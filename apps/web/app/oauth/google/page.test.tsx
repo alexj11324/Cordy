@@ -2,7 +2,16 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
-const { clerkLoaded, session, search, signInResource, sso, signOut, replace } =
+const {
+  clerkLoaded,
+  session,
+  search,
+  signInResource,
+  sso,
+  signOut,
+  replace,
+  registerDesktopGoogleAttempt,
+} =
   vi.hoisted(() => ({
     clerkLoaded: { current: true },
     session: { current: null as { id: string } | null },
@@ -11,7 +20,12 @@ const { clerkLoaded, session, search, signInResource, sso, signOut, replace } =
     sso: vi.fn(),
     signOut: vi.fn(),
     replace: vi.fn(),
+    registerDesktopGoogleAttempt: vi.fn(),
   }));
+
+vi.mock("@patchbay/core/api", () => ({
+  api: { registerDesktopGoogleAttempt },
+}));
 
 vi.mock("@clerk/nextjs", () => ({
   useClerk: () => ({
@@ -64,6 +78,8 @@ describe("GoogleOAuthPage", () => {
     signOut.mockReset();
     signOut.mockResolvedValue(undefined);
     replace.mockReset();
+    registerDesktopGoogleAttempt.mockReset();
+    registerDesktopGoogleAttempt.mockResolvedValue({ registered: true });
     signInResource.current = { sso };
   });
 
@@ -75,6 +91,10 @@ describe("GoogleOAuthPage", () => {
     render(<GoogleOAuthPage />);
 
     await waitFor(() => expect(sso).toHaveBeenCalledOnce());
+    expect(registerDesktopGoogleAttempt).toHaveBeenCalledWith(
+      state,
+      codeChallenge,
+    );
     const query = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
     expect(sso).toHaveBeenCalledWith({
       strategy: "oauth_google",
@@ -112,6 +132,21 @@ describe("GoogleOAuthPage", () => {
       "Invalid desktop binding",
     );
     expect(sso).not.toHaveBeenCalled();
+    expect(registerDesktopGoogleAttempt).not.toHaveBeenCalled();
+  });
+
+  it("does not leave for Google until Rust registers the desktop attempt", async () => {
+    const codeChallenge = "a".repeat(43);
+    const state = "b".repeat(43);
+    search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
+    registerDesktopGoogleAttempt.mockRejectedValue(new Error("unavailable"));
+
+    render(<GoogleOAuthPage />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Google sign-in failed",
+    );
+    expect(sso).not.toHaveBeenCalled();
   });
 
   it("waits for Clerk readiness before consuming a Google attempt", async () => {
@@ -123,6 +158,7 @@ describe("GoogleOAuthPage", () => {
     const view = render(<GoogleOAuthPage />);
     await Promise.resolve();
     expect(sso).not.toHaveBeenCalled();
+    expect(registerDesktopGoogleAttempt).not.toHaveBeenCalled();
 
     clerkLoaded.current = true;
     view.rerender(<GoogleOAuthPage />);
@@ -183,6 +219,10 @@ describe("GoogleOAuthPage", () => {
       "Google sign-in failed",
     );
     expect(sso).not.toHaveBeenCalled();
+    expect(registerDesktopGoogleAttempt).toHaveBeenCalledWith(
+      state,
+      codeChallenge,
+    );
   });
 
   it("does not loop when a reset returns with the session still active", async () => {
@@ -222,6 +262,7 @@ describe("GoogleOAuthPage", () => {
         `/oauth/google/callback?${search.current}`,
       );
       expect(sso).not.toHaveBeenCalled();
+      expect(registerDesktopGoogleAttempt).not.toHaveBeenCalled();
     } finally {
       vi.unstubAllGlobals();
     }

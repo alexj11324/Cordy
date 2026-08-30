@@ -12,6 +12,7 @@ import {
   startGoogleOAuth,
 } from "@/features/auth/google-oauth";
 import { useT } from "@patchbay/views/i18n";
+import { api } from "@patchbay/core/api";
 import { useWebSearchParams } from "@/platform/client-navigation";
 
 export default function GoogleOAuthPage() {
@@ -32,7 +33,9 @@ function GoogleOAuthContent() {
   const { signIn } = useSignIn();
   const { t } = useT("auth");
   const attempted = useRef(false);
+  const registeringAttempt = useRef(false);
   const clearingSession = useRef(false);
+  const [attemptRegistered, setAttemptRegistered] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -64,6 +67,22 @@ function GoogleOAuthContent() {
           hash: window.location.hash,
         }),
       );
+      return;
+    }
+
+    if (!attemptRegistered) {
+      if (registeringAttempt.current) return;
+      registeringAttempt.current = true;
+      void api
+        .registerDesktopGoogleAttempt(binding.state, binding.codeChallenge)
+        .then(({ registered }) => {
+          if (!registered) throw new Error("Desktop Google OAuth attempt unavailable");
+          setAttemptRegistered(true);
+        })
+        .catch(() => {
+          registeringAttempt.current = false;
+          setError(t(($) => $.web.google_oauth.failed));
+        });
       return;
     }
 
@@ -114,7 +133,7 @@ function GoogleOAuthContent() {
       .catch(() => {
         setError(t(($) => $.web.google_oauth.failed));
       });
-  }, [binding, clerk, searchParams, signIn, t]);
+  }, [attemptRegistered, binding, clerk, searchParams, signIn, t]);
 
   return (
     <ClerkAuthShell>

@@ -21,6 +21,18 @@ pub enum ClerkAuthError {
 #[async_trait]
 pub trait ClerkSessionVerifier: Send + Sync {
     async fn verify(&self, token: &str) -> Result<ClerkIdentity, ClerkAuthError>;
+
+    /// Verifies that the token belongs to a new, active Google OAuth session
+    /// created after the server registered the desktop authorization attempt.
+    /// Implementations used by tests that do not exercise desktop OAuth fail
+    /// closed by default.
+    async fn verify_fresh_google_session(
+        &self,
+        _token: &str,
+        _not_before_ms: i64,
+    ) -> Result<ClerkIdentity, ClerkAuthError> {
+        Err(ClerkAuthError::Invalid)
+    }
 }
 
 pub struct ClerkAuthClient {
@@ -161,6 +173,56 @@ impl ClerkAuthClient {
                 .filter(|value| !value.is_empty()),
         })
     }
+
+    async fn fetch_session(&self, session_id: &str) -> Result<ClerkSession, ClerkAuthError> {
+        let mut url = url::Url::parse("https://api.clerk.com/v1/sessions/")
+            .map_err(|_| ClerkAuthError::Unavailable)?;
+        url.path_segments_mut()
+            .map_err(|_| ClerkAuthError::Unavailable)?
+            .push(session_id);
+        let response = self
+            .http
+            .get(url)
+            .bearer_auth(&self.secret_key)
+            .send()
+            .await
+            .map_err(|_| ClerkAuthError::Unavailable)?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(ClerkAuthError::Invalid);
+        }
+        if !response.status().is_success() {
+            return Err(ClerkAuthError::Unavailable);
+        }
+        response
+            .json::<ClerkSession>()
+            .await
+            .map_err(|_| ClerkAuthError::Unavailable)
+    }
+
+    async fn fetch_client(&self, client_id: &str) -> Result<ClerkClient, ClerkAuthError> {
+        let mut url = url::Url::parse("https://api.clerk.com/v1/clients/")
+            .map_err(|_| ClerkAuthError::Unavailable)?;
+        url.path_segments_mut()
+            .map_err(|_| ClerkAuthError::Unavailable)?
+            .push(client_id);
+        let response = self
+            .http
+            .get(url)
+            .bearer_auth(&self.secret_key)
+            .send()
+            .await
+            .map_err(|_| ClerkAuthError::Unavailable)?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(ClerkAuthError::Invalid);
+        }
+        if !response.status().is_success() {
+            return Err(ClerkAuthError::Unavailable);
+        }
+        response
+            .json::<ClerkClient>()
+            .await
+            .map_err(|_| ClerkAuthError::Unavailable)
+    }
 }
 
 #[async_trait]
@@ -169,15 +231,66 @@ impl ClerkSessionVerifier for ClerkAuthClient {
         let claims = self.verify_claims(token)?;
         self.fetch_identity(&claims.sub).await
     }
+
+    async fn verify_fresh_google_session(
+        &self,
+        token: &str,
+        not_before_ms: i64,
+    ) -> Result<ClerkIdentity, ClerkAuthError> {
+        let claims = self.verify_claims(token)?;
+        let session_id = claims
+            .sid
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or(ClerkAuthError::Invalid)?;
+        let session = self.fetch_session(session_id).await?;
+        if session.id != session_id
+            || session.user_id != claims.sub
+            || session.status != "active"
+            || session.actor.is_some()
+            || session.created_at < not_before_ms
+            || session.client_id.trim().is_empty()
+        {
+            return Err(ClerkAuthError::Invalid);
+        }
+        let client = self.fetch_client(&session.client_id).await?;
+        if client.id != session.client_id
+            || client.last_authentication_strategy.as_deref() != Some("oauth_google")
+        {
+            return Err(ClerkAuthError::Invalid);
+        }
+        self.fetch_identity(&claims.sub).await
+    }
 }
 
 #[derive(Debug, Deserialize)]
 struct ClerkClaims {
     sub: String,
     #[serde(default)]
+    sid: Option<String>,
+    #[serde(default)]
     azp: Option<String>,
     #[serde(default)]
     sts: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClerkSession {
+    id: String,
+    user_id: String,
+    client_id: String,
+    created_at: i64,
+    status: String,
+    #[serde(default)]
+    actor: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClerkClient {
+    id: String,
+    #[serde(default)]
+    last_authentication_strategy: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

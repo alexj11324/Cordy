@@ -9,9 +9,7 @@ type BrokerRoute =
 /** Keep a reverse-proxy base path on every same-origin broker transition. */
 export function buildBrokerRoute(
   currentPathname: string,
-  currentRoute:
-    | typeof GOOGLE_OAUTH_ENTRY_PATH
-    | typeof GOOGLE_OAUTH_CALLBACK_PATH,
+  currentRoute: BrokerRoute,
   targetRoute: BrokerRoute,
 ): string {
   const pathname = currentPathname.replace(/\/+$/, "");

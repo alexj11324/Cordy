@@ -431,7 +431,6 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             )),
         )
         .merge(formal_guard(cli_token::router()))
-        .merge(formal_guard(desktop_handoff::authenticated_router()))
         .merge(client_usage::router())
         .merge(feedback::router())
         .merge(formal_guard(invitation::router()))

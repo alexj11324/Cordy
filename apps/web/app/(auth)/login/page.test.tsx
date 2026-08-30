@@ -7,7 +7,7 @@ const {
   search,
   authStoreState,
   issueCliToken,
-  issueDesktopHandoff,
+  completeDesktopGoogleAttempt,
   redirectToCliCallback,
   redirectToDesktopApp,
   exchangeReady,
@@ -19,7 +19,7 @@ const {
   search: { current: "" },
   authStoreState: { current: { status: "unauthenticated" } },
   issueCliToken: vi.fn(),
-  issueDesktopHandoff: vi.fn(),
+  completeDesktopGoogleAttempt: vi.fn(),
   redirectToCliCallback: vi.fn(),
   redirectToDesktopApp: vi.fn(),
   exchangeReady: { current: true },
@@ -42,9 +42,13 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(search.current),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
-  api: { issueCliToken, issueDesktopHandoff },
-}));
+vi.mock("@patchbay/core/api", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@patchbay/core/api")>();
+  return {
+    ...original,
+    api: { issueCliToken, completeDesktopGoogleAttempt },
+  };
+});
 
 vi.mock("@patchbay/views/auth", async (importOriginal) => {
   const original = await importOriginal<typeof import("@patchbay/views/auth")>();
@@ -89,13 +93,14 @@ import LoginPage from "./page";
 
 describe("LoginPage", () => {
   beforeEach(() => {
+    vi.unstubAllGlobals();
     signInProps.current = {};
     search.current = "";
     authStoreState.current = { status: "unauthenticated" };
     authState.current = { isLoaded: true, isSignedIn: false, getToken: vi.fn() };
     exchangeReady.current = true;
     issueCliToken.mockReset();
-    issueDesktopHandoff.mockReset();
+    completeDesktopGoogleAttempt.mockReset();
     redirectToCliCallback.mockReset();
     redirectToDesktopApp.mockReset();
   });
@@ -254,14 +259,24 @@ describe("LoginPage", () => {
 
   it("automatically hands a signed-in desktop session to the Patchbay app", async () => {
     search.current = "platform=desktop&code_challenge=challenge-value&state=opaque-state";
-    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authState.current = {
+      isLoaded: true,
+      isSignedIn: true,
+      getToken: vi.fn().mockResolvedValue("clerk-session-token"),
+    };
     authStoreState.current = { status: "authenticated" };
-    issueDesktopHandoff.mockResolvedValue({ code: "desktop-handoff-code" });
+    completeDesktopGoogleAttempt.mockResolvedValue({ code: "desktop-handoff-code" });
 
     render(<LoginPage />);
 
-    await waitFor(() => expect(issueDesktopHandoff).toHaveBeenCalledOnce());
-    expect(issueDesktopHandoff).toHaveBeenCalledWith("challenge-value");
+    await waitFor(() =>
+      expect(completeDesktopGoogleAttempt).toHaveBeenCalledOnce(),
+    );
+    expect(completeDesktopGoogleAttempt).toHaveBeenCalledWith(
+      "clerk-session-token",
+      "opaque-state",
+      "challenge-value",
+    );
     expect(redirectToDesktopApp).toHaveBeenCalledWith(
       "desktop-handoff-code",
       "opaque-state",
@@ -276,10 +291,39 @@ describe("LoginPage", () => {
 
     render(<LoginPage />);
 
-    expect(issueDesktopHandoff).not.toHaveBeenCalled();
+    expect(completeDesktopGoogleAttempt).not.toHaveBeenCalled();
     expect(
       screen.getByRole("button", { name: "Preparing Desktop sign-in..." }),
     ).toBeDisabled();
+  });
+
+  it("restarts Google instead of accepting an ambient signed-in session", async () => {
+    const { ApiError } = await import("@patchbay/core/api");
+    const codeChallenge = "c".repeat(43);
+    const state = "s".repeat(43);
+    search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
+    authState.current = {
+      isLoaded: true,
+      isSignedIn: true,
+      getToken: vi.fn().mockResolvedValue("ambient-clerk-token"),
+    };
+    authStoreState.current = { status: "authenticated" };
+    completeDesktopGoogleAttempt.mockRejectedValue(
+      new ApiError("fresh Google authorization is required", 409, "Conflict"),
+    );
+    const locationReplace = vi.fn();
+    vi.stubGlobal("location", {
+      pathname: "/login",
+      replace: locationReplace,
+    });
+
+    render(<LoginPage />);
+
+    await waitFor(() => expect(locationReplace).toHaveBeenCalledOnce());
+    expect(locationReplace).toHaveBeenCalledWith(
+      `/oauth/google?platform=desktop&code_challenge=${codeChallenge}&state=${state}`,
+    );
+    expect(redirectToDesktopApp).not.toHaveBeenCalled();
   });
 
   it("does not mint a desktop handoff without a renderer binding", async () => {
@@ -290,7 +334,7 @@ describe("LoginPage", () => {
     render(<LoginPage />);
 
     await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
-    expect(issueDesktopHandoff).not.toHaveBeenCalled();
+    expect(completeDesktopGoogleAttempt).not.toHaveBeenCalled();
     expect(redirectToDesktopApp).not.toHaveBeenCalled();
   });
 });
