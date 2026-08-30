@@ -670,7 +670,8 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeS
         request: RepoCheckoutRequest,
         task_token: &str,
     ) -> Result<Value, RepoCheckoutFailure> {
-        self.checkout_repo(ctx, active_task, request, task_token).await
+        self.checkout_repo(ctx, active_task, request, task_token)
+            .await
     }
 
     async fn flush_runtime_cleanup(&self, ctx: Ctx) -> anyhow::Result<()> {
