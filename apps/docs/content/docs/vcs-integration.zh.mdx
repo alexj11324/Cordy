@@ -79,7 +79,7 @@ Patchbay 会用存储的密钥校验每次投递，因此没有匹配密钥的 W
 - **Work Product 关系** —— Webhook 只镜像 provider 产物，不读取 PR 文本，也不创建 Issue 关系。请在 issue 中使用 Attach 操作/API 选择未关联产物；智能体路径通过 task/run 登记。显式关系启用关闭意图后，合并且没有仍处于 open 的关联 PR 时，issue 会被移动到「完成」。
 - **CI** —— Forgejo/Gitea 的提交状态与 GitLab 的流水线会汇总为 head commit 的通过/失败/进行中检查条。
 
-如果 task 结束时尚未登记，Cordy 可以使用该 task 持久化的仓库身份、执行 workspace 和精确 head branch 做一次确定性查询。只有唯一匹配会持久化；零匹配保持未关联，多匹配、共享或使用中的分支、默认/detached head、查询失败会记录为歧义或不符合条件，等待显式确认。分支只用于首次查询，不是长期关联键。
+如果 task 结束时尚未登记，Patchbay 可以使用该 task 持久化的仓库身份、执行 workspace 和精确 head branch 做一次确定性查询。只有唯一匹配会持久化；零匹配保持未关联，多匹配、共享或使用中的分支、默认/detached head、查询失败会记录为歧义或不符合条件，等待显式确认。分支只用于首次查询，不是长期关联键。
 
 ## 智能体创建 Pull Request
 

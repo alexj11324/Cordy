@@ -79,7 +79,7 @@ Patchbay は保存済みの secret で各 delivery を検証するため、一�
 - **Work Product の関係** — Webhook は provider のデータをミラーするだけで、PR の本文を読んだり Issue 関係を作成したりしません。イシューの Attach 操作/API で未関連の Work Product を選択します。エージェント経路は task/run から登録します。明示的な close intent のある関係がマージされ、open の関連 PR が残っていなければ、イシューを「完了」へ移動します。
 - **CI** — Forgejo/Gitea の commit status と GitLab pipeline を、head commit の成功/失敗/進行中チェックバーへ集約します。
 
-task が終了時点で登録していない場合、Cordy は task が保存した repository identity、execution workspace、exact head branch だけで一度だけ決定的な検索を行えます。唯一の一致だけが永続化され、0 件は未関連、複数件、共有または使用中のブランチ、default/detached head、検索失敗は曖昧または対象外として記録されます。ブランチは初回検索専用で、永続的な関係キーではありません。
+task が終了時点で登録していない場合、Patchbay は task が保存した repository identity、execution workspace、exact head branch だけで一度だけ決定的な検索を行えます。唯一の一致だけが永続化され、0 件は未関連、複数件、共有または使用中のブランチ、default/detached head、検索失敗は曖昧または対象外として記録されます。ブランチは初回検索専用で、永続的な関係キーではありません。
 
 ## エージェントによる Pull Request の作成
 

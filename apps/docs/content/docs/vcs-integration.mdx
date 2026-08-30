@@ -84,7 +84,7 @@ Patchbay authenticates every delivery against the stored secret, so a webhook wi
 - **Work Product relations** — webhook deliveries mirror provider objects but never inspect PR text or create Issue relations. Use the issue's Attach action/API to select an unassociated product; task/run registration is the agent path. A relation with explicit close intent on a merged PR moves the issue to **Done** once no linked PR is still open.
 - **CI** — Forgejo/Gitea commit statuses and GitLab pipelines aggregate into a passed/failed/pending checks bar for the head commit.
 
-If a task finishes without registration, Cordy may perform one exact-branch
+If a task finishes without registration, Patchbay may perform one exact-branch
 lookup using that task's persisted repository identity, execution workspace, and
 head branch. Only one match is durable. Zero matches remain unassociated;
 multiple matches, shared or active branches, default/detached heads, and lookup
