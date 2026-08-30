@@ -141,6 +141,7 @@ type NavLabelKey =
   | "usage"
   | "runtimes"
   | "skills"
+  | "integrations"
   | "settings";
 
 // Nav icons are NOT declared here: they are derived from each item's
