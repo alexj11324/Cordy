@@ -147,12 +147,10 @@ export function installWebDesktopBridge(): boolean {
     pickDirectory: async (_defaultPath?: string) => ({
       ok: false,
       reason: "unsupported",
-      error: BROWSER_PREVIEW_ERROR,
     }),
     validateLocalDirectory: async (_path: string) => ({
       ok: false,
-      reason: "error",
-      error: BROWSER_PREVIEW_ERROR,
+      reason: "unsupported",
     }),
     onCloseActiveTab: (callback: () => void) =>
       listenForShortcut("w", callback),
