@@ -7,6 +7,7 @@ import {
   cargoBuildArguments,
   cargoProfileDirectory,
   cargoTargetDirectory,
+  enforceCliAvailability,
   normalizeRuntimeArch,
   normalizeRuntimePlatform,
   rustTargetFor,
@@ -53,10 +54,11 @@ describe("bundle-cli Rust target selection", () => {
     ).toBe(resolve("/var/cache/patchbay"));
   });
 
-  it("keeps release as the packaging default and makes development incremental", () => {
+  it("requires an explicit profile and makes development incremental", () => {
     const target = "aarch64-apple-darwin";
 
-    expect(buildProfileFromArgs([])).toBe("release");
+    expect(() => buildProfileFromArgs([])).toThrow(/explicit --profile/);
+    expect(buildProfileFromArgs(["--profile", "release"])).toBe("release");
     expect(buildProfileFromArgs(["--profile", "dev"])).toBe("dev");
     expect(() => buildProfileFromArgs(["--profile", "fast"])).toThrow(
       /unsupported build profile/,
@@ -65,6 +67,16 @@ describe("bundle-cli Rust target selection", () => {
     expect(cargoBuildArguments("dev", target)).not.toContain("--release");
     expect(cargoProfileDirectory("release")).toBe("release");
     expect(cargoProfileDirectory("dev")).toBe("debug");
+  });
+
+  it("fails formal release packaging instead of shipping without a CLI", () => {
+    expect(() =>
+      enforceCliAvailability("release", false, "cargo is unavailable"),
+    ).toThrow(/release CLI is required.*cargo is unavailable/i);
+    expect(enforceCliAvailability("dev", false, "cargo is unavailable")).toBe(
+      false,
+    );
+    expect(enforceCliAvailability("release", true, "unused")).toBe(true);
   });
 
   it("uses stable commit metadata for repeated development bundles", () => {

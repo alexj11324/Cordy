@@ -101,11 +101,23 @@ export function cargoTargetDirectory(env = process.env, cwd = serverRsDir) {
 
 export function buildProfileFromArgs(argv) {
   const flagIndex = argv.indexOf("--profile");
-  const profile = flagIndex === -1 ? "release" : (argv[flagIndex + 1] ?? "");
+  if (flagIndex === -1) {
+    throw new Error(
+      "[bundle-cli] an explicit --profile dev or --profile release is required",
+    );
+  }
+  const profile = argv[flagIndex + 1] ?? "";
   if (BUILD_PROFILES.has(profile)) return profile;
   throw new Error(
     `[bundle-cli] unsupported build profile: ${profile}. Use dev or release.`,
   );
+}
+
+export function enforceCliAvailability(profile, available, detail) {
+  if (!available && profile === "release") {
+    throw new Error(`[bundle-cli] release CLI is required: ${detail}`);
+  }
+  return available;
 }
 
 export function cargoProfileDirectory(profile) {
@@ -184,7 +196,10 @@ async function main() {
   const destDir = join(repoRoot, "apps", "desktop", "resources", "bin");
   const destBinary = join(destDir, binName);
 
-  if (hasCargo()) {
+  const cargoAvailable = hasCargo();
+  enforceCliAvailability(profile, cargoAvailable, "cargo is unavailable");
+
+  if (cargoAvailable) {
     const version =
       git("describe", "--tags", "--match", "v[0-9]*", "--always", "--dirty") ||
       "dev";
@@ -221,7 +236,13 @@ async function main() {
     );
   }
 
-  if (!(await exists(srcBinary))) {
+  const sourceBinaryExists = await exists(srcBinary);
+  enforceCliAvailability(
+    profile,
+    sourceBinaryExists,
+    `${srcBinary} was not produced`,
+  );
+  if (!sourceBinaryExists) {
     console.warn(
       `[bundle-cli] ${srcBinary} not present — Desktop will fall back to ` +
         `auto-installing the latest release at runtime.`,

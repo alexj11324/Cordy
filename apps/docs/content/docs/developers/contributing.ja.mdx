@@ -91,9 +91,19 @@ pnpm lint
 pnpm test
 ```
 
-Desktop から `server-rs` の変更を検証するときだけ
-`pnpm dev:desktop:rust` を使用してください。正式な Desktop パッケージは
-引き続き release CLI をビルドして同梱します。
+変更内容に合う最小範囲の Desktop パスを選択してください：
+
+| 状況 | コマンド | 実行内容 |
+| --- | --- | --- |
+| ブラウザだけで renderer/UI を反復 | `pnpm dev:desktop:web` | Vite のみ、Rust なし |
+| 通常の renderer、Electron main、preload 開発 | `pnpm dev:desktop` | Electron/Vite のみ、Rust なし |
+| フロントエンド/Electron のビルド確認 | `pnpm --filter @patchbay/desktop build` | production JS bundle、Rust なし |
+| 未公開の `server-rs` / CLI 動作を Desktop から検証 | `pnpm dev:desktop:rust` | 増分 Cargo 開発ビルド後に Electron/Vite |
+| installer、署名/公証、updater、内蔵 CLI、release を検証 | `pnpm --filter @patchbay/desktop package` | release Rust CLI と installer。数十分かかる場合あり |
+
+通常の UI、TypeScript、CSS、main/preload、ドキュメント変更で package
+パスを使用しないでください。完全な release コンパイルは明示的な成果物検証と
+GitHub Actions のためのもので、通常の編集・更新ループには含めません。
 
 ルートコマンドはデフォルトで Mobile を除外します。Mobile には独自のスクリプトと CI があるため、変更前に `apps/mobile/AGENTS.md` を読んでください。
 

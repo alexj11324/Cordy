@@ -514,11 +514,19 @@ The default command automatically:
 3. Starts and manages its own daemon instance
 4. Connects to the local backend
 
-`pnpm dev:desktop:rust` first bundles the current `server-rs` source with
-Cargo's incremental development profile. Use it when the Rust CLI itself
-changed; ordinary renderer and Electron work should stay on the default fast
-path. Formal `pnpm --filter @patchbay/desktop package` builds and embeds the
-release CLI regardless of which development command was used.
+Choose the narrowest path that matches what changed:
+
+| Situation | Command | Expected work |
+| --- | --- | --- |
+| Browser-only renderer/UI iteration | `pnpm dev:desktop:web` | Vite only; no Rust |
+| Normal renderer, Electron main, or preload iteration | `pnpm dev:desktop` | Electron/Vite only; no Rust |
+| Compile-check frontend/Electron output | `pnpm --filter @patchbay/desktop build` | Electron/Vite production bundles; no Rust |
+| Test unpublished `server-rs` / CLI behavior through Desktop | `pnpm dev:desktop:rust` | Incremental Cargo development CLI, then Electron/Vite |
+| Validate an installer, signing/notarization, updater, embedded CLI, or release | `pnpm --filter @patchbay/desktop package` | Release Rust CLI and installer packaging; may take tens of minutes |
+
+Do not use the package path for routine UI, TypeScript, CSS, main/preload, or
+documentation changes. The full release build is intentionally reserved for a
+distributable artifact or its production boundaries, plus GitHub Actions.
 
 Login in the Desktop UI with `dev@localhost` and the generated code from the
 backend logs. If you set `PATCHBAY_DEV_VERIFICATION_CODE=888888` before starting

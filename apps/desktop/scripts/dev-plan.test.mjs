@@ -7,8 +7,17 @@ import { describe, expect, it } from "vitest";
 import { planDevCommands } from "./dev-plan.mjs";
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
+const repoRoot = join(scriptsDir, "..", "..", "..");
 const desktopPackage = JSON.parse(
   readFileSync(join(scriptsDir, "..", "package.json"), "utf8"),
+);
+const rootPackage = JSON.parse(
+  readFileSync(join(repoRoot, "package.json"), "utf8"),
+);
+const devLauncher = readFileSync(join(scriptsDir, "dev.mjs"), "utf8");
+const ciWorkflow = readFileSync(
+  join(repoRoot, ".github", "workflows", "ci.yml"),
+  "utf8",
 );
 
 describe("Desktop development build plan", () => {
@@ -26,7 +35,7 @@ describe("Desktop development build plan", () => {
 
   it("uses an explicit incremental Rust development build when requested", () => {
     expect(
-      planDevCommands(["--bundle-cli", "--mode", "staging"], {
+      planDevCommands(["--source-cli", "--mode", "staging"], {
         nodePath: "/usr/bin/node",
         scriptsDir,
       }),
@@ -46,10 +55,29 @@ describe("Desktop development build plan", () => {
     ]);
   });
 
+  it("rejects the removed ambiguous bundle flag", () => {
+    expect(() =>
+      planDevCommands(["--bundle-cli"], {
+        nodePath: "/usr/bin/node",
+        scriptsDir,
+      }),
+    ).toThrow(/removed.*dev:desktop:rust/i);
+  });
+
   it("keeps ordinary builds Rust-free and provides the source-matched dev entry", () => {
     expect(desktopPackage.scripts.build).toBe("electron-vite build");
+    expect(desktopPackage.scripts["bundle-cli"]).toBeUndefined();
+    expect(desktopPackage.scripts["bundle-cli:release"]).toBeUndefined();
     expect(desktopPackage.scripts["dev:rust"]).toBe(
-      "node scripts/dev.mjs --bundle-cli",
+      "node scripts/dev.mjs --source-cli",
     );
+    expect(rootPackage.scripts["dev:desktop"]).toBe(
+      "turbo dev --filter=@patchbay/desktop",
+    );
+    expect(rootPackage.scripts.build).toBe(
+      "turbo build --filter=!@patchbay/mobile",
+    );
+    expect(devLauncher).not.toContain('"bundle-cli.mjs"');
+    expect(ciWorkflow).not.toContain("Prepare Rust CLI bundle target");
   });
 });

@@ -90,6 +90,10 @@ pnpm build
 `pnpm build` builds the frontend and Electron bundles without compiling Rust.
 Formal Desktop packaging still uses `pnpm --filter @patchbay/desktop package`,
 which always builds and embeds the release Rust CLI before creating installers.
+Run that full path only for installer, signing/notarization, updater,
+embedded-CLI, or release acceptance; it may take tens of minutes and is not a
+day-to-day edit-refresh command. See [Contributing](CONTRIBUTING.md#desktop-app-local-testing)
+for the complete path-selection table.
 
 ## Documentation
 

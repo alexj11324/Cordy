@@ -91,8 +91,18 @@ pnpm lint
 pnpm test
 ```
 
-只有通过 Desktop 验证 `server-rs` 改动时才使用
-`pnpm dev:desktop:rust`。正式 Desktop 打包仍会构建并内置 release CLI。
+请根据改动选择范围最小的 Desktop 路径：
+
+| 场景 | 命令 | 实际工作 |
+| --- | --- | --- |
+| 只在浏览器迭代 renderer/UI | `pnpm dev:desktop:web` | 只运行 Vite，不编译 Rust |
+| 日常 renderer、Electron main 或 preload 开发 | `pnpm dev:desktop` | 只运行 Electron/Vite，不编译 Rust |
+| 检查前端/Electron 是否能构建 | `pnpm --filter @patchbay/desktop build` | 生成生产 JS bundle，不编译 Rust |
+| 通过 Desktop 验证尚未发布的 `server-rs` / CLI 行为 | `pnpm dev:desktop:rust` | 增量 Cargo 开发构建，然后启动 Electron/Vite |
+| 验证安装包、签名/公证、自动更新、内置 CLI 或正式发布 | `pnpm --filter @patchbay/desktop package` | release Rust CLI 和安装包，可能耗时几十分钟 |
+
+普通 UI、TypeScript、CSS、main/preload 或文档改动绝不能走 package 路径。
+全量 release 编译只属于明确的产物验收和 GitHub Actions，不属于默认的修改刷新循环。
 
 根命令默认排除 Mobile。移动端有独立脚本和 CI，修改前先阅读 `apps/mobile/AGENTS.md`。
 

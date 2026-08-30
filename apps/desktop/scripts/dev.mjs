@@ -4,9 +4,9 @@
 // Derives per-worktree isolation env (renderer port + app name) so multiple
 // worktrees can run `pnpm dev:desktop` side-by-side, then brands the dev
 // Electron and starts electron-vite with the augmented env. Rust is opt-in via
-// `--bundle-cli`: ordinary renderer/main-process edits should keep Vite's fast
-// feedback loop, while contributors changing server-rs can explicitly bundle
-// a source-matched incremental development CLI.
+// the public `pnpm dev:desktop:rust` command: ordinary renderer/main-process
+// edits stay on Vite's fast feedback loop, while contributors changing
+// server-rs can explicitly bundle a source-matched incremental development CLI.
 
 import { spawnSync } from "node:child_process";
 import { dirname } from "node:path";

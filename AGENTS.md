@@ -57,6 +57,33 @@ make test             # Developer helper for Rust tests; GitHub Actions is autho
 make check            # Product-wide local helper; not an agent/default migration gate
 ```
 
+### Desktop development and build paths (hard rules)
+
+| Situation | Command | Rust work |
+| --- | --- | --- |
+| Renderer-only UI iteration in a browser | `pnpm dev:desktop:web` | None |
+| Normal Electron renderer, main, or preload development | `pnpm dev:desktop` | None |
+| Ordinary frontend/Electron build verification | `pnpm --filter @patchbay/desktop build` or `pnpm build` | None |
+| A `server-rs` / CLI change must be exercised through Desktop | `pnpm dev:desktop:rust` (developer-only under the local-Cargo rule below) | Incremental development profile |
+| Installer, signing, notarization, updater, bundled-CLI, or release acceptance | `pnpm --filter @patchbay/desktop package` or the release workflow | Full release CLI plus packaging; may take tens of minutes |
+
+- The first three Rust-free paths are the default for day-to-day development
+  and agent verification. Do not package the app merely to validate a UI,
+  TypeScript, CSS, Electron main/preload, documentation, or shared-package
+  change.
+- Use the source-matched Rust path only when the task changed `server-rs` or
+  explicitly depends on unpublished CLI behavior. Under the repository rule
+  prohibiting local Cargo for agents, agents verify this contract with focused
+  script tests and GitHub Actions; human developers may run the command.
+- Use the full package/release path only when the requested acceptance actually
+  concerns a distributable artifact or one of its production boundaries. The
+  long release build belongs in GitHub Actions or a deliberate release check,
+  never in the default edit-refresh loop.
+- Never add `bundle-cli.mjs`, Cargo, or a release CLI build back to the default
+  `dev`, `dev:staging`, or `build` scripts, or to the frontend-build setup in
+  CI. `bundle-cli.mjs` requires an explicit `dev` or `release` profile, and the
+  formal package wrapper must pass `release` explicitly.
+
 ### Coding Conventions
 
 - TypeScript is strict. Prefer `type` over `interface`, avoid `any`, and use

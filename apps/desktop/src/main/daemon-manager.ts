@@ -445,8 +445,9 @@ function findCliOnPath(): string | null {
  * Returns the path to the CLI binary bundled inside the Desktop app.
  *
  * - Dev (`electron-vite dev`): `app.getAppPath()` → `apps/desktop`, resolving
- *   to `apps/desktop/resources/bin/patchbay`. `bundle-cli.mjs` populates this
- *   before dev starts, so iterating on Rust changes is "cargo build → restart".
+ *   to `apps/desktop/resources/bin/patchbay`. The fast `pnpm dev:desktop` path
+ *   never builds Rust. `pnpm dev:desktop:rust` explicitly populates this path
+ *   with an incremental source-matched development CLI when Rust changed.
  * - Packaged: `app.getAppPath()` → `<Patchbay.app>/Contents/Resources/app.asar`.
  *   electron-builder's `asarUnpack: resources/**` extracts the binary to
  *   `app.asar.unpacked/`, so we swap the path segment to execute it.
@@ -498,9 +499,9 @@ async function probeCliBinary(
  *   5. `patchbay` on PATH (dev convenience / user-installed via brew).
  * Returns `null` only when all of the above fail.
  *
- * Bundled is preferred so Desktop iterates in lockstep with Rust changes in
- * the same repo — avoids the 404 / stale-API problem when the Desktop's
- * TS side is ahead of the last published CLI release.
+ * Bundled is preferred when present. Ordinary TypeScript/UI development may
+ * use a managed/released/PATH CLI; changes that require unpublished Rust
+ * behavior must use the explicit source-matched Desktop development command.
  *
  * This function is idempotent and safe to call concurrently — in-flight
  * installs are de-duplicated via `cliResolvePromise`.

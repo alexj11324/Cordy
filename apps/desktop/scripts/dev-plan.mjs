@@ -9,6 +9,11 @@ export function planDevCommands(
 
   for (const token of argv) {
     if (token === "--bundle-cli") {
+      throw new Error(
+        "[dev:desktop] --bundle-cli was removed; use pnpm dev:desktop:rust for source-matched Rust development",
+      );
+    }
+    if (token === "--source-cli") {
       bundleCli = true;
     } else {
       electronViteArgs.push(token);

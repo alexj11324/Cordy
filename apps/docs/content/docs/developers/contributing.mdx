@@ -91,8 +91,19 @@ pnpm lint
 pnpm test
 ```
 
-Use `pnpm dev:desktop:rust` only when testing `server-rs` changes through
-Desktop. Formal Desktop packaging still builds and embeds the release CLI.
+Choose the narrowest Desktop path that matches the change:
+
+| Situation | Command | Work performed |
+| --- | --- | --- |
+| Browser-only renderer/UI iteration | `pnpm dev:desktop:web` | Vite only; no Rust |
+| Normal renderer, Electron main, or preload iteration | `pnpm dev:desktop` | Electron/Vite only; no Rust |
+| Frontend/Electron compile check | `pnpm --filter @patchbay/desktop build` | Production JS bundles; no Rust |
+| Exercise unpublished `server-rs` / CLI behavior through Desktop | `pnpm dev:desktop:rust` | Incremental Cargo development CLI, then Electron/Vite |
+| Validate an installer, signing/notarization, updater, embedded CLI, or release | `pnpm --filter @patchbay/desktop package` | Release Rust CLI and installer packaging; may take tens of minutes |
+
+Never use the package path for ordinary UI, TypeScript, CSS, main/preload, or
+documentation changes. Full release compilation belongs to deliberate
+artifact acceptance and GitHub Actions, not the default edit-refresh loop.
 
 Root commands exclude Mobile by default. Mobile has separate scripts and CI; read `apps/mobile/AGENTS.md` before changing it.
 
