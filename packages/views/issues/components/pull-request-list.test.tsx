@@ -32,16 +32,22 @@ vi.mock("@patchbay/core/github/queries", async () => {
   };
 });
 
-vi.mock("@patchbay/core/github/mutations", () => ({
-  useAttachIssuePullRequest: () => ({
-    mutate: hookMocks.attachIssuePullRequest,
-    isPending: false,
-  }),
-  useAttachIssueWorkProduct: () => ({
-    mutate: hookMocks.attachIssueWorkProduct,
-    isPending: false,
-  }),
-}));
+vi.mock("@patchbay/core/github", async () => {
+  const actual = await vi.importActual<typeof import("@patchbay/core/github")>(
+    "@patchbay/core/github",
+  );
+  return {
+    ...actual,
+    useAttachIssuePullRequest: () => ({
+      mutate: hookMocks.attachIssuePullRequest,
+      isPending: false,
+    }),
+    useAttachIssueWorkProduct: () => ({
+      mutate: hookMocks.attachIssueWorkProduct,
+      isPending: false,
+    }),
+  };
+});
 
 import { PullRequestList } from "./pull-request-list";
 
