@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context as _;
-use axum::extract::{Path, Query as AxumQuery, State};
+use axum::extract::{Extension, Path, Query as AxumQuery, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -125,6 +125,10 @@ pub fn router() -> Router<HandlerState> {
         .route(
             "/api/daemon/tasks/{task_id}/start",
             axum::routing::post(start_task),
+        )
+        .route(
+            "/api/daemon/tasks/{task_id}/execution-provenance",
+            axum::routing::post(record_execution_provenance),
         )
         .route(
             "/api/daemon/tasks/{task_id}/wait-local-directory",
@@ -2882,6 +2886,110 @@ async fn start_task(
         Err(e) => {
             tracing::warn!(error = %e, task_id = %task_id, "start task failed");
             error_response(StatusCode::BAD_REQUEST, &e.to_string())
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Default)]
+struct ExecutionProvenanceRequest {
+    #[serde(default)]
+    execution_repo_identity: String,
+    #[serde(default)]
+    execution_workspace: String,
+    #[serde(default)]
+    execution_head_branch: String,
+    #[serde(default)]
+    execution_head_sha: String,
+    #[serde(default)]
+    execution_head_state: String,
+}
+
+/// Records exact facts from the worktree created by the authenticated daemon.
+/// This is intentionally not a task-token endpoint: the daemon owns the
+/// checkout and submits its server-issued facts with its daemon credential.
+/// The middleware extension, rather than caller-supplied headers, is the
+/// authority for the daemon workspace and authentication path.
+async fn record_execution_provenance(
+    State(state): State<HandlerState>,
+    Extension(daemon_context): Extension<DaemonContext>,
+    Path(task_id): Path<String>,
+    headers: HeaderMap,
+    body: Option<Json<ExecutionProvenanceRequest>>,
+) -> Response {
+    if daemon_context.auth_path
+        != patchbay_middleware::daemon_auth::DAEMON_AUTH_PATH_DAEMON_TOKEN
+        || daemon_context
+            .workspace_id
+            .as_deref()
+            .is_none_or(|workspace_id| workspace_id.trim().is_empty())
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "execution provenance requires daemon authentication",
+        );
+    }
+    let access = Access::new(&state, &headers);
+    let (task, workspace_id) =
+        match require_daemon_task_access_with_workspace(&access, Some(daemon_context), &task_id)
+            .await
+        {
+            Ok(value) => value,
+            Err(response) => return response,
+        };
+    if task.status != "running" {
+        return error_response(
+            StatusCode::CONFLICT,
+            "execution provenance requires a running task",
+        );
+    }
+    let Some(Json(request)) = body else {
+        return error_response(StatusCode::BAD_REQUEST, "invalid request body");
+    };
+    let request = ExecutionProvenanceRequest {
+        execution_repo_identity: sanitize(&request.execution_repo_identity),
+        execution_workspace: sanitize(&request.execution_workspace),
+        execution_head_branch: sanitize(&request.execution_head_branch),
+        execution_head_sha: sanitize(&request.execution_head_sha),
+        execution_head_state: sanitize(&request.execution_head_state),
+    };
+    if request.execution_repo_identity.trim().is_empty()
+        || request.execution_workspace.trim().is_empty()
+        || request.execution_head_branch.trim().is_empty()
+        || request.execution_head_state.trim().is_empty()
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "repository, execution workspace, head branch, and head state are required",
+        );
+    }
+    let Ok(workspace_uuid) = Uuid::parse_str(&workspace_id) else {
+        tracing::error!(%task_id, %workspace_id, "execution provenance resolved an invalid workspace id");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "invalid task workspace");
+    };
+    let input = crate::work_product::ExecutionProvenanceInput {
+        repo_identity: request.execution_repo_identity,
+        execution_workspace: request.execution_workspace,
+        head_branch: request.execution_head_branch,
+        head_sha: request.execution_head_sha,
+        head_state: request.execution_head_state,
+    };
+    match crate::work_product::record_execution_provenance(
+        &state,
+        task.id,
+        workspace_uuid,
+        task.autopilot_run_id,
+        &input,
+        false,
+    )
+    .await
+    {
+        Ok(_) => Json(json!({ "status": "ok" })).into_response(),
+        Err(error) => {
+            tracing::warn!(%error, %task_id, "record execution provenance failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to record execution provenance",
+            )
         }
     }
 }

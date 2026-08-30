@@ -150,7 +150,6 @@ pub trait ProductionRuntimeServices: DaemonCoreServices {
         ctx: Ctx,
         active_task: ActiveRepoCheckoutTask,
         request: RepoCheckoutRequest,
-        task_token: &str,
     ) -> Result<Value, RepoCheckoutFailure>;
 
     /// Flushes lifecycle cleanup for runtimes removed before the final current
@@ -709,11 +708,6 @@ async fn repo_checkout_handler<S: ProductionRuntimeServices>(
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
         .ok_or_else(unauthorized)?;
-    let task_token = authorization
-        .strip_prefix("Bearer ")
-        .map(str::trim)
-        .filter(|token| !token.is_empty())
-        .ok_or_else(unauthorized)?;
     let active = state
         .checkout_registry
         .resolve(authorization)
@@ -768,7 +762,7 @@ async fn repo_checkout_handler<S: ProductionRuntimeServices>(
     let request_lifetime = RequestLifetime(state.root_ctx.child());
     let result = state
         .services
-        .repo_checkout(request_lifetime.0.clone(), active, request, task_token)
+        .repo_checkout(request_lifetime.0.clone(), active, request)
         .await
         .map_err(|failure| {
             let status = StatusCode::from_u16(failure.status_code)

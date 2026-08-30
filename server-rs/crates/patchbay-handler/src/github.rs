@@ -795,7 +795,7 @@ async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) -> anyhow:
         )
         .await?;
         if let Some(pr) = pr {
-            let product = match work_product_q::upsert_work_product(
+            let product = work_product_q::upsert_work_product(
                 &state.pool,
                 pr.workspace_id,
                 "pull_request",
@@ -805,27 +805,13 @@ async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) -> anyhow:
                 Some("github_pull_request"),
                 Some(pr.id),
             )
-            .await
-            {
-                Ok(product) => product,
-                Err(error) => {
-                    tracing::warn!(%error, pr_id = %pr.id, "github: upsert work product failed");
-                    continue;
-                }
-            };
-            let issue_ids = match work_product_q::list_issue_ids_for_work_product(
+            .await?;
+            let issue_ids = work_product_q::list_issue_ids_for_work_product(
                 &state.pool,
                 pr.workspace_id,
                 product.id,
             )
-            .await
-            {
-                Ok(issue_ids) => issue_ids,
-                Err(error) => {
-                    tracing::warn!(%error, pr_id = %pr.id, "github: list work product relations failed");
-                    continue;
-                }
-            };
+            .await?;
             if matches!(pr.state.as_str(), "merged" | "closed") {
                 for issue_id in &issue_ids {
                     let Ok(Some(issue)) = patchbay_db::queries::issue::get_issue_in_workspace(

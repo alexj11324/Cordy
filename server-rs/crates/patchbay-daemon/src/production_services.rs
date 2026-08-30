@@ -366,7 +366,6 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
         ctx: Ctx,
         active_task: ActiveRepoCheckoutTask,
         request: RepoCheckoutRequest,
-        task_token: &str,
     ) -> Result<Value, RepoCheckoutFailure> {
         self.ensure_repo_ready(&ctx, &request.workspace_id, &request.url)
             .await?;
@@ -407,7 +406,6 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
                 self.client
                     .record_execution_provenance(
                         &ctx,
-                        task_token,
                         &task_id,
                         &repo_identity,
                         &execution_workspace,
@@ -668,10 +666,8 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> ProductionRuntimeS
         ctx: Ctx,
         active_task: ActiveRepoCheckoutTask,
         request: RepoCheckoutRequest,
-        task_token: &str,
     ) -> Result<Value, RepoCheckoutFailure> {
-        self.checkout_repo(ctx, active_task, request, task_token)
-            .await
+        self.checkout_repo(ctx, active_task, request).await
     }
 
     async fn flush_runtime_cleanup(&self, ctx: Ctx) -> anyhow::Result<()> {

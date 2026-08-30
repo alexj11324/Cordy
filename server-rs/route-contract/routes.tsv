@@ -183,7 +183,6 @@ GET	/api/teams/{}
 GET	/api/teams/{}/members
 GET	/api/teams/{}/members/status
 GET	/api/tasks/{}/messages
-POST	/api/tasks/{}/execution-provenance
 GET	/api/tasks/{}/work-products
 GET	/api/tokens
 GET	/api/v1/plugin/context
@@ -297,6 +296,7 @@ POST	/api/daemon/runtimes/{}/update/{}/result
 POST	/api/daemon/tasks/claim
 POST	/api/daemon/tasks/{}/cancel-ack
 POST	/api/daemon/tasks/{}/complete
+POST	/api/daemon/tasks/{}/execution-provenance
 POST	/api/daemon/tasks/{}/fail
 POST	/api/daemon/tasks/{}/messages
 POST	/api/daemon/tasks/{}/plugin-hooks
