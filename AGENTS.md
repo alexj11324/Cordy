@@ -57,34 +57,6 @@ make test             # Developer helper for Rust tests; GitHub Actions is autho
 make check            # Product-wide local helper; not an agent/default migration gate
 ```
 
-### Local Desktop UI Preview
-
-To open the shared Desktop renderer without starting the full backend, run
-this from the repository root:
-
-```bash
-DESKTOP_RENDERER_PORT=5175 pnpm --filter @patchbay/desktop dev:web
-```
-
-Then open [http://127.0.0.1:5175/ui-preview](http://127.0.0.1:5175/ui-preview)
-in a browser. The Vite host installs a same-origin preview API for read-only
-fixture data, so the page is an explicit local demo and does not require
-PostgreSQL, a daemon, or a live automation backend. Its banner identifies the
-data as sample data and says when the backend is not connected. The sample issue cards are real
-shared issue-surface links: click one or focus it and press Enter to open the
-issue detail, where the linked execution log and task handoff state are shown.
-The sample runs stay on that shared issue path; the preview does not add a
-standalone transcript or pretend that read-only run details are persisted.
-From the preview sidebar, choose **Autopilot** to inspect the sample
-automation list and open a row for its run/detail state. The preview keeps
-these workspace tabs in an in-memory router, so `/preview/autopilots` is an
-internal tab path rather than a URL to paste into the browser. Product data
-writes are intentionally unsupported and fall through to Vite; view
-preferences may only update in memory for the current tab. Do not treat this
-preview as persisted or live automation data. For a real backend, set both
-`VITE_API_URL` and `VITE_DESKTOP_PREVIEW=false`; otherwise leave `VITE_API_URL`
-unset so the renderer stays on the local preview API.
-
 ### Coding Conventions
 
 - TypeScript is strict. Prefer `type` over `interface`, avoid `any`, and use

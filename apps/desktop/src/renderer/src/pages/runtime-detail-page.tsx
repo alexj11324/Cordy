@@ -10,7 +10,6 @@ import { runtimeListOptions } from "@patchbay/core/runtimes/queries";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 import { DaemonRuntimeActions } from "../components/daemon-runtime-card";
 import { useDesktopRuntimeContext } from "../components/use-desktop-runtime-context";
-import { isDesktopWebPreview } from "../platform/web-bridge";
 
 export function RuntimeDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -18,7 +17,6 @@ export function RuntimeDetailPage() {
   const { data: runtimes } = useQuery(runtimeListOptions(wsId));
   const runtime = runtimes?.find((candidate) => candidate.id === id);
   const context = useDesktopRuntimeContext();
-  const isPreview = isDesktopWebPreview();
 
   useDocumentTitle(runtime ? runtimeDisplayLabel(runtime) : "Devices");
 
@@ -26,11 +24,10 @@ export function RuntimeDetailPage() {
   return (
     <SharedRuntimeDetailPage
       runtimeId={id}
-      readOnly={isPreview}
       localDaemonId={context.localDaemonId}
       localMachineName={context.localMachineName}
-      localMachineActions={isPreview ? undefined : <DaemonRuntimeActions />}
-      hasLocalMachine={!isPreview}
+      localMachineActions={<DaemonRuntimeActions />}
+      hasLocalMachine
       bootstrapping={context.bootstrapping}
     />
   );
@@ -44,16 +41,9 @@ export function RuntimeSettingsPage() {
   const wsId = useWorkspaceId();
   const { data: runtimes } = useQuery(runtimeListOptions(wsId));
   const runtime = runtimes?.find((candidate) => candidate.id === runtimeId);
-  const isPreview = isDesktopWebPreview();
 
   useDocumentTitle(runtime ? runtimeDisplayLabel(runtime) : "Device");
 
   if (!id || !runtimeId) return null;
-  return (
-    <SharedRuntimeSettingsPage
-      machineId={id}
-      runtimeId={runtimeId}
-      readOnly={isPreview}
-    />
-  );
+  return <SharedRuntimeSettingsPage machineId={id} runtimeId={runtimeId} />;
 }

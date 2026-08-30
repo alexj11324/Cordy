@@ -233,7 +233,6 @@ import type {
   CreateCloudRuntimeNodeRequest,
   ListCloudRuntimeNodesParams,
 } from "../runtimes/cloud-runtime";
-import type { SupportedLocale } from "../i18n";
 import { type Logger, noopLogger } from "../logger";
 import { createRequestId, createSafeId } from "../utils";
 import { getCurrentSlug } from "../platform/workspace-storage";
@@ -472,8 +471,6 @@ export interface ApiClientOptions {
   onUnauthorized?: () => void;
   /** Identifies the client to the server. Sent as X-Client-* headers. */
   identity?: ApiClientIdentity;
-  /** Resolved app locale, sent so server-backed and preview reads agree. */
-  locale?: SupportedLocale;
 }
 
 export interface ClientRuntimeSnapshot {
@@ -666,7 +663,6 @@ export class ApiClient {
     if (id?.platform) headers["X-Client-Platform"] = id.platform;
     if (id?.version) headers["X-Client-Version"] = id.version;
     if (id?.os) headers["X-Client-OS"] = id.os;
-    if (this.options.locale) headers["Accept-Language"] = this.options.locale;
     return headers;
   }
 

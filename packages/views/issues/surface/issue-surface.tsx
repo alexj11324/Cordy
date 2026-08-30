@@ -55,8 +55,6 @@ interface IssueSurfaceComponentProps extends IssueSurfaceProps {
   clientFilter?: (issue: Issue) => boolean;
   showClientEmpty?: (context: IssueSurfaceRenderContext) => boolean;
   batchToolbar?: "always" | "list" | "never";
-  /** Suppress mutating issue affordances for embedded read-only surfaces. */
-  readOnly?: boolean;
   contentClassName?: string;
 }
 
@@ -72,7 +70,6 @@ export function IssueSurface({
   clientFilter,
   showClientEmpty,
   batchToolbar = "always",
-  readOnly = false,
   contentClassName,
 }: IssueSurfaceComponentProps) {
   const wsId = useWorkspaceId();
@@ -162,7 +159,6 @@ export function IssueSurface({
         clientFilter={clientFilter}
         showClientEmpty={showClientEmpty}
         batchToolbar={batchToolbar}
-        readOnly={readOnly}
         contentClassName={contentClassName}
       />
       </ViewBaselineProvider>
@@ -181,7 +177,6 @@ function IssueSurfaceContent({
   clientFilter,
   showClientEmpty,
   batchToolbar,
-  readOnly,
   contentClassName,
 }: Omit<IssueSurfaceComponentProps, "surfaceKey">) {
   const { t } = useT("projects");
@@ -232,7 +227,6 @@ function IssueSurfaceContent({
     issues.length === 0 &&
     (showClientEmpty ? showClientEmpty(renderContext) : true);
   const shouldShowBatchToolbar =
-    !readOnly &&
     batchToolbar !== "never" &&
     (batchToolbar === "always" ||
       controller.viewMode === "list" ||
@@ -341,7 +335,6 @@ function IssueSurfaceContent({
                 onMoveIssue={controller.moveIssue}
                 onCreateIssue={openCreateIssue}
                 statusPagination={controller.statusPagination!}
-                readOnly={readOnly}
               />
             )}
             {controller.viewMode === "table" && (

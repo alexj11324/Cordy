@@ -32,7 +32,6 @@ let chatStore: ReturnType<typeof createChatStore>;
 function initCore(
   apiBaseUrl: string,
   storage: StorageAdapter,
-  locale: CoreProviderProps["locale"],
   onLogin?: () => void,
   onLogout?: () => void,
   cookieAuth?: boolean,
@@ -59,7 +58,6 @@ function initCore(
       storage.removeItem("patchbay_token");
     },
     identity,
-    locale,
   });
   setApiInstance(api);
   setSchemaLogger(createLogger("api-schema"));
@@ -100,7 +98,6 @@ export function CoreProvider({
       initCore(
         apiBaseUrl,
         storage,
-        locale,
         onLogin,
         onLogout,
         cookieAuth,
@@ -119,9 +116,6 @@ export function CoreProvider({
   // I18nProvider wraps everything else: server and client must use the same
   // (locale, resources) to avoid hydration mismatch. Language switching goes
   // through window.location.reload(), never client-side changeLanguage.
-  const isUiPreview =
-    typeof window !== "undefined" &&
-    window.location.pathname.startsWith("/ui-preview");
   const tree = (
     <QueryProvider>
       <AuthInitializer
@@ -134,14 +128,9 @@ export function CoreProvider({
       >
         {/* Desktop's reporter owns both activity and runtime state so it must
             be the only writer for that installation. */}
-        {identity?.platform !== "desktop" && !isUiPreview && (
+        {identity?.platform !== "desktop" && (
           <ClientUsageReporter storage={storage} identity={identity} />
         )}
-        {/* Keep the realtime context mounted in the browser preview even when
-            no token is available. WSProvider becomes a no-op until a real
-            session exists, while shared detail/card components can still use
-            the same subscription hooks as Electron instead of crashing at a
-            route boundary. */}
         <WSProvider
           wsUrl={wsUrl}
           authStore={authStore}

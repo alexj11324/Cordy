@@ -14,7 +14,6 @@ import {
   resolveBrowserWsUrl,
 } from "@/config/runtime-urls";
 import { ClerkProvider } from "@/components/clerk-provider";
-import { isUiFixturesEnabled } from "@/lib/ui-fixtures/enabled";
 import "./globals.css";
 
 // Inter is the Latin UI face. next/font produces a hashed family (`__Inter_xxx`)
@@ -139,18 +138,14 @@ export default async function RootLayout({
 }) {
   const locale = await getRequestLocale();
   const resources = { [locale]: RESOURCES[locale] };
-  const uiFixtures = isUiFixturesEnabled();
-  const apiBaseUrl = uiFixtures
-    ? undefined
-    : resolveBrowserApiBaseUrl(process.env);
-  const wsUrl = uiFixtures ? undefined : resolveBrowserWsUrl(process.env);
+  const apiBaseUrl = resolveBrowserApiBaseUrl(process.env);
+  const wsUrl = resolveBrowserWsUrl(process.env);
   const providers = (
     <WebProviders
       locale={locale}
       resources={resources}
       apiBaseUrl={apiBaseUrl}
       wsUrl={wsUrl}
-      uiFixtures={uiFixtures}
     >
       {children}
     </WebProviders>
@@ -181,19 +176,12 @@ export default async function RootLayout({
             strategy="beforeInteractive"
           />
         )}
-        {uiFixtures ? (
+        <ClerkProvider>
           <ThemeProvider>
             {providers}
             <Toaster />
           </ThemeProvider>
-        ) : (
-          <ClerkProvider>
-            <ThemeProvider>
-              {providers}
-              <Toaster />
-            </ThemeProvider>
-          </ClerkProvider>
-        )}
+        </ClerkProvider>
       </body>
     </html>
   );

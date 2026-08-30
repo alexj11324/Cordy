@@ -193,7 +193,6 @@ const PAGINATION = {
 function renderListView(
   issues: Issue[] = ISSUES,
   visibleStatuses: IssueStatusCategory[] = ["todo"],
-  readOnly = false,
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
@@ -208,8 +207,6 @@ function renderListView(
               visibleStatuses={visibleStatuses}
               statusPagination={PAGINATION}
               onMoveIssue={vi.fn()}
-              onCreateIssue={vi.fn()}
-              readOnly={readOnly}
             />
           </ScrollRestorationProvider>
         </IssueContextMenuProvider>
@@ -255,14 +252,6 @@ describe("ListView status header collapse", () => {
     await user.click(trigger);
 
     expect(mockViewState.listCollapsedStatuses).toEqual(["todo"]);
-  });
-
-  it("hides status quick-create in read-only mode", () => {
-    renderListView(ISSUES, ["todo"], true);
-
-    expect(
-      screen.queryByRole("button", { name: "Add issue" }),
-    ).not.toBeInTheDocument();
   });
 });
 

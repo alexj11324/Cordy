@@ -78,12 +78,10 @@ function formToConfig(state: FormState): OpenclawRuntimeConfig {
 
 export function RuntimeConfigTab({
   agent,
-  canEdit = true,
   onSave,
   onDirtyChange,
 }: {
   agent: Agent;
-  canEdit?: boolean;
   onSave: (updates: { runtime_config: Record<string, unknown> }) => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
@@ -117,10 +115,10 @@ export function RuntimeConfigTab({
   }, [dirty, onDirtyChange]);
 
   const portValid = state.port === "" || /^\d+$/.test(state.port);
-  const canSave = canEdit && portValid && !saving;
+  const canSave = portValid && !saving;
 
   const handleSave = async () => {
-    if (!canEdit || !canSave || !dirty) return;
+    if (!canSave) return;
     setSaving(true);
     try {
       await onSave({
@@ -155,7 +153,6 @@ export function RuntimeConfigTab({
             <button
               key={mode}
               type="button"
-              disabled={!canEdit}
               onClick={() =>
                 setState((s) => {
                   if (s.mode === mode) return s;
@@ -187,7 +184,7 @@ export function RuntimeConfigTab({
 
       <fieldset
         className={`space-y-3 rounded-md border p-3 ${isGateway ? "" : "opacity-50"}`}
-        disabled={!canEdit || !isGateway}
+        disabled={!isGateway}
       >
         <legend className="px-1 text-caption font-medium">
           {t(($) => $.tab_body.runtime_config.gateway_legend)}
@@ -271,7 +268,7 @@ export function RuntimeConfigTab({
             // built-in form controls; @base-ui's Switch is an ARIA component
             // and stays interactive unless we tell it otherwise. Without
             // this guard users could flip TLS on while still in Local mode.
-            disabled={!canEdit || !isGateway}
+            disabled={!isGateway}
             onCheckedChange={(checked: boolean) =>
               setState((s) => ({ ...s, tls: checked }))
             }
@@ -285,7 +282,7 @@ export function RuntimeConfigTab({
             {t(($) => $.tab_body.common.unsaved_changes)}
           </span>
         )}
-        <Button onClick={handleSave} disabled={!canEdit || !dirty || !canSave} size="sm">
+        <Button onClick={handleSave} disabled={!dirty || !canSave} size="sm">
           {saving ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (

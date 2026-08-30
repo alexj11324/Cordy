@@ -1082,24 +1082,6 @@ describe("ApiClient", () => {
     expect(headers["X-Client-OS"]).toBe("macos");
   });
 
-  it("sends the resolved app locale for server and preview negotiation", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify([]), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
-    const client = new ApiClient("https://api.example.test", {
-      locale: "ja",
-    });
-    await client.listWorkspaces();
-
-    const headers = fetchMock.mock.calls[0]![1]!.headers as Record<string, string>;
-    expect(headers["Accept-Language"]).toBe("ja");
-  });
-
   it("omits X-Client-* headers when identity is not configured", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify([]), {

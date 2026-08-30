@@ -242,8 +242,6 @@ export interface AgentsPageProps {
   localDaemonId?: string | null;
   localMachineName?: string | null;
   hasLocalMachine?: boolean;
-  /** Hide all agent mutations when the host is a local read-only preview. */
-  readOnly?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -253,11 +251,9 @@ export interface AgentsPageProps {
 function PageHeaderBar({
   totalCount,
   onCreate,
-  readOnly,
 }: {
   totalCount: number;
   onCreate: () => void;
-  readOnly: boolean;
 }) {
   const { t } = useT("agents");
   return (
@@ -270,13 +266,13 @@ function PageHeaderBar({
         href: "https://patchbay.ai/docs/agents",
         label: t(($) => $.page.learn_more),
       }}
-      actions={readOnly ? undefined : (
+      actions={
         <CollectionPageHeaderAction
           icon={Plus}
           label={t(($) => $.page.new_agent)}
           onClick={onCreate}
         />
-      )}
+      }
     />
   );
 }
@@ -285,17 +281,15 @@ function ListError({
   onCreate,
   listError,
   onRetry,
-  readOnly,
 }: {
   onCreate: () => void;
   listError: unknown;
   onRetry: () => void;
-  readOnly: boolean;
 }) {
   const { t } = useT("agents");
   return (
     <div className="flex flex-1 min-h-0 flex-col">
-      <PageHeaderBar totalCount={0} onCreate={onCreate} readOnly={readOnly} />
+      <PageHeaderBar totalCount={0} onCreate={onCreate} />
       <CollectionPageState
         role="alert"
         tone="destructive"
@@ -316,19 +310,19 @@ function ListError({
   );
 }
 
-function EmptyState({ onCreate, readOnly }: { onCreate: () => void; readOnly: boolean }) {
+function EmptyState({ onCreate }: { onCreate: () => void }) {
   const { t } = useT("agents");
   return (
     <CollectionPageState
       icon={Bot}
       title={t(($) => $.empty.title)}
       description={t(($) => $.empty.description)}
-      actions={readOnly ? undefined : (
+      actions={
         <Button type="button" onClick={onCreate} size="sm">
           <Plus aria-hidden="true" className="size-3" />
           {t(($) => $.page.new_agent)}
         </Button>
-      )}
+      }
     />
   );
 }
@@ -585,7 +579,6 @@ function AgentListHeader({
   someSelected,
   onToggleAll,
   isColVisible,
-  readOnly,
 }: {
   sortField: AgentSortField;
   sortDirection: ListGridSortDirection;
@@ -594,7 +587,6 @@ function AgentListHeader({
   someSelected: boolean;
   onToggleAll: () => void;
   isColVisible: (key: AgentColumnKey) => boolean;
-  readOnly: boolean;
 }) {
   const { t } = useT("agents");
   const sorted = (field: AgentSortField) =>
@@ -603,25 +595,23 @@ function AgentListHeader({
   return (
     <ListGridHeader>
       <div className="hidden items-center justify-center @2xl:flex">
-        {!readOnly && (
-          <button
-            type="button"
-            aria-pressed={allSelected}
-            onClick={onToggleAll}
-            className={`-m-1.5 flex items-center p-1.5 ${
-              anySelected
-                ? ""
-                : "opacity-0 transition-opacity group-hover/header:opacity-100"
-            }`}
-          >
-            <Checkbox
-              checked={allSelected}
-              indeterminate={someSelected && !allSelected}
-              tabIndex={-1}
-              className="pointer-events-none"
-            />
-          </button>
-        )}
+        <button
+          type="button"
+          aria-pressed={allSelected}
+          onClick={onToggleAll}
+          className={`-m-1.5 flex items-center p-1.5 ${
+            anySelected
+              ? ""
+              : "opacity-0 transition-opacity group-hover/header:opacity-100"
+          }`}
+        >
+          <Checkbox
+            checked={allSelected}
+            indeterminate={someSelected && !allSelected}
+            tabIndex={-1}
+            className="pointer-events-none"
+          />
+        </button>
       </div>
       <ListGridHeaderCell sorted={sorted("name")} onSort={() => onSort("name")}>
         {t(($) => $.columns.agent)}
@@ -776,7 +766,7 @@ function LoadingSkeleton() {
 // Page
 // ---------------------------------------------------------------------------
 
-export function AgentsPage({ readOnly = false }: AgentsPageProps = {}) {
+export function AgentsPage(_props: AgentsPageProps = {}) {
   const { t } = useT("agents");
   const wsId = useWorkspaceId();
   const paths = useWorkspacePaths();
@@ -1010,7 +1000,6 @@ export function AgentsPage({ readOnly = false }: AgentsPageProps = {}) {
     return (
       <ListError
         onCreate={() => navigation.push(paths.newAgent())}
-        readOnly={readOnly}
         listError={listError}
         onRetry={() => refetchList()}
       />
@@ -1048,7 +1037,6 @@ export function AgentsPage({ readOnly = false }: AgentsPageProps = {}) {
       <PageHeaderBar
         totalCount={totalCount}
         onCreate={() => navigation.push(paths.newAgent())}
-        readOnly={readOnly}
       />
 
       {isLoading || (!showEmpty && !listReady) ? (
@@ -1057,10 +1045,7 @@ export function AgentsPage({ readOnly = false }: AgentsPageProps = {}) {
         </div>
       ) : showEmpty ? (
         <div className="flex flex-1 items-center justify-center">
-          <EmptyState
-            onCreate={() => navigation.push(paths.newAgent())}
-            readOnly={readOnly}
-          />
+          <EmptyState onCreate={() => navigation.push(paths.newAgent())} />
         </div>
       ) : (
         <>
@@ -1099,7 +1084,6 @@ export function AgentsPage({ readOnly = false }: AgentsPageProps = {}) {
                 someSelected={someSelected}
                 onToggleAll={handleToggleAll}
                 isColVisible={isColVisible}
-                readOnly={readOnly}
               />
               <ListGridBody
                 style={{
@@ -1124,14 +1108,10 @@ export function AgentsPage({ readOnly = false }: AgentsPageProps = {}) {
                       }`}
                       {...rowLink(paths.agentDetail(row.agent.id), row.agent.name)}
                     >
-                      {readOnly ? (
-                        <ListGridCell className="hidden @2xl:flex" />
-                      ) : (
-                        <CheckboxCell
-                          checked={selectedIds.has(row.agent.id)}
-                          onToggle={() => toggleSelected(row.agent.id)}
-                        />
-                      )}
+                      <CheckboxCell
+                        checked={selectedIds.has(row.agent.id)}
+                        onToggle={() => toggleSelected(row.agent.id)}
+                      />
                       <NameCell row={row} />
                       {isColVisible("status") ? (
                         <StatusCell row={row} />
@@ -1193,7 +1173,6 @@ export function AgentsPage({ readOnly = false }: AgentsPageProps = {}) {
                             presence={row.presence}
                             canManage={row.canManage}
                             duplicateHref={duplicateHref(row.agent)}
-                            readOnly={readOnly}
                           />
                         </span>
                       </ListGridCell>
@@ -1206,14 +1185,12 @@ export function AgentsPage({ readOnly = false }: AgentsPageProps = {}) {
         </>
       )}
 
-      {!readOnly && (
-        <AgentBatchToolbar
-          rows={selectedRows}
-          members={members}
-          currentUserId={currentUser?.id ?? null}
-          onClear={() => setSelectedIds(new Set())}
-        />
-      )}
+      <AgentBatchToolbar
+        rows={selectedRows}
+        members={members}
+        currentUserId={currentUser?.id ?? null}
+        onClear={() => setSelectedIds(new Set())}
+      />
 
     </div>
   );

@@ -179,7 +179,7 @@ function renderDetail(
   runtime: AgentRuntime,
   props: Pick<
     ComponentProps<typeof RuntimeDetail>,
-    "machineHref" | "machineLabel" | "readOnly"
+    "machineHref" | "machineLabel"
   > = {},
 ) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -265,19 +265,6 @@ describe("RuntimeDetail visibility section", () => {
     expect(screen.getByText("Public")).toBeInTheDocument();
     // The editor's "Private" choice button must not render in read-only mode.
     expect(screen.queryByText("Private")).not.toBeInTheDocument();
-  });
-
-  it("hides every runtime mutation control on an explicitly read-only surface", () => {
-    renderDetail(
-      makeRuntime({ owner_id: "user-me", visibility: "private" }),
-      { readOnly: true },
-    );
-
-    expect(screen.getByText("Private")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Public" })).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /Delete device/i }),
-    ).not.toBeInTheDocument();
   });
 
   // PB-6126: a workspace admin may rename or delete someone else's runtime,

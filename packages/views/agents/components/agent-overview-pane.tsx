@@ -128,8 +128,6 @@ interface AgentOverviewPaneProps {
   onUpdate: (id: string, data: Record<string, unknown>) => Promise<void>;
   currentUserId?: string | null;
   canEdit: boolean;
-  /** Hide task mutation and conversation entry points in a read-only host. */
-  readOnly?: boolean;
   navIntent?: DetailTab | null;
   onNavIntentHandled?: () => void;
 }
@@ -150,7 +148,6 @@ export function AgentOverviewPane({
   onUpdate,
   currentUserId,
   canEdit,
-  readOnly = false,
   navIntent,
   onNavIntentHandled,
 }: AgentOverviewPaneProps) {
@@ -367,11 +364,7 @@ export function AgentOverviewPane({
         {effectiveView === "overview" && (
           <div className="mx-auto max-w-[1440px] p-4 sm:p-6">
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-              <ActivityTab
-                agent={agent}
-                showPerformance={false}
-                readOnly={readOnly}
-              />
+              <ActivityTab agent={agent} showPerformance={false} />
               <AgentOverviewSummary
                 agent={agent}
                 runtime={runtime}
@@ -383,11 +376,7 @@ export function AgentOverviewPane({
 
         {effectiveView === "work" && (
           <div className="flex min-h-[620px] flex-col">
-            <ActorIssuesPanel
-              actorType="agent"
-              actorId={agent.id}
-              readOnly={readOnly}
-            />
+            <ActorIssuesPanel actorType="agent" actorId={agent.id} />
           </div>
         )}
 
@@ -437,7 +426,6 @@ export function AgentOverviewPane({
                   {effectiveView === "instructions" && (
                     <InstructionsTab
                       agent={agent}
-                      canEdit={canEdit}
                       onSave={(instructions) =>
                         onUpdate(agent.id, { instructions })
                       }
@@ -482,7 +470,6 @@ export function AgentOverviewPane({
                       agent={agent}
                       members={members}
                       currentUserId={currentUserId ?? null}
-                      canEdit={canEdit}
                       onDirtyChange={setActiveDirty}
                       onUpdate={onUpdate}
                     />
@@ -494,7 +481,6 @@ export function AgentOverviewPane({
                     <CustomArgsTab
                       agent={agent}
                       runtimeDevice={runtime ?? undefined}
-                      canEdit={canEdit}
                       onSave={(updates) => onUpdate(agent.id, updates)}
                       onDirtyChange={setActiveDirty}
                     />
@@ -502,7 +488,6 @@ export function AgentOverviewPane({
                   {effectiveView === "runtime_config" && (
                     <RuntimeConfigTab
                       agent={agent}
-                      canEdit={canEdit}
                       onSave={(updates) => onUpdate(agent.id, updates)}
                       onDirtyChange={setActiveDirty}
                     />

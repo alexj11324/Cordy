@@ -4,7 +4,6 @@ import { env } from "node:process";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
-import { previewApiPlugin } from "./scripts/preview-api.mjs";
 
 const desktopRoot = dirname(fileURLToPath(import.meta.url));
 const port =
@@ -15,7 +14,7 @@ const port =
 export default defineConfig({
   // Keep the browser renderer on the same env files as the Electron renderer.
   envDir: desktopRoot,
-  plugins: [previewApiPlugin(), react(), tailwindcss()],
+  plugins: [react(), tailwindcss()],
   root: resolve(desktopRoot, "src/renderer"),
   base: "/",
   appType: "spa",

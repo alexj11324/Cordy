@@ -71,8 +71,7 @@ make dev
 
 `make dev` creates the local environment when needed, installs dependencies,
 starts PostgreSQL, applies migrations, and launches the Rust backend plus the
-Desktop renderer in a browser through Vite. The default visual preview is
-available at `/ui-preview` and does not require an API session.
+Desktop renderer in a browser through Vite.
 
 For the actual Next.js web client, use `pnpm dev:web:next`. To run the same
 renderer inside Electron, use `pnpm dev:desktop`; both renderer paths share

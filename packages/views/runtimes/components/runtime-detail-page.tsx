@@ -32,8 +32,6 @@ import { useT, useTimeAgo } from "../../i18n";
 export interface RuntimeDetailPageProps {
   /** A machine id, or a legacy runtime id that locates its machine. */
   runtimeId: string;
-  /** Suppress all runtime-management controls for an explicitly read-only host. */
-  readOnly?: boolean;
   localDaemonId?: string | null;
   localMachineName?: string | null;
   localMachineActions?: React.ReactNode;
@@ -81,7 +79,6 @@ function findMachine(
  */
 export function RuntimeDetailPage({
   runtimeId,
-  readOnly = false,
   localDaemonId,
   localMachineName,
   localMachineActions,
@@ -165,9 +162,9 @@ export function RuntimeDetailPage({
   const isAdmin =
     currentMember?.role === "owner" || currentMember?.role === "admin";
   const canAddRuntime =
-    !readOnly && isAdmin && machine?.mode === "local" && !!machine.daemonId;
+    isAdmin && machine?.mode === "local" && !!machine.daemonId;
   const renameTarget = useMemo(() => {
-    if (readOnly || !machine || machine.runtimes.length === 0) return null;
+    if (!machine || machine.runtimes.length === 0) return null;
     const editable = isAdmin
       ? machine.runtimes[0]
       : machine.runtimes.find((runtime) => runtime.owner_id === currentUserId);
@@ -176,7 +173,7 @@ export function RuntimeDetailPage({
       runtimeId: editable.id,
       currentName: sharedCustomName(machine.runtimes) ?? "",
     };
-  }, [machine, isAdmin, currentUserId, readOnly]);
+  }, [machine, isAdmin, currentUserId]);
 
   if (isLoading) return <MachineDetailSkeleton />;
 
@@ -266,9 +263,8 @@ export function RuntimeDetailPage({
                   </span>
                   <MachineCliSection
                     machine={machine}
-                    currentUserId={readOnly ? undefined : currentUserId}
-                    canManageAnyRuntime={!readOnly && isAdmin}
-                    readOnly={readOnly}
+                    currentUserId={currentUserId}
+                    canManageAnyRuntime={isAdmin}
                   />
                   {machine.lastSeenAt && (
                     <span>{timeAgo(machine.lastSeenAt)}</span>
@@ -289,7 +285,7 @@ export function RuntimeDetailPage({
                   {t(($) => $.machine.rename)}
                 </Button>
               )}
-              {!readOnly && machine.isCurrent && localMachineActions}
+              {machine.isCurrent && localMachineActions}
             </div>
           </div>
         </div>
@@ -323,7 +319,6 @@ export function RuntimeDetailPage({
                 runtimes={machineRuntimes}
                 now={now}
                 machineTitle={machine.title}
-                readOnly={readOnly}
                 runtimeHref={(childRuntimeId) =>
                   paths.runtimeSettings(machine.id, childRuntimeId)
                 }

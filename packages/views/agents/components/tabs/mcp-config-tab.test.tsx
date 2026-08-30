@@ -458,14 +458,7 @@ describe("McpConfigTab workspace servers", () => {
     render(
       <TestShell>
         <McpConfigTab
-          agent={{
-            ...baseAgent,
-            mcp_config: {
-              mcpServers: {
-                "managed-fetch": { command: "uvx" },
-              },
-            },
-          }}
+          agent={baseAgent}
           runtime={null}
           canEdit={false}
           onSave={vi.fn()}
@@ -474,10 +467,6 @@ describe("McpConfigTab workspace servers", () => {
     );
 
     expect(await screen.findByText("shared-linear")).toBeInTheDocument();
-    expect(screen.getByText("managed-fetch")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /add mcp/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /edit mcp server/i })).toBeNull();
-    expect(screen.queryByRole("button", { name: /delete mcp server/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /Add from workspace/ })).toBeNull();
     expect(screen.queryByRole("switch")).toBeNull();
     expect(screen.queryByRole("button", { name: /Remove shared-linear/i })).toBeNull();

@@ -1,23 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { resolveDevRemoteApiUrl } from "@/config/runtime-urls";
-import { isUiFixturesEnabled } from "@/lib/ui-fixtures/enabled";
-import { handleFixtureRequest } from "@/lib/ui-fixtures/handler";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-type RouteContext = { params: Promise<{ path?: string[] }> };
-
-async function readBody(req: NextRequest): Promise<unknown> {
-  if (req.method === "GET" || req.method === "HEAD") return undefined;
-  const text = await req.text();
-  if (!text) return undefined;
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return text;
-  }
-}
 
 async function proxyToBackend(req: NextRequest): Promise<Response> {
   const origin = resolveDevRemoteApiUrl(process.env);
@@ -48,28 +33,11 @@ async function proxyToBackend(req: NextRequest): Promise<Response> {
   }
 }
 
-async function handle(req: NextRequest, context: RouteContext): Promise<Response> {
-  if (!isUiFixturesEnabled()) {
-    if (process.env.NODE_ENV === "production") {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    return proxyToBackend(req);
+async function handle(req: NextRequest): Promise<Response> {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-
-  const { path = [] } = await context.params;
-  const result = handleFixtureRequest({
-    method: req.method,
-    pathname: `/api/${path.join("/")}`,
-    search: req.nextUrl.searchParams,
-    cookieHeader: req.headers.get("cookie"),
-    workspaceSlug: req.headers.get("x-workspace-slug"),
-    body: await readBody(req),
-  });
-
-  if (result.status === 204) {
-    return new NextResponse(null, { status: 204 });
-  }
-  return NextResponse.json(result.body ?? null, { status: result.status });
+  return proxyToBackend(req);
 }
 
 export const GET = handle;

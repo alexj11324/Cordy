@@ -9,12 +9,10 @@ import { useT } from "../../../i18n";
 
 export function InstructionsTab({
   agent,
-  canEdit = true,
   onSave,
   onDirtyChange,
 }: {
   agent: Agent;
-  canEdit?: boolean;
   onSave: (instructions: string) => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
@@ -42,7 +40,6 @@ export function InstructionsTab({
   }, [isDirty, onDirtyChange]);
 
   const handleSave = async () => {
-    if (!canEdit || !isDirty || saving) return;
     setSaving(true);
     try {
       await onSave(value);
@@ -112,7 +109,6 @@ export function InstructionsTab({
           }
           rows={18}
           className="min-h-96 resize-y leading-6"
-          disabled={!canEdit}
         />
       </div>
 
@@ -123,7 +119,7 @@ export function InstructionsTab({
         <Button
           size="sm"
           onClick={handleSave}
-          disabled={!canEdit || !isDirty || saving}
+          disabled={!isDirty || saving}
         >
           {saving ? (
             <Loader2

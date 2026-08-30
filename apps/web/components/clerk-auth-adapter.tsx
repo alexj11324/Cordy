@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { usePathname } from "next/navigation";
 import { useUser, useAuth } from "@clerk/nextjs";
 import { ApiError } from "@patchbay/core/api";
 import { useAuthStore } from "@patchbay/core/auth";
@@ -22,14 +21,11 @@ export function ClerkAuthAdapter({
 }: {
   children: React.ReactNode;
 }) {
-  const pathname = usePathname();
-  const isPreviewRoute = pathname.startsWith("/ui-preview");
   const { user: clerkUser, isLoaded: clerkLoaded } = useUser();
   const { getToken, isSignedIn, signOut } = useAuth();
   const logoutBarrierRef = useRef<Promise<void>>(Promise.resolve());
 
   useEffect(() => {
-    if (isPreviewRoute) return;
     if (!clerkLoaded) return;
     if (!isSignedIn || !clerkUser) {
       logoutBarrierRef.current = Promise.resolve(
@@ -97,7 +93,7 @@ export function ClerkAuthAdapter({
       abortController?.abort();
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [isPreviewRoute, clerkLoaded, clerkUser?.id, getToken, isSignedIn, signOut]);
+  }, [clerkLoaded, clerkUser?.id, getToken, isSignedIn, signOut]);
 
   return <>{children}</>;
 }

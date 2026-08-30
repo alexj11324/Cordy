@@ -45,13 +45,11 @@ function formatArgForPreview(value: string): string {
 export function CustomArgsTab({
   agent,
   runtimeDevice,
-  canEdit = true,
   onSave,
   onDirtyChange,
 }: {
   agent: Agent;
   runtimeDevice?: RuntimeDevice;
-  canEdit?: boolean;
   onSave: (updates: Partial<Agent>) => Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
 }) {
@@ -77,13 +75,11 @@ export function CustomArgsTab({
   }, [editor]);
 
   const startAdding = () => {
-    if (!canEdit) return;
     setEditor({ kind: "add" });
     setEditorValue("");
   };
 
   const startEditing = (entry: ArgEntry) => {
-    if (!canEdit) return;
     setEditor({ kind: "edit", entryId: entry.id });
     setEditorValue(entry.value);
   };
@@ -94,7 +90,6 @@ export function CustomArgsTab({
   };
 
   const commitEditor = () => {
-    if (!canEdit) return;
     const value = editorValue.trim();
     if (!editor || !value) return;
 
@@ -111,13 +106,11 @@ export function CustomArgsTab({
   };
 
   const removeEntry = (entryId: string) => {
-    if (!canEdit) return;
     setEntries((current) => current.filter((entry) => entry.id !== entryId));
     if (editor?.kind === "edit" && editor.entryId === entryId) closeEditor();
   };
 
   const handleSave = async () => {
-    if (!canEdit || !dirty || saving) return;
     setSaving(true);
     try {
       await onSave({ custom_args: currentArgs });
@@ -158,13 +151,12 @@ export function CustomArgsTab({
             : t(($) => $.tab_body.custom_args.input_aria, { index })
         }
         className="font-mono text-caption"
-        disabled={!canEdit}
       />
       <div className="mt-2 flex justify-end gap-2">
         <Button type="button" variant="ghost" size="sm" onClick={closeEditor}>
           {t(($) => $.tab_body.custom_args.cancel_action)}
         </Button>
-        <Button type="submit" size="sm" disabled={!canEdit || !editorValue.trim()}>
+        <Button type="submit" size="sm" disabled={!editorValue.trim()}>
           {editor?.kind === "add"
             ? t(($) => $.tab_body.custom_args.add_action)
             : t(($) => $.tab_body.custom_args.update_action)}
@@ -193,7 +185,7 @@ export function CustomArgsTab({
             variant="outline"
             size="sm"
             onClick={startAdding}
-            disabled={!canEdit || editor !== null}
+            disabled={editor !== null}
           >
             <Plus className="size-3.5" aria-hidden="true" />
             {t(($) => $.tab_body.custom_args.add_argument_action)}
@@ -238,7 +230,7 @@ export function CustomArgsTab({
                           variant="ghost"
                           size="icon-sm"
                           onClick={() => startEditing(entry)}
-                          disabled={!canEdit || editor !== null}
+                          disabled={editor !== null}
                           aria-label={t(($) => $.tab_body.custom_args.edit_aria, {
                             index: index + 1,
                           })}
@@ -250,7 +242,7 @@ export function CustomArgsTab({
                           variant="ghost"
                           size="icon-sm"
                           onClick={() => removeEntry(entry.id)}
-                          disabled={!canEdit || editor !== null}
+                          disabled={editor !== null}
                           className="text-muted-foreground hover:text-destructive"
                           aria-label={t(($) => $.tab_body.custom_args.remove_aria, {
                             index: index + 1,
@@ -296,7 +288,7 @@ export function CustomArgsTab({
         ) : null}
         <Button
           onClick={handleSave}
-          disabled={!canEdit || !dirty || saving || editor !== null}
+          disabled={!dirty || saving || editor !== null}
           size="sm"
         >
           {saving ? (

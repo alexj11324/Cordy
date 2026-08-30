@@ -76,7 +76,6 @@ function ListViewImpl({
   projectId,
   onMoveIssue,
   onCreateIssue,
-  readOnly,
 }: {
   issues: Issue[];
   visibleStatuses: IssueStatusCategory[];
@@ -90,7 +89,6 @@ function ListViewImpl({
     callbacks?: MoveIssueCallbacks,
   ) => boolean | void;
   onCreateIssue?: (defaults: IssueCreateDefaults) => void;
-  readOnly?: boolean;
 }) {
   const listCollapsedStatuses = useViewStore(
     (s) => s.listCollapsedStatuses
@@ -114,7 +112,7 @@ function ListViewImpl({
     [visibleStatuses, listCollapsedStatuses]
   );
 
-  const dragEnabled = !readOnly && !!onMoveIssue;
+  const dragEnabled = !!onMoveIssue;
 
   const groups = useMemo(
     () => buildListGroups(visibleStatuses),
@@ -394,7 +392,6 @@ function ListViewImpl({
             projectId={projectId}
             onCreateIssue={onCreateIssue}
             dragEnabled={dragEnabled}
-            readOnly={readOnly}
             isExpanded={isExpanded}
             sortLabel={sortLabel}
             scrollParent={scrollEl}
@@ -447,7 +444,6 @@ function StatusAccordionItem({
   projectId,
   onCreateIssue,
   dragEnabled,
-  readOnly,
   isExpanded,
   sortLabel,
   scrollParent,
@@ -461,7 +457,6 @@ function StatusAccordionItem({
   projectId?: string;
   onCreateIssue?: (defaults: IssueCreateDefaults) => void;
   dragEnabled: boolean;
-  readOnly?: boolean;
   isExpanded: boolean;
   sortLabel: string | null;
   scrollParent: HTMLElement | null;
@@ -530,7 +525,6 @@ function StatusAccordionItem({
         project={
           issue.project_id ? projectMap?.get(issue.project_id) : undefined
         }
-        readOnly={readOnly}
       />
     );
 
@@ -576,29 +570,27 @@ function StatusAccordionItem({
         }`}
       >
         <div className="pl-3 flex items-center">
-          {!readOnly && (
-            <input
-              type="checkbox"
-              checked={allSelected}
-              ref={(el) => {
-                if (el) el.indeterminate = someSelected && !allSelected;
-              }}
-              onChange={() => {
-                if (allSelected) {
-                  deselect(issueIds);
-                } else {
-                  select(issueIds);
-                }
-              }}
-              className="cursor-pointer accent-primary"
-            />
-          )}
+          <input
+            type="checkbox"
+            checked={allSelected}
+            ref={(el) => {
+              if (el) el.indeterminate = someSelected && !allSelected;
+            }}
+            onChange={() => {
+              if (allSelected) {
+                deselect(issueIds);
+              } else {
+                select(issueIds);
+              }
+            }}
+            className="cursor-pointer accent-primary"
+          />
         </div>
         <Accordion.Trigger className="group/trigger flex flex-1 items-center gap-2 px-2 h-full text-left outline-none cursor-pointer">
           <ChevronRight className="size-3.5 shrink-0 text-muted-foreground transition-transform group-aria-expanded/trigger:rotate-90" />
           <StatusHeading status={status} count={page.total} />
         </Accordion.Trigger>
-        {!readOnly && onCreateIssue && (
+        {onCreateIssue && (
           <div className="pr-2">
             {/* Lazy-mounted tooltip machinery — see DeferredTooltip. */}
             <DeferredTooltip
@@ -608,7 +600,6 @@ function StatusAccordionItem({
                   variant="ghost"
                   size="icon-sm"
                   className="rounded-full text-muted-foreground opacity-0 group-hover/header:opacity-100 transition-opacity"
-                  aria-label={t(($) => $.list.add_issue_tooltip)}
                   onClick={() => {
                     const defaults = {
                       status,

@@ -45,7 +45,6 @@ function ListRowContent({
   containerStyle,
   containerProps,
   checkboxProps,
-  readOnly,
 }: {
   issue: Issue;
   childProgress?: ChildProgress;
@@ -55,7 +54,6 @@ function ListRowContent({
   containerStyle?: React.CSSProperties;
   containerProps?: Record<string, unknown>;
   checkboxProps?: Pick<React.HTMLAttributes<HTMLDivElement>, "onClick" | "onMouseDown" | "onPointerDown">;
-  readOnly?: boolean;
 }) {
   const selection = useIssueSurfaceSelection();
   const selected = selection.selectedIds.has(issue.id);
@@ -77,7 +75,8 @@ function ListRowContent({
   const showDueDate = storeProperties.dueDate && issue.due_date;
   const showLabels = storeProperties.labels && labels.length > 0;
 
-  const row = (
+  return (
+    <IssueActionsContextMenu issue={issue}>
       <div
         ref={containerRef}
         style={containerStyle}
@@ -96,16 +95,14 @@ function ListRowContent({
             priority={issue.priority}
             className={selected ? "hidden" : "group-hover/row:hidden"}
           />
-          {!readOnly && (
-            <input
-              type="checkbox"
-              checked={selected}
-              onChange={() => toggle(issue.id)}
-              className={`absolute inset-0 cursor-pointer accent-primary ${
-                selected ? "" : "hidden group-hover/row:block"
-              }`}
-            />
-          )}
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => toggle(issue.id)}
+            className={`absolute inset-0 cursor-pointer accent-primary ${
+              selected ? "" : "hidden group-hover/row:block"
+            }`}
+          />
         </div>
         <AppLink
           href={p.issueDetail(issue.id)}
@@ -183,11 +180,7 @@ function ListRowContent({
           )}
         </AppLink>
       </div>
-  );
-  return readOnly ? (
-    row
-  ) : (
-    <IssueActionsContextMenu issue={issue}>{row}</IssueActionsContextMenu>
+    </IssueActionsContextMenu>
   );
 }
 
@@ -195,19 +188,16 @@ export const ListRow = memo(function ListRow({
   issue,
   childProgress,
   project,
-  readOnly,
 }: {
   issue: Issue;
   childProgress?: ChildProgress;
   project?: Project;
-  readOnly?: boolean;
 }) {
   return (
     <ListRowContent
       issue={issue}
       childProgress={childProgress}
       project={project}
-      readOnly={readOnly}
     />
   );
 });

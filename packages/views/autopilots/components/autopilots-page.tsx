@@ -17,12 +17,9 @@ import {
   Webhook,
   Zap,
 } from "lucide-react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import {
-  autopilotKeys,
-  autopilotListOptions,
-} from "@patchbay/core/autopilots/queries";
+import { autopilotListOptions } from "@patchbay/core/autopilots/queries";
 import {
   useAutopilotsViewStore,
   AUTOPILOT_DEFAULT_HIDDEN_COLUMNS,
@@ -143,10 +140,6 @@ interface AutopilotTemplate {
   schedule: Pick<ScheduleConfig, "time" | "days">;
 }
 
-type AutopilotListCapabilities = {
-  can_create?: boolean;
-};
-
 const WEEKDAYS: ScheduleConfig["days"] = { kind: "weekly", daysOfWeek: [1, 2, 3, 4, 5] };
 const MONDAY: ScheduleConfig["days"] = { kind: "weekly", daysOfWeek: [1] };
 
@@ -221,33 +214,25 @@ const TEMPLATES: AutopilotTemplate[] = [
 function CheckboxCell({
   checked,
   onToggle,
-  disabled = false,
 }: {
   checked: boolean;
   onToggle: () => void;
-  disabled?: boolean;
 }) {
   return (
     <ListGridCell className="justify-center px-0">
       <button
         type="button"
-        disabled={disabled}
         aria-pressed={checked}
         onClick={(e) => {
           e.stopPropagation();
           onToggle();
         }}
         className={`-m-1.5 flex items-center p-1.5 ${
-          disabled
-            ? "cursor-not-allowed opacity-30"
-            : checked
-              ? ""
-              : "opacity-0 transition-opacity group-hover/row:opacity-100"
+          checked ? "" : "opacity-0 transition-opacity group-hover/row:opacity-100"
         }`}
       >
         <Checkbox
           checked={checked}
-          disabled={disabled}
           tabIndex={-1}
           className="pointer-events-none"
         />
@@ -444,7 +429,6 @@ function AutopilotListHeader({
   onSort,
   allSelected,
   someSelected,
-  hasSelectableRows,
   onToggleAll,
   isColVisible,
 }: {
@@ -453,7 +437,6 @@ function AutopilotListHeader({
   onSort: (field: AutopilotSortField) => void;
   allSelected: boolean;
   someSelected: boolean;
-  hasSelectableRows: boolean;
   onToggleAll: () => void;
   isColVisible: (key: AutopilotColumnKey) => boolean;
 }) {
@@ -466,21 +449,17 @@ function AutopilotListHeader({
       <div className="flex items-center justify-center">
         <button
           type="button"
-          disabled={!hasSelectableRows}
           aria-pressed={allSelected}
           onClick={onToggleAll}
           className={`-m-1.5 flex items-center p-1.5 ${
-            !hasSelectableRows
-              ? "cursor-not-allowed opacity-30"
-              : anySelected
-                ? ""
-                : "opacity-0 transition-opacity group-hover/header:opacity-100"
+            anySelected
+              ? ""
+              : "opacity-0 transition-opacity group-hover/header:opacity-100"
           }`}
         >
           <Checkbox
             checked={allSelected}
             indeterminate={someSelected && !allSelected}
-            disabled={!hasSelectableRows}
             tabIndex={-1}
             className="pointer-events-none"
           />
@@ -623,7 +602,6 @@ function LoadingSkeleton() {
 export function AutopilotsPage() {
   const { t } = useT("autopilots");
   const wsId = useWorkspaceId();
-  const queryClient = useQueryClient();
   const wsPaths = useWorkspacePaths();
   const rowLink = useRowLink();
   const {
@@ -632,13 +610,6 @@ export function AutopilotsPage() {
     error: listError,
     refetch: refetchList,
   } = useQuery(autopilotListOptions(wsId));
-  // Creation is a collection capability. Read it from the raw list response
-  // instead of inferring it from each row's edit/delete capability. Older
-  // servers omit the additive field; the create endpoint remains the final
-  // gate in that case.
-  const listCapabilities = queryClient.getQueryData<AutopilotListCapabilities>(
-    autopilotKeys.list(wsId),
-  );
 
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] =
@@ -769,15 +740,11 @@ export function AutopilotsPage() {
     setCreateOpen(true);
   };
 
-  const selectableRows = rows.filter((a) => a.can_write !== false);
-  const selectedRows = selectableRows.filter((a) => selectedIds.has(a.id));
-  const allSelected =
-    selectableRows.length > 0 && selectedRows.length === selectableRows.length;
+  const selectedRows = rows.filter((a) => selectedIds.has(a.id));
+  const allSelected = rows.length > 0 && selectedRows.length === rows.length;
   const someSelected = selectedRows.length > 0 && !allSelected;
   const handleToggleAll = () => {
-    setSelectedIds(
-      allSelected ? new Set() : new Set(selectableRows.map((a) => a.id)),
-    );
+    setSelectedIds(allSelected ? new Set() : new Set(rows.map((a) => a.id)));
   };
 
   const virtualItems = rowVirtualizer.getVirtualItems();
@@ -792,8 +759,6 @@ export function AutopilotsPage() {
 
   const totalCount = autopilots.length;
   const showEmpty = !isLoading && !listError && totalCount === 0;
-  const canCreate =
-    !isLoading && !listError && listCapabilities?.can_create !== false;
 
   return (
     // relative: positioning anchor for the batch toolbar (page-centered,
@@ -804,13 +769,13 @@ export function AutopilotsPage() {
         icon={AlarmClockCheck}
         title={t(($) => $.page.title)}
         count={totalCount}
-        actions={canCreate ? (
+        actions={
           <CollectionPageHeaderAction
             icon={Plus}
             label={t(($) => $.page.new_autopilot)}
             onClick={() => openCreate()}
           />
-        ) : null}
+        }
       />
 
       {listError ? (
@@ -910,7 +875,6 @@ export function AutopilotsPage() {
                 onSort={handleSort}
                 allSelected={allSelected}
                 someSelected={someSelected}
-                hasSelectableRows={selectableRows.length > 0}
                 onToggleAll={handleToggleAll}
                 isColVisible={isColVisible}
               />
@@ -939,7 +903,6 @@ export function AutopilotsPage() {
                     >
                       <CheckboxCell
                         checked={selectedIds.has(autopilot.id)}
-                        disabled={autopilot.can_write === false}
                         onToggle={() => toggleSelected(autopilot.id)}
                       />
                       <NameCell autopilot={autopilot} />

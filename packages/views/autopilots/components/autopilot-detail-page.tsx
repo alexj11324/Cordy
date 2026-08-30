@@ -717,7 +717,7 @@ export function AutopilotDetailPage({ autopilotId }: { autopilotId: string }) {
                 size="sm"
                 checked={autopilot.status === "active"}
                 onCheckedChange={handleToggleStatus}
-                disabled={autopilot.status === "archived" || !canWrite}
+                disabled={autopilot.status === "archived"}
                 aria-label={
                   autopilot.status === "active"
                     ? t(($) => $.detail.pause_aria)

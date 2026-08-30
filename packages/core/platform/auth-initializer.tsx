@@ -108,15 +108,6 @@ export function AuthInitializer({
   }, [identity?.version]);
 
   useEffect(() => {
-    if (
-      typeof window !== "undefined" &&
-      window.location.pathname.startsWith("/ui-preview")
-    ) {
-      // The Vite Desktop `/ui-preview` surface is deliberately backend-free. Do not even
-      // start the optional config request from the shared root provider.
-      return;
-    }
-
     // Stamp attribution before anything else — the signup event (server-side)
     // reads this cookie, so it has to be present before the user hits submit.
     captureSignupSource();
@@ -324,13 +315,7 @@ export function AuthInitializer({
       void attempt();
     };
 
-    if (
-      typeof window !== "undefined" &&
-      window.location.pathname.startsWith("/ui-preview")
-    ) {
-      // The Vite Desktop `/ui-preview` surface seeds its own session so onboarding and
-      // the app shell can be designed without Clerk or the API.
-    } else if (clerkAuth) {
+    if (clerkAuth) {
       // ClerkAuthAdapter owns the one-time Clerk -> Patchbay session exchange.
       // Starting /api/me here races that exchange and produces a false 401.
       useAuthStore.setState({

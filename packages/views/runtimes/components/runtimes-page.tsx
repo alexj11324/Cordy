@@ -59,8 +59,6 @@ import { useT, useTimeAgo } from "../../i18n";
 import { daemonRuntimesDocsHref } from "./runtime-docs";
 
 export interface RuntimesPageProps {
-  /** Suppress product-data mutations when the host is an explicit preview. */
-  readOnly?: boolean;
   /** Desktop-only daemon id used to identify this device. */
   localDaemonId?: string | null;
   /** Desktop-only friendly device name for the local daemon. */
@@ -83,7 +81,6 @@ function useNowTick(intervalMs = 30_000): number {
 }
 
 export function RuntimesPage({
-  readOnly = false,
   localDaemonId,
   localMachineName,
   hasLocalMachine,
@@ -173,22 +170,17 @@ export function RuntimesPage({
         onConnectRemote={() => setShowConnectDialog(true)}
         cloudRuntimeEnabled={cloudRuntimeEnabled}
         onOpenCloudRuntime={() => setShowCloudRuntimeDialog(true)}
-        readOnly={readOnly}
       />
 
       {showEmpty ? (
         <div className="flex flex-1 items-center justify-center p-6">
-          <EmptyState
-            onConnectRemote={() => setShowConnectDialog(true)}
-            readOnly={readOnly}
-          />
+          <EmptyState onConnectRemote={() => setShowConnectDialog(true)} />
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto flex w-full max-w-[1440px] flex-col p-4 sm:p-6">
             {!agentsLoading &&
               !chatSessionsLoading &&
-              !readOnly &&
               memberNeedsMikaSetup(agents, chatSessions) &&
               runtimes.length > 0 && (
               <MikaSetupCard
@@ -209,17 +201,16 @@ export function RuntimesPage({
                 runtimes={orphanProfileRuntimes}
                 now={now}
                 hasMachines={machines.length > 0}
-                readOnly={readOnly}
               />
             )}
           </div>
         </div>
       )}
 
-      {!readOnly && showConnectDialog && (
+      {showConnectDialog && (
         <ConnectRemoteDialog onClose={() => setShowConnectDialog(false)} />
       )}
-      {!readOnly && cloudRuntimeEnabled && showCloudRuntimeDialog && (
+      {cloudRuntimeEnabled && showCloudRuntimeDialog && (
         <CloudRuntimeDialog onClose={() => setShowCloudRuntimeDialog(false)} />
       )}
     </div>
@@ -358,12 +349,10 @@ function OrphanRuntimeProfiles({
   runtimes,
   now,
   hasMachines,
-  readOnly = false,
 }: {
   runtimes: ReturnType<typeof pendingRuntimeFromProfile>[];
   now: number;
   hasMachines: boolean;
-  readOnly?: boolean;
 }) {
   const { t } = useT("runtimes");
   return (
@@ -377,7 +366,7 @@ function OrphanRuntimeProfiles({
         </p>
       </div>
       <div className="overflow-hidden rounded-lg border bg-card">
-        <RuntimeList runtimes={runtimes} now={now} readOnly={readOnly} />
+        <RuntimeList runtimes={runtimes} now={now} />
       </div>
     </section>
   );
@@ -388,13 +377,11 @@ function PageHeaderBar({
   onConnectRemote,
   cloudRuntimeEnabled,
   onOpenCloudRuntime,
-  readOnly,
 }: {
   totalCount: number;
   onConnectRemote: () => void;
   cloudRuntimeEnabled: boolean;
   onOpenCloudRuntime: () => void;
-  readOnly: boolean;
 }) {
   const { t, i18n } = useT("runtimes");
   return (
@@ -407,7 +394,7 @@ function PageHeaderBar({
         href: daemonRuntimesDocsHref(i18n.language),
         label: t(($) => $.page.learn_more),
       }}
-      actions={!readOnly ? (
+      actions={
         <>
           {cloudRuntimeEnabled && (
             <CollectionPageHeaderAction
@@ -422,7 +409,7 @@ function PageHeaderBar({
             onClick={onConnectRemote}
           />
         </>
-      ) : undefined}
+      }
     />
   );
 }
@@ -565,25 +552,19 @@ function ProviderIconStack({ providers }: { providers: string[] }) {
   );
 }
 
-function EmptyState({
-  onConnectRemote,
-  readOnly = false,
-}: {
-  onConnectRemote: () => void;
-  readOnly?: boolean;
-}) {
+function EmptyState({ onConnectRemote }: { onConnectRemote: () => void }) {
   const { t } = useT("runtimes");
   return (
     <CollectionPageState
       icon={Server}
       title={t(($) => $.page.empty.title)}
       description={t(($) => $.page.empty.hint)}
-      actions={!readOnly ? (
+      actions={
         <Button type="button" size="sm" onClick={onConnectRemote}>
           <Plus aria-hidden="true" className="size-3" />
           {t(($) => $.page.connect_remote)}
         </Button>
-      ) : undefined}
+      }
     />
   );
 }

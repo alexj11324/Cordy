@@ -31,15 +31,11 @@ export function MachineCliSection({
   machine,
   currentUserId,
   canManageAnyRuntime,
-  readOnly = false,
 }: {
   machine: RuntimeMachine;
   currentUserId: string | undefined;
   canManageAnyRuntime: boolean;
-  readOnly?: boolean;
 }) {
-  if (readOnly) return null;
-
   const updateRuntime = machineUpdateRuntime(
     machine,
     currentUserId,

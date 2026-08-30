@@ -132,13 +132,11 @@ export function McpConfigTab({
   useEffect(() => onDirtyChange?.(false), [onDirtyChange]);
 
   const openAddDialog = () => {
-    if (!canEdit) return;
     setEditingServer(null);
     setEditorOpen(true);
   };
 
   const openEditDialog = (server: ManagedMcpServer) => {
-    if (!canEdit) return;
     setEditingServer(server);
     setEditorOpen(true);
   };
@@ -147,7 +145,6 @@ export function McpConfigTab({
     name: string,
     config: Record<string, unknown>,
   ) => {
-    if (!canEdit) return;
     const next = upsertManagedMcpServer(
       agent.mcp_config,
       editingServer,
@@ -186,28 +183,22 @@ export function McpConfigTab({
   };
 
   const handleAddWorkspaceServer = (serverId: string) =>
-    canEdit
-      ? runAssignmentAction(async () => {
-          await addServer.mutateAsync(serverId);
-          toast.success(t(($) => $.tab_body.mcp_config.workspace_added_toast));
-        })
-      : Promise.resolve();
+    runAssignmentAction(async () => {
+      await addServer.mutateAsync(serverId);
+      toast.success(t(($) => $.tab_body.mcp_config.workspace_added_toast));
+    });
 
   const handleToggleWorkspaceServer = (serverId: string, enabled: boolean) =>
-    canEdit
-      ? runAssignmentAction(() => setServerEnabled.mutateAsync({ serverId, enabled }))
-      : Promise.resolve();
+    runAssignmentAction(() => setServerEnabled.mutateAsync({ serverId, enabled }));
 
   const handleRemoveWorkspaceServer = (serverId: string) =>
-    canEdit
-      ? runAssignmentAction(async () => {
-          await removeServer.mutateAsync(serverId);
-          toast.success(t(($) => $.tab_body.mcp_config.workspace_removed_toast));
-        })
-      : Promise.resolve();
+    runAssignmentAction(async () => {
+      await removeServer.mutateAsync(serverId);
+      toast.success(t(($) => $.tab_body.mcp_config.workspace_removed_toast));
+    });
 
   const handleDelete = async () => {
-    if (!canEdit || !deletingServer) return;
+    if (!deletingServer) return;
     setDeleting(true);
     try {
       await onSave({
@@ -236,7 +227,7 @@ export function McpConfigTab({
           <h3 className="text-body font-medium">
             {t(($) => $.tab_body.mcp_config.managed_title)}
           </h3>
-          {canEdit && !redacted && (
+          {!redacted && (
             <Button size="sm" variant="outline" onClick={openAddDialog}>
               <Plus aria-hidden="true" />
               {t(($) => $.tab_body.mcp_config.add_action)}
@@ -263,8 +254,8 @@ export function McpConfigTab({
           <McpServerList
             servers={managedServers}
             disabledLabel={t(($) => $.tab_body.mcp_config.agent_disabled_badge)}
-            onEdit={canEdit ? openEditDialog : undefined}
-            onDelete={canEdit ? setDeletingServer : undefined}
+            onEdit={openEditDialog}
+            onDelete={setDeletingServer}
             editLabel={t(($) => $.tab_body.mcp_config.edit_aria)}
             deleteLabel={t(($) => $.tab_body.mcp_config.delete_aria)}
           />
@@ -385,7 +376,7 @@ export function McpConfigTab({
         )}
       </section>
 
-      {canEdit && !redacted && (
+      {!redacted && (
         <McpServerDialog
           open={editorOpen}
           server={editingServer}
