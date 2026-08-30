@@ -230,10 +230,13 @@ describe("sidebar auto-collapse between lg and xl", () => {
       const root = container.querySelector<HTMLElement>("[data-slot='sidebar']")!;
       const rail = container.querySelector<HTMLElement>("[data-slot='sidebar-rail']")!;
       const inner = container.querySelector<HTMLElement>("[data-slot='sidebar-inner']")!;
+      const gap = container.querySelector<HTMLElement>("[data-slot='sidebar-gap']")!;
 
       expect(root).toHaveAttribute("data-state", "collapsed");
+      expect(gap).toHaveAttribute("data-layout-collapsible", "offcanvas");
       fireEvent.pointerEnter(rail);
       expect(root).toHaveAttribute("data-state", "expanded");
+      expect(gap).toHaveAttribute("data-layout-collapsible", "offcanvas");
 
       // The rail moves to the expanded sidebar edge. A stationary pointer must
       // not collapse/reveal the nav in a loop when the rail itself moves out
@@ -260,6 +263,7 @@ describe("sidebar auto-collapse between lg and xl", () => {
       fireEvent.pointerLeave(rail);
       act(() => vi.advanceTimersByTime(180));
       expect(root).toHaveAttribute("data-state", "expanded");
+      expect(gap).toHaveAttribute("data-layout-collapsible", "");
     } finally {
       vi.useRealTimers();
     }

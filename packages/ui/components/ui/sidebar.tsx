@@ -362,6 +362,7 @@ function Sidebar({
   const {
     isCompact,
     state,
+    open,
     openMobile,
     setOpenMobile,
     revealHoverSidebar,
@@ -438,13 +439,14 @@ function Sidebar({
       {/* This is what handles the sidebar gap on desktop */}
       <div
         data-slot="sidebar-gap"
+        data-layout-collapsible={open ? "" : collapsible}
         className={cn(
           "relative w-(--sidebar-width) bg-transparent transition-[width] duration-200 ease-out motion-reduce:transition-none",
-          "group-data-[collapsible=offcanvas]:w-0",
+          "data-[layout-collapsible=offcanvas]:w-0",
           "group-data-[side=right]:rotate-180",
           variant === "floating" || variant === "inset"
-            ? "group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]"
-            : "group-data-[collapsible=icon]:w-(--sidebar-width-icon)"
+            ? "data-[layout-collapsible=icon]:w-[calc(var(--sidebar-width-icon)+(--spacing(4)))]"
+            : "data-[layout-collapsible=icon]:w-(--sidebar-width-icon)"
         )}
       />
       <div
