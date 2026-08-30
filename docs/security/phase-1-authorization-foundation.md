@@ -54,12 +54,18 @@ code and in CI:
    request replay, or upstream failure; an unreadable or overflowing ledger
    fails closed instead of resetting the grant budget.
 8. Every provider process tree is launched behind a fail-closed OS/filesystem
-   boundary. macOS uses a deny-by-default sandbox profile; Linux uses
-   bubblewrap with isolated process/IPC/UTS/cgroup namespaces, a hidden host
-   home, read-only system/provider files, and writes limited to task-owned
-   roots. Unsupported hosts and missing sandbox executables cannot launch a
-   provider task. Ambient daemon variables are cleared and rebuilt from an
-   inert allowlist before every provider spawn.
+   boundary. macOS uses a deny-by-default sandbox profile with only child
+   process execution, an explicit runtime read allowlist, and task-owned write
+   roots. Linux uses bubblewrap with an empty root namespace, isolated
+   process/IPC/UTS/cgroup namespaces, private `/dev`, `/proc`, and temporary
+   filesystems, exact read-only system/provider mounts, and writes limited to
+   task-owned roots. Existing task `.env*` credentials are denied or masked;
+   case aliases are treated as credentials, and credential symlinks or hard
+   links fail closed when they cannot be masked safely. Host provider profiles
+   remain denied even when a managed runtime mount overlaps the host home.
+   Unsupported hosts and missing sandbox executables cannot launch a provider
+   task. Ambient daemon variables are cleared and rebuilt from an inert
+   allowlist before every provider spawn.
 9. Runtime read/update is enforced by the same authorizer. Workspace admins do
    not automatically read or mutate another user's private runtime. Public
    runtime metadata remains available to workspace members. Local runtime use

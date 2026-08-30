@@ -445,6 +445,10 @@ impl ProviderExecutionPlan {
         &self.prepare.task
     }
 
+    pub fn provider_source_home(&self) -> &str {
+        &self.prepare.hermes_source_home
+    }
+
     /// The exact registered target selected before preparation. In particular,
     /// custom profile identity must survive until the backend is constructed;
     /// provider name alone is insufficient to select the right executable.

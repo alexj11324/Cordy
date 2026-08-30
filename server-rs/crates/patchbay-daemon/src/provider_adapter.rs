@@ -943,12 +943,21 @@ impl ProductionProviderAdapter {
             crate::provider_isolation::isolate_provider_command(
                 &mut backend_config.command,
                 crate::provider_isolation::ProviderIsolation {
+                    provider: &target.provider,
                     task_root: &environment.root_dir,
                     work_dir: &environment.work_dir,
                     temp_dir: task_temp_dir_path,
+                    provider_source_home: plan.provider_source_home(),
                 },
             )
-            .context("isolate provider process")?;
+            .map_err(|error| {
+                tracing::warn!(
+                    provider = %target.provider,
+                    reason = crate::provider_isolation::failure_reason(&error),
+                    "provider process isolation rejected task before spawn"
+                );
+                anyhow::anyhow!("provider process isolation rejected the task")
+            })?;
             let backend = patchbay_agent::build_backend(&target.provider, backend_config)
                 .map_err(|error| anyhow::anyhow!("create agent backend: {error}"))?;
             let _provider_broker = provider_broker;
