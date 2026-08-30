@@ -99,11 +99,11 @@ describe("local Vite preview API", () => {
     );
     const taskMessages = await call(
       "GET",
-      "/api/tasks/00000000-0000-4000-8000-000000000201/messages",
+      "/api/tasks/task-pre-104/messages",
     );
     const unsupportedTaskWrite = await call(
       "POST",
-      "/api/tasks/00000000-0000-4000-8000-000000000201/messages",
+      "/api/tasks/task-pre-104/messages",
       { content: "not persisted" },
     );
 
