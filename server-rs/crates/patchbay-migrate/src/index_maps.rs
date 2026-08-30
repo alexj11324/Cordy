@@ -510,6 +510,42 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "417_task_capability_claim_fence_index",
         "task_token_claim_fence_idx",
     ),
+    (
+        "419_dependency_graph_plan_id_index",
+        "uq_dependency_graph_plan_id",
+    ),
+    (
+        "420_dependency_graph_node_id_index",
+        "uq_dependency_graph_node_id",
+    ),
+    (
+        "421_dependency_graph_edge_id_index",
+        "uq_dependency_graph_edge_id",
+    ),
+    (
+        "422_dependency_graph_idempotency_index",
+        "uq_dependency_graph_plan_idempotency",
+    ),
+    (
+        "423_dependency_graph_active_parent_index",
+        "uq_dependency_graph_plan_active_parent",
+    ),
+    (
+        "424_dependency_graph_node_temp_index",
+        "uq_dependency_graph_node_plan_temp",
+    ),
+    (
+        "425_dependency_graph_edge_direction_index",
+        "uq_dependency_graph_edge_plan_direction",
+    ),
+    (
+        "426_dependency_graph_edge_from_index",
+        "idx_dependency_graph_edge_plan_from",
+    ),
+    (
+        "427_dependency_graph_edge_to_index",
+        "idx_dependency_graph_edge_plan_to",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
@@ -568,5 +604,41 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
     (
         "410_agent_task_queue_execution_lane_active_unique",
         "idx_agent_task_queue_execution_lane_active_unique",
+    ),
+    (
+        "419_dependency_graph_plan_id_index",
+        "uq_dependency_graph_plan_id",
+    ),
+    (
+        "420_dependency_graph_node_id_index",
+        "uq_dependency_graph_node_id",
+    ),
+    (
+        "421_dependency_graph_edge_id_index",
+        "uq_dependency_graph_edge_id",
+    ),
+    (
+        "422_dependency_graph_idempotency_index",
+        "uq_dependency_graph_plan_idempotency",
+    ),
+    (
+        "423_dependency_graph_active_parent_index",
+        "uq_dependency_graph_plan_active_parent",
+    ),
+    (
+        "424_dependency_graph_node_temp_index",
+        "uq_dependency_graph_node_plan_temp",
+    ),
+    (
+        "425_dependency_graph_edge_direction_index",
+        "uq_dependency_graph_edge_plan_direction",
+    ),
+    (
+        "426_dependency_graph_edge_from_index",
+        "idx_dependency_graph_edge_plan_from",
+    ),
+    (
+        "427_dependency_graph_edge_to_index",
+        "idx_dependency_graph_edge_plan_to",
     ),
 ];
