@@ -5,6 +5,10 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use patchbay_authorization::{
+    Action, AuthorizationContext, AuthorizationRequest, Principal, PrincipalType, Resource,
+    ResourceType,
+};
 use patchbay_db::models::{Agent, AgentInvocationTarget};
 use patchbay_db::queries::{agent, agent_invocation_target, chat, task_message};
 use patchbay_middleware::workspace::WorkspaceContext;
@@ -74,6 +78,20 @@ async fn send_message_to_main_task(
     else {
         return error_response(StatusCode::FORBIDDEN, "invalid Side Chat task identity");
     };
+    if !task_lease_allows(
+        &state,
+        &headers,
+        context.member.workspace_id,
+        source_task_id,
+        Action::TASK_UPDATE,
+    )
+    .await
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task capability does not allow update",
+        );
+    }
     let Some(actor_agent_id) = headers
         .get("x-agent-id")
         .and_then(|value| value.to_str().ok())
@@ -130,11 +148,23 @@ async fn list_messages(
     Extension(context): Extension<WorkspaceContext>,
     Path(task_id): Path<String>,
     Query(query): Query<MessageQuery>,
+    headers: HeaderMap,
 ) -> Response {
     let task_id = match Uuid::parse_str(task_id.trim()) {
         Ok(task_id) => task_id,
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid task_id"),
     };
+    if !task_lease_allows(
+        &state,
+        &headers,
+        context.member.workspace_id,
+        task_id,
+        Action::TASK_READ,
+    )
+    .await
+    {
+        return error_response(StatusCode::FORBIDDEN, "task capability does not allow read");
+    }
     let task = match agent::get_agent_task(&state.pool, task_id).await {
         Ok(Some(task)) => task,
         Ok(None) => return error_response(StatusCode::NOT_FOUND, "task not found"),
@@ -189,6 +219,20 @@ async fn cancel_task(
         Ok(task_id) => task_id,
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid task id"),
     };
+    if !task_lease_allows(
+        &state,
+        &headers,
+        context.member.workspace_id,
+        task_id,
+        Action::TASK_UPDATE,
+    )
+    .await
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task capability does not allow update",
+        );
+    }
     let task =
         match agent::get_agent_task_in_workspace(&state.pool, task_id, context.member.workspace_id)
             .await
@@ -278,6 +322,72 @@ async fn cancel_task(
         response["cancelled_chat_message"] = Value::Object(value);
     }
     Json(response).into_response()
+}
+
+async fn task_lease_allows(
+    state: &HandlerState,
+    headers: &HeaderMap,
+    workspace_id: Uuid,
+    task_id: Uuid,
+    action: &'static str,
+) -> bool {
+    if headers
+        .get("x-actor-source")
+        .and_then(|value| value.to_str().ok())
+        != Some("task_token")
+    {
+        return true;
+    }
+    let header_uuid = |name: &'static str| {
+        headers
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| Uuid::parse_str(value).ok())
+    };
+    let Some(current_task_id) = header_uuid("x-task-id") else {
+        return false;
+    };
+    if !task_request_matches(headers, task_id) {
+        return false;
+    }
+    let Some(lease_id) = header_uuid("x-capability-lease-id") else {
+        return false;
+    };
+    state
+        .authorization
+        .authorize(AuthorizationRequest {
+            principal: Principal {
+                principal_type: PrincipalType::TaskRun,
+                id: Some(current_task_id),
+            },
+            action: Action::new(action),
+            resource: Resource {
+                resource_type: ResourceType::new(ResourceType::TASK_RUN),
+                id: Some(task_id),
+                workspace_id,
+                owner_id: header_uuid("x-on-behalf-of-user-id"),
+                attributes: json!({"private": true}),
+            },
+            context: AuthorizationContext {
+                on_behalf_of_user_id: header_uuid("x-on-behalf-of-user-id"),
+                via_agent_id: header_uuid("x-agent-id"),
+                device_id: header_uuid("x-device-id"),
+                task_id: Some(current_task_id),
+                lease_id: Some(lease_id),
+                ..Default::default()
+            },
+            delegation_chain: Vec::new(),
+        })
+        .await
+        .is_ok_and(|decision| decision.is_allowed())
+}
+
+fn task_request_matches(headers: &HeaderMap, requested_task_id: Uuid) -> bool {
+    headers
+        .get("x-task-id")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| Uuid::parse_str(value).ok())
+        == Some(requested_task_id)
 }
 
 fn cancel_options(
@@ -513,5 +623,15 @@ mod tests {
             &[],
             owner
         ));
+    }
+
+    #[test]
+    fn task_lease_cannot_read_or_cancel_another_task() {
+        let own_task = uuid_at('a');
+        let other_task = uuid_at('b');
+        let mut headers = HeaderMap::new();
+        headers.insert("x-task-id", own_task.to_string().parse().unwrap());
+        assert!(task_request_matches(&headers, own_task));
+        assert!(!task_request_matches(&headers, other_task));
     }
 }

@@ -289,23 +289,88 @@ fn set_header(req: &mut Request, name: &'static str, value: &str) {
 }
 
 fn clear_untrusted_task_identity(req: &mut Request) {
-    for name in ["x-actor-source", "x-agent-id", "x-task-id", "x-guest-user"] {
+    for name in [
+        "x-actor-source",
+        "x-agent-id",
+        "x-task-id",
+        "x-capability-lease-id",
+        "x-on-behalf-of-user-id",
+        "x-device-id",
+        "x-guest-user",
+    ] {
         req.headers_mut().remove(name);
     }
 }
 
-fn stamp_task_identity(
-    req: &mut Request,
+struct TaskIdentity {
     user_id: Uuid,
     agent_id: Uuid,
     task_id: Uuid,
     workspace_id: Uuid,
-) {
-    set_header(req, "x-user-id", &user_id.to_string());
-    set_header(req, "x-agent-id", &agent_id.to_string());
-    set_header(req, "x-task-id", &task_id.to_string());
-    set_header(req, "x-workspace-id", &workspace_id.to_string());
+    lease_id: Uuid,
+    on_behalf_of_user_id: Option<Uuid>,
+    device_id: Option<Uuid>,
+}
+
+fn stamp_task_identity(req: &mut Request, identity: TaskIdentity) {
+    set_header(req, "x-user-id", &identity.user_id.to_string());
+    set_header(req, "x-agent-id", &identity.agent_id.to_string());
+    set_header(req, "x-task-id", &identity.task_id.to_string());
+    set_header(req, "x-workspace-id", &identity.workspace_id.to_string());
+    set_header(req, "x-capability-lease-id", &identity.lease_id.to_string());
+    if let Some(on_behalf_of_user_id) = identity.on_behalf_of_user_id {
+        set_header(
+            req,
+            "x-on-behalf-of-user-id",
+            &on_behalf_of_user_id.to_string(),
+        );
+    }
+    if let Some(device_id) = identity.device_id {
+        set_header(req, "x-device-id", &device_id.to_string());
+    }
     set_header(req, "x-actor-source", "task_token");
+}
+
+/// Phase 1 task leases are accepted only by data-plane routes whose handlers
+/// either bind mutations to the current task or consume the shared
+/// authorizer. This default-deny boundary prevents the compatibility
+/// `x-user-id` projection from turning a short-lived task lease into a JWT,
+/// PAT, credential-management session, Agent secret read, or another durable
+/// human control-plane authority.
+fn task_token_route_allowed(method: &Method, path: &str, _workspace_id: Uuid) -> bool {
+    if method == Method::POST && path == "/api/authorization/provider-leases/validate" {
+        return true;
+    }
+    if path.starts_with("/api/issues") {
+        if method == Method::GET {
+            let suffix = path.strip_prefix("/api/issues/").unwrap_or_default();
+            return !suffix.is_empty() && !suffix.contains('/');
+        }
+        if method == Method::POST {
+            return path == "/api/issues" || path.ends_with("/comments");
+        }
+        if method == Method::PUT {
+            let suffix = path.strip_prefix("/api/issues/").unwrap_or_default();
+            return !suffix.is_empty() && !suffix.contains('/');
+        }
+        return false;
+    }
+    if path.starts_with("/api/comments") {
+        return false;
+    }
+    if path.starts_with("/api/tasks/") {
+        return (method == Method::GET && path.ends_with("/messages"))
+            || (method == Method::POST
+                && (path.ends_with("/message-bus") || path.ends_with("/cancel")));
+    }
+    if method == Method::GET
+        && ["/api/properties", "/api/labels"]
+            .iter()
+            .any(|prefix| path.starts_with(prefix))
+    {
+        return true;
+    }
+    false
 }
 
 /// Auth middleware entrypoint — use via
@@ -425,12 +490,29 @@ pub async fn auth_middleware(
                 TEMPORARILY_DISABLED_USER_ERROR,
             ));
         }
+        if !task_token_route_allowed(req.method(), req.uri().path(), tt.workspace_id) {
+            tracing::warn!(
+                task_id = %tt.task_id,
+                path = %req.uri().path(),
+                method = %req.method(),
+                "auth: capability lease rejected at human control-plane boundary"
+            );
+            return Err((
+                StatusCode::FORBIDDEN,
+                r#"{"error":"task capability is not valid for this route"}"#,
+            ));
+        }
         stamp_task_identity(
             &mut req,
-            tt.user_id,
-            tt.agent_id,
-            tt.task_id,
-            tt.workspace_id,
+            TaskIdentity {
+                user_id: tt.user_id,
+                agent_id: tt.agent_id,
+                task_id: tt.task_id,
+                workspace_id: tt.workspace_id,
+                lease_id: tt.id,
+                on_behalf_of_user_id: tt.on_behalf_of_user_id,
+                device_id: tt.device_id,
+            },
         );
         return Ok(next.run(req).await);
     }
@@ -782,6 +864,9 @@ mod tests {
         let agent_id = test_uuid(6);
         let task_id = test_uuid(7);
         let workspace_id = test_uuid(8);
+        let lease_id = test_uuid(11);
+        let on_behalf_of = test_uuid(12);
+        let device_id = test_uuid(13);
         let mut request = request(Some("203.0.113.9:443"), "mat_secret", MARKER);
         request
             .headers_mut()
@@ -791,13 +876,27 @@ mod tests {
             .insert("x-task-id", test_uuid(10).to_string().parse().unwrap());
 
         clear_untrusted_task_identity(&mut request);
-        stamp_task_identity(&mut request, user_id, agent_id, task_id, workspace_id);
+        stamp_task_identity(
+            &mut request,
+            TaskIdentity {
+                user_id,
+                agent_id,
+                task_id,
+                workspace_id,
+                lease_id,
+                on_behalf_of_user_id: Some(on_behalf_of),
+                device_id: Some(device_id),
+            },
+        );
 
         for (name, expected) in [
             ("x-user-id", user_id),
             ("x-agent-id", agent_id),
             ("x-task-id", task_id),
             ("x-workspace-id", workspace_id),
+            ("x-capability-lease-id", lease_id),
+            ("x-on-behalf-of-user-id", on_behalf_of),
+            ("x-device-id", device_id),
         ] {
             let expected = expected.to_string();
             assert_eq!(
@@ -816,6 +915,77 @@ mod tests {
                 .and_then(|value| value.to_str().ok()),
             Some("task_token")
         );
+    }
+
+    #[test]
+    fn task_lease_cannot_mint_durable_or_human_control_plane_authority() {
+        let workspace_id = test_uuid(14);
+        let bound_workspace = format!("/api/workspaces/{workspace_id}");
+        for (method, path) in [
+            (Method::POST, "/api/cli-token"),
+            (Method::POST, "/api/tokens"),
+            (Method::GET, "/api/integrations/composio/connections"),
+            (Method::GET, "/api/agents/private-agent/env"),
+            (Method::POST, "/api/issues/quick-create"),
+            (Method::POST, "/api/issues/issue-id/rerun"),
+            (Method::DELETE, "/api/issues/issue-id"),
+            (Method::POST, "/api/issues/batch-delete"),
+            (Method::DELETE, "/api/comments/comment-id"),
+            (
+                Method::POST,
+                "/api/runtimes/runtime-id/unbind-agents-and-delete",
+            ),
+            (Method::POST, "/api/cloud-runtime/nodes"),
+            (Method::GET, "/api/workspaces"),
+            (Method::GET, "/api/agent-task-snapshot"),
+            (Method::GET, "/api/attachments/private-chat-file"),
+            (Method::GET, "/api/chat/history"),
+            (Method::GET, "/api/issues"),
+            (Method::GET, "/api/issues/other/timeline"),
+            (Method::POST, "/api/issues/query"),
+            (Method::POST, "/api/issues/table/rows"),
+            (Method::POST, "/api/issues/table/groups"),
+            (Method::POST, "/api/issues/table/facets"),
+            (Method::POST, "/api/upload-file"),
+            (Method::GET, "/api/runtimes"),
+            (Method::PATCH, "/api/runtimes/runtime-id"),
+            (Method::GET, "/api/authorization/decisions/decision-id"),
+            (Method::GET, "/api/authorization/provider-leases/validate"),
+            (
+                Method::POST,
+                "/api/authorization/provider-leases/validate/extra",
+            ),
+            (Method::POST, "/api/authorization/provider-grants"),
+            (Method::GET, bound_workspace.as_str()),
+        ] {
+            assert!(
+                !task_token_route_allowed(&method, path, workspace_id),
+                "{method} {path}"
+            );
+        }
+    }
+
+    #[test]
+    fn task_lease_allowlist_is_limited_to_scoped_data_plane_routes() {
+        let workspace_id = test_uuid(15);
+        for (method, path) in [
+            (Method::GET, "/api/issues/issue-id"),
+            (Method::PUT, "/api/issues/issue-id"),
+            (Method::POST, "/api/issues/issue-id/comments"),
+            (Method::POST, "/api/issues"),
+            (Method::POST, "/api/tasks/task-id/message-bus"),
+            (Method::POST, "/api/authorization/provider-leases/validate"),
+        ] {
+            assert!(
+                task_token_route_allowed(&method, path, workspace_id),
+                "{method} {path}"
+            );
+        }
+        assert!(!task_token_route_allowed(
+            &Method::GET,
+            &format!("/api/workspaces/{}", test_uuid(16)),
+            workspace_id,
+        ));
     }
 
     #[test]

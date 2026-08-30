@@ -117,6 +117,11 @@ pub struct IssueCreateOpts {
     /// /issue uses this while detached media resolves; None keeps the
     /// ordinary immediate enqueue path.
     pub assigned_agent_run_fire_at: Option<DateTime<Utc>>,
+    /// Optional one-shot task capability consumed in the same transaction as
+    /// the issue insert. This is used by quick-create so concurrent or replayed
+    /// requests cannot create multiple issues from one task lease. A failed
+    /// create rolls the revocation back with the rest of the transaction.
+    pub consume_task_lease_id: Option<Uuid>,
 }
 
 /// Typed failure surface of [`IssueService::create`]. The four sentinel
@@ -137,6 +142,8 @@ pub enum IssueCreateError {
     StatusUnavailable,
     #[error("issues with work underway require an assignee")]
     ActiveAssigneeRequired,
+    #[error("task capability lease was already consumed")]
+    CapabilityConsumed,
     #[error("{0}")]
     Internal(String),
     #[error(transparent)]
@@ -180,6 +187,22 @@ impl IssueService {
         opts: IssueCreateOpts,
     ) -> Result<IssueCreateResult, IssueCreateError> {
         let mut tx = self.pool.begin().await.map_err(IssueCreateError::Sql)?;
+
+        if let Some(lease_id) = opts.consume_task_lease_id {
+            let consumed = sqlx::query_scalar::<_, Uuid>(
+                r#"UPDATE task_token
+SET revoked_at = now(), revoked_reason = 'quick_create_consumed'
+WHERE id = $1 AND revoked_at IS NULL AND expires_at > now()
+RETURNING id"#,
+            )
+            .bind(lease_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(IssueCreateError::Sql)?;
+            if consumed.is_none() {
+                return Err(IssueCreateError::CapabilityConsumed);
+            }
+        }
 
         // A create landing on a CUSTOM status takes the shared catalog lock
         // AND re-resolves the status inside this transaction: an archive can

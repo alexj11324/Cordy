@@ -166,10 +166,21 @@ pub async fn delete_agent_runtime(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
 ) -> anyhow::Result<u64> {
-    let r = sqlx::query(r#"DELETE FROM agent_runtime WHERE id = $1"#)
-        .bind(id)
-        .execute(executor)
-        .await?;
+    let r = sqlx::query(
+        r#"WITH revoked_grants AS (
+    UPDATE authorization_grant
+    SET revoked_at = COALESCE(revoked_at, now()), updated_at = now()
+    WHERE revoked_at IS NULL
+      AND (
+        (resource_type IN ('runtime', 'provider_identity') AND resource_id = $1)
+        OR (principal_type = 'device_runtime' AND principal_id = $1)
+      )
+)
+DELETE FROM agent_runtime WHERE id = $1"#,
+    )
+    .bind(id)
+    .execute(executor)
+    .await?;
     Ok(r.rows_affected())
 }
 
@@ -177,10 +188,23 @@ pub async fn delete_system_agents_by_runtime(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     runtime_id: Uuid,
 ) -> anyhow::Result<u64> {
-    let r = sqlx::query(r#"DELETE FROM agent WHERE runtime_id = $1 AND kind = 'system'"#)
-        .bind(runtime_id)
-        .execute(executor)
-        .await?;
+    let r = sqlx::query(
+        r#"WITH victims AS MATERIALIZED (
+    SELECT id FROM agent WHERE runtime_id = $1 AND kind = 'system'
+), revoked_grants AS (
+    UPDATE authorization_grant
+    SET revoked_at = COALESCE(revoked_at, now()), updated_at = now()
+    WHERE revoked_at IS NULL
+      AND (
+          (resource_type = 'agent_definition' AND resource_id IN (SELECT id FROM victims))
+          OR (principal_type = 'agent_definition' AND principal_id IN (SELECT id FROM victims))
+      )
+)
+DELETE FROM agent WHERE id IN (SELECT id FROM victims)"#,
+    )
+    .bind(runtime_id)
+    .execute(executor)
+    .await?;
     Ok(r.rows_affected())
 }
 

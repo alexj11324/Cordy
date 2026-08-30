@@ -1,15 +1,17 @@
-//! Filtered child-process environments for agent backends.
+//! Minimal child-process environments for agent backends.
 //!
-//! Daemon-level `PATCHBAY_*` values and Claude runtime markers must not leak into
-//! provider-controlled tools. Task-scoped overrides are applied after the
-//! ambient filter so an explicit `PATCHBAY_TOKEN` still reaches the child.
+//! A provider process can spawn arbitrary tools, so ambient daemon variables
+//! are authority, not harmless convenience. In particular API keys, credential
+//! socket paths, provider homes and platform login tokens must never be
+//! inherited. Only inert locale/terminal/process-discovery values cross this
+//! boundary; the daemon then adds task-scoped overrides explicitly.
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 
 use tokio::process::Command;
 
-pub fn configure_child_env(command: &mut Command, overrides: &BTreeMap<String, String>) {
+pub(crate) fn configure_child_env(command: &mut Command, overrides: &BTreeMap<String, String>) {
     command.env_clear();
     for (key, value) in filtered_inherited_env() {
         command.env(key, value);
@@ -19,10 +21,52 @@ pub fn configure_child_env(command: &mut Command, overrides: &BTreeMap<String, S
     }
 }
 
+/// Final fail-closed seal applied immediately before every provider spawn.
+/// It preserves values explicitly set on the command by an adapter, but drops
+/// every implicit ambient variable except the inert allowlist above. Keeping
+/// this in the shared process owner prevents a new backend from accidentally
+/// reintroducing daemon credentials merely by omitting an env helper call.
+pub(crate) fn seal_child_env(command: &mut Command) {
+    let explicit = command
+        .as_std()
+        .get_envs()
+        .filter_map(|(key, value)| value.map(|value| (key.to_os_string(), value.to_os_string())))
+        .collect::<Vec<_>>();
+    command.env_clear();
+    for (key, value) in filtered_inherited_env() {
+        command.env(key, value);
+    }
+    for (key, value) in explicit {
+        command.env(key, value);
+    }
+}
+
 fn filtered_inherited_env() -> Vec<(OsString, OsString)> {
     std::env::vars_os()
-        .filter(|(key, _)| !is_filtered_child_env_key(&key.to_string_lossy()))
+        .filter(|(key, _)| is_inert_inherited_env_key(&key.to_string_lossy()))
         .collect()
+}
+
+fn is_inert_inherited_env_key(key: &str) -> bool {
+    let upper = key.to_ascii_uppercase();
+    matches!(
+        upper.as_str(),
+        "PATH"
+            | "LANG"
+            | "LANGUAGE"
+            | "TZ"
+            | "TERM"
+            | "COLORTERM"
+            | "NO_COLOR"
+            | "FORCE_COLOR"
+            | "SYSTEMROOT"
+            | "WINDIR"
+            | "COMSPEC"
+            | "PATHEXT"
+            | "OS"
+            | "NUMBER_OF_PROCESSORS"
+            | "PROCESSOR_ARCHITECTURE"
+    ) || upper.starts_with("LC_")
 }
 
 #[cfg(test)]
@@ -32,7 +76,7 @@ pub(crate) fn merge_child_env(
 ) -> BTreeMap<String, String> {
     let mut env = BTreeMap::new();
     for (key, value) in ambient {
-        if !is_filtered_child_env_key(&key) {
+        if is_inert_inherited_env_key(&key) {
             env.insert(key, value);
         }
     }
@@ -42,20 +86,6 @@ pub(crate) fn merge_child_env(
             .map(|(key, value)| (key.clone(), value.clone())),
     );
     env
-}
-
-fn is_filtered_child_env_key(key: &str) -> bool {
-    if key.to_ascii_uppercase().starts_with("PATCHBAY_") {
-        return true;
-    }
-    matches!(
-        key,
-        "CLAUDECODE"
-            | "CLAUDE_CODE_ENTRYPOINT"
-            | "CLAUDE_CODE_EXECPATH"
-            | "CLAUDE_CODE_SESSION_ID"
-            | "CLAUDE_CODE_SSE_PORT"
-    ) || key.starts_with("CLAUDECODE_")
 }
 
 #[cfg(test)]
@@ -93,15 +123,35 @@ mod tests {
             env.get("PATCHBAY_SERVER_URL").map(String::as_str),
             Some("https://task.example")
         );
-        assert_eq!(
-            env.get("CLAUDE_CODE_GIT_BASH_PATH").map(String::as_str),
-            Some("C:\\Git\\bash.exe")
-        );
-        assert_eq!(env.get("CLAUDECODEX").map(String::as_str), Some("keep-me"));
+        assert!(!env.contains_key("CLAUDE_CODE_GIT_BASH_PATH"));
+        assert!(!env.contains_key("CLAUDECODEX"));
         assert!(!env.contains_key("CLAUDECODE"));
         assert!(!env.contains_key("CLAUDE_CODE_SESSION_ID"));
         assert!(!env.contains_key("CLAUDECODE_INTERNAL"));
-        assert!(!is_filtered_child_env_key("CLAUDE_CODE_MAX_OUTPUT_TOKENS"));
-        assert!(is_filtered_child_env_key("patchbay_token"));
+    }
+
+    #[test]
+    fn ambient_credentials_and_host_paths_are_never_inherited() {
+        let ambient = [
+            ("HOME", "/Users/owner"),
+            ("SSH_AUTH_SOCK", "/tmp/owner-agent.sock"),
+            ("OPENAI_API_KEY", "long-lived"),
+            ("ANTHROPIC_API_KEY", "long-lived"),
+            ("AWS_PROFILE", "production"),
+            ("LANG", "en_US.UTF-8"),
+        ]
+        .into_iter()
+        .map(|(key, value)| (key.to_string(), value.to_string()));
+        let env = merge_child_env(ambient, &BTreeMap::new());
+        assert_eq!(env.get("LANG").map(String::as_str), Some("en_US.UTF-8"));
+        for key in [
+            "HOME",
+            "SSH_AUTH_SOCK",
+            "OPENAI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "AWS_PROFILE",
+        ] {
+            assert!(!env.contains_key(key), "unexpected inherited {key}");
+        }
     }
 }

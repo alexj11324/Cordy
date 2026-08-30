@@ -59,7 +59,7 @@ use patchbay_db::queries::github::get_issue_review_head_sha;
 use patchbay_db::queries::issue::get_issue;
 use patchbay_db::queries::runtime::get_agent_runtime;
 use patchbay_db::queries::task_message::list_task_messages;
-use patchbay_db::queries::task_token::{create_task_token, delete_task_tokens_by_task};
+use patchbay_db::queries::task_token::{create_task_token, revoke_task_tokens_by_task};
 use patchbay_db::queries::workspace::get_workspace_attribution_fail_closed;
 
 use crate::attribution::{
@@ -188,6 +188,10 @@ pub enum TaskServiceError {
     ChatQuickActionsStale,
     #[error("chat quick actions: session busy")]
     ChatQuickActionsBusy,
+    #[error("capability lease is already finalized for this task claim")]
+    CapabilityLeaseAlreadyFinalized,
+    #[error("capability lease delegation boundary denied issuance")]
+    CapabilityLeaseIssuanceDenied,
     #[error("task is no longer queued")]
     NoLongerQueued(ErrTaskNoLongerQueued),
     #[error("rerun: operator not allowed to invoke target agent")]
@@ -1064,10 +1068,9 @@ impl TaskService {
         }
     }
 
-    /// Terminal-cancelled capture plus eager revocation of any mat_ task
-    /// tokens minted for this task (PB-2600): cancellation is terminal, so
-    /// deleting the token closes the window where a compromised process could
-    /// keep authenticating until the 24h expiry. Failure is non-fatal.
+    /// Terminal-cancelled capture plus eager, monotonic revocation of any mat_
+    /// capability leases. Keep the rows for explain/audit; authentication
+    /// rejects revoked leases and a separate retention policy may purge them.
     pub async fn capture_task_cancelled(&self, task: &AgentTaskQueue) {
         if let Some(metrics) = &self.metrics {
             let (source, runtime_mode, _) = self.task_metrics_context(task).await;
@@ -1081,7 +1084,7 @@ impl TaskService {
                 task.attempt,
             );
         }
-        if let Err(err) = delete_task_tokens_by_task(&self.pool, task.id).await {
+        if let Err(err) = revoke_task_tokens_by_task(&self.pool, task.id, "task_cancelled").await {
             tracing::warn!(
                 task_id = %task.id,
                 error = %err,
@@ -3689,6 +3692,59 @@ pub struct CreateTaskToken {
     pub workspace_id: Uuid,
     pub user_id: Uuid,
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub scope: serde_json::Value,
+    pub parent_task_id: Option<Uuid>,
+    pub claim_dispatched_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub delegation_fence: i64,
+    pub on_behalf_of_user_id: Option<Uuid>,
+    pub device_id: Option<Uuid>,
+}
+
+/// Server-owned root ceiling for a task claim. Resource ACLs and the
+/// authorizer still narrow these action families at use time; the agent never
+/// supplies this list. Child claims are intersected with their parent scope by
+/// `create_task_token` in the same transaction that persists the lease.
+pub fn root_task_capability_scope(task: &AgentTaskQueue) -> serde_json::Value {
+    let mut scope = vec![
+        patchbay_authorization::Capability::task(patchbay_authorization::Action::TASK_READ),
+        patchbay_authorization::Capability::task(patchbay_authorization::Action::TASK_UPDATE),
+        patchbay_authorization::Capability::wildcard(
+            patchbay_authorization::Action::AGENT_INVOKE,
+            patchbay_authorization::ResourceType::AGENT_DEFINITION,
+        ),
+        patchbay_authorization::Capability::wildcard(
+            patchbay_authorization::Action::RESOURCE_READ,
+            patchbay_authorization::ResourceType::PROJECT_RESOURCE,
+        ),
+        patchbay_authorization::Capability::wildcard(
+            patchbay_authorization::Action::RESOURCE_USE,
+            patchbay_authorization::ResourceType::PROJECT_RESOURCE,
+        ),
+    ];
+    if let Some(runtime_id) = task.runtime_id {
+        scope.push(patchbay_authorization::Capability::exact(
+            patchbay_authorization::Action::RUNTIME_USE,
+            patchbay_authorization::ResourceType::RUNTIME,
+            runtime_id,
+        ));
+        scope.push(patchbay_authorization::Capability::exact(
+            patchbay_authorization::Action::CREDENTIAL_USE,
+            patchbay_authorization::ResourceType::PROVIDER_IDENTITY,
+            runtime_id,
+        ));
+    }
+    serde_json::to_value(scope).unwrap_or_else(|_| serde_json::json!([]))
+}
+
+/// Deterministic claim fence. Concurrent response finalizers for one dispatch
+/// compute the same value and the partial unique index admits only one. A
+/// re-dispatch changes `dispatched_at`, producing a new fence while the old
+/// lease becomes invalid because its timestamp no longer matches the task.
+pub fn task_claim_fence(task: &AgentTaskQueue) -> i64 {
+    task.dispatched_at
+        .map(|at| at.timestamp_micros().saturating_mul(32))
+        .unwrap_or_default()
+        .saturating_add(i64::from(task.attempt))
 }
 
 /// Parameters for persisting a Remote MCP daemon token (Go
@@ -3795,18 +3851,7 @@ impl TaskService {
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
         let cancelled = self.cancel_tasks_for_agent_in_tx(&mut tx, agent_id).await?;
         tx.commit().await.map_err(TaskServiceError::Sql)?;
-        for t in &cancelled {
-            self.capture_task_cancelled(t).await;
-            self.broadcast_task_event(
-                patchbay_protocol::EVENT_TASK_CANCELLED,
-                t,
-                Default::default(),
-            )
-            .await;
-        }
-        // One reconcile: all rows belong to the same agent.
-        self.reconcile_agent_status(agent_id).await;
-        self.notify_tasks_finished(&cancelled).await;
+        self.publish_transactional_cancellations(&cancelled).await;
         Ok(cancelled)
     }
 
@@ -5071,7 +5116,7 @@ impl TaskService {
     ) -> Result<Vec<Uuid>, TaskServiceError> {
         let mut receipt = task.delivered_comment_ids.clone();
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
-        create_task_token(
+        let created_lease = create_task_token(
             &mut *tx,
             &token.token_hash,
             token.task_id,
@@ -5079,10 +5124,30 @@ impl TaskService {
             token.workspace_id,
             token.user_id,
             token.expires_at,
+            &token.scope,
+            token.parent_task_id,
+            token.claim_dispatched_at,
+            token.delegation_fence,
+            token.on_behalf_of_user_id,
+            token.device_id,
             new_v7(),
         )
         .await
         .map_err(|e| TaskServiceError::Internal(format!("create task token: {e}")))?;
+        if created_lease.is_none() {
+            let replay = patchbay_db::queries::task_token::task_token_exists_for_claim(
+                &mut *tx,
+                token.task_id,
+                token.claim_dispatched_at,
+            )
+            .await
+            .map_err(|e| TaskServiceError::Internal(format!("inspect task token claim: {e}")))?;
+            return Err(if replay {
+                TaskServiceError::CapabilityLeaseAlreadyFinalized
+            } else {
+                TaskServiceError::CapabilityLeaseIssuanceDenied
+            });
+        }
         if let Some(dt) = &daemon_token {
             // Opportunistic bounded cleanup keeps short-lived per-task daemon
             // credentials from accumulating without adding another sweeper.

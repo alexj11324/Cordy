@@ -17,14 +17,19 @@ use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
+use chrono::Utc;
 use http_body_util::BodyExt as _;
+use patchbay_authorization::{
+    Action, AuthorizationContext, AuthorizationRequest, Authorizer, Principal, PrincipalType,
+    Resource, ResourceType, WorkspaceRole,
+};
 use patchbay_daemon::hub::{
     ClientIdentity, HeartbeatHandler, RpcHandler, RpcHandlerError, RpcOutcome,
 };
 use patchbay_db::models::AgentRuntime;
 use patchbay_db::queries::{
     agent, autopilot, chat, comment as comment_q, issue, member, runtime, runtime_profile,
-    task_message, task_token, workspace,
+    task_message, task_token, team, workspace,
 };
 use patchbay_middleware::daemon_auth::DaemonContext;
 use patchbay_protocol::{
@@ -34,10 +39,10 @@ use patchbay_protocol::{
     HEARTBEAT_STATUS_RUNTIME_GONE,
 };
 use patchbay_service::issue_status as issue_status_svc;
-use patchbay_service::plugin::PluginService;
 use patchbay_service::task_service::TaskService;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
+use sqlx::Row;
 use uuid::Uuid;
 
 use crate::error::error_response;
@@ -1566,7 +1571,7 @@ const CLAIM_BATCH_MAX_TASKS_CAP: usize = 32;
 pub(crate) struct DaemonClaimServices {
     pub(crate) pool: sqlx::PgPool,
     pub(crate) tasks: Arc<TaskService>,
-    pub(crate) plugins: Arc<PluginService>,
+    pub(crate) authorization: Arc<dyn Authorizer>,
 }
 
 impl DaemonClaimServices {
@@ -1574,7 +1579,7 @@ impl DaemonClaimServices {
         Self {
             pool: state.pool.clone(),
             tasks: state.tasks.clone(),
-            plugins: state.plugins.clone(),
+            authorization: state.authorization.clone(),
         }
     }
 }
@@ -1873,10 +1878,13 @@ async fn claim_tasks_by_runtime_core(
             continue;
         };
         match finalize_claim_enriched_with_runtime(state, &task, owner, &built, Some(rt)).await {
-            Ok((auth_token, remote_mcp_token, receipt)) => {
+            Ok((auth_token, remote_mcp_token, receipt, provider_authorization)) => {
                 let mut payload = built.payload;
                 if let Some(obj) = payload.as_object_mut() {
                     set_claim_tokens(obj, &auth_token, remote_mcp_token.as_deref(), &receipt);
+                    if !provider_authorization.is_null() {
+                        obj.insert("provider_authorization".into(), provider_authorization);
+                    }
                     insert_delivered_comment_ids(obj, built.delivered_comment_ids.clone());
                 }
                 out.push(payload);
@@ -2044,9 +2052,224 @@ async fn repair_stale_comment_plan(
 /// when the payload carries Remote MCP connections or plugin hook tools (Go
 /// remoteMCPDaemonTokenForClaim + FinalizeTaskClaim), recording the exact
 /// comment-delivery receipt for comment-backed tasks.
-/// Returns (raw task token, optional raw daemon token, persisted receipt).
+/// Returns (raw task token, optional raw daemon token, persisted receipt,
+/// provider authorization descriptor).
 /// Runtime-aware variant used by the per-runtime claim path so the Remote MCP
 /// daemon token can be bound to the claiming runtime's daemon.
+#[allow(clippy::too_many_arguments)]
+async fn authorize_provider_identity_for_claim(
+    state: &DaemonClaimServices,
+    task: &patchbay_db::models::AgentTaskQueue,
+    built: &crate::claim_response::BuiltClaim,
+    runtime: &AgentRuntime,
+    originator: Uuid,
+    owner_id: Uuid,
+    workspace_role: WorkspaceRole,
+) -> Result<Value, bool> {
+    if !provider_uses_credential_broker(&runtime.provider) {
+        let reason = format!(
+            "Provider {} is disabled until a lease-bound credential broker is available.",
+            runtime.provider
+        );
+        if let Err(error) = state
+            .tasks
+            .cancel_task_with_reason(task.id, &reason, "authorization_denied")
+            .await
+        {
+            tracing::error!(%error, task_id = %task.id, provider = %runtime.provider, "failed to settle unsupported provider task");
+        }
+        return Err(false);
+    }
+    let model = built
+        .payload
+        .pointer("/agent/model")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let team_ids =
+        team::list_teams_by_member(&state.pool, runtime.workspace_id, "member", originator)
+            .await
+            .map_err(|error| {
+                tracing::error!(%error, task_id = %task.id, "load provider grant teams failed");
+                true
+            })?
+            .into_iter()
+            .map(|team| team.id)
+            .collect::<Vec<_>>();
+    let request_for = |principal_type, principal_id| AuthorizationRequest {
+        principal: Principal {
+            principal_type,
+            id: Some(principal_id),
+        },
+        action: Action::new(Action::CREDENTIAL_USE),
+        resource: Resource {
+            resource_type: ResourceType::new(ResourceType::PROVIDER_IDENTITY),
+            id: Some(runtime.id),
+            workspace_id: runtime.workspace_id,
+            owner_id: Some(owner_id),
+            attributes: json!({
+                "private": true,
+                "provider": runtime.provider,
+                "provider_action": "provider.invoke",
+                "model": model,
+            }),
+        },
+        context: AuthorizationContext {
+            workspace_role: Some(workspace_role),
+            on_behalf_of_user_id: Some(originator),
+            via_agent_id: Some(task.agent_id),
+            device_id: Some(runtime.id),
+            task_id: Some(task.id),
+            team_ids: team_ids.clone(),
+            ..Default::default()
+        },
+        delegation_chain: Vec::new(),
+    };
+    let user_decision = state
+        .authorization
+        .authorize(request_for(PrincipalType::User, originator))
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, task_id = %task.id, "provider authorization failed closed");
+            true
+        })?;
+    let agent_decision = if originator == owner_id {
+        None
+    } else {
+        Some(
+            state
+                .authorization
+                .authorize(request_for(PrincipalType::AgentDefinition, task.agent_id))
+                .await
+                .map_err(|error| {
+                    tracing::error!(%error, task_id = %task.id, "agent provider authorization failed closed");
+                    true
+                })?,
+        )
+    };
+    let decisions = std::iter::once(&user_decision)
+        .chain(agent_decision.iter())
+        .collect::<Vec<_>>();
+    let explicit_deny = decisions
+        .iter()
+        .any(|decision| decision.reason == "matched explicit deny grant");
+    let approval_required = decisions
+        .iter()
+        .any(|decision| decision.effect == patchbay_authorization::DecisionEffect::RequireApproval);
+    let allowed = decisions.iter().any(|decision| decision.is_allowed());
+    if explicit_deny || approval_required || !allowed {
+        let reason = if explicit_deny {
+            "Provider access was explicitly denied."
+        } else if approval_required {
+            "Provider access requires approval."
+        } else {
+            "The provider owner has not authorized this use."
+        };
+        if let Err(error) = state
+            .tasks
+            .cancel_task_with_reason(task.id, reason, "authorization_denied")
+            .await
+        {
+            tracing::error!(%error, task_id = %task.id, "settle provider authorization denial failed");
+        }
+        return Err(false);
+    }
+
+    let mut grant_ids = decisions
+        .iter()
+        .flat_map(|decision| decision.matched_grants.iter().copied())
+        .collect::<Vec<_>>();
+    grant_ids.sort_unstable();
+    grant_ids.dedup();
+    let mut expires_at = Utc::now() + chrono::Duration::hours(2);
+    let mut max_tokens: Option<u64> = None;
+    let mut has_unbounded_grant = false;
+    if originator != owner_id {
+        let rows = sqlx::query(
+            r#"SELECT id, conditions, expires_at
+FROM authorization_grant
+WHERE id = ANY($1::uuid[]) AND effect = 'allow' AND revoked_at IS NULL
+  AND (expires_at IS NULL OR expires_at > now())"#,
+        )
+        .bind(&grant_ids)
+        .fetch_all(&state.pool)
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, task_id = %task.id, "load matched provider grants failed");
+            true
+        })?;
+        let mut eligible_ids = Vec::new();
+        for row in rows {
+            let conditions: Value = row.try_get("conditions").map_err(|_| true)?;
+            if !provider_grant_applies_to_task(
+                &conditions,
+                task.id,
+                task.delegated_from_task_id.is_some(),
+            ) {
+                continue;
+            }
+            eligible_ids.push(row.try_get::<Uuid, _>("id").map_err(|_| true)?);
+            merge_provider_grant_budget(&mut max_tokens, &mut has_unbounded_grant, &conditions);
+            if let Some(grant_expiry) = row
+                .try_get::<Option<chrono::DateTime<Utc>>, _>("expires_at")
+                .map_err(|_| true)?
+            {
+                expires_at = expires_at.min(grant_expiry);
+            }
+        }
+        if eligible_ids.is_empty() {
+            let reason = "Delegated tasks require a provider grant bound to that exact task.";
+            let _ = state
+                .tasks
+                .cancel_task_with_reason(task.id, reason, "authorization_denied")
+                .await;
+            return Err(false);
+        }
+        grant_ids = eligible_ids;
+    }
+    Ok(json!({
+        "provider": runtime.provider,
+        "runtime_id": runtime.id,
+        "device_id": runtime.id,
+        "owner_user_id": owner_id,
+        "grantee_user_id": originator,
+        "agent_id": task.agent_id,
+        "task_id": task.id,
+        "action": "provider.invoke",
+        "models": if model.is_empty() { Vec::<String>::new() } else { vec![model] },
+        "max_tokens": if has_unbounded_grant { None } else { max_tokens },
+        "expires_at": expires_at,
+        "grant_ids": grant_ids,
+    }))
+}
+
+fn provider_uses_credential_broker(provider: &str) -> bool {
+    matches!(provider, "codex" | "claude")
+}
+
+fn merge_provider_grant_budget(
+    max_tokens: &mut Option<u64>,
+    has_unbounded_grant: &mut bool,
+    conditions: &Value,
+) {
+    match conditions.get("max_tokens").and_then(Value::as_u64) {
+        Some(value) => {
+            *max_tokens = Some(max_tokens.map_or(value, |current| current.max(value)));
+        }
+        None => *has_unbounded_grant = true,
+    }
+}
+
+fn provider_grant_applies_to_task(conditions: &Value, task_id: Uuid, delegated: bool) -> bool {
+    !delegated
+        || conditions
+            .get("task_id")
+            .and_then(Value::as_str)
+            .and_then(|value| Uuid::parse_str(value).ok())
+            == Some(task_id)
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn finalize_claim_enriched_full(
     state: &DaemonClaimServices,
@@ -2054,15 +2277,138 @@ async fn finalize_claim_enriched_full(
     owner_id: Uuid,
     built: &crate::claim_response::BuiltClaim,
     runtime: Option<&AgentRuntime>,
-) -> Result<(String, Option<String>, Vec<Uuid>), bool> {
+) -> Result<(String, Option<String>, Vec<Uuid>, Value), bool> {
     let token_str = patchbay_auth::jwt::generate_agent_task_token().map_err(|_| false)?;
-    let expires = chrono::Utc::now() + chrono::Duration::hours(24);
+    // Capability leases are deliberately much shorter than the historical
+    // Two-hour capability lease. Terminal-state revocation normally closes it
+    // earlier; a re-dispatch mints a new claim-fenced lease.
+    let expires = chrono::Utc::now() + chrono::Duration::hours(2);
     let workspace_id = built
         .payload
         .get("workspace_id")
         .and_then(|v| v.as_str())
         .and_then(|s| Uuid::parse_str(s).ok())
         .ok_or(false)?;
+
+    let Some(originator) = task.originator_user_id else {
+        tracing::warn!(
+            task_id = %task.id,
+            "capability lease issuance denied because the task has no on-behalf user"
+        );
+        if let Err(error) = state
+            .tasks
+            .cancel_task_with_reason(
+                task.id,
+                "Task capability issuance requires an initiating user.",
+                "authorization_denied",
+            )
+            .await
+        {
+            tracing::error!(%error, task_id = %task.id, "failed to settle unattributed task");
+        }
+        return Err(false);
+    };
+
+    let provider_authorization = if let Some(runtime) = runtime {
+        let workspace_role =
+            member::get_member_by_user_and_workspace(&state.pool, originator, workspace_id)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|membership| match membership.role.as_str() {
+                    "owner" => Some(WorkspaceRole::Owner),
+                    "admin" => Some(WorkspaceRole::Admin),
+                    "member" => Some(WorkspaceRole::Member),
+                    _ => None,
+                });
+        let Some(workspace_role) = workspace_role else {
+            tracing::warn!(
+                task_id = %task.id,
+                originator_user_id = %originator,
+                "runtime capability issuance denied because the initiating user is not a current workspace member"
+            );
+            if let Err(error) = state
+                .tasks
+                .cancel_task_with_reason(
+                    task.id,
+                    "The initiating user is no longer a member of this workspace.",
+                    "authorization_denied",
+                )
+                .await
+            {
+                tracing::error!(%error, task_id = %task.id, "failed to settle removed-member task");
+            }
+            return Err(false);
+        };
+        let provider_authorization = authorize_provider_identity_for_claim(
+            state,
+            task,
+            built,
+            runtime,
+            originator,
+            owner_id,
+            workspace_role,
+        )
+        .await?;
+        let runtime_decision = state
+            .authorization
+            .authorize(AuthorizationRequest {
+                principal: Principal {
+                    principal_type: PrincipalType::User,
+                    id: Some(originator),
+                },
+                action: Action::new(Action::RUNTIME_USE),
+                resource: Resource {
+                    resource_type: ResourceType::new(ResourceType::RUNTIME),
+                    id: Some(runtime.id),
+                    workspace_id,
+                    owner_id: runtime.owner_id,
+                    attributes: json!({
+                        "private": runtime.visibility != "public",
+                        "local_device": runtime.runtime_mode == "local",
+                        "brokered_provider": originator != owner_id
+                            && !provider_authorization.is_null(),
+                    }),
+                },
+                context: AuthorizationContext {
+                    workspace_role: Some(workspace_role),
+                    on_behalf_of_user_id: Some(originator),
+                    via_agent_id: Some(task.agent_id),
+                    device_id: Some(runtime.id),
+                    task_id: Some(task.id),
+                    ..Default::default()
+                },
+                delegation_chain: Vec::new(),
+            })
+            .await
+            .map_err(|error| {
+                tracing::error!(%error, task_id = %task.id, runtime_id = %runtime.id, "runtime capability issuance failed closed");
+                true
+            })?;
+        if !runtime_decision.is_allowed() {
+            tracing::warn!(
+                task_id = %task.id,
+                runtime_id = %runtime.id,
+                originator_user_id = ?originator,
+                "runtime capability issuance denied"
+            );
+            if let Err(error) = state
+                .tasks
+                .cancel_task_with_reason(
+                    task.id,
+                    "The initiating user is not authorized to use this Runtime.",
+                    "authorization_denied",
+                )
+                .await
+            {
+                tracing::error!(%error, task_id = %task.id, "failed to settle runtime authorization denial");
+            }
+            return Err(false);
+        }
+        provider_authorization
+    } else {
+        Value::Null
+    };
 
     // Both Remote MCP brokers and plugin hook tools call daemon-authenticated
     // endpoints. The raw token rides only in this response; its hash commits
@@ -2109,8 +2455,18 @@ async fn finalize_claim_enriched_full(
                 task_id: task.id,
                 agent_id: task.agent_id,
                 workspace_id,
-                user_id: owner_id,
+                // Legacy workspace guards still require x-user-id, but that
+                // compatibility projection must never be the Agent definition
+                // owner. Bind it only to the initiating human; unattributed
+                // tasks were denied and settled before lease creation.
+                user_id: originator,
                 expires_at: Some(expires),
+                scope: patchbay_service::task_service::root_task_capability_scope(task),
+                parent_task_id: task.delegated_from_task_id,
+                claim_dispatched_at: task.dispatched_at,
+                delegation_fence: patchbay_service::task_service::task_claim_fence(task),
+                on_behalf_of_user_id: task.originator_user_id,
+                device_id: task.runtime_id,
             },
             daemon_token,
             built.delivered_comment_ids.clone(),
@@ -2118,7 +2474,26 @@ async fn finalize_claim_enriched_full(
         )
         .await;
     match receipt {
-        Ok(receipt) => Ok((token_str, raw_daemon_token, receipt)),
+        Ok(receipt) => Ok((token_str, raw_daemon_token, receipt, provider_authorization)),
+        Err(patchbay_service::task_service::TaskServiceError::CapabilityLeaseAlreadyFinalized) => {
+            tracing::warn!(task_id = %task.id, "claim finalization replay lost the immutable lease fence");
+            Err(false)
+        }
+        Err(patchbay_service::task_service::TaskServiceError::CapabilityLeaseIssuanceDenied) => {
+            tracing::warn!(task_id = %task.id, "claim finalization rejected a widened delegation boundary");
+            if let Err(error) = state
+                .tasks
+                .cancel_task_with_reason(
+                    task.id,
+                    "The delegated capability exceeds its parent task boundary.",
+                    "authorization_denied",
+                )
+                .await
+            {
+                tracing::error!(%error, task_id = %task.id, "failed to settle rejected delegated capability");
+            }
+            Err(false)
+        }
         Err(e) => {
             tracing::error!(error = %e, task_id = %task.id, "claim finalization failed");
             Err(true)
@@ -2143,7 +2518,7 @@ async fn finalize_claim_enriched_with_runtime(
     owner_id: Uuid,
     built: &crate::claim_response::BuiltClaim,
     runtime: Option<&AgentRuntime>,
-) -> Result<(String, Option<String>, Vec<Uuid>), bool> {
+) -> Result<(String, Option<String>, Vec<Uuid>, Value), bool> {
     finalize_claim_enriched_full(state, task, owner_id, built, runtime).await
 }
 
@@ -2260,10 +2635,13 @@ async fn claim_task_by_runtime(
     match finalize_claim_enriched_with_runtime(&claim_services, &task, owner, &built, Some(&rt))
         .await
     {
-        Ok((token, remote_mcp_token, receipt)) => {
+        Ok((token, remote_mcp_token, receipt, provider_authorization)) => {
             let mut payload = built.payload;
             if let Some(obj) = payload.as_object_mut() {
                 set_claim_tokens(obj, &token, remote_mcp_token.as_deref(), &receipt);
+                if !provider_authorization.is_null() {
+                    obj.insert("provider_authorization".into(), provider_authorization);
+                }
                 insert_delivered_comment_ids(obj, built.delivered_comment_ids.clone());
             }
             Json(json!({ "task": payload })).into_response()
@@ -2653,7 +3031,9 @@ async fn complete_task(
 }
 
 async fn revoke_tokens_best_effort(state: &HandlerState, task_id: Uuid) {
-    if let Err(e) = task_token::delete_task_tokens_by_task(&state.pool, task_id).await {
+    if let Err(e) =
+        task_token::revoke_task_tokens_by_task(&state.pool, task_id, "task_completed").await
+    {
         tracing::warn!(error = %e, task_id = %task_id, "failed to revoke task tokens");
     }
 }
@@ -4390,6 +4770,56 @@ fn plugin_error_response(err: &patchbay_service::plugin::PluginError, fallback: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn delegated_provider_grant_requires_exact_task_binding() {
+        let task_id = Uuid::now_v7();
+        assert!(!provider_grant_applies_to_task(&json!({}), task_id, true));
+        assert!(!provider_grant_applies_to_task(
+            &json!({"task_id": Uuid::now_v7()}),
+            task_id,
+            true,
+        ));
+        assert!(provider_grant_applies_to_task(
+            &json!({"task_id": task_id}),
+            task_id,
+            true,
+        ));
+        assert!(provider_grant_applies_to_task(&json!({}), task_id, false));
+    }
+
+    #[test]
+    fn unsupported_provider_execution_requires_a_credential_broker() {
+        assert!(provider_uses_credential_broker("codex"));
+        assert!(provider_uses_credential_broker("claude"));
+        assert!(!provider_uses_credential_broker("cursor"));
+        assert!(!provider_uses_credential_broker("copilot"));
+    }
+
+    #[test]
+    fn provider_grant_budget_keeps_independent_alternatives() {
+        let mut max_tokens = None;
+        let mut has_unbounded_grant = false;
+        merge_provider_grant_budget(
+            &mut max_tokens,
+            &mut has_unbounded_grant,
+            &json!({"max_tokens": 100}),
+        );
+        merge_provider_grant_budget(
+            &mut max_tokens,
+            &mut has_unbounded_grant,
+            &json!({"max_tokens": 1_000}),
+        );
+        assert_eq!(max_tokens, Some(1_000));
+        assert!(!has_unbounded_grant);
+
+        merge_provider_grant_budget(
+            &mut max_tokens,
+            &mut has_unbounded_grant,
+            &json!({"models": ["gpt-5.6-sol"]}),
+        );
+        assert!(has_unbounded_grant);
+    }
 
     fn lazy_test_state() -> HandlerState {
         let pool = sqlx::postgres::PgPoolOptions::new()

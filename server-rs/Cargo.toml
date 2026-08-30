@@ -4,6 +4,7 @@ members = [
     "crates/patchbay-agent",
     "crates/patchbay-analytics",
     "crates/patchbay-auth",
+    "crates/patchbay-authorization",
     "crates/patchbay-channel",
     "crates/patchbay-daemon",
     "crates/patchbay-channel-engine",

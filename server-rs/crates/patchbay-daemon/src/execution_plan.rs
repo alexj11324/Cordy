@@ -8,6 +8,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::path::Path;
 use std::time::Duration;
 
 use patchbay_agent::ExecOptions;
@@ -444,6 +445,10 @@ impl ProviderExecutionPlan {
         &self.prepare.task
     }
 
+    pub fn provider_source_home(&self) -> &str {
+        &self.prepare.hermes_source_home
+    }
+
     /// The exact registered target selected before preparation. In particular,
     /// custom profile identity must survive until the backend is constructed;
     /// provider name alone is insufficient to select the right executable.
@@ -546,6 +551,25 @@ impl ProviderExecutionPlan {
             environment.patchbay_config_root.clone(),
         );
         insert_nonempty(&mut values, "CODEX_HOME", &environment.codex_home);
+        // Provider tools receive a task-private home on every platform. The
+        // real daemon user's HOME/USERPROFILE and credential sockets are not
+        // part of the task execution contract.
+        values.insert("HOME".to_string(), environment.root_dir.clone());
+        values.insert("USERPROFILE".to_string(), environment.root_dir.clone());
+        values.insert(
+            "XDG_CONFIG_HOME".to_string(),
+            Path::new(&environment.root_dir)
+                .join(".config")
+                .to_string_lossy()
+                .into_owned(),
+        );
+        values.insert(
+            "XDG_CACHE_HOME".to_string(),
+            Path::new(&environment.root_dir)
+                .join(".cache")
+                .to_string_lossy()
+                .into_owned(),
+        );
         insert_nonempty(&mut values, "CURSOR_DATA_DIR", &environment.cursor_data_dir);
         insert_nonempty(
             &mut values,
@@ -775,6 +799,12 @@ fn sanitize_custom_env(
 pub(crate) fn blocked_custom_env_key(key: &str) -> bool {
     let upper = key.to_ascii_uppercase();
     upper.starts_with("PATCHBAY_")
+        || upper.contains("KEY")
+        || upper.contains("SECRET")
+        || upper.contains("TOKEN")
+        || upper.contains("PASSWORD")
+        || upper.contains("CREDENTIAL")
+        || upper.contains("AUTH")
         || matches!(
             upper.as_str(),
             "HOME"
@@ -1064,7 +1094,7 @@ mod tests {
                 .any(|value| value == "daemon-broker-secret" || value == "owner-secret"),
             "daemon or blocked owner credentials entered the child environment"
         );
-        assert_eq!(bound.child_env.get("API_KEY"), Some("custom-secret"));
+        assert_eq!(bound.child_env.get("API_KEY"), None);
         assert_eq!(bound.child_env.get("PATH"), Some("/patchbay/bin:/usr/bin"));
         assert_eq!(bound.options.cwd, "/workspaces/ws/task/workdir");
         assert_eq!(bound.options.model, "gpt-5");

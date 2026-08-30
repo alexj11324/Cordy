@@ -6,6 +6,7 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use patchbay_authorization::Action;
 use patchbay_db::models::{Comment, CommentReaction};
 use patchbay_db::queries::{activity, agent, attachment, comment, issue as issue_q, reaction};
 use patchbay_middleware::workspace::WorkspaceContext;
@@ -86,6 +87,21 @@ async fn preview_triggers(
         Ok(issue) => issue,
         Err(response) => return response,
     };
+    if !crate::issue::task_project_resource_allows(
+        &state,
+        &headers,
+        issue.workspace_id,
+        Some(issue.id),
+        true,
+        Action::RESOURCE_USE,
+    )
+    .await
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task capability does not allow commenting on this issue",
+        );
+    }
     let content = clean_content(&request.content);
     if content.is_empty() {
         return Json(json!({ "agents": [], "blocked": [] })).into_response();
@@ -138,6 +154,7 @@ async fn preview_triggers(
         actor_type: &actor_type,
         actor_id,
         originator_user_id,
+        task_authorization: crate::issue::TaskAuthorizationContext::from_headers(&headers),
         exclude_trigger_comment_id,
     })
     .await;
@@ -175,6 +192,21 @@ async fn create(
         Ok(issue) => issue,
         Err(response) => return response,
     };
+    if !crate::issue::task_project_resource_allows(
+        &state,
+        &headers,
+        issue.workspace_id,
+        Some(issue.id),
+        true,
+        Action::RESOURCE_USE,
+    )
+    .await
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task capability does not allow commenting on this issue",
+        );
+    }
     let content = clean_content(&request.content);
     if content.is_empty() {
         return error_response(StatusCode::BAD_REQUEST, "content is required");
@@ -337,6 +369,7 @@ async fn create(
         actor_type: &author_type,
         actor_id: author_id,
         originator_user_id,
+        task_authorization: crate::issue::TaskAuthorizationContext::from_headers(&headers),
         exclude_trigger_comment_id: Some(id),
     })
     .await;
@@ -539,6 +572,7 @@ async fn update(
             actor_type: &actor_type,
             actor_id,
             originator_user_id,
+            task_authorization: crate::issue::TaskAuthorizationContext::from_headers(&headers),
             exclude_trigger_comment_id: Some(current.id),
         })
         .await;

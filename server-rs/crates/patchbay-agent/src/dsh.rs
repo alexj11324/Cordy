@@ -19,6 +19,7 @@ use crate::command::RuntimeCommand;
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
+use crate::env::configure_child_env;
 use crate::mcp::managed_object;
 use crate::model::{Catalog, CatalogCache, Model, ModelDiscoveryCacheKey, ModelThinking};
 use crate::process::OwnedProcessTree;
@@ -149,8 +150,8 @@ impl Backend for DshBackend {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .envs(&self.config.env)
             .kill_on_drop(false);
+        configure_child_env(&mut command, &self.config.env);
         if !options.cwd.is_empty() {
             command.current_dir(&options.cwd);
         }
@@ -768,8 +769,8 @@ async fn discover_once(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
-        .envs(&config.env)
         .kill_on_drop(false);
+    configure_child_env(&mut command, &config.env);
     let mut tree = OwnedProcessTree::spawn(&mut command).await?;
     let stdout = tree
         .child_mut()

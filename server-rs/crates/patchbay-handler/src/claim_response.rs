@@ -14,7 +14,7 @@ use patchbay_db::models::{AgentRuntime, AgentTaskQueue};
 use patchbay_db::queries::{
     agent as agent_q, agent as agent_queries, autopilot as autopilot_q, chat as chat_q,
     comment as comment_q, issue as issue_q, project as project_q, team as team_q, user as user_q,
-    workspace as workspace_q, workspace_mcp as ws_mcp_q,
+    workspace as workspace_q,
 };
 use patchbay_protocol::{
     DAEMON_CAPABILITY_COALESCED_COMMENTS_V1, DAEMON_CAPABILITY_LOCAL_WORKTREE_V1,
@@ -27,7 +27,6 @@ use crate::claim_comments::{
 };
 use crate::daemon::DaemonClaimServices;
 use crate::error::error_response;
-use crate::mcp_merge::{merge_mcp_overlay, resolve_agent_mcp_config, WorkspaceMcpBinding};
 use crate::team_briefing::build_team_leader_briefing;
 use crate::timefmt::rfc3339;
 
@@ -151,6 +150,24 @@ fn rerun_source_matches_task_scope(task: &AgentTaskQueue, source: &AgentTaskQueu
     false
 }
 
+fn strip_unleased_execution_resume(payload: &mut Map<String, Value>) {
+    // A path or provider session is an execution capability, not harmless
+    // continuity metadata. Until Directory/session leases exist, a task claim
+    // must start fresh even when a stored task, rerun, chat, or Message Bus
+    // anchor contains an owner/caller worktree or provider session.
+    for key in [
+        "work_dir",
+        "relative_work_dir",
+        "durable_work_dir",
+        "relative_durable_work_dir",
+        "branch_name",
+        "prior_work_dir",
+        "prior_session_id",
+    ] {
+        payload.remove(key);
+    }
+}
+
 /// Go trailingUserMessages: the run of user messages after the last assistant
 /// message — the set the agent has NOT yet replied to. Legacy channel tasks stop
 /// at the first unexpired media marker.
@@ -176,21 +193,6 @@ fn trailing_user_messages(
     msgs
 }
 
-fn parse_runtime_connected_apps_for_claim(raw: Option<&Value>) -> Option<Value> {
-    let raw = raw?;
-    if raw.is_null() {
-        return None;
-    }
-    // Shape-checked passthrough: ConnectedApp serializes verbatim from the row.
-    match raw.as_array() {
-        Some(_) => Some(raw.clone()),
-        None => {
-            tracing::warn!("daemon claim: unmarshal runtime_connected_apps failed");
-            None
-        }
-    }
-}
-
 fn disabled_runtime_skills_for(raw: &Value, runtime_id: &str, provider: &str) -> Vec<Value> {
     let empty = vec![];
     let all = raw.as_array().unwrap_or(&empty);
@@ -203,53 +205,6 @@ fn disabled_runtime_skills_for(raw: &Value, runtime_id: &str, provider: &str) ->
         .collect()
 }
 
-fn github_repo_refs(resources: &[Value]) -> Vec<Value> {
-    let mut out = Vec::new();
-    for row in resources {
-        if row.get("resource_type").and_then(|v| v.as_str()) != Some("github_repo") {
-            continue;
-        }
-        let r#ref = row.get("resource_ref").cloned().unwrap_or(Value::Null);
-        let url = r#ref.get("url").and_then(|v| v.as_str()).unwrap_or("");
-        if url.is_empty() {
-            continue;
-        }
-        let mut repo = json!({ "url": url });
-        if let Some(r) = r#ref
-            .get("ref")
-            .and_then(|v| v.as_str())
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-        {
-            repo["ref"] = Value::String(r.to_string());
-        }
-        out.push(repo);
-    }
-    out
-}
-
-async fn list_project_resources(state: &DaemonClaimServices, project_id: Uuid) -> Vec<Value> {
-    match patchbay_db::queries::project_resource::list_project_resources(&state.pool, project_id)
-        .await
-    {
-        Ok(rows) => rows
-            .into_iter()
-            .map(|row| {
-                json!({
-                    "id": row.id.to_string(),
-                    "resource_type": row.resource_type,
-                    "resource_ref": row.resource_ref,
-                    "label": row.label.unwrap_or_default(),
-                })
-            })
-            .collect(),
-        Err(e) => {
-            tracing::warn!(error = %e, project_id = %project_id, "claim: load project resources failed");
-            Vec::new()
-        }
-    }
-}
-
 /// Applies project title/description/resources to the payload and returns any
 /// github_repo lifts (Go's inline project-resources block).
 async fn apply_project_context(
@@ -257,50 +212,25 @@ async fn apply_project_context(
     payload: &mut Map<String, Value>,
     project_id: Uuid,
 ) -> Vec<Value> {
-    let mut project_repos = Vec::new();
     if let Ok(Some(proj)) = project_q::get_project(&state.pool, project_id).await {
         payload.insert("project_title".into(), Value::String(proj.title.clone()));
         if let Some(desc) = &proj.description {
             payload.insert("project_description".into(), Value::String(desc.clone()));
         }
     }
-    let rows = list_project_resources(state, project_id).await;
-    if !rows.is_empty() {
-        let mut resources = Vec::with_capacity(rows.len());
-        for row in &rows {
-            let mut entry = json!({
-                "id": row["id"],
-                "resource_type": row["resource_type"],
-                "resource_ref": if row["resource_ref"].as_str().is_some() || row["resource_ref"].is_object() { row["resource_ref"].clone() } else { json!({}) },
-            });
-            if let Some(label) = row
-                .get("label")
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.is_empty())
-            {
-                entry["label"] = Value::String(label.to_string());
-            }
-            resources.push(entry);
-        }
-        payload.insert("project_resources".into(), Value::Array(resources));
-        project_repos = github_repo_refs(&rows);
-    }
-    project_repos
+    // Local directories and repository URLs are execution capabilities, not
+    // project metadata. Phase 1 has no lease-bound Directory/Git credential
+    // broker, so a task claim never receives them. This prevents a shared
+    // Agent from turning its owner's daemon HOME, checkout, or credential
+    // helper into ambient caller authority.
+    Vec::new()
 }
 
 async fn workspace_repos_or(
-    state: &DaemonClaimServices,
-    workspace_id: Uuid,
+    _state: &DaemonClaimServices,
+    _workspace_id: Uuid,
     fallback: Value,
 ) -> Value {
-    if let Ok(Some(ws)) = workspace_q::get_workspace(&state.pool, workspace_id).await {
-        let repos = ws.repos;
-        if let Some(list) = repos.as_array() {
-            if !list.is_empty() {
-                return repos.clone();
-            }
-        }
-    }
     fallback
 }
 
@@ -353,43 +283,11 @@ pub(crate) async fn build_claimed_task_response(
     // delivered_comment_ids array.
     let mut delivered_comments: Vec<CoalescedCommentData> = Vec::new();
 
-    // Agent-trigger plugin hooks ride the claim as tools. Failures degrade to
-    // no tools rather than failing the claim.
-    if let Ok(workspace_uuid) = Uuid::parse_str(runtime_workspace_id) {
-        if let Ok(tools) =
-            patchbay_service::plugin_agent_tools::agent_hook_tools(&state.plugins, workspace_uuid)
-                .await
-        {
-            if let Ok(t) = serde_json::to_value(&tools) {
-                obj.insert("plugin_hook_tools".into(), t);
-            }
-        }
-        if let Ok(connections) = patchbay_service::plugin_mcp_transport::agent_mcp_connections(
-            &state.plugins.pool,
-            workspace_uuid,
-        )
-        .await
-        {
-            if !connections.is_empty() {
-                if let Ok(conns) = serde_json::to_value(&connections) {
-                    let existing = obj
-                        .entry("remote_mcp_connections")
-                        .or_insert_with(|| Value::Array(Vec::new()));
-                    if let Value::Array(arr) = existing {
-                        if let Value::Array(mut incoming) = conns {
-                            arr.append(&mut incoming);
-                        }
-                    }
-                }
-            }
-        }
-
-        if let Some(apps) =
-            parse_runtime_connected_apps_for_claim(task.runtime_connected_apps.as_ref())
-        {
-            obj.insert("connected_apps".into(), apps);
-        }
-    }
+    // Phase 1 never projects workspace plugin tools, plugin MCP credentials,
+    // or connected-app bindings into task claims. Those stores are
+    // workspace/owner scoped and have no lease-bound credential broker yet;
+    // advertising them here would turn agent.invoke into implicit tool and
+    // credential authority.
 
     // Load the task agent with fresh data (name + skills + env/args/mcp).
     let agent = match agent_q::get_agent(&state.pool, task.agent_id).await {
@@ -428,68 +326,13 @@ pub(crate) async fn build_claimed_task_response(
         }
     };
 
-    let custom_env: Value = agent.custom_env.clone();
-    let custom_args: Vec<String> = agent
-        .custom_args
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|v| v.as_str().map(str::to_string))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    // mcp_config: agent column → bound enabled workspace servers → per-task overlay.
-    let mut mcp_config = agent.mcp_config.clone();
-    match ws_mcp_q::list_enabled_agent_mcp_servers(&state.pool, agent.id).await {
-        Err(e) => {
-            tracing::warn!(
-                error = %e,
-                task_id = %task.id,
-                agent_id = %agent.id,
-                "daemon claim: load agent mcp servers failed; using agent mcp_config"
-            );
-        }
-        Ok(bound) if !bound.is_empty() => {
-            let bindings: Vec<WorkspaceMcpBinding> = bound
-                .into_iter()
-                .map(|server| WorkspaceMcpBinding {
-                    name: server.name,
-                    config: server.config.unwrap_or(Value::Null),
-                })
-                .collect();
-            match resolve_agent_mcp_config(&bindings, mcp_config.as_ref()) {
-                Ok(resolved) => mcp_config = resolved,
-                Err(_) => {
-                    tracing::warn!(
-                        task_id = %task.id,
-                        "daemon claim: resolve agent mcp servers failed; falling back to agent mcp_config"
-                    );
-                }
-            }
-        }
-        Ok(_) => {}
-    }
-    if let Some(overlay) = task.runtime_mcp_overlay.as_ref().filter(|o| !o.is_null()) {
-        match merge_mcp_overlay(mcp_config.as_ref(), Some(overlay)) {
-            Ok(merged) => mcp_config = merged,
-            Err(_) => {
-                tracing::warn!(
-                    task_id = %task.id,
-                    "daemon claim: merge runtime_mcp_overlay failed; falling back to agent mcp_config"
-                );
-            }
-        }
-    }
-
-    // runtime_config: forward only non-empty payloads.
-    let runtime_config = (!agent.runtime_config.is_null()
-        && agent
-            .runtime_config
-            .as_object()
-            .map(|m| !m.is_empty())
-            .unwrap_or(false))
-    .then(|| agent.runtime_config.clone());
+    // Phase 1 intentionally ignores persisted per-task overlays, including
+    // rows queued before this deployment. The legacy Composio overlay embeds
+    // a server-wide long-lived API key and was computed before capability
+    // lease issuance, so forwarding it would bypass credential.use and lease
+    // revocation. A later broker may restore overlays only with a short-lived,
+    // lease-bound credential.
+    let _ = capability_scoped_task_overlay(task.runtime_mcp_overlay.as_ref());
 
     let disabled_skills = disabled_runtime_skills_for(
         &agent.disabled_runtime_skills,
@@ -504,18 +347,6 @@ pub(crate) async fn build_claimed_task_response(
         "instructions".into(),
         Value::String(agent.instructions.clone()),
     );
-    match custom_env {
-        Value::Object(env_map) if !env_map.is_empty() => {
-            agent_obj.insert("custom_env".into(), Value::Object(env_map));
-        }
-        _ => {}
-    }
-    if !custom_args.is_empty() {
-        agent_obj.insert("custom_args".into(), json!(custom_args));
-    }
-    if let Some(cfg) = &mcp_config {
-        agent_obj.insert("mcp_config".into(), cfg.clone());
-    }
     set_if_not_empty(
         &mut agent_obj,
         "model",
@@ -531,9 +362,6 @@ pub(crate) async fn build_claimed_task_response(
         "service_tier",
         agent.service_tier.as_deref().unwrap_or(""),
     );
-    if let Some(rc) = &runtime_config {
-        agent_obj.insert("runtime_config".into(), rc.clone());
-    }
     if !disabled_skills.is_empty() {
         agent_obj.insert(
             "disabled_runtime_skills".into(),
@@ -599,14 +427,16 @@ pub(crate) async fn build_claimed_task_response(
         .await);
     }
 
-    // Runtime owner profile description for "## Requesting User" injection.
-    if let Some(owner_id) = runtime.owner_id {
-        if let Ok(Some(owner)) = user_q::get_user(&state.pool, owner_id).await {
-            set_if_not_empty(obj, "requesting_user_name", &owner.name);
-            if !owner.profile_description.is_empty() {
+    // The requesting user is the task's on-behalf originator, never the
+    // Runtime or Agent owner. Owner profile text here would be both private
+    // data disclosure and an instruction-confusion path for shared Agents.
+    if let Some(requesting_user_id) = task.originator_user_id {
+        if let Ok(Some(requesting_user)) = user_q::get_user(&state.pool, requesting_user_id).await {
+            set_if_not_empty(obj, "requesting_user_name", &requesting_user.name);
+            if !requesting_user.profile_description.is_empty() {
                 obj.insert(
                     "requesting_user_profile_description".into(),
-                    Value::String(owner.profile_description.clone()),
+                    Value::String(requesting_user.profile_description.clone()),
                 );
             }
         }
@@ -1513,6 +1343,8 @@ pub(crate) async fn build_claimed_task_response(
         );
     }
 
+    strip_unleased_execution_resume(obj);
+
     let _ = header::CACHE_CONTROL; // keep import surface minimal
 
     Ok(BuiltClaim {
@@ -1520,6 +1352,10 @@ pub(crate) async fn build_claimed_task_response(
         delivered_comment_ids: comment_data_ids(&delivered_comments),
         comment_backed,
     })
+}
+
+fn capability_scoped_task_overlay(_persisted: Option<&Value>) -> Option<&Value> {
+    None
 }
 
 fn chat_session_resume_fallback_needed(prior_session_id: &str, prior_work_dir: &str) -> bool {
@@ -1602,7 +1438,10 @@ async fn fail_claimed_task_before_launch(
 
 #[cfg(test)]
 mod tests {
-    use super::explicit_goal_objective;
+    use super::{
+        capability_scoped_task_overlay, explicit_goal_objective, strip_unleased_execution_resume,
+    };
+    use serde_json::json;
 
     #[test]
     fn goal_directive_is_explicit_and_line_oriented() {
@@ -1618,5 +1457,49 @@ mod tests {
         let objective = explicit_goal_objective("/GOAL").expect("goal objective");
         assert!(objective.contains("every remaining requirement"));
         assert!(objective.contains("genuinely blocked"));
+    }
+
+    #[test]
+    fn legacy_owner_composio_overlay_is_not_delivered_to_a_task() {
+        let legacy = json!({
+            "mcpServers": {
+                "composio": {
+                    "type": "http",
+                    "url": "https://mcp.example/session",
+                    "headers": {"x-api-key": "owner-platform-secret"}
+                }
+            }
+        });
+        assert!(capability_scoped_task_overlay(Some(&legacy)).is_none());
+    }
+
+    #[test]
+    fn stored_worktree_and_provider_session_are_not_delivered_to_a_task() {
+        let mut payload = json!({
+            "work_dir": "/owner/checkout",
+            "relative_work_dir": "task/worktree",
+            "durable_work_dir": "/owner/durable",
+            "relative_durable_work_dir": "durable",
+            "branch_name": "owner/private",
+            "prior_work_dir": "/owner/prior",
+            "prior_session_id": "owner-provider-session",
+            "title": "safe metadata"
+        })
+        .as_object()
+        .cloned()
+        .expect("object");
+        strip_unleased_execution_resume(&mut payload);
+        for denied in [
+            "work_dir",
+            "relative_work_dir",
+            "durable_work_dir",
+            "relative_durable_work_dir",
+            "branch_name",
+            "prior_work_dir",
+            "prior_session_id",
+        ] {
+            assert!(!payload.contains_key(denied));
+        }
+        assert_eq!(payload.get("title"), Some(&json!("safe metadata")));
     }
 }

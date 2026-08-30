@@ -394,6 +394,9 @@ impl patchbay_service::task_service::TaskWakeupNotifier for DaemonTaskWakeup {
 #[derive(Clone)]
 pub struct HandlerState {
     pub pool: sqlx::PgPool,
+    /// Shared enforcement interface. Consumers must fail closed on store or
+    /// audit errors; UI checks are never an authorization boundary.
+    pub authorization: Arc<dyn patchbay_authorization::Authorizer>,
     pub pat_cache: PatCache,
     pub daemon_token_cache: DaemonTokenCache,
     pub membership_cache: MembershipCache,
@@ -569,6 +572,9 @@ impl HandlerState {
         composio: Option<Arc<patchbay_composio::Service>>,
         business_metrics: Option<Arc<patchbay_metrics::BusinessMetrics>>,
     ) -> Self {
+        let authorization: Arc<dyn patchbay_authorization::Authorizer> = Arc::new(
+            patchbay_authorization::PostgresAuthorizer::new(pool.clone()),
+        );
         let bus = Arc::new(patchbay_events::Bus::new());
         let daemon_hub = Arc::new(patchbay_daemon::hub::DaemonHub::new());
         let daemon_notifier = Arc::new(patchbay_daemon::notifier::RelayNotifier::new(
@@ -588,11 +594,13 @@ impl HandlerState {
         task_service.wakeup = Some(Arc::downgrade(&task_wakeup));
         task_service.quick_actions = Some(llm.clone());
         task_service.feature_flags = feature_flags.clone();
-        task_service.set_composio_overlay(
-            composio
-                .as_ref()
-                .map(|service| crate::composio::task_overlay_builder(service.clone())),
-        );
+        // Phase 1 fails closed for Agent credential delegation. The current
+        // Composio overlay embeds the platform's long-lived API key in runtime
+        // configuration and is built before a task lease exists, so it cannot
+        // satisfy credential.use intersection. Human connection management
+        // remains available; task overlays stay off until a short-lived
+        // broker consumes the capability lease at dispatch.
+        task_service.set_composio_overlay(None);
         let tasks = Arc::new(task_service);
         let coordinator = patchbay_service::coordination::CoordinatorService::new(
             pool.clone(),
@@ -626,6 +634,7 @@ impl HandlerState {
         auth_verify_rate_limit.trusted_proxies = trusted_proxies;
         Self {
             pool,
+            authorization,
             pat_cache,
             daemon_token_cache: DaemonTokenCache::disabled(),
             membership_cache: MembershipCache::disabled(),
@@ -793,7 +802,9 @@ impl HandlerState {
         self
     }
 
-    /// Rebuilds the Composio HTTP service and task overlay from loaded config.
+    /// Rebuilds the human Composio HTTP service from loaded config. Task
+    /// overlays remain fail-closed until lease-bound credential brokering is
+    /// available.
     /// TOML-only deployments no longer depend on process environment after
     /// `Config::load` has already merged env overrides into `config`.
     pub fn with_composio_from_config(mut self, config: &patchbay_config::Config) -> Self {
@@ -810,9 +821,8 @@ impl HandlerState {
         match crate::composio::build_service_from_config(self.pool.clone(), config) {
             Ok(service) => {
                 let service = Arc::new(service);
-                self.composio = Some(service.clone());
-                self.tasks
-                    .set_composio_overlay(Some(crate::composio::task_overlay_builder(service)));
+                self.composio = Some(service);
+                self.tasks.set_composio_overlay(None);
             }
             Err(error) => {
                 tracing::warn!(%error, "composio disabled by incomplete configuration");
@@ -1300,7 +1310,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn production_dependencies_gate_composio_and_task_overlay() {
+    async fn production_dependencies_gate_composio_and_keep_task_overlay_disabled() {
         let _env = RestoreComposioEnv::clear();
         let build = || {
             HandlerState::new_with_production_dependencies(
@@ -1336,7 +1346,7 @@ mod tests {
         std::env::set_var("COMPOSIO_CALLBACK_BASE_URL", "https://api.example.com/");
         let configured = build();
         assert!(configured.composio.is_some());
-        assert!(configured.tasks.composio.read().unwrap().is_some());
+        assert!(configured.tasks.composio.read().unwrap().is_none());
 
         std::env::set_var("FF_COMPOSIO_MCP_APPS", "0");
         let flag_disabled = build();

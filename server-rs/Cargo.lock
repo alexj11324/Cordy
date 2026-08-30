@@ -988,6 +988,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "patchbay-authorization"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.20",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "patchbay-channel"
 version = "0.1.0"
 dependencies = [
@@ -1231,6 +1245,7 @@ dependencies = [
  "patchbay-agent",
  "patchbay-analytics",
  "patchbay-auth",
+ "patchbay-authorization",
  "patchbay-channel",
  "patchbay-composio",
  "patchbay-config",
@@ -1538,6 +1553,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "patchbay-analytics",
+ "patchbay-authorization",
  "patchbay-db",
  "patchbay-events",
  "patchbay-metrics",

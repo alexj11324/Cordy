@@ -16,6 +16,7 @@ pub mod agent_mcp;
 pub mod attachment;
 pub mod attachment_storage;
 pub mod auth;
+pub mod authorization;
 pub mod autopilot;
 pub mod autopilot_listeners;
 pub mod autopilot_webhook;
@@ -463,6 +464,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         )))
         .merge(
             runtime::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                patchbay_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
+            authorization::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
                 patchbay_middleware::workspace::require_workspace,
             )),
