@@ -44,11 +44,9 @@ return string.sub(value, separator + 1)
 const REDIS_CONSUME_ATTEMPT_SCRIPT: &str = r#"
 local value = redis.call("GET", KEYS[1])
 if not value then return "" end
-local separator = string.find(value, "|", 1, true)
-if not separator then return "" end
 if value ~= ARGV[1] then return "__mismatch__" end
 redis.call("DEL", KEYS[1])
-return string.sub(value, separator + 1)
+return "1"
 "#;
 
 #[derive(Debug)]
@@ -72,7 +70,14 @@ struct LocalGrant {
 struct LocalAttempt {
     code_challenge: String,
     started_at_ms: i64,
+    generation: String,
     expires_at: Instant,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DesktopGoogleAttempt {
+    started_at_ms: i64,
+    generation: String,
 }
 
 impl Default for DesktopHandoffTokens {
@@ -195,11 +200,14 @@ impl DesktopHandoffTokens {
         &self,
         state: &str,
         code_challenge: &str,
-    ) -> Result<Option<i64>, DesktopHandoffStoreError> {
+    ) -> Result<Option<DesktopGoogleAttempt>, DesktopHandoffStoreError> {
         let key = attempt_redis_key(state);
-        let started_at_ms = unix_epoch_ms()?;
+        let attempt = DesktopGoogleAttempt {
+            started_at_ms: unix_epoch_ms()?,
+            generation: generate_attempt_generation(),
+        };
         if let Some(connection) = self.redis.clone() {
-            let value = format!("{code_challenge}|{started_at_ms}");
+            let value = encode_attempt(code_challenge, &attempt);
             let mut connection = connection;
             let result = tokio::time::timeout(
                 REDIS_TIMEOUT,
@@ -215,7 +223,7 @@ impl DesktopHandoffTokens {
             .map_err(|_| DesktopHandoffStoreError)?
             .map_err(|_| DesktopHandoffStoreError)?;
             if result.is_some() {
-                return Ok(Some(started_at_ms));
+                return Ok(Some(attempt));
             }
             let existing = tokio::time::timeout(
                 REDIS_TIMEOUT,
@@ -236,25 +244,29 @@ impl DesktopHandoffTokens {
         let key = hash_code(state);
         if let Some(existing) = attempts.get(&key) {
             return Ok(
-                (existing.code_challenge == code_challenge).then_some(existing.started_at_ms)
+                (existing.code_challenge == code_challenge).then(|| DesktopGoogleAttempt {
+                    started_at_ms: existing.started_at_ms,
+                    generation: existing.generation.clone(),
+                }),
             );
         }
         attempts.insert(
             key,
             LocalAttempt {
                 code_challenge: code_challenge.to_string(),
-                started_at_ms,
+                started_at_ms: attempt.started_at_ms,
+                generation: attempt.generation.clone(),
                 expires_at: Instant::now() + CODE_TTL,
             },
         );
-        Ok(Some(started_at_ms))
+        Ok(Some(attempt))
     }
 
     pub async fn get_google_attempt(
         &self,
         state: &str,
         code_challenge: &str,
-    ) -> Result<Option<i64>, DesktopHandoffStoreError> {
+    ) -> Result<Option<DesktopGoogleAttempt>, DesktopHandoffStoreError> {
         if let Some(connection) = self.redis.clone() {
             let mut connection = connection;
             let existing = tokio::time::timeout(
@@ -276,18 +288,21 @@ impl DesktopHandoffTokens {
         Ok(attempts
             .get(&hash_code(state))
             .filter(|attempt| attempt.code_challenge == code_challenge)
-            .map(|attempt| attempt.started_at_ms))
+            .map(|attempt| DesktopGoogleAttempt {
+                started_at_ms: attempt.started_at_ms,
+                generation: attempt.generation.clone(),
+            }))
     }
 
     pub async fn consume_google_attempt(
         &self,
         state: &str,
         code_challenge: &str,
-        expected_started_at_ms: i64,
-    ) -> Result<Option<i64>, DesktopHandoffStoreError> {
+        expected: &DesktopGoogleAttempt,
+    ) -> Result<bool, DesktopHandoffStoreError> {
         if let Some(connection) = self.redis.clone() {
             let mut connection = connection;
-            let expected = format!("{code_challenge}|{expected_started_at_ms}");
+            let expected = encode_attempt(code_challenge, expected);
             let value = tokio::time::timeout(
                 REDIS_TIMEOUT,
                 redis::cmd("EVAL")
@@ -301,23 +316,24 @@ impl DesktopHandoffTokens {
             .map_err(|_| DesktopHandoffStoreError)?
             .map_err(|_| DesktopHandoffStoreError)?;
             if value.is_empty() || value == "__mismatch__" {
-                return Ok(None);
+                return Ok(false);
             }
-            return Ok(value.parse::<i64>().ok());
+            return Ok(value == "1");
         }
 
         let mut attempts = self.attempts.lock().unwrap_or_else(|e| e.into_inner());
         sweep_local_attempts(&mut attempts);
         let key = hash_code(state);
         let Some(attempt) = attempts.get(&key) else {
-            return Ok(None);
+            return Ok(false);
         };
         if attempt.code_challenge != code_challenge
-            || attempt.started_at_ms != expected_started_at_ms
+            || attempt.started_at_ms != expected.started_at_ms
+            || attempt.generation != expected.generation
         {
-            return Ok(None);
+            return Ok(false);
         }
-        Ok(attempts.remove(&key).map(|attempt| attempt.started_at_ms))
+        Ok(attempts.remove(&key).is_some())
     }
 }
 
@@ -328,6 +344,12 @@ fn generate_code() -> String {
         "{CODE_PREFIX}{}",
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw)
     )
+}
+
+fn generate_attempt_generation() -> String {
+    let mut raw = [0u8; 16];
+    rand::rngs::OsRng.fill_bytes(&mut raw);
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(raw)
 }
 
 fn hash_code(code: &str) -> String {
@@ -350,11 +372,25 @@ fn unix_epoch_ms() -> Result<i64, DesktopHandoffStoreError> {
     i64::try_from(millis).map_err(|_| DesktopHandoffStoreError)
 }
 
-fn parse_attempt(value: &str, code_challenge: &str) -> Option<i64> {
-    let (stored_challenge, started_at_ms) = value.split_once('|')?;
-    (stored_challenge == code_challenge)
-        .then(|| started_at_ms.parse::<i64>().ok())
-        .flatten()
+fn encode_attempt(code_challenge: &str, attempt: &DesktopGoogleAttempt) -> String {
+    format!(
+        "{code_challenge}|{}|{}",
+        attempt.started_at_ms, attempt.generation
+    )
+}
+
+fn parse_attempt(value: &str, code_challenge: &str) -> Option<DesktopGoogleAttempt> {
+    let mut parts = value.split('|');
+    let stored_challenge = parts.next()?;
+    let started_at_ms = parts.next()?.parse::<i64>().ok()?;
+    let generation = parts.next()?;
+    if stored_challenge != code_challenge || generation.is_empty() || parts.next().is_some() {
+        return None;
+    }
+    Some(DesktopGoogleAttempt {
+        started_at_ms,
+        generation: generation.to_string(),
+    })
 }
 
 fn sweep_local(issued: &mut HashMap<String, LocalGrant>) {
@@ -456,17 +492,14 @@ async fn complete_google_attempt(
             "Clerk login is not configured",
         );
     };
-    let started_at_ms = match state
+    let attempt = match state
         .desktop_handoff_tokens
         .get_google_attempt(&request.state, &request.code_challenge)
         .await
     {
-        Ok(Some(started_at_ms)) => started_at_ms,
+        Ok(Some(attempt)) => attempt,
         Ok(None) => {
-            return error_response(
-                StatusCode::CONFLICT,
-                "fresh authentication is required",
-            )
+            return error_response(StatusCode::CONFLICT, "fresh authentication is required")
         }
         Err(_) => {
             return error_response(
@@ -476,15 +509,12 @@ async fn complete_google_attempt(
         }
     };
     let identity = match verifier
-        .verify_fresh_session(token, started_at_ms)
+        .verify_fresh_session(token, attempt.started_at_ms)
         .await
     {
         Ok(identity) => identity,
         Err(crate::clerk_auth::ClerkAuthError::Invalid) => {
-            return error_response(
-                StatusCode::CONFLICT,
-                "fresh authentication is required",
-            )
+            return error_response(StatusCode::CONFLICT, "fresh authentication is required")
         }
         Err(crate::clerk_auth::ClerkAuthError::Unavailable) => {
             return error_response(
@@ -513,15 +543,11 @@ async fn complete_google_attempt(
     }
     match state
         .desktop_handoff_tokens
-        .consume_google_attempt(
-            &request.state,
-            &request.code_challenge,
-            started_at_ms,
-        )
+        .consume_google_attempt(&request.state, &request.code_challenge, &attempt)
         .await
     {
-        Ok(Some(consumed_at_ms)) if consumed_at_ms == started_at_ms => {}
-        Ok(Some(_)) | Ok(None) => {
+        Ok(true) => {}
+        Ok(false) => {
             return error_response(
                 StatusCode::CONFLICT,
                 "desktop Google OAuth attempt was already used",
@@ -616,7 +642,7 @@ mod tests {
         let store = DesktopHandoffTokens::new();
         let state = "s".repeat(43);
         let challenge = "c".repeat(43);
-        let started_at = store
+        let attempt = store
             .register_google_attempt(&state, &challenge)
             .await
             .unwrap()
@@ -627,7 +653,7 @@ mod tests {
                 .register_google_attempt(&state, &challenge)
                 .await
                 .unwrap(),
-            Some(started_at)
+            Some(attempt.clone())
         );
         assert_eq!(
             store
@@ -636,20 +662,14 @@ mod tests {
                 .unwrap(),
             None
         );
-        assert_eq!(
-            store
-                .consume_google_attempt(&state, &challenge, started_at)
-                .await
-                .unwrap(),
-            Some(started_at)
-        );
-        assert_eq!(
-            store
-                .consume_google_attempt(&state, &challenge, started_at)
-                .await
-                .unwrap(),
-            None
-        );
+        assert!(store
+            .consume_google_attempt(&state, &challenge, &attempt)
+            .await
+            .unwrap());
+        assert!(!store
+            .consume_google_attempt(&state, &challenge, &attempt)
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
@@ -657,12 +677,17 @@ mod tests {
         let store = DesktopHandoffTokens::new();
         let state = "s".repeat(43);
         let challenge = "c".repeat(43);
-        let started_at = store
+        let attempt = store
             .register_google_attempt(&state, &challenge)
             .await
             .unwrap()
             .unwrap();
-        let replacement_started_at = started_at + 1;
+        let replacement = DesktopGoogleAttempt {
+            // Even an ABA replacement registered in the same millisecond has
+            // a distinct server-generated generation.
+            started_at_ms: attempt.started_at_ms,
+            generation: generate_attempt_generation(),
+        };
         store
             .attempts
             .lock()
@@ -671,32 +696,24 @@ mod tests {
                 hash_code(&state),
                 LocalAttempt {
                     code_challenge: challenge.clone(),
-                    started_at_ms: replacement_started_at,
+                    started_at_ms: replacement.started_at_ms,
+                    generation: replacement.generation.clone(),
                     expires_at: Instant::now() + CODE_TTL,
                 },
             );
 
+        assert!(!store
+            .consume_google_attempt(&state, &challenge, &attempt)
+            .await
+            .unwrap());
         assert_eq!(
-            store
-                .consume_google_attempt(&state, &challenge, started_at)
-                .await
-                .unwrap(),
-            None
+            store.get_google_attempt(&state, &challenge).await.unwrap(),
+            Some(replacement.clone())
         );
-        assert_eq!(
-            store
-                .get_google_attempt(&state, &challenge)
-                .await
-                .unwrap(),
-            Some(replacement_started_at)
-        );
-        assert_eq!(
-            store
-                .consume_google_attempt(&state, &challenge, replacement_started_at)
-                .await
-                .unwrap(),
-            Some(replacement_started_at)
-        );
+        assert!(store
+            .consume_google_attempt(&state, &challenge, &replacement)
+            .await
+            .unwrap());
     }
 
     #[test]

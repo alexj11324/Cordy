@@ -4,8 +4,10 @@
 use async_trait::async_trait;
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 // Match Clerk's documented Backend SDK default for cross-service clock skew.
+const CLERK_CLOCK_SKEW_SECS: u64 = 5;
 const CLERK_SESSION_CLOCK_SKEW_MS: i64 = 5_000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -76,6 +78,7 @@ impl ClerkAuthClient {
                 anyhow::anyhow!("CLERK_JWT_KEY is not a valid RSA public key: {error}")
             })?;
         let mut validation = Validation::new(Algorithm::RS256);
+        validation.leeway = CLERK_CLOCK_SKEW_SECS;
         validation.validate_nbf = true;
         validation.set_required_spec_claims(&["exp", "nbf", "iss", "sub"]);
         validation.set_issuer(&[issuer.trim_end_matches('/')]);
@@ -203,7 +206,6 @@ impl ClerkAuthClient {
             .await
             .map_err(|_| ClerkAuthError::Unavailable)
     }
-
 }
 
 #[async_trait]
@@ -226,11 +228,12 @@ impl ClerkSessionVerifier for ClerkAuthClient {
             .filter(|value| !value.is_empty())
             .ok_or(ClerkAuthError::Invalid)?;
         let session = self.fetch_session(session_id).await?;
+        let now_ms = unix_epoch_ms()?;
         if session.id != session_id
             || session.user_id != claims.sub
             || session.status != "active"
             || session.actor.is_some()
-            || !session_is_fresh(session.created_at, not_before_ms)
+            || !session_is_fresh(session.created_at, not_before_ms, now_ms)
             || session.client_id.trim().is_empty()
         {
             return Err(ClerkAuthError::Invalid);
@@ -324,8 +327,17 @@ fn is_authorized_party(authorized_parties: &[String], party: Option<&str>) -> bo
     })
 }
 
-fn session_is_fresh(created_at_ms: i64, not_before_ms: i64) -> bool {
+fn unix_epoch_ms() -> Result<i64, ClerkAuthError> {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| ClerkAuthError::Unavailable)?
+        .as_millis();
+    i64::try_from(millis).map_err(|_| ClerkAuthError::Unavailable)
+}
+
+fn session_is_fresh(created_at_ms: i64, not_before_ms: i64, now_ms: i64) -> bool {
     created_at_ms >= not_before_ms.saturating_sub(CLERK_SESSION_CLOCK_SKEW_MS)
+        && created_at_ms <= now_ms.saturating_add(CLERK_SESSION_CLOCK_SKEW_MS)
 }
 
 #[cfg(test)]
@@ -364,17 +376,31 @@ mod tests {
     #[test]
     fn fresh_session_allows_only_bounded_clock_skew() {
         let attempt_started_at_ms = 100_000;
+        let now_ms = attempt_started_at_ms + 10_000;
         assert!(session_is_fresh(
             attempt_started_at_ms + 1,
             attempt_started_at_ms,
+            now_ms,
         ));
         assert!(session_is_fresh(
             attempt_started_at_ms - CLERK_SESSION_CLOCK_SKEW_MS,
             attempt_started_at_ms,
+            now_ms,
         ));
         assert!(!session_is_fresh(
             attempt_started_at_ms - CLERK_SESSION_CLOCK_SKEW_MS - 1,
             attempt_started_at_ms,
+            now_ms,
+        ));
+        assert!(session_is_fresh(
+            now_ms + CLERK_SESSION_CLOCK_SKEW_MS,
+            attempt_started_at_ms,
+            now_ms,
+        ));
+        assert!(!session_is_fresh(
+            now_ms + CLERK_SESSION_CLOCK_SKEW_MS + 1,
+            attempt_started_at_ms,
+            now_ms,
         ));
     }
 }
