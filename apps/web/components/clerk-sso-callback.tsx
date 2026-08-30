@@ -1,12 +1,7 @@
 "use client";
 
 import { AuthenticateWithRedirectCallback } from "@clerk/nextjs";
-import { useT } from "@patchbay/views/i18n";
-import { ClerkAuthShell } from "@/components/clerk-auth-shell";
-import {
-  buildDesktopHandoffQuery,
-  hasInvalidDesktopBrowserAppOrigin,
-} from "@/features/auth/desktop-handoff";
+import { buildDesktopHandoffQuery } from "@/features/auth/desktop-handoff";
 import {
   authRouteWithRedirect,
   resolveSafeRedirectUrl,
@@ -23,29 +18,9 @@ export function ClerkSSOCallback({
   signUpPath,
 }: ClerkSSOCallbackProps) {
   const searchParams = useWebSearchParams();
-  const { t } = useT("auth");
   const desktopHandoff = searchParams.get("platform") === "desktop";
-  if (
-    desktopHandoff &&
-    hasInvalidDesktopBrowserAppOrigin(
-      searchParams,
-      process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN,
-    )
-  ) {
-    return (
-      <ClerkAuthShell>
-        <p role="alert">
-          {t(($) => $.web.desktop_handoff.invalid_app_origin)}
-        </p>
-      </ClerkAuthShell>
-    );
-  }
-
   const desktopHandoffQuery = desktopHandoff
-    ? buildDesktopHandoffQuery(
-        searchParams,
-        process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN,
-      )
+    ? buildDesktopHandoffQuery(searchParams)
     : "";
   const redirectUrl = resolveSafeRedirectUrl(searchParams.get("redirect_url"));
   const loginUrl = desktopHandoff
