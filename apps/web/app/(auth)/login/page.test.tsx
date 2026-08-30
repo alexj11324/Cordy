@@ -11,6 +11,7 @@ const {
   redirectToCliCallback,
   redirectToDesktopApp,
   redirectToDesktopBrowserApp,
+  exchangeReady,
 } = vi.hoisted(() => ({
   signInProps: { current: {} as Record<string, unknown> },
   authState: {
@@ -23,6 +24,7 @@ const {
   redirectToCliCallback: vi.fn(),
   redirectToDesktopApp: vi.fn(),
   redirectToDesktopBrowserApp: vi.fn(),
+  exchangeReady: { current: true },
 }));
 
 vi.mock("@patchbay/core/auth", () => ({
@@ -58,8 +60,32 @@ vi.mock("@/features/auth/desktop-handoff", async (importOriginal) => {
   return { ...original, redirectToDesktopBrowserApp };
 });
 
+vi.mock("@/components/clerk-auth-adapter", () => ({
+  useClerkSessionExchangeReady: () => exchangeReady.current,
+}));
+
 vi.mock("@patchbay/views/i18n", () => ({
-  useT: () => ({ t: () => "Open Patchbay Desktop" }),
+  useT: () => ({
+    t: (
+      selector: (resources: {
+        web: {
+          desktop_handoff: Record<string, string>;
+        };
+      }) => string,
+    ) =>
+      selector({
+        web: {
+          desktop_handoff: {
+            invalid_app_origin: "Invalid desktop app origin.",
+            opening_title: "Opening Patchbay",
+            preparing: "Preparing Desktop sign-in...",
+            opening_description: "Opening Patchbay Desktop",
+            open_button: "Open Patchbay Desktop",
+            prepare_failed: "Failed to prepare Desktop sign-in",
+          },
+        },
+      }),
+  }),
 }));
 
 import LoginPage from "./page";
@@ -70,6 +96,7 @@ describe("LoginPage", () => {
     search.current = "";
     authStoreState.current = { status: "unauthenticated" };
     authState.current = { isLoaded: true, isSignedIn: false, getToken: vi.fn() };
+    exchangeReady.current = true;
     issueCliToken.mockReset();
     issueDesktopHandoff.mockReset();
     redirectToCliCallback.mockReset();
@@ -197,6 +224,20 @@ describe("LoginPage", () => {
       "desktop-handoff-code",
       "opaque-state",
     );
+  });
+
+  it("waits for the current Clerk identity to finish the Rust session exchange", async () => {
+    search.current = "platform=desktop&code_challenge=challenge-value&state=opaque-state";
+    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authStoreState.current = { status: "authenticated" };
+    exchangeReady.current = false;
+
+    render(<LoginPage />);
+
+    expect(issueDesktopHandoff).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("button", { name: "Preparing Desktop sign-in..." }),
+    ).toBeDisabled();
   });
 
   it("returns a browser-hosted desktop session to the allowlisted app origin", async () => {

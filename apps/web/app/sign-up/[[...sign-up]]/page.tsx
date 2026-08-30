@@ -4,7 +4,15 @@ import { Suspense } from "react";
 import { SignUp } from "@clerk/nextjs";
 import { useSearchParams } from "next/navigation";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
-import { buildDesktopHandoffQuery } from "@/features/auth/desktop-handoff";
+import {
+  buildDesktopHandoffQuery,
+  readDesktopBrowserAppOrigin,
+} from "@/features/auth/desktop-handoff";
+import {
+  authRouteWithRedirect,
+  resolveSafeRedirectUrl,
+} from "@/features/auth/safe-redirect";
+import { useT } from "@patchbay/views/i18n";
 
 export default function SignUpPage() {
   return (
@@ -16,20 +24,41 @@ export default function SignUpPage() {
 
 function SignUpContent() {
   const searchParams = useSearchParams();
+  const { t } = useT("auth");
   const desktopHandoff = searchParams.get("platform") === "desktop";
+  const requestedAppOrigin = searchParams.get("app_origin");
+  const browserAppOrigin = readDesktopBrowserAppOrigin(
+    searchParams,
+    process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN,
+  );
+  if (desktopHandoff && requestedAppOrigin !== null && !browserAppOrigin) {
+    return (
+      <ClerkAuthShell>
+        <p role="alert">
+          {t(($) => $.web.desktop_handoff.invalid_app_origin)}
+        </p>
+      </ClerkAuthShell>
+    );
+  }
   const desktopHandoffQuery = desktopHandoff
-    ? buildDesktopHandoffQuery(searchParams)
+    ? buildDesktopHandoffQuery(
+        searchParams,
+        process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN,
+      )
     : "";
+  const redirectUrl = resolveSafeRedirectUrl(searchParams.get("redirect_url"));
   return (
     <ClerkAuthShell>
       <SignUp
         routing="path"
         path="/sign-up"
         signInUrl={
-          desktopHandoff ? `/sign-in?${desktopHandoffQuery}` : "/sign-in"
+          desktopHandoff
+            ? `/sign-in?${desktopHandoffQuery}`
+            : authRouteWithRedirect("/sign-in", redirectUrl)
         }
         fallbackRedirectUrl={
-          desktopHandoff ? `/login?${desktopHandoffQuery}` : "/"
+          desktopHandoff ? `/login?${desktopHandoffQuery}` : redirectUrl
         }
       />
     </ClerkAuthShell>

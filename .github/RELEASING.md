@@ -52,6 +52,9 @@ passed into `Dockerfile.web` at build time because Next.js embeds
 `NEXT_PUBLIC_*` values in the client bundle. The Helm
 `frontend.config.clerkPublishableKey` value must match that build-time key; the
 runtime environment variable alone cannot change an already-built bundle.
+The published Web image also embeds `NEXT_PUBLIC_DESKTOP_APP_ORIGIN` as
+`https://app.patchbay.ai`; this exact origin is the only browser-hosted desktop
+handoff destination accepted by the accounts app.
 
 The manual **Release** workflow first applies migrations with
 `patchbay-migrate`, runs every Rust workspace target, builds the server, CLI,

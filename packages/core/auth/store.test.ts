@@ -89,6 +89,22 @@ describe("authStore", () => {
     expect(api.setToken).not.toHaveBeenCalled();
   });
 
+  it("retains a handed-off token when user hydration fails transiently", async () => {
+    const storage = makeStorage();
+    const api = {
+      getMe: vi.fn().mockRejectedValue(new TypeError("temporarily offline")),
+      setToken: vi.fn(),
+    } as unknown as ApiClient;
+    const store = createAuthStore({ api, storage });
+
+    await expect(
+      store.getState().loginWithToken("redeemed-session-token"),
+    ).rejects.toThrow("temporarily offline");
+
+    expect(storage.snapshot().patchbay_token).toBe("redeemed-session-token");
+    expect(api.setToken).toHaveBeenCalledWith("redeemed-session-token");
+  });
+
   it("explicit logout still clears credentials and publishes unauthenticated state", () => {
     const storage = makeStorage({ patchbay_token: "t" });
     const api = makeApi();

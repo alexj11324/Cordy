@@ -27,6 +27,7 @@ import {
   readDesktopBrowserAppOrigin,
   redirectToDesktopBrowserApp,
 } from "@/features/auth/desktop-handoff";
+import { useClerkSessionExchangeReady } from "@/components/clerk-auth-adapter";
 
 function desktopHandoffQuery(
   codeChallenge: string,
@@ -51,6 +52,8 @@ export default function LoginPage() {
 function LoginContent() {
   const searchParams = useSearchParams();
   const { isLoaded, isSignedIn } = useAuth();
+  const { t } = useT("auth");
+  const clerkSessionExchangeReady = useClerkSessionExchangeReady();
   const patchbayAuthStatus = useAuthStore((state) => state.status);
   const [error, setError] = useState("");
   const cliCallback = searchParams.get("cli_callback") ?? "";
@@ -103,7 +106,9 @@ function LoginContent() {
   if (desktopHandoff && invalidDesktopAppOrigin) {
     return (
       <ClerkAuthShell>
-        <p role="alert">Invalid desktop app origin.</p>
+        <p role="alert">
+          {t(($) => $.web.desktop_handoff.invalid_app_origin)}
+        </p>
       </ClerkAuthShell>
     );
   }
@@ -151,6 +156,7 @@ function LoginContent() {
         codeChallenge={desktopCodeChallenge}
         state={desktopState}
         appOrigin={desktopAppOrigin}
+        clerkSessionExchangeReady={clerkSessionExchangeReady}
       />
     );
   }
@@ -179,14 +185,17 @@ function DesktopHandoff({
   codeChallenge,
   state,
   appOrigin,
+  clerkSessionExchangeReady,
 }: {
   codeChallenge: string;
   state: string;
   appOrigin: string | null;
+  clerkSessionExchangeReady: boolean;
 }) {
   const { t } = useT("auth");
   const authStatus = useAuthStore((state) => state.status);
-  const backendSessionReady = authStatus === "authenticated";
+  const backendSessionReady =
+    clerkSessionExchangeReady && authStatus === "authenticated";
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const automaticAttempted = useRef(false);

@@ -118,3 +118,32 @@ export function clearDesktopHandoffVerifier(state: string): void {
     writePendingHandoffs(pending.filter((entry) => entry.state !== state));
   }
 }
+
+/**
+ * Redeem a one-time code, then publish the resulting session. Once redeem
+ * succeeds the code can never be used again, so clear its verifier immediately.
+ * If user hydration fails after the token was persisted, restart the normal
+ * auth initializer instead of attempting to redeem the consumed code again.
+ */
+export async function completeDesktopHandoff(
+  code: string,
+  state: string,
+  dependencies: {
+    redeem: (code: string, verifier: string) => Promise<{ token: string }>;
+    login: (token: string) => Promise<unknown>;
+    recoverPersistedToken: () => void;
+  },
+): Promise<boolean> {
+  const verifier = readDesktopHandoffVerifier(state);
+  if (!verifier) return false;
+
+  const { token } = await dependencies.redeem(code, verifier);
+  clearDesktopHandoffVerifier(state);
+  try {
+    await dependencies.login(token);
+    return true;
+  } catch {
+    dependencies.recoverPersistedToken();
+    return false;
+  }
+}

@@ -17,12 +17,19 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(search.current),
 }));
 
+vi.mock("@patchbay/views/i18n", () => ({
+  useT: () => ({
+    t: () => "Invalid desktop app origin.",
+  }),
+}));
+
 import SignUpPage from "./page";
 
 describe("SignUpPage", () => {
   beforeEach(() => {
     search.current = "";
     signUpProps.current = {};
+    delete process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN;
   });
 
   it("renders the canonical signup flow without desktop handoff state", () => {
@@ -49,6 +56,37 @@ describe("SignUpPage", () => {
       fallbackRedirectUrl:
         "/login?platform=desktop&code_challenge=challenge-value&state=opaque-state",
     });
+  });
+
+  it("preserves an allowlisted browser app origin through signup", () => {
+    process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN = "https://app.patchbay.ai";
+    search.current =
+      "platform=desktop&code_challenge=challenge-value&state=opaque-state" +
+      "&app_origin=https%3A%2F%2Fapp.patchbay.ai";
+
+    render(<SignUpPage />);
+
+    const query =
+      "platform=desktop&code_challenge=challenge-value&state=opaque-state" +
+      "&app_origin=https%3A%2F%2Fapp.patchbay.ai";
+    expect(signUpProps.current).toMatchObject({
+      signInUrl: `/login?${query}`,
+      fallbackRedirectUrl: `/login?${query}`,
+    });
+  });
+
+  it("fails closed for a mismatched browser app origin", () => {
+    process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN = "https://app.patchbay.ai";
+    search.current =
+      "platform=desktop&code_challenge=challenge-value&state=opaque-state" +
+      "&app_origin=https%3A%2F%2Fevil.example";
+
+    render(<SignUpPage />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Invalid desktop app origin.",
+    );
+    expect(screen.queryByTestId("clerk-sign-up")).not.toBeInTheDocument();
   });
 
   it("preserves a validated web redirect through signup and sign-in", () => {
