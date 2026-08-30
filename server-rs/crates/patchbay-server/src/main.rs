@@ -48,8 +48,7 @@ struct ProductionApp {
     scheduler: patchbay_scheduler::ManagerRuntime,
     heartbeat_scheduler: patchbay_handler::heartbeat_scheduler::HeartbeatSchedulerRuntime,
     runtime_sweeper: patchbay_handler::runtime_sweeper::RuntimeSweeperRuntime,
-    work_product_discovery:
-        patchbay_handler::work_product::WorkProductDiscoveryRuntime,
+    work_product_discovery: patchbay_handler::work_product::WorkProductDiscoveryRuntime,
     plugin_events: Option<patchbay_service::plugin_event_dispatch::PluginEventDispatcherRuntime>,
     github_snapshots: Option<patchbay_ghsnapshot::ManagerRuntime>,
     ordered_event_side_effects:
@@ -439,11 +438,10 @@ async fn build_production_router(
         .tasks
         .start_side_effect_runtime(root_cancel.child_token());
     let heartbeat_scheduler = heartbeat_scheduler.start(root_cancel.child_token());
-    let work_product_discovery =
-        patchbay_handler::work_product::WorkProductDiscoveryRuntime::start(
-            state.clone(),
-            root_cancel.child_token(),
-        );
+    let work_product_discovery = patchbay_handler::work_product::WorkProductDiscoveryRuntime::start(
+        state.clone(),
+        root_cancel.child_token(),
+    );
     let configured_reconnect_grace = duration_env(
         "PATCHBAY_RUNTIME_RECONNECT_GRACE",
         patchbay_handler::runtime_sweeper::DEFAULT_RECONNECT_GRACE,

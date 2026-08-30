@@ -705,11 +705,8 @@ pub(crate) async fn discover_pending_for_task(
         ) {
             continue;
         }
-        let provenance = match work_product_q::claim_execution_discovery(
-            &state.pool,
-            &provenance,
-        )
-        .await
+        let provenance = match work_product_q::claim_execution_discovery(&state.pool, &provenance)
+            .await
         {
             Ok(Some(provenance)) => provenance,
             Ok(None) => continue,
@@ -1487,15 +1484,7 @@ async fn record_discovery_failure(
     match_count: i32,
     reason: Option<&str>,
 ) {
-    record_discovery_result(
-        state,
-        provenance,
-        status,
-        match_count,
-        reason,
-        None,
-    )
-    .await;
+    record_discovery_result(state, provenance, status, match_count, reason, None).await;
 }
 
 fn nonempty(value: &str) -> Option<&str> {
