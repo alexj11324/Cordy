@@ -595,7 +595,7 @@ jobs:
             REMOTE_API_URL=http://backend:8080
             NEXT_PUBLIC_APP_VERSION=${{ needs.self-hosted-prepare.outputs.tag_name }}
             NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
-            NEXT_PUBLIC_DESKTOP_APP_ORIGIN=https://app.patchbay.ai
+            NEXT_PUBLIC_DESKTOP_APP_ORIGIN=${{ vars.NEXT_PUBLIC_DESKTOP_APP_ORIGIN }}
           outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/patchbay-web,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest

@@ -19,14 +19,14 @@ import { DragStrip } from "@patchbay/views/platform";
 import { createDesktopGoogleLoginUrl } from "./login-handoff";
 import { isDesktopWebHost } from "../platform/web-bridge";
 
-function requireRuntimeAppUrl(): string {
+function requireRuntimeAccountsUrl(): string {
   const runtimeConfig = window.desktopAPI.runtimeConfig;
   if (!runtimeConfig.ok) {
     throw new Error(
       "Invariant violated: DesktopLoginPage rendered before App accepted runtime config",
     );
   }
-  return runtimeConfig.config.appUrl;
+  return runtimeConfig.config.accountsUrl;
 }
 
 function GuestSessionEntry() {
@@ -74,7 +74,7 @@ function GuestSessionEntry() {
 }
 
 export function DesktopLoginPage() {
-  const webUrl = requireRuntimeAppUrl();
+  const accountsUrl = requireRuntimeAccountsUrl();
   const { t } = useT("auth");
   const [showEmailFlow, setShowEmailFlow] = useState(false);
   const [openingGoogle, setOpeningGoogle] = useState(false);
@@ -113,7 +113,7 @@ export function DesktopLoginPage() {
         ? window.location.origin
         : undefined;
       const url = await createDesktopGoogleLoginUrl(
-        webUrl,
+        accountsUrl,
         browserReturnOrigin,
       );
       if (browserReturnOrigin) {

@@ -24,10 +24,12 @@ describe("desktop login handoff", () => {
   });
 
   it("stores a renderer-bound verifier and carries only challenge/state to web login", async () => {
-    const url = await createDesktopGoogleLoginUrl("https://patchbay.ai");
+    const url = await createDesktopGoogleLoginUrl(
+      "https://accounts.aspectlylabs.com",
+    );
     const parsed = new URL(url);
 
-    expect(parsed.origin).toBe("https://patchbay.ai");
+    expect(parsed.origin).toBe("https://accounts.aspectlylabs.com");
     expect(parsed.pathname).toBe("/oauth/google");
     expect(parsed.searchParams.get("platform")).toBe("desktop");
     expect(parsed.searchParams.get("code_challenge")).toHaveLength(43);
@@ -39,17 +41,17 @@ describe("desktop login handoff", () => {
 
   it("binds a backend-enabled browser host to its explicit app origin", async () => {
     const url = await createDesktopGoogleLoginUrl(
-      "https://accounts.patchbay.ai",
-      "https://app.patchbay.ai",
+      "https://accounts.aspectlylabs.com",
+      "https://patchbay.aspectlylabs.com",
     );
 
     expect(new URL(url).searchParams.get("app_origin")).toBe(
-      "https://app.patchbay.ai",
+      "https://patchbay.aspectlylabs.com",
     );
   });
 
   it("does not clear the pending verifier for an unsolicited state", async () => {
-    await createDesktopGoogleLoginUrl("https://patchbay.ai");
+    await createDesktopGoogleLoginUrl("https://accounts.aspectlylabs.com");
 
     expect(readDesktopHandoffVerifier("wrong-state")).toBeNull();
     const raw = localStorage.getItem("patchbay_desktop_login_handoff");
@@ -57,7 +59,9 @@ describe("desktop login handoff", () => {
   });
 
   it("keeps the verifier after the renderer session is recreated", async () => {
-    const url = await createDesktopGoogleLoginUrl("https://patchbay.ai");
+    const url = await createDesktopGoogleLoginUrl(
+      "https://accounts.aspectlylabs.com",
+    );
     const state = new URL(url).searchParams.get("state") ?? "";
 
     sessionStorage.clear();
@@ -68,7 +72,9 @@ describe("desktop login handoff", () => {
   it("rejects an expired verifier", async () => {
     vi.useFakeTimers();
     try {
-      const url = await createDesktopGoogleLoginUrl("https://patchbay.ai");
+      const url = await createDesktopGoogleLoginUrl(
+        "https://accounts.aspectlylabs.com",
+      );
       const state = new URL(url).searchParams.get("state") ?? "";
 
       vi.advanceTimersByTime(10 * 60 * 1000);
@@ -81,7 +87,9 @@ describe("desktop login handoff", () => {
   });
 
   it("clears the verifier only for the matching completed handoff", async () => {
-    const url = await createDesktopGoogleLoginUrl("https://patchbay.ai");
+    const url = await createDesktopGoogleLoginUrl(
+      "https://accounts.aspectlylabs.com",
+    );
     const state = new URL(url).searchParams.get("state") ?? "";
 
     clearDesktopHandoffVerifier(state);
@@ -101,8 +109,12 @@ describe("desktop login handoff", () => {
       },
     });
 
-    const firstUrl = await createDesktopGoogleLoginUrl("https://patchbay.ai");
-    const secondUrl = await createDesktopGoogleLoginUrl("https://patchbay.ai");
+    const firstUrl = await createDesktopGoogleLoginUrl(
+      "https://accounts.aspectlylabs.com",
+    );
+    const secondUrl = await createDesktopGoogleLoginUrl(
+      "https://accounts.aspectlylabs.com",
+    );
     const firstState = new URL(firstUrl).searchParams.get("state") ?? "";
     const secondState = new URL(secondUrl).searchParams.get("state") ?? "";
 
@@ -117,7 +129,9 @@ describe("desktop login handoff", () => {
   });
 
   it("recovers from the persisted token after redeem succeeds but user hydration fails", async () => {
-    const url = await createDesktopGoogleLoginUrl("https://patchbay.ai");
+    const url = await createDesktopGoogleLoginUrl(
+      "https://accounts.aspectlylabs.com",
+    );
     const state = new URL(url).searchParams.get("state") ?? "";
     const redeem = vi.fn().mockResolvedValue({ token: "session-token" });
     const login = vi.fn().mockRejectedValue(new TypeError("temporarily offline"));
@@ -137,7 +151,9 @@ describe("desktop login handoff", () => {
   });
 
   it("keeps the verifier when the one-time code was not redeemed", async () => {
-    const url = await createDesktopGoogleLoginUrl("https://patchbay.ai");
+    const url = await createDesktopGoogleLoginUrl(
+      "https://accounts.aspectlylabs.com",
+    );
     const state = new URL(url).searchParams.get("state") ?? "";
     const recoverPersistedToken = vi.fn();
 

@@ -79,6 +79,18 @@ for compose_file in docker-compose.selfhost.build.yml docker-compose.labs.yml; d
   fi
 done
 
+# Hosted images use a repository variable so the callback stays disabled until
+# the approved HTTPS app origin is actually deployed. Never bake a speculative
+# production hostname into a public image.
+for workflow_file in .github/workflows/container-images.yml .github/workflows/release.yml; do
+  if ! grep -Fq \
+    'NEXT_PUBLIC_DESKTOP_APP_ORIGIN=${{ vars.NEXT_PUBLIC_DESKTOP_APP_ORIGIN }}' \
+    "$workflow_file"; then
+    echo "$workflow_file does not source the Desktop callback origin from repository configuration"
+    exit 1
+  fi
+done
+
 while IFS= read -r llm_var; do
   if ! grep -Eq "^[[:space:]]+${llm_var}: \\\$\{${llm_var}:-" docker-compose.selfhost.yml; then
     echo "$llm_var is documented in .env.example but not mapped into the backend"

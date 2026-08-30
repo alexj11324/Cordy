@@ -80,7 +80,10 @@ beforeEach(() => {
     value: {
       runtimeConfig: {
         ok: true,
-        config: { appUrl: "https://patchbay.ai" },
+        config: {
+          appUrl: "https://patchbay.aspectlylabs.com",
+          accountsUrl: "https://accounts.aspectlylabs.com",
+        },
       },
       openExternal: mocks.openExternal,
     },
@@ -113,7 +116,7 @@ describe("DesktopLoginPage", () => {
     await waitFor(() => expect(mocks.openExternal).toHaveBeenCalledOnce());
     const [url] = mocks.openExternal.mock.calls[0] as [string];
     const parsed = new URL(url);
-    expect(parsed.origin).toBe("https://patchbay.ai");
+    expect(parsed.origin).toBe("https://accounts.aspectlylabs.com");
     expect(parsed.pathname).toBe("/oauth/google");
     expect(parsed.searchParams.get("platform")).toBe("desktop");
     expect(parsed.searchParams.get("code_challenge")).toHaveLength(43);

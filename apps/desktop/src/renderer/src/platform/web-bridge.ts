@@ -112,10 +112,14 @@ export function installWebDesktopBridge(): boolean {
       (preview ? window.location.origin : undefined),
     wsUrl: import.meta.env.VITE_WS_URL,
     // The no-backend preview must stay on its Vite origin. A backend-enabled
-    // browser host instead derives the auth origin from VITE_API_URL (or the
-    // shared runtime-config convention), unless it is explicitly configured.
+    // browser host derives share links from VITE_API_URL unless VITE_APP_URL is
+    // explicit. Auth reuses that app origin unless VITE_ACCOUNTS_URL separates
+    // the broker onto another deployed host.
     appUrl:
       import.meta.env.VITE_APP_URL ||
+      (preview ? window.location.origin : undefined),
+    accountsUrl:
+      import.meta.env.VITE_ACCOUNTS_URL ||
       (preview ? window.location.origin : undefined),
   });
   const daemonStatus = browserDaemonStatus(runtimeConfig.apiUrl);

@@ -102,7 +102,7 @@ describe("LoginPage", () => {
     redirectToCliCallback.mockReset();
     redirectToDesktopApp.mockReset();
     redirectToDesktopBrowserApp.mockReset();
-    process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN = "https://app.patchbay.ai";
+    process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN = "https://patchbay.aspectlylabs.com";
   });
 
   it("renders the Clerk sign-in flow at the canonical login route", () => {
@@ -243,7 +243,7 @@ describe("LoginPage", () => {
   it("returns a browser-hosted desktop session to the allowlisted app origin", async () => {
     search.current =
       "platform=desktop&code_challenge=challenge-value&state=opaque-state" +
-      "&app_origin=https%3A%2F%2Fapp.patchbay.ai";
+      "&app_origin=https%3A%2F%2Fpatchbay.aspectlylabs.com";
     authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
     authStoreState.current = { status: "authenticated" };
     issueDesktopHandoff.mockResolvedValue({ code: "desktop-handoff-code" });
@@ -252,7 +252,7 @@ describe("LoginPage", () => {
 
     await waitFor(() => expect(issueDesktopHandoff).toHaveBeenCalledOnce());
     expect(redirectToDesktopBrowserApp).toHaveBeenCalledWith(
-      "https://app.patchbay.ai",
+      "https://patchbay.aspectlylabs.com",
       "desktop-handoff-code",
       "opaque-state",
     );

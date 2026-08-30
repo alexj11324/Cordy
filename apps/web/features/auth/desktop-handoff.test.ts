@@ -57,21 +57,21 @@ describe("buildDesktopHandoffQuery", () => {
       platform: "desktop",
       code_challenge: codeChallenge,
       state,
-      app_origin: "https://app.patchbay.ai",
+      app_origin: "https://patchbay.aspectlylabs.com",
     });
 
     expect(
       readDesktopHandoffBinding(
         searchParams,
-        "https://app.patchbay.ai",
+        "https://patchbay.aspectlylabs.com",
       ),
     ).toEqual({
       codeChallenge,
       state,
-      appOrigin: "https://app.patchbay.ai",
+      appOrigin: "https://patchbay.aspectlylabs.com",
       query:
         `platform=desktop&code_challenge=${codeChallenge}` +
-        `&state=${state}&app_origin=https%3A%2F%2Fapp.patchbay.ai`,
+        `&state=${state}&app_origin=https%3A%2F%2Fpatchbay.aspectlylabs.com`,
     });
   });
 
@@ -86,7 +86,7 @@ describe("buildDesktopHandoffQuery", () => {
     expect(
       readDesktopHandoffBinding(
         searchParams,
-        "https://app.patchbay.ai",
+        "https://patchbay.aspectlylabs.com",
       ),
     ).toBeNull();
     expect(readDesktopHandoffBinding(searchParams)).toBeNull();

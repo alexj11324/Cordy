@@ -59,14 +59,14 @@ Put the PAT in the `Authorization` header:
 ```bash
 export PATCHBAY_TOKEN='pby_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 
-curl https://api.patchbay.ai/api/me \
+curl https://api.aspectlylabs.com/api/me \
   -H "Authorization: Bearer $PATCHBAY_TOKEN"
 ```
 
 Workspace-level API calls also need the workspace, as required by the endpoint:
 
 ```bash
-curl https://api.patchbay.ai/api/issues \
+curl https://api.aspectlylabs.com/api/issues \
   -H "Authorization: Bearer $PATCHBAY_TOKEN" \
   -H "X-Workspace-ID: $PATCHBAY_WORKSPACE_ID"
 ```

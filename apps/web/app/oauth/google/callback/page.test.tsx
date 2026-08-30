@@ -88,17 +88,17 @@ describe("GoogleOAuthCallbackPage", () => {
   it("preserves an allowlisted browser app origin after Clerk finalizes", async () => {
     const codeChallenge = "a".repeat(43);
     const state = "b".repeat(43);
-    process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN = "https://app.patchbay.ai";
+    process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN = "https://patchbay.aspectlylabs.com";
     mocks.search.current =
       `platform=desktop&code_challenge=${codeChallenge}&state=${state}` +
-      "&app_origin=https%3A%2F%2Fapp.patchbay.ai";
+      "&app_origin=https%3A%2F%2Fpatchbay.aspectlylabs.com";
 
     render(<GoogleOAuthCallbackPage />);
 
     await waitFor(() => expect(mocks.signIn.finalize).toHaveBeenCalledOnce());
     expect(mocks.replace).toHaveBeenCalledWith(
       `/login?platform=desktop&code_challenge=${codeChallenge}` +
-        `&state=${state}&app_origin=https%3A%2F%2Fapp.patchbay.ai`,
+        `&state=${state}&app_origin=https%3A%2F%2Fpatchbay.aspectlylabs.com`,
     );
   });
 

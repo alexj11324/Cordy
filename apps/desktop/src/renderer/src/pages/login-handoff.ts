@@ -74,7 +74,7 @@ function randomBase64Url(byteLength: number): string {
  * BrowserWindow can redeem the one-time code returned by the web login.
  */
 export async function createDesktopGoogleLoginUrl(
-  appUrl: string,
+  accountsUrl: string,
   browserReturnOrigin?: string,
 ): Promise<string> {
   const verifier = randomBase64Url(32);
@@ -95,7 +95,7 @@ export async function createDesktopGoogleLoginUrl(
   );
   writePendingHandoffs([...pendingHandoffs, pending]);
   const url = new URL(
-    buildDesktopGoogleLoginUrl(appUrl, browserReturnOrigin),
+    buildDesktopGoogleLoginUrl(accountsUrl, browserReturnOrigin),
   );
   url.searchParams.set("code_challenge", codeChallenge);
   url.searchParams.set("state", state);
