@@ -4,67 +4,16 @@ const HANDOFF_VALUE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
 export type DesktopHandoffBinding = {
   codeChallenge: string;
   state: string;
-  appOrigin: string | null;
   query: string;
 };
 
-function normalizeAppOrigin(value: string | null | undefined): string | null {
-  if (!value) return null;
-  try {
-    const url = new URL(value);
-    if (
-      (url.protocol !== "http:" && url.protocol !== "https:") ||
-      url.username ||
-      url.password ||
-      url.pathname !== "/" ||
-      url.search ||
-      url.hash
-    ) {
-      return null;
-    }
-    return url.origin;
-  } catch {
-    return null;
-  }
-}
-
-/** Accept a browser return only when deployment config names that exact origin. */
-export function readDesktopBrowserAppOrigin(
-  searchParams: URLSearchParams,
-  configuredOrigin: string | undefined,
-): string | null {
-  const requested = normalizeAppOrigin(searchParams.get("app_origin"));
-  const configured = normalizeAppOrigin(configuredOrigin);
-  return requested && configured && requested === configured
-    ? requested
-    : null;
-}
-
-export function hasInvalidDesktopBrowserAppOrigin(
-  searchParams: URLSearchParams,
-  configuredOrigin: string | undefined,
-): boolean {
-  return (
-    searchParams.has("app_origin") &&
-    readDesktopBrowserAppOrigin(searchParams, configuredOrigin) === null
-  );
-}
-
-/** Preserve the binding that lets a desktop OAuth callback return safely. */
-export function buildDesktopHandoffQuery(
-  searchParams: URLSearchParams,
-  configuredAppOrigin?: string,
-): string {
+/** Preserve only the canonical PKCE binding through the provider callback. */
+export function buildDesktopHandoffQuery(searchParams: URLSearchParams): string {
   const params = new URLSearchParams({ platform: "desktop" });
   for (const key of DESKTOP_HANDOFF_PARAMS) {
     const value = searchParams.get(key);
     if (value) params.set(key, value);
   }
-  const appOrigin = readDesktopBrowserAppOrigin(
-    searchParams,
-    configuredAppOrigin,
-  );
-  if (appOrigin) params.set("app_origin", appOrigin);
   return params.toString();
 }
 
@@ -75,9 +24,12 @@ export function buildDesktopHandoffQuery(
  */
 export function readDesktopHandoffBinding(
   searchParams: URLSearchParams,
-  configuredAppOrigin?: string,
 ): DesktopHandoffBinding | null {
   if (searchParams.get("platform") !== "desktop") return null;
+  // The desktop handoff has one return transport: the patchbay:// custom
+  // protocol. Reject the retired HTTP app-origin transport instead of
+  // allowing an old link to select a second callback protocol.
+  if (searchParams.has("app_origin")) return null;
   const codeChallenge = searchParams.get("code_challenge") ?? "";
   const state = searchParams.get("state") ?? "";
   if (
@@ -86,28 +38,9 @@ export function readDesktopHandoffBinding(
   ) {
     return null;
   }
-  const requestedAppOrigin = searchParams.get("app_origin");
-  const appOrigin = readDesktopBrowserAppOrigin(
-    searchParams,
-    configuredAppOrigin,
-  );
-  if (requestedAppOrigin !== null && appOrigin === null) return null;
   return {
     codeChallenge,
     state,
-    appOrigin,
-    query: buildDesktopHandoffQuery(searchParams, configuredAppOrigin),
+    query: buildDesktopHandoffQuery(searchParams),
   };
-}
-
-/** Return a PKCE-bound one-time code to an explicitly allowlisted app origin. */
-export function redirectToDesktopBrowserApp(
-  appOrigin: string,
-  code: string,
-  state: string,
-): void {
-  const callback = new URL("/auth/callback", appOrigin);
-  callback.searchParams.set("code", code);
-  callback.searchParams.set("state", state);
-  window.location.replace(callback.href);
 }

@@ -139,8 +139,8 @@ function AppContent() {
     });
   }, []);
 
-  // Listen for the PKCE-bound one-time code delivered by Electron deep link
-  // or the explicit Vite browser callback. daemonAPI.syncToken is handled
+  // Listen for the PKCE-bound one-time code delivered by the Electron deep
+  // link. daemonAPI.syncToken is handled
   // separately by the [user] effect below, which fires whenever a user logs
   // in (handoff, session restore, account switch).
   useEffect(() => {

@@ -78,24 +78,17 @@ Do not enable a fixed code on a publicly reachable instance. The production comb
 
 ## Google sign-in
 
-1. Create an OAuth 2.0 client in the [Google Cloud Console](https://console.cloud.google.com/).
-2. Add the Patchbay frontend's callback URL to **Authorized redirect URIs**:
+1. Configure Google as a provider in the managed `accounts` service.
+2. Register the broker callback at **Authorized redirect URIs**:
 
    ```text
-   https://patchbay.example.com/auth/callback
+   https://accounts.example.com/oauth/google/callback
    ```
 
-3. Set:
-
-   ```dotenv
-   GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com
-   GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxxxxx
-   GOOGLE_REDIRECT_URI=https://patchbay.example.com/auth/callback
-   ```
-
-4. Restart the API service.
-
-The URLs in the Google Console and in `GOOGLE_REDIRECT_URI` must match exactly, including protocol, port, and trailing slash. Once configured, the sign-in page shows a Google sign-in button; the frontend image needs no rebuild.
+3. Keep the desktop flow on the broker's `/oauth/google` entry and
+   `/oauth/google/callback` callback. The broker returns only a one-time
+   PKCE-bound code through `patchbay://auth/callback`; the Rust API redeems it
+   at `/api/desktop-handoff/redeem`.
 
 ## Signup restrictions
 

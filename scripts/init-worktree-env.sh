@@ -37,10 +37,6 @@ PATCHBAY_SERVER_URL=ws://localhost:${backend_port}/ws
 PATCHBAY_PUBLIC_URL=http://localhost:${backend_port}
 PATCHBAY_APP_URL=${frontend_origin}
 
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GOOGLE_REDIRECT_URI=${frontend_origin}/auth/callback
-
 FRONTEND_PORT=${frontend_port}
 FRONTEND_ORIGIN=${frontend_origin}
 NEXT_PUBLIC_API_URL=http://localhost:${backend_port}

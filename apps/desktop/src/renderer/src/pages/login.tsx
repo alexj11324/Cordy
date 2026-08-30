@@ -7,7 +7,6 @@ import { LoginPage } from "@patchbay/views/auth";
 import { useT } from "@patchbay/views/i18n";
 import { DragStrip } from "@patchbay/views/platform";
 import { createDesktopGoogleLoginUrl } from "./login-handoff";
-import { isDesktopWebHost } from "../platform/web-bridge";
 
 function requireRuntimeAccountsUrl(): string {
   const runtimeConfig = window.desktopAPI.runtimeConfig;
@@ -74,21 +73,8 @@ export function DesktopLoginPage() {
     setOpeningGoogle(true);
     setError(null);
     try {
-      const browserReturnOrigin = isDesktopWebHost()
-        ? window.location.origin
-        : undefined;
-      const url = await createDesktopGoogleLoginUrl(
-        accountsUrl,
-        browserReturnOrigin,
-      );
-      if (browserReturnOrigin) {
-        // Vite is already the system browser. Keep this in the same tab so the
-        // explicit app-origin callback can deliver the PKCE code to this
-        // renderer's local verifier without a custom-protocol handler.
-        window.location.assign(url);
-      } else {
-        await window.desktopAPI.openExternal(url);
-      }
+      const url = await createDesktopGoogleLoginUrl(accountsUrl);
+      await window.desktopAPI.openExternal(url);
     } catch {
       setError(t(($) => $.desktop.entry.login_error));
     } finally {

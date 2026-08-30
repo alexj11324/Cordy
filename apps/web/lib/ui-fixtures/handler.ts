@@ -148,7 +148,6 @@ export function handleFixtureRequest(request: FixtureHttpRequest): FixtureHttpRe
       cdn_domain: "",
       cdn_signed: false,
       allow_signup: true,
-      google_client_id: "",
       workspace_creation_disabled: false,
       vcs_integration_available: false,
       local_worktree_supported: false,

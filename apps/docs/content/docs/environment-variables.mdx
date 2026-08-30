@@ -84,14 +84,6 @@ SMTP takes priority over Resend whenever `SMTP_HOST` is non-empty.
 | `SMTP_TLS_INSECURE` | `false` | Skips certificate verification; trusted internal networks only |
 | `SMTP_EHLO_NAME` | hostname | EHLO/FQDN required by strict relays |
 
-### Google OAuth
-
-| Variable | Default | Description |
-|---|---|---|
-| `GOOGLE_CLIENT_ID` | empty | Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | empty | Google OAuth client secret |
-| `GOOGLE_REDIRECT_URI` | `http://localhost:3000/auth/callback` | Must exactly match the callback URL in the Google Console |
-
 ### Signup scope
 
 | Variable | Default | Description |

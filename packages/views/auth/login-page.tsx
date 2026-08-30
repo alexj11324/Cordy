@@ -28,13 +28,6 @@ import { useT } from "../i18n";
 // Types
 // ---------------------------------------------------------------------------
 
-interface GoogleAuthConfig {
-  clientId: string;
-  redirectUri: string;
-  /** Opaque state passed through Google OAuth (e.g. "platform:desktop"). */
-  state?: string;
-}
-
 interface CliCallbackConfig {
   /** Validated localhost callback URL */
   url: string;
@@ -48,13 +41,11 @@ interface LoginPageProps {
   /** Called after successful login. The workspace list is seeded into React
    *  Query before this fires, so the caller can compute a destination URL. */
   onSuccess: () => void;
-  /** Google OAuth config. Omit to disable Google login. */
-  google?: GoogleAuthConfig;
   /** CLI callback config for authorizing CLI tools. */
   cliCallback?: CliCallbackConfig;
   /** Called after a token is obtained (e.g. to set cookies). */
   onTokenObtained?: () => void;
-  /** Override Google login handler (e.g. desktop opens browser externally). When provided, renders the Google button even if `google` config is omitted. */
+  /** Canonical brokered Google login handler (e.g. desktop opens browser externally). */
   onGoogleLogin?: () => void;
   /** Render the cardless narrow form used by the authentication example. */
   embedded?: boolean;
@@ -118,7 +109,6 @@ export function validateCliCallback(cliCallback: string): boolean {
 export function LoginPage({
   logo,
   onSuccess,
-  google,
   cliCallback,
   onTokenObtained,
   onGoogleLogin,
@@ -292,22 +282,10 @@ export function LoginPage({
   const handleGoogleLogin = () => {
     if (onGoogleLogin) {
       onGoogleLogin();
-      return;
     }
-    if (!google) return;
-    const params = new URLSearchParams({
-      client_id: google.clientId,
-      redirect_uri: google.redirectUri,
-      response_type: "code",
-      scope: "openid email profile",
-      access_type: "offline",
-      prompt: "select_account",
-    });
-    if (google.state) params.set("state", google.state);
-    window.location.href = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   };
 
-  const googleEnabled = Boolean(google || onGoogleLogin);
+  const googleEnabled = Boolean(onGoogleLogin);
   const googleSeparator = showGoogleSeparator && googleEnabled ? (
     <div
       data-slot="field-separator"

@@ -8,7 +8,6 @@ interface ConfigState {
   // storage URL on that domain as a loadable media source (PB-3254).
   cdnSigned: boolean;
   allowSignup: boolean;
-  googleClientId: string;
   daemonServerUrl: string;
   daemonAppUrl: string;
   // Self-host gate (#3433): when true, every "Create workspace" affordance
@@ -35,7 +34,6 @@ interface ConfigState {
   setCdnConfig: (config: { cdnDomain: string; cdnSigned?: boolean }) => void;
   setAuthConfig: (config: {
     allowSignup: boolean;
-    googleClientId?: string;
     workspaceCreationDisabled?: boolean;
     vcsIntegrationAvailable?: boolean;
   }) => void;
@@ -52,7 +50,6 @@ export const configStore = createStore<ConfigState>((set) => ({
   cdnDomain: "",
   cdnSigned: false,
   allowSignup: true,
-  googleClientId: "",
   daemonServerUrl: "",
   daemonAppUrl: "",
   workspaceCreationDisabled: false,
@@ -63,10 +60,9 @@ export const configStore = createStore<ConfigState>((set) => ({
   setCdnConfig: ({ cdnDomain, cdnSigned = false }) => set({ cdnDomain, cdnSigned }),
   setAuthConfig: ({
     allowSignup,
-    googleClientId = "",
     workspaceCreationDisabled = false,
     vcsIntegrationAvailable = false,
-  }) => set({ allowSignup, googleClientId, workspaceCreationDisabled, vcsIntegrationAvailable }),
+  }) => set({ allowSignup, workspaceCreationDisabled, vcsIntegrationAvailable }),
   setDaemonConfig: ({ daemonServerUrl = "", daemonAppUrl = "" }) =>
     set({ daemonServerUrl, daemonAppUrl }),
   setFeatureFlags: (flags = {}) => set({ featureFlags: { ...flags } }),

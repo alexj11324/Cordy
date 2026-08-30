@@ -20,94 +20,6 @@ const BROWSER_DAEMON_PREFS: DaemonPrefs = {
   autoStop: false,
 };
 
-const AUTH_CALLBACK_PATH = "/auth/callback";
-const HANDOFF_CODE_PATTERN = /^pbd_[A-Za-z0-9_-]{43}$/;
-const HANDOFF_STATE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
-const PENDING_BROWSER_AUTH_HANDOFF_KEY = "patchbay_browser_auth_handoff";
-const PENDING_BROWSER_AUTH_HANDOFF_TTL_MS = 10 * 60 * 1000;
-
-type BrowserAuthHandoff = { code: string; state: string };
-type StoredBrowserAuthHandoff = BrowserAuthHandoff & { expiresAt: number };
-
-function isStoredBrowserAuthHandoff(
-  value: unknown,
-): value is StoredBrowserAuthHandoff {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Record<string, unknown>;
-  return (
-    typeof candidate.code === "string" &&
-    HANDOFF_CODE_PATTERN.test(candidate.code) &&
-    typeof candidate.state === "string" &&
-    HANDOFF_STATE_PATTERN.test(candidate.state) &&
-    typeof candidate.expiresAt === "number" &&
-    Number.isFinite(candidate.expiresAt)
-  );
-}
-
-function readPendingBrowserAuthHandoff(): BrowserAuthHandoff | null {
-  try {
-    const raw = sessionStorage.getItem(PENDING_BROWSER_AUTH_HANDOFF_KEY);
-    if (!raw) return null;
-    const parsed: unknown = JSON.parse(raw);
-    if (
-      !isStoredBrowserAuthHandoff(parsed) ||
-      parsed.expiresAt <= Date.now()
-    ) {
-      sessionStorage.removeItem(PENDING_BROWSER_AUTH_HANDOFF_KEY);
-      return null;
-    }
-    return { code: parsed.code, state: parsed.state };
-  } catch {
-    try {
-      sessionStorage.removeItem(PENDING_BROWSER_AUTH_HANDOFF_KEY);
-    } catch {
-      // Storage can be unavailable in a locked-down browser context.
-    }
-    return null;
-  }
-}
-
-function writePendingBrowserAuthHandoff(payload: BrowserAuthHandoff): void {
-  try {
-    sessionStorage.setItem(
-      PENDING_BROWSER_AUTH_HANDOFF_KEY,
-      JSON.stringify({
-        ...payload,
-        expiresAt: Date.now() + PENDING_BROWSER_AUTH_HANDOFF_TTL_MS,
-      } satisfies StoredBrowserAuthHandoff),
-    );
-  } catch {
-    // The URL has already been cleared; the normal in-memory path still works.
-  }
-}
-
-function clearPendingBrowserAuthHandoff(): void {
-  try {
-    sessionStorage.removeItem(PENDING_BROWSER_AUTH_HANDOFF_KEY);
-  } catch {
-    // Best effort; a successful in-memory delivery is still terminal here.
-  }
-}
-
-function takeBrowserAuthHandoff(): BrowserAuthHandoff | null {
-  const persisted = readPendingBrowserAuthHandoff();
-  if (window.location.pathname !== AUTH_CALLBACK_PATH) return persisted;
-  const params = new URLSearchParams(window.location.search);
-  const code = params.get("code") ?? "";
-  const state = params.get("state") ?? "";
-  // Clear every callback query, including malformed attacker-supplied input,
-  // before deciding whether it is eligible for redemption.
-  window.history.replaceState(null, "", "/");
-  if (!HANDOFF_CODE_PATTERN.test(code) || !HANDOFF_STATE_PATTERN.test(state)) {
-    return persisted;
-  }
-
-  // The normal App handoff listener redeems it over HTTPS with PKCE.
-  const pending = { code, state };
-  writePendingBrowserAuthHandoff(pending);
-  return pending;
-}
-
 function browserPlatform(): "macos" | "windows" | "linux" | "unknown" {
   const platform = navigator.platform.toLowerCase();
   if (platform.includes("mac")) return "macos";
@@ -173,7 +85,6 @@ export function installWebDesktopBridge(): boolean {
   const preview =
     !import.meta.env.VITE_API_URL &&
     import.meta.env.VITE_DESKTOP_PREVIEW !== "false";
-  let pendingBrowserAuthHandoff = preview ? null : takeBrowserAuthHandoff();
   const runtimeConfig = runtimeConfigFromDevEnv({
     // The browser preview owns a same-origin local API middleware by default.
     // An explicit VITE_API_URL still opts into a real remote/local backend for
@@ -211,40 +122,12 @@ export function installWebDesktopBridge(): boolean {
     getLastFreeze: () => null,
     ackFreeze: (_ts: number) => undefined,
     reportAuthSession: (_userId: string | null) => undefined,
+    // Browser Vite hosts have no native deep-link receiver. The canonical
+    // handoff is delivered only by Electron's main/preload bridge through
+    // patchbay://auth/callback; this host must never accept an HTTP callback.
     onAuthHandoff: (
-      callback: (payload: {
-        code: string;
-        state: string;
-      }) => boolean | Promise<boolean>,
-    ) => {
-      if (!pendingBrowserAuthHandoff) return noopUnsubscribe();
-      let cancelled = false;
-      let deliveryInFlight = false;
-      const deliver = async () => {
-        const pending = pendingBrowserAuthHandoff;
-        if (!pending || cancelled || deliveryInFlight) return;
-        deliveryInFlight = true;
-        try {
-          const acknowledged = await callback(pending);
-          if (acknowledged && pendingBrowserAuthHandoff === pending) {
-            pendingBrowserAuthHandoff = null;
-            clearPendingBrowserAuthHandoff();
-            window.removeEventListener("online", retry);
-          }
-        } catch {
-          // Keep the PKCE-bound code for an explicit browser-online retry.
-        } finally {
-          deliveryInFlight = false;
-        }
-      };
-      const retry = () => void deliver();
-      window.addEventListener("online", retry);
-      queueMicrotask(retry);
-      return () => {
-        cancelled = true;
-        window.removeEventListener("online", retry);
-      };
-    },
+      _callback: (payload: { code: string; state: string }) => boolean | Promise<boolean>,
+    ) => noopUnsubscribe(),
     onInviteOpen: (_callback: (invitationId: string) => void) =>
       noopUnsubscribe(),
     openExternal: async (url: string) => openBrowserUrl(url),

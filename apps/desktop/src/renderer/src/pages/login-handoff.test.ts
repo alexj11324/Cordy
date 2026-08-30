@@ -40,17 +40,6 @@ describe("desktop login handoff", () => {
     expect(readDesktopHandoffVerifier(state ?? "")).toHaveLength(43);
   });
 
-  it("binds a backend-enabled browser host to its explicit app origin", async () => {
-    const url = await createDesktopGoogleLoginUrl(
-      "https://accounts.aspectlylabs.com",
-      "https://patchbay.aspectlylabs.com",
-    );
-
-    expect(new URL(url).searchParams.get("app_origin")).toBe(
-      "https://patchbay.aspectlylabs.com",
-    );
-  });
-
   it("does not clear the pending verifier for an unsolicited state", async () => {
     await createDesktopGoogleLoginUrl("https://accounts.aspectlylabs.com");
 

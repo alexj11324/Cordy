@@ -78,24 +78,17 @@ PATCHBAY_DEV_VERIFICATION_CODE=888888
 
 ## Google ログイン
 
-1. [Google Cloud Console](https://console.cloud.google.com/) で OAuth 2.0 client を作成します。
-2. Patchbay フロントエンドのコールバックアドレスを **Authorized redirect URIs** に追加します:
+1. 管理対象の `accounts` サービスで Google provider を設定します。
+2. broker のコールバックアドレスを **Authorized redirect URIs** に追加します:
 
    ```text
-   https://patchbay.example.com/auth/callback
+   https://accounts.example.com/oauth/google/callback
    ```
 
-3. 次を設定します:
-
-   ```dotenv
-   GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com
-   GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxxxxx
-   GOOGLE_REDIRECT_URI=https://patchbay.example.com/auth/callback
-   ```
-
-4. API サービスを再起動します。
-
-Google Console と `GOOGLE_REDIRECT_URI` のアドレスは、プロトコル、ポート、末尾のスラッシュを含めて完全に一致している必要があります。設定が反映されると、ログインページに Google ログインボタンが表示されます。フロントエンドイメージの再ビルドは不要です。
+3. Desktop ログインは broker の `/oauth/google` と
+   `/oauth/google/callback` だけを使用します。broker は
+   `patchbay://auth/callback` を通じて一度だけ使える PKCE code を返し、
+   Rust API が `/api/desktop-handoff/redeem` で交換します。
 
 ## サインアップ制限
 
