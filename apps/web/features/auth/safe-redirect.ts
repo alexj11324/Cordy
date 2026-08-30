@@ -17,7 +17,7 @@ export function resolveSafeRedirectUrl(raw: string | null): string {
 }
 
 export function authRouteWithRedirect(
-  route: "/login" | "/signup",
+  route: "/login" | "/signup" | "/sign-in" | "/sign-up",
   redirectUrl: string,
 ): string {
   if (redirectUrl === "/") return route;

@@ -3,6 +3,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   clearDesktopHandoffVerifier,
+  completeDesktopHandoff,
   createDesktopGoogleLoginUrl,
   readDesktopHandoffVerifier,
 } from "./login-handoff";
@@ -113,5 +114,42 @@ describe("desktop login handoff", () => {
 
     expect(readDesktopHandoffVerifier(firstState)).toBeNull();
     expect(readDesktopHandoffVerifier(secondState)).toHaveLength(43);
+  });
+
+  it("recovers from the persisted token after redeem succeeds but user hydration fails", async () => {
+    const url = await createDesktopGoogleLoginUrl("https://patchbay.ai");
+    const state = new URL(url).searchParams.get("state") ?? "";
+    const redeem = vi.fn().mockResolvedValue({ token: "session-token" });
+    const login = vi.fn().mockRejectedValue(new TypeError("temporarily offline"));
+    const recoverPersistedToken = vi.fn();
+
+    await expect(
+      completeDesktopHandoff("pbd_code", state, {
+        redeem,
+        login,
+        recoverPersistedToken,
+      }),
+    ).resolves.toBe(false);
+
+    expect(login).toHaveBeenCalledWith("session-token");
+    expect(recoverPersistedToken).toHaveBeenCalledOnce();
+    expect(readDesktopHandoffVerifier(state)).toBeNull();
+  });
+
+  it("keeps the verifier when the one-time code was not redeemed", async () => {
+    const url = await createDesktopGoogleLoginUrl("https://patchbay.ai");
+    const state = new URL(url).searchParams.get("state") ?? "";
+    const recoverPersistedToken = vi.fn();
+
+    await expect(
+      completeDesktopHandoff("invalid-code", state, {
+        redeem: vi.fn().mockRejectedValue(new Error("invalid handoff")),
+        login: vi.fn(),
+        recoverPersistedToken,
+      }),
+    ).rejects.toThrow("invalid handoff");
+
+    expect(recoverPersistedToken).not.toHaveBeenCalled();
+    expect(readDesktopHandoffVerifier(state)).toHaveLength(43);
   });
 });

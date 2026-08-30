@@ -1,11 +1,29 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { useUser, useAuth } from "@clerk/nextjs";
 import { ApiError } from "@patchbay/core/api";
 import { useAuthStore } from "@patchbay/core/auth";
 
 const RETRY_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 16_000, 30_000] as const;
+
+const ClerkSessionExchangeContext = createContext(false);
+
+type ExchangedClerkIdentity = {
+  sessionId: string;
+  userId: string;
+};
+
+/** True only after the current Clerk session has become a Rust session. */
+export function useClerkSessionExchangeReady(): boolean {
+  return useContext(ClerkSessionExchangeContext);
+}
 
 /**
  * Bridges Clerk's auth state into the existing Zustand AuthState store.
@@ -22,12 +40,16 @@ export function ClerkAuthAdapter({
   children: React.ReactNode;
 }) {
   const { user: clerkUser, isLoaded: clerkLoaded } = useUser();
-  const { getToken, isSignedIn, signOut } = useAuth();
+  const { getToken, isSignedIn, sessionId, signOut } = useAuth();
+  const clerkUserId = clerkUser?.id;
   const logoutBarrierRef = useRef<Promise<void>>(Promise.resolve());
+  const [exchangedIdentity, setExchangedIdentity] =
+    useState<ExchangedClerkIdentity | null>(null);
 
   useEffect(() => {
     if (!clerkLoaded) return;
-    if (!isSignedIn || !clerkUser) {
+    if (!isSignedIn || !clerkUserId) {
+      setExchangedIdentity(null);
       logoutBarrierRef.current = Promise.resolve(
         useAuthStore.getState().logout(),
       );
@@ -55,6 +77,9 @@ export function ClerkAuthAdapter({
         await useAuthStore
           .getState()
           .loginWithClerk(sessionToken, controller.signal);
+        if (!cancelled && sessionId) {
+          setExchangedIdentity({ sessionId, userId: clerkUserId });
+        }
       } catch (error) {
         if (cancelled || controller.signal.aborted) return;
         const status = error instanceof ApiError ? error.status : undefined;
@@ -93,7 +118,19 @@ export function ClerkAuthAdapter({
       abortController?.abort();
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [clerkLoaded, clerkUser?.id, getToken, isSignedIn, signOut]);
+  }, [clerkLoaded, clerkUserId, getToken, isSignedIn, sessionId, signOut]);
 
-  return <>{children}</>;
+  const exchangeReady =
+    clerkLoaded === true &&
+    isSignedIn === true &&
+    typeof sessionId === "string" &&
+    sessionId !== "" &&
+    exchangedIdentity?.sessionId === sessionId &&
+    exchangedIdentity.userId === clerkUserId;
+
+  return (
+    <ClerkSessionExchangeContext.Provider value={exchangeReady}>
+      {children}
+    </ClerkSessionExchangeContext.Provider>
+  );
 }

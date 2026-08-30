@@ -49,7 +49,7 @@ describe("loadRuntimeConfig", () => {
         schemaVersion: 1,
         apiUrl: "https://api.patchbay.ai",
         wsUrl: "wss://api.patchbay.ai/ws",
-        appUrl: "https://accounts.aspectlylabs.com",
+        appUrl: "https://accounts.patchbay.ai",
       },
     });
   });
@@ -75,7 +75,7 @@ describe("loadRuntimeConfig", () => {
         schemaVersion: 1,
         apiUrl: "https://api.patchbay.ai",
         wsUrl: "wss://api.patchbay.ai/ws",
-        appUrl: "https://accounts.aspectlylabs.com",
+        appUrl: "https://accounts.patchbay.ai",
       },
     });
   });
