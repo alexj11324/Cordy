@@ -70,6 +70,112 @@ describe("local Vite preview API", () => {
     );
   });
 
+  it("applies my scopes, assignee filters, date ranges, and priority ordering", async () => {
+    const assigned = await call("POST", "/api/issues/table/rows", {
+      query: {
+        ...baseQuery,
+        scope: { kind: "my", relation: "assigned" },
+      },
+      page: { limit: 50 },
+    });
+    const noAssignee = await call("POST", "/api/issues/table/rows", {
+      query: {
+        ...baseQuery,
+        filters: { assignees: [], include_no_assignee: true },
+      },
+      page: { limit: 50 },
+    });
+    const byPriority = await call("POST", "/api/issues/table/rows", {
+      query: {
+        ...baseQuery,
+        sort: { field: "priority", direction: "asc" },
+      },
+      page: { limit: 50 },
+    });
+    const allIssues = await call("GET", "/api/issues?limit=50");
+    const newest = allIssues.body.issues.find((issue) => issue.identifier === "PRE-101");
+    const recentRange = {
+      field: "created_at",
+      start: newest.created_at,
+      end: new Date(Date.parse(newest.created_at) + 1_000).toISOString(),
+    };
+    const recent = await call("POST", "/api/issues/table/rows", {
+      query: {
+        ...baseQuery,
+        filters: { date: recentRange },
+      },
+      page: { limit: 50 },
+    });
+    const recentFacets = await call("POST", "/api/issues/table/facets", {
+      query: {
+        ...baseQuery,
+        filters: { date: recentRange },
+      },
+      facets: [{ kind: "status" }],
+    });
+
+    expect(assigned.body.rows.map(({ issue }) => issue.identifier)).toEqual([
+      "PRE-101",
+      "PRE-102",
+      "PRE-103",
+      "PRE-106",
+    ]);
+    expect(assigned.body.rows.map(({ issue }) => issue.identifier)).not.toEqual(
+      expect.arrayContaining(["PRE-104", "PRE-105"]),
+    );
+    expect(noAssignee.body).toMatchObject({ total: 0, rows: [] });
+    expect(byPriority.body.rows.map(({ issue }) => issue.identifier)).toEqual([
+      "PRE-104",
+      "PRE-101",
+      "PRE-102",
+      "PRE-105",
+      "PRE-103",
+      "PRE-106",
+    ]);
+    expect(recent.body.rows.map(({ issue }) => issue.identifier)).toEqual(["PRE-101"]);
+    expect(recentFacets.body.total).toBe(1);
+    expect(recentFacets.body.facets[0].values).toEqual([{ key: "backlog", count: 1 }]);
+  });
+
+  it("serves compound swimlane groups and cell rows", async () => {
+    const group = { kind: "compound", primary: "assignee", secondary: "status" };
+    const groups = await call("POST", "/api/issues/table/groups", {
+      query: baseQuery,
+      group,
+    });
+    const agentGroup = groups.body.groups.find(
+      (candidate) => candidate.key === "assignee:agent:agent-preview",
+    );
+    const inProgress = agentGroup.secondary_groups.find(
+      (candidate) => candidate.value.status === "in_progress",
+    );
+    const rows = await call("POST", "/api/issues/table/rows", {
+      query: baseQuery,
+      group,
+      group_key: inProgress.key,
+      hierarchy: { enabled: false },
+      parent_id: null,
+      page: { limit: 50 },
+    });
+    const categoryGroup = { ...group, secondary: "status_category" };
+    const categoryGroups = await call("POST", "/api/issues/table/groups", {
+      query: baseQuery,
+      group: categoryGroup,
+    });
+    const categoryCell = categoryGroups.body.groups
+      .find((candidate) => candidate.key === agentGroup.key)
+      .secondary_groups.find((candidate) => candidate.value.status === "in_progress");
+
+    expect(groups.body.total).toBe(6);
+    expect(agentGroup.count).toBe(2);
+    expect(agentGroup.secondary_groups).toHaveLength(7);
+    expect(inProgress.key).toContain(":status:in_progress");
+    expect(inProgress.count).toBe(1);
+    expect(rows.body.rows.map(({ issue }) => issue.identifier)).toEqual(["PRE-104"]);
+    expect(categoryCell.key).toContain(":status_category:in_progress");
+    expect(categoryCell.count).toBe(1);
+  });
+
   it("answers status and active-agent facets from the same filtered query", async () => {
     const result = await call("POST", "/api/issues/table/facets", {
       query: baseQuery,
@@ -329,6 +435,11 @@ describe("local Vite preview API", () => {
     );
     const completedRun = runs.body.runs.find((run) => run.id === "run-pr-review-completed");
     const completedTask = tasks.body.find((task) => task.id === "task-pre-106");
+    const currentRun = runs.body.runs.find((run) => run.id === "run-pr-review-current");
+    const currentTask = tasks.body.find((task) => task.id === "task-pre-105-review");
+    expect(Date.parse(currentRun.triggered_at)).toBeLessThanOrEqual(
+      Date.parse(currentTask.created_at),
+    );
     expect(Date.parse(completedRun.triggered_at)).toBeLessThanOrEqual(
       Date.parse(completedTask.created_at),
     );

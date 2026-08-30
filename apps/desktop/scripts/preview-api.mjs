@@ -18,6 +18,7 @@ const STATUS_CATEGORIES = [
   "blocked",
   "cancelled",
 ];
+const PRIORITY_ORDER = ["urgent", "high", "medium", "low", "none"];
 
 // Keep fixture timestamps anchored to the process that serves the preview.
 // Hard-coded dates make the shared time-ago cells look stale as soon as the
@@ -675,7 +676,7 @@ const PREVIEW_RUNS = {
       status: "running",
       issueNumber: "105",
       taskId: "task-pre-105-review",
-      triggeredAt: previewTime(-97),
+      triggeredAt: previewTime(-100),
     }),
     previewRun({
       id: "run-pr-review-completed",
@@ -1031,6 +1032,37 @@ function actorMatches(issue, actors, type) {
   );
 }
 
+function matchesMyScope(issue, relation) {
+  const assignedToPreviewUser =
+    issue.assignee_type === "member" && issue.assignee_id === PREVIEW_USER_ID;
+  const assignedToPreviewAgent = issue.assignee_type === "agent";
+  const createdByPreviewUser =
+    issue.creator_type === "member" && issue.creator_id === PREVIEW_USER_ID;
+
+  switch (relation) {
+    case "assigned":
+      return assignedToPreviewUser;
+    case "created":
+      return createdByPreviewUser;
+    case "involved":
+      return assignedToPreviewUser || assignedToPreviewAgent;
+    case "any":
+      return assignedToPreviewUser || assignedToPreviewAgent || createdByPreviewUser;
+    default:
+      return false;
+  }
+}
+
+function matchesDateFilter(issue, date) {
+  if (!date) return true;
+  if (date.field !== "created_at" && date.field !== "updated_at") return false;
+  const issueTime = Date.parse(issue[date.field] ?? "");
+  const start = Date.parse(date.start ?? "");
+  const end = Date.parse(date.end ?? "");
+  return Number.isFinite(issueTime) && Number.isFinite(start) && Number.isFinite(end) &&
+    start < end && issueTime >= start && issueTime < end;
+}
+
 function matchesIssue(issue, query = {}, { ignoreStatus = false, ignoreWorking = false } = {}) {
   const scope = query.scope ?? {};
   if (Array.isArray(scope.assignee_types) && !scope.assignee_types.includes(issue.assignee_type)) {
@@ -1045,6 +1077,9 @@ function matchesIssue(issue, query = {}, { ignoreStatus = false, ignoreWorking =
   if (scope.kind === "creator" && !actorMatches(issue, [scope.actor], "creator")) {
     return false;
   }
+  if (scope.kind === "my" && !matchesMyScope(issue, scope.relation ?? "any")) {
+    return false;
+  }
 
   const filters = query.filters ?? {};
   if (!ignoreStatus && Array.isArray(filters.statuses) && filters.statuses.length > 0) {
@@ -1055,8 +1090,14 @@ function matchesIssue(issue, query = {}, { ignoreStatus = false, ignoreWorking =
   if (Array.isArray(filters.priorities) && filters.priorities.length > 0 && !filters.priorities.includes(issue.priority)) {
     return false;
   }
-  if (!actorMatches(issue, filters.assignees, "assignee")) {
-    if (!(filters.include_no_assignee && issue.assignee_id === null)) return false;
+  if (Array.isArray(filters.assignees)) {
+    if (filters.assignees.length === 0) {
+      if (!filters.include_no_assignee || issue.assignee_id !== null) return false;
+    } else if (!actorMatches(issue, filters.assignees, "assignee")) {
+      if (!(filters.include_no_assignee && issue.assignee_id === null)) return false;
+    }
+  } else if (filters.include_no_assignee && issue.assignee_id !== null) {
+    return false;
   }
   if (!actorMatches(issue, filters.creators, "creator")) return false;
   if (Array.isArray(filters.project_ids) && filters.project_ids.length > 0 && !filters.project_ids.includes(issue.project_id)) {
@@ -1066,6 +1107,7 @@ function matchesIssue(issue, query = {}, { ignoreStatus = false, ignoreWorking =
     const labels = new Set((issue.labels ?? []).map((label) => label.id));
     if (!filters.label_ids.some((labelId) => labels.has(labelId))) return false;
   }
+  if (!matchesDateFilter(issue, filters.date)) return false;
   if (!ignoreWorking && Array.isArray(filters.working_issue_ids)) {
     if (!filters.working_issue_ids.includes(issue.id)) return false;
   }
@@ -1086,8 +1128,15 @@ function sortIssues(issues, query = {}) {
   const field = query.sort?.field ?? "position";
   const direction = query.sort?.direction === "desc" ? -1 : 1;
   return [...issues].sort((a, b) => {
-    const left = field === "title" ? a.title : field === "priority" ? a.priority : a[field] ?? "";
-    const right = field === "title" ? b.title : field === "priority" ? b.priority : b[field] ?? "";
+    if (field === "priority") {
+      const leftRank = PRIORITY_ORDER.indexOf(a.priority);
+      const rightRank = PRIORITY_ORDER.indexOf(b.priority);
+      const left = leftRank === -1 ? PRIORITY_ORDER.length : leftRank;
+      const right = rightRank === -1 ? PRIORITY_ORDER.length : rightRank;
+      if (left !== right) return (left - right) * direction;
+    }
+    const left = field === "title" ? a.title : a[field] ?? "";
+    const right = field === "title" ? b.title : b[field] ?? "";
     return String(left).localeCompare(String(right), undefined, { numeric: true }) * direction;
   });
 }
@@ -1140,27 +1189,104 @@ function tableFacets(body, copy = DEFAULT_PREVIEW_COPY) {
 }
 
 function groupKeyForIssue(issue, group) {
-  if (group?.kind === "assignee") return issue.assignee_id ? `assignee:${issue.assignee_type}:${issue.assignee_id}` : "assignee:none";
+  if (group?.kind === "assignee") return issue.assignee_id ? `assignee:${issue.assignee_type}:${issue.assignee_id}` : "assignee:unassigned";
   if (group?.kind === "project") return issue.project_id ? `project:${issue.project_id}` : "project:none";
+  if (group?.kind === "parent") return issue.parent_issue_id ? `parent:${issue.parent_issue_id}` : "parent:none";
   return `status:${categoryOf(issue)}`;
 }
 
-function groupValueForIssue(issue, group) {
+function groupValueForIssue(issue, group, issueById = new Map()) {
   if (group?.kind === "assignee") {
     return { kind: "assignee", actor: issue.assignee_id ? { type: issue.assignee_type, id: issue.assignee_id } : null };
   }
   if (group?.kind === "project") return { kind: "project", project_id: issue.project_id };
+  if (group?.kind === "parent") {
+    const parent = issue.parent_issue_id ? issueById.get(issue.parent_issue_id) ?? null : null;
+    return {
+      kind: "parent",
+      parent_id: issue.parent_issue_id,
+      parent: parent
+        ? {
+            id: parent.id,
+            number: parent.number,
+            identifier: parent.identifier,
+            title: parent.title,
+            status: parent.status,
+          }
+        : null,
+      value_state: issue.parent_issue_id
+        ? parent
+          ? "value"
+          : "unavailable"
+        : "unset",
+    };
+  }
   return { kind: "status", status: categoryOf(issue) };
+}
+
+function compoundGroupKey(primaryKey, status, secondary) {
+  const axis = secondary === "status_category" ? ":status_category:" : ":status:";
+  return `compound:${Buffer.from(primaryKey, "utf8").toString("base64url")}${axis}${status}`;
+}
+
+function parseCompoundGroupKey(groupKey, secondary) {
+  if (typeof groupKey !== "string" || !groupKey.startsWith("compound:")) return null;
+  const axis = secondary === "status_category" ? ":status_category:" : ":status:";
+  const marker = groupKey.indexOf(axis, "compound:".length);
+  if (marker < 0) return null;
+  const encoded = groupKey.slice("compound:".length, marker);
+  const status = groupKey.slice(marker + axis.length);
+  if (!encoded || !status) return null;
+  try {
+    const primaryKey = Buffer.from(encoded, "base64url").toString("utf8");
+    return primaryKey ? { primaryKey, status } : null;
+  } catch {
+    return null;
+  }
+}
+
+function secondaryValueForIssue(issue, secondary) {
+  return secondary === "status_category" ? categoryOf(issue) : issue.status;
 }
 
 function tableGroups(body, copy = DEFAULT_PREVIEW_COPY) {
   const issues = filteredIssues(body.query, undefined, copy);
+  const group = body.group ?? { kind: "status" };
+  if (group.kind === "compound") {
+    const primary = group.primary ?? "assignee";
+    const secondary = group.secondary ?? "status";
+    const issueById = new Map(issues.map((issue) => [issue.id, issue]));
+    const grouped = new Map();
+    for (const issue of issues) {
+      const key = groupKeyForIssue(issue, { kind: primary });
+      const current = grouped.get(key) ?? { key, issues: [] };
+      current.issues.push(issue);
+      grouped.set(key, current);
+    }
+    return {
+      query_fingerprint: JSON.stringify(body.query ?? {}),
+      total: issues.length,
+      groups: [...grouped.values()].map(({ key, issues: groupIssues }) => ({
+        key,
+        value: groupValueForIssue(groupIssues[0], { kind: primary }, issueById),
+        count: groupIssues.length,
+        secondary_groups: STATUS_CATEGORIES.map((status) => ({
+          key: compoundGroupKey(key, status, secondary),
+          value: { kind: "status", status },
+          count: groupIssues.filter(
+            (issue) => secondaryValueForIssue(issue, secondary) === status,
+          ).length,
+        })),
+      })),
+      next_cursor: null,
+    };
+  }
   const grouped = new Map();
   for (const issue of issues) {
-    const key = groupKeyForIssue(issue, body.group);
+    const key = groupKeyForIssue(issue, group);
     const current = grouped.get(key);
     if (current) current.count += 1;
-    else grouped.set(key, { key, value: groupValueForIssue(issue, body.group), count: 1 });
+    else grouped.set(key, { key, value: groupValueForIssue(issue, group), count: 1 });
   }
   return {
     query_fingerprint: JSON.stringify(body.query ?? {}),
@@ -1173,7 +1299,20 @@ function tableGroups(body, copy = DEFAULT_PREVIEW_COPY) {
 function tableRows(body, copy = DEFAULT_PREVIEW_COPY) {
   let issues = filteredIssues(body.query, undefined, copy);
   const groupKey = body.group_key;
-  if (groupKey?.startsWith("status:")) {
+  if (body.group?.kind === "compound" && groupKey) {
+    const secondary = body.group.secondary ?? "status";
+    const parsed = parseCompoundGroupKey(groupKey, secondary);
+    if (!parsed) {
+      issues = [];
+    } else {
+      const primary = body.group.primary ?? "assignee";
+      issues = issues.filter(
+        (issue) =>
+          groupKeyForIssue(issue, { kind: primary }) === parsed.primaryKey &&
+          secondaryValueForIssue(issue, secondary) === parsed.status,
+      );
+    }
+  } else if (groupKey?.startsWith("status:")) {
     const category = groupKey.slice("status:".length);
     issues = issues.filter((issue) => categoryOf(issue) === category);
   } else if (groupKey?.startsWith("assignee:")) {
@@ -1181,7 +1320,7 @@ function tableRows(body, copy = DEFAULT_PREVIEW_COPY) {
     issues = issues.filter(
       (issue) =>
         `${issue.assignee_type}:${issue.assignee_id}` === expected ||
-        (expected === "none" && issue.assignee_id === null),
+        ((expected === "none" || expected === "unassigned") && issue.assignee_id === null),
     );
   } else if (groupKey?.startsWith("project:")) {
     const expected = groupKey.slice("project:".length);
