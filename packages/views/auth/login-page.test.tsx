@@ -387,6 +387,31 @@ describe("LoginPage", () => {
   // Google OAuth
   // -------------------------------------------------------------------------
 
+  it("matches the cardless authentication example structure when embedded", () => {
+    const onGoogleLogin = vi.fn();
+    const { container } = renderWithI18n(
+      <LoginPage
+        embedded
+        showGoogleSeparator
+        onGoogleLogin={onGoogleLogin}
+        onSuccess={onSuccess}
+        extra={<button type="button">Continue as guest</button>}
+      />,
+    );
+
+    expect(container.querySelector('[data-slot="card"]')).not.toBeInTheDocument();
+    expect(container.querySelector(".sm\\:w-\\[350px\\]")).toBeInTheDocument();
+    expect(screen.getByText("Email")).toHaveClass("sr-only");
+    expect(container.querySelector('[data-slot="field-group"]')).toBeInTheDocument();
+    expect(screen.getByText("Or continue with")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /continue with google/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /continue as guest/i }),
+    ).toBeInTheDocument();
+  });
+
   it("renders Google OAuth button when google prop provided", () => {
     render(
       <LoginPage

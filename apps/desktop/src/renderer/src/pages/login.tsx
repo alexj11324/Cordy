@@ -1,19 +1,9 @@
 import { useState } from "react";
-import { Mail } from "lucide-react";
 import { useAuthStore } from "@patchbay/core/auth";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@patchbay/ui/components/ui/card";
 import { Alert, AlertDescription } from "@patchbay/ui/components/ui/alert";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
 import { LoginPage } from "@patchbay/views/auth";
-import { GoogleIcon } from "@patchbay/views/onboarding";
 import { useT } from "@patchbay/views/i18n";
 import { DragStrip } from "@patchbay/views/platform";
 import { createDesktopGoogleLoginUrl } from "./login-handoff";
@@ -55,7 +45,7 @@ function GuestSessionEntry() {
       <Button
         type="button"
         variant="ghost"
-        className="w-full text-muted-foreground"
+        className="h-auto w-full px-1 py-1 text-sm text-muted-foreground"
         onClick={() => void handleContinue()}
         disabled={isStarting}
         aria-busy={isStarting}
@@ -76,33 +66,8 @@ function GuestSessionEntry() {
 export function DesktopLoginPage() {
   const accountsUrl = requireRuntimeAccountsUrl();
   const { t } = useT("auth");
-  const [showEmailFlow, setShowEmailFlow] = useState(false);
   const [openingGoogle, setOpeningGoogle] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  if (showEmailFlow) {
-    return (
-      <div className="flex h-screen flex-col bg-background">
-        <DragStrip />
-        <main className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4 py-10">
-          <LoginPage
-            logo={<PatchbayIcon bordered size="lg" />}
-            onSuccess={() => undefined}
-            extra={
-              <Button
-                type="button"
-                variant="ghost"
-                className="w-full"
-                onClick={() => setShowEmailFlow(false)}
-              >
-                {t(($) => $.common.back)}
-              </Button>
-            }
-          />
-        </main>
-      </div>
-    );
-  }
 
   const handleGoogleLogin = async () => {
     if (openingGoogle) return;
@@ -134,55 +99,54 @@ export function DesktopLoginPage() {
   return (
     <div className="flex h-screen flex-col bg-background">
       <DragStrip />
-      <main className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-4 py-10">
-        <Card className="w-full max-w-md shadow-lg">
-          <CardHeader className="items-center text-center">
-            <PatchbayIcon bordered size="lg" />
-            <CardTitle className="text-display-sm">
-              {t(($) => $.desktop.entry.title)}
-            </CardTitle>
-            <CardDescription className="max-w-sm text-pretty">
-              {t(($) => $.desktop.entry.description)}
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {error && (
-              <Alert variant="destructive" aria-live="polite">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                size="lg"
-                onClick={() => void handleGoogleLogin()}
-                disabled={openingGoogle}
-                aria-busy={openingGoogle}
-              >
-                <GoogleIcon className="size-4" />
-                {openingGoogle
-                  ? t(($) => $.desktop.entry.opening_google)
-                  : t(($) => $.desktop.entry.login_google)}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                size="lg"
-                onClick={() => setShowEmailFlow(true)}
-                disabled={openingGoogle}
-              >
-                <Mail className="size-4" aria-hidden="true" />
-                {t(($) => $.desktop.entry.login_email)}
-              </Button>
+      <main
+        id="desktop-login"
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+      >
+        <div
+          data-testid="authentication-example"
+          className="relative flex min-h-full flex-1 flex-col overflow-hidden bg-background lg:grid lg:grid-cols-2"
+        >
+          <a
+            href="#desktop-login"
+            aria-current="page"
+            className="absolute right-4 top-4 z-30 inline-flex h-9 items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:right-8 md:top-8"
+          >
+            {t(($) => $.desktop.entry.login_label)}
+          </a>
+          <div
+            data-testid="authentication-brand-panel"
+            className="relative hidden h-full min-h-[32rem] flex-col p-10 text-primary lg:flex dark:border-r"
+          >
+            <div className="absolute inset-0 bg-primary/5" aria-hidden="true" />
+            <div className="relative z-20 flex items-center text-lg font-medium">
+              <PatchbayIcon className="mr-2 size-6" noSpin />
+              {t(($) => $.desktop.entry.brand)}
             </div>
-          </CardContent>
-          <CardFooter className="border-t pt-3">
-            <GuestSessionEntry />
-          </CardFooter>
-        </Card>
+            <div className="relative z-20 mt-auto">
+              <blockquote className="leading-normal text-balance">
+                {t(($) => $.desktop.entry.quote)}
+              </blockquote>
+            </div>
+          </div>
+          <div className="flex min-h-full items-center justify-center p-6 lg:h-full lg:p-8">
+            <div className="mx-auto flex w-full flex-col justify-center gap-6 sm:w-[350px]">
+              {error && (
+                <Alert variant="destructive" aria-live="polite">
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+              <LoginPage
+                embedded
+                showGoogleSeparator
+                googleLoading={openingGoogle}
+                onGoogleLogin={() => void handleGoogleLogin()}
+                onSuccess={() => undefined}
+                extra={<GuestSessionEntry />}
+              />
+            </div>
+          </div>
+        </div>
       </main>
     </div>
   );
