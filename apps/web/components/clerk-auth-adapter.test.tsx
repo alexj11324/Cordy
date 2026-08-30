@@ -61,6 +61,11 @@ vi.mock("@patchbay/core/auth", () => ({
 vi.mock("@patchbay/core/api", () => ({
   ApiError: class ApiError extends Error {
     status?: number;
+
+    constructor(message: string, status: number, _statusText: string) {
+      super(message);
+      this.status = status;
+    }
   },
 }));
 
@@ -68,6 +73,7 @@ import {
   ClerkAuthAdapter,
   useClerkSessionExchangeReady,
 } from "./clerk-auth-adapter";
+import { ApiError } from "@patchbay/core/api";
 
 function ExchangeStatus() {
   return <output>{useClerkSessionExchangeReady() ? "ready" : "waiting"}</output>;
@@ -158,5 +164,22 @@ describe("ClerkAuthAdapter", () => {
     await waitFor(() => expect(screen.getByText("waiting")).toBeInTheDocument());
     await waitFor(() => expect(loginWithClerk).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByText("ready")).toBeInTheDocument());
+  });
+
+  it("suppresses auth re-arm while cleaning up a permanent exchange rejection", async () => {
+    loginWithClerk.mockRejectedValueOnce(
+      new ApiError("rejected", 401, "Unauthorized"),
+    );
+
+    render(
+      <ClerkAuthAdapter>
+        <ExchangeStatus />
+      </ClerkAuthAdapter>,
+    );
+
+    await waitFor(() =>
+      expect(logout).toHaveBeenCalledWith({ rearmAuth: false }),
+    );
+    expect(signOut).toHaveBeenCalledOnce();
   });
 });

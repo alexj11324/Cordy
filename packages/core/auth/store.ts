@@ -13,9 +13,15 @@ export interface AuthStoreOptions {
   cookieAuth?: boolean;
 }
 
+export type AuthLogoutOptions = {
+  /** Prevent platform auth recovery when cleaning up a permanently rejected session. */
+  rearmAuth?: boolean;
+};
+
 /** Optional promise that platform auth cleanup can await before re-authentication. */
 export type AuthLogoutHandler = (
   serverLogout?: Promise<void>,
+  options?: AuthLogoutOptions,
 ) => void | Promise<void>;
 
 export type AuthStatus =
@@ -38,7 +44,7 @@ export interface AuthState {
   createGuestSession: () => Promise<User>;
   loginWithToken: (token: string) => Promise<User>;
   /** Clears local auth state and resolves after a cookie session is revoked. */
-  logout: () => Promise<void>;
+  logout: (options?: AuthLogoutOptions) => Promise<void>;
   setUser: (user: User) => void;
   refreshMe: () => Promise<void>;
 }
@@ -135,12 +141,12 @@ export function createAuthStore(options: AuthStoreOptions) {
       return user;
     },
 
-    logout: async () => {
+    logout: async (logoutOptions?: AuthLogoutOptions) => {
       const serverLogout =
         cookieAuth || get().user?.is_guest === true
           ? api.logout().catch(() => {})
           : Promise.resolve();
-      const platformLogout = onLogout?.(serverLogout);
+      const platformLogout = onLogout?.(serverLogout, logoutOptions);
       // Keep the promise so callers that are about to start a new Clerk
       // exchange or navigate away can serialize behind both server-side
       // session revocation and platform auth cleanup (for example Clerk).

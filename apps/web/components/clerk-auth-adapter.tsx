@@ -97,7 +97,9 @@ export function ClerkAuthAdapter({
           // session. Clear the Patchbay session and Clerk identity so the
           // user can take an actionable sign-in path instead of seeing a
           // blank recovering shell forever.
-          logoutBarrierRef.current = useAuthStore.getState().logout();
+          logoutBarrierRef.current = useAuthStore
+            .getState()
+            .logout({ rearmAuth: false });
           await logoutBarrierRef.current;
           if (cancelled) return;
           void signOut().catch(() => {});

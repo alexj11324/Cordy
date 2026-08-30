@@ -3,7 +3,10 @@
 import { useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useAuthStore } from "@patchbay/core/auth";
-import type { AuthLogoutHandler } from "@patchbay/core/auth";
+import type {
+  AuthLogoutHandler,
+  AuthLogoutOptions,
+} from "@patchbay/core/auth";
 import { CoreProvider } from "@patchbay/core/platform";
 import { createBrowserCookieLocaleAdapter } from "@patchbay/core/i18n/browser";
 import type { LocaleResources, SupportedLocale } from "@patchbay/core/i18n";
@@ -102,29 +105,34 @@ function ClerkWebProviders(props: WebProvidersProps) {
   const clerkAuthRef = useRef({ isSignedIn, signOut });
   clerkAuthRef.current = { isSignedIn, signOut };
 
-  const logout = useCallback<AuthLogoutHandler>(async (serverLogout) => {
-    let signOutFailed = false;
-    try {
-      if (clerkAuthRef.current.isSignedIn) {
-        await clerkAuthRef.current.signOut();
+  const logout = useCallback<AuthLogoutHandler>(
+    async (serverLogout, options?: AuthLogoutOptions) => {
+      let signOutFailed = false;
+      try {
+        if (clerkAuthRef.current.isSignedIn) {
+          await clerkAuthRef.current.signOut();
+        }
+      } catch (error) {
+        signOutFailed = true;
+        // A transient Clerk failure must not strand the already-cleared core
+        // session on a gated workspace route. The next explicit sign-in still
+        // goes through Clerk and the Rust exchange before becoming authenticated.
+        console.warn("Clerk sign-out failed during local logout", error);
+      } finally {
+        clearWebSessionState();
+        if (signOutFailed) {
+          // Core starts server revocation and platform cleanup together. Wait
+          // for the revocation response before re-exchanging Clerk, otherwise
+          // the old logout response could clear the newly issued session cookie.
+          await serverLogout;
+          if (options?.rearmAuth !== false) {
+            useAuthStore.getState().retryAuthentication();
+          }
+        }
       }
-    } catch (error) {
-      signOutFailed = true;
-      // A transient Clerk failure must not strand the already-cleared core
-      // session on a gated workspace route. The next explicit sign-in still
-      // goes through Clerk and the Rust exchange before becoming authenticated.
-      console.warn("Clerk sign-out failed during local logout", error);
-    } finally {
-      clearWebSessionState();
-      if (signOutFailed) {
-        // Core starts server revocation and platform cleanup together. Wait
-        // for the revocation response before re-exchanging Clerk, otherwise
-        // the old logout response could clear the newly issued session cookie.
-        await serverLogout;
-        useAuthStore.getState().retryAuthentication();
-      }
-    }
-  }, []);
+    },
+    [],
+  );
 
   return <WebProviderTree {...props} onLogout={logout} />;
 }
