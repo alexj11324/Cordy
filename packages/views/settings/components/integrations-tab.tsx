@@ -61,6 +61,7 @@ type InstallationSummary = {
   id: string;
   agent_id: string | null;
   status: string;
+  region?: string;
 };
 
 type InstallationListing = {
@@ -90,6 +91,7 @@ type HubActionProps = {
   isGuest: boolean;
   query: IntegrationQuery;
   installationId?: string;
+  reconnectSupported?: boolean;
   onDisconnect: () => void;
   onManage: () => void;
   onReconnect: () => void;
@@ -172,6 +174,7 @@ function HubAction({
   onManage,
   onReconnect,
   query,
+  reconnectSupported = true,
 }: HubActionProps) {
   const { t } = useT("settings");
   const hubConnected = hasActiveHub(query.data);
@@ -227,7 +230,12 @@ function HubAction({
     );
   }
   if (hubConnected && installationId) {
-    const canReconnect = query.data.install_supported === true;
+    // A deployment-wide capability flag is not enough for region-aware
+    // providers. Lark's international reconnect flow is intentionally
+    // disabled until its end-to-end path is restored; hiding the action
+    // prevents revoking a working install into an unsupported flow.
+    const canReconnect =
+      reconnectSupported && query.data.install_supported === true;
     return (
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Button variant="outline" size="sm" onClick={onManage}>
@@ -448,6 +456,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
                     isGuest={isGuest}
                     query={query}
                     installationId={hub?.id}
+                    reconnectSupported={channel !== "lark" || hub?.region !== "lark"}
                     onManage={() => {
                       setManagedChannel(channel);
                       setManagedInstallationId(hub?.id ?? null);
