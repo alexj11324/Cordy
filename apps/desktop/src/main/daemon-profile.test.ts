@@ -7,6 +7,7 @@ import {
   DEFAULT_HEALTH_PORT,
   deriveProfileName,
   healthPortForProfile,
+  legacyDesktopProfileForTarget,
   profileArgs,
   profileConfigPath,
   profileDir,
@@ -32,6 +33,23 @@ describe("deriveProfileName", () => {
 
   it("falls back to a fixed name on an unparseable URL", () => {
     expect(deriveProfileName("not a url")).toBe("desktop");
+  });
+});
+
+describe("legacyDesktopProfileForTarget", () => {
+  it("retires only the previous packaged profile on the canonical migration", () => {
+    expect(
+      legacyDesktopProfileForTarget("https://api.aspectlylabs.com"),
+    ).toEqual({
+      name: "desktop-api.patchbay.ai",
+      serverUrl: "https://api.patchbay.ai",
+    });
+    expect(
+      legacyDesktopProfileForTarget("https://api.example.com"),
+    ).toBeNull();
+    expect(
+      legacyDesktopProfileForTarget("https://api.aspectlylabs.com/proxy"),
+    ).toBeNull();
   });
 });
 

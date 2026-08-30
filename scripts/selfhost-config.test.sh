@@ -91,6 +91,20 @@ for workflow_file in .github/workflows/container-images.yml .github/workflows/re
   fi
 done
 
+# Those hosted workflow contracts must run when either workflow changes.
+# Keep this scoped to the frontend filter; release.yml also appears in the
+# backend filter and would otherwise make a broad grep pass accidentally.
+frontend_filter="$(
+  sed -n "/^            frontend:/,/^            backend:/p" \
+    .github/workflows/ci.yml
+)"
+for workflow_file in .github/workflows/container-images.yml .github/workflows/release.yml; do
+  if ! grep -Fq -- "- '${workflow_file}'" <<<"$frontend_filter"; then
+    echo "$workflow_file must trigger the frontend deployment contract tests"
+    exit 1
+  fi
+done
+
 while IFS= read -r llm_var; do
   if ! grep -Eq "^[[:space:]]+${llm_var}: \\\$\{${llm_var}:-" docker-compose.selfhost.yml; then
     echo "$llm_var is documented in .env.example but not mapped into the backend"

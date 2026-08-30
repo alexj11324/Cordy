@@ -142,8 +142,17 @@ const desktopAPI = {
     ipcRenderer.send(AUTH_SESSION_STATE_CHANNEL, userId),
   /** Listen for a PKCE-bound, one-time desktop login code delivered via deep link. */
   onAuthHandoff: (
-    callback: (payload: { code: string; state: string }) => void,
-  ) => subscribeToMainRendererChannel("auth:handoff", callback),
+    callback: (payload: {
+      code: string;
+      state: string;
+    }) => boolean | Promise<boolean>,
+  ) =>
+    subscribeToMainRendererChannel(
+      "auth:handoff",
+      (payload: { code: string; state: string }) => {
+        void Promise.resolve(callback(payload)).catch(() => undefined);
+      },
+    ),
   /** Listen for invitation IDs delivered via deep link */
   onInviteOpen: (callback: (invitationId: string) => void) =>
     subscribeToMainRendererChannel("invite:open", callback),

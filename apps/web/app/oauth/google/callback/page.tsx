@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useClerk, useSignIn, useSignUp } from "@clerk/nextjs";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
+import { buildBrokerRoute } from "@/features/auth/broker-path";
 import { readDesktopHandoffBinding } from "@/features/auth/desktop-handoff";
 import { useT } from "@patchbay/views/i18n";
 import {
@@ -44,7 +45,11 @@ function GoogleOAuthCallbackContent() {
     if (!clerk.loaded || attempted.current) return;
     attempted.current = true;
 
-    const destination = `/login?${binding.query}`;
+    const destination = `${buildBrokerRoute(
+      window.location.pathname,
+      "/oauth/google/callback",
+      "/login",
+    )}?${binding.query}`;
     const failClosed = () => {
       setError(t(($) => $.web.google_oauth.failed));
     };

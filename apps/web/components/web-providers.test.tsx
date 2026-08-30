@@ -90,4 +90,22 @@ describe("WebProviders", () => {
       clearLoggedInCookie.mock.invocationCallOrder[0]!,
     );
   });
+
+  it("completes local logout when Clerk sign-out is temporarily unavailable", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    signOut.mockRejectedValue(new TypeError("offline"));
+    render(
+      <WebProviders locale="en" resources={{}}>
+        <div>content</div>
+      </WebProviders>,
+    );
+
+    const onLogout = coreProps.current?.onLogout;
+    await expect(act(async () => onLogout?.())).resolves.toBeUndefined();
+
+    expect(signOut).toHaveBeenCalledOnce();
+    expect(resetWelcome).toHaveBeenCalledOnce();
+    expect(clearLoggedInCookie).toHaveBeenCalledOnce();
+    warn.mockRestore();
+  });
 });

@@ -145,15 +145,17 @@ function AppContent() {
   useEffect(() => {
     return window.desktopAPI.onAuthHandoff(async ({ code, state }) => {
       setBootstrapping(true);
+      let acknowledged = false;
       try {
-        const authenticated = await completeDesktopHandoff(code, state, {
+        const completion = await completeDesktopHandoff(code, state, {
           redeem: (handoffCode, verifier) =>
             api.redeemDesktopHandoff(handoffCode, verifier),
           login: (token) => useAuthStore.getState().loginWithToken(token),
           recoverPersistedToken: () =>
             useAuthStore.getState().retryAuthentication(),
         });
-        if (!authenticated) return;
+        acknowledged = completion.acknowledged;
+        if (!completion.authenticated) return completion.acknowledged;
         // Seed React Query cache with the workspace list so the index-route
         // redirect (routes.tsx `IndexRedirect`) can resolve the initial
         // destination without a second fetch. Workspace side-effects
@@ -161,8 +163,10 @@ function AppContent() {
         // WorkspaceRouteLayout when the URL resolves.
         const wsList = await api.listWorkspaces();
         qc.setQueryData(workspaceKeys.list(), wsList);
+        return completion.acknowledged;
       } catch {
         // Token invalid or expired — user stays on login page
+        return acknowledged;
       } finally {
         setBootstrapping(false);
       }

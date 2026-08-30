@@ -100,10 +100,18 @@ function ClerkWebProviders(props: WebProvidersProps) {
   clerkAuthRef.current = { isSignedIn, signOut };
 
   const logout = useCallback(async () => {
-    if (clerkAuthRef.current.isSignedIn) {
-      await clerkAuthRef.current.signOut();
+    try {
+      if (clerkAuthRef.current.isSignedIn) {
+        await clerkAuthRef.current.signOut();
+      }
+    } catch (error) {
+      // A transient Clerk failure must not strand the already-cleared core
+      // session on a gated workspace route. The next explicit sign-in still
+      // goes through Clerk and the Rust exchange before becoming authenticated.
+      console.warn("Clerk sign-out failed during local logout", error);
+    } finally {
+      clearWebSessionState();
     }
-    clearWebSessionState();
   }, []);
 
   return <WebProviderTree {...props} onLogout={logout} />;

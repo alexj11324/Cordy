@@ -143,10 +143,27 @@ describe("desktop login handoff", () => {
         login,
         recoverPersistedToken,
       }),
-    ).resolves.toBe(false);
+    ).resolves.toEqual({ acknowledged: true, authenticated: false });
 
     expect(login).toHaveBeenCalledWith("session-token");
     expect(recoverPersistedToken).toHaveBeenCalledOnce();
+    expect(readDesktopHandoffVerifier(state)).toBeNull();
+  });
+
+  it("acknowledges a code only after redemption and authentication succeed", async () => {
+    const url = await createDesktopGoogleLoginUrl(
+      "https://accounts.aspectlylabs.com",
+    );
+    const state = new URL(url).searchParams.get("state") ?? "";
+
+    await expect(
+      completeDesktopHandoff("pbd_code", state, {
+        redeem: vi.fn().mockResolvedValue({ token: "session-token" }),
+        login: vi.fn().mockResolvedValue(undefined),
+        recoverPersistedToken: vi.fn(),
+      }),
+    ).resolves.toEqual({ acknowledged: true, authenticated: true });
+
     expect(readDesktopHandoffVerifier(state)).toBeNull();
   });
 
