@@ -113,6 +113,7 @@ jobs:
               - 'packages/core/runtimes/cli-version.ts'
               - 'Makefile'
               - '.github/workflows/ci.yml'
+              - '.github/workflows/macos-release.yml'
             installer:
               - 'scripts/install.sh'
               - 'scripts/install.ps1'

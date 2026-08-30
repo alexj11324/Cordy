@@ -218,16 +218,18 @@ function OnboardingStepFlow({
   // server-side (idempotent via COALESCE on onboarded_at) and navigates
   // without creating new workspace content.
   const handleWelcomeSkip = useCallback(async () => {
-    try {
-      await completeOnboarding("skip_existing", workspaces[0]?.id);
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : t(($) => $.errors.skip_failed),
-      );
-      return;
+    if (!backendFree) {
+      try {
+        await completeOnboarding("skip_existing", workspaces[0]?.id);
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : t(($) => $.errors.skip_failed),
+        );
+        return;
+      }
     }
     onComplete(workspaces[0] ?? undefined);
-  }, [workspaces, onComplete]);
+  }, [backendFree, workspaces, onComplete, t]);
 
   const handleWorkspaceCreated = useCallback(
     (ws: Workspace) => {

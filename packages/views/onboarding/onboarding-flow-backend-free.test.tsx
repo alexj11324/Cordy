@@ -16,7 +16,7 @@ vi.mock("@patchbay/core/auth", () => ({
 }));
 
 vi.mock("@patchbay/core/workspace", () => ({
-  useWorkspaceList: () => ({ workspaces: [], ready: true }),
+  useWorkspaceList: () => ({ workspaces: [mocks.workspace], ready: true }),
 }));
 
 vi.mock("@patchbay/core/onboarding", async () => {
@@ -55,7 +55,14 @@ vi.mock("./steps/step-runtime-connect", () => ({
   StepRuntimeConnect: () => null,
 }));
 
-vi.mock("./steps/step-welcome", () => ({ StepWelcome: () => null }));
+vi.mock("./steps/step-welcome", () => ({
+  StepWelcome: ({ onSkip }: { onSkip?: () => void }) =>
+    onSkip ? (
+      <button type="button" onClick={onSkip}>
+        Skip existing onboarding
+      </button>
+    ) : null,
+}));
 vi.mock("./components/onboarding-logout-button", () => ({
   OnboardingLogoutButton: () => null,
 }));
@@ -90,6 +97,25 @@ function renderRuntimeSkip(
   fireEvent.click(screen.getByRole("button", { name: "Skip preview runtime" }));
 }
 
+function renderWelcomeSkip(onComplete: ReturnType<typeof vi.fn>) {
+  render(
+    <I18nProvider
+      locale="en"
+      resources={{ en: { common: enCommon, onboarding: enOnboarding } }}
+    >
+      <OnboardingFlow
+        backendFree
+        onComplete={
+          onComplete as React.ComponentProps<typeof OnboardingFlow>["onComplete"]
+        }
+      />
+    </I18nProvider>,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Skip existing onboarding" }),
+  );
+}
+
 describe("OnboardingFlow backend-free runtime skip", () => {
   beforeEach(() => {
     mocks.completeOnboarding.mockReset();
@@ -110,6 +136,17 @@ describe("OnboardingFlow backend-free runtime skip", () => {
       workspaceId: mocks.workspace.id,
       choice: "skip",
     });
+  });
+
+  it("skips existing preview onboarding without calling the backend", async () => {
+    const onComplete = vi.fn();
+
+    renderWelcomeSkip(onComplete);
+
+    await waitFor(() =>
+      expect(onComplete).toHaveBeenCalledWith(mocks.workspace),
+    );
+    expect(mocks.completeOnboarding).not.toHaveBeenCalled();
   });
 
   it("still persists runtime skip when a backend is available", async () => {
