@@ -258,21 +258,21 @@ mod tests {
 
     #[test]
     fn authorized_parties_must_be_origins() {
-        assert!(split_origins(Some("https://aspectlylabs.com/path")).is_err());
+        assert!(split_origins(Some("https://app.example.com/path")).is_err());
         assert_eq!(
-            split_origins(Some("https://aspectlylabs.com, http://localhost:3000")).unwrap(),
-            vec!["https://aspectlylabs.com", "http://localhost:3000"]
+            split_origins(Some("https://app.example.com, https://local.example.com")).unwrap(),
+            vec!["https://app.example.com", "https://local.example.com"]
         );
     }
 
     #[test]
     fn missing_or_unknown_authorized_party_is_rejected() {
-        let allowed = vec!["https://accounts.aspectlylabs.com".to_string()];
+        let allowed = vec!["https://app.example.com".to_string()];
         assert!(!is_authorized_party(&allowed, None));
         assert!(!is_authorized_party(&allowed, Some("https://evil.example")));
         assert!(is_authorized_party(
             &allowed,
-            Some("https://accounts.aspectlylabs.com/")
+            Some("https://app.example.com/")
         ));
     }
 }

@@ -1,4 +1,4 @@
-import { buildDesktopLoginUrl } from "./login-url";
+import { buildDesktopGoogleLoginUrl } from "./login-url";
 
 const PENDING_HANDOFF_KEY = "patchbay_desktop_login_handoff";
 const PENDING_HANDOFF_TTL_MS = 10 * 60 * 1000;
@@ -73,7 +73,9 @@ function randomBase64Url(byteLength: number): string {
  * protocol URL. The verifier remains in app-local storage so a recreated
  * BrowserWindow can redeem the one-time code returned by the web login.
  */
-export async function createDesktopLoginUrl(appUrl: string): Promise<string> {
+export async function createDesktopGoogleLoginUrl(
+  appUrl: string,
+): Promise<string> {
   const verifier = randomBase64Url(32);
   const digest = await crypto.subtle.digest(
     "SHA-256",
@@ -91,7 +93,7 @@ export async function createDesktopLoginUrl(appUrl: string): Promise<string> {
     (entry) => entry.state !== state,
   );
   writePendingHandoffs([...pendingHandoffs, pending]);
-  const url = new URL(buildDesktopLoginUrl(appUrl));
+  const url = new URL(buildDesktopGoogleLoginUrl(appUrl));
   url.searchParams.set("code_challenge", codeChallenge);
   url.searchParams.set("state", state);
   return url.href;
