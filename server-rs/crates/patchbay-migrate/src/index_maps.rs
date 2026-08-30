@@ -463,23 +463,23 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "idx_activity_log_team_no_action_task",
     ),
     (
-        "398_agent_coordination_event_key_index",
+        "402_agent_coordination_event_key_index",
         "idx_agent_coordination_outbox_event_key",
     ),
     (
-        "399_agent_coordination_assignment_key_index",
+        "403_agent_coordination_assignment_key_index",
         "idx_agent_coordination_assignment_event_role",
     ),
     (
-        "400_agent_coordination_pending_index",
+        "404_agent_coordination_pending_index",
         "idx_agent_coordination_outbox_pending",
     ),
     (
-        "401_agent_coordination_outbox_id_index",
+        "405_agent_coordination_outbox_id_index",
         "agent_coordination_outbox_pkey_uidx",
     ),
     (
-        "402_agent_coordination_assignment_id_index",
+        "406_agent_coordination_assignment_id_index",
         "agent_coordination_assignment_pkey_uidx",
     ),
 ];

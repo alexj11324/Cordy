@@ -1,8 +1,8 @@
 -- Durable internal handoffs. These rows are the source of truth for
 -- coordinator work; the in-memory event bus is only a latency/UI hint.
 --
--- IDs are attached as primary keys in migration 403 after their backing
--- indexes are built concurrently in migrations 401 and 402. Inline PRIMARY
+-- IDs are attached as primary keys in migration 407 after their backing
+-- indexes are built concurrently in migrations 405 and 406. Inline PRIMARY
 -- KEY declarations build their indexes non-concurrently, which violates the
 -- repository migration policy even for newly-created tables.
 CREATE TABLE agent_coordination_outbox (
