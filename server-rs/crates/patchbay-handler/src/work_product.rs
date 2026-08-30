@@ -224,6 +224,9 @@ pub(crate) async fn attach_existing(
             Err(response) => return response,
         };
     publish_relation_event(&state, &issue, &product, &relation, &actor);
+    if request.close_intent {
+        crate::vcs_webhook::maybe_complete_issue(&state, issue.clone()).await;
+    }
     (
         StatusCode::OK,
         Json(json!({
@@ -822,6 +825,17 @@ pub(crate) async fn discover_after_task(
                         });
                     }
                 }
+            }
+            Err(error) if error.to_string().contains("status 404") => {
+                // An installation that does not cover this repository is not
+                // evidence that the exact-head lookup is ambiguous. GitHub
+                // reports that scope mismatch as 404; continue to the other
+                // workspace installation and retain hard failures below.
+                tracing::debug!(
+                    task_id = %task.id,
+                    installation_id = installation.installation_id,
+                    "branch discovery skipped installation without repository access"
+                );
             }
             Err(error) => {
                 lookup_failed = true;

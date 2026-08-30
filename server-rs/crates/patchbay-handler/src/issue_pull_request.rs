@@ -667,6 +667,9 @@ pub(crate) async fn attach(
         task_id: task_id.map(|id| id.to_string()).unwrap_or_default(),
         chat_session_id: String::new(),
     });
+    if request.close_intent {
+        crate::vcs_webhook::maybe_complete_issue(&state, issue.clone()).await;
+    }
     let status = if is_new {
         StatusCode::CREATED
     } else {

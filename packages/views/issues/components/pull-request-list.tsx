@@ -113,7 +113,6 @@ function UnassociatedPullRequests({ issueId, workspaceId }: { issueId: string; w
   const products = (data?.work_products ?? []).filter(
     (product) =>
       product.kind === "pull_request" &&
-      product.provider === "github" &&
       product.external_url,
   );
 

@@ -914,6 +914,13 @@ export function useRealtimeSync(
         // PR list is keyed by issue id, not workspace, so we invalidate all
         // PR queries — the open issue detail page will refetch its own list.
         qc.invalidateQueries({ queryKey: ["github", "pull-requests"] });
+        // Provider webhooks also create or detach workspace-scoped Work
+        // Products. That picker uses staleTime: Infinity, so refresh it with
+        // the same PR event or an unassociated product can remain invisible.
+        const wsId = getCurrentWsId();
+        if (wsId) {
+          qc.invalidateQueries({ queryKey: githubKeys.unassociatedWorkProducts(wsId) });
+        }
       },
       // Powers the agent presence cache: any task lifecycle change
       // (dispatch / completed / failed / cancelled) refreshes the
