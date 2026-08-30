@@ -100,6 +100,7 @@ const PAGE_KEYWORDS: Record<WorkspacePageKey, string[]> = {
   usage: ["usage", "analytics", "stats", "metrics", "统计", "分析", "用量"],
   runtimes: ["runtimes", "environments", "machines", "devices", "device", "运行时", "设备"],
   skills: ["skills", "library", "技能"],
+  integrations: ["integrations", "connectors", "messaging", "集成", "连接"],
   settings: ["settings", "config", "preferences", "设置", "配置"],
 };
 

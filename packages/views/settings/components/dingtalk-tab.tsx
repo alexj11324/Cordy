@@ -65,7 +65,7 @@ function formatInstalledAt(value: string): string {
 // The settings page connects one workspace-scoped Hub. The channel selects
 // the active Agent with `/agents`; group-specific routes remain manageable
 // below for teams that want a fixed group target.
-export function DingTalkTab() {
+export function DingTalkTab({ installationId }: { installationId?: string } = {}) {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -87,7 +87,9 @@ export function DingTalkTab() {
   const { data, isLoading } = useQuery({
     ...dingtalkInstallationsOptions(wsId),
   });
-  const installations = data?.installations ?? [];
+  const installations = (data?.installations ?? []).filter(
+    (installation) => !installationId || installation.id === installationId,
+  );
   const configured = data?.configured === true;
   const groupRoutingSupported = data?.group_routing_supported === true;
   const hasActiveInstallation = installations.some(
@@ -103,7 +105,9 @@ export function DingTalkTab() {
     ...dingtalkGroupRoutesOptions(wsId),
     enabled: configured && groupRoutingSupported && hasActiveInstallation && !!wsId,
   });
-  const groupRoutes = groupRouteData?.routes ?? [];
+  const groupRoutes = (groupRouteData?.routes ?? []).filter(
+    (route) => !installationId || route.installation_id === installationId,
+  );
   const activeAgents = (agents ?? []).filter((agent) => !agent.archived_at);
 
   const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);

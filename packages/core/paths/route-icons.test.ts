@@ -46,6 +46,7 @@ describe("pageForSegment", () => {
     expect(pageForSegment("projects")).toBe("projects");
     expect(pageForSegment("my-issues")).toBe("myIssues");
     expect(pageForSegment("settings")).toBe("settings");
+    expect(pageForSegment("integrations")).toBe("integrations");
   });
 
   it("returns null for an unknown segment", () => {
@@ -63,6 +64,7 @@ describe("resolveRouteIconName", () => {
     expect(resolveRouteIconName("/acme/teams")).toBe("PeopleGroup");
     expect(resolveRouteIconName("/acme/usage")).toBe("BarChart3");
     expect(resolveRouteIconName("/acme/my-issues")).toBe("CircleUser");
+    expect(resolveRouteIconName("/acme/integrations")).toBe("Plug");
   });
 
   it("gives sub-routes their parent page icon (sidebar semantics)", () => {

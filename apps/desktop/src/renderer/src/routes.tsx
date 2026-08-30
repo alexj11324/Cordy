@@ -31,7 +31,9 @@ import { InboxPage } from "@patchbay/views/inbox";
 import { ChatPage } from "@patchbay/views/chat";
 import { ChannelsPage } from "@patchbay/views/channels";
 import { SettingsPage } from "@patchbay/views/settings";
+import { WorkspaceIntegrationsPage } from "@patchbay/views/integrations";
 import { useT } from "@patchbay/views/i18n";
+import { useDocumentTitle } from "./hooks/use-document-title";
 import { Download, Server } from "lucide-react";
 import { DaemonSettingsTab } from "./components/daemon-settings-tab";
 import { UpdatesSettingsTab } from "./components/updates-settings-tab";
@@ -63,6 +65,12 @@ function DesktopSettingsRoute() {
       ]}
     />
   );
+}
+
+function DesktopIntegrationsRoute() {
+  const { t } = useT("settings");
+  useDocumentTitle(t(($) => $.page.integrations_title));
+  return <WorkspaceIntegrationsPage />;
 }
 
 /**
@@ -179,6 +187,10 @@ export const appRoutes: RouteObject[] = [
             handle: { title: "Device" },
           },
           { path: "skills", element: <SkillsPage />, handle: { title: "Skills" } },
+          {
+            path: "integrations",
+            element: <DesktopIntegrationsRoute />,
+          },
           {
             path: "skills/:id",
             element: <SkillDetailPage />,
