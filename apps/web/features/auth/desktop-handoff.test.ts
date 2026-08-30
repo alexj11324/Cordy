@@ -45,60 +45,22 @@ describe("buildDesktopHandoffQuery", () => {
     ).toEqual({
       codeChallenge,
       state,
-      appOrigin: null,
       query: `platform=desktop&code_challenge=${codeChallenge}&state=${state}`,
     });
   });
 
-  it("preserves a browser return only when deployment config names the exact app origin", () => {
-    const codeChallenge = "a".repeat(43);
-    const state = "b".repeat(43);
-    const searchParams = new URLSearchParams({
-      platform: "desktop",
-      code_challenge: codeChallenge,
-      state,
-      app_origin: "https://patchbay.aspectlylabs.com",
-    });
-
+  it("rejects the removed browser-return parameter", () => {
     expect(
       readDesktopHandoffBinding(
-        searchParams,
-        "https://patchbay.aspectlylabs.com",
+        new URLSearchParams({
+          platform: "desktop",
+          code_challenge: "a".repeat(43),
+          state: "b".repeat(43),
+          app_origin: "https://patchbay.example",
+        }),
       ),
-    ).toEqual({
-      codeChallenge,
-      state,
-      appOrigin: "https://patchbay.aspectlylabs.com",
-      query:
-        `platform=desktop&code_challenge=${codeChallenge}` +
-        `&state=${state}&app_origin=https%3A%2F%2Fpatchbay.aspectlylabs.com`,
-    });
+    ).toBeNull();
   });
-
-  it.each([
-    "http://localhost:3000",
-    "https://www.aspectlylabs.com",
-    "https://app.patchbay.ai",
-    "https://evil.example",
-  ])(
-    "rejects an unconfigured or mismatched browser app origin: %s",
-    (appOrigin) => {
-      const searchParams = new URLSearchParams({
-        platform: "desktop",
-        code_challenge: "a".repeat(43),
-        state: "b".repeat(43),
-        app_origin: appOrigin,
-      });
-
-      expect(
-        readDesktopHandoffBinding(
-          searchParams,
-          "https://patchbay.aspectlylabs.com",
-        ),
-      ).toBeNull();
-      expect(readDesktopHandoffBinding(searchParams)).toBeNull();
-    },
-  );
 
   it.each([
     "platform=desktop",
