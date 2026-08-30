@@ -1753,14 +1753,36 @@ async fn archive_agent(
             "this agent is built into Patchbay and cannot be archived",
         );
     }
-    let archived = match agent::archive_agent(&state.pool, target.id, context.member.user_id).await
-    {
+    let mut tx = match state.pool.begin().await {
+        Ok(tx) => tx,
+        Err(error) => {
+            tracing::warn!(%error, agent_id = %target.id, "failed to begin agent archive");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive agent");
+        }
+    };
+    let archived = match agent::archive_agent(&mut *tx, target.id, context.member.user_id).await {
         Ok(Some(v)) => v,
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive agent"),
     };
-    if let Err(error) = state.tasks.cancel_tasks_for_agent(target.id).await {
-        tracing::warn!(%error, agent_id = %target.id, "failed to cancel tasks after archiving agent");
+    let cancelled = match state
+        .tasks
+        .cancel_tasks_for_agent_in_tx(&mut tx, target.id)
+        .await
+    {
+        Ok(cancelled) => cancelled,
+        Err(error) => {
+            tracing::warn!(%error, agent_id = %target.id, "failed to cancel tasks while archiving agent");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive agent");
+        }
+    };
+    if let Err(error) = tx.commit().await {
+        tracing::warn!(%error, agent_id = %target.id, "failed to commit agent archive");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive agent");
     }
+    state
+        .tasks
+        .publish_transactional_cancellations(&cancelled)
+        .await;
     publish(&state, "agent:archived", &archived, context.member.user_id);
     match hydrated_agent_response(&state, &context, &headers, archived).await {
         Ok(response) => Json(response).into_response(),

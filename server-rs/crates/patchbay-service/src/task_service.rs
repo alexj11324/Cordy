@@ -3772,18 +3772,7 @@ impl TaskService {
         agent_id: Uuid,
     ) -> Result<Vec<AgentTaskQueue>, TaskServiceError> {
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
-        let cancelled = cancel_agent_tasks_by_agent(&mut *tx, agent_id)
-            .await
-            .map_err(|e| TaskServiceError::Sql(downcast_sqlx(e)))?;
-        for task in &cancelled {
-            crate::coordination::record_reviewer_task_cancelled(&mut tx, task)
-                .await
-                .map_err(|error| {
-                    TaskServiceError::Internal(format!(
-                        "record cancelled reviewer recovery: {error}"
-                    ))
-                })?;
-        }
+        let cancelled = self.cancel_tasks_for_agent_in_tx(&mut tx, agent_id).await?;
         tx.commit().await.map_err(TaskServiceError::Sql)?;
         for t in &cancelled {
             self.capture_task_cancelled(t).await;
@@ -3797,6 +3786,29 @@ impl TaskService {
         // One reconcile: all rows belong to the same agent.
         self.reconcile_agent_status(agent_id).await;
         self.notify_tasks_finished(&cancelled).await;
+        Ok(cancelled)
+    }
+
+    /// Cancels an agent's tasks and records reviewer recovery inside a
+    /// caller-owned business transaction. Side effects must be published only
+    /// after that caller commits.
+    pub async fn cancel_tasks_for_agent_in_tx(
+        &self,
+        executor: &mut sqlx::PgConnection,
+        agent_id: Uuid,
+    ) -> Result<Vec<AgentTaskQueue>, TaskServiceError> {
+        let cancelled = cancel_agent_tasks_by_agent(&mut *executor, agent_id)
+            .await
+            .map_err(|e| TaskServiceError::Sql(downcast_sqlx(e)))?;
+        for task in &cancelled {
+            crate::coordination::record_reviewer_task_cancelled(executor, task)
+                .await
+                .map_err(|error| {
+                    TaskServiceError::Internal(format!(
+                        "record cancelled reviewer recovery: {error}"
+                    ))
+                })?;
+        }
         Ok(cancelled)
     }
 
@@ -5581,34 +5593,217 @@ mod tests {
         assert!(completed.load(Ordering::Acquire));
     }
 
-    #[test]
-    fn reviewer_recovery_is_recorded_before_cancellation_commit() {
-        let source = include_str!("task_service.rs");
-        let cancel_for_agent = source
-            .split("pub async fn cancel_tasks_for_agent")
-            .nth(1)
-            .expect("agent cancellation")
-            .split("pub async fn cancel_tasks_by_trigger_comment")
-            .next()
-            .expect("agent cancellation body");
-        let recovery = cancel_for_agent
-            .find("record_reviewer_task_cancelled")
-            .expect("durable reviewer recovery");
-        let commit = cancel_for_agent
-            .find("tx.commit()")
-            .expect("transaction commit");
-        assert!(recovery < commit);
+    #[tokio::test]
+    async fn archive_transaction_recovers_only_finalized_reviewer_dispatch() {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for reviewer archive transaction contracts");
+        let pool = PgPool::connect(&url)
+            .await
+            .expect("connect contract database");
+        let service = TaskService::new(pool.clone(), Arc::new(patchbay_events::Bus::new()));
+        let workspace_id = Uuid::now_v7();
+        let agent_id = Uuid::now_v7();
+        let issue_id = Uuid::now_v7();
+        let member_review_issue_id = Uuid::now_v7();
+        let promoted_event_id = Uuid::now_v7();
+        let promoted_assignment_id = Uuid::now_v7();
+        let promoted_task_id = Uuid::now_v7();
+        let unpromoted_event_id = Uuid::now_v7();
+        let unpromoted_assignment_id = Uuid::now_v7();
+        let unpromoted_task_id = Uuid::now_v7();
+        let actor_id = Uuid::now_v7();
+        let mut tx = pool.begin().await.expect("begin archive contract");
 
-        let cancel_one = source
-            .split("pub async fn cancel_task_with_result")
-            .nth(1)
-            .expect("single cancellation")
-            .split("pub async fn cancel_queued_chat_tasks")
-            .next()
-            .expect("single cancellation body");
+        sqlx::query(
+            "INSERT INTO workspace (id, name, slug) VALUES ($1, 'review archive contract', $2)",
+        )
+        .bind(workspace_id)
+        .bind(format!("review-archive-{workspace_id}"))
+        .execute(&mut *tx)
+        .await
+        .expect("create workspace");
+        sqlx::query(
+            "INSERT INTO \"user\" (id, name, email) VALUES ($1, 'review archive actor', $2)",
+        )
+        .bind(actor_id)
+        .bind(format!("review-archive-{actor_id}@example.test"))
+        .execute(&mut *tx)
+        .await
+        .expect("create archive actor");
+        sqlx::query("INSERT INTO agent (id, workspace_id, name, runtime_mode, status, max_concurrent_tasks, owner_id) VALUES ($1, $2, 'reviewer', 'local', 'idle', 4, $3)")
+            .bind(agent_id)
+            .bind(workspace_id)
+            .bind(actor_id)
+            .execute(&mut *tx)
+            .await
+            .expect("create reviewer");
+        sqlx::query("INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, reviewer_type, reviewer_id, number, position) VALUES ($1, $2, 'review contract', 'in_review', 'medium', 'member', $3, 'agent', $4, 'agent', $4, 1, 0)")
+            .bind(issue_id)
+            .bind(workspace_id)
+            .bind(actor_id)
+            .bind(agent_id)
+            .execute(&mut *tx)
+            .await
+            .expect("create review issue");
+
+        for (event_id, assignment_id, task_id, event_key, finalized) in [
+            (
+                promoted_event_id,
+                promoted_assignment_id,
+                promoted_task_id,
+                "promoted",
+                true,
+            ),
+            (
+                unpromoted_event_id,
+                unpromoted_assignment_id,
+                unpromoted_task_id,
+                "unpromoted",
+                false,
+            ),
+        ] {
+            sqlx::query("INSERT INTO agent_coordination_outbox (id, event_key, workspace_id, issue_id, event_type, payload, status) VALUES ($1, $2, $3, $4, 'task_completed', '{}'::jsonb, $5)")
+                .bind(event_id)
+                .bind(format!("archive-contract-{event_key}-{workspace_id}"))
+                .bind(workspace_id)
+                .bind(issue_id)
+                .bind(if finalized { "completed" } else { "pending" })
+                .execute(&mut *tx)
+                .await
+                .expect("create original outbox");
+            sqlx::query("INSERT INTO agent_task_queue (id, agent_id, issue_id, status, priority, context) VALUES ($1, $2, $3, $4, 0, $5)")
+                .bind(task_id)
+                .bind(agent_id)
+                .bind(issue_id)
+                .bind(if finalized { "dispatched" } else { "deferred" })
+                .bind(serde_json::json!({ (COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY): assignment_id }))
+                .execute(&mut *tx)
+                .await
+                .expect("create reviewer task");
+            sqlx::query("INSERT INTO agent_coordination_assignment (id, event_id, workspace_id, issue_id, role, status, owner_type, owner_id, dispatched_task_id, decision) VALUES ($1, $2, $3, $4, 'reviewer', $5, 'agent', $6, $7, $8)")
+                .bind(assignment_id)
+                .bind(event_id)
+                .bind(workspace_id)
+                .bind(issue_id)
+                .bind(if finalized { "dispatched" } else { "assigned" })
+                .bind(agent_id)
+                .bind(finalized.then_some(task_id))
+                .bind(serde_json::json!({ "explicit_reviewer": true }))
+                .execute(&mut *tx)
+                .await
+                .expect("create reviewer assignment");
+        }
+
+        sqlx::query("INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, reviewer_type, reviewer_id, number, position) VALUES ($1, $2, 'member review contract', 'in_review', 'medium', 'member', $3, 'agent', $4, 'member', $3, 2, 0)")
+            .bind(member_review_issue_id)
+            .bind(workspace_id)
+            .bind(actor_id)
+            .bind(agent_id)
+            .execute(&mut *tx)
+            .await
+            .expect("create member review issue");
+        let member_review_issue =
+            sqlx::query_as::<_, Issue>("SELECT * FROM issue WHERE id = $1 AND workspace_id = $2")
+                .bind(member_review_issue_id)
+                .bind(workspace_id)
+                .fetch_one(&mut *tx)
+                .await
+                .expect("load member review issue");
+        crate::coordination::record_reviewer_reassignment(&mut tx, &member_review_issue, None)
+            .await
+            .expect("record member reviewer handoff");
+        let member_handoff: (Option<String>, Option<Uuid>, bool, String, Uuid) =
+            sqlx::query_as(
+                "SELECT assignment.owner_type, assignment.owner_id, (event.payload->>'explicit_reviewer')::boolean, event.payload->>'reviewer_type', (event.payload->>'reviewer_id')::uuid FROM agent_coordination_outbox event JOIN agent_coordination_assignment assignment ON assignment.event_id = event.id WHERE event.event_key = $1",
+            )
+            .bind(format!(
+                "reviewer_reassigned:{}:{}",
+                member_review_issue.id, member_review_issue.revision
+            ))
+            .fetch_one(&mut *tx)
+            .await
+            .expect("load member reviewer handoff");
         assert_eq!(
-            cancel_one.matches("record_reviewer_task_cancelled").count(),
-            2
+            member_handoff,
+            (None, None, true, "member".to_string(), actor_id)
         );
+
+        sqlx::query("SAVEPOINT before_archive")
+            .execute(&mut *tx)
+            .await
+            .expect("save pre-archive state");
+
+        patchbay_db::queries::agent::archive_agent(&mut *tx, agent_id, actor_id)
+            .await
+            .expect("archive reviewer")
+            .expect("reviewer exists");
+        let cancelled = service
+            .cancel_tasks_for_agent_in_tx(&mut tx, agent_id)
+            .await
+            .expect("cancel reviewer tasks transactionally");
+        assert_eq!(cancelled.len(), 2);
+
+        let recoveries: Vec<(Uuid, bool)> = sqlx::query_as(
+            "SELECT source_task_id, (payload->>'explicit_reviewer')::boolean FROM agent_coordination_outbox WHERE event_key LIKE 'reviewer_task_cancelled:%' AND workspace_id = $1",
+        )
+        .bind(workspace_id)
+        .fetch_all(&mut *tx)
+        .await
+        .expect("load reviewer recoveries");
+        assert_eq!(recoveries, vec![(promoted_task_id, true)]);
+        let unpromoted_state: (String, Option<Uuid>) = sqlx::query_as(
+            "SELECT event.status, assignment.dispatched_task_id FROM agent_coordination_outbox event JOIN agent_coordination_assignment assignment ON assignment.event_id = event.id WHERE event.id = $1",
+        )
+        .bind(unpromoted_event_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("load original unpromoted recovery owner");
+        assert_eq!(unpromoted_state, ("pending".to_string(), None));
+        let archived_at: Option<chrono::DateTime<chrono::Utc>> =
+            sqlx::query_scalar("SELECT archived_at FROM agent WHERE id = $1")
+                .bind(agent_id)
+                .fetch_one(&mut *tx)
+                .await
+                .expect("load archived reviewer");
+        assert!(archived_at.is_some());
+
+        sqlx::query("ROLLBACK TO SAVEPOINT before_archive")
+            .execute(&mut *tx)
+            .await
+            .expect("roll back atomic archive boundary");
+        let archived_at: Option<chrono::DateTime<chrono::Utc>> =
+            sqlx::query_scalar("SELECT archived_at FROM agent WHERE id = $1")
+                .bind(agent_id)
+                .fetch_one(&mut *tx)
+                .await
+                .expect("load restored reviewer");
+        assert!(archived_at.is_none());
+        let restored_tasks: Vec<(Uuid, String)> = sqlx::query_as(
+            "SELECT id, status FROM agent_task_queue WHERE id IN ($1, $2) ORDER BY id",
+        )
+        .bind(promoted_task_id)
+        .bind(unpromoted_task_id)
+        .fetch_all(&mut *tx)
+        .await
+        .expect("load restored reviewer tasks");
+        assert_eq!(restored_tasks.len(), 2);
+        assert!(restored_tasks.contains(&(promoted_task_id, "dispatched".to_string())));
+        assert!(restored_tasks.contains(&(unpromoted_task_id, "deferred".to_string())));
+        let recovery_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM agent_coordination_outbox WHERE event_key LIKE 'reviewer_task_cancelled:%' AND workspace_id = $1",
+        )
+        .bind(workspace_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("verify recovery rollback");
+        assert_eq!(recovery_count, 0);
+
+        tx.rollback().await.expect("rollback archive contract");
+        let persisted: i64 = sqlx::query_scalar("SELECT count(*) FROM agent WHERE id = $1")
+            .bind(agent_id)
+            .fetch_one(&pool)
+            .await
+            .expect("verify rollback");
+        assert_eq!(persisted, 0);
     }
 }

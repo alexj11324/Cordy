@@ -95,6 +95,49 @@ fn requires_explicit_reviewer(
     (assignment_owner_id.is_none() && issue_reviewer.is_some()) || payload_explicit
 }
 
+fn cancelled_reviewer_recovery_provenance(
+    role: &str,
+    assignment_status: &str,
+    dispatched_task_id: Option<Uuid>,
+    cancelled_task_id: Uuid,
+    decision: &Value,
+    event_payload: &Value,
+) -> Option<bool> {
+    if role != ASSIGNMENT_REVIEWER
+        || assignment_status != "dispatched"
+        || dispatched_task_id != Some(cancelled_task_id)
+    {
+        return None;
+    }
+    Some(
+        decision
+            .get("explicit_reviewer")
+            .and_then(Value::as_bool)
+            .or_else(|| {
+                event_payload
+                    .get("explicit_reviewer")
+                    .and_then(Value::as_bool)
+            })
+            .unwrap_or(false),
+    )
+}
+
+fn explicit_reviewer_assignment_owner(reviewer_type: &str, reviewer_id: Uuid) -> Option<Uuid> {
+    (reviewer_type == "agent").then_some(reviewer_id)
+}
+
+fn should_defer_unowned_explicit_reviewer(
+    is_task_completion: bool,
+    issue_category: &str,
+    assignment_owner_id: Option<Uuid>,
+    explicit_reviewer: bool,
+) -> bool {
+    is_task_completion
+        && issue_category == issue_status::IN_REVIEW
+        && assignment_owner_id.is_none()
+        && explicit_reviewer
+}
+
 #[derive(Debug, Clone)]
 struct DispatchPlan {
     event_id: Uuid,
@@ -403,7 +446,10 @@ FOR UPDATE"#,
             .as_ref()
             .and_then(|issue| issue.reviewer_type.as_deref().zip(issue.reviewer_id));
         let requested_reviewer_id = assignment
-            .owner_id
+            .owner_type
+            .as_deref()
+            .filter(|kind| *kind == "agent")
+            .and(assignment.owner_id)
             .or_else(|| explicit_reviewer.and_then(|(kind, id)| (kind == "agent").then_some(id)));
         let reviewer_team_id = reviewer_snapshot.as_ref().and_then(|issue| {
             (issue.assignee_type.as_deref() == Some("team"))
@@ -577,6 +623,29 @@ FOR UPDATE"#,
             && assignment.role == ASSIGNMENT_REVIEWER
             && assignment.owner_type.as_deref() == Some("agent")
             && assignment.dispatched_task_id.is_none();
+
+        if should_defer_unowned_explicit_reviewer(
+            is_task_completion,
+            &category,
+            assignment.owner_id,
+            event
+                .payload
+                .get("explicit_reviewer")
+                .and_then(Value::as_bool)
+                == Some(true),
+        ) {
+            defer_claimed_tx(
+                &mut *tx,
+                event,
+                &assignment,
+                "explicit reviewer is not an agent or is unavailable",
+                NO_OWNER_RETRY,
+                None,
+            )
+            .await?;
+            tx.commit().await?;
+            return Ok(None);
+        }
 
         if !is_task_completion && !is_review_return {
             complete_claimed_tx(
@@ -849,6 +918,7 @@ RETURNING *"#,
                             "assignment_activity_published": false,
                             "candidate_agent_id": candidate.id,
                             "candidate_agent_name": candidate.name.clone(),
+                            "explicit_reviewer": false,
                             "previous_status": issue.status,
                             "previous_assignee_type": issue.assignee_type,
                             "previous_assignee_id": issue.assignee_id,
@@ -1157,6 +1227,7 @@ RETURNING *"#,
                     "assignment_activity_published": false,
                     "candidate_agent_id": candidate.id,
                     "candidate_agent_name": candidate.name.clone(),
+                    "explicit_reviewer": explicit_reviewer_required,
                     "previous_status": issue.status,
                     "previous_assignee_type": issue.assignee_type,
                     "previous_assignee_id": issue.assignee_id,
@@ -2837,22 +2908,16 @@ pub async fn record_review_return(
 }
 
 /// Persists an explicitly selected reviewer handoff in the same transaction
-/// as the issue's reviewer change. The assignment is pre-owned so recovery
-/// reuses the user's final reviewer instead of running automatic selection.
+/// as the issue's reviewer change. Agent reviewers pre-own the assignment;
+/// other supported reviewer kinds remain unowned and defer fail-closed.
 pub async fn record_reviewer_reassignment(
     executor: &mut sqlx::PgConnection,
     issue: &Issue,
     source_task_id: Option<Uuid>,
 ) -> anyhow::Result<()> {
-    let Some(reviewer_id) = issue
-        .reviewer_type
-        .as_deref()
-        .filter(|kind| *kind == "agent")
-        .and(issue.reviewer_id)
+    let Some((reviewer_type, reviewer_id)) = issue.reviewer_type.as_deref().zip(issue.reviewer_id)
     else {
-        return Err(anyhow::anyhow!(
-            "reviewer reassignment has no agent reviewer"
-        ));
+        return Err(anyhow::anyhow!("reviewer reassignment has no reviewer"));
     };
     let event_key = format!("reviewer_reassigned:{}:{}", issue.id, issue.revision);
     record_event_and_assignment(
@@ -2866,22 +2931,26 @@ pub async fn record_reviewer_reassignment(
             "issue_id": issue.id,
             "explicit_reviewer": true,
             "reviewer_reassignment": true,
+            "reviewer_type": reviewer_type,
+            "reviewer_id": reviewer_id,
         }),
         ASSIGNMENT_REVIEWER,
     )
     .await?;
-    sqlx::query(
-        r#"UPDATE agent_coordination_assignment assignment
+    if let Some(reviewer_id) = explicit_reviewer_assignment_owner(reviewer_type, reviewer_id) {
+        sqlx::query(
+            r#"UPDATE agent_coordination_assignment assignment
 SET owner_type = 'agent', owner_id = $2, status = 'assigned', updated_at = now()
 FROM agent_coordination_outbox event
 WHERE event.event_key = $1
   AND assignment.event_id = event.id
   AND assignment.role = 'reviewer'"#,
-    )
-    .bind(event_key)
-    .bind(reviewer_id)
-    .execute(&mut *executor)
-    .await?;
+        )
+        .bind(event_key)
+        .bind(reviewer_id)
+        .execute(&mut *executor)
+        .await?;
+    }
     Ok(())
 }
 
@@ -2902,8 +2971,10 @@ pub async fn record_reviewer_task_cancelled(
         .and_then(Value::as_str)
         .and_then(|value| Uuid::parse_str(value).ok());
     let assignment = sqlx::query(
-        r#"SELECT assignment.role
+        r#"SELECT assignment.role, assignment.status, assignment.dispatched_task_id,
+       assignment.decision, event.payload
 FROM agent_coordination_assignment assignment
+JOIN agent_coordination_outbox event ON event.id = assignment.event_id
 WHERE assignment.dispatched_task_id = $1
    OR ($2::uuid IS NOT NULL AND assignment.id = $2)
 ORDER BY assignment.created_at DESC, assignment.id DESC
@@ -2917,9 +2988,23 @@ LIMIT 1"#,
         return Ok(());
     };
     let role: String = assignment.try_get(0)?;
-    if role != ASSIGNMENT_REVIEWER {
+    let assignment_status: String = assignment.try_get(1)?;
+    let dispatched_task_id: Option<Uuid> = assignment.try_get(2)?;
+    let decision: Value = assignment.try_get(3)?;
+    let event_payload: Value = assignment.try_get(4)?;
+    let Some(explicit_reviewer) = cancelled_reviewer_recovery_provenance(
+        &role,
+        &assignment_status,
+        dispatched_task_id,
+        task.id,
+        &decision,
+        &event_payload,
+    ) else {
+        // Before mark_dispatched, the original durable outbox remains the
+        // sole recovery owner. Creating a second event here would reserve and
+        // potentially dispatch the reviewer twice.
         return Ok(());
-    }
+    };
     let issue =
         sqlx::query("SELECT workspace_id, reviewer_type, reviewer_id FROM issue WHERE id = $1")
             .bind(issue_id)
@@ -2946,6 +3031,7 @@ LIMIT 1"#,
             "issue_id": issue_id,
             "agent_id": task.agent_id,
             "reviewer_task_cancelled": true,
+            "explicit_reviewer": explicit_reviewer,
         }),
         ASSIGNMENT_REVIEWER,
     )
@@ -3255,18 +3341,93 @@ mod tests {
     }
 
     #[test]
-    fn cancelled_reviewer_recovery_is_idempotent_and_preowned() {
-        let source = include_str!("coordination.rs");
-        let recovery = source
-            .split("pub async fn record_reviewer_task_cancelled")
-            .nth(1)
-            .expect("reviewer cancellation recovery")
-            .split("async fn record_event_and_assignment")
-            .next()
-            .expect("reviewer cancellation recovery body");
-        assert!(recovery.contains("reviewer_task_cancelled:{}"));
-        assert!(recovery.contains("record_event_and_assignment("));
-        assert!(recovery.contains("SET owner_type = 'agent', owner_id = $2"));
+    fn cancelled_reviewer_recovery_requires_finalized_dispatch_and_keeps_provenance() {
+        let task_id = Uuid::from_u128(61);
+        assert_eq!(
+            cancelled_reviewer_recovery_provenance(
+                ASSIGNMENT_REVIEWER,
+                "dispatched",
+                Some(task_id),
+                task_id,
+                &json!({"explicit_reviewer": true}),
+                &json!({}),
+            ),
+            Some(true),
+        );
+        assert_eq!(
+            cancelled_reviewer_recovery_provenance(
+                ASSIGNMENT_REVIEWER,
+                "dispatched",
+                Some(task_id),
+                task_id,
+                &json!({}),
+                &json!({"explicit_reviewer": true}),
+            ),
+            Some(true),
+        );
+        assert_eq!(
+            cancelled_reviewer_recovery_provenance(
+                ASSIGNMENT_REVIEWER,
+                "assigned",
+                None,
+                task_id,
+                &json!({"explicit_reviewer": true}),
+                &json!({}),
+            ),
+            None,
+            "the original outbox exclusively recovers an unpromoted task",
+        );
+        assert_eq!(
+            cancelled_reviewer_recovery_provenance(
+                ASSIGNMENT_REVIEWER,
+                "assigned",
+                Some(task_id),
+                task_id,
+                &json!({"explicit_reviewer": true}),
+                &json!({}),
+            ),
+            None,
+            "the assignment must be finalized before a second recovery is durable",
+        );
+        assert_eq!(
+            cancelled_reviewer_recovery_provenance(
+                ASSIGNMENT_REVIEWER,
+                "dispatched",
+                Some(Uuid::from_u128(62)),
+                task_id,
+                &json!({}),
+                &json!({}),
+            ),
+            None,
+        );
+    }
+
+    #[test]
+    fn non_agent_explicit_reviewer_is_preserved_without_dispatch_owner() {
+        let reviewer_id = Uuid::from_u128(63);
+        assert_eq!(
+            explicit_reviewer_assignment_owner("member", reviewer_id),
+            None
+        );
+        assert_eq!(
+            explicit_reviewer_assignment_owner("team", reviewer_id),
+            None
+        );
+        assert_eq!(
+            explicit_reviewer_assignment_owner("agent", reviewer_id),
+            Some(reviewer_id)
+        );
+        assert!(requires_explicit_reviewer(
+            None,
+            Some(("member", reviewer_id)),
+            true,
+        ));
+        assert!(should_defer_unowned_explicit_reviewer(
+            true,
+            issue_status::IN_REVIEW,
+            None,
+            true,
+        ));
     }
 
     #[test]
