@@ -26,6 +26,11 @@ export function planDevCommands(
       command: nodePath,
       args: [join(scriptsDir, "bundle-cli.mjs"), "--profile", "dev"],
     });
+  } else {
+    commands.push({
+      command: nodePath,
+      args: [join(scriptsDir, "clear-dev-cli.mjs")],
+    });
   }
 
   commands.push(

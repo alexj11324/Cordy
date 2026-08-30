@@ -103,6 +103,8 @@ pnpm test
 
 普通 UI、TypeScript、CSS、main/preload 或文档改动绝不能走 package 路径。
 全量 release 编译只属于明确的产物验收和 GitHub Actions，不属于默认的修改刷新循环。
+日常 Electron 路径启动前会清理先前 Rust 开发留下的 source CLI，避免陈旧二进制
+干扰快速路径的验证结果。
 
 根命令默认排除 Mobile。移动端有独立脚本和 CI，修改前先阅读 `apps/mobile/AGENTS.md`。
 

@@ -526,7 +526,9 @@ Choose the narrowest path that matches what changed:
 
 Do not use the package path for routine UI, TypeScript, CSS, main/preload, or
 documentation changes. The full release build is intentionally reserved for a
-distributable artifact or its production boundaries, plus GitHub Actions.
+distributable artifact or its production boundaries, plus GitHub Actions. The
+normal Electron path clears a source CLI left by an earlier Rust development
+run so a stale binary cannot affect fast-path verification.
 
 Login in the Desktop UI with `dev@localhost` and the generated code from the
 backend logs. If you set `PATCHBAY_DEV_VERIFICATION_CODE=888888` before starting

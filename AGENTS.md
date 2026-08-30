@@ -70,7 +70,8 @@ make check            # Product-wide local helper; not an agent/default migratio
 - The first three Rust-free paths are the default for day-to-day development
   and agent verification. Do not package the app merely to validate a UI,
   TypeScript, CSS, Electron main/preload, documentation, or shared-package
-  change.
+  change. The normal Electron path clears any ignored source CLI left by an
+  earlier Rust development run before it starts.
 - Use the source-matched Rust path only when the task changed `server-rs` or
   explicitly depends on unpublished CLI behavior. Under the repository rule
   prohibiting local Cargo for agents, agents verify this contract with focused

@@ -7,6 +7,7 @@
 // the public `pnpm dev:desktop:rust` command: ordinary renderer/main-process
 // edits stay on Vite's fast feedback loop, while contributors changing
 // server-rs can explicitly bundle a source-matched incremental development CLI.
+// Returning to the default command clears that source artifact before launch.
 
 import { spawnSync } from "node:child_process";
 import { dirname } from "node:path";

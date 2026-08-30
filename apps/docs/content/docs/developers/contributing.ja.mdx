@@ -104,6 +104,8 @@ pnpm test
 通常の UI、TypeScript、CSS、main/preload、ドキュメント変更で package
 パスを使用しないでください。完全な release コンパイルは明示的な成果物検証と
 GitHub Actions のためのもので、通常の編集・更新ループには含めません。
+通常の Electron パスは、以前の Rust 開発で残った source CLI を起動前に削除し、
+古いバイナリが高速パスの検証に影響しないようにします。
 
 ルートコマンドはデフォルトで Mobile を除外します。Mobile には独自のスクリプトと CI があるため、変更前に `apps/mobile/AGENTS.md` を読んでください。
 

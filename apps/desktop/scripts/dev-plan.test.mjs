@@ -27,6 +27,10 @@ describe("Desktop development build plan", () => {
     ).toEqual([
       {
         command: "/usr/bin/node",
+        args: [join(scriptsDir, "clear-dev-cli.mjs")],
+      },
+      {
+        command: "/usr/bin/node",
         args: [join(scriptsDir, "brand-dev-electron.mjs")],
       },
       { command: "electron-vite", args: ["dev"] },

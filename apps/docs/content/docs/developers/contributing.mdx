@@ -104,6 +104,8 @@ Choose the narrowest Desktop path that matches the change:
 Never use the package path for ordinary UI, TypeScript, CSS, main/preload, or
 documentation changes. Full release compilation belongs to deliberate
 artifact acceptance and GitHub Actions, not the default edit-refresh loop.
+The normal Electron path clears any source CLI left by an earlier Rust
+development run so stale binaries cannot affect fast-path verification.
 
 Root commands exclude Mobile by default. Mobile has separate scripts and CI; read `apps/mobile/AGENTS.md` before changing it.
 
