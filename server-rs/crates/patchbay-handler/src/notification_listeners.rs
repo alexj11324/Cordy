@@ -45,6 +45,14 @@ struct InboxSpec<'a> {
     details: &'a Value,
 }
 
+fn recovered_inbox_matches(item: &InboxItem, workspace_id: Uuid, spec: &InboxSpec<'_>) -> bool {
+    item.workspace_id == workspace_id
+        && item.recipient_type == spec.recipient_type
+        && item.recipient_id == spec.recipient_id
+        && item.type_ == spec.notif_type
+        && item.issue_id == Some(spec.issue_id)
+}
+
 type ListenerFuture = std::pin::Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>>;
 
 pub(crate) async fn handle_event(pool: PgPool, bus: Arc<Bus>, event: Event) -> anyhow::Result<()> {
@@ -643,6 +651,7 @@ async fn create_and_publish(
     } else {
         event.actor_id.parse().ok()
     };
+    let inbox_id = durable_coordination_inbox_id(event, &spec);
     let item = match inbox::create_inbox_item(
         pool,
         workspace_id,
@@ -656,12 +665,26 @@ async fn create_and_publish(
         actor_type,
         actor_id,
         spec.details,
-        durable_coordination_inbox_id(event, &spec),
+        inbox_id,
     )
     .await?
     {
         Some(item) => item,
-        None => return Ok(false),
+        None => {
+            let existing = inbox::get_inbox_item_in_workspace(pool, inbox_id, workspace_id)
+                .await?
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "durable coordination inbox {inbox_id} conflicted but could not be reloaded"
+                    )
+                })?;
+            if !recovered_inbox_matches(&existing, workspace_id, &spec) {
+                return Err(anyhow::anyhow!(
+                    "durable coordination inbox {inbox_id} conflicted with mismatched identity"
+                ));
+            }
+            existing
+        }
     };
     publish_inbox(bus, event, item, spec.issue_status);
     Ok(true)
@@ -1146,5 +1169,79 @@ mod tests {
             durable_coordination_inbox_id(&event, &spec),
             durable_coordination_inbox_id(&replacement_after_that, &spec)
         );
+    }
+
+    #[test]
+    fn durable_inbox_conflict_is_reloaded_before_publication() {
+        let source = include_str!("notification_listeners.rs");
+        let create_and_publish = source
+            .split("async fn create_and_publish")
+            .nth(1)
+            .expect("create_and_publish")
+            .split("async fn notify_mentions")
+            .next()
+            .expect("create_and_publish body");
+        let reload = create_and_publish
+            .find("get_inbox_item_in_workspace")
+            .expect("durable inbox reload");
+        let publish = create_and_publish
+            .find("publish_inbox")
+            .expect("inbox publication");
+        assert!(reload < publish);
+        assert!(create_and_publish.contains("conflicted but could not be reloaded"));
+        assert!(create_and_publish.contains("recovered_inbox_matches"));
+    }
+
+    #[test]
+    fn recovered_durable_inbox_requires_exact_notification_identity() {
+        let workspace_id = Uuid::from_u128(1);
+        let recipient_id = Uuid::from_u128(2);
+        let issue_id = Uuid::from_u128(3);
+        let details = json!({});
+        let spec = InboxSpec {
+            recipient_type: "agent",
+            recipient_id,
+            issue_id,
+            issue_status: "in_review",
+            notif_type: "issue_assigned",
+            severity: "action_required",
+            title: "Issue",
+            body: None,
+            details: &details,
+        };
+        let item = InboxItem {
+            id: Uuid::from_u128(4),
+            workspace_id,
+            recipient_type: "agent".into(),
+            recipient_id,
+            type_: "issue_assigned".into(),
+            severity: "action_required".into(),
+            issue_id: Some(issue_id),
+            title: "Issue".into(),
+            body: None,
+            read: false,
+            archived: false,
+            created_at: chrono::Utc::now(),
+            actor_type: None,
+            actor_id: None,
+            details: Some(json!({})),
+        };
+        assert!(recovered_inbox_matches(&item, workspace_id, &spec));
+
+        let mut mismatch = item.clone();
+        mismatch.workspace_id = Uuid::from_u128(5);
+        assert!(!recovered_inbox_matches(&mismatch, workspace_id, &spec));
+        mismatch = item.clone();
+        mismatch.recipient_type = "member".into();
+        assert!(!recovered_inbox_matches(&mismatch, workspace_id, &spec));
+        mismatch = item.clone();
+        mismatch.recipient_id = Uuid::from_u128(6);
+        assert!(!recovered_inbox_matches(&mismatch, workspace_id, &spec));
+        mismatch = item.clone();
+        mismatch.type_ = "issue_mentioned".into();
+        assert!(!recovered_inbox_matches(&mismatch, workspace_id, &spec));
+        mismatch = item;
+        mismatch.issue_id = Some(Uuid::from_u128(7));
+        assert!(!recovered_inbox_matches(&mismatch, workspace_id, &spec));
     }
 }

@@ -5269,16 +5269,9 @@ fn issue_reviewer(issue: &Issue) -> Option<(&str, Uuid)> {
     issue.reviewer_type.as_deref().zip(issue.reviewer_id)
 }
 
-fn is_review_return(
-    previous_category: &str,
-    next_category: &str,
-    previous_owner: Option<(&str, Uuid)>,
-    next_owner: Option<(&str, Uuid)>,
-    assignee_touched: bool,
-) -> bool {
+fn leaves_review_for_implementation(previous_category: &str, next_category: &str) -> bool {
     previous_category == patchbay_service::issue_status::IN_REVIEW
         && next_category == patchbay_service::issue_status::IN_PROGRESS
-        && (!assignee_touched || previous_owner == next_owner)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -5287,10 +5280,10 @@ struct ReviewReturnActions {
     record_executor_handoff: bool,
 }
 
-fn review_return_actions(returning_from_review: bool, suppress_run: bool) -> ReviewReturnActions {
+fn review_return_actions(leaving_review: bool, suppress_run: bool) -> ReviewReturnActions {
     ReviewReturnActions {
-        retire_reviewer_tasks: returning_from_review,
-        record_executor_handoff: returning_from_review && !suppress_run,
+        retire_reviewer_tasks: leaving_review,
+        record_executor_handoff: leaving_review && !suppress_run,
     }
 }
 
@@ -5749,13 +5742,8 @@ async fn apply_issue_update(
     let prelock_next_category =
         patchbay_service::issue_status::effective(&state.pool, next.workspace_id, &next.status)
             .await;
-    let should_lock_reviewer_tasks = is_review_return(
-        &prelock_previous_category,
-        &prelock_next_category,
-        issue_owner(&previous),
-        issue_owner(&next),
-        assignee_touched,
-    );
+    let should_lock_reviewer_tasks =
+        leaves_review_for_implementation(&prelock_previous_category, &prelock_next_category);
 
     let mut tx = state.pool.begin().await.map_err(|error| {
         tracing::warn!(%error, issue_id = %previous.id, "failed to begin issue update");
@@ -5875,14 +5863,8 @@ async fn apply_issue_update(
             .await;
     let next_category =
         patchbay_service::issue_status::effective(&mut *tx, next.workspace_id, &next.status).await;
-    let returning_from_review = is_review_return(
-        &previous_category,
-        &next_category,
-        issue_owner(&locked),
-        issue_owner(&next),
-        assignee_touched,
-    );
-    if returning_from_review && !should_lock_reviewer_tasks {
+    let leaving_review = leaves_review_for_implementation(&previous_category, &next_category);
+    if leaving_review && !should_lock_reviewer_tasks {
         return Err(revision_conflict(
             &locked,
             previous.revision,
@@ -6007,7 +5989,7 @@ RETURNING *"#,
             }
         }
     }
-    let review_return_actions = review_return_actions(returning_from_review, suppress_run);
+    let review_return_actions = review_return_actions(leaving_review, suppress_run);
     let retired_reviewer_tasks = if review_return_actions.retire_reviewer_tasks {
         patchbay_service::coordination::retire_locked_reviewer_tasks_for_review_return(
             &mut tx,
@@ -6066,7 +6048,7 @@ RETURNING *"#,
     let assignee_changed = previous.assignee_type != updated.assignee_type
         || previous.assignee_id != updated.assignee_id;
     let status_changed = previous.status != updated.status;
-    if !suppress_run && !returning_from_review {
+    if !suppress_run && !leaving_review {
         let is_self_loop = if let Some(task_id) = task_id {
             agent::get_agent_task(&state.pool, task_id)
                 .await
@@ -8280,37 +8262,11 @@ mod tests {
     }
 
     #[test]
-    fn review_return_survives_redundant_assignee_fields() {
-        let owner_a = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f21").unwrap();
-        let owner_b = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f22").unwrap();
-
-        assert!(is_review_return(
-            "in_review",
+    fn every_review_to_implementation_transition_is_a_review_return() {
+        assert!(leaves_review_for_implementation("in_review", "in_progress"));
+        assert!(!leaves_review_for_implementation(
             "in_progress",
-            Some(("agent", owner_a)),
-            Some(("agent", owner_a)),
-            true,
-        ));
-        assert!(is_review_return(
-            "in_review",
-            "in_progress",
-            Some(("agent", owner_a)),
-            Some(("agent", owner_a)),
-            false,
-        ));
-        assert!(!is_review_return(
-            "in_review",
-            "in_progress",
-            Some(("agent", owner_a)),
-            Some(("agent", owner_b)),
-            true,
-        ));
-        assert!(!is_review_return(
-            "in_progress",
-            "in_review",
-            Some(("agent", owner_a)),
-            Some(("agent", owner_a)),
-            true,
+            "in_review"
         ));
     }
 
@@ -8337,6 +8293,23 @@ mod tests {
                 record_executor_handoff: false,
             }
         );
+    }
+
+    #[test]
+    fn reassignment_while_leaving_review_uses_the_coordinator_handoff() {
+        assert!(leaves_review_for_implementation("in_review", "in_progress"));
+        assert_eq!(
+            review_return_actions(true, false),
+            ReviewReturnActions {
+                retire_reviewer_tasks: true,
+                record_executor_handoff: true,
+            }
+        );
+        let source = include_str!("issue.rs");
+        assert!(
+            source.contains("record_review_return(\n            &mut tx,\n            &updated")
+        );
+        assert!(source.contains("if !suppress_run && !leaving_review"));
     }
 
     #[test]
