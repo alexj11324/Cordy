@@ -67,6 +67,18 @@ require_config "$config" 'PATCHBAY_LLM_BASE_URL: http://gateway.example/v1'
 require_config "$config" 'PATCHBAY_LLM_DEFAULT_MODEL: model-from-env'
 require_config "$config" 'PATCHBAY_LLM_MAX_RETRIES: "3"'
 
+# NEXT_PUBLIC values are compiled into the Web client. Every supported local
+# image build must pass the exact desktop callback origin through BuildKit;
+# setting it only on the running container is too late for Next.js.
+for compose_file in docker-compose.selfhost.build.yml docker-compose.labs.yml; do
+  if ! grep -Fq \
+    'NEXT_PUBLIC_DESKTOP_APP_ORIGIN: ${NEXT_PUBLIC_DESKTOP_APP_ORIGIN:-}' \
+    "$compose_file"; then
+    echo "$compose_file does not pass NEXT_PUBLIC_DESKTOP_APP_ORIGIN to Dockerfile.web"
+    exit 1
+  fi
+done
+
 while IFS= read -r llm_var; do
   if ! grep -Eq "^[[:space:]]+${llm_var}: \\\$\{${llm_var}:-" docker-compose.selfhost.yml; then
     echo "$llm_var is documented in .env.example but not mapped into the backend"
