@@ -1,15 +1,14 @@
-import type { AgentTask, ChatMessage, ChatPendingTask } from "@patchbay/core/types";
+import type {
+  AgentTask,
+  ChatMessage,
+  ChatPendingTask,
+} from "@patchbay/core/types";
+import {
+  deriveAgentThreadTaskState,
+  isAgentTaskActive,
+} from "@patchbay/core/agent-thread";
 
-const ACTIVE_TASK_STATUSES = new Set<AgentTask["status"]>([
-  "queued",
-  "dispatched",
-  "waiting_local_directory",
-  "running",
-]);
-
-export function isAgentTaskActive(task: AgentTask): boolean {
-  return ACTIVE_TASK_STATUSES.has(task.status);
-}
+export { isAgentTaskActive };
 
 export function taskResultText(task: AgentTask): string {
   if (typeof task.result === "string") return task.result;
@@ -34,7 +33,10 @@ export function buildAgentThreadMessages(
       chat_session_id: conversationId,
       role: "user",
       content:
-        task.handoff_note?.trim() || task.trigger_summary?.trim() || initialPrompt,
+        task.agent_thread_message?.trim() ||
+        task.handoff_note?.trim() ||
+        task.trigger_summary?.trim() ||
+        initialPrompt,
       task_id: null,
       created_at: task.created_at,
     },
@@ -61,12 +63,5 @@ export function buildAgentThreadMessages(
 export function pendingTaskForAgentThread(
   task: AgentTask | undefined,
 ): ChatPendingTask | null {
-  if (!task || !isAgentTaskActive(task)) return null;
-  return {
-    task_id: task.id,
-    status: task.status,
-    created_at: task.created_at,
-    supports_queue: true,
-    queued_tasks: [],
-  };
+  return task ? deriveAgentThreadTaskState([task]).pendingTask : null;
 }

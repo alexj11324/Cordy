@@ -48,10 +48,12 @@ interface Props {
   /** Cancel the in-flight agent task. Only callable while `sending===true`. */
   onStop: () => void;
   /** True while an agent task is running for the active session. The
-   *  composer swaps Send for Stop. */
+   *  composer shows Stop; queue-capable callers may also keep Send visible. */
   sending: boolean;
   /** Queued tasks remain busy, but do not expose Stop without draft restore. */
   allowStop?: boolean;
+  /** Keep Send available while the provider executes the current turn. */
+  allowSubmitWhileRunning?: boolean;
   /** Hard-disable typing + send. Used when there's no usable agent in the
    *  workspace or the session is archived (legacy). */
   disabled?: boolean;
@@ -71,6 +73,7 @@ export function ChatComposer({
   onStop,
   sending,
   allowStop = true,
+  allowSubmitWhileRunning = false,
   disabled = false,
   disabledReason,
   allowAttachments = true,
@@ -121,7 +124,10 @@ export function ChatComposer({
       disabledReason={disabledReason}
       showAttachments={allowAttachments}
       isSending={sending}
-      renderStop={allowStop ? () => <StopButton onPress={handleStop} /> : undefined}
+      allowSubmitWhileSending={allowSubmitWhileRunning}
+      renderStop={
+        allowStop ? () => <StopButton onPress={handleStop} /> : undefined
+      }
       manageKeyboard={false}
     />
   );

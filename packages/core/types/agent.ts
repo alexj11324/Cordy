@@ -273,6 +273,20 @@ export interface TaskAttribution {
   rerun_of_task_id?: string;
 }
 
+export type AgentTaskStatus =
+  | "queued"
+  | "deferred"
+  | "dispatched"
+  | "waiting_local_directory"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  // The server may add a lifecycle state before an installed client is
+  // upgraded. Preserve that state so clients can make a terminal decision
+  // instead of silently treating it as queued/active.
+  | (string & {});
+
 export interface AgentTask {
   id: string;
   agent_id: string;
@@ -286,14 +300,7 @@ export interface AgentTask {
   // because another task currently owns the same on-disk path lock.
   // Treated as an active (non-terminal) state alongside queued/dispatched/
   // running by every consumer that buckets tasks into "active vs done".
-  status:
-    | "queued"
-    | "dispatched"
-    | "waiting_local_directory"
-    | "running"
-    | "completed"
-    | "failed"
-    | "cancelled";
+  status: AgentTaskStatus;
   priority: number;
   dispatched_at: string | null;
   started_at: string | null;
@@ -325,6 +332,12 @@ export interface AgentTask {
   attempt?: number;
   /** Set when an issue comment triggered this task (@mention or assignee comment). */
   trigger_comment_id?: string;
+  /**
+   * Complete user-authored turn for an Agent-thread continuation. The bounded
+   * trigger_summary remains a routing summary; this field lets history render
+   * the exact submitted turn after reopening the thread.
+   */
+  agent_thread_message?: string;
   /**
    * Earlier comment IDs folded into this run before it was claimed. This does
    * not include `trigger_comment_id`, which remains the run's newest trigger.
@@ -626,8 +639,8 @@ export interface AgentSkillSummary {
   id: string;
   name: string;
   description: string;
-	/** Older servers omit this field; consumers must treat that as enabled. */
-	enabled?: boolean;
+  /** Older servers omit this field; consumers must treat that as enabled. */
+  enabled?: boolean;
 }
 
 export interface CreateAgentRequest {
@@ -834,8 +847,8 @@ export interface SkillSummary {
   created_by: string | null;
   created_at: string;
   updated_at: string;
-	/** Present only when returned from an agent-scoped assignment endpoint. */
-	enabled?: boolean;
+  /** Present only when returned from an agent-scoped assignment endpoint. */
+  enabled?: boolean;
 }
 
 export interface Skill extends SkillSummary {
@@ -1200,10 +1213,10 @@ export interface RuntimeLocalSkillSummary {
 }
 
 export interface RuntimeLocalMcpServerSummary {
-	name: string;
-	transport?: "stdio" | "http" | "sse" | "unknown";
-	source?: string;
-	enabled: boolean;
+  name: string;
+  transport?: "stdio" | "http" | "sse" | "unknown";
+  source?: string;
+  enabled: boolean;
 }
 
 export interface RuntimeLocalSkillListRequest {
@@ -1212,8 +1225,8 @@ export interface RuntimeLocalSkillListRequest {
   status: RuntimeLocalSkillStatus;
   skills?: RuntimeLocalSkillSummary[];
   supported: boolean;
-	mcp_servers?: RuntimeLocalMcpServerSummary[];
-	mcp_supported?: boolean;
+  mcp_servers?: RuntimeLocalMcpServerSummary[];
+  mcp_supported?: boolean;
   error?: string;
   created_at: string;
   updated_at: string;
@@ -1248,8 +1261,8 @@ export interface RuntimeLocalSkillImportRequest {
 export interface RuntimeLocalSkillsResult {
   skills: RuntimeLocalSkillSummary[];
   supported: boolean;
-	mcpServers: RuntimeLocalMcpServerSummary[];
-	mcpSupported: boolean;
+  mcpServers: RuntimeLocalMcpServerSummary[];
+  mcpSupported: boolean;
 }
 
 export interface RuntimeLocalSkillImportResult {

@@ -1606,6 +1606,7 @@ export const AgentTaskSchema = z.object({
   side_chat_root_comment_id: z.string().optional(),
   attempt: z.number().optional(),
   trigger_comment_id: z.string().optional(),
+  agent_thread_message: z.string().optional(),
   // Coverage is additive display metadata. A mixed-version or partially
   // upgraded server must not make one malformed optional field erase the
   // entire Agent thread events, so degrade that field to "absent" independently.

@@ -2,8 +2,8 @@
  * Single row inside the agent-runs formSheet route
  * (`app/(app)/[workspace]/issue/[id]/runs.tsx`). Same component for active
  * and past tasks —
- * the trailing Cancel button is conditional on `status in {queued,
- * dispatched, running}`, and the status badge / colour swaps based on the
+ * the trailing Cancel button is conditional on an active status, and the
+ * status badge / colour swaps based on the
  * AgentTask.status enum.
  *
  * Every row opens the same interactive Agent thread route. A terminal task
@@ -11,6 +11,7 @@
  * server-provided unavailable reason disables continuation explicitly.
  */
 import { Alert, Pressable, View } from "react-native";
+import { isAgentTaskActive } from "@patchbay/core/agent-thread";
 import type { AgentTask } from "@patchbay/core/types";
 import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
@@ -29,17 +30,10 @@ interface Props {
   onOpen: () => void;
 }
 
-const ACTIVE_STATUSES: readonly AgentTask["status"][] = [
-  "queued",
-  "dispatched",
-  "waiting_local_directory",
-  "running",
-];
-
 export function RunRow({ task, issueId, onOpen }: Props) {
   const { getName } = useActorLookup();
   const copy = useAgentThreadCopy();
-  const isActive = ACTIVE_STATUSES.includes(task.status);
+  const isActive = isAgentTaskActive(task);
   const summary = task.trigger_summary?.trim() || fallbackSummary(task, copy);
   // Past tasks use completed_at when present (server fills it for terminal
   // statuses); active tasks fall back to created_at so the user sees how
@@ -50,15 +44,14 @@ export function RunRow({ task, issueId, onOpen }: Props) {
     <Pressable
       onPress={onOpen}
       accessibilityRole="button"
-      accessibilityLabel={formatAgentThreadCopy(copy.open_thread_for, { summary })}
+      accessibilityLabel={formatAgentThreadCopy(copy.open_thread_for, {
+        summary,
+      })}
       className="flex-row items-start gap-3 py-2 active:opacity-70"
     >
       <ActorAvatar type="agent" id={task.agent_id} size={28} showPresence />
       <View className="flex-1 gap-1">
-        <Text
-          className="text-sm text-foreground"
-          numberOfLines={2}
-        >
+        <Text className="text-sm text-foreground" numberOfLines={2}>
           <Text className="font-medium">{getName("agent", task.agent_id)}</Text>
           <Text className="text-muted-foreground"> · {summary}</Text>
         </Text>
@@ -76,16 +69,21 @@ export function RunRow({ task, issueId, onOpen }: Props) {
   );
 }
 
-function StatusBadge({ task, copy }: { task: AgentTask; copy: AgentThreadCopy }) {
-  const label = copy.status[task.status] ?? task.status;
+function StatusBadge({
+  task,
+  copy,
+}: {
+  task: AgentTask;
+  copy: AgentThreadCopy;
+}) {
+  const label =
+    copy.status[task.status as keyof AgentThreadCopy["status"]] ?? task.status;
   const cls = STATUS_CLASS[task.status] ?? "text-muted-foreground";
   // For failed tasks, surface the failure_reason inline so users don't have
   // to drill in. Missing / empty / unrecognised stays as just "Failed".
   if (task.status === "failed" && task.failure_reason) {
     const reasonLabel =
-      copy.failure[
-        task.failure_reason as keyof AgentThreadCopy["failure"]
-      ];
+      copy.failure[task.failure_reason as keyof AgentThreadCopy["failure"]];
     if (reasonLabel) {
       return (
         <Text className={`text-xs ${cls}`}>
@@ -109,18 +107,14 @@ function CancelButton({
   const mutation = useCancelTask(issueId);
 
   const onPress = () => {
-    Alert.alert(
-      copy.cancel_task_title,
-      copy.cancel_task_body,
-      [
-        { text: copy.keep_running, style: "cancel" },
-        {
-          text: copy.cancel_task,
-          style: "destructive",
-          onPress: () => mutation.mutate(taskId),
-        },
-      ],
-    );
+    Alert.alert(copy.cancel_task_title, copy.cancel_task_body, [
+      { text: copy.keep_running, style: "cancel" },
+      {
+        text: copy.cancel_task,
+        style: "destructive",
+        onPress: () => mutation.mutate(taskId),
+      },
+    ]);
   };
 
   return (
@@ -153,8 +147,9 @@ function fallbackSummary(task: AgentTask, copy: AgentThreadCopy): string {
   }
 }
 
-const STATUS_CLASS: Record<AgentTask["status"], string> = {
+const STATUS_CLASS: Record<string, string> = {
   queued: "text-muted-foreground",
+  deferred: "text-muted-foreground",
   dispatched: "text-brand",
   waiting_local_directory: "text-muted-foreground",
   running: "text-brand",

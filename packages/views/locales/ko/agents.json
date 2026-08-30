@@ -565,6 +565,7 @@
     "activity": {
       "status": {
         "queued": "대기 중",
+        "deferred": "재시도 중",
         "dispatched": "디스패치됨",
         "waiting_local_directory": "디렉터리 대기 중",
         "running": "실행 중",

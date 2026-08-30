@@ -1,6 +1,7 @@
 import { useLocalSearchParams } from "expo-router";
 import { Header } from "@/components/ui/header";
 import { TaskAgentThreadScreen } from "@/components/agent-thread/task-agent-thread-screen";
+import { useAgentThreadCopy } from "@/lib/agent-thread-i18n";
 
 /**
  * Native formSheet route for one persisted Agent task. The row and this
@@ -9,12 +10,13 @@ import { TaskAgentThreadScreen } from "@/components/agent-thread/task-agent-thre
  */
 export default function TaskAgentThreadRoute() {
   const { taskId } = useLocalSearchParams<{ taskId: string }>();
+  const copy = useAgentThreadCopy();
 
   if (!taskId) return null;
 
   return (
     <>
-      <Header title="Agent thread" />
+      <Header title={copy.thread_title} />
       <TaskAgentThreadScreen taskId={taskId} />
     </>
   );

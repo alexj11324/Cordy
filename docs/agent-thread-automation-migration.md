@@ -27,6 +27,9 @@ provider session.
 - Continuation requests are authorized, idempotent, lane-aware, and preserve
   the provider session. Concurrent sends have a defined conflict result, and
   provider rejection changes the thread to an honest unavailable/error state.
+- Continuation task entries expose the complete submitted user turn as the
+  canonical `agent_thread_message` field; the bounded `trigger_summary`
+  remains routing metadata, and private task context is never returned whole.
 
 ### Automation canonical contract
 

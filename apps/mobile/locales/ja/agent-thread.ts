@@ -1,4 +1,5 @@
 const agentThread = {
+  thread_title: "Agent スレッド",
   runs_title: "Agent の実行",
   active: "実行中",
   past: "履歴",
@@ -20,8 +21,27 @@ const agentThread = {
   could_not_continue: "Agent スレッドを続けられませんでした。",
   unable_to_stop: "Agent を停止できません",
   unavailable_fallback: "この Agent スレッドは続行できません。",
+  reason_provider_session_retired:
+    "Provider セッションは削除または無効化されており、復元できません。",
+  reason_provider_session_missing:
+    "Provider セッションのデータがないため、この Agent スレッドを安全に続行できません。",
+  reason_fresh_session_required:
+    "この実行は新しい Provider セッションで開始されたため、以前のスレッドを続行できません。",
+  reason_provider_session_not_established:
+    "この実行の Provider セッションはまだ確立されていません。",
+  reason_agent_archived:
+    "この Agent はアーカイブされているため、スレッドを続行できません。",
+  reason_agent_runtime_unbound:
+    "この Agent はランタイムに接続されていないため、スレッドを続行できません。",
+  reason_agent_runtime_rebound:
+    "この Agent は別のランタイムに再接続されているため、安全に続行できません。",
+  reason_agent_runtime_missing:
+    "この Agent のランタイムは存在しないため、スレッドを続行できません。",
+  reason_agent_thread_invoke_forbidden:
+    "この Agent スレッドは読めますが、続行する権限がありません。",
   status: {
     queued: "待機中",
+    deferred: "再試行中",
     dispatched: "開始中",
     waiting_local_directory: "ディレクトリ待ち",
     running: "実行中",

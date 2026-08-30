@@ -557,6 +557,7 @@
     "activity": {
       "status": {
         "queued": "待機中",
+        "deferred": "再試行中",
         "dispatched": "ディスパッチ済み",
         "waiting_local_directory": "ディレクトリ待機中",
         "running": "実行中",

@@ -25,21 +25,21 @@ use patchbay_db::queries::agent::{
     create_deferred_agent_task, create_deferred_channel_issue_task, create_quick_create_task,
     create_task_message_bus_continuation, extend_agent_task_prepare_lease, get_agent,
     get_agent_for_claim_update, get_agent_task, get_agent_thread_continuation_by_idempotency,
-    list_queued_claim_candidates_by_runtime, list_queued_claim_candidates_by_runtimes,
-    lock_task_for_message_bus, mark_agent_task_waiting_local_directory,
-    mark_chat_finalize_deferred, merge_agent_task_context, promote_deferred_channel_issue_task,
-    promote_due_deferred_tasks_for_runtime, promote_due_deferred_tasks_for_runtimes,
-    reclaim_stale_dispatched_task_for_runtime, reclaim_stale_dispatched_tasks_for_runtimes,
-    refresh_agent_status_from_tasks, requeue_agent_task_after_claim_failure,
-    set_deferred_channel_issue_task_runtime_overlay, set_task_delivered_comment_i_ds,
-    start_agent_task,
+    list_agent_thread_tasks, list_queued_claim_candidates_by_runtime,
+    list_queued_claim_candidates_by_runtimes, lock_task_for_message_bus,
+    mark_agent_task_waiting_local_directory, mark_chat_finalize_deferred, merge_agent_task_context,
+    promote_deferred_channel_issue_task, promote_due_deferred_tasks_for_runtime,
+    promote_due_deferred_tasks_for_runtimes, reclaim_stale_dispatched_task_for_runtime,
+    reclaim_stale_dispatched_tasks_for_runtimes, refresh_agent_status_from_tasks,
+    requeue_agent_task_after_claim_failure, set_deferred_channel_issue_task_runtime_overlay,
+    set_task_delivered_comment_i_ds, start_agent_task,
 };
 use patchbay_db::queries::agent_invocation_target::list_agent_invocation_targets;
 use patchbay_db::queries::attachment::detach_attachments_from_user_chat_message_by_task;
 use patchbay_db::queries::attachment::link_attachments_to_chat_message;
 use patchbay_db::queries::automation::{
     get_active_automation_rule_version, get_automation, get_automation_run,
-    get_automation_run_by_issue, get_automation_trigger,
+    get_automation_run_by_issue, get_automation_trigger, is_automation_collaborator,
 };
 use patchbay_db::queries::channel::{
     clear_channel_chat_session_pending_fresh, lock_channel_chat_session_pending_fresh,
@@ -61,7 +61,9 @@ use patchbay_db::queries::comment::get_comment_in_workspace;
 use patchbay_db::queries::daemon_token::{create_daemon_token, delete_expired_daemon_tokens};
 use patchbay_db::queries::github::get_issue_review_head_sha;
 use patchbay_db::queries::issue::get_issue;
-use patchbay_db::queries::member::get_member_by_user_and_workspace;
+use patchbay_db::queries::member::{
+    get_member_by_user_and_workspace, lock_member_by_user_and_workspace,
+};
 use patchbay_db::queries::runtime::get_agent_runtime;
 use patchbay_db::queries::task_message::list_task_messages;
 use patchbay_db::queries::task_token::{create_task_token, delete_task_tokens_by_task};
@@ -169,21 +171,55 @@ fn member_invocation_allowed(
             }))
 }
 
+fn automation_invocation_allowed(
+    automation_workspace_id: Uuid,
+    agent_workspace_id: Uuid,
+    member_role: Option<&str>,
+    created_by_type: &str,
+    created_by_id: Uuid,
+    requester_user_id: Uuid,
+    collaborator: Option<bool>,
+) -> bool {
+    if automation_workspace_id != agent_workspace_id {
+        return false;
+    }
+    let owns_automation = member_role.is_some_and(|role| {
+        matches!(role, "owner" | "admin")
+            || (created_by_type == "member" && created_by_id == requester_user_id)
+    });
+    owns_automation || collaborator == Some(true)
+}
+
 pub fn agent_thread_availability(
     task: &AgentTaskQueue,
 ) -> Result<(), AgentThreadUnavailableReason> {
-    if task.retired_session_id.is_some() {
+    let Some(session_id) = task.session_id.as_deref() else {
+        if task.retired_session_id.is_some() {
+            return Err(AgentThreadUnavailableReason::RetiredSession);
+        }
+        if task.session_rollout_missing {
+            return Err(AgentThreadUnavailableReason::SessionRolloutMissing);
+        }
+        if task.force_fresh_session {
+            return Err(AgentThreadUnavailableReason::FreshSessionRequired);
+        }
+        return Err(AgentThreadUnavailableReason::SessionNotEstablished);
+    };
+
+    // A successful provider recovery may leave the superseded session id in
+    // `retired_session_id` for audit purposes. It is only terminal when the
+    // task still points at that same id; a different current session is the
+    // durable session the user can continue.
+    if task.retired_session_id.as_deref() == Some(session_id) {
         return Err(AgentThreadUnavailableReason::RetiredSession);
     }
     if task.session_rollout_missing {
         return Err(AgentThreadUnavailableReason::SessionRolloutMissing);
     }
-    if task.force_fresh_session {
-        return Err(AgentThreadUnavailableReason::FreshSessionRequired);
-    }
-    if task.session_id.is_none() {
-        return Err(AgentThreadUnavailableReason::SessionNotEstablished);
-    }
+
+    // `force_fresh_session` is consumed by claim/recovery when no provider
+    // session exists. Once a session is persisted, it must not turn a
+    // successfully recovered thread into an unavailable history surface.
     Ok(())
 }
 
@@ -2864,25 +2900,84 @@ impl TaskService {
             return Err(TaskServiceError::AgentThreadUnavailable(reason));
         }
 
-        // Recheck the authenticated requester after taking the Agent lock.
-        // The handler performs the same admission check for the HTTP path, but
-        // this service boundary must also fail closed for direct callers and
-        // for permission changes racing the continuation request.
-        let is_workspace_member =
-            match get_member_by_user_and_workspace(&mut *tx, requester_user_id, agent.workspace_id)
-                .await
-            {
-                Ok(member) => member.is_some(),
-                Err(error) => {
-                    tracing::warn!(
-                        %error,
-                        requester_user_id = %requester_user_id,
-                        agent_id = %agent.id,
-                        "failed to verify Agent thread requester membership"
-                    );
-                    false
-                }
+        // Recheck the authenticated requester after taking the Agent and
+        // parent-task locks. The handler performs the same admission check for
+        // the HTTP path, but this service boundary must also fail closed for
+        // direct callers and for permission changes racing the continuation
+        // request. Locking the member row makes a concurrent role revocation
+        // serialize with this final authorization decision.
+        let requester_member = match lock_member_by_user_and_workspace(
+            &mut *tx,
+            requester_user_id,
+            agent.workspace_id,
+        )
+        .await
+        {
+            Ok(member) => member,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    requester_user_id = %requester_user_id,
+                    agent_id = %agent.id,
+                    "failed to verify Agent thread requester membership"
+                );
+                None
+            }
+        };
+        let is_workspace_member = requester_member.is_some();
+
+        // Continuation children intentionally clear `automation_run_id`; use
+        // the locked parent to recover the complete chain and recheck the
+        // Automation owner/collaborator boundary immediately before insert.
+        // This prevents a permission revoked while the requester overlay was
+        // being built from still authorizing a new turn.
+        let thread_tasks = match list_agent_thread_tasks(&mut *tx, parent.id).await {
+            Ok(tasks) => tasks,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    parent_task_id = %parent.id,
+                    "failed to load Agent thread source for continuation authorization"
+                );
+                return Err(TaskServiceError::AgentThreadInvokeForbidden);
+            }
+        };
+        let automation_run_id = thread_tasks
+            .iter()
+            .find_map(|task| task.automation_run_id)
+            .or(parent.automation_run_id);
+        if let Some(automation_run_id) = automation_run_id {
+            let automation_allowed = match get_automation_run(&mut *tx, automation_run_id).await {
+                Ok(Some(run)) => match get_automation(&mut *tx, run.automation_id).await {
+                    Ok(Some(automation)) => {
+                        let collaborates = match is_automation_collaborator(
+                            &mut *tx,
+                            automation.id,
+                            requester_user_id,
+                        )
+                        .await
+                        {
+                            Ok(value) => value,
+                            Err(_) => None,
+                        };
+                        automation_invocation_allowed(
+                            automation.workspace_id,
+                            agent.workspace_id,
+                            requester_member.as_ref().map(|member| member.role.as_str()),
+                            &automation.created_by_type,
+                            automation.created_by_id,
+                            requester_user_id,
+                            collaborates,
+                        )
+                    }
+                    Ok(None) | Err(_) => false,
+                },
+                Ok(None) | Err(_) => false,
             };
+            if !automation_allowed {
+                return Err(TaskServiceError::AgentThreadInvokeForbidden);
+            }
+        }
         let targets = if is_workspace_member
             && agent.owner_id != Some(requester_user_id)
             && agent.permission_mode == "public_to"
@@ -5963,10 +6058,7 @@ mod tests {
         assert_eq!(agent_thread_availability(&task), Ok(()));
 
         task.force_fresh_session = true;
-        assert_eq!(
-            agent_thread_availability(&task),
-            Err(AgentThreadUnavailableReason::FreshSessionRequired)
-        );
+        assert_eq!(agent_thread_availability(&task), Ok(()));
         task.force_fresh_session = false;
         task.session_rollout_missing = true;
         assert_eq!(
@@ -5975,6 +6067,14 @@ mod tests {
         );
         task.session_rollout_missing = false;
         task.retired_session_id = Some("provider-session".to_string());
+        assert_eq!(
+            agent_thread_availability(&task),
+            Err(AgentThreadUnavailableReason::RetiredSession)
+        );
+        task.retired_session_id = Some("older-provider-session".to_string());
+        assert_eq!(agent_thread_availability(&task), Ok(()));
+
+        task.session_id = None;
         assert_eq!(
             agent_thread_availability(&task),
             Err(AgentThreadUnavailableReason::RetiredSession)
@@ -6061,6 +6161,52 @@ mod tests {
             false,
             &[target("workspace", other)],
             member
+        ));
+    }
+
+    #[test]
+    fn automation_thread_invocation_fails_closed_for_revoked_or_cross_workspace_access() {
+        let workspace = Uuid::new_v4();
+        let other_workspace = Uuid::new_v4();
+        let owner = Uuid::new_v4();
+        let requester = Uuid::new_v4();
+        let automation = Uuid::new_v4();
+
+        assert!(automation_invocation_allowed(
+            workspace,
+            workspace,
+            Some("owner"),
+            "member",
+            owner,
+            owner,
+            Some(false),
+        ));
+        assert!(automation_invocation_allowed(
+            workspace,
+            workspace,
+            Some("member"),
+            "member",
+            automation,
+            requester,
+            Some(true),
+        ));
+        assert!(!automation_invocation_allowed(
+            workspace,
+            workspace,
+            Some("member"),
+            "member",
+            automation,
+            requester,
+            Some(false),
+        ));
+        assert!(!automation_invocation_allowed(
+            other_workspace,
+            workspace,
+            Some("owner"),
+            "member",
+            owner,
+            owner,
+            Some(true),
         ));
     }
 

@@ -406,7 +406,8 @@ export const EMPTY_SEARCH_PROJECTS_RESPONSE: SearchProjectsResponse = {
 // Mirrors AgentTask in packages/core/types/agent.ts. Backend handlers:
 //   GET  /api/issues/{id}/active-task → { tasks: AgentTask[] } (may be empty)
 //   GET  /api/issues/{id}/task-runs   → AgentTask[]
-// Lenient on every field — status and kind use `.catch()`, while
+// Lenient on every field — status stays open and only malformed/missing input
+// falls back to an explicit unknown value, while
 // failure_reason remains an open string so a future server-side value renders
 // without crashing the row (root AGENTS.md "Enum drift downgrades, not crashes").
 
@@ -415,17 +416,7 @@ export const AgentTaskSchema: z.ZodType<AgentTask> = z.object({
   agent_id: z.string().default(""),
   runtime_id: z.string().default(""),
   issue_id: z.string().default(""),
-  status: z
-    .enum([
-      "queued",
-      "dispatched",
-      "waiting_local_directory",
-      "running",
-      "completed",
-      "failed",
-      "cancelled",
-    ])
-    .catch("queued"),
+  status: z.string().catch("unknown"),
   priority: z.number().default(0),
   dispatched_at: z.string().nullable().default(null),
   started_at: z.string().nullable().default(null),
@@ -446,6 +437,7 @@ export const AgentTaskSchema: z.ZodType<AgentTask> = z.object({
   parent_task_id: z.string().optional(),
   attempt: z.number().optional(),
   trigger_comment_id: z.string().optional(),
+  agent_thread_message: z.string().optional(),
   trigger_summary: z.string().optional(),
   kind: z
     .enum(["comment", "automation", "chat", "quick_create", "direct", "message_bus"])

@@ -27,6 +27,7 @@ const LIVE_STATUS_RANK: Partial<Record<AgentTask["status"], number>> = {
   dispatched: 1,
   waiting_local_directory: 2,
   queued: 3,
+  deferred: 4,
 };
 
 function isLiveTask(task: AgentTask): boolean {

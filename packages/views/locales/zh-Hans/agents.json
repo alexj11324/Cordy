@@ -664,6 +664,7 @@
     "activity": {
       "status": {
         "queued": "排队中",
+        "deferred": "重试中",
         "dispatched": "已派发",
         "waiting_local_directory": "等待目录",
         "running": "进行中",

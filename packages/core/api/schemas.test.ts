@@ -96,6 +96,34 @@ const baseIssue = {
 };
 
 describe("AgentThreadResponseSchema availability compatibility", () => {
+  it("preserves the complete continuation turn alongside its bounded summary", () => {
+    const parsed = AgentThreadResponseSchema.safeParse({
+      task: {
+        id: "task-2",
+        trigger_summary: "Bounded summary",
+        agent_thread_message:
+          "The complete continuation instruction with details beyond the summary limit.",
+      },
+      thread_tasks: [
+        {
+          id: "task-2",
+          trigger_summary: "Bounded summary",
+          agent_thread_message:
+            "The complete continuation instruction with details beyond the summary limit.",
+        },
+      ],
+      agent: { id: "agent-1", name: "Builder" },
+      availability: { state: "available" },
+      can_continue: true,
+    });
+
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.task.agent_thread_message).toContain(
+      "details beyond the summary limit",
+    );
+  });
+
   it("keeps the thread envelope when the server adds an availability state", () => {
     const parsed = AgentThreadResponseSchema.safeParse({
       task: { id: "task-1" },

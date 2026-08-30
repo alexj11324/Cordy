@@ -23,6 +23,7 @@ const ACTIVE_STATUS_RANK: Partial<Record<AgentTask["status"], number>> = {
   dispatched: 1,
   waiting_local_directory: 2,
   queued: 3,
+  deferred: 4,
 };
 
 function isActiveTask(task: AgentTask): boolean {
@@ -33,9 +34,10 @@ function commentIdsForTask(task: AgentTask): string[] {
   if (task.status !== "queued" && task.delivered_comment_ids !== undefined) {
     return task.delivered_comment_ids;
   }
-  return [task.trigger_comment_id, ...(task.coalesced_comment_ids ?? [])].filter(
-    (id): id is string => Boolean(id),
-  );
+  return [
+    task.trigger_comment_id,
+    ...(task.coalesced_comment_ids ?? []),
+  ].filter((id): id is string => Boolean(id));
 }
 
 function taskResultText(task: AgentTask): string {
@@ -86,11 +88,14 @@ export function buildIssueAgentConversation({
   const comments = timeline.filter(
     (entry) => entry.type === "comment" && typeof entry.content === "string",
   );
-  const commentsById = new Map(comments.map((comment) => [comment.id, comment]));
+  const commentsById = new Map(
+    comments.map((comment) => [comment.id, comment]),
+  );
   const assistantCommentsByTask = new Map<string, TimelineEntry[]>();
   for (const comment of comments) {
     if (comment.source_task_id && taskIds.has(comment.source_task_id)) {
-      const taskComments = assistantCommentsByTask.get(comment.source_task_id) ?? [];
+      const taskComments =
+        assistantCommentsByTask.get(comment.source_task_id) ?? [];
       taskComments.push(comment);
       assistantCommentsByTask.set(comment.source_task_id, taskComments);
     }
@@ -107,7 +112,8 @@ export function buildIssueAgentConversation({
       if (!comment || addedUserComments.has(comment.id)) continue;
       // A target agent's own completion comment is already its assistant turn,
       // even if an older server accidentally included it in a later claim batch.
-      if (comment.source_task_id && taskIds.has(comment.source_task_id)) continue;
+      if (comment.source_task_id && taskIds.has(comment.source_task_id))
+        continue;
 
       messages.push({
         id: comment.id,
@@ -189,30 +195,30 @@ export function buildIssueAgentConversation({
         task_id: task.id,
         created_at: task.completed_at ?? task.created_at,
         failure_reason:
-          task.status === "failed" ? task.failure_reason || "agent_error" : null,
+          task.status === "failed"
+            ? task.failure_reason || "agent_error"
+            : null,
         elapsed_ms: elapsedMs(task),
         message_kind: content.trim() ? "message" : "no_response",
       });
     }
   }
 
-  const activeTasks = agentTasks
-    .filter(isActiveTask)
-    .toSorted((a, b) => {
-      const aIsSideChat = Boolean(a.side_chat_parent_task_id);
-      const bIsSideChat = Boolean(b.side_chat_parent_task_id);
-      if (aIsSideChat !== bIsSideChat) return aIsSideChat ? -1 : 1;
-      if (aIsSideChat && bIsSideChat) {
-        return (
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        );
-      }
-      const rank =
-        (ACTIVE_STATUS_RANK[a.status] ?? 99) -
-        (ACTIVE_STATUS_RANK[b.status] ?? 99);
-      if (rank !== 0) return rank;
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-    });
+  const activeTasks = agentTasks.filter(isActiveTask).toSorted((a, b) => {
+    const aIsSideChat = Boolean(a.side_chat_parent_task_id);
+    const bIsSideChat = Boolean(b.side_chat_parent_task_id);
+    if (aIsSideChat !== bIsSideChat) return aIsSideChat ? -1 : 1;
+    if (aIsSideChat && bIsSideChat) {
+      return (
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+    }
+    const rank =
+      (ACTIVE_STATUS_RANK[a.status] ?? 99) -
+      (ACTIVE_STATUS_RANK[b.status] ?? 99);
+    if (rank !== 0) return rank;
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  });
   const head = activeTasks[0];
   const pendingTask: ChatPendingTask | null = head
     ? {
@@ -232,8 +238,7 @@ export function buildIssueAgentConversation({
   return {
     messages: messages.toSorted((a, b) => {
       const time =
-        new Date(a.created_at).getTime() -
-        new Date(b.created_at).getTime();
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       if (time !== 0) return time;
       if (a.role === b.role) return a.id.localeCompare(b.id);
       return a.role === "user" ? -1 : 1;
@@ -256,7 +261,7 @@ export function queuedIssueFollowUps(
   if (!pendingTask) return [];
   const rows: ChatQueuedTask[] = [];
   if (
-    pendingTask.status === "queued" &&
+    (pendingTask.status === "queued" || pendingTask.status === "deferred") &&
     pendingTask.task_id &&
     pendingTask.created_at
   ) {
@@ -269,7 +274,7 @@ export function queuedIssueFollowUps(
     });
   }
   for (const task of pendingTask.queued_tasks ?? []) {
-    if (task.status === "queued") rows.push(task);
+    if (task.status === "queued" || task.status === "deferred") rows.push(task);
   }
   return rows;
 }

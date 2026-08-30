@@ -1,4 +1,5 @@
 const agentThread = {
+  thread_title: "Agent 对话",
   runs_title: "Agent 运行",
   active: "进行中",
   past: "历史",
@@ -20,8 +21,22 @@ const agentThread = {
   could_not_continue: "无法继续此 Agent 对话。",
   unable_to_stop: "无法停止 Agent",
   unavailable_fallback: "此 Agent 对话无法继续。",
+  reason_provider_session_retired: "Provider 会话已删除或退役，无法恢复。",
+  reason_provider_session_missing:
+    "Provider 会话数据缺失，此 Agent 对话无法安全继续。",
+  reason_fresh_session_required:
+    "此运行使用了新的 Provider 会话，无法继续之前的对话。",
+  reason_provider_session_not_established: "Provider 尚未为此次运行建立会话。",
+  reason_agent_archived: "此 Agent 已归档，无法继续其对话。",
+  reason_agent_runtime_unbound: "此 Agent 已不再绑定运行时，无法继续其对话。",
+  reason_agent_runtime_rebound:
+    "此 Agent 已绑定到其他运行时，无法安全继续其对话。",
+  reason_agent_runtime_missing: "此 Agent 的运行时已不存在，无法继续其对话。",
+  reason_agent_thread_invoke_forbidden:
+    "你可以阅读此 Agent 对话，但没有权限继续执行。",
   status: {
     queued: "排队中",
+    deferred: "重试中",
     dispatched: "启动中",
     waiting_local_directory: "等待目录",
     running: "运行中",

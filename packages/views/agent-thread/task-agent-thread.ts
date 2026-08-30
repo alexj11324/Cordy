@@ -1,15 +1,14 @@
-import type { AgentTask, ChatMessage, ChatPendingTask } from "@patchbay/core/types";
+import type {
+  AgentTask,
+  ChatMessage,
+  ChatPendingTask,
+} from "@patchbay/core/types";
+import {
+  deriveAgentThreadTaskState,
+  isAgentTaskActive,
+} from "@patchbay/core/agent-thread";
 
-const ACTIVE_TASK_STATUSES = new Set<AgentTask["status"]>([
-  "queued",
-  "dispatched",
-  "running",
-  "waiting_local_directory",
-]);
-
-export function isAgentTaskActive(task: AgentTask): boolean {
-  return ACTIVE_TASK_STATUSES.has(task.status);
-}
+export { isAgentTaskActive };
 
 export function taskResultText(task: AgentTask): string {
   if (typeof task.result === "string") return task.result;
@@ -37,7 +36,11 @@ export function buildTaskAgentThreadMessages(
       id: `task-prompt:${task.id}`,
       chat_session_id: conversationId,
       role: "user",
-      content: task.handoff_note?.trim() || task.trigger_summary?.trim() || initialPrompt,
+      content:
+        task.agent_thread_message?.trim() ||
+        task.handoff_note?.trim() ||
+        task.trigger_summary?.trim() ||
+        initialPrompt,
       task_id: null,
       created_at: task.created_at,
     },
@@ -52,7 +55,8 @@ export function buildTaskAgentThreadMessages(
       content,
       task_id: task.id,
       created_at: task.completed_at ?? task.started_at ?? task.created_at,
-      failure_reason: task.status === "failed" ? task.failure_reason || "agent_error" : null,
+      failure_reason:
+        task.status === "failed" ? task.failure_reason || "agent_error" : null,
       message_kind: content.trim() ? "message" : "no_response",
     });
   }
@@ -63,12 +67,5 @@ export function buildTaskAgentThreadMessages(
 export function pendingTaskForAgentThread(
   task: AgentTask | undefined,
 ): ChatPendingTask | null {
-  if (!task || !isAgentTaskActive(task)) return null;
-  return {
-    task_id: task.id,
-    status: task.status,
-    created_at: task.created_at,
-    supports_queue: true,
-    queued_tasks: [],
-  };
+  return task ? deriveAgentThreadTaskState([task]).pendingTask : null;
 }

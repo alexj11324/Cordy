@@ -40,6 +40,7 @@ const LIVE_FOLLOW_UP_STATUSES = new Set<AgentTask["status"]>([
   "running",
   "waiting_local_directory",
   "queued",
+  "deferred",
 ]);
 
 /**
@@ -117,7 +118,8 @@ export function useIssueAgentMessageSend({
           content: `${mention}\n\n${content.trim()}`,
           parentId: activeMainTask ? sideChatRootId : undefined,
           attachmentIds,
-          suppressAgentIds: suppress && suppress.length > 0 ? suppress : undefined,
+          suppressAgentIds:
+            suppress && suppress.length > 0 ? suppress : undefined,
         });
         const openedSideChat = comment.trigger_outcomes?.some(
           (outcome) =>
@@ -290,7 +292,9 @@ export function IssueAgentConversationDialog({
   const user = useAuthStore((state) => state.user);
   const { data: agent } = useQuery(agentDetailOptions(wsId, agentId));
   const { data: runtimes = [] } = useQuery(runtimeListOptions(wsId));
-  const { data: timeline = [], isLoading } = useQuery(issueTimelineOptions(issueId));
+  const { data: timeline = [], isLoading } = useQuery(
+    issueTimelineOptions(issueId),
+  );
   const agentName = agent?.name || t(($) => $.agent_live.fallback_name);
   const { send, steer } = useIssueAgentMessageSend({
     issueId,
@@ -299,7 +303,8 @@ export function IssueAgentConversationDialog({
     tasks,
   });
   const supportsGoal = runtimes.some(
-    (runtime) => runtime.id === agent?.runtime_id && runtime.provider === "codex",
+    (runtime) =>
+      runtime.id === agent?.runtime_id && runtime.provider === "codex",
   );
   const agentTasks = useMemo(
     () => tasks.filter((candidate) => candidate.agent_id === agentId),
@@ -387,7 +392,9 @@ export function IssueAgentConversationDialog({
 
   const handleEditQueuedFollowUp = useCallback(
     async (taskId: string) => {
-      const sourceTask = agentTasks.find((candidate) => candidate.id === taskId);
+      const sourceTask = agentTasks.find(
+        (candidate) => candidate.id === taskId,
+      );
       const comment = sourceTask?.trigger_comment_id
         ? timeline.find(
             (entry) =>
@@ -406,10 +413,12 @@ export function IssueAgentConversationDialog({
         useChatStore.getState().setInputDraft(draftKey, content);
       }
       if (attachments.length > 0) {
-        useChatStore.getState().setInputDraftAttachments(
-          draftKey,
-          attachments.map(attachmentToDraftUpload),
-        );
+        useChatStore
+          .getState()
+          .setInputDraftAttachments(
+            draftKey,
+            attachments.map(attachmentToDraftUpload),
+          );
       }
       await cancelQueuedFollowUp(taskId);
     },
@@ -436,7 +445,9 @@ export function IssueAgentConversationDialog({
         count: agentTasks.length,
       })}
       descriptionHint={
-        supportsGoal ? t(($) => $.agent_thread.conversation_goal_hint) : undefined
+        supportsGoal
+          ? t(($) => $.agent_thread.conversation_goal_hint)
+          : undefined
       }
       messages={conversation.messages}
       messageActors={conversation.messageActors}

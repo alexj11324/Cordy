@@ -1,6 +1,6 @@
 /**
  * Agent Runs sheet — presented as a formSheet by the parent Stack. Two
- * sections: Active (queued/dispatched/running, created_at desc) and Past
+ * sections: Active (queued/deferred/dispatched/running, created_at desc) and Past
  * (completed_at desc, status rank as tiebreaker). Empty
  * sections hide entirely.
  *
@@ -14,6 +14,7 @@ import { ScrollView, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import type { AgentTask } from "@patchbay/core/types";
+import { isAgentTaskActive } from "@patchbay/core/agent-thread";
 import { Text } from "@/components/ui/text";
 import { RunRow } from "@/components/issue/run-row";
 import {
@@ -23,7 +24,7 @@ import {
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { useAgentThreadCopy } from "@/lib/agent-thread-i18n";
 
-const PAST_STATUS_ORDER: Record<AgentTask["status"], number> = {
+const PAST_STATUS_ORDER: Record<string, number> = {
   failed: 0,
   cancelled: 1,
   completed: 2,
@@ -45,23 +46,23 @@ export default function IssueRunsRoute() {
 
   const active = useMemo(
     () =>
-      [...activeTasks].sort((a, b) =>
-        (b.created_at ?? "").localeCompare(a.created_at ?? ""),
-      ),
+      activeTasks
+        .filter(isAgentTaskActive)
+        .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "")),
     [activeTasks],
   );
 
   const past = useMemo(() => {
-    const filtered = allTasks.filter(
-      (t) =>
-        t.status === "completed" ||
-        t.status === "failed" ||
-        t.status === "cancelled",
-    );
+    const filtered = allTasks.filter((t) => !isAgentTaskActive(t));
     return filtered.sort((a, b) => {
-      const timeDiff = (b.completed_at ?? "").localeCompare(a.completed_at ?? "");
+      const timeDiff = (b.completed_at ?? "").localeCompare(
+        a.completed_at ?? "",
+      );
       if (timeDiff !== 0) return timeDiff;
-      return PAST_STATUS_ORDER[a.status] - PAST_STATUS_ORDER[b.status];
+      return (
+        (PAST_STATUS_ORDER[a.status] ?? 99) -
+        (PAST_STATUS_ORDER[b.status] ?? 99)
+      );
     });
   }, [allTasks]);
 

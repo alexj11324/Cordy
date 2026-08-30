@@ -1,4 +1,5 @@
 const agentThread = {
+  thread_title: "Agent thread",
   runs_title: "Agent runs",
   active: "Active",
   past: "Past",
@@ -15,13 +16,33 @@ const agentThread = {
   task: "Task",
   agent: "Agent",
   continue_prompt: "Continue this Agent thread",
-  permission_denied: "You no longer have permission to continue this Agent thread.",
+  permission_denied:
+    "You no longer have permission to continue this Agent thread.",
   unavailable: "This Agent thread is no longer available for continuation.",
   could_not_continue: "The Agent thread could not be continued.",
   unable_to_stop: "Unable to stop Agent",
   unavailable_fallback: "This Agent thread is unavailable for continuation.",
+  reason_provider_session_retired:
+    "The provider session was deleted or retired and cannot be restored.",
+  reason_provider_session_missing:
+    "The provider session data is missing, so this Agent thread cannot continue safely.",
+  reason_fresh_session_required:
+    "This run started with a fresh provider session and cannot continue the previous thread.",
+  reason_provider_session_not_established:
+    "The provider has not established a session for this run yet.",
+  reason_agent_archived:
+    "This Agent is archived and its thread cannot continue.",
+  reason_agent_runtime_unbound:
+    "This Agent is no longer bound to a runtime, so its thread cannot continue.",
+  reason_agent_runtime_rebound:
+    "This Agent is bound to a different runtime, so its thread cannot continue safely.",
+  reason_agent_runtime_missing:
+    "The Agent runtime no longer exists, so its thread cannot continue.",
+  reason_agent_thread_invoke_forbidden:
+    "You can read this Agent thread, but you do not have permission to continue it.",
   status: {
     queued: "Queued",
+    deferred: "Retrying",
     dispatched: "Starting",
     waiting_local_directory: "Waiting for directory",
     running: "Running",

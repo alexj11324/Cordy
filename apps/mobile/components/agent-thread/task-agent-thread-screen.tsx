@@ -3,11 +3,12 @@
  * already-shipping ChatMessageList + ChatComposer; this route is the Agent
  * thread surface, not a separate task or event inspection product surface.
  */
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Alert, KeyboardAvoidingView, Platform, View } from "react-native";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ChatMessage, TaskMessagePayload } from "@patchbay/core/types";
 import { createSafeId } from "@patchbay/core/utils";
+import { deriveAgentThreadTaskState } from "@patchbay/core/agent-thread";
 import { api, ApiError } from "@/data/api";
 import { chatKeys, taskMessagesOptions } from "@/data/queries/chat";
 import { agentThreadOptions } from "@/data/queries/agent-thread";
@@ -17,8 +18,9 @@ import { useChatDraftsStore } from "@/data/stores/chat-drafts-store";
 import { ChatMessageList } from "@/components/chat/chat-message-list";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { Text } from "@/components/ui/text";
-import { buildAgentThreadMessages, pendingTaskForAgentThread } from "@/lib/agent-thread-display";
+import { buildAgentThreadMessages } from "@/lib/agent-thread-display";
 import {
+  agentThreadAvailabilityMessage,
   useAgentThreadCopy,
   type AgentThreadCopy,
 } from "@/lib/agent-thread-i18n";
@@ -49,10 +51,28 @@ function unionTaskMessagesBySeq(
 
 function continuationError(error: unknown, copy: AgentThreadCopy): string {
   if (error instanceof ApiError && error.status === 403) {
-    return copy.permission_denied;
+    const body =
+      error.body && typeof error.body === "object"
+        ? (error.body as Record<string, unknown>)
+        : undefined;
+    return agentThreadAvailabilityMessage(
+      copy,
+      typeof body?.reason_code === "string" ? body.reason_code : undefined,
+      typeof body?.reason === "string" ? body.reason : undefined,
+      copy.permission_denied,
+    );
   }
   if (error instanceof ApiError && error.status === 409) {
-    return copy.unavailable;
+    const body =
+      error.body && typeof error.body === "object"
+        ? (error.body as Record<string, unknown>)
+        : undefined;
+    return agentThreadAvailabilityMessage(
+      copy,
+      typeof body?.reason_code === "string" ? body.reason_code : undefined,
+      typeof body?.reason === "string" ? body.reason : undefined,
+      copy.unavailable,
+    );
   }
   return error instanceof Error ? error.message : copy.could_not_continue;
 }
@@ -63,7 +83,14 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
   const queryClient = useQueryClient();
   const threadQuery = useQuery(agentThreadOptions(wsId, taskId));
   const continuation = useContinueAgentThread();
-  const draft = useChatDraftsStore((state) => state.drafts[`agent-thread:${taskId}`] ?? "");
+  const pendingSendRef = useRef<{
+    taskId: string;
+    content: string;
+    idempotencyKey: string;
+  } | null>(null);
+  const draft = useChatDraftsStore(
+    (state) => state.drafts[`agent-thread:${taskId}`] ?? "",
+  );
   const setDraft = useChatDraftsStore((state) => state.setDraft);
   const clearDraft = useChatDraftsStore((state) => state.clearDraft);
   const task = threadQuery.data?.task;
@@ -85,8 +112,16 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
       ),
     [copy.continue_prompt, threadTasks],
   );
-  const pendingTask = pendingTaskForAgentThread(task);
-  const liveTaskMessages = useQuery(taskMessagesOptions(continuationParentTaskId));
+  const taskState = useMemo(
+    () => deriveAgentThreadTaskState(threadTasks),
+    [threadTasks],
+  );
+  const pendingTask = taskState.pendingTask;
+  const liveTaskId =
+    taskState.executingTask?.id ??
+    taskState.headTask?.id ??
+    continuationParentTaskId;
+  const liveTaskMessages = useQuery(taskMessagesOptions(liveTaskId));
 
   useEffect(() => {
     if (!threadQuery.data?.events) return;
@@ -106,49 +141,80 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
 
   const handleSend = useCallback(
     async (content: string, _attachmentIds: string[]) => {
+      const normalizedContent = content.trim();
       if (
         !threadQuery.data?.can_continue ||
         threadQuery.data.availability.state !== "available" ||
-        !continuationParentTaskId
+        !continuationParentTaskId ||
+        !normalizedContent
       ) {
         throw new Error(
-          threadQuery.data?.availability.reason ||
+          agentThreadAvailabilityMessage(
+            copy,
+            threadQuery.data?.availability.reason_code,
+            threadQuery.data?.availability.reason,
             copy.unavailable_fallback,
+          ),
         );
       }
+      const pendingSend = pendingSendRef.current;
+      const idempotencyKey =
+        pendingSend?.taskId === continuationParentTaskId &&
+        pendingSend.content === normalizedContent
+          ? pendingSend.idempotencyKey
+          : createSafeId();
+      pendingSendRef.current = {
+        taskId: continuationParentTaskId,
+        content: normalizedContent,
+        idempotencyKey,
+      };
       await continuation.mutateAsync({
         taskId: continuationParentTaskId,
         request: {
-          content: content.trim(),
-          idempotency_key: createSafeId(),
+          content: normalizedContent,
+          idempotency_key: idempotencyKey,
         },
       });
+      pendingSendRef.current = null;
       clearDraft(`agent-thread:${taskId}`);
     },
     [
       clearDraft,
       continuation,
       continuationParentTaskId,
-      copy.unavailable_fallback,
+      copy,
       taskId,
       threadQuery.data,
     ],
   );
 
   const handleStop = useCallback(() => {
-    if (!continuationParentTaskId) return;
-    void api.cancelTaskById(continuationParentTaskId).catch((error) => {
+    const taskToStop =
+      taskState.executingTask?.id ??
+      pendingTask?.task_id ??
+      continuationParentTaskId;
+    if (!taskToStop) return;
+    void api.cancelTaskById(taskToStop).catch((error) => {
       Alert.alert(copy.unable_to_stop, continuationError(error, copy));
     });
-  }, [continuationParentTaskId, copy]);
+  }, [
+    continuationParentTaskId,
+    copy,
+    pendingTask?.task_id,
+    taskState.executingTask?.id,
+  ]);
 
   const unavailableReason = threadQuery.isError
     ? continuationError(threadQuery.error, copy)
     : threadQuery.data &&
         (!threadQuery.data.can_continue ||
           threadQuery.data.availability.state === "unavailable")
-      ? threadQuery.data.availability.reason ||
-        copy.unavailable_fallback
+      ? agentThreadAvailabilityMessage(
+          copy,
+          threadQuery.data.availability.reason_code,
+          threadQuery.data.availability.reason,
+          copy.unavailable_fallback,
+        )
       : undefined;
   const availability = threadQuery.data
     ? threadQuery.data.availability.state === "available"
@@ -157,7 +223,7 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
     : undefined;
   const canContinue = Boolean(
     threadQuery.data?.can_continue &&
-      threadQuery.data.availability.state === "available",
+    threadQuery.data.availability.state === "available",
   );
 
   return (
@@ -182,7 +248,8 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
           onSend={handleSend}
           onStop={handleStop}
           sending={Boolean(pendingTask?.task_id)}
-          allowStop={pendingTask?.status !== "queued"}
+          allowStop={Boolean(taskState.executingTask)}
+          allowSubmitWhileRunning
           allowAttachments={false}
           disabled={Boolean(unavailableReason) || !canContinue}
           disabledReason={unavailableReason}

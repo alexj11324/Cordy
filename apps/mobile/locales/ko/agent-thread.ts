@@ -1,4 +1,5 @@
 const agentThread = {
+  thread_title: "Agent 스레드",
   runs_title: "Agent 실행",
   active: "진행 중",
   past: "이전 기록",
@@ -20,8 +21,26 @@ const agentThread = {
   could_not_continue: "Agent 스레드를 계속할 수 없습니다.",
   unable_to_stop: "Agent를 중지할 수 없습니다",
   unavailable_fallback: "이 Agent 스레드는 계속할 수 없습니다.",
+  reason_provider_session_retired:
+    "Provider 세션이 삭제되었거나 폐기되어 복원할 수 없습니다.",
+  reason_provider_session_missing:
+    "Provider 세션 데이터가 없어 이 Agent 스레드를 안전하게 계속할 수 없습니다.",
+  reason_fresh_session_required:
+    "이 실행은 새 Provider 세션으로 시작되어 이전 스레드를 계속할 수 없습니다.",
+  reason_provider_session_not_established:
+    "이 실행에 대한 Provider 세션이 아직 설정되지 않았습니다.",
+  reason_agent_archived: "이 Agent는 보관되어 스레드를 계속할 수 없습니다.",
+  reason_agent_runtime_unbound:
+    "이 Agent는 런타임에 더 이상 연결되지 않아 스레드를 계속할 수 없습니다.",
+  reason_agent_runtime_rebound:
+    "이 Agent가 다른 런타임에 연결되어 안전하게 계속할 수 없습니다.",
+  reason_agent_runtime_missing:
+    "이 Agent의 런타임이 더 이상 존재하지 않아 스레드를 계속할 수 없습니다.",
+  reason_agent_thread_invoke_forbidden:
+    "이 Agent 스레드는 읽을 수 있지만 계속 실행할 권한이 없습니다.",
   status: {
     queued: "대기 중",
+    deferred: "재시도 중",
     dispatched: "시작 중",
     waiting_local_directory: "디렉터리 대기 중",
     running: "실행 중",

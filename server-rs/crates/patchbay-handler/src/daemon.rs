@@ -3148,10 +3148,11 @@ async fn pin_task_session(
     body: Option<Json<PinSessionBody>>,
 ) -> Response {
     let access = Access::new(&state, &headers);
-    let (task, _) = match require_daemon_task_access_with_workspace(&access, None, &task_id).await {
-        Ok(v) => v,
-        Err(res) => return res,
-    };
+    let (task, task_workspace_id) =
+        match require_daemon_task_access_with_workspace(&access, None, &task_id).await {
+            Ok(v) => v,
+            Err(res) => return res,
+        };
     let Some(Json(req)) = body else {
         return error_response(StatusCode::BAD_REQUEST, "invalid request body");
     };
@@ -3170,17 +3171,33 @@ async fn pin_task_session(
     // chat_session → agent_task_queue is the global lock order; a missing chat
     // session is fine (ErrNoRows tolerated in Go).
     let _ = chat::lock_chat_session_for_task(&mut *tx, task.id).await;
-    if let Err(e) = agent::update_agent_task_session(&mut *tx, task.id, session_id, work_dir).await
-    {
-        tracing::warn!(error = %e, task_id = %task_id, "pin-session failed");
-        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "pin session failed");
-    }
+    let rows_affected =
+        match agent::update_agent_task_session(&mut *tx, task.id, session_id, work_dir).await {
+            Ok(rows) => rows,
+            Err(e) => {
+                tracing::warn!(error = %e, task_id = %task_id, "pin-session failed");
+                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "pin session failed");
+            }
+        };
     if let Err(e) = chat::advance_cancelled_chat_session_pointer(&mut *tx, task.id).await {
         tracing::warn!(error = %e, task_id = %task_id, "advance cancelled chat session pointer failed");
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, "pin session failed");
     }
     if tx.commit().await.is_err() {
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, "pin session failed");
+    }
+    if rows_affected > 0 {
+        // Pinning is a lifecycle transition for the canonical Agent thread,
+        // but it is not a task status change. Publish after commit so an open
+        // thread invalidates its availability cache without observing a
+        // session value that could still be rolled back.
+        state.tasks.report_progress(
+            &task.id.to_string(),
+            &task_workspace_id,
+            "Agent session ready",
+            1,
+            1,
+        );
     }
     StatusCode::NO_CONTENT.into_response()
 }
