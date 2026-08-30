@@ -100,7 +100,7 @@ describe("local Vite preview API", () => {
     expect(workingAgents.body.every((agent) => agent.running_task_count > 0)).toBe(true);
   });
 
-  it("serves the running task through both shared activity endpoints", async () => {
+  it("serves the running task through shared activity endpoints without a transcript", async () => {
     const snapshot = await call("GET", "/api/agent-task-snapshot");
     const issueTasks = await call(
       "GET",
@@ -133,7 +133,7 @@ describe("local Vite preview API", () => {
       ]),
     );
     expect(issueTasks.body.every((task) => task.issue_id === "00000000-0000-4000-8000-000000000104")).toBe(true);
-    expect(taskMessages).toEqual({ handled: true, status: 200, body: [] });
+    expect(taskMessages.handled).toBe(false);
     expect(unsupportedTaskWrite.handled).toBe(false);
   });
 
@@ -430,36 +430,23 @@ describe("local Vite preview API", () => {
     expect(unsupportedTrigger.handled).toBe(false);
   });
 
-  it("serves empty read contracts for the seeded Mika chat session", async () => {
+  it("does not expose preview chat or transcript entrypoints", async () => {
     const page = await call(
       "GET",
-      "/api/chat/sessions/chat-session-preview-mika/messages/page?limit=25",
+      "/api/chat/sessions/preview/messages/page?limit=25",
     );
     const messages = await call(
       "GET",
-      "/api/chat/sessions/chat-session-preview-mika/messages",
+      "/api/chat/sessions/preview/messages",
     );
     const pending = await call(
       "GET",
-      "/api/chat/sessions/chat-session-preview-mika/pending-task",
-    );
-    const unknown = await call(
-      "GET",
-      "/api/chat/sessions/chat-session-unknown/messages/page",
+      "/api/chat/sessions/preview/pending-task",
     );
 
-    expect(page).toEqual({
-      handled: true,
-      status: 200,
-      body: { messages: [], limit: 25, has_more: false, next_cursor: null },
-    });
-    expect(messages).toEqual({ handled: true, status: 200, body: [] });
-    expect(pending).toEqual({
-      handled: true,
-      status: 200,
-      body: { supports_queue: false, queued_tasks: [] },
-    });
-    expect(unknown).toMatchObject({ handled: true, status: 404 });
+    expect(page.handled).toBe(false);
+    expect(messages.handled).toBe(false);
+    expect(pending.handled).toBe(false);
   });
 
   it("keeps shared issue list and optional detail reads on the JSON boundary", async () => {

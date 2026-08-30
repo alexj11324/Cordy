@@ -260,11 +260,6 @@ const PREVIEW_EMPTY_DINGTALK_GROUP_ROUTES = { routes: [] };
 const PREVIEW_EMPTY_RUNTIME_PROFILES = { runtime_profiles: [] };
 const PREVIEW_EMPTY_PLUGINS = { plugins: [] };
 const PREVIEW_EMPTY_MCP_SERVERS = [];
-const PREVIEW_CHAT_SESSION_ID = "chat-session-preview-mika";
-const PREVIEW_EMPTY_CHAT_PENDING_TASK = {
-  supports_queue: false,
-  queued_tasks: [],
-};
 
 function previewRuntimeLocalSkills(runtimeId) {
   return {
@@ -289,19 +284,6 @@ function previewRuntimeModels(runtimeId) {
     supported: true,
     created_at: NOW,
     updated_at: NOW,
-  };
-}
-
-function previewChatMessagesPage(url) {
-  const requestedLimit = Number(url.searchParams.get("limit") ?? 50);
-  const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
-    ? requestedLimit
-    : 50;
-  return {
-    messages: [],
-    limit,
-    has_more: false,
-    next_cursor: null,
   };
 }
 
@@ -1272,24 +1254,6 @@ export async function handlePreviewRequest(req, res) {
       ? json(res, PREVIEW_EMPTY_MCP_SERVERS)
       : json(res, { error: "Preview workspace not found" }, 404);
   }
-  const chatMessagesPage = /^\/api\/chat\/sessions\/([^/]+)\/messages\/page$/.exec(path);
-  if (method === "GET" && chatMessagesPage) {
-    return decodeURIComponent(chatMessagesPage[1]) === PREVIEW_CHAT_SESSION_ID
-      ? json(res, previewChatMessagesPage(url))
-      : json(res, { error: "Preview chat session not found" }, 404);
-  }
-  const chatMessages = /^\/api\/chat\/sessions\/([^/]+)\/messages$/.exec(path);
-  if (method === "GET" && chatMessages) {
-    return decodeURIComponent(chatMessages[1]) === PREVIEW_CHAT_SESSION_ID
-      ? json(res, [])
-      : json(res, { error: "Preview chat session not found" }, 404);
-  }
-  const chatPendingTask = /^\/api\/chat\/sessions\/([^/]+)\/pending-task$/.exec(path);
-  if (method === "GET" && chatPendingTask) {
-    return decodeURIComponent(chatPendingTask[1]) === PREVIEW_CHAT_SESSION_ID
-      ? json(res, PREVIEW_EMPTY_CHAT_PENDING_TASK)
-      : json(res, { error: "Preview chat session not found" }, 404);
-  }
   if (method === "GET" && path === "/api/agents") {
     return json(res, PREVIEW_DIRECTORY_AGENTS.map((agent) => localizePreviewAgent(agent, copy)));
   }
@@ -1470,13 +1434,6 @@ export async function handlePreviewRequest(req, res) {
       : json(res, { error: "Preview autopilot not found" }, 404);
   }
   if (method === "GET" && path === "/api/issues/child-progress") return json(res, { progress: [] });
-  const taskMessagesResource = /^\/api\/tasks\/([^/]+)\/messages$/.exec(path);
-  if (method === "GET" && taskMessagesResource) {
-    const taskId = decodeURIComponent(taskMessagesResource[1]);
-    return PREVIEW_TASKS.some((task) => task.id === taskId)
-      ? json(res, [])
-      : json(res, { error: "Preview task not found" }, 404);
-  }
   if (method === "GET" && path === "/api/issues") return json(res, listPreviewIssues(url, copy));
   if (method === "POST" && path === "/api/issues/query") {
     const body = await readBody(req);
