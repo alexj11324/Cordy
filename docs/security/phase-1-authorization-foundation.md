@@ -43,7 +43,11 @@ code and in CI:
    directory, claim IPC, deep link, or logs. OAuth refresh occurs under a
    daemon-side mutex before expiry and once after an upstream 401; refresh
    rotation is atomically persisted with mode `0600` on Unix. Invalidated or
-   revoked provider sessions require the host user to sign in again.
+   revoked provider sessions require the host user to sign in again. The
+   broker permits only provider inference operations (`responses`,
+   `responses/compact`, `chat/completions`, `messages`, and Anthropic token
+   counting); account, organization, model-administration, file, and other
+   provider APIs are denied before budget consumption or credential use.
 8. Every provider process tree is launched behind a fail-closed OS/filesystem
    boundary. macOS uses a deny-by-default sandbox profile; Linux uses
    bubblewrap with isolated process/IPC/UTS/cgroup namespaces, a hidden host
@@ -79,7 +83,11 @@ performs its first provider login locally. After that, the daemon renews a
 valid OAuth session without daily user interaction; explicit logout,
 revocation, refresh-session expiry, or provider rejection is the re-login
 boundary. API-key logins have no refresh protocol and remain valid only while
-the host-managed key is valid.
+the host-managed key is valid. OpenClaw is not broker-integrated in this slice:
+any host OpenClaw configuration or Gateway bearer rejects task launch, and the
+daemon removes legacy task-local OpenClaw snapshots before attempting
+preparation. It never includes a host OpenClaw config or writes a Gateway token
+into a task wrapper.
 
 ## Root cause and risk boundary
 
