@@ -1570,14 +1570,13 @@ mod tests {
             ("dependency_graph_node", "plan_id"),
             ("dependency_graph_plan", "id"),
         ] {
-            let remaining: i64 =
-                sqlx::query_scalar(&format!(
-                    "SELECT COUNT(*) FROM {table} WHERE {key_column} = $1"
-                ))
-                    .bind(first.plan.id)
-                    .fetch_one(&pool)
-                    .await
-                    .expect("count graph rows after issue deletion");
+            let remaining: i64 = sqlx::query_scalar(&format!(
+                "SELECT COUNT(*) FROM {table} WHERE {key_column} = $1"
+            ))
+            .bind(first.plan.id)
+            .fetch_one(&pool)
+            .await
+            .expect("count graph rows after issue deletion");
             assert_eq!(remaining, 0, "dangling rows remain in {table}");
         }
 
