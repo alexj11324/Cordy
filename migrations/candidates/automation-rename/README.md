@@ -14,6 +14,11 @@ discriminators that are part of the product contract:
 - `issue.origin_type`: `autopilot` becomes `automation`.
 - `issue_subscriber.reason`: `autopilot` becomes `automation`.
 
+The quota-period scope index was consumed as the primary-key backing index by
+migration 359, so its live name is `autopilot_quota_period_pkey`; the candidate
+renames that attached index through the primary-key constraint rather than
+assuming a separate `uq_autopilot_quota_period_scope` still exists.
+
 No arbitrary JSON payloads or historical migration files are rewritten. The
 old spelling in this candidate is migration input only; it is not an API,
 event, permission, telemetry, or UI compatibility surface.
