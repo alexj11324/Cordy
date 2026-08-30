@@ -202,12 +202,14 @@
       },
       "tasks": {
         "task-pre-102": {
+          "trigger_summary": "PR review handoff",
           "handoff_note": "Pick up the next unreviewed board state."
         },
         "task-pre-103": {
           "handoff_note": "Verify the keyboard path in the browser preview."
         },
         "task-pre-104": {
+          "trigger_summary": "CI watch",
           "handoff_note": "Keep watching CI and report the first actionable failure."
         },
         "task-pre-105-implementation": {
@@ -215,9 +217,11 @@
           "result_summary": "Responsive sidebar implementation is ready for review."
         },
         "task-pre-105-review": {
+          "trigger_summary": "PR review handoff",
           "handoff_note": "Review the implementation handoff and leave findings on the PR."
         },
         "task-pre-106": {
+          "trigger_summary": "PR review handoff",
           "result_summary": "The web and API commands are split and documented."
         }
       },

@@ -76,7 +76,15 @@ const PREVIEW_ISSUES = [
   previewIssue("102", "todo", "Polish issue board empty states", "Keep the board useful before real work arrives.", "medium"),
   previewIssue("103", "todo", "Add keyboard shortcuts", "Expose the common actions without extra chrome.", "low"),
   previewIssue("104", "in_progress", "Add real-time status indicator", "Show when an agent is actively working on an issue.", "urgent", "agent"),
-  previewIssue("105", "in_review", "Check responsive sidebar", "Make the workspace navigation feel balanced at every width.", "medium"),
+  previewIssue(
+    "105",
+    "in_review",
+    "Check responsive sidebar",
+    "Make the workspace navigation feel balanced at every width.",
+    "medium",
+    "agent",
+    { type: "agent", id: "agent-mika" },
+  ),
   previewIssue("106", "done", "Split web and API dev commands", "Let visual work start without the full local stack.", "none"),
 ];
 
@@ -250,6 +258,7 @@ function previewTask({
   result = null,
   kind = "direct",
   autopilotRunId,
+  triggerSummary,
   handoffNote,
   branchName,
 }) {
@@ -268,6 +277,7 @@ function previewTask({
     created_at: createdAt,
     kind,
     ...(autopilotRunId ? { autopilot_run_id: autopilotRunId } : {}),
+    ...(triggerSummary ? { trigger_summary: triggerSummary } : {}),
     ...(handoffNote ? { handoff_note: handoffNote } : {}),
     ...(branchName ? { branch_name: branchName } : {}),
   };
@@ -283,6 +293,7 @@ const PREVIEW_TASKS = [
     createdAt: previewTime(-28),
     autopilotRunId: "run-pr-review-queued",
     kind: "autopilot",
+    triggerSummary: "PR review handoff",
     handoffNote: "Pick up the next unreviewed board state.",
   }),
   previewTask({
@@ -306,6 +317,7 @@ const PREVIEW_TASKS = [
     startedAt: previewTime(-238),
     autopilotRunId: "run-ci-watch",
     kind: "autopilot",
+    triggerSummary: "CI watch",
     handoffNote: "Keep watching CI and report the first actionable failure.",
   }),
   previewTask({
@@ -333,12 +345,13 @@ const PREVIEW_TASKS = [
     startedAt: previewTime(-97),
     autopilotRunId: "run-pr-review-current",
     kind: "autopilot",
+    triggerSummary: "PR review handoff",
     handoffNote: "Review the implementation handoff and leave findings on the PR.",
   }),
   previewTask({
     id: "task-pre-106",
-    agentId: "agent-nova",
-    runtimeId: "runtime-nova",
+    agentId: "agent-mika",
+    runtimeId: "runtime-mika",
     issueNumber: "106",
     status: "completed",
     createdAt: previewTime(-4320),
@@ -348,6 +361,7 @@ const PREVIEW_TASKS = [
     result: { summary: "The web and API commands are split and documented." },
     autopilotRunId: "run-pr-review-completed",
     kind: "autopilot",
+    triggerSummary: "PR review handoff",
     branchName: "chore/split-dev-commands",
   }),
 ];
@@ -611,6 +625,7 @@ function localizePreviewTask(task, copy = DEFAULT_PREVIEW_COPY) {
       : task.result;
   return {
     ...task,
+    ...(fixture.trigger_summary ? { trigger_summary: fixture.trigger_summary } : {}),
     ...(fixture.handoff_note ? { handoff_note: fixture.handoff_note } : {}),
     ...(result ? { result } : {}),
   };
@@ -753,7 +768,15 @@ function issueId(number) {
   return `00000000-0000-4000-8000-000000000${number}`;
 }
 
-function previewIssue(number, status, title, description, priority, assignee = "member") {
+function previewIssue(
+  number,
+  status,
+  title,
+  description,
+  priority,
+  assignee = "member",
+  reviewer = null,
+) {
   const id = issueId(number);
   const isAgent = assignee === "agent";
   return {
@@ -768,6 +791,9 @@ function previewIssue(number, status, title, description, priority, assignee = "
     priority,
     assignee_type: isAgent ? "agent" : "member",
     assignee_id: isAgent ? PREVIEW_AGENT_ID : PREVIEW_USER_ID,
+    ...(reviewer
+      ? { reviewer_type: reviewer.type, reviewer_id: reviewer.id }
+      : {}),
     creator_type: "member",
     creator_id: PREVIEW_USER_ID,
     parent_issue_id: null,

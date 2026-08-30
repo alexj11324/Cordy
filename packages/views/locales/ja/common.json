@@ -202,12 +202,14 @@
       },
       "tasks": {
         "task-pre-102": {
+          "trigger_summary": "PR 確認の引き継ぎ",
           "handoff_note": "次の未確認のボード状態を引き継ぎます。"
         },
         "task-pre-103": {
           "handoff_note": "ブラウザプレビューでキーボード操作の流れを確認します。"
         },
         "task-pre-104": {
+          "trigger_summary": "CI 監視",
           "handoff_note": "CI を監視し、最初に対応できる失敗を報告します。"
         },
         "task-pre-105-implementation": {
@@ -215,9 +217,11 @@
           "result_summary": "レスポンシブなサイドバー実装を確認できる状態です。"
         },
         "task-pre-105-review": {
+          "trigger_summary": "PR 確認の引き継ぎ",
           "handoff_note": "実装の引き継ぎを確認し、PR に発見事項を残します。"
         },
         "task-pre-106": {
+          "trigger_summary": "PR 確認の引き継ぎ",
           "result_summary": "Web と API のコマンドを分離し、ドキュメント化しました。"
         }
       },

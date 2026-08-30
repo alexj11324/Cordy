@@ -60,12 +60,14 @@ describe("local Vite preview API", () => {
     });
 
     expect(members.handled).toBe(true);
-    expect(members.body.total).toBe(5);
+    expect(members.body.total).toBe(4);
     expect(members.body.rows.map(({ issue }) => issue.identifier)).not.toContain(
       "PRE-104",
     );
-    expect(agents.body.total).toBe(1);
-    expect(agents.body.rows[0].issue.identifier).toBe("PRE-104");
+    expect(agents.body.total).toBe(2);
+    expect(agents.body.rows.map(({ issue }) => issue.identifier)).toEqual(
+      expect.arrayContaining(["PRE-104", "PRE-105"]),
+    );
   });
 
   it("answers status and active-agent facets from the same filtered query", async () => {
@@ -113,7 +115,15 @@ describe("local Vite preview API", () => {
         }),
       ]),
     );
-    expect(issueTasks.body).toEqual(snapshot.body);
+    expect(issueTasks.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          issue_id: "00000000-0000-4000-8000-000000000104",
+          status: "running",
+        }),
+      ]),
+    );
+    expect(issueTasks.body.every((task) => task.issue_id === "00000000-0000-4000-8000-000000000104")).toBe(true);
     expect(taskMessages).toEqual({ handled: true, status: 200, body: [] });
     expect(unsupportedTaskWrite.handled).toBe(false);
   });
@@ -134,11 +144,18 @@ describe("local Vite preview API", () => {
 
   it("keeps the sample directory and issue execution log linked", async () => {
     const agents = await call("GET", "/api/agents");
+    const issue = await call("GET", "/api/issues/PRE-105");
     const tasks = await call("GET", "/api/issues/PRE-105/task-runs");
 
     expect(agents.body.map((agent) => agent.name)).toEqual(
       expect.arrayContaining(["Atlas", "Mika", "Nova", "Quill"]),
     );
+    expect(issue.body).toMatchObject({
+      assignee_type: "agent",
+      assignee_id: "agent-preview",
+      reviewer_type: "agent",
+      reviewer_id: "agent-mika",
+    });
     expect(tasks.body).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -153,12 +170,21 @@ describe("local Vite preview API", () => {
         }),
       ]),
     );
+    for (const task of tasks.body) {
+      expect(task.issue_id).toBe("00000000-0000-4000-8000-000000000105");
+      expect(task).not.toHaveProperty("chat_session_id");
+      expect(task).not.toHaveProperty("side_chat_parent_task_id");
+      expect(task).not.toHaveProperty("side_chat_root_comment_id");
+      expect(task).not.toHaveProperty("transcript");
+      expect(task).not.toHaveProperty("messages");
+    }
   });
 
   it("serves read-only automation samples with runs and an explicit write boundary", async () => {
     const list = await call("GET", "/api/autopilots");
     const detail = await call("GET", "/api/autopilots/autopilot-pr-review");
     const runs = await call("GET", "/api/autopilots/autopilot-pr-review/runs");
+    const tasks = await call("GET", "/api/agent-task-snapshot");
 
     expect(list.body.total).toBe(3);
     expect(detail.body.autopilot).toMatchObject({
@@ -176,6 +202,30 @@ describe("local Vite preview API", () => {
         }),
       ]),
     );
+
+    const tasksById = new Map(tasks.body.map((task) => [task.id, task]));
+    const autopilotsById = new Map(
+      list.body.autopilots.map((autopilot) => [autopilot.id, autopilot]),
+    );
+    for (const run of runs.body.runs) {
+      const task = tasksById.get(run.task_id);
+      const autopilot = autopilotsById.get(run.autopilot_id);
+      expect(task).toBeDefined();
+      expect(autopilot).toBeDefined();
+      expect(task).toMatchObject({
+        issue_id: expect.any(String),
+        agent_id: autopilot.assignee_id,
+        autopilot_run_id: run.id,
+        kind: "autopilot",
+        trigger_summary: autopilot.title,
+      });
+      expect(task.issue_id).not.toBe("");
+    }
+    for (const task of tasks.body) {
+      expect(task).not.toHaveProperty("chat_session_id");
+      expect(task).not.toHaveProperty("transcript");
+      expect(task).not.toHaveProperty("messages");
+    }
 
     const unsupportedTrigger = await call(
       "POST",
@@ -250,6 +300,12 @@ describe("local Vite preview API", () => {
       undefined,
       { "accept-language": "ja-JP,ja;q=0.9" },
     );
+    const tasks = await call(
+      "GET",
+      "/api/issues/PRE-105/task-runs",
+      undefined,
+      { "accept-language": "ja-JP,ja;q=0.9" },
+    );
 
     expect(issues.body.issues[0]).toMatchObject({
       title: "优化工作区引导",
@@ -259,5 +315,13 @@ describe("local Vite preview API", () => {
       title: "PR 確認の引き継ぎ",
       description: "完了した実装作業を対応可能な確認担当者に渡します。",
     });
+    expect(tasks.body).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "task-pre-105-review",
+          trigger_summary: "PR 確認の引き継ぎ",
+        }),
+      ]),
+    );
   });
 });

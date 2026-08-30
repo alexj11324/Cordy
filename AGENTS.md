@@ -72,7 +72,9 @@ fixture data, so the page is an explicit local demo and does not require
 PostgreSQL, a daemon, or a live automation backend. Its banner identifies the
 data as sample data and says when the backend is not connected. The sample issue cards are real
 shared issue-surface links: click one or focus it and press Enter to open the
-task detail, where the linked execution log and task handoff state are shown.
+issue detail, where the linked execution log and task handoff state are shown.
+The sample runs stay on that shared issue path; the preview does not add a
+standalone transcript or pretend that read-only run details are persisted.
 From the preview sidebar, choose **Autopilot** to inspect the sample
 automation list and open a row for its run/detail state. The preview keeps
 these workspace tabs in an in-memory router, so `/preview/autopilots` is an

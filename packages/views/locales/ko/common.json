@@ -202,12 +202,14 @@
       },
       "tasks": {
         "task-pre-102": {
+          "trigger_summary": "PR 검토 인계",
           "handoff_note": "다음으로 검토하지 않은 보드 상태를 이어받습니다."
         },
         "task-pre-103": {
           "handoff_note": "브라우저 미리보기에서 키보드 작업 경로를 확인합니다."
         },
         "task-pre-104": {
+          "trigger_summary": "CI 모니터링",
           "handoff_note": "CI를 계속 확인하고 첫 번째 실행 가능한 실패를 보고합니다."
         },
         "task-pre-105-implementation": {
@@ -215,9 +217,11 @@
           "result_summary": "반응형 사이드바 구현이 검토 준비되었습니다."
         },
         "task-pre-105-review": {
+          "trigger_summary": "PR 검토 인계",
           "handoff_note": "구현 인계를 검토하고 PR에 발견 사항을 남깁니다."
         },
         "task-pre-106": {
+          "trigger_summary": "PR 검토 인계",
           "result_summary": "Web 및 API 명령을 분리하고 문서화했습니다."
         }
       },

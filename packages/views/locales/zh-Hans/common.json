@@ -202,12 +202,14 @@
       },
       "tasks": {
         "task-pre-102": {
+          "trigger_summary": "PR 复查交接",
           "handoff_note": "接手下一个尚未复查的看板状态。"
         },
         "task-pre-103": {
           "handoff_note": "在浏览器预览中验证键盘操作路径。"
         },
         "task-pre-104": {
+          "trigger_summary": "CI 监控",
           "handoff_note": "持续关注 CI，并报告第一个可执行的失败。"
         },
         "task-pre-105-implementation": {
@@ -215,9 +217,11 @@
           "result_summary": "响应式侧边栏实现已准备好复查。"
         },
         "task-pre-105-review": {
+          "trigger_summary": "PR 复查交接",
           "handoff_note": "复查实现交接，并在 PR 上留下发现。"
         },
         "task-pre-106": {
+          "trigger_summary": "PR 复查交接",
           "result_summary": "Web 与 API 命令已拆分并完成文档说明。"
         }
       },
