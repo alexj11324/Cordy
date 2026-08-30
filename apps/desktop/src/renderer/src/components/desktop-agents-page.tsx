@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { AgentsPage } from "@patchbay/views/agents";
 import type { DaemonStatus } from "../../../shared/daemon-types";
+import { isDesktopWebPreview } from "../platform/web-bridge";
 
 /**
  * Desktop wrapper around the shared `AgentsPage`. Bridges the Electron
@@ -18,6 +19,7 @@ import type { DaemonStatus } from "../../../shared/daemon-types";
  * even when the app doesn't manage the running daemon (WSL2 etc.).
  */
 export function DesktopAgentsPage() {
+  const isPreview = isDesktopWebPreview();
   const [status, setStatus] = useState<DaemonStatus>({ state: "stopped" });
   const [lastIdentity, setLastIdentity] = useState<{
     daemonId: string | null;
@@ -42,6 +44,7 @@ export function DesktopAgentsPage() {
 
   return (
     <AgentsPage
+      readOnly={isPreview}
       localDaemonId={status.daemonId ?? lastIdentity.daemonId}
       localMachineName={status.deviceName ?? lastIdentity.deviceName ?? hostName}
       // Desktop owns a local machine for the lifetime of the app, even

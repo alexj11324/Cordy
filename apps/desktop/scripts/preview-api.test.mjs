@@ -183,6 +183,18 @@ describe("local Vite preview API", () => {
       include_total: true,
     });
     const workingAgents = await call("GET", "/api/working-agents");
+    const assignedWorkingAgents = await call(
+      "GET",
+      "/api/working-agents?type=issue&scope=mine&relation=assigned",
+    );
+    const childWorkingAgents = await call(
+      "GET",
+      "/api/working-agents?type=issue&parent=00000000-0000-4000-8000-000000000104",
+    );
+    const autopilotWorkingAgents = await call(
+      "GET",
+      "/api/working-agents?type=autopilot",
+    );
 
     expect(result.body.total).toBe(6);
     expect(
@@ -204,6 +216,12 @@ describe("local Vite preview API", () => {
       "agent-mika",
     ]);
     expect(workingAgents.body.every((agent) => agent.running_task_count > 0)).toBe(true);
+    expect(assignedWorkingAgents).toEqual({ handled: true, status: 200, body: [] });
+    expect(childWorkingAgents).toEqual({ handled: true, status: 200, body: [] });
+    expect(autopilotWorkingAgents.body.map((agent) => agent.id)).toEqual([
+      "agent-preview",
+      "agent-mika",
+    ]);
   });
 
   it("serves the running task through shared activity endpoints without a transcript", async () => {

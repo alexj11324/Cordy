@@ -67,9 +67,11 @@ import { useT, useTimeAgo } from "../../i18n";
 
 interface AgentDetailPageProps {
   agentId: string;
+  /** Hide agent mutations when the host is a local read-only preview. */
+  readOnly?: boolean;
 }
 
-export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
+export function AgentDetailPage({ agentId, readOnly = false }: AgentDetailPageProps) {
   const { t } = useT("agents");
   const wsId = useWorkspaceId();
   const paths = useWorkspacePaths();
@@ -131,6 +133,8 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
   const [tabNavIntent, setTabNavIntent] = useState<DetailTab | null>(null);
 
   const handleUpdate = async (id: string, data: Record<string, unknown>) => {
+    if (readOnly) return;
+
     // Optimistic update: patch the matching agent in the cached list
     // BEFORE the network round-trip so the inspector picker chips flip to
     // the new value immediately on click. Without this, every inspector
@@ -201,6 +205,8 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
   };
 
   const handleArchive = async (id: string) => {
+    if (readOnly) return;
+
     try {
       await api.archiveAgent(id);
       qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
@@ -211,6 +217,8 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
   };
 
   const handleRestore = async (id: string) => {
+    if (readOnly) return;
+
     try {
       await api.restoreAgent(id);
       qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
@@ -304,6 +312,8 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
   const owner = agent.owner_id
     ? members.find((m) => m.user_id === agent.owner_id) ?? null
     : null;
+  const canEditAgent = !readOnly && canEdit.allowed;
+  const canAssignAgent = !readOnly && canAssign.allowed;
 
   // Chat shares the invocation gate with assignment (PB-3963): starting a
   // chat triggers agent runs. The button stays visible either way — a denied
@@ -314,6 +324,10 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
   // The control is a real link, so a failed gate has to cancel the navigation
   // AppLink would otherwise perform — preventDefault is that cancel.
   const handleDm = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (readOnly) {
+      e.preventDefault();
+      return;
+    }
     if (permissionsLoading) {
       e.preventDefault();
       return;
@@ -329,6 +343,8 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
     }
   };
   const handleAssign = () => {
+    if (readOnly) return;
+
     if (!runtimeBound) {
       toast.error(t(($) => $.detail.runtime_required_toast));
       return;
@@ -345,18 +361,19 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
         runtime={runtime}
         presence={presence}
         backHref={paths.agents()}
-        canAssign={canAssign.allowed}
-        canArchive={canEdit.allowed}
+        canAssign={canAssignAgent}
+        canArchive={canEditAgent}
         dmPending={permissionsLoading}
+        showDm={!readOnly}
         dmHref={`${paths.chat()}?agent=${agent.id}`}
         onDm={handleDm}
         onAssign={handleAssign}
         onArchive={
-          agent.system_key ? undefined : () => setConfirmArchive(true)
+          readOnly || agent.system_key ? undefined : () => setConfirmArchive(true)
         }
       />
 
-      {!canEdit.allowed && (
+      {!canEditAgent && (
         <div className="px-6 pt-3">
           <CapabilityBanner
             reason={canEdit.reason}
@@ -372,7 +389,7 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
           <span className="flex-1">
             {t(($) => $.detail.archived_banner)}
           </span>
-          {canEdit.allowed && (
+          {canEditAgent && (
             <Button
               variant="outline"
               size="sm"
@@ -391,7 +408,7 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
           <span className="flex-1">
             {t(($) => $.detail.runtime_required_banner)}
           </span>
-          {canEdit.allowed && (
+          {canEditAgent && (
             <Button
               variant="outline"
               size="sm"
@@ -413,7 +430,8 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
           members={members}
           onUpdate={handleUpdate}
           currentUserId={currentUser?.id ?? null}
-          canEdit={canEdit.allowed}
+          canEdit={canEditAgent}
+          readOnly={readOnly}
           navIntent={tabNavIntent}
           onNavIntentHandled={() => setTabNavIntent(null)}
         />
@@ -473,6 +491,7 @@ function DetailHeader({
   canAssign,
   canArchive,
   dmPending,
+  showDm,
   dmHref,
   onDm,
   onAssign,
@@ -485,6 +504,7 @@ function DetailHeader({
   canAssign: boolean;
   canArchive: boolean;
   dmPending: boolean;
+  showDm: boolean;
   dmHref: string;
   /** Runs before the link navigates; calls preventDefault when a gate denies
    *  the chat, which is what stops AppLink from pushing. */
@@ -556,7 +576,7 @@ function DetailHeader({
           </div>
 
           <div className="flex shrink-0 items-center gap-2 self-end lg:self-start">
-            {!isArchived && (
+            {showDm && !isArchived && (
               <Button
                 variant="outline"
                 size="sm"

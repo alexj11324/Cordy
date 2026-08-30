@@ -184,7 +184,7 @@ const baseAgent: Agent = {
   archived_by: null,
 };
 
-function renderPage() {
+function renderPage(readOnly = false) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -201,7 +201,7 @@ function renderPage() {
     <I18nProvider locale="en" resources={TEST_RESOURCES}>
       <NavigationProvider value={navigation}>
         <QueryClientProvider client={queryClient}>
-          <AgentDetailPage agentId="agent-1" />
+          <AgentDetailPage agentId="agent-1" readOnly={readOnly} />
         </QueryClientProvider>
       </NavigationProvider>
     </I18nProvider>,
@@ -375,6 +375,22 @@ describe("AgentDetailPage direct-detail fallback", () => {
 });
 
 describe("AgentDetailPage DM button", () => {
+  it("suppresses mutation entry points in a read-only preview", async () => {
+    renderPage(true);
+
+    expect(await screen.findByRole("heading", { name: "Lambda" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Assign work" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "DM" })).not.toBeInTheDocument();
+
+    // The overview mock exposes an update callback so the page-level guard is
+    // exercised even though the real inspector hides its controls via
+    // canEdit=false.
+    fireEvent.click(screen.getByRole("button", { name: "update model" }));
+    expect(mockUpdateAgent).not.toHaveBeenCalled();
+  });
+
   it("navigates to the chat deep link when the user can chat with the agent", async () => {
     const { push } = renderPage();
     fireEvent.click(await screen.findByRole("button", { name: "DM" }));

@@ -108,9 +108,12 @@ function ActorIssuesHeader({
 export function ActorIssuesPanel({
   actorType,
   actorId,
+  readOnly = false,
 }: {
   actorType: TaskActorType;
   actorId: string;
+  /** Suppress issue mutations when embedded in a read-only agent preview. */
+  readOnly?: boolean;
 }) {
   const { t } = useT("issues");
   const scope = useStore(actorIssuesViewStore, (s) => s.scope);
@@ -131,7 +134,8 @@ export function ActorIssuesPanel({
     <IssueSurface
       scope={surfaceScope}
       modes={["list"]}
-      batchToolbar="always"
+      batchToolbar={readOnly ? "never" : "always"}
+      readOnly={readOnly}
       contentClassName="p-1"
       search={search}
       renderHeader={({ controller }) => (

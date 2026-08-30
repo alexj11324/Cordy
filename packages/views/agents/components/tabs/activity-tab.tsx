@@ -57,6 +57,8 @@ const RECENT_SKELETON_ROWS = 4;
 interface ActivityTabProps {
   agent: Agent;
   showPerformance?: boolean;
+  /** Hide task mutation and conversation entry points in a read-only host. */
+  readOnly?: boolean;
 }
 
 /**
@@ -72,7 +74,11 @@ interface ActivityTabProps {
  * the workspace 7d activity buckets for the trend), so opening this tab
  * adds no extra fetches once the page is hydrated.
  */
-export function ActivityTab({ agent, showPerformance = true }: ActivityTabProps) {
+export function ActivityTab({
+  agent,
+  showPerformance = true,
+  readOnly = false,
+}: ActivityTabProps) {
   const wsId = useWorkspaceId();
 
   const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
@@ -176,7 +182,12 @@ export function ActivityTab({ agent, showPerformance = true }: ActivityTabProps)
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      <NowSection tasks={activeTasks} issueMap={issueMap} agent={agent} />
+      <NowSection
+        tasks={activeTasks}
+        issueMap={issueMap}
+        agent={agent}
+        readOnly={readOnly}
+      />
       {showPerformance && (
         <Last30dSection activity={activity} avgDurationMs={avgDurationMs} />
       )}
@@ -190,6 +201,7 @@ export function ActivityTab({ agent, showPerformance = true }: ActivityTabProps)
         }
         issueMap={issueMap}
         agent={agent}
+        readOnly={readOnly}
       />
     </div>
   );
@@ -289,10 +301,12 @@ function NowSection({
   tasks,
   issueMap,
   agent,
+  readOnly,
 }: {
   tasks: AgentTask[];
   issueMap: Map<string, Issue>;
   agent: Agent;
+  readOnly: boolean;
 }) {
   const { t } = useT("agents");
   return (
@@ -312,6 +326,7 @@ function NowSection({
           issueMap={issueMap}
           timeMode="active"
           agent={agent}
+          readOnly={readOnly}
         />
       )}
     </Section>
@@ -395,6 +410,7 @@ function RecentWorkSection({
   onShowMore,
   issueMap,
   agent,
+  readOnly,
 }: {
   tasks: AgentTask[];
   totalCount: number;
@@ -403,6 +419,7 @@ function RecentWorkSection({
   onShowMore: () => void;
   issueMap: Map<string, Issue>;
   agent: Agent;
+  readOnly: boolean;
 }) {
   const { t } = useT("agents");
   // While the first fetch is in flight we have no counts to summarise, so
@@ -427,6 +444,7 @@ function RecentWorkSection({
             issueMap={issueMap}
             timeMode="completed"
             agent={agent}
+            readOnly={readOnly}
           />
           {hasMore && (
             <button
@@ -476,11 +494,13 @@ function TaskList({
   issueMap,
   timeMode,
   agent,
+  readOnly,
 }: {
   tasks: AgentTask[];
   issueMap: Map<string, Issue>;
   timeMode: "active" | "completed";
   agent: Agent;
+  readOnly: boolean;
 }) {
   return (
     <div
@@ -497,6 +517,7 @@ function TaskList({
           issueMap={issueMap}
           timeMode={timeMode}
           agent={agent}
+          readOnly={readOnly}
         />
       ))}
     </div>
@@ -508,11 +529,13 @@ function TaskRow({
   issueMap,
   timeMode,
   agent,
+  readOnly,
 }: {
   task: AgentTask;
   issueMap: Map<string, Issue>;
   timeMode: "active" | "completed";
   agent: Agent;
+  readOnly: boolean;
 }) {
   const { t } = useT("agents");
   const timeAgo = useTimeAgo();
@@ -525,17 +548,18 @@ function TaskRow({
   const issue = hasIssue ? issueMap.get(task.issue_id) : undefined;
   const isRunning = task.status === "running";
   const chatSessionId = task.chat_session_id;
-  const showChat = !hasIssue && Boolean(chatSessionId);
+  const showChat = !readOnly && !hasIssue && Boolean(chatSessionId);
   // Cancel only makes sense for the three active states. Terminal rows
   // (completed / failed / cancelled) hide the button entirely.
   const showCancel =
+    !readOnly &&
     timeMode === "active" &&
     (task.status === "queued" ||
       task.status === "dispatched" ||
       task.status === "running");
 
   const handleCancel = async () => {
-    if (cancelling) return;
+    if (readOnly || cancelling) return;
     setCancelling(true);
     try {
       await api.cancelTaskById(task.id);
@@ -727,7 +751,7 @@ function TaskRow({
             <TooltipContent>{t(($) => $.tab_body.activity.open_issue_tooltip)}</TooltipContent>
           </Tooltip>
         )}
-        {hasIssue && (
+        {!readOnly && hasIssue && (
           <>
             <IssueAgentConversationTrigger onClick={() => setConversationOpen(true)} />
             {conversationOpen && (

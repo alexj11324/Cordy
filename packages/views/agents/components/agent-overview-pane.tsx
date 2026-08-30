@@ -128,6 +128,8 @@ interface AgentOverviewPaneProps {
   onUpdate: (id: string, data: Record<string, unknown>) => Promise<void>;
   currentUserId?: string | null;
   canEdit: boolean;
+  /** Hide task mutation and conversation entry points in a read-only host. */
+  readOnly?: boolean;
   navIntent?: DetailTab | null;
   onNavIntentHandled?: () => void;
 }
@@ -148,6 +150,7 @@ export function AgentOverviewPane({
   onUpdate,
   currentUserId,
   canEdit,
+  readOnly = false,
   navIntent,
   onNavIntentHandled,
 }: AgentOverviewPaneProps) {
@@ -364,7 +367,11 @@ export function AgentOverviewPane({
         {effectiveView === "overview" && (
           <div className="mx-auto max-w-[1440px] p-4 sm:p-6">
             <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
-              <ActivityTab agent={agent} showPerformance={false} />
+              <ActivityTab
+                agent={agent}
+                showPerformance={false}
+                readOnly={readOnly}
+              />
               <AgentOverviewSummary
                 agent={agent}
                 runtime={runtime}
@@ -376,7 +383,11 @@ export function AgentOverviewPane({
 
         {effectiveView === "work" && (
           <div className="flex min-h-[620px] flex-col">
-            <ActorIssuesPanel actorType="agent" actorId={agent.id} />
+            <ActorIssuesPanel
+              actorType="agent"
+              actorId={agent.id}
+              readOnly={readOnly}
+            />
           </div>
         )}
 

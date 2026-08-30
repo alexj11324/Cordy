@@ -849,8 +849,66 @@ function previewRunningTasksByAgent() {
   return byAgent;
 }
 
-function previewWorkingAgents(copy = DEFAULT_PREVIEW_COPY) {
-  const byAgent = previewRunningTasksByAgent();
+function workingAgentIssueMatchesRelation(issue, relation) {
+  if (!issue) return false;
+  const assignedToPreviewUser =
+    issue.assignee_type === "member" && issue.assignee_id === PREVIEW_USER_ID;
+  const createdByPreviewUser =
+    issue.creator_type === "member" && issue.creator_id === PREVIEW_USER_ID;
+  const assignedToPreviewAgent =
+    issue.assignee_type === "agent" &&
+    PREVIEW_DIRECTORY_AGENTS.some(
+      (agent) => agent.id === issue.assignee_id && agent.owner_id === PREVIEW_USER_ID,
+    );
+
+  switch (relation) {
+    case "assigned":
+      return assignedToPreviewUser;
+    case "created":
+      return createdByPreviewUser;
+    case "involved":
+      return assignedToPreviewAgent;
+    case "any":
+      return assignedToPreviewUser || createdByPreviewUser || assignedToPreviewAgent;
+    default:
+      return false;
+  }
+}
+
+function workingAgentTaskMatches(task, {
+  workType = "",
+  scope = "",
+  relation = "",
+  parent = "",
+} = {}) {
+  if (task.status !== "running") return false;
+
+  const hasChatSession = typeof task.chat_session_id === "string";
+  const hasAutopilotRun = typeof task.autopilot_run_id === "string";
+  if (workType === "chat" && !hasChatSession) return false;
+  if (workType === "autopilot" && (hasChatSession || !hasAutopilotRun)) return false;
+  if (workType === "issue" && (hasChatSession || hasAutopilotRun || !task.issue_id)) return false;
+
+  const issue = PREVIEW_ISSUES.find((candidate) => candidate.id === task.issue_id);
+  if (parent && (!issue || issue.parent_issue_id !== parent)) return false;
+  if (scope === "mine" && !workingAgentIssueMatchesRelation(issue, relation || "any")) {
+    return false;
+  }
+  return true;
+}
+
+function previewWorkingAgents(copy = DEFAULT_PREVIEW_COPY, filters = {}) {
+  const byAgent = new Map();
+  for (const task of PREVIEW_TASKS) {
+    if (!workingAgentTaskMatches(task, filters)) continue;
+    const current = byAgent.get(task.agent_id) ?? {
+      issue_ids: new Set(),
+      running_task_count: 0,
+    };
+    current.running_task_count += 1;
+    if (task.issue_id) current.issue_ids.add(task.issue_id);
+    byAgent.set(task.agent_id, current);
+  }
   return PREVIEW_DIRECTORY_AGENTS
     .map((agent) => {
       const current = byAgent.get(agent.id);
@@ -1487,7 +1545,46 @@ export async function handlePreviewRequest(req, res) {
       total: STATUS_CATEGORIES.length,
     });
   }
-  if (method === "GET" && path === "/api/working-agents") return json(res, previewWorkingAgents(copy));
+  if (method === "GET" && path === "/api/working-agents") {
+    const workType = (url.searchParams.get("type") ?? "").trim();
+    const scope = (url.searchParams.get("scope") ?? "").trim();
+    const requestedRelation = (url.searchParams.get("relation") ?? "").trim();
+    const relation = scope === "mine" && requestedRelation ? requestedRelation : "any";
+    const parent = (url.searchParams.get("parent") ?? "").trim();
+
+    if (!["", "issue", "autopilot", "chat"].includes(workType)) {
+      return json(res, { error: "invalid type: must be issue, autopilot, or chat" }, 400);
+    }
+    if (scope === "mine" && workType !== "issue") {
+      return json(res, { error: "scope=mine requires type=issue" }, 400);
+    }
+    if (scope && scope !== "mine") {
+      return json(res, { error: "invalid scope: must be mine" }, 400);
+    }
+    if (!scope && requestedRelation) {
+      return json(res, { error: "relation requires scope=mine" }, 400);
+    }
+    if (scope === "mine" && !["assigned", "created", "involved", "any"].includes(relation)) {
+      return json(res, {
+        error: "invalid relation: must be assigned, created, involved, or any",
+      }, 400);
+    }
+    if (parent && workType !== "issue") {
+      return json(res, { error: "parent requires type=issue" }, 400);
+    }
+    if (parent && scope) {
+      return json(res, { error: "parent cannot be combined with scope" }, 400);
+    }
+    if (parent && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(parent)) {
+      return json(res, { error: "invalid parent" }, 400);
+    }
+    return json(res, previewWorkingAgents(copy, {
+      workType,
+      scope,
+      relation,
+      parent,
+    }));
+  }
   if (method === "GET" && path === "/api/agent-task-snapshot") {
     return json(res, PREVIEW_TASKS.map((task) => localizePreviewTask(task, copy)));
   }

@@ -50,6 +50,8 @@ interface AgentRowActionsProps {
   // this agent's config as a template. A href rather than a callback so the
   // menu item is a real link (modifier-click opens it in a new tab).
   duplicateHref: string;
+  /** Hide all mutating row actions in a local read-only preview. */
+  readOnly?: boolean;
 }
 
 /**
@@ -68,6 +70,7 @@ export function AgentRowActions({
   presence,
   canManage,
   duplicateHref,
+  readOnly = false,
 }: AgentRowActionsProps) {
   const { t } = useT("agents");
   const { t: tCommon } = useT("common");
@@ -87,14 +90,14 @@ export function AgentRowActions({
   // Derive which menu items to render. Doing this once here keeps the JSX
   // below a flat list of conditionals rather than a tangle of role/state
   // branches.
-  const showStop = canManage && !isArchived && hasActiveWork;
-  const showDuplicate = !isArchived; // any workspace member can duplicate
+  const showStop = !readOnly && canManage && !isArchived && hasActiveWork;
+  const showDuplicate = !readOnly && !isArchived; // any workspace member can duplicate
   // Patchbay's built-in agents cannot be archived — the server refuses it, and
   // the workspace's entry point runs through one. Hide the action rather than
   // let it fail with a toast.
   const isSystemAgent = !!agent.system_key;
-  const showArchive = canManage && !isArchived && !isSystemAgent;
-  const showRestore = canManage && isArchived;
+  const showArchive = !readOnly && canManage && !isArchived && !isSystemAgent;
+  const showRestore = !readOnly && canManage && isArchived;
 
   const invalidateAgents = () => {
     qc.invalidateQueries({ queryKey: workspaceKeys.agents(wsId) });
