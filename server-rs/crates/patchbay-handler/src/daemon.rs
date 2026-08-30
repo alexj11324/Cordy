@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context as _;
-use axum::extract::{Path, Query as AxumQuery, State};
+use axum::extract::{Extension, Path, Query as AxumQuery, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
@@ -26,7 +26,7 @@ use patchbay_authorization::{
 use patchbay_daemon::hub::{
     ClientIdentity, HeartbeatHandler, RpcHandler, RpcHandlerError, RpcOutcome,
 };
-use patchbay_db::models::AgentRuntime;
+use patchbay_db::models::{AgentRuntime, AgentTaskQueue};
 use patchbay_db::queries::{
     agent, autopilot, chat, comment as comment_q, issue, member, runtime, runtime_profile,
     task_message, task_token, team, workspace,
@@ -40,7 +40,7 @@ use patchbay_protocol::{
 };
 use patchbay_service::issue_status as issue_status_svc;
 use patchbay_service::task_service::TaskService;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sqlx::Row;
 use uuid::Uuid;
@@ -127,6 +127,10 @@ pub fn router() -> Router<HandlerState> {
             axum::routing::post(start_task),
         )
         .route(
+            "/api/daemon/tasks/{task_id}/execution-provenance",
+            axum::routing::post(record_execution_provenance),
+        )
+        .route(
             "/api/daemon/tasks/{task_id}/wait-local-directory",
             axum::routing::post(mark_task_waiting_local_directory),
         )
@@ -204,6 +208,50 @@ fn daemon_workspace_id(ext: Option<DaemonContext>) -> String {
     ext.and_then(|d| d.workspace_id).unwrap_or_default()
 }
 
+fn daemon_context_workspace_matches(context: Option<&DaemonContext>, workspace_id: &str) -> bool {
+    context
+        .and_then(|context| context.workspace_id.as_deref())
+        .is_some_and(|daemon_workspace_id| daemon_workspace_id == workspace_id)
+}
+
+fn daemon_provenance_context_is_authorized(context: &DaemonContext) -> bool {
+    context.auth_path == patchbay_middleware::daemon_auth::DAEMON_AUTH_PATH_DAEMON_TOKEN
+        && context
+            .workspace_id
+            .as_deref()
+            .is_some_and(|workspace_id| !workspace_id.trim().is_empty())
+        && context
+            .daemon_id
+            .as_deref()
+            .is_some_and(|daemon_id| !daemon_id.trim().is_empty())
+}
+
+fn daemon_runtime_identity_matches_context(
+    context: &DaemonContext,
+    task_workspace_id: Uuid,
+    runtime_workspace_id: Uuid,
+    runtime_daemon_id: Option<&str>,
+) -> bool {
+    let Some(context_workspace_id) = context.workspace_id.as_deref() else {
+        return false;
+    };
+    let Some(context_daemon_id) = context
+        .daemon_id
+        .as_deref()
+        .filter(|daemon_id| !daemon_id.trim().is_empty())
+    else {
+        return false;
+    };
+    let Some(runtime_daemon_id) =
+        runtime_daemon_id.filter(|daemon_id| !daemon_id.trim().is_empty())
+    else {
+        return false;
+    };
+    Uuid::parse_str(context_workspace_id).ok() == Some(task_workspace_id)
+        && runtime_workspace_id == task_workspace_id
+        && runtime_daemon_id == context_daemon_id
+}
+
 pub(crate) fn daemon_id_of(ext: Option<DaemonContext>) -> String {
     ext.and_then(|d| d.daemon_id).unwrap_or_default()
 }
@@ -262,6 +310,9 @@ async fn check_daemon_workspace_access(
         return Err(error_response(StatusCode::NOT_FOUND, "not found"));
     }
     let daemon_ctx = daemon_ctx.or_else(|| daemon_context_from_headers(access.headers));
+    if daemon_context_workspace_matches(daemon_ctx.as_ref(), workspace_id) {
+        return Ok(workspace_id.to_string());
+    }
     let daemon_ws = daemon_workspace_id(daemon_ctx.clone());
     if !daemon_ws.is_empty() {
         if daemon_ws != workspace_id {
@@ -1878,10 +1929,22 @@ async fn claim_tasks_by_runtime_core(
             continue;
         };
         match finalize_claim_enriched_with_runtime(state, &task, owner, &built, Some(rt)).await {
-            Ok((auth_token, remote_mcp_token, receipt, provider_authorization)) => {
+            Ok((
+                auth_token,
+                remote_mcp_token,
+                execution_daemon_token,
+                receipt,
+                provider_authorization,
+            )) => {
                 let mut payload = built.payload;
                 if let Some(obj) = payload.as_object_mut() {
-                    set_claim_tokens(obj, &auth_token, remote_mcp_token.as_deref(), &receipt);
+                    set_claim_tokens(
+                        obj,
+                        &auth_token,
+                        remote_mcp_token.as_deref(),
+                        execution_daemon_token.as_deref(),
+                        &receipt,
+                    );
                     if !provider_authorization.is_null() {
                         obj.insert("provider_authorization".into(), provider_authorization);
                     }
@@ -2052,8 +2115,8 @@ async fn repair_stale_comment_plan(
 /// when the payload carries Remote MCP connections or plugin hook tools (Go
 /// remoteMCPDaemonTokenForClaim + FinalizeTaskClaim), recording the exact
 /// comment-delivery receipt for comment-backed tasks.
-/// Returns (raw task token, optional raw daemon token, persisted receipt,
-/// provider authorization descriptor).
+/// Returns (raw task token, optional Remote MCP token, execution daemon token,
+/// persisted receipt, provider authorization descriptor).
 /// Runtime-aware variant used by the per-runtime claim path so the Remote MCP
 /// daemon token can be bound to the claiming runtime's daemon.
 #[allow(clippy::too_many_arguments)]
@@ -2277,7 +2340,7 @@ async fn finalize_claim_enriched_full(
     owner_id: Uuid,
     built: &crate::claim_response::BuiltClaim,
     runtime: Option<&AgentRuntime>,
-) -> Result<(String, Option<String>, Vec<Uuid>, Value), bool> {
+) -> Result<(String, Option<String>, Option<String>, Vec<Uuid>, Value), bool> {
     let token_str = patchbay_auth::jwt::generate_agent_task_token().map_err(|_| false)?;
     // Capability leases are deliberately much shorter than the historical
     // Two-hour capability lease. Terminal-state revocation normally closes it
@@ -2410,41 +2473,50 @@ async fn finalize_claim_enriched_full(
         Value::Null
     };
 
-    // Both Remote MCP brokers and plugin hook tools call daemon-authenticated
-    // endpoints. The raw token rides only in this response; its hash commits
-    // atomically with the task token below.
+    // Every claimed task receives one daemon-authenticated execution token.
+    // Remote MCP brokers and plugin hook tools may use the same capability, so
+    // there is one server-side credential bound to the claiming runtime. The
+    // raw token rides only in this response; its hash commits atomically with
+    // the task token below.
     let carries_daemon_mcp_capability = claim_requires_daemon_mcp_token(&built.payload);
-    let mut daemon_token: Option<patchbay_service::task_service::CreateDaemonToken> = None;
-    let mut raw_daemon_token: Option<String> = None;
-    if carries_daemon_mcp_capability {
-        let Some(runtime) = runtime else {
-            tracing::error!(
-                task_id = %task.id,
-                "MCP-enabled claim requires a resolved runtime; requeueing"
-            );
-            return Err(true);
-        };
-        let Some(daemon_id) = runtime
-            .daemon_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|d| !d.is_empty())
-        else {
-            tracing::error!(
-                task_id = %task.id,
-                "runtime daemon_id is required for MCP-enabled claim; requeueing"
-            );
-            return Err(true);
-        };
-        let raw = patchbay_auth::jwt::generate_daemon_token().map_err(|_| true)?;
-        raw_daemon_token = Some(raw.clone());
-        daemon_token = Some(patchbay_service::task_service::CreateDaemonToken {
-            token_hash: patchbay_auth::jwt::hash_token(&raw),
-            workspace_id: runtime.workspace_id,
-            daemon_id: daemon_id.to_string(),
-            expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(24)),
-        });
+    let Some(runtime) = runtime else {
+        tracing::error!(
+            task_id = %task.id,
+            "claimed task requires a resolved runtime for execution provenance; requeueing"
+        );
+        return Err(true);
+    };
+    if runtime.workspace_id != workspace_id {
+        tracing::error!(
+            task_id = %task.id,
+            runtime_id = %runtime.id,
+            runtime_workspace_id = %runtime.workspace_id,
+            payload_workspace_id = %workspace_id,
+            "claimed task runtime workspace does not match task workspace; requeueing"
+        );
+        return Err(true);
     }
+    let Some(daemon_id) = runtime
+        .daemon_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|d| !d.is_empty())
+    else {
+        tracing::error!(
+            task_id = %task.id,
+            runtime_id = %runtime.id,
+            "runtime daemon_id is required for task execution provenance; requeueing"
+        );
+        return Err(true);
+    };
+    let raw_execution_token = patchbay_auth::jwt::generate_daemon_token().map_err(|_| true)?;
+    let daemon_token = Some(patchbay_service::task_service::CreateDaemonToken {
+        token_hash: patchbay_auth::jwt::hash_token(&raw_execution_token),
+        workspace_id: runtime.workspace_id,
+        daemon_id: daemon_id.to_string(),
+        expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(24)),
+    });
+    let raw_remote_mcp_token = carries_daemon_mcp_capability.then(|| raw_execution_token.clone());
 
     let receipt = state
         .tasks
@@ -2474,7 +2546,13 @@ async fn finalize_claim_enriched_full(
         )
         .await;
     match receipt {
-        Ok(receipt) => Ok((token_str, raw_daemon_token, receipt, provider_authorization)),
+        Ok(receipt) => Ok((
+            token_str,
+            raw_remote_mcp_token,
+            Some(raw_execution_token),
+            receipt,
+            provider_authorization,
+        )),
         Err(patchbay_service::task_service::TaskServiceError::CapabilityLeaseAlreadyFinalized) => {
             tracing::warn!(task_id = %task.id, "claim finalization replay lost the immutable lease fence");
             Err(false)
@@ -2518,7 +2596,7 @@ async fn finalize_claim_enriched_with_runtime(
     owner_id: Uuid,
     built: &crate::claim_response::BuiltClaim,
     runtime: Option<&AgentRuntime>,
-) -> Result<(String, Option<String>, Vec<Uuid>, Value), bool> {
+) -> Result<(String, Option<String>, Option<String>, Vec<Uuid>, Value), bool> {
     finalize_claim_enriched_full(state, task, owner_id, built, runtime).await
 }
 
@@ -2528,12 +2606,19 @@ fn set_claim_tokens(
     obj: &mut Map<String, Value>,
     auth_token: &str,
     remote_mcp_daemon_token: Option<&str>,
+    execution_daemon_token: Option<&str>,
     receipt: &[Uuid],
 ) {
     obj.insert("auth_token".into(), Value::String(auth_token.to_string()));
     if let Some(token) = remote_mcp_daemon_token {
         obj.insert(
             "remote_mcp_daemon_token".into(),
+            Value::String(token.to_string()),
+        );
+    }
+    if let Some(token) = execution_daemon_token {
+        obj.insert(
+            "execution_daemon_token".into(),
             Value::String(token.to_string()),
         );
     }
@@ -2635,10 +2720,16 @@ async fn claim_task_by_runtime(
     match finalize_claim_enriched_with_runtime(&claim_services, &task, owner, &built, Some(&rt))
         .await
     {
-        Ok((token, remote_mcp_token, receipt, provider_authorization)) => {
+        Ok((token, remote_mcp_token, execution_daemon_token, receipt, provider_authorization)) => {
             let mut payload = built.payload;
             if let Some(obj) = payload.as_object_mut() {
-                set_claim_tokens(obj, &token, remote_mcp_token.as_deref(), &receipt);
+                set_claim_tokens(
+                    obj,
+                    &token,
+                    remote_mcp_token.as_deref(),
+                    execution_daemon_token.as_deref(),
+                    &receipt,
+                );
                 if !provider_authorization.is_null() {
                     obj.insert("provider_authorization".into(), provider_authorization);
                 }
@@ -2826,12 +2917,158 @@ async fn start_task(
         return error_response(StatusCode::BAD_REQUEST, "invalid task_id");
     };
     match state.tasks.start_task(task_uuid).await {
-        Ok(task) => Json(crate::task_json::task_to_map(&task, &ws_id)).into_response(),
+        Ok(started_task) => {
+            Json(crate::task_json::task_to_map(&started_task, &ws_id)).into_response()
+        }
         Err(e) => {
             tracing::warn!(error = %e, task_id = %task_id, "start task failed");
             error_response(StatusCode::BAD_REQUEST, &e.to_string())
         }
     }
+}
+
+#[derive(Debug, Deserialize, Serialize, Default)]
+#[serde(deny_unknown_fields)]
+struct ExecutionProvenanceRequest {
+    #[serde(default)]
+    execution_repo_identity: String,
+    #[serde(default)]
+    execution_workspace: String,
+    #[serde(default)]
+    execution_head_branch: String,
+    #[serde(default)]
+    execution_head_sha: String,
+    #[serde(default)]
+    execution_head_state: String,
+    #[serde(default)]
+    finished: bool,
+}
+
+/// Records exact facts from the worktree created by the authenticated daemon.
+/// This is intentionally not a task-token endpoint: the daemon owns the
+/// checkout and submits its server-issued facts with its daemon credential.
+/// The middleware extension, rather than caller-supplied headers, is the
+/// authority for the daemon workspace and authentication path.
+async fn record_execution_provenance(
+    State(state): State<HandlerState>,
+    Extension(daemon_context): Extension<DaemonContext>,
+    Path(task_id): Path<String>,
+    headers: HeaderMap,
+    body: Option<Json<ExecutionProvenanceRequest>>,
+) -> Response {
+    if !daemon_provenance_context_is_authorized(&daemon_context) {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "execution provenance requires daemon authentication",
+        );
+    }
+    let access = Access::new(&state, &headers);
+    let (task, workspace_id) = match require_daemon_task_access_with_workspace(
+        &access,
+        Some(daemon_context.clone()),
+        &task_id,
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
+    let Some(Json(request)) = body else {
+        return error_response(StatusCode::BAD_REQUEST, "invalid request body");
+    };
+    let request = ExecutionProvenanceRequest {
+        execution_repo_identity: sanitize(&request.execution_repo_identity),
+        execution_workspace: sanitize(&request.execution_workspace),
+        execution_head_branch: sanitize(&request.execution_head_branch),
+        execution_head_sha: sanitize(&request.execution_head_sha),
+        execution_head_state: sanitize(&request.execution_head_state),
+        finished: request.finished,
+    };
+    if !task_status_allows_execution_provenance(&task.status, request.finished) {
+        return error_response(
+            StatusCode::CONFLICT,
+            "execution provenance requires a running task or a final cancelled-task update",
+        );
+    }
+    if request.execution_repo_identity.trim().is_empty()
+        || request.execution_workspace.trim().is_empty()
+        || request.execution_head_state.trim().is_empty()
+        || !matches!(
+            request.execution_head_state.trim(),
+            "attached" | "detached" | "default" | "unknown"
+        )
+        || matches!(request.execution_head_state.trim(), "attached" | "default")
+            && request.execution_head_branch.trim().is_empty()
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "repository, execution workspace, and valid head state are required; attached/default heads require a branch",
+        );
+    }
+    let Ok(workspace_uuid) = Uuid::parse_str(&workspace_id) else {
+        tracing::error!(%task_id, %workspace_id, "execution provenance resolved an invalid workspace id");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "invalid task workspace");
+    };
+    let Some(runtime_id) = task.runtime_id else {
+        return error_response(StatusCode::NOT_FOUND, "task runtime not found");
+    };
+    let runtime = match runtime::get_agent_runtime(&state.pool, runtime_id).await {
+        Ok(Some(runtime)) => runtime,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "task runtime not found"),
+        Err(error) => {
+            tracing::warn!(%error, %task_id, "load task runtime for execution provenance failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load task runtime",
+            );
+        }
+    };
+    if !daemon_runtime_identity_matches_context(
+        &daemon_context,
+        workspace_uuid,
+        runtime.workspace_id,
+        runtime.daemon_id.as_deref(),
+    ) {
+        tracing::warn!(
+            %task_id,
+            runtime_id = %runtime.id,
+            runtime_workspace_id = %runtime.workspace_id,
+            daemon_workspace_id = ?daemon_context.workspace_id,
+            daemon_id = ?daemon_context.daemon_id,
+            "execution provenance runtime identity does not match daemon context"
+        );
+        return error_response(StatusCode::NOT_FOUND, "task runtime not found");
+    }
+    let input = crate::work_product::ExecutionProvenanceInput {
+        repo_identity: request.execution_repo_identity,
+        execution_workspace: request.execution_workspace,
+        head_branch: request.execution_head_branch,
+        head_sha: request.execution_head_sha,
+        head_state: request.execution_head_state,
+    };
+    match crate::work_product::record_execution_provenance(
+        &state,
+        task.id,
+        workspace_uuid,
+        task.autopilot_run_id,
+        &input,
+        request.finished,
+    )
+    .await
+    {
+        Ok(_) => Json(json!({ "status": "ok" })).into_response(),
+        Err(error) => {
+            tracing::warn!(%error, %task_id, "record execution provenance failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to record execution provenance",
+            )
+        }
+    }
+}
+
+fn task_status_allows_execution_provenance(status: &str, finished: bool) -> bool {
+    status == "running" || (status == "cancelled" && finished)
 }
 
 #[derive(Deserialize, Default)]
@@ -2915,9 +3152,8 @@ async fn report_task_progress(
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct TaskCompleteRequest {
-    #[serde(default, rename = "pr_url")]
-    pr_url: String,
     #[serde(default)]
     output: String,
     #[serde(default, rename = "session_id")]
@@ -2944,6 +3180,20 @@ fn sanitize(s: &str) -> String {
     }
 }
 
+/// Terminal task delivery only performs the short durable enqueue transaction;
+/// it never waits for a provider exact-head lookup. The single durable worker
+/// bounds provider discovery and can drain the pending row after a restart.
+async fn schedule_work_product_discovery(
+    state: &HandlerState,
+    task: AgentTaskQueue,
+    workspace_id: Uuid,
+) {
+    if let Err(error) = crate::work_product::queue_task_discovery(state, &task, workspace_id).await
+    {
+        tracing::warn!(%error, task_id = %task.id, "durable work product discovery enqueue failed");
+    }
+}
+
 /// POST /api/daemon/tasks/{taskId}/complete. A context-exhaustion notice in the
 /// output is re-routed to the failure path so a run that ran out of context is
 /// recorded as failed rather than published as a clean success (GH #6402).
@@ -2963,7 +3213,6 @@ async fn complete_task(
         return error_response(StatusCode::BAD_REQUEST, "invalid request body");
     };
     let req = TaskCompleteRequest {
-        pr_url: sanitize(&req.pr_url),
         output: sanitize(&req.output),
         session_id: sanitize(&req.session_id),
         work_dir: sanitize(&req.work_dir),
@@ -2994,7 +3243,6 @@ async fn complete_task(
     }
 
     let result = json!({
-        "pr_url": req.pr_url,
         "output": req.output,
         "session_id": req.session_id,
         "work_dir": req.work_dir,
@@ -3021,6 +3269,11 @@ async fn complete_task(
         .await
     {
         Ok(task) => {
+            if let Ok(workspace_id) = Uuid::parse_str(&ws_id) {
+                schedule_work_product_discovery(&state, task.clone(), workspace_id).await;
+            } else {
+                tracing::warn!(task_id = %task_id, workspace_id = %ws_id, "complete: invalid resolved workspace id for work product discovery");
+            }
             state.tasks.notify_task_finished(&task).await;
             revoke_tokens_best_effort(&state, task.id).await;
             tracing::info!(task_id = %task_id, agent_id = %task.agent_id, "task completed");
@@ -3042,6 +3295,7 @@ async fn revoke_tokens_best_effort(state: &HandlerState, task_id: Uuid) {
 }
 
 #[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 struct FailBody {
     #[serde(default)]
     error: String,
@@ -3119,6 +3373,11 @@ async fn fail_task_impl(
         .await
     {
         Ok(task) => {
+            if let Ok(workspace_uuid) = Uuid::parse_str(workspace_id) {
+                schedule_work_product_discovery(state, task.clone(), workspace_uuid).await;
+            } else {
+                tracing::warn!(task_id = %task_id, workspace_id = %workspace_id, "fail: invalid resolved workspace id for work product discovery");
+            }
             state.tasks.notify_task_finished(&task).await;
             revoke_tokens_best_effort(state, task.id).await;
             tracing::info!(
@@ -3412,6 +3671,7 @@ async fn list_task_messages_impl(
 }
 
 #[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 struct CancelAckBody {
     #[serde(default, rename = "branch_name")]
     branch_name: String,
@@ -3510,6 +3770,16 @@ async fn ack_task_cancelled(
         state.tasks.rebroadcast_cancelled_task(task.id).await;
     }
     let _ = state.tasks.finalize_deferred_cancelled_chat(task.id).await;
+    if let Some(workspace_id) = state
+        .tasks
+        .resolve_task_workspace_id(&task)
+        .await
+        .and_then(|value| Uuid::parse_str(&value).ok())
+    {
+        schedule_work_product_discovery(&state, task.clone(), workspace_id).await;
+    } else {
+        tracing::warn!(task_id = %task_id, "cancel ack: invalid resolved workspace id for work product discovery");
+    }
     Json(json!({ "status": "ok" })).into_response()
 }
 
@@ -4831,6 +5101,178 @@ mod tests {
         HandlerState::new(pool, patchbay_auth::pat_cache::PatCache::disabled(), None)
     }
 
+    #[test]
+    fn execution_provenance_requires_daemon_token_and_workspace() {
+        let daemon_context = DaemonContext {
+            workspace_id: Some("workspace-1".to_string()),
+            daemon_id: Some("daemon-1".to_string()),
+            auth_path: patchbay_middleware::daemon_auth::DAEMON_AUTH_PATH_DAEMON_TOKEN,
+        };
+        assert!(daemon_provenance_context_is_authorized(&daemon_context));
+
+        for auth_path in [
+            patchbay_middleware::daemon_auth::DAEMON_AUTH_PATH_PAT,
+            patchbay_middleware::daemon_auth::DAEMON_AUTH_PATH_JWT,
+            "task_token",
+        ] {
+            assert!(!daemon_provenance_context_is_authorized(&DaemonContext {
+                auth_path,
+                ..daemon_context.clone()
+            }));
+        }
+        assert!(!daemon_provenance_context_is_authorized(&DaemonContext {
+            workspace_id: None,
+            ..daemon_context.clone()
+        }));
+        assert!(!daemon_provenance_context_is_authorized(&DaemonContext {
+            daemon_id: None,
+            ..daemon_context
+        }));
+    }
+
+    #[test]
+    fn execution_provenance_requires_exact_daemon_workspace() {
+        let context = DaemonContext {
+            workspace_id: Some("workspace-1".to_string()),
+            daemon_id: Some("daemon-1".to_string()),
+            auth_path: patchbay_middleware::daemon_auth::DAEMON_AUTH_PATH_DAEMON_TOKEN,
+        };
+        assert!(daemon_context_workspace_matches(
+            Some(&context),
+            "workspace-1"
+        ));
+        assert!(!daemon_context_workspace_matches(
+            Some(&context),
+            "workspace-2"
+        ));
+        assert!(!daemon_context_workspace_matches(None, "workspace-1"));
+    }
+
+    #[test]
+    fn execution_provenance_accepts_only_running_or_final_cancelled_updates() {
+        assert!(task_status_allows_execution_provenance("running", false));
+        assert!(task_status_allows_execution_provenance("running", true));
+        assert!(task_status_allows_execution_provenance("cancelled", true));
+        assert!(!task_status_allows_execution_provenance("cancelled", false));
+        assert!(!task_status_allows_execution_provenance("completed", true));
+        assert!(!task_status_allows_execution_provenance("failed", true));
+    }
+
+    #[test]
+    fn execution_provenance_requires_exact_runtime_daemon_identity() {
+        let workspace_id = Uuid::from_u128(1);
+        let context = DaemonContext {
+            workspace_id: Some(workspace_id.to_string()),
+            daemon_id: Some("daemon-1".to_string()),
+            auth_path: patchbay_middleware::daemon_auth::DAEMON_AUTH_PATH_DAEMON_TOKEN,
+        };
+        assert!(daemon_runtime_identity_matches_context(
+            &context,
+            workspace_id,
+            workspace_id,
+            Some("daemon-1")
+        ));
+        assert!(!daemon_runtime_identity_matches_context(
+            &context,
+            workspace_id,
+            Uuid::from_u128(2),
+            Some("daemon-1")
+        ));
+        assert!(!daemon_runtime_identity_matches_context(
+            &context,
+            workspace_id,
+            workspace_id,
+            Some("daemon-2")
+        ));
+    }
+
+    #[test]
+    fn execution_provenance_body_cannot_supply_task_identity() {
+        let forged = serde_json::from_value::<ExecutionProvenanceRequest>(json!({
+            "execution_repo_identity": "https://github.com/example/repo",
+            "execution_workspace": "/srv/workspaces/task",
+            "execution_head_branch": "feature/work",
+            "execution_head_sha": "abc123",
+            "execution_head_state": "attached",
+            "finished": true,
+            "task_id": "forged-task",
+            "agent_id": "forged-agent",
+            "workspace_id": "forged-workspace"
+        }));
+        assert!(
+            forged.is_err(),
+            "identity fields must not be accepted in the body"
+        );
+
+        let request: ExecutionProvenanceRequest = serde_json::from_value(json!({
+            "execution_repo_identity": "https://github.com/example/repo",
+            "execution_workspace": "/srv/workspaces/task",
+            "execution_head_branch": "feature/work",
+            "execution_head_sha": "abc123",
+            "execution_head_state": "attached",
+            "finished": true
+        }))
+        .expect("execution facts should decode");
+        assert_eq!(request.execution_head_branch, "feature/work");
+        assert_eq!(request.execution_head_sha, "abc123");
+        assert!(request.finished);
+    }
+
+    #[test]
+    fn task_token_lifecycle_payloads_reject_execution_facts() {
+        let facts = json!({
+            "execution_repo_identity": "https://github.com/example/repo",
+            "execution_workspace": "/srv/workspaces/task",
+            "execution_head_branch": "feature/work",
+            "execution_head_sha": "abc123",
+            "execution_head_state": "attached"
+        });
+        assert!(serde_json::from_value::<TaskCompleteRequest>(facts.clone()).is_err());
+        assert!(serde_json::from_value::<FailBody>(facts.clone()).is_err());
+        assert!(serde_json::from_value::<CancelAckBody>(facts).is_err());
+    }
+
+    #[tokio::test]
+    async fn execution_provenance_route_rejects_task_token_before_task_lookup() {
+        let response = record_execution_provenance(
+            State(lazy_test_state()),
+            Extension(DaemonContext {
+                workspace_id: Some("workspace-1".to_string()),
+                daemon_id: Some("daemon-1".to_string()),
+                auth_path: "task_token",
+            }),
+            Path("not-a-task-id".to_string()),
+            HeaderMap::new(),
+            None,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn daemon_provenance_workspace_mismatch_fails_closed() {
+        let state = lazy_test_state();
+        let headers = HeaderMap::new();
+        let access = Access::new(&state, &headers);
+        let context = DaemonContext {
+            workspace_id: Some("workspace-1".to_string()),
+            daemon_id: Some("daemon-1".to_string()),
+            auth_path: patchbay_middleware::daemon_auth::DAEMON_AUTH_PATH_DAEMON_TOKEN,
+        };
+
+        let mismatch = check_daemon_workspace_access(&access, Some(context.clone()), "workspace-2")
+            .await
+            .expect_err("a daemon cannot cross the token workspace boundary");
+        assert_eq!(mismatch.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            check_daemon_workspace_access(&access, Some(context), "workspace-1")
+                .await
+                .expect("the injected daemon workspace should match exactly"),
+            "workspace-1"
+        );
+    }
+
     #[tokio::test]
     async fn websocket_heartbeat_rejects_malformed_runtime_before_database_access() {
         let state = lazy_test_state();
@@ -5065,9 +5507,16 @@ mod tests {
     #[test]
     fn set_claim_tokens_includes_remote_mcp_credential() {
         let mut payload = Map::new();
-        set_claim_tokens(&mut payload, "task-token", Some("mcp-token"), &[]);
+        set_claim_tokens(
+            &mut payload,
+            "task-token",
+            Some("mcp-token"),
+            Some("execution-token"),
+            &[],
+        );
         assert_eq!(payload["auth_token"], json!("task-token"));
         assert_eq!(payload["remote_mcp_daemon_token"], json!("mcp-token"));
+        assert_eq!(payload["execution_daemon_token"], json!("execution-token"));
     }
 
     #[test]

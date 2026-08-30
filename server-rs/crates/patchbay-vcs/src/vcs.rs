@@ -8,8 +8,8 @@
 //! Each provider only contributes the parts that actually differ between
 //! providers: how a webhook is authenticated, how its event/payload shapes
 //! map to the normalized PR/CI structs, and how a token is validated. The
-//! shared storage, issue auto-link / auto-close, and broadcast logic live
-//! in the handler layer and consume the normalized types.
+//! shared Work Product snapshot, explicit relation, and broadcast logic live in
+//! the handler layer and consume the normalized types.
 
 use anyhow::Result;
 use thiserror::Error;

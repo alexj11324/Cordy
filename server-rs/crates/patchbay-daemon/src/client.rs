@@ -443,7 +443,9 @@ impl Client {
         .await
     }
 
-    /// `StartTask` (client.go:352).
+    /// `StartTask` (client.go:352). Execution facts are submitted through the
+    /// daemon-authenticated provenance endpoint, never through the task-token
+    /// lifecycle callback.
     pub(crate) async fn start_task(
         &self,
         ctx: &crate::repocache::Ctx,
@@ -453,6 +455,51 @@ impl Client {
             ctx,
             &format!("/api/daemon/tasks/{task_id}/start"),
             json!({}),
+        )
+        .await
+    }
+
+    /// Records exact facts from the checkout created after StartTask. The
+    /// daemon owns this call and authenticates it with its server-issued
+    /// daemon token; the task-scoped token never reaches this endpoint.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn record_execution_provenance(
+        &self,
+        ctx: &crate::repocache::Ctx,
+        daemon_token: &str,
+        task_id: &str,
+        execution_repo_identity: &str,
+        execution_workspace: &str,
+        execution_head_branch: &str,
+        execution_head_sha: &str,
+        execution_head_state: &str,
+        finished: bool,
+    ) -> anyhow::Result<()> {
+        let mut body = serde_json::Map::new();
+        if !execution_repo_identity.is_empty() {
+            body.insert(
+                "execution_repo_identity".into(),
+                json!(execution_repo_identity),
+            );
+        }
+        if !execution_workspace.is_empty() {
+            body.insert("execution_workspace".into(), json!(execution_workspace));
+        }
+        if !execution_head_branch.is_empty() {
+            body.insert("execution_head_branch".into(), json!(execution_head_branch));
+        }
+        if !execution_head_sha.is_empty() {
+            body.insert("execution_head_sha".into(), json!(execution_head_sha));
+        }
+        if !execution_head_state.is_empty() {
+            body.insert("execution_head_state".into(), json!(execution_head_state));
+        }
+        body.insert("finished".into(), json!(finished));
+        self.post_json_unit_with_token(
+            ctx,
+            &format!("/api/daemon/tasks/{task_id}/execution-provenance"),
+            daemon_token,
+            Value::Object(body),
         )
         .await
     }
@@ -1580,6 +1627,40 @@ impl Client {
         req_body: Value,
     ) -> anyhow::Result<()> {
         let builder = self.builder_post(path, req_body.clone())?;
+        let _: Option<serde_json::Value> = self
+            .execute_json(
+                apply_ctx_deadline(builder, ctx, CONTROL_PLANE_TIMEOUT),
+                ctx.clone(),
+                false,
+                "POST",
+            )
+            .await?;
+        Ok(())
+    }
+
+    /// `postJSON` without the profile/task credential. This is reserved for
+    /// daemon-capability routes whose authorization must be bound to the
+    /// claiming daemon, such as execution provenance.
+    async fn post_json_unit_with_token(
+        &self,
+        ctx: &crate::repocache::Ctx,
+        path: &str,
+        token: &str,
+        req_body: Value,
+    ) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            !token.trim().is_empty(),
+            "daemon capability is required for {path}"
+        );
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("Content-Type", "application/json".parse().unwrap());
+        headers.insert("Authorization", format!("Bearer {token}").parse().unwrap());
+        let builder = self
+            .http_client()
+            .post(format!("{}{path}", self.base_url))
+            .headers(headers)
+            .json(&req_body);
+        let builder = self.set_identity_headers(builder);
         let _: Option<serde_json::Value> = self
             .execute_json(
                 apply_ctx_deadline(builder, ctx, CONTROL_PLANE_TIMEOUT),

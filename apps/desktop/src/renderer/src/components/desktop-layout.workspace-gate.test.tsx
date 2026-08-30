@@ -113,9 +113,9 @@ vi.mock("./tab-content", () => ({
 const { DesktopShell } = await import("./desktop-layout");
 
 function renderShell() {
-  (
-    window as unknown as { desktopAPI: Record<string, unknown> }
-  ).desktopAPI = {
+  (window as unknown as { desktopAPI: Record<string, unknown> }).desktopAPI = {
+    host: "electron",
+    appInfo: { version: "0.0.0-test", os: "macos" },
     onNavigationGesture: () => () => {},
     onInboxOpen: () => () => {},
   };

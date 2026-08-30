@@ -1223,7 +1223,6 @@ impl TaskService {
         let payload = serde_json::from_value::<TaskCompletedPayload>(result.clone()).unwrap_or(
             TaskCompletedPayload {
                 task_id: String::new(),
-                pr_url: String::new(),
                 output: String::new(),
             },
         );

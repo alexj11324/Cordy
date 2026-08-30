@@ -546,6 +546,47 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "427_dependency_graph_edge_to_index",
         "idx_dependency_graph_edge_plan_to",
     ),
+    ("431_work_product_id_index", "work_product_id_uidx"),
+    (
+        "433_work_product_external_identity_index",
+        "work_product_external_identity_uidx",
+    ),
+    (
+        "434_work_product_provider_record_index",
+        "work_product_provider_record_idx",
+    ),
+    (
+        "436_work_product_relation_id_index",
+        "work_product_relation_id_uidx",
+    ),
+    (
+        "438_work_product_relation_key_index",
+        "work_product_relation_active_key_uidx",
+    ),
+    (
+        "439_work_product_relation_issue_index",
+        "work_product_relation_issue_idx",
+    ),
+    (
+        "440_work_product_relation_product_index",
+        "work_product_relation_product_idx",
+    ),
+    (
+        "441_work_product_relation_task_index",
+        "work_product_relation_task_idx",
+    ),
+    (
+        "443_agent_task_execution_provenance_identity_index",
+        "agent_task_execution_provenance_identity_uidx",
+    ),
+    (
+        "445_agent_task_execution_provenance_branch_index",
+        "agent_task_execution_provenance_branch_idx",
+    ),
+    (
+        "450_agent_task_execution_provenance_discovery_queue_index",
+        "agent_task_execution_provenance_discovery_queue_idx",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
@@ -640,5 +681,46 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
     (
         "427_dependency_graph_edge_to_index",
         "idx_dependency_graph_edge_plan_to",
+    ),
+    ("431_work_product_id_index", "work_product_id_uidx"),
+    (
+        "433_work_product_external_identity_index",
+        "work_product_external_identity_uidx",
+    ),
+    (
+        "434_work_product_provider_record_index",
+        "work_product_provider_record_idx",
+    ),
+    (
+        "436_work_product_relation_id_index",
+        "work_product_relation_id_uidx",
+    ),
+    (
+        "438_work_product_relation_key_index",
+        "work_product_relation_active_key_uidx",
+    ),
+    (
+        "439_work_product_relation_issue_index",
+        "work_product_relation_issue_idx",
+    ),
+    (
+        "440_work_product_relation_product_index",
+        "work_product_relation_product_idx",
+    ),
+    (
+        "441_work_product_relation_task_index",
+        "work_product_relation_task_idx",
+    ),
+    (
+        "443_agent_task_execution_provenance_identity_index",
+        "agent_task_execution_provenance_identity_uidx",
+    ),
+    (
+        "445_agent_task_execution_provenance_branch_index",
+        "agent_task_execution_provenance_branch_idx",
+    ),
+    (
+        "450_agent_task_execution_provenance_discovery_queue_index",
+        "agent_task_execution_provenance_discovery_queue_idx",
     ),
 ];

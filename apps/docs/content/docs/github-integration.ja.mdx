@@ -5,11 +5,11 @@ description: pull request を Patchbay のイシューに紐づけ、開発の�
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-GitHub を接続すると、Patchbay はイシュー番号を使って pull request を自動的に紐づけます。イシューの詳細画面から、PR の状態、変更規模、CI の結果、マージ競合を直接確認できます。
+GitHub を接続すると、Patchbay は pull request をミラーリングし、状態、変更規模、CI の結果、マージ競合をイシューの詳細画面に表示します。PR がイシューに表示されるのは、認証済みの task/run が登録した場合、またはワークスペースのメンバーが明示的に Attach した場合だけです。`PB-123` は人が GitHub を検索するために使えますが、紐づけは作成しません。
 
 GitHub 連携が読み取るのは、インストール時に許可されたリポジトリだけです。コード、コメント、status check を書き込むことはありません。
 
-セルフホスト版 Patchbay では、セルフホストの Forgejo、Gitea、GitLab インスタンスも同時に接続できます。PR の自動紐づけ、マージ時の Done への変更、CI 表示を同じように利用できます。**設定 → 連携 → Git ホスティング**から設定してください。詳しくは[セルフホスト Git ホスティング](/vcs-integration)を参照してください。Patchbay Cloud にはこの項目はありません。
+セルフホスト版 Patchbay では、セルフホストの Forgejo、Gitea、GitLab インスタンスも同時に接続できます。明示的な紐づけ、マージ時の Done への変更、CI 表示を同じように利用できます。**設定 → 連携 → Git ホスティング**から設定してください。詳しくは[セルフホスト Git ホスティング](/vcs-integration)を参照してください。Patchbay Cloud にはこの項目はありません。
 
 ## GitHub を接続する
 
@@ -29,40 +29,27 @@ GitHub 連携が読み取るのは、インストール時に許可されたリ�
 
 ## 機能スイッチ
 
-**設定 → GitHub** には 4 つのスイッチがあります。
+**設定 → GitHub** には 3 つのスイッチがあります。
 
 | スイッチ | 機能 |
 |---|---|
-| GitHub 連携 | メインスイッチ。無効にすると下の 3 項目は機能しなくなりますが、GitHub App の接続は解除されません。 |
+| GitHub 連携 | メインスイッチ。無効にすると下の 2 項目は機能しなくなりますが、GitHub App の接続は解除されません。 |
 | PR サイドバー | 紐づいた pull request をイシューの詳細画面に表示します。 |
 | Co-authored-by | エージェントが作成する commit に `Co-authored-by: patchbay-agent <github@patchbay.ai>` を追加します。 |
-| PR の自動紐づけ | PR のブランチ名、タイトル、本文からイシュー番号を検出します。 |
 | **PR カード → CI とマージ可否** | 紐づいた各 PR について、Patchbay は認証済みの GitHub API スナップショットを取得し、その **CI ステータス**と**マージ可否**をカードにミラーリングします（下記の **PR カードに表示される内容** を参照）。 |
 
 
 ## PR をイシューに紐づける
 
-最も簡単な方法は、イシュー番号をブランチ名または PR タイトルへ入れることです。イシューが `PB-123` の場合:
+正規の経路は明示的な操作です。エージェントは認証済みの task/run で作成した PR を Work Product として登録できます。ワークスペースのメンバーは、イシューからミラー済みの Work Product を選択して Attach できます。CLI も利用できます。
 
-```text
-pb-123-fix-login-redirect
+```bash
+patchbay issue pull-request attach PB-123 --url https://github.com/acme/api/pull/6
 ```
 
-```text
-PB-123 ログイン後のリダイレクトを修正
-```
+issue 引数は現在のワークスペースで解決され、URL から別の workspace、task、run を選ぶことはできません。ワークスペースのメンバーによる手動 URL Attach は GitHub App がなくても使えます。task-scoped Attach には、サーバーが正確な repository と実行ブランチを検証できるよう、認証済み GitHub App の provider metadata が必要です。呼び出し側が送るタイトル、ブランチ、SHA は ownership の証明になりません。マージ後に Done へ進める明示的な close intent が必要な場合は `--close-intent` を付けます。PR のタイトル、本文、ブランチ、commit、コメントにある文字列は、紐づけや close intent を作成しません。
 
-Patchbay は大文字と小文字を区別せず、現在のワークスペースのイシュー接頭辞だけを照合します。1 つの PR を複数のイシューに紐づけることもできます。
-
-イシュー番号を PR 本文だけに書く場合は、GitHub の closing keyword を使ってください。
-
-```text
-Closes PB-123
-Fixes PB-123
-Resolves PB-123
-```
-
-本文に `Related to PB-123` のような通常の参照を書いただけでは、そのイシューの作業 PR として表示されません。Commit message と PR コメントも紐づけの対象外です。
+task が終了時点で登録していない場合、サーバーはその task が保存した repository identity、execution workspace、exact head branch だけを使って一度だけ決定的に検索できます。唯一の一致だけが登録され、0 件は未関連、複数件、共有・使用中のブランチ、default branch、detached HEAD、検索失敗は曖昧または対象外として監査情報に残ります。ブランチは初回検索専用で、永続的な関係キーではありません。`PB-123` を含む PR でも、明示的な Attach がなければ未関連のままです。
 
 ## イシューから PR を確認する
 
@@ -82,19 +69,17 @@ CI の状態とマージ可能性は、Patchbay が GitHub API から取得し�
 
 PR がマージされても、必ずしもイシューが完了するわけではありません。Patchbay がイシューを `Done` に変更するのは、次の条件をすべて満たす場合だけです。
 
-1. 紐づいたマージ済み PR のうち少なくとも 1 つで、`Closes PB-123` のように closing keyword の直後にイシュー番号を指定している。`Closes login PB-123` のように間に別の単語がある形式は無効です。
-2. そのイシューに、`Open` または `Draft` の作業 PR がほかに残っていない。本文中の通常の参照は作業 PR に含みません。
+1. 少なくとも 1 つの明示的な関係で `close_intent` が有効になっている。
+2. そのイシューに、`Open` または `Draft` の作業 PR がほかに残っていない。
 3. イシューの現在の状態が `done` または `cancelled` ではない。
 
-そのため、ブランチ名やタイトルに `PB-123` を含めるだけで紐づけは作成されますが、それだけではイシューを完了にしません。PR をマージせずにクローズした場合も、イシューは完了しません。
+そのため、PR のどこかに `PB-123` を含めるだけでは紐づけも完了も作成されません。PR をマージせずにクローズした場合も、イシューは完了しません。
 
 状態の変更はシステム操作としてタイムラインに記録され、そのイシューを購読しているメンバーへ通知されます。
 
 ## 複数のワークスペース
 
-同じ GitHub App installation を複数の Patchbay ワークスペースへ接続できます。GitHub イベントは各ワークスペースにそれぞれ送られ、各ワークスペースのイシュー接頭辞に従って照合されます。
-
-たとえば、1 つの PR が `PB-1` と `ENG-2` の両方を参照している場合、異なる接頭辞を持つ 2 つのワークスペースでそれぞれ紐づけられます。ワークスペース間で相手のイシューが見えることはありません。
+同じ GitHub App installation を複数の Patchbay ワークスペースへ接続できます。GitHub イベントは各ワークスペースへ個別にミラーされ、明示的な関係は対象ワークスペースの権限で検証されます。ワークスペース間で相手のイシューや関係が見えることはありません。
 
 ## 接続を解除する
 
@@ -157,7 +142,7 @@ GITHUB_APP_ID=<numeric GitHub App ID>
 GITHUB_APP_PRIVATE_KEY=<complete PEM private key, including BEGIN/END lines and newlines>
 ```
 
-秘密鍵は GitHub App の **Private keys → Generate a private key** から生成します。設定しない場合も連携は安全に縮退します。PR のミラー、イシューの自動紐づけ、マージ時の Done への変更は動作しますが、PR カードに CI やマージ状態は表示されません。
+秘密鍵は GitHub App の **Private keys → Generate a private key** から生成します。設定しない場合も連携は安全に縮退します。PR のミラーと既存の明示的な関係の表示は動作しますが、PR カードに CI やマージ状態は表示されません。
 
 ### 3. データベースを更新して接続する
 
@@ -173,10 +158,10 @@ API サービスを再起動し、**設定 → GitHub** から接続します。
 
 - **接続ボタンを使用できない**: `GITHUB_APP_SLUG` と `GITHUB_WEBHOOK_SECRET` が API プロセスに設定されていることを確認します。
 - **Webhook が 401 を返す**: GitHub App と API が同じ Webhook secret を使っていることを確認し、GitHub の **Recent Deliveries** から再配信します。
-- **PR が紐づかない**: リポジトリが App の許可範囲にあること、PR の自動紐づけが有効であること、番号が現在のワークスペースのものかを確認します。
-- **本文に番号を書いても表示されない**: `Closes PB-123` を使うか、番号をブランチ名または PR タイトルに入れます。
+- **PR が紐づかない**: イシューの明示的な Attach、または CLI の PR URL を使用します。エージェント実行では execution provenance と discovery 状態を確認します。PR 内の番号だけでは不十分です。
+- **実行後も未関連のまま**: 0 件、複数件、共有/default/detached ブランチ、provider 検索失敗では権限のあるメンバーによる確認が必要です。task 詳細に理由が記録されます。
 - **CI の状態がない**: `GITHUB_APP_ID` と `GITHUB_APP_PRIVATE_KEY` が設定済みで、App に Checks と Commit statuses の read-only 権限があり、関連イベントを購読していることを確認します。インストール済み App に権限を追加した場合は、各 installation の所有者が GitHub 上で承認するまで有効になりません。
-- **PR のマージ後もイシューが完了しない**: PR で closing keyword を使っていることと、`Open` または `Draft` の関連 PR がほかに残っていないことを確認します。
+- **PR のマージ後もイシューが完了しない**: 明示的な関係の `close_intent` と、`Open` または `Draft` の関連 PR が残っていないことを確認します。
 
 ## 次のステップ
 

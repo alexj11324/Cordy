@@ -297,12 +297,24 @@ pub async fn get_issue_pull_request_close_aggregate(
     issue_id: Uuid,
 ) -> anyhow::Result<Option<GetIssuePullRequestCloseAggregateRow>> {
     let row = sqlx::query(
-        r#"SELECT
-    COALESCE(SUM(CASE WHEN pr.state IN ('open', 'draft') THEN 1 ELSE 0 END), 0)::bigint AS open_count,
-    COALESCE(SUM(CASE WHEN pr.state = 'merged' AND ipr.close_intent THEN 1 ELSE 0 END), 0)::bigint AS merged_with_close_intent_count
-FROM github_pull_request pr
-JOIN issue_pull_request ipr ON ipr.pull_request_id = pr.id
-WHERE ipr.issue_id = $1 AND NOT ipr.reference_only"#
+        r#"WITH linked AS (
+    SELECT pr.id, pr.state, bool_or(wpr.close_intent) AS close_intent
+    FROM github_pull_request pr
+    JOIN work_product wp
+      ON wp.workspace_id = pr.workspace_id
+     AND wp.provider_record_type = 'github_pull_request'
+     AND wp.provider_record_id = pr.id
+    JOIN work_product_relation wpr
+      ON wpr.workspace_id = wp.workspace_id
+     AND wpr.work_product_id = wp.id
+     AND wpr.issue_id = $1
+     AND wpr.detached_at IS NULL
+    GROUP BY pr.id, pr.state
+)
+SELECT
+    COALESCE(SUM(CASE WHEN state IN ('open', 'draft') THEN 1 ELSE 0 END), 0)::bigint AS open_count,
+    COALESCE(SUM(CASE WHEN state = 'merged' AND close_intent THEN 1 ELSE 0 END), 0)::bigint AS merged_with_close_intent_count
+FROM linked"#,
     )
         .bind(issue_id)
         .fetch_optional(executor)
@@ -322,13 +334,31 @@ pub async fn get_issue_review_head_sha(
         r#"SELECT head_sha FROM (
     SELECT pr.head_sha AS head_sha, pr.state AS state, pr.pr_updated_at AS pr_updated_at
     FROM github_pull_request pr
-    JOIN issue_pull_request ipr ON ipr.pull_request_id = pr.id
-    WHERE ipr.issue_id = $1 AND pr.head_sha <> '' AND NOT ipr.reference_only
+    WHERE pr.head_sha <> '' AND EXISTS (
+        SELECT 1
+        FROM work_product wp
+        JOIN work_product_relation wpr ON wpr.work_product_id = wp.id
+        WHERE wp.workspace_id = pr.workspace_id
+          AND wp.provider_record_type = 'github_pull_request'
+          AND wp.provider_record_id = pr.id
+          AND wpr.workspace_id = pr.workspace_id
+          AND wpr.issue_id = $1
+          AND wpr.detached_at IS NULL
+    )
     UNION ALL
     SELECT pr.head_sha AS head_sha, pr.state AS state, pr.pr_updated_at AS pr_updated_at
     FROM vcs_pull_request pr
-    JOIN issue_vcs_pull_request ipr ON ipr.pull_request_id = pr.id
-    WHERE ipr.issue_id = $1 AND pr.head_sha <> '' AND NOT ipr.reference_only
+    WHERE pr.head_sha <> '' AND EXISTS (
+        SELECT 1
+        FROM work_product wp
+        JOIN work_product_relation wpr ON wpr.work_product_id = wp.id
+        WHERE wp.workspace_id = pr.workspace_id
+          AND wp.provider_record_type = 'vcs_pull_request'
+          AND wp.provider_record_id = pr.id
+          AND wpr.workspace_id = pr.workspace_id
+          AND wpr.issue_id = $1
+          AND wpr.detached_at IS NULL
+    )
 ) combined
 ORDER BY (state IN ('open', 'draft')) DESC, pr_updated_at DESC
 LIMIT 1"#,
@@ -359,56 +389,6 @@ pub async fn get_pending_git_hub_installation(
         received_at: row.try_get(4)?,
         updated_at: row.try_get(5)?,
     }))
-}
-
-pub async fn link_issue_to_pull_request(
-    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    issue_id: Uuid,
-    pull_request_id: Uuid,
-    close_intent: bool,
-    linked_by_type: Option<&str>,
-    linked_by_id: Option<Uuid>,
-    reference_only: bool,
-    preserve_close_intent: bool,
-    preserve_reference_only: bool,
-    preserve_linked_by: bool,
-) -> anyhow::Result<u64> {
-    let r = sqlx::query(
-        r#"INSERT INTO issue_pull_request (
-    issue_id, pull_request_id, linked_by_type, linked_by_id, close_intent, reference_only
-) VALUES (
-    $1, $2, $4, $5, $3, $6
-)
-ON CONFLICT (issue_id, pull_request_id) DO UPDATE SET
-    linked_by_type = CASE
-        WHEN $9 THEN issue_pull_request.linked_by_type
-        ELSE EXCLUDED.linked_by_type
-    END,
-    linked_by_id = CASE
-        WHEN $9 THEN issue_pull_request.linked_by_id
-        ELSE EXCLUDED.linked_by_id
-    END,
-    close_intent = CASE
-        WHEN $7 THEN issue_pull_request.close_intent
-        ELSE EXCLUDED.close_intent
-    END,
-    reference_only = CASE
-        WHEN $8 THEN issue_pull_request.reference_only
-        ELSE EXCLUDED.reference_only
-    END"#,
-    )
-    .bind(issue_id)
-    .bind(pull_request_id)
-    .bind(close_intent)
-    .bind(linked_by_type)
-    .bind(linked_by_id)
-    .bind(reference_only)
-    .bind(preserve_close_intent)
-    .bind(preserve_reference_only)
-    .bind(preserve_linked_by)
-    .execute(executor)
-    .await?;
-    Ok(r.rows_affected())
 }
 
 pub async fn list_git_hub_installations_by_installation_id(
@@ -471,20 +451,27 @@ ORDER BY created_at ASC"#
 
 pub async fn list_issue_i_ds_for_pull_request(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
     pull_request_id: Uuid,
-) -> anyhow::Result<Vec<Option<Uuid>>> {
+) -> anyhow::Result<Vec<Uuid>> {
     let rows = sqlx::query(
-        r#"SELECT issue_id FROM issue_pull_request
-WHERE pull_request_id = $1"#,
+        r#"SELECT DISTINCT wpr.issue_id
+FROM work_product wp
+JOIN work_product_relation wpr ON wpr.work_product_id = wp.id
+WHERE wp.workspace_id = $1
+  AND wp.provider_record_type = 'github_pull_request'
+  AND wp.provider_record_id = $2
+  AND wpr.workspace_id = $1
+  AND wpr.issue_id IS NOT NULL
+  AND wpr.detached_at IS NULL"#,
     )
+    .bind(workspace_id)
     .bind(pull_request_id)
     .fetch_all(executor)
     .await?;
-    let mut out = Vec::with_capacity(rows.len());
-    for row in &rows {
-        out.push(row.try_get(0)?);
-    }
-    Ok(out)
+    rows.into_iter()
+        .map(|row| row.try_get(0).map_err(Into::into))
+        .collect()
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -532,8 +519,17 @@ pub async fn list_pull_requests_by_issue(
         r#"WITH issue_prs AS (
     SELECT pr.id, pr.snapshot_head_sha
     FROM github_pull_request pr
-    JOIN issue_pull_request ipr ON ipr.pull_request_id = pr.id
-    WHERE ipr.issue_id = $1 AND NOT ipr.reference_only
+    WHERE EXISTS (
+        SELECT 1
+        FROM work_product wp
+        JOIN work_product_relation wpr ON wpr.work_product_id = wp.id
+        WHERE wp.workspace_id = pr.workspace_id
+          AND wp.provider_record_type = 'github_pull_request'
+          AND wp.provider_record_id = pr.id
+          AND wpr.workspace_id = pr.workspace_id
+          AND wpr.issue_id = $1
+          AND wpr.detached_at IS NULL
+    )
 ),
 checks AS (
     SELECT
@@ -572,9 +568,18 @@ SELECT
     COALESCE(c.running, 0)::bigint AS checks_running,
     COALESCE(c.failed_names, '{}')::text[] AS failed_check_names
 FROM github_pull_request pr
-JOIN issue_pull_request ipr ON ipr.pull_request_id = pr.id
 LEFT JOIN checks c ON c.pr_id = pr.id
-WHERE ipr.issue_id = $1 AND NOT ipr.reference_only
+WHERE EXISTS (
+    SELECT 1
+    FROM work_product wp
+    JOIN work_product_relation wpr ON wpr.work_product_id = wp.id
+    WHERE wp.workspace_id = pr.workspace_id
+      AND wp.provider_record_type = 'github_pull_request'
+      AND wp.provider_record_id = pr.id
+      AND wpr.workspace_id = pr.workspace_id
+      AND wpr.issue_id = $1
+      AND wpr.detached_at IS NULL
+)
 ORDER BY pr.pr_created_at DESC"#
     )
         .bind(issue_id)
@@ -619,22 +624,6 @@ ORDER BY pr.pr_created_at DESC"#
         });
     }
     Ok(out)
-}
-
-pub async fn unlink_issue_from_pull_request(
-    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    issue_id: Uuid,
-    pull_request_id: Uuid,
-) -> anyhow::Result<u64> {
-    let r = sqlx::query(
-        r#"DELETE FROM issue_pull_request
-WHERE issue_id = $1 AND pull_request_id = $2"#,
-    )
-    .bind(issue_id)
-    .bind(pull_request_id)
-    .execute(executor)
-    .await?;
-    Ok(r.rows_affected())
 }
 
 pub async fn update_git_hub_installation_account_by_installation_id(

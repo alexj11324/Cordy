@@ -5,11 +5,11 @@ description: 把 pull request 与 Patchbay issue 关联，并在 issue 中查看
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-连接 GitHub 后，Patchbay 根据 issue 编号自动关联 pull request。issue 详情中可直接查看 PR 状态、改动规模、CI 结果和合并冲突。
+连接 GitHub 后，Patchbay 会镜像 pull request，并在 issue 详情中显示 PR 状态、改动规模、CI 结果和合并冲突。只有经鉴权的 task/run 登记，或工作区成员执行显式 Attach 后，PR 才会显示为该 issue 的产物。`PB-123` 只便于人搜索 GitHub，不会建立关联。
 
 GitHub 集成只读取安装时授权的仓库，不会提交代码、评论或 status check。
 
-自部署的 Patchbay 还可以并行连接自托管的 Forgejo、Gitea 或 GitLab 实例，获得同样的 PR 自动关联、合并转 Done 和 CI 展示，入口在 **设置 → 集成 → Git 代码托管**，详见[自托管 Git 代码托管](/vcs-integration)。Patchbay Cloud 不提供该入口。
+自部署的 Patchbay 还可以并行连接自托管的 Forgejo、Gitea 或 GitLab 实例，获得同样的显式关联、合并转 Done 和 CI 展示，入口在 **设置 → 集成 → Git 代码托管**，详见[自托管 Git 代码托管](/vcs-integration)。Patchbay Cloud 不提供该入口。
 
 ## 连接 GitHub
 
@@ -29,56 +29,35 @@ GitHub 集成只读取安装时授权的仓库，不会提交代码、评论或 
 
 ## 功能开关
 
-**设置 → GitHub** 中有四个开关：
+**设置 → GitHub** 中有三个开关：
 
 | 开关 | 作用 |
 |---|---|
-| GitHub 集成 | 总开关。关闭后，下面三项不再生效，但不会断开 GitHub App。 |
+| GitHub 集成 | 总开关。关闭后，下面两项不再生效，但不会断开 GitHub App。 |
 | PR 侧栏 | 在 issue 详情中显示关联的 pull request。 |
 | Co-authored-by | 在智能体创建的 commit 中加入 `Co-authored-by: patchbay-agent <github@patchbay.ai>`。 |
-| 自动关联 PR | 从 PR 的分支名、标题和正文中识别 issue 编号。 |
 | **PR 卡片 → CI 与可合并性** | 对每个关联的 PR，Patchbay 从 GitHub API 拉取一份经鉴权的快照，把它的 **CI 状态**和**可合并性**镜像到卡片上（见下方 **PR 卡片展示什么**）。 |
 
 
 
 ## 让 PR 关联到 issue
 
-最简单的做法，是把 issue 编号写进分支名或 PR 标题。例如 issue 为 `PB-123`：
-
-```text
-pb-123-fix-login-redirect
-```
-
-```text
-PB-123 修复登录后的跳转
-```
-
-Patchbay 会忽略大小写，并且只匹配当前工作区的 issue 前缀。一个 PR 可以关联多个 issue。
-
-只在 PR 正文中写编号时，需要使用 GitHub 的关闭语句：
-
-```text
-Closes PB-123
-Fixes PB-123
-Resolves PB-123
-```
-
-正文中的普通提及，例如 `Related to PB-123`，不会作为该 issue 的工作 PR 显示。Commit message 和 PR 评论也不会触发关联。
+规范路径是显式操作：智能体在经鉴权的 task/run 中创建 PR 后登记 Work Product，或工作区成员从 issue 中选择已镜像的产物并执行 Attach。也可以使用 CLI：
 
 ### 创建时直接挂上（CLI / 智能体）
-
-编号扫描依赖 GitHub webhook，因此需要连接 GitHub 应用。还有一条不依赖它的路径：打开 PR 的人当时就知道 URL，可以立刻把它挂到 issue 上。
 
 ```bash
 patchbay issue pull-request attach PB-123 --url https://github.com/acme/api/pull/6
 ```
 
-- 工作区没有安装 GitHub App 时同样可用——侧栏至少显示 PR 编号和可点击的链接。
-- 已安装应用时，Patchbay 会通过应用 API 自动拉全元数据（标题、状态、分支、head），不需要额外参数。
-- 可选参数（`--title`、`--state`、`--branch`、`--head-sha`）对应 `gh pr view --json` 的输出，供无应用时补充。
-- 挂上不会新建关闭意图：合入自动关单仍然只认标题或正文里的 `Closes` / `Fixes` / `Resolves`。若 webhook 已记录该意图，重复挂上会保留它。
+- issue 参数由当前工作区解析；URL 不能选择其他 workspace、task 或 run。
+- 工作区成员的手工 URL Attach 在没有安装 GitHub App 时同样可用——侧栏至少显示 PR 编号和可点击的链接。
+- task-scoped Attach 必须由已授权的 GitHub App 提供元数据，以便服务端验证精确的仓库和执行分支；调用者自填的标题、分支或 SHA 不能替代 ownership 证明。
+- 已安装应用时，Patchbay 会通过应用 API 自动拉全元数据（标题、状态、分支、head），成员不需要额外参数。
+- 可选参数（`--title`、`--state`、`--branch`、`--head-sha`）对应 `gh pr view --json` 的输出，仅供无应用时的成员手工 Attach 补充。
+- 如果希望合并后移动 issue 到 Done，请加 `--close-intent`。PR 标题、正文、分支、commit 或评论中的文字都不会产生关闭意图。
 
-两条路径无论先后都并存且幂等：挂上的 PR 之后被 webhook 匹配到时仍是同一张卡片，webhook 会补全或刷新元数据（包括补上安装关联）；已经由 webhook 镜像的 PR 再次挂上时，也不会被仅含 URL 的兜底数据覆盖。标题 / 分支里带编号仍建议保留作为兜底，但它不再是侧栏亮起来的唯一条件。
+所有显式路径都幂等，并汇聚到同一条 Work Product 关系。GitHub webhook 只镜像 provider 状态并刷新已有关系，不扫描 PR 文本，也不创建关联。task 结束时若尚未显式登记，服务端可以使用该 task 自己持久化的仓库身份、执行 workspace 和精确 head branch 做一次确定性查询；只有唯一匹配才会建立带审计来源的关系。零匹配保持未关联，多匹配、共享或仍被使用的分支、默认分支、detached HEAD 或查询失败会显示为歧义/不符合条件，等待有权限用户确认。即使 PR 文本包含 `PB-123`，没有显式 Attach 也仍然未关联。
 
 ## 在 issue 中查看 PR
 
@@ -98,19 +77,17 @@ CI 状态和可合并性来自 Patchbay 从 GitHub API 拉取的快照，两者�
 
 PR 合并不一定代表 issue 已完成。Patchbay 只有在以下条件同时成立时，才把 issue 改为 `Done`：
 
-1. 至少一个已合并的关联 PR 使用了紧跟编号的关闭语句，例如 `Closes PB-123`（`Closes login PB-123` 这类中间隔词的写法不生效）；
-2. 该 issue 没有其他仍为 `Open` 或 `Draft` 的工作 PR（正文中的普通提及不算）；
+1. 至少一个已合并的显式关系启用了 `close_intent`；
+2. 该 issue 没有其他仍为 `Open` 或 `Draft` 的工作 PR；
 3. issue 当前不是 `done` 或 `cancelled`。
 
-因此，仅在分支名或标题中写 `PB-123` 会建立关联，但不会单独触发完成。PR 关闭但没有合并，也不会完成 issue。
+因此，在 PR 任意位置写 `PB-123` 都不会建立关联或触发完成。PR 关闭但没有合并，也不会完成 issue。
 
 状态变化会以系统操作写入时间线，订阅该 issue 的成员会收到通知。
 
 ## 多个工作区
 
-同一个 GitHub App installation 可以连接到多个 Patchbay 工作区。GitHub 事件会分别进入每个工作区，再按照各自的 issue 前缀匹配。
-
-例如一个 PR 同时引用 `PB-1` 和 `ENG-2`，它可以在两个不同前缀的工作区中分别关联。工作区之间不会看到对方的 issue。
+同一个 GitHub App installation 可以连接到多个 Patchbay 工作区。GitHub 事件会分别镜像到每个工作区，而每条显式关系都必须通过对应工作区的权限检查。工作区之间不会看到对方的 issue 或关系。
 
 ## 断开连接
 
@@ -173,7 +150,7 @@ GITHUB_APP_ID=<GitHub App 的数字 ID>
 GITHUB_APP_PRIVATE_KEY=<完整 PEM 私钥，保留 BEGIN/END 行和换行>
 ```
 
-私钥在 GitHub App 的 **Private keys → Generate a private key** 中生成。不配置时集成会平稳降级：PR 照常镜像，issue 照常自动关联并在合并时转 Done，只是 PR 卡片不显示 CI 或合并状态。
+私钥在 GitHub App 的 **Private keys → Generate a private key** 中生成。不配置时集成会平稳降级：PR 照常镜像，已有显式关系照常显示，只是 PR 卡片不显示 CI 或合并状态。
 
 ### 3. 更新数据库并连接
 
@@ -189,10 +166,10 @@ make migrate-up
 
 - **连接按钮不可用**：检查 `GITHUB_APP_SLUG` 和 `GITHUB_WEBHOOK_SECRET` 是否已进入 API 进程。
 - **Webhook 返回 401**：确认 GitHub App 与 API 使用同一个 Webhook secret，然后在 GitHub 的 **Recent Deliveries** 中重新投递。
-- **PR 没有关联**：检查仓库是否在 App 授权范围内、自动关联是否开启，以及编号是否属于当前工作区。
-- **正文写了编号但没显示**：改用 `Closes PB-123`，或把编号放到分支名、PR 标题中。
+- **PR 没有关联**：在 issue 中使用显式 Attach，或用 CLI 提交 PR URL。智能体运行则检查 execution provenance 和 discovery 状态；PR 文本中的编号不够建立关系。
+- **运行结束后仍未关联**：零匹配、多匹配、共享/默认/detached 分支或 provider 查询失败需要有权限用户确认，task 详情会记录原因。
 - **没有 CI 状态**：确认 `GITHUB_APP_ID` 和 `GITHUB_APP_PRIVATE_KEY` 已配置，App 具有 Checks 与 Commit statuses 的只读权限并订阅了对应事件。给已安装的 App 补加权限后，还需要各 installation 的所有者在 GitHub 上批准才会生效。
-- **PR 合并后 issue 没完成**：确认 PR 使用了关闭语句，并检查是否还有其他关联 PR 处于 Open 或 Draft。
+- **PR 合并后 issue 没完成**：确认显式关系启用了 `close_intent`，并检查是否还有其他关联 PR 处于 Open 或 Draft。
 
 ## 接下来
 
