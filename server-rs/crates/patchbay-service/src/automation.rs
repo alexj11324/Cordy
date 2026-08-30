@@ -1091,7 +1091,9 @@ impl AutomationService {
             }
             "cancelled" | "blocked" => {
                 let reason = format!("issue {}", issue.status);
-                let updated = self.fail_automation_run(run.id, Some(&reason), None).await?;
+                let updated = self
+                    .fail_automation_run(run.id, Some(&reason), None)
+                    .await?;
                 let source = updated.source.clone();
                 self.capture_automation_run_failed(&automation, &updated, &source, &reason)
                     .await;
@@ -1145,7 +1147,9 @@ impl AutomationService {
                     Some(e) => e.clone(),
                     None => format!("task {}", task.status),
                 };
-                let updated = self.fail_automation_run(run.id, Some(&reason), None).await?;
+                let updated = self
+                    .fail_automation_run(run.id, Some(&reason), None)
+                    .await?;
                 let source = updated.source.clone();
                 self.capture_automation_run_failed(&automation, &updated, &source, &reason)
                     .await;
