@@ -898,7 +898,30 @@ impl ProductionProviderAdapter {
                     ctx.token().clone(),
                 ),
             )?;
-            let child_env = bound.child_env.into_inner();
+            let mut child_env = bound.child_env.into_inner();
+            let provider_broker = match task.provider_authorization.as_ref() {
+                Some(authorization) => {
+                    let broker = crate::provider_credential_broker::ProviderCredentialBroker::start(
+                        Arc::clone(&client),
+                        ctx.clone(),
+                        &task,
+                        authorization,
+                    )
+                    .await
+                    .context("start provider credential broker")?;
+                    broker
+                        .configure_child_environment(&target.provider, &mut child_env)
+                        .context("configure provider credential broker")?;
+                    Some(broker)
+                }
+                None if matches!(target.provider.as_str(), "codex" | "claude") => {
+                    anyhow::bail!(
+                        "server did not issue a provider authorization for {}",
+                        target.provider
+                    );
+                }
+                None => None,
+            };
             configure_codex_task_shell_environment(
                 &target.provider,
                 &environment.codex_home,
@@ -927,6 +950,7 @@ impl ProductionProviderAdapter {
             .context("isolate provider process")?;
             let backend = patchbay_agent::build_backend(&target.provider, backend_config)
                 .map_err(|error| anyhow::anyhow!("create agent backend: {error}"))?;
+            let _provider_broker = provider_broker;
             let token = task.auth_token.trim().to_string();
             let _checkout = runtime.checkout_registry().register_owned(
                 token,

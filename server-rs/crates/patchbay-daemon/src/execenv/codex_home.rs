@@ -1,8 +1,7 @@
 //! Port of execenv/codex_home.go.
 //!
 //! Symbol map:
-//! - codexSymlinkedFiles / codexCopiedFiles
-//!   → CODEX_SYMLINKED_FILES / CODEX_COPIED_FILES
+//! - codexCopiedFiles              → CODEX_COPIED_FILES
 //! - codexModelsCacheFile / codexModelsCacheBindingFile
 //!   → CODEX_MODELS_CACHE_FILE / CODEX_MODELS_CACHE_BINDING_FILE
 //! - CodexHomeOptions               → CodexHomeOptions
@@ -28,8 +27,6 @@
 //! - CodexResumeRolloutPresent      → codex_resume_rollout_present
 //! - exposeResumeRollout            → expose_resume_rollout
 //! - linkCodexRollout               → link_codex_rollout
-//! - syncCodexReferencedFiles /
-//!   syncCodexReferencedFile        → sync_codex_referenced_files / _file
 //! - openVerifiedCodexHomeRoot      → (folded into materialise_in_codex_home;
 //!   std has no os.Root; see Deviations)
 //! - materialiseInCodexHome         → materialise_in_codex_home
@@ -38,7 +35,6 @@
 //! - readCodexModelsCacheBinding /
 //!   writeCodexModelsCacheBinding    → read/write_codex_models_cache_binding
 //! - resolveCodexConfigPath         → resolve_codex_config_path
-//! - exposeSharedCodexPluginCache   → expose_shared_codex_plugin_cache
 //! - syncCopiedFile / seedCopiedFile → sync_copied_file / seed_copied_file
 //! - sharedConfigPresence /
 //!   statSharedCodexConfig           → SharedConfigPresence / stat_shared_codex_config
@@ -71,7 +67,7 @@ use super::execenv::user_home_dir;
 /// Files to copy from the shared ~/.codex/ into the per-task CODEX_HOME.
 /// Copies are isolated — task-local config and cache refreshes don't mutate
 /// the shared home.
-pub(crate) const CODEX_COPIED_FILES: [&str; 3] = ["config.json", "config.toml", "instructions.md"];
+pub(crate) const CODEX_COPIED_FILES: [&str; 1] = ["instructions.md"];
 
 pub(crate) const CODEX_MODELS_CACHE_FILE: &str = "models_cache.json";
 pub(crate) const CODEX_MODELS_CACHE_BINDING_FILE: &str = ".models_cache_config.sha256";
@@ -169,32 +165,20 @@ pub fn prepare_codex_home_with_opts(
     // Remove it before any provider process is allowed to start.
     remove_any(&join_path(&[codex_home, "auth.json"]))
         .context("remove legacy task Codex credential")?;
+    remove_any(&join_path(&[codex_home, "config.json"]))
+        .context("remove legacy task Codex config")?;
+    remove_any(&join_path(&[codex_home, "config.toml"]))
+        .context("remove legacy task Codex config")?;
 
-    // Sync isolated files from the shared source. Track the config.toml sync
-    // outcome specifically: on Windows a failed sync makes the per-task config
-    // untrustworthy, so the sandbox decision must fail closed rather than read
-    // a stale or absent copy as "unconfigured" and loosen (PB-4957).
-    let mut config_sync_err: Option<String> = None;
+    // Copy only non-credential instructions. Host config may contain provider
+    // API keys, custom headers, executable hooks, or absolute host paths.
     for name in CODEX_COPIED_FILES {
         let src = join_path(&[&shared_home, name]);
         let dst = join_path(&[codex_home, name]);
         if let Err(err) = sync_copied_file(&src, &dst) {
             tracing::warn!(file = %name, error = %format!("{err:#}"), "execenv: codex-home sync failed");
-            if name == "config.toml" {
-                config_sync_err = Some(format!("{err:#}"));
-            }
         }
     }
-    // Drop `[[skills.config]]` entries inherited from the user's
-    // ~/.codex/config.toml. See codex_skill_strip.rs.
-    if let Err(err) = super::codex_skill_strip::sanitize_copied_codex_config(&join_path(&[
-        codex_home,
-        "config.toml",
-    ])) {
-        tracing::warn!(error = %format!("{err:#}"), "execenv: codex-home sanitize config failed");
-    }
-
-    sync_codex_referenced_files(codex_home, &shared_home)?;
 
     // Seed the shared model cache only for a fresh task home. On reuse, keep a
     // task-local cache that Codex may have refreshed, but only while the source
@@ -212,16 +196,15 @@ pub fn prepare_codex_home_with_opts(
         }
     }
 
-    if let Err(err) = expose_shared_codex_plugin_cache(codex_home, &shared_home) {
-        tracing::warn!(error = %format!("{err:#}"), "execenv: codex-home plugin cache exposure failed");
-    }
+    remove_any(&join_path(&[codex_home, "plugins", "cache"]))
+        .context("remove legacy shared Codex plugin cache")?;
 
     // Write a daemon-managed sandbox block into config.toml (see codex_sandbox.rs).
     let config_file = join_path(&[codex_home, "config.toml"]);
     let win_state = if super::codex_sandbox::resolve_goos(&opts.goos) == "windows" {
         resolve_windows_sandbox_state(
             &config_file,
-            config_sync_err.as_deref(),
+            None,
             stat_shared_codex_config(&shared_home),
             &opts.codex_custom_args,
         )
@@ -974,85 +957,6 @@ fn link_codex_rollout(src: &str, dst: &str) -> anyhow::Result<()> {
 // Config-referenced files
 // ---------------------------------------------------------------------------
 
-/// sync_codex_referenced_files materialises every file the copied config.toml
-/// points at inside the per-task CODEX_HOME (PB-5623 / #6271). Only the three
-/// keys below are followed — copying every path a config could mention would
-/// turn any user config into a channel for pulling arbitrary host files into a
-/// task sandbox.
-fn sync_codex_referenced_files(codex_home: &str, shared_home: &str) -> anyhow::Result<()> {
-    let config_path = join_path(&[codex_home, "config.toml"]);
-    let data = match std::fs::read(&config_path) {
-        Ok(d) => d,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
-        Err(e) => return Err(anyhow!("read {config_path}: {e}")),
-    };
-
-    let cfg: toml::Value = toml::from_str(&String::from_utf8_lossy(&data))
-        .map_err(|e| anyhow!("parse {}: {e}", config_path))?;
-    let get_str = |key: &str| -> String {
-        cfg.get(key)
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string()
-    };
-
-    for (key, path_value) in [
-        ("model_catalog_json", get_str("model_catalog_json")),
-        (
-            "model_instructions_file",
-            get_str("model_instructions_file"),
-        ),
-        (
-            "experimental_instructions_file",
-            get_str("experimental_instructions_file"),
-        ),
-    ] {
-        sync_codex_referenced_file(codex_home, shared_home, key, &path_value)?;
-    }
-    Ok(())
-}
-
-/// sync_codex_referenced_file copies one config-referenced file from the
-/// shared Codex home into the task home at the same relative location.
-/// Absolute and ~-rooted values are left alone; destination writes are
-/// confined to the task home.
-fn sync_codex_referenced_file(
-    codex_home: &str,
-    shared_home: &str,
-    key: &str,
-    config_value: &str,
-) -> anyhow::Result<()> {
-    let referenced_path = config_value.trim();
-    if referenced_path.is_empty() {
-        return Ok(());
-    }
-
-    let src = resolve_codex_config_path(referenced_path, shared_home, key)?;
-    let info = match std::fs::metadata(&src) {
-        Ok(i) => i,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            bail!("{key} {referenced_path:?} resolved to missing file {src}: {e}")
-        }
-        // Not a confident absence — a permission or IO failure must not be
-        // reported as "the file isn't there".
-        Err(e) => bail!("{key} {referenced_path:?}: cannot stat source {src}: {e}"),
-    };
-
-    if referenced_path.starts_with('/') || referenced_path.starts_with('~') {
-        return Ok(());
-    }
-    if !info.is_file() {
-        bail!("{key} {referenced_path:?} resolved to {src}, which is not a regular file");
-    }
-    let clean_referenced_path = clean_lexical(referenced_path);
-    if clean_referenced_path.starts_with("..")
-        || clean_lexical(&format!("/{clean_referenced_path}")).starts_with("..")
-    {
-        bail!("{key} {referenced_path:?} must be a local relative path or an absolute path");
-    }
-    materialise_in_codex_home(codex_home, &clean_referenced_path, &src, key)
-}
-
 /// materialise_in_codex_home writes src to relPath inside codexHome with the
 /// symlink-refusal check Go binds to an opened os.Root handle. std has no
 /// stable root-scoped write API, so the identity check degrades to: refuse
@@ -1273,35 +1177,6 @@ fn is_absolute_config_path(path: &str) -> bool {
             .as_bytes()
             .get(1..3)
             .is_some_and(|suffix| suffix[0] == b':' && matches!(suffix[1], b'/' | b'\\'))
-}
-
-// ---------------------------------------------------------------------------
-// Plugin cache / symlinks
-// ---------------------------------------------------------------------------
-
-fn expose_shared_codex_plugin_cache(codex_home: &str, shared_home: &str) -> anyhow::Result<()> {
-    let src = join_path(&[shared_home, "plugins", "cache"]);
-    let dst = join_path(&[codex_home, "plugins", "cache"]);
-    std::fs::create_dir_all(&src).context("create shared plugin cache dir")?;
-    let dst_parent = super::context::dir_of(&dst);
-    std::fs::create_dir_all(&dst_parent).context("create codex plugin dir")?;
-
-    if let Ok(md) = Path::new(&dst).symlink_metadata() {
-        let is_link = md.file_type().is_symlink();
-        if is_link {
-            if let Ok(target) = std::fs::read_link(&dst) {
-                if target.to_string_lossy() == src {
-                    return Ok(());
-                }
-            }
-            std::fs::remove_file(&dst).context("remove stale plugin cache link")?;
-        } else {
-            remove_any(&dst).context("remove stale plugin cache path")?;
-        }
-    }
-
-    create_dir_link(&src, &dst).context("expose shared plugin cache")?;
-    Ok(())
 }
 
 // ---------------------------------------------------------------------------

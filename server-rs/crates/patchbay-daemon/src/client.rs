@@ -1317,6 +1317,36 @@ impl Client {
 // ---------------------------------------------------------------------------
 
 impl Client {
+    pub(crate) async fn validate_provider_lease(
+        &self,
+        ctx: &crate::repocache::Ctx,
+        task_token: &str,
+        runtime_id: &str,
+        provider: &str,
+        model: &str,
+        requested_max_tokens: u64,
+    ) -> anyhow::Result<()> {
+        #[derive(Deserialize)]
+        struct Response {
+            allowed: bool,
+        }
+        let response: Response = self
+            .post_json_with_token(
+                ctx,
+                "/api/authorization/provider-leases/validate",
+                task_token,
+                json!({
+                    "runtime_id": runtime_id,
+                    "provider": provider,
+                    "model": model,
+                    "requested_max_tokens": requested_max_tokens,
+                }),
+            )
+            .await?;
+        anyhow::ensure!(response.allowed, "provider capability lease was denied");
+        Ok(())
+    }
+
     /// `InvokeAgentPluginHook` (client.go:1160): asks the server to make one
     /// agent-triggered hook call. A refused or failed hook comes back as a 200
     /// with a status so the caller can render it as a TOOL error rather than a
