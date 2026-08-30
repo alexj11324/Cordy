@@ -1,3 +1,4 @@
+import { type CSSProperties } from "react";
 import { useParams } from "react-router-dom";
 import { IssueDetailRoute } from "@patchbay/views/issues/components";
 import { useWorkspaceId } from "@patchbay/core/hooks";
@@ -18,5 +19,19 @@ export function IssueDetailPage({ onDelete }: { onDelete?: () => void }) {
   // Render errors bubble to the root route errorElement (DesktopRouteErrorPage),
   // which contains the crash inside the tab content pane. No page-level boundary
   // here — a whole-page wrapper duplicates the route-level error UI.
-  return <IssueDetailRoute routeId={id} onDelete={onDelete} />;
+  return (
+    <IssueDetailRoute
+      routeId={id}
+      onDelete={onDelete}
+      leadingAction={
+        onDelete ? (
+          <span
+            aria-hidden
+            className="-ml-4 h-12 w-28 shrink-0"
+            style={{ WebkitAppRegion: "drag" } as CSSProperties}
+          />
+        ) : undefined
+      }
+    />
+  );
 }

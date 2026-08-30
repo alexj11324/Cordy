@@ -47,10 +47,9 @@ export function AppCrashBoundary({ children }: { children: ReactNode }) {
 
 /**
  * Full-window view outside the dashboard shell, so it owes the same window
- * chrome every other one does: `<DragStrip />` as the first flex child, or the
+ * chrome every other one does: a native-only `<DragStrip />` overlay, or the
  * user loses the draggable top edge exactly when the app is least usable. The
- * Reload button sits inside the centred `flex-1` region, well clear of the top
- * 48px, so it needs no `WebkitAppRegion: "no-drag"` opt-out.
+ * Reload button sits inside the centred region, well clear of the top 48px.
  *
  * Everything rendered here has to be safe under a broken tree: an error thrown
  * while rendering a fallback is NOT caught by its own boundary and would blank

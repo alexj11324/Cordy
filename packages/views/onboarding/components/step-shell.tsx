@@ -19,8 +19,9 @@ import { StepProgressBar, StepSidebar } from "./step-sidebar";
  * left edge of every other step. There is now one measure. A step that needs
  * to break out of it says so locally rather than picking a different global.
  */
-export const STEP_COLUMN = "mx-auto flex min-h-full w-full max-w-[28rem] flex-col";
-export const STEP_GUTTER = "px-6 py-8 sm:px-10 lg:px-14 lg:py-10";
+export const STEP_COLUMN =
+  "mx-auto flex min-h-full w-full max-w-[28rem] flex-col";
+export const STEP_GUTTER = "px-6 pb-8 pt-14 sm:px-10 md:pt-8 lg:px-14 lg:py-10";
 
 /**
  * Title + supporting line for a step.
@@ -127,7 +128,6 @@ export function StepShell({
   if (singlePane) {
     return (
       <div className="animate-onboarding-enter flex h-full min-h-0 flex-col bg-muted/20">
-        <DragStrip />
         <main
           ref={mainRef}
           style={fadeStyle}
@@ -153,7 +153,9 @@ export function StepShell({
                   ) : (
                     <span />
                   )}
-                  {chromeFooter ? <div className="shrink-0">{chromeFooter}</div> : null}
+                  {chromeFooter ? (
+                    <div className="shrink-0">{chromeFooter}</div>
+                  ) : null}
                 </div>
               ) : null}
               {children}
@@ -166,14 +168,12 @@ export function StepShell({
 
   return (
     <div className="animate-onboarding-enter flex h-full min-h-0 flex-col bg-background">
-      {/* One strip across the whole window, as the first flex child — the
-          shape the desktop shell rule asks for, and the fix for an overlap:
-          the rail is a dark inset panel that started at the window's top-left
-          corner, which is exactly where macOS draws the traffic lights, so
-          they sat on top of it. Reserving the strip above both panes drops the
-          panel clear of them and keeps the whole band draggable. Two ad-hoc
-          per-pane strips used to do this job and neither was first. */}
-      <DragStrip />
+      {/* Compact desktop windows do not render the rail, so they keep a
+          native-only top-edge drag target and place their controls below it.
+          At md+ the rail owns the titlebar surface instead. */}
+      <div className="md:hidden">
+        <DragStrip />
+      </div>
 
       <div className="flex min-h-0 flex-1">
         <StepSidebar

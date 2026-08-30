@@ -1,10 +1,7 @@
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { useAuthStore } from "@patchbay/core/auth";
 import { Alert, AlertDescription } from "@patchbay/ui/components/ui/alert";
-import {
-  Button,
-  buttonVariants,
-} from "@patchbay/ui/components/ui/button";
+import { Button, buttonVariants } from "@patchbay/ui/components/ui/button";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
 import { cn } from "@patchbay/ui/lib/utils";
 import { LoginPage } from "@patchbay/views/auth";
@@ -100,9 +97,10 @@ export function DesktopLoginPage() {
           <a
             href="#desktop-login"
             aria-current="page"
+            style={{ WebkitAppRegion: "no-drag" } as CSSProperties}
             className={cn(
               buttonVariants({ variant: "ghost" }),
-              "absolute top-4 right-4 md:top-8 md:right-8",
+              "absolute top-14 right-4 z-20 md:right-8",
             )}
           >
             {t(($) => $.desktop.entry.login_label)}
