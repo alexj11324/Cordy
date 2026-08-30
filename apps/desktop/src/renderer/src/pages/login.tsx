@@ -112,7 +112,7 @@ export function DesktopLoginPage() {
             className="relative hidden h-full flex-col p-10 text-primary lg:flex dark:border-r"
           >
             <div className="absolute inset-0 bg-primary/5" aria-hidden="true" />
-            <div className="relative z-20 flex items-center text-lg font-medium">
+            <div className="relative z-20 flex items-center text-title font-medium">
               <PatchbayIcon className="mr-2 h-6 w-6" noSpin />
               {t(($) => $.desktop.entry.brand)}
             </div>
