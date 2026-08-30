@@ -18,7 +18,11 @@ export default function GoogleOAuthPage() {
 function GoogleOAuthContent() {
   const searchParams = useSearchParams();
   const binding = useMemo(
-    () => readDesktopHandoffBinding(searchParams),
+    () =>
+      readDesktopHandoffBinding(
+        searchParams,
+        process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN,
+      ),
     [searchParams],
   );
   const { signIn } = useSignIn();

@@ -45,6 +45,29 @@ describe("GoogleOAuthPage", () => {
     search.current = "";
     sso.mockReset();
     sso.mockResolvedValue({ error: null });
+    delete process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN;
+  });
+
+  it("keeps the allowlisted browser app origin through the Google callback", async () => {
+    const codeChallenge = "a".repeat(43);
+    const state = "b".repeat(43);
+    process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN = "https://app.patchbay.ai";
+    search.current =
+      `platform=desktop&code_challenge=${codeChallenge}&state=${state}` +
+      "&app_origin=https%3A%2F%2Fapp.patchbay.ai";
+
+    render(<GoogleOAuthPage />);
+
+    await waitFor(() => expect(sso).toHaveBeenCalledOnce());
+    const query =
+      `platform=desktop&code_challenge=${codeChallenge}&state=${state}` +
+      "&app_origin=https%3A%2F%2Fapp.patchbay.ai";
+    expect(sso).toHaveBeenCalledWith(
+      expect.objectContaining({
+        redirectUrl: `/login?${query}`,
+        redirectCallbackUrl: `/oauth/google/callback?${query}`,
+      }),
+    );
   });
 
   it("starts only the Google provider with the renderer handoff intact", async () => {

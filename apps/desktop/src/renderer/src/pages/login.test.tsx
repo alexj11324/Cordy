@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 const mocks = vi.hoisted(() => ({
   createGuestSession: vi.fn(),
   openExternal: vi.fn(),
+  isDesktopWebHost: vi.fn(() => false),
 }));
 
 vi.mock("@patchbay/core/auth", () => ({
@@ -31,6 +32,10 @@ vi.mock("@patchbay/views/onboarding", () => ({
 
 vi.mock("@patchbay/views/platform", () => ({
   DragStrip: () => null,
+}));
+
+vi.mock("../platform/web-bridge", () => ({
+  isDesktopWebHost: mocks.isDesktopWebHost,
 }));
 
 vi.mock("@patchbay/views/i18n", () => ({
@@ -65,6 +70,7 @@ import { DesktopLoginPage } from "./login";
 beforeEach(() => {
   mocks.createGuestSession.mockReset();
   mocks.openExternal.mockReset();
+  mocks.isDesktopWebHost.mockReset().mockReturnValue(false);
   mocks.createGuestSession.mockResolvedValue({
     id: "guest-user",
     is_guest: true,
