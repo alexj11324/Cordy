@@ -59,6 +59,15 @@ unset value disables browser-hosted Desktop handoff instead of claiming that an
 unprovisioned host works. Once deployed, that exact origin is the only hosted
 browser destination accepted by the accounts app.
 
+The canonical hosted Helm deployment routes both Web entrypoints to the same
+frontend Service: set `ingress.frontend.host` to
+`patchbay.aspectlylabs.com`, add `accounts.aspectlylabs.com` to
+`ingress.frontend.additionalHosts`, and set `ingress.backend.host` to
+`api.aspectlylabs.com`. Provision valid TLS for all three hosts before changing
+public DNS or the Clerk OAuth configuration. Keep browser-hosted Desktop
+handoff disabled until `/auth/callback`, the accounts broker routes, and the API
+are reachable on those exact HTTPS origins.
+
 The manual **Release** workflow first applies migrations with
 `patchbay-migrate`, runs every Rust workspace target, builds the server, CLI,
 migration runner, and all three backfill binaries, and runs RustSec before any
