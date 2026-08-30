@@ -23,7 +23,7 @@ use patchbay_authorization::{
     ResourceType, WorkspaceRole,
 };
 use patchbay_db::models::{
-    AgentTaskQueue, Attachment, Issue, IssueLabel, IssueReaction, IssueSubscriber,
+    Agent, AgentTaskQueue, Attachment, Issue, IssueLabel, IssueReaction, IssueSubscriber,
 };
 use patchbay_db::queries::issue_reaction::AddIssueReactionRow;
 use patchbay_db::queries::{
@@ -6204,8 +6204,9 @@ RETURNING *"#,
         } else {
             None
         };
-        let can_access_agent: Option<ProbePredicate<_>> = gate_direct_member.then(|| {
-            Box::new(move |agent| allowed_run_agent_id == Some(agent.id)) as ProbePredicate<_>
+        let can_access_agent: Option<ProbePredicate<Agent>> = gate_direct_member.then(|| {
+            Box::new(move |agent: Agent| allowed_run_agent_id == Some(agent.id))
+                as ProbePredicate<Agent>
         });
         let trigger = state
             .issues
