@@ -15,6 +15,7 @@ struct Rows {
     agent_id: Uuid,
     issue_id: Uuid,
     runtime_id: Uuid,
+    replacement_runtime_id: Uuid,
 }
 
 impl Rows {
@@ -29,6 +30,7 @@ impl Rows {
         let agent_id = Uuid::now_v7();
         let issue_id = Uuid::now_v7();
         let runtime_id = Uuid::now_v7();
+        let replacement_runtime_id = Uuid::now_v7();
         sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, $2, $3)")
             .bind(workspace_id)
             .bind("Capability lease contract")
@@ -51,6 +53,15 @@ impl Rows {
              VALUES ($1, $2, 'Capability lease runtime', 'local', 'test', 'online', $3)",
         )
         .bind(runtime_id)
+        .bind(workspace_id)
+        .bind(user_id)
+        .execute(&pool)
+        .await?;
+        sqlx::query(
+            "INSERT INTO agent_runtime (id, workspace_id, name, runtime_mode, provider, status, owner_id) \
+             VALUES ($1, $2, 'Capability lease replacement runtime', 'local', 'test', 'online', $3)",
+        )
+        .bind(replacement_runtime_id)
         .bind(workspace_id)
         .bind(user_id)
         .execute(&pool)
@@ -84,6 +95,7 @@ impl Rows {
             agent_id,
             issue_id,
             runtime_id,
+            replacement_runtime_id,
         }))
     }
 
@@ -209,10 +221,9 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
         .await?
         .is_some());
 
-    let replacement_runtime_id = Uuid::now_v7();
     sqlx::query("UPDATE agent_task_queue SET runtime_id = $2 WHERE id = $1")
         .bind(task_id)
-        .bind(replacement_runtime_id)
+        .bind(rows.replacement_runtime_id)
         .execute(&rows.pool)
         .await?;
     assert!(
