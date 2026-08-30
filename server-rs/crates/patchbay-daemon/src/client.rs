@@ -574,6 +574,7 @@ impl Client {
     }
 
     /// `CompleteTask` (client.go:441): terminal callback with bounded retry.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn complete_task(
         &self,
         ctx: &crate::repocache::Ctx,
@@ -616,6 +617,7 @@ impl Client {
     }
 
     /// `FailTask` (client.go:473): terminal callback with bounded retry.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn fail_task(
         &self,
         ctx: &crate::repocache::Ctx,
