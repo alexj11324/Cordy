@@ -117,12 +117,12 @@ describe("useRealtimeSync — ws instance change", () => {
     const ws2 = createMockWs();
     rerender({ ws: ws2 });
 
-    // Should have called invalidateQueries for all workspace-scoped keys
-      // (17 workspace-scoped [incl. Agent threads, property definitions, and dependency graph] + 6 per-issue
-    // prefixes + the workspace working-agents projection + 5 per-chat
-    // prefixes + 1 workspaceKeys.list() + 1 cross-workspace inbox unread
-    // summary + 2 channel caches = 34 calls)
-    expect(invalidateSpy).toHaveBeenCalledTimes(34);
+    // Should have called invalidateQueries for every reconnect recovery key:
+    // 21 workspace-scoped calls (including Agent threads, properties, status,
+    // and dependency graph) + 1 cross-workspace inbox summary + 6 per-issue
+    // prefixes + 5 chat/channel message prefixes + 1 draft-restore prefix +
+    // 1 workspace list = 35 calls.
+    expect(invalidateSpy).toHaveBeenCalledTimes(35);
   });
 
   it("does not re-invalidate when rerendered with the same ws instance", () => {

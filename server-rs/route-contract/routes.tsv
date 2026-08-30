@@ -2,6 +2,7 @@ DELETE	/api/agents/{}/labels/{}
 DELETE	/api/agents/{}/mcp-servers/{}
 DELETE	/api/agents/{}/skills/{}
 DELETE	/api/attachments/{}
+DELETE	/api/authorization/provider-grants/{}
 DELETE	/api/automations/{}
 DELETE	/api/automations/{}/collaborators/{}
 DELETE	/api/automations/{}/triggers/{}
@@ -66,6 +67,8 @@ GET	/api/attachments/{}
 GET	/api/attachments/{}/content
 GET	/api/attachments/{}/download
 GET	/api/attachments/{}/signed-download
+GET	/api/authorization/decisions/{}
+GET	/api/authorization/provider-grants
 GET	/api/automations
 GET	/api/automations/cron-preview
 GET	/api/automations/usage
@@ -121,6 +124,8 @@ GET	/api/dashboard/failures/daily
 GET	/api/dashboard/runtime/daily
 GET	/api/dashboard/usage/by-agent
 GET	/api/dashboard/usage/daily
+GET	/api/dependency-graphs
+GET	/api/dependency-graphs/{}
 GET	/api/github/setup
 GET	/api/inbox
 GET	/api/inbox/archived
@@ -145,6 +150,7 @@ GET	/api/issues/{}/active-task
 GET	/api/issues/{}/attachments
 GET	/api/issues/{}/children
 GET	/api/issues/{}/comments
+GET	/api/issues/{}/dependency-graph
 GET	/api/issues/{}/labels
 GET	/api/issues/{}/metadata
 GET	/api/issues/{}/pull-requests
@@ -252,6 +258,8 @@ POST	/api/agents/{}/labels
 POST	/api/agents/{}/mcp-servers
 POST	/api/agents/{}/restore
 POST	/api/agents/{}/skills/add
+POST	/api/authorization/provider-grants
+POST	/api/authorization/provider-leases/validate
 POST	/api/automations
 POST	/api/automations/{}/collaborators
 POST	/api/automations/{}/deliveries/{}/replay
@@ -307,6 +315,9 @@ POST	/api/daemon/tasks/{}/start
 POST	/api/daemon/tasks/{}/usage
 POST	/api/daemon/tasks/{}/wait-local-directory
 POST	/api/daemon/workspaces/{}/issues/gc-check
+POST	/api/dependency-graphs/{}/retire
+POST	/api/desktop-handoff
+POST	/api/desktop-handoff/redeem
 POST	/api/dingtalk/binding/redeem
 POST	/api/feedback
 POST	/api/inbox/archive-all
@@ -333,6 +344,7 @@ POST	/api/issues/table/groups
 POST	/api/issues/table/rows
 POST	/api/issues/{}/comments
 POST	/api/issues/{}/comments/trigger-preview
+POST	/api/issues/{}/dependency-graph/apply
 POST	/api/issues/{}/labels
 POST	/api/issues/{}/move
 POST	/api/issues/{}/pull-requests
@@ -404,6 +416,7 @@ POST	/api/workspaces/{}/vcs/connections
 POST	/api/workspaces/{}/vcs/connections/{}/rotate-webhook
 POST	/api/workspaces/{}/wecom/install/byo
 POST	/api/workspaces/{}/weixin/install/begin
+POST	/auth/clerk
 POST	/auth/guest
 POST	/auth/logout
 POST	/auth/send-code

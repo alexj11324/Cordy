@@ -1,5 +1,5 @@
--- Candidate only: reverse automation_rename.up.sql during a coordinated
--- rollback with the canonical binary stopped.
+-- Reverse 451_automation_schema_rename.up.sql during a coordinated rollback
+-- with the canonical binary stopped.
 BEGIN;
 
 ALTER TABLE issue DROP CONSTRAINT IF EXISTS issue_origin_type_check;

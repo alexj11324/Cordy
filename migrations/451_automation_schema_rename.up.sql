@@ -1,6 +1,5 @@
--- Candidate only: promote as the next contiguous migration after the
--- coordination, authorization, dependency-graph, and Work Product schema is
--- stable. This is a canonical-only cutover; no legacy API adapter is added.
+-- Canonical Automation schema cutover after coordination, authorization,
+-- dependency-graph, and Work Product migrations. No legacy API adapter is added.
 BEGIN;
 
 ALTER TABLE autopilot_trigger RENAME COLUMN autopilot_id TO automation_id;
