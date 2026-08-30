@@ -48,24 +48,26 @@ struct ValidateProviderLeaseRequest {
 async fn load_provider_budget(
     pool: &PgPool,
     workspace_id: Uuid,
-    lease_id: Uuid,
-    task_id: Uuid,
     runtime_id: Uuid,
+    grant_ids: &[Uuid],
 ) -> anyhow::Result<u64> {
+    anyhow::ensure!(
+        !grant_ids.is_empty(),
+        "provider budget has no authorizing grant"
+    );
     let contexts = sqlx::query_scalar::<_, Value>(
         r#"SELECT context
 FROM authorization_audit_event
 WHERE workspace_id = $1
-  AND principal_type = 'task_run' AND principal_id = $2
+  AND principal_type = 'task_run'
   AND action = 'credential.use' AND resource_type = 'provider_identity'
-  AND resource_id = $3 AND decision = 'allow'
-  AND context->>'lease_id' = $4
+  AND resource_id = $2 AND decision = 'allow'
+  AND matched_grant_ids && $3::uuid[]
   AND context->>'provider_budget_reservation' = 'true'"#,
     )
     .bind(workspace_id)
-    .bind(task_id)
     .bind(runtime_id)
-    .bind(lease_id.to_string())
+    .bind(grant_ids)
     .fetch_all(pool)
     .await?;
     sum_provider_token_reservations(&contexts)
@@ -209,9 +211,8 @@ WHERE task.id = $1 AND runtime.id = $2"#,
         let cumulative_requested_tokens = match load_provider_budget(
             &state.pool,
             workspace_id,
-            task_auth.lease_id,
-            task_auth.task_id,
             request.runtime_id,
+            &initial_decision.matched_grants,
         )
         .await
         {
@@ -615,33 +616,39 @@ mod tests {
         let workspace_id = Uuid::now_v7();
         let task_id = Uuid::now_v7();
         let runtime_id = Uuid::now_v7();
+        let other_task_id = Uuid::now_v7();
         let lease_id = Uuid::now_v7();
         let other_lease_id = Uuid::now_v7();
+        let grant_id = Uuid::now_v7();
+        let other_grant_id = Uuid::now_v7();
         sqlx::query(
             r#"INSERT INTO authorization_audit_event (
     id, workspace_id, principal_type, principal_id, action, resource_type,
-    resource_id, decision, reason, policy_version, context
+    resource_id, decision, reason, matched_grant_ids, policy_version, context
 ) VALUES
-    ($1,$2,'task_run',$3,'credential.use','provider_identity',$4,'allow','reserved','phase1',$5),
-    ($6,$2,'task_run',$3,'credential.use','provider_identity',$4,'allow','reserved','phase1',$7),
-    ($8,$2,'task_run',$3,'credential.use','provider_identity',$4,'allow','other lease','phase1',$9)"#,
+    ($1,$2,'task_run',$3,'credential.use','provider_identity',$4,'allow','reserved',ARRAY[$5]::uuid[],'phase1',$6),
+    ($7,$2,'task_run',$8,'credential.use','provider_identity',$4,'allow','reserved',ARRAY[$5]::uuid[],'phase1',$9),
+    ($10,$2,'task_run',$8,'credential.use','provider_identity',$4,'allow','other grant',ARRAY[$11]::uuid[],'phase1',$12)"#,
         )
         .bind(Uuid::now_v7())
         .bind(workspace_id)
         .bind(task_id)
         .bind(runtime_id)
+        .bind(grant_id)
         .bind(json!({
             "lease_id": lease_id,
             "provider_request_tokens": 2_000,
             "provider_budget_reservation": true,
         }))
         .bind(Uuid::now_v7())
+        .bind(other_task_id)
         .bind(json!({
-            "lease_id": lease_id,
+            "lease_id": other_lease_id,
             "provider_request_tokens": 3_000,
             "provider_budget_reservation": true,
         }))
         .bind(Uuid::now_v7())
+        .bind(other_grant_id)
         .bind(json!({
             "lease_id": other_lease_id,
             "provider_request_tokens": 7_000,
@@ -651,10 +658,9 @@ mod tests {
         .await
         .expect("persist provider budget reservations");
 
-        let first_load =
-            load_provider_budget(&pool, workspace_id, lease_id, task_id, runtime_id).await;
+        let first_load = load_provider_budget(&pool, workspace_id, runtime_id, &[grant_id]).await;
         let replacement_load =
-            load_provider_budget(&pool, workspace_id, lease_id, task_id, runtime_id).await;
+            load_provider_budget(&pool, workspace_id, runtime_id, &[grant_id]).await;
         sqlx::query("DELETE FROM authorization_audit_event WHERE workspace_id = $1")
             .bind(workspace_id)
             .execute(&pool)

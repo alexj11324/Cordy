@@ -915,13 +915,10 @@ impl ProductionProviderAdapter {
                         .context("configure provider credential broker")?;
                     Some(broker)
                 }
-                None if matches!(target.provider.as_str(), "codex" | "claude") => {
-                    anyhow::bail!(
-                        "server did not issue a provider authorization for {}",
-                        target.provider
-                    );
-                }
-                None => None,
+                None => anyhow::bail!(
+                    "server did not issue a provider authorization for {}; provider execution is disabled until a lease-bound credential broker is available",
+                    target.provider
+                ),
             };
             configure_codex_task_shell_environment(
                 &target.provider,

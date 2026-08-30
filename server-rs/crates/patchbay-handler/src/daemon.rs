@@ -2066,8 +2066,19 @@ async fn authorize_provider_identity_for_claim(
     owner_id: Uuid,
     workspace_role: WorkspaceRole,
 ) -> Result<Value, bool> {
-    if !matches!(runtime.provider.as_str(), "codex" | "claude") {
-        return Ok(Value::Null);
+    if !provider_uses_credential_broker(&runtime.provider) {
+        let reason = format!(
+            "Provider {} is disabled until a lease-bound credential broker is available.",
+            runtime.provider
+        );
+        if let Err(error) = state
+            .tasks
+            .cancel_task_with_reason(task.id, &reason, "authorization_denied")
+            .await
+        {
+            tracing::error!(%error, task_id = %task.id, provider = %runtime.provider, "failed to settle unsupported provider task");
+        }
+        return Err(false);
     }
     let model = built
         .payload
@@ -2173,6 +2184,7 @@ async fn authorize_provider_identity_for_claim(
     grant_ids.dedup();
     let mut expires_at = Utc::now() + chrono::Duration::hours(2);
     let mut max_tokens: Option<u64> = None;
+    let mut has_unbounded_grant = false;
     if originator != owner_id {
         let rows = sqlx::query(
             r#"SELECT id, conditions, expires_at
@@ -2198,9 +2210,11 @@ WHERE id = ANY($1::uuid[]) AND effect = 'allow' AND revoked_at IS NULL
                 continue;
             }
             eligible_ids.push(row.try_get::<Uuid, _>("id").map_err(|_| true)?);
-            if let Some(value) = conditions.get("max_tokens").and_then(Value::as_u64) {
-                max_tokens = Some(max_tokens.map_or(value, |current| current.min(value)));
-            }
+            merge_provider_grant_budget(
+                &mut max_tokens,
+                &mut has_unbounded_grant,
+                &conditions,
+            );
             if let Some(grant_expiry) = row
                 .try_get::<Option<chrono::DateTime<Utc>>, _>("expires_at")
                 .map_err(|_| true)?
@@ -2228,10 +2242,27 @@ WHERE id = ANY($1::uuid[]) AND effect = 'allow' AND revoked_at IS NULL
         "task_id": task.id,
         "action": "provider.invoke",
         "models": if model.is_empty() { Vec::<String>::new() } else { vec![model] },
-        "max_tokens": max_tokens,
+        "max_tokens": if has_unbounded_grant { None } else { max_tokens },
         "expires_at": expires_at,
         "grant_ids": grant_ids,
     }))
+}
+
+fn provider_uses_credential_broker(provider: &str) -> bool {
+    matches!(provider, "codex" | "claude")
+}
+
+fn merge_provider_grant_budget(
+    max_tokens: &mut Option<u64>,
+    has_unbounded_grant: &mut bool,
+    conditions: &Value,
+) {
+    match conditions.get("max_tokens").and_then(Value::as_u64) {
+        Some(value) => {
+            *max_tokens = Some(max_tokens.map_or(value, |current| current.max(value)));
+        }
+        None => *has_unbounded_grant = true,
+    }
 }
 
 fn provider_grant_applies_to_task(conditions: &Value, task_id: Uuid, delegated: bool) -> bool {
@@ -4759,6 +4790,39 @@ mod tests {
             true,
         ));
         assert!(provider_grant_applies_to_task(&json!({}), task_id, false));
+    }
+
+    #[test]
+    fn unsupported_provider_execution_requires_a_credential_broker() {
+        assert!(provider_uses_credential_broker("codex"));
+        assert!(provider_uses_credential_broker("claude"));
+        assert!(!provider_uses_credential_broker("cursor"));
+        assert!(!provider_uses_credential_broker("copilot"));
+    }
+
+    #[test]
+    fn provider_grant_budget_keeps_independent_alternatives() {
+        let mut max_tokens = None;
+        let mut has_unbounded_grant = false;
+        merge_provider_grant_budget(
+            &mut max_tokens,
+            &mut has_unbounded_grant,
+            &json!({"max_tokens": 100}),
+        );
+        merge_provider_grant_budget(
+            &mut max_tokens,
+            &mut has_unbounded_grant,
+            &json!({"max_tokens": 1_000}),
+        );
+        assert_eq!(max_tokens, Some(1_000));
+        assert!(!has_unbounded_grant);
+
+        merge_provider_grant_budget(
+            &mut max_tokens,
+            &mut has_unbounded_grant,
+            &json!({"models": ["gpt-5.6-sol"]}),
+        );
+        assert!(has_unbounded_grant);
     }
 
     fn lazy_test_state() -> HandlerState {

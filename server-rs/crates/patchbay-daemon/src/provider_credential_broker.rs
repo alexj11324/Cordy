@@ -299,10 +299,7 @@ async fn proxy_provider_request_inner(
         );
     }
     let counts_tokens_only = parts.uri.path() == "/anthropic/v1/messages/count_tokens";
-    let requested_tokens = payload
-        .get("max_output_tokens")
-        .or_else(|| payload.get("max_tokens"))
-        .and_then(Value::as_u64);
+    let requested_tokens = requested_output_tokens(&payload);
     if state.authorization.max_tokens.is_some() && !counts_tokens_only {
         anyhow::ensure!(
             requested_tokens.is_some(),
@@ -430,6 +427,14 @@ fn constant_time_equal(left: &[u8], right: &[u8]) -> bool {
         .zip(right)
         .fold(0_u8, |difference, (a, b)| difference | (a ^ b))
         == 0
+}
+
+fn requested_output_tokens(payload: &Value) -> Option<u64> {
+    payload
+        .get("max_output_tokens")
+        .or_else(|| payload.get("max_completion_tokens"))
+        .or_else(|| payload.get("max_tokens"))
+        .and_then(Value::as_u64)
 }
 
 fn reserve_token_budget(state: &BrokerState, requested: u64) -> anyhow::Result<()> {
@@ -935,6 +940,19 @@ mod tests {
             "/openai/v1/organizations"
         )
         .is_err());
+    }
+
+    #[test]
+    fn broker_reads_modern_chat_completion_output_limit() {
+        assert_eq!(
+            requested_output_tokens(&json!({"max_completion_tokens": 512})),
+            Some(512)
+        );
+        assert_eq!(
+            requested_output_tokens(&json!({"max_output_tokens": 256, "max_completion_tokens": 512})),
+            Some(256)
+        );
+        assert_eq!(requested_output_tokens(&json!({"max_tokens": 128})), Some(128));
     }
 
     #[test]
