@@ -6,6 +6,8 @@ export function ClerkProvider({ children }: { children: React.ReactNode }) {
   return (
     <BaseClerkProvider
       publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+      signInUrl="/login"
+      signUpUrl="/signup"
     >
       {children}
     </BaseClerkProvider>

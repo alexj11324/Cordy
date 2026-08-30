@@ -1,10 +1,14 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useClerk, useSignIn, useSignUp } from "@clerk/nextjs";
+import { useAuth, useClerk, useSignIn, useSignUp } from "@clerk/nextjs";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
 import { buildBrokerRoute } from "@/features/auth/broker-path";
 import { readDesktopHandoffBinding } from "@/features/auth/desktop-handoff";
+import {
+  consumeGoogleOAuthNonce,
+  googleOAuthAttemptIsReady,
+} from "@/features/auth/google-oauth";
 import { useT } from "@patchbay/views/i18n";
 import {
   useWebRouter,
@@ -26,11 +30,13 @@ function GoogleOAuthCallbackContent() {
     [searchParams],
   );
   const clerk = useClerk();
+  const { isSignedIn } = useAuth();
   const { signIn } = useSignIn();
   const { signUp } = useSignUp();
   const router = useWebRouter();
   const { t } = useT("auth");
   const attempted = useRef(false);
+  const nonceConsumed = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -39,7 +45,19 @@ function GoogleOAuthCallbackContent() {
       return;
     }
     if (!clerk.loaded || attempted.current) return;
-    attempted.current = true;
+    if (!signIn || !signUp) {
+      if (isSignedIn) {
+        attempted.current = true;
+        router.replace(
+          `${buildBrokerRoute(
+            window.location.pathname,
+            "/oauth/google/callback",
+            "/login",
+          )}?${binding.query}`,
+        );
+      }
+      return;
+    }
 
     const destination = `${buildBrokerRoute(
       window.location.pathname,
@@ -136,8 +154,29 @@ function GoogleOAuthCallbackContent() {
       failClosed();
     };
 
-    void complete().catch(failClosed);
-  }, [binding, clerk, router, signIn, signUp, t]);
+    const run = async () => {
+      if (!nonceConsumed.current) {
+        nonceConsumed.current = true;
+        await consumeGoogleOAuthNonce(
+          signIn,
+          searchParams.get("rotating_token_nonce"),
+        );
+      }
+
+      if (googleOAuthAttemptIsReady(signIn, signUp)) {
+        attempted.current = true;
+        await complete();
+        return;
+      }
+
+      if (isSignedIn) {
+        attempted.current = true;
+        router.replace(destination);
+      }
+    };
+
+    void run().catch(failClosed);
+  }, [binding, clerk, isSignedIn, router, searchParams, signIn, signUp, t]);
 
   return (
     <ClerkAuthShell>

@@ -10,12 +10,14 @@ type Navigate = (input: {
 const mocks = vi.hoisted(() => ({
   search: { current: "" },
   replace: vi.fn(),
+  isSignedIn: { current: false },
   signIn: {
-    status: "complete",
+    status: "complete" as string | null,
     isTransferable: false,
     existingSession: null as { sessionId: string } | null,
     create: vi.fn(),
     finalize: vi.fn(),
+    reload: vi.fn(),
   },
   signUp: {
     status: null as string | null,
@@ -29,6 +31,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@clerk/nextjs", () => ({
   useClerk: () => ({ loaded: true, setActive: mocks.setActive }),
+  useAuth: () => ({ isSignedIn: mocks.isSignedIn.current }),
   useSignIn: () => ({ signIn: mocks.signIn }),
   useSignUp: () => ({ signUp: mocks.signUp }),
 }));
@@ -68,12 +71,14 @@ describe("GoogleOAuthCallbackPage", () => {
     window.history.replaceState(null, "", "/");
     vi.clearAllMocks();
     mocks.search.current = "";
+    mocks.isSignedIn.current = false;
     mocks.signIn.status = "complete";
     mocks.signIn.isTransferable = false;
     mocks.signIn.existingSession = null;
     mocks.signUp.status = null;
     mocks.signUp.isTransferable = false;
     mocks.signUp.existingSession = null;
+    mocks.signIn.reload.mockResolvedValue(undefined);
     mocks.signIn.finalize.mockImplementation(
       async ({ navigate }: { navigate: Navigate }) => {
         await navigate({
@@ -177,5 +182,53 @@ describe("GoogleOAuthCallbackPage", () => {
       "Google sign-in failed",
     );
     expect(mocks.replace).not.toHaveBeenCalled();
+  });
+
+  it("reloads a rotating token nonce before finalizing", async () => {
+    const codeChallenge = "a".repeat(43);
+    const state = "b".repeat(43);
+    mocks.search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}&rotating_token_nonce=nonce-value`;
+
+    render(<GoogleOAuthCallbackPage />);
+
+    await waitFor(() =>
+      expect(mocks.signIn.reload).toHaveBeenCalledWith({
+        rotatingTokenNonce: "nonce-value",
+      }),
+    );
+    await waitFor(() => expect(mocks.signIn.finalize).toHaveBeenCalledOnce());
+  });
+
+  it("waits for Clerk to hydrate instead of failing closed on a null status", async () => {
+    const codeChallenge = "a".repeat(43);
+    const state = "b".repeat(43);
+    mocks.search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
+    mocks.signIn.status = null;
+
+    const view = render(<GoogleOAuthCallbackPage />);
+    await Promise.resolve();
+    expect(mocks.signIn.finalize).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    mocks.signIn.status = "complete";
+    view.rerender(<GoogleOAuthCallbackPage />);
+    await waitFor(() => expect(mocks.signIn.finalize).toHaveBeenCalledOnce());
+  });
+
+  it("continues to desktop login when the session is already active", async () => {
+    const codeChallenge = "a".repeat(43);
+    const state = "b".repeat(43);
+    mocks.search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
+    mocks.signIn.status = null;
+    mocks.isSignedIn.current = true;
+
+    render(<GoogleOAuthCallbackPage />);
+
+    await waitFor(() =>
+      expect(mocks.replace).toHaveBeenCalledWith(
+        `/login?platform=desktop&code_challenge=${codeChallenge}&state=${state}`,
+      ),
+    );
+    expect(mocks.signIn.finalize).not.toHaveBeenCalled();
   });
 });

@@ -2,18 +2,24 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
-const { clerkLoaded, search, sso } = vi.hoisted(() => ({
-  clerkLoaded: { current: true },
-  search: { current: "" },
-  sso: vi.fn(),
-}));
+const { clerkLoaded, isSignedIn, search, signInResource, sso, replace } =
+  vi.hoisted(() => ({
+    clerkLoaded: { current: true },
+    isSignedIn: { current: false },
+    search: { current: "" },
+    signInResource: { current: { sso: vi.fn() } as Record<string, unknown> },
+    sso: vi.fn(),
+    replace: vi.fn(),
+  }));
 
 vi.mock("@clerk/nextjs", () => ({
   useClerk: () => ({ loaded: clerkLoaded.current }),
-  useSignIn: () => ({ signIn: { sso } }),
+  useAuth: () => ({ isSignedIn: isSignedIn.current }),
+  useSignIn: () => ({ signIn: signInResource.current }),
 }));
 
 vi.mock("next/navigation", () => ({
+  useRouter: () => ({ replace }),
   useSearchParams: () => new URLSearchParams(search.current),
 }));
 
@@ -44,11 +50,15 @@ import GoogleOAuthPage from "./page";
 
 describe("GoogleOAuthPage", () => {
   beforeEach(() => {
+    vi.unstubAllGlobals();
     clerkLoaded.current = true;
+    isSignedIn.current = false;
     window.history.replaceState(null, "", "/");
     search.current = "";
     sso.mockReset();
     sso.mockResolvedValue({ error: null });
+    replace.mockReset();
+    signInResource.current = { sso };
   });
 
   it("starts a provider-specific Google sign-in with the renderer handoff intact", async () => {
@@ -62,8 +72,8 @@ describe("GoogleOAuthPage", () => {
     const query = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
     expect(sso).toHaveBeenCalledWith({
       strategy: "oauth_google",
-      redirectUrl: `/login?${query}`,
-      redirectCallbackUrl: `/oauth/google/callback?${query}`,
+      redirectUrl: `${window.location.origin}/login?${query}`,
+      redirectCallbackUrl: `${window.location.origin}/oauth/google/callback?${query}`,
       oidcPrompt: "select_account",
     });
     expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
@@ -81,8 +91,8 @@ describe("GoogleOAuthPage", () => {
     const query = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
     expect(sso).toHaveBeenCalledWith(
       expect.objectContaining({
-        redirectUrl: `/patchbay/login?${query}`,
-        redirectCallbackUrl: `/patchbay/oauth/google/callback?${query}`,
+        redirectUrl: `${window.location.origin}/patchbay/login?${query}`,
+        redirectCallbackUrl: `${window.location.origin}/patchbay/oauth/google/callback?${query}`,
       }),
     );
   });
@@ -111,5 +121,64 @@ describe("GoogleOAuthPage", () => {
     clerkLoaded.current = true;
     view.rerender(<GoogleOAuthPage />);
     await waitFor(() => expect(sso).toHaveBeenCalledOnce());
+  });
+
+  it("waits until sso is actually available instead of failing closed", async () => {
+    const codeChallenge = "a".repeat(43);
+    const state = "b".repeat(43);
+    search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
+    signInResource.current = {};
+
+    const view = render(<GoogleOAuthPage />);
+    await Promise.resolve();
+    expect(sso).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    signInResource.current = { sso };
+    view.rerender(<GoogleOAuthPage />);
+    await waitFor(() => expect(sso).toHaveBeenCalledOnce());
+  });
+
+  it("hands an already-signed-in Clerk session to desktop login", async () => {
+    const codeChallenge = "a".repeat(43);
+    const state = "b".repeat(43);
+    search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
+    isSignedIn.current = true;
+
+    render(<GoogleOAuthPage />);
+
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith(
+        `/login?platform=desktop&code_challenge=${codeChallenge}&state=${state}`,
+      ),
+    );
+    expect(sso).not.toHaveBeenCalled();
+  });
+
+  it("does not start a second SSO when Clerk already returned a ticket", async () => {
+    const codeChallenge = "a".repeat(43);
+    const state = "b".repeat(43);
+    search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}&rotating_token_nonce=nonce-value`;
+    const locationReplace = vi.fn();
+    vi.stubGlobal("location", {
+      origin: "http://localhost:3000",
+      pathname: "/oauth/google",
+      search: `?${search.current}`,
+      hash: "",
+      href: `http://localhost:3000/oauth/google?${search.current}`,
+      replace: locationReplace,
+    });
+
+    try {
+      render(<GoogleOAuthPage />);
+
+      await waitFor(() => expect(locationReplace).toHaveBeenCalledOnce());
+      expect(locationReplace).toHaveBeenCalledWith(
+        `/oauth/google/callback?${search.current}`,
+      );
+      expect(sso).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
