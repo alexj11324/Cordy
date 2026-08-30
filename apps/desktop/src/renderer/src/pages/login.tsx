@@ -1,8 +1,12 @@
 import { useState } from "react";
 import { useAuthStore } from "@patchbay/core/auth";
 import { Alert, AlertDescription } from "@patchbay/ui/components/ui/alert";
-import { Button } from "@patchbay/ui/components/ui/button";
+import {
+  Button,
+  buttonVariants,
+} from "@patchbay/ui/components/ui/button";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
+import { cn } from "@patchbay/ui/lib/utils";
 import { LoginPage } from "@patchbay/views/auth";
 import { useT } from "@patchbay/views/i18n";
 import { DragStrip } from "@patchbay/views/platform";
@@ -91,22 +95,25 @@ export function DesktopLoginPage() {
       >
         <div
           data-testid="authentication-example"
-          className="relative flex min-h-full flex-1 flex-col overflow-hidden bg-background lg:grid lg:grid-cols-2"
+          className="relative container flex flex-1 shrink-0 items-center justify-center md:grid lg:max-w-none lg:grid-cols-2 lg:px-0"
         >
           <a
             href="#desktop-login"
             aria-current="page"
-            className="absolute right-4 top-4 z-30 inline-flex h-9 items-center justify-center rounded-md px-4 py-2 text-body font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:right-8 md:top-8"
+            className={cn(
+              buttonVariants({ variant: "ghost" }),
+              "absolute top-4 right-4 md:top-8 md:right-8",
+            )}
           >
             {t(($) => $.desktop.entry.login_label)}
           </a>
           <div
             data-testid="authentication-brand-panel"
-            className="relative hidden h-full min-h-[32rem] flex-col p-10 text-primary lg:flex dark:border-r"
+            className="relative hidden h-full flex-col p-10 text-primary lg:flex dark:border-r"
           >
             <div className="absolute inset-0 bg-primary/5" aria-hidden="true" />
-            <div className="relative z-20 flex items-center text-title font-medium">
-              <PatchbayIcon className="mr-2 size-6" noSpin />
+            <div className="relative z-20 flex items-center text-lg font-medium">
+              <PatchbayIcon className="mr-2 h-6 w-6" noSpin />
               {t(($) => $.desktop.entry.brand)}
             </div>
             <div className="relative z-20 mt-auto">
@@ -115,22 +122,22 @@ export function DesktopLoginPage() {
               </blockquote>
             </div>
           </div>
-          <div className="flex min-h-full items-center justify-center p-6 lg:h-full lg:p-8">
-            <div className="mx-auto flex w-full flex-col justify-center gap-6 sm:w-[350px]">
-              {error && (
-                <Alert variant="destructive" aria-live="polite">
-                  <AlertDescription>{error}</AlertDescription>
-                </Alert>
-              )}
-              <LoginPage
-                embedded
-                showGoogleSeparator
-                googleLoading={openingGoogle}
-                onGoogleLogin={() => void handleGoogleLogin()}
-                onSuccess={() => undefined}
-                extra={<GuestSessionEntry />}
-              />
-            </div>
+          <div className="flex items-center justify-center lg:h-[1000px] lg:p-8">
+            <LoginPage
+              embedded
+              externalError={
+                error ? (
+                  <Alert variant="destructive" aria-live="polite">
+                    <AlertDescription>{error}</AlertDescription>
+                  </Alert>
+                ) : undefined
+              }
+              showGoogleSeparator
+              googleLoading={openingGoogle}
+              onGoogleLogin={() => void handleGoogleLogin()}
+              onSuccess={() => undefined}
+              extra={<GuestSessionEntry />}
+            />
           </div>
         </div>
       </main>
