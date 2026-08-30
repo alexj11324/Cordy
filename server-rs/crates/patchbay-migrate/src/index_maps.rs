@@ -487,27 +487,27 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "idx_agent_task_queue_execution_lane_active_unique",
     ),
     (
-        "402_authorization_grant_id_index",
+        "412_authorization_grant_id_index",
         "authorization_grant_id_idx",
     ),
     (
-        "403_authorization_grant_lookup_index",
+        "413_authorization_grant_lookup_index",
         "authorization_grant_lookup_idx",
     ),
     (
-        "404_authorization_audit_id_index",
+        "414_authorization_audit_id_index",
         "authorization_audit_event_id_idx",
     ),
     (
-        "405_authorization_audit_lookup_index",
+        "415_authorization_audit_lookup_index",
         "authorization_audit_event_lookup_idx",
     ),
     (
-        "406_task_capability_parent_index",
+        "416_task_capability_parent_index",
         "task_token_parent_token_id_idx",
     ),
     (
-        "407_task_capability_claim_fence_index",
+        "417_task_capability_claim_fence_index",
         "task_token_claim_fence_idx",
     ),
 ];
