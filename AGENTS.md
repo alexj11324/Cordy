@@ -105,6 +105,23 @@ never run Go tooling or Go tests. Default tests and production code must also
 never discover or execute ambient, user-installed agent CLIs; tests must supply
 a fixture executable or an explicitly missing path.
 
+### Authorized execution invariants
+
+- When the user has explicitly authorized a target and scope, the agent must
+  autonomously complete every executable repair, deployment, and real-runtime
+  acceptance within that scope. Ordinary login, password-manager or iCloud
+  Keychain use, OTP entry, available cloud control planes, CI/review, DNS, and
+  deployment steps are execution work, not blockers.
+- When an authorized step fails, diagnose the concrete cause, repair it on the
+  approved path, and continue. Do not stop at source inspection, a green CI
+  result, or a deployment plan when the requested runtime or hosted result is
+  still executable and unverified.
+- Pause and request user takeover only for a platform-enforced Passkey,
+  biometric, or equivalent security confirmation that cannot be covered by the
+  user's authorization. Never bypass a platform-enforced security control,
+  weaken an access boundary, or disclose passwords, OTPs, keys, tokens, or
+  other secrets.
+
 ### Default feature delivery loop
 
 For an implementation request, the default definition of done is a complete
