@@ -89,7 +89,7 @@ function clampScale(value: number): number {
   return Math.min(MAX_SCALE, Math.max(MIN_SCALE, value));
 }
 
-function nodeMatchesFilter(node: DependencyGraphNode, filter: GraphFilter): boolean {
+export function nodeMatchesFilter(node: DependencyGraphNode, filter: GraphFilter): boolean {
   return filter === "all" || node.readiness.state === filter;
 }
 
@@ -158,7 +158,7 @@ function layoutGraphs(graphs: DependencyGraphResponse[]): {
   };
 }
 
-function relatedNodeKeys(
+export function relatedNodeKeys(
   graph: DependencyGraphResponse,
   selected: SelectedNode | null,
 ): { upstream: Set<string>; downstream: Set<string> } {
@@ -536,6 +536,10 @@ export function DependencyGraphView({ projectId }: { projectId?: string }) {
               const isRelated = !selectedNode || isSelected || nodeRelation.upstream.has(key) || nodeRelation.downstream.has(key);
               const readinessLabel = stateLabel(t, item.node.readiness.state);
               const assignee = formatAssignee(item.node);
+              const selectNode = () => {
+                setSelectedNode({ planId: item.graph.plan.id, tempId: item.node.temp_id });
+                setSelectedEdge(null);
+              };
               return (
                 <AppLink
                   key={key}
@@ -554,9 +558,14 @@ export function DependencyGraphView({ projectId }: { projectId?: string }) {
                   )}
                   style={{ left: item.x, top: item.y, width: NODE_WIDTH, height: NODE_HEIGHT }}
                   onClick={() => {
-                    setSelectedNode({ planId: item.graph.plan.id, tempId: item.node.temp_id });
-                    setSelectedEdge(null);
+                    // AppLink still opens the real Issue on a normal click.
+                    // Selection is also exposed by hover/focus so the graph's
+                    // upstream/downstream explanation remains observable
+                    // before navigation, including for keyboard users.
+                    selectNode();
                   }}
+                  onMouseEnter={selectNode}
+                  onFocus={selectNode}
                   aria-label={t(($) => $.graph.node_label, {
                     identifier: item.node.issue.identifier,
                     title: item.node.title,
