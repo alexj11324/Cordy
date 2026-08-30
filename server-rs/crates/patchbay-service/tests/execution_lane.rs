@@ -22,8 +22,7 @@ async fn test_pool() -> anyhow::Result<Option<PgPool>> {
         PgPoolOptions::new()
             .max_connections(16)
             .connect(&url)
-            .await
-            .map_err(Into::into)?,
+            .await?,
     ))
 }
 
