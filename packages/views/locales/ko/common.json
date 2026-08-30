@@ -233,7 +233,8 @@
       "autopilots": {
         "autopilot-pr-review": {
           "title": "PR 검토 인계",
-          "description": "완료된 구현 작업을 검토 가능한 담당자에게 전달합니다."
+          "description": "완료된 구현 작업을 검토 가능한 담당자에게 전달합니다.",
+          "issue_title_template": "PR 검토 후속 작업"
         },
         "autopilot-ci-watch": {
           "title": "CI 모니터링",

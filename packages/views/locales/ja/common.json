@@ -233,7 +233,8 @@
       "autopilots": {
         "autopilot-pr-review": {
           "title": "PR 確認の引き継ぎ",
-          "description": "完了した実装作業を対応可能な確認担当者に渡します。"
+          "description": "完了した実装作業を対応可能な確認担当者に渡します。",
+          "issue_title_template": "PR 確認のフォローアップ"
         },
         "autopilot-ci-watch": {
           "title": "CI 監視",

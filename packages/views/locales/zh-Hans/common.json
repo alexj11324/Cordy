@@ -233,7 +233,8 @@
       "autopilots": {
         "autopilot-pr-review": {
           "title": "PR 复查交接",
-          "description": "将已完成的实现工作交给可用的复查者。"
+          "description": "将已完成的实现工作交给可用的复查者。",
+          "issue_title_template": "PR 复查后续"
         },
         "autopilot-ci-watch": {
           "title": "CI 监控",

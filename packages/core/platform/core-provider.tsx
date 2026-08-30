@@ -32,6 +32,7 @@ let chatStore: ReturnType<typeof createChatStore>;
 function initCore(
   apiBaseUrl: string,
   storage: StorageAdapter,
+  locale: CoreProviderProps["locale"],
   onLogin?: () => void,
   onLogout?: () => void,
   cookieAuth?: boolean,
@@ -58,6 +59,7 @@ function initCore(
       storage.removeItem("patchbay_token");
     },
     identity,
+    locale,
   });
   setApiInstance(api);
   setSchemaLogger(createLogger("api-schema"));
@@ -98,6 +100,7 @@ export function CoreProvider({
       initCore(
         apiBaseUrl,
         storage,
+        locale,
         onLogin,
         onLogout,
         cookieAuth,

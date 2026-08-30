@@ -251,6 +251,7 @@ describe("local Vite preview API", () => {
       title: "PR review handoff",
       can_write: false,
       trigger_kinds: ["schedule"],
+      issue_title_template: "PR review follow-up",
     });
     expect(detail.body.triggers).toHaveLength(1);
     expect(detail.body.triggers[0].kind).toBe("schedule");
@@ -268,6 +269,7 @@ describe("local Vite preview API", () => {
     expect(detail.body.autopilot).toMatchObject({
       last_run_at: runs.body.runs[0].triggered_at,
       last_run_status: runs.body.runs[0].status,
+      execution_mode: "create_issue",
     });
     const earliestRunAt = Math.min(
       ...runs.body.runs.map((run) => Date.parse(run.triggered_at)),
@@ -300,6 +302,41 @@ describe("local Vite preview API", () => {
         }),
       ]),
     );
+    const completedRun = runs.body.runs.find((run) => run.id === "run-pr-review-completed");
+    const completedTask = tasks.body.find((task) => task.id === "task-pre-106");
+    expect(Date.parse(completedRun.triggered_at)).toBeLessThanOrEqual(
+      Date.parse(completedTask.created_at),
+    );
+    expect(Date.parse(completedRun.completed_at)).toBeGreaterThanOrEqual(
+      Date.parse(completedTask.completed_at),
+    );
+
+    const ciWatchDetail = await call("GET", "/api/autopilots/autopilot-ci-watch");
+    const ciWatchTrigger = ciWatchDetail.body.triggers[0];
+    expect(ciWatchDetail.body.autopilot.next_run_at).toBe(ciWatchTrigger.next_run_at);
+    expect(Date.parse(ciWatchTrigger.next_run_at)).toBeGreaterThan(Date.now() - 60_000);
+    expect(Number(new Intl.DateTimeFormat("en-US", {
+      timeZone: ciWatchTrigger.timezone,
+      minute: "numeric",
+    }).format(new Date(ciWatchTrigger.next_run_at))) % 15).toBe(0);
+    expect(Number(new Intl.DateTimeFormat("en-US", {
+      timeZone: detail.body.triggers[0].timezone,
+      minute: "numeric",
+    }).format(new Date(detail.body.triggers[0].next_run_at))) % 30).toBe(0);
+    const cronPreview = await call(
+      "GET",
+      "/api/autopilots/cron-preview?expr=%2A%2F15+%2A+%2A+%2A+%2A&tz=America%2FNew_York",
+    );
+    expect(cronPreview.body.next_runs).toHaveLength(3);
+    expect(cronPreview.body.next_runs).toEqual(
+      [...cronPreview.body.next_runs].sort(),
+    );
+    for (const nextRun of cronPreview.body.next_runs) {
+      expect(Number(new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/New_York",
+        minute: "numeric",
+      }).format(new Date(nextRun))) % 15).toBe(0);
+    }
 
     const tasksById = new Map(tasks.body.map((task) => [task.id, task]));
     const autopilotsById = new Map(
@@ -453,6 +490,9 @@ describe("local Vite preview API", () => {
     });
     expect(runtimes.body.find((runtime) => runtime.id === "runtime-quill")).toMatchObject({
       device_info: "ランタイムはオフラインです",
+    });
+    expect(autopilots.body.autopilots[0]).toMatchObject({
+      issue_title_template: "PR 確認のフォローアップ",
     });
   });
 });

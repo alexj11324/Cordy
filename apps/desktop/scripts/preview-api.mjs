@@ -7,6 +7,7 @@ const WORKSPACE_ID = "ws-preview";
 const PREVIEW_USER_ID = "user-preview";
 const PREVIEW_MEMBER_ID = "member-preview";
 const PREVIEW_AGENT_ID = "agent-preview";
+const PREVIEW_TIMEZONE = "America/New_York";
 
 const STATUS_CATEGORIES = [
   "backlog",
@@ -76,6 +77,92 @@ function previewTime(minutesFromSessionStart) {
     PREVIEW_SESSION_STARTED_AT + minutesFromSessionStart * 60_000,
   ).toISOString();
 }
+
+function previewZonedParts(timestamp, timeZone) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      calendar: "gregory",
+      hourCycle: "h23",
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "numeric",
+      minute: "numeric",
+      weekday: "short",
+    })
+      .formatToParts(new Date(timestamp))
+      .filter(({ type }) => type !== "literal")
+      .map(({ type, value }) => [type, value]),
+  );
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+    weekday: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(parts.weekday),
+  };
+}
+
+function previewCronFieldMatches(value, field, minimum, maximum) {
+  return field.split(",").some((token) => {
+    const [range, rawStep] = token.split("/");
+    const step = rawStep === undefined ? 1 : Number(rawStep);
+    if (!Number.isInteger(step) || step < 1) return false;
+
+    let start = minimum;
+    let end = maximum;
+    if (range !== "*") {
+      if (range.includes("-")) {
+        const [rawStart, rawEnd] = range.split("-");
+        start = Number(rawStart);
+        end = Number(rawEnd);
+      } else {
+        start = Number(range);
+        end = start;
+      }
+    }
+    return Number.isInteger(start) && Number.isInteger(end) &&
+      start >= minimum && end <= maximum && start <= end &&
+      value >= start && value <= end && (value - start) % step === 0;
+  });
+}
+
+function previewNextCronOccurrence(cronExpression, timeZone, after = PREVIEW_SESSION_STARTED_AT) {
+  const fields = cronExpression.trim().split(/\s+/);
+  if (fields.length !== 5) throw new Error(`Unsupported preview cron: ${cronExpression}`);
+  const [minuteField, hourField, dayOfMonthField, monthField, dayOfWeekField] = fields;
+  const firstMinute = Math.floor(after / 60_000) + 1;
+  const maxMinutes = 366 * 24 * 60;
+
+  for (let offset = 0; offset <= maxMinutes; offset += 1) {
+    const timestamp = (firstMinute + offset) * 60_000;
+    const parts = previewZonedParts(timestamp, timeZone);
+    if (!previewCronFieldMatches(parts.minute, minuteField, 0, 59)) continue;
+    if (!previewCronFieldMatches(parts.hour, hourField, 0, 23)) continue;
+    if (!previewCronFieldMatches(parts.month, monthField, 1, 12)) continue;
+    const dayOfMonthMatches = previewCronFieldMatches(parts.day, dayOfMonthField, 1, 31);
+    const dayOfWeekMatches = previewCronFieldMatches(parts.weekday, dayOfWeekField, 0, 6);
+    const dayOfMonthWildcard = dayOfMonthField === "*";
+    const dayOfWeekWildcard = dayOfWeekField === "*";
+    const dayMatches = dayOfMonthWildcard || dayOfWeekWildcard
+      ? dayOfMonthMatches && dayOfWeekMatches
+      : dayOfMonthMatches || dayOfWeekMatches;
+    if (dayMatches) return new Date(timestamp).toISOString();
+  }
+
+  throw new Error(`No preview cron occurrence found: ${cronExpression}`);
+}
+
+const PREVIEW_NEXT_PR_REVIEW_AT = previewNextCronOccurrence(
+  "*/30 * * * *",
+  PREVIEW_TIMEZONE,
+);
+const PREVIEW_NEXT_CI_WATCH_AT = previewNextCronOccurrence(
+  "*/15 * * * *",
+  PREVIEW_TIMEZONE,
+);
 
 const PREVIEW_WORKSPACE = {
   id: WORKSPACE_ID,
@@ -466,10 +553,10 @@ const PREVIEW_AUTOPILOTS = [
     description: "Routes completed implementation work to an available reviewer.",
     assigneeId: "agent-mika",
     status: "active",
-    executionMode: "run_only",
-    nextRunAt: previewTime(30),
+    executionMode: "create_issue",
+    nextRunAt: PREVIEW_NEXT_PR_REVIEW_AT,
     triggerKinds: ["schedule"],
-    createdAt: previewTime(-4320),
+    createdAt: previewTime(-4322),
   }),
   previewAutopilot({
     id: "autopilot-ci-watch",
@@ -478,7 +565,7 @@ const PREVIEW_AUTOPILOTS = [
     assigneeId: PREVIEW_AGENT_ID,
     status: "active",
     executionMode: "run_only",
-    nextRunAt: previewTime(15),
+    nextRunAt: PREVIEW_NEXT_CI_WATCH_AT,
     triggerKinds: ["schedule"],
     createdAt: previewTime(-270),
   }),
@@ -510,7 +597,7 @@ function previewTrigger(
     kind: "schedule",
     enabled,
     cron_expression: cronExpression,
-    timezone: "America/New_York",
+    timezone: PREVIEW_TIMEZONE,
     next_run_at: nextRunAt,
     webhook_token: null,
     webhook_path: null,
@@ -524,8 +611,8 @@ function previewTrigger(
 }
 
 const PREVIEW_TRIGGERS = {
-  "autopilot-pr-review": [previewTrigger("trigger-pr-review", "autopilot-pr-review", true, "*/30 * * * *", previewTime(30), previewTime(-97))],
-  "autopilot-ci-watch": [previewTrigger("trigger-ci-watch", "autopilot-ci-watch", true, "*/15 * * * *", previewTime(15), previewTime(-238))],
+  "autopilot-pr-review": [previewTrigger("trigger-pr-review", "autopilot-pr-review", true, "*/30 * * * *", PREVIEW_NEXT_PR_REVIEW_AT, previewTime(-97))],
+  "autopilot-ci-watch": [previewTrigger("trigger-ci-watch", "autopilot-ci-watch", true, "*/15 * * * *", PREVIEW_NEXT_CI_WATCH_AT, previewTime(-238))],
   "autopilot-weekly-summary": [previewTrigger("trigger-weekly-summary", "autopilot-weekly-summary", false, "0 9 * * 1", null)],
 };
 
@@ -581,7 +668,7 @@ const PREVIEW_RUNS = {
       status: "completed",
       issueNumber: "106",
       taskId: "task-pre-106",
-      triggeredAt: previewTime(-4290),
+      triggeredAt: previewTime(-4321),
       completedAt: previewTime(-4262),
       result: { summary: "Review passed and the issue was closed." },
     }),
@@ -1259,7 +1346,22 @@ export async function handlePreviewRequest(req, res) {
     });
   }
   if (method === "GET" && path === "/api/autopilots/cron-preview") {
-    return json(res, { next_runs: [previewTime(15), previewTime(30)] });
+    const expression = url.searchParams.get("expr") ?? "*/15 * * * *";
+    const timeZone = url.searchParams.get("tz") ?? PREVIEW_TIMEZONE;
+    try {
+      const nextRuns = [];
+      let after = PREVIEW_SESSION_STARTED_AT;
+      for (let index = 0; index < 3; index += 1) {
+        const nextRun = previewNextCronOccurrence(expression, timeZone, after);
+        nextRuns.push(nextRun);
+        after = Date.parse(nextRun);
+      }
+      return json(res, { next_runs: nextRuns });
+    } catch (error) {
+      return json(res, {
+        error: error instanceof Error ? error.message : "Invalid preview cron",
+      }, 400);
+    }
   }
   if (method === "GET" && path === "/api/autopilots") {
     return json(res, {

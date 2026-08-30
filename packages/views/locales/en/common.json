@@ -234,7 +234,8 @@
       "autopilots": {
         "autopilot-pr-review": {
           "title": "PR review handoff",
-          "description": "Routes completed implementation work to an available reviewer."
+          "description": "Routes completed implementation work to an available reviewer.",
+          "issue_title_template": "PR review follow-up"
         },
         "autopilot-ci-watch": {
           "title": "CI watch",
