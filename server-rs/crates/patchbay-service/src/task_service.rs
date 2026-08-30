@@ -6478,7 +6478,7 @@ mod tests {
 
     #[test]
     fn agent_thread_binding_is_fail_closed_for_lifecycle_changes() {
-        let runtime_id = Uuid::new_v4();
+        let runtime_id = Uuid::now_v7();
         assert_eq!(
             agent_thread_binding_reason(true, Some(runtime_id), Some(runtime_id), true),
             Some(AgentThreadUnavailableReason::AgentArchived)
@@ -6488,7 +6488,7 @@ mod tests {
             Some(AgentThreadUnavailableReason::AgentUnbound)
         );
         assert_eq!(
-            agent_thread_binding_reason(false, Some(runtime_id), Some(Uuid::new_v4()), true,),
+            agent_thread_binding_reason(false, Some(runtime_id), Some(Uuid::now_v7()), true,),
             Some(AgentThreadUnavailableReason::AgentRuntimeRebound)
         );
         assert_eq!(
@@ -6503,12 +6503,12 @@ mod tests {
 
     #[test]
     fn agent_thread_invocation_requires_current_member_and_target() {
-        let owner = Uuid::new_v4();
-        let member = Uuid::new_v4();
-        let other = Uuid::new_v4();
+        let owner = Uuid::now_v7();
+        let member = Uuid::now_v7();
+        let other = Uuid::now_v7();
         let target = |target_type: &str, target_id: Uuid| AgentInvocationTarget {
-            id: Uuid::new_v4(),
-            agent_id: Uuid::new_v4(),
+            id: Uuid::now_v7(),
+            agent_id: Uuid::now_v7(),
             target_type: target_type.to_string(),
             target_id,
             created_by: None,
@@ -6561,11 +6561,11 @@ mod tests {
 
     #[test]
     fn automation_thread_invocation_fails_closed_for_revoked_or_cross_workspace_access() {
-        let workspace = Uuid::new_v4();
-        let other_workspace = Uuid::new_v4();
-        let owner = Uuid::new_v4();
-        let requester = Uuid::new_v4();
-        let automation = Uuid::new_v4();
+        let workspace = Uuid::now_v7();
+        let other_workspace = Uuid::now_v7();
+        let owner = Uuid::now_v7();
+        let requester = Uuid::now_v7();
+        let automation = Uuid::now_v7();
 
         assert!(automation_invocation_allowed(
             workspace,
