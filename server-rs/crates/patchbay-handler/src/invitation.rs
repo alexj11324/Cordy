@@ -1077,6 +1077,7 @@ mod tests {
             id: user_id,
             name: "Alex".into(),
             email: "alex@example.com".into(),
+            is_guest: false,
             avatar_url: None,
             created_at: now,
             updated_at: now,

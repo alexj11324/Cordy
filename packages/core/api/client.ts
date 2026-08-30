@@ -768,6 +768,10 @@ export class ApiClient {
     });
   }
 
+  async createGuestSession(): Promise<LoginResponse> {
+    return this.fetch("/auth/guest", { method: "POST" });
+  }
+
   async logout(): Promise<void> {
     await this.fetch("/auth/logout", { method: "POST" });
   }

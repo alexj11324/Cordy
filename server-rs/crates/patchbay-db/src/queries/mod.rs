@@ -19,6 +19,7 @@ pub mod dingtalk;
 pub mod feedback;
 pub mod github;
 pub mod github_snapshot;
+pub mod guest;
 pub mod inbox;
 pub mod invitation;
 pub mod issue;

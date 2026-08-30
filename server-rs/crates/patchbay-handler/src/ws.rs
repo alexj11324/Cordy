@@ -25,7 +25,7 @@ use patchbay_auth::disabled_users::{
     is_temporarily_disabled_user, is_temporarily_disabled_user_id,
 };
 use patchbay_auth::jwt::hash_token;
-use patchbay_db::queries::{member, personal_access_token, workspace};
+use patchbay_db::queries::{guest, member, personal_access_token, user, workspace};
 use patchbay_middleware::auth::decode_jwt_claims;
 use patchbay_realtime::broadcaster::{SCOPE_CHAT, SCOPE_TASK, SCOPE_USER, SCOPE_WORKSPACE};
 use patchbay_realtime::hub::PatResolver as _;
@@ -540,7 +540,7 @@ fn resolve_pat(pr: &DbPatResolver, token: &str) -> Option<String> {
 /// `authenticateToken`. Error payloads are the exact JSON strings Go writes
 /// back before closing.
 fn authenticate_token(pr: &DbPatResolver, token: &str) -> Result<String, &'static str> {
-    if token.starts_with("pby_") {
+    if token.starts_with("pbg_") || token.starts_with("pby_") {
         let Some(user_id) = resolve_pat(pr, token) else {
             return Err(r#"{"error":"invalid token"}"#);
         };
@@ -602,6 +602,20 @@ impl patchbay_realtime::hub::PatResolver for DbPatResolver {
         let hash = hash_token(token);
         tokio::task::block_in_place(|| {
             tokio::runtime::Handle::current().block_on(async move {
+                // Guest bearer tokens are live session credentials, not PATs;
+                // do not cache this result because logout revokes the session
+                // row and the next connection must observe that immediately.
+                if token.starts_with("pbg_") {
+                    let session = guest::find_active_by_token_hash(&pool, &hash)
+                        .await
+                        .ok()??;
+                    let guest_user = user::get_user(&pool, session.user_id).await.ok()??;
+                    if !guest_user.is_guest {
+                        return None;
+                    }
+                    return Some(guest_user.id.to_string());
+                }
+
                 if let Some(user_id) = cache.get(&hash).await {
                     return Some(user_id);
                 }

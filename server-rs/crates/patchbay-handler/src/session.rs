@@ -4,6 +4,8 @@ use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::{extract::State, Json, Router};
+use patchbay_auth::jwt::hash_token;
+use patchbay_db::queries::guest as guest_queries;
 
 use crate::error::error_response;
 use crate::state::HandlerState;
@@ -12,7 +14,27 @@ pub fn public_router() -> Router<HandlerState> {
     Router::new().route("/auth/logout", post(logout))
 }
 
-async fn logout(State(state): State<HandlerState>) -> Response {
+async fn logout(State(state): State<HandlerState>, headers: HeaderMap) -> Response {
+    // Desktop guest sessions use a bearer token rather than the cookie
+    // session used by the web app. Revoke that server-side before clearing
+    // client state so copied guest credentials stop authenticating at logout.
+    if let Some(token) = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .filter(|value| value.starts_with("pbg_"))
+    {
+        if let Err(error) =
+            guest_queries::revoke_active_by_token_hash(&state.pool, &hash_token(token)).await
+        {
+            tracing::warn!(%error, "guest auth: failed to revoke session on logout");
+            return error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "guest session revocation unavailable",
+            );
+        }
+    }
+
     let (domain, secure) = state.auth_settings.cookie_attributes();
     let mut headers = HeaderMap::new();
 

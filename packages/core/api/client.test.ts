@@ -7,6 +7,32 @@ afterEach(() => {
 });
 
 describe("ApiClient edit guards", () => {
+  it("creates a guest session through the dedicated endpoint", async () => {
+    const user = {
+      id: "guest-user",
+      is_guest: true,
+      name: "Guest",
+      email: "guest@example.invalid",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ token: "pbg_guest-token", user }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ApiClient("https://api.example.test");
+
+    await expect(client.createGuestSession()).resolves.toEqual({
+      token: "pbg_guest-token",
+      user,
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.test/auth/guest",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("serializes field baselines for issue and comment writes", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
       new Response("{}", {

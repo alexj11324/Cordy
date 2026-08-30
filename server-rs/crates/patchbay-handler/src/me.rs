@@ -116,6 +116,7 @@ struct UserResponse {
     profile_description: String,
     created_at: String,
     updated_at: String,
+    is_guest: bool,
 }
 
 impl From<&User> for UserResponse {
@@ -133,6 +134,7 @@ impl From<&User> for UserResponse {
             profile_description: user.profile_description.clone(),
             created_at: crate::timefmt::rfc3339(user.created_at),
             updated_at: crate::timefmt::rfc3339(user.updated_at),
+            is_guest: user.is_guest,
         }
     }
 }
@@ -629,6 +631,7 @@ mod tests {
             created_at: "2026-08-23T12:34:56.123Z".parse().unwrap(),
             email: "alex@example.com".into(),
             id: Uuid::parse_str("018f946a-1234-7890-abcd-1234567890ab").unwrap(),
+            is_guest: false,
             language: None,
             name: "Alex".into(),
             onboarded_at: None,
@@ -704,6 +707,7 @@ mod tests {
             created_at: "2026-08-23T12:34:56Z".parse().unwrap(),
             email: "alex@example.com".into(),
             id: Uuid::nil(),
+            is_guest: false,
             language: None,
             name: "Alex".into(),
             onboarded_at: None,

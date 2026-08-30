@@ -3,7 +3,7 @@
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{Duration, Utc};
 use patchbay_auth::jwt::{generate_pat_token, hash_token};
@@ -19,9 +19,22 @@ const RENEW_THRESHOLD_DAYS: i64 = 7;
 const RENEW_EXTENSION_DAYS: i64 = 90;
 
 pub fn router() -> Router<HandlerState> {
+    guest_router().merge(formal_router())
+}
+
+/// The only PAT operation available to guests: Desktop's daemon credential
+/// exchange. The handler restricts guest requests to the Desktop token name.
+pub fn guest_router() -> Router<HandlerState> {
     Router::new()
-        .route("/api/tokens", get(list).post(create))
-        .route("/api/tokens/", get(list).post(create))
+        .route("/api/tokens", post(create))
+        .route("/api/tokens/", post(create))
+}
+
+/// Personal-token management for formal accounts.
+pub fn formal_router() -> Router<HandlerState> {
+    Router::new()
+        .route("/api/tokens", get(list))
+        .route("/api/tokens/", get(list))
         .route("/api/tokens/current/renew", axum::routing::post(renew))
         .route("/api/tokens/{id}", axum::routing::delete(revoke))
 }
@@ -74,6 +87,9 @@ async fn create(
     };
     if request.name.is_empty() {
         return error_response(StatusCode::BAD_REQUEST, "name is required");
+    }
+    if headers.get("x-guest-user").is_some() && request.name != "Patchbay Desktop" {
+        return error_response(StatusCode::FORBIDDEN, "formal login required");
     }
     let raw = match generate_pat_token() {
         Ok(value) => value,

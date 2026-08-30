@@ -17,7 +17,7 @@ use patchbay_auth::daemon_token_cache::{DaemonTokenCache, DaemonTokenIdentity};
 use patchbay_auth::disabled_users::is_temporarily_disabled_user;
 use patchbay_auth::jwt::hash_token;
 use patchbay_auth::pat_cache::{ttl_for_expiry, PatCache};
-use patchbay_db::queries::{daemon_token, personal_access_token};
+use patchbay_db::queries::{daemon_token, guest, personal_access_token, user};
 
 use crate::auth::AuthSideEffectSpawner;
 
@@ -28,6 +28,7 @@ pub const DAEMON_ID_HEADER: &str = "x-patchbay-daemon-id";
 
 /// Auth path labels exposed via [`DaemonContext`] for telemetry.
 pub const DAEMON_AUTH_PATH_DAEMON_TOKEN: &str = "daemon_token";
+pub const DAEMON_AUTH_PATH_GUEST: &str = "guest";
 pub const DAEMON_AUTH_PATH_PAT: &str = "pat";
 pub const DAEMON_AUTH_PATH_CLOUD_PAT: &str = "cloud_pat";
 pub const DAEMON_AUTH_PATH_JWT: &str = "jwt";
@@ -149,6 +150,61 @@ pub async fn daemon_auth_middleware(
             workspace_id: Some(identity.workspace_id),
             daemon_id: Some(identity.daemon_id),
             auth_path: DAEMON_AUTH_PATH_DAEMON_TOKEN,
+        });
+        return Ok(next.run(req).await);
+    }
+
+    // Guest bearer tokens are live server-backed sessions. Keep this branch
+    // uncached so logout revocation is observed by daemon HTTP and WS calls;
+    // the daemon receives only the guest user's identity and must still pass
+    // the normal workspace-membership checks in the handlers.
+    if token.starts_with("pbg_") {
+        let session = match guest::find_active_by_token_hash(&state.pool, &hash).await {
+            Ok(Some(session)) => session,
+            Ok(None) => {
+                tracing::warn!(path = ?req.uri().path(), "daemon_auth: invalid guest token");
+                return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
+            }
+            Err(error) => {
+                tracing::error!(%error, "daemon_auth: guest session lookup unavailable");
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    r#"{"error":"authentication temporarily unavailable"}"#,
+                ));
+            }
+        };
+        let guest_user = match user::get_user(&state.pool, session.user_id).await {
+            Ok(Some(user)) => user,
+            Ok(None) => {
+                tracing::warn!(path = ?req.uri().path(), "daemon_auth: guest user not found");
+                return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
+            }
+            Err(error) => {
+                tracing::error!(%error, "daemon_auth: guest user lookup unavailable");
+                return Err((
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    r#"{"error":"authentication temporarily unavailable"}"#,
+                ));
+            }
+        };
+        if !guest_user.is_guest {
+            tracing::warn!(path = ?req.uri().path(), "daemon_auth: guest session points to formal user");
+            return Err((StatusCode::UNAUTHORIZED, r#"{"error":"invalid token"}"#));
+        }
+        if reject_disabled(
+            &guest_user.id.to_string(),
+            &guest_user.email,
+            DAEMON_AUTH_PATH_GUEST,
+        ) {
+            return Err(err_disabled());
+        }
+        set_user(&mut req, &guest_user.id.to_string());
+        req.headers_mut()
+            .insert("x-guest-user", HeaderValue::from_static("true"));
+        req.extensions_mut().insert(DaemonContext {
+            workspace_id: None,
+            daemon_id: None,
+            auth_path: DAEMON_AUTH_PATH_GUEST,
         });
         return Ok(next.run(req).await);
     }
@@ -283,6 +339,7 @@ fn clear_untrusted_identity_headers(req: &mut Request) {
     req.headers_mut().remove("x-user-id");
     req.headers_mut().remove("x-user-email");
     req.headers_mut().remove("x-actor-source");
+    req.headers_mut().remove("x-guest-user");
     req.headers_mut().remove(DAEMON_WORKSPACE_HEADER);
     req.headers_mut().remove(DAEMON_ID_HEADER);
 }
