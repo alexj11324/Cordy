@@ -45,7 +45,7 @@ import { useT } from "../../i18n";
 // The settings page connects one workspace-scoped Slack Hub. The channel
 // chooses the active Agent with `/agents`; the optional per-Agent form below
 // remains available for legacy deep links and existing installations.
-export function SlackTab() {
+export function SlackTab({ installationId }: { installationId?: string } = {}) {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -60,7 +60,9 @@ export function SlackTab() {
     ...slackInstallationsOptions(wsId),
     enabled: !!wsId,
   });
-  const installations = data?.installations ?? [];
+  const installations = (data?.installations ?? []).filter(
+    (installation) => !installationId || installation.id === installationId,
+  );
   const configured = data?.configured === true;
   // install_supported tracks whether the OAuth client credentials are wired on
   // the server. When false, "Connect Slack" would 503, so we hide the connect

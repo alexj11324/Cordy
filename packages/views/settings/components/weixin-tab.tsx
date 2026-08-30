@@ -22,7 +22,7 @@ import { weixinInstallationsOptions, weixinKeys } from "@patchbay/core/weixin";
 import { WeixinMark } from "./weixin-mark";
 import { useT } from "../../i18n";
 
-export function WeixinTab() {
+export function WeixinTab({ installationId }: { installationId?: string } = {}) {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -70,10 +70,13 @@ export function WeixinTab() {
       </Card>
     );
   }
-  return data.installations.length ? (
+  const installations = data.installations.filter(
+    (installation) => !installationId || installation.id === installationId,
+  );
+  return installations.length ? (
     <Card>
       <CardContent className="divide-y">
-        {data.installations.map((item) => (
+        {installations.map((item) => (
           <div
             key={item.id}
             className="flex items-center justify-between py-3 first:pt-0 last:pb-0"

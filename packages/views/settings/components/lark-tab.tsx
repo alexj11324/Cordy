@@ -60,7 +60,7 @@ const LARK_INTL_CONNECT_ENABLED: boolean = false;
 // The settings page connects one workspace-scoped Hub. The channel selects
 // the active Agent with `/agents`; the optional per-Agent form remains
 // available for legacy links and existing installations.
-export function LarkTab() {
+export function LarkTab({ installationId }: { installationId?: string } = {}) {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -75,7 +75,9 @@ export function LarkTab() {
     ...larkInstallationsOptions(wsId),
     enabled: !!wsId,
   });
-  const installations = data?.installations ?? [];
+  const installations = (data?.installations ?? []).filter(
+    (installation) => !installationId || installation.id === installationId,
+  );
   const configured = data?.configured === true;
   // install_supported tracks whether the device-flow install path is
   // wired end-to-end on the server. When false, scan-to-bind would

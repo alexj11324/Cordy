@@ -227,15 +227,18 @@ function HubAction({
     );
   }
   if (hubConnected && installationId) {
+    const canReconnect = query.data.install_supported === true;
     return (
       <div className="flex flex-wrap items-center justify-end gap-2">
         <Button variant="outline" size="sm" onClick={onManage}>
           <Settings2 />
           {t(($) => $.page.integrations_manage)}
         </Button>
-        <Button variant="outline" size="sm" onClick={onReconnect}>
-          {t(($) => $.page.integrations_reconnect)}
-        </Button>
+        {canReconnect ? (
+          <Button variant="outline" size="sm" onClick={onReconnect}>
+            {t(($) => $.page.integrations_reconnect)}
+          </Button>
+        ) : null}
         <Button
           variant="ghost"
           size="sm"
@@ -296,6 +299,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
   const [managedChannel, setManagedChannel] = useState<IntegrationChannel | null>(null);
+  const [managedInstallationId, setManagedInstallationId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<{
     channel: IntegrationChannel;
     installationId: string;
@@ -394,12 +398,12 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
 
   function renderManagedTab(channel: IntegrationChannel) {
     return {
-      lark: <LarkTab />,
-      slack: <SlackTab />,
-      dingtalk: <DingTalkTab />,
-      wecom: <WecomTab />,
-      telegram: <TelegramTab />,
-      weixin: <WeixinTab />,
+      lark: <LarkTab installationId={managedInstallationId ?? undefined} />,
+      slack: <SlackTab installationId={managedInstallationId ?? undefined} />,
+      dingtalk: <DingTalkTab installationId={managedInstallationId ?? undefined} />,
+      wecom: <WecomTab installationId={managedInstallationId ?? undefined} />,
+      telegram: <TelegramTab installationId={managedInstallationId ?? undefined} />,
+      weixin: <WeixinTab installationId={managedInstallationId ?? undefined} />,
     }[channel];
   }
 
@@ -444,7 +448,10 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
                     isGuest={isGuest}
                     query={query}
                     installationId={hub?.id}
-                    onManage={() => setManagedChannel(channel)}
+                    onManage={() => {
+                      setManagedChannel(channel);
+                      setManagedInstallationId(hub?.id ?? null);
+                    }}
                     onReconnect={() => hub && setPendingAction({ channel, installationId: hub.id, reconnect: true })}
                     onDisconnect={() => hub && setPendingAction({ channel, installationId: hub.id, reconnect: false })}
                   >
@@ -497,7 +504,15 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
           {content}
         </SettingsTab>
       )}
-      <Dialog open={managedChannel !== null} onOpenChange={(open) => !open && setManagedChannel(null)}>
+      <Dialog
+        open={managedChannel !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setManagedChannel(null);
+            setManagedInstallationId(null);
+          }
+        }}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{t(($) => $.page.integrations_manage)}</DialogTitle>

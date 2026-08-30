@@ -46,7 +46,7 @@ import { useT } from "../../i18n";
 // The settings page connects one workspace-scoped Hub. The channel selects
 // the active Agent with `/agents`; the optional per-Agent form remains
 // available for legacy links and existing installations.
-export function WecomTab() {
+export function WecomTab({ installationId }: { installationId?: string } = {}) {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -61,7 +61,9 @@ export function WecomTab() {
     ...wecomInstallationsOptions(wsId),
     enabled: !!wsId,
   });
-  const installations = data?.installations ?? [];
+  const installations = (data?.installations ?? []).filter(
+    (installation) => !installationId || installation.id === installationId,
+  );
   const configured = data?.configured === true;
   const installSupported = data?.install_supported === true;
 
