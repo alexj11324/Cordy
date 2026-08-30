@@ -346,6 +346,7 @@
     "pull_requests_loading": "불러오는 중...",
     "pull_requests_empty": "아직 연결된 Pull request가 없습니다. 아래에서 명시적으로 연결하세요. PR 텍스트만으로는 연결되지 않습니다.",
     "pull_requests_attach_label": "Pull request URL",
+    "pull_requests_close_intent": "이 PR이 병합되면 이슈를 완료로 표시",
     "pull_requests_attach_placeholder": "https://github.com/org/repo/pull/123",
     "pull_requests_attach_action": "명시적으로 연결",
     "pull_requests_attaching": "연결 중…",

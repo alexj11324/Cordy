@@ -90,6 +90,9 @@ head branch. Only one match is durable. Zero matches remain unassociated;
 multiple matches, shared or active branches, default/detached heads, and lookup
 failures remain visibly ambiguous or ineligible for explicit confirmation. The
 branch is used only for this first lookup, not as a lasting association key.
+This automatic lookup is currently available only for GitHub App repositories;
+Forgejo, Gitea, and GitLab products remain unassociated until a member explicitly
+attaches them.
 
 ## Agents opening pull requests
 

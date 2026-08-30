@@ -348,6 +348,7 @@
     "pull_requests_loading": "Loading…",
     "pull_requests_empty": "No linked pull requests yet. Attach a PR explicitly below; text in a PR does not create a link.",
     "pull_requests_attach_label": "Pull request URL",
+    "pull_requests_close_intent": "Close the issue when this PR merges",
     "pull_requests_attach_placeholder": "https://github.com/org/repo/pull/123",
     "pull_requests_attach_action": "Attach",
     "pull_requests_attaching": "Attaching…",

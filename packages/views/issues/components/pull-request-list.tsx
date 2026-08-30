@@ -29,6 +29,7 @@ import {
 } from "@patchbay/core/github";
 import type { GitHubPullRequest, GitHubPullRequestState } from "@patchbay/core/types";
 import { Button } from "@patchbay/ui/components/ui/button";
+import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
 import { cn } from "@patchbay/ui/lib/utils";
 import { useT, useTimeAgo } from "../../i18n";
 
@@ -110,6 +111,7 @@ function UnassociatedPullRequests({ issueId, workspaceId }: { issueId: string; w
   const { data } = useQuery(unassociatedWorkProductsOptions(workspaceId));
   const mutation = useAttachIssueWorkProduct(issueId, workspaceId);
   const [attachingId, setAttachingId] = useState<string | null>(null);
+  const [closeIntent, setCloseIntent] = useState(false);
   const products = (data?.work_products ?? []).filter(
     (product) =>
       product.kind === "pull_request" &&
@@ -126,6 +128,14 @@ function UnassociatedPullRequests({ issueId, workspaceId }: { issueId: string; w
       <p className="text-micro font-medium text-muted-foreground">
         {t(($) => $.detail.pull_requests_unassociated_heading)}
       </p>
+      <label className="flex items-center gap-2 text-micro text-muted-foreground">
+        <Checkbox
+          checked={closeIntent}
+          onCheckedChange={(checked) => setCloseIntent(checked === true)}
+          aria-label={t(($) => $.detail.pull_requests_close_intent)}
+        />
+        <span>{t(($) => $.detail.pull_requests_close_intent)}</span>
+      </label>
       {products.map((product) => (
         <div key={product.id} className="flex items-center gap-2 text-micro">
           <a
@@ -144,7 +154,7 @@ function UnassociatedPullRequests({ issueId, workspaceId }: { issueId: string; w
             onClick={() => {
               setAttachingId(product.id);
               mutation.mutate(
-                { work_product_id: product.id },
+                { work_product_id: product.id, close_intent: closeIntent },
                 {
                   onSuccess: () => toast.success(t(($) => $.detail.pull_requests_attach_success)),
                   onError: () => toast.error(t(($) => $.detail.pull_requests_attach_failed)),
@@ -172,13 +182,14 @@ function AttachPullRequestForm({
 }) {
   const { t } = useT("issues");
   const [url, setUrl] = useState("");
+  const [closeIntent, setCloseIntent] = useState(false);
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const value = url.trim();
     if (!value || mutation.isPending) return;
     mutation.mutate(
-      { url: value },
+      { url: value, close_intent: closeIntent },
       {
         onSuccess: () => {
           setUrl("");
@@ -222,6 +233,14 @@ function AttachPullRequestForm({
           ? t(($) => $.detail.pull_requests_attaching)
           : t(($) => $.detail.pull_requests_attach_action)}
       </Button>
+      <label className="flex basis-full items-center gap-2 text-micro text-muted-foreground">
+        <Checkbox
+          checked={closeIntent}
+          onCheckedChange={(checked) => setCloseIntent(checked === true)}
+          aria-label={t(($) => $.detail.pull_requests_close_intent)}
+        />
+        <span>{t(($) => $.detail.pull_requests_close_intent)}</span>
+      </label>
     </form>
   );
 }

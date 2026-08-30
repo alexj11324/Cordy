@@ -346,6 +346,7 @@
     "pull_requests_loading": "加载中...",
     "pull_requests_empty": "还没有关联的 PR。请在下方显式关联；PR 文本不会自动建立关联。",
     "pull_requests_attach_label": "Pull Request URL",
+    "pull_requests_close_intent": "此 PR 合并后关闭 issue",
     "pull_requests_attach_placeholder": "https://github.com/org/repo/pull/123",
     "pull_requests_attach_action": "显式关联",
     "pull_requests_attaching": "关联中…",

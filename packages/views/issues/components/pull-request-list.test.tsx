@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import type { GitHubPullRequest } from "@patchbay/core/types";
@@ -7,6 +7,11 @@ import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
 
 const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
+
+const hookMocks = vi.hoisted(() => ({
+  attachIssuePullRequest: vi.fn(),
+  attachIssueWorkProduct: vi.fn(),
+}));
 
 vi.mock("@patchbay/core/github/queries", async () => {
   const actual = await vi.importActual<typeof import("@patchbay/core/github/queries")>(
@@ -26,6 +31,17 @@ vi.mock("@patchbay/core/github/queries", async () => {
     }),
   };
 });
+
+vi.mock("@patchbay/core/github/mutations", () => ({
+  useAttachIssuePullRequest: () => ({
+    mutate: hookMocks.attachIssuePullRequest,
+    isPending: false,
+  }),
+  useAttachIssueWorkProduct: () => ({
+    mutate: hookMocks.attachIssueWorkProduct,
+    isPending: false,
+  }),
+}));
 
 import { PullRequestList } from "./pull-request-list";
 
@@ -93,6 +109,25 @@ describe("PullRequestList sidebar rows", () => {
     );
     expect(screen.getByText(/does not create a link/)).toBeInTheDocument();
     expect(screen.queryByText(/auto-link/i)).not.toBeInTheDocument();
+  });
+
+  it("sends close intent only when the user explicitly selects it", async () => {
+    hookMocks.attachIssuePullRequest.mockClear();
+    mockPRs = [];
+    renderList();
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Close the issue when this PR merges" }),
+    );
+    fireEvent.change(screen.getByTestId("attach-pull-request-input"), {
+      target: { value: "https://github.com/acme/widget/pull/1" },
+    });
+    fireEvent.submit(screen.getByTestId("attach-pull-request-form"));
+
+    expect(hookMocks.attachIssuePullRequest).toHaveBeenCalledWith(
+      { url: "https://github.com/acme/widget/pull/1", close_intent: true },
+      expect.any(Object),
+    );
   });
 
   it("uses the sidebar list-row surface instead of a card surface", async () => {

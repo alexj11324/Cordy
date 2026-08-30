@@ -455,6 +455,7 @@ WHERE wp.workspace_id = $1
       WHERE wpr.workspace_id = wp.workspace_id
         AND wpr.work_product_id = wp.id
         AND wpr.detached_at IS NULL
+        AND wpr.issue_id IS NOT NULL
   )
 ORDER BY wp.updated_at DESC, wp.id DESC"#
     );
@@ -482,8 +483,9 @@ pub async fn get_execution_provenance(
 }
 
 /// Records the task-owned execution workspace before the agent starts and
-/// refreshes it at terminal delivery. `finished` only advances the terminal
-/// timestamp; it never resets discovery audit fields on a replay.
+/// refreshes it at terminal delivery. A terminal delivery replaces the
+/// execution head fields, including clearing a branch that no longer carries
+/// work; a late start replay cannot resurrect those terminal facts.
 pub async fn upsert_execution_provenance(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     task_id: Uuid,
@@ -509,13 +511,27 @@ ON CONFLICT (task_id) DO UPDATE SET
     run_id = COALESCE(agent_task_execution_provenance.run_id, EXCLUDED.run_id),
     repo_identity = COALESCE(agent_task_execution_provenance.repo_identity, EXCLUDED.repo_identity),
     execution_workspace = COALESCE(agent_task_execution_provenance.execution_workspace, EXCLUDED.execution_workspace),
-    head_branch = COALESCE(agent_task_execution_provenance.head_branch, EXCLUDED.head_branch),
+    head_branch = CASE
+        WHEN $9 THEN EXCLUDED.head_branch
+        WHEN agent_task_execution_provenance.finished_at IS NOT NULL
+        THEN agent_task_execution_provenance.head_branch
+        ELSE COALESCE(agent_task_execution_provenance.head_branch, EXCLUDED.head_branch)
+    END,
     head_sha = CASE
         WHEN $9 AND EXCLUDED.head_sha IS NOT NULL
         THEN EXCLUDED.head_sha
+        WHEN agent_task_execution_provenance.finished_at IS NOT NULL
+        THEN agent_task_execution_provenance.head_sha
         ELSE COALESCE(agent_task_execution_provenance.head_sha, EXCLUDED.head_sha)
     END,
-    head_state = CASE WHEN agent_task_execution_provenance.head_state <> 'unknown' THEN agent_task_execution_provenance.head_state ELSE EXCLUDED.head_state END,
+    head_state = CASE
+        WHEN $9 THEN EXCLUDED.head_state
+        WHEN agent_task_execution_provenance.finished_at IS NOT NULL
+        THEN agent_task_execution_provenance.head_state
+        WHEN agent_task_execution_provenance.head_state <> 'unknown'
+        THEN agent_task_execution_provenance.head_state
+        ELSE EXCLUDED.head_state
+    END,
     started_at = COALESCE(agent_task_execution_provenance.started_at, EXCLUDED.started_at),
     finished_at = CASE WHEN $9 THEN now() ELSE agent_task_execution_provenance.finished_at END,
     updated_at = now()

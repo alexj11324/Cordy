@@ -539,6 +539,11 @@ impl LocalWorktree {
         if !produced_work {
             let _ = delete_branch(&self.git_root, &self.branch).await;
             outcome.branch = String::new();
+            // The branch was deleted because this read-only task has no
+            // deliverable. Preserve that terminal fact for discovery: a
+            // start-time attached branch must not be rediscovered after it is
+            // removed.
+            outcome.head_state = "detached".to_string();
         }
 
         tracing::info!(
