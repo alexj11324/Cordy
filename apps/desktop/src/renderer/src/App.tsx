@@ -29,9 +29,6 @@ import { DesktopClientUsageReporter } from "./platform/client-usage-reporter";
 import { DiagnosticRouteReporter } from "./platform/diagnostic-route-reporter";
 import { flushFreezeBreadcrumb } from "./freeze-flush";
 import { DesktopAuthSessionBridge } from "./platform/auth-session-bridge";
-import { isDesktopWebPreview } from "./platform/web-bridge";
-import { DesktopWebPreviewSession } from "./platform/desktop-web-preview-session";
-import { DesktopWebPreviewOnboardingPage } from "./components/desktop-web-preview-onboarding-page";
 import { completeDesktopHandoff } from "./pages/login-handoff";
 
 // BCP-47 region tags for the <html lang> attribute, mirroring

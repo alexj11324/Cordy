@@ -3,16 +3,7 @@ import type { DaemonPrefs, DaemonStatus, LocalRuntimeProbe } from "../../../shar
 import type { NavigationGesture } from "../../../shared/navigation-gestures";
 import type { IssueWindowRequest } from "../../../shared/issue-window";
 
-declare global {
-  interface Window {
-    /** True when the Desktop renderer is running in Vite's browser host. */
-    __PATCHBAY_VITE_DESKTOP_PREVIEW__?: boolean;
-    /** True for both fixture and backend-enabled Vite browser hosts. */
-    __PATCHBAY_VITE_DESKTOP_HOST__?: boolean;
-  }
-}
-
-const BROWSER_PREVIEW_ERROR =
+const BROWSER_RENDERER_ERROR =
   "This Desktop control is unavailable in the browser renderer.";
 
 const BROWSER_DAEMON_PREFS: DaemonPrefs = {
@@ -84,30 +75,14 @@ export function installWebDesktopBridge(): boolean {
   const existingWindow = window as unknown as { desktopAPI?: unknown };
   if (existingWindow.desktopAPI) return false;
 
-  // The documented backend-enabled Vite path is selected by VITE_API_URL.
-  // VITE_DESKTOP_PREVIEW remains an explicit fixture-only override when no
-  // backend URL is present.
-  const preview =
-    !import.meta.env.VITE_API_URL &&
-    import.meta.env.VITE_DESKTOP_PREVIEW !== "false";
   const runtimeConfig = runtimeConfigFromDevEnv({
-    // The browser preview owns a same-origin local API middleware by default.
-    // An explicit VITE_API_URL still opts into a real remote/local backend for
-    // full server-backed acceptance without changing the Vite host.
-    apiUrl:
-      import.meta.env.VITE_API_URL ||
-      (preview ? window.location.origin : undefined),
-    wsUrl: import.meta.env.VITE_WS_URL,
-    // The no-backend preview must stay on its Vite origin. A backend-enabled
-    // browser host derives share links from VITE_API_URL unless VITE_APP_URL is
-    // explicit. Auth reuses that app origin unless VITE_ACCOUNTS_URL separates
-    // the broker onto another deployed host.
-    appUrl:
-      import.meta.env.VITE_APP_URL ||
-      (preview ? window.location.origin : undefined),
-    accountsUrl:
-      import.meta.env.VITE_ACCOUNTS_URL ||
-      (preview ? window.location.origin : undefined),
+    // `make start-worktree` exports the Next.js convention, while direct
+    // Desktop development uses Vite's convention. Accept both so a linked
+    // worktree never falls back to the primary checkout's port.
+    apiUrl: viteEnv.VITE_API_URL || viteEnv.NEXT_PUBLIC_API_URL,
+    wsUrl: viteEnv.VITE_WS_URL || viteEnv.NEXT_PUBLIC_WS_URL,
+    appUrl: viteEnv.VITE_APP_URL,
+    accountsUrl: viteEnv.VITE_ACCOUNTS_URL,
   });
   const daemonStatus = browserDaemonStatus(runtimeConfig.apiUrl);
 
@@ -251,21 +226,5 @@ export function installWebDesktopBridge(): boolean {
   window.daemonAPI = daemonAPI;
   window.updater = updater;
   window.electron = {} as Window["electron"];
-  window.__PATCHBAY_VITE_DESKTOP_HOST__ = true;
-  window.__PATCHBAY_VITE_DESKTOP_PREVIEW__ = preview;
   return true;
-}
-
-export function isDesktopWebHost(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    window.__PATCHBAY_VITE_DESKTOP_HOST__ === true
-  );
-}
-
-export function isDesktopWebPreview(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    window.__PATCHBAY_VITE_DESKTOP_PREVIEW__ === true
-  );
 }

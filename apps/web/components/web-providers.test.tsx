@@ -76,10 +76,6 @@ vi.mock("./clerk-auth-adapter", () => ({
   ClerkAuthAdapter: ({ children }: { children: ReactNode }) => children,
 }));
 
-vi.mock("@/lib/ui-fixtures/context", () => ({
-  UiFixturesProvider: ({ children }: { children: ReactNode }) => children,
-}));
-
 import { WebProviders } from "./web-providers";
 
 describe("WebProviders", () => {

@@ -8,8 +8,6 @@ const bridgeKeys = [
   "daemonAPI",
   "updater",
   "electron",
-  "__PATCHBAY_VITE_DESKTOP_HOST__",
-  "__PATCHBAY_VITE_DESKTOP_PREVIEW__",
 ] as const;
 
 function clearWebBridge(): void {
@@ -81,7 +79,6 @@ describe("Vite browser Desktop bridge", () => {
     expect(window.location.pathname).toBe("/auth/callback");
     expect(window.location.search).toContain("code=");
   });
-
 });
 
 describe("Vite browser Desktop bridge", () => {

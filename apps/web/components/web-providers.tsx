@@ -42,7 +42,6 @@ type WebProvidersProps = {
   resources: Record<string, LocaleResources>;
   apiBaseUrl?: string;
   wsUrl?: string;
-  uiFixtures?: boolean;
 };
 
 function clearWebSessionState() {
@@ -56,14 +55,8 @@ function WebProviderTree({
   resources,
   apiBaseUrl,
   wsUrl,
-  uiFixtures = false,
   onLogout,
 }: WebProvidersProps & { onLogout: AuthLogoutHandler }) {
-  // Normal web sessions are initialized by ClerkAuthAdapter. UI fixtures omit
-  // ClerkProvider, so they must use the cookie-auth initializer to reach the
-  // fixture /api/me endpoint instead of remaining in "authenticating" forever.
-  const clerkAuth = !uiFixtures;
-
   // Stable identity reference so downstream effects keyed on it don't see a
   // new object on every parent render.
   const identity = useMemo(
@@ -77,22 +70,20 @@ function WebProviderTree({
     </WebNavigationProvider>
   );
   return (
-    <UiFixturesProvider enabled={uiFixtures}>
-      <CoreProvider
-        apiBaseUrl={apiBaseUrl}
-        wsUrl={wsUrl || deriveWsUrl()}
-        clerkAuth={clerkAuth}
-        cookieAuth
-        onLogin={setLoggedInCookie}
-        onLogout={onLogout}
-        identity={identity}
-        locale={locale}
-        resources={resources}
-        localeAdapter={localeAdapter}
-      >
-        {uiFixtures ? tree : <ClerkAuthAdapter>{tree}</ClerkAuthAdapter>}
-      </CoreProvider>
-    </UiFixturesProvider>
+    <CoreProvider
+      apiBaseUrl={apiBaseUrl}
+      wsUrl={wsUrl || deriveWsUrl()}
+      clerkAuth
+      cookieAuth
+      onLogin={setLoggedInCookie}
+      onLogout={onLogout}
+      identity={identity}
+      locale={locale}
+      resources={resources}
+      localeAdapter={localeAdapter}
+    >
+      <ClerkAuthAdapter>{tree}</ClerkAuthAdapter>
+    </CoreProvider>
   );
 }
 
@@ -137,8 +128,5 @@ function ClerkWebProviders(props: WebProvidersProps) {
 }
 
 export function WebProviders(props: WebProvidersProps) {
-  if (props.uiFixtures) {
-    return <WebProviderTree {...props} onLogout={clearWebSessionState} />;
-  }
   return <ClerkWebProviders {...props} />;
 }
