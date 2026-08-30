@@ -17,7 +17,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: fce7fead79d71908e2475111940671995c9f1b6b
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Install Linux packaging dependencies
         run: |
