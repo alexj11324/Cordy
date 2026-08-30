@@ -123,9 +123,7 @@ describe("PullRequestList sidebar rows", () => {
     renderList();
     await screen.findByTestId("attach-pull-request-form");
 
-    fireEvent.click(
-      screen.getByRole("checkbox", { name: "Close the issue when this PR merges" }),
-    );
+    fireEvent.click(screen.getByRole("checkbox"));
     fireEvent.change(screen.getByTestId("attach-pull-request-input"), {
       target: { value: "https://github.com/acme/widget/pull/1" },
     });
