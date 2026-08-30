@@ -13,6 +13,7 @@ const {
       current: null as null | {
         onLogout?: (
           serverLogout?: Promise<void>,
+          options?: { rearmAuth?: boolean },
         ) => void | Promise<void>;
       },
     },
@@ -35,6 +36,7 @@ vi.mock("@patchbay/core/platform", () => ({
     children: ReactNode;
     onLogout?: (
       serverLogout?: Promise<void>,
+      options?: { rearmAuth?: boolean },
     ) => void | Promise<void>;
   }) => {
     coreProps.current = props;
@@ -153,6 +155,35 @@ describe("WebProviders", () => {
     });
 
     expect(retryAuthentication).toHaveBeenCalledOnce();
+    warn.mockRestore();
+  });
+
+  it("does not rearm a permanently rejected Clerk session", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    signOut.mockRejectedValue(new TypeError("offline"));
+    let releaseServerLogout!: () => void;
+    const serverLogout = new Promise<void>((resolve) => {
+      releaseServerLogout = resolve;
+    });
+    render(
+      <WebProviders locale="en" resources={{}}>
+        <div>content</div>
+      </WebProviders>,
+    );
+
+    const onLogout = coreProps.current?.onLogout;
+    expect(onLogout).toBeTypeOf("function");
+    const logoutPromise = onLogout?.(serverLogout, { rearmAuth: false });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(retryAuthentication).not.toHaveBeenCalled();
+
+    releaseServerLogout();
+    await act(async () => {
+      await logoutPromise;
+    });
+    expect(retryAuthentication).not.toHaveBeenCalled();
     warn.mockRestore();
   });
 });

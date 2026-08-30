@@ -1,6 +1,7 @@
 export { createAuthStore } from "./store";
 export type {
   AuthLogoutHandler,
+  AuthLogoutOptions,
   AuthStoreOptions,
   AuthState,
   AuthStatus,
