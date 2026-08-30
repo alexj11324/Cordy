@@ -40,7 +40,12 @@ function AuthCallbackContent() {
 
   useEffect(() => {
     if (searchParams.get("platform") === "desktop") {
-      router.replace(`/login?${buildDesktopHandoffQuery(searchParams)}`);
+      router.replace(
+        `/login?${buildDesktopHandoffQuery(
+          searchParams,
+          process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN,
+        )}`,
+      );
       return;
     }
     const redirectUrl = searchParams.get("redirect_url");
