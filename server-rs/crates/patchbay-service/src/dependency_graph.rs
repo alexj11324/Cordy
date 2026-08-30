@@ -1565,13 +1565,15 @@ mod tests {
                 .expect("delete dependency graph node issue"),
             1
         );
-        for table in [
-            "dependency_graph_edge",
-            "dependency_graph_node",
-            "dependency_graph_plan",
+        for (table, key_column) in [
+            ("dependency_graph_edge", "plan_id"),
+            ("dependency_graph_node", "plan_id"),
+            ("dependency_graph_plan", "id"),
         ] {
             let remaining: i64 =
-                sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table} WHERE plan_id = $1"))
+                sqlx::query_scalar(&format!(
+                    "SELECT COUNT(*) FROM {table} WHERE {key_column} = $1"
+                ))
                     .bind(first.plan.id)
                     .fetch_one(&pool)
                     .await
