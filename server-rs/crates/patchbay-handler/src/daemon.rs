@@ -3191,7 +3191,6 @@ async fn schedule_work_product_discovery(
     if let Err(error) = crate::work_product::queue_task_discovery(state, &task, workspace_id).await
     {
         tracing::warn!(%error, task_id = %task.id, "durable work product discovery enqueue failed");
-        return;
     }
 }
 
