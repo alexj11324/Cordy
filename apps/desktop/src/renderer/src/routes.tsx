@@ -31,6 +31,7 @@ import { InboxPage } from "@patchbay/views/inbox";
 import { ChatPage } from "@patchbay/views/chat";
 import { ChannelsPage } from "@patchbay/views/channels";
 import { SettingsPage } from "@patchbay/views/settings";
+import { WorkspaceIntegrationsPage } from "@patchbay/views/integrations";
 import { useT } from "@patchbay/views/i18n";
 import { Download, Server } from "lucide-react";
 import { DaemonSettingsTab } from "./components/daemon-settings-tab";
@@ -179,6 +180,11 @@ export const appRoutes: RouteObject[] = [
             handle: { title: "Device" },
           },
           { path: "skills", element: <SkillsPage />, handle: { title: "Skills" } },
+          {
+            path: "integrations",
+            element: <WorkspaceIntegrationsPage />,
+            handle: { title: "Integrations" },
+          },
           {
             path: "skills/:id",
             element: <SkillDetailPage />,

@@ -24,7 +24,11 @@ const membersRef = vi.hoisted(() => ({
 }));
 const dingtalkInstallationsRef = vi.hoisted(() => ({
   current: undefined as
-    | { installations: { agent_id: string | null }[] }
+    | {
+        configured: boolean;
+        install_supported: boolean;
+        installations: { id: string; agent_id: string | null; status: string }[];
+      }
     | undefined,
 }));
 
@@ -47,6 +51,7 @@ vi.mock("@tanstack/react-query", () => ({
     };
   },
   queryOptions: <T,>(opts: T) => opts,
+  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 
 vi.mock("@patchbay/core/composio", () => ({
@@ -158,10 +163,27 @@ describe("Settings IntegrationsTab", () => {
       expect(title).not.toBeNull();
       expect(description?.tagName).toBe("P");
       expect(description).toHaveClass("text-caption", "text-muted-foreground");
-      expect(card.parentElement).toHaveClass("grid", "sm:grid-cols-2");
+      expect(card.parentElement).toHaveClass("grid", "md:grid-cols-2", "xl:grid-cols-3");
       expect(icon).not.toHaveClass("border");
       expect(icon).toHaveClass("size-12");
     }
+  });
+
+  it("shows connected Hub management actions without an Agent preselection", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    dingtalkInstallationsRef.current = {
+      configured: true,
+      install_supported: true,
+      installations: [{ id: "hub-1", agent_id: null, status: "active" }],
+    };
+
+    renderTab();
+
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Manage" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reconnect" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
   });
 
   it("explains that Agent selection happens in the connected chat", () => {
@@ -201,7 +223,9 @@ describe("Settings IntegrationsTab", () => {
 
   it("keeps legacy DingTalk route management available", () => {
     dingtalkInstallationsRef.current = {
-      installations: [{ agent_id: "legacy-agent" }],
+      configured: true,
+      install_supported: true,
+      installations: [{ id: "legacy-1", agent_id: "legacy-agent", status: "active" }],
     };
 
     renderTab();

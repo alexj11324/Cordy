@@ -123,6 +123,7 @@ type NavKey =
   | "usage"
   | "runtimes"
   | "skills"
+  | "integrations"
   | "settings";
 
 // Static schema (key only) — labels resolved at render via useT("layout"),
@@ -157,6 +158,7 @@ const workspaceNav: { key: NavKey; labelKey: NavLabelKey }[] = [
   { key: "projects", labelKey: "projects" },
   { key: "autopilots", labelKey: "autopilots" },
   { key: "agents", labelKey: "agents" },
+  { key: "integrations", labelKey: "integrations" },
   { key: "teams", labelKey: "teams" },
   { key: "usage", labelKey: "usage" },
 ];
