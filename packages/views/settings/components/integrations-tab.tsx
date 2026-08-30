@@ -61,7 +61,6 @@ type InstallationSummary = {
   id: string;
   agent_id: string | null;
   status: string;
-  region?: string;
 };
 
 type InstallationListing = {
@@ -442,6 +441,13 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
             const hub = query.data?.installations.find(
               (installation) => installation.agent_id === null && installation.status === "active",
             );
+            const larkHubRegion =
+              channel === "lark"
+                ? lark.data?.installations.find(
+                    (installation) =>
+                      installation.agent_id === null && installation.status === "active",
+                  )?.region
+                : undefined;
             return (
               <IntegrationCard
                 key={channel}
@@ -456,7 +462,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
                     isGuest={isGuest}
                     query={query}
                     installationId={hub?.id}
-                    reconnectSupported={channel !== "lark" || hub?.region !== "lark"}
+                    reconnectSupported={channel !== "lark" || larkHubRegion !== "lark"}
                     onManage={() => {
                       setManagedChannel(channel);
                       setManagedInstallationId(hub?.id ?? null);
