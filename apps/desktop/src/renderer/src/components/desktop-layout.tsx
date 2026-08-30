@@ -20,13 +20,20 @@ import {
 } from "@patchbay/views/layout";
 import { SearchCommand, SearchTrigger } from "@patchbay/views/search";
 import { FloatingChat } from "@patchbay/views/chat";
-import { WorkspaceSlugProvider, paths, useCurrentWorkspace } from "@patchbay/core/paths";
+import {
+  WorkspaceSlugProvider,
+  paths,
+  useCurrentWorkspace,
+} from "@patchbay/core/paths";
 import { workspaceListOptions } from "@patchbay/core/workspace";
 import {
   useNavigation,
   type LinkClickIntent,
 } from "@patchbay/views/navigation";
-import { getCurrentSlug, subscribeToCurrentSlug } from "@patchbay/core/platform";
+import {
+  getCurrentSlug,
+  subscribeToCurrentSlug,
+} from "@patchbay/core/platform";
 import { useDesktopUnreadBadge } from "@patchbay/views/platform";
 import {
   DesktopNavigationProvider,
@@ -113,18 +120,20 @@ function useNativeNavigationGestures() {
   }, [goBack, goForward]);
 }
 
-
 // The main area's top bar doubles as a window drag region. When the sidebar
 // is not occupying main-flow width, leave room for the fixed window toolbar
 // so tabs do not land beneath the traffic lights / navigation controls.
 function MainTopBar() {
-  const { state, isCompact } = useSidebar();
-  const sidebarHidden = state === "collapsed" || isCompact;
+  const { open, isCompact } = useSidebar();
+  const sidebarHidden = !open || isCompact;
 
   return (
     <motion.header
       animate={{ paddingLeft: sidebarHidden ? WINDOW_TOOLBAR_CLEARANCE : 0 }}
-      className={cn("relative shrink-0 flex items-center gap-2", TOP_BAR_HEIGHT_CLASS)}
+      className={cn(
+        "relative shrink-0 flex items-center gap-2",
+        TOP_BAR_HEIGHT_CLASS,
+      )}
       initial={false}
       transition={toolbarMotion}
     >
@@ -149,8 +158,8 @@ function MainTopBar() {
 // leaves the main flow, the left margin must grow to mirror the fixed mr-2 so
 // the floating canvas sits symmetrically inside the window frame.
 function MainCanvas({ children }: { children: React.ReactNode }) {
-  const { state, isCompact } = useSidebar();
-  const sidebarHidden = state === "collapsed" || isCompact;
+  const { open, isCompact } = useSidebar();
+  const sidebarHidden = !open || isCompact;
 
   return (
     <motion.div
@@ -290,7 +299,12 @@ export function DesktopShell() {
           >
             {slug && <GlobalShortcuts />}
             {slug && <WindowToolbar />}
-            {slug && <AppSidebar topSlot={<SidebarTopSpacer />} searchSlot={<SearchTrigger />} />}
+            {slug && (
+              <AppSidebar
+                topSlot={<SidebarTopSpacer />}
+                searchSlot={<SearchTrigger />}
+              />
+            )}
             {/* Right side: header + content container */}
             <div className="flex flex-1 min-w-0 flex-col">
               <MainTopBar />

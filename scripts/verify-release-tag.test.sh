@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 guard="$repo_root/scripts/verify-release-tag.sh"
 release_workflow="$repo_root/.github/workflows/release.yml"
+macos_release_workflow="$repo_root/.github/workflows/macos-release.yml"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
@@ -42,6 +43,14 @@ for mode in lightweight annotated; do
     bash "$guard" v1.2.3 expected-sha >/dev/null
 done
 
+release_concurrency='group: production-release-${{ inputs.tag }}'
+macos_release_concurrency='group: production-release-${{ inputs.tag || github.event.workflow_run.head_branch || github.run_id }}'
+if ! grep -Fq -- "$release_concurrency" "$release_workflow" ||
+  ! grep -Fq -- "$macos_release_concurrency" "$macos_release_workflow"; then
+  echo "release workflows do not share the tag-scoped production publication lock" >&2
+  exit 1
+fi
+
 if PATH="$tmp_dir/bin:$PATH" \
   GITHUB_REPOSITORY=patchbay-ai/patchbay \
   FAKE_GH_MODE=mismatch \
@@ -66,7 +75,7 @@ if [ "$guard_count" -lt 7 ]; then
 fi
 
 for release_contract in \
-  'group: production-release-${{ inputs.tag }}' \
+  "$release_concurrency" \
   'git merge-base --is-ancestor "$commit_sha" origin/main' \
   'git merge-base --is-ancestor "$EXPECTED_COMMIT" origin/main'; do
   if ! grep -Fq -- "$release_contract" "$release_workflow"; then

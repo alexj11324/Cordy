@@ -24,7 +24,10 @@ permissions:
   contents: write
 
 concurrency:
-  group: macos-desktop-release-${{ inputs.tag || github.event.workflow_run.head_sha || github.run_id }}
+  # Share the tag-scoped publication lock with release.yml. The automatic
+  # path receives the version tag as workflow_run.head_branch, while manual
+  # runs receive the same value through inputs.tag.
+  group: production-release-${{ inputs.tag || github.event.workflow_run.head_branch || github.run_id }}
   cancel-in-progress: false
 
 jobs:
