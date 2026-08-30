@@ -725,26 +725,8 @@
       "cancel_failed_toast": "Failed to cancel task",
       "started_prefix": "Started {{when}}",
       "dispatched_prefix": "Dispatched {{when}}",
-      "queued_prefix": "Queued {{when}}",
-      "open_run_aria": "Open run details",
-      "open_run_tooltip": "Open run details"
+      "queued_prefix": "Queued {{when}}"
     }
-  },
-  "task_detail": {
-    "title": "Run details",
-    "description": "{{agent}} · {{status}}",
-    "loading": "Loading run details…",
-    "load_failed": "Could not load this run's execution messages.",
-    "empty": "No execution messages were recorded for this run.",
-    "events_one": "{{count}} event",
-    "events_other": "{{count}} events",
-    "text": "Message",
-    "thinking": "Thinking",
-    "tool_use": "Tool call",
-    "tool_result": "Tool result",
-    "error": "Error",
-    "input": "Input",
-    "open_tooltip": "Open run details"
   },
   "char_counter": {
     "over_limit": " · {{count}} over limit"

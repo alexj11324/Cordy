@@ -7,11 +7,7 @@ import {
   Webhook, RotateCw, Server,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  autopilotDetailOptions,
-  autopilotRunOptions,
-  autopilotRunsOptions,
-} from "@patchbay/core/autopilots/queries";
+import { autopilotDetailOptions, autopilotRunsOptions } from "@patchbay/core/autopilots/queries";
 import { projectDetailOptions } from "@patchbay/core/projects/queries";
 import {
   useUpdateAutopilot,
@@ -64,12 +60,9 @@ import type {
   AutopilotSubscriber,
   AutopilotTrigger,
 } from "@patchbay/core/types";
-import type { AgentTask } from "@patchbay/core/types/agent";
 import { ReadonlyContent } from "../../editor";
-import { TaskRunDetailButton } from "../../common/task-run-detail-dialog";
 import { AutopilotDialog } from "./autopilot-dialog";
 import { runNowToastKind, runNowBlockedKey } from "./run-now-toast";
-import { WebhookPayloadPreview } from "./webhook-payload-preview";
 import { WebhookDeliveriesSection } from "./webhook-deliveries-section";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { useT } from "../../i18n";
@@ -92,62 +85,12 @@ const RUN_VISUAL: Record<RunStatus, { color: string; icon: typeof CheckCircle2; 
   failed: { color: "text-destructive", icon: XCircle },
 };
 
-// The run list omits the potentially large webhook envelope. Fetch it only
-// when a user opens the read-only non-issue run inspection surface.
-function WebhookPayloadSlot({
-  autopilotId,
-  runId,
-}: {
-  autopilotId: string;
-  runId: string;
-}) {
-  const wsId = useWorkspaceId();
-  const { data, isLoading } = useQuery(
-    autopilotRunOptions(wsId, autopilotId, runId),
-  );
-  if (isLoading) return <Skeleton className="h-9 w-full" />;
-  if (!data || data.trigger_payload == null) return null;
-  return <WebhookPayloadPreview payload={data.trigger_payload} />;
-}
-
-function syntheticTaskForRun(run: AutopilotRun): AgentTask | null {
-  if (!run.task_id) return null;
-  return {
-    id: run.task_id,
-    agent_id: "",
-    runtime_id: "",
-    issue_id: "",
-    status:
-      run.status === "running"
-        ? "running"
-        : run.status === "completed"
-          ? "completed"
-          : run.status === "failed"
-            ? "failed"
-            : "queued",
-    priority: 0,
-    dispatched_at: null,
-    started_at: run.triggered_at || null,
-    completed_at: run.completed_at || null,
-    result: null,
-    error: run.failure_reason || null,
-    created_at: run.created_at,
-  };
-}
-
-function RunRow({
-  run,
-  agentName,
-}: {
-  run: AutopilotRun;
-  agentName: string;
-}) {
+function RunRow({ run }: { run: AutopilotRun }) {
   const { t, i18n } = useT("autopilots");
   const wsPaths = useWorkspacePaths();
   const status = (RUN_VISUAL[run.status as RunStatus] ? (run.status as RunStatus) : "issue_created");
   const visual = RUN_VISUAL[status];
   const StatusIcon = visual.icon;
-  const task = syntheticTaskForRun(run);
 
   const content = (
     <>
@@ -168,19 +111,6 @@ function RunRow({
       <span className="w-32 shrink-0 text-right text-caption text-muted-foreground tabular-nums">
         {formatInTimeZone(run.triggered_at || run.created_at, undefined, i18n.language)}
       </span>
-      {task && !run.issue_id && (
-        <TaskRunDetailButton
-          task={task}
-          agentName={agentName}
-          statusLabel={t(($) => $.run_status[status])}
-          title={t(($) => $.run.view_log)}
-          headerSlot={
-            run.source === "webhook" ? (
-              <WebhookPayloadSlot autopilotId={run.autopilot_id} runId={run.id} />
-            ) : undefined
-          }
-        />
-      )}
     </>
   );
 
@@ -197,23 +127,17 @@ function RunRow({
   return <div className={rowClass}>{content}</div>;
 }
 
-function RunHistoryList({
-  runs,
-  agentName,
-}: {
-  runs: AutopilotRun[];
-  agentName: string;
-}) {
+function RunHistoryList({ runs }: { runs: AutopilotRun[] }) {
   const visibleRuns = runs.filter((run) => run.status !== "skipped");
   const skippedRuns = runs.filter((run) => run.status === "skipped");
 
   return (
     <div className="rounded-md border overflow-hidden">
       {visibleRuns.map((run) => (
-        <RunRow key={run.id} run={run} agentName={agentName} />
+        <RunRow key={run.id} run={run} />
       ))}
       {skippedRuns.length > 0 && (
-        <SkippedRunsGroup runs={skippedRuns} agentName={agentName} />
+        <SkippedRunsGroup runs={skippedRuns} />
       )}
     </div>
   );
@@ -221,10 +145,8 @@ function RunHistoryList({
 
 function SkippedRunsGroup({
   runs,
-  agentName,
 }: {
   runs: AutopilotRun[];
-  agentName: string;
 }) {
   const { t, i18n } = useT("autopilots");
   const [open, setOpen] = useState(false);
@@ -256,7 +178,7 @@ function SkippedRunsGroup({
       {open && (
         <div className="border-t bg-background">
           {runs.map((run) => (
-            <RunRow key={run.id} run={run} agentName={agentName} />
+            <RunRow key={run.id} run={run} />
           ))}
         </div>
       )}
@@ -728,7 +650,6 @@ export function AutopilotDetailPage({ autopilotId }: { autopilotId: string }) {
   // edit/run but cannot grant/revoke. Fall back to canWrite when the server
   // doesn't send the field (older backend).
   const canManageAccess = autopilot.can_manage_access ?? canWrite;
-  const runAgentName = getActorName(autopilot.assignee_type, autopilot.assignee_id);
 
   const handleRunNow = async () => {
     try {
@@ -1001,7 +922,7 @@ export function AutopilotDetailPage({ autopilotId }: { autopilotId: string }) {
                 {t(($) => $.detail.no_runs)}
               </div>
             ) : (
-              <RunHistoryList runs={runs} agentName={runAgentName} />
+              <RunHistoryList runs={runs} />
             )}
           </section>
 

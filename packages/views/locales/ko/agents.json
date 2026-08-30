@@ -612,25 +612,8 @@
       "cancel_failed_toast": "작업을 취소하지 못했습니다",
       "started_prefix": "{{when}} 시작됨",
       "dispatched_prefix": "{{when}} 디스패치됨",
-      "queued_prefix": "{{when}} 대기 시작",
-      "open_run_aria": "실행 세부 정보 열기",
-      "open_run_tooltip": "실행 세부 정보 열기"
+      "queued_prefix": "{{when}} 대기 시작"
     }
-  },
-  "task_detail": {
-    "title": "실행 세부 정보",
-    "description": "{{agent}} · {{status}}",
-    "loading": "실행 세부 정보를 불러오는 중…",
-    "load_failed": "이 실행의 실행 메시지를 불러오지 못했습니다.",
-    "empty": "이 실행에는 기록된 실행 메시지가 없습니다.",
-    "events_other": "이벤트 {{count}}개",
-    "text": "메시지",
-    "thinking": "생각",
-    "tool_use": "도구 호출",
-    "tool_result": "도구 결과",
-    "error": "오류",
-    "input": "입력",
-    "open_tooltip": "실행 세부 정보 열기"
   },
   "char_counter": {
     "over_limit": " · 제한 초과 {{count}}자"

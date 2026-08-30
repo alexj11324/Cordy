@@ -144,8 +144,7 @@
     "skipped_group": {
       "label": "건너뜀",
       "summary": "건너뛴 실행 {{count}}개"
-    },
-    "view_log": "실행 로그 보기"
+    }
   },
   "webhook_payload": {
     "label": "Webhook 이벤트:",

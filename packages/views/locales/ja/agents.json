@@ -604,25 +604,8 @@
       "cancel_failed_toast": "作業をキャンセルできませんでした",
       "started_prefix": "{{when}} に開始",
       "dispatched_prefix": "{{when}} にディスパッチ",
-      "queued_prefix": "{{when}} に待機開始",
-      "open_run_aria": "実行詳細を開く",
-      "open_run_tooltip": "実行詳細を開く"
+      "queued_prefix": "{{when}} に待機開始"
     }
-  },
-  "task_detail": {
-    "title": "実行詳細",
-    "description": "{{agent}} · {{status}}",
-    "loading": "実行詳細を読み込んでいます…",
-    "load_failed": "この実行のメッセージを読み込めませんでした。",
-    "empty": "この実行には実行メッセージが記録されていません。",
-    "events_other": "イベント {{count}} 件",
-    "text": "メッセージ",
-    "thinking": "思考",
-    "tool_use": "ツール呼び出し",
-    "tool_result": "ツール結果",
-    "error": "エラー",
-    "input": "入力",
-    "open_tooltip": "実行詳細を開く"
   },
   "char_counter": {
     "over_limit": " · 制限を {{count}} 文字超過"

@@ -4,7 +4,6 @@ import {
   deriveAvgDurationLast30d,
   formatDurationMs,
 } from "./activity-tab";
-import { shouldShowTaskRunDetails } from "../../../common/task-run-detail-dialog";
 
 const NOW = new Date("2026-04-28T12:00:00Z").getTime();
 const HOUR = 60 * 60 * 1000;
@@ -106,21 +105,5 @@ describe("formatDurationMs", () => {
   it("handles zero / negative defensively", () => {
     expect(formatDurationMs(0)).toBe("—");
     expect(formatDurationMs(-100)).toBe("—");
-  });
-});
-
-describe("shouldShowTaskRunDetails", () => {
-  it("keeps an inspection action for unlinked non-chat work", () => {
-    expect(shouldShowTaskRunDetails({ issue_id: "" })).toBe(true);
-  });
-
-  it("leaves issue-linked work on the issue-thread surface", () => {
-    expect(shouldShowTaskRunDetails({ issue_id: "issue-1" })).toBe(false);
-  });
-
-  it("leaves chat work on its chat surface", () => {
-    expect(
-      shouldShowTaskRunDetails({ issue_id: "", chat_session_id: "chat-1" }),
-    ).toBe(false);
   });
 });

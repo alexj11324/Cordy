@@ -144,8 +144,7 @@
     "skipped_group": {
       "label": "Skipped",
       "summary": "{{count}} skipped runs"
-    },
-    "view_log": "View run log"
+    }
   },
   "webhook_payload": {
     "label": "Webhook event:",

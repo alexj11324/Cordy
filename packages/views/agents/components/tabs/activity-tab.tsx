@@ -37,10 +37,6 @@ import {
   IssueAgentConversationTrigger,
 } from "../../../issues/components/issue-agent-conversation-dialog";
 import { AttributionBadge } from "../../../issues/components/attribution-badge";
-import {
-  shouldShowTaskRunDetails,
-  TaskRunDetailButton,
-} from "../../../common/task-run-detail-dialog";
 import { taskStatusConfig } from "../../config";
 import { cancelReasonLabel, failureReasonLabel } from "./task-failure";
 import { Sparkline } from "../sparkline";
@@ -530,7 +526,6 @@ function TaskRow({
   const isRunning = task.status === "running";
   const chatSessionId = task.chat_session_id;
   const showChat = !hasIssue && Boolean(chatSessionId);
-  const showRunDetails = shouldShowTaskRunDetails(task);
   // Cancel only makes sense for the three active states. Terminal rows
   // (completed / failed / cancelled) hide the button entirely.
   const showCancel =
@@ -715,10 +710,10 @@ function TaskRow({
         </div>
       </div>
 
-      {/* Hover-only actions. The row is intentionally non-clickable so the
-          available inspection destinations remain explicit: issue detail and
-          conversation for issue work, run details for unlinked work.
-          focus-within keeps the slot reachable for keyboard users. */}
+      {/* Hover-only actions. The row is intentionally non-clickable so
+          neither destination is privileged — issue detail and the agent
+          conversation are equally valid follow-ups. focus-within keeps the
+          slot reachable for keyboard users. */}
       <div className="ml-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100">
         {hasIssue && (
           <Tooltip>
@@ -743,14 +738,6 @@ function TaskRow({
               />
             )}
           </>
-        )}
-        {showRunDetails && (
-          <TaskRunDetailButton
-            task={task}
-            agentName={agent.name}
-            statusLabel={taskStatusLabel(task.status, t)}
-            title={t(($) => $.tab_body.activity.open_run_tooltip)}
-          />
         )}
         {showChat && chatSessionId && (
           <Tooltip>

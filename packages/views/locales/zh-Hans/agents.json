@@ -711,25 +711,8 @@
       "cancel_failed_toast": "取消 task 失败",
       "started_prefix": "{{when}}启动",
       "dispatched_prefix": "{{when}}派发",
-      "queued_prefix": "{{when}}排队",
-      "open_run_aria": "打开运行详情",
-      "open_run_tooltip": "打开运行详情"
+      "queued_prefix": "{{when}}排队"
     }
-  },
-  "task_detail": {
-    "title": "运行详情",
-    "description": "{{agent}} · {{status}}",
-    "loading": "正在加载运行详情…",
-    "load_failed": "无法加载此次运行的执行消息。",
-    "empty": "此次运行没有记录执行消息。",
-    "events_other": "{{count}} 个事件",
-    "text": "消息",
-    "thinking": "思考",
-    "tool_use": "工具调用",
-    "tool_result": "工具结果",
-    "error": "错误",
-    "input": "输入",
-    "open_tooltip": "打开运行详情"
   },
   "char_counter": {
     "over_limit": " · 超出 {{count}} 字"

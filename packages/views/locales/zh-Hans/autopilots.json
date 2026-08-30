@@ -144,8 +144,7 @@
     "skipped_group": {
       "label": "已跳过",
       "summary": "{{count}} 条跳过的运行"
-    },
-    "view_log": "查看运行日志"
+    }
   },
   "webhook_payload": {
     "label": "Webhook 事件：",
