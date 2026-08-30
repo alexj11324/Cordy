@@ -302,8 +302,7 @@ fn clear_untrusted_task_identity(req: &mut Request) {
     }
 }
 
-fn stamp_task_identity(
-    req: &mut Request,
+struct TaskIdentity {
     user_id: Uuid,
     agent_id: Uuid,
     task_id: Uuid,
@@ -311,20 +310,26 @@ fn stamp_task_identity(
     lease_id: Uuid,
     on_behalf_of_user_id: Option<Uuid>,
     device_id: Option<Uuid>,
-) {
-    set_header(req, "x-user-id", &user_id.to_string());
-    set_header(req, "x-agent-id", &agent_id.to_string());
-    set_header(req, "x-task-id", &task_id.to_string());
-    set_header(req, "x-workspace-id", &workspace_id.to_string());
-    set_header(req, "x-capability-lease-id", &lease_id.to_string());
-    if let Some(on_behalf_of_user_id) = on_behalf_of_user_id {
+}
+
+fn stamp_task_identity(req: &mut Request, identity: TaskIdentity) {
+    set_header(req, "x-user-id", &identity.user_id.to_string());
+    set_header(req, "x-agent-id", &identity.agent_id.to_string());
+    set_header(req, "x-task-id", &identity.task_id.to_string());
+    set_header(req, "x-workspace-id", &identity.workspace_id.to_string());
+    set_header(
+        req,
+        "x-capability-lease-id",
+        &identity.lease_id.to_string(),
+    );
+    if let Some(on_behalf_of_user_id) = identity.on_behalf_of_user_id {
         set_header(
             req,
             "x-on-behalf-of-user-id",
             &on_behalf_of_user_id.to_string(),
         );
     }
-    if let Some(device_id) = device_id {
+    if let Some(device_id) = identity.device_id {
         set_header(req, "x-device-id", &device_id.to_string());
     }
     set_header(req, "x-actor-source", "task_token");
@@ -500,13 +505,15 @@ pub async fn auth_middleware(
         }
         stamp_task_identity(
             &mut req,
-            tt.user_id,
-            tt.agent_id,
-            tt.task_id,
-            tt.workspace_id,
-            tt.id,
-            tt.on_behalf_of_user_id,
-            tt.device_id,
+            TaskIdentity {
+                user_id: tt.user_id,
+                agent_id: tt.agent_id,
+                task_id: tt.task_id,
+                workspace_id: tt.workspace_id,
+                lease_id: tt.id,
+                on_behalf_of_user_id: tt.on_behalf_of_user_id,
+                device_id: tt.device_id,
+            },
         );
         return Ok(next.run(req).await);
     }
@@ -872,13 +879,15 @@ mod tests {
         clear_untrusted_task_identity(&mut request);
         stamp_task_identity(
             &mut request,
-            user_id,
-            agent_id,
-            task_id,
-            workspace_id,
-            lease_id,
-            Some(on_behalf_of),
-            Some(device_id),
+            TaskIdentity {
+                user_id,
+                agent_id,
+                task_id,
+                workspace_id,
+                lease_id,
+                on_behalf_of_user_id: Some(on_behalf_of),
+                device_id: Some(device_id),
+            },
         );
 
         for (name, expected) in [
