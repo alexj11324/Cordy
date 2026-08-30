@@ -1,0 +1,58 @@
+name: Aspectlylabs packaged Electron artifact
+
+on:
+  push:
+    branches:
+      - codex/aspectlylabs-fce-desktop
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  desktop-linux-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout exact deployment source
+        uses: actions/checkout@v4
+        with:
+          ref: fce7fead79d71908e2475111940671995c9f1b6b
+          fetch-depth: 0
+
+      - name: Install Linux packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools rpm
+
+      - name: Set up Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-unknown-linux-musl
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
+          echo "CC_AARCH64_UNKNOWN_LINUX_MUSL=musl-gcc" >> "$GITHUB_ENV"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Package ARM64 Electron
+        working-directory: apps/desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: node scripts/package.mjs --linux --arm64 --publish never
+
+      - name: Upload packaged Electron artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-linux-arm64-fce7fead
+          path: apps/desktop/dist
+          if-no-files-found: error
