@@ -1310,7 +1310,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn production_dependencies_gate_composio_and_task_overlay() {
+    async fn production_dependencies_gate_composio_and_keep_task_overlay_disabled() {
         let _env = RestoreComposioEnv::clear();
         let build = || {
             HandlerState::new_with_production_dependencies(
@@ -1346,7 +1346,7 @@ mod tests {
         std::env::set_var("COMPOSIO_CALLBACK_BASE_URL", "https://api.example.com/");
         let configured = build();
         assert!(configured.composio.is_some());
-        assert!(configured.tasks.composio.read().unwrap().is_some());
+        assert!(configured.tasks.composio.read().unwrap().is_none());
 
         std::env::set_var("FF_COMPOSIO_MCP_APPS", "0");
         let flag_disabled = build();
