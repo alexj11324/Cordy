@@ -26,6 +26,21 @@ reject_rendered_value() {
   fi
 }
 
+require_rendered_count() {
+  local rendered=$1
+  local expected=$2
+  local count=$3
+  local actual
+
+  actual="$(grep -Fc -- "$expected" <<<"$rendered" || true)"
+  if [[ "$actual" != "$count" ]]; then
+    echo "Unexpected Helm-rendered config value count:"
+    echo "  expected $count occurrence(s) of: $expected"
+    echo "  found: $actual"
+    exit 1
+  fi
+}
+
 helm lint "$CHART_DIR"
 
 default_config="$(
@@ -77,5 +92,18 @@ require_rendered_value "$entitlement_config" 'PATCHBAY_ENTITLEMENT_POLICY_TIMEOU
 require_rendered_value "$entitlement_config" 'PATCHBAY_ENTITLEMENT_STALE_GRACE: "10m"'
 require_rendered_value "$entitlement_config" 'PATCHBAY_ENTITLEMENT_EMERGENCY_DISABLED: "false"'
 reject_rendered_value "$entitlement_config" 'PATCHBAY_ENTITLEMENT_SERVICE_TOKEN'
+
+canonical_auth_ingress="$(
+  helm template patchbay "$CHART_DIR" \
+    --show-only templates/ingress.yaml \
+    --set-string ingress.frontend.host=patchbay.aspectlylabs.com \
+    --set-string 'ingress.frontend.additionalHosts[0]=accounts.aspectlylabs.com' \
+    --set-string ingress.backend.host=api.aspectlylabs.com
+)"
+require_rendered_value "$canonical_auth_ingress" 'host: "patchbay.aspectlylabs.com"'
+require_rendered_value "$canonical_auth_ingress" 'host: "accounts.aspectlylabs.com"'
+require_rendered_value "$canonical_auth_ingress" 'host: "api.aspectlylabs.com"'
+require_rendered_count "$canonical_auth_ingress" 'number: 3000' 2
+require_rendered_count "$canonical_auth_ingress" 'number: 8080' 1
 
 echo "helm config rendering ok"

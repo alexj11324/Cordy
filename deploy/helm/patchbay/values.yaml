@@ -229,6 +229,10 @@ ingress:
   annotations: {}
   frontend:
     host: patchbay.dev.lan
+    # Route other Web entrypoints to the same frontend Service. The canonical
+    # hosted deployment adds accounts.aspectlylabs.com here while keeping
+    # patchbay.aspectlylabs.com as the primary host.
+    additionalHosts: []
   backend:
     host: api.patchbay.dev.lan
   # tls:
