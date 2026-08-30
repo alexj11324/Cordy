@@ -678,7 +678,8 @@ mod tests {
         .unwrap();
         let cfg = fs::read_to_string(overlay.join("config.yaml")).unwrap();
         assert!(!cfg.contains("/srv/skills"));
-        assert!(cfg.contains("provider: none"));
+        let cfg: Value = serde_yaml::from_str(&cfg).unwrap();
+        assert_eq!(cfg["memory"]["provider"].as_str(), Some(""));
         let dotenv = fs::read_to_string(overlay.join(".env")).unwrap();
         assert!(!dotenv.contains("HERMES_HOME=/wrong"));
         assert!(!dotenv.contains("API_KEY=secret"));

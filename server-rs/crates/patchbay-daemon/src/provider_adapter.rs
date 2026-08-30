@@ -3046,7 +3046,7 @@ mod tests {
         configure_codex_task_shell_environment("codex", &codex_home, &task, &child_env).unwrap();
 
         let config = std::fs::read_to_string(temp.path().join("config.toml")).unwrap();
-        assert!(config.contains("CUSTOM_API_TOKEN"));
+        assert!(!config.contains("CUSTOM_API_TOKEN"));
         assert!(config.contains("PATH"));
         assert!(!config.contains("secret"));
         assert!(!config.contains("blocked"));
