@@ -312,6 +312,22 @@ async fn remove(
             "failed to remove connection",
         );
     }
+    let affected_issue_ids = match vcs::list_issue_ids_for_vcs_connection_work_products(
+        &mut *transaction,
+        connection_id,
+        workspace_id,
+    )
+    .await
+    {
+        Ok(issue_ids) => issue_ids,
+        Err(error) => {
+            tracing::warn!(%error, %connection_id, "vcs: list connection issue relations failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to remove connection",
+            );
+        }
+    };
     if let Err(error) =
         vcs::delete_vcs_connection(&mut *transaction, connection_id, workspace_id).await
     {
@@ -335,6 +351,24 @@ async fn remove(
         payload: json!({"id": raw_id}),
         ..Default::default()
     });
+    for issue_id in affected_issue_ids {
+        match patchbay_db::queries::issue::get_issue_in_workspace(
+            &state.pool,
+            issue_id,
+            workspace_id,
+        )
+        .await
+        {
+            Ok(Some(issue)) => crate::vcs_webhook::maybe_complete_issue(&state, issue).await,
+            Ok(None) => {}
+            Err(error) => tracing::warn!(
+                %error,
+                %issue_id,
+                %connection_id,
+                "vcs: re-evaluate issue after connection deletion failed"
+            ),
+        }
+    }
     StatusCode::NO_CONTENT.into_response()
 }
 

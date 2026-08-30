@@ -112,7 +112,11 @@ pub async fn get_issue_combined_pull_request_close_aggregate(
 ) -> anyhow::Result<Option<GetIssueCombinedPullRequestCloseAggregateRow>> {
     let row = sqlx::query(
         r#"WITH combined AS (
-    SELECT pr.id, pr.state AS state, bool_or(wpr.close_intent) AS close_intent
+    SELECT
+        pr.id,
+        pr.state AS state,
+        bool_or(wpr.close_intent) AS close_intent,
+        pr.installation_id IS NOT NULL AS provider_verified
     FROM github_pull_request pr
     JOIN work_product wp
       ON wp.workspace_id = pr.workspace_id
@@ -123,9 +127,13 @@ pub async fn get_issue_combined_pull_request_close_aggregate(
      AND wpr.work_product_id = wp.id
      AND wpr.issue_id = $1
      AND wpr.detached_at IS NULL
-    GROUP BY pr.id, pr.state
+    GROUP BY pr.id, pr.state, pr.installation_id
     UNION ALL
-    SELECT pr.id, pr.state AS state, bool_or(wpr.close_intent) AS close_intent
+    SELECT
+        pr.id,
+        pr.state AS state,
+        bool_or(wpr.close_intent) AS close_intent,
+        TRUE AS provider_verified
     FROM vcs_pull_request pr
     JOIN work_product wp
       ON wp.workspace_id = pr.workspace_id
@@ -139,8 +147,8 @@ pub async fn get_issue_combined_pull_request_close_aggregate(
     GROUP BY pr.id, pr.state
 )
 SELECT
-    COALESCE(SUM(CASE WHEN state IN ('open', 'draft') THEN 1 ELSE 0 END), 0)::bigint AS open_count,
-    COALESCE(SUM(CASE WHEN state = 'merged' AND close_intent THEN 1 ELSE 0 END), 0)::bigint AS merged_with_close_intent_count
+    COALESCE(SUM(CASE WHEN state IN ('open', 'draft') OR NOT provider_verified THEN 1 ELSE 0 END), 0)::bigint AS open_count,
+    COALESCE(SUM(CASE WHEN state = 'merged' AND close_intent AND provider_verified THEN 1 ELSE 0 END), 0)::bigint AS merged_with_close_intent_count
 FROM combined"#
     )
         .bind(issue_id)
@@ -151,6 +159,38 @@ FROM combined"#
         open_count: row.try_get(0)?,
         merged_with_close_intent_count: row.try_get(1)?,
     }))
+}
+
+/// Returns issues whose active Work Product relations will be removed with a
+/// VCS connection. Call this after locking the connection products and before
+/// deleting them so the caller can re-evaluate the surviving close intents.
+pub async fn list_issue_ids_for_vcs_connection_work_products(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    connection_id: Uuid,
+    workspace_id: Uuid,
+) -> anyhow::Result<Vec<Uuid>> {
+    let rows = sqlx::query(
+        r#"SELECT DISTINCT wpr.issue_id
+FROM vcs_pull_request pr
+JOIN work_product wp
+  ON wp.workspace_id = pr.workspace_id
+ AND wp.provider_record_type = 'vcs_pull_request'
+ AND wp.provider_record_id = pr.id
+JOIN work_product_relation wpr
+  ON wpr.workspace_id = wp.workspace_id
+ AND wpr.work_product_id = wp.id
+WHERE pr.connection_id = $1
+  AND pr.workspace_id = $2
+  AND wpr.issue_id IS NOT NULL
+  AND wpr.detached_at IS NULL"#,
+    )
+    .bind(connection_id)
+    .bind(workspace_id)
+    .fetch_all(executor)
+    .await?;
+    rows.into_iter()
+        .map(|row| row.try_get(0).map_err(Into::into))
+        .collect()
 }
 
 pub async fn get_vcs_connection_by_id(

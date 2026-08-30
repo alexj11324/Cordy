@@ -2973,12 +2973,6 @@ async fn record_execution_provenance(
         Ok(value) => value,
         Err(response) => return response,
     };
-    if task.status != "running" {
-        return error_response(
-            StatusCode::CONFLICT,
-            "execution provenance requires a running task",
-        );
-    }
     let Some(Json(request)) = body else {
         return error_response(StatusCode::BAD_REQUEST, "invalid request body");
     };
@@ -2990,6 +2984,12 @@ async fn record_execution_provenance(
         execution_head_state: sanitize(&request.execution_head_state),
         finished: request.finished,
     };
+    if !task_status_allows_execution_provenance(&task.status, request.finished) {
+        return error_response(
+            StatusCode::CONFLICT,
+            "execution provenance requires a running task or a final cancelled-task update",
+        );
+    }
     if request.execution_repo_identity.trim().is_empty()
         || request.execution_workspace.trim().is_empty()
         || request.execution_head_state.trim().is_empty()
@@ -3065,6 +3065,10 @@ async fn record_execution_provenance(
             )
         }
     }
+}
+
+fn task_status_allows_execution_provenance(status: &str, finished: bool) -> bool {
+    status == "running" || (status == "cancelled" && finished)
 }
 
 #[derive(Deserialize, Default)]
@@ -3177,8 +3181,8 @@ fn sanitize(s: &str) -> String {
 }
 
 /// Terminal task delivery only performs the short durable enqueue transaction;
-/// it never waits for a provider exact-head lookup. The durable worker can
-/// drain the pending row after a process restart.
+/// it never waits for a provider exact-head lookup. The single durable worker
+/// bounds provider discovery and can drain the pending row after a restart.
 async fn schedule_work_product_discovery(
     state: &HandlerState,
     task: AgentTaskQueue,
@@ -3189,10 +3193,6 @@ async fn schedule_work_product_discovery(
         tracing::warn!(%error, task_id = %task.id, "durable work product discovery enqueue failed");
         return;
     }
-    let state = state.clone();
-    tokio::spawn(async move {
-        crate::work_product::discover_pending_for_task(&state, &task, workspace_id).await;
-    });
 }
 
 /// POST /api/daemon/tasks/{taskId}/complete. A context-exhaustion notice in the
@@ -5147,6 +5147,19 @@ mod tests {
             "workspace-2"
         ));
         assert!(!daemon_context_workspace_matches(None, "workspace-1"));
+    }
+
+    #[test]
+    fn execution_provenance_accepts_only_running_or_final_cancelled_updates() {
+        assert!(task_status_allows_execution_provenance("running", false));
+        assert!(task_status_allows_execution_provenance("running", true));
+        assert!(task_status_allows_execution_provenance("cancelled", true));
+        assert!(!task_status_allows_execution_provenance(
+            "cancelled",
+            false
+        ));
+        assert!(!task_status_allows_execution_provenance("completed", true));
+        assert!(!task_status_allows_execution_provenance("failed", true));
     }
 
     #[test]

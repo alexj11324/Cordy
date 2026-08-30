@@ -897,6 +897,14 @@ impl ProductionProviderAdapter {
             preparation.stop();
             prepare_lease.stop().await;
             start_result.map_err(|error| anyhow::anyhow!("start task failed: {error}"))?;
+            record_initial_environment_provenance(
+                &preparation_ctx,
+                &client,
+                &task.execution_daemon_token,
+                &task.id,
+                &environment,
+            )
+            .await?;
             if let Err(error) = client
                 .report_progress(
                     &ctx,
@@ -2750,6 +2758,38 @@ async fn execution_provenance_for_start(
     }
 
     execution_provenance_for_work_dir(ctx, work_dir).await
+}
+
+/// Persists the prepared checkout before the provider process is launched so
+/// an in-run explicit attach can prove ownership immediately after StartTask.
+async fn record_initial_environment_provenance(
+    ctx: &Ctx,
+    client: &Client,
+    daemon_token: &str,
+    task_id: &str,
+    environment: &Environment,
+) -> anyhow::Result<()> {
+    let facts = execution_provenance_for_start(ctx, environment).await;
+    if facts.repo_identity.is_empty() {
+        return Ok(());
+    }
+    if daemon_token.trim().is_empty() {
+        anyhow::bail!("execution daemon credential is missing");
+    }
+    client
+        .record_execution_provenance(
+            ctx,
+            daemon_token,
+            task_id,
+            &facts.repo_identity,
+            &facts.execution_workspace,
+            &facts.head_branch,
+            &facts.head_sha,
+            &facts.head_state,
+            false,
+        )
+        .await
+        .context("record initial execution provenance")
 }
 
 async fn execution_provenance_for_work_dir(ctx: &Ctx, work_dir: &str) -> ExecutionProvenanceFacts {
