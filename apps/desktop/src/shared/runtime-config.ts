@@ -123,6 +123,32 @@ export function isStaleDevelopmentRuntimeConfig(config: RuntimeConfig): boolean 
   );
 }
 
+/**
+ * Packaged builds using the managed API must never inherit a loopback OAuth
+ * broker from an old development desktop.json. That shape strands Google
+ * sign-in on localhost even though the rest of the app is using production.
+ * Keep explicit self-hosted configurations untouched.
+ */
+export function normalizePackagedRuntimeConfig(
+  config: RuntimeConfig,
+): RuntimeConfig {
+  if (isStaleDevelopmentRuntimeConfig(config)) {
+    return { ...DEFAULT_RUNTIME_CONFIG };
+  }
+
+  if (
+    config.apiUrl === DEFAULT_RUNTIME_CONFIG.apiUrl &&
+    isLoopbackHttpUrl(config.accountsUrl)
+  ) {
+    return {
+      ...config,
+      accountsUrl: DEFAULT_RUNTIME_CONFIG.accountsUrl,
+    };
+  }
+
+  return config;
+}
+
 export function deriveWsUrl(apiUrl: string): string {
   const url = new URL(apiUrl);
   if (url.protocol === "https:") url.protocol = "wss:";
@@ -193,6 +219,14 @@ function normalizeHttpUrl(value: string, field: string): string {
   url.search = "";
   url.hash = "";
   return trimTrailingSlash(url.toString());
+}
+
+function isLoopbackHttpUrl(value: string): boolean {
+  const url = new URL(value);
+  return (
+    (url.protocol === "http:" || url.protocol === "https:") &&
+    (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]")
+  );
 }
 
 function normalizeWsUrl(value: string, field: string): string {
