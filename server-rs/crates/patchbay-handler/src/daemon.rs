@@ -5175,6 +5175,47 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn execution_provenance_route_rejects_task_token_before_task_lookup() {
+        let response = record_execution_provenance(
+            State(lazy_test_state()),
+            Extension(DaemonContext {
+                workspace_id: Some("workspace-1".to_string()),
+                daemon_id: Some("daemon-1".to_string()),
+                auth_path: "task_token",
+            }),
+            Path("not-a-task-id".to_string()),
+            HeaderMap::new(),
+            None,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn daemon_provenance_workspace_mismatch_fails_closed() {
+        let state = lazy_test_state();
+        let headers = HeaderMap::new();
+        let access = Access::new(&state, &headers);
+        let context = DaemonContext {
+            workspace_id: Some("workspace-1".to_string()),
+            daemon_id: Some("daemon-1".to_string()),
+            auth_path: patchbay_middleware::daemon_auth::DAEMON_AUTH_PATH_DAEMON_TOKEN,
+        };
+
+        let mismatch = check_daemon_workspace_access(&access, Some(context.clone()), "workspace-2")
+            .await
+            .expect_err("a daemon cannot cross the token workspace boundary");
+        assert_eq!(mismatch.status(), StatusCode::NOT_FOUND);
+        assert_eq!(
+            check_daemon_workspace_access(&access, Some(context), "workspace-1")
+                .await
+                .expect("the injected daemon workspace should match exactly"),
+            "workspace-1"
+        );
+    }
+
+    #[tokio::test]
     async fn websocket_heartbeat_rejects_malformed_runtime_before_database_access() {
         let state = lazy_test_state();
         let processor = DaemonHeartbeatProcessor::from_state(&state);

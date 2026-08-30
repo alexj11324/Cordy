@@ -34,3 +34,18 @@ export function useAttachIssueWorkProduct(issueId: string, wsId: string) {
     },
   });
 }
+
+/** Explicitly detaches a Work Product from the current issue. */
+export function useDetachIssueWorkProduct(issueId: string, wsId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (workProductId: string) => api.detachIssueWorkProduct(issueId, workProductId),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: githubKeys.pullRequests(issueId) }),
+        queryClient.invalidateQueries({ queryKey: githubKeys.workProducts(issueId) }),
+        queryClient.invalidateQueries({ queryKey: githubKeys.unassociatedWorkProducts(wsId) }),
+      ]);
+    },
+  });
+}

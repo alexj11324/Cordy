@@ -41,6 +41,13 @@ export const issuePullRequestsOptions = (issueId: string) =>
     enabled: !!issueId,
   });
 
+export const issueWorkProductsOptions = (issueId: string) =>
+  queryOptions({
+    queryKey: githubKeys.workProducts(issueId),
+    queryFn: () => api.listIssueWorkProducts(issueId),
+    enabled: !!issueId,
+  });
+
 export const unassociatedWorkProductsOptions = (wsId: string) =>
   queryOptions({
     queryKey: githubKeys.unassociatedWorkProducts(wsId),

@@ -14,16 +14,19 @@ import {
   GitPullRequestClosed,
   GitPullRequestDraft,
   TriangleAlert,
+  Unlink,
   XCircle,
 } from "lucide-react";
 import {
   issuePullRequestsOptions,
+  issueWorkProductsOptions,
   unassociatedWorkProductsOptions,
   deriveChecksStatus,
   deriveMergeStatus,
   shouldShowPullRequestStats,
   useAttachIssuePullRequest,
   useAttachIssueWorkProduct,
+  useDetachIssueWorkProduct,
   type PullRequestChecksStatus,
   type PullRequestMergeStatus,
 } from "@patchbay/core/github";
@@ -53,8 +56,40 @@ export function PullRequestList({ issueId, workspaceId }: { issueId: string; wor
   const { t } = useT("issues");
   const [expanded, setExpanded] = useState(false);
   const { data, isLoading } = useQuery(issuePullRequestsOptions(issueId));
+  const { data: workProductsData } = useQuery(issueWorkProductsOptions(issueId));
   const attachMutation = useAttachIssuePullRequest(issueId, workspaceId);
+  const detachMutation = useDetachIssueWorkProduct(issueId, workspaceId);
+  const [detachingId, setDetachingId] = useState<string | null>(null);
   const prs = data?.pull_requests ?? [];
+  const workProductIds = new Map(
+    (workProductsData?.work_products ?? [])
+      .filter((product) => product.kind === "pull_request" && product.provider_record_id)
+      .map((product) => [`${product.provider}:${product.provider_record_id}`, product.id] as const),
+  );
+
+  function renderPullRequestRow(pr: GitHubPullRequest) {
+    const workProductId = workProductIds.get(`${pr.provider ?? "github"}:${pr.id}`);
+    return (
+      <PullRequestRow
+        key={pr.id}
+        pr={pr}
+        workProductId={workProductId}
+        isDetaching={workProductId === detachingId}
+        onDetach={
+          workProductId
+            ? () => {
+                setDetachingId(workProductId);
+                detachMutation.mutate(workProductId, {
+                  onSuccess: () => toast.success(t(($) => $.detail.pull_requests_detach_success)),
+                  onError: () => toast.error(t(($) => $.detail.pull_requests_detach_failed)),
+                  onSettled: () => setDetachingId(null),
+                });
+              }
+            : undefined
+        }
+      />
+    );
+  }
 
   if (isLoading) {
     return <p className="text-caption text-muted-foreground px-2">{t(($) => $.detail.pull_requests_loading)}</p>;
@@ -82,12 +117,12 @@ export function PullRequestList({ issueId, workspaceId }: { issueId: string; wor
   return (
     <div className="space-y-1">
       {expandedHead.map((pr) => (
-        <PullRequestRow key={pr.id} pr={pr} />
+        renderPullRequestRow(pr)
       ))}
       {useCollapse ? (
         <div className="space-y-1">
           {expanded
-            ? collapsedTail.map((pr) => <PullRequestRow key={pr.id} pr={pr} />)
+            ? collapsedTail.map(renderPullRequestRow)
             : null}
           <button
             type="button"
@@ -245,36 +280,71 @@ function AttachPullRequestForm({
   );
 }
 
-function PullRequestRow({ pr }: { pr: GitHubPullRequest }) {
+function PullRequestRow({
+  pr,
+  workProductId,
+  isDetaching,
+  onDetach,
+}: {
+  pr: GitHubPullRequest;
+  workProductId?: string;
+  isDetaching: boolean;
+  onDetach?: () => void;
+}) {
   const { t } = useT("issues");
   const cfg = STATE_ICON[pr.state] ?? { icon: GitPullRequest, className: "" };
   const StateIcon = cfg.icon;
   const isDraft = pr.state === "draft";
   const stateLabel = getStateLabel(pr.state, t);
+  const detachLabel = t(($) =>
+    isDetaching ? $.detail.pull_requests_detaching : $.detail.pull_requests_detach,
+  );
 
   return (
-    <a
+    <div
       data-testid="pull-request-row"
-      href={pr.html_url}
-      target="_blank"
-      rel="noreferrer noopener"
       className={cn(
         "flex items-start gap-2 rounded-md px-2 py-1.5 -mx-2 hover:bg-accent/50 transition-colors group",
         isDraft ? "opacity-80" : null,
       )}
     >
-      <StateIcon className={cn("h-3.5 w-3.5 mt-0.5 shrink-0", cfg.className)} />
-      <div className="min-w-0 flex-1">
-        <p className="text-caption font-medium leading-snug truncate group-hover:text-foreground">
-          {pr.title}
-        </p>
-        <p className="text-micro text-muted-foreground truncate">
-          {pr.repo_owner}/{pr.repo_name}#{pr.number} · {stateLabel}
-          {pr.author_login ? ` · @${pr.author_login}` : null}
-        </p>
-        <PullRequestRowDetails pr={pr} />
-      </div>
-    </a>
+      <a
+        href={pr.html_url}
+        target="_blank"
+        rel="noreferrer noopener"
+        className="flex min-w-0 flex-1 items-start gap-2"
+      >
+        <StateIcon className={cn("h-3.5 w-3.5 mt-0.5 shrink-0", cfg.className)} />
+        <div className="min-w-0 flex-1">
+          <p className="text-caption font-medium leading-snug truncate group-hover:text-foreground">
+            {pr.title}
+          </p>
+          <p className="text-micro text-muted-foreground truncate">
+            {pr.repo_owner}/{pr.repo_name}#{pr.number} · {stateLabel}
+            {pr.author_login ? ` · @${pr.author_login}` : null}
+          </p>
+          <PullRequestRowDetails pr={pr} />
+        </div>
+      </a>
+      {workProductId && onDetach ? (
+        <Button
+          type="button"
+          size="icon"
+          variant="ghost"
+          className="h-6 w-6 shrink-0"
+          disabled={isDetaching}
+          aria-label={detachLabel}
+          title={detachLabel}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onDetach();
+          }}
+        >
+          <Unlink className="h-3 w-3" />
+        </Button>
+      ) : null}
+    </div>
   );
 }
 

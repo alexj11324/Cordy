@@ -79,6 +79,27 @@ FOR UPDATE OF wp"#,
     Ok(())
 }
 
+/// Establishes the lock order shared by webhook persistence and connection
+/// deletion. The row may already be gone; the caller preserves the existing
+/// not-found behavior in that case.
+pub async fn lock_vcs_connection(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    connection_id: Uuid,
+    workspace_id: Uuid,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"SELECT id
+FROM vcs_connection
+WHERE id = $1 AND workspace_id = $2
+FOR UPDATE"#,
+    )
+    .bind(connection_id)
+    .bind(workspace_id)
+    .fetch_optional(executor)
+    .await?;
+    Ok(())
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct GetIssueCombinedPullRequestCloseAggregateRow {
     pub open_count: i64,
@@ -136,10 +157,29 @@ pub async fn get_vcs_connection_by_id(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
 ) -> anyhow::Result<Option<VcsConnection>> {
-    let row = sqlx::query(
-        r#"SELECT id, workspace_id, provider, instance_url, account_login, access_token_encrypted, webhook_secret_encrypted, connected_by_id, created_at, updated_at FROM vcs_connection
-WHERE id = $1"#
-    )
+    get_vcs_connection_by_id_inner(executor, id, false).await
+}
+
+/// Loads and locks a connection row for the duration of a webhook transaction.
+/// Disconnect takes the same connection-row lock before locking its products,
+/// so a webhook cannot insert a provider mirror after disconnect cleanup.
+pub async fn get_vcs_connection_by_id_for_update(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    id: Uuid,
+) -> anyhow::Result<Option<VcsConnection>> {
+    get_vcs_connection_by_id_inner(executor, id, true).await
+}
+
+async fn get_vcs_connection_by_id_inner(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    id: Uuid,
+    for_update: bool,
+) -> anyhow::Result<Option<VcsConnection>> {
+    let lock = if for_update { " FOR UPDATE" } else { "" };
+    let query = format!(
+        "SELECT id, workspace_id, provider, instance_url, account_login, access_token_encrypted, webhook_secret_encrypted, connected_by_id, created_at, updated_at FROM vcs_connection WHERE id = $1{lock}"
+    );
+    let row = sqlx::query(&query)
         .bind(id)
         .fetch_optional(executor)
         .await?;

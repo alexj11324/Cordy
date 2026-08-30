@@ -20,6 +20,7 @@ CREATE TABLE agent_task_execution_provenance (
             'ambiguous', 'associated', 'ineligible'
         )
     ),
+    discovery_lease_id         UUID,
     discovery_match_count      INTEGER NOT NULL DEFAULT 0 CHECK (discovery_match_count >= 0),
     discovery_reason           TEXT,
     discovery_work_product_id  UUID,

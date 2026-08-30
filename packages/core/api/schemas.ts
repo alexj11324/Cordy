@@ -427,6 +427,7 @@ export const ExecutionProvenanceSchema = z.object({
   started_at: z.string().nullable(),
   finished_at: z.string().nullable(),
   discovery_status: z.string(),
+  discovery_lease_id: z.string().nullable(),
   discovery_match_count: z.number(),
   discovery_reason: z.string().nullable(),
   discovery_work_product_id: z.string().nullable(),

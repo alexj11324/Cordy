@@ -67,6 +67,7 @@ export type ExecutionProvenance = {
   started_at: string | null;
   finished_at: string | null;
   discovery_status: WorkProductDiscoveryStatus | string;
+  discovery_lease_id: string | null;
   discovery_match_count: number;
   discovery_reason: string | null;
   discovery_work_product_id: string | null;

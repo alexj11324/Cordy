@@ -11,6 +11,7 @@ const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
 const hookMocks = vi.hoisted(() => ({
   attachIssuePullRequest: vi.fn(),
   attachIssueWorkProduct: vi.fn(),
+  detachIssueWorkProduct: vi.fn(),
 }));
 
 vi.mock("@patchbay/core/github/queries", async () => {
@@ -22,6 +23,11 @@ vi.mock("@patchbay/core/github/queries", async () => {
     issuePullRequestsOptions: (issueId: string) => ({
       queryKey: ["github", "pull-requests", issueId],
       queryFn: async () => ({ pull_requests: mockPRs }),
+      enabled: !!issueId,
+    }),
+    issueWorkProductsOptions: (issueId: string) => ({
+      queryKey: ["work-products", "issue", issueId],
+      queryFn: async () => ({ work_products: mockWorkProducts }),
       enabled: !!issueId,
     }),
     unassociatedWorkProductsOptions: (workspaceId: string) => ({
@@ -46,12 +52,23 @@ vi.mock("@patchbay/core/github", async () => {
       mutate: hookMocks.attachIssueWorkProduct,
       isPending: false,
     }),
+    useDetachIssueWorkProduct: () => ({
+      mutate: hookMocks.detachIssueWorkProduct,
+      isPending: false,
+    }),
   };
 });
 
 import { PullRequestList } from "./pull-request-list";
 
 let mockPRs: GitHubPullRequest[] = [];
+
+let mockWorkProducts: Array<{
+  id: string;
+  kind: string;
+  provider: string;
+  provider_record_id: string | null;
+}> = [];
 
 function makePR(overrides: Partial<GitHubPullRequest> = {}): GitHubPullRequest {
   return {
@@ -142,6 +159,28 @@ describe("PullRequestList sidebar rows", () => {
     const row = screen.getByTestId("pull-request-row");
     expect(row).toHaveClass("rounded-md", "-mx-2", "hover:bg-accent/50");
     expect(row).not.toHaveClass("rounded-lg", "border", "bg-card");
+  });
+
+  it("offers explicit detach only for a PR with a canonical Work Product relation", async () => {
+    hookMocks.detachIssueWorkProduct.mockClear();
+    mockPRs = [makePR({ id: "github-pr-1" })];
+    mockWorkProducts = [
+      {
+        id: "work-product-1",
+        kind: "pull_request",
+        provider: "github",
+        provider_record_id: "github-pr-1",
+      },
+    ];
+    renderList();
+    await waitForRender();
+
+    fireEvent.click(screen.getByRole("button", { name: "Detach this PR" }));
+
+    expect(hookMocks.detachIssueWorkProduct).toHaveBeenCalledWith(
+      "work-product-1",
+      expect.any(Object),
+    );
   });
 
   // --- CI status element ---------------------------------------------------

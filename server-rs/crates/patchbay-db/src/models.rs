@@ -1748,6 +1748,7 @@ pub struct AgentTaskExecutionProvenance {
     pub started_at: Option<DateTime<Utc>>,
     pub finished_at: Option<DateTime<Utc>>,
     pub discovery_status: String,
+    pub discovery_lease_id: Option<Uuid>,
     pub discovery_match_count: i32,
     pub discovery_reason: Option<String>,
     pub discovery_work_product_id: Option<Uuid>,

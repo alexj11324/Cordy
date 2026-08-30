@@ -139,6 +139,7 @@ pub(crate) fn provenance_response(provenance: &AgentTaskExecutionProvenance) -> 
         "started_at": provenance.started_at.map(crate::timefmt::rfc3339),
         "finished_at": provenance.finished_at.map(crate::timefmt::rfc3339),
         "discovery_status": provenance.discovery_status,
+        "discovery_lease_id": provenance.discovery_lease_id,
         "discovery_match_count": provenance.discovery_match_count,
         "discovery_reason": provenance.discovery_reason,
         "discovery_work_product_id": provenance.discovery_work_product_id,
@@ -1047,11 +1048,38 @@ async fn discover_one_execution(
         tracing::warn!(%error, task_id = %task.id, "branch discovery lock failed");
         return;
     }
+
+    // Fence the claimed provenance row before any terminal decision. A stale
+    // worker may have been reclaimed while it was doing the preflight checks;
+    // only the worker holding the current lease may write an audit result or
+    // relation in this transaction.
+    match work_product_q::lock_execution_discovery_lease(&mut *transaction, provenance).await {
+        Ok(true) => {}
+        Ok(false) => {
+            tracing::debug!(task_id = %task.id, "discovery lease was reclaimed before branch checks");
+            return;
+        }
+        Err(error) => {
+            drop(transaction);
+            record_discovery_failure(
+                state,
+                provenance,
+                work_product_q::DISCOVERY_AMBIGUOUS,
+                0,
+                Some("discovery_lease_lock_failed"),
+            )
+            .await;
+            tracing::warn!(%error, task_id = %task.id, "lock work product discovery lease failed");
+            return;
+        }
+    }
+
     let other_executions = match work_product_q::list_other_branch_executions(
         &mut *transaction,
         workspace_id,
         repo_identity,
         head_branch,
+        head_sha,
         task.id,
     )
     .await

@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 const WORK_PRODUCT_COLUMNS: &str = "id, workspace_id, kind, provider, external_identity, external_url, provider_record_type, provider_record_id, created_at, updated_at";
 const RELATION_COLUMNS: &str = "id, workspace_id, work_product_id, issue_id, task_id, run_id, relation_key, relation_source, attached_by_type, attached_by_id, attached_at, close_intent, detached_at, detached_by_type, detached_by_id, detached_task_id, detached_run_id";
-const PROVENANCE_COLUMNS: &str = "task_id, workspace_id, run_id, repo_identity, execution_workspace, head_branch, head_sha, head_state, started_at, finished_at, discovery_status, discovery_match_count, discovery_reason, discovery_work_product_id, discovery_at, updated_at";
+const PROVENANCE_COLUMNS: &str = "task_id, workspace_id, run_id, repo_identity, execution_workspace, head_branch, head_sha, head_state, started_at, finished_at, discovery_status, discovery_lease_id, discovery_match_count, discovery_reason, discovery_work_product_id, discovery_at, updated_at";
 
 pub const RELATION_SOURCE_MANUAL_EXPLICIT: &str = "manual_explicit";
 pub const RELATION_SOURCE_TASK_EXPLICIT: &str = "task_explicit";
@@ -127,11 +127,12 @@ fn provenance_from_row(
         started_at: row.try_get(8)?,
         finished_at: row.try_get(9)?,
         discovery_status: row.try_get(10)?,
-        discovery_match_count: row.try_get(11)?,
-        discovery_reason: row.try_get(12)?,
-        discovery_work_product_id: row.try_get(13)?,
-        discovery_at: row.try_get(14)?,
-        updated_at: row.try_get(15)?,
+        discovery_lease_id: row.try_get(11)?,
+        discovery_match_count: row.try_get(12)?,
+        discovery_reason: row.try_get(13)?,
+        discovery_work_product_id: row.try_get(14)?,
+        discovery_at: row.try_get(15)?,
+        updated_at: row.try_get(16)?,
     })
 }
 
@@ -617,9 +618,10 @@ pub async fn mark_execution_discovery(
         ),
         "invalid execution discovery status"
     );
-    sqlx::query(
+    let result = sqlx::query(
         r#"UPDATE agent_task_execution_provenance
 SET discovery_status = $3,
+    discovery_lease_id = NULL,
     discovery_match_count = $4,
     discovery_reason = $5,
     discovery_work_product_id = $6,
@@ -629,7 +631,8 @@ WHERE workspace_id = $1
   AND task_id = $2
   AND repo_identity = $7
   AND execution_workspace = $8
-  AND discovery_status IN ('not_attempted', 'pending', 'in_progress')"#,
+  AND discovery_lease_id = $9
+  AND discovery_status = 'in_progress'"#,
     )
     .bind(provenance.workspace_id)
     .bind(provenance.task_id)
@@ -644,8 +647,10 @@ WHERE workspace_id = $1
             .as_deref()
             .unwrap_or_default(),
     )
+    .bind(provenance.discovery_lease_id)
     .execute(executor)
     .await?;
+    anyhow::ensure!(result.rows_affected() == 1, "execution discovery lease lost");
     Ok(())
 }
 
@@ -660,6 +665,7 @@ pub async fn mark_task_discovery_pending(
     let result = sqlx::query(
         r#"UPDATE agent_task_execution_provenance
 SET discovery_status = 'pending',
+    discovery_lease_id = NULL,
     discovery_match_count = 0,
     discovery_reason = NULL,
     discovery_work_product_id = NULL,
@@ -688,6 +694,7 @@ pub async fn mark_task_discovery_skipped_for_explicit_relation(
     let result = sqlx::query(
         r#"UPDATE agent_task_execution_provenance
 SET discovery_status = 'associated',
+    discovery_lease_id = NULL,
     discovery_match_count = 0,
     discovery_reason = 'explicit_relation_exists',
     discovery_work_product_id = (
@@ -722,6 +729,7 @@ pub async fn claim_execution_discovery(
     let query = format!(
         r#"UPDATE agent_task_execution_provenance
 SET discovery_status = 'in_progress',
+    discovery_lease_id = gen_random_uuid(),
     discovery_at = now(),
     updated_at = now()
 WHERE workspace_id = $1
@@ -793,15 +801,18 @@ pub async fn lock_branch_discovery(
     Ok(())
 }
 
-/// Returns every other persisted execution using the same workspace-scoped
-/// repository identity and exact branch. Terminal rows matter here too: two
-/// tasks can finish concurrently, and checking only active queue rows after
-/// the current task is terminal would let both discover the same PR.
+/// Returns every other potentially overlapping execution using the same
+/// workspace-scoped repository identity and exact branch. An unfinished row
+/// represents a currently active/shared checkout; a finished row matters only
+/// when its terminal SHA is identical to the current execution. A later reuse
+/// of the branch with a different terminal head is therefore not blocked by
+/// unrelated historical provenance.
 pub async fn list_other_branch_executions(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
     repo_identity: &str,
     head_branch: &str,
+    head_sha: &str,
     exclude_task_id: Uuid,
 ) -> anyhow::Result<Vec<AgentTaskExecutionProvenance>> {
     let query = format!(
@@ -811,6 +822,7 @@ WHERE p.workspace_id = $1
   AND p.repo_identity = $2
   AND p.head_branch = $3
   AND p.task_id <> $4
+  AND (p.finished_at IS NULL OR p.head_sha = $5)
 ORDER BY p.updated_at DESC, p.task_id DESC"#
     );
     let rows = sqlx::query(&query)
@@ -818,9 +830,43 @@ ORDER BY p.updated_at DESC, p.task_id DESC"#
         .bind(repo_identity)
         .bind(head_branch)
         .bind(exclude_task_id)
+        .bind(head_sha)
         .fetch_all(executor)
         .await?;
     rows.iter().map(provenance_from_row).collect()
+}
+
+/// Holds the claimed provenance row while a worker performs the provider
+/// lookup and relation write. A stale worker cannot be reclaimed between this
+/// lock and its final lease-checked update.
+pub async fn lock_execution_discovery_lease(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    provenance: &AgentTaskExecutionProvenance,
+) -> anyhow::Result<bool> {
+    let row = sqlx::query(
+        r#"SELECT task_id
+FROM agent_task_execution_provenance
+WHERE workspace_id = $1
+  AND task_id = $2
+  AND repo_identity = $3
+  AND execution_workspace = $4
+  AND discovery_status = 'in_progress'
+  AND discovery_lease_id = $5
+FOR UPDATE"#,
+    )
+    .bind(provenance.workspace_id)
+    .bind(provenance.task_id)
+    .bind(provenance.repo_identity.as_deref().unwrap_or_default())
+    .bind(
+        provenance
+            .execution_workspace
+            .as_deref()
+            .unwrap_or_default(),
+    )
+    .bind(provenance.discovery_lease_id)
+    .fetch_optional(executor)
+    .await?;
+    Ok(row.is_some())
 }
 
 pub async fn detach_work_product_relations(
