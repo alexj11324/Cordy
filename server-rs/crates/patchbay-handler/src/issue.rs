@@ -9173,8 +9173,8 @@ mod tests {
         .await
         .expect("create attachment");
         sqlx::query(
-            "INSERT INTO agent_task_queue (id, agent_id, issue_id, status, priority, dispatched_at, originator_user_id, runtime_id) \
-             VALUES ($1, $2, $3, 'dispatched', 0, $4, $5, $6)",
+            "INSERT INTO agent_task_queue (id, agent_id, issue_id, status, priority, dispatched_at, originator_user_id, accountable_user_id, runtime_id) \
+             VALUES ($1, $2, $3, 'dispatched', 0, $4, $5, $5, $6)",
         )
         .bind(task_id)
         .bind(agent_id)
