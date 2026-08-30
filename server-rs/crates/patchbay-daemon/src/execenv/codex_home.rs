@@ -815,21 +815,6 @@ pub(crate) fn create_dir_link(src: &str, dst: &str) -> anyhow::Result<()> {
     }
 }
 
-/// createFileLink (unix build): a plain symlink.
-fn create_file_link(src: &str, dst: &str) -> anyhow::Result<()> {
-    #[cfg(unix)]
-    {
-        std::os::unix::fs::symlink(src, dst)?;
-        Ok(())
-    }
-    #[cfg(windows)]
-    {
-        std::fs::copy(src, dst)
-            .map(|_| ())
-            .map_err(anyhow::Error::new)
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Rollouts
 // ---------------------------------------------------------------------------
@@ -962,6 +947,7 @@ fn link_codex_rollout(src: &str, dst: &str) -> anyhow::Result<()> {
 /// stable root-scoped write API, so the identity check degrades to: refuse
 /// when the task home itself is a symlink, verify dir-ness before mkdir, and
 /// document the residual swap-after-check window as Go's PB-5647.
+#[cfg(test)]
 fn materialise_in_codex_home(
     codex_home: &str,
     rel_path: &str,
