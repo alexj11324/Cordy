@@ -27,60 +27,68 @@ code and in CI:
 5. Permanent grants are persisted separately from resources. Explicit deny
    wins; grants can require approval; task/run decisions still require a valid
    lease, so a standing grant cannot widen a task scope.
-6. A task claim never receives stored Agent `custom_env`, custom arguments,
-   MCP configuration, Runtime configuration, workspace plugin tools, connected
-   apps, Composio overlays, local directory paths, or repository URLs. These
-   paths can expose long-lived owner/workspace credentials or the runtime
-   owner's checkout and credential helper, and there is no lease-bound broker
-   for them in Phase 1. Human
-   connection management remains available; a later broker must consume
-   `credential.use` and return only a short-lived, lease-bound session.
-   The server claim payload never returns long-lived credential material,
-   including for an owner-originated run. Stored current/prior work directories, branch names,
-   durable directories, and provider session IDs are also stripped so reruns
-   and chat continuity cannot recover another caller's local execution state.
-7. Runtime read/update is enforced by the same authorizer. Workspace admins do
+6. Codex/Claude provider identity is a distinct protected resource. A runtime
+   owner must explicitly grant `credential.use` to a user, team, or Agent
+   definition; the grant binds workspace, grantee, provider, action, model or
+   token budget, expiry, runtime/device, and optionally one task. Deny and
+   `require_approval` win and fail closed. A delegated child needs an exact
+   task-bound grant, so a generic standing grant cannot be transferred or
+   widened through subdelegation.
+7. The task claim receives only the server-computed provider-authorization
+   descriptor. The daemon keeps the long-lived API key, Codex `auth.json`, or
+   Claude `.credentials.json` on the host and substitutes it only on the
+   broker's upstream request. A task receives a random, task-local broker
+   bearer and loopback URL, never a long-lived provider token, refresh token,
+   host credential path, or provider login document in its environment, task
+   directory, claim IPC, deep link, or logs. OAuth refresh occurs under a
+   daemon-side mutex before expiry and once after an upstream 401; refresh
+   rotation is atomically persisted with mode `0600` on Unix. Invalidated or
+   revoked provider sessions require the host user to sign in again.
+8. Every provider process tree is launched behind a fail-closed OS/filesystem
+   boundary. macOS uses a deny-by-default sandbox profile; Linux uses
+   bubblewrap with isolated process/IPC/UTS/cgroup namespaces, a hidden host
+   home, read-only system/provider files, and writes limited to task-owned
+   roots. Unsupported hosts and missing sandbox executables cannot launch a
+   provider task. Ambient daemon variables are cleared and rebuilt from an
+   inert allowlist before every provider spawn.
+9. Runtime read/update is enforced by the same authorizer. Workspace admins do
    not automatically read or mutate another user's private runtime. Public
    runtime metadata remains available to workspace members. Local runtime use
-   is owner-only even when the runtime is public or a foreign-user grant
-   exists, because the current daemon sandbox exposes its account HOME and
-   credential helpers. Non-local public compute may retain workspace sharing;
-   private runtime read/use remains owner- or explicit-grant-only where the
-   local-device guardrail does not apply.
-8. Every authorizer result appends an explain record that can answer: who,
+   by another member requires both the explicit provider-identity grant above
+   and the brokered-provider execution attribute; ordinary workspace role or
+   public visibility cannot supply the runtime owner's provider identity.
+10. Every authorizer result appends an explain record that can answer: who,
    on whose behalf, via which agent, on which device, action, resource,
    decision, why, matched grants, policy version, obligations, and delegation
    chain. Explain reads are actor-scoped; workspace owners may inspect their
    workspace, while admins do not receive a private-resource bypass.
 
 Required negative tests cover cross-user shared-agent credential isolation,
-child-scope narrowing, expiry/revocation/task completion, private-resource admin
-denial, `require_approval` fail-closed behavior, and concurrent/replayed claim
-fencing.
+cross-member provider denial without an explicit grant, provider grant
+revocation/model/budget/device/task fencing, child-scope narrowing,
+expiry/revocation/task completion, private-resource admin denial,
+`require_approval` fail-closed behavior, and concurrent/replayed claim fencing.
 
-## Known release blocker
+## Fail-closed deployment boundary
 
-The current local daemon still materializes provider login state (for example,
-the Codex `auth.json`) inside task-visible runtime state, while its provider
-shell can execute as the daemon OS user with full filesystem access. The server
-boundary in this phase prevents a foreign caller from receiving another
-user's local runtime, but it cannot truthfully enforce `credential.read_secret`
-against an owner-originated local process that can read the file directly.
-
-This slice must not be released as satisfying the acceptance above until the
-product chooses one safe boundary: disable task claims for local providers that
-materialize long-lived login state, or add enforced process/filesystem
-isolation plus a short-lived credential broker. This is a release decision, not
-a policy-engine follow-up that can be hidden behind the server interface.
+Provider tasks are available only where the daemon can prove the process and
+filesystem boundary: the system `sandbox-exec` on macOS or bubblewrap on Linux.
+Windows and other unsupported hosts reject provider execution in this slice;
+they do not fall back to exposing the host account. A trusted device still
+performs its first provider login locally. After that, the daemon renews a
+valid OAuth session without daily user interaction; explicit logout,
+revocation, refresh-session expiry, or provider rejection is the re-login
+boundary. API-key logins have no refresh protocol and remain valid only while
+the host-managed key is valid.
 
 ## Root cause and risk boundary
 
-The immediate confused-deputy root cause is earlier than daemon execution:
-claim assembly treats successful `agent.invoke` admission as permission to
-copy Agent env/MCP/Runtime configuration and workspace plugin/connection
-credentials into the run. The originator is carried only for attribution. A
-shared agent therefore turns owner or workspace execution configuration into
-ambient authority for callers.
+The immediate confused-deputy root cause spans claim assembly and provider
+launch: successful `agent.invoke` admission historically doubled as permission
+to use the Agent or Runtime owner's ambient provider login. The originator was
+carried only for attribution, while the provider process inherited the host
+account and could read its credential files. A shared agent therefore turned
+owner execution configuration into ambient authority for callers.
 
 The existing `mat_` token fixes actor-header forgery but is an identity token,
 not yet a complete lease: it carries no scope or parent chain, and
@@ -97,7 +105,10 @@ Task read/update endpoints bind the requested task to the lease task; single
 Issue reads, comments, and mutations that remain available consume the
 project-resource lease and bind to the task's Issue.
 
-Phase 1 fixes those earliest boundaries. It intentionally does not rewrite all
+Phase 1 fixes those earliest boundaries by requiring an independently matched
+provider grant, issuing a constraint-only claim descriptor, revalidating the
+task lease and standing grant on every broker request, and isolating the entire
+provider process tree from the host login. It intentionally does not rewrite all
 legacy resource handlers, introduce a universal resource registry, expose
 long-lived secrets, add an external policy service, or reinterpret
 `team_member.role`. That field remains an orchestration label (`leader`,
@@ -147,9 +158,9 @@ security rollback, not a normal operational toggle.
 
 ## Explicit follow-ups
 
-Later slices should add lease-bound short-lived credential/tool and
-Directory/repository brokers before re-enabling Agent execution configuration,
-plugin/connection tools, or local checkout projection; move remaining private
+Later slices should add lease-bound tool, Directory/repository, and remaining
+integration brokers before re-enabling additional Agent execution configuration
+or local checkout projection; move remaining private
 Agent, Chat, Integration/Connection, plugin/tool, and device-management
 handlers onto the same interface; add separate team
 security membership; add Guest membership storage and invitation rules; add an
