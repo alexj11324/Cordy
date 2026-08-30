@@ -651,6 +651,7 @@ fn isolate_macos(
     let mut profile = String::from(
         "(version 1)\n\
          (deny default)\n\
+         (import \"dyld-support.sb\")\n\
          (allow process-exec)\n\
          (allow process-fork)\n\
          (allow network*)\n\
@@ -679,6 +680,10 @@ fn isolate_macos(
         ));
         profile.push_str(&format!(
             "(allow file-read* (subpath \"{}\"))\n",
+            sandbox_quote(path.as_path())
+        ));
+        profile.push_str(&format!(
+            "(allow file-map-executable (subpath \"{}\"))\n",
             sandbox_quote(path.as_path())
         ));
     }
@@ -731,7 +736,9 @@ fn append_macos_sensitive_rules(profile: &mut String, sensitive_paths: &[Sensiti
         };
         profile.push_str(&format!(
             "(deny file-read* ({filter} \"{}\"))\n\
-             (deny file-write* ({filter} \"{}\"))\n",
+             (deny file-write* ({filter} \"{}\"))\n\
+             (deny file-map-executable ({filter} \"{}\"))\n",
+            sandbox_quote(&sensitive.path),
             sandbox_quote(&sensitive.path),
             sandbox_quote(&sensitive.path)
         ));
@@ -1268,6 +1275,7 @@ mod tests {
         );
         assert!(profile.contains("(deny file-read* (literal \"/task/.env.local\"))"));
         assert!(profile.contains("(deny file-write* (literal \"/task/.env.local\"))"));
+        assert!(profile.contains("(deny file-map-executable (literal \"/task/.env.local\"))"));
     }
 
     #[cfg(target_os = "macos")]
