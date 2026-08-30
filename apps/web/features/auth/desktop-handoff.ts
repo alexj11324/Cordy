@@ -40,6 +40,16 @@ export function readDesktopBrowserAppOrigin(
     : null;
 }
 
+export function hasInvalidDesktopBrowserAppOrigin(
+  searchParams: URLSearchParams,
+  configuredOrigin: string | undefined,
+): boolean {
+  return (
+    searchParams.has("app_origin") &&
+    readDesktopBrowserAppOrigin(searchParams, configuredOrigin) === null
+  );
+}
+
 /** Preserve the binding that lets a desktop OAuth callback return safely. */
 export function buildDesktopHandoffQuery(
   searchParams: URLSearchParams,
