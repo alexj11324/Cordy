@@ -9300,8 +9300,8 @@ mod tests {
         let quick_task_id = Uuid::now_v7();
         let quick_dispatched_at = Utc::now();
         sqlx::query(
-            "INSERT INTO agent_task_queue (id, agent_id, status, priority, dispatched_at, originator_user_id, runtime_id, context) \
-             VALUES ($1, $2, 'dispatched', 0, $3, $4, $5, $6)",
+            "INSERT INTO agent_task_queue (id, agent_id, status, priority, dispatched_at, originator_user_id, accountable_user_id, runtime_id, context) \
+             VALUES ($1, $2, 'dispatched', 0, $3, $4, $4, $5, $6)",
         )
         .bind(quick_task_id)
         .bind(agent_id)
