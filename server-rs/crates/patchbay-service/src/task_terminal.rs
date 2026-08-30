@@ -817,7 +817,17 @@ impl TaskService {
                 .await
                 .map_err(|e| TaskServiceError::Internal(format!("load target agent: {e}")))?
                 .ok_or_else(|| TaskServiceError::Internal("load target agent: not found".into()))?;
-            if !can_invoke(&target_agent) {
+            if target_agent.archived_at.is_some() || !can_invoke(&target_agent) {
+                return Err(TaskServiceError::RerunInvokeNotAllowed(
+                    ERR_RERUN_INVOKE_NOT_ALLOWED,
+                ));
+            }
+        } else {
+            let target_agent = patchbay_db::queries::agent::get_agent(&self.pool, agent_id)
+                .await
+                .map_err(|e| TaskServiceError::Internal(format!("load target agent: {e}")))?
+                .ok_or_else(|| TaskServiceError::Internal("load target agent: not found".into()))?;
+            if target_agent.archived_at.is_some() {
                 return Err(TaskServiceError::RerunInvokeNotAllowed(
                     ERR_RERUN_INVOKE_NOT_ALLOWED,
                 ));

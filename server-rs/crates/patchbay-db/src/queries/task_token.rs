@@ -26,18 +26,24 @@ pub async fn create_task_token(
     id: Uuid,
 ) -> anyhow::Result<Option<TaskToken>> {
     let row = sqlx::query(
-        r#"WITH claim AS (
+        r#"WITH target_agent_guard AS MATERIALIZED (
+    SELECT id, workspace_id
+    FROM agent
+    WHERE id = $3
+      AND workspace_id = $4
+      AND archived_at IS NULL
+    FOR SHARE
+), claim AS (
     SELECT task.id, task.delegated_from_task_id, task.dispatched_at
-    FROM agent_task_queue task
-    JOIN agent current_agent ON current_agent.id = task.agent_id
+    FROM target_agent_guard agent_guard
+    JOIN agent_task_queue task ON task.agent_id = agent_guard.id
     WHERE task.id = $2
       AND task.status IN ('dispatched', 'running', 'waiting_local_directory', 'deferred')
       AND task.dispatched_at IS NOT DISTINCT FROM $9::timestamptz
       AND task.agent_id = $3
-      AND current_agent.workspace_id = $4
       AND task.originator_user_id IS NOT DISTINCT FROM $11::uuid
       AND task.runtime_id IS NOT DISTINCT FROM $12::uuid
-    FOR SHARE
+    FOR SHARE OF task
 ), parent AS (
     SELECT token.id, token.scope, token.delegation_depth, token.delegation_fence,
            token.workspace_id, token.on_behalf_of_user_id, token.device_id
@@ -52,6 +58,7 @@ pub async fn create_task_token(
       AND token.device_id IS NOT DISTINCT FROM task.runtime_id
       AND token.on_behalf_of_user_id IS NOT DISTINCT FROM task.originator_user_id
       AND token.workspace_id = current_agent.workspace_id
+      AND current_agent.archived_at IS NULL
       AND task.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
     ORDER BY token.created_at DESC, token.id DESC
     LIMIT 1
@@ -185,6 +192,7 @@ pub async fn get_task_token_by_hash(
            task.agent_id AS current_agent_id, task.runtime_id AS current_device_id,
            task.originator_user_id AS current_on_behalf_of_user_id,
            current_agent.workspace_id AS current_workspace_id,
+           current_agent.archived_at AS current_agent_archived_at,
            ARRAY[token.id] AS path
     FROM task_token token
     JOIN agent_task_queue task ON task.id = token.task_id
@@ -199,7 +207,8 @@ pub async fn get_task_token_by_hash(
            parent.expires_at, parent.created_at, parent.token_hash, parent.user_id,
            task.status, task.dispatched_at,
            task.agent_id, task.runtime_id, task.originator_user_id,
-           current_agent.workspace_id, child.path || parent.id
+           current_agent.workspace_id, current_agent.archived_at,
+           child.path || parent.id
     FROM task_token parent
     JOIN lease_chain child ON child.parent_token_id = parent.id
     JOIN agent_task_queue task ON task.id = parent.task_id
@@ -220,6 +229,7 @@ pub async fn get_task_token_by_hash(
        OR lease.device_id IS DISTINCT FROM lease.current_device_id
        OR lease.on_behalf_of_user_id IS DISTINCT FROM lease.current_on_behalf_of_user_id
        OR lease.workspace_id <> lease.current_workspace_id
+       OR lease.current_agent_archived_at IS NOT NULL
        OR lease.delegation_depth > 8
        OR (lease.parent_token_id IS NULL AND lease.delegation_depth <> 0)
        OR (lease.parent_token_id IS NOT NULL AND (

@@ -109,7 +109,7 @@ pub async fn archive_agent(
 ) -> anyhow::Result<Option<Agent>> {
     let row = sqlx::query(
         r#"UPDATE agent SET archived_at = now(), archived_by = $2, updated_at = now()
-WHERE id = $1
+WHERE id = $1 AND archived_at IS NULL
 RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
     )
         .bind(id)
@@ -1393,9 +1393,11 @@ SET status = 'dispatched',
     prepare_lease_expires_at = now() + make_interval(secs => $1::double precision)
 WHERE id = (
     SELECT atq.id FROM agent_task_queue atq
+    JOIN agent task_agent ON task_agent.id = atq.agent_id
     WHERE atq.agent_id = $2
       AND atq.runtime_id = $3
       AND atq.status = 'queued'
+      AND task_agent.archived_at IS NULL
       AND EXISTS (
           SELECT 1 FROM agent_runtime r
           WHERE r.id = atq.runtime_id

@@ -450,3 +450,96 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
     rows.cleanup().await;
     Ok(())
 }
+
+#[tokio::test]
+async fn lease_creation_locks_agent_before_task_during_archive() -> anyhow::Result<()> {
+    let Some(rows) = Rows::optional().await? else {
+        return Ok(());
+    };
+    let dispatched_at = Utc::now();
+    let task_id = rows.task(dispatched_at).await?;
+
+    let mut archive_tx = rows.pool.begin().await?;
+    let archive_pid = sqlx::query_scalar::<_, i32>("SELECT pg_backend_pid()")
+        .fetch_one(&mut *archive_tx)
+        .await?;
+    sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM agent WHERE id = $1 AND archived_at IS NULL FOR UPDATE",
+    )
+    .bind(rows.agent_id)
+    .fetch_one(&mut *archive_tx)
+    .await?;
+
+    let mut lease_tx = rows.pool.begin().await?;
+    let lease_pid = sqlx::query_scalar::<_, i32>("SELECT pg_backend_pid()")
+        .fetch_one(&mut *lease_tx)
+        .await?;
+    let agent_id = rows.agent_id;
+    let workspace_id = rows.workspace_id;
+    let user_id = rows.user_id;
+    let runtime_id = rows.runtime_id;
+    let lease_scope = task_scope();
+    let lease_attempt = tokio::spawn(async move {
+        let result = create_task_token(
+            &mut *lease_tx,
+            &format!("lease-archive-race-{task_id}"),
+            task_id,
+            agent_id,
+            workspace_id,
+            user_id,
+            Some(Utc::now() + Duration::hours(1)),
+            &lease_scope,
+            None,
+            Some(dispatched_at),
+            1,
+            Some(user_id),
+            Some(runtime_id),
+            Uuid::now_v7(),
+        )
+        .await;
+        match result {
+            Ok(lease) => {
+                lease_tx.commit().await?;
+                Ok::<_, anyhow::Error>(lease)
+            }
+            Err(error) => {
+                let _ = lease_tx.rollback().await;
+                Err(error)
+            }
+        }
+    });
+
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let blockers = sqlx::query_scalar::<_, Vec<i32>>("SELECT pg_blocking_pids($1)")
+                .bind(lease_pid)
+                .fetch_one(&rows.pool)
+                .await?;
+            if blockers.contains(&archive_pid) {
+                return Ok::<_, sqlx::Error>(());
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("lease creation must wait on the agent archive lock")?;
+
+    sqlx::query("SET LOCAL lock_timeout = '500ms'")
+        .execute(&mut *archive_tx)
+        .await?;
+    patchbay_db::queries::agent::archive_agent(&mut *archive_tx, rows.agent_id, rows.user_id)
+        .await?
+        .expect("archive locked agent");
+    let cancelled =
+        patchbay_db::queries::agent::cancel_agent_tasks_by_agent(&mut *archive_tx, rows.agent_id)
+            .await?;
+    assert_eq!(cancelled.len(), 1);
+    archive_tx.commit().await?;
+
+    assert!(
+        lease_attempt.await??.is_none(),
+        "an archive that wins the Agent lock must prevent lease issuance"
+    );
+    rows.cleanup().await;
+    Ok(())
+}

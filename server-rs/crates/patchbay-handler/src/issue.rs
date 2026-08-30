@@ -2883,7 +2883,11 @@ async fn rerun_issue(
         }
     };
     let target = match agent::get_agent(&state.pool, target_agent_id).await {
-        Ok(Some(target)) if target.workspace_id == issue.workspace_id => target,
+        Ok(Some(target))
+            if target.workspace_id == issue.workspace_id && target.archived_at.is_none() =>
+        {
+            target
+        }
         Ok(_) => return error_response(StatusCode::BAD_REQUEST, "target agent not found"),
         Err(_) => {
             return error_response(
@@ -9415,6 +9419,128 @@ mod tests {
             StatusCode::FORBIDDEN
         );
 
+        let mut archive_tx = pool.begin().await.expect("begin archive transaction");
+        sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM agent WHERE id = $1 AND archived_at IS NULL FOR UPDATE",
+        )
+        .bind(agent_id)
+        .fetch_one(&mut *archive_tx)
+        .await
+        .expect("lock agent for archive");
+        let mut enqueue_tx = pool.begin().await.expect("begin concurrent enqueue");
+        sqlx::query("SET LOCAL lock_timeout = '100ms'")
+            .execute(&mut *enqueue_tx)
+            .await
+            .expect("set enqueue lock timeout");
+        let lock_error = sqlx::query_scalar::<_, bool>("SELECT lock_task_owner_rows($1, NULL, $2)")
+            .bind(agent_id)
+            .bind(runtime_id)
+            .fetch_one(&mut *enqueue_tx)
+            .await
+            .expect_err("concurrent enqueue must wait on the archive fence");
+        assert_eq!(
+            lock_error
+                .as_database_error()
+                .and_then(|error| error.code())
+                .as_deref(),
+            Some("55P03")
+        );
+        enqueue_tx
+            .rollback()
+            .await
+            .expect("rollback blocked enqueue");
+        patchbay_db::queries::agent::archive_agent(&mut *archive_tx, agent_id, user_id)
+            .await
+            .expect("archive agent")
+            .expect("agent archived");
+        let cancelled =
+            patchbay_db::queries::agent::cancel_agent_tasks_by_agent(&mut *archive_tx, agent_id)
+                .await
+                .expect("cancel active agent tasks");
+        assert_eq!(cancelled.len(), 2);
+        archive_tx.commit().await.expect("commit agent archive");
+        assert!(patchbay_db::queries::task_token::get_task_token_by_hash(
+            &pool,
+            &format!("issue-auth-lease-{task_id}"),
+        )
+        .await
+        .expect("look up archived-agent lease")
+        .is_none());
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM task_token WHERE task_id = ANY($1) AND revoked_at IS NOT NULL",
+            )
+            .bind(vec![task_id, quick_task_id])
+            .fetch_one(&pool)
+            .await
+            .expect("count revoked archived-agent leases"),
+            2
+        );
+
+        let fenced_task_id = Uuid::now_v7();
+        let fenced_insert = sqlx::query(
+            "INSERT INTO agent_task_queue (id, agent_id, status, priority, originator_user_id, accountable_user_id, runtime_id) \
+             SELECT $1, $2, 'queued', 0, $3, $3, $4 \
+             WHERE lock_task_owner_rows($2, NULL, $4)",
+        )
+        .bind(fenced_task_id)
+        .bind(agent_id)
+        .bind(user_id)
+        .bind(runtime_id)
+        .execute(&pool)
+        .await
+        .expect("apply archived-agent enqueue fence");
+        assert_eq!(fenced_insert.rows_affected(), 0);
+
+        let archived_task_id = Uuid::now_v7();
+        let archived_task_dispatched_at = Utc::now();
+        sqlx::query(
+            "INSERT INTO agent_task_queue (id, agent_id, status, priority, dispatched_at, originator_user_id, accountable_user_id, runtime_id) \
+             VALUES ($1, $2, 'dispatched', 0, $3, $4, $4, $5)",
+        )
+        .bind(archived_task_id)
+        .bind(agent_id)
+        .bind(archived_task_dispatched_at)
+        .bind(user_id)
+        .bind(runtime_id)
+        .execute(&pool)
+        .await
+        .expect("create archived-agent task fixture");
+        assert!(patchbay_db::queries::task_token::create_task_token(
+            &pool,
+            &format!("issue-auth-archived-lease-{archived_task_id}"),
+            archived_task_id,
+            agent_id,
+            workspace_id,
+            user_id,
+            Some(Utc::now() + chrono::Duration::minutes(10)),
+            &json!([{
+                "action": Action::RESOURCE_READ,
+                "resource_type": ResourceType::PROJECT_RESOURCE,
+                "resource_id": allowed_issue_id,
+            }]),
+            None,
+            Some(archived_task_dispatched_at),
+            3,
+            Some(user_id),
+            Some(runtime_id),
+            Uuid::now_v7(),
+        )
+        .await
+        .expect("reject archived-agent lease creation")
+        .is_none());
+        patchbay_db::queries::agent::restore_agent(&pool, agent_id)
+            .await
+            .expect("restore agent")
+            .expect("agent restored");
+        assert!(patchbay_db::queries::task_token::get_task_token_by_hash(
+            &pool,
+            &format!("issue-auth-lease-{task_id}"),
+        )
+        .await
+        .expect("look up restored-agent old lease")
+        .is_none());
+
         sqlx::query("DELETE FROM authorization_audit_event WHERE workspace_id = $1")
             .bind(workspace_id)
             .execute(&pool)
@@ -9426,7 +9552,7 @@ mod tests {
             .await
             .expect("delete lease");
         sqlx::query("DELETE FROM agent_task_queue WHERE id = ANY($1)")
-            .bind(vec![task_id, quick_task_id])
+            .bind(vec![task_id, quick_task_id, archived_task_id])
             .execute(&pool)
             .await
             .expect("delete task");

@@ -3851,18 +3851,7 @@ impl TaskService {
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
         let cancelled = self.cancel_tasks_for_agent_in_tx(&mut tx, agent_id).await?;
         tx.commit().await.map_err(TaskServiceError::Sql)?;
-        for t in &cancelled {
-            self.capture_task_cancelled(t).await;
-            self.broadcast_task_event(
-                patchbay_protocol::EVENT_TASK_CANCELLED,
-                t,
-                Default::default(),
-            )
-            .await;
-        }
-        // One reconcile: all rows belong to the same agent.
-        self.reconcile_agent_status(agent_id).await;
-        self.notify_tasks_finished(&cancelled).await;
+        self.publish_transactional_cancellations(&cancelled).await;
         Ok(cancelled)
     }
 
