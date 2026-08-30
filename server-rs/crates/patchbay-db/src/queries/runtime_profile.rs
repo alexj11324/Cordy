@@ -106,7 +106,8 @@ pub async fn delete_agent_runtimes_by_profile(
     WHERE workspace_id = $2
       AND revoked_at IS NULL
       AND (
-        (resource_type = 'runtime' AND resource_id IN (SELECT id FROM victims))
+        (resource_type IN ('runtime', 'provider_identity')
+            AND resource_id IN (SELECT id FROM victims))
         OR (principal_type = 'device_runtime' AND principal_id IN (SELECT id FROM victims))
       )
 )

@@ -7576,11 +7576,11 @@ pub(crate) async fn can_member_invoke_agent(
 
 #[derive(Clone, Copy)]
 pub(crate) struct TaskAuthorizationContext {
-    task_id: Uuid,
-    lease_id: Uuid,
-    on_behalf_of_user_id: Option<Uuid>,
-    via_agent_id: Option<Uuid>,
-    device_id: Option<Uuid>,
+    pub(crate) task_id: Uuid,
+    pub(crate) lease_id: Uuid,
+    pub(crate) on_behalf_of_user_id: Option<Uuid>,
+    pub(crate) via_agent_id: Option<Uuid>,
+    pub(crate) device_id: Option<Uuid>,
 }
 
 impl TaskAuthorizationContext {

@@ -3733,6 +3733,11 @@ pub fn root_task_capability_scope(task: &AgentTaskQueue) -> serde_json::Value {
             patchbay_authorization::ResourceType::RUNTIME,
             runtime_id,
         ));
+        scope.push(patchbay_authorization::Capability::exact(
+            patchbay_authorization::Action::CREDENTIAL_USE,
+            patchbay_authorization::ResourceType::PROVIDER_IDENTITY,
+            runtime_id,
+        ));
     }
     serde_json::to_value(scope).unwrap_or_else(|_| serde_json::json!([]))
 }

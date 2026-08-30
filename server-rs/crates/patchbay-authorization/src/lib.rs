@@ -88,6 +88,7 @@ impl ResourceType {
     pub const RUNTIME: &'static str = "runtime";
     pub const LOCAL_DIRECTORY: &'static str = "local_directory";
     pub const PROJECT_RESOURCE: &'static str = "project_resource";
+    pub const PROVIDER_IDENTITY: &'static str = "provider_identity";
     pub const TASK_RUN: &'static str = "task_run";
     pub const WORKSPACE: &'static str = "workspace";
 
@@ -326,6 +327,7 @@ WHERE workspace_id = $1
       OR (principal_type = 'agent_definition' AND (
           ($9::uuid IS NOT NULL
               AND ($5 IN ('agent_definition', 'device_runtime', 'service', 'system')
+                  OR ($2 = 'credential.use' AND $3 = 'provider_identity')
                   OR effect IN ('deny', 'require_approval'))
               AND (principal_id IS NULL OR principal_id = $9))
           OR (effect IN ('deny', 'require_approval')
@@ -740,6 +742,12 @@ fn evaluate(
             .get("local_device")
             .and_then(Value::as_bool)
             .unwrap_or(false)
+        && !request
+            .resource
+            .attributes
+            .get("brokered_provider")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
     {
         let effective_user = match request.principal.principal_type {
             PrincipalType::User => request.principal.id,
@@ -878,6 +886,12 @@ fn relationship_allows(request: &AuthorizationRequest) -> bool {
         }
         Action::RUNTIME_USE => {
             is_owner
+                || request
+                    .resource
+                    .attributes
+                    .get("brokered_provider")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
                 || (!is_private
                     && matches!(
                         request.context.workspace_role,
@@ -911,6 +925,34 @@ fn grant_conditions_match(conditions: &Value, request: &AuthorizationRequest) ->
                 .context
                 .on_behalf_of_user_id
                 .is_some_and(|id| value.as_str() == Some(id.to_string().as_str())),
+            "task_id" => request
+                .context
+                .task_id
+                .is_some_and(|id| value.as_str() == Some(id.to_string().as_str())),
+            "agent_id" => request
+                .context
+                .via_agent_id
+                .is_some_and(|id| value.as_str() == Some(id.to_string().as_str())),
+            "provider" => request.resource.attributes.get("provider") == Some(value),
+            "provider_action" => {
+                request.resource.attributes.get("provider_action") == Some(value)
+            }
+            "models" => value.as_array().is_some_and(|models| {
+                request
+                    .resource
+                    .attributes
+                    .get("model")
+                    .and_then(Value::as_str)
+                    .is_some_and(|model| models.iter().any(|allowed| allowed.as_str() == Some(model)))
+            }),
+            "max_tokens" => value.as_u64().is_some_and(|maximum| {
+                request
+                    .resource
+                    .attributes
+                    .get("requested_max_tokens")
+                    .and_then(Value::as_u64)
+                    .is_none_or(|requested| requested <= maximum)
+            }),
             // Unknown conditions never match. This is additive and fail-closed.
             _ => false,
         };
@@ -1092,6 +1134,77 @@ mod tests {
             &[],
         );
         assert_eq!(decision.effect, DecisionEffect::Deny);
+    }
+
+    #[test]
+    fn provider_grant_conditions_bind_model_device_task_and_budget() {
+        let owner = Uuid::now_v7();
+        let actor = Uuid::now_v7();
+        let runtime_id = Uuid::now_v7();
+        let task_id = Uuid::now_v7();
+        let mut req = request(
+            Action::CREDENTIAL_USE,
+            ResourceType::PROVIDER_IDENTITY,
+            owner,
+            actor,
+        );
+        req.resource.id = Some(runtime_id);
+        req.resource.attributes = json!({
+            "provider": "codex",
+            "provider_action": "provider.invoke",
+            "model": "gpt-5.6-sol",
+            "requested_max_tokens": 10_000,
+        });
+        req.context.device_id = Some(runtime_id);
+        req.context.task_id = Some(task_id);
+        let conditions = json!({
+            "provider": "codex",
+            "provider_action": "provider.invoke",
+            "models": ["gpt-5.6-sol"],
+            "max_tokens": 20_000,
+            "device_id": runtime_id,
+            "task_id": task_id,
+        });
+        assert!(grant_conditions_match(&conditions, &req));
+        req.resource.attributes["model"] = json!("gpt-5.6-terra");
+        assert!(!grant_conditions_match(&conditions, &req));
+        req.resource.attributes["model"] = json!("gpt-5.6-sol");
+        req.resource.attributes["requested_max_tokens"] = json!(30_000);
+        assert!(!grant_conditions_match(&conditions, &req));
+    }
+
+    #[test]
+    fn provider_identity_requires_owner_relationship_or_explicit_grant() {
+        let owner = Uuid::now_v7();
+        let colleague = Uuid::now_v7();
+        let mut req = request(
+            Action::CREDENTIAL_USE,
+            ResourceType::PROVIDER_IDENTITY,
+            owner,
+            colleague,
+        );
+        req.resource.attributes = json!({
+            "private": true,
+            "provider": "codex",
+            "provider_action": "provider.invoke",
+        });
+        assert_eq!(evaluate(&req, &[], &[]).effect, DecisionEffect::Deny);
+
+        let allow = Grant {
+            id: Uuid::now_v7(),
+            effect: "allow".to_string(),
+            conditions: json!({
+                "provider": "codex",
+                "provider_action": "provider.invoke",
+            }),
+        };
+        assert_eq!(
+            evaluate(&req, std::slice::from_ref(&allow), &[]).effect,
+            DecisionEffect::Allow
+        );
+
+        req.principal.id = Some(owner);
+        assert_eq!(evaluate(&req, &[], &[]).effect, DecisionEffect::Allow);
     }
 
     #[test]

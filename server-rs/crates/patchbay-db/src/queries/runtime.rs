@@ -172,7 +172,7 @@ pub async fn delete_agent_runtime(
     SET revoked_at = COALESCE(revoked_at, now()), updated_at = now()
     WHERE revoked_at IS NULL
       AND (
-        (resource_type = 'runtime' AND resource_id = $1)
+        (resource_type IN ('runtime', 'provider_identity') AND resource_id = $1)
         OR (principal_type = 'device_runtime' AND principal_id = $1)
       )
 )
