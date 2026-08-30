@@ -254,6 +254,19 @@ describe("proxy root and locale handling", () => {
   it("leaves the legacy frontend auth callback public", async () => {
     expect(await redirectLocation("/auth/callback")).toBeNull();
   });
+
+  it("leaves the provider-specific Google broker and callback public", async () => {
+    expect(
+      await redirectLocation(
+        `/oauth/google?platform=desktop&code_challenge=${"a".repeat(43)}&state=${"b".repeat(43)}`,
+      ),
+    ).toBeNull();
+    expect(
+      await redirectLocation(
+        `/oauth/google/callback?platform=desktop&code_challenge=${"a".repeat(43)}&state=${"b".repeat(43)}`,
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("proxy UI fixtures", () => {

@@ -8,21 +8,25 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@patchbay/core/auth", () => ({
-  useAuthStore: (selector: (state: { createGuestSession: typeof mocks.createGuestSession }) => unknown) =>
-    selector({ createGuestSession: mocks.createGuestSession }),
+  useAuthStore: (
+    selector: (state: {
+      createGuestSession: typeof mocks.createGuestSession;
+    }) => unknown,
+  ) => selector({ createGuestSession: mocks.createGuestSession }),
 }));
 
 vi.mock("@patchbay/views/auth", () => ({
-  LoginPage: ({ extra, onGoogleLogin }: { extra?: ReactNode; onGoogleLogin: () => void }) => (
-    <div>
-      <button type="button" onClick={onGoogleLogin}>Log in</button>
-      {extra}
-    </div>
+  LoginPage: ({ extra }: { extra?: ReactNode }) => (
+    <div data-testid="email-otp-flow">{extra}</div>
   ),
 }));
 
 vi.mock("@patchbay/ui/components/common/patchbay-icon", () => ({
-  PatchbayIcon: () => null,
+  PatchbayIcon: () => <div data-testid="patchbay-icon" />,
+}));
+
+vi.mock("@patchbay/views/onboarding", () => ({
+  GoogleIcon: () => null,
 }));
 
 vi.mock("@patchbay/views/platform", () => ({
@@ -31,12 +35,24 @@ vi.mock("@patchbay/views/platform", () => ({
 
 vi.mock("@patchbay/views/i18n", () => ({
   useT: () => ({
-    t: (select: (locale: { desktop: { entry: Record<string, string> } }) => string) =>
+    t: (
+      select: (locale: {
+        common: { back: string };
+        desktop: { entry: Record<string, string> };
+      }) => string,
+    ) =>
       select({
+        common: { back: "Back" },
         desktop: {
           entry: {
-            skip: "Continue without signing in",
+            title: "Welcome to Patchbay",
+            description: "Choose how to continue",
+            login_google: "Continue with Google",
+            opening_google: "Opening Google sign-in…",
+            login_email: "Continue with Email",
+            skip: "Continue as guest",
             skipping: "Starting guest session…",
+            login_error: "Could not open the login page",
             guest_error: "Could not start a guest session",
           },
         },
@@ -49,13 +65,16 @@ import { DesktopLoginPage } from "./login";
 beforeEach(() => {
   mocks.createGuestSession.mockReset();
   mocks.openExternal.mockReset();
-  mocks.createGuestSession.mockResolvedValue({ id: "guest-user", is_guest: true });
+  mocks.createGuestSession.mockResolvedValue({
+    id: "guest-user",
+    is_guest: true,
+  });
   Object.defineProperty(window, "desktopAPI", {
     configurable: true,
     value: {
       runtimeConfig: {
         ok: true,
-        config: { appUrl: "https://accounts.aspectlylabs.com" },
+        config: { appUrl: "https://patchbay.ai" },
       },
       openExternal: mocks.openExternal,
     },
@@ -63,35 +82,54 @@ beforeEach(() => {
 });
 
 describe("DesktopLoginPage", () => {
-  it("keeps formal login and offers a clear guest entry", () => {
+  it("renders the branded equal Google and Email choices with Guest secondary", () => {
     render(<DesktopLoginPage />);
 
-    expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument();
+    expect(screen.getByTestId("patchbay-icon")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Continue without signing in" }),
+      screen.getByRole("button", { name: "Continue with Google" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Continue with Email" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Continue as guest" }),
     ).toBeInTheDocument();
   });
 
-  it("opens the configured public accounts login path for formal login", async () => {
+  it("opens the provider-specific Google route with the #623 PKCE binding", async () => {
     render(<DesktopLoginPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Log in" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue with Google" }),
+    );
 
     await waitFor(() => expect(mocks.openExternal).toHaveBeenCalledOnce());
     const [url] = mocks.openExternal.mock.calls[0] as [string];
     const parsed = new URL(url);
-    expect(parsed.origin).toBe("https://accounts.aspectlylabs.com");
-    expect(parsed.pathname).toBe("/login");
+    expect(parsed.origin).toBe("https://patchbay.ai");
+    expect(parsed.pathname).toBe("/oauth/google");
     expect(parsed.searchParams.get("platform")).toBe("desktop");
     expect(parsed.searchParams.get("code_challenge")).toHaveLength(43);
     expect(parsed.searchParams.get("state")).toHaveLength(43);
-    expect(mocks.createGuestSession).not.toHaveBeenCalled();
+    expect(parsed.searchParams.get("token")).toBeNull();
   });
 
-  it("starts a real guest session without opening the browser", async () => {
+  it("keeps the real Email OTP flow inside Electron", () => {
     render(<DesktopLoginPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Continue without signing in" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Continue with Email" }),
+    );
+
+    expect(screen.getByTestId("email-otp-flow")).toBeInTheDocument();
+    expect(mocks.openExternal).not.toHaveBeenCalled();
+  });
+
+  it("starts the existing real guest session without opening the browser", async () => {
+    render(<DesktopLoginPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue as guest" }));
 
     await waitFor(() => expect(mocks.createGuestSession).toHaveBeenCalledOnce());
     expect(mocks.openExternal).not.toHaveBeenCalled();
