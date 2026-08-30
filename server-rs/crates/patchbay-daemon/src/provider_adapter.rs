@@ -410,7 +410,7 @@ impl ProductionProviderAdapter {
         runtime: ProviderRuntimeContext,
     ) -> TaskRunOutcome {
         let _active = CounterGuard::new(&self.active_tasks);
-        let is_message_bus_continuation = !task.message_bus_messages.is_empty();
+        let is_message_bus_continuation = task_is_message_bus_continuation(&task);
         // Old servers can still dispatch this retired synthetic task. It has
         // no user prompt and must complete empty before registration lookup,
         // Remote MCP discovery, skill fetch, or filesystem preparation.
@@ -2353,6 +2353,13 @@ fn should_retry_with_fresh_session(
         && fresh_session_may_help(&result.error)
 }
 
+fn task_is_message_bus_continuation(task: &Task) -> bool {
+    // The parent task edge is the server's canonical continuation marker. The
+    // message list is payload; it may be absent in a mixed-version claim, but
+    // the copied parent session must still never be replaced with a fresh one.
+    !task.message_bus_parent_task_id.is_empty()
+}
+
 fn fresh_session_may_help(error: &str) -> bool {
     let reason = patchbay_task_failure::classify(error);
     ![
@@ -3699,6 +3706,29 @@ mod tests {
             0,
             "cursor",
             true,
+        ));
+    }
+
+    #[test]
+    fn message_bus_parent_disables_fresh_session_retry() {
+        let task = Task {
+            message_bus_parent_task_id: "main-task-1".into(),
+            ..Task::default()
+        };
+        let rejected = ExecutionResult {
+            status: "failed".into(),
+            error: "resume unavailable".into(),
+            resume_rejected: true,
+            ..ExecutionResult::default()
+        };
+
+        assert!(task_is_message_bus_continuation(&task));
+        assert!(!should_retry_with_fresh_session(
+            &rejected,
+            "old-session",
+            0,
+            "qwen",
+            !task_is_message_bus_continuation(&task),
         ));
     }
 
