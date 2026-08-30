@@ -85,13 +85,22 @@ postgres:
 # Backend (Rust API + WS server)
 # -----------------------------------------------------------------------------
 backend:
+  redis:
+    # Desktop handoff codes use REDIS_URL as their shared one-time grant store.
+    # Keep this false for the default single backend pod. Set it to true before
+    # increasing backend.replicas; the existing Secret must then contain the
+    # key below, or Kubernetes will keep the backend pods from starting.
+    enabled: false
+    secretKey: REDIS_URL
   # Concurrent backend pods are now safe to start: patchbay-migrate uses a
   # Postgres session-level advisory lock to serialize the startup
   # `migrate up` run, so late-arriving pods queue and then no-op (see
   # GitHub patchbay-ai/patchbay#3647). 1 is still the recommended default
   # because the chart Deployment uses strategy: Recreate and there is no
   # leader-elected workload split — increase this only if you actually
-  # need horizontal scale of the API/WS server.
+  # need horizontal scale of the API/WS server. Horizontal scale also requires
+  # backend.redis.enabled so browser-issued Desktop handoff codes can be
+  # redeemed through any replica.
   replicas: 1
   uploads:
     persistence:
