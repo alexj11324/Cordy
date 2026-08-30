@@ -9,7 +9,7 @@ use chrono::{DateTime, Duration, Utc};
 use patchbay_middleware::workspace::WorkspaceContext;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::Row;
+use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::error::error_response;
@@ -43,6 +43,44 @@ struct ValidateProviderLeaseRequest {
     provider: String,
     model: String,
     requested_max_tokens: u64,
+}
+
+async fn load_provider_budget(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    lease_id: Uuid,
+    task_id: Uuid,
+    runtime_id: Uuid,
+) -> anyhow::Result<u64> {
+    let contexts = sqlx::query_scalar::<_, Value>(
+        r#"SELECT context
+FROM authorization_audit_event
+WHERE workspace_id = $1
+  AND principal_type = 'task_run' AND principal_id = $2
+  AND action = 'credential.use' AND resource_type = 'provider_identity'
+  AND resource_id = $3 AND decision = 'allow'
+  AND context->>'lease_id' = $4
+  AND context->>'provider_budget_reservation' = 'true'"#,
+    )
+    .bind(workspace_id)
+    .bind(task_id)
+    .bind(runtime_id)
+    .bind(lease_id.to_string())
+    .fetch_all(pool)
+    .await?;
+    sum_provider_token_reservations(&contexts)
+}
+
+fn sum_provider_token_reservations(contexts: &[Value]) -> anyhow::Result<u64> {
+    contexts.iter().try_fold(0_u64, |reserved, context| {
+        let tokens = context
+            .get("provider_request_tokens")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| anyhow::anyhow!("provider token reservation is invalid"))?;
+        reserved
+            .checked_add(tokens)
+            .ok_or_else(|| anyhow::anyhow!("provider token reservations overflowed"))
+    })
 }
 
 async fn validate_provider_lease(
@@ -118,9 +156,8 @@ WHERE task.id = $1 AND runtime.id = $2"#,
         "member" => WorkspaceRole::Member,
         _ => WorkspaceRole::Guest,
     };
-    let decision = state
-        .authorization
-        .authorize(AuthorizationRequest {
+    let authorization_request =
+        |requested_max_tokens: u64, provider_budget_reservation: bool| AuthorizationRequest {
             principal: Principal {
                 principal_type: PrincipalType::TaskRun,
                 id: Some(task_auth.task_id),
@@ -133,10 +170,12 @@ WHERE task.id = $1 AND runtime.id = $2"#,
                 owner_id,
                 attributes: json!({
                     "private": true,
-                    "provider": provider,
+                    "provider": provider.clone(),
                     "provider_action": "provider.invoke",
-                    "model": request.model,
-                    "requested_max_tokens": request.requested_max_tokens,
+                    "model": request.model.clone(),
+                    "requested_max_tokens": requested_max_tokens,
+                    "provider_request_tokens": request.requested_max_tokens,
+                    "provider_budget_reservation": provider_budget_reservation,
                 }),
             },
             context: AuthorizationContext {
@@ -146,20 +185,70 @@ WHERE task.id = $1 AND runtime.id = $2"#,
                 device_id: task_auth.device_id,
                 task_id: Some(task_auth.task_id),
                 lease_id: Some(task_auth.lease_id),
-                team_ids,
+                team_ids: team_ids.clone(),
                 ..Default::default()
             },
             delegation_chain: Vec::new(),
-        })
-        .await;
+        };
+    // The first allow audit is the durable reservation. It commits before the
+    // cumulative pass, so concurrent requests cannot both miss one another:
+    // whichever final check runs second observes both reservations. Replays
+    // after a daemon restart likewise remain charged to this lease.
+    let initial_decision = match state
+        .authorization
+        .authorize(authorization_request(request.requested_max_tokens, true))
+        .await
+    {
+        Ok(decision) => decision,
+        Err(error) => {
+            tracing::error!(%error, "validate provider lease failed closed");
+            return error_response(StatusCode::SERVICE_UNAVAILABLE, "authorization unavailable");
+        }
+    };
+    let decision = if initial_decision.is_allowed() && owner_id != Some(context.member.user_id) {
+        let cumulative_requested_tokens = match load_provider_budget(
+            &state.pool,
+            workspace_id,
+            task_auth.lease_id,
+            task_auth.task_id,
+            request.runtime_id,
+        )
+        .await
+        {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::error!(%error, "load provider token budget failed");
+                return error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "authorization unavailable",
+                );
+            }
+        };
+        match state
+            .authorization
+            .authorize(authorization_request(cumulative_requested_tokens, false))
+            .await
+        {
+            Ok(decision) => decision,
+            Err(error) => {
+                tracing::error!(%error, "validate cumulative provider budget failed closed");
+                return error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "authorization unavailable",
+                );
+            }
+        }
+    } else {
+        initial_decision
+    };
     match decision {
-        Ok(decision) if decision.is_allowed() => Json(json!({
+        decision if decision.is_allowed() => Json(json!({
             "allowed": true,
             "decision_id": decision.audit_id,
             "policy_version": decision.policy_version,
         }))
         .into_response(),
-        Ok(decision) => (
+        decision => (
             StatusCode::FORBIDDEN,
             Json(json!({
                 "allowed": false,
@@ -169,10 +258,6 @@ WHERE task.id = $1 AND runtime.id = $2"#,
             })),
         )
             .into_response(),
-        Err(error) => {
-            tracing::error!(%error, "validate provider lease failed closed");
-            error_response(StatusCode::SERVICE_UNAVAILABLE, "authorization unavailable")
-        }
     }
 }
 
@@ -514,4 +599,96 @@ async fn explain(
         return error_response(StatusCode::NOT_FOUND, "decision not found");
     }
     Json(event).into_response()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn provider_budget_is_loaded_from_durable_audit_rows() {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for provider budget contract");
+        let pool = PgPool::connect(&url)
+            .await
+            .expect("connect contract PostgreSQL");
+        let workspace_id = Uuid::now_v7();
+        let task_id = Uuid::now_v7();
+        let runtime_id = Uuid::now_v7();
+        let lease_id = Uuid::now_v7();
+        let other_lease_id = Uuid::now_v7();
+        sqlx::query(
+            r#"INSERT INTO authorization_audit_event (
+    id, workspace_id, principal_type, principal_id, action, resource_type,
+    resource_id, decision, reason, policy_version, context
+) VALUES
+    ($1,$2,'task_run',$3,'credential.use','provider_identity',$4,'allow','reserved','phase1',$5),
+    ($6,$2,'task_run',$3,'credential.use','provider_identity',$4,'allow','reserved','phase1',$7),
+    ($8,$2,'task_run',$3,'credential.use','provider_identity',$4,'allow','other lease','phase1',$9)"#,
+        )
+        .bind(Uuid::now_v7())
+        .bind(workspace_id)
+        .bind(task_id)
+        .bind(runtime_id)
+        .bind(json!({
+            "lease_id": lease_id,
+            "provider_request_tokens": 2_000,
+            "provider_budget_reservation": true,
+        }))
+        .bind(Uuid::now_v7())
+        .bind(json!({
+            "lease_id": lease_id,
+            "provider_request_tokens": 3_000,
+            "provider_budget_reservation": true,
+        }))
+        .bind(Uuid::now_v7())
+        .bind(json!({
+            "lease_id": other_lease_id,
+            "provider_request_tokens": 7_000,
+            "provider_budget_reservation": true,
+        }))
+        .execute(&pool)
+        .await
+        .expect("persist provider budget reservations");
+
+        let first_load = load_provider_budget(
+            &pool,
+            workspace_id,
+            lease_id,
+            task_id,
+            runtime_id,
+        )
+        .await;
+        let replacement_load = load_provider_budget(
+            &pool,
+            workspace_id,
+            lease_id,
+            task_id,
+            runtime_id,
+        )
+        .await;
+        sqlx::query("DELETE FROM authorization_audit_event WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("clean provider budget contract rows");
+
+        assert_eq!(first_load.unwrap(), 5_000);
+        assert_eq!(replacement_load.unwrap(), 5_000);
+    }
+
+    #[test]
+    fn provider_token_reservations_are_cumulative_and_overflow_closed() {
+        let contexts = vec![
+            json!({"provider_request_tokens": 2_000}),
+            json!({"provider_request_tokens": 3_000}),
+        ];
+        assert_eq!(sum_provider_token_reservations(&contexts).unwrap(), 5_000);
+        assert!(sum_provider_token_reservations(&[json!({})]).is_err());
+        assert!(sum_provider_token_reservations(&[
+            json!({"provider_request_tokens": u64::MAX}),
+            json!({"provider_request_tokens": 1}),
+        ])
+        .is_err());
+    }
 }

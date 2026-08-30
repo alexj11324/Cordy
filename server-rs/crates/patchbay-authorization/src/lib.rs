@@ -466,6 +466,19 @@ SELECT * FROM lease_chain ORDER BY delegation_depth DESC"#,
             "team_ids": request.context.team_ids,
             "approval_id": request.context.approval_id,
             "request_id": request.context.request_id,
+            // Provider budget reservations are non-secret authorization
+            // evidence. Persist the per-request amount so a replacement
+            // daemon cannot reset a task's cumulative grant budget.
+            "provider_request_tokens": request
+                .resource
+                .attributes
+                .get("provider_request_tokens")
+                .and_then(Value::as_u64),
+            "provider_budget_reservation": request
+                .resource
+                .attributes
+                .get("provider_budget_reservation")
+                .and_then(Value::as_bool),
         });
         sqlx::query(
             r#"INSERT INTO authorization_audit_event (

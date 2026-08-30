@@ -48,6 +48,11 @@ code and in CI:
    `responses/compact`, `chat/completions`, `messages`, and Anthropic token
    counting); account, organization, model-administration, file, and other
    provider APIs are denied before budget consumption or credential use.
+   For cross-member grants, every allowed broker request durably reserves its
+   declared maximum output tokens in the authorization audit ledger before the
+   cumulative grant check. Reservations remain charged across daemon restart,
+   request replay, or upstream failure; an unreadable or overflowing ledger
+   fails closed instead of resetting the grant budget.
 8. Every provider process tree is launched behind a fail-closed OS/filesystem
    boundary. macOS uses a deny-by-default sandbox profile; Linux uses
    bubblewrap with isolated process/IPC/UTS/cgroup namespaces, a hidden host
