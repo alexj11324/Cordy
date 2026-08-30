@@ -2890,17 +2890,17 @@ mod dispatch_contract_tests {
 
     #[test]
     fn automation_run_updates_require_the_exact_task_owner() {
-        let task_id = Uuid::new_v4();
+        let task_id = Uuid::now_v7();
         assert!(automation_run_owns_task(task_id, Some(task_id)));
         assert!(!automation_run_owns_task(task_id, None));
-        assert!(!automation_run_owns_task(task_id, Some(Uuid::new_v4())));
+        assert!(!automation_run_owns_task(task_id, Some(Uuid::now_v7())));
     }
 
     #[test]
     fn message_bus_continuations_are_not_linked_issue_run_candidates() {
         assert!(context_is_message_bus_continuation(Some(
             &serde_json::json!({
-                "message_bus_parent_task_id": Uuid::new_v4().to_string(),
+                "message_bus_parent_task_id": Uuid::now_v7().to_string(),
             })
         )));
         assert!(!context_is_message_bus_continuation(Some(
