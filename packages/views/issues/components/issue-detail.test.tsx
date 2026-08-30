@@ -1063,7 +1063,7 @@ describe("IssueDetail (shared)", () => {
     expect(
       within(section).getByText(/Blocked · 1\/2 hard prerequisites satisfied/),
     ).toBeInTheDocument();
-    expect(within(section).getByText("Done")).toBeInTheDocument();
+    expect(within(section).getAllByText("Done")).toHaveLength(2);
     expect(within(section).getByText("In Progress")).toBeInTheDocument();
     expect(within(section).getByText(/TES-2's output/)).toBeInTheDocument();
 
