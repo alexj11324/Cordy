@@ -1771,10 +1771,7 @@ async fn archive_agent(
         Ok(None) => return error_response(StatusCode::CONFLICT, "agent is already archived"),
         Err(error) => {
             tracing::warn!(%error, agent_id = %target.id, "failed to lock agent for archive");
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to archive agent",
-            )
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive agent");
         }
     }
     let archived = match agent::archive_agent(&mut *tx, target.id, context.member.user_id).await {
