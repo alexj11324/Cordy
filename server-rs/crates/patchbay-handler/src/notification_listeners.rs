@@ -858,7 +858,7 @@ async fn scoped_db_issue(pool: &PgPool, event: &Event, id: Uuid) -> anyhow::Resu
     let Some(workspace_id) = event_workspace(event) else {
         return Ok(None);
     };
-    Ok(issue::get_issue_in_workspace(pool, id, workspace_id).await?)
+    issue::get_issue_in_workspace(pool, id, workspace_id).await
 }
 
 fn fields_from_issue(issue: Issue) -> IssueFields {

@@ -517,7 +517,7 @@ async fn insert_activity(
     action: &str,
     details: Value,
 ) -> anyhow::Result<()> {
-    match activity::create_activity(
+    if let Some(row) = activity::create_activity(
         pool,
         workspace_id,
         issue_id,
@@ -529,8 +529,7 @@ async fn insert_activity(
     )
     .await?
     {
-        Some(row) => publish_activity(bus, event, row),
-        None => {}
+        publish_activity(bus, event, row);
     }
     Ok(())
 }
