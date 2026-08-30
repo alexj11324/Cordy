@@ -11,7 +11,6 @@ import {
 import { SignIn, useAuth } from "@clerk/nextjs";
 import { useAuthStore } from "@patchbay/core/auth";
 import { api } from "@patchbay/core/api";
-import { useSearchParams } from "next/navigation";
 import {
   redirectToCliCallback,
   redirectToDesktopApp,
@@ -28,6 +27,7 @@ import {
   redirectToDesktopBrowserApp,
 } from "@/features/auth/desktop-handoff";
 import { useClerkSessionExchangeReady } from "@/components/clerk-auth-adapter";
+import { useWebSearchParams } from "@/platform/client-navigation";
 
 function desktopHandoffQuery(
   codeChallenge: string,
@@ -50,7 +50,7 @@ export default function LoginPage() {
 }
 
 function LoginContent() {
-  const searchParams = useSearchParams();
+  const searchParams = useWebSearchParams();
   const { isLoaded, isSignedIn } = useAuth();
   const { t } = useT("auth");
   const clerkSessionExchangeReady = useClerkSessionExchangeReady();

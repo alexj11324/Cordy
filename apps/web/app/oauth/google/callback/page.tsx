@@ -2,10 +2,13 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useClerk, useSignIn, useSignUp } from "@clerk/nextjs";
-import { useRouter, useSearchParams } from "next/navigation";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
 import { readDesktopHandoffBinding } from "@/features/auth/desktop-handoff";
 import { useT } from "@patchbay/views/i18n";
+import {
+  useWebRouter,
+  useWebSearchParams,
+} from "@/platform/client-navigation";
 
 export default function GoogleOAuthCallbackPage() {
   return (
@@ -16,7 +19,7 @@ export default function GoogleOAuthCallbackPage() {
 }
 
 function GoogleOAuthCallbackContent() {
-  const searchParams = useSearchParams();
+  const searchParams = useWebSearchParams();
   const binding = useMemo(
     () =>
       readDesktopHandoffBinding(
@@ -28,7 +31,7 @@ function GoogleOAuthCallbackContent() {
   const clerk = useClerk();
   const { signIn } = useSignIn();
   const { signUp } = useSignUp();
-  const router = useRouter();
+  const router = useWebRouter();
   const { t } = useT("auth");
   const attempted = useRef(false);
   const [error, setError] = useState<string | null>(null);
