@@ -159,4 +159,22 @@ describe("Rust desktop Google proxy", () => {
       error: "invalid_rust_api_response",
     });
   });
+
+  it("stops reading a chunked request as soon as it exceeds the limit", async () => {
+    const oversized = request("/v1/desktop/google/attempt", {
+      body: { state: "s".repeat(5000), code_challenge: codeChallenge },
+    });
+    expect(oversized.headers.get("content-length")).toBeNull();
+    const fetcher = vi.fn();
+
+    const response = await proxyRustDesktopGoogleRequest(
+      oversized,
+      "attempt",
+      { apiOrigin, brokerOrigin },
+      fetcher,
+    );
+
+    expect(response.status).toBe(413);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
 });

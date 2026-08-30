@@ -19,7 +19,8 @@ test("ordinary product updates do not require an auth broker release or full OAu
 test("broker packaging changes remain in the independent release lane", () => {
   for (const path of [
     "Dockerfile.auth-broker",
-    "deploy/helm/patchbay-auth-broker/values.yaml",
+    ".dockerignore",
+    "deploy/helm/patchbay-auth-broker/Chart.yaml",
     ".github/workflows/auth-broker-release.yml",
     "apps/auth-broker/app/globals.css",
   ]) {
@@ -35,6 +36,8 @@ test("protocol, provider callback, session exchange, and desktop boundaries requ
     "contracts/auth-broker/v1.json",
     "apps/auth-broker/app/oauth/google/callback/page.tsx",
     "apps/auth-broker/lib/rust-api-proxy.ts",
+    "deploy/helm/patchbay-auth-broker/values.yaml",
+    "deploy/helm/patchbay-auth-broker/templates/deployment.yaml",
     "apps/web/features/auth/google-oauth.ts",
     "server-rs/crates/patchbay-handler/src/clerk_auth.rs",
     "apps/desktop/src/renderer/src/pages/login-handoff.ts",

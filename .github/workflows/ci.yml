@@ -310,6 +310,21 @@ jobs:
           pnpm exec turbo build --filter='!@patchbay/docs' --filter='!@patchbay/mobile'
           pnpm exec turbo typecheck lint --filter='!@patchbay/docs' --filter='!@patchbay/mobile'
 
+      - name: Setup Docker Buildx for auth broker
+        if: ${{ needs.changes.outputs.auth_broker_release == 'true' }}
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build independent auth broker image
+        if: ${{ needs.changes.outputs.auth_broker_release == 'true' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.auth-broker
+          push: false
+          tags: patchbay-auth-broker:ci
+          cache-from: type=gha,scope=ci-auth-broker
+          cache-to: type=gha,mode=max,scope=ci-auth-broker
+
       # Blocking from the start: it reports nothing today, and it covers the
       # one regression knip structurally cannot see. packages/ui exports four
       # wildcards, which knip expands into entry-point globs over every file

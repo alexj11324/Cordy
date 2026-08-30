@@ -31,26 +31,29 @@ export async function proxyRustDesktopGoogleRequest(
   ) {
     return jsonError(409, "contract_version_rejected");
   }
-  const contentLength = Number(request.headers.get("content-length") ?? "0");
-  if (!Number.isFinite(contentLength) || contentLength > MAX_REQUEST_BYTES) {
-    return jsonError(413, "request_too_large");
+  const contentLengthHeader = request.headers.get("content-length");
+  if (contentLengthHeader !== null) {
+    const contentLength = Number(contentLengthHeader);
+    if (
+      !Number.isFinite(contentLength) ||
+      contentLength < 0 ||
+      contentLength > MAX_REQUEST_BYTES
+    ) {
+      return jsonError(413, "request_too_large");
+    }
   }
   const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
   if (!contentType.startsWith("application/json")) {
     return jsonError(415, "content_type_rejected");
   }
-  let bodyText: string;
-  try {
-    bodyText = await request.text();
-  } catch {
-    return jsonError(400, "invalid_request");
-  }
-  if (new TextEncoder().encode(bodyText).byteLength > MAX_REQUEST_BYTES) {
+  const bodyResult = await readBoundedRequestBody(request, MAX_REQUEST_BYTES);
+  if (bodyResult.status === "too_large") {
     return jsonError(413, "request_too_large");
   }
+  if (bodyResult.status === "invalid") return jsonError(400, "invalid_request");
   let body: unknown;
   try {
-    body = JSON.parse(bodyText);
+    body = JSON.parse(bodyResult.text);
   } catch {
     return jsonError(400, "invalid_request");
   }
@@ -128,6 +131,51 @@ export async function proxyRustDesktopGoogleRequest(
     );
   }
   return jsonError(502, "invalid_rust_api_response");
+}
+
+async function readBoundedRequestBody(
+  request: Request,
+  limit: number,
+): Promise<
+  | { status: "ok"; text: string }
+  | { status: "invalid" }
+  | { status: "too_large" }
+> {
+  if (!request.body) return { status: "ok", text: "" };
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let byteLength = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      byteLength += value.byteLength;
+      if (byteLength > limit) {
+        await reader.cancel().catch(() => undefined);
+        return { status: "too_large" };
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return { status: "invalid" };
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(byteLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return {
+      status: "ok",
+      text: new TextDecoder("utf-8", { fatal: true }).decode(bytes),
+    };
+  } catch {
+    return { status: "invalid" };
+  }
 }
 
 function jsonError(status: number, code: string): Response {

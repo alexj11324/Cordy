@@ -6,6 +6,7 @@ const AUTH_BROKER_RELEASE_PATTERNS = [
   /^apps\/auth-broker\//,
   /^contracts\/auth-broker\//,
   /^deploy\/helm\/patchbay-auth-broker\//,
+  /^\.dockerignore$/,
   /^Dockerfile\.auth-broker$/,
   /^\.github\/workflows\/auth-broker-release\.yml$/,
 ];
@@ -16,6 +17,8 @@ const FULL_GOOGLE_OAUTH_E2E_PATTERNS = [
   /^apps\/auth-broker\/app\/login\//,
   /^apps\/auth-broker\/app\/v1\/desktop\//,
   /^apps\/auth-broker\/lib\/(broker-client|contract|desktop-handoff|google-oauth|runtime-config|rust-api-proxy)\.(ts|tsx)$/,
+  /^deploy\/helm\/patchbay-auth-broker\/values\.yaml$/,
+  /^deploy\/helm\/patchbay-auth-broker\/templates\/deployment\.yaml$/,
   /^apps\/web\/app\/oauth\/google\//,
   /^apps\/web\/app\/\(auth\)\/login\//,
   /^apps\/web\/features\/auth\//,

@@ -23,7 +23,9 @@ function resolveLocale(languages: readonly string[]): SupportedLocale {
 export function useAuthMessages() {
   const [locale, setLocale] = useState<SupportedLocale>("en");
   useEffect(() => {
-    setLocale(resolveLocale(navigator.languages ?? [navigator.language]));
+    const resolved = resolveLocale(navigator.languages ?? [navigator.language]);
+    document.documentElement.lang = resolved;
+    setLocale(resolved);
   }, []);
   return { locale, messages: RESOURCES[locale] };
 }
