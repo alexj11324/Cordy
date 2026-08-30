@@ -40,7 +40,7 @@ use patchbay_protocol::{
 };
 use patchbay_service::issue_status as issue_status_svc;
 use patchbay_service::task_service::TaskService;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use sqlx::Row;
 use uuid::Uuid;
@@ -208,6 +208,20 @@ fn daemon_workspace_id(ext: Option<DaemonContext>) -> String {
     ext.and_then(|d| d.workspace_id).unwrap_or_default()
 }
 
+fn daemon_context_workspace_matches(context: Option<&DaemonContext>, workspace_id: &str) -> bool {
+    context
+        .and_then(|context| context.workspace_id.as_deref())
+        .is_some_and(|daemon_workspace_id| daemon_workspace_id == workspace_id)
+}
+
+fn daemon_provenance_context_is_authorized(context: &DaemonContext) -> bool {
+    context.auth_path == patchbay_middleware::daemon_auth::DAEMON_AUTH_PATH_DAEMON_TOKEN
+        && context
+            .workspace_id
+            .as_deref()
+            .is_some_and(|workspace_id| !workspace_id.trim().is_empty())
+}
+
 pub(crate) fn daemon_id_of(ext: Option<DaemonContext>) -> String {
     ext.and_then(|d| d.daemon_id).unwrap_or_default()
 }
@@ -266,6 +280,9 @@ async fn check_daemon_workspace_access(
         return Err(error_response(StatusCode::NOT_FOUND, "not found"));
     }
     let daemon_ctx = daemon_ctx.or_else(|| daemon_context_from_headers(access.headers));
+    if daemon_context_workspace_matches(daemon_ctx.as_ref(), workspace_id) {
+        return Ok(workspace_id.to_string());
+    }
     let daemon_ws = daemon_workspace_id(daemon_ctx.clone());
     if !daemon_ws.is_empty() {
         if daemon_ws != workspace_id {
@@ -2890,7 +2907,7 @@ async fn start_task(
     }
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 struct ExecutionProvenanceRequest {
     #[serde(default)]
     execution_repo_identity: String,
@@ -2916,13 +2933,7 @@ async fn record_execution_provenance(
     headers: HeaderMap,
     body: Option<Json<ExecutionProvenanceRequest>>,
 ) -> Response {
-    if daemon_context.auth_path
-        != patchbay_middleware::daemon_auth::DAEMON_AUTH_PATH_DAEMON_TOKEN
-        || daemon_context
-            .workspace_id
-            .as_deref()
-            .is_none_or(|workspace_id| workspace_id.trim().is_empty())
-    {
+    if !daemon_provenance_context_is_authorized(&daemon_context) {
         return error_response(
             StatusCode::FORBIDDEN,
             "execution provenance requires daemon authentication",
@@ -5094,6 +5105,73 @@ mod tests {
             .connect_lazy("postgres://patchbay:patchbay@127.0.0.1/patchbay")
             .expect("test database URL is valid");
         HandlerState::new(pool, patchbay_auth::pat_cache::PatCache::disabled(), None)
+    }
+
+    #[test]
+    fn execution_provenance_requires_daemon_token_and_workspace() {
+        let daemon_context = DaemonContext {
+            workspace_id: Some("workspace-1".to_string()),
+            daemon_id: Some("daemon-1".to_string()),
+            auth_path: patchbay_middleware::daemon_auth::DAEMON_AUTH_PATH_DAEMON_TOKEN,
+        };
+        assert!(daemon_provenance_context_is_authorized(&daemon_context));
+
+        for auth_path in [
+            patchbay_middleware::daemon_auth::DAEMON_AUTH_PATH_PAT,
+            patchbay_middleware::daemon_auth::DAEMON_AUTH_PATH_JWT,
+            "task_token",
+        ] {
+            assert!(!daemon_provenance_context_is_authorized(&DaemonContext {
+                auth_path,
+                ..daemon_context.clone()
+            }));
+        }
+        assert!(!daemon_provenance_context_is_authorized(&DaemonContext {
+            workspace_id: None,
+            ..daemon_context
+        }));
+    }
+
+    #[test]
+    fn execution_provenance_requires_exact_daemon_workspace() {
+        let context = DaemonContext {
+            workspace_id: Some("workspace-1".to_string()),
+            daemon_id: Some("daemon-1".to_string()),
+            auth_path: patchbay_middleware::daemon_auth::DAEMON_AUTH_PATH_DAEMON_TOKEN,
+        };
+        assert!(daemon_context_workspace_matches(
+            Some(&context),
+            "workspace-1"
+        ));
+        assert!(!daemon_context_workspace_matches(
+            Some(&context),
+            "workspace-2"
+        ));
+        assert!(!daemon_context_workspace_matches(None, "workspace-1"));
+    }
+
+    #[test]
+    fn execution_provenance_body_cannot_supply_task_identity() {
+        let request: ExecutionProvenanceRequest = serde_json::from_value(json!({
+            "execution_repo_identity": "https://github.com/example/repo",
+            "execution_workspace": "/srv/workspaces/task",
+            "execution_head_branch": "feature/work",
+            "execution_head_sha": "abc123",
+            "execution_head_state": "attached",
+            "task_id": "forged-task",
+            "agent_id": "forged-agent",
+            "workspace_id": "forged-workspace"
+        }))
+        .expect("execution facts should decode");
+
+        assert_eq!(request.execution_head_branch, "feature/work");
+        assert_eq!(request.execution_head_sha, "abc123");
+        // Task, Agent, and workspace identity are taken from the path and the
+        // authenticated DaemonContext; they are not fields in this payload.
+        assert!(serde_json::to_value(request)
+            .unwrap()
+            .get("task_id")
+            .is_none());
     }
 
     #[tokio::test]
