@@ -139,7 +139,6 @@
     "task_detail": "样例任务详情",
     "back_to_issues": "返回任务",
     "execution": "执行记录",
-    "runs_one": "{{count}} 次运行",
     "runs_other": "{{count}} 次运行",
     "assignee": "负责人",
     "created": "创建时间",

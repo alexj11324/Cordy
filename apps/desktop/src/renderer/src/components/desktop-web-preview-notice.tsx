@@ -19,7 +19,7 @@ export function DesktopWebPreviewNotice() {
         •
       </span>
       <span>{t(($) => $.preview.sample_data)}</span>
-      <span className="inline-flex items-center gap-1 text-muted-foreground/80">
+      <span className="inline-flex items-center gap-1 text-muted-foreground">
         <WifiOff className="size-3" aria-hidden="true" />
         {t(($) => $.preview.no_backend)}
       </span>

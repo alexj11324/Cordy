@@ -139,7 +139,6 @@
     "task_detail": "샘플 작업 상세",
     "back_to_issues": "이슈로 돌아가기",
     "execution": "실행 기록",
-    "runs_one": "실행 {{count}}회",
     "runs_other": "실행 {{count}}회",
     "assignee": "담당자",
     "created": "생성일",
