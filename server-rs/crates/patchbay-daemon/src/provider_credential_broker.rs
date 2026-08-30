@@ -949,10 +949,15 @@ mod tests {
             Some(512)
         );
         assert_eq!(
-            requested_output_tokens(&json!({"max_output_tokens": 256, "max_completion_tokens": 512})),
+            requested_output_tokens(
+                &json!({"max_output_tokens": 256, "max_completion_tokens": 512})
+            ),
             Some(256)
         );
-        assert_eq!(requested_output_tokens(&json!({"max_tokens": 128})), Some(128));
+        assert_eq!(
+            requested_output_tokens(&json!({"max_tokens": 128})),
+            Some(128)
+        );
     }
 
     #[test]

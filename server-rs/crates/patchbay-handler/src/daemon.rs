@@ -2210,11 +2210,7 @@ WHERE id = ANY($1::uuid[]) AND effect = 'allow' AND revoked_at IS NULL
                 continue;
             }
             eligible_ids.push(row.try_get::<Uuid, _>("id").map_err(|_| true)?);
-            merge_provider_grant_budget(
-                &mut max_tokens,
-                &mut has_unbounded_grant,
-                &conditions,
-            );
+            merge_provider_grant_budget(&mut max_tokens, &mut has_unbounded_grant, &conditions);
             if let Some(grant_expiry) = row
                 .try_get::<Option<chrono::DateTime<Utc>>, _>("expires_at")
                 .map_err(|_| true)?
