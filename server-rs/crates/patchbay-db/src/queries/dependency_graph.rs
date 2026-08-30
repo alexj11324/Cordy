@@ -245,6 +245,118 @@ pub struct DependencyGraphEdgeInsert {
     pub consumed_output: String,
 }
 
+/// Durable publication work created in the same transaction as graph nodes.
+/// The handler claims these rows before sending the normal issue:created event
+/// and marks them published only after the in-process bus accepts it.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct DependencyGraphIssueCreatedOutboxRow {
+    pub plan_id: Uuid,
+    pub node_id: Uuid,
+    pub workspace_id: Uuid,
+    pub issue_id: Uuid,
+}
+
+pub async fn ensure_issue_created_outbox<'e, E>(
+    executor: E,
+    workspace_id: Uuid,
+    plan_id: Uuid,
+) -> anyhow::Result<u64>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    Ok(sqlx::query(
+        r#"INSERT INTO dependency_graph_issue_created_outbox (
+    plan_id, node_id, workspace_id, issue_id
+)
+SELECT node.plan_id, node.id, node.workspace_id, node.issue_id
+FROM dependency_graph_node node
+WHERE node.plan_id = $1
+  AND node.workspace_id = $2
+ON CONFLICT (plan_id, node_id) DO NOTHING"#,
+    )
+    .bind(plan_id)
+    .bind(workspace_id)
+    .execute(executor)
+    .await?
+    .rows_affected())
+}
+
+pub async fn claim_issue_created_outbox<'e, E>(
+    executor: E,
+    workspace_id: Uuid,
+    plan_id: Uuid,
+    lease_owner: &str,
+) -> anyhow::Result<Vec<DependencyGraphIssueCreatedOutboxRow>>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    Ok(sqlx::query_as::<_, DependencyGraphIssueCreatedOutboxRow>(
+        r#"WITH candidates AS (
+    SELECT plan_id, node_id
+    FROM dependency_graph_issue_created_outbox
+    WHERE workspace_id = $1
+      AND plan_id = $2
+      AND (
+          status = 'pending'
+          OR (
+              status = 'processing'
+              AND (lease_expires_at IS NULL OR lease_expires_at <= now())
+          )
+      )
+    ORDER BY created_at ASC, node_id ASC
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE dependency_graph_issue_created_outbox AS event
+SET status = 'processing',
+    attempt = event.attempt + 1,
+    lease_owner = $3,
+    lease_expires_at = now() + interval '30 seconds',
+    updated_at = now()
+FROM candidates
+WHERE event.plan_id = candidates.plan_id
+  AND event.node_id = candidates.node_id
+RETURNING event.plan_id, event.node_id, event.workspace_id, event.issue_id"#,
+    )
+    .bind(workspace_id)
+    .bind(plan_id)
+    .bind(lease_owner)
+    .fetch_all(executor)
+    .await?)
+}
+
+pub async fn mark_issue_created_outbox_published<'e, E>(
+    executor: E,
+    workspace_id: Uuid,
+    plan_id: Uuid,
+    node_id: Uuid,
+    lease_owner: &str,
+) -> anyhow::Result<bool>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    Ok(sqlx::query(
+        r#"UPDATE dependency_graph_issue_created_outbox
+SET status = 'published',
+    published_at = now(),
+    lease_owner = NULL,
+    lease_expires_at = NULL,
+    updated_at = now()
+WHERE workspace_id = $1
+  AND plan_id = $2
+  AND node_id = $3
+  AND status = 'processing'
+  AND lease_owner = $4"#,
+    )
+    .bind(workspace_id)
+    .bind(plan_id)
+    .bind(node_id)
+    .bind(lease_owner)
+    .execute(executor)
+    .await?
+    .rows_affected()
+        == 1)
+}
+
 pub async fn list_nodes<'e, E>(
     executor: E,
     plan_id: Uuid,

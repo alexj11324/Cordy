@@ -367,6 +367,11 @@ affected_dependency_graph_plans AS (
       AND (edge.from_issue_id IN (SELECT target.id FROM target)
            OR edge.to_issue_id IN (SELECT target.id FROM target))
 ),
+cleared_dependency_graph_issue_created_outbox AS (
+    DELETE FROM dependency_graph_issue_created_outbox
+    WHERE workspace_id = $2
+      AND plan_id IN (SELECT id FROM affected_dependency_graph_plans)
+),
 cleared_dependency_graph_edges AS (
     DELETE FROM dependency_graph_edge
     WHERE workspace_id = $2

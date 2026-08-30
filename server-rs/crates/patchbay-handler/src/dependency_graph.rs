@@ -61,6 +61,7 @@ struct DependencyGraphListQuery {
 #[derive(Debug, Serialize, Deserialize)]
 struct DependencyGraphCursor {
     v: u8,
+    workspace_id: Uuid,
     project_id: Option<Uuid>,
     updated_at: DateTime<Utc>,
     id: Uuid,
@@ -68,6 +69,7 @@ struct DependencyGraphCursor {
 
 fn decode_graph_cursor(
     raw: Option<&str>,
+    workspace_id: Uuid,
     project_id: Option<Uuid>,
 ) -> Result<Option<(DateTime<Utc>, Uuid)>, Response> {
     let Some(raw) = raw.filter(|value| !value.trim().is_empty()) else {
@@ -81,6 +83,12 @@ fn decode_graph_cursor(
         .ok_or_else(|| {
             error_response(StatusCode::BAD_REQUEST, "invalid dependency graph cursor")
         })?;
+    if cursor.workspace_id != workspace_id {
+        return Err(error_response(
+            StatusCode::CONFLICT,
+            "dependency graph cursor does not belong to this workspace",
+        ));
+    }
     if cursor.project_id != project_id {
         return Err(error_response(
             StatusCode::CONFLICT,
@@ -90,16 +98,100 @@ fn decode_graph_cursor(
     Ok(Some((cursor.updated_at, cursor.id)))
 }
 
-fn encode_graph_cursor(project_id: Option<Uuid>, cursor: (DateTime<Utc>, Uuid)) -> String {
+fn encode_graph_cursor(
+    workspace_id: Uuid,
+    project_id: Option<Uuid>,
+    cursor: (DateTime<Utc>, Uuid),
+) -> String {
     URL_SAFE_NO_PAD.encode(
         serde_json::to_vec(&DependencyGraphCursor {
             v: 1,
+            workspace_id,
             project_id,
             updated_at: cursor.0,
             id: cursor.1,
         })
         .expect("dependency graph cursor is serializable"),
     )
+}
+
+async fn publish_pending_issue_created_events(
+    state: &HandlerState,
+    snapshot: &DependencyGraphSnapshot,
+) {
+    let lease_owner = format!("dependency-graph-issue-created:{}", Uuid::now_v7());
+    let pending = match graph_q::claim_issue_created_outbox(
+        &state.pool,
+        snapshot.plan.workspace_id,
+        snapshot.plan.id,
+        &lease_owner,
+    )
+    .await
+    {
+        Ok(pending) => pending,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                plan_id = %snapshot.plan.id,
+                "dependency graph issue-created publication claim deferred"
+            );
+            return;
+        }
+    };
+    if pending.is_empty() {
+        return;
+    }
+    let prefix = issue_prefix(state, snapshot.plan.workspace_id).await;
+    for event in pending {
+        let Some(node) = snapshot
+            .nodes
+            .iter()
+            .find(|node| node.node.id == event.node_id && node.issue.id == event.issue_id)
+        else {
+            tracing::warn!(
+                plan_id = %event.plan_id,
+                node_id = %event.node_id,
+                issue_id = %event.issue_id,
+                "dependency graph issue-created outbox row has no matching snapshot node"
+            );
+            continue;
+        };
+        let issue = issue_created_response_with_status_category(
+            &node.issue,
+            &prefix,
+            &node.effective_status,
+        );
+        state.bus.publish(&patchbay_events::Event {
+            event_type: patchbay_protocol::EVENT_ISSUE_CREATED.to_string(),
+            workspace_id: event.workspace_id.to_string(),
+            actor_type: snapshot.plan.created_by_type.clone(),
+            actor_id: snapshot.plan.created_by_id.to_string(),
+            payload: json!({ "issue": issue }),
+            ..Default::default()
+        });
+        match graph_q::mark_issue_created_outbox_published(
+            &state.pool,
+            event.workspace_id,
+            event.plan_id,
+            event.node_id,
+            &lease_owner,
+        )
+        .await
+        {
+            Ok(true) => {}
+            Ok(false) => tracing::warn!(
+                plan_id = %event.plan_id,
+                node_id = %event.node_id,
+                "dependency graph issue-created publication was not acknowledged"
+            ),
+            Err(error) => tracing::warn!(
+                %error,
+                plan_id = %event.plan_id,
+                node_id = %event.node_id,
+                "dependency graph issue-created publication mark deferred"
+            ),
+        }
+    }
 }
 
 fn workspace_id(context: &WorkspaceContext) -> Result<Uuid, Response> {
@@ -283,7 +375,11 @@ async fn list_dependency_graphs(
         Err(response) => return response,
     };
     let limit = i64::from(query.limit.unwrap_or(64).min(64));
-    let after = match decode_graph_cursor(query.cursor.as_deref(), query.project_id) {
+    let after = match decode_graph_cursor(
+        query.cursor.as_deref(),
+        workspace_id,
+        query.project_id,
+    ) {
         Ok(after) => after,
         Err(response) => return response,
     };
@@ -308,7 +404,7 @@ async fn list_dependency_graphs(
             Json(json!({
                 "graphs": graphs,
                 "next_cursor": next_cursor
-                    .map(|cursor| encode_graph_cursor(query.project_id, cursor)),
+                    .map(|cursor| encode_graph_cursor(workspace_id, query.project_id, cursor)),
             }))
             .into_response()
         }
@@ -386,27 +482,13 @@ async fn apply_issue_dependency_graph(
         created_by_type,
         created_by_id,
     )
-    .await
+        .await
     {
         Ok(snapshot) => {
-            if snapshot.newly_created {
-                let prefix = issue_prefix(&state, workspace_id).await;
-                for node in &snapshot.nodes {
-                    let issue = issue_created_response_with_status_category(
-                        &node.issue,
-                        &prefix,
-                        &node.effective_status,
-                    );
-                    state.bus.publish(&patchbay_events::Event {
-                        event_type: patchbay_protocol::EVENT_ISSUE_CREATED.to_string(),
-                        workspace_id: workspace_id.to_string(),
-                        actor_type: created_by_type.to_string(),
-                        actor_id: created_by_id.to_string(),
-                        payload: json!({ "issue": issue }),
-                        ..Default::default()
-                    });
-                }
-            }
+            // The outbox is populated in the same transaction as the graph.
+            // Drain it for both the first apply and idempotent replays so a
+            // post-commit handler failure can recover the standard events.
+            publish_pending_issue_created_events(&state, &snapshot).await;
             if let Err(error) = state
                 .tasks
                 .wake_dependency_graph_ready_tasks(workspace_id, snapshot.plan.id)
@@ -584,4 +666,27 @@ fn snapshot_value(snapshot: &DependencyGraphSnapshot, prefix: &str) -> Value {
             "cancelled": snapshot.readiness.cancelled,
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn graph_cursor_is_bound_to_workspace_and_project() {
+        let workspace_id = Uuid::now_v7();
+        let other_workspace_id = Uuid::now_v7();
+        let project_id = Some(Uuid::now_v7());
+        let updated_at = Utc::now();
+        let graph_id = Uuid::now_v7();
+        let encoded = encode_graph_cursor(workspace_id, project_id, (updated_at, graph_id));
+
+        assert_eq!(
+            decode_graph_cursor(Some(&encoded), workspace_id, project_id)
+                .expect("cursor decodes"),
+            Some((updated_at, graph_id))
+        );
+        assert!(decode_graph_cursor(Some(&encoded), other_workspace_id, project_id).is_err());
+        assert!(decode_graph_cursor(Some(&encoded), workspace_id, None).is_err());
+    }
 }

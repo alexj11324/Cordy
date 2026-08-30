@@ -954,6 +954,9 @@ pub async fn apply_dependency_plan(
         if existing.request_hash != request_hash {
             return Err(DependencyGraphError::IdempotencyConflict);
         }
+        graph_q::ensure_issue_created_outbox(&mut *tx, workspace_id, existing.id)
+            .await
+            .map_err(db_error)?;
         tx.commit().await.map_err(db_error)?;
         return load_graph(pool, existing).await;
     }
@@ -980,6 +983,9 @@ pub async fn apply_dependency_plan(
         if existing.request_hash != request_hash {
             return Err(DependencyGraphError::IdempotencyConflict);
         }
+        graph_q::ensure_issue_created_outbox(&mut *tx, workspace_id, existing.id)
+            .await
+            .map_err(db_error)?;
         tx.commit().await.map_err(db_error)?;
         return load_graph(pool, existing).await;
     }
@@ -1044,6 +1050,9 @@ pub async fn apply_dependency_plan(
         if existing.request_hash != plan_request_hash(input) {
             return Err(DependencyGraphError::IdempotencyConflict);
         }
+        graph_q::ensure_issue_created_outbox(&mut *tx, workspace_id, existing.id)
+            .await
+            .map_err(db_error)?;
         tx.commit().await.map_err(db_error)?;
         return load_graph(pool, existing).await;
     };
@@ -1172,6 +1181,9 @@ pub async fn apply_dependency_plan(
         .map_err(db_error)?;
     }
 
+    graph_q::ensure_issue_created_outbox(&mut *tx, workspace_id, plan.id)
+        .await
+        .map_err(db_error)?;
     tx.commit().await.map_err(db_error)?;
     let mut snapshot = load_dependency_graph(pool, workspace_id, plan.id).await?;
     snapshot.newly_created = true;
