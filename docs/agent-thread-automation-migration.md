@@ -37,9 +37,12 @@ provider session.
   use `Automation` as the canonical product concept; Chinese user-visible text
   uses `自动化`.
 - Existing production data has a reversible, verifiable upgrade and downgrade
-  path. Any old-client/API/event compatibility is isolated in the deprecation
-  adapter, emits usage telemetry, has tests and a removal deadline, and is not
-  used by new canonical code.
+  path. This product has no production users, external durable URLs, or
+  rolling deployment requiring a compatibility bridge, so this rename has no
+  legacy client/API/event adapter. A future adapter would require a separate
+  deployment decision and, if approved, must be isolated, observable, tested,
+  owned, and explicitly time-boxed; it may never become a second canonical
+  contract.
 - The database rename migration is deliberately unnumbered in this branch.
   After the frozen coordination, execution-lane, authorization, and dependency
   graph migrations land, it receives the next contiguous migration number on
@@ -68,14 +71,15 @@ separate user-facing product surface.
 
 ## Verification ledger
 
-- Full-tree search has no old canonical product spelling outside this policy,
-  immutable historical migration/changelog records, and the isolated adapter.
+- Full-tree search has no old canonical product spelling outside this policy
+  and immutable historical migration/changelog records; there is no adapter in
+  this product migration.
 - Generated API/OpenAPI/SDK schemas and WebSocket event registries agree with
   the Automation contract.
 - Database upgrade and downgrade are exercised against representative legacy
-  data; old-client compatibility is exercised only during the documented
-  window; new-client Automation E2E covers create, trigger, run history, and
-  continuation.
+  data; new-client Automation E2E covers create, trigger, run history, and
+  continuation. Since there is no supported old-client compatibility window,
+  coordinated cutover is the validation boundary.
 - Regression tests cover every entry point, provider-session continuation,
   deleted/expired session, permission denial, idempotency/concurrency lane,
   Automation localization, and absence of legacy run surfaces.

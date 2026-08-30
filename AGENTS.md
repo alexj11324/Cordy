@@ -57,8 +57,11 @@ affected path all pass.
 For the current product rename, `Automation` / `自动化` is the only canonical
 concept in shipping code and contracts. Do not add new APIs, database objects,
 types, events, permissions, telemetry labels, or UI using the former product
-spelling. Immutable historical migrations/changelogs and the explicitly
-time-boxed deprecation adapter are the only allowed residual locations.
+spelling. This product has no production users, external durable URLs, or
+rolling deployment requiring a compatibility bridge, so no deprecation adapter
+is authorized for this rename; immutable historical migrations/changelogs are
+the only allowed old product-spelling residuals. A future adapter requires a
+separate approved deployment decision and must satisfy the invariant above.
 
 ### Database Migrations (hard rules)
 
