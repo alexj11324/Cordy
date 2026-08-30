@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getApi } from "../api";
 import { ApiError } from "../api/client";
-import { useAuthStore } from "../auth";
+import { useAuthStore, type AuthLogoutHandler } from "../auth";
 import {
   captureSignupSource,
   identify as identifyAnalytics,
@@ -41,7 +41,7 @@ export function AuthInitializer({
 }: {
   children: ReactNode;
   onLogin?: () => void;
-  onLogout?: () => void | Promise<void>;
+  onLogout?: AuthLogoutHandler;
   storage?: StorageAdapter;
   cookieAuth?: boolean;
   clerkAuth?: boolean;

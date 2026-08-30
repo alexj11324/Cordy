@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useAuthStore } from "@patchbay/core/auth";
+import type { AuthLogoutHandler } from "@patchbay/core/auth";
 import { CoreProvider } from "@patchbay/core/platform";
 import { createBrowserCookieLocaleAdapter } from "@patchbay/core/i18n/browser";
 import type { LocaleResources, SupportedLocale } from "@patchbay/core/i18n";
@@ -55,7 +56,7 @@ function WebProviderTree({
   wsUrl,
   uiFixtures = false,
   onLogout,
-}: WebProvidersProps & { onLogout: () => void | Promise<void> }) {
+}: WebProvidersProps & { onLogout: AuthLogoutHandler }) {
   // Normal web sessions are initialized by ClerkAuthAdapter. UI fixtures omit
   // ClerkProvider, so they must use the cookie-auth initializer to reach the
   // fixture /api/me endpoint instead of remaining in "authenticating" forever.
@@ -101,7 +102,7 @@ function ClerkWebProviders(props: WebProvidersProps) {
   const clerkAuthRef = useRef({ isSignedIn, signOut });
   clerkAuthRef.current = { isSignedIn, signOut };
 
-  const logout = useCallback(async () => {
+  const logout = useCallback<AuthLogoutHandler>(async (serverLogout) => {
     let signOutFailed = false;
     try {
       if (clerkAuthRef.current.isSignedIn) {
@@ -116,10 +117,10 @@ function ClerkWebProviders(props: WebProvidersProps) {
     } finally {
       clearWebSessionState();
       if (signOutFailed) {
-        // Core logout has already cleared the Rust session by the time this
-        // awaited platform cleanup settles. Bump the generation so the
-        // adapter re-exchanges the still-active Clerk identity instead of
-        // leaving the login gate waiting on a stale success marker.
+        // Core starts server revocation and platform cleanup together. Wait
+        // for the revocation response before re-exchanging Clerk, otherwise
+        // the old logout response could clear the newly issued session cookie.
+        await serverLogout;
         useAuthStore.getState().retryAuthentication();
       }
     }

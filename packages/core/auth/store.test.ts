@@ -240,6 +240,42 @@ describe("authStore", () => {
     expect(settled).toBe(true);
   });
 
+  it("passes the server revocation barrier to platform logout", async () => {
+    let resolveServerLogout!: () => void;
+    const api = {
+      logout: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveServerLogout = resolve;
+          }),
+      ),
+      setToken: vi.fn(),
+    } as unknown as ApiClient;
+    let receivedBarrier: Promise<void> | undefined;
+    const onLogout = vi.fn((serverLogout?: Promise<void>) => {
+      receivedBarrier = serverLogout;
+    });
+    const store = createAuthStore({
+      api,
+      storage: makeStorage(),
+      cookieAuth: true,
+      onLogout,
+    });
+    store.setState({ user: fakeUser, status: "authenticated", isLoading: false });
+
+    let settled = false;
+    const pending = store.getState().logout().then(() => {
+      settled = true;
+    });
+    expect(receivedBarrier).toBeInstanceOf(Promise);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    resolveServerLogout();
+    await pending;
+    expect(settled).toBe(true);
+  });
+
   it("revokes a server-backed guest session on logout", () => {
     const storage = makeStorage({ patchbay_token: "pbg_guest-token" });
     const api = {
