@@ -9109,11 +9109,11 @@ mod tests {
             "INSERT INTO workspace (id, name, slug, issue_counter) \
              VALUES ($1, 'issue auth', $2, 2)",
         )
-            .bind(workspace_id)
-            .bind(format!("issue-auth-{workspace_id}"))
-            .execute(&pool)
-            .await
-            .expect("create workspace");
+        .bind(workspace_id)
+        .bind(format!("issue-auth-{workspace_id}"))
+        .execute(&pool)
+        .await
+        .expect("create workspace");
         sqlx::query("INSERT INTO \"user\" (id, name, email) VALUES ($1, 'originator', $2)")
             .bind(user_id)
             .bind(format!("issue-auth-{user_id}@example.test"))
