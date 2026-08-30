@@ -194,6 +194,28 @@ pub async fn get_work_product_by_id(
     row.as_ref().map(work_product_from_row).transpose()
 }
 
+/// Locks a Work Product row for the duration of the caller's transaction.
+/// Relation insertion and product cleanup use this same row lock so a cleanup
+/// cannot commit after observing the product but before observing a concurrent
+/// relation insert.
+pub async fn lock_work_product(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+    work_product_id: Uuid,
+) -> anyhow::Result<bool> {
+    let row = sqlx::query(
+        r#"SELECT id
+FROM work_product
+WHERE workspace_id = $1 AND id = $2
+FOR UPDATE"#,
+    )
+    .bind(workspace_id)
+    .bind(work_product_id)
+    .fetch_optional(executor)
+    .await?;
+    Ok(row.is_some())
+}
+
 pub async fn attach_work_product_relation(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
@@ -448,7 +470,10 @@ pub async fn has_active_relation_for_task(
     let row = sqlx::query(
         r#"SELECT EXISTS(
     SELECT 1 FROM work_product_relation
-    WHERE workspace_id = $1 AND task_id = $2 AND detached_at IS NULL
+    WHERE workspace_id = $1
+      AND task_id = $2
+      AND relation_source = 'task_explicit'
+      AND detached_at IS NULL
 )"#,
     )
     .bind(workspace_id)
@@ -644,6 +669,42 @@ SET discovery_status = 'pending',
 WHERE workspace_id = $1
   AND task_id = $2
   AND discovery_status = 'not_attempted'"#,
+    )
+    .bind(workspace_id)
+    .bind(task_id)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// Closes the durable discovery queue when a task already has an explicit
+/// relation. The terminal provenance remains auditable, but no branch lookup
+/// is scheduled or retried for that task.
+pub async fn mark_task_discovery_skipped_for_explicit_relation(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+    task_id: Uuid,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"UPDATE agent_task_execution_provenance
+SET discovery_status = 'associated',
+    discovery_match_count = 0,
+    discovery_reason = 'explicit_relation_exists',
+    discovery_work_product_id = (
+        SELECT relation.work_product_id
+        FROM work_product_relation relation
+        WHERE relation.workspace_id = $1
+          AND relation.task_id = $2
+          AND relation.relation_source = 'task_explicit'
+          AND relation.detached_at IS NULL
+        ORDER BY relation.attached_at ASC, relation.id ASC
+        LIMIT 1
+    ),
+    discovery_at = now(),
+    updated_at = now()
+WHERE workspace_id = $1
+  AND task_id = $2
+  AND discovery_status IN ('not_attempted', 'pending', 'in_progress')"#,
     )
     .bind(workspace_id)
     .bind(task_id)

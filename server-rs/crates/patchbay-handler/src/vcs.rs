@@ -284,22 +284,53 @@ async fn remove(
         Ok(value) => value,
         Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid connection id"),
     };
-    match vcs::delete_vcs_connection(&state.pool, connection_id, workspace_id).await {
-        Ok(_) => {
-            state.bus.publish(&patchbay_events::Event {
-                event_type: patchbay_protocol::EVENT_VCS_CONNECTION_DELETED.into(),
-                workspace_id: workspace_id.to_string(),
-                actor_type: "system".into(),
-                payload: json!({"id": raw_id}),
-                ..Default::default()
-            });
-            StatusCode::NO_CONTENT.into_response()
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, %connection_id, "vcs: begin connection deletion failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to remove connection",
+            );
         }
-        Err(_) => error_response(
+    };
+    if let Err(error) = vcs::lock_vcs_connection_work_products(
+        &mut *transaction,
+        connection_id,
+        workspace_id,
+    )
+    .await
+    {
+        tracing::warn!(%error, %connection_id, "vcs: lock connection work products failed");
+        return error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to remove connection",
-        ),
+        );
     }
+    if let Err(error) =
+        vcs::delete_vcs_connection(&mut *transaction, connection_id, workspace_id).await
+    {
+        tracing::warn!(%error, %connection_id, "vcs: delete connection failed");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to remove connection",
+        );
+    }
+    if let Err(error) = transaction.commit().await {
+        tracing::warn!(%error, %connection_id, "vcs: commit connection deletion failed");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to remove connection",
+        );
+    }
+    state.bus.publish(&patchbay_events::Event {
+        event_type: patchbay_protocol::EVENT_VCS_CONNECTION_DELETED.into(),
+        workspace_id: workspace_id.to_string(),
+        actor_type: "system".into(),
+        payload: json!({"id": raw_id}),
+        ..Default::default()
+    });
+    StatusCode::NO_CONTENT.into_response()
 }
 
 async fn rotate(

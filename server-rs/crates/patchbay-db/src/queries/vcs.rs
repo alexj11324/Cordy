@@ -53,6 +53,32 @@ DELETE FROM vcs_connection WHERE vcs_connection.id = $1 AND vcs_connection.works
     Ok(r.rows_affected())
 }
 
+/// Locks all VCS Work Products before connection cleanup. The caller must
+/// keep the transaction open and invoke `delete_vcs_connection` afterwards so
+/// relation cleanup runs with a fresh statement snapshot after any concurrent
+/// attachment has committed.
+pub async fn lock_vcs_connection_work_products(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    connection_id: Uuid,
+    workspace_id: Uuid,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"SELECT wp.id
+FROM work_product wp
+JOIN vcs_pull_request pr
+  ON pr.id = wp.provider_record_id
+ AND wp.provider_record_type = 'vcs_pull_request'
+WHERE wp.workspace_id = $2
+  AND pr.connection_id = $1
+FOR UPDATE OF wp"#,
+    )
+    .bind(connection_id)
+    .bind(workspace_id)
+    .fetch_all(executor)
+    .await?;
+    Ok(())
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct GetIssueCombinedPullRequestCloseAggregateRow {
     pub open_count: i64,

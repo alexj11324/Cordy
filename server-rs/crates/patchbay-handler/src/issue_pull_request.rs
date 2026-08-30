@@ -628,8 +628,8 @@ pub(crate) async fn attach(
     } else {
         work_product_q::RELATION_SOURCE_MANUAL_EXPLICIT
     };
-    let relation = match work_product_q::attach_work_product_relation(
-        &state.pool,
+    let relation = match crate::work_product::attach_work_product_relation_locked(
+        &state,
         issue.workspace_id,
         work_product.id,
         Some(issue.id),

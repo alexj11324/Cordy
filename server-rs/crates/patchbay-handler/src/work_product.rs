@@ -657,6 +657,19 @@ pub(crate) async fn queue_task_discovery(
         )
         .await?;
     }
+    if work_product_q::has_active_relation_for_task(&state.pool, workspace_id, task.id).await? {
+        work_product_q::mark_task_discovery_skipped_for_explicit_relation(
+            &state.pool,
+            workspace_id,
+            task.id,
+        )
+        .await?;
+        tracing::debug!(
+            task_id = %task.id,
+            "skip branch discovery after explicit work product relation"
+        );
+        return Ok(());
+    }
     work_product_q::mark_task_discovery_pending(&state.pool, workspace_id, task.id).await?;
     Ok(())
 }
@@ -669,6 +682,33 @@ pub(crate) async fn discover_pending_for_task(
     task: &patchbay_db::models::AgentTaskQueue,
     workspace_id: Uuid,
 ) {
+    match work_product_q::has_active_relation_for_task(&state.pool, workspace_id, task.id).await {
+        Ok(true) => {
+            if let Err(error) = work_product_q::mark_task_discovery_skipped_for_explicit_relation(
+                &state.pool,
+                workspace_id,
+                task.id,
+            )
+            .await
+            {
+                tracing::warn!(
+                    %error,
+                    task_id = %task.id,
+                    "mark explicit work product discovery skip failed"
+                );
+            }
+            return;
+        }
+        Ok(false) => {}
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                task_id = %task.id,
+                "check explicit work product relation failed"
+            );
+            return;
+        }
+    }
     let provenances = match work_product_q::list_execution_provenances(
         &state.pool,
         workspace_id,
@@ -863,6 +903,17 @@ async fn discover_one_execution(
         .await;
         return;
     };
+    let Some(head_sha) = nonempty(&provenance.head_sha) else {
+        record_discovery_failure(
+            state,
+            provenance,
+            work_product_q::DISCOVERY_INELIGIBLE,
+            0,
+            Some("missing_head_sha"),
+        )
+        .await;
+        return;
+    };
     if let BranchDiscoveryDecision::Ineligible(reason) =
         classify_branch_discovery(&provenance.head_state, 0, 0)
     {
@@ -1038,8 +1089,55 @@ async fn discover_one_execution(
         return;
     }
 
+    // An explicit task registration is authoritative over discovery. Recheck
+    // after the provider-installation lookup, immediately before the durable
+    // discovery transaction can create a second relation.
+    match work_product_q::has_active_relation_for_task(
+        &mut *transaction,
+        workspace_id,
+        task.id,
+    )
+    .await
+    {
+        Ok(true) => {
+            if let Err(error) = work_product_q::mark_task_discovery_skipped_for_explicit_relation(
+                &mut *transaction,
+                workspace_id,
+                task.id,
+            )
+            .await
+            {
+                tracing::warn!(%error, task_id = %task.id, "mark explicit work product discovery skip failed");
+                return;
+            }
+            if let Err(error) = transaction.commit().await {
+                tracing::warn!(%error, task_id = %task.id, "commit explicit work product discovery skip failed");
+            }
+            return;
+        }
+        Ok(false) => {}
+        Err(error) => {
+            drop(transaction);
+            record_discovery_failure(
+                state,
+                provenance,
+                work_product_q::DISCOVERY_AMBIGUOUS,
+                0,
+                Some("explicit_relation_lookup_failed"),
+            )
+            .await;
+            tracing::warn!(
+                %error,
+                task_id = %task.id,
+                "check explicit work product relation in discovery transaction failed"
+            );
+            return;
+        }
+    }
+
     let mut matches = Vec::new();
     let mut lookup_failed = false;
+    let mut head_sha_mismatch = false;
     for installation in installations {
         match client
             .pull_requests_by_head(installation.installation_id, owner, repo, head_branch)
@@ -1070,6 +1168,17 @@ async fn discover_one_execution(
                             "branch discovery provider returned a non-exact head repository"
                         );
                         lookup_failed = true;
+                        continue;
+                    }
+                    if item.metadata.head_sha != head_sha {
+                        tracing::warn!(
+                            task_id = %task.id,
+                            expected_head_sha = %head_sha,
+                            returned_head_sha = %item.metadata.head_sha,
+                            pr_number = item.number,
+                            "branch discovery provider returned a non-exact head commit"
+                        );
+                        head_sha_mismatch = true;
                         continue;
                     }
                     if !matches
@@ -1114,6 +1223,21 @@ async fn discover_one_execution(
         .await
         {
             tracing::warn!(%error, task_id = %task.id, "commit failed branch discovery audit failed");
+        }
+        return;
+    }
+    if head_sha_mismatch {
+        if let Err(error) = commit_discovery_status(
+            transaction,
+            provenance,
+            work_product_q::DISCOVERY_AMBIGUOUS,
+            matches.len() as i32,
+            Some("pull_request_head_sha_mismatch"),
+            None,
+        )
+        .await
+        {
+            tracing::warn!(%error, task_id = %task.id, "commit head SHA mismatch discovery failed");
         }
         return;
     }
@@ -1238,6 +1362,38 @@ async fn discover_one_execution(
             return;
         }
     };
+    match work_product_q::lock_work_product(&mut *transaction, workspace_id, product.id).await {
+        Ok(true) => {}
+        Ok(false) => {
+            drop(transaction);
+            record_discovery_failure(
+                state,
+                provenance,
+                work_product_q::DISCOVERY_UNASSOCIATED,
+                1,
+                Some("work_product_removed_before_relation"),
+            )
+            .await;
+            return;
+        }
+        Err(error) => {
+            drop(transaction);
+            record_discovery_failure(
+                state,
+                provenance,
+                work_product_q::DISCOVERY_UNASSOCIATED,
+                1,
+                Some("work_product_lock_failed"),
+            )
+            .await;
+            tracing::warn!(
+                %error,
+                task_id = %task.id,
+                "branch discovery work product lock failed"
+            );
+            return;
+        }
+    }
     let relation_key =
         work_product_q::relation_key(task.issue_id, Some(task.id), task.autopilot_run_id);
     let relation = match work_product_q::attach_work_product_relation(
@@ -1391,8 +1547,8 @@ async fn attach_relation(
     close_intent: bool,
 ) -> Result<WorkProductRelation, Response> {
     let relation_key = work_product_q::relation_key(Some(issue.id), actor.task_id, actor.run_id);
-    work_product_q::attach_work_product_relation(
-        &state.pool,
+    attach_work_product_relation_locked(
+        state,
         issue.workspace_id,
         product.id,
         Some(issue.id),
@@ -1409,6 +1565,44 @@ async fn attach_relation(
         tracing::warn!(%error, product_id = %product.id, issue_id = %issue.id, "work product relation write failed");
         error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to attach work product")
     })
+}
+
+/// Serializes explicit relation insertion with product cleanup. The product
+/// lock must be held in the same transaction as the relation write; locking it
+/// in a standalone pool statement would not protect the insert.
+pub(crate) async fn attach_work_product_relation_locked(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    work_product_id: Uuid,
+    issue_id: Option<Uuid>,
+    task_id: Option<Uuid>,
+    run_id: Option<Uuid>,
+    relation_key: &str,
+    relation_source: &str,
+    attached_by_type: &str,
+    attached_by_id: Uuid,
+    close_intent: bool,
+) -> anyhow::Result<WorkProductRelation> {
+    let mut transaction = state.pool.begin().await?;
+    if !work_product_q::lock_work_product(&mut *transaction, workspace_id, work_product_id).await? {
+        anyhow::bail!("work product is not in the requested workspace");
+    }
+    let relation = work_product_q::attach_work_product_relation(
+        &mut *transaction,
+        workspace_id,
+        work_product_id,
+        issue_id,
+        task_id,
+        run_id,
+        relation_key,
+        relation_source,
+        attached_by_type,
+        attached_by_id,
+        close_intent,
+    )
+    .await?;
+    transaction.commit().await?;
+    Ok(relation)
 }
 
 fn publish_relation_event(

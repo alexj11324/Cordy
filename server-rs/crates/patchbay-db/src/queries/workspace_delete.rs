@@ -980,6 +980,22 @@ pub async fn lock_workspace_task_owner_runtimes(
     Ok(r.rows_affected())
 }
 
+pub async fn lock_workspace_work_products(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"SELECT id
+FROM work_product
+WHERE workspace_id = $1
+FOR UPDATE"#,
+    )
+    .bind(workspace_id)
+    .fetch_all(executor)
+    .await?;
+    Ok(())
+}
+
 pub async fn prepare_workspace_deletion_links(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
