@@ -858,11 +858,6 @@ FOR UPDATE"#,
                     tx.commit().await?;
                     return Ok(None);
                 }
-                let team_id = if issue.assignee_type.as_deref() == Some("team") {
-                    issue.assignee_id
-                } else {
-                    None
-                };
                 let source_agent_id = event
                     .payload
                     .get("agent_id")
