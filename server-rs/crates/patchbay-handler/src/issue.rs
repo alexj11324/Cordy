@@ -34,6 +34,7 @@ use patchbay_db::queries::{
 use patchbay_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
 use patchbay_service::issue_service::{
     IssueCreateError, IssueCreateOpts, IssueCreateParams, IssueTriggerInput, IssueTriggerProbe,
+    ProbePredicate,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -2576,26 +2577,10 @@ async fn preview_trigger(
     }
     let mut allowed_agents = HashSet::new();
     for (issue, _, _) in &candidates {
-        let target_id = match (issue.assignee_type.as_deref(), issue.assignee_id) {
-            (Some("agent"), Some(agent_id)) => Some(agent_id),
-            (Some("team"), Some(team_id)) => {
-                team::get_team_in_workspace(&state.pool, team_id, workspace_id)
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|team| team.leader_id)
-            }
-            _ => None,
-        };
-        let Some(agent_id) = target_id else {
-            continue;
-        };
-        if let Ok(Some(agent)) =
-            agent::get_agent_in_workspace(&state.pool, agent_id, workspace_id).await
+        if let Some(agent_id) =
+            allowed_member_run_agent(&state, context.member.user_id, issue).await
         {
-            if can_member_invoke_agent(&state, context.member.user_id, workspace_id, &agent).await {
-                allowed_agents.insert(agent.id);
-            }
+            allowed_agents.insert(agent_id);
         }
     }
     let mut triggers = Vec::new();
@@ -2642,6 +2627,29 @@ async fn runtime_supports_handoff(state: &HandlerState, agent_id: Uuid) -> bool 
         .get("cli_version")
         .and_then(Value::as_str)
         .is_some_and(patchbay_agent::version::handoff_supported)
+}
+
+async fn allowed_member_run_agent(
+    state: &HandlerState,
+    user_id: Uuid,
+    issue: &Issue,
+) -> Option<Uuid> {
+    let agent_id = match (issue.assignee_type.as_deref(), issue.assignee_id) {
+        (Some("agent"), Some(agent_id)) => agent_id,
+        (Some("team"), Some(team_id)) => {
+            team::get_team_in_workspace(&state.pool, team_id, issue.workspace_id)
+                .await
+                .ok()??
+                .leader_id
+        }
+        _ => return None,
+    };
+    let target = agent::get_agent_in_workspace(&state.pool, agent_id, issue.workspace_id)
+        .await
+        .ok()??;
+    can_member_invoke_agent(state, user_id, issue.workspace_id, &target)
+        .await
+        .then_some(target.id)
 }
 
 async fn issue_timeline(
@@ -6189,6 +6197,16 @@ RETURNING *"#,
         } else {
             false
         };
+        let gate_direct_member =
+            task_authorization.is_none() && (assignee_changed || status_changed);
+        let allowed_run_agent_id = if gate_direct_member {
+            allowed_member_run_agent(state, context.member.user_id, &updated).await
+        } else {
+            None
+        };
+        let can_access_agent: Option<ProbePredicate<_>> = gate_direct_member.then(|| {
+            Box::new(move |agent| allowed_run_agent_id == Some(agent.id)) as ProbePredicate<_>
+        });
         let trigger = state
             .issues
             .will_enqueue_run(
@@ -6200,7 +6218,7 @@ RETURNING *"#,
                     status_changed,
                 },
                 IssueTriggerProbe {
-                    can_access_agent: None,
+                    can_access_agent,
                     is_self_loop: Some(Box::new(move |_| is_self_loop)),
                     suppress_active_self_assignment: Some(Box::new(move |_| {
                         suppress_active_self_assignment
@@ -9223,6 +9241,53 @@ mod tests {
             .expect("load agent")
             .expect("agent exists");
         assert!(!can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        let issue_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number, position) \
+             VALUES ($1, $2, 'provider status gate', 'backlog', 'medium', 'member', $3, 'agent', $4, 1, 0)",
+        )
+        .bind(issue_id)
+        .bind(workspace_id)
+        .bind(colleague_id)
+        .bind(agent_id)
+        .execute(&pool)
+        .await
+        .expect("create provider-gated issue");
+        let app = router()
+            .with_state(state.clone())
+            .layer(Extension(WorkspaceContext {
+                workspace_id: workspace_id.to_string(),
+                member: patchbay_db::models::Member {
+                    created_at: Utc::now(),
+                    id: Uuid::now_v7(),
+                    role: "member".into(),
+                    user_id: colleague_id,
+                    workspace_id,
+                },
+            }));
+        async fn update_status(app: &Router, issue_id: Uuid, status: &str) -> StatusCode {
+            app.clone()
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method(axum::http::Method::PUT)
+                        .uri(format!("/api/issues/{issue_id}"))
+                        .header(axum::http::header::CONTENT_TYPE, "application/json")
+                        .body(axum::body::Body::from(
+                            json!({"status": status}).to_string(),
+                        ))
+                        .expect("build status update"),
+                )
+                .await
+                .expect("update issue status")
+                .status()
+        }
+        async fn queued_runs(pool: &sqlx::PgPool, issue_id: Uuid) -> i64 {
+            sqlx::query_scalar("SELECT count(*) FROM agent_task_queue WHERE issue_id = $1")
+                .bind(issue_id)
+                .fetch_one(pool)
+                .await
+                .expect("count issue runs")
+        }
 
         let authorizer = patchbay_authorization::PostgresAuthorizer::new(pool.clone());
         let grant = |principal_type: PrincipalType,
@@ -9298,12 +9363,31 @@ mod tests {
             .await
             .expect("create user grant");
         assert!(can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        assert_eq!(update_status(&app, issue_id, "todo").await, StatusCode::OK);
+        assert_eq!(queued_runs(&pool, issue_id).await, 1);
+        sqlx::query("DELETE FROM agent_task_queue WHERE issue_id = $1")
+            .bind(issue_id)
+            .execute(&pool)
+            .await
+            .expect("delete allowed status run");
+        sqlx::query("UPDATE issue SET status = 'backlog' WHERE id = $1")
+            .bind(issue_id)
+            .execute(&pool)
+            .await
+            .expect("reset provider-gated issue");
         sqlx::query("UPDATE authorization_grant SET effect = 'require_approval' WHERE id = $1")
             .bind(user_grant_id)
             .execute(&pool)
             .await
             .expect("require approval");
         assert!(!can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        assert_eq!(update_status(&app, issue_id, "todo").await, StatusCode::OK);
+        assert_eq!(queued_runs(&pool, issue_id).await, 0);
+        sqlx::query("UPDATE issue SET status = 'backlog' WHERE id = $1")
+            .bind(issue_id)
+            .execute(&pool)
+            .await
+            .expect("reset approval-gated issue");
         sqlx::query(
             "UPDATE authorization_grant SET effect = 'allow', revoked_at = now() WHERE id = $1",
         )
@@ -9312,6 +9396,8 @@ mod tests {
         .await
         .expect("revoke user grant");
         assert!(!can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        assert_eq!(update_status(&app, issue_id, "todo").await, StatusCode::OK);
+        assert_eq!(queued_runs(&pool, issue_id).await, 0);
 
         let team = team::create_team(
             &pool,
@@ -9340,11 +9426,33 @@ mod tests {
             .await
             .expect("create team grant");
         assert!(can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        sqlx::query(
+            "UPDATE issue SET status = 'backlog', assignee_type = 'team', assignee_id = $1 WHERE id = $2",
+        )
+        .bind(team.id)
+        .bind(issue_id)
+        .execute(&pool)
+        .await
+        .expect("assign provider-gated issue to team");
+        assert_eq!(update_status(&app, issue_id, "todo").await, StatusCode::OK);
+        assert_eq!(queued_runs(&pool, issue_id).await, 1);
+        sqlx::query("DELETE FROM agent_task_queue WHERE issue_id = $1")
+            .bind(issue_id)
+            .execute(&pool)
+            .await
+            .expect("delete team status run");
+        sqlx::query("UPDATE issue SET status = 'backlog' WHERE id = $1")
+            .bind(issue_id)
+            .execute(&pool)
+            .await
+            .expect("reset team provider-gated issue");
         sqlx::query("UPDATE authorization_grant SET revoked_at = now() WHERE id = $1")
             .bind(team_grant_id)
             .execute(&pool)
             .await
             .expect("revoke team grant");
+        assert_eq!(update_status(&app, issue_id, "todo").await, StatusCode::OK);
+        assert_eq!(queued_runs(&pool, issue_id).await, 0);
 
         let agent_grant_id = authorizer
             .create_grant(grant(
@@ -9370,6 +9478,16 @@ mod tests {
         .await
         .expect("make runtime public cloud");
         assert!(!can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        sqlx::query(
+            "UPDATE issue SET status = 'backlog', assignee_type = 'agent', assignee_id = $1 WHERE id = $2",
+        )
+        .bind(agent_id)
+        .bind(issue_id)
+        .execute(&pool)
+        .await
+        .expect("reset public-cloud provider-gated issue");
+        assert_eq!(update_status(&app, issue_id, "todo").await, StatusCode::OK);
+        assert_eq!(queued_runs(&pool, issue_id).await, 0);
         assert_eq!(
             sqlx::query_scalar::<_, i64>(
                 "SELECT count(*) FROM agent_task_queue WHERE agent_id = $1",
@@ -9401,6 +9519,16 @@ mod tests {
             .execute(&pool)
             .await
             .expect("delete team");
+        sqlx::query("DELETE FROM agent_task_queue WHERE issue_id = $1")
+            .bind(issue_id)
+            .execute(&pool)
+            .await
+            .expect("delete provider-gated issue runs");
+        sqlx::query("DELETE FROM issue WHERE id = $1")
+            .bind(issue_id)
+            .execute(&pool)
+            .await
+            .expect("delete provider-gated issue");
         agent_invocation_target::delete_agent_invocation_targets(&pool, agent_id)
             .await
             .expect("delete invocation target");
