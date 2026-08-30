@@ -83,6 +83,34 @@ describe("loadRuntimeConfig", () => {
     });
   });
 
+  it("repairs a stale localhost accounts origin for the managed packaged API", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "patchbay-desktop-config-"));
+    const configPath = join(dir, "desktop.json");
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        schemaVersion: 1,
+        apiUrl: "https://api.aspectlylabs.com",
+        wsUrl: "wss://api.aspectlylabs.com/ws",
+        appUrl: "https://patchbay.aspectlylabs.com",
+        accountsUrl: "http://localhost:3000",
+      }),
+    );
+
+    await expect(
+      loadRuntimeConfig({ isDev: false, configPath, env: {} }),
+    ).resolves.toEqual({
+      ok: true,
+      config: {
+        schemaVersion: 1,
+        apiUrl: "https://api.aspectlylabs.com",
+        wsUrl: "wss://api.aspectlylabs.com/ws",
+        appUrl: "https://patchbay.aspectlylabs.com",
+        accountsUrl: "https://accounts.aspectlylabs.com",
+      },
+    });
+  });
+
   it("preserves explicit self-hosted packaged runtime URLs", async () => {
     const dir = await mkdtemp(join(tmpdir(), "patchbay-desktop-config-"));
     const configPath = join(dir, "desktop.json");
