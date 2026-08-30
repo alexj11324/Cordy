@@ -33,9 +33,9 @@ import {
 } from "@/components/ui/collapsible";
 import {
   formatAgentThreadCopy,
-  useAgentThreadCopy,
   type AgentThreadCopy,
 } from "@/lib/agent-thread-i18n";
+import { useAgentThreadCopy } from "@/lib/use-agent-thread-copy";
 
 interface Props {
   items: TaskMessagePayload[];
@@ -70,15 +70,17 @@ export function ChatTimeline({ items, isStreaming = false }: Props) {
         >
           <Ionicons name="chevron-forward" size={12} color="#71717a" />
           {isStreaming ? <StreamingDot /> : null}
-          <Text className="text-xs text-muted-foreground">
-            {processLabel}
-          </Text>
+          <Text className="text-xs text-muted-foreground">{processLabel}</Text>
         </View>
       </CollapsibleTrigger>
       <CollapsibleContent>
         <View className="mt-1 rounded-lg border border-border bg-muted/20 px-2 py-1.5 gap-0.5">
           {processSteps.map((item) => (
-            <StepRow key={`${item.task_id}-${item.seq}`} item={item} copy={copy} />
+            <StepRow
+              key={`${item.task_id}-${item.seq}`}
+              item={item}
+              copy={copy}
+            />
           ))}
         </View>
       </CollapsibleContent>

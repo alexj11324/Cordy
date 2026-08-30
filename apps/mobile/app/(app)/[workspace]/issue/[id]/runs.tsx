@@ -13,7 +13,6 @@ import { useMemo } from "react";
 import { ScrollView, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import type { AgentTask } from "@patchbay/core/types";
 import { isAgentTaskActive } from "@patchbay/core/agent-thread";
 import { Text } from "@/components/ui/text";
 import { RunRow } from "@/components/issue/run-row";
@@ -22,7 +21,7 @@ import {
   issueTasksOptions,
 } from "@/data/queries/issues";
 import { useWorkspaceStore } from "@/data/workspace-store";
-import { useAgentThreadCopy } from "@/lib/agent-thread-i18n";
+import { useAgentThreadCopy } from "@/lib/use-agent-thread-copy";
 
 const PAST_STATUS_ORDER: Record<string, number> = {
   failed: 0,

@@ -1,5 +1,3 @@
-import { useMemo } from "react";
-import { useAuthStore } from "@/data/auth-store";
 import en from "@/locales/en/agent-thread";
 import zhHans from "@/locales/zh-Hans/agent-thread";
 import ja from "@/locales/ja/agent-thread";
@@ -21,6 +19,12 @@ const RESOURCES = {
   ja,
   ko,
 } satisfies Record<MobileLocale, AgentThreadCopy>;
+
+export function getAgentThreadCopy(
+  language: string | null | undefined,
+): AgentThreadCopy {
+  return RESOURCES[normalizeMobileLocale(language)];
+}
 
 export function normalizeMobileLocale(
   language: string | null | undefined,
@@ -63,9 +67,4 @@ export function agentThreadAvailabilityMessage(
     agent_thread_depth_limit: copy.reason_agent_thread_depth_limit,
   };
   return (reasonCode && localized[reasonCode]) || serverReason || fallback;
-}
-
-export function useAgentThreadCopy(): AgentThreadCopy {
-  const language = useAuthStore((state) => state.user?.language);
-  return useMemo(() => RESOURCES[normalizeMobileLocale(language)], [language]);
 }

@@ -21,9 +21,9 @@ import { Text } from "@/components/ui/text";
 import { buildAgentThreadMessages } from "@/lib/agent-thread-display";
 import {
   agentThreadAvailabilityMessage,
-  useAgentThreadCopy,
   type AgentThreadCopy,
 } from "@/lib/agent-thread-i18n";
+import { useAgentThreadCopy } from "@/lib/use-agent-thread-copy";
 
 interface Props {
   taskId: string;

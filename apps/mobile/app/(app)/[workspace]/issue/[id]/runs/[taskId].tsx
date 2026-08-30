@@ -1,7 +1,7 @@
 import { useLocalSearchParams } from "expo-router";
 import { Header } from "@/components/ui/header";
 import { TaskAgentThreadScreen } from "@/components/agent-thread/task-agent-thread-screen";
-import { useAgentThreadCopy } from "@/lib/agent-thread-i18n";
+import { useAgentThreadCopy } from "@/lib/use-agent-thread-copy";
 
 /**
  * Native formSheet route for one persisted Agent task. The row and this

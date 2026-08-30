@@ -20,9 +20,9 @@ import { useActorLookup } from "@/data/use-actor-name";
 import { timeAgo } from "@/lib/time-ago";
 import {
   formatAgentThreadCopy,
-  useAgentThreadCopy,
   type AgentThreadCopy,
 } from "@/lib/agent-thread-i18n";
+import { useAgentThreadCopy } from "@/lib/use-agent-thread-copy";
 
 interface Props {
   task: AgentTask;
