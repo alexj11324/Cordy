@@ -285,13 +285,10 @@ jobs:
             exit 1
           }
 
-      - name: Upload verified macOS assets
+      - name: Prepare verified macOS assets
         working-directory: apps/desktop
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
           VERSION: ${{ needs.prepare.outputs.version }}
-          EXPECTED_COMMIT: ${{ needs.prepare.outputs.commit_sha }}
         shell: bash
         run: |
           required_assets=(
@@ -311,41 +308,38 @@ jobs:
             required_assets+=("$blockmap")
           fi
 
-          tag_json="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME")"
-          tag_sha="$(jq -r '.object.sha' <<< "$tag_json")"
-          tag_type="$(jq -r '.object.type' <<< "$tag_json")"
-          while [ "$tag_type" = "tag" ]; do
-            tag_json="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha")"
-            tag_sha="$(jq -r '.object.sha' <<< "$tag_json")"
-            tag_type="$(jq -r '.object.type' <<< "$tag_json")"
-          done
-          if [ "$tag_type" != "commit" ] || [ "$tag_sha" != "$EXPECTED_COMMIT" ]; then
-            echo "::error::Release tag $TAG_NAME no longer resolves to prepared commit $EXPECTED_COMMIT."
-            exit 1
-          fi
-
-          gh release upload "$TAG_NAME" \
-            "${required_assets[@]}" \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
+      - name: Stage verified macOS assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-release-${{ matrix.arch }}
+          path: |
+            apps/desktop/dist/patchbay-desktop-${{ needs.prepare.outputs.version }}-mac-${{ matrix.arch }}.dmg
+            apps/desktop/dist/patchbay-desktop-${{ needs.prepare.outputs.version }}-mac-${{ matrix.arch }}.zip
+            apps/desktop/dist/patchbay-desktop-${{ needs.prepare.outputs.version }}-mac-${{ matrix.arch }}.zip.blockmap
+            apps/desktop/dist/${{ matrix.metadata }}
+          if-no-files-found: error
 
   publish:
     needs: [prepare, package-macos]
     if: needs.prepare.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Verify macOS draft assets
+      - name: Download verified macOS assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: macos-release-*
+          path: staged-macos-assets
+          merge-multiple: true
+
+      - name: Upload verified macOS assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.prepare.outputs.tag_name }}
           VERSION: ${{ needs.prepare.outputs.version }}
+          EXPECTED_COMMIT: ${{ needs.prepare.outputs.commit_sha }}
           REQUESTED_ARCH: ${{ github.event_name == 'workflow_run' && 'arm64' || inputs.arch }}
         shell: bash
         run: |
-          published_assets="$(gh release view "$TAG_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --json assets \
-            --jq '.assets[].name')"
           required_assets=()
           if [ "$REQUESTED_ARCH" = "arm64" ] || [ "$REQUESTED_ARCH" = "all" ]; then
             required_assets+=(
@@ -362,11 +356,35 @@ jobs:
             )
           fi
           for asset in "${required_assets[@]}"; do
-            grep -Fxq "$asset" <<< "$published_assets" || {
-              echo "::error::Draft release is missing required macOS asset $asset."
+            if [ ! -f "staged-macos-assets/$asset" ]; then
+              echo "::error::Staged macOS release is missing required asset $asset."
               exit 1
-            }
+            fi
           done
+
+          tag_json="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME")"
+          tag_sha="$(jq -r '.object.sha' <<< "$tag_json")"
+          tag_type="$(jq -r '.object.type' <<< "$tag_json")"
+          while [ "$tag_type" = "tag" ]; do
+            tag_json="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha")"
+            tag_sha="$(jq -r '.object.sha' <<< "$tag_json")"
+            tag_type="$(jq -r '.object.type' <<< "$tag_json")"
+          done
+          if [ "$tag_type" != "commit" ] || [ "$tag_sha" != "$EXPECTED_COMMIT" ]; then
+            echo "::error::Release tag $TAG_NAME no longer resolves to prepared commit $EXPECTED_COMMIT."
+            exit 1
+          fi
+
+          shopt -s nullglob
+          assets=(staged-macos-assets/*)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "::error::No verified macOS assets were staged."
+            exit 1
+          fi
+          gh release upload "$TAG_NAME" \
+            "${assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
 
       - name: Publish macOS release
         env:
