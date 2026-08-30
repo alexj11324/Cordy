@@ -658,9 +658,18 @@ fn isolate_macos(
              (literal \"/dev/random\")\n\
              (literal \"/dev/urandom\")\n\
              (subpath \"/dev/fd\"))\n\
+         (allow file-read-metadata file-test-existence\n\
+             (literal \"/\")\n\
+             (literal \"/etc\")\n\
+             (literal \"/tmp\")\n\
+             (literal \"/var\"))\n\
          (allow file-write* (literal \"/dev/null\"))\n",
     );
     for path in &readable {
+        profile.push_str(&format!(
+            "(allow file-read-metadata file-test-existence (path-ancestors \"{}\"))\n",
+            sandbox_quote(path.as_path())
+        ));
         profile.push_str(&format!(
             "(allow file-read* (subpath \"{}\"))\n",
             sandbox_quote(path.as_path())
@@ -856,13 +865,24 @@ mod tests {
     fn task_visible_credential_files_are_selected_for_masking() {
         let root = tempfile::tempdir().unwrap();
         fs::create_dir_all(root.path().join("app")).unwrap();
-        fs::write(root.path().join("app").join(".env.local"), "TOKEN=secret\n").unwrap();
-        assert_eq!(
-            sensitive_task_files(&[root.path()], &BTreeSet::new()).unwrap(),
-            vec![SensitivePath {
-                path: root.path().join("app").join(".env.local"),
+        let credential = root.path().join("app").join(".env.local");
+        fs::write(&credential, "TOKEN=secret\n").unwrap();
+        let expected = BTreeSet::from([
+            SensitivePath {
+                path: credential.clone(),
                 kind: SensitivePathKind::File,
-            }]
+            },
+            SensitivePath {
+                path: fs::canonicalize(&credential).unwrap(),
+                kind: SensitivePathKind::File,
+            },
+        ]);
+        assert_eq!(
+            sensitive_task_files(&[root.path()], &BTreeSet::new())
+                .unwrap()
+                .into_iter()
+                .collect::<BTreeSet<_>>(),
+            expected
         );
     }
 
@@ -1261,7 +1281,11 @@ mod tests {
             .args(allowed.argv(&[template.to_string_lossy().into_owned()]))
             .output()
             .unwrap();
-        assert!(allowed_output.status.success());
+        assert!(
+            allowed_output.status.success(),
+            "sandboxed template read failed: {}",
+            String::from_utf8_lossy(&allowed_output.stderr)
+        );
         assert!(String::from_utf8_lossy(&allowed_output.stdout).contains("replace-me"));
     }
 
@@ -1514,6 +1538,8 @@ fn reject_provider_install_source_overlap(
     if provider_source_home.trim().is_empty() {
         return Ok(());
     }
+    let provider_install = fs::canonicalize(provider_install)
+        .context("resolve provider install root before credential overlap check")?;
     let source = absolute_path(provider_source_home, "provider source home")?;
     let source = match fs::canonicalize(&source) {
         Ok(canonical) => canonical,
@@ -1524,7 +1550,7 @@ fn reject_provider_install_source_overlap(
         }
     };
     anyhow::ensure!(
-        !provider_install.starts_with(&source) && !source.starts_with(provider_install),
+        !provider_install.starts_with(&source) && !source.starts_with(&provider_install),
         "provider install root {} overlaps host provider profile {}",
         provider_install.display(),
         source.display()
