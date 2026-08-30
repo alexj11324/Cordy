@@ -472,14 +472,15 @@ impl Client {
         .await
     }
 
-    /// Records the exact repository checkout created after StartTask. The
-    /// server derives task, workspace, and run identity from the authenticated
-    /// daemon route; these arguments are only facts observed in that task's
-    /// execution workspace.
+    /// Records exact facts from the checkout created after StartTask. This call
+    /// deliberately uses the task-scoped credential rather than the daemon's
+    /// workspace credential; the server must derive the task and workspace
+    /// identity from the authenticated `mat_` token.
     #[allow(clippy::too_many_arguments)]
     pub(crate) async fn record_execution_provenance(
         &self,
         ctx: &crate::repocache::Ctx,
+        task_token: &str,
         task_id: &str,
         execution_repo_identity: &str,
         execution_workspace: &str,
@@ -496,12 +497,15 @@ impl Client {
             execution_head_sha,
             execution_head_state,
         );
-        self.post_json_unit(
-            ctx,
-            &format!("/api/daemon/tasks/{task_id}/execution-provenance"),
-            Value::Object(body),
-        )
-        .await
+        let _: Value = self
+            .post_json_with_token(
+                ctx,
+                &format!("/api/tasks/{task_id}/execution-provenance"),
+                task_token,
+                Value::Object(body),
+            )
+            .await?;
+        Ok(())
     }
 
     /// `MarkTaskWaitingLocalDirectory` (client.go:365): parks a

@@ -127,10 +127,6 @@ pub fn router() -> Router<HandlerState> {
             axum::routing::post(start_task),
         )
         .route(
-            "/api/daemon/tasks/{task_id}/execution-provenance",
-            axum::routing::post(record_task_execution_provenance),
-        )
-        .route(
             "/api/daemon/tasks/{task_id}/wait-local-directory",
             axum::routing::post(mark_task_waiting_local_directory),
         )
@@ -2886,84 +2882,6 @@ async fn start_task(
         Err(e) => {
             tracing::warn!(error = %e, task_id = %task_id, "start task failed");
             error_response(StatusCode::BAD_REQUEST, &e.to_string())
-        }
-    }
-}
-
-/// POST /api/daemon/tasks/{taskId}/execution-provenance. Repository checkout
-/// commands run after StartTask, so the daemon records the exact checkout
-/// facts through this task-scoped authenticated route before an agent can
-/// register a provider product. The URL carries no caller-selected task,
-/// workspace, issue, or run identity.
-async fn record_task_execution_provenance(
-    State(state): State<HandlerState>,
-    Path(task_id): Path<String>,
-    headers: HeaderMap,
-    body: Option<Json<TaskStartRequest>>,
-) -> Response {
-    let access = Access::new(&state, &headers);
-    let (task, ws_id) =
-        match require_daemon_task_access_with_workspace(&access, None, &task_id).await {
-            Ok(v) => v,
-            Err(res) => return res,
-        };
-    if task.status != "running" {
-        return error_response(
-            StatusCode::CONFLICT,
-            "execution provenance requires a running task",
-        );
-    }
-    let Some(Json(request)) = body else {
-        return error_response(StatusCode::BAD_REQUEST, "invalid request body");
-    };
-    let Ok(task_uuid) = Uuid::parse_str(task_id.trim()) else {
-        return error_response(StatusCode::BAD_REQUEST, "invalid task_id");
-    };
-    let Ok(workspace_id) = Uuid::parse_str(&ws_id) else {
-        tracing::error!(task_id = %task_uuid, workspace_id = %ws_id, "execution provenance resolved an invalid workspace id");
-        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "invalid task workspace");
-    };
-    let request = TaskStartRequest {
-        execution_repo_identity: sanitize(&request.execution_repo_identity),
-        execution_workspace: sanitize(&request.execution_workspace),
-        execution_head_branch: sanitize(&request.execution_head_branch),
-        execution_head_sha: sanitize(&request.execution_head_sha),
-        execution_head_state: sanitize(&request.execution_head_state),
-    };
-    if request.execution_repo_identity.trim().is_empty()
-        || request.execution_workspace.trim().is_empty()
-        || request.execution_head_branch.trim().is_empty()
-        || request.execution_head_state.trim().is_empty()
-    {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "repository, execution workspace, head branch, and head state are required",
-        );
-    }
-    let input = crate::work_product::ExecutionProvenanceInput {
-        repo_identity: request.execution_repo_identity,
-        execution_workspace: request.execution_workspace,
-        head_branch: request.execution_head_branch,
-        head_sha: request.execution_head_sha,
-        head_state: request.execution_head_state,
-    };
-    match crate::work_product::record_execution_provenance(
-        &state,
-        task_uuid,
-        workspace_id,
-        task.autopilot_run_id,
-        &input,
-        false,
-    )
-    .await
-    {
-        Ok(_) => Json(json!({ "status": "ok" })).into_response(),
-        Err(error) => {
-            tracing::warn!(%error, task_id = %task_uuid, "record execution provenance failed");
-            error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to record execution provenance",
-            )
         }
     }
 }
