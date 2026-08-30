@@ -220,9 +220,9 @@ pub(crate) async fn attach_existing(
     }
     let relation =
         match attach_relation(&state, &issue, &product, &actor, request.close_intent).await {
-        Ok(relation) => relation,
-        Err(response) => return response,
-    };
+            Ok(relation) => relation,
+            Err(response) => return response,
+        };
     publish_relation_event(&state, &issue, &product, &relation, &actor);
     (
         StatusCode::OK,
@@ -283,17 +283,17 @@ pub(crate) async fn detach(
     let product =
         match work_product_q::get_work_product_by_id(&state.pool, issue.workspace_id, product_id)
             .await
-    {
-        Ok(Some(product)) => product,
-        Ok(None) => return error_response(StatusCode::NOT_FOUND, "work product not found"),
-        Err(error) => {
-            tracing::warn!(%error, "work product lookup failed");
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to load work product",
-            );
-        }
-    };
+        {
+            Ok(Some(product)) => product,
+            Ok(None) => return error_response(StatusCode::NOT_FOUND, "work product not found"),
+            Err(error) => {
+                tracing::warn!(%error, "work product lookup failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to load work product",
+                );
+            }
+        };
     let detached = match work_product_q::detach_work_product_relations(
         &state.pool,
         issue.workspace_id,
@@ -370,14 +370,14 @@ pub(crate) async fn list_for_task(
     let task =
         match agent::get_agent_task_in_workspace(&state.pool, task_id, context.member.workspace_id)
             .await
-    {
-        Ok(Some(task)) => task,
-        Ok(None) => return error_response(StatusCode::NOT_FOUND, "task not found"),
-        Err(error) => {
-            tracing::warn!(%error, "task work product lookup failed");
-            return error_response(StatusCode::NOT_FOUND, "task not found");
-        }
-    };
+        {
+            Ok(Some(task)) => task,
+            Ok(None) => return error_response(StatusCode::NOT_FOUND, "task not found"),
+            Err(error) => {
+                tracing::warn!(%error, "task work product lookup failed");
+                return error_response(StatusCode::NOT_FOUND, "task not found");
+            }
+        };
     let provenance = match work_product_q::get_execution_provenance(
         &state.pool,
         context.member.workspace_id,
