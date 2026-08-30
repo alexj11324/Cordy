@@ -903,7 +903,7 @@ async fn discover_one_execution(
         .await;
         return;
     };
-    let Some(head_sha) = nonempty(&provenance.head_sha) else {
+    let Some(head_sha) = provenance.head_sha.as_deref().and_then(nonempty) else {
         record_discovery_failure(
             state,
             provenance,
