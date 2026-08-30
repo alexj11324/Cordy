@@ -38,6 +38,24 @@ describe("native auth handoff delivery", () => {
     expect(callback).toHaveBeenCalledTimes(2);
   });
 
+  it("acknowledges only successful delivery", async () => {
+    const callback = vi
+      .fn<(value: AuthHandoffPayload) => Promise<boolean>>()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    const acknowledge = vi.fn();
+    const delivery = createAuthHandoffDelivery(callback, acknowledge);
+
+    delivery.enqueue(payload);
+    await flushDelivery();
+    expect(acknowledge).not.toHaveBeenCalled();
+
+    delivery.retry();
+    await flushDelivery();
+    expect(acknowledge).toHaveBeenCalledOnce();
+    expect(acknowledge).toHaveBeenCalledWith(payload);
+  });
+
   it("delivers queued handoffs in order after each acknowledgement", async () => {
     const secondPayload = { ...payload, state: "c".repeat(43) };
     const delivered: AuthHandoffPayload[] = [];

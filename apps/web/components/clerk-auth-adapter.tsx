@@ -42,11 +42,14 @@ export function ClerkAuthAdapter({
   const { user: clerkUser, isLoaded: clerkLoaded } = useUser();
   const { getToken, isSignedIn, sessionId, signOut } = useAuth();
   const clerkUserId = clerkUser?.id;
+  const patchbayStatus = useAuthStore((state) => state.status);
+  const retryGeneration = useAuthStore((state) => state.retryGeneration);
   const logoutBarrierRef = useRef<Promise<void>>(Promise.resolve());
   const [exchangedIdentity, setExchangedIdentity] =
     useState<ExchangedClerkIdentity | null>(null);
 
   useEffect(() => {
+    setExchangedIdentity(null);
     if (!clerkLoaded) return;
     if (!isSignedIn || !clerkUserId) {
       setExchangedIdentity(null);
@@ -118,11 +121,20 @@ export function ClerkAuthAdapter({
       abortController?.abort();
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [clerkLoaded, clerkUserId, getToken, isSignedIn, sessionId, signOut]);
+  }, [
+    clerkLoaded,
+    clerkUserId,
+    getToken,
+    isSignedIn,
+    retryGeneration,
+    sessionId,
+    signOut,
+  ]);
 
   const exchangeReady =
     clerkLoaded === true &&
     isSignedIn === true &&
+    patchbayStatus === "authenticated" &&
     typeof sessionId === "string" &&
     sessionId !== "" &&
     exchangedIdentity?.sessionId === sessionId &&

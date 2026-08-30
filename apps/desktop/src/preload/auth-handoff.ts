@@ -6,13 +6,17 @@ export type AuthHandoffPayload = {
 type AuthHandoffCallback = (
   payload: AuthHandoffPayload,
 ) => boolean | Promise<boolean>;
+type AuthHandoffAcknowledger = (payload: AuthHandoffPayload) => void;
 
 /**
  * Keeps native handoffs until the renderer acknowledges redemption. A failed
  * redemption is retried by the preload's existing browser-online recovery
  * signal; the one-time code itself remains protected by the Rust verifier.
  */
-export function createAuthHandoffDelivery(callback: AuthHandoffCallback): {
+export function createAuthHandoffDelivery(
+  callback: AuthHandoffCallback,
+  acknowledge?: AuthHandoffAcknowledger,
+): {
   enqueue: (payload: AuthHandoffPayload) => void;
   retry: () => void;
   dispose: () => void;
@@ -30,7 +34,10 @@ export function createAuthHandoffDelivery(callback: AuthHandoffCallback): {
     let acknowledged = false;
     try {
       acknowledged = await callback(payload);
-      if (acknowledged && pending[0] === payload) pending.shift();
+      if (acknowledged) {
+        if (pending[0] === payload) pending.shift();
+        acknowledge?.(payload);
+      }
     } catch {
       // Keep the payload for the next explicit retry signal.
     } finally {

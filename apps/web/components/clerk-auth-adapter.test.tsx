@@ -1,8 +1,21 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { clerkState, getToken, loginWithClerk, logout, setAuthState, signOut } =
-  vi.hoisted(() => ({
+const {
+  authState,
+  clerkState,
+  getToken,
+  loginWithClerk,
+  logout,
+  setAuthState,
+  signOut,
+} = vi.hoisted(() => ({
+  authState: {
+    current: {
+      status: "authenticating" as "authenticating" | "authenticated",
+      retryGeneration: 0,
+    },
+  },
     clerkState: {
       current: {
         isLoaded: true,
@@ -34,10 +47,15 @@ vi.mock("@clerk/nextjs", () => ({
 }));
 
 vi.mock("@patchbay/core/auth", () => ({
-  useAuthStore: Object.assign(vi.fn(), {
-    getState: () => ({ loginWithClerk, logout }),
-    setState: setAuthState,
-  }),
+  useAuthStore: Object.assign(
+    vi.fn((selector: (state: typeof authState.current) => unknown) =>
+      selector(authState.current),
+    ),
+    {
+      getState: () => ({ loginWithClerk, logout }),
+      setState: setAuthState,
+    },
+  ),
 }));
 
 vi.mock("@patchbay/core/api", () => ({
@@ -63,8 +81,14 @@ describe("ClerkAuthAdapter", () => {
       sessionId: "session-a",
       userId: "user-a",
     };
+    authState.current = { status: "authenticating", retryGeneration: 0 };
     getToken.mockReset().mockResolvedValue("clerk-session-token");
-    loginWithClerk.mockReset().mockResolvedValue({ id: "patchbay-user" });
+    loginWithClerk
+      .mockReset()
+      .mockImplementation(async () => {
+        authState.current.status = "authenticated";
+        return { id: "patchbay-user" };
+      });
     logout.mockReset().mockResolvedValue(undefined);
     setAuthState.mockReset();
     signOut.mockReset().mockResolvedValue(undefined);
@@ -76,7 +100,10 @@ describe("ClerkAuthAdapter", () => {
       finishSecondExchange = resolve;
     });
     loginWithClerk
-      .mockResolvedValueOnce({ id: "patchbay-user-a" })
+      .mockImplementationOnce(async () => {
+        authState.current.status = "authenticated";
+        return { id: "patchbay-user-a" };
+      })
       .mockImplementationOnce(() => secondExchange);
 
     const { rerender } = render(
@@ -109,6 +136,27 @@ describe("ClerkAuthAdapter", () => {
       await secondExchange;
     });
 
+    await waitFor(() => expect(screen.getByText("ready")).toBeInTheDocument());
+  });
+
+  it("re-exchanges the active Clerk identity after a failed local logout", async () => {
+    const { rerender } = render(
+      <ClerkAuthAdapter>
+        <ExchangeStatus />
+      </ClerkAuthAdapter>,
+    );
+
+    await waitFor(() => expect(screen.getByText("ready")).toBeInTheDocument());
+
+    authState.current = { status: "authenticating", retryGeneration: 1 };
+    rerender(
+      <ClerkAuthAdapter>
+        <ExchangeStatus />
+      </ClerkAuthAdapter>,
+    );
+
+    await waitFor(() => expect(screen.getByText("waiting")).toBeInTheDocument());
+    await waitFor(() => expect(loginWithClerk).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByText("ready")).toBeInTheDocument());
   });
 });

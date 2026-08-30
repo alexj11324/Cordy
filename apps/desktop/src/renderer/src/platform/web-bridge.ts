@@ -23,11 +23,75 @@ const BROWSER_DAEMON_PREFS: DaemonPrefs = {
 const AUTH_CALLBACK_PATH = "/auth/callback";
 const HANDOFF_CODE_PATTERN = /^pbd_[A-Za-z0-9_-]{43}$/;
 const HANDOFF_STATE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
+const PENDING_BROWSER_AUTH_HANDOFF_KEY = "patchbay_browser_auth_handoff";
+const PENDING_BROWSER_AUTH_HANDOFF_TTL_MS = 10 * 60 * 1000;
 
 type BrowserAuthHandoff = { code: string; state: string };
+type StoredBrowserAuthHandoff = BrowserAuthHandoff & { expiresAt: number };
+
+function isStoredBrowserAuthHandoff(
+  value: unknown,
+): value is StoredBrowserAuthHandoff {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.code === "string" &&
+    HANDOFF_CODE_PATTERN.test(candidate.code) &&
+    typeof candidate.state === "string" &&
+    HANDOFF_STATE_PATTERN.test(candidate.state) &&
+    typeof candidate.expiresAt === "number" &&
+    Number.isFinite(candidate.expiresAt)
+  );
+}
+
+function readPendingBrowserAuthHandoff(): BrowserAuthHandoff | null {
+  try {
+    const raw = sessionStorage.getItem(PENDING_BROWSER_AUTH_HANDOFF_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      !isStoredBrowserAuthHandoff(parsed) ||
+      parsed.expiresAt <= Date.now()
+    ) {
+      sessionStorage.removeItem(PENDING_BROWSER_AUTH_HANDOFF_KEY);
+      return null;
+    }
+    return { code: parsed.code, state: parsed.state };
+  } catch {
+    try {
+      sessionStorage.removeItem(PENDING_BROWSER_AUTH_HANDOFF_KEY);
+    } catch {
+      // Storage can be unavailable in a locked-down browser context.
+    }
+    return null;
+  }
+}
+
+function writePendingBrowserAuthHandoff(payload: BrowserAuthHandoff): void {
+  try {
+    sessionStorage.setItem(
+      PENDING_BROWSER_AUTH_HANDOFF_KEY,
+      JSON.stringify({
+        ...payload,
+        expiresAt: Date.now() + PENDING_BROWSER_AUTH_HANDOFF_TTL_MS,
+      } satisfies StoredBrowserAuthHandoff),
+    );
+  } catch {
+    // The URL has already been cleared; the normal in-memory path still works.
+  }
+}
+
+function clearPendingBrowserAuthHandoff(): void {
+  try {
+    sessionStorage.removeItem(PENDING_BROWSER_AUTH_HANDOFF_KEY);
+  } catch {
+    // Best effort; a successful in-memory delivery is still terminal here.
+  }
+}
 
 function takeBrowserAuthHandoff(): BrowserAuthHandoff | null {
-  if (window.location.pathname !== AUTH_CALLBACK_PATH) return null;
+  const persisted = readPendingBrowserAuthHandoff();
+  if (window.location.pathname !== AUTH_CALLBACK_PATH) return persisted;
   const params = new URLSearchParams(window.location.search);
   const code = params.get("code") ?? "";
   const state = params.get("state") ?? "";
@@ -35,11 +99,13 @@ function takeBrowserAuthHandoff(): BrowserAuthHandoff | null {
   // before deciding whether it is eligible for redemption.
   window.history.replaceState(null, "", "/");
   if (!HANDOFF_CODE_PATTERN.test(code) || !HANDOFF_STATE_PATTERN.test(state)) {
-    return null;
+    return persisted;
   }
 
   // The normal App handoff listener redeems it over HTTPS with PKCE.
-  return { code, state };
+  const pending = { code, state };
+  writePendingBrowserAuthHandoff(pending);
+  return pending;
 }
 
 function browserPlatform(): "macos" | "windows" | "linux" | "unknown" {
@@ -162,6 +228,7 @@ export function installWebDesktopBridge(): boolean {
           const acknowledged = await callback(pending);
           if (acknowledged && pendingBrowserAuthHandoff === pending) {
             pendingBrowserAuthHandoff = null;
+            clearPendingBrowserAuthHandoff();
             window.removeEventListener("online", retry);
           }
         } catch {

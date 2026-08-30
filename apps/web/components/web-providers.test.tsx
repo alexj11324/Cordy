@@ -2,19 +2,28 @@ import { act, render } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { coreProps, resetWelcome, clearLoggedInCookie, signOut } = vi.hoisted(
-  () => ({
+const {
+  coreProps,
+  resetWelcome,
+  clearLoggedInCookie,
+  retryAuthentication,
+  signOut,
+} = vi.hoisted(() => ({
     coreProps: {
       current: null as null | { onLogout?: () => void | Promise<void> },
     },
     resetWelcome: vi.fn(),
     clearLoggedInCookie: vi.fn(),
+    retryAuthentication: vi.fn(),
     signOut: vi.fn(),
-  }),
-);
+  }));
 
 vi.mock("@clerk/nextjs", () => ({
   useAuth: () => ({ isSignedIn: true, signOut }),
+}));
+
+vi.mock("@patchbay/core/auth", () => ({
+  useAuthStore: { getState: () => ({ retryAuthentication }) },
 }));
 
 vi.mock("@patchbay/core/platform", () => ({
@@ -86,6 +95,7 @@ describe("WebProviders", () => {
     expect(signOut).toHaveBeenCalledOnce();
     expect(resetWelcome).toHaveBeenCalledOnce();
     expect(clearLoggedInCookie).toHaveBeenCalledOnce();
+    expect(retryAuthentication).not.toHaveBeenCalled();
     expect(signOut.mock.invocationCallOrder[0]!).toBeLessThan(
       clearLoggedInCookie.mock.invocationCallOrder[0]!,
     );
@@ -106,6 +116,7 @@ describe("WebProviders", () => {
     expect(signOut).toHaveBeenCalledOnce();
     expect(resetWelcome).toHaveBeenCalledOnce();
     expect(clearLoggedInCookie).toHaveBeenCalledOnce();
+    expect(retryAuthentication).toHaveBeenCalledOnce();
     warn.mockRestore();
   });
 });
