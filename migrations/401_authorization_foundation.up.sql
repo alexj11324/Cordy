@@ -1,7 +1,7 @@
 -- Phase 1 authorization foundation. Policy rows are deliberately separate
 -- from protected resources: this is a grant ledger, not a universal resource
 -- registry. Relationships are application-enforced; no foreign keys/cascades.
-CREATE TABLE authorization_grant (
+CREATE TABLE IF NOT EXISTS authorization_grant (
     id UUID NOT NULL DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL,
     principal_type TEXT NOT NULL CHECK (principal_type IN (
@@ -26,7 +26,7 @@ CREATE TABLE authorization_grant (
 COMMENT ON TABLE authorization_grant IS
     'Permanent RBAC/ReBAC/ABAC grants. Explicit deny wins. A grant never widens a task_run beyond its task_token capability lease.';
 
-CREATE TABLE authorization_audit_event (
+CREATE TABLE IF NOT EXISTS authorization_audit_event (
     id UUID NOT NULL DEFAULT gen_random_uuid(),
     workspace_id UUID NOT NULL,
     principal_type TEXT NOT NULL,
@@ -57,19 +57,19 @@ COMMENT ON TABLE authorization_audit_event IS
 -- rows receive only the legacy agent.invoke capability; all new claims replace
 -- this with a server-computed scope.
 ALTER TABLE task_token
-    ADD COLUMN scope JSONB NOT NULL DEFAULT
+    ADD COLUMN IF NOT EXISTS scope JSONB NOT NULL DEFAULT
         '[{"action":"agent.invoke","resource_type":"agent_definition","resource_id":"*"}]'::jsonb
         CHECK (jsonb_typeof(scope) = 'array'),
-    ADD COLUMN parent_token_id UUID,
-    ADD COLUMN parent_fence BIGINT,
-    ADD COLUMN delegation_depth INT NOT NULL DEFAULT 0
+    ADD COLUMN IF NOT EXISTS parent_token_id UUID,
+    ADD COLUMN IF NOT EXISTS parent_fence BIGINT,
+    ADD COLUMN IF NOT EXISTS delegation_depth INT NOT NULL DEFAULT 0
         CHECK (delegation_depth BETWEEN 0 AND 8),
-    ADD COLUMN delegation_fence BIGINT NOT NULL DEFAULT 0,
-    ADD COLUMN claim_dispatched_at TIMESTAMPTZ,
-    ADD COLUMN on_behalf_of_user_id UUID,
-    ADD COLUMN device_id UUID,
-    ADD COLUMN revoked_at TIMESTAMPTZ,
-    ADD COLUMN revoked_reason TEXT;
+    ADD COLUMN IF NOT EXISTS delegation_fence BIGINT NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS claim_dispatched_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS on_behalf_of_user_id UUID,
+    ADD COLUMN IF NOT EXISTS device_id UUID,
+    ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMPTZ,
+    ADD COLUMN IF NOT EXISTS revoked_reason TEXT;
 
 COMMENT ON TABLE task_token IS
     'Short-lived, revocable task capability leases. Raw mat_ bearer values are never stored. scope is server-computed; parent/depth/fences enforce monotonic delegation.';
@@ -160,15 +160,10 @@ BEGIN
 END;
 $$;
 
-WITH ranked AS (
-    SELECT id,
-           row_number() OVER (PARTITION BY task_id ORDER BY created_at, id) AS fence
-    FROM task_token
-)
-UPDATE task_token token
-SET delegation_fence = ranked.fence
-FROM ranked
-WHERE token.id = ranked.id;
+-- A previous unrecorded execution may already have installed the immutability
+-- trigger. Remove it before replaying the deterministic legacy-token backfill;
+-- it is recreated after the backfill and deduplication complete.
+DROP TRIGGER IF EXISTS trg_task_capability_lease_immutable ON task_token;
 
 UPDATE task_token token
 SET claim_dispatched_at = task.dispatched_at,
@@ -178,19 +173,22 @@ SET claim_dispatched_at = task.dispatched_at,
     revoked_at = CASE
         WHEN task.originator_user_id IS NULL
           OR task.runtime_id IS NULL
-          OR task.delegated_from_task_id IS NOT NULL THEN now()
+          OR task.delegated_from_task_id IS NOT NULL
+            THEN COALESCE(token.revoked_at, now())
         ELSE token.revoked_at
     END,
-    revoked_reason = CASE
-        WHEN task.originator_user_id IS NULL THEN 'migration_missing_on_behalf_identity'
-        WHEN task.runtime_id IS NULL THEN 'migration_missing_device_binding'
-        -- Historical child tokens did not record the exact parent token/fence.
-        -- Treating them as roots would silently discard ancestor revocation and
-        -- scope, so deployment settles them explicitly instead of guessing a
-        -- delegation chain that cannot be proven from current-main data.
-        WHEN task.delegated_from_task_id IS NOT NULL THEN 'migration_unfenced_delegation'
-        ELSE token.revoked_reason
-    END
+    revoked_reason = COALESCE(
+        token.revoked_reason,
+        CASE
+            WHEN task.originator_user_id IS NULL THEN 'migration_missing_on_behalf_identity'
+            WHEN task.runtime_id IS NULL THEN 'migration_missing_device_binding'
+            -- Historical child tokens did not record the exact parent token/fence.
+            -- Treating them as roots would silently discard ancestor revocation and
+            -- scope, so deployment settles them explicitly instead of guessing a
+            -- delegation chain that cannot be proven from current-main data.
+            WHEN task.delegated_from_task_id IS NOT NULL THEN 'migration_unfenced_delegation'
+        END
+    )
 FROM agent_task_queue task
 WHERE task.id = token.task_id;
 
@@ -210,6 +208,18 @@ WITH duplicates AS (
 DELETE FROM task_token token
 USING duplicates
 WHERE token.id = duplicates.id AND duplicates.ordinal > 1;
+
+-- Rank only the surviving claim rows so a replay cannot renumber a token that
+-- was retained from a duplicate historical dispatch.
+WITH ranked AS (
+    SELECT id,
+           row_number() OVER (PARTITION BY task_id ORDER BY created_at, id) AS fence
+    FROM task_token
+)
+UPDATE task_token token
+SET delegation_fence = ranked.fence
+FROM ranked
+WHERE token.id = ranked.id;
 
 CREATE OR REPLACE FUNCTION enforce_task_capability_lease_immutability()
 RETURNS TRIGGER AS $$
@@ -264,6 +274,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_revoke_task_capability_leases ON agent_task_queue;
 CREATE TRIGGER trg_revoke_task_capability_leases
     AFTER UPDATE OF status, dispatched_at, agent_id, runtime_id, originator_user_id
     ON agent_task_queue
