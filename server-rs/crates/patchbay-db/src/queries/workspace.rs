@@ -61,6 +61,12 @@ ws_agents AS (
 ws_skills AS (
     SELECT id FROM skill WHERE workspace_id = $1
 ),
+cleared_coordination_assignments AS (
+    DELETE FROM agent_coordination_assignment WHERE workspace_id = $1
+),
+cleared_coordination_outbox AS (
+    DELETE FROM agent_coordination_outbox WHERE workspace_id = $1
+),
 cleared_agent_label_assignments AS (
     DELETE FROM agent_to_label WHERE agent_id IN (SELECT id FROM ws_agents)
 ),

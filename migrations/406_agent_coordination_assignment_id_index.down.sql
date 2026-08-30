@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS agent_coordination_assignment_pkey_uidx;

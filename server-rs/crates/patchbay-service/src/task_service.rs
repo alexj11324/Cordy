@@ -195,6 +195,28 @@ pub enum TaskServiceError {
     FailClosedNoOwner(ErrAttributionFailClosed),
 }
 
+async fn lock_task_owner_rows_before_issue(
+    executor: &mut sqlx::PgConnection,
+    agent_id: Uuid,
+    issue_id: Uuid,
+    runtime_id: Uuid,
+) -> Result<(), TaskServiceError> {
+    let locked = sqlx::query_scalar::<_, bool>("SELECT lock_task_owner_rows($1, $2, $3)")
+        .bind(agent_id)
+        .bind(issue_id)
+        .bind(runtime_id)
+        .fetch_one(executor)
+        .await
+        .map_err(TaskServiceError::Sql)?;
+    if locked {
+        Ok(())
+    } else {
+        Err(TaskServiceError::Internal(
+            "task owner disappeared while enqueuing task".to_string(),
+        ))
+    }
+}
+
 /// Seam for building the per-task Composio MCP overlay at enqueue time.
 ///
 /// Contract: `None` means "no overlay for this run". Any overlay value is the
@@ -259,6 +281,76 @@ pub struct RuntimeMcpOverlayData {
 pub struct SideChatSeed {
     pub parent_task_id: Uuid,
     pub root_comment_id: Uuid,
+}
+
+// These task-context fields are the durable correlation contract between a
+// coordinator assignment and the task that will execute it. The owner
+// generation is read from the issue row and copied into the existing JSONB
+// context; the assignment row remains the authoritative audit record.
+pub(crate) const COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY: &str = "coordination_assignment_id";
+pub(crate) const COORDINATION_OWNER_TYPE_CONTEXT_KEY: &str = "coordination_owner_type";
+pub(crate) const COORDINATION_OWNER_ID_CONTEXT_KEY: &str = "coordination_owner_id";
+pub(crate) const COORDINATION_OWNER_GENERATION_CONTEXT_KEY: &str = "coordination_owner_generation";
+pub(crate) const COORDINATION_ISSUE_REVISION_CONTEXT_KEY: &str = "coordination_issue_revision";
+
+pub(crate) fn issue_task_context(
+    issue: &Issue,
+    assignment_id: Option<Uuid>,
+    owner_generation: Option<i64>,
+) -> serde_json::Value {
+    let mut context = serde_json::Map::new();
+    if let (Some(owner_type), Some(owner_id)) = (&issue.assignee_type, issue.assignee_id) {
+        context.insert(
+            COORDINATION_OWNER_TYPE_CONTEXT_KEY.to_string(),
+            serde_json::json!(owner_type),
+        );
+        context.insert(
+            COORDINATION_OWNER_ID_CONTEXT_KEY.to_string(),
+            serde_json::json!(owner_id.to_string()),
+        );
+        if let Some(owner_generation) = owner_generation {
+            context.insert(
+                COORDINATION_OWNER_GENERATION_CONTEXT_KEY.to_string(),
+                serde_json::json!(owner_generation),
+            );
+        }
+        context.insert(
+            COORDINATION_ISSUE_REVISION_CONTEXT_KEY.to_string(),
+            serde_json::json!(issue.revision),
+        );
+    }
+    if let Some(assignment_id) = assignment_id {
+        context.insert(
+            COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY.to_string(),
+            serde_json::json!(assignment_id.to_string()),
+        );
+    }
+    serde_json::Value::Object(context)
+}
+
+fn mention_task_context(
+    issue: &Issue,
+    side_chat: Option<&SideChatSeed>,
+    assignment_id: Option<Uuid>,
+    include_owner_context: bool,
+    owner_generation: Option<i64>,
+) -> serde_json::Value {
+    let mut context = match side_chat {
+        Some(side_chat) => serde_json::json!({
+            "side_chat_parent_task_id": side_chat.parent_task_id.to_string(),
+            "side_chat_root_comment_id": side_chat.root_comment_id.to_string(),
+        }),
+        None => serde_json::Value::Object(serde_json::Map::new()),
+    };
+    if assignment_id.is_some() || include_owner_context {
+        if let Some(object) = context.as_object_mut() {
+            let coordination = issue_task_context(issue, assignment_id, owner_generation);
+            if let Some(coordination) = coordination.as_object() {
+                object.extend(coordination.clone());
+            }
+        }
+    }
+    context
 }
 
 #[derive(Debug, Clone)]
@@ -1306,6 +1398,29 @@ impl TaskService {
             .await;
     }
 
+    /// Publishes a coordinator task only after its assignment row and queued
+    /// status have committed. PostgreSQL polling remains the recovery path if
+    /// this best-effort realtime tail is interrupted.
+    pub async fn publish_task_queued(&self, task_id: Uuid) {
+        match get_agent_task(&self.pool, task_id).await {
+            Ok(Some(task)) => {
+                self.broadcast_task_event(
+                    patchbay_protocol::EVENT_TASK_QUEUED,
+                    &task,
+                    Default::default(),
+                )
+                .await;
+                self.notify_task_enqueued(&task).await;
+            }
+            Ok(None) => {
+                tracing::warn!(task_id = %task_id, "coordinator task disappeared before publish");
+            }
+            Err(error) => {
+                tracing::warn!(task_id = %task_id, %error, "coordinator task publish lookup failed");
+            }
+        }
+    }
+
     /// Best-effort daemon wakeup after a terminal state. The task ID is
     /// deliberately omitted: the completed task is not available; the hint
     /// only means a queued successor may have become claimable.
@@ -1604,6 +1719,55 @@ impl TaskService {
             .await
     }
 
+    /// Creates the coordinator's task while it is still unclaimable. The
+    /// coordinator links the returned task to its assignment in the same
+    /// transaction that promotes it to `queued`.
+    pub async fn enqueue_task_for_issue_with_handoff_unpublished(
+        &self,
+        issue: &Issue,
+        handoff_note: &str,
+        actor_user_id: Option<Uuid>,
+        coordination_assignment_id: Uuid,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        self.enqueue_issue_task_with_comment_plan_internal(
+            issue,
+            None,
+            vec![],
+            false,
+            handoff_note,
+            actor_user_id,
+            None,
+            None,
+            Some(coordination_assignment_id),
+        )
+        .await
+    }
+
+    /// Creates an unpublished task for an explicitly selected agent while
+    /// leaving the persisted issue owner untouched. The current issue
+    /// contract stores the implementation owner in `assignee_*` and the
+    /// reviewer in `reviewer_*`; this local projection keeps team-owned issues
+    /// dispatchable to the selected reviewer without rewriting ownership.
+    pub async fn enqueue_task_for_agent_with_handoff_unpublished(
+        &self,
+        issue: &Issue,
+        agent_id: Uuid,
+        handoff_note: &str,
+        actor_user_id: Option<Uuid>,
+        coordination_assignment_id: Uuid,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        let mut agent_issue = issue.clone();
+        agent_issue.assignee_type = Some("agent".to_string());
+        agent_issue.assignee_id = Some(agent_id);
+        self.enqueue_task_for_issue_with_handoff_unpublished(
+            &agent_issue,
+            handoff_note,
+            actor_user_id,
+            coordination_assignment_id,
+        )
+        .await
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn enqueue_issue_task(
         &self,
@@ -1718,13 +1882,90 @@ impl TaskService {
         rerun_of_task_id: Option<Uuid>,
         fire_at: Option<chrono::DateTime<chrono::Utc>>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
+        self.enqueue_issue_task_with_comment_plan_internal(
+            issue,
+            trigger_comment_id,
+            coalesced_comment_ids,
+            force_fresh_session,
+            handoff_note,
+            actor_user_id,
+            rerun_of_task_id,
+            fire_at,
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn enqueue_issue_task_with_comment_plan_internal(
+        &self,
+        issue: &Issue,
+        trigger_comment_id: Option<Uuid>,
+        coalesced_comment_ids: Vec<Uuid>,
+        force_fresh_session: bool,
+        handoff_note: &str,
+        actor_user_id: Option<Uuid>,
+        rerun_of_task_id: Option<Uuid>,
+        fire_at: Option<chrono::DateTime<chrono::Utc>>,
+        coordination_assignment_id: Option<Uuid>,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        if coordination_assignment_id.is_some() && fire_at.is_some() {
+            return Err(TaskServiceError::Internal(
+                "coordination tasks cannot be deferred by fire_at".to_string(),
+            ));
+        }
         let prep = self
             .prepare_issue_enqueue(issue, trigger_comment_id, actor_user_id, true)
             .await?;
+        let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        // The owner-row fence acquires workspace → agent → issue → runtime
+        // locks. Take it before the issue FOR UPDATE below so this transaction
+        // cannot invert the teardown/merge lock order.
+        lock_task_owner_rows_before_issue(&mut tx, prep.assignee_id, issue.id, prep.runtime_id)
+            .await?;
+        let (current_owner_type, current_owner_id, owner_generation): (
+            Option<String>,
+            Option<Uuid>,
+            i64,
+        ) = sqlx::query_as(
+            "SELECT assignee_type, assignee_id, assignee_generation FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
+        )
+        .bind(issue.id)
+        .bind(issue.workspace_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(TaskServiceError::Sql)?
+        .ok_or_else(|| {
+            TaskServiceError::Internal("issue disappeared while enqueuing task".to_string())
+        })?;
+        if coordination_assignment_id.is_none()
+            && (current_owner_type.as_deref() != issue.assignee_type.as_deref()
+                || current_owner_id != issue.assignee_id)
+        {
+            return Err(TaskServiceError::Internal(
+                "issue owner changed while enqueuing task".to_string(),
+            ));
+        }
+        let initial_context_issue = if coordination_assignment_id.is_none() {
+            let mut snapshot = issue.clone();
+            snapshot.assignee_type = current_owner_type;
+            snapshot.assignee_id = current_owner_id;
+            snapshot
+        } else {
+            issue.clone()
+        };
+        let initial_context = issue_task_context(
+            &initial_context_issue,
+            coordination_assignment_id,
+            Some(owner_generation),
+        );
+        let initial_status = coordination_assignment_id
+            .map(|_| "deferred")
+            .unwrap_or("queued");
 
         let created = if fire_at.is_some() {
             create_deferred_channel_issue_task(
-                &self.pool,
+                &mut *tx,
                 prep.assignee_id,
                 prep.runtime_id,
                 issue.id,
@@ -1749,11 +1990,12 @@ impl TaskService {
                 prep.attr_evidence_ref.unwrap_or_else(Uuid::nil),
                 fire_at,
                 new_v7(),
+                &initial_context,
             )
             .await
         } else {
             create_agent_task(
-                &self.pool,
+                &mut *tx,
                 prep.assignee_id,
                 prep.runtime_id,
                 issue.id,
@@ -1777,7 +2019,8 @@ impl TaskService {
                 prep.attr_evidence_kind.as_deref(),
                 prep.attr_evidence_ref.unwrap_or_else(Uuid::nil),
                 new_v7(),
-                &serde_json::Value::Null,
+                &initial_context,
+                initial_status,
             )
             .await
         };
@@ -1789,6 +2032,7 @@ impl TaskService {
                 return Err(TaskServiceError::Sql(downcast_sqlx(e)));
             }
         };
+        tx.commit().await.map_err(TaskServiceError::Sql)?;
 
         tracing::info!(
             task_id = %task.id,
@@ -1797,7 +2041,7 @@ impl TaskService {
             force_fresh_session,
             "task enqueued"
         );
-        if fire_at.is_some() {
+        if fire_at.is_some() || coordination_assignment_id.is_some() {
             return Ok(task);
         }
         // Order matters: broadcast first, notify daemon second — see Go
@@ -1901,6 +2145,12 @@ impl TaskService {
             trigger_summary: None,
             head_sha,
         };
+        let owner_generation: i64 =
+            sqlx::query_scalar("SELECT assignee_generation FROM issue WHERE id = $1")
+                .bind(issue.id)
+                .fetch_one(&mut *tx)
+                .await?;
+        let initial_context = issue_task_context(issue, None, Some(owner_generation));
 
         let task = create_deferred_channel_issue_task(
             tx,
@@ -1928,6 +2178,7 @@ impl TaskService {
             prep.attr_evidence_ref.unwrap_or_else(Uuid::nil),
             Some(fire_at),
             new_v7(),
+            &initial_context,
         )
         .await
         .map_err(|e| TaskServiceError::Sql(downcast_sqlx(e)))?
@@ -1942,7 +2193,7 @@ impl TaskService {
         agent_id: Uuid,
         trigger_comment_id: Option<Uuid>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
-        self.enqueue_mention_task(
+        self.enqueue_mention_task_internal(
             issue,
             agent_id,
             trigger_comment_id,
@@ -1953,6 +2204,8 @@ impl TaskService {
             "",
             None,
             None,
+            None,
+            false,
             None,
         )
         .await
@@ -1991,7 +2244,7 @@ impl TaskService {
         team_id: Uuid,
         trigger_comment_id: Option<Uuid>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
-        self.enqueue_mention_task(
+        self.enqueue_mention_task_internal(
             issue,
             leader_id,
             trigger_comment_id,
@@ -2002,6 +2255,8 @@ impl TaskService {
             "",
             None,
             None,
+            None,
+            true,
             None,
         )
         .await
@@ -2017,7 +2272,7 @@ impl TaskService {
         handoff_note: &str,
         actor_user_id: Option<Uuid>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
-        self.enqueue_mention_task(
+        self.enqueue_mention_task_internal(
             issue,
             leader_id,
             None,
@@ -2029,6 +2284,67 @@ impl TaskService {
             actor_user_id,
             None,
             None,
+            true,
+            None,
+        )
+        .await
+    }
+
+    /// Team-leader briefing for an explicit @team mention. It remains a
+    /// leader task for prompt construction, but the mention itself is not an
+    /// implementation-owner transition and must not carry owner-generation
+    /// fencing context.
+    pub async fn enqueue_task_for_team_leader_without_owner_context(
+        &self,
+        issue: &Issue,
+        leader_id: Uuid,
+        team_id: Uuid,
+        trigger_comment_id: Option<Uuid>,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        self.enqueue_mention_task_internal(
+            issue,
+            leader_id,
+            trigger_comment_id,
+            vec![],
+            true,
+            Some(team_id),
+            false,
+            "",
+            None,
+            None,
+            None,
+            false,
+            None,
+        )
+        .await
+    }
+
+    /// Creates the coordinator's team-leader task while it is still
+    /// unclaimable. The assignment is linked before the coordinator promotes
+    /// it and publishes the queue event.
+    pub async fn enqueue_task_for_team_leader_with_handoff_unpublished(
+        &self,
+        issue: &Issue,
+        leader_id: Uuid,
+        team_id: Uuid,
+        handoff_note: &str,
+        actor_user_id: Option<Uuid>,
+        coordination_assignment_id: Uuid,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        self.enqueue_mention_task_internal(
+            issue,
+            leader_id,
+            None,
+            vec![],
+            true,
+            Some(team_id),
+            false,
+            handoff_note,
+            actor_user_id,
+            None,
+            None,
+            true,
+            Some(coordination_assignment_id),
         )
         .await
     }
@@ -2216,6 +2532,41 @@ impl TaskService {
         rerun_of_task_id: Option<Uuid>,
         side_chat: Option<SideChatSeed>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
+        self.enqueue_mention_task_internal(
+            issue,
+            agent_id,
+            trigger_comment_id,
+            coalesced_comment_ids,
+            is_leader,
+            team_id,
+            force_fresh_session,
+            handoff_note,
+            actor_user_id,
+            rerun_of_task_id,
+            side_chat,
+            false,
+            None,
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn enqueue_mention_task_internal(
+        &self,
+        issue: &Issue,
+        agent_id: Uuid,
+        trigger_comment_id: Option<Uuid>,
+        coalesced_comment_ids: Vec<Uuid>,
+        is_leader: bool,
+        team_id: Option<Uuid>,
+        force_fresh_session: bool,
+        handoff_note: &str,
+        actor_user_id: Option<Uuid>,
+        rerun_of_task_id: Option<Uuid>,
+        side_chat: Option<SideChatSeed>,
+        owner_context: bool,
+        coordination_assignment_id: Option<Uuid>,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
         let agent = get_agent(&self.pool, agent_id)
             .await
             .map_err(|e| TaskServiceError::LoadAgent(downcast_sqlx(e)))?
@@ -2258,15 +2609,61 @@ impl TaskService {
         // context, and the pending-task index must be able to distinguish the
         // Side Chat at INSERT time.
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
-        let initial_context = side_chat
-            .as_ref()
-            .map(|side_chat| {
-                serde_json::json!({
-                    "side_chat_parent_task_id": side_chat.parent_task_id.to_string(),
-                    "side_chat_root_comment_id": side_chat.root_comment_id.to_string(),
-                })
-            })
-            .unwrap_or(serde_json::Value::Null);
+        if owner_context || coordination_assignment_id.is_some() {
+            // Keep the owner-row lock order ahead of the issue snapshot lock;
+            // the INSERT below fences the same rows again inside its write.
+            lock_task_owner_rows_before_issue(&mut tx, agent_id, issue.id, runtime_id).await?;
+        }
+        let owner_snapshot = if coordination_assignment_id.is_some() || owner_context {
+            Some(
+                sqlx::query_as::<_, (Option<String>, Option<Uuid>, i64)>(
+                    "SELECT assignee_type, assignee_id, assignee_generation FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
+                )
+                .bind(issue.id)
+                .bind(issue.workspace_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(TaskServiceError::Sql)?
+                .ok_or_else(|| {
+                    TaskServiceError::Internal("issue disappeared while enqueuing task".to_string())
+                })?,
+            )
+        } else {
+            None
+        };
+        if owner_context
+            && coordination_assignment_id.is_none()
+            && (owner_snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.0.as_deref())
+                != issue.assignee_type.as_deref()
+                || owner_snapshot.as_ref().and_then(|snapshot| snapshot.1) != issue.assignee_id)
+        {
+            return Err(TaskServiceError::Internal(
+                "issue owner changed while enqueuing mention task".to_string(),
+            ));
+        }
+        let owner_generation = owner_snapshot.as_ref().map(|snapshot| snapshot.2);
+        let initial_context_issue = if owner_context && coordination_assignment_id.is_none() {
+            let mut snapshot = issue.clone();
+            snapshot.assignee_type = owner_snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.0.clone());
+            snapshot.assignee_id = owner_snapshot.as_ref().and_then(|snapshot| snapshot.1);
+            snapshot
+        } else {
+            issue.clone()
+        };
+        let initial_context = mention_task_context(
+            &initial_context_issue,
+            side_chat.as_ref(),
+            coordination_assignment_id,
+            owner_context,
+            owner_generation,
+        );
+        let initial_status = coordination_assignment_id
+            .map(|_| "deferred")
+            .unwrap_or("queued");
         let created = create_agent_task(
             &mut *tx,
             agent_id,
@@ -2293,6 +2690,7 @@ impl TaskService {
             attr_evidence_ref.unwrap_or_else(Uuid::nil),
             new_v7(),
             &initial_context,
+            initial_status,
         )
         .await;
         let task = match created {
@@ -2321,6 +2719,9 @@ impl TaskService {
             is_leader_task = is_leader,
             "mention task enqueued"
         );
+        if coordination_assignment_id.is_some() {
+            return Ok(task);
+        }
         self.broadcast_task_event(
             patchbay_protocol::EVENT_TASK_QUEUED,
             &task,
@@ -2591,6 +2992,27 @@ impl TaskService {
         }
         self.notify_tasks_finished(&cancelled).await;
         Ok(())
+    }
+
+    /// Completes the post-commit tail for tasks whose cancellation was written
+    /// by a caller-owned business transaction. Review-return uses this after
+    /// the issue update and reviewer retirement commit atomically.
+    pub async fn publish_transactional_cancellations(&self, cancelled: &[AgentTaskQueue]) {
+        let mut agents = std::collections::HashSet::new();
+        for t in cancelled {
+            self.capture_task_cancelled(t).await;
+            self.broadcast_task_event(
+                patchbay_protocol::EVENT_TASK_CANCELLED,
+                t,
+                Default::default(),
+            )
+            .await;
+            agents.insert(t.agent_id);
+        }
+        for agent_id in agents {
+            self.reconcile_agent_status(agent_id).await;
+        }
+        self.notify_tasks_finished(cancelled).await;
     }
 
     // --- Chat task family -------------------------------------------------------
@@ -3349,9 +3771,9 @@ impl TaskService {
         &self,
         agent_id: Uuid,
     ) -> Result<Vec<AgentTaskQueue>, TaskServiceError> {
-        let cancelled = cancel_agent_tasks_by_agent(&self.pool, agent_id)
-            .await
-            .map_err(|e| TaskServiceError::Sql(downcast_sqlx(e)))?;
+        let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        let cancelled = self.cancel_tasks_for_agent_in_tx(&mut tx, agent_id).await?;
+        tx.commit().await.map_err(TaskServiceError::Sql)?;
         for t in &cancelled {
             self.capture_task_cancelled(t).await;
             self.broadcast_task_event(
@@ -3364,6 +3786,29 @@ impl TaskService {
         // One reconcile: all rows belong to the same agent.
         self.reconcile_agent_status(agent_id).await;
         self.notify_tasks_finished(&cancelled).await;
+        Ok(cancelled)
+    }
+
+    /// Cancels an agent's tasks and records reviewer recovery inside a
+    /// caller-owned business transaction. Side effects must be published only
+    /// after that caller commits.
+    pub async fn cancel_tasks_for_agent_in_tx(
+        &self,
+        executor: &mut sqlx::PgConnection,
+        agent_id: Uuid,
+    ) -> Result<Vec<AgentTaskQueue>, TaskServiceError> {
+        let cancelled = cancel_agent_tasks_by_agent(&mut *executor, agent_id)
+            .await
+            .map_err(|e| TaskServiceError::Sql(downcast_sqlx(e)))?;
+        for task in &cancelled {
+            crate::coordination::record_reviewer_task_cancelled(executor, task)
+                .await
+                .map_err(|error| {
+                    TaskServiceError::Internal(format!(
+                        "record cancelled reviewer recovery: {error}"
+                    ))
+                })?;
+        }
         Ok(cancelled)
     }
 
@@ -3531,6 +3976,13 @@ impl TaskService {
             let Some(cancelled) = cancelled else {
                 return Err(TaskServiceError::NoLongerQueued(ErrTaskNoLongerQueued));
             };
+            crate::coordination::record_reviewer_task_cancelled(&mut tx, &cancelled)
+                .await
+                .map_err(|error| {
+                    TaskServiceError::Internal(format!(
+                        "record cancelled reviewer recovery: {error}"
+                    ))
+                })?;
             cancelled_chat_message = self
                 .settle_queued_chat_input(&mut tx, &cancelled, &opts.queue_action)
                 .await?;
@@ -3576,6 +4028,13 @@ impl TaskService {
                         TaskServiceError::Internal(format!("advance cancelled chat pointer: {e}"))
                     })?;
             }
+            crate::coordination::record_reviewer_task_cancelled(&mut tx, &cancelled)
+                .await
+                .map_err(|error| {
+                    TaskServiceError::Internal(format!(
+                        "record cancelled reviewer recovery: {error}"
+                    ))
+                })?;
             tx.commit().await.map_err(TaskServiceError::Sql)?;
             cancelled
         };
@@ -4875,6 +5334,100 @@ mod tests {
         }
     }
 
+    fn issue_context_fixture(owner_id: Uuid) -> Issue {
+        let timestamp = chrono::DateTime::parse_from_rfc3339("2026-08-20T12:00:00Z")
+            .expect("valid ts")
+            .with_timezone(&chrono::Utc);
+        Issue {
+            acceptance_criteria: serde_json::json!([]),
+            assignee_id: Some(owner_id),
+            assignee_type: Some("agent".to_string()),
+            context_refs: serde_json::json!([]),
+            created_at: timestamp,
+            creator_id: Uuid::nil(),
+            creator_type: "member".to_string(),
+            description: None,
+            due_date: None,
+            first_executed_at: None,
+            id: Uuid::now_v7(),
+            last_activity_at: None,
+            metadata: serde_json::json!({}),
+            number: 1,
+            origin_id: None,
+            origin_type: None,
+            parent_issue_id: None,
+            position: 0.0,
+            priority: "none".to_string(),
+            project_id: None,
+            properties: serde_json::json!({}),
+            revision: 7,
+            reviewer_id: None,
+            reviewer_type: None,
+            stage: None,
+            start_date: None,
+            status: "in_progress".to_string(),
+            title: "coordination context".to_string(),
+            updated_at: timestamp,
+            workspace_id: Uuid::now_v7(),
+        }
+    }
+
+    #[test]
+    fn coordination_context_preserves_owner_and_side_chat_identity() {
+        let owner_id = Uuid::now_v7();
+        let assignment_id = Uuid::now_v7();
+        let issue = issue_context_fixture(owner_id);
+
+        let context = issue_task_context(&issue, Some(assignment_id), Some(0));
+        assert_eq!(context[COORDINATION_OWNER_TYPE_CONTEXT_KEY], "agent");
+        assert_eq!(
+            context[COORDINATION_OWNER_ID_CONTEXT_KEY],
+            owner_id.to_string()
+        );
+        assert_eq!(context[COORDINATION_OWNER_GENERATION_CONTEXT_KEY], 0);
+        assert_eq!(context[COORDINATION_ISSUE_REVISION_CONTEXT_KEY], 7);
+        assert_eq!(
+            context[COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY],
+            assignment_id.to_string()
+        );
+
+        let side_chat = SideChatSeed {
+            parent_task_id: Uuid::now_v7(),
+            root_comment_id: Uuid::now_v7(),
+        };
+        let mention = mention_task_context(
+            &issue,
+            Some(&side_chat),
+            Some(assignment_id),
+            false,
+            Some(0),
+        );
+        assert_eq!(
+            mention["side_chat_parent_task_id"],
+            side_chat.parent_task_id.to_string()
+        );
+        assert_eq!(
+            mention[COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY],
+            assignment_id.to_string()
+        );
+
+        let plain_mention = mention_task_context(&issue, None, None, false, None);
+        assert!(plain_mention
+            .as_object()
+            .is_some_and(|object| object.is_empty()));
+        let team_mention = mention_task_context(&issue, None, None, false, Some(3));
+        assert!(team_mention
+            .as_object()
+            .is_some_and(|object| object.is_empty()));
+
+        let leader_mention = mention_task_context(&issue, None, None, true, Some(0));
+        assert_eq!(leader_mention[COORDINATION_OWNER_TYPE_CONTEXT_KEY], "agent");
+        assert_eq!(
+            leader_mention[COORDINATION_OWNER_ID_CONTEXT_KEY],
+            owner_id.to_string()
+        );
+    }
+
     #[test]
     fn duration_seconds_matches_go_semantics() {
         // Either side missing → -1 (caller skips the observation).
@@ -5038,5 +5591,229 @@ mod tests {
             TaskSideEffectShutdownOutcome::Stopped
         );
         assert!(completed.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn archive_transaction_recovers_only_finalized_reviewer_dispatch() {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for reviewer archive transaction contracts");
+        let pool = PgPool::connect(&url)
+            .await
+            .expect("connect contract database");
+        let service = TaskService::new(pool.clone(), Arc::new(patchbay_events::Bus::new()));
+        let workspace_id = Uuid::now_v7();
+        let agent_id = Uuid::now_v7();
+        let runtime_id = Uuid::now_v7();
+        let issue_id = Uuid::now_v7();
+        let member_review_issue_id = Uuid::now_v7();
+        let promoted_event_id = Uuid::now_v7();
+        let promoted_assignment_id = Uuid::now_v7();
+        let promoted_task_id = Uuid::now_v7();
+        let unpromoted_event_id = Uuid::now_v7();
+        let unpromoted_assignment_id = Uuid::now_v7();
+        let unpromoted_task_id = Uuid::now_v7();
+        let actor_id = Uuid::now_v7();
+        let mut tx = pool.begin().await.expect("begin archive contract");
+
+        sqlx::query(
+            "INSERT INTO workspace (id, name, slug) VALUES ($1, 'review archive contract', $2)",
+        )
+        .bind(workspace_id)
+        .bind(format!("review-archive-{workspace_id}"))
+        .execute(&mut *tx)
+        .await
+        .expect("create workspace");
+        sqlx::query(
+            "INSERT INTO \"user\" (id, name, email) VALUES ($1, 'review archive actor', $2)",
+        )
+        .bind(actor_id)
+        .bind(format!("review-archive-{actor_id}@example.test"))
+        .execute(&mut *tx)
+        .await
+        .expect("create archive actor");
+        sqlx::query("INSERT INTO agent_runtime (id, workspace_id, daemon_id, name, runtime_mode, provider, status, last_seen_at) VALUES ($1, $2, $3, 'review archive runtime', 'local', $3, 'online', now())")
+            .bind(runtime_id)
+            .bind(workspace_id)
+            .bind(format!("review-archive-{runtime_id}"))
+            .execute(&mut *tx)
+            .await
+            .expect("create reviewer runtime");
+        sqlx::query("INSERT INTO agent (id, workspace_id, name, runtime_mode, status, max_concurrent_tasks, owner_id, runtime_id) VALUES ($1, $2, 'reviewer', 'local', 'idle', 4, $3, $4)")
+            .bind(agent_id)
+            .bind(workspace_id)
+            .bind(actor_id)
+            .bind(runtime_id)
+            .execute(&mut *tx)
+            .await
+            .expect("create reviewer");
+        sqlx::query("INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, reviewer_type, reviewer_id, number, position) VALUES ($1, $2, 'review contract', 'in_review', 'medium', 'member', $3, 'agent', $4, 'agent', $4, 1, 0)")
+            .bind(issue_id)
+            .bind(workspace_id)
+            .bind(actor_id)
+            .bind(agent_id)
+            .execute(&mut *tx)
+            .await
+            .expect("create review issue");
+
+        for (event_id, assignment_id, task_id, event_key, finalized) in [
+            (
+                promoted_event_id,
+                promoted_assignment_id,
+                promoted_task_id,
+                "promoted",
+                true,
+            ),
+            (
+                unpromoted_event_id,
+                unpromoted_assignment_id,
+                unpromoted_task_id,
+                "unpromoted",
+                false,
+            ),
+        ] {
+            sqlx::query("INSERT INTO agent_coordination_outbox (id, event_key, workspace_id, issue_id, event_type, payload, status) VALUES ($1, $2, $3, $4, 'task_completed', '{}'::jsonb, $5)")
+                .bind(event_id)
+                .bind(format!("archive-contract-{event_key}-{workspace_id}"))
+                .bind(workspace_id)
+                .bind(issue_id)
+                .bind(if finalized { "completed" } else { "pending" })
+                .execute(&mut *tx)
+                .await
+                .expect("create original outbox");
+            sqlx::query("INSERT INTO agent_task_queue (id, agent_id, runtime_id, issue_id, status, priority, context) VALUES ($1, $2, $3, $4, $5, 0, $6)")
+                .bind(task_id)
+                .bind(agent_id)
+                .bind(runtime_id)
+                .bind(issue_id)
+                .bind(if finalized { "dispatched" } else { "deferred" })
+                .bind(serde_json::json!({ (COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY): assignment_id }))
+                .execute(&mut *tx)
+                .await
+                .expect("create reviewer task");
+            sqlx::query("INSERT INTO agent_coordination_assignment (id, event_id, workspace_id, issue_id, role, status, owner_type, owner_id, dispatched_task_id, decision) VALUES ($1, $2, $3, $4, 'reviewer', $5, 'agent', $6, $7, $8)")
+                .bind(assignment_id)
+                .bind(event_id)
+                .bind(workspace_id)
+                .bind(issue_id)
+                .bind(if finalized { "dispatched" } else { "assigned" })
+                .bind(agent_id)
+                .bind(finalized.then_some(task_id))
+                .bind(serde_json::json!({ "explicit_reviewer": true }))
+                .execute(&mut *tx)
+                .await
+                .expect("create reviewer assignment");
+        }
+
+        sqlx::query("INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, reviewer_type, reviewer_id, number, position) VALUES ($1, $2, 'member review contract', 'in_review', 'medium', 'member', $3, 'agent', $4, 'member', $3, 2, 0)")
+            .bind(member_review_issue_id)
+            .bind(workspace_id)
+            .bind(actor_id)
+            .bind(agent_id)
+            .execute(&mut *tx)
+            .await
+            .expect("create member review issue");
+        let member_review_issue =
+            sqlx::query_as::<_, Issue>("SELECT * FROM issue WHERE id = $1 AND workspace_id = $2")
+                .bind(member_review_issue_id)
+                .bind(workspace_id)
+                .fetch_one(&mut *tx)
+                .await
+                .expect("load member review issue");
+        crate::coordination::record_reviewer_reassignment(&mut tx, &member_review_issue, None)
+            .await
+            .expect("record member reviewer handoff");
+        let member_handoff: (Option<String>, Option<Uuid>, bool, String, Uuid) =
+            sqlx::query_as(
+                "SELECT assignment.owner_type, assignment.owner_id, (event.payload->>'explicit_reviewer')::boolean, event.payload->>'reviewer_type', (event.payload->>'reviewer_id')::uuid FROM agent_coordination_outbox event JOIN agent_coordination_assignment assignment ON assignment.event_id = event.id WHERE event.event_key = $1",
+            )
+            .bind(format!(
+                "reviewer_reassigned:{}:{}",
+                member_review_issue.id, member_review_issue.revision
+            ))
+            .fetch_one(&mut *tx)
+            .await
+            .expect("load member reviewer handoff");
+        assert_eq!(
+            member_handoff,
+            (None, None, true, "member".to_string(), actor_id)
+        );
+
+        sqlx::query("SAVEPOINT before_archive")
+            .execute(&mut *tx)
+            .await
+            .expect("save pre-archive state");
+
+        patchbay_db::queries::agent::archive_agent(&mut *tx, agent_id, actor_id)
+            .await
+            .expect("archive reviewer")
+            .expect("reviewer exists");
+        let cancelled = service
+            .cancel_tasks_for_agent_in_tx(&mut tx, agent_id)
+            .await
+            .expect("cancel reviewer tasks transactionally");
+        assert_eq!(cancelled.len(), 2);
+
+        let recoveries: Vec<(Uuid, bool)> = sqlx::query_as(
+            "SELECT source_task_id, (payload->>'explicit_reviewer')::boolean FROM agent_coordination_outbox WHERE event_key LIKE 'reviewer_task_cancelled:%' AND workspace_id = $1",
+        )
+        .bind(workspace_id)
+        .fetch_all(&mut *tx)
+        .await
+        .expect("load reviewer recoveries");
+        assert_eq!(recoveries, vec![(promoted_task_id, true)]);
+        let unpromoted_state: (String, Option<Uuid>) = sqlx::query_as(
+            "SELECT event.status, assignment.dispatched_task_id FROM agent_coordination_outbox event JOIN agent_coordination_assignment assignment ON assignment.event_id = event.id WHERE event.id = $1",
+        )
+        .bind(unpromoted_event_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("load original unpromoted recovery owner");
+        assert_eq!(unpromoted_state, ("pending".to_string(), None));
+        let archived_at: Option<chrono::DateTime<chrono::Utc>> =
+            sqlx::query_scalar("SELECT archived_at FROM agent WHERE id = $1")
+                .bind(agent_id)
+                .fetch_one(&mut *tx)
+                .await
+                .expect("load archived reviewer");
+        assert!(archived_at.is_some());
+
+        sqlx::query("ROLLBACK TO SAVEPOINT before_archive")
+            .execute(&mut *tx)
+            .await
+            .expect("roll back atomic archive boundary");
+        let archived_at: Option<chrono::DateTime<chrono::Utc>> =
+            sqlx::query_scalar("SELECT archived_at FROM agent WHERE id = $1")
+                .bind(agent_id)
+                .fetch_one(&mut *tx)
+                .await
+                .expect("load restored reviewer");
+        assert!(archived_at.is_none());
+        let restored_tasks: Vec<(Uuid, String)> = sqlx::query_as(
+            "SELECT id, status FROM agent_task_queue WHERE id IN ($1, $2) ORDER BY id",
+        )
+        .bind(promoted_task_id)
+        .bind(unpromoted_task_id)
+        .fetch_all(&mut *tx)
+        .await
+        .expect("load restored reviewer tasks");
+        assert_eq!(restored_tasks.len(), 2);
+        assert!(restored_tasks.contains(&(promoted_task_id, "dispatched".to_string())));
+        assert!(restored_tasks.contains(&(unpromoted_task_id, "deferred".to_string())));
+        let recovery_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM agent_coordination_outbox WHERE event_key LIKE 'reviewer_task_cancelled:%' AND workspace_id = $1",
+        )
+        .bind(workspace_id)
+        .fetch_one(&mut *tx)
+        .await
+        .expect("verify recovery rollback");
+        assert_eq!(recovery_count, 0);
+
+        tx.rollback().await.expect("rollback archive contract");
+        let persisted: i64 = sqlx::query_scalar("SELECT count(*) FROM agent WHERE id = $1")
+            .bind(agent_id)
+            .fetch_one(&pool)
+            .await
+            .expect("verify rollback");
+        assert_eq!(persisted, 0);
     }
 }

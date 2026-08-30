@@ -174,22 +174,36 @@ where
     if is_built_in(status) {
         return status.to_string();
     }
-    match patchbay_db::queries::issue_status::get_issue_status_entry_by_key(
+    effective_checked(executor, workspace_id, status)
+        .await
+        .unwrap_or_else(|_| status.to_string())
+}
+
+/// Resolves a status category while preserving database failures for durable
+/// event consumers. Callers whose contract is best-effort can use
+/// [`effective`], while consumers that must retry an event on a failed catalog
+/// read use this checked variant.
+pub async fn effective_checked<'e, E>(
+    executor: E,
+    workspace_id: Uuid,
+    status: &str,
+) -> anyhow::Result<String>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    if is_built_in(status) {
+        return Ok(status.to_string());
+    }
+    let entry = patchbay_db::queries::issue_status::get_issue_status_entry_by_key(
         executor,
         workspace_id,
         status,
     )
-    .await
-    {
-        Ok(Some(entry)) => {
-            if is_category(&entry.category) {
-                entry.category
-            } else {
-                status.to_string()
-            }
-        }
+    .await?;
+    Ok(match entry {
+        Some(entry) if is_category(&entry.category) => entry.category,
         _ => status.to_string(),
-    }
+    })
 }
 
 /// Validates that status is usable in this workspace, returning the catalog

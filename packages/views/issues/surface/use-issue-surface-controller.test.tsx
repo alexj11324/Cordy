@@ -584,6 +584,58 @@ describe("useIssueSurfaceController", () => {
     expect(updateIssueMutate).not.toHaveBeenCalled();
   });
 
+  it("routes a grouped review return with repeated owner fields through confirmation", async () => {
+    fixtureRows = [
+      makeIssue({
+        id: "issue-review-return",
+        status: "in_review",
+        assignee_type: "agent",
+        assignee_id: "agent-1",
+        revision: 10,
+      }),
+    ];
+    listIssues.mockResolvedValue({ issues: fixtureRows, total: fixtureRows.length });
+    const { result } = renderHook(
+      () =>
+        useIssueSurfaceController({
+          scope: { type: "project", projectId: "p1" },
+          modes: ["board", "list", "swimlane", "gantt"],
+        }),
+      { wrapper: makeWrapper(qc, "project:p1") },
+    );
+    await waitFor(() => expect(result.current.issues).toHaveLength(1));
+
+    let committed = true;
+    act(() => {
+      committed = result.current.moveIssue("issue-review-return", {
+        status: "in_progress",
+        assignee_type: "agent",
+        assignee_id: "agent-1",
+        position: 42,
+        before_id: null,
+        after_id: null,
+      });
+    });
+
+    expect(committed).toBe(false);
+    expect(openModal).toHaveBeenCalledWith(
+      "issue-run-confirm",
+      expect.objectContaining({
+        mode: "review-return",
+        assigneeType: "agent",
+        assigneeId: "agent-1",
+        issueRevision: 10,
+        additionalUpdates: expect.objectContaining({
+          assignee_type: "agent",
+          assignee_id: "agent-1",
+          position: 42,
+          move_intent: { before_id: null, after_id: null },
+        }),
+      }),
+    );
+    expect(updateIssueMutate).not.toHaveBeenCalled();
+  });
+
   it("exposes surface actions and surface-local selection", async () => {
     const { result } = renderHook(
       () =>

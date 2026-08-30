@@ -411,6 +411,8 @@
     "team_leader_no_action_reason": "evaluated: no action needed ({{reason}})",
     "team_leader_failed": "evaluation failed",
     "team_leader_failed_reason": "evaluation failed: {{reason}}",
+    "coordinator_assignment": "Coordinator assigned the next owner",
+    "coordinator_assignment_to": "Coordinator assigned {{name}}",
     "coalesced_badge": "×{{count}}",
     "activity_count_one": "{{count}} activity",
     "activity_count_other": "{{count}} activities",

@@ -845,7 +845,7 @@ export function useIssueSurfaceController({
     ) => {
       const issue = data.issues.find((candidate) => candidate.id === issueId);
       const intent = issue && runConfirmIntent(issue, updates, catalog);
-      if (intent?.mode === "review") {
+      if (intent?.mode === "review" || intent?.mode === "review-return") {
         const { before_id, after_id, ...fields } = updates;
         openModal("issue-run-confirm", {
           ...intent,

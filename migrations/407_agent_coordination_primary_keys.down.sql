@@ -1,0 +1,2 @@
+ALTER TABLE agent_coordination_assignment DROP CONSTRAINT IF EXISTS agent_coordination_assignment_pkey;
+ALTER TABLE agent_coordination_outbox DROP CONSTRAINT IF EXISTS agent_coordination_outbox_pkey;

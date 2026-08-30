@@ -70,9 +70,10 @@ type RunConfirmData = {
   issueIds?: string[];
   // `assign` gives the issue an agent/team owner; `promote` moves an
   // already-owned issue out of the backlog category; `review` atomically
-  // changes status and owner so review work cannot be left unclaimed.
-  mode?: "assign" | "promote" | "review";
-  /** promote/review only: the status KEY the issue is moving to. */
+  // changes status and owner so review work cannot be left unclaimed;
+  // `review-return` confirms the durable handoff back to that owner.
+  mode?: "assign" | "promote" | "review" | "review-return";
+  /** promote/review/review-return only: the status KEY the issue is moving to. */
   status?: IssueStatus;
   assigneeType?: IssueAssigneeType;
   assigneeId?: string;
@@ -103,8 +104,8 @@ type RunConfirmData = {
  * surface through the issue's normal updates, so the confirm adds no result
  * toast. Whether a run starts stays the server's existing decision at write
  * time. Dismissing the dialog (X / Esc / click-outside) cancels without any
- * write. Shared by single assign (1 id), batch assign (N ids), and the
- * single-issue promotion out of backlog, and review handoff.
+ * write. Shared by single assign (1 id), batch assign (N ids), the
+ * single-issue promotion out of backlog, review handoff, and review return.
  */
 export function RunConfirmModal({
   onClose,
@@ -152,6 +153,7 @@ export function RunConfirmModal({
   const { data: runtimes = [] } = useQuery({ ...runtimeListOptions(wsId), enabled: !!wsId });
   const { data: teams = [] } = useQuery({ ...teamListOptions(wsId), enabled: !!wsId });
   const isReview = d.mode === "review" && !!d.status;
+  const isReviewReturn = d.mode === "review-return" && !!d.status;
   const targetAssigneeType = isReview ? reviewerType : d.assigneeType ?? null;
   const targetAssigneeId = isReview ? reviewerId : d.assigneeId ?? null;
   const localHandoff = useMemo<boolean | null>(() => {
@@ -197,6 +199,13 @@ export function RunConfirmModal({
           status: d.status,
           reviewer_type: reviewerType,
           reviewer_id: reviewerId,
+          ...(d.issueRevision !== undefined
+            ? { expected_revision: d.issueRevision }
+            : {}),
+        }
+      : isReviewReturn
+      ? {
+          status: d.status,
           ...(d.issueRevision !== undefined
             ? { expected_revision: d.issueRevision }
             : {}),
@@ -304,6 +313,11 @@ export function RunConfirmModal({
         : t(($) => $.run_confirm.review_choose, {
             status: fenced(statusLabel(d.status ?? "")),
           })
+      : isReviewReturn
+      ? t(($) => $.run_confirm.review_return_single, {
+          to: fenced(assigneeName),
+          status: fenced(statusLabel(d.status ?? "")),
+        })
       : isPromote
       ? t(($) => $.run_confirm.promote_single, {
           name: fenced(assigneeName),
@@ -331,7 +345,9 @@ export function RunConfirmModal({
               ? t(($) => $.run_confirm.title_promote)
               : isReview
                 ? t(($) => $.run_confirm.title_review)
-              : t(($) => $.run_confirm.title_assign)}
+                : isReviewReturn
+                  ? t(($) => $.run_confirm.title_review_return)
+                  : t(($) => $.run_confirm.title_assign)}
           </DialogTitle>
           <DialogDescription>{headline}</DialogDescription>
         </DialogHeader>
@@ -415,6 +431,8 @@ export function RunConfirmModal({
               <>
                 {isReview
                   ? t(($) => $.run_confirm.confirm_review)
+                  : isReviewReturn
+                  ? t(($) => $.run_confirm.confirm_review_return)
                   : isPromote
                   ? t(($) => $.run_confirm.confirm_promote)
                   : t(($) => $.run_confirm.confirm_assign)}

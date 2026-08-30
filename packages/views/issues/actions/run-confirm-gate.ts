@@ -44,6 +44,14 @@ export type RunConfirmIntent =
       assigneeType: IssueAssigneeType | null;
       assigneeId: string | null;
       issueRevision?: number;
+    }
+  | {
+      issueIds: [string];
+      mode: "review-return";
+      status: string;
+      assigneeType: "agent" | "team";
+      assigneeId: string;
+      issueRevision?: number;
     };
 
 /**
@@ -92,6 +100,11 @@ const NEVER_STARTS = ["backlog", "done", "cancelled"];
  *   different from the current owner and sends status + reviewer atomically.
  *   If a reviewer is already on the issue (or supplied in the same write),
  *   the write applies directly.
+ * - **review-return**: returning from Review to In Progress. The existing
+ *   implementation owner is restored by the durable coordinator, so the
+ *   dialog preserves the handoff-note and suppress-run choices before the
+ *   status write is applied. Redundant assignee fields from grouped surfaces
+ *   do not turn this into a different assignment.
  *
  * Unresolvable categories fail toward confirming: a dialog the user dismisses
  * costs a click, a silent start costs an unwanted agent run.
@@ -106,13 +119,30 @@ export function runConfirmIntent(
 
   if (updates.status && updates.status !== issue.status) {
     const target = resolveStatusCategory(updates.status, undefined, catalog);
+    const nextOwnerType = Object.prototype.hasOwnProperty.call(updates, "assignee_type")
+      ? updates.assignee_type ?? null
+      : issue.assignee_type;
+    const nextOwnerId = Object.prototype.hasOwnProperty.call(updates, "assignee_id")
+      ? updates.assignee_id ?? null
+      : issue.assignee_id;
+    if (
+      issueCategory === "in_review" &&
+      target === "in_progress" &&
+      (issue.assignee_type === "agent" || issue.assignee_type === "team") &&
+      !!issue.assignee_id &&
+      nextOwnerType === issue.assignee_type &&
+      nextOwnerId === issue.assignee_id
+    ) {
+      return {
+        issueIds: [issue.id],
+        mode: "review-return",
+        status: updates.status,
+        assigneeType: issue.assignee_type,
+        assigneeId: issue.assignee_id,
+        issueRevision: issue.revision,
+      };
+    }
     if (target === "in_review" && issueCategory !== "in_review") {
-      const nextOwnerType = Object.prototype.hasOwnProperty.call(updates, "assignee_type")
-        ? updates.assignee_type ?? null
-        : issue.assignee_type;
-      const nextOwnerId = Object.prototype.hasOwnProperty.call(updates, "assignee_id")
-        ? updates.assignee_id ?? null
-        : issue.assignee_id;
       const reviewerWasProvided =
         Object.prototype.hasOwnProperty.call(updates, "reviewer_type") ||
         Object.prototype.hasOwnProperty.call(updates, "reviewer_id");

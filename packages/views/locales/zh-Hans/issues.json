@@ -404,6 +404,8 @@
     "team_leader_no_action_reason": "已评估：无需操作（{{reason}}）",
     "team_leader_failed": "评估失败",
     "team_leader_failed_reason": "评估失败：{{reason}}",
+    "coordinator_assignment": "协调器分派了下一位负责人",
+    "coordinator_assignment_to": "协调器将任务分派给 {{name}}",
     "coalesced_badge": "×{{count}}",
     "activity_count_other": "{{count}} 条动态",
     "show_more_activities_other": "展开更早 {{count}} 条动态"

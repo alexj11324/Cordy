@@ -6,7 +6,7 @@
 //! outbox: `recover_pending_delegated_failures` replays it after crashes,
 //! and bounded automatic attempts end in one visible exhaustion outcome.
 
-use serde_json::json;
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 use patchbay_db::dbid::new_v7;
@@ -31,7 +31,10 @@ use crate::issue_status;
 use crate::redact;
 use crate::task_helpers::{priority_to_int, truncate_for_summary, TRIGGER_SUMMARY_MAX_LEN};
 use crate::task_service::{
-    downcast_sqlx, opt_str, overlay_value_or_null, TaskService, TaskServiceError,
+    downcast_sqlx, issue_task_context, opt_str, overlay_value_or_null, TaskService,
+    TaskServiceError, COORDINATION_ISSUE_REVISION_CONTEXT_KEY,
+    COORDINATION_OWNER_GENERATION_CONTEXT_KEY, COORDINATION_OWNER_ID_CONTEXT_KEY,
+    COORDINATION_OWNER_TYPE_CONTEXT_KEY,
 };
 
 pub const DELEGATED_FAILURE_ERROR_SUMMARY_RUNES: usize = 800;
@@ -242,6 +245,38 @@ pub(crate) fn delegated_failure_recovery_attribution(
         }
     }
     (originator, accountable)
+}
+
+fn delegated_failure_recovery_context(
+    target: &DelegatedFailureRecoveryTarget,
+    owner_generation: i64,
+) -> Value {
+    let mut context = serde_json::Map::new();
+    if let Some(source_context) = target.source.context.as_ref().and_then(Value::as_object) {
+        for key in [
+            COORDINATION_OWNER_TYPE_CONTEXT_KEY,
+            COORDINATION_OWNER_ID_CONTEXT_KEY,
+            COORDINATION_OWNER_GENERATION_CONTEXT_KEY,
+            COORDINATION_ISSUE_REVISION_CONTEXT_KEY,
+        ] {
+            if let Some(value) = source_context.get(key) {
+                context.insert(key.to_string(), value.clone());
+            }
+        }
+    }
+    let has_owner_identity = context
+        .get(COORDINATION_OWNER_TYPE_CONTEXT_KEY)
+        .and_then(Value::as_str)
+        .is_some()
+        && context
+            .get(COORDINATION_OWNER_ID_CONTEXT_KEY)
+            .and_then(Value::as_str)
+            .is_some();
+    if has_owner_identity {
+        Value::Object(context)
+    } else {
+        issue_task_context(&target.issue, None, Some(owner_generation))
+    }
 }
 
 /// The generated CreateCommentRow returns nullable identity columns; the
@@ -628,6 +663,19 @@ impl TaskService {
                 .build_runtime_mcp_overlay(originator.unwrap_or_else(Uuid::nil), &target.agent)
                 .await;
             let head_sha = self.resolve_issue_review_sha(target.issue.id).await;
+            let owner_generation: i64 = sqlx::query_scalar(
+                "SELECT assignee_generation FROM issue WHERE id = $1 AND workspace_id = $2",
+            )
+            .bind(target.issue.id)
+            .bind(target.issue.workspace_id)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|error| {
+                TaskServiceError::Internal(format!(
+                    "load delegated recovery owner generation: {error}"
+                ))
+            })?;
+            let context = delegated_failure_recovery_context(target, owner_generation);
             let created = create_agent_task(
                 &self.pool,
                 target.agent.id,
@@ -653,7 +701,8 @@ impl TaskService {
                 Some(attribution::evidence_delegated_failure().as_str()),
                 target.failed.id,
                 new_v7(),
-                &serde_json::Value::Null,
+                &context,
+                "queued",
             )
             .await;
             match created {
@@ -1403,14 +1452,32 @@ mod tests {
             anyhow::ensure!(recovery.content.contains(&failed_id.to_string()), "recovery comment omitted failed task id");
             anyhow::ensure!(recovery.content.contains(&rows.source_task_id.to_string()), "recovery comment omitted source task id");
 
-            let recovery_row: (Uuid, Uuid, Uuid, Option<Uuid>, Option<Uuid>, Option<String>) = sqlx::query_as(
-                "SELECT id, agent_id, issue_id, delegated_from_task_id, trigger_evidence_ref_id, trigger_evidence_kind FROM agent_task_queue WHERE trigger_evidence_kind = 'delegated_failure' AND trigger_evidence_ref_id = $1",
+            let recovery_row: (
+                Uuid,
+                Uuid,
+                Uuid,
+                Option<Uuid>,
+                Option<Uuid>,
+                Option<String>,
+                serde_json::Value,
+            ) = sqlx::query_as(
+                "SELECT id, agent_id, issue_id, delegated_from_task_id, trigger_evidence_ref_id, trigger_evidence_kind, context FROM agent_task_queue WHERE trigger_evidence_kind = 'delegated_failure' AND trigger_evidence_ref_id = $1",
             )
             .bind(failed_id)
             .fetch_one(&rows.pool)
             .await?;
             anyhow::ensure!(recovery_row.1 == rows.coordinator_id && recovery_row.2 == rows.source_issue_id, "recovery target = {}/{}", recovery_row.1, recovery_row.2);
             anyhow::ensure!(recovery_row.3 == Some(failed_id) && recovery_row.4 == Some(failed_id) && recovery_row.5.as_deref() == Some("delegated_failure"), "recovery lineage is incomplete: {recovery_row:?}");
+            anyhow::ensure!(
+                recovery_row.6["coordination_owner_type"].as_str() == Some("agent")
+                    && recovery_row.6["coordination_owner_id"]
+                        .as_str()
+                        .and_then(|value| Uuid::parse_str(value).ok())
+                        == Some(rows.coordinator_id)
+                    && recovery_row.6["coordination_owner_generation"].as_i64() == Some(0),
+                "recovery task lost implementation owner context: {}",
+                recovery_row.6
+            );
             anyhow::ensure!(rows.recovery_count(failed_id).await? == 1, "recovery task count is not one");
 
             {

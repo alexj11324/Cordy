@@ -1061,51 +1061,35 @@ impl AutopilotService {
     /// status. A custom status finalizes exactly like its canonical inherited
     /// status; the failure audit deliberately keeps issue.status so it names
     /// what a human actually chose (PB-6243).
-    pub async fn sync_run_from_issue(&self, issue: &patchbay_db::models::Issue) {
+    pub async fn sync_run_from_issue(
+        &self,
+        issue: &patchbay_db::models::Issue,
+    ) -> anyhow::Result<()> {
         if issue.origin_type.as_deref() != Some("autopilot") {
-            return;
+            return Ok(());
         }
-        let Some(run) = get_autopilot_run_by_issue(&self.pool, issue.id)
-            .await
-            .ok()
-            .flatten()
-        else {
+        let Some(run) = get_autopilot_run_by_issue(&self.pool, issue.id).await? else {
             // No active run linked to this issue.
-            return;
+            return Ok(());
         };
-        let Some(autopilot) = get_autopilot(&self.pool, run.autopilot_id)
-            .await
-            .ok()
-            .flatten()
-        else {
-            return;
+        let Some(autopilot) = get_autopilot(&self.pool, run.autopilot_id).await? else {
+            return Ok(());
         };
         let ws_id = autopilot.workspace_id.to_string();
 
         let effective_status =
-            crate::issue_status::effective(&self.pool, issue.workspace_id, &issue.status).await;
+            crate::issue_status::effective_checked(&self.pool, issue.workspace_id, &issue.status)
+                .await?;
         match effective_status.as_str() {
             "done" | "in_review" => {
-                let updated = match self.complete_run(run.id, &serde_json::Value::Null).await {
-                    Ok(updated) => updated,
-                    Err(err) => {
-                        tracing::warn!(run_id = %run.id, error = %err, "failed to complete autopilot run");
-                        return;
-                    }
-                };
+                let updated = self.complete_run(run.id, &serde_json::Value::Null).await?;
                 self.capture_autopilot_run_completed(&autopilot, &updated)
                     .await;
                 self.publish_run_done(&ws_id, &updated, "completed");
             }
             "cancelled" | "blocked" => {
                 let reason = format!("issue {}", issue.status);
-                let updated = match self.fail_autopilot_run(run.id, Some(&reason), None).await {
-                    Ok(updated) => updated,
-                    Err(err) => {
-                        tracing::warn!(run_id = %run.id, error = %err, "failed to fail autopilot run");
-                        return;
-                    }
-                };
+                let updated = self.fail_autopilot_run(run.id, Some(&reason), None).await?;
                 let source = updated.source.clone();
                 self.capture_autopilot_run_failed(&autopilot, &updated, &source, &reason)
                     .await;
@@ -1113,35 +1097,29 @@ impl AutopilotService {
             }
             _ => {}
         }
+        Ok(())
     }
 
     /// Updates the run when a run_only task completes or fails.
-    pub async fn sync_run_from_task(&self, task: &patchbay_db::models::AgentTaskQueue) {
+    pub async fn sync_run_from_task(
+        &self,
+        task: &patchbay_db::models::AgentTaskQueue,
+    ) -> anyhow::Result<()> {
         let Some(run_id) = task.autopilot_run_id else {
-            return;
+            return Ok(());
         };
-        let Some(run) = get_autopilot_run(&self.pool, run_id).await.ok().flatten() else {
-            return;
+        let Some(run) = get_autopilot_run(&self.pool, run_id).await? else {
+            return Ok(());
         };
-        let Some(autopilot) = get_autopilot(&self.pool, run.autopilot_id)
-            .await
-            .ok()
-            .flatten()
-        else {
-            return;
+        let Some(autopilot) = get_autopilot(&self.pool, run.autopilot_id).await? else {
+            return Ok(());
         };
         let ws_id = autopilot.workspace_id.to_string();
 
         match task.status.as_str() {
             "completed" => {
                 let result = task.result.clone().unwrap_or(serde_json::Value::Null);
-                let updated = match self.complete_run(run.id, &result).await {
-                    Ok(updated) => updated,
-                    Err(err) => {
-                        tracing::warn!(run_id = %run.id, error = %err, "failed to complete autopilot run from task");
-                        return;
-                    }
-                };
+                let updated = self.complete_run(run.id, &result).await?;
                 self.capture_autopilot_run_completed(&autopilot, &updated)
                     .await;
                 self.publish_run_done(&ws_id, &updated, "completed");
@@ -1153,13 +1131,7 @@ impl AutopilotService {
                     Some(e) => e.clone(),
                     None => format!("task {}", task.status),
                 };
-                let updated = match self.fail_autopilot_run(run.id, Some(&reason), None).await {
-                    Ok(updated) => updated,
-                    Err(err) => {
-                        tracing::warn!(run_id = %run.id, error = %err, "failed to fail autopilot run from task");
-                        return;
-                    }
-                };
+                let updated = self.fail_autopilot_run(run.id, Some(&reason), None).await?;
                 let source = updated.source.clone();
                 self.capture_autopilot_run_failed(&autopilot, &updated, &source, &reason)
                     .await;
@@ -1167,6 +1139,7 @@ impl AutopilotService {
             }
             _ => {}
         }
+        Ok(())
     }
 
     /// Fails a create_issue run when a linked-issue task terminally fails.
@@ -1176,66 +1149,37 @@ impl AutopilotService {
     pub async fn sync_run_from_linked_issue_task(
         &self,
         task: &patchbay_db::models::AgentTaskQueue,
-    ) {
+    ) -> anyhow::Result<()> {
         if task.autopilot_run_id.is_some() || task.issue_id.is_none() || task.status != "failed" {
-            return;
+            return Ok(());
         }
         let issue_id = task.issue_id.expect("guarded above");
-        let Some(run) = get_autopilot_run_by_issue(&self.pool, issue_id)
-            .await
-            .ok()
-            .flatten()
-        else {
-            return;
+        let Some(run) = get_autopilot_run_by_issue(&self.pool, issue_id).await? else {
+            return Ok(());
         };
         // A still-active task — typically the auto-retry FailTask just
         // enqueued — means the dispatch isn't terminal yet; wait for the
         // final attempt.
-        match has_active_task_for_issue(&self.pool, issue_id).await {
+        match has_active_task_for_issue(&self.pool, issue_id).await? {
             // No active task remains — the failure is final for this dispatch.
-            Ok(Some(false)) | Ok(None) => {}
+            Some(false) | None => {}
             // A still-active task (typically the auto-retry FailTask just
             // enqueued) means the dispatch isn't terminal yet.
-            Ok(Some(true)) => return,
-            Err(err) => {
-                tracing::warn!(
-                    issue_id = %issue_id,
-                    task_id = %task.id,
-                    error = %err,
-                    "failed to check active tasks for autopilot issue failure"
-                );
-                return;
-            }
+            Some(true) => return Ok(()),
         }
-        let Some(autopilot) = get_autopilot(&self.pool, run.autopilot_id)
-            .await
-            .ok()
-            .flatten()
-        else {
-            return;
+        let Some(autopilot) = get_autopilot(&self.pool, run.autopilot_id).await? else {
+            return Ok(());
         };
 
         let reason = task_failure_reason_for_run(task);
-        let updated = match self
+        let updated = self
             .fail_autopilot_run(run.id, opt_str_reason(&reason), None)
-            .await
-        {
-            Ok(updated) => updated,
-            Err(err) => {
-                tracing::warn!(
-                    run_id = %run.id,
-                    issue_id = %issue_id,
-                    task_id = %task.id,
-                    error = %err,
-                    "failed to fail autopilot run from linked issue task"
-                );
-                return;
-            }
-        };
+            .await?;
         let source = updated.source.clone();
         self.capture_autopilot_run_failed(&autopilot, &updated, &source, &reason)
             .await;
         self.publish_run_done(&autopilot.workspace_id.to_string(), &updated, "failed");
+        Ok(())
     }
 }
 
@@ -2776,7 +2720,7 @@ impl AutopilotService {
             .ok_or_else(|| anyhow::anyhow!("repair task linkage: no row"))?;
         match task.status.as_str() {
             "completed" | "failed" | "cancelled" => {
-                self.sync_run_from_task(&task).await;
+                self.sync_run_from_task(&task).await?;
                 updated = get_autopilot_run(&self.pool, run.id)
                     .await
                     .map_err(|e| anyhow::anyhow!("reload terminal repaired run: {e}"))?

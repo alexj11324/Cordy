@@ -404,6 +404,8 @@
     "team_leader_no_action_reason": "평가 완료: 필요한 작업 없음({{reason}})",
     "team_leader_failed": "평가 실패",
     "team_leader_failed_reason": "평가 실패: {{reason}}",
+    "coordinator_assignment": "코디네이터가 다음 담당자를 할당했습니다",
+    "coordinator_assignment_to": "코디네이터가 {{name}}님에게 할당했습니다",
     "coalesced_badge": "×{{count}}",
     "activity_count_other": "활동 {{count}}개",
     "show_more_activities_other": "활동 {{count}}개 더 보기"

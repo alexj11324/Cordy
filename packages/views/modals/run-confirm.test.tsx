@@ -124,14 +124,17 @@ vi.mock("../i18n", () => ({
           title_review: "Hand off for review",
           review_choose: "choose reviewer for {{status}}",
           review_single: "handoff {{from}} to {{to}} for {{status}}",
+          title_review_return: "Return from review",
+          review_return_single: "return this issue to {{to}} in {{status}}",
           reviewer_label: "Reviewer",
           reviewer_must_change: "choose someone else",
           unassigned: "Unassigned",
           confirm_review: "Hand off for review",
+          confirm_review_return: "Return to implementation",
         },
         // useStatusLabel resolves BUILT-IN keys through i18n and custom ones
         // through the catalog, so the promote headline needs both sources.
-        status: { todo: "Todo", in_review: "In Review" },
+        status: { todo: "Todo", in_progress: "In Progress", in_review: "In Review" },
       };
       return sel(labels).replace(/\{\{(\w+)\}\}/g, (_m, k) => String(vars?.[k] ?? ""));
     },
@@ -215,6 +218,15 @@ const review = {
   fromAssigneeId: "agent-1",
   assigneeType: null,
   assigneeId: null,
+  issueRevision: 7,
+};
+
+const reviewReturn = {
+  issueIds: ["issue-1"],
+  mode: "review-return" as const,
+  status: "in_progress",
+  assigneeType: "agent" as const,
+  assigneeId: "agent-1",
   issueRevision: 7,
 };
 
@@ -330,6 +342,22 @@ describe("RunConfirmModal", () => {
       reviewer_type: "agent",
       reviewer_id: "agent-2",
       expected_revision: 7,
+    });
+  });
+
+  it("returns to the implementation owner with the note and suppress choices", async () => {
+    const { container } = render(<RunConfirmModal onClose={vi.fn()} data={reviewReturn} />);
+    expect(screen.getByText("Return from review")).toBeInTheDocument();
+    expect(container.textContent).toContain("return this issue to Walt in In Progress");
+    fireEvent.change(noteBox(), { target: { value: "address the review comments" } });
+    fireEvent.click(screen.getByRole("button", { name: "Return to implementation" }));
+
+    await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
+    expect(mockUpdate).toHaveBeenCalledWith({
+      id: "issue-1",
+      status: "in_progress",
+      expected_revision: 7,
+      handoff_note: "address the review comments",
     });
   });
 

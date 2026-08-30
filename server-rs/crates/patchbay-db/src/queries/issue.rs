@@ -341,6 +341,14 @@ pub async fn delete_issue(
 ),
 cleared_vcs_pr_links AS (
     DELETE FROM issue_vcs_pull_request WHERE issue_id IN (SELECT target.id FROM target)
+),
+cleared_coordination_assignments AS (
+    DELETE FROM agent_coordination_assignment
+    WHERE issue_id IN (SELECT target.id FROM target)
+),
+cleared_coordination_outbox AS (
+    DELETE FROM agent_coordination_outbox
+    WHERE issue_id IN (SELECT target.id FROM target)
 )
 DELETE FROM issue WHERE issue.id IN (SELECT target.id FROM target)"#,
     )

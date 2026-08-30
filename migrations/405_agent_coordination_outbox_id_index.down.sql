@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS agent_coordination_outbox_pkey_uidx;

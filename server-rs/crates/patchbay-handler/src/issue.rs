@@ -3211,6 +3211,23 @@ fn move_position(
     Ok(position)
 }
 
+const MOVE_ALLOWED_FIELDS: &[&str] = &[
+    "status",
+    "assignee_type",
+    "assignee_id",
+    "parent_issue_id",
+    "project_id",
+    "before_id",
+    "after_id",
+    "expected_revision",
+    "suppress_run",
+    "handoff_note",
+];
+
+fn is_allowed_move_field(field: &str) -> bool {
+    MOVE_ALLOWED_FIELDS.contains(&field)
+}
+
 async fn move_issue(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
@@ -3226,20 +3243,7 @@ async fn move_issue(
         Ok(fields) => fields,
         Err(response) => return response,
     };
-    const ALLOWED: &[&str] = &[
-        "status",
-        "assignee_type",
-        "assignee_id",
-        "parent_issue_id",
-        "project_id",
-        "before_id",
-        "after_id",
-        "expected_revision",
-    ];
-    if let Some(field) = fields
-        .keys()
-        .find(|field| !ALLOWED.contains(&field.as_str()))
-    {
+    if let Some(field) = fields.keys().find(|field| !is_allowed_move_field(field)) {
         return error_response(
             StatusCode::BAD_REQUEST,
             &format!("unsupported move field: {field}"),
@@ -5265,6 +5269,35 @@ fn issue_reviewer(issue: &Issue) -> Option<(&str, Uuid)> {
     issue.reviewer_type.as_deref().zip(issue.reviewer_id)
 }
 
+fn leaves_review_for_implementation(previous_category: &str, next_category: &str) -> bool {
+    previous_category == patchbay_service::issue_status::IN_REVIEW
+        && next_category == patchbay_service::issue_status::IN_PROGRESS
+}
+
+fn changes_reviewer_while_in_review(
+    previous_category: &str,
+    next_category: &str,
+    previous_reviewer: Option<(&str, Uuid)>,
+    next_reviewer: Option<(&str, Uuid)>,
+) -> bool {
+    previous_category == patchbay_service::issue_status::IN_REVIEW
+        && next_category == patchbay_service::issue_status::IN_REVIEW
+        && previous_reviewer != next_reviewer
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ReviewReturnActions {
+    retire_reviewer_tasks: bool,
+    record_executor_handoff: bool,
+}
+
+fn review_return_actions(leaving_review: bool, suppress_run: bool) -> ReviewReturnActions {
+    ReviewReturnActions {
+        retire_reviewer_tasks: leaving_review,
+        record_executor_handoff: leaving_review && !suppress_run,
+    }
+}
+
 struct LegacyReviewRemap<'a> {
     previous_category: &'a str,
     next_category: &'a str,
@@ -5711,6 +5744,24 @@ async fn apply_issue_update(
         };
     }
 
+    let prelock_previous_category = patchbay_service::issue_status::effective(
+        &state.pool,
+        previous.workspace_id,
+        &previous.status,
+    )
+    .await;
+    let prelock_next_category =
+        patchbay_service::issue_status::effective(&state.pool, next.workspace_id, &next.status)
+            .await;
+    let should_lock_reviewer_tasks =
+        leaves_review_for_implementation(&prelock_previous_category, &prelock_next_category)
+            || changes_reviewer_while_in_review(
+                &prelock_previous_category,
+                &prelock_next_category,
+                issue_reviewer(&previous),
+                issue_reviewer(&next),
+            );
+
     let mut tx = state.pool.begin().await.map_err(|error| {
         tracing::warn!(%error, issue_id = %previous.id, "failed to begin issue update");
         error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
@@ -5751,6 +5802,19 @@ async fn apply_issue_update(
             error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
         })?;
     }
+    let locked_reviewer_task_ids = if should_lock_reviewer_tasks {
+        patchbay_service::coordination::lock_active_reviewer_tasks_for_review_return(
+            &mut tx,
+            previous.id,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, issue_id = %previous.id, "failed to lock reviewer tasks for review return");
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
+        })?
+    } else {
+        Vec::new()
+    };
     let locked = sqlx::query_as::<_, Issue>(
         "SELECT * FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
     )
@@ -5816,6 +5880,14 @@ async fn apply_issue_update(
             .await;
     let next_category =
         patchbay_service::issue_status::effective(&mut *tx, next.workspace_id, &next.status).await;
+    let leaving_review = leaves_review_for_implementation(&previous_category, &next_category);
+    if leaving_review && !should_lock_reviewer_tasks {
+        return Err(revision_conflict(
+            &locked,
+            previous.revision,
+            locked.revision,
+        ));
+    }
     let remapped = remap_legacy_review_assignee(LegacyReviewRemap {
         previous_category: &previous_category,
         next_category: &next_category,
@@ -5827,6 +5899,19 @@ async fn apply_issue_update(
         next_reviewer_type: &mut next.reviewer_type,
         next_reviewer_id: &mut next.reviewer_id,
     });
+    let reviewer_reassigned = changes_reviewer_while_in_review(
+        &previous_category,
+        &next_category,
+        issue_reviewer(&locked),
+        issue_reviewer(&next),
+    );
+    if reviewer_reassigned && !should_lock_reviewer_tasks {
+        return Err(revision_conflict(
+            &locked,
+            previous.revision,
+            locked.revision,
+        ));
+    }
     if issue_reviewer(&locked).is_some() && next.reviewer_type.is_none() {
         return Err(reviewer_cannot_clear_response());
     }
@@ -5934,10 +6019,74 @@ RETURNING *"#,
             }
         }
     }
+    let review_return_actions = review_return_actions(leaving_review, suppress_run);
+    let retire_reviewer_tasks = review_return_actions.retire_reviewer_tasks || reviewer_reassigned;
+    let retired_reviewer_tasks = if retire_reviewer_tasks {
+        patchbay_service::coordination::retire_locked_reviewer_tasks_for_review_return(
+            &mut tx,
+            &locked_reviewer_task_ids,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, issue_id = %previous.id, "failed to retire reviewer tasks for review return");
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
+        })?
+    } else {
+        Vec::new()
+    };
+    // `suppress_run` is an explicit request to leave returned work idle. The
+    // owner restoration and reviewer retirement still belong to the atomic
+    // issue update, but it must not create a durable executor handoff.
+    let should_record_review_return = review_return_actions.record_executor_handoff;
+    let should_record_reviewer_reassignment = reviewer_reassigned && !suppress_run;
+    if should_record_review_return {
+        // Persist the executor handoff in the same transaction as the review
+        // return. The coordinator's PostgreSQL outbox is authoritative; the
+        // in-memory notification below is only a latency hint.
+        let handoff_note = (!handoff_note.is_empty()).then_some(handoff_note.as_str());
+        patchbay_service::coordination::record_review_return(
+            &mut tx,
+            &updated,
+            retired_reviewer_tasks.first().map(|task| task.id),
+            handoff_note,
+        )
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, issue_id = %previous.id, "failed to record review return handoff");
+                error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to update issue",
+                )
+            })?;
+    }
+    if should_record_reviewer_reassignment {
+        patchbay_service::coordination::record_reviewer_reassignment(
+            &mut tx,
+            &updated,
+            retired_reviewer_tasks.first().map(|task| task.id),
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, issue_id = %previous.id, "failed to record reviewer reassignment handoff");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update issue",
+            )
+        })?;
+    }
     tx.commit().await.map_err(|error| {
         tracing::warn!(%error, issue_id = %previous.id, "failed to commit issue update");
         error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
     })?;
+    if should_record_review_return || should_record_reviewer_reassignment {
+        state.coordinator.notify();
+    }
+    if !retired_reviewer_tasks.is_empty() {
+        state
+            .tasks
+            .publish_transactional_cancellations(&retired_reviewer_tasks)
+            .await;
+    }
     let (actor_type, actor_id, task_id) = mutation_actor(state, context, headers).await;
     publish_issue_updated(state, &previous, &updated, &actor_type, actor_id, task_id).await;
     if attachments_changed {
@@ -5946,7 +6095,7 @@ RETURNING *"#,
     let assignee_changed = previous.assignee_type != updated.assignee_type
         || previous.assignee_id != updated.assignee_id;
     let status_changed = previous.status != updated.status;
-    if !suppress_run {
+    if !suppress_run && !leaving_review && !reviewer_reassigned {
         let is_self_loop = if let Some(task_id) = task_id {
             agent::get_agent_task(&state.pool, task_id)
                 .await
@@ -8045,6 +8194,13 @@ mod tests {
     }
 
     #[test]
+    fn move_request_allows_review_run_controls() {
+        assert!(is_allowed_move_field("suppress_run"));
+        assert!(is_allowed_move_field("handoff_note"));
+        assert!(!is_allowed_move_field("move_intent"));
+    }
+
+    #[test]
     fn legacy_prefix_fallback_matches_frozen_go_rule() {
         assert_eq!(legacy_issue_prefix("Frontend Team"), "FRO");
         assert_eq!(legacy_issue_prefix("前端团队"), "WS");
@@ -8150,6 +8306,93 @@ mod tests {
         assert_eq!(next_id, Some(owner_a));
         assert_eq!(reviewer_type.as_deref(), Some("agent"));
         assert_eq!(reviewer_id, Some(owner_b));
+    }
+
+    #[test]
+    fn every_review_to_implementation_transition_is_a_review_return() {
+        assert!(leaves_review_for_implementation("in_review", "in_progress"));
+        assert!(!leaves_review_for_implementation(
+            "in_progress",
+            "in_review"
+        ));
+    }
+
+    #[test]
+    fn reviewer_change_inside_review_requires_transactional_replacement() {
+        let reviewer_a = Uuid::from_u128(40);
+        let reviewer_b = Uuid::from_u128(41);
+        assert!(changes_reviewer_while_in_review(
+            "in_review",
+            "in_review",
+            Some(("agent", reviewer_a)),
+            Some(("agent", reviewer_b)),
+        ));
+        assert!(!changes_reviewer_while_in_review(
+            "in_review",
+            "in_progress",
+            Some(("agent", reviewer_a)),
+            Some(("agent", reviewer_b)),
+        ));
+
+        let source = include_str!("issue.rs");
+        assert!(source.contains("record_reviewer_reassignment("));
+        assert!(source.contains("reviewer_reassigned && !suppress_run"));
+        assert!(source.contains("!leaving_review && !reviewer_reassigned"));
+    }
+
+    #[test]
+    fn suppress_run_still_retires_reviewer_without_executor_handoff() {
+        assert_eq!(
+            review_return_actions(true, true),
+            ReviewReturnActions {
+                retire_reviewer_tasks: true,
+                record_executor_handoff: false,
+            }
+        );
+        assert_eq!(
+            review_return_actions(true, false),
+            ReviewReturnActions {
+                retire_reviewer_tasks: true,
+                record_executor_handoff: true,
+            }
+        );
+        assert_eq!(
+            review_return_actions(false, false),
+            ReviewReturnActions {
+                retire_reviewer_tasks: false,
+                record_executor_handoff: false,
+            }
+        );
+    }
+
+    #[test]
+    fn reassignment_while_leaving_review_uses_the_coordinator_handoff() {
+        assert!(leaves_review_for_implementation("in_review", "in_progress"));
+        assert_eq!(
+            review_return_actions(true, false),
+            ReviewReturnActions {
+                retire_reviewer_tasks: true,
+                record_executor_handoff: true,
+            }
+        );
+        let source = include_str!("issue.rs");
+        assert!(
+            source.contains("record_review_return(\n            &mut tx,\n            &updated")
+        );
+        assert!(source.contains("if !suppress_run && !leaving_review"));
+    }
+
+    #[test]
+    fn review_return_locks_reviewer_tasks_before_issue() {
+        let source = include_str!("issue.rs");
+        let issue_lock = source
+            .find("SELECT * FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE")
+            .expect("issue row lock");
+        let reviewer_task_lock = source
+            .find("lock_active_reviewer_tasks_for_review_return")
+            .expect("reviewer task lock");
+        assert!(reviewer_task_lock < issue_lock);
+        assert!(source.contains("prelock_previous_category"));
     }
 
     #[test]

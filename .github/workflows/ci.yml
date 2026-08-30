@@ -485,6 +485,10 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.backend == 'true' }}
     runs-on: ubuntu-latest
+    # The workspace suite normally completes in about ten minutes. Keep a
+    # bounded upper limit so a single hung test cannot hold the merge gate
+    # indefinitely while leaving enough room for a cold runner/cache.
+    timeout-minutes: 45
     services:
       postgres:
         image: pgvector/pgvector:pg17
@@ -521,9 +525,33 @@ jobs:
         working-directory: server-rs
         run: cargo run --locked -p patchbay-migrate --bin patchbay-migrate -- up
 
-      - name: Run workspace tests
+      - name: Run workspace tests by package
         working-directory: server-rs
-        run: cargo test --workspace --all-targets --locked
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t workspace_packages < <(
+            cargo metadata --locked --no-deps --format-version 1 \
+              | jq -r '
+                . as $metadata
+                | $metadata.packages[]
+                | select(.id as $id | $metadata.workspace_members | index($id))
+                | .name
+              '
+          )
+
+          if ((${#workspace_packages[@]} == 0)); then
+            echo "::error::cargo metadata returned no workspace packages"
+            exit 1
+          fi
+
+          for package in "${workspace_packages[@]}"; do
+            echo "::group::cargo test -p ${package}"
+            echo "Running workspace package: ${package}"
+            cargo test --locked -p "${package}" --all-targets
+            echo "::endgroup::"
+          done
 
   rust-audit:
     needs: changes
