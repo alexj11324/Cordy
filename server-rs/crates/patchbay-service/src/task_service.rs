@@ -2994,6 +2994,27 @@ impl TaskService {
         Ok(())
     }
 
+    /// Completes the post-commit tail for tasks whose cancellation was written
+    /// by a caller-owned business transaction. Review-return uses this after
+    /// the issue update and reviewer retirement commit atomically.
+    pub async fn publish_transactional_cancellations(&self, cancelled: &[AgentTaskQueue]) {
+        let mut agents = std::collections::HashSet::new();
+        for t in cancelled {
+            self.capture_task_cancelled(t).await;
+            self.broadcast_task_event(
+                patchbay_protocol::EVENT_TASK_CANCELLED,
+                t,
+                Default::default(),
+            )
+            .await;
+            agents.insert(t.agent_id);
+        }
+        for agent_id in agents {
+            self.reconcile_agent_status(agent_id).await;
+        }
+        self.notify_tasks_finished(cancelled).await;
+    }
+
     // --- Chat task family -------------------------------------------------------
 
     /// Creates a task-owned input batch for a chat session. Channel media

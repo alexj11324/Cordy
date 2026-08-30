@@ -5281,6 +5281,19 @@ fn is_review_return(
         && (!assignee_touched || previous_owner == next_owner)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ReviewReturnActions {
+    retire_reviewer_tasks: bool,
+    record_executor_handoff: bool,
+}
+
+fn review_return_actions(returning_from_review: bool, suppress_run: bool) -> ReviewReturnActions {
+    ReviewReturnActions {
+        retire_reviewer_tasks: returning_from_review,
+        record_executor_handoff: returning_from_review && !suppress_run,
+    }
+}
+
 struct LegacyReviewRemap<'a> {
     previous_category: &'a str,
     next_category: &'a str,
@@ -5727,6 +5740,23 @@ async fn apply_issue_update(
         };
     }
 
+    let prelock_previous_category = patchbay_service::issue_status::effective(
+        &state.pool,
+        previous.workspace_id,
+        &previous.status,
+    )
+    .await;
+    let prelock_next_category =
+        patchbay_service::issue_status::effective(&state.pool, next.workspace_id, &next.status)
+            .await;
+    let should_lock_reviewer_tasks = is_review_return(
+        &prelock_previous_category,
+        &prelock_next_category,
+        issue_owner(&previous),
+        issue_owner(&next),
+        assignee_touched,
+    );
+
     let mut tx = state.pool.begin().await.map_err(|error| {
         tracing::warn!(%error, issue_id = %previous.id, "failed to begin issue update");
         error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
@@ -5767,6 +5797,19 @@ async fn apply_issue_update(
             error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
         })?;
     }
+    let locked_reviewer_task_ids = if should_lock_reviewer_tasks {
+        patchbay_service::coordination::lock_active_reviewer_tasks_for_review_return(
+            &mut tx,
+            previous.id,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, issue_id = %previous.id, "failed to lock reviewer tasks for review return");
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
+        })?
+    } else {
+        Vec::new()
+    };
     let locked = sqlx::query_as::<_, Issue>(
         "SELECT * FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
     )
@@ -5839,6 +5882,13 @@ async fn apply_issue_update(
         issue_owner(&next),
         assignee_touched,
     );
+    if returning_from_review && !should_lock_reviewer_tasks {
+        return Err(revision_conflict(
+            &locked,
+            previous.revision,
+            locked.revision,
+        ));
+    }
     let remapped = remap_legacy_review_assignee(LegacyReviewRemap {
         previous_category: &previous_category,
         next_category: &next_category,
@@ -5957,10 +6007,24 @@ RETURNING *"#,
             }
         }
     }
+    let review_return_actions = review_return_actions(returning_from_review, suppress_run);
+    let retired_reviewer_tasks = if review_return_actions.retire_reviewer_tasks {
+        patchbay_service::coordination::retire_locked_reviewer_tasks_for_review_return(
+            &mut tx,
+            &locked_reviewer_task_ids,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, issue_id = %previous.id, "failed to retire reviewer tasks for review return");
+            error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
+        })?
+    } else {
+        Vec::new()
+    };
     // `suppress_run` is an explicit request to leave returned work idle. The
-    // owner restoration still belongs to the atomic issue update, but it must
-    // not create a durable coordinator handoff or wake the worker.
-    let should_record_review_return = returning_from_review && !suppress_run;
+    // owner restoration and reviewer retirement still belong to the atomic
+    // issue update, but it must not create a durable executor handoff.
+    let should_record_review_return = review_return_actions.record_executor_handoff;
     if should_record_review_return {
         // Persist the executor handoff in the same transaction as the review
         // return. The coordinator's PostgreSQL outbox is authoritative; the
@@ -5969,7 +6033,7 @@ RETURNING *"#,
         patchbay_service::coordination::record_review_return(
             &mut tx,
             &updated,
-            None,
+            retired_reviewer_tasks.first().map(|task| task.id),
             handoff_note,
         )
             .await
@@ -5987,6 +6051,12 @@ RETURNING *"#,
     })?;
     if should_record_review_return {
         state.coordinator.notify();
+    }
+    if !retired_reviewer_tasks.is_empty() {
+        state
+            .tasks
+            .publish_transactional_cancellations(&retired_reviewer_tasks)
+            .await;
     }
     let (actor_type, actor_id, task_id) = mutation_actor(state, context, headers).await;
     publish_issue_updated(state, &previous, &updated, &actor_type, actor_id, task_id).await;
@@ -8242,6 +8312,44 @@ mod tests {
             Some(("agent", owner_a)),
             true,
         ));
+    }
+
+    #[test]
+    fn suppress_run_still_retires_reviewer_without_executor_handoff() {
+        assert_eq!(
+            review_return_actions(true, true),
+            ReviewReturnActions {
+                retire_reviewer_tasks: true,
+                record_executor_handoff: false,
+            }
+        );
+        assert_eq!(
+            review_return_actions(true, false),
+            ReviewReturnActions {
+                retire_reviewer_tasks: true,
+                record_executor_handoff: true,
+            }
+        );
+        assert_eq!(
+            review_return_actions(false, false),
+            ReviewReturnActions {
+                retire_reviewer_tasks: false,
+                record_executor_handoff: false,
+            }
+        );
+    }
+
+    #[test]
+    fn review_return_locks_reviewer_tasks_before_issue() {
+        let source = include_str!("issue.rs");
+        let issue_lock = source
+            .find("SELECT * FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE")
+            .expect("issue row lock");
+        let reviewer_task_lock = source
+            .find("lock_active_reviewer_tasks_for_review_return")
+            .expect("reviewer task lock");
+        assert!(reviewer_task_lock < issue_lock);
+        assert!(source.contains("prelock_previous_category"));
     }
 
     #[test]
