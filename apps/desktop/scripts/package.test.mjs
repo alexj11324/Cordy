@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { delimiter, join, resolve } from "node:path";
 import { afterEach, describe, it, expect } from "vitest";
 import {
+  bundleCliArgsForTarget,
   builderArgsForTarget,
   deriveVersion,
   DESCRIBE_ARGS,
@@ -405,6 +406,22 @@ describe("builderArgsForTarget", () => {
       "--x64",
       "--publish",
       "never",
+    ]);
+  });
+});
+
+describe("bundleCliArgsForTarget", () => {
+  it("requires the release profile for every formal Desktop package", () => {
+    const args = bundleCliArgsForTarget({ platform: "mac", arch: "arm64" });
+
+    expect(args[0]).toMatch(/bundle-cli\.mjs$/);
+    expect(args.slice(1)).toEqual([
+      "--profile",
+      "release",
+      "--target-platform",
+      "darwin",
+      "--target-arch",
+      "arm64",
     ]);
   });
 });

@@ -10,7 +10,9 @@ pub mod client;
 pub mod manager;
 pub mod snapshot;
 
-pub use client::{Client, PullRequestMetadata, RateLimitError, DEFAULT_API_BASE};
+pub use client::{
+    Client, PullRequestHeadMatch, PullRequestMetadata, RateLimitError, DEFAULT_API_BASE,
+};
 pub use manager::{
     Address, Manager, ManagerRuntime, ManagerShutdownOutcome, OnApplied, OnAppliedFuture,
     DEFAULT_SHUTDOWN_TIMEOUT,

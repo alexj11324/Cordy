@@ -353,6 +353,18 @@ export function builderArgsForTarget(
   return builderArgs;
 }
 
+export function bundleCliArgsForTarget(target) {
+  return [
+    bundleCliScript,
+    "--profile",
+    "release",
+    "--target-platform",
+    PLATFORM_CONFIG[target.platform].runtimePlatform,
+    "--target-arch",
+    target.arch,
+  ];
+}
+
 function main() {
   const passthrough = stripLeadingSeparator(process.argv.slice(2));
   const parsed = parsePackageArgs(passthrough);
@@ -429,13 +441,7 @@ function main() {
     console.log(`[package] bundling CLI → ${formatTarget(target)}`);
     execFileSync(
       "node",
-      [
-        bundleCliScript,
-        "--target-platform",
-        PLATFORM_CONFIG[target.platform].runtimePlatform,
-        "--target-arch",
-        target.arch,
-      ],
+      bundleCliArgsForTarget(target),
       {
         stdio: "inherit",
         cwd: desktopRoot,

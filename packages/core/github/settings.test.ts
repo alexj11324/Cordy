@@ -12,7 +12,6 @@ describe("deriveGitHubSettings", () => {
       enabled: true,
       prSidebar: true,
       coAuthor: true,
-      autoLinkPRs: true,
     });
   });
 
@@ -21,7 +20,6 @@ describe("deriveGitHubSettings", () => {
       enabled: true,
       prSidebar: true,
       coAuthor: true,
-      autoLinkPRs: true,
     });
   });
 
@@ -31,29 +29,23 @@ describe("deriveGitHubSettings", () => {
         github_enabled: false,
         github_pr_sidebar_enabled: true,
         co_authored_by_enabled: true,
-        github_auto_link_prs_enabled: true,
       }),
     );
     expect(got).toEqual({
       enabled: false,
       prSidebar: false,
       coAuthor: false,
-      autoLinkPRs: false,
     });
   });
 
   it("each sub-flag can be flipped independently when master is on", () => {
     expect(
       deriveGitHubSettings(ws({ github_pr_sidebar_enabled: false })),
-    ).toMatchObject({ enabled: true, prSidebar: false, coAuthor: true, autoLinkPRs: true });
+    ).toMatchObject({ enabled: true, prSidebar: false, coAuthor: true });
 
     expect(
       deriveGitHubSettings(ws({ co_authored_by_enabled: false })),
-    ).toMatchObject({ enabled: true, prSidebar: true, coAuthor: false, autoLinkPRs: true });
-
-    expect(
-      deriveGitHubSettings(ws({ github_auto_link_prs_enabled: false })),
-    ).toMatchObject({ enabled: true, prSidebar: true, coAuthor: true, autoLinkPRs: false });
+    ).toMatchObject({ enabled: true, prSidebar: true, coAuthor: false });
   });
 
   it("treats non-false values (true, null, missing) as enabled", () => {

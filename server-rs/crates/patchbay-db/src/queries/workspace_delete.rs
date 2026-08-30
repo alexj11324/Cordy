@@ -27,6 +27,10 @@ deleted_task_messages AS (
 deleted_task_tokens AS (
     DELETE FROM task_token WHERE task_id IN (SELECT id FROM batch)
 ),
+deleted_task_execution_provenance AS (
+    DELETE FROM agent_task_execution_provenance
+    WHERE task_id IN (SELECT id FROM batch)
+),
 deleted_channel_outbound_cards AS (
     DELETE FROM channel_outbound_card_message WHERE task_id IN (SELECT id FROM batch)
 ),
@@ -315,11 +319,11 @@ ws_autopilots AS MATERIALIZED (
 ws_github_prs AS MATERIALIZED (
     SELECT id FROM github_pull_request WHERE workspace_id = $1
 ),
-ws_vcs_prs AS MATERIALIZED (
-    SELECT id FROM vcs_pull_request WHERE workspace_id = $1
-),
 ws_vcs_connections AS MATERIALIZED (
     SELECT id FROM vcs_connection WHERE workspace_id = $1
+),
+ws_work_products AS MATERIALIZED (
+    SELECT id FROM work_product WHERE workspace_id = $1
 ),
 ws_channel_installations AS MATERIALIZED (
     SELECT id FROM channel_installation WHERE workspace_id = $1
@@ -336,6 +340,10 @@ deleted_authorization_audit AS (
 ),
 deleted_authorization_grants AS (
     DELETE FROM authorization_grant WHERE workspace_id = $1
+),
+deleted_task_execution_provenance AS (
+    DELETE FROM agent_task_execution_provenance
+    WHERE workspace_id = $1
 ),
 deleted_hourly_dirty AS (
     DELETE FROM task_usage_hourly_dirty WHERE workspace_id = $1
@@ -412,15 +420,14 @@ deleted_skill_labels AS (
     WHERE skill_id IN (SELECT id FROM ws_skills)
        OR label_id IN (SELECT id FROM ws_labels)
 ),
-deleted_issue_github_links AS (
-    DELETE FROM issue_pull_request
-    WHERE issue_id IN (SELECT id FROM ws_issues)
-       OR pull_request_id IN (SELECT id FROM ws_github_prs)
+deleted_work_product_relations AS (
+    DELETE FROM work_product_relation
+    WHERE workspace_id = $1
+       OR issue_id IN (SELECT id FROM ws_issues)
+       OR work_product_id IN (SELECT id FROM ws_work_products)
 ),
-deleted_issue_vcs_links AS (
-    DELETE FROM issue_vcs_pull_request
-    WHERE issue_id IN (SELECT id FROM ws_issues)
-       OR pull_request_id IN (SELECT id FROM ws_vcs_prs)
+deleted_work_products AS (
+    DELETE FROM work_product WHERE workspace_id = $1
 ),
 deleted_agent_invocation_targets AS (
     DELETE FROM agent_invocation_target
@@ -565,7 +572,21 @@ pub async fn delete_workspace_pull_requests(
     workspace_id: Uuid,
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
-        r#"WITH deleted_github_prs AS (
+        r#"WITH work_products AS (
+    SELECT id FROM work_product WHERE workspace_id = $1
+),
+deleted_work_product_relations AS (
+    DELETE FROM work_product_relation
+    WHERE workspace_id = $1 OR work_product_id IN (SELECT id FROM work_products)
+),
+deleted_work_products AS (
+    DELETE FROM work_product WHERE workspace_id = $1
+),
+deleted_task_execution_provenance AS (
+    DELETE FROM agent_task_execution_provenance
+    WHERE workspace_id = $1
+),
+deleted_github_prs AS (
     DELETE FROM github_pull_request
     WHERE github_pull_request.workspace_id = $1
 )
@@ -957,6 +978,22 @@ pub async fn lock_workspace_task_owner_runtimes(
     .execute(executor)
     .await?;
     Ok(r.rows_affected())
+}
+
+pub async fn lock_workspace_work_products(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"SELECT id
+FROM work_product
+WHERE workspace_id = $1
+FOR UPDATE"#,
+    )
+    .bind(workspace_id)
+    .fetch_all(executor)
+    .await?;
+    Ok(())
 }
 
 pub async fn prepare_workspace_deletion_links(

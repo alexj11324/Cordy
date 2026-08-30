@@ -25,8 +25,8 @@ use crate::config::{
 };
 use crate::daemon_core::DaemonCoreServices;
 use crate::health::{
-    ActiveRepoCheckoutTask, AgentHealthSnapshot, HealthResponse, RepoCheckoutRegistry,
-    RepoCheckoutRequest, REPO_CHECKOUT_LOCK_WAIT_TIMEOUT,
+    ActiveRepoCheckoutTask, AgentHealthSnapshot, HealthResponse, RepoCheckoutProvenance,
+    RepoCheckoutRegistry, RepoCheckoutRequest, REPO_CHECKOUT_LOCK_WAIT_TIMEOUT,
 };
 use crate::production_stack::{ProductionRuntimeServices, RepoCheckoutFailure};
 use crate::provider_registration::{RuntimeLaunchRegistry, RuntimeLaunchSpec};
@@ -369,6 +369,9 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
     ) -> Result<Value, RepoCheckoutFailure> {
         self.ensure_repo_ready(&ctx, &request.workspace_id, &request.url)
             .await?;
+        let task_id = request.task_id.clone();
+        let repo_identity = request.url.clone();
+        let workspace_id = request.workspace_id.clone();
         let reference = if request.r#ref.trim().is_empty() {
             self.repo_state
                 .task_default_ref(&request.workspace_id, &request.task_id, &request.url)
@@ -393,8 +396,56 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
             isolated_git_metadata: request.checkout_mode == "isolated",
         };
         match self.repo_cache.create_worktree_ctx(&ctx, params).await {
-            Ok(result) => serde_json::to_value(result)
-                .map_err(|error| checkout_failure(500, error.to_string())),
+            Ok(result) => {
+                // The checkout is created after StartTask, so persist its
+                // exact path and branch through the task-scoped daemon API
+                // before returning it to the agent. The branch is discovery
+                // input only; durable identity remains the Work Product
+                // relation written by the server.
+                let execution_workspace = result.path.to_string_lossy().into_owned();
+                if active_task.execution_daemon_token.trim().is_empty() {
+                    return Err(checkout_failure(
+                        500,
+                        "execution daemon credential is missing",
+                    ));
+                }
+                self.client
+                    .record_execution_provenance(
+                        &ctx,
+                        &active_task.execution_daemon_token,
+                        &task_id,
+                        &repo_identity,
+                        &execution_workspace,
+                        &result.branch_name,
+                        "",
+                        "attached",
+                        false,
+                    )
+                    .await
+                    .map_err(|error| {
+                        checkout_failure(
+                            500,
+                            format!(
+                                "record execution provenance for workspace {workspace_id}: {error}"
+                            ),
+                        )
+                    })?;
+                if !self.checkout_registry.record_checkout(
+                    &task_id,
+                    RepoCheckoutProvenance {
+                        path: execution_workspace,
+                        repo_identity,
+                        branch_name: result.branch_name.clone(),
+                    },
+                ) {
+                    return Err(checkout_failure(
+                        500,
+                        "execution checkout ownership expired",
+                    ));
+                }
+                serde_json::to_value(result)
+                    .map_err(|error| checkout_failure(500, error.to_string()))
+            }
             Err(error) if request.retry_busy && is_repo_busy(&error) => Err(RepoCheckoutFailure {
                 status_code: 503,
                 message: "repository is busy with another operation; retry later".to_string(),

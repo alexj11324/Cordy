@@ -34,7 +34,7 @@ export function DashboardLayout({
         </div>
       }
     >
-      <SidebarProvider className="h-svh bg-app-shell">
+      <SidebarProvider glass className="h-svh bg-app-shell">
         <GlobalShortcuts />
         <WorkspacePresencePrefetch />
         <AppSidebar searchSlot={searchSlot} />

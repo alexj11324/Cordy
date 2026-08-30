@@ -53,6 +53,7 @@ pub mod user;
 pub mod vcs;
 pub mod verification_code;
 pub mod webhook_delivery;
+pub mod work_product;
 pub mod workspace;
 pub mod workspace_channel;
 pub mod workspace_delete;

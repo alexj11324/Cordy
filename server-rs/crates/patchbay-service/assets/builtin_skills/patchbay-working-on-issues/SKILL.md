@@ -16,55 +16,41 @@ For building mention links, load `patchbay-mentioning` instead — not this skil
 Every contract below is traced to source in
 `references/working-on-issues-source-map.md`.
 
-## PR linking and close intent are two distinct contracts
+## Work Products and explicit PR association
 
-The GitHub webhook runs two separate scans over an incoming PR. They are not the
-same gate and they read different fields.
+A PR is a Work Product. Its association with an Issue belongs to the canonical
+Work Product relation created by an authenticated execution context or by an
+authorized user explicitly attaching the PR. The PR title, body, branch, and
+human-readable issue key are never scanned to create or recover a relation.
 
-**Linking** scans the PR **title, body, OR branch** for a routable issue key
-(`PREFIX-NUMBER`, e.g. `PB-2759`). Each match writes an issue ↔ PR link row.
-This is the link that `patchbay issue pull-requests` reads back — but see the
-reference-only rule below: a key that appears **only** as a bare mention in the
-body is linked yet hidden from that list.
+When an agent creates a PR, register it before completing the task through the
+task-scoped Patchbay credentials. The server derives the task, run, Issue, and
+workspace from that authenticated context; do not submit a different task or
+Issue as a caller-controlled owner:
 
-```text
-PB-2759: add built-in issue working skill        # title prefix → links, shown
-agent/matt/pb-2759-working-on-issues             # branch ref   → links, shown
+```bash
+patchbay issue pull-request attach <issue-id> --url https://github.com/<owner>/<repo>/pull/<number>
 ```
 
-**Close intent** is stricter and is a separate scan over **title or body only —
-never the branch**. It fires only for a key placed immediately after a closing
-keyword (`Closes` / `Fixes` / `Resolves`, optional `:` then whitespace). That
-adjacency is what sets the link row's close-intent flag, the gate that
-auto-advances the issue to `done` when the PR merges.
+For an execution that did not register its PR, Patchbay may perform one
+deterministic post-run lookup using that execution's persisted workspace, repo
+identity, and exact head branch. A unique PR in the same repository and
+workspace becomes a relation with `execution_branch_discovery` provenance. Zero,
+multiple, shared, detached, or default-branch matches stay unassociated or
+ambiguous for explicit review. The branch is only an input to this one lookup;
+later webhook and poller updates use the durable relation and do not search by
+branch again.
 
-```text
-Closes PB-2759                                    # links AND records close intent
-Fixes PB-2759
-Resolves PB-2759
-Fix login PB-2759                                 # links only — keyword not adjacent
-```
+Manual, old-agent, and external PRs without an explicit registration remain
+unassociated until an authorized user attaches them. An issue key such as
+`PB-2759` may help a person search GitHub or name a branch, but it does not prove
+identity, authorization, or relation correctness. A PR containing that key must
+not appear in the Issue's linked list until it is explicitly attached or safely
+associated by the execution-branch discovery above.
 
-Consequence: a bare title prefix or a branch reference links the PR but does not
-close the issue on merge. A closing keyword immediately adjacent to the issue key
-records close intent; on merge, that close intent can move the linked issue to
-`done`.
-
-**Reference-only links (hidden from the PR list).** A key that appears **only**
-as a bare mention in the body — no closing keyword, and not in the title or
-branch — still writes a link row, but the row is flagged `reference_only` and
-**excluded from `patchbay issue pull-requests`** (and the issue's right-side PR
-list in the UI). This keeps passing mentions like `Related PB-2759` or
-`Follow up in PB-2759` from surfacing an unrelated PR as if it were working on
-that issue. To make a PR show up for an issue, either attach it explicitly with
-`patchbay issue pull-request attach <issue-id> --url …` (always a working link), or
-put the key in the title, the branch, or after a closing keyword in the body —
-not as a loose body reference.
-
-```text
-Closes PB-2759 in the body                        # links and shown
-Related to PB-2759 in the body (no title/branch)  # links but reference_only → hidden
-```
+Close intent is also explicit. If a PR should advance an Issue when it merges,
+pass `--close-intent` during the attach operation; text such as `Closes PB-2759`
+is ordinary PR content and has no association or close-intent effect.
 
 ### Default for code-changing issue work
 
@@ -76,32 +62,32 @@ is blocked by auth, failing tests, or missing remote state, report that blocker
 instead of pretending the run is complete.
 
 After `gh pr create` (or once you know the PR URL), **immediately attach it to the
-issue** — this is the write-back path and it works even when no GitHub App is
-installed in the workspace:
+Issue** — this is the explicit write-back path. A task-token attach must be
+verified against provider metadata from the authorized GitHub App, including the
+exact repository and execution branch. A workspace member may use the same URL
+form without an App for a manual attach; caller-supplied metadata is never an
+ownership proof for a task token:
 
 ```bash
 patchbay issue pull-request attach <issue-id> --url https://github.com/<owner>/<repo>/pull/<number>
 ```
 
-Still put a routable issue key in the PR title, body, or branch so the webhook's
-identifier scan can link (and re-link) the PR as a fallback — but that scan is no
-longer the only way the sidebar lights up. If the PR should close the issue on
-merge, keep putting the key immediately after a closing keyword in the title or
-body; attaching never creates close intent and preserves any intent the webhook
-already recorded:
+An issue key in the PR title, body, or branch is optional human context. It is not
+required for association and does not change the attach result. If provider
+metadata is unavailable to a task-token call, leave the PR unassociated for an
+authorized member to confirm instead of bypassing the ownership check. If the PR should
+close the Issue on merge, pass explicit close intent:
 
 ```text
-PB-2759: fix login redirect        # links only
-Closes PB-2759                     # links and records close intent
+PB-2759: fix login redirect        # optional human context
+Closes PB-2759                     # ordinary text; no automatic effect
 ```
 
-Division of labor: the write-back answers "which PR is this" at creation time.
-CI status, mergeability, merge events, and merge-time auto-close still come from
-the GitHub App integration — attaching does not fake any of them. Without an
-installation, the attached card shows number + URL until a webhook backfills the
-full metadata. Re-attaching after a webhook cannot replace that metadata with
-URL-only fallback values, and later webhooks preserve the explicit user/agent
-attribution recorded by attach.
+The explicit relation answers "which PR is this" at creation or attach time. CI
+status, mergeability, and merge events still come from the GitHub App integration;
+attaching does not fake any of them. Without an installation, the attached card
+shows number + URL until a webhook supplies full metadata. Later webhooks preserve
+the relation provenance and only refresh the Work Product snapshot.
 
 In the final issue comment, include the PR URL when a PR exists. If the task did
 not produce a PR because no code changed or the user asked not to create one, say
@@ -109,9 +95,9 @@ that explicitly.
 
 ## Reading a linked PR's real state
 
-When a step depends on PR state, query Patchbay's link table — do not infer it
-from branch names, GitHub search, memory, or `pr_url` metadata (which can be
-stale).
+When a step depends on PR state, query Patchbay's canonical Work Product relation
+and provider snapshot — do not infer it from branch names, PR text, GitHub search,
+memory, or task metadata.
 
 ```bash
 patchbay issue pull-requests <issue-id> --output json
@@ -143,12 +129,10 @@ Returns `{"pull_requests": [...]}`. Each element exposes:
 So "is it merged?" is `state == "merged"` (or `merged_at != null`); "is it still
 a draft?" is `state == "draft"`; coarse CI status is `checks_conclusion`.
 
-If the command returns no linked PRs after a PR was opened, the link scanner did
-not observe a routable issue key in the PR title/body/branch — or the only match
-was a bare body mention, which links as `reference_only` and is hidden from this
-list (see the reference-only rule above). The deterministic fix is to attach the
-PR yourself (`patchbay issue pull-request attach <issue-id> --url …`); that writes a
-working link immediately and never depends on the scanner.
+If the command returns no linked PRs after a PR was opened, the PR has not been
+explicitly attached and was not uniquely associated by the originating
+execution's exact-branch discovery. Attach it yourself when authorized; the
+attach operation records the relation and its provenance immediately.
 
 ## Metadata: durable custom state
 
@@ -242,9 +226,9 @@ on it. These are the contracts, not advice:
   The server rejects a missing or unchanged reviewer. If no suitable reviewer
   is available, keep the issue in its current active state and ask a human to
   choose one; do not leave it ownerless or parked in review.
-- **`done`** on a child issue posts a system comment on its parent. If a PR
-  carries close intent (`Closes PB-XXXX`), it advances the issue to `done`
-  itself on merge — you do not also need to flip it manually.
+- **`done`** on a child issue posts a system comment on its parent. If an
+  explicitly attached Work Product relation carries close intent, it advances
+  the Issue to `done` on merge — PR text alone never sets that intent.
 - **`cancelled`** is a terminal, user-driven decision to close the issue. Like
   `done` it enqueues no new agent work, but it does **not** stop tasks already in
   flight — a run in progress keeps going (PB-4465). To stop a running task,
@@ -336,11 +320,12 @@ breakdown, leave it `backlog` and comment to confirm first.
 
 ## Incorrect → correct
 
-PR title (link the issue):
+PR association:
 
 ```text
-Fix login redirect                  # incorrect — no issue key, won't link
-PB-2759: fix login redirect        # correct — links the PR
+PB-2759: fix login redirect        # human context only; never an association
+patchbay issue pull-request attach <issue-id> --url <pr-url>
+                                      # explicit, authorized association
 ```
 
 Serial / phased sub-issues (don't start the whole chain at once):
@@ -359,10 +344,8 @@ patchbay issue create --title "Step 3" --parent <issue-id> --assignee <agent> --
 
 ## References
 
-`references/working-on-issues-source-map.md` — accurate `file:line` for every
-contract above: the `pull-requests` CLI and route, the PR response field list,
-`derivePRState`, the two-path link (`extractIdentifiers`) vs close-intent
-(`extractClosingIdentifiers`) proof, the backlog enqueue lines, child-done
-notify, the stage column / `stageBarrierClosed` barrier and the `--stage` /
-`issue children` CLI, and the metadata CLI. Re-derive before depending on an
-exact line.
+`references/working-on-issues-source-map.md` — source anchors for the canonical
+Work Product attach/discovery routes, provider snapshot fields, task admission
+and terminal hooks, the backlog enqueue lines, child-done notify, the stage
+barrier and its CLI, and the metadata CLI. Re-derive before depending on an exact
+line.

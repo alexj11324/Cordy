@@ -401,6 +401,18 @@ async fn execute_claimed_task<H: DaemonTaskExecutionHost>(
         tracing::warn!(task = %task.id, error = %err, "report task usage failed");
     }
 
+    // Execution facts are submitted before any terminal callback, using the
+    // server-issued daemon capability bound to this claimed runtime. Never
+    // put these facts on the task-token lifecycle requests: that credential is
+    // intentionally insufficient to author its own provenance.
+    record_execution_provenance(
+        &client,
+        &task.execution_daemon_token,
+        &task.id,
+        &outcome.result,
+    )
+    .await;
+
     if cancelled_by_server.load(Ordering::Acquire) {
         acknowledge_cancelled_run(&client, &task.id, &outcome).await;
         return;
@@ -563,6 +575,52 @@ async fn acknowledge_cancelled_run(client: &Client, task_id: &str, outcome: &Tas
     let report_ctx = Ctx::new();
     if let Err(err) = client.ack_task_cancelled(&report_ctx, task_id, ack).await {
         tracing::warn!(task = %task_id, error = %err, "cancel ack failed; server sweeper will finalize");
+    }
+}
+
+/// Refreshes the terminal execution facts through the daemon capability before
+/// the task-token lifecycle callback is sent. Missing facts are observable but
+/// non-fatal: the server still records an unassociated task outcome.
+async fn record_execution_provenance(
+    client: &Client,
+    daemon_token: &str,
+    task_id: &str,
+    result: &TaskResult,
+) {
+    let has_facts = [
+        result.execution_repo_identity.trim(),
+        result.execution_workspace.trim(),
+        result.execution_head_branch.trim(),
+        result.execution_head_sha.trim(),
+        result.execution_head_state.trim(),
+    ]
+    .into_iter()
+    .any(|value| !value.is_empty());
+    if !has_facts {
+        return;
+    }
+    if daemon_token.trim().is_empty() {
+        tracing::warn!(
+            task_id = %task_id,
+            "terminal execution provenance skipped because execution daemon credential is missing"
+        );
+        return;
+    }
+    if let Err(error) = client
+        .record_execution_provenance(
+            &Ctx::new(),
+            daemon_token,
+            task_id,
+            &result.execution_repo_identity,
+            &result.execution_workspace,
+            &result.execution_head_branch,
+            &result.execution_head_sha,
+            &result.execution_head_state,
+            true,
+        )
+        .await
+    {
+        tracing::warn!(%error, task_id = %task_id, "terminal execution provenance refresh failed");
     }
 }
 

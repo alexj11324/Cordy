@@ -896,7 +896,12 @@ export function useRealtimeSync(
       },
       vcs_connection: () => {
         const wsId = getCurrentWsId();
-        if (wsId) qc.invalidateQueries({ queryKey: ["vcs", wsId] });
+        if (wsId) {
+          qc.invalidateQueries({ queryKey: ["vcs", wsId] });
+          qc.invalidateQueries({ queryKey: ["github", "pull-requests"] });
+          qc.invalidateQueries({ queryKey: ["work-products", "issue"] });
+          qc.invalidateQueries({ queryKey: githubKeys.unassociatedWorkProducts(wsId) });
+        }
       },
       wecom_installation: () => {
         const wsId = getCurrentWsId();
@@ -914,6 +919,14 @@ export function useRealtimeSync(
         // PR list is keyed by issue id, not workspace, so we invalidate all
         // PR queries — the open issue detail page will refetch its own list.
         qc.invalidateQueries({ queryKey: ["github", "pull-requests"] });
+        // Provider webhooks also create or detach workspace-scoped Work
+        // Products. That picker uses staleTime: Infinity, so refresh it with
+        // the same PR event or an unassociated product can remain invisible.
+        const wsId = getCurrentWsId();
+        if (wsId) {
+          qc.invalidateQueries({ queryKey: githubKeys.unassociatedWorkProducts(wsId) });
+          qc.invalidateQueries({ queryKey: ["work-products", "issue"] });
+        }
       },
       // Powers the agent presence cache: any task lifecycle change
       // (dispatch / completed / failed / cancelled) refreshes the
