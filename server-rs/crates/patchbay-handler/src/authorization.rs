@@ -136,7 +136,7 @@ WHERE task.id = $1 AND runtime.id = $2"#,
     {
         return error_response(StatusCode::FORBIDDEN, "provider lease scope mismatch");
     }
-    let team_ids = match patchbay_db::queries::team::list_teams_by_member(
+    let team_ids: Vec<Uuid> = match patchbay_db::queries::team::list_teams_by_member(
         &state.pool,
         workspace_id,
         "member",
