@@ -486,7 +486,6 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "410_agent_task_queue_execution_lane_active_unique",
         "idx_agent_task_queue_execution_lane_active_unique",
     ),
-    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
