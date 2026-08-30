@@ -40,6 +40,10 @@ pub struct PullRequestMetadata {
     pub state: String,
     pub html_url: String,
     pub branch: String,
+    /// Full name of the repository that owns the head ref. A missing value is
+    /// intentionally not treated as the base repository: task-scoped attach
+    /// and discovery must fail closed when GitHub cannot prove the head repo.
+    pub head_repo_identity: Option<String>,
     pub head_sha: String,
     pub author_login: String,
     pub author_avatar_url: String,
@@ -50,6 +54,15 @@ pub struct PullRequestMetadata {
     pub additions: i32,
     pub deletions: i32,
     pub changed_files: i32,
+}
+
+/// A pull request returned by an exact repository/head lookup. The caller
+/// must still enforce its task-owned execution provenance before creating a
+/// durable Work Product relation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PullRequestHeadMatch {
+    pub number: i32,
+    pub metadata: PullRequestMetadata,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -470,6 +483,57 @@ impl Client {
         metadata_from_body(body)
     }
 
+    /// Lists pull requests whose head is the exact branch in the exact
+    /// repository. This endpoint is used only by terminal task discovery;
+    /// callers must not persist the branch as the relation identity.
+    pub async fn pull_requests_by_head(
+        &self,
+        installation_id: i64,
+        owner: &str,
+        repo: &str,
+        head_branch: &str,
+    ) -> Result<Vec<PullRequestHeadMatch>> {
+        let token = self.installation_token(installation_id).await?;
+        let head = format!("{owner}:{head_branch}");
+        let response = self
+            .http
+            .get(format!(
+                "{}/repos/{owner}/{repo}/pulls",
+                self.api_base.trim_end_matches('/')
+            ))
+            .query(&[
+                ("state", "all"),
+                ("head", head.as_str()),
+                ("per_page", "100"),
+            ])
+            .header("Accept", "application/vnd.github+json")
+            .header("X-GitHub-Api-Version", "2022-11-28")
+            .header("Authorization", format!("Bearer {token}"))
+            .send()
+            .await
+            .map_err(|error| anyhow!("list pull requests by head: {error}"))?;
+        if response.status() != reqwest::StatusCode::OK {
+            return Err(anyhow!(
+                "list pull requests by head: github status {}",
+                response.status().as_u16()
+            ));
+        }
+        let bodies: Vec<PullRequestBody> = response
+            .json()
+            .await
+            .map_err(|_| anyhow!("list pull requests by head: malformed response"))?;
+        bodies
+            .into_iter()
+            .map(|body| {
+                let number = body.number;
+                Ok(PullRequestHeadMatch {
+                    number,
+                    metadata: metadata_from_body(body)?,
+                })
+            })
+            .collect()
+    }
+
     /// Runs a single GraphQL query as the given installation and returns
     /// the raw `data` object. GitHub returns HTTP 200 even for query-level
     /// errors, so we inspect the `errors` array too, mapping a RATE_LIMITED
@@ -545,6 +609,7 @@ fn metadata_from_body(body: PullRequestBody) -> Result<PullRequestMetadata> {
         state: state.into(),
         html_url: body.html_url,
         branch: body.head.ref_name,
+        head_repo_identity: body.head.repo.map(|repo| repo.full_name),
         head_sha: body.head.sha,
         author_login: body.user.login,
         author_avatar_url: body.user.avatar_url,
@@ -572,6 +637,8 @@ fn parse_optional_time(raw: &Option<String>) -> Option<chrono::DateTime<chrono::
 
 #[derive(Debug, Deserialize)]
 struct PullRequestBody {
+    #[serde(default)]
+    number: i32,
     #[serde(default)]
     title: String,
     #[serde(default)]
@@ -608,6 +675,14 @@ struct PullRequestHead {
     ref_name: String,
     #[serde(default)]
     sha: String,
+    #[serde(default)]
+    repo: Option<PullRequestHeadRepo>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct PullRequestHeadRepo {
+    #[serde(default)]
+    full_name: String,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -771,7 +846,7 @@ mod tests {
             "updated_at": "2026-08-23T11:21:31Z",
             "merged_at": "2026-08-23T11:21:30Z",
             "closed_at": "not-a-time",
-            "head": {"ref": "codex/attach", "sha": "abc123"},
+            "head": {"ref": "codex/attach", "sha": "abc123", "repo": {"full_name": "o/r"}},
             "user": {"login": "alex", "avatar_url": "https://avatars.example/alex"},
             "additions": 10,
             "deletions": 2,
@@ -782,6 +857,7 @@ mod tests {
         assert_eq!(metadata.state, "merged");
         assert_eq!(metadata.branch, "codex/attach");
         assert_eq!(metadata.head_sha, "abc123");
+        assert_eq!(metadata.head_repo_identity.as_deref(), Some("o/r"));
         assert_eq!(
             metadata.created_at.to_rfc3339(),
             "2026-08-22T10:20:30+00:00"

@@ -5,11 +5,11 @@ description: pull request를 Patchbay 이슈에 연결하고 이슈에서 개발
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-GitHub를 연결하면 Patchbay가 이슈 번호를 기준으로 pull request를 자동 연결합니다. 이슈 상세 화면에서 PR 상태, 변경 규모, CI 결과, merge conflict를 바로 확인할 수 있습니다.
+GitHub를 연결하면 Patchbay가 pull request를 미러링하고 이슈 상세 화면에 PR 상태, 변경 규모, CI 결과, merge conflict를 표시합니다. 인증된 task/run이 등록하거나 워크스페이스 멤버가 명시적으로 Attach한 PR만 이슈에 표시됩니다. `PB-123`은 사람이 GitHub에서 검색하기 위한 표시일 뿐 연결을 만들지 않습니다.
 
 GitHub 연동은 설치할 때 승인한 저장소만 읽으며 코드, 댓글, status check를 제출하지 않습니다.
 
-자체 배포한 Patchbay에서는 자체 호스팅 Forgejo, Gitea, GitLab 인스턴스도 동시에 연결해 동일한 PR 자동 연결, merge 시 Done 전환, CI 표시 기능을 사용할 수 있습니다. **설정 → 연동 → Git 코드 호스팅**에서 연결하며 자세한 내용은 [자체 호스팅 Git 코드 호스팅](/vcs-integration)을 참고하세요. Patchbay Cloud에는 이 메뉴가 없습니다.
+자체 배포한 Patchbay에서는 자체 호스팅 Forgejo, Gitea, GitLab 인스턴스도 동시에 연결해 동일한 명시적 연결, merge 시 Done 전환, CI 표시 기능을 사용할 수 있습니다. **설정 → 연동 → Git 코드 호스팅**에서 연결하며 자세한 내용은 [자체 호스팅 Git 코드 호스팅](/vcs-integration)을 참고하세요. Patchbay Cloud에는 이 메뉴가 없습니다.
 
 ## GitHub 연결
 
@@ -29,40 +29,27 @@ GitHub 연동은 설치할 때 승인한 저장소만 읽으며 코드, 댓글, 
 
 ## 기능 스위치
 
-**설정 → GitHub**에는 네 가지 스위치가 있습니다.
+**설정 → GitHub**에는 세 가지 스위치가 있습니다.
 
 | 스위치 | 역할 |
 |---|---|
-| GitHub 연동 | 전체 스위치입니다. 끄면 아래 세 기능이 작동하지 않지만 GitHub App 연결은 해제되지 않습니다. |
+| GitHub 연동 | 전체 스위치입니다. 끄면 아래 두 기능이 작동하지 않지만 GitHub App 연결은 해제되지 않습니다. |
 | PR 사이드바 | 이슈 상세 화면에 연결된 pull request를 표시합니다. |
 | Co-authored-by | 에이전트가 만든 commit에 `Co-authored-by: patchbay-agent <github@patchbay.ai>`를 추가합니다. |
-| PR 자동 연결 | PR의 브랜치 이름, 제목, 본문에서 이슈 번호를 찾습니다. |
 | **PR 카드 → CI와 머지 가능 여부** | 연결된 각 PR에 대해 Patchbay는 인증된 GitHub API 스냅샷을 가져와, 그 **CI 상태**와 **머지 가능 여부**를 카드에 미러링합니다(아래 **PR 카드에 표시되는 것** 참조). |
 
 
 ## PR을 이슈에 연결
 
-가장 간단한 방법은 이슈 번호를 브랜치 이름이나 PR 제목에 넣는 것입니다. 예를 들어 이슈가 `PB-123`인 경우:
+정식 경로는 명시적 작업입니다. 에이전트는 인증된 task/run에서 만든 PR을 Work Product로 등록할 수 있고, 워크스페이스 멤버는 이슈에서 미러링된 Work Product를 선택해 Attach할 수 있습니다. CLI도 사용할 수 있습니다.
 
-```text
-pb-123-fix-login-redirect
+```bash
+patchbay issue pull-request attach PB-123 --url https://github.com/acme/api/pull/6
 ```
 
-```text
-PB-123 로그인 후 리디렉션 수정
-```
+issue 인자는 현재 워크스페이스에서 해석되며 URL로 다른 workspace, task, run을 선택할 수 없습니다. 워크스페이스 멤버의 수동 URL Attach는 GitHub App 설치 없이도 사용할 수 있습니다. task-scoped Attach는 서버가 정확한 저장소와 실행 브랜치를 검증할 수 있도록 인증된 GitHub App의 provider metadata가 필요하며, 호출자가 보낸 제목·브랜치·SHA는 ownership 증명이 될 수 없습니다. merge 후 Done 전환을 원하면 `--close-intent`를 지정합니다. PR 제목, 본문, 브랜치, commit, 댓글의 문자열은 연결이나 close intent를 만들지 않습니다.
 
-Patchbay는 대소문자를 구분하지 않으며 현재 워크스페이스의 이슈 접두사만 매칭합니다. 하나의 PR을 여러 이슈에 연결할 수 있습니다.
-
-이슈 번호를 PR 본문에만 쓸 때는 GitHub의 종료 문구를 사용해야 합니다.
-
-```text
-Closes PB-123
-Fixes PB-123
-Resolves PB-123
-```
-
-본문의 `Related to PB-123` 같은 일반 언급은 해당 이슈의 작업 PR로 표시되지 않습니다. Commit message와 PR 댓글도 연결을 트리거하지 않습니다.
+task가 끝날 때 등록되지 않은 경우 서버는 해당 task가 저장한 repository identity, execution workspace, exact head branch만으로 한 번 결정적으로 조회할 수 있습니다. 유일한 일치만 연결하며, 0건은 미연결로 남깁니다. 여러 건, 공유/사용 중인 브랜치, default branch, detached HEAD, 조회 실패는 모호하거나 대상 제외 상태로 감사 기록에 남습니다. 브랜치는 최초 조회에만 사용되며 영구 관계 키가 아닙니다. PR에 `PB-123`이 있어도 명시적 Attach가 없으면 미연결 상태입니다.
 
 ## 이슈에서 PR 확인
 
@@ -82,19 +69,17 @@ CI 상태와 merge 가능 여부는 Patchbay가 GitHub API에서 가져온 snaps
 
 PR이 merge되었다고 이슈가 반드시 완료된 것은 아닙니다. Patchbay는 다음 조건이 모두 충족될 때만 이슈를 `Done`으로 바꿉니다.
 
-1. merge된 연결 PR이 하나 이상 있고, `Closes PB-123`처럼 종료 문구 바로 뒤에 번호가 있습니다(`Closes login PB-123`처럼 중간에 다른 단어가 있으면 적용되지 않음).
-2. 해당 이슈에 `Open` 또는 `Draft` 상태인 다른 작업 PR이 없습니다. 본문의 일반 언급은 작업 PR에 포함되지 않습니다.
+1. 하나 이상의 명시적 연결에서 `close_intent`가 활성화되어 있습니다.
+2. 해당 이슈에 `Open` 또는 `Draft` 상태인 다른 작업 PR이 없습니다.
 3. 이슈의 현재 상태가 `done` 또는 `cancelled`가 아닙니다.
 
-따라서 브랜치 이름이나 제목에 `PB-123`만 넣으면 연결은 되지만 그것만으로 완료를 트리거하지 않습니다. PR을 merge하지 않고 닫아도 이슈가 완료되지 않습니다.
+따라서 PR 어디에든 `PB-123`만 넣어서는 연결이나 완료가 만들어지지 않습니다. PR을 merge하지 않고 닫아도 이슈가 완료되지 않습니다.
 
 상태 변경은 시스템 작업으로 타임라인에 기록되고 해당 이슈 구독자에게 알림이 전달됩니다.
 
 ## 여러 워크스페이스
 
-같은 GitHub App installation을 여러 Patchbay 워크스페이스에 연결할 수 있습니다. GitHub 이벤트는 각 워크스페이스로 따로 들어가고 각 워크스페이스의 이슈 접두사를 기준으로 매칭됩니다.
-
-예를 들어 PR 하나에서 `PB-1`과 `ENG-2`를 함께 참조하면 서로 다른 접두사를 사용하는 두 워크스페이스에 각각 연결될 수 있습니다. 워크스페이스는 서로의 이슈를 볼 수 없습니다.
+같은 GitHub App installation을 여러 Patchbay 워크스페이스에 연결할 수 있습니다. GitHub 이벤트는 각 워크스페이스에 따로 미러링되며 명시적 연결은 해당 워크스페이스의 권한으로 검증됩니다. 워크스페이스는 서로의 이슈나 연결을 볼 수 없습니다.
 
 ## 연결 해제
 
@@ -157,7 +142,7 @@ GITHUB_APP_ID=<GitHub App 숫자 ID>
 GITHUB_APP_PRIVATE_KEY=<BEGIN/END 줄과 줄바꿈을 유지한 전체 PEM private key>
 ```
 
-Private key는 GitHub App의 **Private keys → Generate a private key**에서 생성합니다. 설정하지 않으면 연동 기능이 자연스럽게 축소됩니다. PR은 계속 미러링되고 이슈 자동 연결과 merge 시 Done 전환도 정상적으로 작동하지만 PR 카드에 CI 또는 merge 상태가 표시되지 않습니다.
+Private key는 GitHub App의 **Private keys → Generate a private key**에서 생성합니다. 설정하지 않으면 연동 기능이 자연스럽게 축소됩니다. PR은 계속 미러링되고 기존 명시적 연결도 표시되지만 PR 카드에 CI 또는 merge 상태가 표시되지 않습니다.
 
 ### 3. 데이터베이스 업데이트 및 연결
 
@@ -173,10 +158,10 @@ API 서비스를 다시 시작한 뒤 **설정 → GitHub**에서 연결을 완�
 
 - **연결 버튼을 사용할 수 없음**: `GITHUB_APP_SLUG`와 `GITHUB_WEBHOOK_SECRET`이 API 프로세스에 전달되었는지 확인합니다.
 - **Webhook이 401을 반환함**: GitHub App과 API가 같은 Webhook secret을 사용하는지 확인하고 GitHub의 **Recent Deliveries**에서 다시 전달합니다.
-- **PR이 연결되지 않음**: 저장소가 App 승인 범위에 있는지, 자동 연결이 켜져 있는지, 번호가 현재 워크스페이스에 속하는지 확인합니다.
-- **본문에 번호를 썼지만 표시되지 않음**: `Closes PB-123`을 사용하거나 번호를 브랜치 이름 또는 PR 제목에 넣습니다.
+- **PR이 연결되지 않음**: 이슈의 명시적 Attach 또는 CLI의 PR URL을 사용합니다. 에이전트 실행이라면 execution provenance와 discovery 상태를 확인합니다. PR 안의 번호만으로는 충분하지 않습니다.
+- **실행 후에도 미연결**: 0건, 여러 건, 공유/default/detached 브랜치, provider 조회 실패는 권한 있는 멤버의 확인이 필요하며 task 상세에 이유가 기록됩니다.
 - **CI 상태가 없음**: `GITHUB_APP_ID`와 `GITHUB_APP_PRIVATE_KEY`가 설정되었는지, App에 Checks 및 Commit statuses 읽기 권한이 있고 관련 이벤트를 구독했는지 확인합니다. 설치된 App에 권한을 추가한 뒤에는 각 installation owner가 GitHub에서 승인해야 적용됩니다.
-- **PR merge 후 이슈가 완료되지 않음**: PR에 종료 문구가 있는지 확인하고 다른 연결 PR이 Open 또는 Draft 상태로 남아 있는지 확인합니다.
+- **PR merge 후 이슈가 완료되지 않음**: 명시적 연결의 `close_intent`가 켜져 있는지, 다른 연결 PR이 Open 또는 Draft 상태로 남아 있는지 확인합니다.
 
 ## 다음 단계
 
