@@ -94,6 +94,15 @@ describe("local Vite preview API", () => {
       "GET",
       "/api/issues/00000000-0000-4000-8000-000000000104/task-runs",
     );
+    const taskMessages = await call(
+      "GET",
+      "/api/tasks/00000000-0000-4000-8000-000000000201/messages",
+    );
+    const unsupportedTaskWrite = await call(
+      "POST",
+      "/api/tasks/00000000-0000-4000-8000-000000000201/messages",
+      { content: "not persisted" },
+    );
 
     expect(snapshot.body).toEqual(
       expect.arrayContaining([
@@ -104,6 +113,8 @@ describe("local Vite preview API", () => {
       ]),
     );
     expect(issueTasks.body).toEqual(snapshot.body);
+    expect(taskMessages).toEqual({ handled: true, status: 200, body: [] });
+    expect(unsupportedTaskWrite.handled).toBe(false);
   });
 
   it("returns issue detail data and does not claim unsupported writes succeeded", async () => {

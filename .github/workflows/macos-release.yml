@@ -98,6 +98,12 @@ jobs:
             exit 1
           fi
 
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$commit_sha" origin/main; then
+            echo "::error::Refusing to release '$tag' because commit '$commit_sha' is not contained in main."
+            exit 1
+          fi
+
           is_stable=true
           if [[ "$tag" == *-* ]]; then
             is_stable=false

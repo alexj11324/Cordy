@@ -28,6 +28,8 @@ require_literal 'commit_sha: ${{ steps.meta.outputs.commit_sha }}'
 require_literal 'echo "commit_sha=$commit_sha"'
 require_literal 'ref: ${{ needs.prepare.outputs.commit_sha }}'
 require_literal "startsWith(github.event.workflow_run.head_branch, 'v')"
+require_literal 'git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main'
+require_literal 'git merge-base --is-ancestor "$commit_sha" origin/main'
 require_literal 'package_matrix: ${{ steps.meta.outputs.package_matrix }}'
 require_literal 'if: needs.prepare.outputs.should_publish == '\''true'\'''
 require_literal 'matrix: ${{ fromJSON(needs.prepare.outputs.package_matrix) }}'

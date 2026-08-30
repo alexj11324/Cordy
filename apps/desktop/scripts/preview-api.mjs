@@ -416,6 +416,12 @@ export async function handlePreviewRequest(req, res) {
   if (method === "GET" && path === "/api/working-agents") return json(res, [PREVIEW_AGENT]);
   if (method === "GET" && path === "/api/agent-task-snapshot") return json(res, [PREVIEW_AGENT_TASK]);
   if (method === "GET" && path === "/api/issues/child-progress") return json(res, { progress: [] });
+  const taskMessagesResource = /^\/api\/tasks\/([^/]+)\/messages$/.exec(path);
+  if (method === "GET" && taskMessagesResource) {
+    return decodeURIComponent(taskMessagesResource[1]) === PREVIEW_AGENT_TASK.id
+      ? json(res, [])
+      : json(res, { error: "Preview task not found" }, 404);
+  }
   const commentsResource = /^\/api\/issues\/([^/]+)\/comments$/.exec(path);
   if (method === "GET" && commentsResource) {
     return findPreviewIssue(commentsResource[1])
