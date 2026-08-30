@@ -7,8 +7,8 @@ allowed-tools: Bash(patchbay *), Bash(git *), Bash(gh *)
 
 # Patchbay dependency-aware task planning
 
-Use this skill only when the current goal is genuinely complex and can be
-split into two or more independently verifiable deliverables. It is a
+Use this skill only for complex, genuinely splittable goals that can be split
+into two or more independently verifiable deliverables. It is a
 planning capability for a team leader or explicitly designated planner. It is
 not a replacement for the team leader base prompt, `patchbay-working-on-issues`,
 or ordinary delegation. A simple, coherent goal remains one task. Do not
