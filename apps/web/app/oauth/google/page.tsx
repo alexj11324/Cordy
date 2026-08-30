@@ -2,10 +2,10 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSignIn } from "@clerk/nextjs";
-import { useSearchParams } from "next/navigation";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
 import { readDesktopHandoffBinding } from "@/features/auth/desktop-handoff";
 import { useT } from "@patchbay/views/i18n";
+import { useWebSearchParams } from "@/platform/client-navigation";
 
 export default function GoogleOAuthPage() {
   return (
@@ -16,7 +16,7 @@ export default function GoogleOAuthPage() {
 }
 
 function GoogleOAuthContent() {
-  const searchParams = useSearchParams();
+  const searchParams = useWebSearchParams();
   const binding = useMemo(
     () =>
       readDesktopHandoffBinding(

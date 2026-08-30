@@ -2,7 +2,6 @@
 
 import { Suspense } from "react";
 import { SignIn } from "@clerk/nextjs";
-import { useSearchParams } from "next/navigation";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
 import {
   buildDesktopHandoffQuery,
@@ -13,6 +12,7 @@ import {
   resolveSafeRedirectUrl,
 } from "@/features/auth/safe-redirect";
 import { useT } from "@patchbay/views/i18n";
+import { useWebSearchParams } from "@/platform/client-navigation";
 
 export default function SignInPage() {
   return (
@@ -23,7 +23,7 @@ export default function SignInPage() {
 }
 
 function SignInContent() {
-  const searchParams = useSearchParams();
+  const searchParams = useWebSearchParams();
   const { t } = useT("auth");
   const desktopHandoff = searchParams.get("platform") === "desktop";
   const requestedAppOrigin = searchParams.get("app_origin");

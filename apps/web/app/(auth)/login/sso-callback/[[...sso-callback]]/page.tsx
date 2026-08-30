@@ -2,12 +2,12 @@
 
 import { Suspense } from "react";
 import { AuthenticateWithRedirectCallback } from "@clerk/nextjs";
-import { useSearchParams } from "next/navigation";
 import { buildDesktopHandoffQuery } from "@/features/auth/desktop-handoff";
 import {
   authRouteWithRedirect,
   resolveSafeRedirectUrl,
 } from "@/features/auth/safe-redirect";
+import { useWebSearchParams } from "@/platform/client-navigation";
 
 export default function SSOCallbackPage() {
   return (
@@ -18,7 +18,7 @@ export default function SSOCallbackPage() {
 }
 
 function SSOCallbackContent() {
-  const searchParams = useSearchParams();
+  const searchParams = useWebSearchParams();
   const desktopHandoff = searchParams.get("platform") === "desktop";
   const desktopHandoffQuery = desktopHandoff
     ? buildDesktopHandoffQuery(
