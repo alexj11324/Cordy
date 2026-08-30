@@ -1092,12 +1092,8 @@ async fn discover_one_execution(
     // An explicit task registration is authoritative over discovery. Recheck
     // after the provider-installation lookup, immediately before the durable
     // discovery transaction can create a second relation.
-    match work_product_q::has_active_relation_for_task(
-        &mut *transaction,
-        workspace_id,
-        task.id,
-    )
-    .await
+    match work_product_q::has_active_relation_for_task(&mut *transaction, workspace_id, task.id)
+        .await
     {
         Ok(true) => {
             if let Err(error) = work_product_q::mark_task_discovery_skipped_for_explicit_relation(

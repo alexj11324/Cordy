@@ -294,12 +294,8 @@ async fn remove(
             );
         }
     };
-    if let Err(error) = vcs::lock_vcs_connection_work_products(
-        &mut *transaction,
-        connection_id,
-        workspace_id,
-    )
-    .await
+    if let Err(error) =
+        vcs::lock_vcs_connection_work_products(&mut *transaction, connection_id, workspace_id).await
     {
         tracing::warn!(%error, %connection_id, "vcs: lock connection work products failed");
         return error_response(
