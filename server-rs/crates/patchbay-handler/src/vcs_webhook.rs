@@ -60,23 +60,22 @@ async fn handle(
             );
         }
     };
-    let connection =
-        match patchbay_db::queries::vcs::get_vcs_connection_by_id_for_update(
-            &mut *transaction,
-            connection_id,
-        )
-        .await
-        {
-            Ok(Some(connection)) => connection,
-            Ok(None) => return error_response(StatusCode::NOT_FOUND, "unknown connection"),
-            Err(error) => {
-                tracing::warn!(%error, %connection_id, "vcs: lookup connection failed");
-                return error_response(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "webhook persistence unavailable",
-                );
-            }
-        };
+    let connection = match patchbay_db::queries::vcs::get_vcs_connection_by_id_for_update(
+        &mut *transaction,
+        connection_id,
+    )
+    .await
+    {
+        Ok(Some(connection)) => connection,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "unknown connection"),
+        Err(error) => {
+            tracing::warn!(%error, %connection_id, "vcs: lookup connection failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "webhook persistence unavailable",
+            );
+        }
+    };
     let Some(provider) = patchbay_vcs::for_kind(&connection.provider) else {
         tracing::error!(provider = %connection.provider, "vcs: connection has unknown provider");
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, "unknown provider");

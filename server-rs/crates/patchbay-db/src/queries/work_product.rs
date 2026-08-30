@@ -650,7 +650,10 @@ WHERE workspace_id = $1
     .bind(provenance.discovery_lease_id)
     .execute(executor)
     .await?;
-    anyhow::ensure!(result.rows_affected() == 1, "execution discovery lease lost");
+    anyhow::ensure!(
+        result.rows_affected() == 1,
+        "execution discovery lease lost"
+    );
     Ok(())
 }
 
