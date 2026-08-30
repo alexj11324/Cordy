@@ -13,7 +13,6 @@ struct Rows {
     workspace_id: Uuid,
     user_id: Uuid,
     agent_id: Uuid,
-    issue_id: Uuid,
     runtime_id: Uuid,
     replacement_runtime_id: Uuid,
 }
@@ -28,7 +27,6 @@ impl Rows {
         let workspace_id = Uuid::now_v7();
         let user_id = Uuid::now_v7();
         let agent_id = Uuid::now_v7();
-        let issue_id = Uuid::now_v7();
         let runtime_id = Uuid::now_v7();
         let replacement_runtime_id = Uuid::now_v7();
         sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, $2, $3)")
@@ -77,23 +75,11 @@ impl Rows {
         .bind(runtime_id)
         .execute(&pool)
         .await?;
-        sqlx::query(
-            "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number, position) \
-             VALUES ($1, $2, $3, 'in_progress', 'medium', 'member', $4, 'agent', $5, 1, 0)",
-        )
-        .bind(issue_id)
-        .bind(workspace_id)
-        .bind("Capability lease issue")
-        .bind(user_id)
-        .bind(agent_id)
-        .execute(&pool)
-        .await?;
         Ok(Some(Self {
             pool,
             workspace_id,
             user_id,
             agent_id,
-            issue_id,
             runtime_id,
             replacement_runtime_id,
         }))
@@ -101,13 +87,31 @@ impl Rows {
 
     async fn task(&self, dispatched_at: chrono::DateTime<Utc>) -> anyhow::Result<Uuid> {
         let task_id = Uuid::now_v7();
+        let issue_id = Uuid::now_v7();
+        sqlx::query(
+            r#"INSERT INTO issue (
+    id, workspace_id, title, status, priority, creator_type, creator_id,
+    assignee_type, assignee_id, number, position
+) VALUES (
+    $1, $2, 'Capability lease issue', 'in_progress', 'medium', 'member', $3,
+    'agent', $4,
+    (SELECT COALESCE(MAX(number), 0) + 1 FROM issue WHERE workspace_id = $2),
+    0
+)"#,
+        )
+        .bind(issue_id)
+        .bind(self.workspace_id)
+        .bind(self.user_id)
+        .bind(self.agent_id)
+        .execute(&self.pool)
+        .await?;
         sqlx::query(
             "INSERT INTO agent_task_queue (id, agent_id, issue_id, status, priority, dispatched_at, originator_user_id, accountable_user_id, originator_source, runtime_id) \
              VALUES ($1, $2, $3, 'dispatched', 0, $4, $5, $5, 'direct_user_request', $6)",
         )
         .bind(task_id)
         .bind(self.agent_id)
-        .bind(self.issue_id)
+        .bind(issue_id)
         .bind(dispatched_at)
         .bind(self.user_id)
         .bind(self.runtime_id)
