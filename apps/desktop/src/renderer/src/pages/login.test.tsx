@@ -32,8 +32,8 @@ vi.mock("@patchbay/views/auth", () => ({
   }) => (
     <section data-testid="email-otp-flow" data-embedded={embedded}>
       <div className="flex flex-col gap-2 text-center">
-        <h1>Sign in to Patchbay</h1>
-        <p>Enter your email to get a login code</p>
+        <h1>Create an account</h1>
+        <p>Enter your email below to create your account</p>
       </div>
       <div className="grid gap-6">
         <form aria-label="Email sign in">
@@ -132,9 +132,21 @@ describe("DesktopLoginPage", () => {
     render(<DesktopLoginPage />);
 
     const example = screen.getByTestId("authentication-example");
-    expect(example).toHaveClass("lg:grid-cols-2");
+    expect(example).toHaveClass(
+      "container",
+      "md:grid",
+      "lg:max-w-none",
+      "lg:grid-cols-2",
+      "lg:px-0",
+    );
+    expect(example).not.toHaveClass("overflow-hidden");
     expect(screen.getByTestId("authentication-brand-panel")).toHaveClass(
+      "p-10",
+      "text-primary",
       "lg:flex",
+    );
+    expect(screen.getByTestId("authentication-brand-panel")).not.toHaveClass(
+      "min-h-[32rem]",
     );
     expect(screen.getByRole("link", { name: "Login" })).toHaveAttribute(
       "href",

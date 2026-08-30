@@ -18,6 +18,13 @@ import {
   InputOTPGroup,
   InputOTPSlot,
 } from "@patchbay/ui/components/ui/input-otp";
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+  FieldSeparator,
+} from "@patchbay/ui/components/ui/field";
 import { useAuthStore } from "@patchbay/core/auth";
 import { workspaceKeys } from "@patchbay/core/workspace/queries";
 import { api } from "@patchbay/core/api";
@@ -53,6 +60,8 @@ interface LoginPageProps {
   showGoogleSeparator?: boolean;
   /** Disable Google while an external desktop login is opening. */
   googleLoading?: boolean;
+  /** Error state owned by the embedding shell, rendered in the same form column. */
+  externalError?: ReactNode;
   /** Slot rendered at the bottom of the sign-in card, below the
    *  Google button. The web shell uses it for a "Prefer the desktop
    *  app?" prompt; desktop omits it (a download prompt inside the app
@@ -116,6 +125,7 @@ export function LoginPage({
   embedded = false,
   showGoogleSeparator = false,
   googleLoading = false,
+  externalError,
 }: LoginPageProps) {
   const { t } = useT("auth");
   const qc = useQueryClient();
@@ -287,27 +297,12 @@ export function LoginPage({
 
   const googleEnabled = Boolean(onGoogleLogin);
   const googleSeparator = showGoogleSeparator && googleEnabled ? (
-    <div
-      data-slot="field-separator"
-      data-content="true"
-      className="relative -my-2 h-5 text-body"
-    >
-      <div
-        role="none"
-        data-slot="separator"
-        className="absolute inset-0 top-1/2 shrink-0 bg-border"
-      />
-      <span className="relative mx-auto block w-fit bg-background px-2 text-muted-foreground">
-        {t(($) => $.common.or_continue_with)}
-      </span>
-    </div>
+    <FieldSeparator>{t(($) => $.common.or_continue_with)}</FieldSeparator>
   ) : null;
   const googleButton = googleEnabled ? (
     <Button
       type="button"
       variant="outline"
-      className="w-full"
-      size="lg"
       onClick={handleGoogleLogin}
       disabled={loading || googleLoading}
       aria-busy={googleLoading}
@@ -339,8 +334,8 @@ export function LoginPage({
   const stepHeading = (title: ReactNode, description: ReactNode) =>
     embedded ? (
       <div className="flex flex-col gap-2 text-center">
-        <h1 className="text-display-sm font-semibold tracking-tight">{title}</h1>
-        <p className="text-body text-muted-foreground">{description}</p>
+        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        <p className="text-sm text-muted-foreground">{description}</p>
       </div>
     ) : (
       <CardHeader className="text-center">
@@ -495,19 +490,11 @@ export function LoginPage({
 
   const emailForm = embedded ? (
     <form id="login-form" onSubmit={handleSendCode}>
-      <div
-        data-slot="field-group"
-        className="flex w-full flex-col gap-7"
-      >
-        <div
-          role="group"
-          data-slot="field"
-          data-orientation="vertical"
-          className="flex w-full flex-col gap-3 [&>*]:w-full"
-        >
-          <Label className="sr-only" htmlFor="login-email">
+      <FieldGroup>
+        <Field>
+          <FieldLabel className="sr-only" htmlFor="login-email">
             {t(($) => $.common.email)}
-          </Label>
+          </FieldLabel>
           <Input
             id="login-email"
             type="email"
@@ -521,17 +508,11 @@ export function LoginPage({
             required
             disabled={loading}
           />
-          {error && <p className="text-body text-destructive">{error}</p>}
-        </div>
-        <div
-          role="group"
-          data-slot="field"
-          data-orientation="vertical"
-          className="flex w-full flex-col gap-3 [&>*]:w-full"
-        >
+          {error && <FieldError>{error}</FieldError>}
+        </Field>
+        <Field>
           <Button
             type="submit"
-            className="w-full"
             disabled={!email || loading}
             aria-busy={loading}
           >
@@ -539,8 +520,8 @@ export function LoginPage({
               ? t(($) => $.signin.sending)
               : t(($) => $.signin.continue)}
           </Button>
-        </div>
-      </div>
+        </Field>
+      </FieldGroup>
     </form>
   ) : (
     <form id="login-form" onSubmit={handleSendCode} className="space-y-4">
@@ -563,9 +544,10 @@ export function LoginPage({
   if (embedded) {
     return (
       <div className="mx-auto flex w-full flex-col justify-center gap-6 sm:w-[350px]">
+        {externalError}
         {stepHeading(
-          t(($) => $.signin.title),
-          t(($) => $.signin.description),
+          t(($) => $.desktop.entry.title),
+          t(($) => $.desktop.entry.description),
         )}
         <div className="grid gap-6">
           {emailForm}
