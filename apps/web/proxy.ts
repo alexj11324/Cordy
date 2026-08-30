@@ -18,7 +18,6 @@ const clerkPublicRoutes = createRouteMatcher([
   "/sign-up(.*)",
   "/sso-callback(.*)",
   "/oauth/google(.*)",
-  "/auth/callback",
   "/api/webhooks(.*)",
   "/api/config",
   "/api/health",
