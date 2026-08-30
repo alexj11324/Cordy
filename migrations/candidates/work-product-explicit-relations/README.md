@@ -76,4 +76,5 @@ consumer and keeping each concurrent index in its own unit.
 
 The final assigned versions are `430–447`; the later `448/449` Graph
 follow-up migrations already present on `main` are intentionally left
-unchanged.
+unchanged. The provenance discovery-queue index follow-up is assigned `450`
+so every migration version remains unique.

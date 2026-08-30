@@ -584,7 +584,7 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "agent_task_execution_provenance_branch_idx",
     ),
     (
-        "448_agent_task_execution_provenance_discovery_queue_index",
+        "450_agent_task_execution_provenance_discovery_queue_index",
         "agent_task_execution_provenance_discovery_queue_idx",
     ),
 ];
@@ -720,7 +720,7 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
         "agent_task_execution_provenance_branch_idx",
     ),
     (
-        "448_agent_task_execution_provenance_discovery_queue_index",
+        "450_agent_task_execution_provenance_discovery_queue_index",
         "agent_task_execution_provenance_discovery_queue_idx",
     ),
 ];
