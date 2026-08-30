@@ -255,11 +255,11 @@ RETURNING event.id, event.event_key, event.workspace_id, event.issue_id,
 
         let issue_prefix = if plan.publish_issue_update || plan.publish_reviewer_update {
             patchbay_db::queries::workspace::get_workspace(&self.pool, plan.issue.workspace_id)
-                .await
-                .ok()
-                .flatten()
-                .map(|workspace| workspace.issue_prefix)
-                .unwrap_or_default()
+                .await?
+                .ok_or_else(|| {
+                    anyhow::anyhow!("coordinator workspace disappeared before publication")
+                })?
+                .issue_prefix
         } else {
             String::new()
         };
@@ -1167,7 +1167,10 @@ RETURNING *"#,
             issue,
             owner_type,
             owner_id,
-            expected_owner_generation: Some(current_owner_generation),
+            // Reviewer promotion is keyed by the selected reviewer and the
+            // issue's review state, not by the implementation owner's current
+            // generation. Executor handoffs retain the owner fence.
+            expected_owner_generation: (!is_task_completion).then_some(current_owner_generation),
             expected_issue_category: expected_issue_category.to_string(),
             publish_issue_update: event.event_type == EVENT_TASK_COMPLETED,
             publish_reviewer_update: false,

@@ -15,6 +15,7 @@ use std::time::Duration;
 use futures_util::FutureExt;
 use patchbay_events::{Bus, Event};
 use patchbay_service::autopilot::AutopilotService;
+use serde_json::Value;
 use sqlx::PgPool;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -52,20 +53,32 @@ impl OrderedEventSideEffects {
             let bus = processor_bus.clone();
             let autopilots = autopilots.clone();
             Box::pin(async move {
+                let coordinator_publication = Self::is_coordination_publication(&event);
                 if let Err(error) =
                     crate::subscriber_activity_listeners::handle_event(&pool, &bus, &event).await
                 {
                     tracing::error!(%error, "ordered subscriber/activity side effects failed");
-                    return;
+                    if coordinator_publication {
+                        return;
+                    }
                 }
                 if let Err(error) =
                     crate::notification_listeners::handle_event(pool.clone(), bus, event.clone())
                         .await
                 {
                     tracing::error!(%error, "ordered notification side effects failed");
-                    return;
+                    if coordinator_publication {
+                        return;
+                    }
                 }
-                crate::autopilot_listeners::handle_event(&autopilots, &event).await;
+                if let Err(error) =
+                    crate::autopilot_listeners::handle_event(&autopilots, &event).await
+                {
+                    tracing::error!(%error, "ordered Autopilot side effects failed");
+                    if coordinator_publication {
+                        return;
+                    }
+                }
                 if let Err(error) =
                     patchbay_service::coordination::acknowledge_coordination_publication(
                         &pool, &event,
@@ -77,6 +90,21 @@ impl OrderedEventSideEffects {
             })
         });
         Self::with_processor(bus, processor)
+    }
+
+    fn is_coordination_publication(event: &Event) -> bool {
+        event
+            .payload
+            .get("coordination_event_id")
+            .and_then(Value::as_str)
+            .is_some()
+            && matches!(
+                event
+                    .payload
+                    .get("coordination_publication")
+                    .and_then(Value::as_str),
+                Some("review_handoff") | Some("reviewer_replacement") | Some("assignment_activity")
+            )
     }
 
     fn with_processor(bus: Arc<Bus>, processor: EventProcessor) -> Arc<Self> {
@@ -308,5 +336,26 @@ mod tests {
             *log.lock().unwrap(),
             vec![(1, "start"), (1, "finish"), (2, "start"), (2, "finish")]
         );
+    }
+
+    #[test]
+    fn only_durable_coordination_publications_use_replay_on_error() {
+        let coordinator_event = Event {
+            payload: json!({
+                "coordination_event_id": "11111111-1111-4111-8111-111111111111",
+                "coordination_publication": "review_handoff",
+            }),
+            ..Default::default()
+        };
+        let ordinary_event = Event {
+            payload: json!({"coordination_publication": "review_handoff"}),
+            ..Default::default()
+        };
+        assert!(OrderedEventSideEffects::is_coordination_publication(
+            &coordinator_event
+        ));
+        assert!(!OrderedEventSideEffects::is_coordination_publication(
+            &ordinary_event
+        ));
     }
 }

@@ -195,6 +195,28 @@ pub enum TaskServiceError {
     FailClosedNoOwner(ErrAttributionFailClosed),
 }
 
+async fn lock_task_owner_rows_before_issue(
+    executor: &mut sqlx::PgConnection,
+    agent_id: Uuid,
+    issue_id: Uuid,
+    runtime_id: Uuid,
+) -> Result<(), TaskServiceError> {
+    let locked = sqlx::query_scalar::<_, bool>("SELECT lock_task_owner_rows($1, $2, $3)")
+        .bind(agent_id)
+        .bind(issue_id)
+        .bind(runtime_id)
+        .fetch_one(executor)
+        .await
+        .map_err(TaskServiceError::Sql)?;
+    if locked {
+        Ok(())
+    } else {
+        Err(TaskServiceError::Internal(
+            "task owner disappeared while enqueuing task".to_string(),
+        ))
+    }
+}
+
 /// Seam for building the per-task Composio MCP overlay at enqueue time.
 ///
 /// Contract: `None` means "no overlay for this run". Any overlay value is the
@@ -1896,6 +1918,11 @@ impl TaskService {
             .prepare_issue_enqueue(issue, trigger_comment_id, actor_user_id, true)
             .await?;
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        // The owner-row fence acquires workspace → agent → issue → runtime
+        // locks. Take it before the issue FOR UPDATE below so this transaction
+        // cannot invert the teardown/merge lock order.
+        lock_task_owner_rows_before_issue(&mut *tx, prep.assignee_id, issue.id, prep.runtime_id)
+            .await?;
         let (current_owner_type, current_owner_id, owner_generation): (
             Option<String>,
             Option<Uuid>,
@@ -2582,6 +2609,11 @@ impl TaskService {
         // context, and the pending-task index must be able to distinguish the
         // Side Chat at INSERT time.
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        if owner_context || coordination_assignment_id.is_some() {
+            // Keep the owner-row lock order ahead of the issue snapshot lock;
+            // the INSERT below fences the same rows again inside its write.
+            lock_task_owner_rows_before_issue(&mut *tx, agent_id, issue.id, runtime_id).await?;
+        }
         let owner_snapshot = if coordination_assignment_id.is_some() || owner_context {
             Some(
                 sqlx::query_as::<_, (Option<String>, Option<Uuid>, i64)>(

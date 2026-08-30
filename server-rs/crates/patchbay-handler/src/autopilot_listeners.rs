@@ -45,7 +45,11 @@ impl AutopilotEventListeners {
     pub fn new(bus: Arc<Bus>, service: Arc<AutopilotService>) -> Arc<Self> {
         let processor: WorkProcessor = Arc::new(move |work| {
             let service = service.clone();
-            Box::pin(async move { handle_work(&service, work).await })
+            Box::pin(async move {
+                if let Err(error) = handle_work(&service, work).await {
+                    tracing::error!(%error, "autopilot event listener failed");
+                }
+            })
         });
         Self::with_processor(bus, processor)
     }
@@ -145,38 +149,41 @@ impl AutopilotEventListeners {
     }
 }
 
-async fn handle_work(service: &Arc<AutopilotService>, work: AutopilotEventWork) {
+async fn handle_work(
+    service: &Arc<AutopilotService>,
+    work: AutopilotEventWork,
+) -> anyhow::Result<()> {
     match work {
         AutopilotEventWork::Issue(issue_id) => {
-            match patchbay_db::queries::issue::get_issue(&service.pool, issue_id).await {
-                Ok(Some(issue)) => service.sync_run_from_issue(&issue).await,
-                Ok(None) => {}
-                Err(error) => tracing::debug!(
-                    %issue_id,
-                    %error,
-                    "autopilot listener: failed to load issue"
-                ),
+            if let Some(issue) =
+                patchbay_db::queries::issue::get_issue(&service.pool, issue_id).await?
+            {
+                service.sync_run_from_issue(&issue).await?;
             }
         }
         AutopilotEventWork::Task {
             task_id,
             sync_linked_issue_failure,
         } => {
-            let Ok(Some(task)) =
-                patchbay_db::queries::agent::get_agent_task(&service.pool, task_id).await
+            let Some(task) =
+                patchbay_db::queries::agent::get_agent_task(&service.pool, task_id).await?
             else {
-                return;
+                return Ok(());
             };
             if task.autopilot_run_id.is_some() {
-                service.sync_run_from_task(&task).await;
+                service.sync_run_from_task(&task).await?;
             } else if sync_linked_issue_failure {
-                service.sync_run_from_linked_issue_task(&task).await;
+                service.sync_run_from_linked_issue_task(&task).await?;
             }
         }
     }
+    Ok(())
 }
 
-pub(crate) async fn handle_event(service: &Arc<AutopilotService>, event: &Event) {
+pub(crate) async fn handle_event(
+    service: &Arc<AutopilotService>,
+    event: &Event,
+) -> anyhow::Result<()> {
     let work = match event.event_type.as_str() {
         patchbay_protocol::EVENT_ISSUE_UPDATED => {
             terminal_issue_id(event).map(AutopilotEventWork::Issue)
@@ -196,7 +203,9 @@ pub(crate) async fn handle_event(service: &Arc<AutopilotService>, event: &Event)
         _ => None,
     };
     if let Some(work) = work {
-        handle_work(service, work).await;
+        handle_work(service, work).await
+    } else {
+        Ok(())
     }
 }
 

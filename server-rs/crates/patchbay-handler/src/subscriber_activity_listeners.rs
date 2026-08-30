@@ -517,7 +517,9 @@ async fn insert_activity(
     action: &str,
     details: Value,
 ) -> anyhow::Result<()> {
-    if let Some(row) = activity::create_activity(
+    let activity_id =
+        durable_coordination_activity_id(event).unwrap_or_else(patchbay_db::dbid::new_v7);
+    let row = match activity::create_activity(
         pool,
         workspace_id,
         issue_id,
@@ -525,10 +527,14 @@ async fn insert_activity(
         actor_id,
         action,
         &details,
-        durable_coordination_activity_id(event).unwrap_or_else(patchbay_db::dbid::new_v7),
+        activity_id,
     )
     .await?
     {
+        Some(row) => Some(row),
+        None => activity::get_activity(pool, activity_id).await?,
+    };
+    if let Some(row) = row {
         publish_activity(bus, event, row);
     }
     Ok(())
