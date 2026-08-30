@@ -69,12 +69,19 @@ vi.mock("@patchbay/views/i18n", () => ({
     t: (
       selector: (resources: {
         web: {
+          cli_authorization: Record<string, string>;
           desktop_handoff: Record<string, string>;
         };
       }) => string,
     ) =>
       selector({
         web: {
+          cli_authorization: {
+            prompt: "Localized CLI authorization prompt",
+            authorize_button: "Localized CLI authorization button",
+            failed: "Localized CLI authorization failure",
+            invalid_callback: "Localized invalid CLI callback",
+          },
           desktop_handoff: {
             invalid_app_origin: "Invalid desktop app origin.",
             opening_title: "Opening Patchbay",
@@ -128,6 +135,18 @@ describe("LoginPage", () => {
     );
   });
 
+  it("localizes an invalid CLI callback", () => {
+    search.current =
+      "cli_callback=https%3A%2F%2Fevil.example%2Fcallback&cli_state=opaque-state";
+
+    render(<LoginPage />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Localized invalid CLI callback",
+    );
+    expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
+  });
+
   it("preserves the requested app path and query through Clerk sign-in", () => {
     search.current = "redirect_url=%2Fusage%3Ftab%3Dbilling%23summary";
 
@@ -173,7 +192,12 @@ describe("LoginPage", () => {
     render(<LoginPage />);
 
     expect(
-      screen.getByRole("button", { name: "Authorize CLI" }),
+      screen.getByRole("button", {
+        name: "Localized CLI authorization button",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Localized CLI authorization prompt"),
     ).toBeInTheDocument();
     expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
   });
@@ -186,7 +210,11 @@ describe("LoginPage", () => {
     issueCliToken.mockResolvedValue({ token: "patchbay-native-token" });
 
     render(<LoginPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Authorize CLI" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Localized CLI authorization button",
+      }),
+    );
 
     await waitFor(() => expect(issueCliToken).toHaveBeenCalledOnce());
     expect(redirectToCliCallback).toHaveBeenCalledWith(
@@ -195,6 +223,28 @@ describe("LoginPage", () => {
       "opaque-state",
     );
     expect(authState.current.getToken).not.toHaveBeenCalled();
+  });
+
+  it("localizes a retryable CLI authorization failure", async () => {
+    search.current =
+      "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
+    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authStoreState.current = { status: "authenticated" };
+    issueCliToken.mockRejectedValue(new Error("temporary failure"));
+
+    render(<LoginPage />);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Localized CLI authorization button",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Localized CLI authorization failure",
+      ),
+    );
+    expect(redirectToCliCallback).not.toHaveBeenCalled();
   });
 
   it("does not authorize CLI before the Patchbay session exchange completes", () => {
@@ -206,7 +256,11 @@ describe("LoginPage", () => {
     render(<LoginPage />);
 
     expect(screen.getByTestId("clerk-sign-in")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Authorize CLI" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: "Localized CLI authorization button",
+      }),
+    ).not.toBeInTheDocument();
     expect(issueCliToken).not.toHaveBeenCalled();
   });
 
