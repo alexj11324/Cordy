@@ -950,10 +950,7 @@ mod tests {
             (Method::GET, "/api/runtimes"),
             (Method::PATCH, "/api/runtimes/runtime-id"),
             (Method::GET, "/api/authorization/decisions/decision-id"),
-            (
-                Method::GET,
-                "/api/authorization/provider-leases/validate",
-            ),
+            (Method::GET, "/api/authorization/provider-leases/validate"),
             (
                 Method::POST,
                 "/api/authorization/provider-leases/validate/extra",
@@ -977,10 +974,7 @@ mod tests {
             (Method::POST, "/api/issues/issue-id/comments"),
             (Method::POST, "/api/issues"),
             (Method::POST, "/api/tasks/task-id/message-bus"),
-            (
-                Method::POST,
-                "/api/authorization/provider-leases/validate",
-            ),
+            (Method::POST, "/api/authorization/provider-leases/validate"),
         ] {
             assert!(
                 task_token_route_allowed(&method, path, workspace_id),
