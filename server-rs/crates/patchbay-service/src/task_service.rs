@@ -1504,25 +1504,23 @@ impl TaskService {
         plan_id: Uuid,
     ) -> Result<(), TaskServiceError> {
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
-        let promoted = dependency_graph_q::promote_ready_issues_for_plan(
-            &mut *tx,
-            workspace_id,
-            plan_id,
-        )
-        .await
-        .map_err(|error| TaskServiceError::Internal(format!("promote graph tasks: {error}")))?;
+        let promoted =
+            dependency_graph_q::promote_ready_issues_for_plan(&mut *tx, workspace_id, plan_id)
+                .await
+                .map_err(|error| {
+                    TaskServiceError::Internal(format!("promote graph tasks: {error}"))
+                })?;
         tx.commit().await.map_err(TaskServiceError::Sql)?;
 
         if !promoted.is_empty() {
             self.publish_dependency_graph_wakeup(workspace_id, Some(plan_id), &promoted);
         }
-        let issue_ids = dependency_graph_q::list_ready_issue_ids_for_plan(
-            &self.pool,
-            workspace_id,
-            plan_id,
-        )
-        .await
-        .map_err(|error| TaskServiceError::Internal(format!("list ready graph tasks: {error}")))?;
+        let issue_ids =
+            dependency_graph_q::list_ready_issue_ids_for_plan(&self.pool, workspace_id, plan_id)
+                .await
+                .map_err(|error| {
+                    TaskServiceError::Internal(format!("list ready graph tasks: {error}"))
+                })?;
         self.enqueue_ready_dependency_issue_ids(issue_ids).await;
         Ok(())
     }
@@ -1542,18 +1540,20 @@ impl TaskService {
             prerequisite_issue_id,
         )
         .await
-        .map_err(|error| TaskServiceError::Internal(format!("promote graph dependents: {error}")))?;
+        .map_err(|error| {
+            TaskServiceError::Internal(format!("promote graph dependents: {error}"))
+        })?;
         tx.commit().await.map_err(TaskServiceError::Sql)?;
 
         if !promoted.is_empty() {
             self.publish_dependency_graph_wakeup(workspace_id, None, &promoted);
         }
-        let issue_ids = dependency_graph_q::list_ready_issue_ids_for_workspace(
-            &self.pool,
-            workspace_id,
-        )
-        .await
-        .map_err(|error| TaskServiceError::Internal(format!("list ready graph dependents: {error}")))?;
+        let issue_ids =
+            dependency_graph_q::list_ready_issue_ids_for_workspace(&self.pool, workspace_id)
+                .await
+                .map_err(|error| {
+                    TaskServiceError::Internal(format!("list ready graph dependents: {error}"))
+                })?;
         self.enqueue_ready_dependency_issue_ids(issue_ids).await;
         Ok(())
     }
@@ -1646,11 +1646,12 @@ impl TaskService {
                 self.publish_dependency_graph_wakeup(workspace_id, None, &promoted);
             }
         }
-        let issue_ids = dependency_graph_q::list_ready_issue_ids_for_runtime(&self.pool, runtime_id)
-            .await
-            .map_err(|error| {
-                TaskServiceError::Internal(format!("list runtime graph tasks: {error}"))
-            })?;
+        let issue_ids =
+            dependency_graph_q::list_ready_issue_ids_for_runtime(&self.pool, runtime_id)
+                .await
+                .map_err(|error| {
+                    TaskServiceError::Internal(format!("list runtime graph tasks: {error}"))
+                })?;
         self.enqueue_ready_dependency_issue_ids(issue_ids).await;
         Ok(())
     }
@@ -5034,7 +5035,10 @@ impl TaskService {
             }
         }
 
-        if let Err(error) = self.reconcile_dependency_tasks_for_runtime(runtime_id).await {
+        if let Err(error) = self
+            .reconcile_dependency_tasks_for_runtime(runtime_id)
+            .await
+        {
             tracing::warn!(%error, %runtime_id, "dependency task recovery before claim failed");
         }
 
@@ -5214,7 +5218,10 @@ impl TaskService {
         }
 
         for runtime_id in &unique_ids {
-            if let Err(error) = self.reconcile_dependency_tasks_for_runtime(*runtime_id).await {
+            if let Err(error) = self
+                .reconcile_dependency_tasks_for_runtime(*runtime_id)
+                .await
+            {
                 tracing::warn!(%error, %runtime_id, "dependency task recovery before batch claim failed");
             }
         }

@@ -4,8 +4,8 @@ use std::fs;
 use std::io::Read;
 
 use super::{
-    ensure_file_within_workdir, format_table, new_api_client, resolve_issue_ref, value_string,
-    Cli, Environment, IssueDependencyGraphApplyArgs, OutputFormat, RunOutput,
+    ensure_file_within_workdir, format_table, new_api_client, resolve_issue_ref, value_string, Cli,
+    Environment, IssueDependencyGraphApplyArgs, OutputFormat, RunOutput,
 };
 
 pub(super) async fn run_issue_dependency_graph_get(
@@ -120,7 +120,9 @@ pub(super) fn format_dependency_graph_table(graph: &Value) -> String {
         "READY".into(),
         nodes
             .iter()
-            .filter(|node| value_string(node.get("readiness").unwrap_or(&Value::Null), "state") == "ready")
+            .filter(|node| {
+                value_string(node.get("readiness").unwrap_or(&Value::Null), "state") == "ready"
+            })
             .count()
             .to_string(),
     ]);
@@ -128,7 +130,9 @@ pub(super) fn format_dependency_graph_table(graph: &Value) -> String {
         "BLOCKED".into(),
         nodes
             .iter()
-            .filter(|node| value_string(node.get("readiness").unwrap_or(&Value::Null), "state") == "blocked")
+            .filter(|node| {
+                value_string(node.get("readiness").unwrap_or(&Value::Null), "state") == "blocked"
+            })
             .count()
             .to_string(),
     ]);

@@ -223,7 +223,9 @@ mod tests {
             .find(|skill| skill.name == TASK_PLANNING_SKILL_NAME)
             .expect("planning skill is embedded");
         assert!(planning.content.contains("user-invocable: false"));
-        assert!(planning.content.contains("only for complex, genuinely splittable"));
+        assert!(planning
+            .content
+            .contains("only for complex, genuinely splittable"));
         assert!(planning.content.contains("do not split"));
         assert!(planning.content.contains("atomic"));
     }

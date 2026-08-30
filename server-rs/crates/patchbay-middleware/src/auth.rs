@@ -352,9 +352,7 @@ fn task_token_route_allowed(method: &Method, path: &str, _workspace_id: Uuid) ->
     {
         return true;
     }
-    if method == Method::POST
-        && is_uuid_route(path, "/api/issues/", "/dependency-graph/apply")
-    {
+    if method == Method::POST && is_uuid_route(path, "/api/issues/", "/dependency-graph/apply") {
         return true;
     }
     if path.starts_with("/api/issues") {

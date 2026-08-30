@@ -15,9 +15,10 @@ fn dependency_graph_apply_accepts_one_complete_plan_source() {
     ])
     .expect("dependency graph apply CLI");
     let Command::Issue(IssueArgs {
-        command: IssueCommand::DependencyGraph(IssueDependencyGraphArgs {
-            command: IssueDependencyGraphCommand::Apply(args),
-        }),
+        command:
+            IssueCommand::DependencyGraph(IssueDependencyGraphArgs {
+                command: IssueDependencyGraphCommand::Apply(args),
+            }),
     }) = cli.command
     else {
         panic!("expected dependency graph apply command");

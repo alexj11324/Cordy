@@ -394,9 +394,9 @@ pub(crate) async fn build_claimed_task_response(
         }
     } else {
         let mut skills = state.tasks.load_agent_skills(task.agent_id).await;
-        skills.extend(patchbay_service::builtin_skills::load_builtin_skills_for_task(
-            task.is_leader_task,
-        ));
+        skills.extend(
+            patchbay_service::builtin_skills::load_builtin_skills_for_task(task.is_leader_task),
+        );
         if !skills.is_empty() {
             if let Ok(v) = serde_json::to_value(&skills) {
                 agent_obj.insert("skills".into(), v);

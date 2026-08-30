@@ -15,8 +15,7 @@ use patchbay_db::queries::agent;
 use patchbay_middleware::workspace::WorkspaceContext;
 use patchbay_service::dependency_graph::{
     apply_dependency_plan, load_active_dependency_graph_for_issue, load_active_dependency_graphs,
-    load_dependency_graph,
-    DependencyGraphError, DependencyGraphPlanInput, DependencyGraphSnapshot,
+    load_dependency_graph, DependencyGraphError, DependencyGraphPlanInput, DependencyGraphSnapshot,
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -88,9 +87,7 @@ async fn graph_read_allowed(
         .get("x-actor-source")
         .and_then(|value| value.to_str().ok())
         == Some("task_token");
-    if is_task_token
-        && crate::issue::TaskAuthorizationContext::from_headers(headers).is_none()
-    {
+    if is_task_token && crate::issue::TaskAuthorizationContext::from_headers(headers).is_none() {
         return false;
     }
     crate::issue::task_project_resource_allows(
@@ -150,13 +147,13 @@ fn graph_error(error: DependencyGraphError) -> Response {
             (StatusCode::NOT_FOUND, "not_found")
         }
         DependencyGraphError::ActivePlanExists => (StatusCode::CONFLICT, "active_plan_exists"),
-        DependencyGraphError::IdempotencyConflict => {
-            (StatusCode::CONFLICT, "idempotency_conflict")
-        }
+        DependencyGraphError::IdempotencyConflict => (StatusCode::CONFLICT, "idempotency_conflict"),
         DependencyGraphError::AssigneeNotFound { .. } => {
             (StatusCode::UNPROCESSABLE_ENTITY, "invalid_assignee")
         }
-        DependencyGraphError::Integrity(_) => (StatusCode::INTERNAL_SERVER_ERROR, "graph_integrity"),
+        DependencyGraphError::Integrity(_) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, "graph_integrity")
+        }
         DependencyGraphError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "database_error"),
     };
     if matches!(

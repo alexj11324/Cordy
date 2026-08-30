@@ -363,7 +363,10 @@ RETURNING target.id"#,
     .bind(plan_id)
     .fetch_all(executor)
     .await?;
-    Ok(rows.into_iter().map(|row| row.get::<Uuid, _>("id")).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| row.get::<Uuid, _>("id"))
+        .collect())
 }
 
 /// Completion-path wakeup for one prerequisite. The predicate still checks
@@ -400,7 +403,10 @@ RETURNING target.id"#,
     .bind(prerequisite_issue_id)
     .fetch_all(executor)
     .await?;
-    Ok(rows.into_iter().map(|row| row.get::<Uuid, _>("id")).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| row.get::<Uuid, _>("id"))
+        .collect())
 }
 
 /// Crash/restart reconciliation for one runtime. It promotes only its own
@@ -440,7 +446,10 @@ RETURNING target.id"#,
     .bind(runtime_id)
     .fetch_all(executor)
     .await?;
-    Ok(rows.into_iter().map(|row| row.get::<Uuid, _>("id")).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| row.get::<Uuid, _>("id"))
+        .collect())
 }
 
 /// Lists ready agent-owned graph nodes for a plan. A pending queue row is
@@ -481,7 +490,10 @@ ORDER BY node.wave ASC, node.temp_id ASC"#,
     .bind(plan_id)
     .fetch_all(executor)
     .await?;
-    Ok(rows.into_iter().map(|row| row.get::<Uuid, _>("id")).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| row.get::<Uuid, _>("id"))
+        .collect())
 }
 
 /// Lists every ready graph task in a workspace for completion-path wakeups.
@@ -518,7 +530,10 @@ ORDER BY node.wave ASC, node.temp_id ASC"#,
     .bind(workspace_id)
     .fetch_all(executor)
     .await?;
-    Ok(rows.into_iter().map(|row| row.get::<Uuid, _>("id")).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| row.get::<Uuid, _>("id"))
+        .collect())
 }
 
 /// Runtime-scoped form used by claim recovery before the candidate SELECT.
@@ -559,7 +574,10 @@ ORDER BY node.wave ASC, node.temp_id ASC"#,
     .bind(runtime_id)
     .fetch_all(executor)
     .await?;
-    Ok(rows.into_iter().map(|row| row.get::<Uuid, _>("id")).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| row.get::<Uuid, _>("id"))
+        .collect())
 }
 
 /// Persists a fail-closed attention marker when a prerequisite fails or is
@@ -595,7 +613,10 @@ RETURNING plan.id"#,
     .bind(reason)
     .fetch_all(executor)
     .await?;
-    Ok(rows.into_iter().map(|row| row.get::<Uuid, _>("id")).collect())
+    Ok(rows
+        .into_iter()
+        .map(|row| row.get::<Uuid, _>("id"))
+        .collect())
 }
 
 pub async fn set_issue_acceptance_criteria<'e, E>(

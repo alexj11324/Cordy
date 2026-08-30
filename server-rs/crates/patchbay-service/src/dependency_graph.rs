@@ -10,8 +10,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use patchbay_db::dbid::new_v7;
 use patchbay_db::models::{DependencyGraphEdge, DependencyGraphNode, DependencyGraphPlan, Issue};
-use patchbay_db::queries::{dependency_graph as graph_q, issue as issue_q};
 use patchbay_db::queries::workspace::increment_issue_counter;
+use patchbay_db::queries::{dependency_graph as graph_q, issue as issue_q};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -96,7 +96,9 @@ pub enum DependencyGraphError {
     ActivePlanExists,
     #[error("idempotency key was already used for a different dependency graph plan")]
     IdempotencyConflict,
-    #[error("assignee {assignee_type}:{assignee_id} was not found or is unavailable in this workspace")]
+    #[error(
+        "assignee {assignee_type}:{assignee_id} was not found or is unavailable in this workspace"
+    )]
     AssigneeNotFound {
         assignee_type: String,
         assignee_id: Uuid,
@@ -131,7 +133,9 @@ fn validate_text(
         return Err(invalid(format!("{field} exceeds {max_length} characters")));
     }
     if value != trimmed {
-        return Err(invalid(format!("{field} must not have surrounding whitespace")));
+        return Err(invalid(format!(
+            "{field} must not have surrounding whitespace"
+        )));
     }
     Ok(())
 }
@@ -148,7 +152,10 @@ fn validate_text_list(values: &[String], field: &str) -> Result<(), DependencyGr
     Ok(())
 }
 
-fn validate_assignee_shape(assignee: &PlanAssignee, field: &str) -> Result<(), DependencyGraphError> {
+fn validate_assignee_shape(
+    assignee: &PlanAssignee,
+    field: &str,
+) -> Result<(), DependencyGraphError> {
     if assignee.id.is_nil() {
         return Err(invalid(format!("{field}.id must be a non-nil UUID")));
     }
@@ -206,11 +213,24 @@ pub fn validate_dependency_plan(
 
     let mut task_indexes = HashMap::with_capacity(input.tasks.len());
     for (index, task) in input.tasks.iter().enumerate() {
-        validate_text(&task.temp_id, &format!("tasks[{index}].temp_id"), MAX_TEMP_ID_LENGTH, true)?;
+        validate_text(
+            &task.temp_id,
+            &format!("tasks[{index}].temp_id"),
+            MAX_TEMP_ID_LENGTH,
+            true,
+        )?;
         if task_indexes.insert(task.temp_id.as_str(), index).is_some() {
-            return Err(invalid(format!("duplicate task temp_id {:?}", task.temp_id)));
+            return Err(invalid(format!(
+                "duplicate task temp_id {:?}",
+                task.temp_id
+            )));
         }
-        validate_text(&task.title, &format!("tasks[{index}].title"), MAX_TITLE_LENGTH, true)?;
+        validate_text(
+            &task.title,
+            &format!("tasks[{index}].title"),
+            MAX_TITLE_LENGTH,
+            true,
+        )?;
         validate_text(
             &task.description,
             &format!("tasks[{index}].description"),
@@ -387,7 +407,8 @@ fn canonicalize(value: Value) -> Value {
 /// graph while still rejecting a reused key for a different proposal.
 pub fn plan_request_hash(input: &DependencyGraphPlanInput) -> String {
     let value = serde_json::to_value(input).expect("dependency plan is serializable");
-    let canonical = serde_json::to_vec(&canonicalize(value)).expect("canonical plan is serializable");
+    let canonical =
+        serde_json::to_vec(&canonicalize(value)).expect("canonical plan is serializable");
     format!("sha256:{}", hex::encode(Sha256::digest(canonical)))
 }
 
@@ -781,19 +802,17 @@ pub async fn apply_dependency_plan(
         return Err(invalid("idempotency_key exceeds 255 characters"));
     }
     if !matches!(created_by_type, "member" | "agent" | "system") || created_by_id.is_nil() {
-        return Err(invalid("created_by must be a non-nil member, agent, or system identity"));
+        return Err(invalid(
+            "created_by must be a non-nil member, agent, or system identity",
+        ));
     }
     let request_hash = plan_request_hash(input);
     let mut tx = pool.begin().await.map_err(db_error)?;
 
-    if let Some(existing) = graph_q::get_plan_by_idempotency(
-        &mut *tx,
-        workspace_id,
-        idempotency_key,
-        true,
-    )
-    .await
-    .map_err(db_error)?
+    if let Some(existing) =
+        graph_q::get_plan_by_idempotency(&mut *tx, workspace_id, idempotency_key, true)
+            .await
+            .map_err(db_error)?
     {
         if existing.request_hash != request_hash {
             return Err(DependencyGraphError::IdempotencyConflict);
@@ -816,14 +835,10 @@ pub async fn apply_dependency_plan(
     // inserted the idempotency row while this transaction waited for the
     // parent lock. Without this second lookup it would be misreported as an
     // active-plan conflict instead of replaying the original result.
-    if let Some(existing) = graph_q::get_plan_by_idempotency(
-        &mut *tx,
-        workspace_id,
-        idempotency_key,
-        true,
-    )
-    .await
-    .map_err(db_error)?
+    if let Some(existing) =
+        graph_q::get_plan_by_idempotency(&mut *tx, workspace_id, idempotency_key, true)
+            .await
+            .map_err(db_error)?
     {
         if existing.request_hash != request_hash {
             return Err(DependencyGraphError::IdempotencyConflict);
@@ -880,19 +895,15 @@ pub async fn apply_dependency_plan(
         _ => db_error(error),
     })?;
     let Some(plan) = plan else {
-        let existing = graph_q::get_plan_by_idempotency(
-            &mut *tx,
-            workspace_id,
-            idempotency_key,
-            true,
-        )
-        .await
-        .map_err(db_error)?
-        .ok_or_else(|| {
-            DependencyGraphError::Database(
-                "idempotency conflict did not return the existing plan".to_string(),
-            )
-        })?;
+        let existing =
+            graph_q::get_plan_by_idempotency(&mut *tx, workspace_id, idempotency_key, true)
+                .await
+                .map_err(db_error)?
+                .ok_or_else(|| {
+                    DependencyGraphError::Database(
+                        "idempotency conflict did not return the existing plan".to_string(),
+                    )
+                })?;
         if existing.request_hash != plan_request_hash(input) {
             return Err(DependencyGraphError::IdempotencyConflict);
         }
@@ -908,7 +919,11 @@ pub async fn apply_dependency_plan(
         .collect::<HashMap<_, _>>();
 
     for task in &input.tasks {
-        let incoming_count = input.edges.iter().filter(|edge| edge.to == task.temp_id).count();
+        let incoming_count = input
+            .edges
+            .iter()
+            .filter(|edge| edge.to == task.temp_id)
+            .count();
         let status = if incoming_count == 0 {
             issue_status::TODO
         } else {
@@ -917,11 +932,16 @@ pub async fn apply_dependency_plan(
         let issue_number = increment_issue_counter(&mut *tx, workspace_id)
             .await
             .map_err(db_error)?
-            .ok_or_else(|| DependencyGraphError::Database("workspace counter row is missing".to_string()))?;
+            .ok_or_else(|| {
+                DependencyGraphError::Database("workspace counter row is missing".to_string())
+            })?;
         let position = next_top_position(&mut *tx, workspace_id, status)
             .await
             .map_err(db_error)?;
-        let assignee_type = task.assignee.as_ref().map(|assignee| assignee.type_.as_str());
+        let assignee_type = task
+            .assignee
+            .as_ref()
+            .map(|assignee| assignee.type_.as_str());
         let assignee_id = task.assignee.as_ref().map(|assignee| assignee.id);
         let issue = issue_q::create_issue(
             &mut *tx,
@@ -932,7 +952,11 @@ pub async fn apply_dependency_plan(
             "none",
             assignee_type,
             assignee_id,
-            if created_by_type == "agent" { "agent" } else { "member" },
+            if created_by_type == "agent" {
+                "agent"
+            } else {
+                "member"
+            },
             created_by_id,
             Some(input.parent_issue_id),
             position,
@@ -945,7 +969,9 @@ pub async fn apply_dependency_plan(
         )
         .await
         .map_err(db_error)?
-        .ok_or_else(|| DependencyGraphError::Database("planned issue insert returned no row".to_string()))?;
+        .ok_or_else(|| {
+            DependencyGraphError::Database("planned issue insert returned no row".to_string())
+        })?;
         let acceptance_criteria = json!(task.acceptance_criteria);
         graph_q::set_issue_acceptance_criteria(
             &mut *tx,
@@ -968,7 +994,10 @@ pub async fn apply_dependency_plan(
                 acceptance_criteria,
                 context: task.context.clone(),
                 outputs: json!(task.outputs),
-                assignee_type: task.assignee.as_ref().map(|assignee| assignee.type_.clone()),
+                assignee_type: task
+                    .assignee
+                    .as_ref()
+                    .map(|assignee| assignee.type_.clone()),
                 assignee_id,
                 candidate_assignees: json!(task.candidate_assignees),
                 wave: *wave_by_temp_id
@@ -1038,7 +1067,10 @@ mod tests {
         }
     }
 
-    fn plan(tasks: Vec<DependencyGraphTaskInput>, edges: Vec<DependencyGraphEdgeInput>) -> DependencyGraphPlanInput {
+    fn plan(
+        tasks: Vec<DependencyGraphTaskInput>,
+        edges: Vec<DependencyGraphEdgeInput>,
+    ) -> DependencyGraphPlanInput {
         DependencyGraphPlanInput {
             goal: "ship a coherent feature".to_string(),
             parent_issue_id: Uuid::now_v7(),
@@ -1055,7 +1087,10 @@ mod tests {
         );
         assert_eq!(
             validate_dependency_plan(&input).unwrap(),
-            vec![vec!["a".to_string(), "b".to_string()], vec!["c".to_string()]]
+            vec![
+                vec!["a".to_string(), "b".to_string()],
+                vec!["c".to_string()]
+            ]
         );
     }
 
@@ -1194,7 +1229,10 @@ mod tests {
         .expect("parent issue row");
 
         let mut input = plan(
-            vec![task("contract", "contract-output"), task("consumer", "consumer-output")],
+            vec![
+                task("contract", "contract-output"),
+                task("consumer", "consumer-output"),
+            ],
             vec![edge("contract", "consumer", "contract-output")],
         );
         input.parent_issue_id = parent.id;
@@ -1283,7 +1321,10 @@ mod tests {
         assert_eq!(dependent.issue.status, issue_status::BLOCKED);
         assert_eq!(dependent.readiness.state, "blocked");
         assert!(!dependent.readiness.gate_open);
-        assert_eq!(dependent.readiness.unlock_condition, "All 1 hard prerequisites must be Done (0/1 currently satisfied)");
+        assert_eq!(
+            dependent.readiness.unlock_condition,
+            "All 1 hard prerequisites must be Done (0/1 currently satisfied)"
+        );
 
         // A replay returns the original graph and does not allocate another
         // plan or another pair of child issues.
@@ -1328,13 +1369,10 @@ mod tests {
         assert_eq!(promoted, vec![dependent_issue_id]);
 
         let mut replay_wakeup = pool.begin().await.expect("begin replay wakeup");
-        let promoted_again = graph_q::promote_ready_dependents(
-            &mut *replay_wakeup,
-            workspace_id,
-            root_issue_id,
-        )
-        .await
-        .expect("replay dependency wakeup");
+        let promoted_again =
+            graph_q::promote_ready_dependents(&mut *replay_wakeup, workspace_id, root_issue_id)
+                .await
+                .expect("replay dependency wakeup");
         replay_wakeup
             .commit()
             .await

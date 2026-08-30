@@ -125,9 +125,16 @@ pub(super) enum IssueDependencyGraphCommand {
 pub(super) struct IssueDependencyGraphApplyArgs {
     #[arg(value_name = "PARENT-ID")]
     pub(super) parent: String,
-    #[arg(long, help = "Plan idempotency key; reuse it to safely replay the same plan")]
+    #[arg(
+        long,
+        help = "Plan idempotency key; reuse it to safely replay the same plan"
+    )]
     pub(super) idempotency_key: String,
-    #[arg(long, value_name = "PATH", help = "Read the complete typed plan from a UTF-8 JSON file")]
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Read the complete typed plan from a UTF-8 JSON file"
+    )]
     pub(super) plan_file: Option<std::path::PathBuf>,
     #[arg(long, help = "Read the complete typed plan from stdin as UTF-8 JSON")]
     pub(super) plan_stdin: bool,
