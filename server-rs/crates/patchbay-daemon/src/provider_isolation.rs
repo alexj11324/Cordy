@@ -98,9 +98,7 @@ pub(crate) fn isolate_provider_command(
     return isolate_macos(
         command,
         &executable,
-        &task_root,
-        &work_dir,
-        &temp_dir,
+        [&task_root, &work_dir, &temp_dir],
         isolation.provider,
         isolation.provider_source_home,
         &sensitive_paths,
@@ -110,9 +108,7 @@ pub(crate) fn isolate_provider_command(
     return isolate_linux(
         command,
         &executable,
-        &task_root,
-        &work_dir,
-        &temp_dir,
+        [&task_root, &work_dir, &temp_dir],
         isolation.provider,
         isolation.provider_source_home,
         &sensitive_paths,
@@ -400,7 +396,7 @@ fn host_sensitive_paths(
     add_sensitive_file(&mut paths, shared_codex_home.join("auth.json"));
 
     if let Some(home) = std::env::var_os("HOME").filter(|value| !value.is_empty()) {
-        let home = absolute_path(&PathBuf::from(home), "daemon HOME")?;
+        let home = absolute_path(PathBuf::from(home), "daemon HOME")?;
         add_sensitive_file(&mut paths, home.join(".claude").join(".credentials.json"));
         add_sensitive_file(&mut paths, home.join(".claude.json"));
         if provider == "hermes" {
@@ -412,11 +408,11 @@ fn host_sensitive_paths(
     if let Some(claude_home) =
         std::env::var_os("CLAUDE_CONFIG_DIR").filter(|value| !value.is_empty())
     {
-        let claude_home = absolute_path(&PathBuf::from(claude_home), "Claude config home")?;
+        let claude_home = absolute_path(PathBuf::from(claude_home), "Claude config home")?;
         add_sensitive_file(&mut paths, claude_home.join(".credentials.json"));
     }
     if let Some(hermes_home) = std::env::var_os("HERMES_HOME").filter(|value| !value.is_empty()) {
-        let hermes_home = absolute_path(&PathBuf::from(hermes_home), "Hermes source home")?;
+        let hermes_home = absolute_path(PathBuf::from(hermes_home), "Hermes source home")?;
         if provider == "hermes" {
             add_hermes_sensitive_paths(&mut paths, &hermes_home);
         } else {
@@ -588,13 +584,12 @@ fn executable_root(executable: &Path) -> anyhow::Result<PathBuf> {
 fn isolate_macos(
     command: &mut RuntimeCommand,
     executable: &Path,
-    task_root: &Path,
-    work_dir: &Path,
-    temp_dir: &Path,
+    visible_roots: [&Path; 3],
     provider: &str,
     provider_source_home: &str,
     sensitive_paths: &[SensitivePath],
 ) -> anyhow::Result<()> {
+    let [task_root, work_dir, temp_dir] = visible_roots;
     const SANDBOX_EXEC: &str = "/usr/bin/sandbox-exec";
     anyhow::ensure!(
         Path::new(SANDBOX_EXEC).is_file(),
@@ -747,13 +742,12 @@ fn append_macos_sensitive_rules(profile: &mut String, sensitive_paths: &[Sensiti
 fn isolate_linux(
     command: &mut RuntimeCommand,
     executable: &Path,
-    task_root: &Path,
-    work_dir: &Path,
-    temp_dir: &Path,
+    visible_roots: [&Path; 3],
     provider: &str,
     provider_source_home: &str,
     sensitive_paths: &[SensitivePath],
 ) -> anyhow::Result<()> {
+    let [task_root, work_dir, temp_dir] = visible_roots;
     let bwrap = ["/usr/bin/bwrap", "/usr/local/bin/bwrap"]
         .into_iter()
         .find(|path| Path::new(path).is_file())
