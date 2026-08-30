@@ -3,13 +3,44 @@ import type { DaemonPrefs, DaemonStatus, LocalRuntimeProbe } from "../../../shar
 import type { NavigationGesture } from "../../../shared/navigation-gestures";
 import type { IssueWindowRequest } from "../../../shared/issue-window";
 
-const BROWSER_RENDERER_ERROR =
+declare global {
+  interface Window {
+    /** True when the Desktop renderer is running in Vite's browser host. */
+    __PATCHBAY_VITE_DESKTOP_PREVIEW__?: boolean;
+    /** True for both fixture and backend-enabled Vite browser hosts. */
+    __PATCHBAY_VITE_DESKTOP_HOST__?: boolean;
+  }
+}
+
+const BROWSER_PREVIEW_ERROR =
   "This Desktop control is unavailable in the browser renderer.";
 
 const BROWSER_DAEMON_PREFS: DaemonPrefs = {
   autoStart: false,
   autoStop: false,
 };
+
+const AUTH_CALLBACK_PATH = "/auth/callback";
+const HANDOFF_CODE_PATTERN = /^pbd_[A-Za-z0-9_-]{43}$/;
+const HANDOFF_STATE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
+
+type BrowserAuthHandoff = { code: string; state: string };
+
+function takeBrowserAuthHandoff(): BrowserAuthHandoff | null {
+  if (window.location.pathname !== AUTH_CALLBACK_PATH) return null;
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("code") ?? "";
+  const state = params.get("state") ?? "";
+  // Clear every callback query, including malformed attacker-supplied input,
+  // before deciding whether it is eligible for redemption.
+  window.history.replaceState(null, "", "/");
+  if (!HANDOFF_CODE_PATTERN.test(code) || !HANDOFF_STATE_PATTERN.test(state)) {
+    return null;
+  }
+
+  // The normal App handoff listener redeems it over HTTPS with PKCE.
+  return { code, state };
+}
 
 function browserPlatform(): "macos" | "windows" | "linux" | "unknown" {
   const platform = navigator.platform.toLowerCase();
@@ -75,6 +106,8 @@ export function installWebDesktopBridge(): boolean {
   const existingWindow = window as unknown as { desktopAPI?: unknown };
   if (existingWindow.desktopAPI) return false;
 
+  const preview = import.meta.env.VITE_DESKTOP_PREVIEW !== "false";
+  let pendingBrowserAuthHandoff = preview ? null : takeBrowserAuthHandoff();
   const runtimeConfig = runtimeConfigFromDevEnv({
     // `make start-worktree` exports the Next.js convention, while direct
     // Desktop development uses Vite's convention. Accept both so a linked
@@ -104,8 +137,19 @@ export function installWebDesktopBridge(): boolean {
     ackFreeze: (_ts: number) => undefined,
     reportAuthSession: (_userId: string | null) => undefined,
     onAuthHandoff: (
-      _callback: (payload: { code: string; state: string }) => void,
-    ) => noopUnsubscribe(),
+      callback: (payload: { code: string; state: string }) => void,
+    ) => {
+      const pending = pendingBrowserAuthHandoff;
+      if (!pending) return noopUnsubscribe();
+      pendingBrowserAuthHandoff = null;
+      let cancelled = false;
+      queueMicrotask(() => {
+        if (!cancelled) callback(pending);
+      });
+      return () => {
+        cancelled = true;
+      };
+    },
     onInviteOpen: (_callback: (invitationId: string) => void) =>
       noopUnsubscribe(),
     openExternal: async (url: string) => openBrowserUrl(url),
@@ -222,5 +266,21 @@ export function installWebDesktopBridge(): boolean {
   window.daemonAPI = daemonAPI;
   window.updater = updater;
   window.electron = {} as Window["electron"];
+  window.__PATCHBAY_VITE_DESKTOP_HOST__ = true;
+  window.__PATCHBAY_VITE_DESKTOP_PREVIEW__ = preview;
   return true;
+}
+
+export function isDesktopWebHost(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    window.__PATCHBAY_VITE_DESKTOP_HOST__ === true
+  );
+}
+
+export function isDesktopWebPreview(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    window.__PATCHBAY_VITE_DESKTOP_PREVIEW__ === true
+  );
 }

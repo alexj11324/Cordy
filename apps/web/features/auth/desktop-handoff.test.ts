@@ -45,8 +45,51 @@ describe("buildDesktopHandoffQuery", () => {
     ).toEqual({
       codeChallenge,
       state,
+      appOrigin: null,
       query: `platform=desktop&code_challenge=${codeChallenge}&state=${state}`,
     });
+  });
+
+  it("preserves a browser return only when deployment config names the exact app origin", () => {
+    const codeChallenge = "a".repeat(43);
+    const state = "b".repeat(43);
+    const searchParams = new URLSearchParams({
+      platform: "desktop",
+      code_challenge: codeChallenge,
+      state,
+      app_origin: "https://app.patchbay.ai",
+    });
+
+    expect(
+      readDesktopHandoffBinding(
+        searchParams,
+        "https://app.patchbay.ai",
+      ),
+    ).toEqual({
+      codeChallenge,
+      state,
+      appOrigin: "https://app.patchbay.ai",
+      query:
+        `platform=desktop&code_challenge=${codeChallenge}` +
+        `&state=${state}&app_origin=https%3A%2F%2Fapp.patchbay.ai`,
+    });
+  });
+
+  it("rejects an unconfigured or mismatched browser app origin", () => {
+    const searchParams = new URLSearchParams({
+      platform: "desktop",
+      code_challenge: "a".repeat(43),
+      state: "b".repeat(43),
+      app_origin: "https://evil.example",
+    });
+
+    expect(
+      readDesktopHandoffBinding(
+        searchParams,
+        "https://app.patchbay.ai",
+      ),
+    ).toBeNull();
+    expect(readDesktopHandoffBinding(searchParams)).toBeNull();
   });
 
   it.each([

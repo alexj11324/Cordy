@@ -36,6 +36,17 @@ describe("desktop login handoff", () => {
     expect(readDesktopHandoffVerifier(state ?? "")).toHaveLength(43);
   });
 
+  it("binds a backend-enabled browser host to its explicit app origin", async () => {
+    const url = await createDesktopGoogleLoginUrl(
+      "https://accounts.patchbay.ai",
+      "https://app.patchbay.ai",
+    );
+
+    expect(new URL(url).searchParams.get("app_origin")).toBe(
+      "https://app.patchbay.ai",
+    );
+  });
+
   it("does not clear the pending verifier for an unsolicited state", async () => {
     await createDesktopGoogleLoginUrl("https://patchbay.ai");
 

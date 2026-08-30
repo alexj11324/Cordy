@@ -15,6 +15,26 @@ describe("buildDesktopGoogleLoginUrl", () => {
     );
   });
 
+  it("carries an explicit browser app origin without assuming localhost", () => {
+    expect(
+      buildDesktopGoogleLoginUrl(
+        "https://accounts.patchbay.ai",
+        "https://app.patchbay.ai",
+      ),
+    ).toBe(
+      "https://accounts.patchbay.ai/oauth/google?platform=desktop&app_origin=https%3A%2F%2Fapp.patchbay.ai",
+    );
+  });
+
+  it("rejects a browser return URL that is not an exact origin", () => {
+    expect(() =>
+      buildDesktopGoogleLoginUrl(
+        "https://accounts.patchbay.ai",
+        "https://app.patchbay.ai/auth/callback",
+      ),
+    ).toThrow("Desktop browser return origin must be an HTTP(S) origin");
+  });
+
   it("fails closed instead of reopening the legacy accounts worker", () => {
     expect(() =>
       buildDesktopGoogleLoginUrl("https://accounts.aspectlylabs.com"),

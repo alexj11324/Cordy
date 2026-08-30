@@ -10,6 +10,7 @@ const {
   issueDesktopHandoff,
   redirectToCliCallback,
   redirectToDesktopApp,
+  redirectToDesktopBrowserApp,
 } = vi.hoisted(() => ({
   signInProps: { current: {} as Record<string, unknown> },
   authState: {
@@ -21,6 +22,7 @@ const {
   issueDesktopHandoff: vi.fn(),
   redirectToCliCallback: vi.fn(),
   redirectToDesktopApp: vi.fn(),
+  redirectToDesktopBrowserApp: vi.fn(),
 }));
 
 vi.mock("@patchbay/core/auth", () => ({
@@ -49,6 +51,13 @@ vi.mock("@patchbay/views/auth", async (importOriginal) => {
   return { ...original, redirectToCliCallback, redirectToDesktopApp };
 });
 
+vi.mock("@/features/auth/desktop-handoff", async (importOriginal) => {
+  const original = await importOriginal<
+    typeof import("@/features/auth/desktop-handoff")
+  >();
+  return { ...original, redirectToDesktopBrowserApp };
+});
+
 vi.mock("@patchbay/views/i18n", () => ({
   useT: () => ({ t: () => "Open Patchbay Desktop" }),
 }));
@@ -65,6 +74,8 @@ describe("LoginPage", () => {
     issueDesktopHandoff.mockReset();
     redirectToCliCallback.mockReset();
     redirectToDesktopApp.mockReset();
+    redirectToDesktopBrowserApp.mockReset();
+    process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN = "https://app.patchbay.ai";
   });
 
   it("renders the Clerk sign-in flow at the canonical login route", () => {
@@ -186,6 +197,38 @@ describe("LoginPage", () => {
       "desktop-handoff-code",
       "opaque-state",
     );
+  });
+
+  it("returns a browser-hosted desktop session to the allowlisted app origin", async () => {
+    search.current =
+      "platform=desktop&code_challenge=challenge-value&state=opaque-state" +
+      "&app_origin=https%3A%2F%2Fapp.patchbay.ai";
+    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
+    authStoreState.current = { status: "authenticated" };
+    issueDesktopHandoff.mockResolvedValue({ code: "desktop-handoff-code" });
+
+    render(<LoginPage />);
+
+    await waitFor(() => expect(issueDesktopHandoff).toHaveBeenCalledOnce());
+    expect(redirectToDesktopBrowserApp).toHaveBeenCalledWith(
+      "https://app.patchbay.ai",
+      "desktop-handoff-code",
+      "opaque-state",
+    );
+    expect(redirectToDesktopApp).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when a browser handoff names an unconfigured app origin", () => {
+    search.current =
+      "platform=desktop&code_challenge=challenge-value&state=opaque-state" +
+      "&app_origin=https%3A%2F%2Fevil.example";
+
+    render(<LoginPage />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Invalid desktop app origin.",
+    );
+    expect(issueDesktopHandoff).not.toHaveBeenCalled();
   });
 
   it("does not mint a desktop handoff without a renderer binding", async () => {
