@@ -38,6 +38,13 @@ ALTER TABLE webhook_delivery RENAME CONSTRAINT webhook_delivery_automation_id_fk
 ALTER TABLE webhook_delivery RENAME CONSTRAINT webhook_delivery_automation_trigger_id_fkey TO webhook_delivery_trigger_id_fkey;
 ALTER TABLE webhook_delivery RENAME CONSTRAINT webhook_delivery_automation_run_id_fkey TO webhook_delivery_autopilot_run_id_fkey;
 
+COMMENT ON TABLE automation_rule_version IS
+    'Append-only snapshot of autopilot rule publishes (PB-4302 §3.4). One row per substantive publish (create / enable / resume / trigger-condition / target / instructions change), recording the publisher + effective-config summary. Dispatch resolves the latest row for an autopilot as the run''s rule_owner accountable human. No FK, no cascade.';
+COMMENT ON COLUMN automation_trigger.published_by_type IS
+    'Actor type of the trigger''s current responsible publisher: member | agent. Set to the creator at creation and re-stamped to the editor on any substantive edit governing this trigger. Consumed only for attribution (source=trigger_owner) — never authorization. NULL on pre-migration triggers (PB-4302).';
+COMMENT ON COLUMN automation_trigger.published_by_id IS
+    'The member/agent currently responsible for this trigger''s effective config (creator, then last substantive editor). For a member this is the accountable human of runs the trigger fires (source=trigger_owner). No FK, app-layer integrity. NULL on pre-migration triggers, which degrade to rule_owner (PB-4302).';
+
 ALTER INDEX IF EXISTS automation_pkey RENAME TO autopilot_pkey;
 ALTER INDEX IF EXISTS idx_automation_workspace RENAME TO idx_autopilot_workspace;
 ALTER INDEX IF EXISTS idx_automation_assignee RENAME TO idx_autopilot_assignee;
