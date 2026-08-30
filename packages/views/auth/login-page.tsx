@@ -312,7 +312,7 @@ export function LoginPage({
     <div
       data-slot="field-separator"
       data-content="true"
-      className="relative -my-2 h-5 text-sm"
+      className="relative -my-2 h-5 text-body"
     >
       <div
         role="none"
@@ -361,8 +361,8 @@ export function LoginPage({
   const stepHeading = (title: ReactNode, description: ReactNode) =>
     embedded ? (
       <div className="flex flex-col gap-2 text-center">
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-        <p className="text-sm text-muted-foreground">{description}</p>
+        <h1 className="text-display-sm font-semibold tracking-tight">{title}</h1>
+        <p className="text-body text-muted-foreground">{description}</p>
       </div>
     ) : (
       <CardHeader className="text-center">

@@ -45,7 +45,7 @@ function GuestSessionEntry() {
       <Button
         type="button"
         variant="ghost"
-        className="h-auto w-full px-1 py-1 text-sm text-muted-foreground"
+        className="h-auto w-full px-1 py-1 text-body text-muted-foreground"
         onClick={() => void handleContinue()}
         disabled={isStarting}
         aria-busy={isStarting}
@@ -110,7 +110,7 @@ export function DesktopLoginPage() {
           <a
             href="#desktop-login"
             aria-current="page"
-            className="absolute right-4 top-4 z-30 inline-flex h-9 items-center justify-center rounded-md px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:right-8 md:top-8"
+            className="absolute right-4 top-4 z-30 inline-flex h-9 items-center justify-center rounded-md px-4 py-2 text-body font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:right-8 md:top-8"
           >
             {t(($) => $.desktop.entry.login_label)}
           </a>
@@ -119,7 +119,7 @@ export function DesktopLoginPage() {
             className="relative hidden h-full min-h-[32rem] flex-col p-10 text-primary lg:flex dark:border-r"
           >
             <div className="absolute inset-0 bg-primary/5" aria-hidden="true" />
-            <div className="relative z-20 flex items-center text-lg font-medium">
+            <div className="relative z-20 flex items-center text-title font-medium">
               <PatchbayIcon className="mr-2 size-6" noSpin />
               {t(($) => $.desktop.entry.brand)}
             </div>
