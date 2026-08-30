@@ -665,6 +665,264 @@ mod tests {
         assert_eq!(replacement_load.unwrap(), 5_000);
     }
 
+    #[tokio::test]
+    async fn broker_revalidation_requires_the_active_exact_child_grant() {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for delegated provider contract");
+        let pool = PgPool::connect(&url)
+            .await
+            .expect("connect contract PostgreSQL");
+        let workspace_id = Uuid::now_v7();
+        let owner_id = Uuid::now_v7();
+        let colleague_id = Uuid::now_v7();
+        let runtime_id = Uuid::now_v7();
+        let agent_id = Uuid::now_v7();
+        let parent_task_id = Uuid::now_v7();
+        let child_task_id = Uuid::now_v7();
+        let parent_dispatched_at = Utc::now();
+        let child_dispatched_at = Utc::now();
+
+        sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, 'broker revoke', $2)")
+            .bind(workspace_id)
+            .bind(format!("broker-revoke-{workspace_id}"))
+            .execute(&pool)
+            .await
+            .expect("create workspace");
+        for (user_id, name) in [(owner_id, "provider owner"), (colleague_id, "colleague")] {
+            sqlx::query("INSERT INTO \"user\" (id, name, email) VALUES ($1, $2, $3)")
+                .bind(user_id)
+                .bind(name)
+                .bind(format!("broker-revoke-{user_id}@example.test"))
+                .execute(&pool)
+                .await
+                .expect("create user");
+        }
+        for (user_id, role) in [(owner_id, "owner"), (colleague_id, "member")] {
+            sqlx::query("INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, $3)")
+                .bind(workspace_id)
+                .bind(user_id)
+                .bind(role)
+                .execute(&pool)
+                .await
+                .expect("create membership");
+        }
+        sqlx::query(
+            "INSERT INTO agent_runtime (id, workspace_id, daemon_id, name, runtime_mode, provider, status, owner_id, visibility) \
+             VALUES ($1, $2, 'broker-revoke-daemon', 'broker revoke runtime', 'local', 'codex', 'online', $3, 'private')",
+        )
+        .bind(runtime_id)
+        .bind(workspace_id)
+        .bind(owner_id)
+        .execute(&pool)
+        .await
+        .expect("create runtime");
+        sqlx::query(
+            "INSERT INTO agent (id, workspace_id, name, runtime_mode, status, max_concurrent_tasks, owner_id, runtime_id, model) \
+             VALUES ($1, $2, 'broker revoke agent', 'local', 'idle', 1, $3, $4, 'gpt-5.6-sol')",
+        )
+        .bind(agent_id)
+        .bind(workspace_id)
+        .bind(owner_id)
+        .bind(runtime_id)
+        .execute(&pool)
+        .await
+        .expect("create agent");
+        for (task_id, dispatched_at, delegated_from_task_id) in [
+            (parent_task_id, parent_dispatched_at, None),
+            (child_task_id, child_dispatched_at, Some(parent_task_id)),
+        ] {
+            sqlx::query(
+                "INSERT INTO agent_task_queue (id, agent_id, status, priority, dispatched_at, originator_user_id, accountable_user_id, runtime_id, delegated_from_task_id) \
+                 VALUES ($1, $2, 'dispatched', 0, $3, $4, $4, $5, $6)",
+            )
+            .bind(task_id)
+            .bind(agent_id)
+            .bind(dispatched_at)
+            .bind(colleague_id)
+            .bind(runtime_id)
+            .bind(delegated_from_task_id)
+            .execute(&pool)
+            .await
+            .expect("create delegated task");
+        }
+        let scope = json!([{
+            "action": Action::CREDENTIAL_USE,
+            "resource_type": ResourceType::PROVIDER_IDENTITY,
+            "resource_id": runtime_id,
+        }]);
+        patchbay_db::queries::task_token::create_task_token(
+            &pool,
+            &format!("broker-parent-{parent_task_id}"),
+            parent_task_id,
+            agent_id,
+            workspace_id,
+            colleague_id,
+            Some(Utc::now() + Duration::hours(1)),
+            &scope,
+            None,
+            Some(parent_dispatched_at),
+            1,
+            Some(colleague_id),
+            Some(runtime_id),
+            Uuid::now_v7(),
+        )
+        .await
+        .expect("create parent lease")
+        .expect("parent lease inserted");
+        let child_lease = patchbay_db::queries::task_token::create_task_token(
+            &pool,
+            &format!("broker-child-{child_task_id}"),
+            child_task_id,
+            agent_id,
+            workspace_id,
+            colleague_id,
+            Some(Utc::now() + Duration::hours(1)),
+            &scope,
+            Some(parent_task_id),
+            Some(child_dispatched_at),
+            2,
+            Some(colleague_id),
+            Some(runtime_id),
+            Uuid::now_v7(),
+        )
+        .await
+        .expect("create child lease")
+        .expect("child lease inserted");
+        let authorizer = patchbay_authorization::PostgresAuthorizer::new(pool.clone());
+        let provider_grant = |task_id| patchbay_authorization::CreateGrant {
+            workspace_id,
+            principal_type: PrincipalType::User,
+            principal_id: Some(colleague_id),
+            action: Action::CREDENTIAL_USE.to_string(),
+            resource_type: ResourceType::PROVIDER_IDENTITY.to_string(),
+            resource_id: Some(runtime_id),
+            effect: patchbay_authorization::DecisionEffect::Allow,
+            conditions: {
+                let mut conditions = json!({
+                    "provider": "codex",
+                    "provider_action": "provider.invoke",
+                    "device_id": runtime_id,
+                    "models": ["gpt-5.6-sol"],
+                    "max_tokens": 1_000,
+                });
+                if let Some(task_id) = task_id {
+                    conditions["task_id"] = json!(task_id);
+                }
+                conditions
+            },
+            expires_at: Some(Utc::now() + Duration::hours(1)),
+            created_by: Some(owner_id),
+        };
+        authorizer
+            .create_grant(provider_grant(None))
+            .await
+            .expect("create standing provider grant");
+        let exact_grant_id = authorizer
+            .create_grant(provider_grant(Some(child_task_id)))
+            .await
+            .expect("create exact child provider grant");
+        let context = WorkspaceContext {
+            workspace_id: workspace_id.to_string(),
+            member: patchbay_db::models::Member {
+                created_at: Utc::now(),
+                id: Uuid::now_v7(),
+                role: "member".into(),
+                user_id: colleague_id,
+                workspace_id,
+            },
+        };
+        let mut headers = HeaderMap::new();
+        for (name, value) in [
+            ("x-actor-source", "task_token".to_string()),
+            ("x-task-id", child_task_id.to_string()),
+            ("x-capability-lease-id", child_lease.id.to_string()),
+            ("x-on-behalf-of-user-id", colleague_id.to_string()),
+            ("x-agent-id", agent_id.to_string()),
+            ("x-device-id", runtime_id.to_string()),
+        ] {
+            headers.insert(name, value.parse().expect("header value"));
+        }
+        let request = || ValidateProviderLeaseRequest {
+            runtime_id,
+            provider: "codex".into(),
+            model: "gpt-5.6-sol".into(),
+            requested_max_tokens: 100,
+        };
+        let state = HandlerState::new(
+            pool.clone(),
+            patchbay_auth::pat_cache::PatCache::disabled(),
+            None,
+        );
+        assert_eq!(
+            validate_provider_lease(
+                State(state.clone()),
+                Extension(context.clone()),
+                headers.clone(),
+                Json(request()),
+            )
+            .await
+            .status(),
+            StatusCode::OK
+        );
+        authorizer
+            .revoke_grant(exact_grant_id, workspace_id, owner_id)
+            .await
+            .expect("revoke exact child grant");
+        assert_eq!(
+            validate_provider_lease(State(state), Extension(context), headers, Json(request()),)
+                .await
+                .status(),
+            StatusCode::FORBIDDEN,
+            "standing grant must not replace the revoked exact child grant"
+        );
+
+        sqlx::query("DELETE FROM authorization_audit_event WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete audit events");
+        sqlx::query("DELETE FROM authorization_grant WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete grants");
+        sqlx::query("DELETE FROM task_token WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete leases");
+        sqlx::query("DELETE FROM agent_task_queue WHERE agent_id = $1")
+            .bind(agent_id)
+            .execute(&pool)
+            .await
+            .expect("delete tasks");
+        sqlx::query("DELETE FROM agent WHERE id = $1")
+            .bind(agent_id)
+            .execute(&pool)
+            .await
+            .expect("delete agent");
+        sqlx::query("DELETE FROM agent_runtime WHERE id = $1")
+            .bind(runtime_id)
+            .execute(&pool)
+            .await
+            .expect("delete runtime");
+        sqlx::query("DELETE FROM member WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete memberships");
+        sqlx::query("DELETE FROM workspace WHERE id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete workspace");
+        sqlx::query("DELETE FROM \"user\" WHERE id = ANY($1)")
+            .bind(vec![owner_id, colleague_id])
+            .execute(&pool)
+            .await
+            .expect("delete users");
+    }
+
     #[test]
     fn provider_token_reservations_are_cumulative_and_overflow_closed() {
         let contexts = vec![

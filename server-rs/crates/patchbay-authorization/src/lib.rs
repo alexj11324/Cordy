@@ -798,6 +798,7 @@ fn evaluate(
         .filter(|grant| {
             grant_conditions_match(&grant.conditions, request)
                 && provider_grant_owner_matches(grant, request)
+                && delegated_provider_allow_matches(grant, request, lease_chain)
         })
         .collect();
     let mut matched_ids: Vec<Uuid> = matched.iter().map(|grant| grant.id).collect();
@@ -879,6 +880,29 @@ fn provider_grant_owner_matches(grant: &Grant, request: &AuthorizationRequest) -
         return true;
     }
     grant.created_by.is_some() && grant.created_by == request.resource.owner_id
+}
+
+fn delegated_provider_allow_matches(
+    grant: &Grant,
+    request: &AuthorizationRequest,
+    lease_chain: &[LeaseRow],
+) -> bool {
+    if grant.effect != "allow"
+        || request.action.as_str() != Action::CREDENTIAL_USE
+        || request.resource.resource_type.as_str() != ResourceType::PROVIDER_IDENTITY
+        || !lease_chain.first().is_some_and(|leaf| leaf.depth > 0)
+    {
+        return true;
+    }
+    let Some(leaf) = lease_chain.first() else {
+        return false;
+    };
+    grant
+        .conditions
+        .get("task_id")
+        .and_then(Value::as_str)
+        .and_then(|value| Uuid::parse_str(value).ok())
+        == Some(leaf.task_id)
 }
 
 fn relationship_allows(request: &AuthorizationRequest) -> bool {
@@ -1248,6 +1272,117 @@ mod tests {
         req.principal.id = Some(owner);
         req.resource.owner_id = Some(owner);
         assert_eq!(evaluate(&req, &[], &[]).effect, DecisionEffect::Allow);
+    }
+
+    #[test]
+    fn delegated_provider_use_requires_a_leaf_task_bound_allow() {
+        let owner = Uuid::now_v7();
+        let originator = Uuid::now_v7();
+        let workspace_id = Uuid::now_v7();
+        let runtime_id = Uuid::now_v7();
+        let parent = active_lease(
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            Uuid::now_v7(),
+            workspace_id,
+            originator,
+            runtime_id,
+            Capability::exact(
+                Action::CREDENTIAL_USE,
+                ResourceType::PROVIDER_IDENTITY,
+                runtime_id,
+            ),
+        );
+        let child_task_id = Uuid::now_v7();
+        let child_agent_id = Uuid::now_v7();
+        let child_lease_id = Uuid::now_v7();
+        let mut child = active_lease(
+            child_lease_id,
+            child_task_id,
+            child_agent_id,
+            workspace_id,
+            originator,
+            runtime_id,
+            Capability::exact(
+                Action::CREDENTIAL_USE,
+                ResourceType::PROVIDER_IDENTITY,
+                runtime_id,
+            ),
+        );
+        child.parent_token_id = Some(parent.id);
+        child.parent_fence = Some(parent.fence);
+        child.depth = 1;
+
+        let mut req = request(
+            Action::CREDENTIAL_USE,
+            ResourceType::PROVIDER_IDENTITY,
+            owner,
+            originator,
+        );
+        req.principal = Principal {
+            principal_type: PrincipalType::TaskRun,
+            id: Some(child_task_id),
+        };
+        req.resource.id = Some(runtime_id);
+        req.resource.workspace_id = workspace_id;
+        req.resource.attributes = json!({
+            "private": true,
+            "provider": "codex",
+            "provider_action": "provider.invoke",
+            "model": "gpt-5.6-sol",
+        });
+        req.context = AuthorizationContext {
+            workspace_role: Some(WorkspaceRole::Member),
+            on_behalf_of_user_id: Some(originator),
+            via_agent_id: Some(child_agent_id),
+            device_id: Some(runtime_id),
+            task_id: Some(child_task_id),
+            lease_id: Some(child_lease_id),
+            ..Default::default()
+        };
+        let grant = |effect: &str, task_id: Option<Uuid>| {
+            let mut conditions = json!({
+                "provider": "codex",
+                "provider_action": "provider.invoke",
+                "models": ["gpt-5.6-sol"],
+                "device_id": runtime_id,
+            });
+            if let Some(task_id) = task_id {
+                conditions["task_id"] = json!(task_id);
+            }
+            Grant {
+                id: Uuid::now_v7(),
+                effect: effect.to_string(),
+                conditions,
+                created_by: Some(owner),
+            }
+        };
+        let generic_allow = grant("allow", None);
+        let exact_allow = grant("allow", Some(child_task_id));
+        let chain = [child, parent];
+
+        assert_eq!(
+            evaluate(&req, &[generic_allow.clone(), exact_allow.clone()], &chain,).effect,
+            DecisionEffect::Allow
+        );
+        assert_eq!(
+            evaluate(&req, std::slice::from_ref(&generic_allow), &chain).effect,
+            DecisionEffect::Deny,
+            "a standing grant cannot replace a revoked exact child grant"
+        );
+        assert_eq!(
+            evaluate(&req, &[exact_allow.clone(), grant("deny", None)], &chain).effect,
+            DecisionEffect::Deny
+        );
+        assert_eq!(
+            evaluate(
+                &req,
+                &[exact_allow, grant("require_approval", None)],
+                &chain,
+            )
+            .effect,
+            DecisionEffect::RequireApproval
+        );
     }
 
     #[test]

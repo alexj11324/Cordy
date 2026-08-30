@@ -7644,6 +7644,15 @@ pub(crate) async fn can_invoke_agent(
             "member" => Some(WorkspaceRole::Member),
             _ => None,
         });
+    let team_ids = match originator_user_id {
+        Some(user_id) => team::list_teams_by_member(&state.pool, workspace_id, "member", user_id)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|team| team.id)
+            .collect(),
+        None => Vec::new(),
+    };
     let principal_type = if task_authorization.is_some() {
         PrincipalType::TaskRun
     } else {
@@ -7671,6 +7680,7 @@ pub(crate) async fn can_invoke_agent(
         device_id: task_authorization.and_then(|context| context.device_id),
         task_id: task_authorization.map(|context| context.task_id),
         lease_id: task_authorization.map(|context| context.lease_id),
+        team_ids: team_ids.clone(),
         ..Default::default()
     };
     let invocation_allowed = state
@@ -7707,6 +7717,52 @@ pub(crate) async fn can_invoke_agent(
     else {
         return false;
     };
+    let is_brokered_provider = matches!(target_runtime.provider.as_str(), "codex" | "claude");
+    let cross_owner_provider =
+        is_brokered_provider && target_runtime.owner_id != originator_user_id;
+    let direct_originator = task_authorization.is_none() && actor_type != "agent";
+    let provider_allowed = if is_brokered_provider && direct_originator {
+        let Some(originator_user_id) = originator_user_id else {
+            return false;
+        };
+        state
+            .authorization
+            .authorize(AuthorizationRequest {
+                principal: Principal {
+                    principal_type: PrincipalType::User,
+                    id: Some(originator_user_id),
+                },
+                action: Action::new(Action::CREDENTIAL_USE),
+                resource: Resource {
+                    resource_type: ResourceType::new(ResourceType::PROVIDER_IDENTITY),
+                    id: Some(target_runtime.id),
+                    workspace_id,
+                    owner_id: target_runtime.owner_id,
+                    attributes: json!({
+                        "private": true,
+                        "provider": target_runtime.provider,
+                        "provider_action": "provider.invoke",
+                        "model": target.model.as_deref().unwrap_or_default(),
+                    }),
+                },
+                context: AuthorizationContext {
+                    workspace_role: role,
+                    on_behalf_of_user_id: Some(originator_user_id),
+                    via_agent_id: Some(target.id),
+                    device_id: Some(target_runtime.id),
+                    team_ids,
+                    ..Default::default()
+                },
+                delegation_chain: Vec::new(),
+            })
+            .await
+            .is_ok_and(|decision| decision.is_allowed())
+    } else {
+        !cross_owner_provider
+    };
+    if !provider_allowed {
+        return false;
+    }
     state
         .authorization
         .authorize(AuthorizationRequest {
@@ -7723,6 +7779,7 @@ pub(crate) async fn can_invoke_agent(
                 attributes: json!({
                     "private": target_runtime.visibility != "public",
                     "local_device": target_runtime.runtime_mode == "local",
+                    "brokered_provider": cross_owner_provider && provider_allowed,
                 }),
             },
             context: authorization_context,
@@ -9089,6 +9146,289 @@ mod tests {
             .execute(&pool)
             .await
             .expect("delete workspace");
+    }
+
+    #[tokio::test]
+    async fn cross_owner_provider_proof_gates_shared_agent_invocation() {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for provider invocation contract");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(&url)
+            .await
+            .expect("connect contract PostgreSQL");
+        let workspace_id = Uuid::now_v7();
+        let owner_id = Uuid::now_v7();
+        let colleague_id = Uuid::now_v7();
+        let runtime_id = Uuid::now_v7();
+        let agent_id = Uuid::now_v7();
+
+        sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, 'provider gate', $2)")
+            .bind(workspace_id)
+            .bind(format!("provider-gate-{workspace_id}"))
+            .execute(&pool)
+            .await
+            .expect("create workspace");
+        for (user_id, name) in [(owner_id, "provider owner"), (colleague_id, "colleague")] {
+            sqlx::query("INSERT INTO \"user\" (id, name, email) VALUES ($1, $2, $3)")
+                .bind(user_id)
+                .bind(name)
+                .bind(format!("provider-gate-{user_id}@example.test"))
+                .execute(&pool)
+                .await
+                .expect("create user");
+        }
+        for (user_id, role) in [(owner_id, "owner"), (colleague_id, "member")] {
+            sqlx::query("INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, $3)")
+                .bind(workspace_id)
+                .bind(user_id)
+                .bind(role)
+                .execute(&pool)
+                .await
+                .expect("create membership");
+        }
+        sqlx::query(
+            "INSERT INTO agent_runtime (id, workspace_id, daemon_id, name, runtime_mode, provider, status, owner_id, visibility) \
+             VALUES ($1, $2, 'provider-gate-daemon', 'provider gate runtime', 'local', 'codex', 'online', $3, 'private')",
+        )
+        .bind(runtime_id)
+        .bind(workspace_id)
+        .bind(owner_id)
+        .execute(&pool)
+        .await
+        .expect("create runtime");
+        sqlx::query(
+            "INSERT INTO agent (id, workspace_id, name, runtime_mode, status, max_concurrent_tasks, owner_id, runtime_id, permission_mode, model) \
+             VALUES ($1, $2, 'provider gate agent', 'local', 'idle', 1, $3, $4, 'public_to', 'gpt-5.6-sol')",
+        )
+        .bind(agent_id)
+        .bind(workspace_id)
+        .bind(owner_id)
+        .bind(runtime_id)
+        .execute(&pool)
+        .await
+        .expect("create agent");
+        agent_invocation_target::create_agent_invocation_target(
+            &pool,
+            agent_id,
+            "workspace",
+            workspace_id,
+            owner_id,
+        )
+        .await
+        .expect("share agent with workspace");
+        let state = HandlerState::new(pool.clone(), PatCache::disabled(), None);
+        let target = agent::get_agent_in_workspace(&pool, agent_id, workspace_id)
+            .await
+            .expect("load agent")
+            .expect("agent exists");
+        assert!(!can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+
+        let authorizer = patchbay_authorization::PostgresAuthorizer::new(pool.clone());
+        let grant = |principal_type: PrincipalType,
+                     principal_id: Uuid,
+                     resource_id: Uuid,
+                     effect: patchbay_authorization::DecisionEffect,
+                     model: &str| patchbay_authorization::CreateGrant {
+            workspace_id,
+            principal_type,
+            principal_id: Some(principal_id),
+            action: Action::CREDENTIAL_USE.to_string(),
+            resource_type: ResourceType::PROVIDER_IDENTITY.to_string(),
+            resource_id: Some(resource_id),
+            effect,
+            conditions: json!({
+                "provider": "codex",
+                "provider_action": "provider.invoke",
+                "device_id": runtime_id,
+                "models": [model],
+            }),
+            expires_at: Some(Utc::now() + chrono::Duration::hours(1)),
+            created_by: Some(owner_id),
+        };
+        let wrong_model_id = authorizer
+            .create_grant(grant(
+                PrincipalType::User,
+                colleague_id,
+                runtime_id,
+                patchbay_authorization::DecisionEffect::Allow,
+                "gpt-5.6-terra",
+            ))
+            .await
+            .expect("create wrong-model grant");
+        assert!(!can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        sqlx::query("UPDATE authorization_grant SET revoked_at = now() WHERE id = $1")
+            .bind(wrong_model_id)
+            .execute(&pool)
+            .await
+            .expect("revoke wrong-model grant");
+
+        let mut expired_grant = grant(
+            PrincipalType::User,
+            colleague_id,
+            runtime_id,
+            patchbay_authorization::DecisionEffect::Allow,
+            "gpt-5.6-sol",
+        );
+        expired_grant.expires_at = Some(Utc::now() - chrono::Duration::minutes(1));
+        authorizer
+            .create_grant(expired_grant)
+            .await
+            .expect("create expired grant");
+        authorizer
+            .create_grant(grant(
+                PrincipalType::User,
+                colleague_id,
+                Uuid::now_v7(),
+                patchbay_authorization::DecisionEffect::Allow,
+                "gpt-5.6-sol",
+            ))
+            .await
+            .expect("create wrong-runtime grant");
+        assert!(!can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+
+        let user_grant_id = authorizer
+            .create_grant(grant(
+                PrincipalType::User,
+                colleague_id,
+                runtime_id,
+                patchbay_authorization::DecisionEffect::Allow,
+                "gpt-5.6-sol",
+            ))
+            .await
+            .expect("create user grant");
+        assert!(can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        sqlx::query("UPDATE authorization_grant SET effect = 'require_approval' WHERE id = $1")
+            .bind(user_grant_id)
+            .execute(&pool)
+            .await
+            .expect("require approval");
+        assert!(!can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        sqlx::query(
+            "UPDATE authorization_grant SET effect = 'allow', revoked_at = now() WHERE id = $1",
+        )
+        .bind(user_grant_id)
+        .execute(&pool)
+        .await
+        .expect("revoke user grant");
+        assert!(!can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+
+        let team = team::create_team(
+            &pool,
+            workspace_id,
+            "provider delegates",
+            "",
+            agent_id,
+            owner_id,
+            None,
+        )
+        .await
+        .expect("create team")
+        .expect("team inserted");
+        team::add_team_member(&pool, team.id, "member", colleague_id, "member")
+            .await
+            .expect("add team member")
+            .expect("team member inserted");
+        let team_grant_id = authorizer
+            .create_grant(grant(
+                PrincipalType::Team,
+                team.id,
+                runtime_id,
+                patchbay_authorization::DecisionEffect::Allow,
+                "gpt-5.6-sol",
+            ))
+            .await
+            .expect("create team grant");
+        assert!(can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        sqlx::query("UPDATE authorization_grant SET revoked_at = now() WHERE id = $1")
+            .bind(team_grant_id)
+            .execute(&pool)
+            .await
+            .expect("revoke team grant");
+
+        let agent_grant_id = authorizer
+            .create_grant(grant(
+                PrincipalType::AgentDefinition,
+                agent_id,
+                runtime_id,
+                patchbay_authorization::DecisionEffect::Allow,
+                "gpt-5.6-sol",
+            ))
+            .await
+            .expect("create agent grant");
+        assert!(can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        sqlx::query("UPDATE authorization_grant SET revoked_at = now() WHERE id = $1")
+            .bind(agent_grant_id)
+            .execute(&pool)
+            .await
+            .expect("revoke agent grant");
+        sqlx::query(
+            "UPDATE agent_runtime SET runtime_mode = 'cloud', visibility = 'public' WHERE id = $1",
+        )
+        .bind(runtime_id)
+        .execute(&pool)
+        .await
+        .expect("make runtime public cloud");
+        assert!(!can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM agent_task_queue WHERE agent_id = $1",
+            )
+            .bind(agent_id)
+            .fetch_one(&pool)
+            .await
+            .expect("count doomed tasks"),
+            0
+        );
+
+        sqlx::query("DELETE FROM authorization_audit_event WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete audit events");
+        sqlx::query("DELETE FROM authorization_grant WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete grants");
+        sqlx::query("DELETE FROM team_member WHERE team_id = $1")
+            .bind(team.id)
+            .execute(&pool)
+            .await
+            .expect("delete team member");
+        sqlx::query("DELETE FROM team WHERE id = $1")
+            .bind(team.id)
+            .execute(&pool)
+            .await
+            .expect("delete team");
+        agent_invocation_target::delete_agent_invocation_targets(&pool, agent_id)
+            .await
+            .expect("delete invocation target");
+        sqlx::query("DELETE FROM agent WHERE id = $1")
+            .bind(agent_id)
+            .execute(&pool)
+            .await
+            .expect("delete agent");
+        sqlx::query("DELETE FROM agent_runtime WHERE id = $1")
+            .bind(runtime_id)
+            .execute(&pool)
+            .await
+            .expect("delete runtime");
+        sqlx::query("DELETE FROM member WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete memberships");
+        sqlx::query("DELETE FROM workspace WHERE id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete workspace");
+        sqlx::query("DELETE FROM \"user\" WHERE id = ANY($1)")
+            .bind(vec![owner_id, colleague_id])
+            .execute(&pool)
+            .await
+            .expect("delete users");
     }
 
     #[tokio::test]
