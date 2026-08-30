@@ -341,6 +341,22 @@ fn task_token_route_allowed(method: &Method, path: &str, _workspace_id: Uuid) ->
     if method == Method::POST && path == "/api/authorization/provider-leases/validate" {
         return true;
     }
+    // Dependency-graph planning is a scoped data-plane capability for a
+    // leader/planner task. Keep these routes explicit: the generic issue
+    // allowlist below intentionally accepts only one-segment issue reads and
+    // must not accidentally widen task-token access to arbitrary nested
+    // control-plane routes.
+    if method == Method::GET
+        && (is_uuid_route(path, "/api/issues/", "/dependency-graph")
+            || is_uuid_route(path, "/api/dependency-graphs/", ""))
+    {
+        return true;
+    }
+    if method == Method::POST
+        && is_uuid_route(path, "/api/issues/", "/dependency-graph/apply")
+    {
+        return true;
+    }
     if path.starts_with("/api/issues") {
         if method == Method::GET {
             let suffix = path.strip_prefix("/api/issues/").unwrap_or_default();
@@ -371,6 +387,16 @@ fn task_token_route_allowed(method: &Method, path: &str, _workspace_id: Uuid) ->
         return true;
     }
     false
+}
+
+fn is_uuid_route(path: &str, prefix: &str, suffix: &str) -> bool {
+    let Some(id) = path
+        .strip_prefix(prefix)
+        .and_then(|rest| rest.strip_suffix(suffix))
+    else {
+        return false;
+    };
+    !id.contains('/') && !id.is_empty() && Uuid::parse_str(id).is_ok()
 }
 
 /// Auth middleware entrypoint — use via
@@ -968,6 +994,8 @@ mod tests {
     #[test]
     fn task_lease_allowlist_is_limited_to_scoped_data_plane_routes() {
         let workspace_id = test_uuid(15);
+        let issue_id = test_uuid(17);
+        let plan_id = test_uuid(18);
         for (method, path) in [
             (Method::GET, "/api/issues/issue-id"),
             (Method::PUT, "/api/issues/issue-id"),
@@ -981,6 +1009,31 @@ mod tests {
                 "{method} {path}"
             );
         }
+        assert!(task_token_route_allowed(
+            &Method::GET,
+            &format!("/api/issues/{issue_id}/dependency-graph"),
+            workspace_id,
+        ));
+        assert!(task_token_route_allowed(
+            &Method::POST,
+            &format!("/api/issues/{issue_id}/dependency-graph/apply"),
+            workspace_id,
+        ));
+        assert!(task_token_route_allowed(
+            &Method::GET,
+            &format!("/api/dependency-graphs/{plan_id}"),
+            workspace_id,
+        ));
+        assert!(!task_token_route_allowed(
+            &Method::GET,
+            "/api/dependency-graphs",
+            workspace_id,
+        ));
+        assert!(!task_token_route_allowed(
+            &Method::POST,
+            &format!("/api/issues/{issue_id}/dependency-graph/extra"),
+            workspace_id,
+        ));
         assert!(!task_token_route_allowed(
             &Method::GET,
             &format!("/api/workspaces/{}", test_uuid(16)),

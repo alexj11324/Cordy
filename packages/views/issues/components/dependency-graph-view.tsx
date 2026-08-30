@@ -473,7 +473,7 @@ export function DependencyGraphView({ projectId }: { projectId?: string }) {
                   const midX = x1 + (x2 - x1) / 2;
                   return (
                     <g
-                      key={edge.id}
+                      key={edgeKey(graph.plan.id, edge.id)}
                       data-graph-edge
                       role="button"
                       tabIndex={0}

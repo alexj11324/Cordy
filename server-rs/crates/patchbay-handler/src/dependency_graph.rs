@@ -10,6 +10,8 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use patchbay_authorization::Action;
+use patchbay_db::queries::agent;
 use patchbay_middleware::workspace::WorkspaceContext;
 use patchbay_service::dependency_graph::{
     apply_dependency_plan, load_active_dependency_graph_for_issue, load_active_dependency_graphs,
@@ -52,6 +54,95 @@ fn workspace_id(context: &WorkspaceContext) -> Result<Uuid, Response> {
         .map_err(|_| error_response(StatusCode::NOT_FOUND, "workspace not found"))
 }
 
+fn graph_creator(
+    headers: &HeaderMap,
+    context: &WorkspaceContext,
+) -> Result<(&'static str, Uuid), Response> {
+    if headers
+        .get("x-actor-source")
+        .and_then(|value| value.to_str().ok())
+        == Some("task_token")
+    {
+        let Some(agent_id) = headers
+            .get("x-agent-id")
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| Uuid::parse_str(value).ok())
+        else {
+            return Err(error_response(
+                StatusCode::FORBIDDEN,
+                "invalid planner Agent identity",
+            ));
+        };
+        return Ok(("agent", agent_id));
+    }
+    Ok(("member", context.member.user_id))
+}
+
+async fn graph_read_allowed(
+    state: &HandlerState,
+    headers: &HeaderMap,
+    workspace_id: Uuid,
+    issue_id: Uuid,
+) -> bool {
+    let is_task_token = headers
+        .get("x-actor-source")
+        .and_then(|value| value.to_str().ok())
+        == Some("task_token");
+    if is_task_token
+        && crate::issue::TaskAuthorizationContext::from_headers(headers).is_none()
+    {
+        return false;
+    }
+    crate::issue::task_project_resource_allows(
+        state,
+        headers,
+        workspace_id,
+        Some(issue_id),
+        true,
+        Action::RESOURCE_READ,
+    )
+    .await
+}
+
+async fn graph_apply_allowed(
+    state: &HandlerState,
+    headers: &HeaderMap,
+    workspace_id: Uuid,
+    parent_issue_id: Uuid,
+) -> bool {
+    let is_task_token = headers
+        .get("x-actor-source")
+        .and_then(|value| value.to_str().ok())
+        == Some("task_token");
+    let authorization = crate::issue::TaskAuthorizationContext::from_headers(headers);
+    if is_task_token && authorization.is_none() {
+        return false;
+    }
+    if !crate::issue::task_project_resource_allows(
+        state,
+        headers,
+        workspace_id,
+        Some(parent_issue_id),
+        true,
+        Action::RESOURCE_USE,
+    )
+    .await
+    {
+        return false;
+    }
+    let Some(authorization) = authorization else {
+        return true;
+    };
+    let Some(agent_id) = authorization.via_agent_id else {
+        return false;
+    };
+    agent::get_agent_task_in_workspace(&state.pool, authorization.task_id, workspace_id)
+        .await
+        .ok()
+        .flatten()
+        .is_some_and(|task| task.agent_id == agent_id && task.is_leader_task)
+}
+
 fn graph_error(error: DependencyGraphError) -> Response {
     let (status, code) = match &error {
         DependencyGraphError::Validation(_) => (StatusCode::UNPROCESSABLE_ENTITY, "invalid_plan"),
@@ -82,11 +173,18 @@ async fn get_issue_dependency_graph(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(issue_id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> Response {
     let workspace_id = match workspace_id(&context) {
         Ok(workspace_id) => workspace_id,
         Err(response) => return response,
     };
+    if !graph_read_allowed(&state, &headers, workspace_id, issue_id).await {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task capability does not allow reading this dependency graph",
+        );
+    }
     match load_active_dependency_graph_for_issue(&state.pool, workspace_id, issue_id).await {
         Ok(snapshot) => snapshot_response(&state, snapshot).await,
         Err(error) => graph_error(error),
@@ -97,13 +195,29 @@ async fn get_dependency_graph_by_id(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
     Path(plan_id): Path<Uuid>,
+    headers: HeaderMap,
 ) -> Response {
     let workspace_id = match workspace_id(&context) {
         Ok(workspace_id) => workspace_id,
         Err(response) => return response,
     };
     match load_dependency_graph(&state.pool, workspace_id, plan_id).await {
-        Ok(snapshot) => snapshot_response(&state, snapshot).await,
+        Ok(snapshot) => {
+            if !graph_read_allowed(
+                &state,
+                &headers,
+                workspace_id,
+                snapshot.plan.parent_issue_id,
+            )
+            .await
+            {
+                return error_response(
+                    StatusCode::FORBIDDEN,
+                    "task capability does not allow reading this dependency graph",
+                );
+            }
+            snapshot_response(&state, snapshot).await
+        }
         Err(error) => graph_error(error),
     }
 }
@@ -161,14 +275,24 @@ async fn apply_issue_dependency_graph(
             "Idempotency-Key header is required",
         );
     };
+    if !graph_apply_allowed(&state, &headers, workspace_id, parent_issue_id).await {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task capability does not allow applying a dependency graph",
+        );
+    }
+    let (created_by_type, created_by_id) = match graph_creator(&headers, &context) {
+        Ok(creator) => creator,
+        Err(response) => return response,
+    };
 
     match apply_dependency_plan(
         &state.pool,
         workspace_id,
         &input,
         idempotency_key,
-        "member",
-        context.member.user_id,
+        created_by_type,
+        created_by_id,
     )
     .await
     {
@@ -186,8 +310,8 @@ async fn apply_issue_dependency_graph(
             state.bus.publish(&patchbay_events::Event {
                 event_type: patchbay_protocol::EVENT_DEPENDENCY_GRAPH_UPDATED.to_string(),
                 workspace_id: workspace_id.to_string(),
-                actor_type: "member".to_string(),
-                actor_id: context.member.user_id.to_string(),
+                actor_type: created_by_type.to_string(),
+                actor_id: created_by_id.to_string(),
                 payload: json!({
                     "plan_id": snapshot.plan.id,
                     "parent_issue_id": snapshot.plan.parent_issue_id,

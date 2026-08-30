@@ -605,6 +605,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
                 issue::require_issue_workspace,
             )),
         )
+        .merge(
+            dependency_graph::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                patchbay_middleware::workspace::require_workspace,
+            )),
+        )
         .route_layer(middleware::from_fn_with_state(
             cloudfront_signer,
             cloudfront::refresh_signed_cookies,

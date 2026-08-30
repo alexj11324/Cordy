@@ -461,10 +461,10 @@ fn node_state(status: &str, gate_open: bool) -> String {
     } else if status == issue_status::TODO {
         "ready".to_string()
     } else {
-        // Unknown/backlog states are not admitted by the scheduler. Keep them
-        // out of the Ready filter even when the dependency predicate itself is
-        // open; readiness is fail-closed for any status we do not understand.
-        "todo".to_string()
+        // Unknown/backlog states are not admitted by the scheduler. Report
+        // them as blocked so the Graph surface cannot present a non-admitted
+        // task as a runnable "todo" state when the dependency gate is open.
+        "blocked".to_string()
     }
 }
 
@@ -538,20 +538,15 @@ async fn load_graph(
         let status = status_by_issue
             .get(issue_id)
             .expect("status and issue maps are built together");
-        let prerequisites = edges
-            .iter()
-            .filter(|edge| edge.to_issue_id == *issue_id)
-            .collect::<Vec<_>>();
-        let satisfied_prerequisites = prerequisites
-            .iter()
-            .filter(|edge| {
-                status_by_issue
-                    .get(&edge.from_issue_id)
-                    .is_some_and(|status| status == issue_status::DONE)
-            })
-            .count() as i64;
-        let total_prerequisites = prerequisites.len() as i64;
-        let gate_open = satisfied_prerequisites == total_prerequisites;
+        // Read the exact database predicate used by queue INSERT/claim and
+        // wakeup. The API must not drift into a second readiness authority as
+        // custom-status or cross-plan semantics evolve.
+        let gate = graph_q::get_gate_state(pool, plan.workspace_id, *issue_id)
+            .await
+            .map_err(db_error)?;
+        let satisfied_prerequisites = gate.satisfied_prerequisites;
+        let total_prerequisites = gate.total_prerequisites;
+        let gate_open = gate.gate_open;
         let state = node_state(status, gate_open);
         match state.as_str() {
             "ready" => readiness.ready += 1,
@@ -852,6 +847,18 @@ pub async fn apply_dependency_plan(
         for candidate in &task.candidate_assignees {
             validate_persisted_assignee(&mut *tx, workspace_id, candidate).await?;
         }
+    }
+
+    if created_by_type == "agent" {
+        validate_persisted_assignee(
+            &mut *tx,
+            workspace_id,
+            &PlanAssignee {
+                type_: "agent".to_string(),
+                id: created_by_id,
+            },
+        )
+        .await?;
     }
 
     let plan = graph_q::insert_plan(
