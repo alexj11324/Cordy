@@ -1,4 +1,7 @@
 {{- $backendImageTag := default .Chart.AppVersion .Values.images.backend.tag -}}
+{{- if and (gt (int .Values.backend.replicas) 1) (not .Values.backend.redis.enabled) -}}
+{{- fail "backend.redis.enabled must be true when backend.replicas is greater than 1 so desktop handoff codes use a shared store" -}}
+{{- end -}}
 {{- if .Values.backend.uploads.persistence.enabled -}}
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -67,10 +70,19 @@ spec:
                 name: {{ .Release.Name }}-config
             - secretRef:
                 name: {{ include "patchbay.existingSecret" . }}
-          {{- if not .Values.postgres.external.enabled }}
+          {{- if or (not .Values.postgres.external.enabled) .Values.backend.redis.enabled }}
           env:
+            {{- if not .Values.postgres.external.enabled }}
             - name: DATABASE_URL
               value: {{ include "patchbay.databaseUrl" . | quote }}
+            {{- end }}
+            {{- if .Values.backend.redis.enabled }}
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "patchbay.existingSecret" . }}
+                  key: {{ .Values.backend.redis.secretKey | quote }}
+            {{- end }}
           {{- end }}
           {{- if .Values.backend.uploads.persistence.enabled }}
           volumeMounts:

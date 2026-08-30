@@ -37,6 +37,22 @@ require_rendered_value "$default_config" 'PATCHBAY_ENTITLEMENT_POLICY_ENABLED: "
 require_rendered_value "$default_config" 'PATCHBAY_ENTITLEMENT_POLICY_URL: ""'
 reject_rendered_value "$default_config" 'PATCHBAY_ENTITLEMENT_SERVICE_TOKEN'
 
+if helm template patchbay "$CHART_DIR" \
+  --set backend.replicas=2 >/dev/null 2>&1; then
+  echo "Helm must reject multiple backend replicas without shared Redis"
+  exit 1
+fi
+
+redis_backend="$(
+  helm template patchbay "$CHART_DIR" \
+    --show-only templates/backend.yaml \
+    --set backend.replicas=2 \
+    --set backend.redis.enabled=true
+)"
+require_rendered_value "$redis_backend" 'replicas: 2'
+require_rendered_value "$redis_backend" '- name: REDIS_URL'
+require_rendered_value "$redis_backend" 'key: "REDIS_URL"'
+
 disabled_config="$(
   helm template patchbay "$CHART_DIR" \
     --show-only templates/configmap.yaml \
