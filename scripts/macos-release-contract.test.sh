@@ -29,6 +29,11 @@ require_literal 'group: production-release-${{ inputs.tag || github.event.workfl
 require_literal 'echo "commit_sha=$commit_sha"'
 require_literal 'ref: ${{ needs.prepare.outputs.commit_sha }}'
 require_literal "startsWith(github.event.workflow_run.head_branch, 'v')"
+require_literal "github.event.workflow_run.event == 'workflow_dispatch'"
+require_literal 'TRIGGERING_RUN_ID: ${{ github.event.workflow_run.id }}'
+require_literal 'actions/runs/$TRIGGERING_RUN_ID/jobs?per_page=100'
+require_literal '"rust-platform (macos-latest)"'
+require_literal '"rust-platform (windows-latest)"'
 require_count 3 'git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main'
 require_literal 'git merge-base --is-ancestor "$commit_sha" origin/main'
 require_count 2 'git merge-base --is-ancestor "$EXPECTED_COMMIT" origin/main'
@@ -56,8 +61,13 @@ if grep -Fq -- 'BUILD_TARGET' "$workflow"; then
   echo "macOS release workflow must select architectures before allocating matrix runners" >&2
   exit 1
 fi
-if ! grep -Fq -- "- '.github/workflows/macos-release.yml'" "$ci_workflow"; then
-  echo "macOS release workflow changes must run the release contract test" >&2
+if ! grep -Fq -- 'run_rust:' "$ci_workflow" ||
+  ! grep -Fq -- "RUN_RUST: \${{ github.event_name == 'workflow_dispatch' && inputs.run_rust == true }}" "$ci_workflow"; then
+  echo "CI must expose an explicit manual-only Rust validation input" >&2
+  exit 1
+fi
+if [ "$(grep -Fc -- "needs.changes.outputs.rust == 'true'" "$ci_workflow" || true)" -lt 5 ]; then
+  echo "every Rust worker must use the manual Rust validation gate" >&2
   exit 1
 fi
 

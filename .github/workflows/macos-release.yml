@@ -21,12 +21,13 @@ on:
           - all
 
 permissions:
+  actions: read
   contents: write
 
 concurrency:
   # Share the tag-scoped publication lock with release.yml. The automatic
-  # path receives the version tag as workflow_run.head_branch, while manual
-  # runs receive the same value through inputs.tag.
+  # path receives the version tag selected for the manual CI run as
+  # workflow_run.head_branch, while direct runs use inputs.tag.
   group: production-release-${{ inputs.tag || github.event.workflow_run.head_branch || github.run_id }}
   cancel-in-progress: false
 
@@ -39,7 +40,7 @@ jobs:
         (
           github.event_name == 'workflow_run' &&
           github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.event == 'workflow_dispatch' &&
           startsWith(github.event.workflow_run.head_branch, 'v') &&
           github.event.workflow_run.head_repository.full_name == github.repository
         )
@@ -53,6 +54,33 @@ jobs:
       commit_sha: ${{ steps.meta.outputs.commit_sha }}
       package_matrix: ${{ steps.meta.outputs.package_matrix }}
     steps:
+      - name: Verify triggering CI completed the manual Rust suite
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TRIGGERING_RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          jobs_json="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$TRIGGERING_RUN_ID/jobs?per_page=100")"
+          required_jobs=(
+            rust-deployment-contracts
+            rust-quality
+            rust-tests
+            rust-audit
+            "rust-platform (macos-latest)"
+            "rust-platform (windows-latest)"
+          )
+          for job_name in "${required_jobs[@]}"; do
+            conclusion="$(jq -r --arg name "$job_name" '
+              [.jobs[] | select(.name == $name) | .conclusion]
+              | if length == 1 then .[0] else "missing-or-duplicate" end
+            ' <<< "$jobs_json")"
+            if [ "$conclusion" != "success" ]; then
+              echo "::error::Manual Rust authorization is invalid: $job_name concluded '$conclusion'."
+              exit 1
+            fi
+          done
+
       - name: Checkout release candidate
         uses: actions/checkout@v4
         with:
