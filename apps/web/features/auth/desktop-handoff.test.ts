@@ -75,22 +75,30 @@ describe("buildDesktopHandoffQuery", () => {
     });
   });
 
-  it("rejects an unconfigured or mismatched browser app origin", () => {
-    const searchParams = new URLSearchParams({
-      platform: "desktop",
-      code_challenge: "a".repeat(43),
-      state: "b".repeat(43),
-      app_origin: "https://evil.example",
-    });
+  it.each([
+    "http://localhost:3000",
+    "https://www.aspectlylabs.com",
+    "https://app.patchbay.ai",
+    "https://evil.example",
+  ])(
+    "rejects an unconfigured or mismatched browser app origin: %s",
+    (appOrigin) => {
+      const searchParams = new URLSearchParams({
+        platform: "desktop",
+        code_challenge: "a".repeat(43),
+        state: "b".repeat(43),
+        app_origin: appOrigin,
+      });
 
-    expect(
-      readDesktopHandoffBinding(
-        searchParams,
-        "https://patchbay.aspectlylabs.com",
-      ),
-    ).toBeNull();
-    expect(readDesktopHandoffBinding(searchParams)).toBeNull();
-  });
+      expect(
+        readDesktopHandoffBinding(
+          searchParams,
+          "https://patchbay.aspectlylabs.com",
+        ),
+      ).toBeNull();
+      expect(readDesktopHandoffBinding(searchParams)).toBeNull();
+    },
+  );
 
   it.each([
     "platform=desktop",
