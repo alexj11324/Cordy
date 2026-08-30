@@ -40,6 +40,8 @@ function GoogleOAuthContent() {
 
     const returnUrl = `/login?${binding.query}`;
     const callbackUrl = `/oauth/google/callback?${binding.query}`;
+    // Existing Google users stay on sign-in. The callback transfers a new
+    // external account to sign-up when Clerk marks this attempt transferable.
     void signIn
       .sso({
         strategy: "oauth_google",

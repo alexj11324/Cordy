@@ -84,21 +84,30 @@ function GoogleOAuthCallbackContent() {
         return;
       }
 
-      if (signUp.isTransferable) {
-        const { error: transferError } = await signIn.create({
+      // A Google identity that does not belong to an existing Clerk user is
+      // reported on the sign-in attempt as transferable. Continue that exact
+      // verified external account as sign-up before considering the inverse
+      // compatibility transfer.
+      if (signIn.isTransferable) {
+        const { error: transferError } = await signUp.create({
           transfer: true,
         });
+        if (transferError) return failClosed();
+        if ((signUp.status as string) === "complete") {
+          await finalizeSignUp();
+          return;
+        }
+        return failClosed();
+      }
+
+      if (signUp.isTransferable) {
+        const { error: transferError } = await signIn.create({ transfer: true });
         if (transferError) return failClosed();
         if ((signIn.status as string) === "complete") {
           await finalizeSignIn();
           return;
         }
         return failClosed();
-      }
-
-      if (signIn.isTransferable) {
-        const { error: transferError } = await signUp.create({ transfer: true });
-        if (transferError) return failClosed();
       }
       if ((signUp.status as string) === "complete") {
         await finalizeSignUp();
