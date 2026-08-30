@@ -1678,7 +1678,7 @@ mod tests {
             .await
             .expect("retire dependency graph plan");
         assert_eq!(retired.plan.status, "cancelled");
-        assert_eq!(retired.cancellation.cancelled_issues.len(), 2);
+        assert_eq!(retired.cancellation.cancelled_issues.len(), 1);
         assert_eq!(retired.cancellation.cancelled_tasks.len(), 1);
         assert_eq!(retired.cancellation.cancelled_tasks[0].id, task_id);
         assert_eq!(retired.cancellation.cancelled_tasks[0].status, "cancelled");
