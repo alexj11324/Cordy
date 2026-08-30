@@ -1,3 +1,4 @@
+use super::issue_dependency_graph_commands::format_dependency_graph_table;
 use super::*;
 use clap::Parser;
 
