@@ -114,6 +114,7 @@ jobs:
               - 'Makefile'
               - '.github/workflows/ci.yml'
               - '.github/workflows/macos-release.yml'
+              - '.github/workflows/release.yml'
             installer:
               - 'scripts/install.sh'
               - 'scripts/install.ps1'

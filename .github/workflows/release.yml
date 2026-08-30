@@ -726,7 +726,7 @@ jobs:
         run: helm show chart "$OCI_REGISTRY/patchbay" --version "$CHART_VERSION"
 
   promote-self-hosted-latest:
-    needs: [self-hosted-prepare, verify, docker-backend-merge, docker-web-merge, desktop, helm-chart]
+    needs: [self-hosted-prepare, verify, docker-backend-merge, docker-web-merge, desktop, helm-chart, publish-release]
     if: >-
       inputs.promote_latest &&
       needs.self-hosted-prepare.outputs.is_stable == 'true' &&
@@ -1002,16 +1002,14 @@ jobs:
           retention-days: 1
 
   publish-release:
-    needs: [verify, release, desktop, helm-chart, promote-self-hosted-latest]
+    needs: [verify, release, desktop, helm-chart]
     if: >-
       always() &&
       github.repository == 'patchbay-ai/patchbay' &&
       needs.verify.result == 'success' &&
       needs.release.result == 'success' &&
       needs.desktop.result == 'success' &&
-      needs.helm-chart.result == 'success' &&
-      (needs.promote-self-hosted-latest.result == 'success' ||
-       needs.promote-self-hosted-latest.result == 'skipped')
+      needs.helm-chart.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout verified release commit
