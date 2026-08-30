@@ -184,7 +184,7 @@ fn normalize_public_url(raw: &str) -> String {
 }
 
 fn is_official_cloud_daemon_config(app_url: &str) -> bool {
-    url_host_equals(app_url, "patchbay.ai")
+    url_host_equals(app_url, "patchbay.aspectlylabs.com")
 }
 
 fn url_host_equals(raw: &str, expected: &str) -> bool {
@@ -216,17 +216,24 @@ mod tests {
     use tower::ServiceExt;
 
     #[test]
-    fn canonical_hosts_match_go_cloud_detection() {
+    fn canonical_hosts_match_official_cloud_detection() {
+        for raw in [
+            "https://patchbay.aspectlylabs.com",
+            "patchbay.aspectlylabs.com",
+            "patchbay.aspectlylabs.com:8080",
+            "https://patchbay.aspectlylabs.com.",
+        ] {
+            assert!(is_official_cloud_daemon_config(raw), "{raw}");
+        }
         for raw in [
             "https://patchbay.ai",
-            "patchbay.ai",
-            "patchbay.ai:8080",
-            "https://patchbay.ai.",
+            "https://www.aspectlylabs.com",
+            "http://localhost:3000",
+            "https://evil.example",
+            "",
         ] {
-            assert!(url_host_equals(raw, "patchbay.ai"), "{raw}");
+            assert!(!is_official_cloud_daemon_config(raw), "{raw}");
         }
-        assert!(!url_host_equals("https://evil.example", "patchbay.ai"));
-        assert!(!url_host_equals("", "patchbay.ai"));
     }
 
     #[test]
@@ -257,7 +264,7 @@ mod tests {
     #[test]
     fn official_cloud_suppresses_daemon_urls_and_version() {
         let mut config = patchbay_config::Config::default();
-        config.urls.app_url = Some("https://patchbay.ai".into());
+        config.urls.app_url = Some("https://patchbay.aspectlylabs.com".into());
         let settings =
             PublicConfigSettings::from_config(&config, String::new(), false, "v1".into());
         assert!(settings.official_cloud);

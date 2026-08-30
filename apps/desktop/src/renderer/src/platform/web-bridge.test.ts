@@ -51,6 +51,22 @@ describe("Vite Desktop auth handoff", () => {
     });
   });
 
+  it("keeps the hosted broker when only the backend URL is configured", () => {
+    vi.stubEnv("VITE_API_URL", "https://api.aspectlylabs.com");
+
+    expect(installWebDesktopBridge()).toBe(true);
+    expect(window.desktopAPI.runtimeConfig).toEqual({
+      ok: true,
+      config: {
+        schemaVersion: 1,
+        apiUrl: "https://api.aspectlylabs.com",
+        wsUrl: "wss://api.aspectlylabs.com/ws",
+        appUrl: "https://patchbay.aspectlylabs.com",
+        accountsUrl: "https://accounts.aspectlylabs.com",
+      },
+    });
+  });
+
   it("delivers a validated one-time callback to the backend-enabled renderer", async () => {
     const code = `pbd_${"a".repeat(43)}`;
     const state = "b".repeat(43);

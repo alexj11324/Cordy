@@ -35,7 +35,7 @@ describe("runtime config", () => {
     });
   });
 
-  it("strips the leading api. label when deriving appUrl", () => {
+  it("preserves the approved hosted endpoint split when only apiUrl is configured", () => {
     expect(
       parseRuntimeConfig(
         JSON.stringify({ schemaVersion: 1, apiUrl: "https://api.aspectlylabs.com" }),
@@ -44,8 +44,8 @@ describe("runtime config", () => {
       schemaVersion: 1,
       apiUrl: "https://api.aspectlylabs.com",
       wsUrl: "wss://api.aspectlylabs.com/ws",
-      appUrl: "https://aspectlylabs.com",
-      accountsUrl: "https://aspectlylabs.com",
+      appUrl: "https://patchbay.aspectlylabs.com",
+      accountsUrl: "https://accounts.aspectlylabs.com",
     });
   });
 
@@ -142,6 +142,12 @@ describe("runtime config", () => {
       appUrl: "https://test.aspectlylabs.com",
       accountsUrl: "https://test.aspectlylabs.com",
     });
+  });
+
+  it("preserves hosted app and accounts origins for backend-enabled Vite", () => {
+    expect(
+      runtimeConfigFromDevEnv({ apiUrl: "https://api.aspectlylabs.com" }),
+    ).toEqual(DEFAULT_RUNTIME_CONFIG);
   });
 
   it("dev VITE_APP_URL still wins over apiUrl-derived value", () => {
