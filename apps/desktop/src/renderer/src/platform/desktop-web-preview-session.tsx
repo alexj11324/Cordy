@@ -5,7 +5,7 @@ import { chatKeys } from "@patchbay/core/chat/queries";
 import { inboxKeys } from "@patchbay/core/inbox";
 import { pinKeys } from "@patchbay/core/pins";
 import { workspaceKeys } from "@patchbay/core/workspace";
-import type { User, Workspace } from "@patchbay/core/types";
+import type { ChatSession, User, Workspace } from "@patchbay/core/types";
 import { isDesktopWebPreview } from "./web-bridge";
 
 const PREVIEW_SESSION_STARTED_AT = new Date().toISOString();
@@ -25,6 +25,24 @@ const PREVIEW_WORKSPACE: Workspace = {
 };
 
 const PREVIEW_USER_ID = "user-preview";
+
+const PREVIEW_MIKA_SESSION: ChatSession = {
+  id: "chat-session-preview-mika",
+  workspace_id: "ws-preview",
+  agent_id: "agent-mika",
+  creator_id: PREVIEW_USER_ID,
+  title: "Mika",
+  status: "active",
+  has_unread: false,
+  unread_count: 0,
+  last_message: {
+    content: "Mika is ready in the local preview.",
+    role: "assistant",
+    created_at: PREVIEW_SESSION_STARTED_AT,
+  },
+  created_at: PREVIEW_SESSION_STARTED_AT,
+  updated_at: PREVIEW_SESSION_STARTED_AT,
+};
 
 export function shouldRenderPreviewSessionChildren(
   preview: boolean,
@@ -105,7 +123,9 @@ export function DesktopWebPreviewSession({ children }: { children: ReactNode }) 
     queryClient.setQueryData(workspaceKeys.myInvitations(), []);
     queryClient.setQueryData(inboxKeys.list(PREVIEW_WORKSPACE.id), []);
     queryClient.setQueryData(inboxKeys.unreadSummary(), []);
-    queryClient.setQueryData(chatKeys.sessions(PREVIEW_WORKSPACE.id), []);
+    queryClient.setQueryData(chatKeys.sessions(PREVIEW_WORKSPACE.id), [
+      PREVIEW_MIKA_SESSION,
+    ]);
     queryClient.setQueryData(
       chatKeys.pendingTasks(PREVIEW_WORKSPACE.id),
       { tasks: [] },

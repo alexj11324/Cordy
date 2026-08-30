@@ -76,6 +76,7 @@ describe("local Vite preview API", () => {
       facets: [{ kind: "status" }, { kind: "working_agents" }],
       include_total: true,
     });
+    const workingAgents = await call("GET", "/api/working-agents");
 
     expect(result.body.total).toBe(6);
     expect(
@@ -88,7 +89,15 @@ describe("local Vite preview API", () => {
     );
     expect(
       result.body.facets.find((facet) => facet.kind === "working_agents").values,
-    ).toEqual([{ key: "agent-preview", count: 1 }]);
+    ).toEqual([
+      { key: "agent-preview", count: 1 },
+      { key: "agent-mika", count: 1 },
+    ]);
+    expect(workingAgents.body.map((agent) => agent.id)).toEqual([
+      "agent-preview",
+      "agent-mika",
+    ]);
+    expect(workingAgents.body.every((agent) => agent.running_task_count > 0)).toBe(true);
   });
 
   it("serves the running task through both shared activity endpoints", async () => {
@@ -150,6 +159,9 @@ describe("local Vite preview API", () => {
     expect(agents.body.map((agent) => agent.name)).toEqual(
       expect.arrayContaining(["Atlas", "Mika", "Nova", "Quill"]),
     );
+    expect(agents.body.find((agent) => agent.name === "Mika")).toMatchObject({
+      system_key: "mika",
+    });
     expect(issue.body).toMatchObject({
       assignee_type: "agent",
       assignee_id: "agent-preview",
@@ -180,6 +192,21 @@ describe("local Vite preview API", () => {
     }
   });
 
+  it("serves empty usage arrays for every seeded runtime", async () => {
+    const runtimes = await call("GET", "/api/runtimes");
+
+    expect(runtimes.body).toHaveLength(4);
+    for (const runtime of runtimes.body) {
+      const usage = await call(
+        "GET",
+        `/api/runtimes/${runtime.id}/usage?days=14&tz=America%2FNew_York`,
+      );
+      expect(usage).toEqual({ handled: true, status: 200, body: [] });
+    }
+    const unknown = await call("GET", "/api/runtimes/runtime-unknown/usage");
+    expect(unknown).toMatchObject({ handled: true, status: 404 });
+  });
+
   it("serves read-only automation samples with runs and an explicit write boundary", async () => {
     const list = await call("GET", "/api/autopilots");
     const detail = await call("GET", "/api/autopilots/autopilot-pr-review");
@@ -187,10 +214,19 @@ describe("local Vite preview API", () => {
     const tasks = await call("GET", "/api/agent-task-snapshot");
 
     expect(list.body.total).toBe(3);
+    expect(list.body.can_create).toBe(false);
     expect(detail.body.autopilot).toMatchObject({
       title: "PR review handoff",
       can_write: false,
+      trigger_kinds: ["schedule"],
     });
+    expect(detail.body.triggers).toHaveLength(1);
+    expect(detail.body.triggers[0].kind).toBe("schedule");
+    expect(runs.body.runs.map((run) => run.id)).toEqual([
+      "run-pr-review-queued",
+      "run-pr-review-current",
+      "run-pr-review-completed",
+    ]);
     expect(runs.body.runs).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ status: "running", task_id: "task-pre-105-review" }),
@@ -306,10 +342,20 @@ describe("local Vite preview API", () => {
       undefined,
       { "accept-language": "ja-JP,ja;q=0.9" },
     );
+    const preferredEnglish = await call(
+      "GET",
+      "/api/issues?limit=1",
+      undefined,
+      { "accept-language": "en-US,en;q=0.9,ja;q=0.8" },
+    );
 
     expect(issues.body.issues[0]).toMatchObject({
       title: "优化工作区引导",
       description: "让首次使用流程更容易理解。",
+    });
+    expect(preferredEnglish.body.issues[0]).toMatchObject({
+      title: "Refine workspace onboarding",
+      description: "Make the first-run path easier to understand.",
     });
     expect(autopilots.body.autopilots[0]).toMatchObject({
       title: "PR 確認の引き継ぎ",

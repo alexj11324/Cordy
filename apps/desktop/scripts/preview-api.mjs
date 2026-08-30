@@ -31,12 +31,43 @@ const PREVIEW_COPY_BY_LOCALE = {
   "zh-Hans": zhHansCommon.preview.fixtures,
 };
 const DEFAULT_PREVIEW_COPY = PREVIEW_COPY_BY_LOCALE.en;
+const PREVIEW_LOCALES = [
+  { tag: "en", copy: PREVIEW_COPY_BY_LOCALE.en },
+  { tag: "ja", copy: PREVIEW_COPY_BY_LOCALE.ja },
+  { tag: "ko", copy: PREVIEW_COPY_BY_LOCALE.ko },
+  { tag: "zh", copy: PREVIEW_COPY_BY_LOCALE["zh-Hans"] },
+];
 
 function previewCopyForRequest(req) {
-  const header = req.headers?.["accept-language"] ?? "";
-  if (/\bzh(?:-|,|;|$)/i.test(header)) return PREVIEW_COPY_BY_LOCALE["zh-Hans"];
-  if (/\bja(?:-|,|;|$)/i.test(header)) return PREVIEW_COPY_BY_LOCALE.ja;
-  if (/\bko(?:-|,|;|$)/i.test(header)) return PREVIEW_COPY_BY_LOCALE.ko;
+  const header = String(req.headers?.["accept-language"] ?? "");
+  const preferences = header
+    .split(",")
+    .map((part, index) => {
+      const [rawTag, ...parameters] = part.trim().split(";");
+      const tag = rawTag?.trim().toLowerCase();
+      if (!tag || tag === "*") return null;
+      const qualityParameter = parameters.find((parameter) =>
+        parameter.trim().toLowerCase().startsWith("q="),
+      );
+      const quality = qualityParameter
+        ? Number(qualityParameter.trim().slice(2))
+        : 1;
+      return Number.isFinite(quality) && quality > 0 && quality <= 1
+        ? { tag, quality, index }
+        : null;
+    })
+    .filter((preference) => preference !== null)
+    .sort((left, right) => right.quality - left.quality || left.index - right.index);
+
+  for (const preference of preferences) {
+    const locale = PREVIEW_LOCALES.find(
+      ({ tag }) =>
+        preference.tag === tag ||
+        preference.tag.startsWith(`${tag}-`) ||
+        tag.startsWith(`${preference.tag}-`),
+    );
+    if (locale) return locale.copy;
+  }
   return DEFAULT_PREVIEW_COPY;
 }
 
@@ -87,14 +118,6 @@ const PREVIEW_ISSUES = [
   ),
   previewIssue("106", "done", "Split web and API dev commands", "Let visual work start without the full local stack.", "none"),
 ];
-
-const PREVIEW_AGENT = {
-  id: PREVIEW_AGENT_ID,
-  name: "Atlas",
-  avatar_url: null,
-  running_task_count: 1,
-  issue_ids: [issueId("104")],
-};
 
 const PREVIEW_DIRECTORY_AGENT = {
   id: PREVIEW_AGENT_ID,
@@ -178,7 +201,7 @@ const PREVIEW_RUNTIMES = [
   previewRuntime("runtime-quill", "Preview runtime · Quill", "codex", "offline"),
 ];
 
-function previewAgent(id, name, runtimeId, status, description) {
+function previewAgent(id, name, runtimeId, status, description, systemKey = null) {
   return {
     id,
     workspace_id: WORKSPACE_ID,
@@ -205,6 +228,7 @@ function previewAgent(id, name, runtimeId, status, description) {
     updated_at: NOW,
     archived_at: null,
     archived_by: null,
+    ...(systemKey ? { system_key: systemKey } : {}),
   };
 }
 
@@ -225,6 +249,7 @@ const PREVIEW_DIRECTORY_AGENTS = [
     "runtime-mika",
     "working",
     "Reviews completed work and sends actionable feedback.",
+    "mika",
   ),
   previewAgent(
     "agent-nova",
@@ -431,7 +456,7 @@ const PREVIEW_AUTOPILOTS = [
     lastRunAt: previewTime(-97),
     lastRunStatus: "running",
     nextRunAt: previewTime(30),
-    triggerKinds: ["schedule", "api"],
+    triggerKinds: ["schedule"],
   }),
   previewAutopilot({
     id: "autopilot-ci-watch",
@@ -664,19 +689,36 @@ function localizePreviewRun(run, copy = DEFAULT_PREVIEW_COPY) {
   };
 }
 
-function isActiveTask(task) {
-  return task.status === "queued" || task.status === "dispatched" || task.status === "waiting_local_directory" || task.status === "running";
+function sortPreviewRuns(runs) {
+  return [...runs].sort(
+    (left, right) => Date.parse(right.triggered_at) - Date.parse(left.triggered_at),
+  );
 }
 
-function previewWorkingAgents(copy = DEFAULT_PREVIEW_COPY) {
+function isActiveTask(task) {
+  return task.status === "queued" ||
+    task.status === "dispatched" ||
+    task.status === "waiting_local_directory" ||
+    task.status === "running";
+}
+
+function previewRunningTasksByAgent() {
   const byAgent = new Map();
   for (const task of PREVIEW_TASKS) {
-    if (!isActiveTask(task)) continue;
-    const current = byAgent.get(task.agent_id) ?? { issue_ids: new Set(), running_task_count: 0 };
+    if (task.status !== "running") continue;
+    const current = byAgent.get(task.agent_id) ?? {
+      issue_ids: new Set(),
+      running_task_count: 0,
+    };
     current.running_task_count += 1;
     if (task.issue_id) current.issue_ids.add(task.issue_id);
     byAgent.set(task.agent_id, current);
   }
+  return byAgent;
+}
+
+function previewWorkingAgents(copy = DEFAULT_PREVIEW_COPY) {
+  const byAgent = previewRunningTasksByAgent();
   return PREVIEW_DIRECTORY_AGENTS
     .map((agent) => {
       const current = byAgent.get(agent.id);
@@ -934,12 +976,16 @@ function tableFacets(body, copy = DEFAULT_PREVIEW_COPY) {
   const facets = requested.map((request) => {
     if (request.kind === "working_agents") {
       const issues = filteredIssues(body.query, { ignoreWorking: true }, copy);
-      const runningIds = new Set(PREVIEW_AGENT.issue_ids);
+      const runningByAgent = previewRunningTasksByAgent();
+      const values = PREVIEW_DIRECTORY_AGENTS.flatMap((agent) => {
+        const running = runningByAgent.get(agent.id);
+        if (!running) return [];
+        const count = issues.filter((issue) => running.issue_ids.has(issue.id)).length;
+        return count > 0 ? [{ key: agent.id, count }] : [];
+      });
       return {
         kind: request.kind,
-        values: issues.filter((issue) => runningIds.has(issue.id)).length > 0
-          ? [{ key: PREVIEW_AGENT_ID, count: issues.filter((issue) => runningIds.has(issue.id)).length }]
-          : [],
+        values,
       };
     }
     const issues = request.kind === "status"
@@ -1087,6 +1133,13 @@ export async function handlePreviewRequest(req, res) {
   if (method === "GET" && path === "/api/runtimes") {
     return json(res, PREVIEW_RUNTIMES.map((runtime) => localizePreviewRuntime(runtime, copy)));
   }
+  const runtimeUsage = /^\/api\/runtimes\/([^/]+)\/usage$/.exec(path);
+  if (method === "GET" && runtimeUsage) {
+    const runtimeId = decodeURIComponent(runtimeUsage[1]);
+    return PREVIEW_RUNTIMES.some((runtime) => runtime.id === runtimeId)
+      ? json(res, [])
+      : json(res, { error: "Preview runtime not found" }, 404);
+  }
   if (method === "GET" && path === "/api/squads") return json(res, []);
   if (method === "GET" && path === "/api/projects") return json(res, { projects: [], total: 0 });
   if (method === "GET" && path === "/api/properties") return json(res, { properties: [], total: 0 });
@@ -1163,6 +1216,9 @@ export async function handlePreviewRequest(req, res) {
     return json(res, {
       autopilots: PREVIEW_AUTOPILOTS.map((autopilot) => localizePreviewAutopilot(autopilot, copy)),
       total: PREVIEW_AUTOPILOTS.length,
+      // Preview intentionally cannot create or mutate product data. This is
+      // a collection capability, not a projection of per-row can_write.
+      can_create: false,
     });
   }
   const autopilotRunDetail = /^\/api\/autopilots\/([^/]+)\/runs\/([^/]+)$/.exec(path);
@@ -1177,7 +1233,7 @@ export async function handlePreviewRequest(req, res) {
   if (method === "GET" && autopilotRuns) {
     const autopilot = findPreviewAutopilot(autopilotRuns[1]);
     if (!autopilot) return json(res, { error: "Preview autopilot not found" }, 404);
-    const runs = PREVIEW_RUNS[autopilot.id] ?? [];
+    const runs = sortPreviewRuns(PREVIEW_RUNS[autopilot.id] ?? []);
     return json(res, {
       runs: runs.map((run) => localizePreviewRun(run, copy)),
       total: runs.length,

@@ -17,9 +17,12 @@ import {
   Webhook,
   Zap,
 } from "lucide-react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { autopilotListOptions } from "@patchbay/core/autopilots/queries";
+import {
+  autopilotKeys,
+  autopilotListOptions,
+} from "@patchbay/core/autopilots/queries";
 import {
   useAutopilotsViewStore,
   AUTOPILOT_DEFAULT_HIDDEN_COLUMNS,
@@ -139,6 +142,10 @@ interface AutopilotTemplate {
   icon: typeof Zap;
   schedule: Pick<ScheduleConfig, "time" | "days">;
 }
+
+type AutopilotListCapabilities = {
+  can_create?: boolean;
+};
 
 const WEEKDAYS: ScheduleConfig["days"] = { kind: "weekly", daysOfWeek: [1, 2, 3, 4, 5] };
 const MONDAY: ScheduleConfig["days"] = { kind: "weekly", daysOfWeek: [1] };
@@ -616,6 +623,7 @@ function LoadingSkeleton() {
 export function AutopilotsPage() {
   const { t } = useT("autopilots");
   const wsId = useWorkspaceId();
+  const queryClient = useQueryClient();
   const wsPaths = useWorkspacePaths();
   const rowLink = useRowLink();
   const {
@@ -624,6 +632,13 @@ export function AutopilotsPage() {
     error: listError,
     refetch: refetchList,
   } = useQuery(autopilotListOptions(wsId));
+  // Creation is a collection capability. Read it from the raw list response
+  // instead of inferring it from each row's edit/delete capability. Older
+  // servers omit the additive field; the create endpoint remains the final
+  // gate in that case.
+  const listCapabilities = queryClient.getQueryData<AutopilotListCapabilities>(
+    autopilotKeys.list(wsId),
+  );
 
   const [createOpen, setCreateOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] =
@@ -778,9 +793,7 @@ export function AutopilotsPage() {
   const totalCount = autopilots.length;
   const showEmpty = !isLoading && !listError && totalCount === 0;
   const canCreate =
-    !isLoading &&
-    !listError &&
-    (autopilots.length === 0 || autopilots.some((a) => a.can_write !== false));
+    !isLoading && !listError && listCapabilities?.can_create !== false;
 
   return (
     // relative: positioning anchor for the batch toolbar (page-centered,
