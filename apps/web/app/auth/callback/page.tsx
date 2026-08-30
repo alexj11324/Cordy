@@ -4,6 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect } from "react";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
 import { useT } from "@patchbay/views/i18n";
+import { buildDesktopHandoffQuery } from "@/features/auth/desktop-handoff";
 
 function resolveSafeRedirectUrl(raw: string | null): string {
   if (!raw) return "/";
@@ -39,7 +40,7 @@ function AuthCallbackContent() {
 
   useEffect(() => {
     if (searchParams.get("platform") === "desktop") {
-      router.replace("/login?platform=desktop");
+      router.replace(`/login?${buildDesktopHandoffQuery(searchParams)}`);
       return;
     }
     const redirectUrl = searchParams.get("redirect_url");

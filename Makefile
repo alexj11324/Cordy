@@ -269,7 +269,7 @@ dev: ## Bootstrap this checkout end-to-end: create env if needed, ensure DB, mig
 
 web-dev: ## Run the Desktop renderer in a browser through Vite (API-dependent screens need a separate backend)
 	@echo "Frontend: http://localhost:$(FRONTEND_PORT)"
-	@pnpm dev:web
+	@FRONTEND_PORT=$(FRONTEND_PORT) pnpm dev:web
 
 web-next-dev: ## Run only the Next.js web frontend (API-dependent screens need a separate backend)
 	@echo "Frontend: http://localhost:$(FRONTEND_PORT)"

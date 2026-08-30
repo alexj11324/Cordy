@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { SignIn } from "@clerk/nextjs";
 import { useSearchParams } from "next/navigation";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
+import { buildDesktopHandoffQuery } from "@/features/auth/desktop-handoff";
 
 export default function SignInPage() {
   return (
@@ -14,14 +15,22 @@ export default function SignInPage() {
 }
 
 function SignInContent() {
-  const desktopHandoff = useSearchParams().get("platform") === "desktop";
+  const searchParams = useSearchParams();
+  const desktopHandoff = searchParams.get("platform") === "desktop";
+  const desktopHandoffQuery = desktopHandoff
+    ? buildDesktopHandoffQuery(searchParams)
+    : "";
   return (
     <ClerkAuthShell>
       <SignIn
         routing="path"
         path="/sign-in"
-        signUpUrl={desktopHandoff ? "/sign-up?platform=desktop" : "/sign-up"}
-        fallbackRedirectUrl={desktopHandoff ? "/login?platform=desktop" : "/"}
+        signUpUrl={
+          desktopHandoff ? `/sign-up?${desktopHandoffQuery}` : "/sign-up"
+        }
+        fallbackRedirectUrl={
+          desktopHandoff ? `/login?${desktopHandoffQuery}` : "/"
+        }
       />
     </ClerkAuthShell>
   );

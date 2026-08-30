@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { SignUp } from "@clerk/nextjs";
 import { useSearchParams } from "next/navigation";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
+import { buildDesktopHandoffQuery } from "@/features/auth/desktop-handoff";
 
 export default function SignUpPage() {
   return (
@@ -33,13 +34,4 @@ function SignUpContent() {
       />
     </ClerkAuthShell>
   );
-}
-
-function buildDesktopHandoffQuery(searchParams: URLSearchParams): string {
-  const params = new URLSearchParams({ platform: "desktop" });
-  for (const key of ["code_challenge", "state"] as const) {
-    const value = searchParams.get(key);
-    if (value) params.set(key, value);
-  }
-  return params.toString();
 }

@@ -7,6 +7,7 @@ import { Show, SignInButton, SignUpButton, UserButton } from "@clerk/nextjs";
 import { useConfigStore } from "@patchbay/core/config";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
 import { cn } from "@patchbay/ui/lib/utils";
+import { useUiFixtures } from "@/lib/ui-fixtures/context";
 import { docsHrefForLocale, useLocale } from "../i18n";
 import { useDashboardCtaHref } from "../utils/use-dashboard-cta";
 import { formatStarCount, useGithubStars } from "../utils/use-github-stars";
@@ -21,6 +22,7 @@ export function LandingHeader({
   const stars = useGithubStars();
   const starsLabel = stars != null ? formatStarCount(stars) : null;
   const allowSignup = useConfigStore((state) => state.allowSignup);
+  const uiFixtures = useUiFixtures();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const docsHref = docsHrefForLocale(locale);
   const navLinks = [
@@ -105,35 +107,46 @@ export function LandingHeader({
             {t.header.github}
             {starsLabel ? <GitHubStarsBadge label={starsLabel} /> : null}
           </Link>
-          <Show when="signed-out">
-            <SignInButton>
-              <button
-                type="button"
-                className={headerButtonClassName("ghost", variant)}
-              >
-                {t.header.signIn}
-              </button>
-            </SignInButton>
-            {allowSignup ? (
-              <SignUpButton>
-                <button
-                  type="button"
-                  className={headerButtonClassName("solid", variant)}
-                >
-                  {t.header.cta}
-                </button>
-              </SignUpButton>
-            ) : null}
-          </Show>
-          <Show when="signed-in">
-            <UserButton />
+          {uiFixtures ? (
             <Link
               href={ctaHref}
               className={headerButtonClassName("solid", variant)}
             >
-              {t.header.dashboard}
+              {t.header.cta}
             </Link>
-          </Show>
+          ) : (
+            <>
+              <Show when="signed-out">
+                <SignInButton>
+                  <button
+                    type="button"
+                    className={headerButtonClassName("ghost", variant)}
+                  >
+                    {t.header.signIn}
+                  </button>
+                </SignInButton>
+                {allowSignup ? (
+                  <SignUpButton>
+                    <button
+                      type="button"
+                      className={headerButtonClassName("solid", variant)}
+                    >
+                      {t.header.cta}
+                    </button>
+                  </SignUpButton>
+                ) : null}
+              </Show>
+              <Show when="signed-in">
+                <UserButton />
+                <Link
+                  href={ctaHref}
+                  className={headerButtonClassName("solid", variant)}
+                >
+                  {t.header.dashboard}
+                </Link>
+              </Show>
+            </>
+          )}
         </div>
       </div>
 
@@ -175,37 +188,49 @@ export function LandingHeader({
               {t.header.github}
               {starsLabel ? <GitHubStarsBadge label={starsLabel} /> : null}
             </Link>
-            <Show when="signed-out">
-              <SignInButton>
-                <button
-                  type="button"
-                  onClick={() => setIsMenuOpen(false)}
-                  className={mobileNavLinkClassName(variant)}
-                >
-                  {t.header.signIn}
-                </button>
-              </SignInButton>
-              {allowSignup ? (
-                <SignUpButton>
-                  <button
-                    type="button"
-                    onClick={() => setIsMenuOpen(false)}
-                    className={mobileNavLinkClassName(variant)}
-                  >
-                    {t.header.cta}
-                  </button>
-                </SignUpButton>
-              ) : null}
-            </Show>
-            <Show when="signed-in">
+            {uiFixtures ? (
               <Link
                 href={ctaHref}
                 onClick={() => setIsMenuOpen(false)}
                 className={mobileNavLinkClassName(variant)}
               >
-                {t.header.dashboard}
+                {t.header.cta}
               </Link>
-            </Show>
+            ) : (
+              <>
+                <Show when="signed-out">
+                  <SignInButton>
+                    <button
+                      type="button"
+                      onClick={() => setIsMenuOpen(false)}
+                      className={mobileNavLinkClassName(variant)}
+                    >
+                      {t.header.signIn}
+                    </button>
+                  </SignInButton>
+                  {allowSignup ? (
+                    <SignUpButton>
+                      <button
+                        type="button"
+                        onClick={() => setIsMenuOpen(false)}
+                        className={mobileNavLinkClassName(variant)}
+                      >
+                        {t.header.cta}
+                      </button>
+                    </SignUpButton>
+                  ) : null}
+                </Show>
+                <Show when="signed-in">
+                  <Link
+                    href={ctaHref}
+                    onClick={() => setIsMenuOpen(false)}
+                    className={mobileNavLinkClassName(variant)}
+                  >
+                    {t.header.dashboard}
+                  </Link>
+                </Show>
+              </>
+            )}
           </div>
         </div>
       ) : null}

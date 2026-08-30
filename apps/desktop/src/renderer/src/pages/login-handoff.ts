@@ -1,10 +1,12 @@
 import { buildDesktopLoginUrl } from "./login-url";
 
 const PENDING_HANDOFF_KEY = "patchbay_desktop_login_handoff";
+const PENDING_HANDOFF_TTL_MS = 10 * 60 * 1000;
 
 type PendingHandoff = {
   state: string;
   verifier: string;
+  expiresAt: number;
 };
 
 function encodeBase64Url(value: ArrayBuffer): string {
@@ -22,8 +24,8 @@ function randomBase64Url(byteLength: number): string {
 
 /**
  * Start a browser-based desktop login without putting a bearer in the custom
- * protocol URL. The verifier remains in this renderer's session storage and
- * is required to redeem the one-time code returned by the web login.
+ * protocol URL. The verifier remains in app-local storage so a recreated
+ * BrowserWindow can redeem the one-time code returned by the web login.
  */
 export async function createDesktopLoginUrl(appUrl: string): Promise<string> {
   const verifier = randomBase64Url(32);
@@ -33,9 +35,13 @@ export async function createDesktopLoginUrl(appUrl: string): Promise<string> {
   );
   const state = randomBase64Url(32);
   const codeChallenge = encodeBase64Url(digest);
-  const pending: PendingHandoff = { state, verifier };
+  const pending: PendingHandoff = {
+    state,
+    verifier,
+    expiresAt: Date.now() + PENDING_HANDOFF_TTL_MS,
+  };
 
-  sessionStorage.setItem(PENDING_HANDOFF_KEY, JSON.stringify(pending));
+  localStorage.setItem(PENDING_HANDOFF_KEY, JSON.stringify(pending));
   const url = new URL(buildDesktopLoginUrl(appUrl));
   url.searchParams.set("code_challenge", codeChallenge);
   url.searchParams.set("state", state);
@@ -46,9 +52,16 @@ export async function createDesktopLoginUrl(appUrl: string): Promise<string> {
 export function readDesktopHandoffVerifier(state: string): string | null {
   if (!state) return null;
   try {
-    const raw = sessionStorage.getItem(PENDING_HANDOFF_KEY);
+    const raw = localStorage.getItem(PENDING_HANDOFF_KEY);
     if (!raw) return null;
     const pending = JSON.parse(raw) as Partial<PendingHandoff>;
+    if (
+      typeof pending.expiresAt !== "number" ||
+      pending.expiresAt <= Date.now()
+    ) {
+      localStorage.removeItem(PENDING_HANDOFF_KEY);
+      return null;
+    }
     return pending.state === state && typeof pending.verifier === "string"
       ? pending.verifier
       : null;
@@ -60,6 +73,6 @@ export function readDesktopHandoffVerifier(state: string): string | null {
 /** Clear a completed handoff without discarding a verifier after a retryable failure. */
 export function clearDesktopHandoffVerifier(state: string): void {
   if (readDesktopHandoffVerifier(state)) {
-    sessionStorage.removeItem(PENDING_HANDOFF_KEY);
+    localStorage.removeItem(PENDING_HANDOFF_KEY);
   }
 }

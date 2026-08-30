@@ -3,6 +3,7 @@
 import { Suspense } from "react";
 import { AuthenticateWithRedirectCallback } from "@clerk/nextjs";
 import { useSearchParams } from "next/navigation";
+import { buildDesktopHandoffQuery } from "@/features/auth/desktop-handoff";
 
 export default function LegacySignUpSSOCallbackPage() {
   return (
@@ -13,10 +14,20 @@ export default function LegacySignUpSSOCallbackPage() {
 }
 
 function SSOCallbackContent() {
-  const desktopHandoff = useSearchParams().get("platform") === "desktop";
-  const loginUrl = desktopHandoff ? "/login?platform=desktop" : "/login";
-  const signUpUrl = desktopHandoff ? "/signup?platform=desktop" : "/signup";
-  const returnUrl = desktopHandoff ? "/login?platform=desktop" : "/";
+  const searchParams = useSearchParams();
+  const desktopHandoff = searchParams.get("platform") === "desktop";
+  const desktopHandoffQuery = desktopHandoff
+    ? buildDesktopHandoffQuery(searchParams)
+    : "";
+  const loginUrl = desktopHandoff
+    ? `/login?${desktopHandoffQuery}`
+    : "/login";
+  const signUpUrl = desktopHandoff
+    ? `/signup?${desktopHandoffQuery}`
+    : "/signup";
+  const returnUrl = desktopHandoff
+    ? `/login?${desktopHandoffQuery}`
+    : "/";
 
   return (
     <AuthenticateWithRedirectCallback

@@ -10,6 +10,7 @@ import {
 describe("desktop login handoff", () => {
   beforeEach(() => {
     sessionStorage.clear();
+    localStorage.clear();
     vi.stubGlobal("crypto", {
       getRandomValues: (bytes: Uint8Array) => {
         bytes.fill(7);
@@ -39,8 +40,34 @@ describe("desktop login handoff", () => {
     await createDesktopLoginUrl("https://accounts.aspectlylabs.com");
 
     expect(readDesktopHandoffVerifier("wrong-state")).toBeNull();
-    const raw = sessionStorage.getItem("patchbay_desktop_login_handoff");
+    const raw = localStorage.getItem("patchbay_desktop_login_handoff");
     expect(raw).not.toBeNull();
+  });
+
+  it("keeps the verifier after the renderer session is recreated", async () => {
+    const url = await createDesktopLoginUrl("https://accounts.aspectlylabs.com");
+    const state = new URL(url).searchParams.get("state") ?? "";
+
+    sessionStorage.clear();
+
+    expect(readDesktopHandoffVerifier(state)).toHaveLength(43);
+  });
+
+  it("rejects an expired verifier", async () => {
+    vi.useFakeTimers();
+    try {
+      const url = await createDesktopLoginUrl(
+        "https://accounts.aspectlylabs.com",
+      );
+      const state = new URL(url).searchParams.get("state") ?? "";
+
+      vi.advanceTimersByTime(10 * 60 * 1000);
+
+      expect(readDesktopHandoffVerifier(state)).toBeNull();
+      expect(localStorage.getItem("patchbay_desktop_login_handoff")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("clears the verifier only for the matching completed handoff", async () => {
