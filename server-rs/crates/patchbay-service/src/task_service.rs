@@ -12,7 +12,9 @@ use uuid::Uuid;
 
 use patchbay_analytics as analytics;
 use patchbay_db::dbid::new_v7;
-use patchbay_db::models::{Agent, AgentTaskQueue, ChatMessage, ChatSession, Comment, Issue};
+use patchbay_db::models::{
+    Agent, AgentInvocationTarget, AgentTaskQueue, ChatMessage, ChatSession, Comment, Issue,
+};
 use patchbay_db::queries::agent::{
     append_task_message_bus_instruction, cancel_agent_task, cancel_agent_task_by_user,
     cancel_agent_task_with_reason, cancel_agent_tasks_by_agent, cancel_agent_tasks_by_issue,
@@ -32,6 +34,7 @@ use patchbay_db::queries::agent::{
     set_deferred_channel_issue_task_runtime_overlay, set_task_delivered_comment_i_ds,
     start_agent_task,
 };
+use patchbay_db::queries::agent_invocation_target::list_agent_invocation_targets;
 use patchbay_db::queries::attachment::detach_attachments_from_user_chat_message_by_task;
 use patchbay_db::queries::attachment::link_attachments_to_chat_message;
 use patchbay_db::queries::automation::{
@@ -58,6 +61,7 @@ use patchbay_db::queries::comment::get_comment_in_workspace;
 use patchbay_db::queries::daemon_token::{create_daemon_token, delete_expired_daemon_tokens};
 use patchbay_db::queries::github::get_issue_review_head_sha;
 use patchbay_db::queries::issue::get_issue;
+use patchbay_db::queries::member::get_member_by_user_and_workspace;
 use patchbay_db::queries::runtime::get_agent_runtime;
 use patchbay_db::queries::task_message::list_task_messages;
 use patchbay_db::queries::task_token::{create_task_token, delete_task_tokens_by_task};
@@ -112,6 +116,57 @@ pub enum AgentThreadUnavailableReason {
     FreshSessionRequired,
     #[error("the provider session has not been established")]
     SessionNotEstablished,
+    #[error("the Agent is archived")]
+    AgentArchived,
+    #[error("the Agent is not bound to a runtime")]
+    AgentUnbound,
+    #[error("the Agent is bound to a different runtime")]
+    AgentRuntimeRebound,
+    #[error("the Agent runtime no longer exists")]
+    AgentRuntimeMissing,
+}
+
+/// Returns the fail-closed reason for a thread whose Agent/runtime binding no
+/// longer matches the task that opened it. Keep this pure so the exact
+/// archived, unbound, and rebound cases can be regression-tested without a
+/// database fixture.
+pub fn agent_thread_binding_reason(
+    agent_archived: bool,
+    agent_runtime_id: Option<Uuid>,
+    task_runtime_id: Option<Uuid>,
+    runtime_exists: bool,
+) -> Option<AgentThreadUnavailableReason> {
+    if agent_archived {
+        return Some(AgentThreadUnavailableReason::AgentArchived);
+    }
+    let Some(agent_runtime_id) = agent_runtime_id else {
+        return Some(AgentThreadUnavailableReason::AgentUnbound);
+    };
+    if task_runtime_id != Some(agent_runtime_id) {
+        return Some(AgentThreadUnavailableReason::AgentRuntimeRebound);
+    }
+    if !runtime_exists {
+        return Some(AgentThreadUnavailableReason::AgentRuntimeMissing);
+    }
+    None
+}
+
+fn member_invocation_allowed(
+    owner_id: Option<Uuid>,
+    permission_mode: &str,
+    is_workspace_member: bool,
+    targets: &[AgentInvocationTarget],
+    actor_id: Uuid,
+) -> bool {
+    if actor_id.is_nil() || !is_workspace_member {
+        return false;
+    }
+    owner_id == Some(actor_id)
+        || (permission_mode == "public_to"
+            && targets.iter().any(|target| {
+                target.target_type == "workspace"
+                    || (target.target_type == "member" && target.target_id == actor_id)
+            }))
 }
 
 pub fn agent_thread_availability(
@@ -226,6 +281,8 @@ pub enum TaskServiceError {
     AgentThreadUnavailable(AgentThreadUnavailableReason),
     #[error("agent thread idempotency key was already used with different content")]
     AgentThreadIdempotencyConflict,
+    #[error("agent thread continuation is not permitted for this requester")]
+    AgentThreadInvokeForbidden,
     #[error("task is no longer queued")]
     NoLongerQueued(ErrTaskNoLongerQueued),
     #[error("rerun: operator not allowed to invoke target agent")]
@@ -2518,6 +2575,8 @@ impl TaskService {
         {
             (task_id, true)
         } else {
+            let runtime_mcp_overlay = overlay_value_or_null(&parent.runtime_mcp_overlay);
+            let runtime_connected_apps = overlay_value_or_null(&parent.runtime_connected_apps);
             let task_id = create_task_message_bus_continuation(
                 &mut *tx,
                 parent.id,
@@ -2527,6 +2586,11 @@ impl TaskService {
                 &content,
                 new_v7(),
                 "",
+                parent.originator_user_id,
+                parent.accountable_user_id,
+                &runtime_mcp_overlay,
+                &runtime_connected_apps,
+                parent.originator_source.as_deref(),
             )
             .await
             .map_err(downcast_sqlx)?
@@ -2569,6 +2633,54 @@ impl TaskService {
         })
     }
 
+    /// Checks the current Agent/runtime binding before an existing thread is
+    /// advertised as continuable. A provider session alone is insufficient:
+    /// archive, unbind, and runtime replacement are terminal for this
+    /// product-level continuation contract.
+    pub async fn agent_thread_binding_availability(
+        &self,
+        task: &AgentTaskQueue,
+    ) -> Result<(), AgentThreadUnavailableReason> {
+        let agent = match get_agent(&self.pool, task.agent_id).await {
+            Ok(Some(agent)) => agent,
+            Ok(None) => return Err(AgentThreadUnavailableReason::AgentRuntimeMissing),
+            Err(error) => {
+                tracing::warn!(
+                    task_id = %task.id,
+                    agent_id = %task.agent_id,
+                    %error,
+                    "failed to load Agent binding for Agent thread"
+                );
+                return Err(AgentThreadUnavailableReason::AgentRuntimeMissing);
+            }
+        };
+        let runtime_exists = match agent.runtime_id {
+            Some(runtime_id) => match get_agent_runtime(&self.pool, runtime_id).await {
+                Ok(Some(runtime)) => runtime.workspace_id == agent.workspace_id,
+                Ok(None) => false,
+                Err(error) => {
+                    tracing::warn!(
+                        task_id = %task.id,
+                        runtime_id = %runtime_id,
+                        %error,
+                        "failed to load Agent runtime for Agent thread"
+                    );
+                    false
+                }
+            },
+            None => false,
+        };
+        match agent_thread_binding_reason(
+            agent.archived_at.is_some(),
+            agent.runtime_id,
+            task.runtime_id,
+            runtime_exists,
+        ) {
+            Some(reason) => Err(reason),
+            None => Ok(()),
+        }
+    }
+
     /// Queues a user-authored next turn for the same provider session. The
     /// deferred lane is shared with Side Chat delivery so a provider never
     /// receives concurrent writers for one checkout/session. The parent row
@@ -2579,6 +2691,7 @@ impl TaskService {
         parent_task_id: Uuid,
         content: &str,
         idempotency_key: &str,
+        requester_user_id: Uuid,
     ) -> Result<TaskMessageBusReceipt, TaskServiceError> {
         const MAX_MESSAGE_CHARS: usize = 12_000;
         let content = sanitize_text_for_postgres(content.trim());
@@ -2595,7 +2708,130 @@ impl TaskService {
         }
         let content = content.chars().take(MAX_MESSAGE_CHARS).collect::<String>();
 
+        // Composio session creation can perform database and network I/O. Take
+        // a non-locking snapshot for that work; the transaction below repeats
+        // every authorization and binding check before it writes anything.
+        let snapshot_parent = get_agent_task(&self.pool, parent_task_id)
+            .await
+            .map_err(downcast_sqlx)?
+            .ok_or_else(|| {
+                TaskServiceError::Internal("agent thread parent task not found".to_string())
+            })?;
+        if let Err(reason) = agent_thread_availability(&snapshot_parent) {
+            return Err(TaskServiceError::AgentThreadUnavailable(reason));
+        }
+        let snapshot_agent = get_agent(&self.pool, snapshot_parent.agent_id)
+            .await
+            .map_err(downcast_sqlx)?
+            .ok_or_else(|| TaskServiceError::Internal("Agent binding not found".to_string()))?;
+        let snapshot_runtime_exists = match snapshot_agent.runtime_id {
+            Some(runtime_id) => get_agent_runtime(&self.pool, runtime_id)
+                .await
+                .map_err(downcast_sqlx)?
+                .is_some_and(|runtime| runtime.workspace_id == snapshot_agent.workspace_id),
+            None => false,
+        };
+        if let Some(reason) = agent_thread_binding_reason(
+            snapshot_agent.archived_at.is_some(),
+            snapshot_agent.runtime_id,
+            snapshot_parent.runtime_id,
+            snapshot_runtime_exists,
+        ) {
+            return Err(TaskServiceError::AgentThreadUnavailable(reason));
+        }
+
+        // Reject an unauthorized direct service caller before the overlay
+        // builder can create any external provider session. The transaction
+        // below repeats this check after locking the Agent for races.
+        let is_workspace_member = match get_member_by_user_and_workspace(
+            &self.pool,
+            requester_user_id,
+            snapshot_agent.workspace_id,
+        )
+        .await
+        {
+            Ok(member) => member.is_some(),
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    requester_user_id = %requester_user_id,
+                    agent_id = %snapshot_agent.id,
+                    "failed to verify Agent thread requester membership before overlay"
+                );
+                false
+            }
+        };
+        let targets = if is_workspace_member
+            && snapshot_agent.owner_id != Some(requester_user_id)
+            && snapshot_agent.permission_mode == "public_to"
+        {
+            match list_agent_invocation_targets(&self.pool, snapshot_agent.id).await {
+                Ok(targets) => targets,
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        requester_user_id = %requester_user_id,
+                        agent_id = %snapshot_agent.id,
+                        "failed to verify Agent thread invocation targets before overlay"
+                    );
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+        if !member_invocation_allowed(
+            snapshot_agent.owner_id,
+            &snapshot_agent.permission_mode,
+            is_workspace_member,
+            &targets,
+            requester_user_id,
+        ) {
+            return Err(TaskServiceError::AgentThreadInvokeForbidden);
+        }
+
+        let runtime_overlay = self
+            .build_runtime_mcp_overlay(requester_user_id, &snapshot_agent)
+            .await;
+        let runtime_mcp_overlay = overlay_value_or_null(&runtime_overlay.overlay);
+        let runtime_connected_apps = overlay_value_or_null(&runtime_overlay.connected_apps);
+        let attribution = direct_human_run(
+            Some(requester_user_id),
+            evidence_chat(),
+            snapshot_parent.chat_session_id,
+        );
+        let originator_source = attribution
+            .source
+            .as_ref()
+            .map(|source| source.as_str().to_string());
+
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        // Follow the repository owner-row fence: lock Agent/owner rows before
+        // the task row. Claim paths take the same order; upgrading the Agent
+        // after locking the task could otherwise deadlock on a concurrent
+        // claim that already holds the Agent lock and waits for this task.
+        let agent = get_agent_for_claim_update(&mut *tx, snapshot_parent.agent_id)
+            .await
+            .map_err(|error| TaskServiceError::Internal(format!("load Agent binding: {error}")))?
+            .ok_or_else(|| TaskServiceError::Internal("Agent binding not found".to_string()))?;
+        let runtime_exists = match agent.runtime_id {
+            Some(runtime_id) => get_agent_runtime(&mut *tx, runtime_id)
+                .await
+                .map_err(|error| {
+                    TaskServiceError::Internal(format!("load Agent runtime binding: {error}"))
+                })?
+                .is_some_and(|runtime| runtime.workspace_id == agent.workspace_id),
+            None => false,
+        };
+        if let Some(reason) = agent_thread_binding_reason(
+            agent.archived_at.is_some(),
+            agent.runtime_id,
+            snapshot_parent.runtime_id,
+            runtime_exists,
+        ) {
+            return Err(TaskServiceError::AgentThreadUnavailable(reason));
+        }
+
         if !lock_task_for_message_bus(&mut *tx, parent_task_id)
             .await
             .map_err(downcast_sqlx)?
@@ -2612,6 +2848,78 @@ impl TaskService {
             })?;
         if let Err(reason) = agent_thread_availability(&parent) {
             return Err(TaskServiceError::AgentThreadUnavailable(reason));
+        }
+
+        if parent.agent_id != agent.id {
+            return Err(TaskServiceError::Internal(
+                "Agent binding changed while preparing continuation; retry".to_string(),
+            ));
+        }
+        if let Some(reason) = agent_thread_binding_reason(
+            agent.archived_at.is_some(),
+            agent.runtime_id,
+            parent.runtime_id,
+            runtime_exists,
+        ) {
+            return Err(TaskServiceError::AgentThreadUnavailable(reason));
+        }
+
+        // Recheck the authenticated requester after taking the Agent lock.
+        // The handler performs the same admission check for the HTTP path, but
+        // this service boundary must also fail closed for direct callers and
+        // for permission changes racing the continuation request.
+        let is_workspace_member =
+            match get_member_by_user_and_workspace(&mut *tx, requester_user_id, agent.workspace_id)
+                .await
+            {
+                Ok(member) => member.is_some(),
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        requester_user_id = %requester_user_id,
+                        agent_id = %agent.id,
+                        "failed to verify Agent thread requester membership"
+                    );
+                    false
+                }
+            };
+        let targets = if is_workspace_member
+            && agent.owner_id != Some(requester_user_id)
+            && agent.permission_mode == "public_to"
+        {
+            match list_agent_invocation_targets(&mut *tx, agent.id).await {
+                Ok(targets) => targets,
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        requester_user_id = %requester_user_id,
+                        agent_id = %agent.id,
+                        "failed to verify Agent thread invocation targets"
+                    );
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+        if !member_invocation_allowed(
+            agent.owner_id,
+            &agent.permission_mode,
+            is_workspace_member,
+            &targets,
+            requester_user_id,
+        ) {
+            return Err(TaskServiceError::AgentThreadInvokeForbidden);
+        }
+
+        // Never attach a session built from an older owner/allowlist snapshot
+        // to a task after the Agent changed while the external call ran.
+        if agent.owner_id != snapshot_agent.owner_id
+            || agent.composio_toolkit_allowlist != snapshot_agent.composio_toolkit_allowlist
+        {
+            return Err(TaskServiceError::Internal(
+                "Agent configuration changed while preparing continuation; retry".to_string(),
+            ));
         }
 
         if let Some(existing) =
@@ -2639,6 +2947,11 @@ impl TaskService {
             &content,
             new_v7(),
             &idempotency_key,
+            attribution.user_id,
+            attribution.accountable_user_id,
+            &runtime_mcp_overlay,
+            &runtime_connected_apps,
+            originator_source.as_deref(),
         )
         .await
         .map_err(downcast_sqlx)?
@@ -5666,6 +5979,89 @@ mod tests {
             agent_thread_availability(&task),
             Err(AgentThreadUnavailableReason::RetiredSession)
         );
+    }
+
+    #[test]
+    fn agent_thread_binding_is_fail_closed_for_lifecycle_changes() {
+        let runtime_id = Uuid::new_v4();
+        assert_eq!(
+            agent_thread_binding_reason(true, Some(runtime_id), Some(runtime_id), true),
+            Some(AgentThreadUnavailableReason::AgentArchived)
+        );
+        assert_eq!(
+            agent_thread_binding_reason(false, None, None, false),
+            Some(AgentThreadUnavailableReason::AgentUnbound)
+        );
+        assert_eq!(
+            agent_thread_binding_reason(false, Some(runtime_id), Some(Uuid::new_v4()), true,),
+            Some(AgentThreadUnavailableReason::AgentRuntimeRebound)
+        );
+        assert_eq!(
+            agent_thread_binding_reason(false, Some(runtime_id), Some(runtime_id), false),
+            Some(AgentThreadUnavailableReason::AgentRuntimeMissing)
+        );
+        assert_eq!(
+            agent_thread_binding_reason(false, Some(runtime_id), Some(runtime_id), true),
+            None
+        );
+    }
+
+    #[test]
+    fn agent_thread_invocation_requires_current_member_and_target() {
+        let owner = Uuid::new_v4();
+        let member = Uuid::new_v4();
+        let other = Uuid::new_v4();
+        let target = |target_type: &str, target_id: Uuid| AgentInvocationTarget {
+            id: Uuid::new_v4(),
+            agent_id: Uuid::new_v4(),
+            target_type: target_type.to_string(),
+            target_id,
+            created_by: None,
+            created_at: chrono::Utc::now(),
+        };
+
+        assert!(member_invocation_allowed(
+            Some(owner),
+            "private",
+            true,
+            &[],
+            owner
+        ));
+        assert!(!member_invocation_allowed(
+            Some(owner),
+            "private",
+            false,
+            &[],
+            owner
+        ));
+        assert!(member_invocation_allowed(
+            Some(owner),
+            "public_to",
+            true,
+            &[target("member", member)],
+            member
+        ));
+        assert!(!member_invocation_allowed(
+            Some(owner),
+            "public_to",
+            true,
+            &[target("member", other)],
+            member
+        ));
+        assert!(member_invocation_allowed(
+            Some(owner),
+            "public_to",
+            true,
+            &[target("workspace", other)],
+            member
+        ));
+        assert!(!member_invocation_allowed(
+            Some(owner),
+            "public_to",
+            false,
+            &[target("workspace", other)],
+            member
+        ));
     }
 
     #[test]

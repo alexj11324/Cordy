@@ -18,6 +18,10 @@ import { ChatMessageList } from "@/components/chat/chat-message-list";
 import { ChatComposer } from "@/components/chat/chat-composer";
 import { Text } from "@/components/ui/text";
 import { buildAgentThreadMessages, pendingTaskForAgentThread } from "@/lib/agent-thread-display";
+import {
+  useAgentThreadCopy,
+  type AgentThreadCopy,
+} from "@/lib/agent-thread-i18n";
 
 interface Props {
   taskId: string;
@@ -43,17 +47,18 @@ function unionTaskMessagesBySeq(
     : (existing as TaskMessagePayload[]);
 }
 
-function continuationError(error: unknown): string {
+function continuationError(error: unknown, copy: AgentThreadCopy): string {
   if (error instanceof ApiError && error.status === 403) {
-    return "You no longer have permission to continue this Agent thread.";
+    return copy.permission_denied;
   }
   if (error instanceof ApiError && error.status === 409) {
-    return "This Agent thread is no longer available for continuation.";
+    return copy.unavailable;
   }
-  return error instanceof Error ? error.message : "The Agent thread could not be continued.";
+  return error instanceof Error ? error.message : copy.could_not_continue;
 }
 
 export function TaskAgentThreadScreen({ taskId }: Props) {
+  const copy = useAgentThreadCopy();
   const wsId = useWorkspaceStore((state) => state.currentWorkspaceId);
   const queryClient = useQueryClient();
   const threadQuery = useQuery(agentThreadOptions(wsId, taskId));
@@ -72,13 +77,13 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
     [task, threadQuery.data?.thread_tasks],
   );
   const continuationParentTaskId = task?.id ?? taskId;
-  const agentName = threadQuery.data?.agent.name?.trim() || "Agent";
+  const agentName = threadQuery.data?.agent.name?.trim() || copy.agent;
   const messages = useMemo<ChatMessage[]>(
     () =>
       threadTasks.flatMap((threadTask) =>
-        buildAgentThreadMessages(threadTask, "Continue this Agent thread"),
+        buildAgentThreadMessages(threadTask, copy.continue_prompt),
       ),
-    [threadTasks],
+    [copy.continue_prompt, threadTasks],
   );
   const pendingTask = pendingTaskForAgentThread(task);
   const liveTaskMessages = useQuery(taskMessagesOptions(continuationParentTaskId));
@@ -101,10 +106,14 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
 
   const handleSend = useCallback(
     async (content: string, _attachmentIds: string[]) => {
-      if (!threadQuery.data?.can_continue || !continuationParentTaskId) {
+      if (
+        !threadQuery.data?.can_continue ||
+        threadQuery.data.availability.state !== "available" ||
+        !continuationParentTaskId
+      ) {
         throw new Error(
           threadQuery.data?.availability.reason ||
-            "This Agent thread is unavailable for continuation.",
+            copy.unavailable_fallback,
         );
       }
       await continuation.mutateAsync({
@@ -116,27 +125,40 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
       });
       clearDraft(`agent-thread:${taskId}`);
     },
-    [clearDraft, continuation, continuationParentTaskId, taskId, threadQuery.data],
+    [
+      clearDraft,
+      continuation,
+      continuationParentTaskId,
+      copy.unavailable_fallback,
+      taskId,
+      threadQuery.data,
+    ],
   );
 
   const handleStop = useCallback(() => {
     if (!continuationParentTaskId) return;
     void api.cancelTaskById(continuationParentTaskId).catch((error) => {
-      Alert.alert("Unable to stop Agent", continuationError(error));
+      Alert.alert(copy.unable_to_stop, continuationError(error, copy));
     });
-  }, [continuationParentTaskId]);
+  }, [continuationParentTaskId, copy]);
 
   const unavailableReason = threadQuery.isError
-    ? continuationError(threadQuery.error)
-    : threadQuery.data && !threadQuery.data.can_continue
+    ? continuationError(threadQuery.error, copy)
+    : threadQuery.data &&
+        (!threadQuery.data.can_continue ||
+          threadQuery.data.availability.state === "unavailable")
       ? threadQuery.data.availability.reason ||
-        "This Agent thread is unavailable for continuation."
+        copy.unavailable_fallback
       : undefined;
   const availability = threadQuery.data
     ? threadQuery.data.availability.state === "available"
       ? "online"
       : "offline"
     : undefined;
+  const canContinue = Boolean(
+    threadQuery.data?.can_continue &&
+      threadQuery.data.availability.state === "available",
+  );
 
   return (
     <View className="flex-1 bg-background">
@@ -162,7 +184,7 @@ export function TaskAgentThreadScreen({ taskId }: Props) {
           sending={Boolean(pendingTask?.task_id)}
           allowStop={pendingTask?.status !== "queued"}
           allowAttachments={false}
-          disabled={Boolean(unavailableReason) || !threadQuery.data?.can_continue}
+          disabled={Boolean(unavailableReason) || !canContinue}
           disabledReason={unavailableReason}
         />
       </KeyboardAvoidingView>

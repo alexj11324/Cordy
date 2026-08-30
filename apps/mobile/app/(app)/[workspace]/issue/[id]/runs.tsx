@@ -21,6 +21,7 @@ import {
   issueTasksOptions,
 } from "@/data/queries/issues";
 import { useWorkspaceStore } from "@/data/workspace-store";
+import { useAgentThreadCopy } from "@/lib/agent-thread-i18n";
 
 const PAST_STATUS_ORDER: Record<AgentTask["status"], number> = {
   failed: 0,
@@ -36,6 +37,7 @@ export default function IssueRunsRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
   const wsSlug = useWorkspaceStore((s) => s.currentWorkspaceSlug);
+  const copy = useAgentThreadCopy();
   const { data: activeTasks = [] } = useQuery(
     issueActiveTasksOptions(wsId, id),
   );
@@ -67,13 +69,13 @@ export default function IssueRunsRoute() {
     <View className="flex-1">
       <View className="px-4 pt-4 pb-3">
         <Text className="text-base font-semibold text-foreground">
-          Agent Runs
+          {copy.runs_title}
         </Text>
       </View>
       <ScrollView showsVerticalScrollIndicator={false}>
         <View className="px-4 gap-3 pb-4">
           {active.length > 0 ? (
-            <Section title="Active">
+            <Section title={copy.active}>
               {active.map((task) => (
                 <RunRow
                   key={task.id}
@@ -85,7 +87,7 @@ export default function IssueRunsRoute() {
             </Section>
           ) : null}
           {past.length > 0 ? (
-            <Section title="Past">
+            <Section title={copy.past}>
               {past.map((task) => (
                 <RunRow
                   key={task.id}

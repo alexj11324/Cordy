@@ -60,6 +60,7 @@ import {
   PluginPreviewSchema,
   EMPTY_PLUGIN_INSTALLATION_LIST,
   EMPTY_PLUGIN_PREVIEW,
+  AgentThreadResponseSchema,
 } from "./schemas";
 import { IssueViewSchema, IssueViewListSchema } from "./schemas";
 import {
@@ -93,6 +94,31 @@ const baseIssue = {
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };
+
+describe("AgentThreadResponseSchema availability compatibility", () => {
+  it("keeps the thread envelope when the server adds an availability state", () => {
+    const parsed = AgentThreadResponseSchema.safeParse({
+      task: { id: "task-1" },
+      thread_tasks: [{ id: "task-1", status: "completed" }],
+      current_task_id: "task-1",
+      agent: { id: "agent-1", name: "Builder" },
+      events: [{ task_id: "task-1", seq: 1, type: "tool_use", content: "done" }],
+      availability: {
+        state: "provider_reconnecting",
+        reason_code: "provider_reconnecting",
+        reason: "The provider is reconnecting.",
+      },
+      can_continue: true,
+    });
+
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.availability.state).toBe("unavailable");
+    expect(parsed.data.events).toHaveLength(1);
+    expect(parsed.data.thread_tasks[0]?.id).toBe("task-1");
+    expect(parsed.data.availability.reason_code).toBe("provider_reconnecting");
+  });
+});
 
 describe("IssueSchema (via ListIssuesResponseSchema)", () => {
   it("accepts null activity during backfill and rejects malformed activity", () => {

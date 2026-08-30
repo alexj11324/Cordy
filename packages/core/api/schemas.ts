@@ -1645,7 +1645,13 @@ const TaskMessagePayloadSchema = z.object({
 }).loose();
 
 const AgentThreadAvailabilitySchema = z.object({
-  state: z.enum(["available", "unavailable"]).default("unavailable"),
+  // Availability is an open server state. A newer state must make the
+  // composer unavailable without invalidating the surrounding thread
+  // envelope, history, or structured events.
+  state: z
+    .unknown()
+    .transform((state) => (state === "available" ? "available" : "unavailable"))
+    .default("unavailable"),
   reason_code: z.string().optional(),
   reason: z.string().optional(),
 }).loose();

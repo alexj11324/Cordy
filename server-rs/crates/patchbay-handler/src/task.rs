@@ -1,5 +1,7 @@
 //! User-authenticated task endpoints.
 
+use std::collections::HashMap;
+
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
@@ -65,7 +67,9 @@ struct ContinueAgentThreadRequest {
 
 struct AgentThreadAccess {
     task: patchbay_db::models::AgentTaskQueue,
+    thread_tasks: Vec<patchbay_db::models::AgentTaskQueue>,
     agent: Agent,
+    can_invoke: bool,
 }
 
 fn unavailable_reason(
@@ -89,7 +93,30 @@ fn unavailable_reason(
             "provider_session_not_established",
             "The provider has not established a session for this run yet.",
         ),
+        Reason::AgentArchived => (
+            "agent_archived",
+            "This Agent is archived and its thread cannot continue.",
+        ),
+        Reason::AgentUnbound => (
+            "agent_runtime_unbound",
+            "This Agent is no longer bound to a runtime, so its thread cannot continue.",
+        ),
+        Reason::AgentRuntimeRebound => (
+            "agent_runtime_rebound",
+            "This Agent is now bound to a different runtime, so its thread cannot continue safely.",
+        ),
+        Reason::AgentRuntimeMissing => (
+            "agent_runtime_missing",
+            "The Agent runtime no longer exists, so its thread cannot continue.",
+        ),
     }
+}
+
+fn invocation_unavailable_reason() -> (&'static str, &'static str) {
+    (
+        "agent_thread_invoke_forbidden",
+        "You can read this Agent thread, but you do not have permission to continue it.",
+    )
 }
 
 async fn load_agent_thread_access(
@@ -117,43 +144,65 @@ async fn load_agent_thread_access(
         Ok(None) | Err(_) => return Err(error_response(StatusCode::NOT_FOUND, "task not found")),
     };
 
-    if let Some(issue_id) = task.issue_id {
-        match issue_query::get_issue(&state.pool, issue_id).await {
-            Ok(Some(issue)) if issue.workspace_id == context.member.workspace_id => {}
-            Ok(Some(_)) | Ok(None) | Err(_) => {
-                return Err(error_response(StatusCode::NOT_FOUND, "task not found"))
-            }
-        }
-    }
-    if let Some(chat_session_id) = task.chat_session_id {
-        let session = match chat::get_chat_session_in_workspace(
-            &state.pool,
-            chat_session_id,
-            context.member.workspace_id,
-        )
-        .await
-        {
-            Ok(Some(session)) => session,
-            Ok(None) | Err(_) => {
-                return Err(error_response(StatusCode::NOT_FOUND, "task not found"))
-            }
-        };
-        if session.creator_id != context.member.user_id {
+    let thread_tasks = match agent::list_agent_thread_tasks(&state.pool, task_id).await {
+        Ok(tasks) if !tasks.is_empty() => tasks,
+        Ok(_) => vec![task.clone()],
+        Err(error) => {
+            tracing::warn!(%error, %task_id, "failed to load Agent thread tasks for authorization");
             return Err(error_response(
-                StatusCode::FORBIDDEN,
-                "you do not have access to this Agent thread",
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Agent thread tasks",
             ));
         }
-    }
-    if let Some(run_id) = task.automation_run_id {
-        let run = match automation_query::get_automation_run(&state.pool, run_id).await {
-            Ok(Some(run)) => run,
-            Ok(None) | Err(_) => {
-                return Err(error_response(StatusCode::NOT_FOUND, "task not found"))
+    };
+
+    // Authorize the persisted thread by its durable source, not by the
+    // current ability to invoke the Agent. Continuation children intentionally
+    // have no automation_run_id, so checking the complete chain keeps a child
+    // URL from bypassing the root Automation/Issue/Chat authorization.
+    let mut has_resource_source = false;
+    for thread_task in &thread_tasks {
+        if let Some(issue_id) = thread_task.issue_id {
+            has_resource_source = true;
+            match issue_query::get_issue(&state.pool, issue_id).await {
+                Ok(Some(issue)) if issue.workspace_id == context.member.workspace_id => {}
+                Ok(Some(_)) | Ok(None) | Err(_) => {
+                    return Err(error_response(StatusCode::NOT_FOUND, "task not found"))
+                }
             }
-        };
-        let automation =
-            match automation_query::get_automation(&state.pool, run.automation_id).await {
+        }
+        if let Some(chat_session_id) = thread_task.chat_session_id {
+            has_resource_source = true;
+            let session = match chat::get_chat_session_in_workspace(
+                &state.pool,
+                chat_session_id,
+                context.member.workspace_id,
+            )
+            .await
+            {
+                Ok(Some(session)) => session,
+                Ok(None) | Err(_) => {
+                    return Err(error_response(StatusCode::NOT_FOUND, "task not found"))
+                }
+            };
+            if session.creator_id != context.member.user_id {
+                return Err(error_response(
+                    StatusCode::FORBIDDEN,
+                    "you do not have access to this Agent thread",
+                ));
+            }
+        }
+        if let Some(run_id) = thread_task.automation_run_id {
+            has_resource_source = true;
+            let run = match automation_query::get_automation_run(&state.pool, run_id).await {
+                Ok(Some(run)) => run,
+                Ok(None) | Err(_) => {
+                    return Err(error_response(StatusCode::NOT_FOUND, "task not found"))
+                }
+            };
+            let automation = match automation_query::get_automation(&state.pool, run.automation_id)
+                .await
+            {
                 Ok(Some(automation)) if automation.workspace_id == context.member.workspace_id => {
                     automation
                 }
@@ -161,35 +210,41 @@ async fn load_agent_thread_access(
                     return Err(error_response(StatusCode::NOT_FOUND, "task not found"))
                 }
             };
-        let owns_automation = matches!(context.member.role.as_str(), "owner" | "admin")
-            || (automation.created_by_type == "member"
-                && automation.created_by_id == context.member.user_id);
-        let collaborates = matches!(
-            automation_query::is_automation_collaborator(
-                &state.pool,
-                automation.id,
-                context.member.user_id,
-            )
-            .await,
-            Ok(Some(true))
-        );
-        if !owns_automation && !collaborates {
-            return Err(error_response(
-                StatusCode::FORBIDDEN,
-                "you do not have access to this Automation run",
-            ));
+            let owns_automation = matches!(context.member.role.as_str(), "owner" | "admin")
+                || (automation.created_by_type == "member"
+                    && automation.created_by_id == context.member.user_id);
+            let collaborates = matches!(
+                automation_query::is_automation_collaborator(
+                    &state.pool,
+                    automation.id,
+                    context.member.user_id,
+                )
+                .await,
+                Ok(Some(true))
+            );
+            if !owns_automation && !collaborates {
+                return Err(error_response(
+                    StatusCode::FORBIDDEN,
+                    "you do not have access to this Automation run",
+                ));
+            }
         }
     }
-
-    if !can_member_invoke_agent(state, &target, context.member.user_id).await {
+    if !has_resource_source
+        && !can_access_agent(state, context, &target, "member", context.member.user_id).await
+    {
         return Err(error_response(
             StatusCode::FORBIDDEN,
-            "you do not have permission to continue this Agent thread",
+            "you do not have access to this Agent thread",
         ));
     }
+
+    let can_invoke = can_member_invoke_agent(state, &target, context.member.user_id).await;
     Ok(AgentThreadAccess {
         task,
+        thread_tasks,
         agent: target,
+        can_invoke,
     })
 }
 
@@ -206,39 +261,54 @@ async fn get_agent_thread(
         Ok(access) => access,
         Err(response) => return response,
     };
-    let thread_tasks = match agent::list_agent_thread_tasks(&state.pool, task_id).await {
-        Ok(tasks) if !tasks.is_empty() => tasks,
-        Ok(_) => vec![access.task.clone()],
-        Err(error) => {
-            tracing::warn!(%error, %task_id, "failed to load Agent thread tasks");
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to load Agent thread tasks",
-            );
-        }
-    };
+    let thread_tasks = access.thread_tasks;
     let current_task = thread_tasks
         .last()
         .cloned()
         .unwrap_or_else(|| access.task.clone());
-    let mut events = Vec::new();
-    for thread_task in &thread_tasks {
-        match task_message::list_task_messages(&state.pool, thread_task.id).await {
-            Ok(task_events) => events.extend(
-                task_events
-                    .iter()
-                    .map(|event| crate::daemon::task_message_payload(event, thread_task.issue_id)),
-            ),
-            Err(error) => {
-                tracing::warn!(%error, task_id = %thread_task.id, "failed to load Agent thread events");
-                return error_response(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    "failed to load Agent thread events",
-                );
-            }
+    let task_issue_ids = thread_tasks
+        .iter()
+        .map(|task| (task.id, task.issue_id))
+        .collect::<HashMap<_, _>>();
+    let task_events = match task_message::list_task_messages_for_tasks(
+        &state.pool,
+        thread_tasks.iter().map(|task| task.id).collect(),
+    )
+    .await
+    {
+        Ok(task_events) => task_events,
+        Err(error) => {
+            tracing::warn!(%error, task_id = %task_id, "failed to load Agent thread events");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Agent thread events",
+            );
         }
-    }
-    let (availability, can_continue) =
+    };
+    let events = task_events
+        .iter()
+        .map(|event| {
+            let issue_id = task_issue_ids.get(&event.task_id).copied().flatten();
+            crate::daemon::task_message_payload(event, issue_id)
+        })
+        .collect::<Vec<_>>();
+    let (availability, can_continue) = if !access.can_invoke {
+        let (code, message) = invocation_unavailable_reason();
+        (
+            json!({ "state": "available", "reason_code": code, "reason": message }),
+            false,
+        )
+    } else if let Err(reason) = state
+        .tasks
+        .agent_thread_binding_availability(&current_task)
+        .await
+    {
+        let (code, message) = unavailable_reason(reason);
+        (
+            json!({ "state": "unavailable", "reason_code": code, "reason": message }),
+            false,
+        )
+    } else {
         match patchbay_service::task_service::agent_thread_availability(&current_task) {
             Ok(()) => (json!({ "state": "available" }), true),
             Err(reason) => {
@@ -248,7 +318,8 @@ async fn get_agent_thread(
                     false,
                 )
             }
-        };
+        }
+    };
     Json(json!({
         "task": crate::task_json::task_to_map(&current_task, &context.workspace_id),
         "thread_tasks": thread_tasks
@@ -282,16 +353,33 @@ async fn continue_agent_thread(
         Ok(access) => access,
         Err(response) => return response,
     };
-    let parent_task = match agent::list_agent_thread_tasks(&state.pool, task_id).await {
-        Ok(tasks) => tasks.last().cloned().unwrap_or_else(|| access.task.clone()),
-        Err(error) => {
-            tracing::warn!(%error, %task_id, "failed to resolve current Agent thread task");
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to resolve current Agent thread task",
-            );
-        }
-    };
+    if !access.can_invoke {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "you do not have permission to continue this Agent thread",
+        );
+    }
+    let parent_task = access
+        .thread_tasks
+        .last()
+        .cloned()
+        .unwrap_or_else(|| access.task.clone());
+    if let Err(reason) = state
+        .tasks
+        .agent_thread_binding_availability(&parent_task)
+        .await
+    {
+        let (reason_code, message) = unavailable_reason(reason);
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({
+                "error": "agent_thread_unavailable",
+                "reason_code": reason_code,
+                "reason": message,
+            })),
+        )
+            .into_response();
+    }
     if let Err(reason) = patchbay_service::task_service::agent_thread_availability(&parent_task) {
         let (reason_code, message) = unavailable_reason(reason);
         return (
@@ -306,7 +394,12 @@ async fn continue_agent_thread(
     }
     match state
         .tasks
-        .continue_agent_thread(parent_task.id, &request.content, &request.idempotency_key)
+        .continue_agent_thread(
+            parent_task.id,
+            &request.content,
+            &request.idempotency_key,
+            context.member.user_id,
+        )
         .await
     {
         Ok(receipt) => Json(json!({
@@ -334,6 +427,10 @@ async fn continue_agent_thread(
             })),
         )
             .into_response(),
+        Err(TaskServiceError::AgentThreadInvokeForbidden) => error_response(
+            StatusCode::FORBIDDEN,
+            "you do not have permission to continue this Agent thread",
+        ),
         Err(TaskServiceError::Sql(error)) => {
             tracing::warn!(%error, %task_id, "Agent thread continuation failed");
             error_response(
@@ -804,5 +901,13 @@ mod tests {
             &[],
             owner
         ));
+    }
+
+    #[test]
+    fn history_access_can_report_invoke_denial_without_marking_provider_unavailable() {
+        let (code, reason) = invocation_unavailable_reason();
+        assert_eq!(code, "agent_thread_invoke_forbidden");
+        assert!(reason.contains("read this Agent thread"));
+        assert!(!reason.contains("provider session"));
     }
 }

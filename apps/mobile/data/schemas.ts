@@ -457,7 +457,12 @@ export const AgentTaskSchema: z.ZodType<AgentTask> = z.object({
 export const AgentTaskListSchema = z.array(AgentTaskSchema).default([]);
 
 const AgentThreadAvailabilitySchema = z.object({
-  state: z.enum(["available", "unavailable"]).default("unavailable"),
+  // Preserve the thread envelope when a newer server adds an availability
+  // state. Unknown states are terminal from this client's perspective.
+  state: z
+    .unknown()
+    .transform((state) => (state === "available" ? "available" : "unavailable"))
+    .default("unavailable"),
   reason_code: z.string().optional(),
   reason: z.string().optional(),
 }).loose();

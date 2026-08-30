@@ -3601,6 +3601,64 @@ WHERE id = $1"#
     }))
 }
 
+/// Returns the complete provider-session thread containing `task_id`.
+///
+/// A continuation is represented as a normal task row so the existing queue,
+/// event, and audit machinery remains authoritative. The immutable
+/// `message_bus_parent_task_id` context edge is the thread link. Walk to the
+/// oldest reachable ancestor first, then collect every descendant while
+/// requiring the copied agent and resource ownership fields to match. This
+/// keeps an individual child task URL from hiding earlier turns or leaking a
+/// malformed cross-resource row into the shared Agent thread.
+pub async fn list_agent_thread_tasks(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    task_id: Uuid,
+) -> anyhow::Result<Vec<AgentTaskQueue>> {
+    sqlx::query_as::<_, AgentTaskQueue>(
+        r#"WITH RECURSIVE ancestors(id, depth) AS (
+    SELECT $1::uuid, 0
+    UNION ALL
+    SELECT parent.id, child.depth + 1
+    FROM ancestors child
+    JOIN agent_task_queue child_row ON child_row.id = child.id
+    JOIN agent_task_queue parent
+      ON parent.id::text = child_row.context->>'message_bus_parent_task_id'
+    WHERE child.depth < 100
+      AND parent.agent_id = child_row.agent_id
+      AND parent.issue_id IS NOT DISTINCT FROM child_row.issue_id
+      AND parent.chat_session_id IS NOT DISTINCT FROM child_row.chat_session_id
+      AND parent.session_id IS NOT DISTINCT FROM child_row.session_id
+), root AS (
+    SELECT id
+    FROM ancestors
+    ORDER BY depth DESC
+    LIMIT 1
+), thread(id, depth) AS (
+    SELECT root.id, 0
+    FROM root
+    UNION ALL
+    SELECT child.id, thread.depth + 1
+    FROM agent_task_queue child
+    JOIN thread
+      ON child.context->>'message_bus_parent_task_id' = thread.id::text
+    JOIN agent_task_queue parent ON parent.id = thread.id
+    WHERE thread.depth < 100
+      AND child.agent_id = parent.agent_id
+      AND child.issue_id IS NOT DISTINCT FROM parent.issue_id
+      AND child.chat_session_id IS NOT DISTINCT FROM parent.chat_session_id
+      AND child.session_id IS NOT DISTINCT FROM parent.session_id
+)
+SELECT task.*
+FROM agent_task_queue task
+JOIN thread ON thread.id = task.id
+ORDER BY task.created_at ASC, task.id ASC"#,
+    )
+    .bind(task_id)
+    .fetch_all(executor)
+    .await
+    .map_err(Into::into)
+}
+
 pub async fn get_agent_task_for_delegated_failure_update(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
@@ -6577,6 +6635,46 @@ FOR UPDATE"#,
     Ok(row.is_some())
 }
 
+/// The durable idempotency receipt for a user continuation. The key lives in
+/// the private task context so the public task payload never exposes provider
+/// session state or internal routing fields.
+#[derive(Debug, Clone)]
+pub struct AgentThreadContinuationReceipt {
+    pub task_id: Uuid,
+    pub content: String,
+}
+
+pub async fn get_agent_thread_continuation_by_idempotency(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    parent_task_id: Uuid,
+    idempotency_key: &str,
+) -> anyhow::Result<Option<AgentThreadContinuationReceipt>> {
+    let row = sqlx::query(
+        r#"SELECT id, COALESCE(context->'message_bus_messages'->0->>'content', '')
+FROM agent_task_queue candidate
+JOIN agent_task_queue parent ON parent.id = $1
+WHERE candidate.context->>'agent_thread_idempotency_key' = $2
+  AND candidate.context->>'message_bus_parent_task_id' IS NOT NULL
+  AND candidate.agent_id = parent.agent_id
+  AND candidate.issue_id IS NOT DISTINCT FROM parent.issue_id
+  AND candidate.chat_session_id IS NOT DISTINCT FROM parent.chat_session_id
+  AND candidate.session_id IS NOT DISTINCT FROM parent.session_id
+ORDER BY candidate.created_at DESC
+LIMIT 1
+FOR UPDATE OF candidate"#,
+    )
+    .bind(parent_task_id)
+    .bind(idempotency_key)
+    .fetch_optional(executor)
+    .await?;
+    row.map(|row| {
+        Ok(AgentThreadContinuationReceipt {
+            task_id: row.try_get(0)?,
+            content: row.try_get(1)?,
+        })
+    })
+    .transpose()
+}
 /// Appends an instruction to the still-deferred continuation for a main task.
 /// Messages stay structured so the eventual prompt can preserve provenance.
 pub async fn append_task_message_bus_instruction(
@@ -6641,11 +6739,18 @@ pub async fn create_task_message_bus_continuation(
     message_id: Uuid,
     content: &str,
     task_id: Uuid,
+    idempotency_key: &str,
+    originator_user_id: Option<Uuid>,
+    accountable_user_id: Option<Uuid>,
+    runtime_mcp_overlay: &serde_json::Value,
+    runtime_connected_apps: &serde_json::Value,
+    originator_source: Option<&str>,
 ) -> anyhow::Result<Option<Uuid>> {
     let row = sqlx::query(
         r#"INSERT INTO agent_task_queue (
     id, agent_id, runtime_id, issue_id, status, priority,
     trigger_comment_id, trigger_summary, context, session_id, work_dir,
+    chat_session_id, automation_run_id,
     attempt, max_attempts, parent_task_id, force_fresh_session,
     is_leader_task, team_id, originator_user_id, accountable_user_id,
     runtime_mcp_overlay, runtime_connected_apps, originator_source,
@@ -6660,19 +6765,23 @@ SELECT
         - 'side_chat_root_comment_id'
         - 'channel_issue_media_pending'
         - 'message_bus_parent_task_id'
-        - 'message_bus_messages') || jsonb_build_object(
+        - 'message_bus_messages'
+        - 'agent_thread_idempotency_key') || jsonb_build_object(
             'message_bus_parent_task_id', parent.id::text,
             'message_bus_messages', jsonb_build_array(jsonb_build_object(
                 'id', $4::text,
                 'source_task_id', $2::text,
                 'content', $5::text
             ))
-        ),
+        ) || CASE WHEN $7::text = '' THEN '{}'::jsonb
+                  ELSE jsonb_build_object('agent_thread_idempotency_key', $7::text)
+             END,
     parent.session_id, parent.work_dir,
+    parent.chat_session_id, NULL::uuid,
     1, parent.max_attempts, NULL, FALSE,
-    parent.is_leader_task, parent.team_id, parent.originator_user_id,
-    parent.accountable_user_id, parent.runtime_mcp_overlay,
-    parent.runtime_connected_apps, parent.originator_source,
+    parent.is_leader_task, parent.team_id, $8::uuid,
+    $9::uuid, $10::jsonb,
+    $11::jsonb, $12::text,
     parent.delegated_from_task_id, parent.rule_version_id,
     parent.trigger_evidence_kind, parent.trigger_evidence_ref_id, now()
 FROM agent_task_queue parent
@@ -6689,6 +6798,12 @@ RETURNING id"#,
     .bind(message_id)
     .bind(content)
     .bind(task_id)
+    .bind(idempotency_key)
+    .bind(originator_user_id)
+    .bind(accountable_user_id)
+    .bind(runtime_mcp_overlay)
+    .bind(runtime_connected_apps)
+    .bind(originator_source)
     .fetch_optional(executor)
     .await?;
     let Some(row) = row else { return Ok(None) };

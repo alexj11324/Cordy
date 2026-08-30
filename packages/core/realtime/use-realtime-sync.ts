@@ -13,6 +13,7 @@ import { issueKeys } from "../issues/queries";
 import { projectKeys } from "../projects/queries";
 import { pinKeys } from "../pins/queries";
 import { automationKeys } from "../automations/queries";
+import { agentThreadKeys } from "../agent-thread/queries";
 import { runtimeKeys } from "../runtimes/queries";
 import { labelKeys } from "../labels/queries";
 import { propertyKeys } from "../properties/queries";
@@ -654,6 +655,7 @@ function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
     qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: runtimeKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: automationKeys.all(wsId) });
+    qc.invalidateQueries({ queryKey: agentThreadKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: agentTaskSnapshotKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: workspaceWorkingAgentsKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: agentActivityKeys.all(wsId) });
@@ -901,6 +903,11 @@ export function useRealtimeSync(
       task: () => {
         const wsId = getCurrentWsId();
         if (!wsId) return;
+        // Agent thread envelopes contain the current task and the ordered
+        // chain, so every task lifecycle transition can change a mounted
+        // opener/root view. Use the workspace prefix rather than the event's
+        // task id: continuation children are not the stable query identity.
+        qc.invalidateQueries({ queryKey: agentThreadKeys.all(wsId) });
         qc.invalidateQueries({ queryKey: agentTaskSnapshotKeys.list(wsId) });
         qc.invalidateQueries({ queryKey: workspaceWorkingAgentsKeys.all(wsId) });
         // The Table working-agent shortcut derives an assignee set from the

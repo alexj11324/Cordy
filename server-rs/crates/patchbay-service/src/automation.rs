@@ -1113,6 +1113,18 @@ impl AutomationService {
         let Some(run) = get_automation_run(&self.pool, run_id).await? else {
             return Ok(());
         };
+        if !automation_run_owns_task(task.id, run.task_id) {
+            // A continuation must never be able to update the historical
+            // Automation run that opened its parent. The task link is the
+            // authoritative ownership check, not merely automation_run_id.
+            tracing::debug!(
+                run_id = %run.id,
+                task_id = %task.id,
+                run_task_id = ?run.task_id,
+                "ignoring task linked to an Automation run it does not own"
+            );
+            return Ok(());
+        }
         let Some(automation) = get_automation(&self.pool, run.automation_id).await? else {
             return Ok(());
         };
@@ -1152,7 +1164,15 @@ impl AutomationService {
         &self,
         task: &patchbay_db::models::AgentTaskQueue,
     ) -> anyhow::Result<()> {
-        if task.automation_run_id.is_some() || task.issue_id.is_none() || task.status != "failed" {
+        // Message Bus continuations retain issue_id so they stay in the same
+        // Agent thread, but they deliberately have no automation_run_id. Do
+        // not mistake a failed continuation for the original create_issue
+        // dispatch and mutate that Automation run's history.
+        if is_message_bus_continuation(task)
+            || task.automation_run_id.is_some()
+            || task.issue_id.is_none()
+            || task.status != "failed"
+        {
             return Ok(());
         }
         let issue_id = task.issue_id.expect("guarded above");
@@ -1183,6 +1203,24 @@ impl AutomationService {
         self.publish_run_done(&automation.workspace_id.to_string(), &updated, "failed");
         Ok(())
     }
+}
+
+/// A run may be updated only by the exact task recorded as its owner. This is
+/// intentionally pure so continuation isolation is covered without a live DB.
+pub(crate) fn automation_run_owns_task(task_id: Uuid, run_task_id: Option<Uuid>) -> bool {
+    run_task_id == Some(task_id)
+}
+
+fn context_is_message_bus_continuation(context: Option<&serde_json::Value>) -> bool {
+    context
+        .and_then(serde_json::Value::as_object)
+        .and_then(|context| context.get("message_bus_parent_task_id"))
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(|parent_task_id| !parent_task_id.is_empty())
+}
+
+fn is_message_bus_continuation(task: &patchbay_db::models::AgentTaskQueue) -> bool {
+    context_is_message_bus_continuation(task.context.as_ref())
 }
 
 /// Go binds FailureReason with Valid: reason != "" — empty stays NULL.
@@ -2845,6 +2883,29 @@ impl AutomationService {
 mod dispatch_contract_tests {
     use super::*;
     use sqlx::postgres::PgPoolOptions;
+
+    #[test]
+    fn automation_run_updates_require_the_exact_task_owner() {
+        let task_id = Uuid::new_v4();
+        assert!(automation_run_owns_task(task_id, Some(task_id)));
+        assert!(!automation_run_owns_task(task_id, None));
+        assert!(!automation_run_owns_task(task_id, Some(Uuid::new_v4())));
+    }
+
+    #[test]
+    fn message_bus_continuations_are_not_linked_issue_run_candidates() {
+        assert!(context_is_message_bus_continuation(Some(
+            &serde_json::json!({
+                "message_bus_parent_task_id": Uuid::new_v4().to_string(),
+            })
+        )));
+        assert!(!context_is_message_bus_continuation(Some(
+            &serde_json::json!({
+                "message_bus_parent_task_id": "",
+            })
+        )));
+        assert!(!context_is_message_bus_continuation(None));
+    }
 
     async fn required_pool() -> PgPool {
         let url = std::env::var("DATABASE_URL")

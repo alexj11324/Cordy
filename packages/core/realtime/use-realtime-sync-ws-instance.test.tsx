@@ -9,6 +9,7 @@ import type { WSClient } from "../api/ws-client";
 import { defaultStorage } from "../platform/storage";
 import { issueKeys } from "../issues/queries";
 import { chatKeys } from "../chat/queries";
+import { agentThreadKeys } from "../agent-thread/queries";
 import { workspaceWorkingAgentsKeys } from "../agents/queries";
 import { workspaceKeys } from "../workspace/queries";
 import { dingtalkKeys } from "../dingtalk/queries";
@@ -117,11 +118,11 @@ describe("useRealtimeSync — ws instance change", () => {
     rerender({ ws: ws2 });
 
     // Should have called invalidateQueries for all workspace-scoped keys
-    // (16 workspace-scoped [incl. property definitions] + 6 per-issue
+    // (17 workspace-scoped [incl. Agent threads + property definitions] + 6 per-issue
     // prefixes + the workspace working-agents projection + 5 per-chat
     // prefixes + 1 workspaceKeys.list() + 1 cross-workspace inbox unread
-    // summary + 2 channel caches = 33 calls)
-    expect(invalidateSpy).toHaveBeenCalledTimes(33);
+    // summary + 2 channel caches = 34 calls)
+    expect(invalidateSpy).toHaveBeenCalledTimes(34);
   });
 
   it("does not re-invalidate when rerendered with the same ws instance", () => {
@@ -158,6 +159,7 @@ describe("useRealtimeSync — ws instance change", () => {
     // A catalog edit made while this client was disconnected is otherwise
     // invisible for the query's whole 5-minute staleTime.
     expect(calls).toContainEqual(issueStatusKeys.all("ws-1"));
+    expect(calls).toContainEqual(agentThreadKeys.all("ws-1"));
   });
 
   it("invalidates per-issue caches (no wsId in key) on ws instance change", () => {
@@ -341,6 +343,9 @@ describe("useRealtimeSync — Table server membership invalidation", () => {
     });
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: workspaceWorkingAgentsKeys.all("ws-1"),
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: agentThreadKeys.all("ws-1"),
     });
   });
 

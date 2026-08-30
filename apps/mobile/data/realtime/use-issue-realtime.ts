@@ -34,6 +34,7 @@ import type {
   TaskQueuedPayload,
 } from "@patchbay/core/types";
 import { issueKeys } from "@/data/queries/issue-keys";
+import { agentThreadKeys } from "@/data/queries/agent-thread";
 import { useWSSubscriptions } from "@/lib/use-ws-subscriptions";
 import {
   addCommentReaction,
@@ -85,6 +86,10 @@ export function useIssueRealtime(
       // apps/mobile/AGENTS.md "Patch over invalidate" rule #1 (payload is
       // just an id), invalidate is the correct primitive.
       const invalidateTaskQueries = () => {
+        // The Agent thread query is keyed by its original opener, not by the
+        // lifecycle event's child task id. Refresh the workspace prefix so a
+        // multi-turn thread cannot remain on an earlier chain snapshot.
+        qc.invalidateQueries({ queryKey: agentThreadKeys.all(wsId) });
         qc.invalidateQueries({ queryKey: issueKeys.activeTasks(wsId, issueId) });
         qc.invalidateQueries({ queryKey: issueKeys.tasks(wsId, issueId) });
       };

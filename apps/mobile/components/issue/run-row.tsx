@@ -17,6 +17,11 @@ import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { useCancelTask } from "@/data/mutations/issues";
 import { useActorLookup } from "@/data/use-actor-name";
 import { timeAgo } from "@/lib/time-ago";
+import {
+  formatAgentThreadCopy,
+  useAgentThreadCopy,
+  type AgentThreadCopy,
+} from "@/lib/agent-thread-i18n";
 
 interface Props {
   task: AgentTask;
@@ -33,8 +38,9 @@ const ACTIVE_STATUSES: readonly AgentTask["status"][] = [
 
 export function RunRow({ task, issueId, onOpen }: Props) {
   const { getName } = useActorLookup();
+  const copy = useAgentThreadCopy();
   const isActive = ACTIVE_STATUSES.includes(task.status);
-  const summary = task.trigger_summary?.trim() || fallbackSummary(task);
+  const summary = task.trigger_summary?.trim() || fallbackSummary(task, copy);
   // Past tasks use completed_at when present (server fills it for terminal
   // statuses); active tasks fall back to created_at so the user sees how
   // long it's been waiting.
@@ -44,7 +50,7 @@ export function RunRow({ task, issueId, onOpen }: Props) {
     <Pressable
       onPress={onOpen}
       accessibilityRole="button"
-      accessibilityLabel={`Open Agent thread for ${summary}`}
+      accessibilityLabel={formatAgentThreadCopy(copy.open_thread_for, { summary })}
       className="flex-row items-start gap-3 py-2 active:opacity-70"
     >
       <ActorAvatar type="agent" id={task.agent_id} size={28} showPresence />
@@ -57,24 +63,29 @@ export function RunRow({ task, issueId, onOpen }: Props) {
           <Text className="text-muted-foreground"> · {summary}</Text>
         </Text>
         <View className="flex-row items-center gap-2">
-          <StatusBadge task={task} />
+          <StatusBadge task={task} copy={copy} />
           <Text className="text-xs text-muted-foreground">
             {timestamp ? timeAgo(timestamp) : ""}
           </Text>
         </View>
       </View>
-      {isActive ? <CancelButton taskId={task.id} issueId={issueId} /> : null}
+      {isActive ? (
+        <CancelButton taskId={task.id} issueId={issueId} copy={copy} />
+      ) : null}
     </Pressable>
   );
 }
 
-function StatusBadge({ task }: { task: AgentTask }) {
-  const label = STATUS_LABEL[task.status] ?? task.status;
+function StatusBadge({ task, copy }: { task: AgentTask; copy: AgentThreadCopy }) {
+  const label = copy.status[task.status] ?? task.status;
   const cls = STATUS_CLASS[task.status] ?? "text-muted-foreground";
   // For failed tasks, surface the failure_reason inline so users don't have
   // to drill in. Missing / empty / unrecognised stays as just "Failed".
   if (task.status === "failed" && task.failure_reason) {
-    const reasonLabel = FAILURE_REASON_LABEL[task.failure_reason];
+    const reasonLabel =
+      copy.failure[
+        task.failure_reason as keyof AgentThreadCopy["failure"]
+      ];
     if (reasonLabel) {
       return (
         <Text className={`text-xs ${cls}`}>
@@ -89,20 +100,22 @@ function StatusBadge({ task }: { task: AgentTask }) {
 function CancelButton({
   taskId,
   issueId,
+  copy,
 }: {
   taskId: string;
   issueId: string;
+  copy: AgentThreadCopy;
 }) {
   const mutation = useCancelTask(issueId);
 
   const onPress = () => {
     Alert.alert(
-      "Cancel task?",
-      "The agent will stop after the current step.",
+      copy.cancel_task_title,
+      copy.cancel_task_body,
       [
-        { text: "Keep running", style: "cancel" },
+        { text: copy.keep_running, style: "cancel" },
         {
-          text: "Cancel task",
+          text: copy.cancel_task,
           style: "destructive",
           onPress: () => mutation.mutate(taskId),
         },
@@ -119,36 +132,26 @@ function CancelButton({
       disabled={mutation.isPending}
       className="px-3 py-1.5 rounded-md bg-secondary active:opacity-70"
     >
-      <Text className="text-xs font-medium text-foreground">Cancel</Text>
+      <Text className="text-xs font-medium text-foreground">{copy.cancel}</Text>
     </Pressable>
   );
 }
 
-function fallbackSummary(task: AgentTask): string {
+function fallbackSummary(task: AgentTask, copy: AgentThreadCopy): string {
   switch (task.kind) {
     case "comment":
-      return "Comment task";
+      return copy.comment_task;
     case "automation":
-      return "Automation run";
+      return copy.automation_run;
     case "chat":
-      return "Chat task";
+      return copy.chat_task;
     case "quick_create":
-      return "Quick create";
+      return copy.quick_create;
     case "direct":
     default:
-      return "Task";
+      return copy.task;
   }
 }
-
-const STATUS_LABEL: Record<AgentTask["status"], string> = {
-  queued: "Queued",
-  dispatched: "Starting",
-  waiting_local_directory: "Waiting for directory",
-  running: "Running",
-  completed: "Done",
-  failed: "Failed",
-  cancelled: "Cancelled",
-};
 
 const STATUS_CLASS: Record<AgentTask["status"], string> = {
   queued: "text-muted-foreground",
@@ -158,45 +161,4 @@ const STATUS_CLASS: Record<AgentTask["status"], string> = {
   completed: "text-muted-foreground",
   failed: "text-destructive",
   cancelled: "text-muted-foreground",
-};
-
-// Short badge copy — deliberately terser than lib/failure-reason-label.ts,
-// which backs a full-width chat bubble; this one shares a single line with the
-// status word and a timestamp.
-//
-// Keyed by the raw wire value, not a closed enum: `failure_reason` is an open
-// string that grows as classifier rules land. It held only the six
-// pre-PB-1949 coarse values until PB-5370, so every refined `agent_error.*`
-// the backend has written since fell through and the badge read just "Failed".
-// An unrecognised reason still does — a compact badge is the one place where
-// web's raw-wire-value fallback would overflow the row.
-const FAILURE_REASON_LABEL: Record<string, string> = {
-  queued_expired: "Queue expired",
-  runtime_offline: "Runtime offline",
-  runtime_recovery: "Runtime recovery",
-  timeout: "Timeout",
-  iteration_limit: "Iteration limit",
-  agent_blocked: "Needs input",
-  api_invalid_request: "Request rejected",
-  skill_bundle_unavailable: "Skill download failed",
-  runtime_cli_timeout: "Runtime CLI timeout",
-
-  "agent_error.provider_auth_or_access": "Auth failed",
-  "agent_error.provider_quota_limit": "Quota exhausted",
-  "agent_error.provider_capacity_or_rate_limit": "Rate limited",
-  "agent_error.provider_server_error": "Provider error",
-  "agent_error.provider_network": "Network error",
-  "agent_error.process_failure": "Process crashed",
-  "agent_error.empty_or_unparseable_output": "No usable output",
-  "agent_error.agent_timeout": "Agent timeout",
-  "agent_error.context_overflow": "Context overflow",
-  "agent_error.missing_config": "Config missing",
-  "agent_error.model_not_found_or_unavailable": "Model unavailable",
-  "agent_error.runtime_version_unsupported": "CLI unsupported",
-  "agent_error.runtime_missing_executable": "CLI not installed",
-  "agent_error.unknown": "Agent error",
-
-  agent_error: "Agent error",
-  codex_semantic_inactivity: "Codex inactivity",
-  manual: "Manual",
 };
