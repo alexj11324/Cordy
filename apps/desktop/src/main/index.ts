@@ -52,7 +52,9 @@ import {
 } from "../shared/auth-session";
 import {
   MAIN_RENDERER_CHANNEL_STATE_CHANNEL,
+  MAIN_RENDERER_MESSAGE_ACK_CHANNEL,
   MainRendererMessageQueue,
+  parseMainRendererMessageAcknowledgement,
   parseMainRendererChannelState,
   type MainRendererMessageChannel,
 } from "../shared/main-renderer-messages";
@@ -781,6 +783,24 @@ if (!gotTheLock) {
           parsed.channel,
           parsed.ready,
           sendMainRendererMessage,
+        );
+      },
+    );
+
+    // A native auth handoff stays in the main-process queue until the renderer
+    // has redeemed it. This lets a recreated BrowserWindow receive the same
+    // one-time payload after a transient renderer failure without exposing any
+    // bearer token to main or to the acknowledgement channel.
+    ipcMain.on(
+      MAIN_RENDERER_MESSAGE_ACK_CHANNEL,
+      (event, value: unknown) => {
+        if (!mainWindow || event.sender !== mainWindow.webContents) return;
+        const acknowledgement =
+          parseMainRendererMessageAcknowledgement(value);
+        if (!acknowledgement) return;
+        mainRendererMessages.acknowledge(
+          acknowledgement.channel,
+          acknowledgement.payload,
         );
       },
     );

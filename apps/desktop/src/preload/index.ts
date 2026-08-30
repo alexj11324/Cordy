@@ -26,6 +26,7 @@ import type {
 } from "../shared/daemon-types";
 import {
   MAIN_RENDERER_CHANNEL_STATE_CHANNEL,
+  MAIN_RENDERER_MESSAGE_ACK_CHANNEL,
   type MainRendererMessageChannel,
 } from "../shared/main-renderer-messages";
 import {
@@ -151,7 +152,12 @@ const desktopAPI = {
       state: string;
     }) => boolean | Promise<boolean>,
   ) => {
-    const delivery = createAuthHandoffDelivery(callback);
+    const delivery = createAuthHandoffDelivery(callback, (payload) => {
+      ipcRenderer.send(MAIN_RENDERER_MESSAGE_ACK_CHANNEL, {
+        channel: "auth:handoff",
+        payload,
+      });
+    });
     const handler = (
       _event: Electron.IpcRendererEvent,
       payload: AuthHandoffPayload,

@@ -21,6 +21,24 @@ describe("MainRendererMessageQueue", () => {
     });
   });
 
+  it("keeps an unacknowledged auth handoff across renderer recreation", () => {
+    const queue = new MainRendererMessageQueue();
+    const send = vi.fn();
+    const payload = { code: "code-a", state: "state-a" };
+
+    queue.enqueue("auth:handoff", payload, send);
+    queue.setReady("auth:handoff", true, send);
+    queue.resetReady();
+    queue.setReady("auth:handoff", true, send);
+
+    expect(send).toHaveBeenCalledTimes(2);
+    queue.acknowledge("auth:handoff", payload);
+    queue.resetReady();
+    queue.setReady("auth:handoff", true, send);
+
+    expect(send).toHaveBeenCalledTimes(2);
+  });
+
   it("delivers immediately while a channel is ready", () => {
     const queue = new MainRendererMessageQueue();
     const send = vi.fn();

@@ -24,11 +24,13 @@ function clearWebBridge(): void {
 
 beforeEach(() => {
   clearWebBridge();
+  sessionStorage.clear();
   window.history.replaceState(null, "", "/");
 });
 
 afterEach(() => {
   vi.unstubAllEnvs();
+  sessionStorage.clear();
   clearWebBridge();
 });
 
@@ -158,6 +160,35 @@ describe("Vite Desktop auth handoff", () => {
     await Promise.resolve();
     expect(callback).toHaveBeenCalledTimes(2);
     unsubscribe();
+  });
+
+  it("restores an unacknowledged handoff after the browser bridge is recreated", async () => {
+    vi.stubEnv("VITE_API_URL", "https://api.aspectlylabs.com");
+    const code = `pbd_${"a".repeat(43)}`;
+    const state = "b".repeat(43);
+    window.history.replaceState(
+      null,
+      "",
+      `/auth/callback?code=${code}&state=${state}`,
+    );
+
+    expect(installWebDesktopBridge()).toBe(true);
+    const firstCallback = vi.fn().mockResolvedValue(false);
+    const unsubscribe = window.desktopAPI.onAuthHandoff(firstCallback);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(firstCallback).toHaveBeenCalledOnce();
+    unsubscribe();
+
+    clearWebBridge();
+    expect(installWebDesktopBridge()).toBe(true);
+    const secondCallback = vi.fn().mockResolvedValue(true);
+    window.desktopAPI.onAuthHandoff(secondCallback);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(secondCallback).toHaveBeenCalledWith({ code, state });
+    expect(sessionStorage.length).toBe(0);
   });
 });
 

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "@patchbay/core/api";
 import {
   clearDesktopHandoffVerifier,
   completeDesktopHandoff,
@@ -184,5 +185,24 @@ describe("desktop login handoff", () => {
 
     expect(recoverPersistedToken).not.toHaveBeenCalled();
     expect(readDesktopHandoffVerifier(state)).toHaveLength(43);
+  });
+
+  it("retires the verifier after a terminal redeem rejection", async () => {
+    const url = await createDesktopGoogleLoginUrl(
+      "https://accounts.aspectlylabs.com",
+    );
+    const state = new URL(url).searchParams.get("state") ?? "";
+
+    await expect(
+      completeDesktopHandoff("invalid-code", state, {
+        redeem: vi.fn().mockRejectedValue(
+          new ApiError("invalid desktop handoff", 401, "Unauthorized"),
+        ),
+        login: vi.fn(),
+        recoverPersistedToken: vi.fn(),
+      }),
+    ).resolves.toEqual({ acknowledged: true, authenticated: false });
+
+    expect(readDesktopHandoffVerifier(state)).toBeNull();
   });
 });

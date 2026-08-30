@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef } from "react";
 import { useAuth } from "@clerk/nextjs";
+import { useAuthStore } from "@patchbay/core/auth";
 import { CoreProvider } from "@patchbay/core/platform";
 import { createBrowserCookieLocaleAdapter } from "@patchbay/core/i18n/browser";
 import type { LocaleResources, SupportedLocale } from "@patchbay/core/i18n";
@@ -100,17 +101,26 @@ function ClerkWebProviders(props: WebProvidersProps) {
   clerkAuthRef.current = { isSignedIn, signOut };
 
   const logout = useCallback(async () => {
+    let signOutFailed = false;
     try {
       if (clerkAuthRef.current.isSignedIn) {
         await clerkAuthRef.current.signOut();
       }
     } catch (error) {
+      signOutFailed = true;
       // A transient Clerk failure must not strand the already-cleared core
       // session on a gated workspace route. The next explicit sign-in still
       // goes through Clerk and the Rust exchange before becoming authenticated.
       console.warn("Clerk sign-out failed during local logout", error);
     } finally {
       clearWebSessionState();
+      if (signOutFailed) {
+        // Core logout has already cleared the Rust session by the time this
+        // awaited platform cleanup settles. Bump the generation so the
+        // adapter re-exchanges the still-active Clerk identity instead of
+        // leaving the login gate waiting on a stale success marker.
+        useAuthStore.getState().retryAuthentication();
+      }
     }
   }, []);
 

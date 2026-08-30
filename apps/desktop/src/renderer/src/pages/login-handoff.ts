@@ -1,4 +1,5 @@
 import { buildDesktopGoogleLoginUrl } from "./login-url";
+import { ApiError } from "@patchbay/core/api";
 
 const PENDING_HANDOFF_KEY = "patchbay_desktop_login_handoff";
 const PENDING_HANDOFF_TTL_MS = 10 * 60 * 1000;
@@ -14,6 +15,19 @@ export type DesktopHandoffCompletion = {
   acknowledged: boolean;
   authenticated: boolean;
 };
+
+function isTerminalRedeemFailure(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return false;
+  // The server uses 4xx responses for an invalid, expired, or already-used
+  // one-time code. Timeouts and rate limits can still recover, while 5xx and
+  // transport failures must retain the verifier for a later retry.
+  return (
+    error.status >= 400 &&
+    error.status < 500 &&
+    error.status !== 408 &&
+    error.status !== 429
+  );
+}
 
 function isPendingHandoff(value: unknown): value is PendingHandoff {
   if (typeof value !== "object" || value === null) return false;
@@ -143,7 +157,16 @@ export async function completeDesktopHandoff(
   const verifier = readDesktopHandoffVerifier(state);
   if (!verifier) return { acknowledged: true, authenticated: false };
 
-  const { token } = await dependencies.redeem(code, verifier);
+  let token: string;
+  try {
+    ({ token } = await dependencies.redeem(code, verifier));
+  } catch (error) {
+    if (isTerminalRedeemFailure(error)) {
+      clearDesktopHandoffVerifier(state);
+      return { acknowledged: true, authenticated: false };
+    }
+    throw error;
+  }
   clearDesktopHandoffVerifier(state);
   try {
     await dependencies.login(token);
