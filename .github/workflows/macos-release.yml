@@ -330,6 +330,12 @@ jobs:
     if: needs.prepare.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout prepared release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit_sha }}
+          fetch-depth: 0
+
       - name: Download verified macOS assets
         uses: actions/download-artifact@v4
         with:
@@ -380,6 +386,11 @@ jobs:
             echo "::error::Release tag $TAG_NAME no longer resolves to prepared commit $EXPECTED_COMMIT."
             exit 1
           fi
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$EXPECTED_COMMIT" origin/main; then
+            echo "::error::Refusing to upload release assets because prepared commit '$EXPECTED_COMMIT' is not contained in main."
+            exit 1
+          fi
 
           shopt -s nullglob
           assets=(staged-macos-assets/*)
@@ -409,6 +420,11 @@ jobs:
           done
           if [ "$tag_type" != "commit" ] || [ "$tag_sha" != "$EXPECTED_COMMIT" ]; then
             echo "::error::Release tag $TAG_NAME no longer resolves to prepared commit $EXPECTED_COMMIT."
+            exit 1
+          fi
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          if ! git merge-base --is-ancestor "$EXPECTED_COMMIT" origin/main; then
+            echo "::error::Refusing to publish release because prepared commit '$EXPECTED_COMMIT' is not contained in main."
             exit 1
           fi
           gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
