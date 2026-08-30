@@ -946,24 +946,24 @@ pub async fn retire_dependency_plan(
     plan_id: Uuid,
 ) -> Result<DependencyGraphRetirement, DependencyGraphError> {
     let mut tx = pool.begin().await.map_err(db_error)?;
-    let plan = graph_q::lock_plan_by_id(&mut *tx, plan_id, workspace_id)
+    let plan = graph_q::lock_plan_by_id(&mut tx, plan_id, workspace_id)
         .await
         .map_err(db_error)?
         .ok_or(DependencyGraphError::NotFound(plan_id))?;
     if plan.status != "active" {
         return Err(DependencyGraphError::NotFound(plan_id));
     }
-    let nodes = graph_q::list_nodes(&mut *tx, plan_id, workspace_id)
+    let nodes = graph_q::list_nodes(&mut tx, plan_id, workspace_id)
         .await
         .map_err(db_error)?;
     let cancellation = cancel_dependency_graph_children(
-        &mut *tx,
+        &mut tx,
         workspace_id,
         nodes.into_iter().map(|node| node.issue_id).collect(),
     )
     .await
     .map_err(db_error)?;
-    let plan = graph_q::retire_active_plan(&mut *tx, workspace_id, plan_id)
+    let plan = graph_q::retire_active_plan(&mut tx, workspace_id, plan_id)
         .await
         .map_err(db_error)?
         .ok_or(DependencyGraphError::NotFound(plan_id))?;
@@ -1745,7 +1745,7 @@ mod tests {
         .await
         .expect("list owned graph children before parent delete");
         let delete_cancellation =
-            cancel_dependency_graph_children(&mut *delete_tx, workspace_id, delete_child_ids)
+            cancel_dependency_graph_children(&mut delete_tx, workspace_id, delete_child_ids)
                 .await
                 .expect("cancel owned graph children before parent delete");
         assert_eq!(delete_cancellation.cancelled_issues.len(), 2);
@@ -1755,7 +1755,7 @@ mod tests {
             .any(|(_, issue)| issue.id == delete_dependent_issue_id
                 && issue.status == issue_status::CANCELLED));
         assert_eq!(
-            issue_q::delete_issue(&mut *delete_tx, delete_parent.id, workspace_id)
+            issue_q::delete_issue(&mut delete_tx, delete_parent.id, workspace_id)
                 .await
                 .expect("delete dependency graph parent"),
             1
