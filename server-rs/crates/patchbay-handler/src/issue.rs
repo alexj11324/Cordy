@@ -6497,12 +6497,34 @@ pub(crate) async fn issue_response_projection(
     state: &HandlerState,
     issue: &Issue,
 ) -> IssueResponse {
-    let mut response =
-        IssueResponse::from_issue(issue, &issue_prefix(state, issue.workspace_id).await);
-    response.status_category = Some(
+    let prefix = issue_prefix(state, issue.workspace_id).await;
+    let status_category =
         patchbay_service::issue_status::effective(&state.pool, issue.workspace_id, &issue.status)
-            .await,
-    );
+            .await;
+    issue_response_with_status_category(issue, &prefix, &status_category)
+}
+
+pub(crate) fn issue_response_with_status_category(
+    issue: &Issue,
+    prefix: &str,
+    status_category: &str,
+) -> IssueResponse {
+    let mut response = IssueResponse::from_issue(issue, prefix);
+    response.status_category = Some(status_category.to_string());
+    response
+}
+
+pub(crate) fn issue_created_response_with_status_category(
+    issue: &Issue,
+    prefix: &str,
+    status_category: &str,
+) -> IssueResponse {
+    let mut response = issue_response_with_status_category(issue, prefix, status_category);
+    // The issue-created listeners use the presence of `labels` to distinguish
+    // a complete handler creation projection from cache-invalidation events.
+    // Planned children have no labels, but the standard event still carries
+    // the authoritative empty snapshot.
+    response.labels = Some(Vec::new());
     response
 }
 
@@ -7518,7 +7540,7 @@ fn header_uuid(headers: &HeaderMap, name: &str) -> Option<Uuid> {
         .and_then(|value| Uuid::parse_str(value).ok())
 }
 
-async fn validate_assignee(
+pub(crate) async fn validate_assignee(
     state: &HandlerState,
     context: &WorkspaceContext,
     kind: &str,

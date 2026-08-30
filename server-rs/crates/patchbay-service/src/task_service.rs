@@ -61,6 +61,7 @@ use patchbay_db::queries::issue::get_issue;
 use patchbay_db::queries::runtime::get_agent_runtime;
 use patchbay_db::queries::task_message::list_task_messages;
 use patchbay_db::queries::task_token::{create_task_token, revoke_task_tokens_by_task};
+use patchbay_db::queries::team::get_team_in_workspace;
 use patchbay_db::queries::workspace::get_workspace_attribution_fail_closed;
 
 use crate::attribution::{
@@ -1669,7 +1670,34 @@ impl TaskService {
                     continue;
                 }
             };
-            match self.enqueue_task_for_issue(&issue, None).await {
+            let result = if issue.assignee_type.as_deref() == Some("team") {
+                match issue.assignee_id {
+                    Some(team_id) => match get_team_in_workspace(
+                        &self.pool,
+                        team_id,
+                        issue.workspace_id,
+                    )
+                    .await
+                    {
+                        Ok(Some(team)) if team.archived_at.is_none() => {
+                            self.enqueue_task_for_team_leader(&issue, team.leader_id, team.id, None)
+                                .await
+                        }
+                        Ok(_) => Err(TaskServiceError::Internal(
+                            "ready dependency team is unavailable".to_string(),
+                        )),
+                        Err(error) => Err(TaskServiceError::Internal(format!(
+                            "load ready dependency team: {error}"
+                        ))),
+                    },
+                    None => Err(TaskServiceError::Internal(
+                        "ready dependency team has no assignee".to_string(),
+                    )),
+                }
+            } else {
+                self.enqueue_task_for_issue(&issue, None).await
+            };
+            match result {
                 Ok(task) => tracing::info!(
                     issue_id = %issue.id,
                     task_id = %task.id,
@@ -3280,6 +3308,7 @@ impl TaskService {
     pub async fn publish_transactional_cancellations(&self, cancelled: &[AgentTaskQueue]) {
         let mut agents = std::collections::HashSet::new();
         for t in cancelled {
+            self.flag_dependency_attention_for_cancelled_task(t).await;
             self.capture_task_cancelled(t).await;
             self.broadcast_task_event(
                 patchbay_protocol::EVENT_TASK_CANCELLED,

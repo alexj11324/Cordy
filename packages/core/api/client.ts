@@ -1099,10 +1099,12 @@ export class ApiClient {
   async listDependencyGraphs(params?: {
     projectId?: string;
     limit?: number;
+    cursor?: string;
   }): Promise<ListDependencyGraphsResponse> {
     const search = new URLSearchParams();
     if (params?.projectId) search.set("project_id", params.projectId);
     if (params?.limit) search.set("limit", String(params.limit));
+    if (params?.cursor) search.set("cursor", params.cursor);
     const query = search.toString();
     const raw = await this.fetch<unknown>(
       query ? `/api/dependency-graphs?${query}` : "/api/dependency-graphs",

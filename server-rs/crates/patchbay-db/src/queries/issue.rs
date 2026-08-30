@@ -349,6 +349,38 @@ cleared_coordination_assignments AS (
 cleared_coordination_outbox AS (
     DELETE FROM agent_coordination_outbox
     WHERE issue_id IN (SELECT target.id FROM target)
+),
+affected_dependency_graph_plans AS (
+    SELECT plan.id
+    FROM dependency_graph_plan plan
+    WHERE plan.workspace_id = $2
+      AND plan.parent_issue_id IN (SELECT target.id FROM target)
+    UNION
+    SELECT node.plan_id
+    FROM dependency_graph_node node
+    WHERE node.workspace_id = $2
+      AND node.issue_id IN (SELECT target.id FROM target)
+    UNION
+    SELECT edge.plan_id
+    FROM dependency_graph_edge edge
+    WHERE edge.workspace_id = $2
+      AND (edge.from_issue_id IN (SELECT target.id FROM target)
+           OR edge.to_issue_id IN (SELECT target.id FROM target))
+),
+cleared_dependency_graph_edges AS (
+    DELETE FROM dependency_graph_edge
+    WHERE workspace_id = $2
+      AND plan_id IN (SELECT id FROM affected_dependency_graph_plans)
+),
+cleared_dependency_graph_nodes AS (
+    DELETE FROM dependency_graph_node
+    WHERE workspace_id = $2
+      AND plan_id IN (SELECT id FROM affected_dependency_graph_plans)
+),
+cleared_dependency_graph_plans AS (
+    DELETE FROM dependency_graph_plan
+    WHERE workspace_id = $2
+      AND id IN (SELECT id FROM affected_dependency_graph_plans)
 )
 DELETE FROM issue WHERE issue.id IN (SELECT target.id FROM target)"#,
     )
@@ -779,6 +811,22 @@ WHERE id = $1 AND workspace_id = $2"#
         reviewer_type: row.try_get("reviewer_type")?,
         reviewer_id: row.try_get("reviewer_id")?,
     }))
+}
+
+/// Loads a bounded set of issues in one workspace-scoped query. Dependency
+/// graph snapshots use this instead of issuing one detail query per node.
+pub async fn list_issues_in_workspace_by_ids(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+    issue_ids: Vec<Uuid>,
+) -> anyhow::Result<Vec<Issue>> {
+    Ok(sqlx::query_as::<_, Issue>(
+        "SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id FROM issue WHERE workspace_id = $1 AND id = ANY($2::uuid[])",
+    )
+    .bind(workspace_id)
+    .bind(issue_ids)
+    .fetch_all(executor)
+    .await?)
 }
 
 pub async fn list_child_issues(

@@ -1197,10 +1197,12 @@ export const DependencyGraphResponseSchema = z.object({
 
 export const ListDependencyGraphsResponseSchema = z.object({
   graphs: z.array(DependencyGraphResponseSchema).default([]),
+  next_cursor: z.string().nullable().default(null),
 }).loose();
 
 export const EMPTY_LIST_DEPENDENCY_GRAPHS_RESPONSE: ListDependencyGraphsResponse = {
   graphs: [],
+  next_cursor: null,
 };
 
 // Response schema for POST /api/issues. Two tightenings over IssueSchema:

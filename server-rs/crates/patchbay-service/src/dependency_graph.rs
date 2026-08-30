@@ -8,6 +8,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
+use chrono::{DateTime, Utc};
 use patchbay_db::dbid::new_v7;
 use patchbay_db::models::{DependencyGraphEdge, DependencyGraphNode, DependencyGraphPlan, Issue};
 use patchbay_db::queries::workspace::increment_issue_counter;
@@ -129,7 +130,7 @@ fn validate_text(
     if required && trimmed.is_empty() {
         return Err(invalid(format!("{field} is required")));
     }
-    if value.len() > max_length {
+    if value.chars().count() > max_length {
         return Err(invalid(format!("{field} exceeds {max_length} characters")));
     }
     if value != trimmed {
@@ -416,16 +417,28 @@ pub fn plan_request_hash(input: &DependencyGraphPlanInput) -> String {
 pub struct DependencyGraphSnapshot {
     pub plan: DependencyGraphPlan,
     pub parent: Issue,
+    pub parent_effective_status: String,
     pub nodes: Vec<DependencyGraphNodeSnapshot>,
     pub edges: Vec<DependencyGraphEdgeSnapshot>,
     pub waves: Vec<Vec<String>>,
     pub readiness: DependencyGraphReadiness,
+    /// True only for the first successful application, not an idempotent
+    /// replay or a read-only graph load. The handler uses this to avoid
+    /// duplicating issue-created events on retries.
+    pub newly_created: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct DependencyGraphPage {
+    pub snapshots: Vec<DependencyGraphSnapshot>,
+    pub next_cursor: Option<(DateTime<Utc>, Uuid)>,
 }
 
 #[derive(Debug, Clone)]
 pub struct DependencyGraphNodeSnapshot {
     pub node: DependencyGraphNode,
     pub issue: Issue,
+    pub effective_status: String,
     pub readiness: DependencyNodeReadiness,
 }
 
@@ -493,21 +506,121 @@ async fn load_graph(
     pool: &PgPool,
     plan: DependencyGraphPlan,
 ) -> Result<DependencyGraphSnapshot, DependencyGraphError> {
-    let parent = issue_q::get_issue_in_workspace(pool, plan.parent_issue_id, plan.workspace_id)
+    let mut snapshots = load_graphs(pool, vec![plan]).await?;
+    snapshots.pop().ok_or_else(|| {
+        DependencyGraphError::Integrity("dependency graph loader returned no snapshot".to_string())
+    })
+}
+
+/// Loads all graph material for a page with bounded batch queries. Keeping the
+/// issue, effective-status, edge, and gate reads outside the per-plan loop
+/// prevents a 64-plan list from turning into a serial N+1 query storm.
+async fn load_graphs(
+    pool: &PgPool,
+    plans: Vec<DependencyGraphPlan>,
+) -> Result<Vec<DependencyGraphSnapshot>, DependencyGraphError> {
+    if plans.is_empty() {
+        return Ok(Vec::new());
+    }
+    let plan_ids = plans.iter().map(|plan| plan.id).collect::<Vec<_>>();
+    let nodes = graph_q::list_nodes_for_plans(pool, plans[0].workspace_id, plan_ids.clone())
+        .await
+        .map_err(db_error)?;
+    let edges = graph_q::list_edges_for_plans(pool, plans[0].workspace_id, plan_ids)
+        .await
+        .map_err(db_error)?;
+
+    let mut issue_ids = plans
+        .iter()
+        .map(|plan| plan.parent_issue_id)
+        .chain(nodes.iter().map(|node| node.issue_id))
+        .collect::<Vec<_>>();
+    issue_ids.sort_unstable();
+    issue_ids.dedup();
+    let issue_by_id = issue_q::list_issues_in_workspace_by_ids(
+        pool,
+        plans[0].workspace_id,
+        issue_ids.clone(),
+    )
+    .await
+    .map_err(db_error)?
+    .into_iter()
+    .map(|issue| (issue.id, issue))
+    .collect::<HashMap<_, _>>();
+    let status_by_issue = graph_q::list_effective_issue_statuses(
+        pool,
+        plans[0].workspace_id,
+        issue_ids.clone(),
+    )
+    .await
+    .map_err(db_error)?
+    .into_iter()
+    .map(|status| (status.issue_id, status.effective_status))
+    .collect::<HashMap<_, _>>();
+    let mut node_issue_ids = nodes
+        .iter()
+        .map(|node| node.issue_id)
+        .collect::<Vec<_>>();
+    node_issue_ids.sort_unstable();
+    node_issue_ids.dedup();
+    let gate_by_issue = graph_q::get_gate_states(pool, plans[0].workspace_id, node_issue_ids)
         .await
         .map_err(db_error)?
+        .into_iter()
+        .map(|gate| (gate.issue_id, gate))
+        .collect::<HashMap<_, _>>();
+
+    plans
+        .into_iter()
+        .map(|plan| {
+            let plan_nodes = nodes
+                .iter()
+                .filter(|node| node.plan_id == plan.id)
+                .cloned()
+                .collect::<Vec<_>>();
+            let plan_edges = edges
+                .iter()
+                .filter(|edge| edge.plan_id == plan.id)
+                .cloned()
+                .collect::<Vec<_>>();
+            build_graph_snapshot(
+                plan,
+                plan_nodes,
+                plan_edges,
+                &issue_by_id,
+                &status_by_issue,
+                &gate_by_issue,
+            )
+        })
+        .collect()
+}
+
+fn build_graph_snapshot(
+    plan: DependencyGraphPlan,
+    nodes: Vec<DependencyGraphNode>,
+    edges: Vec<DependencyGraphEdge>,
+    issue_by_id: &HashMap<Uuid, Issue>,
+    status_by_issue: &HashMap<Uuid, String>,
+    gate_by_issue: &HashMap<Uuid, graph_q::DependencyGraphGateState>,
+) -> Result<DependencyGraphSnapshot, DependencyGraphError> {
+    let parent = issue_by_id
+        .get(&plan.parent_issue_id)
+        .cloned()
         .ok_or_else(|| {
             DependencyGraphError::Integrity(format!(
                 "parent issue {} is missing",
                 plan.parent_issue_id
             ))
         })?;
-    let nodes = graph_q::list_nodes(pool, plan.id, plan.workspace_id)
-        .await
-        .map_err(db_error)?;
-    let edges = graph_q::list_edges(pool, plan.id, plan.workspace_id)
-        .await
-        .map_err(db_error)?;
+    let parent_effective_status = status_by_issue
+        .get(&plan.parent_issue_id)
+        .cloned()
+        .ok_or_else(|| {
+            DependencyGraphError::Integrity(format!(
+                "parent issue {} has no effective status",
+                plan.parent_issue_id
+            ))
+        })?;
     if nodes.is_empty() {
         return Err(DependencyGraphError::Integrity(
             "a dependency graph plan has no nodes".to_string(),
@@ -515,8 +628,6 @@ async fn load_graph(
     }
 
     let mut node_by_issue = HashMap::with_capacity(nodes.len());
-    let mut issue_by_id = HashMap::with_capacity(nodes.len());
-    let mut status_by_issue = HashMap::with_capacity(nodes.len());
     let mut seen_issue_ids = HashSet::with_capacity(nodes.len());
     let mut seen_temp_ids = HashSet::with_capacity(nodes.len());
     for node in nodes {
@@ -532,19 +643,13 @@ async fn load_graph(
                 node.temp_id
             )));
         }
-        let issue = issue_q::get_issue_in_workspace(pool, node.issue_id, plan.workspace_id)
-            .await
-            .map_err(db_error)?
-            .ok_or_else(|| {
-                DependencyGraphError::Integrity(format!(
-                    "graph node {} points to missing issue {}",
-                    node.temp_id, node.issue_id
-                ))
-            })?;
-        let status = issue_status::effective(pool, issue.workspace_id, &issue.status).await;
-        node_by_issue.insert(node.issue_id, node.clone());
-        issue_by_id.insert(node.issue_id, issue);
-        status_by_issue.insert(node.issue_id, status);
+        if !issue_by_id.contains_key(&node.issue_id) {
+            return Err(DependencyGraphError::Integrity(format!(
+                "graph node {} points to missing issue {}",
+                node.temp_id, node.issue_id
+            )));
+        }
+        node_by_issue.insert(node.issue_id, node);
     }
 
     let mut node_snapshots = Vec::with_capacity(node_by_issue.len());
@@ -555,20 +660,20 @@ async fn load_graph(
     for (issue_id, node) in &node_by_issue {
         let issue = issue_by_id
             .get(issue_id)
-            .expect("node and issue maps are built together");
-        let status = status_by_issue
-            .get(issue_id)
-            .expect("status and issue maps are built together");
-        // Read the exact database predicate used by queue INSERT/claim and
-        // wakeup. The API must not drift into a second readiness authority as
-        // custom-status or cross-plan semantics evolve.
-        let gate = graph_q::get_gate_state(pool, plan.workspace_id, *issue_id)
-            .await
-            .map_err(db_error)?;
-        let satisfied_prerequisites = gate.satisfied_prerequisites;
-        let total_prerequisites = gate.total_prerequisites;
-        let gate_open = gate.gate_open;
-        let state = node_state(status, gate_open);
+            .expect("node issue was checked before snapshot construction");
+        let status = status_by_issue.get(issue_id).ok_or_else(|| {
+            DependencyGraphError::Integrity(format!(
+                "graph node {} has no effective status",
+                node.temp_id
+            ))
+        })?;
+        let gate = gate_by_issue.get(issue_id).ok_or_else(|| {
+            DependencyGraphError::Integrity(format!(
+                "graph node {} has no dependency gate state",
+                node.temp_id
+            ))
+        })?;
+        let state = node_state(status, gate.gate_open);
         match state.as_str() {
             "ready" => readiness.ready += 1,
             "running" => readiness.running += 1,
@@ -580,12 +685,16 @@ async fn load_graph(
         node_snapshots.push(DependencyGraphNodeSnapshot {
             node: node.clone(),
             issue: issue.clone(),
+            effective_status: status.clone(),
             readiness: DependencyNodeReadiness {
                 state,
-                gate_open,
-                satisfied_prerequisites,
-                total_prerequisites,
-                unlock_condition: unlock_condition(satisfied_prerequisites, total_prerequisites),
+                gate_open: gate.gate_open,
+                satisfied_prerequisites: gate.satisfied_prerequisites,
+                total_prerequisites: gate.total_prerequisites,
+                unlock_condition: unlock_condition(
+                    gate.satisfied_prerequisites,
+                    gate.total_prerequisites,
+                ),
             },
         });
     }
@@ -594,6 +703,10 @@ async fn load_graph(
     let temp_id_by_issue = node_by_issue
         .iter()
         .map(|(issue_id, node)| (*issue_id, node.temp_id.clone()))
+        .collect::<HashMap<_, _>>();
+    let readiness_by_issue = node_snapshots
+        .iter()
+        .map(|node| (node.issue.id, node.readiness.clone()))
         .collect::<HashMap<_, _>>();
     let edge_snapshots = edges
         .into_iter()
@@ -607,15 +720,12 @@ async fn load_graph(
                         edge.id
                     ))
                 })?;
-            let target = node_snapshots
-                .iter()
-                .find(|node| node.issue.id == edge.to_issue_id)
-                .ok_or_else(|| {
-                    DependencyGraphError::Integrity(format!(
-                        "edge {} points to missing target node",
-                        edge.id
-                    ))
-                })?;
+            let target = readiness_by_issue.get(&edge.to_issue_id).ok_or_else(|| {
+                DependencyGraphError::Integrity(format!(
+                    "edge {} points to missing target node",
+                    edge.id
+                ))
+            })?;
             Ok(DependencyGraphEdgeSnapshot {
                 from_temp_id: temp_id_by_issue
                     .get(&edge.from_issue_id)
@@ -637,9 +747,9 @@ async fn load_graph(
                     })?,
                 satisfied: prerequisite_status == issue_status::DONE,
                 prerequisite_status,
-                satisfied_prerequisites: target.readiness.satisfied_prerequisites,
-                total_prerequisites: target.readiness.total_prerequisites,
-                unlock_condition: target.readiness.unlock_condition.clone(),
+                satisfied_prerequisites: target.satisfied_prerequisites,
+                total_prerequisites: target.total_prerequisites,
+                unlock_condition: target.unlock_condition.clone(),
                 edge,
             })
         })
@@ -649,10 +759,12 @@ async fn load_graph(
     Ok(DependencyGraphSnapshot {
         plan,
         parent,
+        parent_effective_status,
         nodes: node_snapshots,
         edges: edge_snapshots,
         waves,
         readiness,
+        newly_created: false,
     })
 }
 
@@ -738,15 +850,47 @@ pub async fn load_active_dependency_graphs(
     project_id: Option<Uuid>,
     limit: i64,
 ) -> Result<Vec<DependencyGraphSnapshot>, DependencyGraphError> {
+    Ok(load_active_dependency_graphs_after(pool, workspace_id, project_id, limit, None)
+        .await?
+        .snapshots)
+}
+
+pub async fn load_active_dependency_graphs_after(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    project_id: Option<Uuid>,
+    limit: i64,
+    after: Option<(DateTime<Utc>, Uuid)>,
+) -> Result<DependencyGraphPage, DependencyGraphError> {
     let limit = limit.clamp(1, 64);
-    let plans = graph_q::list_active_plans(pool, workspace_id, project_id, limit)
+    let mut plans = graph_q::list_active_plans(pool, workspace_id, project_id, limit + 1, after)
         .await
         .map_err(db_error)?;
-    let mut snapshots = Vec::with_capacity(plans.len());
-    for plan in plans {
-        snapshots.push(load_graph(pool, plan).await?);
+    let has_next_page = plans.len() > limit as usize;
+    if has_next_page {
+        plans.truncate(limit as usize);
     }
-    Ok(snapshots)
+    let next_cursor = if has_next_page {
+        plans.last().map(|plan| (plan.updated_at, plan.id))
+    } else {
+        None
+    };
+    let snapshots = load_graphs(pool, plans).await?;
+    Ok(DependencyGraphPage {
+        snapshots,
+        next_cursor,
+    })
+}
+
+pub async fn retire_dependency_plan(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    plan_id: Uuid,
+) -> Result<DependencyGraphPlan, DependencyGraphError> {
+    graph_q::retire_active_plan(pool, workspace_id, plan_id)
+        .await
+        .map_err(db_error)?
+        .ok_or(DependencyGraphError::NotFound(plan_id))
 }
 
 async fn validate_persisted_assignee<'e, E>(
@@ -798,7 +942,7 @@ pub async fn apply_dependency_plan(
     if idempotency_key.is_empty() {
         return Err(invalid("idempotency_key is required"));
     }
-    if idempotency_key.len() > 255 {
+    if idempotency_key.chars().count() > 255 {
         return Err(invalid("idempotency_key exceeds 255 characters"));
     }
     if !matches!(created_by_type, "member" | "agent" | "system") || created_by_id.is_nil() {
@@ -1036,7 +1180,9 @@ pub async fn apply_dependency_plan(
     }
 
     tx.commit().await.map_err(db_error)?;
-    load_dependency_graph(pool, workspace_id, plan.id).await
+    let mut snapshot = load_dependency_graph(pool, workspace_id, plan.id).await?;
+    snapshot.newly_created = true;
+    Ok(snapshot)
 }
 
 #[cfg(test)]
@@ -1126,6 +1272,19 @@ mod tests {
         assert!(matches!(
             validate_dependency_plan(&duplicate),
             Err(DependencyGraphError::Validation(message)) if message.contains("hard")
+        ));
+    }
+
+    #[test]
+    fn text_limits_count_unicode_characters() {
+        let mut input = plan(vec![task("a", "a-out")], Vec::new());
+        input.tasks[0].title = "界".repeat(MAX_TITLE_LENGTH);
+        assert!(validate_dependency_plan(&input).is_ok());
+
+        input.tasks[0].title.push('界');
+        assert!(matches!(
+            validate_dependency_plan(&input),
+            Err(DependencyGraphError::Validation(message)) if message.contains("title exceeds")
         ));
     }
 
@@ -1299,6 +1458,8 @@ mod tests {
         let first = first_result.expect("apply typed dependency graph plan");
         let concurrent = concurrent_result.expect("concurrent idempotent dependency graph plan");
         assert_eq!(concurrent.plan.id, first.plan.id);
+        assert_ne!(first.newly_created, concurrent.newly_created);
+        assert!(first.newly_created || concurrent.newly_created);
         assert_eq!(first.nodes.len(), 2);
         assert_eq!(first.edges.len(), 1);
         assert_eq!(first.edges[0].from_temp_id, "contract");
@@ -1339,6 +1500,7 @@ mod tests {
         .await
         .expect("replay idempotent dependency graph plan");
         assert_eq!(replay.plan.id, first.plan.id);
+        assert!(!replay.newly_created);
         assert_eq!(replay.nodes.len(), 2);
         let root_issue_id = root.issue.id;
         let dependent_issue_id = dependent.issue.id;
@@ -1360,6 +1522,7 @@ mod tests {
         assert!(dependent_before_wakeup.readiness.gate_open);
         assert_eq!(dependent_before_wakeup.readiness.satisfied_prerequisites, 1);
         assert_eq!(dependent_before_wakeup.issue.status, issue_status::BLOCKED);
+        let dependent_revision_before_wakeup = dependent_before_wakeup.issue.revision;
 
         let mut tx = pool.begin().await.expect("begin dependency wakeup");
         let promoted = graph_q::promote_ready_dependents(&mut *tx, workspace_id, root_issue_id)
@@ -1388,8 +1551,41 @@ mod tests {
             .find(|node| node.issue.id == dependent_issue_id)
             .expect("dependent after wakeup");
         assert_eq!(dependent_after_wakeup.issue.status, issue_status::TODO);
+        assert_eq!(
+            dependent_after_wakeup.issue.revision,
+            dependent_revision_before_wakeup + 1
+        );
         assert_eq!(dependent_after_wakeup.readiness.state, "ready");
         assert!(dependent_after_wakeup.readiness.gate_open);
+
+        let retired = retire_dependency_plan(&pool, workspace_id, first.plan.id)
+            .await
+            .expect("retire dependency graph plan");
+        assert_eq!(retired.status, "cancelled");
+
+        // Deleting any graph node removes the whole affected plan before the
+        // issue row disappears; no future graph read can observe a dangling
+        // node or edge.
+        assert_eq!(
+            issue_q::delete_issue(&pool, root_issue_id, workspace_id)
+                .await
+                .expect("delete dependency graph node issue"),
+            1
+        );
+        for table in [
+            "dependency_graph_edge",
+            "dependency_graph_node",
+            "dependency_graph_plan",
+        ] {
+            let remaining: i64 = sqlx::query_scalar(&format!(
+                "SELECT COUNT(*) FROM {table} WHERE plan_id = $1"
+            ))
+            .bind(first.plan.id)
+            .fetch_one(&pool)
+            .await
+            .expect("count graph rows after issue deletion");
+            assert_eq!(remaining, 0, "dangling rows remain in {table}");
+        }
 
         // This test owns all rows it creates. Graph rows are explicitly
         // removed because the graph domain intentionally has no FKs.
