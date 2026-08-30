@@ -50,6 +50,15 @@ provider session.
   After the frozen coordination, execution-lane, authorization, and dependency
   graph migrations land, it receives the next contiguous migration number on
   the final stable `main` (currently expected to begin at 430).
+- The inert candidate lives under
+  `migrations/candidates/automation-rename/`. It covers the complete persisted
+  object/data rename, with reversible upgrade and downgrade SQL plus the
+  object-count, discriminator, and constraint validation checklist. The
+  candidate is not discovered by the migration runner and must not be moved
+  into the numbered directory until #629, Dependency Graph, and Work Product
+  are stable. Because this product has no legacy adapter, its rolling
+  acceptance is an explicit coordinated cutover: drain the old binary, apply
+  the rename, then start the canonical binary.
 
 ## Real entry points to verify
 
