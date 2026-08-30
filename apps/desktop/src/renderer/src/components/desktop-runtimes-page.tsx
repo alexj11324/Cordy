@@ -1,5 +1,6 @@
 import { RuntimesPage } from "@patchbay/views/runtimes";
 import { useDesktopRuntimeContext } from "./use-desktop-runtime-context";
+import { isDesktopWebPreview } from "../platform/web-bridge";
 
 /**
  * Desktop wrapper around the shared `RuntimesPage`. Bridges the Electron
@@ -17,16 +18,18 @@ import { useDesktopRuntimeContext } from "./use-desktop-runtime-context";
  */
 export function DesktopRuntimesPage() {
   const context = useDesktopRuntimeContext();
+  const isPreview = isDesktopWebPreview();
 
   return (
     <RuntimesPage
+      readOnly={isPreview}
       localDaemonId={context.localDaemonId}
       localMachineName={context.localMachineName}
       // Desktop owns a local machine for the lifetime of the app, even
       // while the daemon is stopped or hasn't registered yet. Lifecycle
       // controls live on the machine detail page so this collection stays
       // consistent with every other machine row.
-      hasLocalMachine
+      hasLocalMachine={!isPreview}
       bootstrapping={context.bootstrapping}
     />
   );

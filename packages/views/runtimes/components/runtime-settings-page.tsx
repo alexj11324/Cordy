@@ -14,9 +14,11 @@ import { useT } from "../../i18n";
 export function RuntimeSettingsPage({
   machineId,
   runtimeId,
+  readOnly = false,
 }: {
   machineId: string;
   runtimeId: string;
+  readOnly?: boolean;
 }) {
   const { t } = useT("runtimes");
   const wsId = useWorkspaceId();
@@ -63,6 +65,7 @@ export function RuntimeSettingsPage({
   return (
     <RuntimeDetail
       runtime={runtime}
+      readOnly={readOnly}
       machineHref={paths.runtimeDetail(decodedMachineId)}
       machineLabel={machine.title}
       afterDeleteHref={

@@ -200,6 +200,12 @@
         "runtime-nova": "Preview runtime · Nova",
         "runtime-quill": "Preview runtime · Quill"
       },
+      "runtime_device_info": {
+        "runtime-preview": "Browser preview runtime",
+        "runtime-mika": "Browser preview runtime",
+        "runtime-nova": "Browser preview runtime",
+        "runtime-quill": "Runtime offline"
+      },
       "tasks": {
         "task-pre-102": {
           "trigger_summary": "PR review handoff",

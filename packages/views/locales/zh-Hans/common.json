@@ -199,6 +199,12 @@
         "runtime-nova": "预览设备 · Nova",
         "runtime-quill": "预览设备 · Quill"
       },
+      "runtime_device_info": {
+        "runtime-preview": "浏览器预览设备",
+        "runtime-mika": "浏览器预览设备",
+        "runtime-nova": "浏览器预览设备",
+        "runtime-quill": "设备离线"
+      },
       "tasks": {
         "task-pre-102": {
           "trigger_summary": "PR 复查交接",

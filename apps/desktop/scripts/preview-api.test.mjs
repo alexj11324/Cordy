@@ -259,6 +259,16 @@ describe("local Vite preview API", () => {
       "run-pr-review-current",
       "run-pr-review-completed",
     ]);
+    expect(list.body.autopilots.find(
+      (autopilot) => autopilot.id === "autopilot-pr-review",
+    )).toMatchObject({
+      last_run_at: runs.body.runs[0].triggered_at,
+      last_run_status: runs.body.runs[0].status,
+    });
+    expect(detail.body.autopilot).toMatchObject({
+      last_run_at: runs.body.runs[0].triggered_at,
+      last_run_status: runs.body.runs[0].status,
+    });
     const earliestRunAt = Math.min(
       ...runs.body.runs.map((run) => Date.parse(run.triggered_at)),
     );
@@ -274,6 +284,10 @@ describe("local Vite preview API", () => {
         ...autopilotRuns.body.runs.map((run) => Date.parse(run.triggered_at)),
       );
       expect(Date.parse(autopilot.created_at)).toBeLessThan(oldestRun);
+      expect(autopilot).toMatchObject({
+        last_run_at: autopilotRuns.body.runs[0].triggered_at,
+        last_run_status: autopilotRuns.body.runs[0].status,
+      });
     }
     expect(runs.body.runs).toEqual(
       expect.arrayContaining([
@@ -334,7 +348,8 @@ describe("local Vite preview API", () => {
   });
 
   it("resolves optional shared reads without enabling preview mutations", async () => {
-    const [lark, slack, dingtalk, groupRoutes, wecom, telegram, weixin, profiles, plugins] =
+    const agents = await call("GET", "/api/agents");
+    const [lark, slack, dingtalk, groupRoutes, wecom, telegram, weixin, profiles, plugins, workspaceMcp] =
       await Promise.all([
         call("GET", "/api/workspaces/ws-preview/lark/installations"),
         call("GET", "/api/workspaces/ws-preview/slack/installations"),
@@ -345,6 +360,7 @@ describe("local Vite preview API", () => {
         call("GET", "/api/workspaces/ws-preview/weixin/installations"),
         call("GET", "/api/workspaces/ws-preview/runtime-profiles"),
         call("GET", "/api/workspaces/ws-preview/plugins"),
+        call("GET", "/api/workspaces/ws-preview/mcp-servers"),
       ]);
 
     for (const result of [lark, slack, dingtalk, wecom, telegram, weixin]) {
@@ -369,6 +385,15 @@ describe("local Vite preview API", () => {
       status: 200,
       body: { plugins: [] },
     });
+    expect(workspaceMcp).toEqual({ handled: true, status: 200, body: [] });
+    for (const agent of agents.body) {
+      await expect(
+        call("GET", `/api/agents/${agent.id}/mcp-servers`),
+      ).resolves.toEqual({ handled: true, status: 200, body: [] });
+    }
+    expect(
+      await call("GET", "/api/agents/agent-unknown/mcp-servers"),
+    ).toMatchObject({ handled: true, status: 404 });
   });
 
   it("localizes preview-owned fixture copy from the browser language", async () => {
@@ -396,6 +421,12 @@ describe("local Vite preview API", () => {
       undefined,
       { "accept-language": "en-US,en;q=0.9,ja;q=0.8" },
     );
+    const runtimes = await call(
+      "GET",
+      "/api/runtimes",
+      undefined,
+      { "accept-language": "ja-JP,ja;q=0.9" },
+    );
 
     expect(issues.body.issues[0]).toMatchObject({
       title: "优化工作区引导",
@@ -417,5 +448,11 @@ describe("local Vite preview API", () => {
         }),
       ]),
     );
+    expect(runtimes.body.find((runtime) => runtime.id === "runtime-preview")).toMatchObject({
+      device_info: "ブラウザプレビューランタイム",
+    });
+    expect(runtimes.body.find((runtime) => runtime.id === "runtime-quill")).toMatchObject({
+      device_info: "ランタイムはオフラインです",
+    });
   });
 });

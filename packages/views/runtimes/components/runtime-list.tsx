@@ -650,9 +650,12 @@ export function RuntimeList({
   now,
   runtimeHref,
   machineTitle,
+  readOnly = false,
 }: {
   runtimes: AgentRuntime[];
   now: number;
+  /** Hide row deletion/profile controls when the containing surface is read-only. */
+  readOnly?: boolean;
   /** Machine-detail pages keep runtime settings nested under the machine. */
   runtimeHref?: (runtimeId: string) => string;
   /**
@@ -721,13 +724,15 @@ export function RuntimeList({
           ? memberById.get(runtime.owner_id) ?? null
           : null,
         workload: workloadIndex.get(runtime.id) ?? EMPTY_WORKLOAD,
-        canDelete: isCustomRuntime
-          ? isAdmin && !!profile
-          : !isPendingCustomRuntime(runtime) &&
-            (isAdmin || (!!user && runtime.owner_id === user.id)),
+        canDelete:
+          !readOnly &&
+          (isCustomRuntime
+            ? isAdmin && !!profile
+            : !isPendingCustomRuntime(runtime) &&
+              (isAdmin || (!!user && runtime.owner_id === user.id))),
       };
     });
-  }, [runtimes, profileById, memberById, workloadIndex, isAdmin, user]);
+  }, [runtimes, profileById, memberById, workloadIndex, isAdmin, user, readOnly]);
 
   // Mirrors RuntimeRowMenu's render guard: the kebab track only earns its
   // width when at least one row will actually show the menu.

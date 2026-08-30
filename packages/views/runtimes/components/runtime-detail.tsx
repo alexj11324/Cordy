@@ -81,11 +81,13 @@ function useNowTick(intervalMs = 30_000): number {
 
 export function RuntimeDetail({
   runtime,
+  readOnly = false,
   machineHref,
   machineLabel,
   afterDeleteHref,
 }: {
   runtime: AgentRuntime;
+  readOnly?: boolean;
   machineHref?: string;
   machineLabel?: string;
   afterDeleteHref?: string;
@@ -117,15 +119,15 @@ export function RuntimeDetail({
   const isAdmin = currentMember
     ? currentMember.role === "owner" || currentMember.role === "admin"
     : false;
-  const isRuntimeOwner = user && runtime.owner_id === user.id;
-  const canEditRuntime = isAdmin || isRuntimeOwner;
+  const isRuntimeOwner = !!user && runtime.owner_id === user.id;
+  const canEditRuntime = !readOnly && (isAdmin || isRuntimeOwner);
   const runtimeProfile: RuntimeProfile | null = runtime.profile_id
     ? profiles.find((p) => p.id === runtime.profile_id) ?? null
     : null;
   const isCustomRuntime = !!runtime.profile_id;
-  const canDelete = isCustomRuntime
-    ? isAdmin && !!runtimeProfile
-    : canEditRuntime;
+  const canDelete =
+    !readOnly &&
+    (isCustomRuntime ? isAdmin && !!runtimeProfile : canEditRuntime);
 
   const servingAgents = agents.filter(
     (a) => a.runtime_id === runtime.id && !a.archived_at,
@@ -205,8 +207,8 @@ export function RuntimeDetail({
             />
             <DiagnosticsCard
               runtime={runtime}
-              canEditVisibility={!!isRuntimeOwner}
-              canDelete={!!canDelete}
+              canEditVisibility={!readOnly && !!isRuntimeOwner}
+              canDelete={canDelete}
               onDelete={() => setDeleteOpen(true)}
             />
           </div>

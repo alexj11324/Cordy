@@ -171,6 +171,7 @@ const PREVIEW_EMPTY_INSTALLATIONS = {
 const PREVIEW_EMPTY_DINGTALK_GROUP_ROUTES = { routes: [] };
 const PREVIEW_EMPTY_RUNTIME_PROFILES = { runtime_profiles: [] };
 const PREVIEW_EMPTY_PLUGINS = { plugins: [] };
+const PREVIEW_EMPTY_MCP_SERVERS = [];
 
 function previewRuntimeLocalSkills(runtimeId) {
   return {
@@ -425,8 +426,6 @@ function previewAutopilot({
   assigneeId,
   status,
   executionMode,
-  lastRunAt,
-  lastRunStatus,
   nextRunAt,
   triggerKinds,
   createdAt,
@@ -446,12 +445,12 @@ function previewAutopilot({
     issue_title_template: executionMode === "create_issue" ? "Weekly automation summary" : null,
     created_by_type: "member",
     created_by_id: PREVIEW_USER_ID,
-    last_run_at: lastRunAt,
+    last_run_at: null,
     created_at: createdAt,
     updated_at: NOW,
     trigger_kinds: triggerKinds,
     next_run_at: nextRunAt,
-    last_run_status: lastRunStatus,
+    last_run_status: null,
     subscribers: [{ user_type: "member", user_id: PREVIEW_USER_ID, created_at: NOW }],
     // This is a read-only local fixture. Mutations deliberately fall through
     // to Vite instead of pretending that preview writes reached a backend.
@@ -468,8 +467,6 @@ const PREVIEW_AUTOPILOTS = [
     assigneeId: "agent-mika",
     status: "active",
     executionMode: "run_only",
-    lastRunAt: previewTime(-97),
-    lastRunStatus: "running",
     nextRunAt: previewTime(30),
     triggerKinds: ["schedule"],
     createdAt: previewTime(-4320),
@@ -481,8 +478,6 @@ const PREVIEW_AUTOPILOTS = [
     assigneeId: PREVIEW_AGENT_ID,
     status: "active",
     executionMode: "run_only",
-    lastRunAt: previewTime(-238),
-    lastRunStatus: "running",
     nextRunAt: previewTime(15),
     triggerKinds: ["schedule"],
     createdAt: previewTime(-270),
@@ -494,8 +489,6 @@ const PREVIEW_AUTOPILOTS = [
     assigneeId: "agent-quill",
     status: "paused",
     executionMode: "create_issue",
-    lastRunAt: previewTime(-10080),
-    lastRunStatus: "skipped",
     nextRunAt: null,
     triggerKinds: ["schedule"],
     createdAt: previewTime(-10110),
@@ -656,7 +649,12 @@ function localizePreviewAgent(agent, copy = DEFAULT_PREVIEW_COPY) {
 
 function localizePreviewRuntime(runtime, copy = DEFAULT_PREVIEW_COPY) {
   const name = copy.runtimes?.[runtime.id];
-  return name ? { ...runtime, name } : runtime;
+  const deviceInfo = copy.runtime_device_info?.[runtime.id];
+  return {
+    ...runtime,
+    ...(name ? { name } : {}),
+    ...(deviceInfo ? { device_info: deviceInfo } : {}),
+  };
 }
 
 function localizePreviewTask(task, copy = DEFAULT_PREVIEW_COPY) {
@@ -713,6 +711,17 @@ function sortPreviewRuns(runs) {
   );
 }
 
+function previewAutopilotWithLatestRun(autopilot) {
+  const latestRun = sortPreviewRuns(PREVIEW_RUNS[autopilot.id] ?? [])[0];
+  return latestRun
+    ? {
+        ...autopilot,
+        last_run_at: latestRun.triggered_at,
+        last_run_status: latestRun.status,
+      }
+    : autopilot;
+}
+
 function isActiveTask(task) {
   return task.status === "queued" ||
     task.status === "dispatched" ||
@@ -764,7 +773,10 @@ function findPreviewAutopilot(value) {
 
 function previewAutopilotDetail(autopilot, copy = DEFAULT_PREVIEW_COPY) {
   return {
-    autopilot: localizePreviewAutopilot(autopilot, copy),
+    autopilot: localizePreviewAutopilot(
+      previewAutopilotWithLatestRun(autopilot),
+      copy,
+    ),
     triggers: (PREVIEW_TRIGGERS[autopilot.id] ?? []).map((trigger) =>
       localizePreviewTrigger(trigger, copy),
     ),
@@ -1131,6 +1143,12 @@ export async function handlePreviewRequest(req, res) {
   if (method === "GET" && path === `/api/workspaces/${WORKSPACE_ID}/plugins`) {
     return json(res, PREVIEW_EMPTY_PLUGINS);
   }
+  const workspaceMcpServers = /^\/api\/workspaces\/([^/]+)\/mcp-servers$/.exec(path);
+  if (method === "GET" && workspaceMcpServers) {
+    return workspaceMcpServers[1] === WORKSPACE_ID
+      ? json(res, PREVIEW_EMPTY_MCP_SERVERS)
+      : json(res, { error: "Preview workspace not found" }, 404);
+  }
   if (method === "GET" && path === "/api/agents") {
     return json(res, PREVIEW_DIRECTORY_AGENTS.map((agent) => localizePreviewAgent(agent, copy)));
   }
@@ -1140,6 +1158,12 @@ export async function handlePreviewRequest(req, res) {
       ? json(res, PREVIEW_TASKS
         .filter((task) => task.agent_id === decodeURIComponent(agentTasks[1]))
         .map((task) => localizePreviewTask(task, copy)))
+      : json(res, { error: "Preview agent not found" }, 404);
+  }
+  const agentMcpServers = /^\/api\/agents\/([^/]+)\/mcp-servers$/.exec(path);
+  if (method === "GET" && agentMcpServers) {
+    return findPreviewAgent(agentMcpServers[1])
+      ? json(res, PREVIEW_EMPTY_MCP_SERVERS)
       : json(res, { error: "Preview agent not found" }, 404);
   }
   if (method === "GET" && path.startsWith("/api/agents/")) {
@@ -1239,7 +1263,9 @@ export async function handlePreviewRequest(req, res) {
   }
   if (method === "GET" && path === "/api/autopilots") {
     return json(res, {
-      autopilots: PREVIEW_AUTOPILOTS.map((autopilot) => localizePreviewAutopilot(autopilot, copy)),
+      autopilots: PREVIEW_AUTOPILOTS.map((autopilot) =>
+        localizePreviewAutopilot(previewAutopilotWithLatestRun(autopilot), copy),
+      ),
       total: PREVIEW_AUTOPILOTS.length,
       // Preview intentionally cannot create or mutate product data. This is
       // a collection capability, not a projection of per-row can_write.

@@ -199,6 +199,12 @@
         "runtime-nova": "プレビューランタイム · Nova",
         "runtime-quill": "プレビューランタイム · Quill"
       },
+      "runtime_device_info": {
+        "runtime-preview": "ブラウザプレビューランタイム",
+        "runtime-mika": "ブラウザプレビューランタイム",
+        "runtime-nova": "ブラウザプレビューランタイム",
+        "runtime-quill": "ランタイムはオフラインです"
+      },
       "tasks": {
         "task-pre-102": {
           "trigger_summary": "PR 確認の引き継ぎ",

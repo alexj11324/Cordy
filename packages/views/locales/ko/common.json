@@ -199,6 +199,12 @@
         "runtime-nova": "미리보기 런타임 · Nova",
         "runtime-quill": "미리보기 런타임 · Quill"
       },
+      "runtime_device_info": {
+        "runtime-preview": "브라우저 미리보기 런타임",
+        "runtime-mika": "브라우저 미리보기 런타임",
+        "runtime-nova": "브라우저 미리보기 런타임",
+        "runtime-quill": "런타임 오프라인"
+      },
       "tasks": {
         "task-pre-102": {
           "trigger_summary": "PR 검토 인계",
