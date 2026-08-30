@@ -48,6 +48,8 @@ struct ProductionApp {
     scheduler: patchbay_scheduler::ManagerRuntime,
     heartbeat_scheduler: patchbay_handler::heartbeat_scheduler::HeartbeatSchedulerRuntime,
     runtime_sweeper: patchbay_handler::runtime_sweeper::RuntimeSweeperRuntime,
+    work_product_discovery:
+        patchbay_handler::work_product::WorkProductDiscoveryRuntime,
     plugin_events: Option<patchbay_service::plugin_event_dispatch::PluginEventDispatcherRuntime>,
     github_snapshots: Option<patchbay_ghsnapshot::ManagerRuntime>,
     ordered_event_side_effects:
@@ -437,6 +439,11 @@ async fn build_production_router(
         .tasks
         .start_side_effect_runtime(root_cancel.child_token());
     let heartbeat_scheduler = heartbeat_scheduler.start(root_cancel.child_token());
+    let work_product_discovery =
+        patchbay_handler::work_product::WorkProductDiscoveryRuntime::start(
+            state.clone(),
+            root_cancel.child_token(),
+        );
     let configured_reconnect_grace = duration_env(
         "PATCHBAY_RUNTIME_RECONNECT_GRACE",
         patchbay_handler::runtime_sweeper::DEFAULT_RECONNECT_GRACE,
@@ -505,6 +512,7 @@ async fn build_production_router(
         scheduler,
         heartbeat_scheduler,
         runtime_sweeper,
+        work_product_discovery,
         plugin_events,
         github_snapshots,
         ordered_event_side_effects,
@@ -725,6 +733,7 @@ async fn main() -> anyhow::Result<()> {
         scheduler,
         heartbeat_scheduler,
         runtime_sweeper,
+        work_product_discovery,
         plugin_events,
         github_snapshots,
         ordered_event_side_effects,
@@ -773,6 +782,7 @@ async fn main() -> anyhow::Result<()> {
         scheduler_shutdown,
         heartbeat_shutdown,
         runtime_sweeper_shutdown,
+        _work_product_discovery_shutdown,
         github_snapshots_shutdown,
     ) = tokio::join!(
         failure_monitor
@@ -785,6 +795,7 @@ async fn main() -> anyhow::Result<()> {
         scheduler.shutdown(),
         heartbeat_scheduler.shutdown(),
         runtime_sweeper.shutdown(),
+        work_product_discovery.shutdown(),
         shutdown_github_snapshots(github_snapshots),
     );
     let task_side_effects_shutdown = match task_side_effects {

@@ -20,6 +20,8 @@ pub const RELATION_SOURCE_TASK_EXPLICIT: &str = "task_explicit";
 pub const RELATION_SOURCE_EXECUTION_BRANCH_DISCOVERY: &str = "execution_branch_discovery";
 
 pub const DISCOVERY_NOT_ATTEMPTED: &str = "not_attempted";
+pub const DISCOVERY_PENDING: &str = "pending";
+pub const DISCOVERY_IN_PROGRESS: &str = "in_progress";
 pub const DISCOVERY_UNASSOCIATED: &str = "unassociated";
 pub const DISCOVERY_AMBIGUOUS: &str = "ambiguous";
 pub const DISCOVERY_ASSOCIATED: &str = "associated";
@@ -111,12 +113,14 @@ fn work_product_relation_from_joined_row(
 fn provenance_from_row(
     row: &sqlx::postgres::PgRow,
 ) -> anyhow::Result<AgentTaskExecutionProvenance> {
+    let repo_identity: String = row.try_get(3)?;
+    let execution_workspace: String = row.try_get(4)?;
     Ok(AgentTaskExecutionProvenance {
         task_id: row.try_get(0)?,
         workspace_id: row.try_get(1)?,
         run_id: row.try_get(2)?,
-        repo_identity: row.try_get(3)?,
-        execution_workspace: row.try_get(4)?,
+        repo_identity: (!repo_identity.is_empty()).then_some(repo_identity),
+        execution_workspace: (!execution_workspace.is_empty()).then_some(execution_workspace),
         head_branch: row.try_get(5)?,
         head_sha: row.try_get(6)?,
         head_state: row.try_get(7)?,
@@ -478,27 +482,28 @@ ORDER BY wp.updated_at DESC, wp.id DESC"#
     rows.iter().map(work_product_from_row).collect()
 }
 
-pub async fn get_execution_provenance(
+pub async fn list_execution_provenances(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
     task_id: Uuid,
-) -> anyhow::Result<Option<AgentTaskExecutionProvenance>> {
+) -> anyhow::Result<Vec<AgentTaskExecutionProvenance>> {
     let query = format!(
-        "SELECT {PROVENANCE_COLUMNS} FROM agent_task_execution_provenance WHERE workspace_id = $1 AND task_id = $2"
+        "SELECT {PROVENANCE_COLUMNS} FROM agent_task_execution_provenance WHERE workspace_id = $1 AND task_id = $2 ORDER BY updated_at DESC, repo_identity ASC, execution_workspace ASC"
     );
     let row = sqlx::query(&query)
         .bind(workspace_id)
         .bind(task_id)
-        .fetch_optional(executor)
+        .fetch_all(executor)
         .await?;
-    row.as_ref().map(provenance_from_row).transpose()
+    row.iter().map(provenance_from_row).collect()
 }
 
-/// Records the task-owned execution workspace before the agent starts and
-/// refreshes it at terminal delivery. A terminal delivery replaces known
-/// execution head fields, while an adapter that has no local checkout reports
-/// `unknown` and preserves facts already recorded by the checkout endpoint; a
-/// late start replay cannot resurrect terminal facts.
+/// Records one task-owned checkout before the agent starts and refreshes that
+/// same checkout at terminal delivery. The natural key includes the exact
+/// repository and execution workspace so one task can own several checkouts;
+/// a terminal delivery replaces known execution head fields, while an adapter
+/// that has no local checkout reports `unknown` and preserves facts already
+/// recorded by the checkout endpoint.
 pub async fn upsert_execution_provenance(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     task_id: Uuid,
@@ -515,15 +520,15 @@ pub async fn upsert_execution_provenance(
         matches!(head_state, "attached" | "detached" | "default" | "unknown"),
         "invalid execution head state"
     );
+    let repo_identity = repo_identity.unwrap_or_default();
+    let execution_workspace = execution_workspace.unwrap_or_default();
     let query = format!(
         r#"INSERT INTO agent_task_execution_provenance (
     task_id, workspace_id, run_id, repo_identity, execution_workspace,
     head_branch, head_sha, head_state, started_at, finished_at
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), CASE WHEN $9 THEN now() ELSE NULL END)
-ON CONFLICT (task_id) DO UPDATE SET
+ON CONFLICT (workspace_id, task_id, repo_identity, execution_workspace) DO UPDATE SET
     run_id = COALESCE(agent_task_execution_provenance.run_id, EXCLUDED.run_id),
-    repo_identity = COALESCE(agent_task_execution_provenance.repo_identity, EXCLUDED.repo_identity),
-    execution_workspace = COALESCE(agent_task_execution_provenance.execution_workspace, EXCLUDED.execution_workspace),
     head_branch = CASE
         WHEN $9 AND EXCLUDED.head_state <> 'unknown' THEN EXCLUDED.head_branch
         WHEN $9 THEN COALESCE(agent_task_execution_provenance.head_branch, EXCLUDED.head_branch)
@@ -552,7 +557,6 @@ ON CONFLICT (task_id) DO UPDATE SET
     started_at = COALESCE(agent_task_execution_provenance.started_at, EXCLUDED.started_at),
     finished_at = CASE WHEN $9 THEN now() ELSE agent_task_execution_provenance.finished_at END,
     updated_at = now()
-WHERE agent_task_execution_provenance.workspace_id = EXCLUDED.workspace_id
 RETURNING {PROVENANCE_COLUMNS}"#
     );
     let row = sqlx::query(&query)
@@ -565,16 +569,14 @@ RETURNING {PROVENANCE_COLUMNS}"#
         .bind(head_sha)
         .bind(head_state)
         .bind(finished)
-        .fetch_optional(executor)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("execution provenance belongs to another workspace"))?;
+        .fetch_one(executor)
+        .await?;
     provenance_from_row(&row)
 }
 
 pub async fn mark_execution_discovery(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    workspace_id: Uuid,
-    task_id: Uuid,
+    provenance: &AgentTaskExecutionProvenance,
     status: &str,
     match_count: i32,
     reason: Option<&str>,
@@ -600,14 +602,121 @@ SET discovery_status = $3,
     updated_at = now()
 WHERE workspace_id = $1
   AND task_id = $2
-  AND discovery_status = 'not_attempted'"#,
+  AND repo_identity = $7
+  AND execution_workspace = $8
+  AND discovery_status IN ('not_attempted', 'pending', 'in_progress')"#,
     )
-    .bind(workspace_id)
-    .bind(task_id)
+    .bind(provenance.workspace_id)
+    .bind(provenance.task_id)
     .bind(status)
     .bind(match_count)
     .bind(reason)
     .bind(work_product_id)
+    .bind(provenance.repo_identity.as_deref().unwrap_or_default())
+    .bind(provenance.execution_workspace.as_deref().unwrap_or_default())
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+/// Makes terminal discovery durable before its asynchronous worker is
+/// spawned. A process restart can therefore drain the pending rows instead of
+/// losing a `not_attempted` discovery with no audit trail.
+pub async fn mark_task_discovery_pending(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+    task_id: Uuid,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"UPDATE agent_task_execution_provenance
+SET discovery_status = 'pending',
+    discovery_match_count = 0,
+    discovery_reason = NULL,
+    discovery_work_product_id = NULL,
+    discovery_at = NULL,
+    finished_at = COALESCE(finished_at, now()),
+    updated_at = now()
+WHERE workspace_id = $1
+  AND task_id = $2
+  AND discovery_status = 'not_attempted'"#,
+    )
+    .bind(workspace_id)
+    .bind(task_id)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// Claims a pending row for one discovery worker. Stale in-progress rows are
+/// reclaimable after a process crash; final states are never reopened.
+pub async fn claim_execution_discovery(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    provenance: &AgentTaskExecutionProvenance,
+) -> anyhow::Result<Option<AgentTaskExecutionProvenance>> {
+    let query = format!(
+        r#"UPDATE agent_task_execution_provenance
+SET discovery_status = 'in_progress',
+    discovery_at = now(),
+    updated_at = now()
+WHERE workspace_id = $1
+  AND task_id = $2
+  AND repo_identity = $3
+  AND execution_workspace = $4
+  AND (
+      discovery_status = 'pending'
+      OR (discovery_status = 'in_progress' AND updated_at < now() - interval '5 minutes')
+  )
+RETURNING {PROVENANCE_COLUMNS}"#
+    );
+    let row = sqlx::query(&query)
+        .bind(provenance.workspace_id)
+        .bind(provenance.task_id)
+        .bind(provenance.repo_identity.as_deref().unwrap_or_default())
+        .bind(provenance.execution_workspace.as_deref().unwrap_or_default())
+        .fetch_optional(executor)
+        .await?;
+    row.as_ref().map(provenance_from_row).transpose()
+}
+
+/// Lists tasks with work-product discovery still waiting for a worker. This
+/// is the durable handoff used by the production maintenance loop.
+pub async fn list_pending_execution_discovery_tasks(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    limit: i32,
+) -> anyhow::Result<Vec<(Uuid, Uuid)>> {
+    let rows = sqlx::query(
+        r#"SELECT DISTINCT workspace_id, task_id
+FROM agent_task_execution_provenance
+WHERE discovery_status = 'pending'
+   OR (discovery_status = 'in_progress' AND updated_at < now() - interval '5 minutes')
+ORDER BY workspace_id, task_id
+LIMIT $1"#,
+    )
+    .bind(limit)
+    .fetch_all(executor)
+    .await?;
+    rows.iter()
+        .map(|row| Ok((row.try_get(0)?, row.try_get(1)?)))
+        .collect()
+}
+
+/// Serializes exact-head discovery for one workspace/repository/branch. The
+/// caller holds this transaction-scoped lock through the provider lookup and
+/// the provenance/relation writes.
+pub async fn lock_branch_discovery(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+    repo_identity: &str,
+    head_branch: &str,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"SELECT pg_advisory_xact_lock(
+    hashtextextended($1::text || ':' || $2 || ':' || $3, 0)
+)"#,
+    )
+    .bind(workspace_id)
+    .bind(repo_identity)
+    .bind(head_branch)
     .execute(executor)
     .await?;
     Ok(())
@@ -625,14 +734,8 @@ pub async fn list_other_branch_executions(
     exclude_task_id: Uuid,
 ) -> anyhow::Result<Vec<AgentTaskExecutionProvenance>> {
     let query = format!(
-        r#"WITH branch_lock AS (
-    SELECT pg_advisory_xact_lock(
-        hashtextextended($1::text || ':' || $2 || ':' || $3, 0)
-    )
-)
-SELECT {PROVENANCE_COLUMNS}
+        r#"SELECT {PROVENANCE_COLUMNS}
 FROM agent_task_execution_provenance p
-CROSS JOIN branch_lock
 WHERE p.workspace_id = $1
   AND p.repo_identity = $2
   AND p.head_branch = $3

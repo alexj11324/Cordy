@@ -126,10 +126,7 @@ pub(crate) fn product_response(
     })
 }
 
-pub(crate) fn provenance_response(provenance: Option<&AgentTaskExecutionProvenance>) -> Value {
-    let Some(provenance) = provenance else {
-        return json!(null);
-    };
+pub(crate) fn provenance_response(provenance: &AgentTaskExecutionProvenance) -> Value {
     json!({
         "task_id": provenance.task_id,
         "workspace_id": provenance.workspace_id,
@@ -392,7 +389,7 @@ pub(crate) async fn list_for_task(
                 return error_response(StatusCode::NOT_FOUND, "task not found");
             }
         };
-    let provenance = match work_product_q::get_execution_provenance(
+    let provenances = match work_product_q::list_execution_provenances(
         &state.pool,
         context.member.workspace_id,
         task.id,
@@ -426,7 +423,7 @@ pub(crate) async fn list_for_task(
     };
     Json(json!({
         "task_id": task.id,
-        "provenance": provenance_response(provenance.as_ref()),
+        "provenances": provenances.iter().map(provenance_response).collect::<Vec<_>>(),
         "work_products": products
             .iter()
             .map(|(product, relation)| product_response(product, Some(relation)))
@@ -491,55 +488,78 @@ pub(crate) async fn validate_task_explicit_product(
     repo_identity: &str,
     metadata: &patchbay_ghsnapshot::PullRequestMetadata,
 ) -> Result<(), &'static str> {
-    let provenance = work_product_q::get_execution_provenance(&state.pool, workspace_id, task_id)
+    let provenances = work_product_q::list_execution_provenances(&state.pool, workspace_id, task_id)
         .await
-        .map_err(|_| "execution_provenance_unavailable")?
-        .ok_or("execution_provenance_unavailable")?;
-    if provenance.head_state != "attached" {
-        return Err("execution_head_not_attached");
-    }
-    let Some(execution_workspace) = provenance.execution_workspace.as_deref() else {
-        return Err("execution_workspace_unavailable");
-    };
-    if !std::path::Path::new(execution_workspace).is_absolute()
-        || execution_workspace.contains('\0')
-    {
-        return Err("execution_workspace_invalid");
+        .map_err(|_| "execution_provenance_unavailable")?;
+    if provenances.is_empty() {
+        return Err("execution_provenance_unavailable");
     }
     let task = agent::get_agent_task_in_workspace(&state.pool, task_id, workspace_id)
         .await
         .map_err(|_| "task_unavailable")?
         .ok_or("task_unavailable")?;
-    if !task_execution_workspace_matches(
-        task.work_dir.as_deref(),
-        task.durable_work_dir.as_deref(),
-        execution_workspace,
-    ) {
-        return Err("execution_workspace_not_owned_by_task");
-    }
     let workspace = workspace::get_workspace(&state.pool, workspace_id)
         .await
         .map_err(|_| "workspace_unavailable")?
         .ok_or("workspace_unavailable")?;
-    if !task_repository_is_authorized(state, &workspace, &task, repo_identity)
-        .await
-        .map_err(|_| "task_repository_authorization_unavailable")?
-    {
-        return Err("repository_not_authorized_for_workspace");
-    }
-    if provenance.repo_identity.as_deref() != Some(repo_identity)
-        || metadata.branch.is_empty()
-        || provenance.head_branch.as_deref() != Some(metadata.branch.as_str())
-    {
-        return Err("provider_repository_or_branch_mismatch");
-    }
     if metadata.head_repo_identity.is_none() {
         return Err("provider_head_repository_unavailable");
     }
     if !head_repository_matches(metadata.head_repo_identity.as_deref(), repo_identity) {
         return Err("provider_head_repository_mismatch");
     }
-    Ok(())
+    if !task_repository_is_authorized(state, &workspace, &task, repo_identity)
+        .await
+        .map_err(|_| "task_repository_authorization_unavailable")?
+    {
+        return Err("repository_not_authorized_for_workspace");
+    }
+    for provenance in &provenances {
+        let Some(execution_workspace) = provenance.execution_workspace.as_deref() else {
+            continue;
+        };
+        if provenance.head_state != "attached"
+            || !std::path::Path::new(execution_workspace).is_absolute()
+            || execution_workspace.contains('\0')
+            || !task_execution_workspace_matches(
+                task.work_dir.as_deref(),
+                task.durable_work_dir.as_deref(),
+                execution_workspace,
+            )
+            || provenance.repo_identity.as_deref() != Some(repo_identity)
+            || metadata.branch.is_empty()
+            || provenance.head_branch.as_deref() != Some(metadata.branch.as_str())
+        {
+            continue;
+        }
+        return Ok(());
+    }
+    if provenances.iter().all(|provenance| provenance.head_state != "attached") {
+        return Err("execution_head_not_attached");
+    }
+    if provenances.iter().any(|provenance| {
+        provenance
+            .execution_workspace
+            .as_deref()
+            .is_some_and(|path| path.contains('\0') || !std::path::Path::new(path).is_absolute())
+    }) {
+        return Err("execution_workspace_invalid");
+    }
+    if provenances.iter().any(|provenance| {
+        provenance
+            .execution_workspace
+            .as_deref()
+            .is_some_and(|path| {
+                task_execution_workspace_matches(
+                    task.work_dir.as_deref(),
+                    task.durable_work_dir.as_deref(),
+                    path,
+                )
+            })
+    }) {
+        return Err("provider_repository_or_branch_mismatch");
+    }
+    Err("execution_workspace_not_owned_by_task")
 }
 
 /// Resolves the effective repository scope for a claimed task from
@@ -597,82 +617,210 @@ async fn task_repository_is_authorized(
     Ok(false)
 }
 
-/// Best-effort terminal discovery. No error from GitHub or the relation write
-/// changes the already-recorded task outcome; every branch is written to the
-/// provenance audit row so the UI can distinguish no match from uncertainty.
+/// Records terminal provenance and queues discovery before the asynchronous
+/// provider lookup is spawned. The pending state is durable, so a restarted
+/// server can drain it without treating a missing worker as success.
+pub(crate) async fn queue_task_discovery(
+    state: &HandlerState,
+    task: &patchbay_db::models::AgentTaskQueue,
+    workspace_id: Uuid,
+    input: &ExecutionProvenanceInput,
+) -> anyhow::Result<()> {
+    // A terminal adapter may have no local checkout facts. Do not create a
+    // synthetic second row when the checkout endpoint already recorded one;
+    // create an empty audit row only when the task has no provenance at all.
+    let has_facts = [
+        input.repo_identity.trim(),
+        input.execution_workspace.trim(),
+        input.head_branch.trim(),
+        input.head_sha.trim(),
+        input.head_state.trim(),
+    ]
+    .into_iter()
+    .any(|value| !value.is_empty());
+    if has_facts
+        || work_product_q::list_execution_provenances(&state.pool, workspace_id, task.id)
+            .await?
+            .is_empty()
+    {
+        record_execution_provenance(
+            state,
+            task.id,
+            workspace_id,
+            task.autopilot_run_id,
+            input,
+            true,
+        )
+        .await?;
+    }
+    work_product_q::mark_task_discovery_pending(&state.pool, workspace_id, task.id).await?;
+    Ok(())
+}
+
+/// Best-effort terminal discovery. No provider or relation error changes the
+/// already-recorded task outcome; every branch is written to the provenance
+/// audit row so the UI can distinguish no match from uncertainty.
 pub(crate) async fn discover_after_task(
     state: &HandlerState,
     task: &patchbay_db::models::AgentTaskQueue,
     workspace_id: Uuid,
     input: &ExecutionProvenanceInput,
 ) {
-    let provenance = match record_execution_provenance(
-        state,
-        task.id,
+    if let Err(error) = queue_task_discovery(state, task, workspace_id, input).await {
+        tracing::warn!(%error, task_id = %task.id, "queue terminal work product discovery failed");
+        return;
+    }
+    discover_pending_for_task(state, task, workspace_id).await;
+}
+
+/// Processes every persisted checkout for one task. This is deliberately
+/// plural: one task can check out several authorized repositories and each
+/// exact workspace/head gets an independent first-discovery attempt.
+pub(crate) async fn discover_pending_for_task(
+    state: &HandlerState,
+    task: &patchbay_db::models::AgentTaskQueue,
+    workspace_id: Uuid,
+) {
+    let provenances = match work_product_q::list_execution_provenances(
+        &state.pool,
         workspace_id,
-        task.autopilot_run_id,
-        input,
-        true,
+        task.id,
     )
     .await
     {
-        Ok(provenance) => provenance,
+        Ok(provenances) => provenances,
         Err(error) => {
-            tracing::warn!(%error, task_id = %task.id, "record terminal execution provenance failed");
+            tracing::warn!(%error, task_id = %task.id, "list pending work product provenance failed");
             return;
         }
     };
-    let workspace_id = provenance.workspace_id;
-
-    let existing = match work_product_q::list_relations_for_task(&state.pool, workspace_id, task.id)
+    for provenance in provenances {
+        if !matches!(
+            provenance.discovery_status.as_str(),
+            work_product_q::DISCOVERY_PENDING | work_product_q::DISCOVERY_IN_PROGRESS
+        ) {
+            continue;
+        }
+        let provenance = match work_product_q::claim_execution_discovery(
+            &state.pool,
+            &provenance,
+        )
         .await
+        {
+            Ok(Some(provenance)) => provenance,
+            Ok(None) => continue,
+            Err(error) => {
+                tracing::warn!(%error, task_id = %task.id, "claim work product discovery failed");
+                continue;
+            }
+        };
+        discover_one_execution(state, task, &provenance).await;
+    }
+}
+
+/// Drains pending rows left by a process restart. This worker only consumes
+/// the durable post-run queue; webhook and poller paths never invoke it and do
+/// not perform branch discovery.
+pub(crate) async fn drain_pending_work_product_discovery(state: &HandlerState) {
+    let tasks = match work_product_q::list_pending_execution_discovery_tasks(&state.pool, 100).await
     {
-        Ok(relations) => relations,
+        Ok(tasks) => tasks,
         Err(error) => {
-            record_discovery_failure(
-                state,
-                workspace_id,
-                task.id,
-                work_product_q::DISCOVERY_INELIGIBLE,
-                0,
-                Some("relation_lookup_failed"),
-            )
-            .await;
-            tracing::warn!(%error, task_id = %task.id, "skip branch discovery after relation lookup failure");
+            tracing::warn!(%error, "list durable work product discovery queue failed");
             return;
         }
     };
-    if let Some(relation) = existing.first() {
-        // A replay must not overwrite the original discovery outcome. The
-        // first terminal delivery may have recorded a branch discovery (or a
-        // deliberate unassociated/ambiguous result); later deliveries only
-        // observe the durable relation and return.
-        if provenance.discovery_status == work_product_q::DISCOVERY_NOT_ATTEMPTED {
-            record_discovery_result(
-                state,
-                workspace_id,
-                task.id,
-                work_product_q::DISCOVERY_ASSOCIATED,
-                0,
-                Some("explicit_relation_already_exists"),
-                Some(relation.work_product_id),
-            )
-            .await;
+    for (workspace_id, task_id) in tasks {
+        match agent::get_agent_task_in_workspace(&state.pool, task_id, workspace_id).await {
+            Ok(Some(task)) => discover_pending_for_task(state, &task, workspace_id).await,
+            Ok(None) => {
+                let provenances = match work_product_q::list_execution_provenances(
+                    &state.pool,
+                    workspace_id,
+                    task_id,
+                )
+                .await
+                {
+                    Ok(provenances) => provenances,
+                    Err(error) => {
+                        tracing::warn!(%error, %task_id, "list orphaned work product provenance failed");
+                        continue;
+                    }
+                };
+                for provenance in provenances {
+                    if let Ok(Some(provenance)) =
+                        work_product_q::claim_execution_discovery(&state.pool, &provenance).await
+                    {
+                        record_discovery_failure(
+                            state,
+                            &provenance,
+                            work_product_q::DISCOVERY_INELIGIBLE,
+                            0,
+                            Some("task_not_found"),
+                        )
+                        .await;
+                    }
+                }
+            }
+            Err(error) => {
+                tracing::warn!(%error, %task_id, "load queued work product task failed");
+            }
         }
-        return;
+    }
+}
+
+/// Production-owned durable queue worker. The terminal callback performs the
+/// short enqueue transaction synchronously; this worker owns the provider
+/// lookup and drains rows left in `pending`/stale `in_progress` after restart.
+pub struct WorkProductDiscoveryRuntime {
+    cancel: tokio_util::sync::CancellationToken,
+    task: Option<tokio::task::JoinHandle<()>>,
+}
+
+impl WorkProductDiscoveryRuntime {
+    pub fn start(state: HandlerState, cancel: tokio_util::sync::CancellationToken) -> Self {
+        let task_cancel = cancel.clone();
+        let task = tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(std::time::Duration::from_secs(30));
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                tokio::select! {
+                    _ = task_cancel.cancelled() => return,
+                    _ = ticker.tick() => drain_pending_work_product_discovery(&state).await,
+                }
+            }
+        });
+        Self {
+            cancel,
+            task: Some(task),
+        }
     }
 
-    // Discovery is a one-shot post-run operation. Once its outcome is audited,
-    // later webhook/poller deliveries must never query GitHub by branch again.
-    if provenance.discovery_status != work_product_q::DISCOVERY_NOT_ATTEMPTED {
-        return;
+    pub async fn shutdown(mut self) {
+        self.cancel.cancel();
+        let Some(mut task) = self.task.take() else {
+            return;
+        };
+        if tokio::time::timeout(std::time::Duration::from_secs(10), &mut task)
+            .await
+            .is_err()
+        {
+            task.abort();
+            let _ = task.await;
+        }
     }
+}
 
+async fn discover_one_execution(
+    state: &HandlerState,
+    task: &patchbay_db::models::AgentTaskQueue,
+    provenance: &AgentTaskExecutionProvenance,
+) {
+    let workspace_id = provenance.workspace_id;
     let Some(repo_identity) = provenance.repo_identity.as_deref() else {
         record_discovery_failure(
             state,
-            workspace_id,
-            task.id,
+            provenance,
             work_product_q::DISCOVERY_INELIGIBLE,
             0,
             Some("missing_repository_identity"),
@@ -683,8 +831,7 @@ pub(crate) async fn discover_after_task(
     let Some(execution_workspace) = provenance.execution_workspace.as_deref() else {
         record_discovery_failure(
             state,
-            workspace_id,
-            task.id,
+            provenance,
             work_product_q::DISCOVERY_INELIGIBLE,
             0,
             Some("missing_execution_workspace"),
@@ -697,8 +844,7 @@ pub(crate) async fn discover_after_task(
     {
         record_discovery_failure(
             state,
-            workspace_id,
-            task.id,
+            provenance,
             work_product_q::DISCOVERY_INELIGIBLE,
             0,
             Some("execution_workspace_not_absolute"),
@@ -713,8 +859,7 @@ pub(crate) async fn discover_after_task(
     ) {
         record_discovery_failure(
             state,
-            workspace_id,
-            task.id,
+            provenance,
             work_product_q::DISCOVERY_INELIGIBLE,
             0,
             Some("execution_workspace_not_owned_by_task"),
@@ -725,8 +870,7 @@ pub(crate) async fn discover_after_task(
     let Some(head_branch) = provenance.head_branch.as_deref() else {
         record_discovery_failure(
             state,
-            workspace_id,
-            task.id,
+            provenance,
             work_product_q::DISCOVERY_INELIGIBLE,
             0,
             Some("missing_head_branch"),
@@ -739,8 +883,7 @@ pub(crate) async fn discover_after_task(
     {
         record_discovery_failure(
             state,
-            workspace_id,
-            task.id,
+            provenance,
             work_product_q::DISCOVERY_INELIGIBLE,
             0,
             Some(reason),
@@ -751,8 +894,7 @@ pub(crate) async fn discover_after_task(
     let Ok(Some(workspace)) = workspace::get_workspace(&state.pool, workspace_id).await else {
         record_discovery_failure(
             state,
-            workspace_id,
-            task.id,
+            provenance,
             work_product_q::DISCOVERY_INELIGIBLE,
             0,
             Some("workspace_not_found"),
@@ -765,8 +907,7 @@ pub(crate) async fn discover_after_task(
         Ok(false) => {
             record_discovery_failure(
                 state,
-                workspace_id,
-                task.id,
+                provenance,
                 work_product_q::DISCOVERY_INELIGIBLE,
                 0,
                 Some("repository_not_authorized_for_workspace"),
@@ -777,8 +918,7 @@ pub(crate) async fn discover_after_task(
         Err(error) => {
             record_discovery_failure(
                 state,
-                workspace_id,
-                task.id,
+                provenance,
                 work_product_q::DISCOVERY_INELIGIBLE,
                 0,
                 Some("task_repository_authorization_unavailable"),
@@ -788,47 +928,11 @@ pub(crate) async fn discover_after_task(
             return;
         }
     }
-    if let Ok(other_executions) = work_product_q::list_other_branch_executions(
-        &state.pool,
-        workspace_id,
-        repo_identity,
-        head_branch,
-        task.id,
-    )
-    .await
-    {
-        if let BranchDiscoveryDecision::Ambiguous(reason) =
-            classify_branch_discovery("attached", other_executions.len(), 0)
-        {
-            record_discovery_failure(
-                state,
-                workspace_id,
-                task.id,
-                work_product_q::DISCOVERY_AMBIGUOUS,
-                other_executions.len() as i32,
-                Some(reason),
-            )
-            .await;
-            return;
-        }
-    } else {
-        record_discovery_failure(
-            state,
-            workspace_id,
-            task.id,
-            work_product_q::DISCOVERY_AMBIGUOUS,
-            0,
-            Some("active_execution_lookup_failed"),
-        )
-        .await;
-        return;
-    }
 
     let Some((owner, repo)) = split_repo_identity(repo_identity) else {
         record_discovery_failure(
             state,
-            workspace_id,
-            task.id,
+            provenance,
             work_product_q::DISCOVERY_INELIGIBLE,
             0,
             Some("unsupported_repository_identity"),
@@ -839,8 +943,7 @@ pub(crate) async fn discover_after_task(
     let Some(client) = state.github_snapshots.client() else {
         record_discovery_failure(
             state,
-            workspace_id,
-            task.id,
+            provenance,
             work_product_q::DISCOVERY_INELIGIBLE,
             0,
             Some("github_app_not_configured"),
@@ -858,8 +961,7 @@ pub(crate) async fn discover_after_task(
         Err(error) => {
             record_discovery_failure(
                 state,
-                workspace_id,
-                task.id,
+                provenance,
                 work_product_q::DISCOVERY_INELIGIBLE,
                 0,
                 Some("github_installation_lookup_failed"),
@@ -869,6 +971,88 @@ pub(crate) async fn discover_after_task(
             return;
         }
     };
+
+    // Keep the advisory lock alive on the same transaction through the branch
+    // ownership check, provider lookup, mirror upsert, and durable relation.
+    // This prevents two terminal deliveries from both deciding a shared head
+    // is unique before either relation is committed.
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            record_discovery_failure(
+                state,
+                provenance,
+                work_product_q::DISCOVERY_AMBIGUOUS,
+                0,
+                Some("discovery_transaction_unavailable"),
+            )
+            .await;
+            tracing::warn!(%error, task_id = %task.id, "branch discovery transaction begin failed");
+            return;
+        }
+    };
+    if let Err(error) = work_product_q::lock_branch_discovery(
+        &mut *transaction,
+        workspace_id,
+        repo_identity,
+        head_branch,
+    )
+    .await
+    {
+        drop(transaction);
+        record_discovery_failure(
+            state,
+            provenance,
+            work_product_q::DISCOVERY_AMBIGUOUS,
+            0,
+            Some("branch_lock_failed"),
+        )
+        .await;
+        tracing::warn!(%error, task_id = %task.id, "branch discovery lock failed");
+        return;
+    }
+    let other_executions = match work_product_q::list_other_branch_executions(
+        &mut *transaction,
+        workspace_id,
+        repo_identity,
+        head_branch,
+        task.id,
+    )
+    .await
+    {
+        Ok(executions) => executions,
+        Err(error) => {
+            drop(transaction);
+            record_discovery_failure(
+                state,
+                provenance,
+                work_product_q::DISCOVERY_AMBIGUOUS,
+                0,
+                Some("active_execution_lookup_failed"),
+            )
+            .await;
+            tracing::warn!(%error, task_id = %task.id, "branch discovery execution lookup failed");
+            return;
+        }
+    };
+    if let BranchDiscoveryDecision::Ambiguous(reason) =
+        classify_branch_discovery("attached", other_executions.len(), 0)
+    {
+        if let Err(error) = commit_discovery_status(
+            transaction,
+            provenance,
+            work_product_q::DISCOVERY_AMBIGUOUS,
+            other_executions.len() as i32,
+            Some(reason),
+            None,
+        )
+        .await
+        {
+            tracing::warn!(%error, task_id = %task.id, "commit ambiguous branch discovery failed");
+        }
+        return;
+    }
+
     let mut matches = Vec::new();
     let mut lookup_failed = false;
     for installation in installations {
@@ -916,10 +1100,6 @@ pub(crate) async fn discover_after_task(
                 }
             }
             Err(error) if error.to_string().contains("status 404") => {
-                // An installation that does not cover this repository is not
-                // evidence that the exact-head lookup is ambiguous. GitHub
-                // reports that scope mismatch as 404; continue to the other
-                // workspace installation and retain hard failures below.
                 tracing::debug!(
                     task_id = %task.id,
                     installation_id = installation.installation_id,
@@ -938,189 +1118,245 @@ pub(crate) async fn discover_after_task(
         }
     }
     if lookup_failed {
-        record_discovery_failure(
-            state,
-            workspace_id,
-            task.id,
+        if let Err(error) = commit_discovery_status(
+            transaction,
+            provenance,
             work_product_q::DISCOVERY_AMBIGUOUS,
             matches.len() as i32,
             Some("github_pull_request_lookup_failed"),
+            None,
         )
-        .await;
+        .await
+        {
+            tracing::warn!(%error, task_id = %task.id, "commit failed branch discovery audit failed");
+        }
         return;
     }
     match classify_branch_discovery("attached", 0, matches.len()) {
         BranchDiscoveryDecision::Unassociated => {
-            record_discovery_failure(
-                state,
-                workspace_id,
-                task.id,
+            if let Err(error) = commit_discovery_status(
+                transaction,
+                provenance,
                 work_product_q::DISCOVERY_UNASSOCIATED,
                 0,
                 Some("no_pull_request_for_exact_head"),
+                None,
             )
-            .await;
+            .await
+            {
+                tracing::warn!(%error, task_id = %task.id, "commit unassociated branch discovery failed");
+            }
+            return;
         }
         BranchDiscoveryDecision::Ambiguous(reason) => {
-            record_discovery_failure(
-                state,
-                workspace_id,
-                task.id,
+            if let Err(error) = commit_discovery_status(
+                transaction,
+                provenance,
                 work_product_q::DISCOVERY_AMBIGUOUS,
                 matches.len() as i32,
                 Some(reason),
+                None,
             )
-            .await;
+            .await
+            {
+                tracing::warn!(%error, task_id = %task.id, "commit multiple branch discovery failed");
+            }
+            return;
         }
-        BranchDiscoveryDecision::Associated => {
-            let found = matches.pop().expect("one match");
-            let metadata = found.metadata;
-            let canonical_url = if metadata.html_url.is_empty() {
-                format!("https://github.com/{owner}/{repo}/pull/{}", found.number)
-            } else {
-                metadata.html_url.clone()
-            };
-            let mirrored = match github::attach_git_hub_pull_request(
-                &state.pool,
-                workspace_id,
-                Some(found.installation_id),
-                owner,
-                repo,
-                found.number,
-                &metadata.title,
-                &metadata.state,
-                &canonical_url,
-                Some(metadata.created_at),
-                Some(metadata.updated_at),
-                &metadata.head_sha,
-                metadata.additions,
-                metadata.deletions,
-                metadata.changed_files,
-                nonempty(&metadata.branch),
-                nonempty(&metadata.author_login),
-                nonempty(&metadata.author_avatar_url),
-                metadata.merged_at,
-                metadata.closed_at,
-                true,
-            )
-            .await
-            {
-                Ok(Some(pr)) => pr,
-                Ok(None) => {
-                    record_discovery_failure(
-                        state,
-                        workspace_id,
-                        task.id,
-                        work_product_q::DISCOVERY_UNASSOCIATED,
-                        1,
-                        Some("pull_request_mirror_not_written"),
-                    )
-                    .await;
-                    return;
-                }
-                Err(error) => {
-                    tracing::warn!(%error, task_id = %task.id, "branch discovery mirror write failed");
-                    record_discovery_failure(
-                        state,
-                        workspace_id,
-                        task.id,
-                        work_product_q::DISCOVERY_UNASSOCIATED,
-                        1,
-                        Some("pull_request_mirror_write_failed"),
-                    )
-                    .await;
-                    return;
-                }
-            };
-            let product = match work_product_q::upsert_work_product(
-                &state.pool,
-                workspace_id,
-                "pull_request",
-                "github",
-                &work_product_q::external_identity_for_github(owner, repo, found.number),
-                Some(&canonical_url),
-                Some("github_pull_request"),
-                Some(mirrored.id),
-            )
-            .await
-            {
-                Ok(product) => product,
-                Err(error) => {
-                    tracing::warn!(%error, task_id = %task.id, "branch discovery work product write failed");
-                    record_discovery_failure(
-                        state,
-                        workspace_id,
-                        task.id,
-                        work_product_q::DISCOVERY_UNASSOCIATED,
-                        1,
-                        Some("work_product_write_failed"),
-                    )
-                    .await;
-                    return;
-                }
-            };
-            let relation_key =
-                work_product_q::relation_key(task.issue_id, Some(task.id), task.autopilot_run_id);
-            let relation = match work_product_q::attach_work_product_relation(
-                &state.pool,
-                workspace_id,
-                product.id,
-                task.issue_id,
-                Some(task.id),
-                task.autopilot_run_id,
-                &relation_key,
-                work_product_q::RELATION_SOURCE_EXECUTION_BRANCH_DISCOVERY,
-                "agent",
-                task.agent_id,
-                false,
-            )
-            .await
-            {
-                Ok(relation) => relation,
-                Err(error) => {
-                    tracing::warn!(%error, task_id = %task.id, "branch discovery relation write failed");
-                    record_discovery_failure(
-                        state,
-                        workspace_id,
-                        task.id,
-                        work_product_q::DISCOVERY_UNASSOCIATED,
-                        1,
-                        Some("relation_write_failed"),
-                    )
-                    .await;
-                    return;
-                }
-            };
-            record_discovery_result(
-                state,
-                workspace_id,
-                task.id,
-                work_product_q::DISCOVERY_ASSOCIATED,
-                1,
-                Some("unique_pull_request_for_exact_head"),
-                Some(product.id),
-            )
-            .await;
-            let linked_issue_ids = task
-                .issue_id
-                .map(|id| vec![id.to_string()])
-                .unwrap_or_default();
-            state.bus.publish(&patchbay_events::Event {
-                event_type: patchbay_protocol::EVENT_PULL_REQUEST_UPDATED.into(),
-                workspace_id: workspace_id.to_string(),
-                actor_type: "agent".into(),
-                actor_id: task.agent_id.to_string(),
-                payload: json!({
-                    "pull_request": crate::issue_pull_request::github_model_response(mirrored, state.github_snapshots.enabled()),
-                    "linked_issue_ids": linked_issue_ids,
-                    "relation": relation_response(&relation),
-                }),
-                task_id: task.id.to_string(),
-                ..Default::default()
-            });
-        }
+        BranchDiscoveryDecision::Associated => {}
         BranchDiscoveryDecision::Ineligible(_) => unreachable!("attached head state is eligible"),
     }
+
+    let found = matches.pop().expect("one match");
+    let metadata = found.metadata;
+    let canonical_url = if metadata.html_url.is_empty() {
+        format!("https://github.com/{owner}/{repo}/pull/{}", found.number)
+    } else {
+        metadata.html_url.clone()
+    };
+    let mirrored = match github::attach_git_hub_pull_request(
+        &mut *transaction,
+        workspace_id,
+        Some(found.installation_id),
+        owner,
+        repo,
+        found.number,
+        &metadata.title,
+        &metadata.state,
+        &canonical_url,
+        Some(metadata.created_at),
+        Some(metadata.updated_at),
+        &metadata.head_sha,
+        metadata.additions,
+        metadata.deletions,
+        metadata.changed_files,
+        nonempty(&metadata.branch),
+        nonempty(&metadata.author_login),
+        nonempty(&metadata.author_avatar_url),
+        metadata.merged_at,
+        metadata.closed_at,
+        true,
+    )
+    .await
+    {
+        Ok(Some(pr)) => pr,
+        Ok(None) => {
+            drop(transaction);
+            record_discovery_failure(
+                state,
+                provenance,
+                work_product_q::DISCOVERY_UNASSOCIATED,
+                1,
+                Some("pull_request_mirror_not_written"),
+            )
+            .await;
+            return;
+        }
+        Err(error) => {
+            drop(transaction);
+            record_discovery_failure(
+                state,
+                provenance,
+                work_product_q::DISCOVERY_UNASSOCIATED,
+                1,
+                Some("pull_request_mirror_write_failed"),
+            )
+            .await;
+            tracing::warn!(%error, task_id = %task.id, "branch discovery mirror write failed");
+            return;
+        }
+    };
+    let product = match work_product_q::upsert_work_product(
+        &mut *transaction,
+        workspace_id,
+        "pull_request",
+        "github",
+        &work_product_q::external_identity_for_github(owner, repo, found.number),
+        Some(&canonical_url),
+        Some("github_pull_request"),
+        Some(mirrored.id),
+    )
+    .await
+    {
+        Ok(product) => product,
+        Err(error) => {
+            drop(transaction);
+            record_discovery_failure(
+                state,
+                provenance,
+                work_product_q::DISCOVERY_UNASSOCIATED,
+                1,
+                Some("work_product_write_failed"),
+            )
+            .await;
+            tracing::warn!(%error, task_id = %task.id, "branch discovery work product write failed");
+            return;
+        }
+    };
+    let relation_key =
+        work_product_q::relation_key(task.issue_id, Some(task.id), task.autopilot_run_id);
+    let relation = match work_product_q::attach_work_product_relation(
+        &mut *transaction,
+        workspace_id,
+        product.id,
+        task.issue_id,
+        Some(task.id),
+        task.autopilot_run_id,
+        &relation_key,
+        work_product_q::RELATION_SOURCE_EXECUTION_BRANCH_DISCOVERY,
+        "agent",
+        task.agent_id,
+        false,
+    )
+    .await
+    {
+        Ok(relation) => relation,
+        Err(error) => {
+            drop(transaction);
+            record_discovery_failure(
+                state,
+                provenance,
+                work_product_q::DISCOVERY_UNASSOCIATED,
+                1,
+                Some("relation_write_failed"),
+            )
+            .await;
+            tracing::warn!(%error, task_id = %task.id, "branch discovery relation write failed");
+            return;
+        }
+    };
+    if let Err(error) = work_product_q::mark_execution_discovery(
+        &mut *transaction,
+        provenance,
+        work_product_q::DISCOVERY_ASSOCIATED,
+        1,
+        Some("unique_pull_request_for_exact_head"),
+        Some(product.id),
+    )
+    .await
+    {
+        drop(transaction);
+        record_discovery_failure(
+            state,
+            provenance,
+            work_product_q::DISCOVERY_UNASSOCIATED,
+            1,
+            Some("discovery_audit_write_failed"),
+        )
+        .await;
+        tracing::warn!(%error, task_id = %task.id, "branch discovery audit write failed");
+        return;
+    }
+    if let Err(error) = transaction.commit().await {
+        record_discovery_failure(
+            state,
+            provenance,
+            work_product_q::DISCOVERY_UNASSOCIATED,
+            1,
+            Some("discovery_transaction_commit_failed"),
+        )
+        .await;
+        tracing::warn!(%error, task_id = %task.id, "branch discovery transaction commit failed");
+        return;
+    }
+    let linked_issue_ids = task
+        .issue_id
+        .map(|id| vec![id.to_string()])
+        .unwrap_or_default();
+    state.bus.publish(&patchbay_events::Event {
+        event_type: patchbay_protocol::EVENT_PULL_REQUEST_UPDATED.into(),
+        workspace_id: workspace_id.to_string(),
+        actor_type: "agent".into(),
+        actor_id: task.agent_id.to_string(),
+        payload: json!({
+            "pull_request": crate::issue_pull_request::github_model_response(mirrored, state.github_snapshots.enabled()),
+            "linked_issue_ids": linked_issue_ids,
+            "relation": relation_response(&relation),
+        }),
+        task_id: task.id.to_string(),
+        ..Default::default()
+    });
+}
+
+async fn commit_discovery_status(
+    mut transaction: sqlx::Transaction<'_, sqlx::Postgres>,
+    provenance: &AgentTaskExecutionProvenance,
+    status: &str,
+    match_count: i32,
+    reason: Option<&str>,
+    work_product_id: Option<Uuid>,
+) -> anyhow::Result<()> {
+    work_product_q::mark_execution_discovery(
+        &mut *transaction,
+        provenance,
+        status,
+        match_count,
+        reason,
+        work_product_id,
+    )
+    .await?;
+    transaction.commit().await?;
+    Ok(())
 }
 
 async fn attach_actor(
@@ -1220,8 +1456,7 @@ struct DiscoveredPullRequest {
 
 async fn record_discovery_result(
     state: &HandlerState,
-    workspace_id: Uuid,
-    task_id: Uuid,
+    provenance: &AgentTaskExecutionProvenance,
     status: &str,
     match_count: i32,
     reason: Option<&str>,
@@ -1229,8 +1464,7 @@ async fn record_discovery_result(
 ) {
     if let Err(error) = work_product_q::mark_execution_discovery(
         &state.pool,
-        workspace_id,
-        task_id,
+        provenance,
         status,
         match_count,
         reason,
@@ -1238,22 +1472,20 @@ async fn record_discovery_result(
     )
     .await
     {
-        tracing::warn!(%error, %task_id, "write work product discovery audit failed");
+        tracing::warn!(%error, task_id = %provenance.task_id, "write work product discovery audit failed");
     }
 }
 
 async fn record_discovery_failure(
     state: &HandlerState,
-    workspace_id: Uuid,
-    task_id: Uuid,
+    provenance: &AgentTaskExecutionProvenance,
     status: &str,
     match_count: i32,
     reason: Option<&str>,
 ) {
     record_discovery_result(
         state,
-        workspace_id,
-        task_id,
+        provenance,
         status,
         match_count,
         reason,
@@ -1288,10 +1520,19 @@ fn task_execution_workspace_matches(
         .collect::<Vec<_>>();
     !known_paths.is_empty()
         && known_paths.iter().any(|path| {
-            let path = std::path::Path::new(path);
-            path.is_absolute()
-                && !path.to_string_lossy().contains('\0')
-                && path.starts_with(execution_workspace)
+            let task_path = std::path::Path::new(path);
+            let execution_path = std::path::Path::new(execution_workspace);
+            task_path.is_absolute()
+                && !task_path.to_string_lossy().contains('\0')
+                && execution_path.is_absolute()
+                && !execution_path.to_string_lossy().contains('\0')
+                // The task's cwd can be either the repository/worktree root
+                // or a subdirectory selected by the workspace resource. The
+                // provider reports the exact git top-level, so ownership is
+                // safe in both lexical directions; component-aware
+                // `starts_with` prevents `/task-1-other` prefix collisions.
+                && (execution_path.starts_with(task_path)
+                    || task_path.starts_with(execution_path))
         })
 }
 
@@ -1376,14 +1617,19 @@ mod tests {
     #[test]
     fn task_execution_workspace_must_match_known_task_paths() {
         assert!(task_execution_workspace_matches(
+            Some("/srv/executions/task-1"),
+            None,
+            "/srv/executions/task-1/worktree"
+        ));
+        assert!(task_execution_workspace_matches(
             Some("/srv/executions/task-1/worktree"),
             None,
             "/srv/executions/task-1"
         ));
         assert!(!task_execution_workspace_matches(
-            Some("/srv/executions/task-1/worktree"),
+            Some("/srv/executions/task-1"),
             None,
-            "/srv/other"
+            "/srv/executions/task-1-other/worktree"
         ));
         assert!(!task_execution_workspace_matches(
             None,

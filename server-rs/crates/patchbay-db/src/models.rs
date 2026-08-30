@@ -1730,8 +1730,9 @@ pub struct WorkProductRelation {
 }
 
 /// Server-persisted execution provenance used by the post-run branch
-/// discovery path. The task id is the ownership boundary: callers can only
-/// write this row through the authenticated daemon/task context, and the
+/// discovery path. One task may have multiple rows, one per exact repository
+/// checkout/workspace key. The task id is the ownership boundary: callers can
+/// only write rows through the authenticated daemon/task context, and the
 /// discovery result is an audit of that exact execution rather than a
 /// reusable branch association.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]

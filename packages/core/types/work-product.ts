@@ -13,6 +13,8 @@ export type WorkProductRelationSource =
 
 export type WorkProductDiscoveryStatus =
   | "not_attempted"
+  | "pending"
+  | "in_progress"
   | "unassociated"
   | "ambiguous"
   | "associated"
@@ -78,7 +80,7 @@ export type IssueWorkProductsResponse = {
 
 export type TaskWorkProductsResponse = {
   task_id: string;
-  provenance: ExecutionProvenance | null;
+  provenances: ExecutionProvenance[];
   work_products: WorkProduct[];
 };
 

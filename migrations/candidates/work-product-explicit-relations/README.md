@@ -16,11 +16,14 @@ The schema is provider-neutral at the identity/relation boundary:
   close intent, and detach audit fields. Branch discovery writes this same
   durable relation only after a unique exact-head match; branch text is never
   stored as a lasting relationship key.
-- `agent_task_execution_provenance` is the task-owned execution record. It
-  stores the authenticated run's repository identity, exact execution
-  workspace/head branch, active/finished timestamps, and the observable
+- `agent_task_execution_provenance` stores one authenticated task/run
+  checkout per exact repository/workspace key. It stores the repository
+  identity, exact execution workspace/head branch, active/finished
+  timestamps, and the observable pending/in-progress/
   `unassociated`/`ambiguous`/`associated`/`ineligible` discovery result. It is
-  not a second association table and never parses PR text.
+  not a second association table and never parses PR text. A task may
+  therefore own multiple repository checkouts without one row masking the
+  others.
 - No foreign keys or cascades are introduced. Application transactions own
   workspace/issue/task/run checks and dependent cleanup.
 - No PB-style identifier is present in the key or schema. External identities
@@ -47,7 +50,7 @@ constraint is attached:
 11. `work_product_relation_product_index`
 12. `work_product_relation_task_index`
 13. `agent_task_execution_provenance_table`
-14. `agent_task_execution_provenance_task_index`
+14. `agent_task_execution_provenance_identity_index`
 15. `agent_task_execution_provenance_primary_key`
 16. `agent_task_execution_provenance_branch_index`
 

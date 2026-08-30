@@ -2768,21 +2768,35 @@ async fn execution_provenance_for_start(
     .strip_prefix("origin/")
     .map(str::to_string)
     .unwrap_or_default();
-    let head_state = if repo_identity.is_empty() {
-        "unknown"
-    } else if head_branch.is_empty() {
-        "detached"
-    } else if head_branch == default_branch && !default_branch.is_empty() {
-        "default"
-    } else {
-        "attached"
-    };
+    let head_state =
+        classify_execution_head_state(&repo_identity, &head_branch, &default_branch);
     ExecutionProvenanceFacts {
         repo_identity,
         execution_workspace,
         head_branch,
         head_sha,
         head_state: head_state.to_string(),
+    }
+}
+
+fn classify_execution_head_state(
+    repo_identity: &str,
+    head_branch: &str,
+    default_branch: &str,
+) -> &'static str {
+    if repo_identity.is_empty() || (head_branch.is_empty() && default_branch.is_empty()) {
+        "unknown"
+    } else if head_branch.is_empty() {
+        "detached"
+    } else if default_branch.is_empty() {
+        // Without a verified remote default branch, a named head is not
+        // enough to prove that it is a task branch. Fail closed so discovery
+        // cannot attach a PR from an incompletely inspected checkout.
+        "unknown"
+    } else if head_branch == default_branch {
+        "default"
+    } else {
+        "attached"
     }
 }
 
@@ -4106,6 +4120,23 @@ mod tests {
         .unwrap();
         assert_eq!(candidate.path, "C:/releases/0.101.0/codex.exe");
         assert_eq!(candidate.version, None);
+    }
+
+    #[test]
+    fn execution_head_state_fails_closed_when_remote_default_is_unknown() {
+        assert_eq!(
+            classify_execution_head_state("owner/repo", "feature", ""),
+            "unknown"
+        );
+        assert_eq!(
+            classify_execution_head_state("owner/repo", "main", "main"),
+            "default"
+        );
+        assert_eq!(
+            classify_execution_head_state("owner/repo", "feature", "main"),
+            "attached"
+        );
+        assert_eq!(classify_execution_head_state("owner/repo", "", "main"), "detached");
     }
 
     #[test]

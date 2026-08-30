@@ -436,13 +436,13 @@ export const ExecutionProvenanceSchema = z.object({
 
 export const TaskWorkProductsResponseSchema = z.object({
   task_id: z.string(),
-  provenance: ExecutionProvenanceSchema.nullable(),
+  provenances: z.array(ExecutionProvenanceSchema).default([]),
   work_products: z.array(WorkProductSchema).default([]),
 }).loose();
 
 export const EMPTY_TASK_WORK_PRODUCTS_RESPONSE: TaskWorkProductsResponse = {
   task_id: "",
-  provenance: null,
+  provenances: [],
   work_products: [],
 };
 

@@ -3086,19 +3086,29 @@ fn sanitize(s: &str) -> String {
     }
 }
 
-/// Terminal task delivery must not hold the daemon callback open while a
-/// provider exact-head lookup walks GitHub App installations. Discovery is
-/// best-effort and separately audited, so it can run after the task result,
-/// notification, and token revocation have completed.
-fn spawn_work_product_discovery(
+/// Terminal task delivery only performs the short durable enqueue transaction;
+/// it never waits for a provider exact-head lookup. The durable worker can
+/// drain the pending row after a process restart.
+async fn schedule_work_product_discovery(
     state: &HandlerState,
     task: AgentTaskQueue,
     workspace_id: Uuid,
     execution: crate::work_product::ExecutionProvenanceInput,
 ) {
+    if let Err(error) = crate::work_product::queue_task_discovery(
+        state,
+        &task,
+        workspace_id,
+        &execution,
+    )
+    .await
+    {
+        tracing::warn!(%error, task_id = %task.id, "durable work product discovery enqueue failed");
+        return;
+    }
     let state = state.clone();
     tokio::spawn(async move {
-        crate::work_product::discover_after_task(&state, &task, workspace_id, &execution).await;
+        crate::work_product::discover_pending_for_task(&state, &task, workspace_id).await;
     });
 }
 
@@ -3195,7 +3205,7 @@ async fn complete_task(
                 head_state: req.execution_head_state,
             };
             if let Ok(workspace_id) = Uuid::parse_str(&ws_id) {
-                spawn_work_product_discovery(&state, task.clone(), workspace_id, execution);
+                schedule_work_product_discovery(&state, task.clone(), workspace_id, execution).await;
             } else {
                 tracing::warn!(task_id = %task_id, workspace_id = %ws_id, "complete: invalid resolved workspace id for work product discovery");
             }
@@ -3320,7 +3330,7 @@ async fn fail_task_impl(
                 head_state: req.execution_head_state,
             };
             if let Ok(workspace_uuid) = Uuid::parse_str(workspace_id) {
-                spawn_work_product_discovery(state, task.clone(), workspace_uuid, execution);
+                schedule_work_product_discovery(state, task.clone(), workspace_uuid, execution).await;
             } else {
                 tracing::warn!(task_id = %task_id, workspace_id = %workspace_id, "fail: invalid resolved workspace id for work product discovery");
             }
@@ -3738,7 +3748,7 @@ async fn ack_task_cancelled(
         .await
         .and_then(|value| Uuid::parse_str(&value).ok())
     {
-        spawn_work_product_discovery(&state, task.clone(), workspace_id, execution);
+        schedule_work_product_discovery(&state, task.clone(), workspace_id, execution).await;
     } else {
         tracing::warn!(task_id = %task_id, "cancel ack: invalid resolved workspace id for work product discovery");
     }

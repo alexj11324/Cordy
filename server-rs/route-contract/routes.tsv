@@ -21,6 +21,7 @@ DELETE	/api/issues/{}/labels/{}
 DELETE	/api/issues/{}/metadata/{}
 DELETE	/api/issues/{}/properties/{}
 DELETE	/api/issues/{}/reactions
+DELETE	/api/issues/{}/work-products/{}
 DELETE	/api/labels/{}
 DELETE	/api/pins/{}/{}
 DELETE	/api/projects/{}
@@ -149,6 +150,7 @@ GET	/api/issues/{}/subscribers
 GET	/api/issues/{}/task-runs
 GET	/api/issues/{}/timeline
 GET	/api/issues/{}/usage
+GET	/api/issues/{}/work-products
 GET	/api/labels
 GET	/api/labels/{}
 GET	/api/me
@@ -181,6 +183,7 @@ GET	/api/teams/{}
 GET	/api/teams/{}/members
 GET	/api/teams/{}/members/status
 GET	/api/tasks/{}/messages
+GET	/api/tasks/{}/work-products
 GET	/api/tokens
 GET	/api/v1/plugin/context
 GET	/api/v1/plugin/issues/{}
@@ -212,6 +215,7 @@ GET	/api/workspaces/{}/vcs/connections
 GET	/api/workspaces/{}/wecom/installations
 GET	/api/workspaces/{}/weixin/install/{}/status
 GET	/api/workspaces/{}/weixin/installations
+GET	/api/work-products/unassociated
 GET	/health
 GET	/health/realtime
 GET	/healthz
@@ -298,6 +302,7 @@ POST	/api/daemon/tasks/{}/plugin-hooks
 POST	/api/daemon/tasks/{}/progress
 POST	/api/daemon/tasks/{}/session
 POST	/api/daemon/tasks/{}/start
+POST	/api/daemon/tasks/{}/execution-provenance
 POST	/api/daemon/tasks/{}/usage
 POST	/api/daemon/tasks/{}/wait-local-directory
 POST	/api/daemon/workspaces/{}/issues/gc-check
@@ -339,6 +344,7 @@ POST	/api/issues/{}/subscribe
 POST	/api/issues/{}/tasks/{}/cancel
 POST	/api/issues/{}/unsubscribe
 POST	/api/issues/{}/unsubscribe/subtree
+POST	/api/issues/{}/work-products
 POST	/api/labels
 POST	/api/lark/binding/redeem
 POST	/api/me/onboarding/cloud-waitlist
