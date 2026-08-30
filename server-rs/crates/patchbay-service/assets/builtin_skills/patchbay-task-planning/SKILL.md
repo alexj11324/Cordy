@@ -11,9 +11,9 @@ Use this skill only for complex, genuinely splittable goals that can be split
 into two or more independently verifiable deliverables. It is a
 planning capability for a team leader or explicitly designated planner. It is
 not a replacement for the team leader base prompt, `patchbay-working-on-issues`,
-or ordinary delegation. A simple, coherent goal remains one task. Do not
-split a goal merely because it mentions several files, commands, functions,
-people, or steps.
+or ordinary delegation. A simple, coherent goal remains one task. If it is
+simple, do not split it merely because it mentions several files, commands,
+functions, people, or steps.
 
 The result of this skill is a complete typed plan submitted to the server's
 atomic dependency-graph apply operation. Do not create child issues one at a
