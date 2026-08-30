@@ -2950,16 +2950,10 @@ impl TaskService {
             let automation_allowed = match get_automation_run(&mut *tx, automation_run_id).await {
                 Ok(Some(run)) => match get_automation(&mut *tx, run.automation_id).await {
                     Ok(Some(automation)) => {
-                        let collaborates = match is_automation_collaborator(
-                            &mut *tx,
-                            automation.id,
-                            requester_user_id,
-                        )
-                        .await
-                        {
-                            Ok(value) => value,
-                            Err(_) => None,
-                        };
+                        let collaborates =
+                            is_automation_collaborator(&mut *tx, automation.id, requester_user_id)
+                                .await
+                                .unwrap_or_default();
                         automation_invocation_allowed(
                             automation.workspace_id,
                             agent.workspace_id,
