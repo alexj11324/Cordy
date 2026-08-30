@@ -41,11 +41,15 @@ coverage
 !server-rs/crates/patchbay-handler/assets/
 !server-rs/crates/patchbay-handler/assets/**
 
-# Only the web workspace is used by Dockerfile.web. Default-exclude future
-# app workspaces so they do not silently enter the build context.
+# Default-exclude app workspaces, then opt in only the production image
+# contexts maintained by the Dockerfiles in this repository.
 /apps/*
 !/apps/web/
 !/apps/web/**
+
+# The separately released accounts broker has its own production image.
+!/apps/auth-broker/
+!/apps/auth-broker/**
 
 # The production docs image is built from the exact docs workspace as well.
 !/apps/docs/

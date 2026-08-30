@@ -44,9 +44,13 @@ jobs:
       backend: ${{ steps.decide.outputs.backend }}
       installer: ${{ steps.decide.outputs.installer }}
       images: ${{ steps.filter.outputs.images }}
+      auth_broker_release: ${{ steps.auth-impact.outputs.auth_broker_release }}
+      full_google_oauth_e2e: ${{ steps.auth-impact.outputs.full_google_oauth_e2e }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Reject legacy product markers
         run: bash scripts/check-legacy-brand-markers.sh
@@ -68,6 +72,7 @@ jobs:
           # over-matching since a missed path silently skips validation.
           filters: |
             frontend:
+              - 'apps/auth-broker/**'
               - 'apps/web/**'
               - 'apps/desktop/**'
               - 'apps/docs/**'
@@ -79,11 +84,16 @@ jobs:
               - 'turbo.json'
               - 'knip.jsonc'
               - 'Dockerfile.web'
+              - 'Dockerfile.auth-broker'
+              - 'contracts/auth-broker/**'
               - '.dockerignore'
               - '.github/workflows/ci.yml'
               - '.github/workflows/container-images.yml'
+              - '.github/workflows/auth-broker-release.yml'
               - '.github/workflows/release.yml'
               - 'scripts/generate-reserved-slugs.mjs'
+              - 'scripts/classify-auth-change.mjs'
+              - 'scripts/classify-auth-change.test.mjs'
               - 'server-rs/crates/patchbay-handler/assets/reserved_slugs.json'
               - 'scripts/check-ui-wildcard-exports.mjs'
               - 'scripts/check-ui-wildcard-exports.test.sh'
@@ -141,6 +151,31 @@ jobs:
               - '**/*.avif'
               - 'scripts/check-image-budget.mjs'
 
+      - name: Classify authentication release impact
+        id: auth-impact
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "$EVENT_NAME" = "pull_request" ]]; then
+            node scripts/classify-auth-change.mjs "$PR_BASE_SHA" "$PR_HEAD_SHA"
+          else
+            echo "auth_broker_release=false" >> "$GITHUB_OUTPUT"
+            echo "full_google_oauth_e2e=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Summarize authentication release impact
+        env:
+          AUTH_BROKER_RELEASE: ${{ steps.auth-impact.outputs.auth_broker_release }}
+          FULL_GOOGLE_OAUTH_E2E: ${{ steps.auth-impact.outputs.full_google_oauth_e2e }}
+        run: |
+          {
+            echo "### Authentication release impact"
+            echo "- Independent broker release: \`$AUTH_BROKER_RELEASE\`"
+            echo "- Full Google OAuth E2E before auth traffic cutover: \`$FULL_GOOGLE_OAUTH_E2E\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Decide
         id: decide
         # Always run everything on push to main (full validation); on
@@ -187,7 +222,7 @@ jobs:
       TURBO_CACHE_DIR: .turbo/cache
     steps:
       - name: Checkout
-        if: ${{ needs.changes.outputs.frontend == 'true' }}
+        if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.auth_broker_release == 'true' }}
         uses: actions/checkout@v6
 
       - name: Setup pnpm
@@ -238,6 +273,10 @@ jobs:
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         run: bash scripts/worktree-db.test.sh
 
+      - name: Test authentication release classification
+        if: ${{ needs.changes.outputs.frontend == 'true' }}
+        run: node --test scripts/classify-auth-change.test.mjs
+
       - name: Verify reserved-slugs.ts is up to date
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         # Re-runs the generator and fails on any drift from the
@@ -262,6 +301,21 @@ jobs:
         run: |
           pnpm exec turbo build --filter='!@patchbay/docs' --filter='!@patchbay/mobile'
           pnpm exec turbo typecheck lint --filter='!@patchbay/docs' --filter='!@patchbay/mobile'
+
+      - name: Setup Docker Buildx for auth broker
+        if: ${{ needs.changes.outputs.auth_broker_release == 'true' }}
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build independent auth broker image
+        if: ${{ needs.changes.outputs.auth_broker_release == 'true' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.auth-broker
+          push: false
+          tags: patchbay-auth-broker:ci
+          cache-from: type=gha,scope=ci-auth-broker
+          cache-to: type=gha,mode=max,scope=ci-auth-broker
 
       # Blocking from the start: it reports nothing today, and it covers the
       # one regression knip structurally cannot see. packages/ui exports four
@@ -442,6 +496,7 @@ jobs:
 
       - name: Test Rust build and deployment contracts
         run: |
+          bash scripts/auth-broker-helm.test.sh
           bash scripts/helm-config.test.sh
           bash scripts/makefile-build.test.sh
           bash scripts/macos-release-contract.test.sh

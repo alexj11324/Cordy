@@ -59,14 +59,22 @@ unset value disables browser-hosted Desktop handoff instead of claiming that an
 unprovisioned host works. Once deployed, that exact origin is the only hosted
 browser destination accepted by the accounts app.
 
-The canonical hosted Helm deployment routes both Web entrypoints to the same
-frontend Service: set `ingress.frontend.host` to
-`patchbay.aspectlylabs.com`, add `accounts.aspectlylabs.com` to
-`ingress.frontend.additionalHosts`, and set `ingress.backend.host` to
-`api.aspectlylabs.com`. Provision valid TLS for all three hosts before changing
-public DNS or the Clerk OAuth configuration. Keep browser-hosted Desktop
-handoff disabled until `/auth/callback`, the accounts broker routes, and the API
-are reachable on those exact HTTPS origins.
+The current compatibility deployment routes both Web entrypoints to the same
+frontend Service: `patchbay.aspectlylabs.com` is the primary frontend host and
+`accounts.aspectlylabs.com` is an additional host. Keep that route unchanged
+until the independent auth broker passes the staged and canonical browser gates
+in `docs/operations/auth-broker-migration.md` and an operator explicitly
+approves the traffic change.
+
+The ordinary **Release** workflow intentionally excludes the auth broker. Build
+or publish that image only through **Auth Broker Release (manual)**; that
+workflow never deploys the image or changes public traffic. Its publishable
+Clerk key and API/accounts origins are injected at runtime, so they are not
+embedded in the image. The broker chart is separately versioned under
+`deploy/helm/patchbay-auth-broker` and renders no workload unless explicitly
+enabled with an immutable image digest. See
+`docs/architecture/auth-release-boundary.md` for the versioned protocol and the
+changes that require a complete Google OAuth E2E.
 
 The manual **Release** workflow first applies migrations with
 `patchbay-migrate`, runs every Rust workspace target, builds the server, CLI,
