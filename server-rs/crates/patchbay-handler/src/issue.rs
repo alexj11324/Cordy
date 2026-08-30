@@ -28,8 +28,8 @@ use patchbay_db::models::{
 use patchbay_db::queries::issue_reaction::AddIssueReactionRow;
 use patchbay_db::queries::{
     activity, agent, agent_invocation_target, attachment, autopilot, comment as comment_q,
-    issue as issue_q, issue_label, issue_property, issue_reaction, member, quick_action, runtime,
-    subscriber, task_usage, team, user, workspace,
+    dependency_graph as dependency_graph_q, issue as issue_q, issue_label, issue_property,
+    issue_reaction, member, quick_action, runtime, subscriber, task_usage, team, user, workspace,
 };
 use patchbay_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
 use patchbay_service::issue_service::{
@@ -2194,20 +2194,42 @@ struct BatchDeleteRequest {
     issue_ids: Vec<String>,
 }
 
+struct DeletedIssueCleanup {
+    attachment_urls: Vec<String>,
+    cancellation: patchbay_service::dependency_graph::DependencyGraphCancellation,
+}
+
 async fn delete_issue_and_collect_attachment_urls(
     state: &HandlerState,
     issue: &Issue,
-) -> anyhow::Result<Vec<String>> {
+) -> anyhow::Result<DeletedIssueCleanup> {
     let mut tx = state.pool.begin().await?;
     issue_q::lock_issue_for_delete(&mut *tx, issue.id, issue.workspace_id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("issue not found while locking for delete"))?;
+    let child_issue_ids = dependency_graph_q::list_child_issue_ids_for_issue_delete(
+        &mut *tx,
+        issue.workspace_id,
+        issue.id,
+    )
+    .await?;
+    let mut cancellation = patchbay_service::dependency_graph::cancel_dependency_graph_children(
+        &mut *tx,
+        issue.workspace_id,
+        child_issue_ids,
+    )
+    .await?;
+    let target_tasks = agent::cancel_agent_tasks_by_issue(&mut *tx, issue.id).await?;
+    cancellation.cancelled_tasks.extend(target_tasks);
     let urls = attachment::list_attachment_ur_ls_by_issue_or_comments(&mut *tx, issue.id).await?;
     if issue_q::delete_issue(&mut *tx, issue.id, issue.workspace_id).await? != 1 {
         anyhow::bail!("issue disappeared while deleting");
     }
     tx.commit().await?;
-    Ok(urls)
+    Ok(DeletedIssueCleanup {
+        attachment_urls: urls,
+        cancellation,
+    })
 }
 
 pub(crate) async fn delete_attachment_objects(state: &HandlerState, urls: Vec<String>) {
@@ -2248,15 +2270,19 @@ async fn batch_delete_issues(
         else {
             continue;
         };
-        if state.tasks.cancel_tasks_for_issue(issue.id).await.is_err() {
-            continue;
-        }
         let _ = autopilot::fail_autopilot_runs_by_issue(&state.pool, issue.id).await;
-        let Ok(attachment_urls) = delete_issue_and_collect_attachment_urls(&state, &issue).await
+        let Ok(cleanup) = delete_issue_and_collect_attachment_urls(&state, &issue).await
         else {
             continue;
         };
-        delete_attachment_objects(&state, attachment_urls).await;
+        state
+            .tasks
+            .publish_transactional_cancellations(&cleanup.cancellation.cancelled_tasks)
+            .await;
+        for (previous, updated) in cleanup.cancellation.cancelled_issues {
+            publish_issue_updated(&state, &previous, &updated, &actor_type, actor_id, None).await;
+        }
+        delete_attachment_objects(&state, cleanup.attachment_urls).await;
         state.bus.publish(&patchbay_events::Event {
             event_type: patchbay_protocol::EVENT_ISSUE_DELETED.into(),
             workspace_id: workspace_id.to_string(),
@@ -2280,15 +2306,19 @@ async fn delete_issue(
         Ok(issue) => issue,
         Err(response) => return response,
     };
-    if let Err(error) = state.tasks.cancel_tasks_for_issue(issue.id).await {
-        tracing::warn!(%error, issue_id=%issue.id, "failed to cancel issue tasks");
-        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to delete issue");
-    }
     let _ = autopilot::fail_autopilot_runs_by_issue(&state.pool, issue.id).await;
     match delete_issue_and_collect_attachment_urls(&state, &issue).await {
-        Ok(attachment_urls) => {
-            delete_attachment_objects(&state, attachment_urls).await;
+        Ok(cleanup) => {
+            state
+                .tasks
+                .publish_transactional_cancellations(&cleanup.cancellation.cancelled_tasks)
+                .await;
             let (actor_type, actor_id, _) = mutation_actor(&state, &context, &headers).await;
+            for (previous, updated) in cleanup.cancellation.cancelled_issues {
+                publish_issue_updated(&state, &previous, &updated, &actor_type, actor_id, None)
+                    .await;
+            }
+            delete_attachment_objects(&state, cleanup.attachment_urls).await;
             state.bus.publish(&patchbay_events::Event {
                 event_type: patchbay_protocol::EVENT_ISSUE_DELETED.into(),
                 workspace_id: issue.workspace_id.to_string(),

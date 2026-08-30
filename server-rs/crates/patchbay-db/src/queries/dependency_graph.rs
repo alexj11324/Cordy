@@ -30,6 +30,23 @@ where
     .await?)
 }
 
+pub async fn lock_plan_by_id<'e, E>(
+    executor: E,
+    plan_id: Uuid,
+    workspace_id: Uuid,
+) -> anyhow::Result<Option<DependencyGraphPlan>>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    Ok(sqlx::query_as::<_, DependencyGraphPlan>(&format!(
+        "SELECT {PLAN_COLUMNS} FROM dependency_graph_plan WHERE id = $1 AND workspace_id = $2 FOR UPDATE"
+    ))
+    .bind(plan_id)
+    .bind(workspace_id)
+    .fetch_optional(executor)
+    .await?)
+}
+
 pub async fn get_plan_by_idempotency<'e, E>(
     executor: E,
     workspace_id: Uuid,
@@ -370,6 +387,44 @@ where
     ))
     .bind(plan_id)
     .bind(workspace_id)
+    .fetch_all(executor)
+    .await?)
+}
+
+/// Returns the child issue IDs owned by every graph plan affected by deleting
+/// one issue. Plan and node rows are locked so the caller can reconcile those
+/// children before the graph metadata is removed in the same transaction.
+pub async fn list_child_issue_ids_for_issue_delete<'e, E>(
+    executor: E,
+    workspace_id: Uuid,
+    issue_id: Uuid,
+) -> anyhow::Result<Vec<Uuid>>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    Ok(sqlx::query_scalar(
+        r#"SELECT node.issue_id
+FROM dependency_graph_plan AS plan
+JOIN dependency_graph_node AS node
+  ON node.plan_id = plan.id
+ AND node.workspace_id = plan.workspace_id
+WHERE plan.workspace_id = $1
+  AND (
+      plan.parent_issue_id = $2
+      OR node.issue_id = $2
+      OR EXISTS (
+          SELECT 1
+          FROM dependency_graph_edge AS edge
+          WHERE edge.plan_id = plan.id
+            AND edge.workspace_id = plan.workspace_id
+            AND (edge.from_issue_id = $2 OR edge.to_issue_id = $2)
+      )
+  )
+  AND node.issue_id <> $2
+FOR UPDATE OF plan, node"#,
+    )
+    .bind(workspace_id)
+    .bind(issue_id)
     .fetch_all(executor)
     .await?)
 }

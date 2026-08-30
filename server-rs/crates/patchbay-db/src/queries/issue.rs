@@ -834,6 +834,47 @@ pub async fn list_issues_in_workspace_by_ids(
     .await?)
 }
 
+/// Locks the non-terminal issues owned by a dependency-graph plan before the
+/// plan or its queue work is reconciled. The effective-status predicate keeps
+/// custom Done/Cancelled statuses out of graph lifecycle cancellation.
+pub async fn lock_nonterminal_dependency_graph_children(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+    issue_ids: Vec<Uuid>,
+) -> anyhow::Result<Vec<Issue>> {
+    Ok(sqlx::query_as::<_, Issue>(
+        "SELECT id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id FROM issue WHERE workspace_id = $1 AND id = ANY($2::uuid[]) AND issue_effective_status(workspace_id, status) NOT IN ('done', 'cancelled') ORDER BY id FOR UPDATE",
+    )
+    .bind(workspace_id)
+    .bind(issue_ids)
+    .fetch_all(executor)
+    .await?)
+}
+
+/// Moves only non-terminal dependency-graph children to the standard
+/// Cancelled status while preserving revision/activity audit semantics.
+pub async fn cancel_dependency_graph_children(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+    issue_ids: Vec<Uuid>,
+) -> anyhow::Result<Vec<Issue>> {
+    Ok(sqlx::query_as::<_, Issue>(
+        r#"UPDATE issue SET
+    status = 'cancelled',
+    revision = revision + 1,
+    last_activity_at = GREATEST(COALESCE(last_activity_at, updated_at), now()),
+    updated_at = now()
+WHERE workspace_id = $1
+  AND id = ANY($2::uuid[])
+  AND issue_effective_status(workspace_id, status) NOT IN ('done', 'cancelled')
+RETURNING *"#,
+    )
+    .bind(workspace_id)
+    .bind(issue_ids)
+    .fetch_all(executor)
+    .await?)
+}
+
 pub async fn list_child_issues(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     parent_issue_id: Uuid,

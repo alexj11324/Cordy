@@ -549,7 +549,23 @@ async fn retire_dependency_graph(
         Err(response) => return response,
     };
     match retire_dependency_plan(&state.pool, workspace_id, plan_id).await {
-        Ok(plan) => {
+        Ok(retirement) => {
+            state
+                .tasks
+                .publish_transactional_cancellations(&retirement.cancellation.cancelled_tasks)
+                .await;
+            for (previous, updated) in retirement.cancellation.cancelled_issues {
+                crate::issue::publish_issue_updated(
+                    &state,
+                    &previous,
+                    &updated,
+                    &actor_type,
+                    actor_id,
+                    None,
+                )
+                .await;
+            }
+            let plan = retirement.plan;
             state.bus.publish(&patchbay_events::Event {
                 event_type: patchbay_protocol::EVENT_DEPENDENCY_GRAPH_UPDATED.to_string(),
                 workspace_id: workspace_id.to_string(),

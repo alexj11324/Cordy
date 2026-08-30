@@ -10,13 +10,15 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 
 use chrono::{DateTime, Utc};
 use patchbay_db::dbid::new_v7;
-use patchbay_db::models::{DependencyGraphEdge, DependencyGraphNode, DependencyGraphPlan, Issue};
+use patchbay_db::models::{
+    AgentTaskQueue, DependencyGraphEdge, DependencyGraphNode, DependencyGraphPlan, Issue,
+};
 use patchbay_db::queries::workspace::increment_issue_counter;
-use patchbay_db::queries::{dependency_graph as graph_q, issue as issue_q};
+use patchbay_db::queries::{agent as agent_q, dependency_graph as graph_q, issue as issue_q};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use sqlx::{Executor, PgPool};
+use sqlx::{Executor, PgConnection, PgPool};
 use uuid::Uuid;
 
 use crate::issue_position::next_top_position;
@@ -434,6 +436,18 @@ pub struct DependencyGraphPage {
     pub next_cursor: Option<(DateTime<Utc>, Uuid)>,
 }
 
+#[derive(Debug, Default)]
+pub struct DependencyGraphCancellation {
+    pub cancelled_issues: Vec<(Issue, Issue)>,
+    pub cancelled_tasks: Vec<AgentTaskQueue>,
+}
+
+#[derive(Debug)]
+pub struct DependencyGraphRetirement {
+    pub plan: DependencyGraphPlan,
+    pub cancellation: DependencyGraphCancellation,
+}
+
 #[derive(Debug, Clone)]
 pub struct DependencyGraphNodeSnapshot {
     pub node: DependencyGraphNode,
@@ -500,6 +514,61 @@ fn node_state(status: &str, gate_open: bool) -> String {
         // task as a runnable "todo" state when the dependency gate is open.
         "blocked".to_string()
     }
+}
+
+/// Reconciles only the non-terminal issue IDs supplied from persisted graph
+/// nodes. Callers derive those IDs while holding the owning plan/node rows in
+/// the same transaction that removes or retires the graph.
+pub async fn cancel_dependency_graph_children(
+    connection: &mut PgConnection,
+    workspace_id: Uuid,
+    mut issue_ids: Vec<Uuid>,
+) -> anyhow::Result<DependencyGraphCancellation> {
+    issue_ids.sort_unstable();
+    issue_ids.dedup();
+    if issue_ids.is_empty() {
+        return Ok(DependencyGraphCancellation::default());
+    }
+
+    let previous = issue_q::lock_nonterminal_dependency_graph_children(
+        &mut *connection,
+        workspace_id,
+        issue_ids.clone(),
+    )
+    .await?;
+    if previous.is_empty() {
+        return Ok(DependencyGraphCancellation::default());
+    }
+
+    let mut cancelled_tasks = Vec::new();
+    for issue in &previous {
+        cancelled_tasks.extend(
+            agent_q::cancel_agent_tasks_by_issue(&mut *connection, issue.id).await?,
+        );
+    }
+    let updated = issue_q::cancel_dependency_graph_children(
+        &mut *connection,
+        workspace_id,
+        issue_ids,
+    )
+    .await?;
+    let previous_by_id = previous
+        .into_iter()
+        .map(|issue| (issue.id, issue))
+        .collect::<HashMap<_, _>>();
+    let cancelled_issues = updated
+        .into_iter()
+        .filter_map(|updated| {
+            previous_by_id
+                .get(&updated.id)
+                .map(|previous| (previous.clone(), updated))
+        })
+        .collect();
+
+    Ok(DependencyGraphCancellation {
+        cancelled_issues,
+        cancelled_tasks,
+    })
 }
 
 async fn load_graph(
@@ -879,11 +948,31 @@ pub async fn retire_dependency_plan(
     pool: &PgPool,
     workspace_id: Uuid,
     plan_id: Uuid,
-) -> Result<DependencyGraphPlan, DependencyGraphError> {
-    graph_q::retire_active_plan(pool, workspace_id, plan_id)
+) -> Result<DependencyGraphRetirement, DependencyGraphError> {
+    let mut tx = pool.begin().await.map_err(db_error)?;
+    let plan = graph_q::lock_plan_by_id(&mut *tx, plan_id, workspace_id)
         .await
         .map_err(db_error)?
-        .ok_or(DependencyGraphError::NotFound(plan_id))
+        .ok_or(DependencyGraphError::NotFound(plan_id))?;
+    if plan.status != "active" {
+        return Err(DependencyGraphError::NotFound(plan_id));
+    }
+    let nodes = graph_q::list_nodes(&mut *tx, plan_id, workspace_id)
+        .await
+        .map_err(db_error)?;
+    let cancellation = cancel_dependency_graph_children(
+        &mut *tx,
+        workspace_id,
+        nodes.into_iter().map(|node| node.issue_id).collect(),
+    )
+    .await
+    .map_err(db_error)?;
+    let plan = graph_q::retire_active_plan(&mut *tx, workspace_id, plan_id)
+        .await
+        .map_err(db_error)?
+        .ok_or(DependencyGraphError::NotFound(plan_id))?;
+    tx.commit().await.map_err(db_error)?;
+    Ok(DependencyGraphRetirement { plan, cancellation })
 }
 
 async fn validate_persisted_assignee<'e, E>(
@@ -1563,10 +1652,134 @@ mod tests {
         assert_eq!(dependent_after_wakeup.readiness.state, "ready");
         assert!(dependent_after_wakeup.readiness.gate_open);
 
+        let runtime_id = Uuid::now_v7();
+        let agent_id = Uuid::now_v7();
+        sqlx::query("INSERT INTO agent_runtime (id, workspace_id, daemon_id, name, runtime_mode, provider, status, last_seen_at) VALUES ($1, $2, $3, 'dependency graph contract runtime', 'local', 'contract', 'online', now())")
+            .bind(runtime_id)
+            .bind(workspace_id)
+            .bind(format!("dependency-graph-runtime-{runtime_id}"))
+            .execute(&pool)
+            .await
+            .expect("create dependency graph contract runtime");
+        sqlx::query("INSERT INTO agent (id, workspace_id, name, runtime_mode, status, max_concurrent_tasks, runtime_id) VALUES ($1, $2, 'dependency graph contract agent', 'local', 'idle', 1, $3)")
+            .bind(agent_id)
+            .bind(workspace_id)
+            .bind(runtime_id)
+            .execute(&pool)
+            .await
+            .expect("create dependency graph contract agent");
+        let task_id = Uuid::now_v7();
+        sqlx::query("INSERT INTO agent_task_queue (id, agent_id, runtime_id, issue_id, status, priority, context) VALUES ($1, $2, $3, $4, 'dispatched', 0, '{}'::jsonb)")
+            .bind(task_id)
+            .bind(agent_id)
+            .bind(runtime_id)
+            .bind(dependent_issue_id)
+            .execute(&pool)
+            .await
+            .expect("create active dependency graph child task");
+
         let retired = retire_dependency_plan(&pool, workspace_id, first.plan.id)
             .await
             .expect("retire dependency graph plan");
-        assert_eq!(retired.status, "cancelled");
+        assert_eq!(retired.plan.status, "cancelled");
+        assert_eq!(retired.cancellation.cancelled_issues.len(), 2);
+        assert_eq!(retired.cancellation.cancelled_tasks.len(), 1);
+        assert_eq!(retired.cancellation.cancelled_tasks[0].id, task_id);
+        assert_eq!(retired.cancellation.cancelled_tasks[0].status, "cancelled");
+        assert!(retired
+            .cancellation
+            .cancelled_issues
+            .iter()
+            .all(|(_, issue)| issue.status == issue_status::CANCELLED));
+
+        // Deleting a planner parent reconciles every surviving child owned by
+        // the affected plan before the graph rows are removed.
+        let delete_parent_number = increment_issue_counter(&pool, workspace_id)
+            .await
+            .expect("increment delete parent issue counter")
+            .expect("workspace issue counter row");
+        let delete_parent = issue_q::create_issue(
+            &pool,
+            workspace_id,
+            "dependency graph delete parent",
+            Some("contract delete parent"),
+            issue_status::TODO,
+            "none",
+            None,
+            None,
+            "member",
+            creator_id,
+            None,
+            0.0,
+            None,
+            None,
+            delete_parent_number,
+            None,
+            None,
+            new_v7(),
+        )
+        .await
+        .expect("insert dependency graph delete parent")
+        .expect("delete parent issue row");
+        let mut delete_input = input.clone();
+        delete_input.parent_issue_id = delete_parent.id;
+        let delete_graph = apply_dependency_plan(
+            &pool,
+            workspace_id,
+            &delete_input,
+            &format!("dependency-graph-delete-{}", Uuid::now_v7()),
+            "member",
+            creator_id,
+        )
+        .await
+        .expect("apply dependency graph delete plan");
+        let delete_dependent_issue_id = delete_graph
+            .nodes
+            .iter()
+            .find(|node| node.node.temp_id == "consumer")
+            .expect("delete dependent node")
+            .issue
+            .id;
+        let mut delete_tx = pool.begin().await.expect("begin graph parent delete");
+        let delete_child_ids = graph_q::list_child_issue_ids_for_issue_delete(
+            &mut *delete_tx,
+            workspace_id,
+            delete_parent.id,
+        )
+        .await
+        .expect("list owned graph children before parent delete");
+        let delete_cancellation = cancel_dependency_graph_children(
+            &mut *delete_tx,
+            workspace_id,
+            delete_child_ids,
+        )
+        .await
+        .expect("cancel owned graph children before parent delete");
+        assert_eq!(delete_cancellation.cancelled_issues.len(), 2);
+        assert!(delete_cancellation
+            .cancelled_issues
+            .iter()
+            .any(|(_, issue)| issue.id == delete_dependent_issue_id
+                && issue.status == issue_status::CANCELLED));
+        assert_eq!(
+            issue_q::delete_issue(&mut *delete_tx, delete_parent.id, workspace_id)
+                .await
+                .expect("delete dependency graph parent"),
+            1
+        );
+        delete_tx
+            .commit()
+            .await
+            .expect("commit dependency graph parent delete");
+        let delete_dependent = issue_q::get_issue_in_workspace(
+            &pool,
+            delete_dependent_issue_id,
+            workspace_id,
+        )
+        .await
+        .expect("load surviving graph child after parent delete")
+        .expect("surviving graph child issue");
+        assert_eq!(delete_dependent.status, issue_status::CANCELLED);
 
         // Deleting any graph node removes the whole affected plan before the
         // issue row disappears; no future graph read can observe a dangling
