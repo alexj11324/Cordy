@@ -52,6 +52,21 @@ passed into `Dockerfile.web` at build time because Next.js embeds
 `NEXT_PUBLIC_*` values in the client bundle. The Helm
 `frontend.config.clerkPublishableKey` value must match that build-time key; the
 runtime environment variable alone cannot change an already-built bundle.
+The published Web image reads `NEXT_PUBLIC_DESKTOP_APP_ORIGIN` from the same
+named repository Actions variable at build time. Leave it unset until a real
+HTTPS app at `https://patchbay.aspectlylabs.com` serves `/auth/callback`; an
+unset value disables browser-hosted Desktop handoff instead of claiming that an
+unprovisioned host works. Once deployed, that exact origin is the only hosted
+browser destination accepted by the accounts app.
+
+The canonical hosted Helm deployment routes both Web entrypoints to the same
+frontend Service: set `ingress.frontend.host` to
+`patchbay.aspectlylabs.com`, add `accounts.aspectlylabs.com` to
+`ingress.frontend.additionalHosts`, and set `ingress.backend.host` to
+`api.aspectlylabs.com`. Provision valid TLS for all three hosts before changing
+public DNS or the Clerk OAuth configuration. Keep browser-hosted Desktop
+handoff disabled until `/auth/callback`, the accounts broker routes, and the API
+are reachable on those exact HTTPS origins.
 
 The manual **Release** workflow first applies migrations with
 `patchbay-migrate`, runs every Rust workspace target, builds the server, CLI,

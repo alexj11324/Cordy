@@ -91,6 +91,7 @@ import { ThreadNavPanel, mentionsUser, type ThreadNavThread } from "./thread-nav
 import { collectThreadReplies, deriveThreadResolution } from "./thread-utils";
 import { IssueAgentWorkingStatus } from "./issue-agent-live";
 import { QuickActionsSection } from "./quick-actions-section";
+import { DependencyPrerequisites } from "./dependency-prerequisites";
 import { PluginPanelSection } from "../../plugins";
 import { PullRequestList } from "./pull-request-list";
 import { useGitHubSettings } from "@patchbay/core/github";
@@ -2537,6 +2538,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
           click an action they cannot run, and the refusal is explained at run
           time rather than by a silently shorter list. */}
       <QuickActionsSection issueId={issue.id} />
+      <DependencyPrerequisites issueId={issue.id} />
       <PluginPanelSection issueId={issue.id} />
 
       {/* Parent issue — standalone section, only when the issue has a

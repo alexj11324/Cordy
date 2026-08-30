@@ -33,57 +33,6 @@ pub struct ComposioState {
     flags: Option<Arc<dyn FlagSource>>,
 }
 
-struct TaskOverlayBuilder {
-    service: Arc<Service>,
-}
-
-#[async_trait::async_trait]
-impl patchbay_service::task_service::ComposioOverlayBuilder for TaskOverlayBuilder {
-    async fn build_task_overlay(
-        &self,
-        _pool: &sqlx::PgPool,
-        originator_user_id: Uuid,
-        agent: &patchbay_db::models::Agent,
-    ) -> Result<patchbay_service::runtime_apps::McpOverlayResult> {
-        let result = self
-            .service
-            .build_task_overlay(
-                Some(originator_user_id),
-                agent.owner_id,
-                agent
-                    .composio_toolkit_allowlist
-                    .as_deref()
-                    .unwrap_or_default(),
-                patchbay_service::runtime_apps::display_name_for_toolkit_slug,
-            )
-            .await?;
-        let mcp_overlay = if result.mcp_overlay.is_empty() {
-            None
-        } else {
-            Some(serde_json::from_slice(&result.mcp_overlay)?)
-        };
-        Ok(patchbay_service::runtime_apps::McpOverlayResult {
-            mcp_overlay,
-            connected_apps: result
-                .connected_apps
-                .into_iter()
-                .map(|app| patchbay_service::runtime_apps::ConnectedApp {
-                    provider: app.provider,
-                    server_name: app.server_name,
-                    toolkit_slug: app.toolkit_slug,
-                    toolkit_name: app.toolkit_name,
-                })
-                .collect(),
-        })
-    }
-}
-
-pub(crate) fn task_overlay_builder(
-    service: Arc<Service>,
-) -> Arc<dyn patchbay_service::task_service::ComposioOverlayBuilder> {
-    Arc::new(TaskOverlayBuilder { service })
-}
-
 impl ComposioState {
     pub fn new(
         service: Option<Arc<Service>>,

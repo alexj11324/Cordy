@@ -43,7 +43,7 @@ import { useT } from "../../i18n";
 // admin-only (backend-enforced; the UI hides the button to match). The settings
 // page connects a workspace Hub, and the channel selects the active Agent with
 // `/agents`; the optional per-Agent form remains available for legacy links.
-export function TelegramTab() {
+export function TelegramTab({ installationId }: { installationId?: string } = {}) {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -58,7 +58,9 @@ export function TelegramTab() {
     ...telegramInstallationsOptions(wsId),
     enabled: !!wsId,
   });
-  const installations = data?.installations ?? [];
+  const installations = (data?.installations ?? []).filter(
+    (installation) => !installationId || installation.id === installationId,
+  );
   const configured = data?.configured === true;
 
   const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);

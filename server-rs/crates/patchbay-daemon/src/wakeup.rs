@@ -269,8 +269,8 @@ mod tests {
 
     #[test]
     fn task_wakeup_url_https_upgrades() {
-        let url = task_wakeup_url("https://api.patchbay.ai", &[]).unwrap();
-        assert_eq!(url, "wss://api.patchbay.ai/api/daemon/ws");
+        let url = task_wakeup_url("https://api.aspectlylabs.com", &[]).unwrap();
+        assert_eq!(url, "wss://api.aspectlylabs.com/api/daemon/ws");
     }
 
     #[test]

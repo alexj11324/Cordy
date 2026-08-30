@@ -38,6 +38,7 @@ pub struct OwnedProcessTree {
 
 impl OwnedProcessTree {
     pub async fn spawn(command: &mut Command) -> io::Result<Self> {
+        crate::env::seal_child_env(command);
         platform::prepare(command);
         let mut child = command.spawn()?;
         let platform = match platform::claim(&mut child).await {

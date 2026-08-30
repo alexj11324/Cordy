@@ -387,15 +387,42 @@ describe("LoginPage", () => {
   // Google OAuth
   // -------------------------------------------------------------------------
 
-  it("renders Google OAuth button when google prop provided", () => {
-    render(
+  it("matches the authentication example structure when embedded", () => {
+    const onGoogleLogin = vi.fn();
+    const { container } = renderWithI18n(
       <LoginPage
+        embedded
+        showGoogleSeparator
+        onGoogleLogin={onGoogleLogin}
         onSuccess={onSuccess}
-        google={{ clientId: "goog-123", redirectUri: "http://localhost/cb" }}
+        extra={<button type="button">Continue as guest</button>}
       />,
     );
+
+    expect(container.querySelector('[data-slot="card"]')).not.toBeInTheDocument();
+    expect(container.querySelector(".sm\\:w-\\[350px\\]")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Create an account" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Enter your email below to create your account"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Email")).toHaveClass("sr-only");
+    const fieldGroup = container.querySelector('[data-slot="field-group"]');
+    expect(fieldGroup).toBeInTheDocument();
+    expect(fieldGroup).toHaveClass("flex", "w-full", "flex-col", "gap-5");
+    const fields = fieldGroup?.querySelectorAll('[data-slot="field"]');
+    expect(fields).toHaveLength(2);
+    expect(fields?.[0]).toHaveClass("flex", "w-full", "flex-col");
+    expect(fields?.[1]).toHaveClass("flex", "w-full", "flex-col");
+    const separator = container.querySelector('[data-slot="field-separator"]');
+    expect(separator).toHaveClass("relative", "-my-2", "h-5", "text-body");
+    expect(screen.getByText("Or continue with")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /continue with google/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /continue as guest/i }),
     ).toBeInTheDocument();
   });
 

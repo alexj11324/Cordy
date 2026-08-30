@@ -52,7 +52,9 @@ import {
 } from "../shared/auth-session";
 import {
   MAIN_RENDERER_CHANNEL_STATE_CHANNEL,
+  MAIN_RENDERER_MESSAGE_ACK_CHANNEL,
   MainRendererMessageQueue,
+  parseMainRendererMessageAcknowledgement,
   parseMainRendererChannelState,
   type MainRendererMessageChannel,
 } from "../shared/main-renderer-messages";
@@ -659,6 +661,7 @@ if (!gotTheLock) {
       readonly VITE_API_URL?: string;
       readonly VITE_WS_URL?: string;
       readonly VITE_APP_URL?: string;
+      readonly VITE_ACCOUNTS_URL?: string;
     };
 
     runtimeConfigResult = await loadRuntimeConfig({
@@ -670,6 +673,7 @@ if (!gotTheLock) {
         apiUrl: viteEnv.VITE_API_URL,
         wsUrl: viteEnv.VITE_WS_URL,
         appUrl: viteEnv.VITE_APP_URL,
+        accountsUrl: viteEnv.VITE_ACCOUNTS_URL,
       },
     });
 
@@ -779,6 +783,24 @@ if (!gotTheLock) {
           parsed.channel,
           parsed.ready,
           sendMainRendererMessage,
+        );
+      },
+    );
+
+    // A native auth handoff stays in the main-process queue until the renderer
+    // has redeemed it. This lets a recreated BrowserWindow receive the same
+    // one-time payload after a transient renderer failure without exposing any
+    // bearer token to main or to the acknowledgement channel.
+    ipcMain.on(
+      MAIN_RENDERER_MESSAGE_ACK_CHANNEL,
+      (event, value: unknown) => {
+        if (!mainWindow || event.sender !== mainWindow.webContents) return;
+        const acknowledgement =
+          parseMainRendererMessageAcknowledgement(value);
+        if (!acknowledgement) return;
+        mainRendererMessages.acknowledge(
+          acknowledgement.channel,
+          acknowledgement.payload,
         );
       },
     );

@@ -213,6 +213,18 @@ pub(super) async fn run_with_input<R: Read>(
                 },
         }) => run_issue_children(cli, environment, id, *output, *full_id).await,
         Command::Issue(IssueArgs {
+            command:
+                IssueCommand::DependencyGraph(IssueDependencyGraphArgs {
+                    command: IssueDependencyGraphCommand::Get { id, output },
+                }),
+        }) => run_issue_dependency_graph_get(cli, environment, id, *output).await,
+        Command::Issue(IssueArgs {
+            command:
+                IssueCommand::DependencyGraph(IssueDependencyGraphArgs {
+                    command: IssueDependencyGraphCommand::Apply(args),
+                }),
+        }) => run_issue_dependency_graph_apply(cli, environment, args, input).await,
+        Command::Issue(IssueArgs {
             command: IssueCommand::Create(args),
         }) => run_issue_create(cli, environment, args, input).await,
         Command::Issue(IssueArgs {

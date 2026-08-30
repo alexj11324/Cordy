@@ -25,6 +25,7 @@ use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, R
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
+use crate::env::configure_child_env;
 use crate::model::{Catalog, CatalogCache, Model, ModelDiscoveryCacheKey};
 use crate::process::OwnedProcessTree;
 use crate::stderr::SharedDiagnosticBuffer;
@@ -186,8 +187,8 @@ impl Backend for OpenclawBackend {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .envs(&self.config.env)
             .kill_on_drop(false);
+        configure_child_env(&mut command, &self.config.env);
         if !options.cwd.is_empty() {
             command.current_dir(&options.cwd).env("PWD", &options.cwd);
         }
@@ -394,8 +395,8 @@ async fn capture_command(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .envs(env)
         .kill_on_drop(false);
+    configure_child_env(&mut command, env);
     let mut tree = OwnedProcessTree::spawn(&mut command).await?;
     let stdout = tree
         .child_mut()

@@ -24,7 +24,25 @@ const membersRef = vi.hoisted(() => ({
 }));
 const dingtalkInstallationsRef = vi.hoisted(() => ({
   current: undefined as
-    | { installations: { agent_id: string | null }[] }
+    | {
+        configured: boolean;
+        install_supported: boolean;
+        installations: { id: string; agent_id: string | null; status: string }[];
+      }
+    | undefined,
+}));
+const larkInstallationsRef = vi.hoisted(() => ({
+  current: undefined as
+    | {
+        configured: boolean;
+        install_supported: boolean;
+        installations: {
+          id: string;
+          agent_id: string | null;
+          status: string;
+          region?: string;
+        }[];
+      }
     | undefined,
 }));
 
@@ -35,18 +53,24 @@ vi.mock("@tanstack/react-query", () => ({
     const isDingTalkInstallationsQuery =
       opts.queryKey[0] === "dingtalk" &&
       opts.queryKey[opts.queryKey.length - 1] === "installations";
+    const isLarkInstallationsQuery =
+      opts.queryKey[0] === "lark" &&
+      opts.queryKey[opts.queryKey.length - 1] === "installations";
     return {
       data: isMemberQuery
         ? membersRef.current
         : isDingTalkInstallationsQuery
           ? dingtalkInstallationsRef.current
-          : undefined,
+          : isLarkInstallationsQuery
+            ? larkInstallationsRef.current
+            : undefined,
       error: opts.enabled === false ? null : composioErrorRef.current,
       isError: opts.enabled !== false && composioErrorRef.current != null,
       isLoading: false,
     };
   },
   queryOptions: <T,>(opts: T) => opts,
+  useQueryClient: () => ({ invalidateQueries: vi.fn() }),
 }));
 
 vi.mock("@patchbay/core/composio", () => ({
@@ -119,6 +143,7 @@ describe("Settings IntegrationsTab", () => {
     authUserRef.current = null;
     membersRef.current = [];
     dingtalkInstallationsRef.current = undefined;
+    larkInstallationsRef.current = undefined;
     configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: true });
     // Reset the self-host-only VCS gate to its default (hidden) so tests stay
     // isolated; individual tests opt in below.
@@ -158,10 +183,43 @@ describe("Settings IntegrationsTab", () => {
       expect(title).not.toBeNull();
       expect(description?.tagName).toBe("P");
       expect(description).toHaveClass("text-caption", "text-muted-foreground");
-      expect(card.parentElement).toHaveClass("grid", "sm:grid-cols-2");
+      expect(card.parentElement).toHaveClass("grid", "md:grid-cols-2", "xl:grid-cols-3");
       expect(icon).not.toHaveClass("border");
       expect(icon).toHaveClass("size-12");
     }
+  });
+
+  it("shows connected Hub management actions without an Agent preselection", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    dingtalkInstallationsRef.current = {
+      configured: true,
+      install_supported: true,
+      installations: [{ id: "hub-1", agent_id: null, status: "active" }],
+    };
+
+    renderTab();
+
+    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Manage" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reconnect" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
+  });
+
+  it("hides reconnect for an active international Lark Hub while that flow is disabled", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    larkInstallationsRef.current = {
+      configured: true,
+      install_supported: true,
+      installations: [{ id: "lark-hub", agent_id: null, status: "active", region: "lark" }],
+    };
+
+    renderTab();
+
+    expect(screen.getByRole("button", { name: "Manage" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Reconnect" })).toBeNull();
   });
 
   it("explains that Agent selection happens in the connected chat", () => {
@@ -201,7 +259,9 @@ describe("Settings IntegrationsTab", () => {
 
   it("keeps legacy DingTalk route management available", () => {
     dingtalkInstallationsRef.current = {
-      installations: [{ agent_id: "legacy-agent" }],
+      configured: true,
+      install_supported: true,
+      installations: [{ id: "legacy-1", agent_id: "legacy-agent", status: "active" }],
     };
 
     renderTab();

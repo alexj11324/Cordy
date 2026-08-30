@@ -18,6 +18,8 @@ import type {
 } from "../shared/daemon-types";
 
 interface DesktopAPI {
+  /** Host runtime for gating capabilities that only Electron can provide. */
+  host: "electron" | "browser";
   /** App version + normalized OS, captured synchronously at preload time. */
   appInfo: {
     version: string;
@@ -42,7 +44,10 @@ interface DesktopAPI {
   reportAuthSession: (userId: string | null) => void;
   /** Listen for a PKCE-bound, one-time desktop login code delivered via deep link. */
   onAuthHandoff: (
-    callback: (payload: { code: string; state: string }) => void,
+    callback: (payload: {
+      code: string;
+      state: string;
+    }) => boolean | Promise<boolean>,
   ) => () => void;
   /** Listen for invitation IDs delivered via deep link. Returns an unsubscribe function. */
   onInviteOpen: (callback: (invitationId: string) => void) => () => void;

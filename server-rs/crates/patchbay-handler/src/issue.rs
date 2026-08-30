@@ -18,18 +18,23 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
 use chrono::{NaiveDate, SecondsFormat};
+use patchbay_authorization::{
+    Action, AuthorizationContext, AuthorizationRequest, Principal, PrincipalType, Resource,
+    ResourceType, WorkspaceRole,
+};
 use patchbay_db::models::{
-    AgentTaskQueue, Attachment, Issue, IssueLabel, IssueReaction, IssueSubscriber,
+    Agent, AgentTaskQueue, Attachment, Issue, IssueLabel, IssueReaction, IssueSubscriber,
 };
 use patchbay_db::queries::issue_reaction::AddIssueReactionRow;
 use patchbay_db::queries::{
     activity, agent, agent_invocation_target, attachment, automation, comment as comment_q,
-    issue as issue_q, issue_label, issue_property, issue_reaction, member, quick_action, runtime,
-    subscriber, task_usage, team, user, workspace,
+    dependency_graph as dependency_graph_q, issue as issue_q, issue_label, issue_property,
+    issue_reaction, member, quick_action, runtime, subscriber, task_usage, team, user, workspace,
 };
 use patchbay_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
 use patchbay_service::issue_service::{
     IssueCreateError, IssueCreateOpts, IssueCreateParams, IssueTriggerInput, IssueTriggerProbe,
+    ProbePredicate,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -2189,20 +2194,42 @@ struct BatchDeleteRequest {
     issue_ids: Vec<String>,
 }
 
+struct DeletedIssueCleanup {
+    attachment_urls: Vec<String>,
+    cancellation: patchbay_service::dependency_graph::DependencyGraphCancellation,
+}
+
 async fn delete_issue_and_collect_attachment_urls(
     state: &HandlerState,
     issue: &Issue,
-) -> anyhow::Result<Vec<String>> {
+) -> anyhow::Result<DeletedIssueCleanup> {
     let mut tx = state.pool.begin().await?;
     issue_q::lock_issue_for_delete(&mut *tx, issue.id, issue.workspace_id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("issue not found while locking for delete"))?;
+    let child_issue_ids = dependency_graph_q::list_child_issue_ids_for_issue_delete(
+        &mut *tx,
+        issue.workspace_id,
+        issue.id,
+    )
+    .await?;
+    let mut cancellation = patchbay_service::dependency_graph::cancel_dependency_graph_children(
+        &mut tx,
+        issue.workspace_id,
+        child_issue_ids,
+    )
+    .await?;
+    let target_tasks = agent::cancel_agent_tasks_by_issue(&mut *tx, issue.id).await?;
+    cancellation.cancelled_tasks.extend(target_tasks);
     let urls = attachment::list_attachment_ur_ls_by_issue_or_comments(&mut *tx, issue.id).await?;
     if issue_q::delete_issue(&mut *tx, issue.id, issue.workspace_id).await? != 1 {
         anyhow::bail!("issue disappeared while deleting");
     }
     tx.commit().await?;
-    Ok(urls)
+    Ok(DeletedIssueCleanup {
+        attachment_urls: urls,
+        cancellation,
+    })
 }
 
 pub(crate) async fn delete_attachment_objects(state: &HandlerState, urls: Vec<String>) {
@@ -2243,15 +2270,18 @@ async fn batch_delete_issues(
         else {
             continue;
         };
-        if state.tasks.cancel_tasks_for_issue(issue.id).await.is_err() {
-            continue;
-        }
         let _ = automation::fail_automation_runs_by_issue(&state.pool, issue.id).await;
-        let Ok(attachment_urls) = delete_issue_and_collect_attachment_urls(&state, &issue).await
-        else {
+        let Ok(cleanup) = delete_issue_and_collect_attachment_urls(&state, &issue).await else {
             continue;
         };
-        delete_attachment_objects(&state, attachment_urls).await;
+        state
+            .tasks
+            .publish_transactional_cancellations(&cleanup.cancellation.cancelled_tasks)
+            .await;
+        for (previous, updated) in cleanup.cancellation.cancelled_issues {
+            publish_issue_updated(&state, &previous, &updated, &actor_type, actor_id, None).await;
+        }
+        delete_attachment_objects(&state, cleanup.attachment_urls).await;
         state.bus.publish(&patchbay_events::Event {
             event_type: patchbay_protocol::EVENT_ISSUE_DELETED.into(),
             workspace_id: workspace_id.to_string(),
@@ -2275,15 +2305,19 @@ async fn delete_issue(
         Ok(issue) => issue,
         Err(response) => return response,
     };
-    if let Err(error) = state.tasks.cancel_tasks_for_issue(issue.id).await {
-        tracing::warn!(%error, issue_id=%issue.id, "failed to cancel issue tasks");
-        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to delete issue");
-    }
     let _ = automation::fail_automation_runs_by_issue(&state.pool, issue.id).await;
     match delete_issue_and_collect_attachment_urls(&state, &issue).await {
-        Ok(attachment_urls) => {
-            delete_attachment_objects(&state, attachment_urls).await;
+        Ok(cleanup) => {
+            state
+                .tasks
+                .publish_transactional_cancellations(&cleanup.cancellation.cancelled_tasks)
+                .await;
             let (actor_type, actor_id, _) = mutation_actor(&state, &context, &headers).await;
+            for (previous, updated) in cleanup.cancellation.cancelled_issues {
+                publish_issue_updated(&state, &previous, &updated, &actor_type, actor_id, None)
+                    .await;
+            }
+            delete_attachment_objects(&state, cleanup.attachment_urls).await;
             state.bus.publish(&patchbay_events::Event {
                 event_type: patchbay_protocol::EVENT_ISSUE_DELETED.into(),
                 workspace_id: issue.workspace_id.to_string(),
@@ -2375,7 +2409,7 @@ async fn quick_create_issue(
         }
     };
     if let Err(message) =
-        validate_assignee(&state, &context, requested_assignee.0, requested_id).await
+        validate_assignee(&state, &context, requested_assignee.0, requested_id, None).await
     {
         return error_response(StatusCode::FORBIDDEN, &message);
     }
@@ -2572,26 +2606,10 @@ async fn preview_trigger(
     }
     let mut allowed_agents = HashSet::new();
     for (issue, _, _) in &candidates {
-        let target_id = match (issue.assignee_type.as_deref(), issue.assignee_id) {
-            (Some("agent"), Some(agent_id)) => Some(agent_id),
-            (Some("team"), Some(team_id)) => {
-                team::get_team_in_workspace(&state.pool, team_id, workspace_id)
-                    .await
-                    .ok()
-                    .flatten()
-                    .map(|team| team.leader_id)
-            }
-            _ => None,
-        };
-        let Some(agent_id) = target_id else {
-            continue;
-        };
-        if let Ok(Some(agent)) =
-            agent::get_agent_in_workspace(&state.pool, agent_id, workspace_id).await
+        if let Some(agent_id) =
+            allowed_member_run_agent(&state, context.member.user_id, issue).await
         {
-            if can_member_invoke_agent(&state, context.member.user_id, workspace_id, &agent).await {
-                allowed_agents.insert(agent.id);
-            }
+            allowed_agents.insert(agent_id);
         }
     }
     let mut triggers = Vec::new();
@@ -2638,6 +2656,29 @@ async fn runtime_supports_handoff(state: &HandlerState, agent_id: Uuid) -> bool 
         .get("cli_version")
         .and_then(Value::as_str)
         .is_some_and(patchbay_agent::version::handoff_supported)
+}
+
+async fn allowed_member_run_agent(
+    state: &HandlerState,
+    user_id: Uuid,
+    issue: &Issue,
+) -> Option<Uuid> {
+    let agent_id = match (issue.assignee_type.as_deref(), issue.assignee_id) {
+        (Some("agent"), Some(agent_id)) => agent_id,
+        (Some("team"), Some(team_id)) => {
+            team::get_team_in_workspace(&state.pool, team_id, issue.workspace_id)
+                .await
+                .ok()??
+                .leader_id
+        }
+        _ => return None,
+    };
+    let target = agent::get_agent_in_workspace(&state.pool, agent_id, issue.workspace_id)
+        .await
+        .ok()??;
+    can_member_invoke_agent(state, user_id, issue.workspace_id, &target)
+        .await
+        .then_some(target.id)
 }
 
 async fn issue_timeline(
@@ -2879,7 +2920,11 @@ async fn rerun_issue(
         }
     };
     let target = match agent::get_agent(&state.pool, target_agent_id).await {
-        Ok(Some(target)) if target.workspace_id == issue.workspace_id => target,
+        Ok(Some(target))
+            if target.workspace_id == issue.workspace_id && target.archived_at.is_none() =>
+        {
+            target
+        }
         Ok(_) => return error_response(StatusCode::BAD_REQUEST, "target agent not found"),
         Err(_) => {
             return error_response(
@@ -4887,6 +4932,21 @@ async fn get_issue(
         Ok(issue) => issue,
         Err(response) => return response,
     };
+    if !task_project_resource_allows(
+        &state,
+        &headers,
+        issue.workspace_id,
+        Some(issue.id),
+        true,
+        Action::RESOURCE_READ,
+    )
+    .await
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task capability does not allow reading this issue",
+        );
+    }
     let issue_id = issue.id;
     let workspace_id = issue.workspace_id;
     let mut responses = enrich_issue_list(&state, &context, vec![issue]).await;
@@ -4897,13 +4957,18 @@ async fn get_issue(
         .iter()
         .map(IssueReactionResponse::from)
         .collect();
-    response.attachments =
-        attachment::list_attachments_by_issue(&state.pool, issue_id, workspace_id)
-            .await
-            .unwrap_or_default()
-            .iter()
-            .map(|item| AttachmentResponse::for_request(&state, item, &headers))
-            .collect();
+    // Phase 1 has no attachment capability or short-lived object broker. A
+    // task lease may read issue metadata, but must not receive the human
+    // attachment URL (or a freshly signed CloudFront URL) through enrichment.
+    if TaskAuthorizationContext::from_headers(&headers).is_none() {
+        response.attachments =
+            attachment::list_attachments_by_issue(&state.pool, issue_id, workspace_id)
+                .await
+                .unwrap_or_default()
+                .iter()
+                .map(|item| AttachmentResponse::for_request(&state, item, &headers))
+                .collect();
+    }
     Json(response).into_response()
 }
 
@@ -5501,6 +5566,21 @@ async fn update_issue(
         Ok(issue) => issue,
         Err(response) => return response,
     };
+    if !task_project_resource_allows(
+        &state,
+        &headers,
+        previous.workspace_id,
+        Some(previous.id),
+        true,
+        Action::RESOURCE_USE,
+    )
+    .await
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task capability does not allow updating this issue",
+        );
+    }
     let fields = match update_object(&body) {
         Ok(fields) => fields,
         Err(response) => return response,
@@ -5607,9 +5687,15 @@ async fn apply_issue_update(
     if assignee_touched {
         match (next.assignee_type.as_deref(), next.assignee_id) {
             (None, None) => {}
-            (Some(kind), Some(id)) => validate_assignee(state, context, kind, id)
-                .await
-                .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?,
+            (Some(kind), Some(id)) => validate_assignee(
+                state,
+                context,
+                kind,
+                id,
+                TaskAuthorizationContext::from_headers(headers),
+            )
+            .await
+            .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?,
             _ => {
                 return Err(error_response(
                     StatusCode::BAD_REQUEST,
@@ -5640,9 +5726,15 @@ async fn apply_issue_update(
     if reviewer_in_request {
         match (next.reviewer_type.as_deref(), next.reviewer_id) {
             (None, None) => {}
-            (Some(kind), Some(id)) => validate_assignee(state, context, kind, id)
-                .await
-                .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?,
+            (Some(kind), Some(id)) => validate_assignee(
+                state,
+                context,
+                kind,
+                id,
+                TaskAuthorizationContext::from_headers(headers),
+            )
+            .await
+            .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?,
             _ => {
                 return Err(error_response(
                     StatusCode::BAD_REQUEST,
@@ -5761,6 +5853,18 @@ async fn apply_issue_update(
                 issue_reviewer(&previous),
                 issue_reviewer(&next),
             );
+
+    let task_authorization = TaskAuthorizationContext::from_headers(headers);
+    if task_authorization.is_some()
+        && !suppress_run
+        && (assignee_touched || fields.contains_key("status"))
+    {
+        if let (Some(kind), Some(id)) = (next.assignee_type.as_deref(), next.assignee_id) {
+            validate_assignee(state, context, kind, id, task_authorization)
+                .await
+                .map_err(|message| error_response(StatusCode::FORBIDDEN, &message))?;
+        }
+    }
 
     let mut tx = state.pool.begin().await.map_err(|error| {
         tracing::warn!(%error, issue_id = %previous.id, "failed to begin issue update");
@@ -5917,9 +6021,15 @@ async fn apply_issue_update(
     }
     if remapped {
         if let (Some(kind), Some(id)) = (next.reviewer_type.as_deref(), next.reviewer_id) {
-            validate_assignee(state, context, kind, id)
-                .await
-                .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?;
+            validate_assignee(
+                state,
+                context,
+                kind,
+                id,
+                TaskAuthorizationContext::from_headers(headers),
+            )
+            .await
+            .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?;
         }
     }
     if let Some(violation) = issue_workflow_violation(
@@ -6116,6 +6226,17 @@ RETURNING *"#,
         } else {
             false
         };
+        let gate_direct_member =
+            task_authorization.is_none() && (assignee_changed || status_changed);
+        let allowed_run_agent_id = if gate_direct_member {
+            allowed_member_run_agent(state, context.member.user_id, &updated).await
+        } else {
+            None
+        };
+        let can_access_agent: Option<ProbePredicate<Agent>> = gate_direct_member.then(|| {
+            Box::new(move |agent: Agent| allowed_run_agent_id == Some(agent.id))
+                as ProbePredicate<Agent>
+        });
         let trigger = state
             .issues
             .will_enqueue_run(
@@ -6127,7 +6248,7 @@ RETURNING *"#,
                     status_changed,
                 },
                 IssueTriggerProbe {
-                    can_access_agent: None,
+                    can_access_agent,
                     is_self_loop: Some(Box::new(move |_| is_self_loop)),
                     suppress_active_self_assignment: Some(Box::new(move |_| {
                         suppress_active_self_assignment
@@ -6136,7 +6257,9 @@ RETURNING *"#,
             )
             .await;
         if let Some(trigger) = trigger {
-            let actor_user_id = (actor_type == "member").then_some(actor_id);
+            let actor_user_id = task_authorization
+                .and_then(|authorization| authorization.on_behalf_of_user_id)
+                .or_else(|| (actor_type == "member").then_some(actor_id));
             let result = if trigger.assignee_type == "team" {
                 state
                     .tasks
@@ -6403,12 +6526,34 @@ pub(crate) async fn issue_response_projection(
     state: &HandlerState,
     issue: &Issue,
 ) -> IssueResponse {
-    let mut response =
-        IssueResponse::from_issue(issue, &issue_prefix(state, issue.workspace_id).await);
-    response.status_category = Some(
+    let prefix = issue_prefix(state, issue.workspace_id).await;
+    let status_category =
         patchbay_service::issue_status::effective(&state.pool, issue.workspace_id, &issue.status)
-            .await,
-    );
+            .await;
+    issue_response_with_status_category(issue, &prefix, &status_category)
+}
+
+pub(crate) fn issue_response_with_status_category(
+    issue: &Issue,
+    prefix: &str,
+    status_category: &str,
+) -> IssueResponse {
+    let mut response = IssueResponse::from_issue(issue, prefix);
+    response.status_category = Some(status_category.to_string());
+    response
+}
+
+pub(crate) fn issue_created_response_with_status_category(
+    issue: &Issue,
+    prefix: &str,
+    status_category: &str,
+) -> IssueResponse {
+    let mut response = issue_response_with_status_category(issue, prefix, status_category);
+    // The issue-created listeners use the presence of `labels` to distinguish
+    // a complete handler creation projection from cache-invalidation events.
+    // Planned children have no labels, but the standard event still carries
+    // the authoritative empty snapshot.
+    response.labels = Some(Vec::new());
     response
 }
 
@@ -6567,12 +6712,35 @@ fn terminal_category(category: &str) -> bool {
 }
 
 async fn notify_parent_of_child_done(state: &HandlerState, previous: &Issue, issue: &Issue) {
-    let Some(parent_id) = issue.parent_issue_id else {
-        return;
-    };
     let mut resolver = patchbay_service::issue_status::Resolver::new(issue.workspace_id);
     let previous_category = resolver.effective(&state.pool, &previous.status).await;
     let current_category = resolver.effective(&state.pool, &issue.status).await;
+    if previous_category != current_category && current_category == "done" {
+        if let Err(error) = state
+            .tasks
+            .wake_dependency_dependents(issue.workspace_id, issue.id)
+            .await
+        {
+            tracing::warn!(%error, issue_id = %issue.id, "dependency wakeup after issue completion failed");
+        }
+    }
+    if previous_category != current_category && current_category == "cancelled" {
+        if let Err(error) = state
+            .tasks
+            .flag_dependency_attention(
+                issue.workspace_id,
+                issue.id,
+                "prerequisite issue was cancelled",
+            )
+            .await
+        {
+            tracing::warn!(%error, issue_id = %issue.id, "dependency attention update after issue cancellation failed");
+        }
+    }
+
+    let Some(parent_id) = issue.parent_issue_id else {
+        return;
+    };
     if terminal_category(&previous_category) || !terminal_category(&current_category) {
         return;
     }
@@ -7020,6 +7188,73 @@ async fn create_issue(
         return error_response(StatusCode::BAD_REQUEST, "title is required");
     }
     let workspace_id = context.member.workspace_id;
+    let task_authorization = TaskAuthorizationContext::from_headers(&headers);
+    if let Some(authorization) = task_authorization {
+        let task =
+            agent::get_agent_task_in_workspace(&state.pool, authorization.task_id, workspace_id)
+                .await
+                .ok()
+                .flatten();
+        let quick_create_allowed = task.as_ref().is_some_and(|task| {
+            let context =
+                patchbay_service::task_service::TaskService::parse_quick_create_context(task);
+            context.is_some_and(|quick_create| {
+                let mut requested_attachments = request.attachment_ids.clone();
+                requested_attachments.sort_unstable();
+                requested_attachments.dedup();
+                let mut allowed_attachments = quick_create.attachment_ids.clone();
+                allowed_attachments.sort_unstable();
+                allowed_attachments.dedup();
+                let team_matches = if quick_create.team_id.is_empty() {
+                    request.assignee_type.as_deref() != Some("team")
+                } else {
+                    request.assignee_type.as_deref() == Some("team")
+                        && request.assignee_id.as_deref() == Some(quick_create.team_id.as_str())
+                };
+                authorization.via_agent_id == Some(task.agent_id)
+                    && quick_create.workspace_id == workspace_id.to_string()
+                    && authorization
+                        .on_behalf_of_user_id
+                        .is_some_and(|user_id| quick_create.requester_id == user_id.to_string())
+                    && request.priority.trim() == quick_create.priority
+                    && request.due_date.as_deref().unwrap_or("").trim() == quick_create.due_date
+                    && request.project_id.as_deref().unwrap_or("").trim() == quick_create.project_id
+                    && request.parent_issue_id.as_deref().unwrap_or("").trim()
+                        == quick_create.parent_issue_id
+                    && requested_attachments == allowed_attachments
+                    && request.label_ids.is_empty()
+                    && !request.allow_duplicate
+                    && team_matches
+                    && request.origin_type.as_deref() == Some("quick_create")
+                    && request
+                        .origin_id
+                        .as_deref()
+                        .and_then(|raw| Uuid::parse_str(raw).ok())
+                        == Some(authorization.task_id)
+            })
+        });
+        if !quick_create_allowed {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "task capability does not allow creating an issue",
+            );
+        }
+    }
+    if !task_project_resource_allows(
+        &state,
+        &headers,
+        workspace_id,
+        None,
+        false,
+        Action::RESOURCE_USE,
+    )
+    .await
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task capability does not allow creating an issue",
+        );
+    }
     let status = if request.status.is_empty() {
         "todo".to_string()
     } else {
@@ -7066,7 +7301,15 @@ async fn create_issue(
         return error_response(StatusCode::BAD_REQUEST, "invalid assignee_type");
     }
     if let (Some(kind), Some(id)) = (request.assignee_type.as_deref(), assignee_id) {
-        if let Err(message) = validate_assignee(&state, &context, kind, id).await {
+        if let Err(message) = validate_assignee(
+            &state,
+            &context,
+            kind,
+            id,
+            TaskAuthorizationContext::from_headers(&headers),
+        )
+        .await
+        {
             return error_response(StatusCode::BAD_REQUEST, &message);
         }
     }
@@ -7165,6 +7408,8 @@ async fn create_issue(
                     response.labels = Some(labels.iter().map(LabelResponse::from).collect());
                     json!({ "issue": response })
                 })),
+                consume_task_lease_id: task_authorization
+                    .map(|authorization| authorization.lease_id),
                 ..IssueCreateOpts::default()
             },
         )
@@ -7212,11 +7457,66 @@ async fn create_issue(
             "active_issue_requires_assignee",
             "issues in progress, in review, or blocked must have an assignee",
         ),
+        Err(IssueCreateError::CapabilityConsumed) => error_response(
+            StatusCode::CONFLICT,
+            "task capability lease was already consumed",
+        ),
         Err(error) => {
             tracing::warn!(%error, %workspace_id, "failed to create issue");
             error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to create issue")
         }
     }
+}
+
+pub(crate) async fn task_project_resource_allows(
+    state: &HandlerState,
+    headers: &HeaderMap,
+    workspace_id: Uuid,
+    resource_id: Option<Uuid>,
+    require_bound_issue: bool,
+    action: &str,
+) -> bool {
+    let Some(authorization) = TaskAuthorizationContext::from_headers(headers) else {
+        return true;
+    };
+    if require_bound_issue {
+        let bound =
+            agent::get_agent_task_in_workspace(&state.pool, authorization.task_id, workspace_id)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|task| task.issue_id);
+        if bound != resource_id {
+            return false;
+        }
+    }
+    state
+        .authorization
+        .authorize(AuthorizationRequest {
+            principal: Principal {
+                principal_type: PrincipalType::TaskRun,
+                id: Some(authorization.task_id),
+            },
+            action: Action::new(action),
+            resource: Resource {
+                resource_type: ResourceType::new(ResourceType::PROJECT_RESOURCE),
+                id: resource_id,
+                workspace_id,
+                owner_id: authorization.on_behalf_of_user_id,
+                attributes: json!({"private": true}),
+            },
+            context: AuthorizationContext {
+                on_behalf_of_user_id: authorization.on_behalf_of_user_id,
+                via_agent_id: authorization.via_agent_id,
+                device_id: authorization.device_id,
+                task_id: Some(authorization.task_id),
+                lease_id: Some(authorization.lease_id),
+                ..Default::default()
+            },
+            delegation_chain: Vec::new(),
+        })
+        .await
+        .is_ok_and(|decision| decision.is_allowed())
 }
 
 async fn trusted_agent_task(
@@ -7269,11 +7569,12 @@ fn header_uuid(headers: &HeaderMap, name: &str) -> Option<Uuid> {
         .and_then(|value| Uuid::parse_str(value).ok())
 }
 
-async fn validate_assignee(
+pub(crate) async fn validate_assignee(
     state: &HandlerState,
     context: &WorkspaceContext,
     kind: &str,
     id: Uuid,
+    task_authorization: Option<TaskAuthorizationContext>,
 ) -> Result<(), String> {
     let workspace_id = context.member.workspace_id;
     match kind {
@@ -7294,7 +7595,22 @@ async fn validate_assignee(
                 .flatten()
                 .filter(|agent| agent.archived_at.is_none())
                 .ok_or_else(|| "assignee agent not found in this workspace".to_string())?;
-            if !can_member_invoke_agent(state, context.member.user_id, workspace_id, &target).await
+            if !can_invoke_agent(
+                state,
+                if task_authorization.is_some() {
+                    "agent"
+                } else {
+                    "member"
+                },
+                match task_authorization {
+                    Some(authorization) => authorization.on_behalf_of_user_id,
+                    None => Some(context.member.user_id),
+                },
+                workspace_id,
+                &target,
+                task_authorization,
+            )
+            .await
             {
                 return Err("you do not have permission to invoke this agent".to_string());
             }
@@ -7312,7 +7628,22 @@ async fn validate_assignee(
                 .flatten()
                 .filter(|agent| agent.archived_at.is_none())
                 .ok_or_else(|| "team leader is unavailable".to_string())?;
-            if !can_member_invoke_agent(state, context.member.user_id, workspace_id, &leader).await
+            if !can_invoke_agent(
+                state,
+                if task_authorization.is_some() {
+                    "agent"
+                } else {
+                    "member"
+                },
+                match task_authorization {
+                    Some(authorization) => authorization.on_behalf_of_user_id,
+                    None => Some(context.member.user_id),
+                },
+                workspace_id,
+                &leader,
+                task_authorization,
+            )
+            .await
             {
                 return Err("you do not have permission to invoke this team".to_string());
             }
@@ -7328,7 +7659,41 @@ pub(crate) async fn can_member_invoke_agent(
     workspace_id: Uuid,
     target: &patchbay_db::models::Agent,
 ) -> bool {
-    can_invoke_agent(state, "member", Some(user_id), workspace_id, target).await
+    can_invoke_agent(state, "member", Some(user_id), workspace_id, target, None).await
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct TaskAuthorizationContext {
+    pub(crate) task_id: Uuid,
+    pub(crate) lease_id: Uuid,
+    pub(crate) on_behalf_of_user_id: Option<Uuid>,
+    pub(crate) via_agent_id: Option<Uuid>,
+    pub(crate) device_id: Option<Uuid>,
+}
+
+impl TaskAuthorizationContext {
+    pub(crate) fn from_headers(headers: &HeaderMap) -> Option<Self> {
+        if headers
+            .get("x-actor-source")
+            .and_then(|value| value.to_str().ok())
+            != Some("task_token")
+        {
+            return None;
+        }
+        let id = |name: &'static str| {
+            headers
+                .get(name)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| Uuid::parse_str(value).ok())
+        };
+        Some(Self {
+            task_id: id("x-task-id")?,
+            lease_id: id("x-capability-lease-id")?,
+            on_behalf_of_user_id: id("x-on-behalf-of-user-id"),
+            via_agent_id: id("x-agent-id"),
+            device_id: id("x-device-id"),
+        })
+    }
 }
 
 /// Invoke gate keyed on the human originator, not the speaking agent owner.
@@ -7340,33 +7705,181 @@ pub(crate) async fn can_invoke_agent(
     originator_user_id: Option<Uuid>,
     workspace_id: Uuid,
     target: &patchbay_db::models::Agent,
+    task_authorization: Option<TaskAuthorizationContext>,
 ) -> bool {
-    if originator_user_id.is_some_and(|user_id| target.owner_id == Some(user_id)) {
-        return true;
-    }
-    if target.permission_mode != "public_to" {
-        return false;
-    }
+    let owner = originator_user_id.is_some_and(|user_id| target.owner_id == Some(user_id));
     let workspace_broad = matches!(actor_type, "agent" | "system");
-    let is_member = match originator_user_id {
+    let membership = match originator_user_id {
         Some(user_id) => {
             member::get_member_by_user_and_workspace(&state.pool, user_id, workspace_id)
                 .await
                 .ok()
                 .flatten()
-                .is_some()
         }
-        None => false,
+        None => None,
     };
-    agent_invocation_target::list_agent_invocation_targets(&state.pool, target.id)
-        .await
-        .unwrap_or_default()
-        .iter()
-        .any(|entry| match entry.target_type.as_str() {
-            "workspace" => is_member || workspace_broad,
-            "member" => originator_user_id == Some(entry.target_id),
-            _ => false,
+    let acl_allowed = owner
+        || (target.permission_mode == "public_to"
+            && agent_invocation_target::list_agent_invocation_targets(&state.pool, target.id)
+                .await
+                .unwrap_or_default()
+                .iter()
+                .any(|entry| match entry.target_type.as_str() {
+                    "workspace" => membership.is_some() || workspace_broad,
+                    "member" => originator_user_id == Some(entry.target_id),
+                    _ => false,
+                }));
+    let role = membership
+        .as_ref()
+        .and_then(|member| match member.role.as_str() {
+            "owner" => Some(WorkspaceRole::Owner),
+            "admin" => Some(WorkspaceRole::Admin),
+            "member" => Some(WorkspaceRole::Member),
+            _ => None,
+        });
+    let team_ids = match originator_user_id {
+        Some(user_id) => team::list_teams_by_member(&state.pool, workspace_id, "member", user_id)
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .map(|team| team.id)
+            .collect(),
+        None => Vec::new(),
+    };
+    let principal_type = if task_authorization.is_some() {
+        PrincipalType::TaskRun
+    } else {
+        match actor_type {
+            "agent" => PrincipalType::AgentDefinition,
+            "system" => PrincipalType::System,
+            _ => PrincipalType::User,
+        }
+    };
+    let principal_id = task_authorization
+        .map(|context| context.task_id)
+        .or_else(|| {
+            (principal_type == PrincipalType::User)
+                .then_some(originator_user_id)
+                .flatten()
+        });
+    let on_behalf_of_user_id = match task_authorization {
+        Some(context) => context.on_behalf_of_user_id,
+        None => originator_user_id,
+    };
+    let authorization_context = AuthorizationContext {
+        workspace_role: role,
+        on_behalf_of_user_id,
+        via_agent_id: task_authorization.and_then(|context| context.via_agent_id),
+        device_id: task_authorization.and_then(|context| context.device_id),
+        task_id: task_authorization.map(|context| context.task_id),
+        lease_id: task_authorization.map(|context| context.lease_id),
+        team_ids: team_ids.clone(),
+        ..Default::default()
+    };
+    let invocation_allowed = state
+        .authorization
+        .authorize(AuthorizationRequest {
+            principal: Principal {
+                principal_type,
+                id: principal_id,
+            },
+            action: Action::new(Action::AGENT_INVOKE),
+            resource: Resource {
+                resource_type: ResourceType::new(ResourceType::AGENT_DEFINITION),
+                id: Some(target.id),
+                workspace_id,
+                owner_id: target.owner_id,
+                attributes: json!({"invocation_allowed": acl_allowed, "private": target.permission_mode != "public_to"}),
+            },
+            context: authorization_context.clone(),
+            delegation_chain: Vec::new(),
         })
+        .await
+        .is_ok_and(|decision| decision.is_allowed());
+    if !invocation_allowed {
+        return false;
+    }
+    let Some(runtime_id) = target.runtime_id else {
+        return true;
+    };
+    let Some(target_runtime) =
+        runtime::get_agent_runtime_for_workspace(&state.pool, runtime_id, workspace_id)
+            .await
+            .ok()
+            .flatten()
+    else {
+        return false;
+    };
+    let is_brokered_provider = matches!(target_runtime.provider.as_str(), "codex" | "claude");
+    let cross_owner_provider =
+        is_brokered_provider && target_runtime.owner_id != originator_user_id;
+    let direct_originator = task_authorization.is_none() && actor_type != "agent";
+    let provider_allowed = if is_brokered_provider && direct_originator {
+        let Some(originator_user_id) = originator_user_id else {
+            return false;
+        };
+        state
+            .authorization
+            .authorize(AuthorizationRequest {
+                principal: Principal {
+                    principal_type: PrincipalType::User,
+                    id: Some(originator_user_id),
+                },
+                action: Action::new(Action::CREDENTIAL_USE),
+                resource: Resource {
+                    resource_type: ResourceType::new(ResourceType::PROVIDER_IDENTITY),
+                    id: Some(target_runtime.id),
+                    workspace_id,
+                    owner_id: target_runtime.owner_id,
+                    attributes: json!({
+                        "private": true,
+                        "provider": target_runtime.provider,
+                        "provider_action": "provider.invoke",
+                        "model": target.model.as_deref().unwrap_or_default(),
+                    }),
+                },
+                context: AuthorizationContext {
+                    workspace_role: role,
+                    on_behalf_of_user_id: Some(originator_user_id),
+                    via_agent_id: Some(target.id),
+                    device_id: Some(target_runtime.id),
+                    team_ids,
+                    ..Default::default()
+                },
+                delegation_chain: Vec::new(),
+            })
+            .await
+            .is_ok_and(|decision| decision.is_allowed())
+    } else {
+        !cross_owner_provider
+    };
+    if !provider_allowed {
+        return false;
+    }
+    state
+        .authorization
+        .authorize(AuthorizationRequest {
+            principal: Principal {
+                principal_type,
+                id: principal_id,
+            },
+            action: Action::new(Action::RUNTIME_USE),
+            resource: Resource {
+                resource_type: ResourceType::new(ResourceType::RUNTIME),
+                id: Some(target_runtime.id),
+                workspace_id,
+                owner_id: target_runtime.owner_id,
+                attributes: json!({
+                    "private": target_runtime.visibility != "public",
+                    "local_device": target_runtime.runtime_mode == "local",
+                    "brokered_provider": cross_owner_provider && provider_allowed,
+                }),
+            },
+            context: authorization_context,
+            delegation_chain: Vec::new(),
+        })
+        .await
+        .is_ok_and(|decision| decision.is_allowed())
 }
 
 pub(crate) async fn resolve_issue(
@@ -8726,6 +9239,906 @@ mod tests {
             .execute(&pool)
             .await
             .expect("delete workspace");
+    }
+
+    #[tokio::test]
+    async fn cross_owner_provider_proof_gates_shared_agent_invocation() {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for provider invocation contract");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(&url)
+            .await
+            .expect("connect contract PostgreSQL");
+        let workspace_id = Uuid::now_v7();
+        let owner_id = Uuid::now_v7();
+        let colleague_id = Uuid::now_v7();
+        let runtime_id = Uuid::now_v7();
+        let agent_id = Uuid::now_v7();
+
+        sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, 'provider gate', $2)")
+            .bind(workspace_id)
+            .bind(format!("provider-gate-{workspace_id}"))
+            .execute(&pool)
+            .await
+            .expect("create workspace");
+        for (user_id, name) in [(owner_id, "provider owner"), (colleague_id, "colleague")] {
+            sqlx::query("INSERT INTO \"user\" (id, name, email) VALUES ($1, $2, $3)")
+                .bind(user_id)
+                .bind(name)
+                .bind(format!("provider-gate-{user_id}@example.test"))
+                .execute(&pool)
+                .await
+                .expect("create user");
+        }
+        for (user_id, role) in [(owner_id, "owner"), (colleague_id, "member")] {
+            sqlx::query("INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, $3)")
+                .bind(workspace_id)
+                .bind(user_id)
+                .bind(role)
+                .execute(&pool)
+                .await
+                .expect("create membership");
+        }
+        sqlx::query(
+            "INSERT INTO agent_runtime (id, workspace_id, daemon_id, name, runtime_mode, provider, status, owner_id, visibility) \
+             VALUES ($1, $2, 'provider-gate-daemon', 'provider gate runtime', 'local', 'codex', 'online', $3, 'private')",
+        )
+        .bind(runtime_id)
+        .bind(workspace_id)
+        .bind(owner_id)
+        .execute(&pool)
+        .await
+        .expect("create runtime");
+        sqlx::query(
+            "INSERT INTO agent (id, workspace_id, name, runtime_mode, status, max_concurrent_tasks, owner_id, runtime_id, permission_mode, model) \
+             VALUES ($1, $2, 'provider gate agent', 'local', 'idle', 1, $3, $4, 'public_to', 'gpt-5.6-sol')",
+        )
+        .bind(agent_id)
+        .bind(workspace_id)
+        .bind(owner_id)
+        .bind(runtime_id)
+        .execute(&pool)
+        .await
+        .expect("create agent");
+        agent_invocation_target::create_agent_invocation_target(
+            &pool,
+            agent_id,
+            "workspace",
+            workspace_id,
+            owner_id,
+        )
+        .await
+        .expect("share agent with workspace");
+        let state = HandlerState::new(pool.clone(), PatCache::disabled(), None);
+        let target = agent::get_agent_in_workspace(&pool, agent_id, workspace_id)
+            .await
+            .expect("load agent")
+            .expect("agent exists");
+        assert!(!can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        let issue_id = Uuid::now_v7();
+        sqlx::query(
+            "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number, position) \
+             VALUES ($1, $2, 'provider status gate', 'backlog', 'medium', 'member', $3, 'agent', $4, 1, 0)",
+        )
+        .bind(issue_id)
+        .bind(workspace_id)
+        .bind(colleague_id)
+        .bind(agent_id)
+        .execute(&pool)
+        .await
+        .expect("create provider-gated issue");
+        let app = router()
+            .with_state(state.clone())
+            .layer(Extension(WorkspaceContext {
+                workspace_id: workspace_id.to_string(),
+                member: patchbay_db::models::Member {
+                    created_at: Utc::now(),
+                    id: Uuid::now_v7(),
+                    role: "member".into(),
+                    user_id: colleague_id,
+                    workspace_id,
+                },
+            }));
+        async fn update_status(app: &Router, issue_id: Uuid, status: &str) -> StatusCode {
+            app.clone()
+                .oneshot(
+                    axum::http::Request::builder()
+                        .method(axum::http::Method::PUT)
+                        .uri(format!("/api/issues/{issue_id}"))
+                        .header(axum::http::header::CONTENT_TYPE, "application/json")
+                        .body(axum::body::Body::from(
+                            json!({"status": status}).to_string(),
+                        ))
+                        .expect("build status update"),
+                )
+                .await
+                .expect("update issue status")
+                .status()
+        }
+        async fn queued_runs(pool: &sqlx::PgPool, issue_id: Uuid) -> i64 {
+            sqlx::query_scalar("SELECT count(*) FROM agent_task_queue WHERE issue_id = $1")
+                .bind(issue_id)
+                .fetch_one(pool)
+                .await
+                .expect("count issue runs")
+        }
+
+        let authorizer = patchbay_authorization::PostgresAuthorizer::new(pool.clone());
+        let grant = |principal_type: PrincipalType,
+                     principal_id: Uuid,
+                     resource_id: Uuid,
+                     effect: patchbay_authorization::DecisionEffect,
+                     model: &str| patchbay_authorization::CreateGrant {
+            workspace_id,
+            principal_type,
+            principal_id: Some(principal_id),
+            action: Action::CREDENTIAL_USE.to_string(),
+            resource_type: ResourceType::PROVIDER_IDENTITY.to_string(),
+            resource_id: Some(resource_id),
+            effect,
+            conditions: json!({
+                "provider": "codex",
+                "provider_action": "provider.invoke",
+                "device_id": runtime_id,
+                "models": [model],
+            }),
+            expires_at: Some(Utc::now() + chrono::Duration::hours(1)),
+            created_by: Some(owner_id),
+        };
+        let wrong_model_id = authorizer
+            .create_grant(grant(
+                PrincipalType::User,
+                colleague_id,
+                runtime_id,
+                patchbay_authorization::DecisionEffect::Allow,
+                "gpt-5.6-terra",
+            ))
+            .await
+            .expect("create wrong-model grant");
+        assert!(!can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        sqlx::query("UPDATE authorization_grant SET revoked_at = now() WHERE id = $1")
+            .bind(wrong_model_id)
+            .execute(&pool)
+            .await
+            .expect("revoke wrong-model grant");
+
+        let mut expired_grant = grant(
+            PrincipalType::User,
+            colleague_id,
+            runtime_id,
+            patchbay_authorization::DecisionEffect::Allow,
+            "gpt-5.6-sol",
+        );
+        expired_grant.expires_at = Some(Utc::now() - chrono::Duration::minutes(1));
+        authorizer
+            .create_grant(expired_grant)
+            .await
+            .expect("create expired grant");
+        authorizer
+            .create_grant(grant(
+                PrincipalType::User,
+                colleague_id,
+                Uuid::now_v7(),
+                patchbay_authorization::DecisionEffect::Allow,
+                "gpt-5.6-sol",
+            ))
+            .await
+            .expect("create wrong-runtime grant");
+        assert!(!can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+
+        let user_grant_id = authorizer
+            .create_grant(grant(
+                PrincipalType::User,
+                colleague_id,
+                runtime_id,
+                patchbay_authorization::DecisionEffect::Allow,
+                "gpt-5.6-sol",
+            ))
+            .await
+            .expect("create user grant");
+        assert!(can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        assert_eq!(update_status(&app, issue_id, "todo").await, StatusCode::OK);
+        assert_eq!(queued_runs(&pool, issue_id).await, 1);
+        sqlx::query("DELETE FROM agent_task_queue WHERE issue_id = $1")
+            .bind(issue_id)
+            .execute(&pool)
+            .await
+            .expect("delete allowed status run");
+        sqlx::query("UPDATE issue SET status = 'backlog' WHERE id = $1")
+            .bind(issue_id)
+            .execute(&pool)
+            .await
+            .expect("reset provider-gated issue");
+        sqlx::query("UPDATE authorization_grant SET effect = 'require_approval' WHERE id = $1")
+            .bind(user_grant_id)
+            .execute(&pool)
+            .await
+            .expect("require approval");
+        assert!(!can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        assert_eq!(update_status(&app, issue_id, "todo").await, StatusCode::OK);
+        assert_eq!(queued_runs(&pool, issue_id).await, 0);
+        sqlx::query("UPDATE issue SET status = 'backlog' WHERE id = $1")
+            .bind(issue_id)
+            .execute(&pool)
+            .await
+            .expect("reset approval-gated issue");
+        sqlx::query(
+            "UPDATE authorization_grant SET effect = 'allow', revoked_at = now() WHERE id = $1",
+        )
+        .bind(user_grant_id)
+        .execute(&pool)
+        .await
+        .expect("revoke user grant");
+        assert!(!can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        assert_eq!(update_status(&app, issue_id, "todo").await, StatusCode::OK);
+        assert_eq!(queued_runs(&pool, issue_id).await, 0);
+
+        let team = team::create_team(
+            &pool,
+            workspace_id,
+            "provider delegates",
+            "",
+            agent_id,
+            owner_id,
+            None,
+        )
+        .await
+        .expect("create team")
+        .expect("team inserted");
+        team::add_team_member(&pool, team.id, "member", colleague_id, "member")
+            .await
+            .expect("add team member")
+            .expect("team member inserted");
+        let team_grant_id = authorizer
+            .create_grant(grant(
+                PrincipalType::Team,
+                team.id,
+                runtime_id,
+                patchbay_authorization::DecisionEffect::Allow,
+                "gpt-5.6-sol",
+            ))
+            .await
+            .expect("create team grant");
+        assert!(can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        sqlx::query(
+            "UPDATE issue SET status = 'backlog', assignee_type = 'team', assignee_id = $1 WHERE id = $2",
+        )
+        .bind(team.id)
+        .bind(issue_id)
+        .execute(&pool)
+        .await
+        .expect("assign provider-gated issue to team");
+        assert_eq!(update_status(&app, issue_id, "todo").await, StatusCode::OK);
+        assert_eq!(queued_runs(&pool, issue_id).await, 1);
+        sqlx::query("DELETE FROM agent_task_queue WHERE issue_id = $1")
+            .bind(issue_id)
+            .execute(&pool)
+            .await
+            .expect("delete team status run");
+        sqlx::query("UPDATE issue SET status = 'backlog' WHERE id = $1")
+            .bind(issue_id)
+            .execute(&pool)
+            .await
+            .expect("reset team provider-gated issue");
+        sqlx::query("UPDATE authorization_grant SET revoked_at = now() WHERE id = $1")
+            .bind(team_grant_id)
+            .execute(&pool)
+            .await
+            .expect("revoke team grant");
+        assert_eq!(update_status(&app, issue_id, "todo").await, StatusCode::OK);
+        assert_eq!(queued_runs(&pool, issue_id).await, 0);
+
+        let agent_grant_id = authorizer
+            .create_grant(grant(
+                PrincipalType::AgentDefinition,
+                agent_id,
+                runtime_id,
+                patchbay_authorization::DecisionEffect::Allow,
+                "gpt-5.6-sol",
+            ))
+            .await
+            .expect("create agent grant");
+        assert!(can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        sqlx::query("UPDATE authorization_grant SET revoked_at = now() WHERE id = $1")
+            .bind(agent_grant_id)
+            .execute(&pool)
+            .await
+            .expect("revoke agent grant");
+        sqlx::query(
+            "UPDATE agent_runtime SET runtime_mode = 'cloud', visibility = 'public' WHERE id = $1",
+        )
+        .bind(runtime_id)
+        .execute(&pool)
+        .await
+        .expect("make runtime public cloud");
+        assert!(!can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
+        sqlx::query(
+            "UPDATE issue SET status = 'backlog', assignee_type = 'agent', assignee_id = $1 WHERE id = $2",
+        )
+        .bind(agent_id)
+        .bind(issue_id)
+        .execute(&pool)
+        .await
+        .expect("reset public-cloud provider-gated issue");
+        assert_eq!(update_status(&app, issue_id, "todo").await, StatusCode::OK);
+        assert_eq!(queued_runs(&pool, issue_id).await, 0);
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM agent_task_queue WHERE agent_id = $1",
+            )
+            .bind(agent_id)
+            .fetch_one(&pool)
+            .await
+            .expect("count doomed tasks"),
+            0
+        );
+
+        sqlx::query("DELETE FROM authorization_audit_event WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete audit events");
+        sqlx::query("DELETE FROM authorization_grant WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete grants");
+        sqlx::query("DELETE FROM team_member WHERE team_id = $1")
+            .bind(team.id)
+            .execute(&pool)
+            .await
+            .expect("delete team member");
+        sqlx::query("DELETE FROM team WHERE id = $1")
+            .bind(team.id)
+            .execute(&pool)
+            .await
+            .expect("delete team");
+        sqlx::query("DELETE FROM agent_task_queue WHERE issue_id = $1")
+            .bind(issue_id)
+            .execute(&pool)
+            .await
+            .expect("delete provider-gated issue runs");
+        sqlx::query("DELETE FROM issue WHERE id = $1")
+            .bind(issue_id)
+            .execute(&pool)
+            .await
+            .expect("delete provider-gated issue");
+        agent_invocation_target::delete_agent_invocation_targets(&pool, agent_id)
+            .await
+            .expect("delete invocation target");
+        sqlx::query("DELETE FROM agent WHERE id = $1")
+            .bind(agent_id)
+            .execute(&pool)
+            .await
+            .expect("delete agent");
+        sqlx::query("DELETE FROM agent_runtime WHERE id = $1")
+            .bind(runtime_id)
+            .execute(&pool)
+            .await
+            .expect("delete runtime");
+        sqlx::query("DELETE FROM member WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete memberships");
+        sqlx::query("DELETE FROM workspace WHERE id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete workspace");
+        sqlx::query("DELETE FROM \"user\" WHERE id = ANY($1)")
+            .bind(vec![owner_id, colleague_id])
+            .execute(&pool)
+            .await
+            .expect("delete users");
+    }
+
+    #[tokio::test]
+    async fn task_issue_detail_is_fenced_to_the_lease_resource() {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for issue authorization contract");
+        let pool = PgPoolOptions::new()
+            .max_connections(4)
+            .connect(&url)
+            .await
+            .expect("connect contract PostgreSQL");
+        let workspace_id = Uuid::now_v7();
+        let user_id = Uuid::now_v7();
+        let runtime_id = Uuid::now_v7();
+        let agent_id = Uuid::now_v7();
+        let allowed_issue_id = Uuid::now_v7();
+        let denied_issue_id = Uuid::now_v7();
+        let task_id = Uuid::now_v7();
+        let dispatched_at = Utc::now();
+
+        sqlx::query(
+            "INSERT INTO workspace (id, name, slug, issue_counter) \
+             VALUES ($1, 'issue auth', $2, 2)",
+        )
+        .bind(workspace_id)
+        .bind(format!("issue-auth-{workspace_id}"))
+        .execute(&pool)
+        .await
+        .expect("create workspace");
+        sqlx::query("INSERT INTO \"user\" (id, name, email) VALUES ($1, 'originator', $2)")
+            .bind(user_id)
+            .bind(format!("issue-auth-{user_id}@example.test"))
+            .execute(&pool)
+            .await
+            .expect("create user");
+        sqlx::query("INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'member')")
+            .bind(workspace_id)
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .expect("create member");
+        sqlx::query(
+            "INSERT INTO agent_runtime (id, workspace_id, daemon_id, name, runtime_mode, provider, status, owner_id, visibility) \
+             VALUES ($1, $2, 'issue-auth-daemon', 'issue auth runtime', 'local', 'codex', 'online', $3, 'private')",
+        )
+        .bind(runtime_id)
+        .bind(workspace_id)
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .expect("create runtime");
+        sqlx::query(
+            "INSERT INTO agent (id, workspace_id, name, runtime_mode, status, max_concurrent_tasks, owner_id, runtime_id) \
+             VALUES ($1, $2, 'issue auth agent', 'local', 'idle', 1, $3, $4)",
+        )
+        .bind(agent_id)
+        .bind(workspace_id)
+        .bind(user_id)
+        .bind(runtime_id)
+        .execute(&pool)
+        .await
+        .expect("create agent");
+        for (issue_id, number, title) in [
+            (allowed_issue_id, 1, "allowed issue"),
+            (denied_issue_id, 2, "denied issue"),
+        ] {
+            sqlx::query(
+                "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number, position) \
+                 VALUES ($1, $2, $3, 'in_progress', 'medium', 'member', $4, 'agent', $5, $6, 0)",
+            )
+            .bind(issue_id)
+            .bind(workspace_id)
+            .bind(title)
+            .bind(user_id)
+            .bind(agent_id)
+            .bind(number)
+            .execute(&pool)
+            .await
+            .expect("create issue");
+        }
+        sqlx::query(
+            "INSERT INTO attachment (workspace_id, issue_id, uploader_type, uploader_id, filename, url, content_type, size_bytes) \
+             VALUES ($1, $2, 'member', $3, 'owner-secret.txt', 'https://private.example/owner-secret', 'text/plain', 12)",
+        )
+        .bind(workspace_id)
+        .bind(allowed_issue_id)
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .expect("create attachment");
+        sqlx::query(
+            "INSERT INTO agent_task_queue (id, agent_id, issue_id, status, priority, dispatched_at, originator_user_id, accountable_user_id, runtime_id) \
+             VALUES ($1, $2, $3, 'dispatched', 0, $4, $5, $5, $6)",
+        )
+        .bind(task_id)
+        .bind(agent_id)
+        .bind(allowed_issue_id)
+        .bind(dispatched_at)
+        .bind(user_id)
+        .bind(runtime_id)
+        .execute(&pool)
+        .await
+        .expect("create task");
+        let lease = patchbay_db::queries::task_token::create_task_token(
+            &pool,
+            &format!("issue-auth-lease-{task_id}"),
+            task_id,
+            agent_id,
+            workspace_id,
+            user_id,
+            Some(Utc::now() + chrono::Duration::minutes(10)),
+            &json!([{
+                "action": Action::RESOURCE_READ,
+                "resource_type": ResourceType::PROJECT_RESOURCE,
+                "resource_id": allowed_issue_id,
+            }]),
+            None,
+            Some(dispatched_at),
+            1,
+            Some(user_id),
+            Some(runtime_id),
+            Uuid::now_v7(),
+        )
+        .await
+        .expect("create lease")
+        .expect("lease inserted");
+        let context = WorkspaceContext {
+            workspace_id: workspace_id.to_string(),
+            member: patchbay_db::models::Member {
+                created_at: Utc::now(),
+                id: Uuid::now_v7(),
+                role: "member".into(),
+                user_id,
+                workspace_id,
+            },
+        };
+        let app = router()
+            .with_state(HandlerState::new(pool.clone(), PatCache::disabled(), None))
+            .layer(Extension(context));
+
+        async fn get(
+            app: &Router,
+            uri: String,
+            headers: &HeaderMap,
+        ) -> (StatusCode, Option<Value>) {
+            let mut request = axum::http::Request::builder()
+                .method(axum::http::Method::GET)
+                .uri(uri)
+                .body(axum::body::Body::empty())
+                .expect("issue request");
+            *request.headers_mut() = headers.clone();
+            let response = app.clone().oneshot(request).await.expect("issue response");
+            let status = response.status();
+            let bytes = response
+                .into_body()
+                .collect()
+                .await
+                .expect("response body")
+                .to_bytes();
+            let body = serde_json::from_slice(&bytes).ok();
+            (status, body)
+        }
+
+        async fn post(app: &Router, headers: &HeaderMap, body: Value) -> StatusCode {
+            let mut request = axum::http::Request::builder()
+                .method(axum::http::Method::POST)
+                .uri("/api/issues")
+                .header(axum::http::header::CONTENT_TYPE, "application/json")
+                .body(axum::body::Body::from(body.to_string()))
+                .expect("issue create request");
+            for (name, value) in headers {
+                request.headers_mut().insert(name, value.clone());
+            }
+            app.clone()
+                .oneshot(request)
+                .await
+                .expect("issue create response")
+                .status()
+        }
+
+        let mut headers = HeaderMap::new();
+        for (name, value) in [
+            ("x-actor-source", "task_token".to_string()),
+            ("x-task-id", task_id.to_string()),
+            ("x-capability-lease-id", lease.id.to_string()),
+            ("x-on-behalf-of-user-id", user_id.to_string()),
+            ("x-agent-id", agent_id.to_string()),
+            ("x-device-id", runtime_id.to_string()),
+        ] {
+            headers.insert(name, value.parse().expect("header value"));
+        }
+        let (allowed_status, allowed_body) =
+            get(&app, format!("/api/issues/{allowed_issue_id}"), &headers).await;
+        assert_eq!(allowed_status, StatusCode::OK);
+        let allowed_body = allowed_body.expect("allowed issue JSON");
+        assert!(allowed_body.get("attachments").is_none());
+        assert!(!allowed_body.to_string().contains("owner-secret"));
+        let (denied_status, _) =
+            get(&app, format!("/api/issues/{denied_issue_id}"), &headers).await;
+        assert_eq!(denied_status, StatusCode::FORBIDDEN);
+        assert_eq!(
+            post(
+                &app,
+                &headers,
+                json!({
+                    "title": "ordinary task cannot create",
+                    "status": "todo",
+                    "origin_type": "quick_create",
+                    "origin_id": task_id,
+                }),
+            )
+            .await,
+            StatusCode::FORBIDDEN
+        );
+
+        let quick_task_id = Uuid::now_v7();
+        let quick_dispatched_at = Utc::now();
+        sqlx::query(
+            "INSERT INTO agent_task_queue (id, agent_id, status, priority, dispatched_at, originator_user_id, accountable_user_id, runtime_id, context) \
+             VALUES ($1, $2, 'dispatched', 0, $3, $4, $4, $5, $6)",
+        )
+        .bind(quick_task_id)
+        .bind(agent_id)
+        .bind(quick_dispatched_at)
+        .bind(user_id)
+        .bind(runtime_id)
+        .bind(json!({
+            "type": "quick_create",
+            "prompt": "create a scoped issue",
+            "requester_id": user_id,
+            "workspace_id": workspace_id,
+        }))
+        .execute(&pool)
+        .await
+        .expect("create quick task");
+        let quick_lease = patchbay_db::queries::task_token::create_task_token(
+            &pool,
+            &format!("issue-auth-quick-lease-{quick_task_id}"),
+            quick_task_id,
+            agent_id,
+            workspace_id,
+            user_id,
+            Some(Utc::now() + chrono::Duration::minutes(10)),
+            &json!([{
+                "action": Action::RESOURCE_USE,
+                "resource_type": ResourceType::PROJECT_RESOURCE,
+                "resource_id": "*",
+            }]),
+            None,
+            Some(quick_dispatched_at),
+            2,
+            Some(user_id),
+            Some(runtime_id),
+            Uuid::now_v7(),
+        )
+        .await
+        .expect("create quick lease")
+        .expect("quick lease inserted");
+        let mut quick_headers = headers.clone();
+        quick_headers.insert(
+            "x-task-id",
+            quick_task_id.to_string().parse().expect("task header"),
+        );
+        quick_headers.insert(
+            "x-capability-lease-id",
+            quick_lease.id.to_string().parse().expect("lease header"),
+        );
+        let (first_quick_create, replayed_quick_create) = tokio::join!(
+            post(
+                &app,
+                &quick_headers,
+                json!({
+                    "title": "quick task creates scoped issue",
+                    "status": "todo",
+                    "origin_type": "quick_create",
+                    "origin_id": quick_task_id,
+                }),
+            ),
+            post(
+                &app,
+                &quick_headers,
+                json!({
+                    "title": "replayed quick task must not create",
+                    "status": "todo",
+                    "origin_type": "quick_create",
+                    "origin_id": quick_task_id,
+                }),
+            ),
+        );
+        let statuses = [first_quick_create, replayed_quick_create];
+        assert_eq!(
+            statuses
+                .iter()
+                .filter(|status| **status == StatusCode::CREATED)
+                .count(),
+            1
+        );
+        // The replay can lose the lease authorization before it reaches the
+        // atomic consume (403), or reach the consume after the winner commits
+        // (409). Either outcome preserves the one-time capability boundary.
+        assert_eq!(
+            statuses
+                .iter()
+                .filter(|status| {
+                    **status == StatusCode::CONFLICT || **status == StatusCode::FORBIDDEN
+                })
+                .count(),
+            1
+        );
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM issue WHERE origin_type = 'quick_create' AND origin_id = $1",
+            )
+            .bind(quick_task_id)
+            .fetch_one(&pool)
+            .await
+            .expect("count quick-created issues"),
+            1
+        );
+        assert_eq!(
+            post(
+                &app,
+                &quick_headers,
+                json!({
+                    "title": "quick task cannot replace resources",
+                    "status": "todo",
+                    "attachment_ids": [Uuid::now_v7()],
+                    "origin_type": "quick_create",
+                    "origin_id": quick_task_id,
+                }),
+            )
+            .await,
+            StatusCode::FORBIDDEN
+        );
+
+        let mut archive_tx = pool.begin().await.expect("begin archive transaction");
+        sqlx::query_scalar::<_, Uuid>(
+            "SELECT id FROM agent WHERE id = $1 AND archived_at IS NULL FOR UPDATE",
+        )
+        .bind(agent_id)
+        .fetch_one(&mut *archive_tx)
+        .await
+        .expect("lock agent for archive");
+        let mut enqueue_tx = pool.begin().await.expect("begin concurrent enqueue");
+        sqlx::query("SET LOCAL lock_timeout = '100ms'")
+            .execute(&mut *enqueue_tx)
+            .await
+            .expect("set enqueue lock timeout");
+        let lock_error = sqlx::query_scalar::<_, bool>("SELECT lock_task_owner_rows($1, NULL, $2)")
+            .bind(agent_id)
+            .bind(runtime_id)
+            .fetch_one(&mut *enqueue_tx)
+            .await
+            .expect_err("concurrent enqueue must wait on the archive fence");
+        assert_eq!(
+            lock_error
+                .as_database_error()
+                .and_then(|error| error.code())
+                .as_deref(),
+            Some("55P03")
+        );
+        enqueue_tx
+            .rollback()
+            .await
+            .expect("rollback blocked enqueue");
+        patchbay_db::queries::agent::archive_agent(&mut *archive_tx, agent_id, user_id)
+            .await
+            .expect("archive agent")
+            .expect("agent archived");
+        let cancelled =
+            patchbay_db::queries::agent::cancel_agent_tasks_by_agent(&mut *archive_tx, agent_id)
+                .await
+                .expect("cancel active agent tasks");
+        assert_eq!(cancelled.len(), 2);
+        archive_tx.commit().await.expect("commit agent archive");
+        assert!(patchbay_db::queries::task_token::get_task_token_by_hash(
+            &pool,
+            &format!("issue-auth-lease-{task_id}"),
+        )
+        .await
+        .expect("look up archived-agent lease")
+        .is_none());
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(
+                "SELECT count(*) FROM task_token WHERE task_id = ANY($1) AND revoked_at IS NOT NULL",
+            )
+            .bind(vec![task_id, quick_task_id])
+            .fetch_one(&pool)
+            .await
+            .expect("count revoked archived-agent leases"),
+            2
+        );
+
+        let fenced_task_id = Uuid::now_v7();
+        let fenced_insert = sqlx::query(
+            "INSERT INTO agent_task_queue (id, agent_id, status, priority, originator_user_id, accountable_user_id, runtime_id) \
+             SELECT $1, $2, 'queued', 0, $3, $3, $4 \
+             WHERE lock_task_owner_rows($2, NULL, $4)",
+        )
+        .bind(fenced_task_id)
+        .bind(agent_id)
+        .bind(user_id)
+        .bind(runtime_id)
+        .execute(&pool)
+        .await
+        .expect("apply archived-agent enqueue fence");
+        assert_eq!(fenced_insert.rows_affected(), 0);
+
+        let archived_task_id = Uuid::now_v7();
+        let archived_task_dispatched_at = Utc::now();
+        sqlx::query(
+            "INSERT INTO agent_task_queue (id, agent_id, status, priority, dispatched_at, originator_user_id, accountable_user_id, runtime_id) \
+             VALUES ($1, $2, 'dispatched', 0, $3, $4, $4, $5)",
+        )
+        .bind(archived_task_id)
+        .bind(agent_id)
+        .bind(archived_task_dispatched_at)
+        .bind(user_id)
+        .bind(runtime_id)
+        .execute(&pool)
+        .await
+        .expect("create archived-agent task fixture");
+        assert!(patchbay_db::queries::task_token::create_task_token(
+            &pool,
+            &format!("issue-auth-archived-lease-{archived_task_id}"),
+            archived_task_id,
+            agent_id,
+            workspace_id,
+            user_id,
+            Some(Utc::now() + chrono::Duration::minutes(10)),
+            &json!([{
+                "action": Action::RESOURCE_READ,
+                "resource_type": ResourceType::PROJECT_RESOURCE,
+                "resource_id": allowed_issue_id,
+            }]),
+            None,
+            Some(archived_task_dispatched_at),
+            3,
+            Some(user_id),
+            Some(runtime_id),
+            Uuid::now_v7(),
+        )
+        .await
+        .expect("reject archived-agent lease creation")
+        .is_none());
+        patchbay_db::queries::agent::restore_agent(&pool, agent_id)
+            .await
+            .expect("restore agent")
+            .expect("agent restored");
+        assert!(patchbay_db::queries::task_token::get_task_token_by_hash(
+            &pool,
+            &format!("issue-auth-lease-{task_id}"),
+        )
+        .await
+        .expect("look up restored-agent old lease")
+        .is_none());
+
+        sqlx::query("DELETE FROM authorization_audit_event WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete audit");
+        sqlx::query("DELETE FROM task_token WHERE task_id = ANY($1)")
+            .bind(vec![task_id, quick_task_id])
+            .execute(&pool)
+            .await
+            .expect("delete lease");
+        sqlx::query("DELETE FROM agent_task_queue WHERE id = ANY($1)")
+            .bind(vec![task_id, quick_task_id, archived_task_id])
+            .execute(&pool)
+            .await
+            .expect("delete task");
+        sqlx::query("DELETE FROM attachment WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete attachment");
+        sqlx::query("DELETE FROM issue WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete issues");
+        sqlx::query("DELETE FROM agent WHERE id = $1")
+            .bind(agent_id)
+            .execute(&pool)
+            .await
+            .expect("delete agent");
+        sqlx::query("DELETE FROM agent_runtime WHERE id = $1")
+            .bind(runtime_id)
+            .execute(&pool)
+            .await
+            .expect("delete runtime");
+        sqlx::query("DELETE FROM member WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete member");
+        sqlx::query("DELETE FROM workspace WHERE id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete workspace");
+        sqlx::query("DELETE FROM \"user\" WHERE id = $1")
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .expect("delete user");
     }
 
     #[test]

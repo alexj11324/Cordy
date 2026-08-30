@@ -102,10 +102,6 @@ pub struct AuthConfig {
     pub cookie_domain: Option<String>,
     /// `PATCHBAY_DEV_VERIFICATION_CODE` — ignored when APP_ENV=production.
     pub dev_verification_code: Option<String>,
-    /// Google OAuth public-login configuration.
-    pub google_client_id: Option<String>,
-    pub google_client_secret: Option<String>,
-    pub google_redirect_uri: Option<String>,
     /// Clerk session exchange. `CLERK_JWT_KEY` is the instance PEM public
     /// key; `CLERK_ISSUER` and `CLERK_AUTHORIZED_PARTIES` bind otherwise
     /// valid tokens to this deployment; `CLERK_SECRET_KEY` reads the verified
@@ -302,9 +298,6 @@ impl Config {
             &mut self.auth.dev_verification_code,
             "PATCHBAY_DEV_VERIFICATION_CODE",
         );
-        env_str(&mut self.auth.google_client_id, "GOOGLE_CLIENT_ID");
-        env_str(&mut self.auth.google_client_secret, "GOOGLE_CLIENT_SECRET");
-        env_str(&mut self.auth.google_redirect_uri, "GOOGLE_REDIRECT_URI");
         env_str(&mut self.auth.clerk_secret_key, "CLERK_SECRET_KEY");
         env_str(&mut self.auth.clerk_jwt_key, "CLERK_JWT_KEY");
         env_str(&mut self.auth.clerk_issuer, "CLERK_ISSUER");

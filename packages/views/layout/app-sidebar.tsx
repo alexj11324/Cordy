@@ -123,6 +123,7 @@ type NavKey =
   | "usage"
   | "runtimes"
   | "skills"
+  | "integrations"
   | "settings";
 
 // Static schema (key only) — labels resolved at render via useT("layout"),
@@ -140,6 +141,7 @@ type NavLabelKey =
   | "usage"
   | "runtimes"
   | "skills"
+  | "integrations"
   | "settings";
 
 // Nav icons are NOT declared here: they are derived from each item's
@@ -157,6 +159,7 @@ const workspaceNav: { key: NavKey; labelKey: NavLabelKey }[] = [
   { key: "projects", labelKey: "projects" },
   { key: "automations", labelKey: "automations" },
   { key: "agents", labelKey: "agents" },
+  { key: "integrations", labelKey: "integrations" },
   { key: "teams", labelKey: "teams" },
   { key: "usage", labelKey: "usage" },
 ];

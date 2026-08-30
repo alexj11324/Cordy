@@ -405,7 +405,6 @@ POST	/api/workspaces/{}/vcs/connections/{}/rotate-webhook
 POST	/api/workspaces/{}/wecom/install/byo
 POST	/api/workspaces/{}/weixin/install/begin
 POST	/auth/guest
-POST	/auth/google
 POST	/auth/logout
 POST	/auth/send-code
 POST	/auth/verify-code

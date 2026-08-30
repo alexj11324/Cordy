@@ -44,6 +44,11 @@ pub(super) enum IssueCommand {
         #[arg(long, help = "Show full UUIDs in table output")]
         full_id: bool,
     },
+    #[command(
+        name = "dependency-graph",
+        about = "Inspect or atomically apply a dependency graph for an issue"
+    )]
+    DependencyGraph(IssueDependencyGraphArgs),
     #[command(about = "Create a new issue")]
     Create(IssueCreateArgs),
     #[command(about = "Update an issue")]
@@ -89,6 +94,54 @@ pub(super) enum IssueCommand {
     Timeline(IssueTimelineArgs),
     #[command(about = "Manage custom property values on an issue")]
     Property(IssuePropertyArgs),
+}
+
+#[derive(Debug, Args)]
+pub(super) struct IssueDependencyGraphArgs {
+    #[command(subcommand)]
+    pub(super) command: IssueDependencyGraphCommand,
+}
+
+#[derive(Debug, Subcommand)]
+pub(super) enum IssueDependencyGraphCommand {
+    #[command(about = "Get the persisted dependency graph for an issue")]
+    Get {
+        #[arg(value_name = "ID")]
+        id: String,
+        #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+        output: OutputFormat,
+    },
+    #[command(about = "Validate and atomically apply a typed dependency plan")]
+    Apply(IssueDependencyGraphApplyArgs),
+}
+
+#[derive(Debug, Args)]
+#[command(group(
+    ArgGroup::new("plan_source")
+        .required(true)
+        .multiple(false)
+        .args(["plan_file", "plan_stdin"])
+))]
+pub(super) struct IssueDependencyGraphApplyArgs {
+    #[arg(value_name = "PARENT-ID")]
+    pub(super) parent: String,
+    #[arg(
+        long,
+        help = "Plan idempotency key; reuse it to safely replay the same plan"
+    )]
+    pub(super) idempotency_key: String,
+    #[arg(
+        long,
+        value_name = "PATH",
+        help = "Read the complete typed plan from a UTF-8 JSON file"
+    )]
+    pub(super) plan_file: Option<std::path::PathBuf>,
+    #[arg(long, help = "Read the complete typed plan from stdin as UTF-8 JSON")]
+    pub(super) plan_stdin: bool,
+    #[arg(long, help = "Allow --plan-file outside the current working directory")]
+    pub(super) allow_external_file: bool,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    pub(super) output: OutputFormat,
 }
 
 #[derive(Debug, Args)]

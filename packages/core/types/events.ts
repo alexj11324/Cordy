@@ -84,6 +84,7 @@ export type WSEventType =
   | "pin:created"
   | "pin:deleted"
   | "pin:reordered"
+  | "dependency_graph:updated"
   | "invitation:created"
   | "invitation:accepted"
   | "invitation:declined"
@@ -623,6 +624,7 @@ export interface WSEventPayloadMap {
   "pin:created": unknown;
   "pin:deleted": unknown;
   "pin:reordered": unknown;
+  "dependency_graph:updated": unknown;
   "github_installation:created": unknown;
   "github_installation:deleted": unknown;
   "pull_request:linked": unknown;

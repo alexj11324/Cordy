@@ -81,6 +81,8 @@ jobs:
               - 'Dockerfile.web'
               - '.dockerignore'
               - '.github/workflows/ci.yml'
+              - '.github/workflows/container-images.yml'
+              - '.github/workflows/release.yml'
               - 'scripts/generate-reserved-slugs.mjs'
               - 'server-rs/crates/patchbay-handler/assets/reserved_slugs.json'
               - 'scripts/check-ui-wildcard-exports.mjs'
@@ -100,6 +102,7 @@ jobs:
               - '.env.example'
               - 'docker-compose.selfhost.yml'
               - 'docker-compose.selfhost.build.yml'
+              - 'docker-compose.labs.yml'
               - 'Makefile'
             # Rust owns all production backend entrypoints and migrations.
             backend:
@@ -260,7 +263,13 @@ jobs:
         # ~50s of expo-lint + tsc to every web/desktop PR. Keep this
         # filter in sync with the root package.json scripts, which also
         # exclude @patchbay/mobile.
-        run: pnpm exec turbo build typecheck lint --filter='!@patchbay/docs' --filter='!@patchbay/mobile'
+        # @patchbay/web's build and typecheck both generate the same Fumadocs
+        # `.source` tree. Turbo may otherwise run them concurrently and one
+        # generator can remove the directory while the other is traversing it.
+        # Keep lint parallel with typecheck, but finish builds first.
+        run: |
+          pnpm exec turbo build --filter='!@patchbay/docs' --filter='!@patchbay/mobile'
+          pnpm exec turbo typecheck lint --filter='!@patchbay/docs' --filter='!@patchbay/mobile'
 
       # Blocking from the start: it reports nothing today, and it covers the
       # one regression knip structurally cannot see. packages/ui exports four

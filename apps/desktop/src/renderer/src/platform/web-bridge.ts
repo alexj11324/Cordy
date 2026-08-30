@@ -3,14 +3,7 @@ import type { DaemonPrefs, DaemonStatus, LocalRuntimeProbe } from "../../../shar
 import type { NavigationGesture } from "../../../shared/navigation-gestures";
 import type { IssueWindowRequest } from "../../../shared/issue-window";
 
-declare global {
-  interface Window {
-    /** True when the Desktop renderer is running in Vite's browser host. */
-    __PATCHBAY_VITE_DESKTOP_PREVIEW__?: boolean;
-  }
-}
-
-const BROWSER_PREVIEW_ERROR =
+const BROWSER_RENDERER_ERROR =
   "This Desktop control is unavailable in the browser renderer.";
 
 const BROWSER_DAEMON_PREFS: DaemonPrefs = {
@@ -32,7 +25,7 @@ function openBrowserUrl(value: string): void {
     if (url.protocol !== "http:" && url.protocol !== "https:") return;
     window.open(url.toString(), "_blank", "noopener,noreferrer");
   } catch {
-    // A malformed external URL should not break the renderer preview.
+    // A malformed external URL should not break the browser renderer.
   }
 }
 
@@ -63,6 +56,11 @@ function browserDaemonStatus(apiUrl: string): DaemonStatus {
   };
 }
 
+const viteEnv = import.meta.env as ImportMetaEnv & {
+  readonly NEXT_PUBLIC_API_URL?: string;
+  readonly NEXT_PUBLIC_WS_URL?: string;
+};
+
 /**
  * Install the small browser equivalent of Electron's preload bridge.
  *
@@ -77,25 +75,20 @@ export function installWebDesktopBridge(): boolean {
   const existingWindow = window as unknown as { desktopAPI?: unknown };
   if (existingWindow.desktopAPI) return false;
 
-  const preview = import.meta.env.VITE_DESKTOP_PREVIEW !== "false";
   const runtimeConfig = runtimeConfigFromDevEnv({
-    // The browser preview owns a same-origin local API middleware by default.
-    // An explicit VITE_API_URL still opts into a real remote/local backend for
-    // full server-backed acceptance without changing the Vite host.
-    apiUrl:
-      import.meta.env.VITE_API_URL ||
-      (preview ? window.location.origin : undefined),
-    wsUrl: import.meta.env.VITE_WS_URL,
-    // The no-backend preview must stay on its Vite origin. A backend-enabled
-    // browser host instead derives the auth origin from VITE_API_URL (or the
-    // shared runtime-config convention), unless it is explicitly configured.
-    appUrl:
-      import.meta.env.VITE_APP_URL ||
-      (preview ? window.location.origin : undefined),
+    // `make start-worktree` exports the Next.js convention, while direct
+    // Desktop development uses Vite's convention. Accept both so a linked
+    // worktree never falls back to the primary checkout's port.
+    apiUrl: viteEnv.VITE_API_URL || viteEnv.NEXT_PUBLIC_API_URL,
+    wsUrl: viteEnv.VITE_WS_URL || viteEnv.NEXT_PUBLIC_WS_URL,
+    appUrl: viteEnv.VITE_APP_URL,
+    accountsUrl: viteEnv.VITE_ACCOUNTS_URL,
   });
   const daemonStatus = browserDaemonStatus(runtimeConfig.apiUrl);
 
   const desktopAPI = {
+    /** Identifies the browser host for native-only capability decisions. */
+    host: "browser" as const,
     appInfo: {
       version: import.meta.env.VITE_APP_VERSION || "vite",
       os: browserPlatform(),
@@ -111,8 +104,11 @@ export function installWebDesktopBridge(): boolean {
     getLastFreeze: () => null,
     ackFreeze: (_ts: number) => undefined,
     reportAuthSession: (_userId: string | null) => undefined,
+    // Browser Vite hosts have no native deep-link receiver. The canonical
+    // handoff is delivered only by Electron's main/preload bridge through
+    // patchbay://auth/callback; this host must never accept an HTTP callback.
     onAuthHandoff: (
-      _callback: (payload: { code: string; state: string }) => void,
+      _callback: (payload: { code: string; state: string }) => boolean | Promise<boolean>,
     ) => noopUnsubscribe(),
     onInviteOpen: (_callback: (invitationId: string) => void) =>
       noopUnsubscribe(),
@@ -167,9 +163,9 @@ export function installWebDesktopBridge(): boolean {
   } as unknown as Window["desktopAPI"];
 
   const daemonAPI = {
-    start: async () => ({ success: false, error: BROWSER_PREVIEW_ERROR }),
-    stop: async () => ({ success: false, error: BROWSER_PREVIEW_ERROR }),
-    restart: async () => ({ success: false, error: BROWSER_PREVIEW_ERROR }),
+    start: async () => ({ success: false, error: BROWSER_RENDERER_ERROR }),
+    stop: async () => ({ success: false, error: BROWSER_RENDERER_ERROR }),
+    restart: async () => ({ success: false, error: BROWSER_RENDERER_ERROR }),
     getStatus: async () => daemonStatus,
     probeRuntimes: async (): Promise<LocalRuntimeProbe> => ({
       probeResult: "error",
@@ -184,7 +180,7 @@ export function installWebDesktopBridge(): boolean {
     reauthenticate: async (_token: string, _userId: string) => ({
       ok: false as const,
       reason: "transient" as const,
-      message: BROWSER_PREVIEW_ERROR,
+      message: BROWSER_RENDERER_ERROR,
     }),
     isCliInstalled: async () => false,
     getPrefs: async () => BROWSER_DAEMON_PREFS,
@@ -199,7 +195,7 @@ export function installWebDesktopBridge(): boolean {
     onLogLine: (_callback: (line: string) => void) => noopUnsubscribe(),
     openLogFile: async () => ({
       success: false,
-      error: BROWSER_PREVIEW_ERROR,
+      error: BROWSER_RENDERER_ERROR,
     }),
   } as unknown as Window["daemonAPI"];
 
@@ -230,13 +226,5 @@ export function installWebDesktopBridge(): boolean {
   window.daemonAPI = daemonAPI;
   window.updater = updater;
   window.electron = {} as Window["electron"];
-  window.__PATCHBAY_VITE_DESKTOP_PREVIEW__ = preview;
   return true;
-}
-
-export function isDesktopWebPreview(): boolean {
-  return (
-    typeof window !== "undefined" &&
-    window.__PATCHBAY_VITE_DESKTOP_PREVIEW__ === true
-  );
 }

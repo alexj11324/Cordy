@@ -8,7 +8,7 @@ import type { IssueStatus, IssueStatusCategory, IssuePriority } from "../../type
 import { createWorkspaceAwareStorage, registerForWorkspaceRehydration } from "../../platform/workspace-storage";
 import { defaultStorage } from "../../platform/storage";
 
-export type ViewMode = "board" | "list" | "table" | "gantt" | "swimlane";
+export type ViewMode = "board" | "list" | "table" | "gantt" | "swimlane" | "graph";
 export type GanttZoom = "day" | "week" | "month";
 /**
  * Board grouping. Besides the two built-ins, a select-type custom property

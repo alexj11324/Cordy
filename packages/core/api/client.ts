@@ -6,6 +6,8 @@ import type {
   UpdateIssueRequest,
   GroupedIssuesResponse,
   ListIssuesResponse,
+  DependencyGraphResponse,
+  ListDependencyGraphsResponse,
   SearchIssuesResponse,
   SearchProjectsResponse,
   UpdateMeRequest,
@@ -311,6 +313,9 @@ import {
   CronPreviewResponseSchema,
   UNREADABLE_CRON_PREVIEW_RESPONSE,
   ListIssuesResponseSchema,
+  DependencyGraphResponseSchema,
+  ListDependencyGraphsResponseSchema,
+  EMPTY_LIST_DEPENDENCY_GRAPHS_RESPONSE,
   CreateIssueResponseSchema,
   IssueSchema,
   ListWebhookDeliveriesResponseSchema,
@@ -766,13 +771,6 @@ export class ApiClient {
     });
   }
 
-  async googleLogin(code: string, redirectUri: string): Promise<LoginResponse> {
-    return this.fetch("/auth/google", {
-      method: "POST",
-      body: JSON.stringify({ code, redirect_uri: redirectUri }),
-    });
-  }
-
   async clerkLogin(
     sessionToken: string,
     signal?: AbortSignal,
@@ -1078,6 +1076,43 @@ export class ApiClient {
       throw new Error("GET /api/issues/:id returned a malformed issue");
     }
     return issue;
+  }
+
+  async getDependencyGraph(parentIssueId: string): Promise<DependencyGraphResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/issues/${encodeURIComponent(parentIssueId)}/dependency-graph`,
+    );
+    const graph = parseWithFallback<DependencyGraphResponse | null>(
+      raw,
+      DependencyGraphResponseSchema,
+      null,
+      { endpoint: "GET /api/issues/:id/dependency-graph" },
+    );
+    if (!graph) {
+      throw new Error("GET /api/issues/:id/dependency-graph returned a malformed graph");
+    }
+    return graph;
+  }
+
+  async listDependencyGraphs(params?: {
+    projectId?: string;
+    limit?: number;
+    cursor?: string;
+  }): Promise<ListDependencyGraphsResponse> {
+    const search = new URLSearchParams();
+    if (params?.projectId) search.set("project_id", params.projectId);
+    if (params?.limit) search.set("limit", String(params.limit));
+    if (params?.cursor) search.set("cursor", params.cursor);
+    const query = search.toString();
+    const raw = await this.fetch<unknown>(
+      query ? `/api/dependency-graphs?${query}` : "/api/dependency-graphs",
+    );
+    return parseWithFallback(
+      raw,
+      ListDependencyGraphsResponseSchema,
+      EMPTY_LIST_DEPENDENCY_GRAPHS_RESPONSE,
+      { endpoint: "GET /api/dependency-graphs" },
+    );
   }
 
   async createIssue(data: CreateIssueRequest): Promise<Issue> {

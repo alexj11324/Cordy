@@ -115,6 +115,8 @@
     "./issue-views/use-active-view": "./issue-views/use-active-view.ts",
     "./issue-views/baseline": "./issue-views/baseline.ts",
     "./issue-views/preferences": "./issue-views/preferences.ts",
+    "./dependency-graphs": "./dependency-graphs/index.ts",
+    "./dependency-graphs/queries": "./dependency-graphs/queries.ts",
     "./billing": "./billing/index.ts",
     "./billing/queries": "./billing/queries.ts",
     "./billing/mutations": "./billing/mutations.ts",

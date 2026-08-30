@@ -12,7 +12,6 @@ pub mod codex_memory;
 pub mod codex_multi_agent;
 pub mod codex_sandbox;
 pub mod codex_shell_env;
-pub mod codex_skill_strip;
 pub mod codex_user_skills;
 pub mod context;
 pub mod cursor_mcp;

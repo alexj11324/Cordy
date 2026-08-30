@@ -1,10 +1,13 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect } from "react";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
 import { useT } from "@patchbay/views/i18n";
 import { buildDesktopHandoffQuery } from "@/features/auth/desktop-handoff";
+import {
+  useWebRouter,
+  useWebSearchParams,
+} from "@/platform/client-navigation";
 
 function resolveSafeRedirectUrl(raw: string | null): string {
   if (!raw) return "/";
@@ -34,18 +37,19 @@ export default function AuthCallbackPage() {
 }
 
 function AuthCallbackContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+  const router = useWebRouter();
+  const searchParams = useWebSearchParams();
   const { t } = useT("auth");
+  const desktopHandoff = searchParams.get("platform") === "desktop";
 
   useEffect(() => {
-    if (searchParams.get("platform") === "desktop") {
+    if (desktopHandoff) {
       router.replace(`/login?${buildDesktopHandoffQuery(searchParams)}`);
       return;
     }
     const redirectUrl = searchParams.get("redirect_url");
     router.replace(resolveSafeRedirectUrl(redirectUrl));
-  }, [router, searchParams]);
+  }, [desktopHandoff, router, searchParams]);
 
   return (
     <ClerkAuthShell>

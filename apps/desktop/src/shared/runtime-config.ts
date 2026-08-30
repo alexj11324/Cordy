@@ -3,6 +3,7 @@ export interface RuntimeConfig {
   apiUrl: string;
   wsUrl: string;
   appUrl: string;
+  accountsUrl: string;
 }
 
 export interface RuntimeConfigError {
@@ -13,11 +14,14 @@ export type RuntimeConfigResult =
   | { ok: true; config: RuntimeConfig }
   | { ok: false; error: RuntimeConfigError };
 
+// Approved hosted endpoint contract. DNS, TLS, and service readiness remain
+// deployment gates; operators can override every endpoint in desktop.json.
 export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   schemaVersion: 1,
-  apiUrl: "https://api.patchbay.ai",
-  wsUrl: "wss://api.patchbay.ai/ws",
-  appUrl: "https://accounts.aspectlylabs.com",
+  apiUrl: "https://api.aspectlylabs.com",
+  wsUrl: "wss://api.aspectlylabs.com/ws",
+  appUrl: "https://patchbay.aspectlylabs.com",
+  accountsUrl: "https://accounts.aspectlylabs.com",
 });
 
 const LOCAL_DEV_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
@@ -25,12 +29,14 @@ const LOCAL_DEV_RUNTIME_CONFIG: RuntimeConfig = Object.freeze({
   apiUrl: "http://localhost:8080",
   wsUrl: "ws://localhost:8080/ws",
   appUrl: "http://localhost:3000",
+  accountsUrl: "http://localhost:3000",
 });
 
 export interface RuntimeConfigEnv {
   apiUrl?: string;
   wsUrl?: string;
   appUrl?: string;
+  accountsUrl?: string;
 }
 
 export function runtimeConfigFromDevEnv(env: RuntimeConfigEnv): RuntimeConfig {
@@ -38,15 +44,24 @@ export function runtimeConfigFromDevEnv(env: RuntimeConfigEnv): RuntimeConfig {
     env.apiUrl || LOCAL_DEV_RUNTIME_CONFIG.apiUrl,
     "VITE_API_URL",
   );
+  const usesHostedApi = apiUrl === DEFAULT_RUNTIME_CONFIG.apiUrl;
+  const appUrl = env.appUrl
+    ? normalizeHttpUrl(env.appUrl, "VITE_APP_URL")
+    : usesHostedApi
+      ? DEFAULT_RUNTIME_CONFIG.appUrl
+      : deriveDevAppUrl(apiUrl);
   return {
     schemaVersion: 1,
     apiUrl,
     wsUrl: env.wsUrl
       ? normalizeWsUrl(env.wsUrl, "VITE_WS_URL")
       : deriveWsUrl(apiUrl),
-    appUrl: env.appUrl
-      ? normalizeHttpUrl(env.appUrl, "VITE_APP_URL")
-      : deriveDevAppUrl(apiUrl),
+    appUrl,
+    accountsUrl: env.accountsUrl
+      ? normalizeHttpUrl(env.accountsUrl, "VITE_ACCOUNTS_URL")
+      : usesHostedApi
+        ? DEFAULT_RUNTIME_CONFIG.accountsUrl
+        : appUrl,
   };
 }
 
@@ -71,14 +86,26 @@ export function parseRuntimeConfig(raw: string): RuntimeConfig {
 
   const apiUrl = requiredString(obj.apiUrl, "apiUrl");
   const appUrl = optionalString(obj.appUrl, "appUrl");
+  const accountsUrl = optionalString(obj.accountsUrl, "accountsUrl");
   const wsUrl = optionalString(obj.wsUrl, "wsUrl");
 
   const normalizedApiUrl = normalizeHttpUrl(apiUrl, "apiUrl");
+  const usesHostedApi = normalizedApiUrl === DEFAULT_RUNTIME_CONFIG.apiUrl;
+  const normalizedAppUrl = appUrl
+    ? normalizeHttpUrl(appUrl, "appUrl")
+    : usesHostedApi
+      ? DEFAULT_RUNTIME_CONFIG.appUrl
+      : deriveAppUrl(normalizedApiUrl);
   return {
     schemaVersion: 1,
     apiUrl: normalizedApiUrl,
     wsUrl: wsUrl ? normalizeWsUrl(wsUrl, "wsUrl") : deriveWsUrl(normalizedApiUrl),
-    appUrl: appUrl ? normalizeHttpUrl(appUrl, "appUrl") : deriveAppUrl(normalizedApiUrl),
+    appUrl: normalizedAppUrl,
+    accountsUrl: accountsUrl
+      ? normalizeHttpUrl(accountsUrl, "accountsUrl")
+      : usesHostedApi
+        ? DEFAULT_RUNTIME_CONFIG.accountsUrl
+        : normalizedAppUrl,
   };
 }
 
@@ -91,7 +118,8 @@ export function isStaleDevelopmentRuntimeConfig(config: RuntimeConfig): boolean 
   return (
     config.apiUrl === LOCAL_DEV_RUNTIME_CONFIG.apiUrl &&
     config.wsUrl === LOCAL_DEV_RUNTIME_CONFIG.wsUrl &&
-    config.appUrl === LOCAL_DEV_RUNTIME_CONFIG.appUrl
+    config.appUrl === LOCAL_DEV_RUNTIME_CONFIG.appUrl &&
+    config.accountsUrl === LOCAL_DEV_RUNTIME_CONFIG.accountsUrl
   );
 }
 
@@ -106,8 +134,8 @@ export function deriveWsUrl(apiUrl: string): string {
   return trimTrailingSlash(url.toString());
 }
 
-// Convention: api hosts are exposed at `api.<web-host>` (api.patchbay.ai →
-// patchbay.ai, api.test.patchbay.ai → test.patchbay.ai). Strip the leading
+// Convention: api hosts are exposed at `api.<web-host>`
+// (api.test.aspectlylabs.com → test.aspectlylabs.com). Strip the leading
 // `api.` label so a single `apiUrl` configuration produces the right
 // shareable web URL. Hosts that don't match the convention (no leading
 // `api.` label, or short two-label hosts like `api.local`) fall through

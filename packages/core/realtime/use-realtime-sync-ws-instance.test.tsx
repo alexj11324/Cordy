@@ -118,7 +118,7 @@ describe("useRealtimeSync — ws instance change", () => {
     rerender({ ws: ws2 });
 
     // Should have called invalidateQueries for all workspace-scoped keys
-    // (17 workspace-scoped [incl. Agent threads + property definitions] + 6 per-issue
+      // (17 workspace-scoped [incl. Agent threads, property definitions, and dependency graph] + 6 per-issue
     // prefixes + the workspace working-agents projection + 5 per-chat
     // prefixes + 1 workspaceKeys.list() + 1 cross-workspace inbox unread
     // summary + 2 channel caches = 34 calls)

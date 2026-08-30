@@ -254,24 +254,17 @@ describe("proxy root and locale handling", () => {
   it("leaves the legacy frontend auth callback public", async () => {
     expect(await redirectLocation("/auth/callback")).toBeNull();
   });
-});
 
-describe("proxy UI fixtures", () => {
-  it("skips Clerk login and serves product routes when fixtures are on", async () => {
-    const previous = process.env.PATCHBAY_UI_FIXTURES;
-    process.env.PATCHBAY_UI_FIXTURES = "1";
-    try {
-      const login = await proxy(makeRequest("/login"));
-      expect(login.status).toBe(307);
-      expect(login.headers.get("location")).toBe(
-        "https://app.patchbay.test/ui-preview",
-      );
-      const issues = await proxy(makeRequest("/preview/issues"));
-      expect(issues.status).toBe(200);
-      expect(issues.headers.get("location")).toBeNull();
-    } finally {
-      if (previous === undefined) delete process.env.PATCHBAY_UI_FIXTURES;
-      else process.env.PATCHBAY_UI_FIXTURES = previous;
-    }
+  it("leaves the provider-specific Google broker and callback public", async () => {
+    expect(
+      await redirectLocation(
+        `/oauth/google?platform=desktop&code_challenge=${"a".repeat(43)}&state=${"b".repeat(43)}`,
+      ),
+    ).toBeNull();
+    expect(
+      await redirectLocation(
+        `/oauth/google/callback?platform=desktop&code_challenge=${"a".repeat(43)}&state=${"b".repeat(43)}`,
+      ),
+    ).toBeNull();
   });
 });

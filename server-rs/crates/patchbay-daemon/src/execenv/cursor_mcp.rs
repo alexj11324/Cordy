@@ -5,10 +5,7 @@
 //! - cursorWorkspaceTrustedFile /
 //!   cursorMcpAuthFile             → CURSOR_WORKSPACE_TRUSTED_FILE / CURSOR_MCP_AUTH_FILE
 //! - prepareCursorMcpConfig        → prepare_cursor_mcp_config
-//! - seedCursorMcpAuthFile         → seed_cursor_mcp_auth_file
 //! - removeCursorMcpAuthFile       → remove_cursor_mcp_auth_file
-//! - resolveCursorMcpAuthSource    → resolve_cursor_mcp_auth_source
-//! - copyCursorMcpAuthFile         → copy_cursor_mcp_auth_file
 //! - hasManagedCursorMcpConfig     → has_managed_cursor_mcp_config
 //! - parseCursorManagedMcpServers  → parse_cursor_managed_mcp_servers
 //! - marshalCursorMcpConfig        → marshal_cursor_mcp_config
@@ -56,6 +53,11 @@ pub(crate) fn prepare_cursor_mcp_config(
     }
     if env_root.is_empty() {
         bail!("env root is required for managed cursor mcp_config");
+    }
+    if !mcp_auth_source.trim().is_empty() {
+        bail!(
+            "{CURSOR_MCP_AUTH_SOURCE_ENV} cannot materialize host credentials in a task; use a managed Remote MCP broker"
+        );
     }
 
     let project_root = cursor_project_root(work_dir);
@@ -108,33 +110,11 @@ pub(crate) fn prepare_cursor_mcp_config(
         trust_data.as_bytes(),
     )
     .context("write cursor workspace trust")?;
-    if !mcp_auth_source.trim().is_empty() {
-        seed_cursor_mcp_auth_file(&project_data_dir, mcp_auth_source)?;
-    }
-
     Ok(cursor_data_dir)
 }
 
 fn join(base: &str, seg: &str) -> String {
     Path::new(base).join(seg).to_string_lossy().into_owned()
-}
-
-fn seed_cursor_mcp_auth_file(project_data_dir: &str, source: &str) -> anyhow::Result<()> {
-    let source_path = resolve_cursor_mcp_auth_source(source)?;
-    let target = join(project_data_dir, CURSOR_MCP_AUTH_FILE);
-    #[cfg(unix)]
-    {
-        if std::os::unix::fs::symlink(&source_path, &target).is_ok() {
-            return Ok(());
-        }
-    }
-    #[cfg(windows)]
-    {
-        if std::os::windows::fs::symlink_file(&source_path, &target).is_ok() {
-            return Ok(());
-        }
-    }
-    copy_cursor_mcp_auth_file(&target, &source_path).context("seed cursor mcp auth file")
 }
 
 fn remove_cursor_mcp_auth_file(project_data_dir: &str) -> anyhow::Result<()> {
@@ -144,81 +124,6 @@ fn remove_cursor_mcp_auth_file(project_data_dir: &str) -> anyhow::Result<()> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(e) => Err(anyhow!("remove prior cursor mcp auth file: {e}")),
     }
-}
-
-fn resolve_cursor_mcp_auth_source(source: &str) -> anyhow::Result<String> {
-    let mut source = source.trim().to_string();
-    if source.is_empty() {
-        bail!("{CURSOR_MCP_AUTH_SOURCE_ENV} is empty");
-    }
-    if source == "~" || source.starts_with("~/") {
-        let home = super::execenv::user_home_dir()
-            .map_err(|e| anyhow!("resolve {CURSOR_MCP_AUTH_SOURCE_ENV} home directory: {e}"))?;
-        if source == "~" {
-            source = home;
-        } else {
-            source = join(&home, &source[2..]);
-        }
-    }
-    if !source.starts_with('/')
-        && !source.starts_with("\\\\")
-        && source.as_bytes().get(1) != Some(&b':')
-    {
-        bail!(
-            "{CURSOR_MCP_AUTH_SOURCE_ENV} must be an absolute path to {CURSOR_MCP_AUTH_FILE} or its containing Cursor project directory"
-        );
-    }
-    let source = clean_lexical(&source);
-    let info = std::fs::metadata(&source)
-        .map_err(|e| anyhow!("stat {CURSOR_MCP_AUTH_SOURCE_ENV}: {e}"))?;
-    let mut source = source;
-    if info.is_dir() {
-        source = join(&source, CURSOR_MCP_AUTH_FILE);
-        let inner = std::fs::metadata(&source).map_err(|e| {
-            anyhow!("stat {CURSOR_MCP_AUTH_SOURCE_ENV} {CURSOR_MCP_AUTH_FILE}: {e}")
-        })?;
-        if inner.is_dir() {
-            bail!("{CURSOR_MCP_AUTH_SOURCE_ENV} must resolve to a file, got directory {source}");
-        }
-    }
-    let base = Path::new(&source)
-        .file_name()
-        .map(|f| f.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    if base != CURSOR_MCP_AUTH_FILE {
-        bail!("{CURSOR_MCP_AUTH_SOURCE_ENV} must point at {CURSOR_MCP_AUTH_FILE}, got {base}");
-    }
-    Ok(source)
-}
-
-/// Lexical clean for rooted paths (filepath.Clean subset used here).
-fn clean_lexical(path: &str) -> String {
-    Path::new(path)
-        .components()
-        .fold(std::path::PathBuf::new(), |mut acc, c| {
-            use std::path::Component::*;
-            match c {
-                CurDir => {}
-                RootDir => acc.push("/"),
-                ParentDir => {
-                    acc.pop();
-                }
-                other => acc.push(other.as_os_str()),
-            }
-            acc
-        })
-        .to_string_lossy()
-        .into_owned()
-}
-
-fn copy_cursor_mcp_auth_file(target: &str, source: &str) -> anyhow::Result<()> {
-    let data = std::fs::read(source)?;
-    let result = write_private_file(target, &data);
-    if let Err(e) = result {
-        let _ = std::fs::remove_file(target);
-        return Err(e);
-    }
-    Ok(())
 }
 
 fn write_private_file(path: impl AsRef<Path>, data: &[u8]) -> anyhow::Result<()> {
@@ -504,6 +409,25 @@ pub(crate) fn cursor_slugify_path(path: &str) -> String {
 mod tests {
     use super::*;
 
+    fn clean_lexical(path: &str) -> String {
+        Path::new(path)
+            .components()
+            .fold(std::path::PathBuf::new(), |mut acc, component| {
+                use std::path::Component::*;
+                match component {
+                    CurDir => {}
+                    RootDir => acc.push("/"),
+                    ParentDir => {
+                        acc.pop();
+                    }
+                    other => acc.push(other.as_os_str()),
+                }
+                acc
+            })
+            .to_string_lossy()
+            .into_owned()
+    }
+
     // Port of TestCursorSlugifyPath.
     #[test]
     fn test_cursor_slugify_path() {
@@ -590,30 +514,6 @@ mod tests {
         }
     }
 
-    // Port of TestResolveCursorMcpAuthSource.
-    #[test]
-    fn test_resolve_cursor_mcp_auth_source() {
-        assert!(resolve_cursor_mcp_auth_source("").is_err());
-        assert!(resolve_cursor_mcp_auth_source("relative/path").is_err());
-        assert!(resolve_cursor_mcp_auth_source("~other/x").is_err());
-
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().to_string_lossy().to_string();
-
-        // Directory pointing at the containing project dir resolves inside it.
-        let auth = join(&root, CURSOR_MCP_AUTH_FILE);
-        std::fs::write(&auth, b"{}").unwrap();
-        assert_eq!(
-            resolve_cursor_mcp_auth_source(&root).unwrap(),
-            clean_lexical(&auth)
-        );
-
-        // Wrong basename refused.
-        let wrong = join(&root, "nope.json");
-        std::fs::write(&wrong, b"{}").unwrap();
-        assert!(resolve_cursor_mcp_auth_source(&wrong).is_err());
-    }
-
     // Port of TestCursorProjectRoot: walks up to the nearest .git ancestor.
     #[test]
     fn test_cursor_project_root() {
@@ -672,6 +572,18 @@ mod tests {
         std::fs::create_dir_all(&work_dir).unwrap();
 
         let cfg = json!({"mcpServers": {"fetcher": {"command": "npx", "args": ["-y","f"]}}});
+        let credential_error = prepare_cursor_mcp_config(
+            env_root.to_str().unwrap(),
+            work_dir.to_str().unwrap(),
+            Some(&cfg),
+            "/host/mcp-auth.json",
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            credential_error.to_string().contains("Remote MCP broker"),
+            "{credential_error:#}"
+        );
         let data_dir = prepare_cursor_mcp_config(
             env_root.to_str().unwrap(),
             work_dir.to_str().unwrap(),
@@ -718,23 +630,6 @@ mod tests {
                 0o600
             );
         }
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn test_copy_cursor_mcp_auth_file_is_owner_only() {
-        use std::os::unix::fs::PermissionsExt as _;
-
-        let tmp = tempfile::tempdir().unwrap();
-        let source = tmp.path().join("source.json");
-        let target = tmp.path().join(CURSOR_MCP_AUTH_FILE);
-        std::fs::write(&source, br#"{"token":"secret"}"#).unwrap();
-        copy_cursor_mcp_auth_file(target.to_str().unwrap(), source.to_str().unwrap()).unwrap();
-
-        assert_eq!(
-            std::fs::metadata(target).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
     }
 
     // Port of TestPrepareCursorMcpConfigRefusesExistingSidecar.

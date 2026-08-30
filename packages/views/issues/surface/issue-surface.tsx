@@ -28,6 +28,7 @@ import type { Issue } from "@patchbay/core/types";
 import { BoardView } from "../components/board-view";
 import { BatchActionToolbar } from "../components/batch-action-toolbar";
 import { GanttView } from "../components/gantt-view";
+import { DependencyGraphView } from "../components/dependency-graph-view";
 import { IssuesHeader } from "../components/issues-header";
 import { ListView } from "../components/list-view";
 import { SwimLaneView } from "../components/swimlane-view";
@@ -246,6 +247,7 @@ function IssueSurfaceContent({
             scopedIssues={controller.surfaceIssues}
             workingAgents={controller.workingAgents}
             allowGantt={controller.allowGantt}
+            allowGraph={controller.allowGraph}
             isRefreshing={controller.isRefreshing}
             facetCountsExact={
               controller.facetCountsExact
@@ -265,7 +267,13 @@ function IssueSurfaceContent({
             Row fetching is suspended while it is down (a custom status filter
             cannot be routed without it), so every branch below would render an
             unexplained empty surface with no way out. (PB-6243) */}
-        {controller.isStatusCatalogError ? (
+        {controller.viewMode === "graph" ? (
+          <div className={cn("flex flex-col flex-1 min-h-0", contentClassName)}>
+            <DependencyGraphView
+              projectId={scope.type === "project" ? scope.projectId : undefined}
+            />
+          </div>
+        ) : controller.isStatusCatalogError ? (
           <StatusCatalogErrorState onRetry={controller.retryStatusCatalog} />
         ) : controller.isLoading ? (
           renderLoading ? (

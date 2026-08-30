@@ -152,6 +152,7 @@ vi.mock("@patchbay/core/paths", async (importOriginal) => ({
     usage: () => "/acme/usage",
     runtimes: () => "/acme/runtimes",
     skills: () => "/acme/skills",
+    integrations: () => "/acme/integrations",
     settings: () => "/acme/settings",
     issueDetail: (id: string) => `/acme/issues/${id}`,
     projectDetail: (id: string) => `/acme/projects/${id}`,

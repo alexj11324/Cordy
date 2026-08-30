@@ -16,6 +16,7 @@ pub mod agent_mcp;
 pub mod attachment;
 pub mod attachment_storage;
 pub mod auth;
+pub mod authorization;
 pub mod automation;
 pub mod automation_listeners;
 pub mod automation_webhook;
@@ -41,6 +42,7 @@ pub mod contact_sales;
 pub mod daemon;
 pub mod daemon_ws;
 pub mod dashboard;
+pub mod dependency_graph;
 pub mod desktop_handoff;
 pub mod error;
 pub mod feedback;
@@ -468,6 +470,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             )),
         )
         .merge(
+            authorization::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                patchbay_middleware::workspace::require_workspace,
+            )),
+        )
+        .merge(
             cloud_runtime::router(cloud_runtime_proxy.clone()).route_layer(
                 middleware::from_fn_with_state(
                     WorkspaceGuardState::member_only(state.pool.clone()),
@@ -595,6 +603,12 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             notification::router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::member_only(state.pool.clone()),
                 issue::require_issue_workspace,
+            )),
+        )
+        .merge(
+            dependency_graph::router().route_layer(middleware::from_fn_with_state(
+                WorkspaceGuardState::member_only(state.pool.clone()),
+                patchbay_middleware::workspace::require_workspace,
             )),
         )
         .route_layer(middleware::from_fn_with_state(

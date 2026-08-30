@@ -91,14 +91,16 @@ Desktop 默认连接 Patchbay Cloud。连接自托管实例时，在用户目录
 这个文件**不是** CLI 的 `~/.patchbay/config.json`，字段名也不同：CLI 用 `server_url`，Desktop 用 `apiUrl`。Desktop 不会读取 CLI 的配置，它在 `~/.patchbay/profiles/desktop-<host>/` 下管理独立的 daemon profile。改 `config.json` 不会影响 Desktop 连接哪个服务。
 </Callout>
 
-`apiUrl` 是 backend 的公开地址，必须填写，且必须使用 `http` 或 `https`。另外两个地址可以省略，Desktop 会自动推导：
+`apiUrl` 是 backend 的公开地址，必须填写，且必须使用 `http` 或 `https`。另外三个地址可以省略，Desktop 会自动推导：
 
 - `wsUrl`：把 `apiUrl` 的协议换成 `ws` 或 `wss`，并在路径后追加 `/ws`；
 - `appUrl`：域名以 `api.` 开头且至少三段时去掉 `api.` 前缀（`api.example.com` → `example.com`），否则保持与 `apiUrl` 相同。
+- `accountsUrl`：默认复用 `appUrl`；认证 broker 独立部署时再单独设置。
 
-通常只写 `apiUrl` 即可。推导不符合预期时再显式覆盖，常见情况有三类：
+通常只写 `apiUrl` 即可。推导不符合预期时再显式覆盖，常见情况有四类：
 
 - Web 与 API 不同域；
+- 认证 broker 使用独立域名；
 - WebSocket 单独部署；
 - 域名不满足剥前缀的约定（`api.local` 这类两段域名不会去掉前缀）。
 
@@ -107,6 +109,7 @@ Desktop 默认连接 Patchbay Cloud。连接自托管实例时，在用户目录
   "schemaVersion": 1,
   "apiUrl": "https://api.example.com",
   "appUrl": "https://app.example.com",
+  "accountsUrl": "https://accounts.example.com",
   "wsUrl": "wss://ws.example.com/socket"
 }
 ```

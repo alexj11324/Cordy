@@ -899,7 +899,28 @@ impl ProductionProviderAdapter {
                     ctx.token().clone(),
                 ),
             )?;
-            let child_env = bound.child_env.into_inner();
+            let mut child_env = bound.child_env.into_inner();
+            let provider_broker = match task.provider_authorization.as_ref() {
+                Some(authorization) => {
+                    let broker =
+                        crate::provider_credential_broker::ProviderCredentialBroker::start(
+                            Arc::clone(&client),
+                            ctx.clone(),
+                            &task,
+                            authorization,
+                        )
+                        .await
+                        .context("start provider credential broker")?;
+                    broker
+                        .configure_child_environment(&target.provider, &mut child_env)
+                        .context("configure provider credential broker")?;
+                    Some(broker)
+                }
+                None => anyhow::bail!(
+                    "server did not issue a provider authorization for {}; provider execution is disabled until a lease-bound credential broker is available",
+                    target.provider
+                ),
+            };
             configure_codex_task_shell_environment(
                 &target.provider,
                 &environment.codex_home,
@@ -917,8 +938,27 @@ impl ProductionProviderAdapter {
                 backend_config.command.prefix =
                     strip_hermes_profile_selectors(&backend_config.command.prefix);
             }
+            crate::provider_isolation::isolate_provider_command(
+                &mut backend_config.command,
+                crate::provider_isolation::ProviderIsolation {
+                    provider: &target.provider,
+                    task_root: &environment.root_dir,
+                    work_dir: &environment.work_dir,
+                    temp_dir: task_temp_dir_path,
+                    provider_source_home: plan.provider_source_home(),
+                },
+            )
+            .map_err(|error| {
+                tracing::warn!(
+                    provider = %target.provider,
+                    reason = crate::provider_isolation::failure_reason(&error),
+                    "provider process isolation rejected task before spawn"
+                );
+                anyhow::anyhow!("provider process isolation rejected the task")
+            })?;
             let backend = patchbay_agent::build_backend(&target.provider, backend_config)
                 .map_err(|error| anyhow::anyhow!("create agent backend: {error}"))?;
+            let _provider_broker = provider_broker;
             let token = task.auth_token.trim().to_string();
             let _checkout = runtime.checkout_registry().register_owned(
                 token,
@@ -3026,7 +3066,7 @@ mod tests {
         configure_codex_task_shell_environment("codex", &codex_home, &task, &child_env).unwrap();
 
         let config = std::fs::read_to_string(temp.path().join("config.toml")).unwrap();
-        assert!(config.contains("CUSTOM_API_TOKEN"));
+        assert!(!config.contains("CUSTOM_API_TOKEN"));
         assert!(config.contains("PATH"));
         assert!(!config.contains("secret"));
         assert!(!config.contains("blocked"));

@@ -21,6 +21,7 @@ use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, R
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
+use crate::env::configure_child_env;
 use crate::model::{Catalog, CatalogCache, Model, ModelDiscoveryCacheKey};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{sanitize_diagnostic, with_stderr, SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
@@ -218,32 +219,7 @@ fn command_path(command: &RuntimeCommand) -> String {
 }
 
 fn configure_child_environment(command: &mut Command, extra: &BTreeMap<String, String>) {
-    command.env_clear();
-    for (key, value) in std::env::vars_os() {
-        let Some(key_text) = key.to_str() else {
-            command.env(key, value);
-            continue;
-        };
-        if should_filter_inherited_env(key_text) {
-            continue;
-        }
-        command.env(key, value);
-    }
-    command.envs(extra);
-}
-
-fn should_filter_inherited_env(key: &str) -> bool {
-    if key.to_ascii_uppercase().starts_with("PATCHBAY_") {
-        return true;
-    }
-    matches!(
-        key,
-        "CLAUDECODE"
-            | "CLAUDE_CODE_ENTRYPOINT"
-            | "CLAUDE_CODE_EXECPATH"
-            | "CLAUDE_CODE_SESSION_ID"
-            | "CLAUDE_CODE_SSE_PORT"
-    ) || key.starts_with("CLAUDECODE_")
+    configure_child_env(command, extra);
 }
 
 #[allow(clippy::too_many_arguments)]

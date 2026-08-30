@@ -25,6 +25,17 @@ describe("SignUpPage (sign-up route)", () => {
     signUpProps.current = {};
   });
 
+  it("preserves a validated web target when switching to sign-in", () => {
+    search.current = "redirect_url=%2Fusage%3Ftab%3Dbilling%23summary";
+
+    render(<SignUpPage />);
+
+    expect(signUpProps.current).toMatchObject({
+      signInUrl: "/sign-in?redirect_url=%2Fusage%3Ftab%3Dbilling%23summary",
+      fallbackRedirectUrl: "/usage?tab=billing#summary",
+    });
+  });
+
   it("preserves the desktop handoff through the alternate signup route", () => {
     search.current =
       "platform=desktop&code_challenge=challenge-value&state=opaque-state";

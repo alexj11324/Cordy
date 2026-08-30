@@ -223,6 +223,21 @@ impl TaskService {
         tx.commit().await.map_err(TaskServiceError::Sql)?;
         let task = t;
 
+        if let Some(issue_id) = task.issue_id {
+            if let Ok(Some(issue)) = get_issue(&self.pool, issue_id).await {
+                if let Err(error) = self
+                    .wake_dependency_dependents(issue.workspace_id, issue.id)
+                    .await
+                {
+                    tracing::warn!(
+                        %error,
+                        issue_id = %issue.id,
+                        "dependency wakeup after task completion failed"
+                    );
+                }
+            }
+        }
+
         if let Some((dispatch, message_id)) = workspace_channel_reply {
             self.publish_workspace_channel_reply(&task, dispatch, message_id)
                 .await;
@@ -395,6 +410,7 @@ impl TaskService {
         }
 
         let mut retried: Option<AgentTaskQueue> = None;
+        let mut successor_pending = false;
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
         lock_chat_session_for_task_write(&mut tx, task_id).await?;
 
@@ -487,6 +503,7 @@ impl TaskService {
             let successor = has_runnable_successor(&mut *tx, &t).await.map_err(|e| {
                 TaskServiceError::Internal(format!("check runnable successor: {e}"))
             })?;
+            successor_pending = successor;
             if successor {
                 tracing::info!(
                     task_id = %task_id,
@@ -507,8 +524,15 @@ impl TaskService {
                     Ok(Some(child)) => retried = Some(child),
                     Ok(None) => {
                         // Workspace torn down mid-flight, or a rerun took the
-                        // slot after the unlocked check. This transaction still
-                        // owns the parent's failed status — record and move on.
+                        // slot after the unlocked check. Re-check so a
+                        // concurrently-created successor suppresses terminal
+                        // dependency attention just like one found above.
+                        successor_pending =
+                            has_runnable_successor(&mut *tx, &t).await.map_err(|e| {
+                                TaskServiceError::Internal(format!(
+                                    "re-check runnable successor: {e}"
+                                ))
+                            })?;
                         tracing::info!(task_id = %task_id, "fail task auto-retry not created: no row written");
                     }
                     Err(cerr) => {
@@ -520,10 +544,12 @@ impl TaskService {
             }
         }
 
+        let retry_pending = retried.is_some() || successor_pending;
+
         // Terminal non-retried chat failure is a visible assistant outcome,
         // persisted while the session lock is held, then the next direct head
         // reanchors past it.
-        if let (Some(chat_session_id), false) = (t.chat_session_id, retried.is_some()) {
+        if let (Some(chat_session_id), false) = (t.chat_session_id, retry_pending) {
             // An adopted onboarding kickoff must not stay bound to a task that
             // will never run again (PB-5827); gated on retried==nil because a
             // retry child still reads the root's input binding.
@@ -546,6 +572,27 @@ impl TaskService {
         }
         tx.commit().await.map_err(TaskServiceError::Sql)?;
         let task = t;
+
+        if !retry_pending {
+            if let Some(issue_id) = task.issue_id {
+                if let Ok(Some(issue)) = get_issue(&self.pool, issue_id).await {
+                    if let Err(error) = self
+                        .flag_dependency_attention(
+                            issue.workspace_id,
+                            issue.id,
+                            &format!("prerequisite task failed: {failure_reason}"),
+                        )
+                        .await
+                    {
+                        tracing::warn!(
+                            %error,
+                            issue_id = %issue.id,
+                            "dependency attention update after task failure failed"
+                        );
+                    }
+                }
+            }
+        }
 
         tracing::warn!(
             task_id = %task.id,
@@ -579,7 +626,7 @@ impl TaskService {
         // Delegated tasks hand control back to their coordinator only after
         // the retry decision; recoverable failures stay silent while a child
         // attempt is pending.
-        if retried.is_none() {
+        if !retry_pending {
             if let Err(recovery_err) = self.recover_delegated_task_failure(&task).await {
                 tracing::warn!(
                     task_id = %task.id,
@@ -590,7 +637,7 @@ impl TaskService {
         }
 
         // Skip the per-failure system comment when an auto-retry is pending.
-        if let (Some(issue_id), false) = (task.issue_id, retried.is_some()) {
+        if let (Some(issue_id), false) = (task.issue_id, retry_pending) {
             if !err_msg.is_empty() {
                 self.create_agent_comment(
                     issue_id,
@@ -604,14 +651,14 @@ impl TaskService {
             }
         }
 
-        if retried.is_none() {
+        if !retry_pending {
             if let Some(qc) = TaskService::parse_quick_create_context(&task) {
                 self.notify_quick_create_failed(&task, &qc, &err_msg).await;
             }
         }
 
         self.reconcile_agent_status(task.agent_id).await;
-        self.broadcast_task_failed_event(&task, &err_msg, &failure_reason, retried.is_some())
+        self.broadcast_task_failed_event(&task, &err_msg, &failure_reason, retry_pending)
             .await;
         Ok(task)
     }
@@ -817,7 +864,17 @@ impl TaskService {
                 .await
                 .map_err(|e| TaskServiceError::Internal(format!("load target agent: {e}")))?
                 .ok_or_else(|| TaskServiceError::Internal("load target agent: not found".into()))?;
-            if !can_invoke(&target_agent) {
+            if target_agent.archived_at.is_some() || !can_invoke(&target_agent) {
+                return Err(TaskServiceError::RerunInvokeNotAllowed(
+                    ERR_RERUN_INVOKE_NOT_ALLOWED,
+                ));
+            }
+        } else {
+            let target_agent = patchbay_db::queries::agent::get_agent(&self.pool, agent_id)
+                .await
+                .map_err(|e| TaskServiceError::Internal(format!("load target agent: {e}")))?
+                .ok_or_else(|| TaskServiceError::Internal("load target agent: not found".into()))?;
+            if target_agent.archived_at.is_some() {
                 return Err(TaskServiceError::RerunInvokeNotAllowed(
                     ERR_RERUN_INVOKE_NOT_ALLOWED,
                 ));

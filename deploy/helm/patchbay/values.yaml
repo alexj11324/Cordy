@@ -26,7 +26,6 @@ images:
 #     --from-literal=JWT_SECRET="$(openssl rand -hex 32)" \
 #     --from-literal=POSTGRES_PASSWORD="$(openssl rand -hex 16)" \
 #     --from-literal=RESEND_API_KEY="" \
-#     --from-literal=GOOGLE_CLIENT_SECRET="" \
 #     --from-literal=CLERK_SECRET_KEY="" \
 #     --from-literal=CLERK_JWT_KEY="" \
 #     --from-literal=CLOUDFRONT_PRIVATE_KEY="" \
@@ -39,7 +38,6 @@ images:
 #     --from-literal=JWT_SECRET="$(openssl rand -hex 32)" \
 #     --from-literal=DATABASE_URL="postgres://user:pass@host:5432/patchbay?sslmode=require" \
 #     --from-literal=RESEND_API_KEY="" \
-#     --from-literal=GOOGLE_CLIENT_SECRET="" \
 #     --from-literal=CLERK_SECRET_KEY="" \
 #     --from-literal=CLERK_JWT_KEY="" \
 #     --from-literal=CLOUDFRONT_PRIVATE_KEY="" \
@@ -85,13 +83,22 @@ postgres:
 # Backend (Rust API + WS server)
 # -----------------------------------------------------------------------------
 backend:
+  redis:
+    # Desktop handoff codes use REDIS_URL as their shared one-time grant store.
+    # Keep this false for the default single backend pod. Set it to true before
+    # increasing backend.replicas; the existing Secret must then contain the
+    # key below, or Kubernetes will keep the backend pods from starting.
+    enabled: false
+    secretKey: REDIS_URL
   # Concurrent backend pods are now safe to start: patchbay-migrate uses a
   # Postgres session-level advisory lock to serialize the startup
   # `migrate up` run, so late-arriving pods queue and then no-op (see
   # GitHub patchbay-ai/patchbay#3647). 1 is still the recommended default
   # because the chart Deployment uses strategy: Recreate and there is no
   # leader-elected workload split — increase this only if you actually
-  # need horizontal scale of the API/WS server.
+  # need horizontal scale of the API/WS server. Horizontal scale also requires
+  # backend.redis.enabled so browser-issued Desktop handoff codes can be
+  # redeemed through any replica.
   replicas: 1
   uploads:
     persistence:
@@ -150,8 +157,6 @@ backend:
       staleGrace: 15m
       # Local down switch applied by the next chart rollout; it only forces off.
       emergencyDisabled: false
-    googleClientId: ""
-    googleRedirectUri: http://patchbay.dev.lan/auth/callback
     # Clerk session verification. CLERK_SECRET_KEY and CLERK_JWT_KEY stay in
     # existingSecret; these origin values are safe deployment configuration.
     clerkIssuer: ""
@@ -220,6 +225,10 @@ ingress:
   annotations: {}
   frontend:
     host: patchbay.dev.lan
+    # Route other Web entrypoints to the same frontend Service. The canonical
+    # hosted deployment adds accounts.aspectlylabs.com here while keeping
+    # patchbay.aspectlylabs.com as the primary host.
+    additionalHosts: []
   backend:
     host: api.patchbay.dev.lan
   # tls:

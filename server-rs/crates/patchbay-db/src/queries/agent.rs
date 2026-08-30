@@ -109,7 +109,7 @@ pub async fn archive_agent(
 ) -> anyhow::Result<Option<Agent>> {
     let row = sqlx::query(
         r#"UPDATE agent SET archived_at = now(), archived_by = $2, updated_at = now()
-WHERE id = $1
+WHERE id = $1 AND archived_at IS NULL
 RETURNING id, workspace_id, name, avatar_url, runtime_mode, runtime_config, visibility, status, max_concurrent_tasks, owner_id, created_at, updated_at, description, runtime_id, instructions, archived_at, archived_by, custom_env, custom_args, mcp_config, model, thinking_level, composio_toolkit_allowlist, permission_mode, kind, system_key, disabled_runtime_skills, service_tier"#
     )
         .bind(id)
@@ -1393,15 +1393,24 @@ SET status = 'dispatched',
     prepare_lease_expires_at = now() + make_interval(secs => $1::double precision)
 WHERE id = (
     SELECT atq.id FROM agent_task_queue atq
+    JOIN agent task_agent ON task_agent.id = atq.agent_id
     WHERE atq.agent_id = $2
       AND atq.runtime_id = $3
       AND atq.status = 'queued'
+      AND task_agent.archived_at IS NULL
       AND EXISTS (
           SELECT 1 FROM agent_runtime r
           WHERE r.id = atq.runtime_id
             AND r.status = 'online'
             AND COALESCE(r.last_seen_at, r.updated_at) >=
-                now() - make_interval(secs => $4::double precision)
+              now() - make_interval(secs => $4::double precision)
+      )
+      AND (
+          atq.issue_id IS NULL
+          OR dependency_graph_issue_gate_open(
+              (SELECT i.workspace_id FROM issue i WHERE i.id = atq.issue_id),
+              atq.issue_id
+          )
       )
       AND NOT EXISTS (
           SELECT 1 FROM agent_task_queue active
@@ -2625,6 +2634,18 @@ SELECT
 FROM agent_task_queue p
 WHERE p.id = $1
   AND lock_task_owner_rows(p.agent_id, p.issue_id, p.runtime_id)
+  -- A prerequisite may have been reopened after the parent started. Treat
+  -- that race as "no retry" so the parent's terminal failure can still
+  -- commit; the admission trigger remains the final guard for other inserts.
+  AND (
+      p.issue_id IS NULL
+      OR EXISTS (
+          SELECT 1
+          FROM issue task_issue
+          WHERE task_issue.id = p.issue_id
+            AND dependency_graph_issue_gate_open(task_issue.workspace_id, task_issue.id)
+      )
+  )
 ON CONFLICT (issue_id, agent_id) WHERE (
            status IN ('queued', 'dispatched')
            AND COALESCE(context->>'side_chat_parent_task_id', '') = ''
@@ -2779,8 +2800,19 @@ pub async fn delete_system_agent_by_id(
     id: Uuid,
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
-        r#"DELETE FROM agent
-WHERE id = $1 AND kind = 'system' AND system_key LIKE 'agent_builder:%'"#,
+        r#"WITH victim AS MATERIALIZED (
+    SELECT id FROM agent
+    WHERE id = $1 AND kind = 'system' AND system_key LIKE 'agent_builder:%'
+), revoked_grants AS (
+    UPDATE authorization_grant
+    SET revoked_at = COALESCE(revoked_at, now()), updated_at = now()
+    WHERE revoked_at IS NULL
+      AND (
+          (resource_type = 'agent_definition' AND resource_id IN (SELECT id FROM victim))
+          OR (principal_type = 'agent_definition' AND principal_id IN (SELECT id FROM victim))
+      )
+)
+DELETE FROM agent WHERE id IN (SELECT id FROM victim)"#,
     )
     .bind(id)
     .execute(executor)
@@ -4934,7 +4966,15 @@ pub async fn list_queued_claim_candidates_by_runtime(
 ) -> anyhow::Result<Vec<AgentTaskQueue>> {
     let rows = sqlx::query(
         r#"SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, automation_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, execution_lane_key FROM agent_task_queue
-WHERE runtime_id = $1 AND status = 'queued'
+WHERE runtime_id = $1
+  AND status = 'queued'
+  AND (
+      issue_id IS NULL
+      OR dependency_graph_issue_gate_open(
+          (SELECT i.workspace_id FROM issue i WHERE i.id = agent_task_queue.issue_id),
+          issue_id
+      )
+  )
 ORDER BY priority DESC, created_at ASC"#
     )
         .bind(runtime_id)
@@ -5008,7 +5048,15 @@ pub async fn list_queued_claim_candidates_by_runtimes(
 ) -> anyhow::Result<Vec<AgentTaskQueue>> {
     let rows = sqlx::query(
         r#"SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, automation_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, execution_lane_key FROM agent_task_queue
-WHERE runtime_id = ANY($1::uuid[]) AND status = 'queued'
+WHERE runtime_id = ANY($1::uuid[])
+  AND status = 'queued'
+  AND (
+      issue_id IS NULL
+      OR dependency_graph_issue_gate_open(
+          (SELECT i.workspace_id FROM issue i WHERE i.id = agent_task_queue.issue_id),
+          issue_id
+      )
+  )
 ORDER BY priority DESC, created_at ASC"#
     )
         .bind(runtime_ids)
@@ -5835,6 +5883,10 @@ SET status = 'queued', fire_at = NULL
 WHERE task.id = $1
   AND task.issue_id IS NOT NULL
   AND task.status = 'deferred'
+  AND dependency_graph_issue_gate_open(
+      (SELECT i.workspace_id FROM issue i WHERE i.id = task.issue_id),
+      task.issue_id
+  )
   AND task.context->>'coordination_assignment_id' IS NULL
   AND NOT EXISTS (
       SELECT 1
@@ -5927,6 +5979,13 @@ pub async fn promote_due_deferred_tasks_for_runtime(
     WHERE t.runtime_id = $1
       AND t.status = 'deferred'
       AND t.fire_at <= now()
+      AND (
+        t.issue_id IS NULL
+        OR dependency_graph_issue_gate_open(
+            (SELECT i.workspace_id FROM issue i WHERE i.id = t.issue_id),
+            t.issue_id
+        )
+      )
       AND (
         COALESCE(t.context->>'message_bus_parent_task_id', '') = ''
         OR EXISTS (
@@ -6048,6 +6107,13 @@ pub async fn promote_due_deferred_tasks_for_runtimes(
     WHERE t.runtime_id = ANY($1::uuid[])
       AND t.status = 'deferred'
       AND t.fire_at <= now()
+      AND (
+        t.issue_id IS NULL
+        OR dependency_graph_issue_gate_open(
+            (SELECT i.workspace_id FROM issue i WHERE i.id = t.issue_id),
+            t.issue_id
+        )
+      )
       AND (
         COALESCE(t.context->>'message_bus_parent_task_id', '') = ''
         OR EXISTS (
@@ -6233,6 +6299,15 @@ WHERE id = (
             AND COALESCE(r.last_seen_at, r.updated_at) >=
                 now() - make_interval(secs => $4::double precision)
       )
+      AND (
+          atq.issue_id IS NULL
+          OR EXISTS (
+              SELECT 1
+              FROM issue task_issue
+              WHERE task_issue.id = atq.issue_id
+                AND dependency_graph_issue_gate_open(task_issue.workspace_id, task_issue.id)
+          )
+      )
     ORDER BY atq.priority DESC, atq.dispatched_at ASC
     LIMIT 1
     FOR UPDATE SKIP LOCKED
@@ -6329,6 +6404,15 @@ WHERE id IN (
             AND r.status = 'online'
             AND COALESCE(r.last_seen_at, r.updated_at) >=
                 now() - make_interval(secs => $4::double precision)
+      )
+      AND (
+          atq.issue_id IS NULL
+          OR EXISTS (
+              SELECT 1
+              FROM issue task_issue
+              WHERE task_issue.id = atq.issue_id
+                AND dependency_graph_issue_gate_open(task_issue.workspace_id, task_issue.id)
+          )
       )
     ORDER BY atq.priority DESC, atq.dispatched_at ASC
     LIMIT $5::int

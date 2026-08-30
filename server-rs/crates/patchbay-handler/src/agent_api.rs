@@ -1760,6 +1760,20 @@ async fn archive_agent(
             return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive agent");
         }
     };
+    let locked_agent = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM agent WHERE id = $1 AND archived_at IS NULL FOR UPDATE",
+    )
+    .bind(target.id)
+    .fetch_optional(&mut *tx)
+    .await;
+    match locked_agent {
+        Ok(Some(_)) => {}
+        Ok(None) => return error_response(StatusCode::CONFLICT, "agent is already archived"),
+        Err(error) => {
+            tracing::warn!(%error, agent_id = %target.id, "failed to lock agent for archive");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive agent");
+        }
+    }
     let archived = match agent::archive_agent(&mut *tx, target.id, context.member.user_id).await {
         Ok(Some(v)) => v,
         _ => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive agent"),

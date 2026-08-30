@@ -12,6 +12,7 @@ chrono = { workspace = true }
 chrono-tz = "0.9"
 croner = "1"
 patchbay-analytics = { path = "../patchbay-analytics" }
+patchbay-authorization = { path = "../patchbay-authorization" }
 patchbay-db = { path = "../patchbay-db" }
 patchbay-events = { path = "../patchbay-events" }
 patchbay-metrics = { path = "../patchbay-metrics" }

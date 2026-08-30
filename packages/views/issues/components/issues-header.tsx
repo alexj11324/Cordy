@@ -13,6 +13,7 @@ import {
   FolderKanban,
   FolderMinus,
   List,
+  Network,
   Rows3,
   SignalHigh,
   SlidersHorizontal,
@@ -934,6 +935,7 @@ export function IssuesHeader({
   scopedIssues,
   workingAgents,
   allowGantt = false,
+  allowGraph = false,
   dateFilter = null,
   onDateFilterChange,
   isRefreshing = false,
@@ -947,6 +949,7 @@ export function IssuesHeader({
    *  behind the agents-working chip. */
   workingAgents: WorkingAgentSummary[] | undefined;
   allowGantt?: boolean;
+  allowGraph?: boolean;
   dateFilter?: IssueDateFilter | null;
   onDateFilterChange?: (filter: IssueDateFilter | null) => void;
   isRefreshing?: boolean;
@@ -1125,6 +1128,7 @@ export function IssuesHeader({
           <IssueDisplayControls
             scopedIssues={scopedIssues}
             allowGantt={allowGantt}
+            allowGraph={allowGraph}
             dateFilter={dateFilter}
             onDateFilterChange={onDateFilterChange}
             facetCountsExact={facetCountsExact}
@@ -1606,6 +1610,7 @@ export function IssueDisplayControls({
   scopedIssues,
   hideViewToggle = false,
   allowGantt = false,
+  allowGraph = false,
   dateFilter = null,
   onDateFilterChange,
   facetCountsExact = true,
@@ -1624,6 +1629,7 @@ export function IssueDisplayControls({
   // /my-issues, actor panel) ignore viewMode === "gantt" and would silently
   // fall back to List if the option were exposed there. Keep Gantt opt-in.
   allowGantt?: boolean;
+  allowGraph?: boolean;
   /**
    * Whether `scopedIssues` covers the surface's full window. Table does not
    * use loaded rows for counts; server-paged List, Board, and Swimlane follow
@@ -2122,6 +2128,8 @@ export function IssueDisplayControls({
                           <Waves className="size-3.5" />
                         ) : viewMode === "gantt" && allowGantt ? (
                           <ChartGantt className="size-3.5" />
+                        ) : viewMode === "graph" && allowGraph ? (
+                          <Network className="size-3.5" />
                         ) : (
                           <List className="size-3.5" />
                         )}
@@ -2134,6 +2142,8 @@ export function IssueDisplayControls({
                             ? t(($) => $.view.swimlane)
                             : viewMode === "gantt" && allowGantt
                             ? t(($) => $.view.gantt)
+                            : viewMode === "graph" && allowGraph
+                            ? t(($) => $.view.graph)
                             : t(($) => $.view.list)}
                         </span>
                       </Button>
@@ -2150,6 +2160,8 @@ export function IssueDisplayControls({
                   ? t(($) => $.view.tooltip_swimlane)
                   : viewMode === "gantt" && allowGantt
                   ? t(($) => $.view.tooltip_gantt)
+                  : viewMode === "graph" && allowGraph
+                  ? t(($) => $.view.tooltip_graph)
                   : t(($) => $.view.tooltip_list)}
               </TooltipContent>
             </Tooltip>
@@ -2184,6 +2196,12 @@ export function IssueDisplayControls({
                   <DropdownMenuRadioItem value="gantt">
                     <ChartGantt />
                     {t(($) => $.view.gantt)}
+                  </DropdownMenuRadioItem>
+                )}
+                {allowGraph && (
+                  <DropdownMenuRadioItem value="graph">
+                    <Network />
+                    {t(($) => $.view.graph)}
                   </DropdownMenuRadioItem>
                 )}
               </DropdownMenuRadioGroup>

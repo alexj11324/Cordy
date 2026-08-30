@@ -24,6 +24,7 @@ use crate::command::{filter_custom_args, filter_launch_prefix, BlockedArgMode, R
 use crate::contract::{
     AgentError, Backend, ExecOptions, ExecutionResult, Message, MessageType, Session, TokenUsage,
 };
+use crate::env::configure_child_env;
 use crate::model::{Catalog, CatalogCache, Model, ModelDiscoveryCacheKey};
 use crate::process::OwnedProcessTree;
 use crate::stderr::{SharedDiagnosticBuffer, DEFAULT_TAIL_BYTES};
@@ -126,8 +127,8 @@ impl DevecoBackend {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .envs(&self.config.env)
             .kill_on_drop(false);
+        configure_child_env(&mut command, &self.config.env);
         let mut tree = match OwnedProcessTree::spawn(&mut command).await {
             Ok(tree) => tree,
             Err(error) => {
@@ -232,8 +233,8 @@ impl Backend for DevecoBackend {
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .envs(&self.config.env)
             .kill_on_drop(false);
+        configure_child_env(&mut command, &self.config.env);
         if !options.cwd.is_empty() {
             command.current_dir(&options.cwd).env("PWD", &options.cwd);
         }

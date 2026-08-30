@@ -331,6 +331,12 @@ deleted_task_tokens AS (
     DELETE FROM task_token
     WHERE workspace_id = $1
 ),
+deleted_authorization_audit AS (
+    DELETE FROM authorization_audit_event WHERE workspace_id = $1
+),
+deleted_authorization_grants AS (
+    DELETE FROM authorization_grant WHERE workspace_id = $1
+),
 deleted_hourly_dirty AS (
     DELETE FROM task_usage_hourly_dirty WHERE workspace_id = $1
 ),
@@ -372,6 +378,15 @@ deleted_workspace_channel_messages AS (
 ),
 deleted_workspace_channels AS (
     DELETE FROM workspace_channel WHERE workspace_id = $1
+),
+deleted_dependency_graph_edges AS (
+    DELETE FROM dependency_graph_edge WHERE workspace_id = $1
+),
+deleted_dependency_graph_nodes AS (
+    DELETE FROM dependency_graph_node WHERE workspace_id = $1
+),
+deleted_dependency_graph_plans AS (
+    DELETE FROM dependency_graph_plan WHERE workspace_id = $1
 ),
 deleted_issue_dependencies AS (
     DELETE FROM issue_dependency

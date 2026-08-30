@@ -96,8 +96,23 @@ pub async fn delete_agent_runtimes_by_profile(
     workspace_id: Uuid,
 ) -> anyhow::Result<Vec<DeleteAgentRuntimesByProfileRow>> {
     let rows = sqlx::query(
-        r#"DELETE FROM agent_runtime
-WHERE profile_id = $1 AND workspace_id = $2
+        r#"WITH victims AS (
+    SELECT id
+    FROM agent_runtime
+    WHERE profile_id = $1 AND workspace_id = $2
+), revoked AS (
+    UPDATE authorization_grant
+    SET revoked_at = COALESCE(revoked_at, NOW()), updated_at = NOW()
+    WHERE workspace_id = $2
+      AND revoked_at IS NULL
+      AND (
+        (resource_type IN ('runtime', 'provider_identity')
+            AND resource_id IN (SELECT id FROM victims))
+        OR (principal_type = 'device_runtime' AND principal_id IN (SELECT id FROM victims))
+      )
+)
+DELETE FROM agent_runtime
+WHERE id IN (SELECT id FROM victims)
 RETURNING id, workspace_id, owner_id, daemon_id, provider"#,
     )
     .bind(profile_id)
@@ -387,4 +402,101 @@ RETURNING id, workspace_id, display_name, protocol_family, command_name, descrip
         created_at: row.try_get(10)?,
         updated_at: row.try_get(11)?,
     }))
+}
+
+#[cfg(test)]
+mod authorization_cleanup_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn profile_runtime_delete_revokes_resource_and_device_grants() {
+        let url = std::env::var("DATABASE_URL")
+            .expect("DATABASE_URL is required for runtime profile authorization contract");
+        let pool = sqlx::PgPool::connect(&url)
+            .await
+            .expect("connect contract PostgreSQL");
+        let workspace_id = Uuid::now_v7();
+        let user_id = Uuid::now_v7();
+        let profile_id = Uuid::now_v7();
+        let runtime_id = Uuid::now_v7();
+
+        sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, 'profile auth', $2)")
+            .bind(workspace_id)
+            .bind(format!("profile-auth-{workspace_id}"))
+            .execute(&pool)
+            .await
+            .expect("create workspace");
+        sqlx::query("INSERT INTO \"user\" (id, name, email) VALUES ($1, 'owner', $2)")
+            .bind(user_id)
+            .bind(format!("profile-auth-{user_id}@example.test"))
+            .execute(&pool)
+            .await
+            .expect("create owner");
+        sqlx::query(
+            "INSERT INTO runtime_profile (id, workspace_id, display_name, protocol_family, command_name, created_by) \
+             VALUES ($1, $2, 'profile auth', 'codex', 'codex', $3)",
+        )
+        .bind(profile_id)
+        .bind(workspace_id)
+        .bind(user_id)
+        .execute(&pool)
+        .await
+        .expect("create profile");
+        sqlx::query(
+            "INSERT INTO agent_runtime (id, workspace_id, daemon_id, name, runtime_mode, provider, status, owner_id, visibility, profile_id) \
+             VALUES ($1, $2, 'profile-auth-daemon', 'profile runtime', 'local', 'codex', 'offline', $3, 'private', $4)",
+        )
+        .bind(runtime_id)
+        .bind(workspace_id)
+        .bind(user_id)
+        .bind(profile_id)
+        .execute(&pool)
+        .await
+        .expect("create runtime");
+        sqlx::query(
+            "INSERT INTO authorization_grant (workspace_id, principal_type, principal_id, action, resource_type, resource_id, effect, created_by) VALUES \
+             ($1, 'user', $2, 'runtime.use', 'runtime', $3, 'allow', $2), \
+             ($1, 'device_runtime', $3, 'task.read', 'task_run', NULL, 'allow', $2)",
+        )
+        .bind(workspace_id)
+        .bind(user_id)
+        .bind(runtime_id)
+        .execute(&pool)
+        .await
+        .expect("create grants");
+
+        let deleted = delete_agent_runtimes_by_profile(&pool, profile_id, workspace_id)
+            .await
+            .expect("delete profile runtimes");
+        assert_eq!(deleted.len(), 1);
+        let active_grants: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM authorization_grant WHERE workspace_id = $1 AND revoked_at IS NULL",
+        )
+        .bind(workspace_id)
+        .fetch_one(&pool)
+        .await
+        .expect("count active grants");
+        assert_eq!(active_grants, 0);
+
+        sqlx::query("DELETE FROM authorization_grant WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete grants");
+        sqlx::query("DELETE FROM runtime_profile WHERE id = $1")
+            .bind(profile_id)
+            .execute(&pool)
+            .await
+            .expect("delete profile");
+        sqlx::query("DELETE FROM workspace WHERE id = $1")
+            .bind(workspace_id)
+            .execute(&pool)
+            .await
+            .expect("delete workspace");
+        sqlx::query("DELETE FROM \"user\" WHERE id = $1")
+            .bind(user_id)
+            .execute(&pool)
+            .await
+            .expect("delete owner");
+    }
 }

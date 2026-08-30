@@ -1,4 +1,4 @@
-//! Public passwordless and Google authentication endpoints.
+//! Public passwordless and Clerk authentication endpoints.
 
 use axum::body::Bytes;
 use axum::extract::State;
@@ -25,9 +25,6 @@ pub struct AuthSettings {
     allowed_email_domains: Vec<String>,
     app_env: String,
     dev_verification_code: String,
-    google_client_id: String,
-    google_client_secret: String,
-    google_redirect_uri: String,
     pub(crate) cookie_domain: String,
     pub(crate) frontend_origin: String,
 }
@@ -40,9 +37,6 @@ impl AuthSettings {
             allowed_email_domains: split_env("ALLOWED_EMAIL_DOMAINS"),
             app_env: env_trimmed("APP_ENV"),
             dev_verification_code: env_trimmed("PATCHBAY_DEV_VERIFICATION_CODE"),
-            google_client_id: env_trimmed("GOOGLE_CLIENT_ID"),
-            google_client_secret: env_trimmed("GOOGLE_CLIENT_SECRET"),
-            google_redirect_uri: env_trimmed("GOOGLE_REDIRECT_URI"),
             cookie_domain: env_trimmed("COOKIE_DOMAIN"),
             frontend_origin: env_trimmed("FRONTEND_ORIGIN"),
         }
@@ -55,9 +49,6 @@ impl AuthSettings {
             allowed_email_domains: split_value(config.auth.allowed_email_domains.as_deref()),
             app_env: option_trimmed(config.server.app_env.as_deref()),
             dev_verification_code: option_trimmed(config.auth.dev_verification_code.as_deref()),
-            google_client_id: option_trimmed(config.auth.google_client_id.as_deref()),
-            google_client_secret: option_trimmed(config.auth.google_client_secret.as_deref()),
-            google_redirect_uri: option_trimmed(config.auth.google_redirect_uri.as_deref()),
             cookie_domain: option_trimmed(config.auth.cookie_domain.as_deref()),
             frontend_origin: option_trimmed(config.urls.frontend_origin.as_deref()),
         }
@@ -97,7 +88,6 @@ pub fn public_router(
 ) -> Router<HandlerState> {
     let general = Router::new()
         .route("/auth/send-code", post(send_code))
-        .route("/auth/google", post(google_login))
         .route("/auth/clerk", post(clerk_login))
         .route_layer(axum::middleware::from_fn_with_state(
             auth_limit,
@@ -124,29 +114,6 @@ struct VerifyCodeRequest {
     email: String,
     #[serde(default, deserialize_with = "null_string_default")]
     code: String,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct GoogleLoginRequest {
-    #[serde(default, deserialize_with = "null_string_default")]
-    code: String,
-    #[serde(default, deserialize_with = "null_string_default")]
-    redirect_uri: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct GoogleTokenResponse {
-    access_token: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct GoogleUserInfo {
-    #[serde(default)]
-    email: String,
-    #[serde(default)]
-    name: String,
-    #[serde(default)]
-    picture: String,
 }
 
 struct LoginProfile {
@@ -366,111 +333,6 @@ async fn verify_code(
         }
     }
     complete_login(&state, &headers, &email, None).await
-}
-
-async fn google_login(
-    State(state): State<HandlerState>,
-    headers: HeaderMap,
-    body: Bytes,
-) -> Response {
-    let request: GoogleLoginRequest = match decode_first_json(&body) {
-        Ok(request) => request,
-        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid request body"),
-    };
-    if request.code.is_empty() {
-        return error_response(StatusCode::BAD_REQUEST, "code is required");
-    }
-    if state.auth_settings.google_client_id.is_empty()
-        || state.auth_settings.google_client_secret.is_empty()
-    {
-        return error_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Google login is not configured",
-        );
-    }
-    let redirect_uri = if request.redirect_uri.is_empty() {
-        state.auth_settings.google_redirect_uri.as_str()
-    } else {
-        request.redirect_uri.as_str()
-    };
-    let client = reqwest::Client::new();
-    let token_response = match client
-        .post("https://oauth2.googleapis.com/token")
-        .form(&[
-            ("code", request.code.as_str()),
-            ("client_id", state.auth_settings.google_client_id.as_str()),
-            (
-                "client_secret",
-                state.auth_settings.google_client_secret.as_str(),
-            ),
-            ("redirect_uri", redirect_uri),
-            ("grant_type", "authorization_code"),
-        ])
-        .send()
-        .await
-    {
-        Ok(response) => response,
-        Err(error) => {
-            tracing::error!(%error, "auth: Google token exchange failed");
-            return error_response(
-                StatusCode::BAD_GATEWAY,
-                "failed to exchange code with Google",
-            );
-        }
-    };
-    if !token_response.status().is_success() {
-        let status = token_response.status();
-        let response_body = token_response.text().await.unwrap_or_default();
-        tracing::error!(%status, body = %response_body, "auth: Google token exchange rejected");
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "failed to exchange code with Google",
-        );
-    }
-    let token: GoogleTokenResponse = match token_response.json().await {
-        Ok(token) => token,
-        Err(_) => {
-            return error_response(
-                StatusCode::BAD_GATEWAY,
-                "failed to parse Google token response",
-            );
-        }
-    };
-    let google_user: GoogleUserInfo = match client
-        .get("https://www.googleapis.com/oauth2/v2/userinfo")
-        .bearer_auth(&token.access_token)
-        .send()
-        .await
-    {
-        Ok(response) => match response.json().await {
-            Ok(user) => user,
-            Err(_) => {
-                return error_response(StatusCode::BAD_GATEWAY, "failed to parse Google user info");
-            }
-        },
-        Err(error) => {
-            tracing::error!(%error, "auth: Google userinfo fetch failed");
-            return error_response(
-                StatusCode::BAD_GATEWAY,
-                "failed to fetch user info from Google",
-            );
-        }
-    };
-    if google_user.email.is_empty() {
-        return error_response(StatusCode::BAD_REQUEST, "Google account has no email");
-    }
-    let email = google_user.email.trim().to_lowercase();
-    complete_login(
-        &state,
-        &headers,
-        &email,
-        Some(LoginProfile {
-            name: google_user.name,
-            picture: google_user.picture,
-            auth_method: "google",
-        }),
-    )
-    .await
 }
 
 async fn clerk_login(State(state): State<HandlerState>, headers: HeaderMap) -> Response {
@@ -831,12 +693,6 @@ mod tests {
                 "email and code are required",
             ),
             (
-                "/auth/google",
-                r#"{"code":""}"#,
-                StatusCode::BAD_REQUEST,
-                "code is required",
-            ),
-            (
                 "/auth/send-code",
                 "null true",
                 StatusCode::BAD_REQUEST,
@@ -853,12 +709,6 @@ mod tests {
                 r#"{"email":null,"code":null} []"#,
                 StatusCode::BAD_REQUEST,
                 "email and code are required",
-            ),
-            (
-                "/auth/google",
-                r#"{"code":null,"redirect_uri":null} {}"#,
-                StatusCode::BAD_REQUEST,
-                "code is required",
             ),
             (
                 "/auth/clerk",

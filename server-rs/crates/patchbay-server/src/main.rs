@@ -298,6 +298,29 @@ fn install_pending_stores(
     state.with_redis(client)
 }
 
+fn validate_shared_desktop_handoff_redis(
+    required: bool,
+    redis_url: Option<&str>,
+) -> anyhow::Result<()> {
+    if !required {
+        return Ok(());
+    }
+    let redis_url = redis_url
+        .map(str::trim)
+        .filter(|url| !url.is_empty())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "REDIS_URL must be configured when shared desktop handoff storage is required"
+            )
+        })?;
+    redis::Client::open(redis_url).map_err(|_| {
+        anyhow::anyhow!(
+            "REDIS_URL must be a valid Redis URL when shared desktop handoff storage is required"
+        )
+    })?;
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn build_production_router(
     db: sqlx::PgPool,
@@ -370,6 +393,9 @@ async fn build_production_router(
         .url
         .as_deref()
         .filter(|value| !value.trim().is_empty());
+    let require_shared_desktop_handoff =
+        std::env::var("PATCHBAY_REQUIRE_SHARED_DESKTOP_HANDOFF").as_deref() == Ok("true");
+    validate_shared_desktop_handoff_redis(require_shared_desktop_handoff, redis_url)?;
     let root_cancel = CancellationToken::new();
     let state =
         install_pending_stores(state, redis_url).with_channel_cancel(root_cancel.child_token());
@@ -1255,6 +1281,18 @@ mod tests {
         assert!(state.model_list_store.is_some());
         assert!(state.local_skill_list_store.is_some());
         assert!(state.local_skill_import_store.is_some());
+    }
+
+    #[test]
+    fn shared_desktop_handoff_requires_a_nonempty_valid_redis_url() {
+        assert!(validate_shared_desktop_handoff_redis(false, None).is_ok());
+        assert!(validate_shared_desktop_handoff_redis(true, None).is_err());
+        assert!(validate_shared_desktop_handoff_redis(true, Some("   ")).is_err());
+        assert!(validate_shared_desktop_handoff_redis(true, Some("not a redis URL")).is_err());
+        assert!(
+            validate_shared_desktop_handoff_redis(true, Some("redis://redis.internal:6379/0"))
+                .is_ok()
+        );
     }
 
     #[tokio::test]

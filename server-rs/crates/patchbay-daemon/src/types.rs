@@ -172,6 +172,14 @@ pub struct Task {
         skip_serializing_if = "String::is_empty"
     )]
     pub remote_mcp_daemon_token: String,
+    /// Server-computed permission to use this host's provider identity through
+    /// the local broker. It contains constraints and grant ids, never a
+    /// provider secret or broker bearer.
+    #[serde(
+        rename = "provider_authorization",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub provider_authorization: Option<ProviderAuthorization>,
     /// PluginHookTools are this workspace's agent-trigger plugin hooks, which
     /// the local MCP server presents to the agent as tools. Resolved by the
     /// server at claim time; the daemon never reads plugin state itself.
@@ -507,8 +515,30 @@ impl std::fmt::Debug for Task {
                 "has_remote_mcp_daemon_token",
                 &!self.remote_mcp_daemon_token.is_empty(),
             )
+            .field(
+                "has_provider_authorization",
+                &self.provider_authorization.is_some(),
+            )
             .finish_non_exhaustive()
     }
+}
+
+#[derive(Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ProviderAuthorization {
+    pub provider: String,
+    pub runtime_id: String,
+    pub device_id: String,
+    pub owner_user_id: String,
+    pub grantee_user_id: String,
+    pub agent_id: String,
+    pub task_id: String,
+    pub action: String,
+    #[serde(default)]
+    pub models: Vec<String>,
+    pub max_tokens: Option<u64>,
+    pub expires_at: String,
+    #[serde(default)]
+    pub grant_ids: Vec<String>,
 }
 
 /// Serde helper mirroring Go's `omitempty` for int fields (0 omitted).

@@ -956,6 +956,62 @@ pub struct IssueDependency {
     pub type_: String,
 }
 
+/// A validated, immutable planner submission for one parent issue.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct DependencyGraphPlan {
+    pub attention_reason: Option<String>,
+    pub attention_required: bool,
+    pub created_at: DateTime<Utc>,
+    pub created_by_id: Uuid,
+    pub created_by_type: String,
+    pub goal: String,
+    pub id: Uuid,
+    pub idempotency_key: String,
+    pub parent_issue_id: Uuid,
+    pub request_hash: String,
+    pub status: String,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
+}
+
+/// A planner node and the issue allocated for it by atomic plan application.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct DependencyGraphNode {
+    pub acceptance_criteria: serde_json::Value,
+    pub assignee_id: Option<Uuid>,
+    pub assignee_type: Option<String>,
+    pub candidate_assignees: serde_json::Value,
+    pub context: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+    pub description: String,
+    pub id: Uuid,
+    pub issue_id: Uuid,
+    pub outputs: serde_json::Value,
+    pub plan_id: Uuid,
+    pub temp_id: String,
+    pub title: String,
+    pub updated_at: DateTime<Utc>,
+    pub wave: i32,
+    pub workspace_id: Uuid,
+}
+
+/// A directed hard edge. Direction is always prerequisite (`from`) to
+/// dependent (`to`); it intentionally does not reuse issue_dependency's
+/// bidirectional `blocks`/`blocked_by` vocabulary.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct DependencyGraphEdge {
+    pub consumed_output: String,
+    pub created_at: DateTime<Utc>,
+    pub from_issue_id: Uuid,
+    pub id: Uuid,
+    pub plan_id: Uuid,
+    pub reason: String,
+    pub to_issue_id: Uuid,
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub workspace_id: Uuid,
+}
+
 /// Row of `issue_label`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct IssueLabel {
@@ -1472,9 +1528,19 @@ pub struct TaskMessage {
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct TaskToken {
     pub agent_id: Uuid,
+    pub claim_dispatched_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
+    pub delegation_depth: i32,
+    pub delegation_fence: i64,
+    pub device_id: Option<Uuid>,
     pub expires_at: DateTime<Utc>,
     pub id: Uuid,
+    pub on_behalf_of_user_id: Option<Uuid>,
+    pub parent_fence: Option<i64>,
+    pub parent_token_id: Option<Uuid>,
+    pub revoked_at: Option<DateTime<Utc>>,
+    pub revoked_reason: Option<String>,
+    pub scope: serde_json::Value,
     pub task_id: Uuid,
     pub token_hash: String,
     pub user_id: Uuid,

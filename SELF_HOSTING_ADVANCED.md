@@ -52,15 +52,14 @@ STARTTLS is used automatically when advertised by the server. Port 465 (SMTPS / 
 
 > **Note:** If neither Resend nor SMTP is configured, generated verification codes are printed to backend logs — copy them from there to log in. A fixed local testing code (e.g. `888888`) is **opt-in only**: set `PATCHBAY_DEV_VERIFICATION_CODE=888888` in `.env` and keep `APP_ENV` non-production. The Docker self-host stack pins `APP_ENV=production`, so the shortcut is ignored there. **Never enable a fixed code on a publicly reachable instance.**
 
-### Google OAuth (Optional)
+### Google sign-in
 
-| Variable | Description |
-|----------|-------------|
-| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
-| `GOOGLE_REDIRECT_URI` | OAuth callback URL (e.g. `https://app.example.com/auth/callback`) |
-
-Changes take effect after restarting the backend / compose stack. The web UI reads `GOOGLE_CLIENT_ID` from `/api/config` at runtime, so no web rebuild is needed.
+Google sign-in is brokered by the managed `accounts` service. Configure the
+Google provider and Clerk callback at `/oauth/google/callback`; the self-hosted
+backend does not accept Google client secrets or direct Google authorization
+codes. Desktop sign-in returns only a one-time PKCE-bound code over
+`patchbay://auth/callback`, which the Rust API redeems at
+`/api/desktop-handoff/redeem`.
 
 ### Signup Controls (Optional)
 
