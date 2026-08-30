@@ -9,8 +9,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::{Json, Router};
 use chrono::{DateTime, Duration, Utc};
-use patchbay_db::models::{Autopilot, Team, TeamMember};
-use patchbay_db::queries::{agent, autopilot, member, team, workspace};
+use patchbay_db::models::{Automation, Team, TeamMember};
+use patchbay_db::queries::{agent, automation, member, team, workspace};
 use patchbay_middleware::workspace::WorkspaceContext;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -182,7 +182,7 @@ struct TeamMemberStatusListResponse {
 }
 
 #[derive(Debug, Serialize)]
-struct AutopilotEventResponse {
+struct AutomationEventResponse {
     id: String,
     workspace_id: String,
     title: String,
@@ -202,8 +202,8 @@ struct AutopilotEventResponse {
     subscribers: Vec<serde_json::Value>,
 }
 
-impl From<Autopilot> for AutopilotEventResponse {
-    fn from(value: Autopilot) -> Self {
+impl From<Automation> for AutomationEventResponse {
+    fn from(value: Automation) -> Self {
         Self {
             id: value.id.to_string(),
             workspace_id: value.workspace_id.to_string(),
@@ -614,7 +614,7 @@ async fn update(
             Ok(id) => id,
             Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid leader_id"),
         };
-        let new_leader = match agent::lock_agent_for_autopilot_assignment(
+        let new_leader = match agent::lock_agent_for_automation_assignment(
             &mut *transaction,
             parsed_leader_id,
             context.member.workspace_id,
@@ -690,8 +690,9 @@ async fn update(
         }
     };
     let paused = if request.leader_id.is_some() && !new_leader_runtime_bound {
-        match autopilot::pause_autopilots_by_unrunnable_team(&mut *transaction, existing.id).await {
-            Ok(autopilots) => autopilots,
+        match automation::pause_automations_by_unrunnable_team(&mut *transaction, existing.id).await
+        {
+            Ok(automations) => automations,
             Err(_) => {
                 return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update team")
             }
@@ -718,12 +719,12 @@ async fn update(
         patchbay_protocol::EVENT_TEAM_UPDATED,
         json!({ "team": &response }),
     );
-    for autopilot in paused {
+    for automation in paused {
         publish_team_event(
             &state,
             &context,
-            patchbay_protocol::EVENT_AUTOPILOT_UPDATED,
-            json!({ "autopilot": AutopilotEventResponse::from(autopilot) }),
+            patchbay_protocol::EVENT_AUTOMATION_UPDATED,
+            json!({ "automation": AutomationEventResponse::from(automation) }),
         );
     }
     Json(response).into_response()
@@ -770,16 +771,16 @@ async fn remove(
         tracing::warn!(%error, team_id = %locked.id, "transfer team assignees failed");
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive team");
     }
-    let transferred_autopilots = match team::transfer_team_autopilots_to_leader(
+    let transferred_automations = match team::transfer_team_automations_to_leader(
         &mut *transaction,
         locked.id,
         locked.leader_id,
     )
     .await
     {
-        Ok(autopilots) => autopilots,
+        Ok(automations) => automations,
         Err(error) => {
-            tracing::warn!(%error, team_id = %locked.id, "transfer team autopilots failed");
+            tracing::warn!(%error, team_id = %locked.id, "transfer team automations failed");
             return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive team");
         }
     };
@@ -799,12 +800,12 @@ async fn remove(
         patchbay_protocol::EVENT_TEAM_DELETED,
         json!({ "team_id": locked.id, "leader_id": locked.leader_id }),
     );
-    for autopilot in transferred_autopilots {
+    for automation in transferred_automations {
         publish_team_event(
             &state,
             &context,
-            patchbay_protocol::EVENT_AUTOPILOT_UPDATED,
-            json!({ "autopilot": AutopilotEventResponse::from(autopilot) }),
+            patchbay_protocol::EVENT_AUTOMATION_UPDATED,
+            json!({ "automation": AutomationEventResponse::from(automation) }),
         );
     }
     StatusCode::NO_CONTENT.into_response()

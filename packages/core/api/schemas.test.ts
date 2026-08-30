@@ -14,9 +14,9 @@ import {
   EMPTY_LIST_TELEGRAM_INSTALLATIONS_RESPONSE,
   EMPTY_REDEEM_TELEGRAM_BINDING_TOKEN_RESPONSE,
   AgentTaskListSchema,
-  AutopilotQuotaUsageSchema,
-  AutopilotRunSchema,
-  FALLBACK_AUTOPILOT_RUN,
+  AutomationQuotaUsageSchema,
+  AutomationRunSchema,
+  FALLBACK_AUTOMATION_RUN,
   CommentTriggerPreviewSchema,
   DashboardAgentRunTimeListSchema,
   DashboardRunTimeDailyListSchema,
@@ -60,6 +60,7 @@ import {
   PluginPreviewSchema,
   EMPTY_PLUGIN_INSTALLATION_LIST,
   EMPTY_PLUGIN_PREVIEW,
+  AgentThreadResponseSchema,
 } from "./schemas";
 import { IssueViewSchema, IssueViewListSchema } from "./schemas";
 import {
@@ -93,6 +94,59 @@ const baseIssue = {
   created_at: "2026-01-01T00:00:00Z",
   updated_at: "2026-01-01T00:00:00Z",
 };
+
+describe("AgentThreadResponseSchema availability compatibility", () => {
+  it("preserves the complete continuation turn alongside its bounded summary", () => {
+    const parsed = AgentThreadResponseSchema.safeParse({
+      task: {
+        id: "task-2",
+        trigger_summary: "Bounded summary",
+        agent_thread_message:
+          "The complete continuation instruction with details beyond the summary limit.",
+      },
+      thread_tasks: [
+        {
+          id: "task-2",
+          trigger_summary: "Bounded summary",
+          agent_thread_message:
+            "The complete continuation instruction with details beyond the summary limit.",
+        },
+      ],
+      agent: { id: "agent-1", name: "Builder" },
+      availability: { state: "available" },
+      can_continue: true,
+    });
+
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.task.agent_thread_message).toContain(
+      "details beyond the summary limit",
+    );
+  });
+
+  it("keeps the thread envelope when the server adds an availability state", () => {
+    const parsed = AgentThreadResponseSchema.safeParse({
+      task: { id: "task-1" },
+      thread_tasks: [{ id: "task-1", status: "completed" }],
+      current_task_id: "task-1",
+      agent: { id: "agent-1", name: "Builder" },
+      events: [{ task_id: "task-1", seq: 1, type: "tool_use", content: "done" }],
+      availability: {
+        state: "provider_reconnecting",
+        reason_code: "provider_reconnecting",
+        reason: "The provider is reconnecting.",
+      },
+      can_continue: true,
+    });
+
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.data.availability.state).toBe("unavailable");
+    expect(parsed.data.events).toHaveLength(1);
+    expect(parsed.data.thread_tasks[0]?.id).toBe("task-1");
+    expect(parsed.data.availability.reason_code).toBe("provider_reconnecting");
+  });
+});
 
 describe("IssueSchema (via ListIssuesResponseSchema)", () => {
   it("accepts null activity during backfill and rejects malformed activity", () => {
@@ -1141,11 +1195,11 @@ describe("SearchProjectsResponseSchema date drift", () => {
 
 // The "run now" flow branches on run.status/reason_code to avoid a false-success
 // toast (PB-4525), so the trigger response must survive backend drift.
-describe("AutopilotRunSchema", () => {
-  const ENDPOINT = { endpoint: "POST /api/autopilots/:id/trigger" };
+describe("AutomationRunSchema", () => {
+  const ENDPOINT = { endpoint: "POST /api/automations/:id/trigger" };
   const baseRun = {
     id: "run-1",
-    autopilot_id: "ap-1",
+    automation_id: "ap-1",
     trigger_id: null,
     source: "manual",
     status: "issue_created",
@@ -1161,9 +1215,9 @@ describe("AutopilotRunSchema", () => {
 
   it("preserves a blocked run's status and reason_code", () => {
     const parsed = parseWithFallback(
-      { ...baseRun, status: "skipped", failure_reason: "you are not allowed to trigger this autopilot's assignee agent", reason_code: "invocation_not_allowed" },
-      AutopilotRunSchema,
-      FALLBACK_AUTOPILOT_RUN,
+      { ...baseRun, status: "skipped", failure_reason: "you are not allowed to trigger this automation's assignee agent", reason_code: "invocation_not_allowed" },
+      AutomationRunSchema,
+      FALLBACK_AUTOMATION_RUN,
       ENDPOINT,
     );
     expect(parsed.status).toBe("skipped");
@@ -1171,19 +1225,19 @@ describe("AutopilotRunSchema", () => {
   });
 
   it("tolerates an older server omitting reason_code", () => {
-    const parsed = parseWithFallback(baseRun, AutopilotRunSchema, FALLBACK_AUTOPILOT_RUN, ENDPOINT);
+    const parsed = parseWithFallback(baseRun, AutomationRunSchema, FALLBACK_AUTOMATION_RUN, ENDPOINT);
     expect(parsed.status).toBe("issue_created");
     expect(parsed.reason_code).toBeUndefined();
   });
 
   it("degrades a malformed response to a non-success fallback (never a false success)", () => {
-    const parsed = parseWithFallback("not-an-object", AutopilotRunSchema, FALLBACK_AUTOPILOT_RUN, ENDPOINT);
-    expect(parsed).toBe(FALLBACK_AUTOPILOT_RUN);
+    const parsed = parseWithFallback("not-an-object", AutomationRunSchema, FALLBACK_AUTOMATION_RUN, ENDPOINT);
+    expect(parsed).toBe(FALLBACK_AUTOMATION_RUN);
     expect(parsed.status).toBe("failed");
   });
 });
 
-describe("AutopilotQuotaUsageSchema", () => {
+describe("AutomationQuotaUsageSchema", () => {
   const baseUsage = {
     action: "enforce",
     used: 12,
@@ -1195,7 +1249,7 @@ describe("AutopilotQuotaUsageSchema", () => {
   };
 
   it("preserves durable blocked counts by execution source", () => {
-    const parsed = AutopilotQuotaUsageSchema.parse({
+    const parsed = AutomationQuotaUsageSchema.parse({
       ...baseUsage,
       blocked_counts: { schedule: 3, webhook: 7 },
     });
@@ -1203,11 +1257,11 @@ describe("AutopilotQuotaUsageSchema", () => {
   });
 
   it("defaults blocked_counts to null for an older server", () => {
-    expect(AutopilotQuotaUsageSchema.parse(baseUsage).blocked_counts).toBeNull();
+    expect(AutomationQuotaUsageSchema.parse(baseUsage).blocked_counts).toBeNull();
   });
 
   it("isolates a malformed blocked_counts field", () => {
-    const parsed = AutopilotQuotaUsageSchema.parse({
+    const parsed = AutomationQuotaUsageSchema.parse({
       ...baseUsage,
       blocked_counts: { webhook: "many" },
     });

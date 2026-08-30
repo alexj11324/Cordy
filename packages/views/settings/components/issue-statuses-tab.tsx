@@ -91,7 +91,7 @@ import { SettingsTab } from "./settings-layout";
  * The page is organised by CATEGORY rather than as one flat list, because a
  * category is not decoration here — it is the behavior a status inherits. A
  * status in `todo` starts the assigned agent; one in `in_review` finalizes an
- * autopilot run. Grouping is what makes that consequence visible at the moment
+ * automation run. Grouping is what makes that consequence visible at the moment
  * the admin picks a category, which is also the only moment they can: category
  * is immutable after creation, since changing it would silently rewrite the
  * machine semantics of every issue already on the status.

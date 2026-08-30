@@ -205,7 +205,7 @@ describe("pending chat queue", () => {
     expect(result.queued_tasks?.map((item) => item.task_id)).toEqual(["later"]);
   });
 
-  it("keeps queued prompts out of the settled transcript", () => {
+  it("keeps queued prompts out of the settled Agent event history", () => {
     const messages = [
       {
         id: "message-active",
@@ -240,7 +240,7 @@ describe("pending chat queue", () => {
     );
   });
 
-  it("keeps a queued retry's historical root prompt in the transcript", () => {
+  it("keeps a queued retry's historical root prompt in the Agent event history", () => {
     const root = {
       id: "message-root",
       chat_session_id: "session",

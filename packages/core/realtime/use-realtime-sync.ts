@@ -13,7 +13,8 @@ import { issueKeys } from "../issues/queries";
 import { dependencyGraphKeys } from "../dependency-graphs";
 import { projectKeys } from "../projects/queries";
 import { pinKeys } from "../pins/queries";
-import { autopilotKeys } from "../autopilots/queries";
+import { automationKeys } from "../automations/queries";
+import { agentThreadKeys } from "../agent-thread/queries";
 import { runtimeKeys } from "../runtimes/queries";
 import { labelKeys } from "../labels/queries";
 import { propertyKeys } from "../properties/queries";
@@ -184,7 +185,7 @@ export function refetchPendingChatAggregate(
  *
  * The payload has always carried the whole message; this handler used to read
  * `chat_session_id` off it and drop the rest, which made a human's own prompt
- * the one row that reached the transcript ONLY through the refetch below. Any
+ * the one row that reached the Agent event history ONLY through the refetch below. Any
  * client that did not write it locally — a second window or device, a send
  * whose HTTP response failed after the server committed, a surface mounting
  * mid-flight — lost it whenever that refetch was dropped, most reliably to the
@@ -441,7 +442,7 @@ export function removeChatMessageFromCaches(
 
 /**
  * Apply a chat:cancel_finalized event (#5219): the deferred outcome of a
- * cancelled chat task, settled after the daemon's transcript flush.
+ * cancelled chat task, settled after the daemon's Agent event history flush.
  *
  * - outcome "stopped": a late "Stopped." assistant row was persisted —
  *   insert it exactly like a chat:done message.
@@ -664,7 +665,8 @@ function invalidateWorkspaceScopedQueries(qc: QueryClient): void {
     qc.invalidateQueries({ queryKey: workspaceKeys.invitations(wsId) });
     qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: runtimeKeys.all(wsId) });
-    qc.invalidateQueries({ queryKey: autopilotKeys.all(wsId) });
+    qc.invalidateQueries({ queryKey: automationKeys.all(wsId) });
+    qc.invalidateQueries({ queryKey: agentThreadKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: agentTaskSnapshotKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: workspaceWorkingAgentsKeys.all(wsId) });
     qc.invalidateQueries({ queryKey: agentActivityKeys.all(wsId) });
@@ -870,9 +872,9 @@ export function useRealtimeSync(
           invalidateTeamMemberStatusQueries(qc, wsId);
         }
       },
-      autopilot: () => {
+      automation: () => {
         const wsId = getCurrentWsId();
-        if (wsId) qc.invalidateQueries({ queryKey: autopilotKeys.all(wsId) });
+        if (wsId) qc.invalidateQueries({ queryKey: automationKeys.all(wsId) });
       },
       github_installation: () => {
         const wsId = getCurrentWsId();
@@ -936,6 +938,11 @@ export function useRealtimeSync(
       task: () => {
         const wsId = getCurrentWsId();
         if (!wsId) return;
+        // Agent thread envelopes contain the current task and the ordered
+        // chain, so every task lifecycle transition can change a mounted
+        // opener/root view. Use the workspace prefix rather than the event's
+        // task id: continuation children are not the stable query identity.
+        qc.invalidateQueries({ queryKey: agentThreadKeys.all(wsId) });
         qc.invalidateQueries({ queryKey: agentTaskSnapshotKeys.list(wsId) });
         qc.invalidateQueries({ queryKey: workspaceWorkingAgentsKeys.all(wsId) });
         invalidateDependencyGraphQueries(qc, wsId);
@@ -957,7 +964,7 @@ export function useRealtimeSync(
         // catches every agent's list — the per-agent detail key sits
         // under agentTasks/<wsId>/<agentId>.
         qc.invalidateQueries({ queryKey: agentTasksKeys.all(wsId) });
-        // Per-issue task list (issue-detail Execution log). Prefix match
+        // Per-issue task list (issue-detail Agent thread). Prefix match
         // across all issues — keeps the contract "any task: event makes
         // every list-of-tasks query stale" so cache stays fresh even
         // when the relevant component isn't currently mounted.
@@ -1385,7 +1392,7 @@ export function useRealtimeSync(
     // 1. Frames are kept only for a task this client already holds a timeline
     //    entry for — opened at some point, and not yet garbage-collected. The
     //    old `(old = [])` default built that entry on first sight instead, so
-    //    every client accumulated the transcript of every run its user would
+    //    every client accumulated the Agent event history of every run its user would
     //    never open, unbounded tool input included.
     // 2. Frames that survive that gate are coalesced into one cache write per
     //    window, so a burst costs one merge and one render instead of N.
@@ -1402,7 +1409,7 @@ export function useRealtimeSync(
         // Re-check, because holding was last verified up to a window ago and
         // `setQueryData` does NOT postpone garbage collection — query-core arms
         // that timer when the last observer leaves and never again on write.
-        // Closing a transcript while its run keeps streaming therefore has the
+        // Closing a Agent event history while its run keeps streaming therefore has the
         // entry disappear mid-window, and writing then REBUILDS it holding only
         // this batch. With the app-wide `staleTime: Infinity` the next open
         // would read that stub as fresh and never fetch, so everything before
@@ -1535,7 +1542,7 @@ export function useRealtimeSync(
     });
 
     // Deferred cancellation outcome (#5219): the server settles the
-    // empty/non-empty judgment only after the daemon's transcript flush, so
+    // empty/non-empty judgment only after the daemon's Agent event history flush, so
     // this event arrives seconds after the cancel HTTP response — nothing
     // else re-fetches at that point.
     const unsubChatCancelFinalized = ws.on("chat:cancel_finalized", (p) => {
@@ -1628,7 +1635,7 @@ export function useRealtimeSync(
     //      drops the pending pill in those cases. Without it the pill spins
     //      forever in the second-tab scenario.
     // CancelTask also persists a best-effort assistant snapshot when the
-    // stopped chat task had already streamed transcript rows, so refresh the
+    // stopped chat task had already streamed Agent event history rows, so refresh the
     // message page along with clearing pending.
     const unsubTaskCancelled = ws.on("task:cancelled", (p) => {
       const payload = p as TaskCancelledPayload;

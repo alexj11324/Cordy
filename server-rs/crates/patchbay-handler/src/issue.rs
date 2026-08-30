@@ -27,7 +27,7 @@ use patchbay_db::models::{
 };
 use patchbay_db::queries::issue_reaction::AddIssueReactionRow;
 use patchbay_db::queries::{
-    activity, agent, agent_invocation_target, attachment, autopilot, comment as comment_q,
+    activity, agent, agent_invocation_target, attachment, automation, comment as comment_q,
     dependency_graph as dependency_graph_q, issue as issue_q, issue_label, issue_property,
     issue_reaction, member, quick_action, runtime, subscriber, task_usage, team, user, workspace,
 };
@@ -2284,7 +2284,7 @@ async fn batch_delete_issues(
         else {
             continue;
         };
-        let _ = autopilot::fail_autopilot_runs_by_issue(&state.pool, issue.id).await;
+        let _ = automation::fail_automation_runs_by_issue(&state.pool, issue.id).await;
         let Ok(cleanup) = delete_issue_and_collect_attachment_urls(&state, &issue).await else {
             continue;
         };
@@ -2319,7 +2319,7 @@ async fn delete_issue(
         Ok(issue) => issue,
         Err(response) => return response,
     };
-    let _ = autopilot::fail_autopilot_runs_by_issue(&state.pool, issue.id).await;
+    let _ = automation::fail_automation_runs_by_issue(&state.pool, issue.id).await;
     match delete_issue_and_collect_attachment_urls(&state, &issue).await {
         Ok(cleanup) => {
             state
@@ -7577,7 +7577,7 @@ pub(crate) async fn trusted_agent_execution_context(
     Some(TrustedAgentExecutionContext {
         agent_id,
         issue_id: task.issue_id,
-        run_id: task.autopilot_run_id,
+        run_id: task.automation_run_id,
         task_id,
     })
 }

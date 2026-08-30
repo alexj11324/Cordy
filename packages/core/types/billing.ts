@@ -202,7 +202,7 @@ export interface WorkspaceSubscriptionEntitlements {
   status: string;
   seats: number;
   issueWindow: number | null;
-  autopilotRuns: number | null;
+  automationRuns: number | null;
   currentPeriodEnd: string | null;
   snapshotExpiresAt: string | null;
   version: number;

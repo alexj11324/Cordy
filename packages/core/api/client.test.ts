@@ -966,7 +966,7 @@ describe("ApiClient", () => {
     const tasks = await client.listTasksByIssue("issue-1");
 
     // A bad usage payload costs that row its figure and nothing else — the
-    // execution log still lists every run.
+    // Agent thread events still lists every run.
     expect(tasks).toHaveLength(3);
     expect(tasks[0]?.usage).toBeUndefined();
     expect(tasks[1]?.usage).toBeUndefined();
@@ -974,9 +974,9 @@ describe("ApiClient", () => {
     expect(tasks[2]?.usage?.[0]?.output_tokens).toBe(0);
   });
 
-  it("uses the expected HTTP contract for autopilot endpoints", async () => {
+  it("uses the expected HTTP contract for automation endpoints", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
-      new Response(JSON.stringify({ autopilots: [], runs: [], total: 0 }), {
+      new Response(JSON.stringify({ automations: [], runs: [], total: 0 }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
@@ -985,27 +985,27 @@ describe("ApiClient", () => {
 
     const client = new ApiClient("https://api.example.test");
 
-    await client.listAutopilots({ status: "active" });
-    await client.getAutopilot("ap-1");
-    await client.createAutopilot({
+    await client.listAutomations({ status: "active" });
+    await client.getAutomation("ap-1");
+    await client.createAutomation({
       title: "Daily triage",
       project_id: "project-1",
       assignee_id: "agent-1",
       execution_mode: "create_issue",
     });
-    await client.updateAutopilot("ap-1", { status: "paused", project_id: null });
-    await client.deleteAutopilot("ap-1");
-    await client.triggerAutopilot("ap-1");
-    await client.getAutopilotQuotaUsage();
-    await client.listAutopilotRuns("ap-1", { limit: 10, offset: 20 });
-    await client.createAutopilotTrigger("ap-1", {
+    await client.updateAutomation("ap-1", { status: "paused", project_id: null });
+    await client.deleteAutomation("ap-1");
+    await client.triggerAutomation("ap-1");
+    await client.getAutomationQuotaUsage();
+    await client.listAutomationRuns("ap-1", { limit: 10, offset: 20 });
+    await client.createAutomationTrigger("ap-1", {
       kind: "schedule",
       cron_expression: "0 9 * * *",
       timezone: "UTC",
     });
-    await client.updateAutopilotTrigger("ap-1", "tr-1", { enabled: false });
-    await client.deleteAutopilotTrigger("ap-1", "tr-1");
-    await client.rotateAutopilotTriggerWebhookToken("ap-1", "tr-1");
+    await client.updateAutomationTrigger("ap-1", "tr-1", { enabled: false });
+    await client.deleteAutomationTrigger("ap-1", "tr-1");
+    await client.rotateAutomationTriggerWebhookToken("ap-1", "tr-1");
 
     const calls = fetchMock.mock.calls.map(([url, init]) => ({
       url,
@@ -1015,10 +1015,10 @@ describe("ApiClient", () => {
     }));
 
     expect(calls).toMatchObject([
-      { url: "https://api.example.test/api/autopilots?status=active", method: "GET" },
-      { url: "https://api.example.test/api/autopilots/ap-1", method: "GET" },
+      { url: "https://api.example.test/api/automations?status=active", method: "GET" },
+      { url: "https://api.example.test/api/automations/ap-1", method: "GET" },
       {
-        url: "https://api.example.test/api/autopilots",
+        url: "https://api.example.test/api/automations",
         method: "POST",
         body: JSON.stringify({
           title: "Daily triage",
@@ -1028,20 +1028,20 @@ describe("ApiClient", () => {
         }),
       },
       {
-        url: "https://api.example.test/api/autopilots/ap-1",
+        url: "https://api.example.test/api/automations/ap-1",
         method: "PATCH",
         body: JSON.stringify({ status: "paused", project_id: null }),
       },
-      { url: "https://api.example.test/api/autopilots/ap-1", method: "DELETE" },
+      { url: "https://api.example.test/api/automations/ap-1", method: "DELETE" },
       {
-        url: "https://api.example.test/api/autopilots/ap-1/trigger",
+        url: "https://api.example.test/api/automations/ap-1/trigger",
         method: "POST",
         idempotencyKey: expect.any(String),
       },
-      { url: "https://api.example.test/api/autopilots/usage", method: "GET" },
-      { url: "https://api.example.test/api/autopilots/ap-1/runs?limit=10&offset=20", method: "GET" },
+      { url: "https://api.example.test/api/automations/usage", method: "GET" },
+      { url: "https://api.example.test/api/automations/ap-1/runs?limit=10&offset=20", method: "GET" },
       {
-        url: "https://api.example.test/api/autopilots/ap-1/triggers",
+        url: "https://api.example.test/api/automations/ap-1/triggers",
         method: "POST",
         body: JSON.stringify({
           kind: "schedule",
@@ -1050,13 +1050,13 @@ describe("ApiClient", () => {
         }),
       },
       {
-        url: "https://api.example.test/api/autopilots/ap-1/triggers/tr-1",
+        url: "https://api.example.test/api/automations/ap-1/triggers/tr-1",
         method: "PATCH",
         body: JSON.stringify({ enabled: false }),
       },
-      { url: "https://api.example.test/api/autopilots/ap-1/triggers/tr-1", method: "DELETE" },
+      { url: "https://api.example.test/api/automations/ap-1/triggers/tr-1", method: "DELETE" },
       {
-        url: "https://api.example.test/api/autopilots/ap-1/triggers/tr-1/rotate-webhook-token",
+        url: "https://api.example.test/api/automations/ap-1/triggers/tr-1/rotate-webhook-token",
         method: "POST",
       },
     ]);
@@ -1679,7 +1679,7 @@ describe("ApiClient", () => {
       expect(result.attribution).toBeUndefined();
     });
 
-    // The server only defers the empty-transcript judgment — and so only
+    // The server only defers the empty-Agent event history judgment — and so only
     // withholds the synchronous restore — for clients that advertise this
     // capability (#5219). Drop the header and this client is treated as a
     // pre-#5219 build, quietly losing the deferred path it actually implements.
@@ -2399,16 +2399,16 @@ describe("ApiClient workspace MCP servers", () => {
 
 describe("clientErrorMessage", () => {
   it("returns a 4xx message, which handlers write for the user", () => {
-    expect(clientErrorMessage(new ApiError("autopilot is not active", 400, "Bad Request")))
-      .toBe("autopilot is not active");
+    expect(clientErrorMessage(new ApiError("automation is not active", 400, "Bad Request")))
+      .toBe("automation is not active");
     expect(clientErrorMessage(new ApiError("forbidden", 403, "Forbidden"))).toBe("forbidden");
   });
 
   it("withholds a 5xx message, which carries internal server detail", () => {
-    // PB-6472: the pre-fix body for a failed autopilot trigger looked like
+    // PB-6472: the pre-fix body for a failed automation trigger looked like
     // this, and it was rendered verbatim in the run-now toast.
     const leaky = new ApiError(
-      'failed to trigger autopilot: create run: ERROR: duplicate key value violates unique constraint "autopilot_run_pkey" (SQLSTATE 23505)',
+      'failed to trigger automation: create run: ERROR: duplicate key value violates unique constraint "automation_run_pkey" (SQLSTATE 23505)',
       500,
       "Internal Server Error",
     );

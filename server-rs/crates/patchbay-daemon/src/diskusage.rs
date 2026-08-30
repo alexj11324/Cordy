@@ -381,7 +381,7 @@ fn gc_kind_str(kind: Option<&GCMetaKind>) -> &str {
     match kind {
         Some(GCMetaKind::Issue) => "issue",
         Some(GCMetaKind::Chat) => "chat",
-        Some(GCMetaKind::AutopilotRun) => "autopilot_run",
+        Some(GCMetaKind::AutomationRun) => "automation_run",
         Some(GCMetaKind::QuickCreate) => "quick_create",
         Some(GCMetaKind::Other(kind)) => kind,
         None => "",
@@ -407,7 +407,7 @@ fn parent_id_for_meta(meta: &GcMeta) -> String {
     match meta.kind.as_ref() {
         Some(GCMetaKind::Issue) => meta.issue_id.trim().to_string(),
         Some(GCMetaKind::Chat) => meta.chat_session_id.trim().to_string(),
-        Some(GCMetaKind::AutopilotRun) => meta.autopilot_run_id.trim().to_string(),
+        Some(GCMetaKind::AutomationRun) => meta.automation_run_id.trim().to_string(),
         Some(GCMetaKind::QuickCreate) => meta.task_id.trim().to_string(),
         Some(GCMetaKind::Other(_)) | None => String::new(),
     }

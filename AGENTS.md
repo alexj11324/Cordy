@@ -37,6 +37,32 @@ Rust backend + monorepo frontend (pnpm workspaces + Turborepo) with shared packa
 - `packages/views/` - zero `next/*`, zero `react-router-dom`, use `NavigationAdapter` for routing
 - `apps/web/platform/` - only place for Next.js APIs
 
+### Refactor completeness invariant (repository-wide)
+
+Any refactor or rename of a product concept, resource, feature, domain object,
+name, or workflow must begin with an inventory and update every affected
+layer: user interface and accessibility text, frontend models and queries,
+API routes/payloads/schemas/SDKs, backend types and services, database tables,
+columns, indexes and migrations, events and permissions, configuration and
+CLI, telemetry, documentation, fixtures, tests, and generated artifacts.
+The previous name must not remain the internal canonical source after the
+change. A rolling upgrade may retain a legacy spelling only inside an isolated
+deprecation adapter that is observable, tested, has an owner and an explicit
+deletion deadline and condition; it must not create an indefinite dual-write
+or dual-name contract. Every PR must list the unique remaining legacy
+locations, their reason, owner, deletion condition, and the verification that
+full-tree search, schemas/generated output, upgrade/downgrade, and the real
+affected path all pass.
+
+For the current product rename, `Automation` / `自动化` is the only canonical
+concept in shipping code and contracts. Do not add new APIs, database objects,
+types, events, permissions, telemetry labels, or UI using the former product
+spelling. This product has no production users, external durable URLs, or
+rolling deployment requiring a compatibility bridge, so no deprecation adapter
+is authorized for this rename; immutable historical migrations/changelogs are
+the only allowed old product-spelling residuals. A future adapter requires a
+separate approved deployment decision and must satisfy the invariant above.
+
 ### Database Migrations (hard rules)
 
 - Never add database foreign keys or cascading actions. Enforce relationships and perform dependent cleanup explicitly in the application layer, using transactions when the operation must be atomic.

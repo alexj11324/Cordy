@@ -277,7 +277,7 @@ impl TypingIndicatorManager {
         decrypt: Option<&DecrypterArc>,
         tasks: &RuntimeTasks,
     ) {
-        // Issue / autopilot tasks carry no chat_session — nothing to clear.
+        // Issue / automation tasks carry no chat_session — nothing to clear.
         let Some(session_id) = chat_session_id_from_event(e) else {
             return;
         };

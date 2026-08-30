@@ -131,7 +131,7 @@ services:
       GITHUB_APP_ID: ${GITHUB_APP_ID:-}
       GITHUB_APP_PRIVATE_KEY: ${GITHUB_APP_PRIVATE_KEY:-}
       # Public URL the API is reachable at from the open internet, no
-      # trailing slash. Used to mint absolute webhook URLs for autopilot
+      # trailing slash. Used to mint absolute webhook URLs for automation
       # webhook triggers. Leave unset behind a same-origin reverse proxy
       # (e.g. plain localhost dev); the frontend will compose the URL
       # from window.origin + webhook_path in that case. Headers are

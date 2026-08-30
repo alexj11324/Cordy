@@ -180,7 +180,7 @@ interface WorkspaceAgentActivityHoverContentProps {
  * that work lands on, and how many tasks it takes — and the rows group by
  * issue, mirroring what clicking the chip does to the list.
  *
- * It says nothing about work it excludes. Chat/autopilot runs have no
+ * It says nothing about work it excludes. Chat/automation runs have no
  * linked issue and leave no trace anywhere on this page: no row, no head,
  * no indicator. A footnote about them would explain an absence the user
  * never perceived — inventing a discrepancy rather than resolving one.

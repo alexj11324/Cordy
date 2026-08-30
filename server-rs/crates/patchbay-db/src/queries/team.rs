@@ -502,7 +502,7 @@ ORDER BY s.created_at ASC"#
     Ok(out)
 }
 
-pub async fn lock_team_for_autopilot_assignment(
+pub async fn lock_team_for_automation_assignment(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
     workspace_id: Uuid,
@@ -598,13 +598,13 @@ WHERE assignee_type = 'team' AND assignee_id = $1"#
     Ok(r.rows_affected())
 }
 
-pub async fn transfer_team_autopilots_to_leader(
+pub async fn transfer_team_automations_to_leader(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     assignee_id: Uuid,
     assignee_id_2: Uuid,
-) -> anyhow::Result<Vec<Autopilot>> {
+) -> anyhow::Result<Vec<Automation>> {
     let rows = sqlx::query(
-        r#"UPDATE autopilot
+        r#"UPDATE automation
 SET assignee_type = 'agent',
     assignee_id = $2,
     updated_at = now()
@@ -617,7 +617,7 @@ RETURNING id, workspace_id, title, description, assignee_id, status, execution_m
     .await?;
     let mut out = Vec::with_capacity(rows.len());
     for row in &rows {
-        out.push(Autopilot {
+        out.push(Automation {
             id: row.try_get(0)?,
             workspace_id: row.try_get(1)?,
             title: row.try_get(2)?,

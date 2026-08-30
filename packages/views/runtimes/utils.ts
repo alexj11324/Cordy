@@ -736,7 +736,7 @@ export function summarizeTaskUsage(
 
 /**
  * Sum many runs' usage into one figure — the issue-level total shown on the
- * execution-log header. Runs with no recorded usage contribute nothing and do
+ * unified Agent thread. Runs with no recorded usage contribute nothing and do
  * not make the total null; the total is null only when NO run has usage, i.e.
  * when there is genuinely nothing to show.
  */

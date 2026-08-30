@@ -109,7 +109,7 @@ pub struct FinalizedStream {
 
 /// Applies the provider-neutral fail-closed terminal contract used by
 /// stream-json adapters. A clean process exit without a terminal result is a
-/// protocol failure, and failed runs never expose partial transcript text as
+/// protocol failure, and failed runs never expose partial Agent event history text as
 /// final output.
 #[allow(clippy::too_many_arguments)]
 pub fn finalize_stream(
@@ -187,7 +187,7 @@ pub fn finalize_stream(
 
 /// Positive-evidence predicate for the fresh-session retry path shared by
 /// resumable stream providers. An emitted different session also proves the
-/// requested transcript was not loaded.
+/// requested Agent event history was not loaded.
 pub fn resume_was_rejected<'a>(
     requested: &str,
     emitted: &str,

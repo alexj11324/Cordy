@@ -2,7 +2,7 @@ use anyhow::{bail, Context, Result};
 use serde_json::Value;
 
 use super::{
-    encoded_path_segment, format_table, new_api_client, resolve_autopilot_agent,
+    encoded_path_segment, format_table, new_api_client, resolve_automation_agent,
     resolve_current_workspace_id, resolve_issue_ref, value_string, Cli, Environment, OutputFormat,
     RunOutput, TeamActivityArgs, TeamCreateArgs, TeamMemberAddArgs, TeamMemberRemoveArgs,
     TeamMemberSetRoleArgs, TeamUpdateArgs,
@@ -72,7 +72,7 @@ pub(super) async fn run_team_create(
     }
     let client = new_api_client(cli, environment)?;
     let workspace_id = resolve_current_workspace_id(cli, environment);
-    let leader_id = resolve_autopilot_agent(&client, &workspace_id, leader)
+    let leader_id = resolve_automation_agent(&client, &workspace_id, leader)
         .await
         .context("resolve leader")?;
     let mut body = serde_json::Map::from_iter([
@@ -137,7 +137,7 @@ pub(super) async fn run_team_update(
             bail!("--leader must not be empty");
         }
         let workspace_id = resolve_current_workspace_id(cli, environment);
-        let leader_id = resolve_autopilot_agent(&client, &workspace_id, leader)
+        let leader_id = resolve_automation_agent(&client, &workspace_id, leader)
             .await
             .context("resolve leader")?;
         body.insert("leader_id".into(), Value::String(leader_id));

@@ -456,7 +456,7 @@ export interface ChatQuickActionsPayload {
 /**
  * Deferred outcome of a cancelled chat task (#5219). The cancel HTTP response
  * cannot carry it — the empty/non-empty judgment settles only after the
- * daemon's transcript flush — so the server broadcasts it here instead:
+ * daemon's Agent event flush — so the server broadcasts it here instead:
  * outcome "stopped" describes a freshly-persisted "Stopped." assistant row
  * (ChatDonePayload-shaped fields), outcome "restored" is a content-free
  * invalidation hint — the deleted prompt itself is durable server-side and

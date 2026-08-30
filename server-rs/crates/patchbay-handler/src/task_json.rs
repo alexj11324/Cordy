@@ -118,8 +118,8 @@ fn compute_task_kind(t: &AgentTaskQueue) -> &'static str {
     if t.chat_session_id.is_some() {
         return "chat";
     }
-    if t.autopilot_run_id.is_some() {
-        return "autopilot";
+    if t.automation_run_id.is_some() {
+        return "automation";
     }
     if t.issue_id.is_none() {
         return "quick_create";
@@ -172,6 +172,26 @@ fn insert_context_string(map: &mut Map<String, Value>, context: Option<&Value>, 
         return;
     };
     map.insert(key.into(), Value::String(value.into()));
+}
+
+/// Returns the complete user-authored turn for a message-bus continuation.
+/// `trigger_summary` remains a bounded routing summary, while this field is
+/// the public Agent-thread message used to reconstruct the historical turn.
+/// The private context is never returned as a whole.
+fn agent_thread_message(t: &AgentTaskQueue) -> Option<String> {
+    let messages = t
+        .context
+        .as_ref()
+        .and_then(Value::as_object)
+        .and_then(|context| context.get("message_bus_messages"))
+        .and_then(Value::as_array)?;
+    let content = messages
+        .iter()
+        .filter_map(|message| message.as_object()?.get("content")?.as_str())
+        .map(str::trim)
+        .filter(|message| !message.is_empty())
+        .collect::<Vec<_>>();
+    (!content.is_empty()).then(|| content.join("\n\n"))
 }
 
 /// Builds the full AgentTaskResponse map. Field order is irrelevant to JSON
@@ -253,6 +273,9 @@ pub fn task_to_map(t: &AgentTaskQueue, workspace_id: &str) -> Value {
     if let Some(summary) = &t.trigger_summary {
         value.insert("trigger_summary".into(), Value::String(summary.clone()));
     }
+    if let Some(message) = agent_thread_message(t) {
+        value.insert("agent_thread_message".into(), Value::String(message));
+    }
     insert_string(&mut value, "handoff_note", t.handoff_note.as_deref());
     insert_string(&mut value, "work_dir", t.work_dir.as_deref());
     let relative = relative_work_dir(t.work_dir.as_deref().unwrap_or(""), workspace_id, &id);
@@ -269,7 +292,7 @@ pub fn task_to_map(t: &AgentTaskQueue, workspace_id: &str) -> Value {
         Some(&relative_durable),
     );
     insert_uuid(&mut value, "chat_session_id", t.chat_session_id);
-    insert_uuid(&mut value, "autopilot_run_id", t.autopilot_run_id);
+    insert_uuid(&mut value, "automation_run_id", t.automation_run_id);
     insert_string(&mut value, "branch_name", t.branch_name.as_deref());
     // These two IDs are safe routing metadata for the issue conversation UI.
     // Keep the rest of the internal task context server-private.
@@ -293,7 +316,7 @@ mod tests {
             agent_id: Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f12").unwrap(),
             accountable_user_id: None,
             attempt: 1,
-            autopilot_run_id: None,
+            automation_run_id: None,
             branch_name: None,
             chat_finalize_deferred_at: None,
             chat_input_task_id: None,
@@ -403,6 +426,25 @@ mod tests {
             Uuid::nil().to_string()
         );
         assert_eq!(value["dispatched_at"], "2026-08-23T07:00:00Z");
+    }
+
+    #[test]
+    fn user_task_wire_exposes_full_agent_thread_message_separately_from_summary() {
+        let mut task = task_fixture();
+        task.trigger_summary = Some("bounded summary".into());
+        task.context = Some(json!({
+            "message_bus_messages": [{
+                "content": "This is the complete continuation instruction, including details beyond the summary limit."
+            }]
+        }));
+
+        let value = task_to_map(&task, "workspace-1");
+
+        assert_eq!(value["trigger_summary"], "bounded summary");
+        assert_eq!(
+            value["agent_thread_message"],
+            "This is the complete continuation instruction, including details beyond the summary limit."
+        );
     }
 
     #[test]

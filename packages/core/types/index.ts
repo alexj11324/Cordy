@@ -1,4 +1,12 @@
-export type { Issue, IssueStatus, IssuePriority, IssueAssigneeType, IssueMetadata, IssueMetadataValue, IssueReaction } from "./issue";
+export type {
+  Issue,
+  IssueStatus,
+  IssuePriority,
+  IssueAssigneeType,
+  IssueMetadata,
+  IssueMetadataValue,
+  IssueReaction,
+} from "./issue";
 export type {
   DependencyGraphAssignee,
   DependencyGraphEdge,
@@ -26,6 +34,7 @@ export type {
   AgentInvocationTarget,
   AgentInvocationTargetInput,
   AgentTask,
+  AgentTaskStatus,
   TaskUsage,
   TaskAttribution,
   AttributionUser,
@@ -84,7 +93,7 @@ export type {
   RuntimeLocalSkillImportAction,
   RuntimeLocalSkillImportConflict,
   RuntimeLocalSkillSummary,
-	RuntimeLocalMcpServerSummary,
+  RuntimeLocalMcpServerSummary,
   RuntimeLocalSkillListRequest,
   CreateRuntimeLocalSkillImportRequest,
   RuntimeLocalSkillImportRequest,
@@ -94,7 +103,18 @@ export type {
   MikaBootstrapResponse,
 } from "./agent";
 export { RUNTIME_PROFILE_PROTOCOL_FAMILIES } from "./agent";
-export type { Workspace, WorkspaceRepo, WorkspaceMcpServer, Member, MemberRole, User, MemberWithUser, Invitation, ShareLink, ShareLinkInfo } from "./workspace";
+export type {
+  Workspace,
+  WorkspaceRepo,
+  WorkspaceMcpServer,
+  Member,
+  MemberRole,
+  User,
+  MemberWithUser,
+  Invitation,
+  ShareLink,
+  ShareLinkInfo,
+} from "./workspace";
 export type {
   PluginInstallation,
   PluginConfigField,
@@ -115,12 +135,64 @@ export type {
   PluginMCPTool,
   PluginTokenIssue,
 } from "./plugin";
-export type { InboxItem, InboxSeverity, InboxItemType, InboxWorkspaceUnread } from "./inbox";
-export type { NotificationGroupKey, NotificationGroupValue, NotificationPreferences, NotificationPreferenceResponse } from "./notification-preference";
-export type { Comment, CommentType, CommentAuthorType, CommentTriggerPreview, CommentTriggerPreviewAgent, CommentTriggerSource, CommentTriggerOutcome, CommentTriggerStatus, Reaction } from "./comment";
-export type { Label, LabelResourceType, CreateLabelRequest, UpdateLabelRequest, ListLabelsResponse, IssueLabelsResponse, ResourceLabelsResponse } from "./label";
-export type { IssueProperty, IssuePropertyType, IssuePropertyOption, IssuePropertyConfig, IssuePropertyValue, IssuePropertyValues, CreatePropertyRequest, UpdatePropertyRequest, ListPropertiesResponse, IssuePropertiesResponse, IssuePropertyActorKind, IssuePropertyActorRef } from "./property";
-export { ISSUE_PROPERTY_TYPES, isKnownPropertyType, ISSUE_PROPERTY_ACTOR_KINDS, MAX_ISSUE_PROPERTY_ACTOR_VALUES, isActorPropertyType, formatActorRef, parseActorRef, actorRefsFromValue, actorRefValuesFromValue, hasUnknownActorRef } from "./property";
+export type {
+  InboxItem,
+  InboxSeverity,
+  InboxItemType,
+  InboxWorkspaceUnread,
+} from "./inbox";
+export type {
+  NotificationGroupKey,
+  NotificationGroupValue,
+  NotificationPreferences,
+  NotificationPreferenceResponse,
+} from "./notification-preference";
+export type {
+  Comment,
+  CommentType,
+  CommentAuthorType,
+  CommentTriggerPreview,
+  CommentTriggerPreviewAgent,
+  CommentTriggerSource,
+  CommentTriggerOutcome,
+  CommentTriggerStatus,
+  Reaction,
+} from "./comment";
+export type {
+  Label,
+  LabelResourceType,
+  CreateLabelRequest,
+  UpdateLabelRequest,
+  ListLabelsResponse,
+  IssueLabelsResponse,
+  ResourceLabelsResponse,
+} from "./label";
+export type {
+  IssueProperty,
+  IssuePropertyType,
+  IssuePropertyOption,
+  IssuePropertyConfig,
+  IssuePropertyValue,
+  IssuePropertyValues,
+  CreatePropertyRequest,
+  UpdatePropertyRequest,
+  ListPropertiesResponse,
+  IssuePropertiesResponse,
+  IssuePropertyActorKind,
+  IssuePropertyActorRef,
+} from "./property";
+export {
+  ISSUE_PROPERTY_TYPES,
+  isKnownPropertyType,
+  ISSUE_PROPERTY_ACTOR_KINDS,
+  MAX_ISSUE_PROPERTY_ACTOR_VALUES,
+  isActorPropertyType,
+  formatActorRef,
+  parseActorRef,
+  actorRefsFromValue,
+  actorRefValuesFromValue,
+  hasUnknownActorRef,
+} from "./property";
 export type {
   QuickAction,
   QuickActionVisibility,
@@ -135,12 +207,10 @@ export {
   QUICK_ACTION_TEMPLATE_TOKEN_RE,
   findQuickActionTemplateToken,
 } from "./quick-action";
-export type {
-  TimelineEntry,
-  AssigneeFrequencyEntry,
-} from "./activity";
+export type { TimelineEntry, AssigneeFrequencyEntry } from "./activity";
 export type { IssueSubscriber } from "./subscriber";
 export type * from "./events";
+export type * from "./agent-thread";
 export type * from "./api";
 export type { Attachment } from "./attachment";
 export {
@@ -199,7 +269,12 @@ export type {
   UpdateProjectResourceRequest,
   ListProjectResourcesResponse,
 } from "./project";
-export type { PinnedItem, PinnedItemType, CreatePinRequest, ReorderPinsRequest } from "./pin";
+export type {
+  PinnedItem,
+  PinnedItemType,
+  CreatePinRequest,
+  ReorderPinsRequest,
+} from "./pin";
 export type {
   GitHubInstallation,
   GitHubMergeableState,
@@ -276,34 +351,34 @@ export type {
   RedeemTelegramBindingTokenResponse,
 } from "./telegram";
 export type {
-  Autopilot,
-  AutopilotStatus,
-  AutopilotExecutionMode,
-  AutopilotAssigneeType,
-  AutopilotSubscriber,
-  AutopilotSubscriberInput,
-  AutopilotCollaborator,
-  AutopilotCollaboratorsResponse,
-  AutopilotTrigger,
-  AutopilotTriggerKind,
-  AutopilotRun,
-  AutopilotRunStatus,
-  AutopilotRunSource,
-  AutopilotQuotaUsage,
+  Automation,
+  AutomationStatus,
+  AutomationExecutionMode,
+  AutomationAssigneeType,
+  AutomationSubscriber,
+  AutomationSubscriberInput,
+  AutomationCollaborator,
+  AutomationCollaboratorsResponse,
+  AutomationTrigger,
+  AutomationTriggerKind,
+  AutomationRun,
+  AutomationRunStatus,
+  AutomationRunSource,
+  AutomationQuotaUsage,
   WebhookEventFilter,
-  CreateAutopilotRequest,
-  UpdateAutopilotRequest,
-  CreateAutopilotTriggerRequest,
-  UpdateAutopilotTriggerRequest,
-  ListAutopilotsResponse,
+  CreateAutomationRequest,
+  UpdateAutomationRequest,
+  CreateAutomationTriggerRequest,
+  UpdateAutomationTriggerRequest,
+  ListAutomationsResponse,
   CronPreviewResponse,
-  GetAutopilotResponse,
-  ListAutopilotRunsResponse,
+  GetAutomationResponse,
+  ListAutomationRunsResponse,
   WebhookDelivery,
   WebhookDeliveryStatus,
   WebhookSignatureStatus,
   ListWebhookDeliveriesResponse,
-} from "./autopilot";
+} from "./automation";
 export type {
   Team,
   TeamMember,

@@ -575,7 +575,7 @@ fn handle_event(
             }
         }
         other => {
-            if !is_non_transcript_event(other) {
+            if !is_non_agent_event(other) {
                 state.unhandled_types.observe(other);
             }
         }
@@ -1045,7 +1045,7 @@ fn observed_event_type(value: &str) -> String {
     value.to_string()
 }
 
-fn is_non_transcript_event(event_type: &str) -> bool {
+fn is_non_agent_event(event_type: &str) -> bool {
     matches!(event_type.trim(), "user" | "connection" | "retry")
 }
 

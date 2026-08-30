@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@patchbay/ui/lib/utils";
-import { diffTraceLines } from "../../common/task-transcript/trace-event-presenter";
+import { diffTraceLines } from "../../common/agent-thread-events/trace-event-presenter";
 
 interface RevisionConflictCompareProps {
   title: string;

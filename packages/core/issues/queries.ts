@@ -175,7 +175,7 @@ export const issueKeys = {
    *  the global WS task: prefix path so any task lifecycle event refreshes
    *  every per-issue list, regardless of which issue is currently mounted. */
   tasksAll: () => ["issues", "tasks"] as const,
-  /** Per-issue task list (issue-detail Execution log section). */
+  /** Per-issue task list (issue-detail Agent thread section). */
   tasks: (issueId: string) => [...issueKeys.tasksAll(), issueId] as const,
 };
 

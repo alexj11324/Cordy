@@ -64,7 +64,7 @@ export function ProjectPicker({
     (p) => p.title.toLowerCase().includes(query) || matchesPinyin(p.title, query),
   );
 
-  // Callers that bring their own trigger (create pill, chat pill, autopilot
+  // Callers that bring their own trigger (create pill, chat pill, automation
   // card, table cell) take over the trigger entirely.
   const resolvedTriggerRender = triggerRender ?? (
     <button type="button" disabled={disabled} className={PICKER_TRIGGER_CLASS} />

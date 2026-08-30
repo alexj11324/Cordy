@@ -454,7 +454,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "看板卡片上点头像就能直接改负责人。",
           "运行时活跃度和甘特图的日期跟着界面语言显示。",
           "深色模式下，标签页与页面之间的描边不再变色。",
-          "内置的 Bug 分类 Autopilot 现在能正常跑起来。",
+          "内置的 Bug 分类 自动化 现在能正常跑起来。",
         ],
       },
       {
@@ -599,7 +599,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         features: [
           "智能体可以入驻钉钉，私聊或在群里 @ 它就能用。",
           "注册完成后 Mika 已经在等你，还有卡片帮你开第一个任务。",
-          "执行记录里能看到每次运行的花费，以及整个任务的合计。",
+          "Agent 事件里能看到每次运行的花费，以及整个任务的合计。",
           "静音评论通知后，@ 到你的消息依然会送达。",
           "手机上聊天以全屏打开，输入框会浮在键盘上方。",
           "手动替换 patchbay 或 Agent CLI 后自动生效，不用重启。",
@@ -608,7 +608,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "智能体每次运行读取的说明更短，留给工作的空间更多。",
           "不支持推理强度的运行时会直接说明，而不是提示取值无效。",
           "手机上任务详情和讨论列表能用到更多屏幕空间。",
-          "执行记录的标题不再换行，始终保持一行。",
+          "Agent 事件的标题不再换行，始终保持一行。",
         ],
         fixes: [
           "在聊天里用 /issue 建任务，图片会作为附件一起带过去。",
@@ -647,7 +647,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         fixes: [
           "很长的 Codex 会话可以继续了，不再每次恢复都失败。",
           "上下文用满的运行会明确失败，不再返回空答案。",
-          "定时 Autopilot 会按时开始，不再等到下一次唤醒。",
+          "定时 自动化 会按时开始，不再等到下一次唤醒。",
           "在聊天里用 /issue 建任务，不再重复执行同一条命令。",
           "名称相近的 Skill 在 QwenPaw 上不再互相覆盖。",
           "空闲会话的第一条消息立即显示，不再排队等待。",
@@ -679,13 +679,13 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "点击 Skill 中的文件可以正常打开，不再只弹出菜单。",
           "任务里的「取消订阅」现在能够正常生效。",
           "在回复框中输入 / 同样能看到工作区的快捷操作。",
-          "从任务头部打开运行中的执行日志，窗口不再立刻关闭。",
+          "从任务头部打开运行中的 Agent 对话，窗口不再立刻关闭。",
           "OpenClaw 的回复在生成完成后立即送达，不再长时间等待。",
           "在 Slack、飞书中单独发送 /new，不再产生空消息和空运行。",
           "在新接入的聊天渠道里，智能体不再误报附件已发送。",
           "过长的项目名或标签名不再让属性标签占满一整行。",
           "清空属性的入口，现在统一位于选择弹层的第一行。",
-          "Autopilot 的 Runbook 过宽时，不再把设置面板挤出弹窗。",
+          "自动化 的 Runbook 过宽时，不再把设置面板挤出弹窗。",
           "中文侧栏中的 Discord 入口不再显示不全。",
           "把任务指派给团队不再出错。",
         ],
@@ -704,14 +704,14 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         improvements: [
           "磁盘占用数字现在和文件管理器里看到的一致。",
           "命令行遇到冲突会直接告诉你怎么改，不再让你反复重试。",
-          "创建 Autopilot 时会明确指出还差哪个必填项。",
-          "任务侧栏先显示执行日志，详情放到下面。",
+          "创建 自动化 时会明确指出还差哪个必填项。",
+          "任务侧栏先显示 Agent 对话，详情放到下面。",
           "许可证里写明了：免费的公开托管同样需要商业授权。",
         ],
         fixes: [
           "Kimi 接着上次的对话回复时，不再把上一轮的回答重复一遍。",
           "自带 Codex 指令文件的智能体现在能正常开始 task。",
-          "给原本没有触发器的 Autopilot 选好定时，现在能保存下来了。",
+          "给原本没有触发器的 自动化 选好定时，现在能保存下来了。",
           "打开智能体导入的 Skill，不再显示你没做过的改动。",
           "在 Slack 和飞书里用 /new 都能开一段全新对话。",
           "在聊天里用 /issue 建的任务，现在会给你发通知。",
@@ -885,7 +885,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         features: [
           "现在除了 GitHub，还能接入 Forgejo、Gitea、GitLab 等自托管 Git 服务。",
           "Chat 现在能用你的项目上下文，给出更贴合的回答。",
-          "执行日志现在更好读，运行再长也能流畅浏览。",
+          "Agent 对话现在更好读，运行再长也能流畅浏览。",
           "任务表格现在会直接显示哪些智能体正在处理。",
           "复制的记录现在会带上每条事件的时间戳。",
         ],
@@ -1304,7 +1304,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "task 日志偏好记忆、Helm 外部 PostgreSQL 支持，与稳定性修复",
         changes: [],
         features: [
-          "task 日志（Transcript）会记住你的过滤条件与展开状态，下次打开同一次运行时自动恢复。",
+          "Agent 对话会记住你的过滤条件与展开状态，下次打开同一次运行时自动恢复。",
           "自托管（Helm）：新增 `postgres.external.enabled` 开关，可将 Patchbay 指向外部托管的 PostgreSQL（RDS、CNPG、Cloud SQL、Neon 等），跳过内置数据库。",
         ],
         fixes: [
@@ -1313,7 +1313,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "新提交推送后，PR 审查智能体会重新触发审查，不再复用旧提交的结论。",
           "实时事件在服务端 Pod 重启期间不再被静默丢失，新增有界 5 分钟回放窗口覆盖这段时间。",
           "Kiro ACP 运行时 task 的用量再次被正确记入使用日志。",
-          "运行时离线时，自动化（Autopilot）的「创建任务」运行仍然会出现在运行列表里。",
+          "运行时离线时，自动化（自动化）的「创建任务」运行仍然会出现在运行列表里。",
           "正文只在 Slack 附件里的告警卡片（Grafana、Webhook 等）现在会从附件读取正文，而不是回落文本。",
           "Codex 智能体 task 能在 task 主目录里看到守护进程的 Codex 模型目录。（社区反馈）",
           "`/teams/…` 与 `/usage` 老路径不再 404，会重定向到当前对应页面。",
@@ -1367,7 +1367,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "每次 task 运行都会在用量日志里记录本次的 prompt cache 命中率。",
         ],
         improvements: [
-          "Autopilot 的「管理访问」入口从独立按钮改为编辑弹窗里的一个轻量气泡。",
+          "自动化 的「管理访问」入口从独立按钮改为编辑弹窗里的一个轻量气泡。",
           "任务与评论编辑器升级到 Tiptap 3.27.1，修复了输入行内 `code` 快捷方式时误吃前一个字符的问题。",
         ],
         fixes: [
@@ -1383,10 +1383,10 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         version: "0.3.33",
         date: "2026-06-30",
-        title: "Autopilot 协作权限、Slack 历史回灌、技能包归档导入",
+        title: "自动化 协作权限、Slack 历史回灌、技能包归档导入",
         changes: [],
         features: [
-          "Autopilot 新增清晰的写权限分层，详情页提供「管理协作者」入口，可把单个 Autopilot 的写权限授予指定成员。",
+          "自动化 新增清晰的写权限分层，详情页提供「管理协作者」入口，可把单个 自动化 的写权限授予指定成员。",
           "Slack 频道可以把过往对话回灌到 Patchbay，智能体一进入频道即拥有完整上下文。",
           "Slack 智能体处理消息期间会在用户消息上加 👀 反应表情，处理结束后稳定清除，不再出现卡死。",
           "技能包支持从本地 .skill / .zip 归档导入。",
@@ -1419,7 +1419,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "守护进程在探测各个智能体运行时版本时加上了独立超时，单个卡死的 CLI 不会再连累其他运行时。",
         ],
         fixes: [
-          "定时 Autopilot 调度后会立即推进下一次运行时间，避免慢节点造成重复触发。",
+          "定时 自动化 调度后会立即推进下一次运行时间，避免慢节点造成重复触发。",
           "附件预览在框架内重定向、同源资源、本地上传等场景下都能正常打开；有本地上传 URL 时会优先使用本地链接。",
           "失败 task 处理器解开卡住的任务时，前端视图会立即刷新，无需手动重新加载。",
           "任务评论吸顶头与高亮渐隐使用了同一套背景过渡，吸顶切换不再有错位感。",
@@ -1676,7 +1676,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "导入结果会清楚显示哪些技能已新增、已更新、已跳过、发生冲突或导入失败",
         ],
         improvements: [
-          "网页端和移动端的执行记录现在会优先显示最新的历史运行，更容易看清最近进展",
+          "网页端和移动端的Agent 事件现在会优先显示最新的历史运行，更容易看清最近进展",
           "更新日志内容已整理，最新发布内容会归在正确的版本下",
         ],
         fixes: [
@@ -1840,7 +1840,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         improvements: [
           "早期用户如果没有填写入门来源问题，现在可以在之后补充，不需要重新走完整入门流程",
           "已停用的智能体现在会在各处显示为已归档，不再看起来像离线或仍在工作",
-          "聊天历史和任务执行记录的悬浮操作更清晰，减少文字截断和按钮重叠",
+          "聊天历史和任务Agent 事件的悬浮操作更清晰，减少文字截断和按钮重叠",
           "项目里的任务筛选现在会在列表、看板和时间线视图中一致应用智能体工作中筛选",
         ],
         fixes: [
@@ -1877,7 +1877,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Claude task 发送提示词时更不容易卡住",
           "自托管本机运行服务的设置链接会指向正确地址",
           "MCP 设置说明和运行环境支持判断现在保持一致",
-          "执行日志在 task 结束后会正确清理活跃状态",
+          "Agent 对话在 task 结束后会正确清理活跃状态",
         ],
       },
       {
@@ -2083,7 +2083,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         fixes: [
           "在空的顶层列表项按 Enter 时，编辑器可以正常退出列表",
           "安装脚本在 Homebrew 失败时会自动改用发行版文件，并显示更清楚的诊断信息",
-          "从执行记录重试时，会重新唤起当时处理该记录的智能体",
+          "从Agent 事件重试时，会重新唤起当时处理该记录的智能体",
           "聊天和 task 消息加载会跳过临时 ID，避免访问无效 task",
           "OpenCode 运行环境不再进入看不见的交互提问流程",
           "Gemini 运行环境使用正确的官方图标",
@@ -2105,7 +2105,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         improvements: [
           "Onboarding 改为一次回答一个问题，并能用更少步骤引导 runtime 设置",
           "我的任务会包含分配给团队的工作，相关标签也更容易理解",
-          "查看智能体执行日志时可以切换排序方向，回看运行过程更方便",
+          "查看智能体 Agent 对话时可以切换排序方向，回看运行过程更方便",
         ],
         fixes: [
           "桌面端打开 HTML 预览更稳定，必要时会关闭全屏窗口，并支持页面内链接跳转",
@@ -2121,7 +2121,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "Webhook 自动任务、更清晰的工作看板与更稳的运行环境",
         changes: [],
         features: [
-          "Autopilot 现在可以由 webhook 事件触发，并能查看投递记录，在外部系统需要时重新投递一次",
+          "自动化 现在可以由 webhook 事件触发，并能查看投递记录，在外部系统需要时重新投递一次",
           "任务看板支持按负责人分组，展示关联 Pull Request 状态，并加入开始日期，排期更清楚",
           "Runtime 页面升级了机器视图，并在用量图表中加入时间和 task 趋势",
           "Skills 支持从本地 runtime 批量复制到 workspace，团队初始化更快",
@@ -2134,7 +2134,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "搜索结果排序更准确，也会展示更有帮助的摘要片段",
         ],
         fixes: [
-          "Autopilot 创建任务时可以稳定重复触发，并正确归属到负责的 assignee agent",
+          "自动化 创建任务时可以稳定重复触发，并正确归属到负责的 assignee agent",
           "Runtime 设置默认优先选择本地机器，机器列表中的名称也更清晰",
           "Team 页面可以正常滚动，并能看到成员当前是否已经在处理工作",
           "桌面端缩放快捷键在常见组合下恢复正常",
@@ -2270,7 +2270,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Daemon 抑制 Windows 上多余的 git 控制台弹窗",
           "Pi 插件工具不再被硬编码的 `--tools` allowlist 过滤掉",
           "Inbox 在任务加载完成后再滚动到目标评论",
-          "`autopilot create/update` 允许 `--mode run_only`",
+          "`automation create/update` 允许 `--mode run_only`",
           "Changelog header 链接样式对齐 GitHub ghost button",
           "OpenAI Codex / GPT 模型价格补齐，使用成本不再显示为 $0",
         ],
@@ -2284,13 +2284,13 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Quick Create 支持选择 project，并记住上一次的选项",
           "评论 thread 支持解决并折叠，长讨论看起来更清爽",
           "Issue Live Banner 显示 agent 队列中等待执行的 task",
-          "失败 / 取消的 task 可以在 Execution Log 一键重跑",
+          "失败 / 取消的 task 可以在 Agent thread 一键重跑",
           "Agent Create 弹窗新增放大按钮，长描述编辑更舒服",
         ],
         improvements: [
           "Issue Timeline 不再因每个 WS 事件做完整 re-render，长任务滚动更顺",
           "Editor 跳过对超大文本 / JSON 粘贴的解析，避免卡顿",
-          "Autopilot 在 assignee runtime 离线时跳过 dispatch，避免空跑",
+          "自动化 在 assignee runtime 离线时跳过 dispatch，避免空跑",
           "Inbox 自动归档处于终态的 `task_failed` 行",
           "Hermes 把 agent instructions 直接随请求内联传入",
           "Timeline / Comment 改为纯客户端虚拟化，去掉服务端分页",
@@ -2320,7 +2320,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         features: [
           "新增 `patchbay daemon disk-usage` CLI，按 task / workspace 维度查看磁盘占用",
           "Skill Picker 弹窗新增搜索框，Agent 设置里挑技能更快",
-          "Daemon GC 覆盖扩展到 chat、autopilot、quick-create task",
+          "Daemon GC 覆盖扩展到 chat、automation、quick-create task",
           "任务详情页面包屑直接显示 PB-xxxx identifier",
         ],
         improvements: [
@@ -2350,7 +2350,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         improvements: [
           "Chat 和 Inbox 更顺手，历史更清晰，复制回复更方便，归档后能更快处理下一项",
           "任务操作会保留更多上下文，例如更容易找到对应本地文件夹，子任务也会带上正确的项目和状态",
-          "Autopilot 连续失败后会自动暂停，异常自动化更容易发现和修复",
+          "自动化 连续失败后会自动暂停，异常自动化更容易发现和修复",
         ],
         fixes: [
           "中文输入、桌面端升级、长任务时间线和实时状态展示更稳定",
@@ -2419,7 +2419,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "CLI update 完成状态上报更可靠",
           "Session resume 按 runtime 正确守卫，避免跨 runtime 复用 session",
           "看板拖拽任务时显示设置不再丢失",
-          "Autopilot 列表在移动端 viewport 下响应式排版",
+          "自动化 列表在移动端 viewport 下响应式排版",
           "Quick Create 生成的描述更贴合用户输入",
           "Skill upsert 清理 null bytes，修复 PostgreSQL UTF8 错误",
           "Connect Remote 弹窗的安装脚本 URL 修正",
@@ -2455,7 +2455,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "Create Issue by Agent —— 按 `c` 输入一句话并选 Agent，任务异步创建，结果回执送达 Inbox",
-          "Agent Presence v3 —— 可用性与最近 task 拆成两条更清晰的信号；任务详情右侧新增 Execution Log，可看到当前 active run 与历史 run",
+          "Agent Presence v3 —— 可用性与最近 task 拆成两条更清晰的信号；任务详情右侧新增 Agent thread，可看到当前 active run 与历史 run",
           "Daemon ↔ Server 心跳改走 WebSocket，HTTP 自动 fallback，task 起跑延迟更低",
           "Mention 选择器按本机最近使用排序",
         ],
@@ -2534,7 +2534,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Server 在任务创建/更新时校验 `assignee_id` 真实存在；DeleteIssue 改用解析后的任务 ID",
           "Pi Runtime 改为读写 `.pi/skills`，不再使用旧的 `.pi/agent/skills` 路径",
           "Windows 下 Daemon 启动 Agent 改用 `CREATE_NEW_CONSOLE`，孙子进程不再弹出额外终端窗口",
-          "Autopilot 的 run-only 上下文正确传给被调起的 Agent",
+          "自动化 的 run-only 上下文正确传给被调起的 Agent",
         ],
       },
       {
@@ -2546,7 +2546,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Chat V2——侧边栏新增 Chat 入口，主区域提供完整的 AI 对话页面",
           "任务支持右键菜单，列表、看板和详情的操作入口统一收敛",
           "应用内反馈流程及全新的 Help 启动器，集中托管文档、支持和反馈入口",
-          "Autopilot 弹窗重设计——更简的字段配置，创建与编辑共享一致的排期界面",
+          "自动化 弹窗重设计——更简的字段配置，创建与编辑共享一致的排期界面",
           "Skills 页面重设计——列表+详情、卡片化布局、滚动渐隐和共享 PageHeader / 移动端导航",
           "文档站重写为双语扁平内容树——中英文章节共用一棵目录",
         ],
@@ -2648,10 +2648,10 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         version: "0.2.5",
         date: "2026-04-17",
-        title: "CLI Autopilot、Cmd+K 与 Daemon 身份",
+        title: "CLI 自动化、Cmd+K 与 Daemon 身份",
         changes: [],
         features: [
-          "CLI `autopilot` 命令，管理定时和触发式自动化",
+          "CLI `automation` 命令，管理定时和触发式自动化",
           "CLI `issue subscriber` 订阅管理命令",
           "Cmd+K 命令面板扩展——主题切换、快速创建任务/项目、复制链接、切换工作区",
           "任务列表卡片可选显示项目和子任务进度",
@@ -2663,8 +2663,8 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Agent 现在在任意任务状态下都会响应评论触发",
           "修复 Codex 沙箱在 macOS 上的网络访问配置",
           "编辑器气泡菜单改用 @floating-ui/dom 重写，滚动时正确隐藏",
-          "Autopilot 创建者自动订阅其生成的任务",
-          "Autopilot run-only task 正确解析工作区 ID",
+          "自动化 创建者自动订阅其生成的任务",
+          "自动化 run-only task 正确解析工作区 ID",
           "桌面应用 `shell.openExternal` 限制仅允许 http/https 协议（安全）",
           "重名 Agent 创建返回 409 而非静默失败",
           "桌面应用新建标签页继承当前工作区",
@@ -2685,7 +2685,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Codex 同一任务下跨 task 恢复会话线程",
           "Codex 回合错误正确抛出，不再报告空输出",
           "工作区用量按 task 完成时间正确分桶",
-          "Autopilot 运行历史行整行可点击",
+          "自动化 运行历史行整行可点击",
           "Daemon 和 GC 端点加强工作区隔离校验（安全）",
           "邀请邮件中的工作区和邀请人名称进行 HTML 转义",
           "桌面应用开发版和生产版现在可以同时运行",
@@ -2694,11 +2694,11 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         version: "0.2.0",
         date: "2026-04-15",
-        title: "桌面应用、Autopilot 与邀请",
+        title: "桌面应用、自动化 与邀请",
         changes: [],
         features: [
           "macOS 桌面应用——原生 Electron 应用，支持标签页系统、内置 Daemon 管理、沉浸模式和自动更新",
-          "Autopilot——Agent 定时和触发式自动化任务",
+          "自动化——Agent 定时和触发式自动化任务",
           "工作区邀请，支持邮件通知和专用接受页面",
           "Agent 自定义 CLI 参数，支持高级运行时配置",
           "聊天界面重设计，新增未读追踪和会话管理优化",
@@ -2873,7 +2873,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "创建任务弹窗新增项目选择器，CLI 新增项目命令",
           "基于 pg_bigm 的任务全文搜索",
           "Monorepo 拆包——共享 core、UI、views 三个包（Turborepo）",
-          "全屏 Agent 执行日志视图",
+          "全屏 Agent 对话视图",
           "编辑器支持拖拽上传文件并展示文件卡片",
           "任务新增附件区域，支持图片网格和文件卡片展示",
           "运行时支持所有者追踪、筛选、头像展示和点对点更新通知",
@@ -2956,7 +2956,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "收件箱通知点击后自动滚动到对应评论",
           "仓库管理独立为设置页单独标签页",
           "支持从网页端运行时页面更新 CLI，非 Homebrew 安装支持直接下载更新",
-          "新增 CLI 命令查看任务执行记录和运行消息",
+          "新增 CLI 命令查看任务Agent 事件和运行消息",
           "Agent 权限模型优化——所有者和管理员管理 Agent，成员可管理自己 Agent 的技能",
           "每个任务串行执行，防止并发 task 冲突",
           "文件上传支持所有文件类型",

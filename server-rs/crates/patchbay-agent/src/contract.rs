@@ -111,7 +111,7 @@ pub struct Session {
     pub result: oneshot::Receiver<ExecutionResult>,
 }
 
-/// Normalized event kinds consumed by the daemon transcript drain.
+/// Normalized event kinds consumed by the daemon Agent event history drain.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum MessageType {

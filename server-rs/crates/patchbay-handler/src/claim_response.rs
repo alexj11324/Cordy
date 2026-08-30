@@ -12,7 +12,7 @@ use uuid::Uuid;
 
 use patchbay_db::models::{AgentRuntime, AgentTaskQueue};
 use patchbay_db::queries::{
-    agent as agent_q, agent as agent_queries, autopilot as autopilot_q, chat as chat_q,
+    agent as agent_q, agent as agent_queries, automation as automation_q, chat as chat_q,
     comment as comment_q, issue as issue_q, project as project_q, team as team_q, user as user_q,
     workspace as workspace_q,
 };
@@ -269,6 +269,10 @@ pub(crate) async fn build_claimed_task_response(
             obj.insert("message_bus_messages".into(), messages.clone());
         }
     }
+    let is_message_bus_continuation = obj
+        .get("message_bus_parent_task_id")
+        .and_then(Value::as_str)
+        .is_some_and(|value| !value.is_empty());
 
     // Claim-only capability: this server resolves the team-leader role on the
     // wire so the daemon must not re-derive it from the briefing text
@@ -462,7 +466,21 @@ pub(crate) async fn build_claimed_task_response(
 
     let has_quick_create = task.issue_id.is_none()
         && task.chat_session_id.is_none()
-        && task.autopilot_run_id.is_none();
+        && task.automation_run_id.is_none();
+
+    // A user continuation already carries the exact provider session and
+    // checkout selected by its parent. Consume those fields directly for
+    // every source kind (Issue, Automation, or chat); falling back to a
+    // source-specific "latest task" lookup can silently resume a different
+    // session or start fresh.
+    if is_message_bus_continuation && !task.force_fresh_session {
+        if let Some(session_id) = task.session_id.as_deref() {
+            set_if_not_empty(obj, "prior_session_id", session_id);
+        }
+        if let Some(work_dir) = task.work_dir.as_deref().filter(|value| !value.is_empty()) {
+            obj.insert("prior_work_dir".into(), Value::String(work_dir.to_string()));
+        }
+    }
 
     // ---- Issue-bound tasks -------------------------------------------------
     if let Some(issue_id) = task.issue_id {
@@ -773,7 +791,7 @@ pub(crate) async fn build_claimed_task_response(
                         tracing::debug!(error = %e, "claim: rerun source lookup failed");
                     }
                 }
-            } else if !task.force_fresh_session {
+            } else if !task.force_fresh_session && !is_message_bus_continuation {
                 if let Ok(Some(prior)) = agent_queries::get_last_task_session(
                     &state.pool,
                     task.agent_id,
@@ -807,15 +825,10 @@ pub(crate) async fn build_claimed_task_response(
                 }
             }
 
-            // Message Bus turns use the normal issue+Agent continuity lookup
-            // above. The deferred promoter waits for every earlier main turn,
-            // and the lookup excludes Side Chat sessions, so this resumes the
-            // latest state of the main conversation instead of a stale branch.
-            // If no resumable session supplied a checkout, retain the anchor
-            // task's copied workdir so a provider failure does not discard
-            // already-written workspace state.
-            if obj.contains_key("message_bus_parent_task_id") && !obj.contains_key("prior_work_dir")
-            {
+            // Message Bus turns already carry the exact parent session and
+            // checkout. Keep the copied workdir as a defensive fallback for
+            // mixed-version rows where the parent did not have one.
+            if is_message_bus_continuation && !obj.contains_key("prior_work_dir") {
                 set_if_not_empty(
                     obj,
                     "prior_work_dir",
@@ -1065,22 +1078,26 @@ pub(crate) async fn build_claimed_task_response(
         }
     }
 
-    // ---- Autopilot run tasks -----------------------------------------------
-    if let Some(run_id) = task.autopilot_run_id {
-        if let Ok(Some(run)) = autopilot_q::get_autopilot_run(&state.pool, run_id).await {
+    // ---- Automation run tasks -----------------------------------------------
+    if let Some(run_id) = task.automation_run_id {
+        if let Ok(Some(run)) = automation_q::get_automation_run(&state.pool, run_id).await {
             obj.insert(
-                "autopilot_id".into(),
-                Value::String(run.autopilot_id.to_string()),
+                "automation_id".into(),
+                Value::String(run.automation_id.to_string()),
             );
-            obj.insert("autopilot_source".into(), Value::String(run.source.clone()));
+            obj.insert(
+                "automation_source".into(),
+                Value::String(run.source.clone()),
+            );
             if let Some(tp) = run.trigger_payload {
-                obj.insert("autopilot_trigger_payload".into(), tp);
+                obj.insert("automation_trigger_payload".into(), tp);
             }
-            if let Ok(Some(ap)) = autopilot_q::get_autopilot(&state.pool, run.autopilot_id).await {
-                obj.insert("autopilot_title".into(), Value::String(ap.title.clone()));
+            if let Ok(Some(ap)) = automation_q::get_automation(&state.pool, run.automation_id).await
+            {
+                obj.insert("automation_title".into(), Value::String(ap.title.clone()));
                 obj.insert("thread_name".into(), Value::String(ap.title.clone()));
                 if let Some(desc) = &ap.description {
-                    obj.insert("autopilot_description".into(), Value::String(desc.clone()));
+                    obj.insert("automation_description".into(), Value::String(desc.clone()));
                 }
                 let ws_empty = obj
                     .get("workspace_id")

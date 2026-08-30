@@ -1,10 +1,10 @@
-/** Render an instant on the schedule's clock, not the reader's: an autopilot
+/** Render an instant on the schedule's clock, not the reader's: an automation
  *  that says "18:00 (America/Los_Angeles)" must not print its next run as 09:00
  *  to a reader in UTC+8. The wording — month name, 12- or 24-hour dial — is the
  *  reader's locale.
  *
  *  Two things can go wrong, and neither may take a page down:
- *  - a zone this browser's ICU data does not carry (an autopilot saved from a
+ *  - a zone this browser's ICU data does not carry (an automation saved from a
  *    newer build, opened in an older packaged desktop one) → local time: wrong by
  *    an offset, but still a time of day, which a raw ISO string is not;
  *  - a timestamp that is not a date at all (backend drift) → the string itself.

@@ -1,10 +1,10 @@
 import type {
-  AutopilotQuotaUsage,
+  AutomationQuotaUsage,
   WorkspaceSubscriptionEntitlements,
   WorkspaceSubscriptionSummary,
 } from "@patchbay/core/types";
 
-export type AutopilotUsageView =
+export type AutomationUsageView =
   | { kind: "unlimited" }
   | { kind: "unavailable" }
   | {
@@ -24,12 +24,12 @@ export type AutopilotUsageView =
  * complete metered response is authoritative independently of entitlement
  * state; only the unlimited fallback comes from the entitlement response.
  */
-export function resolveAutopilotUsage(
+export function resolveAutomationUsage(
   entitlements: WorkspaceSubscriptionEntitlements,
-  usage: AutopilotQuotaUsage | undefined,
+  usage: AutomationQuotaUsage | undefined,
   failed: boolean,
   allowEntitlementUnlimited: boolean,
-): AutopilotUsageView {
+): AutomationUsageView {
   if (!failed && usage !== undefined && usage.action !== "off") {
     const { used, reserved, limit, reset_at: resetAt } = usage;
     if (
@@ -67,7 +67,7 @@ export function resolveAutopilotUsage(
   if (
     allowEntitlementUnlimited &&
     entitlements.plan === "pro" &&
-    entitlements.autopilotRuns === null
+    entitlements.automationRuns === null
   ) {
     return { kind: "unlimited" };
   }

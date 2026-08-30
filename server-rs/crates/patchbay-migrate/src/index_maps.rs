@@ -1,3 +1,11 @@
+//! Historical migration index map.
+//!
+//! Entries for old schema objects intentionally mirror immutable migration
+//! filenames and relation names. They are migration-runner compatibility data,
+//! not runtime product identifiers. Keep them until the final schema rename is
+//! deployed everywhere and the corresponding pre-rename rollback window is
+//! retired; never use these names in new application code.
+
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
     (
         "035_task_queue_issue_id_index",

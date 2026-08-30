@@ -141,54 +141,54 @@ pub(super) async fn run_with_input<R: Read>(
                     command: SkillFilesCommand::Delete(args),
                 }),
         }) => run_skill_files_delete(cli, environment, args).await,
-        Command::Autopilot(AutopilotArgs {
+        Command::Automation(AutomationArgs {
             command:
-                AutopilotCommand::List {
+                AutomationCommand::List {
                     status,
                     output,
                     full_id,
                 },
-        }) => run_autopilot_list(cli, environment, status, *output, *full_id).await,
-        Command::Autopilot(AutopilotArgs {
-            command: AutopilotCommand::Get { id, output },
-        }) => run_autopilot_get(cli, environment, id, *output).await,
-        Command::Autopilot(AutopilotArgs {
-            command: AutopilotCommand::Create(args),
-        }) => run_autopilot_create(cli, environment, args).await,
-        Command::Autopilot(AutopilotArgs {
-            command: AutopilotCommand::Update(args),
-        }) => run_autopilot_update(cli, environment, args).await,
-        Command::Autopilot(AutopilotArgs {
-            command: AutopilotCommand::Delete { id },
-        }) => run_autopilot_delete(cli, environment, id).await,
-        Command::Autopilot(AutopilotArgs {
-            command: AutopilotCommand::Trigger { id, output },
-        }) => run_autopilot_trigger(cli, environment, id, *output).await,
-        Command::Autopilot(AutopilotArgs {
+        }) => run_automation_list(cli, environment, status, *output, *full_id).await,
+        Command::Automation(AutomationArgs {
+            command: AutomationCommand::Get { id, output },
+        }) => run_automation_get(cli, environment, id, *output).await,
+        Command::Automation(AutomationArgs {
+            command: AutomationCommand::Create(args),
+        }) => run_automation_create(cli, environment, args).await,
+        Command::Automation(AutomationArgs {
+            command: AutomationCommand::Update(args),
+        }) => run_automation_update(cli, environment, args).await,
+        Command::Automation(AutomationArgs {
+            command: AutomationCommand::Delete { id },
+        }) => run_automation_delete(cli, environment, id).await,
+        Command::Automation(AutomationArgs {
+            command: AutomationCommand::Trigger { id, output },
+        }) => run_automation_trigger(cli, environment, id, *output).await,
+        Command::Automation(AutomationArgs {
             command:
-                AutopilotCommand::Runs {
+                AutomationCommand::Runs {
                     id,
                     limit,
                     offset,
                     output,
                 },
-        }) => run_autopilot_runs(cli, environment, id, *limit, *offset, *output).await,
-        Command::Autopilot(AutopilotArgs {
-            command: AutopilotCommand::TriggerAdd(args),
-        }) => run_autopilot_trigger_add(cli, environment, args).await,
-        Command::Autopilot(AutopilotArgs {
-            command: AutopilotCommand::TriggerUpdate(args),
-        }) => run_autopilot_trigger_update(cli, environment, args).await,
-        Command::Autopilot(AutopilotArgs {
+        }) => run_automation_runs(cli, environment, id, *limit, *offset, *output).await,
+        Command::Automation(AutomationArgs {
+            command: AutomationCommand::TriggerAdd(args),
+        }) => run_automation_trigger_add(cli, environment, args).await,
+        Command::Automation(AutomationArgs {
+            command: AutomationCommand::TriggerUpdate(args),
+        }) => run_automation_trigger_update(cli, environment, args).await,
+        Command::Automation(AutomationArgs {
             command:
-                AutopilotCommand::TriggerDelete {
-                    autopilot_id,
+                AutomationCommand::TriggerDelete {
+                    automation_id,
                     trigger_id,
                 },
-        }) => run_autopilot_trigger_delete(cli, environment, autopilot_id, trigger_id).await,
-        Command::Autopilot(AutopilotArgs {
-            command: AutopilotCommand::TriggerRotateUrl(args),
-        }) => run_autopilot_trigger_rotate_url(cli, environment, args, input).await,
+        }) => run_automation_trigger_delete(cli, environment, automation_id, trigger_id).await,
+        Command::Automation(AutomationArgs {
+            command: AutomationCommand::TriggerRotateUrl(args),
+        }) => run_automation_trigger_rotate_url(cli, environment, args, input).await,
         Command::Issue(IssueArgs {
             command: IssueCommand::List(args),
         }) => run_issue_list(cli, environment, args).await,

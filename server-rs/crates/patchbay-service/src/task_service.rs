@@ -12,7 +12,9 @@ use uuid::Uuid;
 
 use patchbay_analytics as analytics;
 use patchbay_db::dbid::new_v7;
-use patchbay_db::models::{Agent, AgentTaskQueue, ChatMessage, ChatSession, Comment, Issue};
+use patchbay_db::models::{
+    Agent, AgentInvocationTarget, AgentTaskQueue, ChatMessage, ChatSession, Comment, Issue,
+};
 use patchbay_db::queries::agent::{
     append_task_message_bus_instruction, cancel_agent_task, cancel_agent_task_by_user,
     cancel_agent_task_with_reason, cancel_agent_tasks_by_agent, cancel_agent_tasks_by_issue,
@@ -22,7 +24,8 @@ use patchbay_db::queries::agent::{
     claim_agent_task, claim_chat_finalize_deferred, count_running_tasks, create_agent_task,
     create_deferred_agent_task, create_deferred_channel_issue_task, create_quick_create_task,
     create_task_message_bus_continuation, extend_agent_task_prepare_lease, get_agent,
-    get_agent_for_claim_update, get_agent_task, list_queued_claim_candidates_by_runtime,
+    get_agent_for_claim_update, get_agent_task, get_agent_thread_continuation_by_idempotency,
+    list_agent_thread_tasks, list_queued_claim_candidates_by_runtime,
     list_queued_claim_candidates_by_runtimes, lock_task_for_message_bus,
     mark_agent_task_waiting_local_directory, mark_chat_finalize_deferred, merge_agent_task_context,
     promote_deferred_channel_issue_task, promote_due_deferred_tasks_for_runtime,
@@ -31,11 +34,12 @@ use patchbay_db::queries::agent::{
     requeue_agent_task_after_claim_failure, set_deferred_channel_issue_task_runtime_overlay,
     set_task_delivered_comment_i_ds, start_agent_task,
 };
+use patchbay_db::queries::agent_invocation_target::list_agent_invocation_targets;
 use patchbay_db::queries::attachment::detach_attachments_from_user_chat_message_by_task;
 use patchbay_db::queries::attachment::link_attachments_to_chat_message;
-use patchbay_db::queries::autopilot::{
-    get_active_autopilot_rule_version, get_autopilot, get_autopilot_run,
-    get_autopilot_run_by_issue, get_autopilot_trigger,
+use patchbay_db::queries::automation::{
+    get_active_automation_rule_version, get_automation, get_automation_run,
+    get_automation_run_by_issue, get_automation_trigger, is_automation_collaborator,
 };
 use patchbay_db::queries::channel::{
     clear_channel_chat_session_pending_fresh, lock_channel_chat_session_pending_fresh,
@@ -58,6 +62,9 @@ use patchbay_db::queries::daemon_token::{create_daemon_token, delete_expired_dae
 use patchbay_db::queries::dependency_graph as dependency_graph_q;
 use patchbay_db::queries::github::get_issue_review_head_sha;
 use patchbay_db::queries::issue::get_issue;
+use patchbay_db::queries::member::{
+    get_member_by_user_and_workspace, lock_member_by_user_and_workspace,
+};
 use patchbay_db::queries::runtime::get_agent_runtime;
 use patchbay_db::queries::task_message::list_task_messages;
 use patchbay_db::queries::task_token::{create_task_token, revoke_task_tokens_by_task};
@@ -91,6 +98,7 @@ pub const CLAIM_RESPONSE_RECOVERY_WINDOW: Duration = Duration::from_secs(90);
 pub const PREPARE_LEASE_DURATION: Duration = Duration::from_secs(45);
 
 const TASK_ANALYTICS_CONTEXT_CACHE_MAX: usize = 4096;
+const MAX_AGENT_THREAD_TASKS_BEFORE_DEPTH_LIMIT: usize = 100;
 
 /// Signals that a run resolved to no precise accountable human and the enqueue
 /// is REFUSED rather than started (PB-4302 §1/§3.5).
@@ -99,6 +107,124 @@ const TASK_ANALYTICS_CONTEXT_CACHE_MAX: usize = 4096;
     "attribution: no precise accountable human and enqueue refused (fail-closed policy, policy read failed, or no agent owner)"
 )]
 pub struct ErrAttributionFailClosed;
+
+/// A continuation is allowed only when the task still has a provider session
+/// that the daemon can resume. These states are deliberately provider-neutral
+/// and are safe to expose as a terminal UI explanation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum AgentThreadUnavailableReason {
+    #[error("the provider session was retired")]
+    RetiredSession,
+    #[error("the provider session is missing")]
+    SessionRolloutMissing,
+    #[error("the task requires a fresh provider session")]
+    FreshSessionRequired,
+    #[error("the provider session has not been established")]
+    SessionNotEstablished,
+    #[error("the Agent is archived")]
+    AgentArchived,
+    #[error("the Agent is not bound to a runtime")]
+    AgentUnbound,
+    #[error("the Agent is bound to a different runtime")]
+    AgentRuntimeRebound,
+    #[error("the Agent runtime no longer exists")]
+    AgentRuntimeMissing,
+}
+
+/// Returns the fail-closed reason for a thread whose Agent/runtime binding no
+/// longer matches the task that opened it. Keep this pure so the exact
+/// archived, unbound, and rebound cases can be regression-tested without a
+/// database fixture.
+pub fn agent_thread_binding_reason(
+    agent_archived: bool,
+    agent_runtime_id: Option<Uuid>,
+    task_runtime_id: Option<Uuid>,
+    runtime_exists: bool,
+) -> Option<AgentThreadUnavailableReason> {
+    if agent_archived {
+        return Some(AgentThreadUnavailableReason::AgentArchived);
+    }
+    let Some(agent_runtime_id) = agent_runtime_id else {
+        return Some(AgentThreadUnavailableReason::AgentUnbound);
+    };
+    if task_runtime_id != Some(agent_runtime_id) {
+        return Some(AgentThreadUnavailableReason::AgentRuntimeRebound);
+    }
+    if !runtime_exists {
+        return Some(AgentThreadUnavailableReason::AgentRuntimeMissing);
+    }
+    None
+}
+
+fn member_invocation_allowed(
+    owner_id: Option<Uuid>,
+    permission_mode: &str,
+    is_workspace_member: bool,
+    targets: &[AgentInvocationTarget],
+    actor_id: Uuid,
+) -> bool {
+    if actor_id.is_nil() || !is_workspace_member {
+        return false;
+    }
+    owner_id == Some(actor_id)
+        || (permission_mode == "public_to"
+            && targets.iter().any(|target| {
+                target.target_type == "workspace"
+                    || (target.target_type == "member" && target.target_id == actor_id)
+            }))
+}
+
+fn automation_invocation_allowed(
+    automation_workspace_id: Uuid,
+    agent_workspace_id: Uuid,
+    member_role: Option<&str>,
+    created_by_type: &str,
+    created_by_id: Uuid,
+    requester_user_id: Uuid,
+    collaborator: Option<bool>,
+) -> bool {
+    if automation_workspace_id != agent_workspace_id {
+        return false;
+    }
+    let owns_automation = member_role.is_some_and(|role| {
+        matches!(role, "owner" | "admin")
+            || (created_by_type == "member" && created_by_id == requester_user_id)
+    });
+    owns_automation || collaborator == Some(true)
+}
+
+pub fn agent_thread_availability(
+    task: &AgentTaskQueue,
+) -> Result<(), AgentThreadUnavailableReason> {
+    let Some(session_id) = task.session_id.as_deref() else {
+        if task.retired_session_id.is_some() {
+            return Err(AgentThreadUnavailableReason::RetiredSession);
+        }
+        if task.session_rollout_missing {
+            return Err(AgentThreadUnavailableReason::SessionRolloutMissing);
+        }
+        if task.force_fresh_session {
+            return Err(AgentThreadUnavailableReason::FreshSessionRequired);
+        }
+        return Err(AgentThreadUnavailableReason::SessionNotEstablished);
+    };
+
+    // A successful provider recovery may leave the superseded session id in
+    // `retired_session_id` for audit purposes. It is only terminal when the
+    // task still points at that same id; a different current session is the
+    // durable session the user can continue.
+    if task.retired_session_id.as_deref() == Some(session_id) {
+        return Err(AgentThreadUnavailableReason::RetiredSession);
+    }
+    if task.session_rollout_missing {
+        return Err(AgentThreadUnavailableReason::SessionRolloutMissing);
+    }
+
+    // `force_fresh_session` is consumed by claim/recovery when no provider
+    // session exists. Once a session is persisted, it must not turn a
+    // successfully recovered thread into an unavailable history surface.
+    Ok(())
+}
 
 /// A fresh enqueue lost the race to a concurrent one (#5914). Benign — a
 /// sibling run already covers this target. Returned bare so no upper-layer
@@ -198,6 +324,14 @@ pub enum TaskServiceError {
     ChatQuickActionsStale,
     #[error("chat quick actions: session busy")]
     ChatQuickActionsBusy,
+    #[error("agent thread is unavailable: {0}")]
+    AgentThreadUnavailable(AgentThreadUnavailableReason),
+    #[error("agent thread idempotency key was already used with different content")]
+    AgentThreadIdempotencyConflict,
+    #[error("agent thread reached its maximum continuation depth")]
+    AgentThreadDepthLimit,
+    #[error("agent thread continuation is not permitted for this requester")]
+    AgentThreadInvokeForbidden,
     #[error("capability lease is already finalized for this task claim")]
     CapabilityLeaseAlreadyFinalized,
     #[error("capability lease delegation boundary denied issuance")]
@@ -486,7 +620,7 @@ impl TaskService {
     }
 
     /// Replaces the Composio overlay builder after the service has already
-    /// been shared with issue/autopilot owners. Startup installs the loaded
+    /// been shared with issue/automation owners. Startup installs the loaded
     /// TOML/env snapshot this way instead of reconstructing TaskService.
     pub fn set_composio_overlay(
         &self,
@@ -733,13 +867,13 @@ impl TaskService {
                     .await;
             }
         }
-        // Autopilot-origin issues from schedule/webhook triggers: no human
+        // Automation-origin issues from schedule/webhook triggers: no human
         // authorized the run → originator stays NULL, accountable goes to the
         // human responsible for the firing trigger's effective config —
         // trigger_owner (PB-4302; Elon must-fix), degrading to rule_owner.
-        if issue.origin_type.as_deref() == Some("autopilot") {
+        if issue.origin_type.as_deref() == Some("automation") {
             if let Some(origin_id) = issue.origin_id {
-                let trigger_id = match get_autopilot_run_by_issue(&self.pool, issue.id).await {
+                let trigger_id = match get_automation_run_by_issue(&self.pool, issue.id).await {
                     Ok(Some(run)) => run.trigger_id,
                     _ => None,
                 };
@@ -874,11 +1008,11 @@ impl TaskService {
     // --- Quick-create context -------------------------------------------------
 
     /// Parses the quick-create context out of a task's context JSONB. Only
-    /// tasks with no issue/chat/autopilot link can be quick-create jobs.
+    /// tasks with no issue/chat/automation link can be quick-create jobs.
     pub fn parse_quick_create_context(task: &AgentTaskQueue) -> Option<QuickCreateContext> {
         if task.issue_id.is_some()
             || task.chat_session_id.is_some()
-            || task.autopilot_run_id.is_some()
+            || task.automation_run_id.is_some()
         {
             return None;
         }
@@ -932,13 +1066,13 @@ impl TaskService {
         let source: &str = if task.chat_session_id.is_some() {
             "chat"
         } else if task.issue_id.is_some() {
-            if tc.source == analytics::SOURCE_AUTOPILOT {
-                "autopilot_issue"
+            if tc.source == analytics::SOURCE_AUTOMATION {
+                "automation_issue"
             } else {
                 "issue"
             }
-        } else if task.autopilot_run_id.is_some() {
-            "autopilot"
+        } else if task.automation_run_id.is_some() {
+            "automation"
         } else if Self::parse_quick_create_context(task).is_some() {
             "quick_create"
         } else if !tc.source.is_empty() {
@@ -972,9 +1106,9 @@ impl TaskService {
             tc.chat_session_id = chat_session_id.to_string();
             tc.source = analytics::SOURCE_CHAT.to_string();
         }
-        if let Some(autopilot_run_id) = task.autopilot_run_id {
-            tc.autopilot_run_id = autopilot_run_id.to_string();
-            tc.source = analytics::SOURCE_AUTOPILOT.to_string();
+        if let Some(automation_run_id) = task.automation_run_id {
+            tc.automation_run_id = automation_run_id.to_string();
+            tc.source = analytics::SOURCE_AUTOMATION.to_string();
         }
 
         if let Some(runtime_id) = task.runtime_id {
@@ -1002,10 +1136,10 @@ impl TaskService {
                     tc.user_id = issue.creator_id.to_string();
                 }
                 match issue.origin_type.as_deref() {
-                    Some("autopilot") => {
-                        tc.source = analytics::SOURCE_AUTOPILOT.to_string();
+                    Some("automation") => {
+                        tc.source = analytics::SOURCE_AUTOMATION.to_string();
                         if let Some(origin_id) = issue.origin_id {
-                            if let Ok(Some(ap)) = get_autopilot(&self.pool, origin_id).await {
+                            if let Ok(Some(ap)) = get_automation(&self.pool, origin_id).await {
                                 if ap.created_by_type == "member" {
                                     tc.user_id = ap.created_by_id.to_string();
                                 }
@@ -1025,9 +1159,9 @@ impl TaskService {
                 tc.user_id = cs.creator_id.to_string();
             }
         }
-        if let Some(autopilot_run_id) = task.autopilot_run_id {
-            if let Ok(Some(run)) = get_autopilot_run(&self.pool, autopilot_run_id).await {
-                if let Ok(Some(ap)) = get_autopilot(&self.pool, run.autopilot_id).await {
+        if let Some(automation_run_id) = task.automation_run_id {
+            if let Ok(Some(run)) = get_automation_run(&self.pool, automation_run_id).await {
+                if let Ok(Some(ap)) = get_automation(&self.pool, run.automation_id).await {
                     tc.workspace_id = ap.workspace_id.to_string();
                     if ap.created_by_type == "member" {
                         tc.user_id = ap.created_by_id.to_string();
@@ -1328,7 +1462,7 @@ fn task_analytics_context_key(task: &AgentTaskQueue) -> Option<String> {
         opt_uuid(&task.runtime_id),
         opt_uuid(&task.issue_id),
         opt_uuid(&task.chat_session_id),
-        opt_uuid(&task.autopilot_run_id),
+        opt_uuid(&task.automation_run_id),
     ))
 }
 
@@ -1383,17 +1517,17 @@ pub fn task_error_type(reason: &str) -> &'static str {
 
 // --- Free-function attribution helpers (DB-backed) ----------------------------
 
-/// Resolves the rule_owner attribution for an autopilot run from its active
-/// rule version snapshot (PB-4302 §3.4). Shared by both autopilot execution
+/// Resolves the rule_owner attribution for an automation run from its active
+/// rule version snapshot (PB-4302 §3.4). Shared by both automation execution
 /// modes. Never errors: attribution must not fail an enqueue.
 pub async fn rule_owner_attribution(
     pool: &PgPool,
     workspace_id: Uuid,
-    autopilot_id: Uuid,
+    automation_id: Uuid,
     evidence_kind: EvidenceKind,
     evidence_ref_id: Option<Uuid>,
 ) -> AttributionResult {
-    let Ok(Some(ver)) = get_active_autopilot_rule_version(pool, workspace_id, autopilot_id).await
+    let Ok(Some(ver)) = get_active_automation_rule_version(pool, workspace_id, automation_id).await
     else {
         return rule_owner(None, None, evidence_kind, evidence_ref_id);
     };
@@ -1405,7 +1539,7 @@ pub async fn rule_owner_attribution(
     rule_owner(publisher, Some(ver.id), evidence_kind, evidence_ref_id)
 }
 
-/// Resolves an autopilot schedule/webhook run to the human currently
+/// Resolves an automation schedule/webhook run to the human currently
 /// RESPONSIBLE for the firing trigger's effective config (PB-4302; Bohan +
 /// Elon must-fix). published_by starts at the creator and transfers to whoever
 /// later substantively edits it. Degrades to rule_owner when unrecoverable.
@@ -1413,12 +1547,12 @@ pub async fn trigger_owner_attribution(
     pool: &PgPool,
     trigger_id: Option<Uuid>,
     workspace_id: Uuid,
-    autopilot_id: Uuid,
+    automation_id: Uuid,
     evidence_kind: EvidenceKind,
     evidence_ref_id: Option<Uuid>,
 ) -> AttributionResult {
     if let Some(trigger_id) = trigger_id {
-        if let Ok(Some(trig)) = get_autopilot_trigger(pool, trigger_id).await {
+        if let Ok(Some(trig)) = get_automation_trigger(pool, trigger_id).await {
             if trig.published_by_type.as_deref() == Some("member") {
                 if let Some(published_by) = trig.published_by_id {
                     return trigger_owner(Some(published_by), evidence_kind, evidence_ref_id);
@@ -1429,7 +1563,7 @@ pub async fn trigger_owner_attribution(
     rule_owner_attribution(
         pool,
         workspace_id,
-        autopilot_id,
+        automation_id,
         evidence_kind,
         evidence_ref_id,
     )
@@ -1761,7 +1895,7 @@ impl TaskService {
     }
 
     /// Resolves the workspace for a task event: issue → chat session →
-    /// autopilot run → quick-create context. `None` = not found.
+    /// automation run → quick-create context. `None` = not found.
     pub async fn resolve_task_workspace_id(&self, task: &AgentTaskQueue) -> Option<String> {
         if let Some(issue_id) = task.issue_id {
             if let Ok(Some(issue)) = get_issue(&self.pool, issue_id).await {
@@ -1773,9 +1907,9 @@ impl TaskService {
                 return Some(cs.workspace_id.to_string());
             }
         }
-        if let Some(autopilot_run_id) = task.autopilot_run_id {
-            if let Ok(Some(run)) = get_autopilot_run(&self.pool, autopilot_run_id).await {
-                if let Ok(Some(ap)) = get_autopilot(&self.pool, run.autopilot_id).await {
+        if let Some(automation_run_id) = task.automation_run_id {
+            if let Ok(Some(run)) = get_automation_run(&self.pool, automation_run_id).await {
+                if let Ok(Some(ap)) = get_automation(&self.pool, run.automation_id).await {
                     return Some(ap.workspace_id.to_string());
                 }
             }
@@ -2651,7 +2785,7 @@ impl TaskService {
     }
 
     /// Explicit @Agent mention while that Agent has a main task in flight.
-    /// This creates an independent, read-only conversation branch; it never
+    /// This creates an independent interactive conversation branch; it never
     /// injects the member's comment into the main task.
     pub async fn enqueue_side_chat_for_mention(
         &self,
@@ -2765,6 +2899,8 @@ impl TaskService {
         {
             (task_id, true)
         } else {
+            let runtime_mcp_overlay = overlay_value_or_null(&parent.runtime_mcp_overlay);
+            let runtime_connected_apps = overlay_value_or_null(&parent.runtime_connected_apps);
             let task_id = create_task_message_bus_continuation(
                 &mut *tx,
                 parent.id,
@@ -2773,6 +2909,12 @@ impl TaskService {
                 message_id,
                 &content,
                 new_v7(),
+                "",
+                parent.originator_user_id,
+                parent.accountable_user_id,
+                &runtime_mcp_overlay,
+                &runtime_connected_apps,
+                parent.originator_source.as_deref(),
             )
             .await
             .map_err(downcast_sqlx)?
@@ -2812,6 +2954,417 @@ impl TaskService {
         Ok(TaskMessageBusReceipt {
             continuation_task_id,
             coalesced,
+        })
+    }
+
+    /// Checks the current Agent/runtime binding before an existing thread is
+    /// advertised as continuable. A provider session alone is insufficient:
+    /// archive, unbind, and runtime replacement are terminal for this
+    /// product-level continuation contract.
+    pub async fn agent_thread_binding_availability(
+        &self,
+        task: &AgentTaskQueue,
+    ) -> Result<(), AgentThreadUnavailableReason> {
+        let agent = match get_agent(&self.pool, task.agent_id).await {
+            Ok(Some(agent)) => agent,
+            Ok(None) => return Err(AgentThreadUnavailableReason::AgentRuntimeMissing),
+            Err(error) => {
+                tracing::warn!(
+                    task_id = %task.id,
+                    agent_id = %task.agent_id,
+                    %error,
+                    "failed to load Agent binding for Agent thread"
+                );
+                return Err(AgentThreadUnavailableReason::AgentRuntimeMissing);
+            }
+        };
+        let runtime_exists = match agent.runtime_id {
+            Some(runtime_id) => match get_agent_runtime(&self.pool, runtime_id).await {
+                Ok(Some(runtime)) => runtime.workspace_id == agent.workspace_id,
+                Ok(None) => false,
+                Err(error) => {
+                    tracing::warn!(
+                        task_id = %task.id,
+                        runtime_id = %runtime_id,
+                        %error,
+                        "failed to load Agent runtime for Agent thread"
+                    );
+                    false
+                }
+            },
+            None => false,
+        };
+        match agent_thread_binding_reason(
+            agent.archived_at.is_some(),
+            agent.runtime_id,
+            task.runtime_id,
+            runtime_exists,
+        ) {
+            Some(reason) => Err(reason),
+            None => Ok(()),
+        }
+    }
+
+    /// Queues a user-authored next turn for the same provider session. The
+    /// deferred lane is shared with Side Chat delivery so a provider never
+    /// receives concurrent writers for one checkout/session. The parent row
+    /// lock plus the private idempotency receipt make retries safe even when
+    /// the HTTP response is lost after commit.
+    pub async fn continue_agent_thread(
+        &self,
+        parent_task_id: Uuid,
+        content: &str,
+        idempotency_key: &str,
+        requester_user_id: Uuid,
+    ) -> Result<TaskMessageBusReceipt, TaskServiceError> {
+        const MAX_MESSAGE_CHARS: usize = 12_000;
+        let content = sanitize_text_for_postgres(content.trim());
+        let idempotency_key = sanitize_text_for_postgres(idempotency_key.trim());
+        if content.is_empty() {
+            return Err(TaskServiceError::Internal(
+                "agent thread message is empty".to_string(),
+            ));
+        }
+        if idempotency_key.is_empty() || idempotency_key.chars().count() > 200 {
+            return Err(TaskServiceError::Internal(
+                "agent thread idempotency key is invalid".to_string(),
+            ));
+        }
+        let content = content.chars().take(MAX_MESSAGE_CHARS).collect::<String>();
+
+        // Composio session creation can perform database and network I/O. Take
+        // a non-locking snapshot for that work; the transaction below repeats
+        // every authorization and binding check before it writes anything.
+        let snapshot_parent = get_agent_task(&self.pool, parent_task_id)
+            .await
+            .map_err(downcast_sqlx)?
+            .ok_or_else(|| {
+                TaskServiceError::Internal("agent thread parent task not found".to_string())
+            })?;
+        if let Err(reason) = agent_thread_availability(&snapshot_parent) {
+            return Err(TaskServiceError::AgentThreadUnavailable(reason));
+        }
+        let snapshot_agent = get_agent(&self.pool, snapshot_parent.agent_id)
+            .await
+            .map_err(downcast_sqlx)?
+            .ok_or_else(|| TaskServiceError::Internal("Agent binding not found".to_string()))?;
+        let snapshot_runtime_exists = match snapshot_agent.runtime_id {
+            Some(runtime_id) => get_agent_runtime(&self.pool, runtime_id)
+                .await
+                .map_err(downcast_sqlx)?
+                .is_some_and(|runtime| runtime.workspace_id == snapshot_agent.workspace_id),
+            None => false,
+        };
+        if let Some(reason) = agent_thread_binding_reason(
+            snapshot_agent.archived_at.is_some(),
+            snapshot_agent.runtime_id,
+            snapshot_parent.runtime_id,
+            snapshot_runtime_exists,
+        ) {
+            return Err(TaskServiceError::AgentThreadUnavailable(reason));
+        }
+
+        // Reject an unauthorized direct service caller before the overlay
+        // builder can create any external provider session. The transaction
+        // below repeats this check after locking the Agent for races.
+        let is_workspace_member = match get_member_by_user_and_workspace(
+            &self.pool,
+            requester_user_id,
+            snapshot_agent.workspace_id,
+        )
+        .await
+        {
+            Ok(member) => member.is_some(),
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    requester_user_id = %requester_user_id,
+                    agent_id = %snapshot_agent.id,
+                    "failed to verify Agent thread requester membership before overlay"
+                );
+                false
+            }
+        };
+        let targets = if is_workspace_member
+            && snapshot_agent.owner_id != Some(requester_user_id)
+            && snapshot_agent.permission_mode == "public_to"
+        {
+            match list_agent_invocation_targets(&self.pool, snapshot_agent.id).await {
+                Ok(targets) => targets,
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        requester_user_id = %requester_user_id,
+                        agent_id = %snapshot_agent.id,
+                        "failed to verify Agent thread invocation targets before overlay"
+                    );
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+        if !member_invocation_allowed(
+            snapshot_agent.owner_id,
+            &snapshot_agent.permission_mode,
+            is_workspace_member,
+            &targets,
+            requester_user_id,
+        ) {
+            return Err(TaskServiceError::AgentThreadInvokeForbidden);
+        }
+
+        let runtime_overlay = self
+            .build_runtime_mcp_overlay(requester_user_id, &snapshot_agent)
+            .await;
+        let runtime_mcp_overlay = overlay_value_or_null(&runtime_overlay.overlay);
+        let runtime_connected_apps = overlay_value_or_null(&runtime_overlay.connected_apps);
+        let attribution = direct_human_run(
+            Some(requester_user_id),
+            evidence_chat(),
+            snapshot_parent.chat_session_id,
+        );
+        let originator_source = attribution
+            .source
+            .as_ref()
+            .map(|source| source.as_str().to_string());
+
+        let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        // Follow the repository owner-row fence: lock Agent/owner rows before
+        // the task row. Claim paths take the same order; upgrading the Agent
+        // after locking the task could otherwise deadlock on a concurrent
+        // claim that already holds the Agent lock and waits for this task.
+        let agent = get_agent_for_claim_update(&mut *tx, snapshot_parent.agent_id)
+            .await
+            .map_err(|error| TaskServiceError::Internal(format!("load Agent binding: {error}")))?
+            .ok_or_else(|| TaskServiceError::Internal("Agent binding not found".to_string()))?;
+        let runtime_exists = match agent.runtime_id {
+            Some(runtime_id) => get_agent_runtime(&mut *tx, runtime_id)
+                .await
+                .map_err(|error| {
+                    TaskServiceError::Internal(format!("load Agent runtime binding: {error}"))
+                })?
+                .is_some_and(|runtime| runtime.workspace_id == agent.workspace_id),
+            None => false,
+        };
+        if let Some(reason) = agent_thread_binding_reason(
+            agent.archived_at.is_some(),
+            agent.runtime_id,
+            snapshot_parent.runtime_id,
+            runtime_exists,
+        ) {
+            return Err(TaskServiceError::AgentThreadUnavailable(reason));
+        }
+
+        if !lock_task_for_message_bus(&mut *tx, parent_task_id)
+            .await
+            .map_err(downcast_sqlx)?
+        {
+            return Err(TaskServiceError::Internal(
+                "agent thread parent task not found".to_string(),
+            ));
+        }
+        let parent = get_agent_task(&mut *tx, parent_task_id)
+            .await
+            .map_err(downcast_sqlx)?
+            .ok_or_else(|| {
+                TaskServiceError::Internal("agent thread parent task not found".to_string())
+            })?;
+        if let Err(reason) = agent_thread_availability(&parent) {
+            return Err(TaskServiceError::AgentThreadUnavailable(reason));
+        }
+
+        if parent.agent_id != agent.id {
+            return Err(TaskServiceError::Internal(
+                "Agent binding changed while preparing continuation; retry".to_string(),
+            ));
+        }
+        if let Some(reason) = agent_thread_binding_reason(
+            agent.archived_at.is_some(),
+            agent.runtime_id,
+            parent.runtime_id,
+            runtime_exists,
+        ) {
+            return Err(TaskServiceError::AgentThreadUnavailable(reason));
+        }
+
+        // Recheck the authenticated requester after taking the Agent and
+        // parent-task locks. The handler performs the same admission check for
+        // the HTTP path, but this service boundary must also fail closed for
+        // direct callers and for permission changes racing the continuation
+        // request. Locking the member row makes a concurrent role revocation
+        // serialize with this final authorization decision.
+        let requester_member = match lock_member_by_user_and_workspace(
+            &mut *tx,
+            requester_user_id,
+            agent.workspace_id,
+        )
+        .await
+        {
+            Ok(member) => member,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    requester_user_id = %requester_user_id,
+                    agent_id = %agent.id,
+                    "failed to verify Agent thread requester membership"
+                );
+                None
+            }
+        };
+        let is_workspace_member = requester_member.is_some();
+
+        // Continuation children intentionally clear `automation_run_id`; use
+        // the locked parent to recover the complete chain and recheck the
+        // Automation owner/collaborator boundary immediately before insert.
+        // This prevents a permission revoked while the requester overlay was
+        // being built from still authorizing a new turn.
+        let thread_tasks = match list_agent_thread_tasks(&mut *tx, parent.id).await {
+            Ok(tasks) => tasks,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    parent_task_id = %parent.id,
+                    "failed to load Agent thread source for continuation authorization"
+                );
+                return Err(TaskServiceError::AgentThreadInvokeForbidden);
+            }
+        };
+        let automation_run_id = thread_tasks
+            .iter()
+            .find_map(|task| task.automation_run_id)
+            .or(parent.automation_run_id);
+        if let Some(automation_run_id) = automation_run_id {
+            let automation_allowed = match get_automation_run(&mut *tx, automation_run_id).await {
+                Ok(Some(run)) => match get_automation(&mut *tx, run.automation_id).await {
+                    Ok(Some(automation)) => {
+                        let collaborates =
+                            is_automation_collaborator(&mut *tx, automation.id, requester_user_id)
+                                .await
+                                .unwrap_or_default();
+                        automation_invocation_allowed(
+                            automation.workspace_id,
+                            agent.workspace_id,
+                            requester_member.as_ref().map(|member| member.role.as_str()),
+                            &automation.created_by_type,
+                            automation.created_by_id,
+                            requester_user_id,
+                            collaborates,
+                        )
+                    }
+                    Ok(None) | Err(_) => false,
+                },
+                Ok(None) | Err(_) => false,
+            };
+            if !automation_allowed {
+                return Err(TaskServiceError::AgentThreadInvokeForbidden);
+            }
+        }
+        let targets = if is_workspace_member
+            && agent.owner_id != Some(requester_user_id)
+            && agent.permission_mode == "public_to"
+        {
+            match list_agent_invocation_targets(&mut *tx, agent.id).await {
+                Ok(targets) => targets,
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        requester_user_id = %requester_user_id,
+                        agent_id = %agent.id,
+                        "failed to verify Agent thread invocation targets"
+                    );
+                    Vec::new()
+                }
+            }
+        } else {
+            Vec::new()
+        };
+        if !member_invocation_allowed(
+            agent.owner_id,
+            &agent.permission_mode,
+            is_workspace_member,
+            &targets,
+            requester_user_id,
+        ) {
+            return Err(TaskServiceError::AgentThreadInvokeForbidden);
+        }
+
+        // Never attach a session built from an older owner/allowlist snapshot
+        // to a task after the Agent changed while the external call ran.
+        if agent.owner_id != snapshot_agent.owner_id
+            || agent.composio_toolkit_allowlist != snapshot_agent.composio_toolkit_allowlist
+        {
+            return Err(TaskServiceError::Internal(
+                "Agent configuration changed while preparing continuation; retry".to_string(),
+            ));
+        }
+
+        if let Some(existing) =
+            get_agent_thread_continuation_by_idempotency(&mut *tx, parent_task_id, &idempotency_key)
+                .await
+                .map_err(downcast_sqlx)?
+        {
+            if existing.content != content {
+                return Err(TaskServiceError::AgentThreadIdempotencyConflict);
+            }
+            tx.commit().await.map_err(TaskServiceError::Sql)?;
+            return Ok(TaskMessageBusReceipt {
+                continuation_task_id: existing.task_id,
+                coalesced: true,
+            });
+        }
+
+        // The history query intentionally caps traversal at the root plus
+        // 100 descendants. Refuse the next new turn once that cap is reached
+        // so a successful child can never execute outside the visible thread.
+        // Keep the idempotency lookup above this guard so a committed request
+        // whose response was lost can still be replayed safely.
+        if thread_tasks.len() > MAX_AGENT_THREAD_TASKS_BEFORE_DEPTH_LIMIT {
+            return Err(TaskServiceError::AgentThreadDepthLimit);
+        }
+
+        let message_id = new_v7();
+        let continuation_task_id = create_task_message_bus_continuation(
+            &mut *tx,
+            parent.id,
+            parent.id,
+            Uuid::nil(),
+            message_id,
+            &content,
+            new_v7(),
+            &idempotency_key,
+            attribution.user_id,
+            attribution.accountable_user_id,
+            &runtime_mcp_overlay,
+            &runtime_connected_apps,
+            originator_source.as_deref(),
+        )
+        .await
+        .map_err(downcast_sqlx)?
+        .ok_or_else(|| {
+            TaskServiceError::Internal("agent thread continuation could not be created".to_string())
+        })?;
+        let continuation = get_agent_task(&mut *tx, continuation_task_id)
+            .await
+            .map_err(downcast_sqlx)?
+            .ok_or_else(|| {
+                TaskServiceError::Internal(
+                    "agent thread continuation could not be loaded".to_string(),
+                )
+            })?;
+        tx.commit().await.map_err(TaskServiceError::Sql)?;
+
+        self.broadcast_task_event(
+            patchbay_protocol::EVENT_TASK_QUEUED,
+            &continuation,
+            Default::default(),
+        )
+        .await;
+        self.notify_runtime_may_have_work(parent.runtime_id, None)
+            .await;
+        Ok(TaskMessageBusReceipt {
+            continuation_task_id,
+            coalesced: false,
         })
     }
 
@@ -3123,7 +3676,7 @@ impl TaskService {
         Ok(task)
     }
 
-    /// Quick-create task: no issue/chat/autopilot link; the prompt lives in
+    /// Quick-create task: no issue/chat/automation link; the prompt lives in
     /// the context JSONB and the agent translates it into `patchbay issue create`.
     #[allow(clippy::too_many_arguments)]
     pub async fn enqueue_quick_create_task(
@@ -4567,7 +5120,7 @@ impl TaskService {
         Ok(Some(cancelled))
     }
 
-    /// Terminal-path chat settle for a CANCELLED task: empty transcript may be
+    /// Terminal-path chat settle for a CANCELLED task: empty Agent event history may be
     /// restorable (or deferred for started tasks behind a draft-restore-capable
     /// client); non-empty gets a "Stopped." assistant row. Errors are logged
     /// and swallowed — the cancellation itself already committed.
@@ -4609,7 +5162,7 @@ impl TaskService {
             }
             if restorable && task.started_at.is_some() && opts.client_supports_draft_restore {
                 // A started task's daemon learns of the cancellation by polling
-                // and may still be flushing its transcript tail, so "empty" is
+                // and may still be flushing its Agent event history tail, so "empty" is
                 // not trustworthy yet. Defer until the daemon acks or the
                 // sweeper grace period expires (#5219).
                 mark_chat_finalize_deferred(&mut *tx, task.id)
@@ -5530,7 +6083,7 @@ fn is_no_rows(err: &anyhow::Error) -> bool {
 }
 
 /// Writes an assistant outcome and reanchors the newly-visible queued direct
-/// head in the caller's transaction — the transcript-order boundary. Callers
+/// head in the caller's transaction — the Agent event history-order boundary. Callers
 /// MUST observe the settling task outside the visible-head status set first.
 pub(crate) async fn create_assistant_chat_message_typed(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -5726,7 +6279,7 @@ mod tests {
             agent_id: id,
             accountable_user_id: None,
             attempt: 1,
-            autopilot_run_id: None,
+            automation_run_id: None,
             branch_name: None,
             chat_finalize_deferred_at: None,
             chat_input_task_id: None,
@@ -5889,6 +6442,170 @@ mod tests {
     }
 
     #[test]
+    fn agent_thread_availability_is_fail_closed() {
+        let mut task = task_fixture();
+        assert_eq!(
+            agent_thread_availability(&task),
+            Err(AgentThreadUnavailableReason::SessionNotEstablished)
+        );
+
+        task.session_id = Some("provider-session".to_string());
+        assert_eq!(agent_thread_availability(&task), Ok(()));
+
+        task.force_fresh_session = true;
+        assert_eq!(agent_thread_availability(&task), Ok(()));
+        task.force_fresh_session = false;
+        task.session_rollout_missing = true;
+        assert_eq!(
+            agent_thread_availability(&task),
+            Err(AgentThreadUnavailableReason::SessionRolloutMissing)
+        );
+        task.session_rollout_missing = false;
+        task.retired_session_id = Some("provider-session".to_string());
+        assert_eq!(
+            agent_thread_availability(&task),
+            Err(AgentThreadUnavailableReason::RetiredSession)
+        );
+        task.retired_session_id = Some("older-provider-session".to_string());
+        assert_eq!(agent_thread_availability(&task), Ok(()));
+
+        task.session_id = None;
+        assert_eq!(
+            agent_thread_availability(&task),
+            Err(AgentThreadUnavailableReason::RetiredSession)
+        );
+    }
+
+    #[test]
+    fn agent_thread_binding_is_fail_closed_for_lifecycle_changes() {
+        let runtime_id = Uuid::now_v7();
+        assert_eq!(
+            agent_thread_binding_reason(true, Some(runtime_id), Some(runtime_id), true),
+            Some(AgentThreadUnavailableReason::AgentArchived)
+        );
+        assert_eq!(
+            agent_thread_binding_reason(false, None, None, false),
+            Some(AgentThreadUnavailableReason::AgentUnbound)
+        );
+        assert_eq!(
+            agent_thread_binding_reason(false, Some(runtime_id), Some(Uuid::now_v7()), true,),
+            Some(AgentThreadUnavailableReason::AgentRuntimeRebound)
+        );
+        assert_eq!(
+            agent_thread_binding_reason(false, Some(runtime_id), Some(runtime_id), false),
+            Some(AgentThreadUnavailableReason::AgentRuntimeMissing)
+        );
+        assert_eq!(
+            agent_thread_binding_reason(false, Some(runtime_id), Some(runtime_id), true),
+            None
+        );
+    }
+
+    #[test]
+    fn agent_thread_invocation_requires_current_member_and_target() {
+        let owner = Uuid::now_v7();
+        let member = Uuid::now_v7();
+        let other = Uuid::now_v7();
+        let target = |target_type: &str, target_id: Uuid| AgentInvocationTarget {
+            id: Uuid::now_v7(),
+            agent_id: Uuid::now_v7(),
+            target_type: target_type.to_string(),
+            target_id,
+            created_by: None,
+            created_at: chrono::Utc::now(),
+        };
+
+        assert!(member_invocation_allowed(
+            Some(owner),
+            "private",
+            true,
+            &[],
+            owner
+        ));
+        assert!(!member_invocation_allowed(
+            Some(owner),
+            "private",
+            false,
+            &[],
+            owner
+        ));
+        assert!(member_invocation_allowed(
+            Some(owner),
+            "public_to",
+            true,
+            &[target("member", member)],
+            member
+        ));
+        assert!(!member_invocation_allowed(
+            Some(owner),
+            "public_to",
+            true,
+            &[target("member", other)],
+            member
+        ));
+        assert!(member_invocation_allowed(
+            Some(owner),
+            "public_to",
+            true,
+            &[target("workspace", other)],
+            member
+        ));
+        assert!(!member_invocation_allowed(
+            Some(owner),
+            "public_to",
+            false,
+            &[target("workspace", other)],
+            member
+        ));
+    }
+
+    #[test]
+    fn automation_thread_invocation_fails_closed_for_revoked_or_cross_workspace_access() {
+        let workspace = Uuid::now_v7();
+        let other_workspace = Uuid::now_v7();
+        let owner = Uuid::now_v7();
+        let requester = Uuid::now_v7();
+        let automation = Uuid::now_v7();
+
+        assert!(automation_invocation_allowed(
+            workspace,
+            workspace,
+            Some("owner"),
+            "member",
+            owner,
+            owner,
+            Some(false),
+        ));
+        assert!(automation_invocation_allowed(
+            workspace,
+            workspace,
+            Some("member"),
+            "member",
+            automation,
+            requester,
+            Some(true),
+        ));
+        assert!(!automation_invocation_allowed(
+            workspace,
+            workspace,
+            Some("member"),
+            "member",
+            automation,
+            requester,
+            Some(false),
+        ));
+        assert!(!automation_invocation_allowed(
+            other_workspace,
+            workspace,
+            Some("owner"),
+            "member",
+            owner,
+            owner,
+            Some(true),
+        ));
+    }
+
+    #[test]
     fn task_failure_reason_defaults_to_agent_error() {
         let mut task = task_fixture();
         assert_eq!(task_failure_reason(&task), "agent_error");
@@ -5973,13 +6690,13 @@ mod tests {
         let (source, _, _) = svc.task_metrics_context(&task).await;
         assert_eq!(
             source, "issue",
-            "no autopilot context without a DB → plain issue"
+            "no automation context without a DB → plain issue"
         );
 
         let mut task = task_fixture();
-        task.autopilot_run_id = Some(Uuid::now_v7());
+        task.automation_run_id = Some(Uuid::now_v7());
         let (source, _, _) = svc.task_metrics_context(&task).await;
-        assert_eq!(source, "autopilot");
+        assert_eq!(source, "automation");
 
         let task = task_fixture();
         let (source, _, _) = svc.task_metrics_context(&task).await;

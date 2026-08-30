@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { AgentTask, TimelineEntry } from "@patchbay/core/types";
-import { buildIssueAgentConversation, queuedIssueFollowUps } from "./issue-agent-conversation";
+import {
+  buildIssueAgentConversation,
+  queuedIssueFollowUps,
+} from "./issue-agent-conversation";
 
 function task(id: string, overrides: Partial<AgentTask> = {}): AgentTask {
   return {
@@ -114,6 +117,29 @@ describe("buildIssueAgentConversation", () => {
     expect(conversation.pendingTask?.task_id).toBe("running");
     expect(conversation.pendingTask?.queued_tasks).toEqual([
       expect.objectContaining({ task_id: "queued", content: "Now do stage 2" }),
+    ]);
+  });
+
+  it("keeps a deferred follow-up in the same active thread", () => {
+    const conversation = buildIssueAgentConversation({
+      issueId: "issue-1",
+      agentId: "agent-1",
+      tasks: [
+        task("running", { status: "running", completed_at: null }),
+        task("deferred", {
+          status: "deferred",
+          created_at: "2026-08-28T10:02:00Z",
+          completed_at: null,
+          trigger_summary: "Retry stage 2",
+        }),
+      ],
+      timeline: [],
+      initialRunPrompt: "Work on this issue.",
+    });
+
+    expect(conversation.pendingTask?.task_id).toBe("running");
+    expect(conversation.pendingTask?.queued_tasks).toEqual([
+      expect.objectContaining({ task_id: "deferred", status: "deferred" }),
     ]);
   });
 

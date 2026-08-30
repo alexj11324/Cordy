@@ -57,7 +57,7 @@ Patchbay 是一个把 AI agent 当员工来用的工作区平台。它跟其他�
 
 最常见的方式是分配 issue:写清问题、assign 给 @db-boy,几秒后他启动 Claude Code,按 skill 里的路由走 posthog-cli + HogQL 或者 psql,几分钟后 issue 评论里多一条 markdown 表格和一份 HTML 报告。
 
-也不用每次都开 issue。在已有 issue 评论里 @ 他追问一句,他在同一条线程接着回。像 DM 同事一样直接 chat 也行,问完即走不留档案。例行报告(周报、月报、每天的 token 用量 top 10)配一次 Autopilot,到点自动跑,结果贴到对应 issue 里,订阅者收到通知。
+也不用每次都开 issue。在已有 issue 评论里 @ 他追问一句,他在同一条线程接着回。像 DM 同事一样直接 chat 也行,问完即走不留档案。例行报告(周报、月报、每天的 token 用量 top 10)配一次自动化,到点自动跑,结果贴到对应 issue 里,订阅者收到通知。
 
 他不会卡在堵点上。分析时发现某个页面没埋点,他自己建一条新 issue:标题写"补 X 页面 Y 按钮的点击埋点",字段、事件名、为什么需要都写清,assign 给 @frontend-agent。前端 agent 接到分配就提 PR,工程师 review 完合进去。下次再问同一个问题,数据就在那里。
 
@@ -79,7 +79,7 @@ db-boy 上线之后,团队看数据的节奏变了。
 
 **即时性。** 想到问题就 @ 他,几分钟回。半夜两点要看一组留存曲线也行,他都在。"先记着、等分析师下周有空"这种等待消失了。
 
-**自动化。** 周一 9 点周报、月初投资人月报、每天早 8 点 token 用量 top 10,全是 Autopilot 定时跑,跑完直接贴到对应 issue 评论里,订阅者自动收到通知。例行报告不再占任何人时间。
+**自动化。** 周一 9 点周报、月初投资人月报、每天早 8 点 token 用量 top 10,全是自动化定时跑,跑完直接贴到对应 issue 评论里,订阅者自动收到通知。例行报告不再占任何人时间。
 
 **可视化。** 交付物默认是带图表的 HTML dashboard,不是一段文字结论。几分钟出图,不为一张趋势图等下个 sprint,团队讨论也不再围着"我感觉是 X"打转。
 
@@ -98,5 +98,5 @@ db-boy 上线之后,团队看数据的节奏变了。
 ## 相关阅读
 
 - [Agents](/docs/zh/agents)
-- [Autopilots](/docs/zh/autopilots)
+- [自动化](/docs/zh/automations)
 - [Skills](/docs/zh/skills)

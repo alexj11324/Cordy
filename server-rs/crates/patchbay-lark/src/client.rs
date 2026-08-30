@@ -322,7 +322,7 @@ pub trait ApiClient: Send + Sync {
     /// router takes when the body contains markdown syntax (fenced code
     /// blocks, headings, lists, tables, etc.) — Lark renders the markdown
     /// into formatted text rather than leaving raw `**bold**` / `# heading`
-    /// characters in the user's transcript. Returns the card's message_id.
+    /// characters in the user's Agent event history. Returns the card's message_id.
     async fn send_markdown_card(&self, p: SendMarkdownCardParams) -> anyhow::Result<String>;
 
     /// The dedicated "you need to bind" outbound. Kept separate from
@@ -347,7 +347,7 @@ pub trait ApiClient: Send + Sync {
     /// child messages (each a normal typed message linked back by
     /// upper_message_id). The inbound enricher relies on both shapes:
     /// items[0] for a quoted-reply parent, items[1:] for a forwarded
-    /// transcript. Returning the raw vec keeps this method a thin transport
+    /// Agent event history. Returning the raw vec keeps this method a thin transport
     /// adapter — flattening and block assembly are the enricher's job.
     async fn get_message(
         &self,

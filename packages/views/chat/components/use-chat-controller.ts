@@ -344,7 +344,7 @@ export function useChatController(opts?: { isActive?: boolean }) {
   // A session outlives the permission that created it. The agent can be flipped
   // to personal, change owner, or drop this member from its allow-list, and the
   // server then refuses every send with `invocation_not_allowed` while still
-  // serving the transcript (PB-4525 — read uses the view gate, send re-runs the
+  // serving the Agent event history (PB-4525 — read uses the view gate, send re-runs the
   // invoke gate). Judge the SESSION's agent, not just the picker list, so the
   // composer goes read-only up front instead of after the user types
   // (PB-6380). Same rule the server enforces, via the shared predicate.

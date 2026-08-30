@@ -140,7 +140,7 @@ mod tests {
         let skills = load_builtin_skills();
         assert_eq!(skills.len(), 10, "expected the 10 shipped platform skills");
         // Deterministic sorted order.
-        assert_eq!(skills[0].name, "patchbay-autopilots");
+        assert_eq!(skills[0].name, "patchbay-automations");
         assert_eq!(
             skills
                 .iter()
@@ -179,24 +179,28 @@ mod tests {
     #[test]
     fn supporting_files_keep_relative_paths() {
         let skills = load_builtin_skills();
-        let autopilots = skills
+        let automations = skills
             .iter()
-            .find(|s| s.name == "patchbay-autopilots")
+            .find(|s| s.name == "patchbay-automations")
             .unwrap();
-        let refs: Vec<_> = autopilots
+        let refs: Vec<_> = automations
             .files
             .iter()
             .filter(|f| f.path.starts_with("references/"))
             .collect();
         assert!(
             refs.iter()
-                .any(|f| f.path == "references/autopilots-source-map.md"),
+                .any(|f| f.path == "references/automations-source-map.md"),
             "subdirectory paths must survive: {:?}",
-            autopilots.files.iter().map(|f| &f.path).collect::<Vec<_>>()
+            automations
+                .files
+                .iter()
+                .map(|f| &f.path)
+                .collect::<Vec<_>>()
         );
         assert!(refs.iter().all(|f| !f.content.is_empty()));
         // SKILL.md itself is not duplicated into files.
-        assert!(autopilots.files.iter().all(|f| f.path != "SKILL.md"));
+        assert!(automations.files.iter().all(|f| f.path != "SKILL.md"));
     }
 
     #[test]

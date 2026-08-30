@@ -92,6 +92,42 @@ ORDER BY seq ASC"#,
     Ok(out)
 }
 
+/// Loads the structured events for a complete Agent thread chain in one
+/// round-trip. `array_position` preserves the caller's chain order while
+/// keeping each task's event sequence ordered, so the handler does not fall
+/// back to one sequential query per child task.
+pub async fn list_task_messages_for_tasks(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    task_ids: Vec<Uuid>,
+) -> anyhow::Result<Vec<TaskMessage>> {
+    if task_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let rows = sqlx::query(
+        r#"SELECT id, task_id, seq, type, tool, content, input, output, created_at FROM task_message
+WHERE task_id = ANY($1::uuid[])
+ORDER BY array_position($1::uuid[], task_id), seq ASC"#,
+    )
+    .bind(task_ids)
+    .fetch_all(executor)
+    .await?;
+    let mut out = Vec::with_capacity(rows.len());
+    for row in &rows {
+        out.push(TaskMessage {
+            id: row.try_get(0)?,
+            task_id: row.try_get(1)?,
+            seq: row.try_get(2)?,
+            type_: row.try_get(3)?,
+            tool: row.try_get(4)?,
+            content: row.try_get(5)?,
+            input: row.try_get(6)?,
+            output: row.try_get(7)?,
+            created_at: row.try_get(8)?,
+        });
+    }
+    Ok(out)
+}
+
 pub async fn list_task_messages_since(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     task_id: Uuid,

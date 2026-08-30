@@ -92,8 +92,8 @@ fn known_source_labels() -> &'static [&'static str] {
     &[
         "chat",
         "issue",
-        "autopilot",
-        "autopilot_issue",
+        "automation",
+        "automation_issue",
         "quick_create",
         "manual",
         "api",
@@ -347,7 +347,7 @@ async fn query_task_queued(
 SELECT
   CASE
     WHEN chat_session_id IS NOT NULL THEN 'chat'
-    WHEN autopilot_run_id IS NOT NULL THEN 'autopilot'
+    WHEN automation_run_id IS NOT NULL THEN 'automation'
     WHEN issue_id IS NOT NULL THEN 'issue'
     ELSE 'other'
   END AS source,
@@ -373,18 +373,18 @@ async fn query_task_running(
     // use the partial indexes from migration 114 independently.
     const STMT: &str = r#"
 WITH in_flight AS (
-  SELECT chat_session_id, autopilot_run_id, issue_id, runtime_id
+  SELECT chat_session_id, automation_run_id, issue_id, runtime_id
   FROM agent_task_queue
   WHERE status = 'dispatched'
   UNION ALL
-  SELECT chat_session_id, autopilot_run_id, issue_id, runtime_id
+  SELECT chat_session_id, automation_run_id, issue_id, runtime_id
   FROM agent_task_queue
   WHERE status = 'running'
 )
 SELECT
   CASE
     WHEN atq.chat_session_id IS NOT NULL THEN 'chat'
-    WHEN atq.autopilot_run_id IS NOT NULL THEN 'autopilot'
+    WHEN atq.automation_run_id IS NOT NULL THEN 'automation'
     WHEN atq.issue_id IS NOT NULL THEN 'issue'
     ELSE 'other'
   END AS source,
@@ -413,7 +413,7 @@ async fn query_task_stuck(
 SELECT
   CASE
     WHEN chat_session_id IS NOT NULL THEN 'chat'
-    WHEN autopilot_run_id IS NOT NULL THEN 'autopilot'
+    WHEN automation_run_id IS NOT NULL THEN 'automation'
     WHEN issue_id IS NOT NULL THEN 'issue'
     ELSE 'other'
   END AS source,

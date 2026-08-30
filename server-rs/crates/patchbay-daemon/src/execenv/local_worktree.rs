@@ -173,7 +173,7 @@ pub struct LocalWorktree {
 #[derive(Debug, Clone, Default)]
 pub struct LocalWorktreeOutcome {
     /// Branch is the branch holding the task's work, or "" when the task made
-    /// no changes at all (a read-only run) — in that case the branch is deleted
+    /// no changes at all (a no-change run) — in that case the branch is deleted
     /// so it never shows up in the user's `git branch` as an empty artifact.
     pub branch: String,
     /// AutoCommitted is true when the agent left uncommitted changes that
@@ -735,7 +735,7 @@ fn remove_tree_recursive(path: &Path) -> Result<(), String> {
 }
 
 /// delete_branch drops a task branch that carries nothing worth keeping — an
-/// empty read-only run, or a prepare that aborted partway. Best-effort: a
+/// empty no-change run, or a prepare that aborted partway. Best-effort: a
 /// leftover branch is untidy, never harmful.
 async fn delete_branch(git_root: &str, branch: &str) -> anyhow::Result<()> {
     if branch.is_empty() {

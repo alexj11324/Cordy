@@ -307,7 +307,7 @@ WHERE EXISTS (
       FROM agent_task_queue task
       JOIN agent ON agent.id = task.agent_id
       WHERE task.id = $4
-        AND task.autopilot_run_id = $5
+        AND task.automation_run_id = $5
         AND agent.workspace_id = $1
   ))
 ON CONFLICT (work_product_id, relation_key) WHERE detached_at IS NULL DO UPDATE SET

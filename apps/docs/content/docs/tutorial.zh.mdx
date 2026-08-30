@@ -147,15 +147,13 @@ Open a pull request when it is ready.
 
 ![新建 issue 的智能体模式，创建者已选 Engineer](/images/docs/tutorial-new-issue-agent-mode.webp)
 
-提交后，Patchbay 创建 issue（编号 `PB-1`，标题自动生成），把 Engineer 设为负责人；Engineer 随即开始执行，状态转为「进行中」。issue 右侧是它的全部动态：状态、负责人、关联的 pull request 和执行记录。
+提交后，Patchbay 创建 issue（编号 `PB-1`，标题自动生成），把 Engineer 设为负责人；Engineer 随即开始执行，状态转为「进行中」。issue 右侧是它的全部动态：状态、负责人、关联的 pull request 和 Agent 事件。
 
-执行需要几分钟，进展有两个入口：标题旁的工作状态徽章，和右侧的**执行日志**——点开当前这次运行：
+执行需要几分钟，进展有两个入口：标题旁的工作状态徽章，和右侧的 **Agent 对话**——点开当前这次运行：
 
 ![查看进展的两个入口](/images/docs/tutorial-issue-engineer-working.webp)
 
-执行记录里是这次执行的每一步：**Agent** 行是它的说明，**Bash**、**Read**、**Edit** 是它运行的命令和读写的文件。截图这一刻，它正在给建好的页面截图自查，刚发现定价表的分隔线没有对齐。点右上角的 ⓘ，可以看到这次执行用的电脑、AI 编程工具和工作目录。
-
-![执行记录，Engineer 的每一步](/images/docs/tutorial-execution-log.webp)
+Agent 事件里是这次执行的每一步：**Agent** 行是它的说明，**Bash**、**Read**、**Edit** 是它运行的命令和读写的文件。截图这一刻，它正在给建好的页面截图自查，刚发现定价表的分隔线没有对齐。点右上角的 ⓘ，可以看到这次执行用的电脑、AI 编程工具和工作目录。
 
 ## 验收：在 issue 里对话
 
@@ -215,7 +213,7 @@ Engineer 交付了第一版，但有些问题它自己意识不到。审查交�
 
 几分钟后，审查评论回来了，结论是：合并前需要修改。五条发现分成两组——代码规范三条、需求符合度两条，每条都带文件和行号。需求符合度的两条正是 Engineer 自己意识不到的问题：定价表把虚构的价格、订金和税务条款当成正式内容展示，没有任何待定标注；联系方式里放了一个没核实过的 Instagram 链接。评论末尾它说明了自己验证过的部分：typecheck、lint 和 build 都通过。
 
-修复不用新流程：在评论区 @Engineer，让它把发现的问题都修掉。发送后 Engineer 随即开始执行，标题旁的徽章和右侧执行记录里都能看到：
+修复不用新流程：在评论区 @Engineer，让它把发现的问题都修掉。发送后 Engineer 随即开始执行，标题旁的徽章和右侧Agent 事件里都能看到：
 
 ![Reviewer 的审查结论，@Engineer 继续修复](/images/docs/tutorial-reviewer-findings.webp)
 
@@ -307,7 +305,7 @@ Skill 是给智能体的知识包：一个 `SKILL.md` 加上可选的支持文�
 
 配置是一句话的事：告诉 Patchbay helper，每周一早上九点，让 Reviewer 对网站代码库做一次全面检查——冗余和死代码、不合理的结构、可以更规范的地方，发现写进 issue 评论，不改代码：
 
-![helper 创建自动化](/images/docs/tutorial-autopilot-create.webp)
+![helper 创建自动化](/images/docs/tutorial-automation-create.webp)
 
 打开**自动化**页面，执行者、提示词和调度（cron + 时区）都已配置好。执行模式有两种：
 
@@ -316,13 +314,13 @@ Skill 是给智能体的知识包：一个 `SKILL.md` 加上可选的支持文�
 
 定期检查用「创建 issue」模式。不想等到周一，点**立即运行**触发一次：
 
-![自动化详情页：调度和立即运行](/images/docs/tutorial-autopilot-detail.webp)
+![自动化详情页：调度和立即运行](/images/docs/tutorial-automation-detail.webp)
 
 issue 随即建出来，Reviewer 开始检查。之后每周一到点，同样的检查会自动创建新的 issue，不再需要任何人触发：
 
-![自动化创建的 issue](/images/docs/tutorial-autopilot-issue.webp)
+![自动化创建的 issue](/images/docs/tutorial-automation-issue.webp)
 
-触发器除了定时还支持 webhook，执行者也可以指向团队，见[自动化文档](/autopilots)。
+触发器除了定时还支持 webhook，执行者也可以指向团队，见[自动化文档](/automations)。
 
 ## 多人协作
 
@@ -343,4 +341,4 @@ issue 多起来之后还有组织它们的工具：**Project** 把相关的 issu
 - [核心概念](/concepts) — 三分钟认识 Patchbay 的全部核心对象。
 - [团队](/teams) — 队长如何路由工作、什么时候用团队而不是单个智能体。
 - [Skills](/skills) — 导入、编写和共享智能体的方法。
-- [自动化](/autopilots) — 定时和 webhook 两类触发器的完整配置。
+- [自动化](/automations) — 定时和 webhook 两类触发器的完整配置。
