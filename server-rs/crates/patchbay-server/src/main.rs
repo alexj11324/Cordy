@@ -1284,9 +1284,7 @@ mod tests {
         assert!(validate_shared_desktop_handoff_redis(false, None).is_ok());
         assert!(validate_shared_desktop_handoff_redis(true, None).is_err());
         assert!(validate_shared_desktop_handoff_redis(true, Some("   ")).is_err());
-        assert!(
-            validate_shared_desktop_handoff_redis(true, Some("not a redis URL")).is_err()
-        );
+        assert!(validate_shared_desktop_handoff_redis(true, Some("not a redis URL")).is_err());
         assert!(
             validate_shared_desktop_handoff_redis(true, Some("redis://redis.internal:6379/0"))
                 .is_ok()
