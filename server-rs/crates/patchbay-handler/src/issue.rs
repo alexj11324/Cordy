@@ -9855,10 +9855,15 @@ mod tests {
                 .count(),
             1
         );
+        // The replay can lose the lease authorization before it reaches the
+        // atomic consume (403), or reach the consume after the winner commits
+        // (409). Either outcome preserves the one-time capability boundary.
         assert_eq!(
             statuses
                 .iter()
-                .filter(|status| **status == StatusCode::CONFLICT)
+                .filter(|status| {
+                    **status == StatusCode::CONFLICT || **status == StatusCode::FORBIDDEN
+                })
                 .count(),
             1
         );
