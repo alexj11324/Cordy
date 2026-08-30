@@ -23,7 +23,9 @@ describe("desktop login handoff", () => {
   });
 
   it("stores a renderer-bound verifier and carries only challenge/state to web login", async () => {
-    const url = await createDesktopLoginUrl("https://accounts.aspectlylabs.com");
+    const url = await createDesktopLoginUrl(
+      "https://accounts.aspectlylabs.com",
+    );
     const parsed = new URL(url);
 
     expect(parsed.origin).toBe("https://accounts.aspectlylabs.com");
@@ -45,7 +47,9 @@ describe("desktop login handoff", () => {
   });
 
   it("keeps the verifier after the renderer session is recreated", async () => {
-    const url = await createDesktopLoginUrl("https://accounts.aspectlylabs.com");
+    const url = await createDesktopLoginUrl(
+      "https://accounts.aspectlylabs.com",
+    );
     const state = new URL(url).searchParams.get("state") ?? "";
 
     sessionStorage.clear();
@@ -71,11 +75,44 @@ describe("desktop login handoff", () => {
   });
 
   it("clears the verifier only for the matching completed handoff", async () => {
-    const url = await createDesktopLoginUrl("https://accounts.aspectlylabs.com");
+    const url = await createDesktopLoginUrl(
+      "https://accounts.aspectlylabs.com",
+    );
     const state = new URL(url).searchParams.get("state") ?? "";
 
     clearDesktopHandoffVerifier(state);
 
     expect(readDesktopHandoffVerifier(state)).toBeNull();
+  });
+
+  it("retains independent verifiers when multiple browser logins are pending", async () => {
+    let seed = 7;
+    vi.stubGlobal("crypto", {
+      getRandomValues: (bytes: Uint8Array) => {
+        bytes.fill(seed++);
+        return bytes;
+      },
+      subtle: {
+        digest: vi.fn(async () => new Uint8Array(32).buffer),
+      },
+    });
+
+    const firstUrl = await createDesktopLoginUrl(
+      "https://accounts.aspectlylabs.com",
+    );
+    const secondUrl = await createDesktopLoginUrl(
+      "https://accounts.aspectlylabs.com",
+    );
+    const firstState = new URL(firstUrl).searchParams.get("state") ?? "";
+    const secondState = new URL(secondUrl).searchParams.get("state") ?? "";
+
+    expect(firstState).not.toBe(secondState);
+    expect(readDesktopHandoffVerifier(firstState)).toHaveLength(43);
+    expect(readDesktopHandoffVerifier(secondState)).toHaveLength(43);
+
+    clearDesktopHandoffVerifier(firstState);
+
+    expect(readDesktopHandoffVerifier(firstState)).toBeNull();
+    expect(readDesktopHandoffVerifier(secondState)).toHaveLength(43);
   });
 });

@@ -9,11 +9,57 @@ type PendingHandoff = {
   expiresAt: number;
 };
 
+function isPendingHandoff(value: unknown): value is PendingHandoff {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.state === "string" &&
+    typeof candidate.verifier === "string" &&
+    typeof candidate.expiresAt === "number"
+  );
+}
+
+function readPendingHandoffs(): PendingHandoff[] {
+  const raw = localStorage.getItem(PENDING_HANDOFF_KEY);
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    // Accept the previous single-entry shape so an in-flight update does not
+    // strand a verifier when the app is upgraded between login attempts.
+    const entries = Array.isArray(parsed)
+      ? parsed
+      : isPendingHandoff(parsed)
+        ? [parsed]
+        : [];
+    const active = entries.filter(
+      (entry): entry is PendingHandoff =>
+        isPendingHandoff(entry) && entry.expiresAt > Date.now(),
+    );
+    if (active.length !== entries.length) {
+      writePendingHandoffs(active);
+    }
+    return active;
+  } catch {
+    return [];
+  }
+}
+
+function writePendingHandoffs(pending: PendingHandoff[]): void {
+  if (pending.length === 0) {
+    localStorage.removeItem(PENDING_HANDOFF_KEY);
+    return;
+  }
+  localStorage.setItem(PENDING_HANDOFF_KEY, JSON.stringify(pending));
+}
+
 function encodeBase64Url(value: ArrayBuffer): string {
   const bytes = new Uint8Array(value);
   let binary = "";
   for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 }
 
 function randomBase64Url(byteLength: number): string {
@@ -41,7 +87,10 @@ export async function createDesktopLoginUrl(appUrl: string): Promise<string> {
     expiresAt: Date.now() + PENDING_HANDOFF_TTL_MS,
   };
 
-  localStorage.setItem(PENDING_HANDOFF_KEY, JSON.stringify(pending));
+  const pendingHandoffs = readPendingHandoffs().filter(
+    (entry) => entry.state !== state,
+  );
+  writePendingHandoffs([...pendingHandoffs, pending]);
   const url = new URL(buildDesktopLoginUrl(appUrl));
   url.searchParams.set("code_challenge", codeChallenge);
   url.searchParams.set("state", state);
@@ -51,28 +100,16 @@ export async function createDesktopLoginUrl(appUrl: string): Promise<string> {
 /** Read the verifier only when the deep-link state matches this renderer. */
 export function readDesktopHandoffVerifier(state: string): string | null {
   if (!state) return null;
-  try {
-    const raw = localStorage.getItem(PENDING_HANDOFF_KEY);
-    if (!raw) return null;
-    const pending = JSON.parse(raw) as Partial<PendingHandoff>;
-    if (
-      typeof pending.expiresAt !== "number" ||
-      pending.expiresAt <= Date.now()
-    ) {
-      localStorage.removeItem(PENDING_HANDOFF_KEY);
-      return null;
-    }
-    return pending.state === state && typeof pending.verifier === "string"
-      ? pending.verifier
-      : null;
-  } catch {
-    return null;
-  }
+  return (
+    readPendingHandoffs().find((entry) => entry.state === state)?.verifier ??
+    null
+  );
 }
 
 /** Clear a completed handoff without discarding a verifier after a retryable failure. */
 export function clearDesktopHandoffVerifier(state: string): void {
-  if (readDesktopHandoffVerifier(state)) {
-    localStorage.removeItem(PENDING_HANDOFF_KEY);
+  const pending = readPendingHandoffs();
+  if (pending.some((entry) => entry.state === state)) {
+    writePendingHandoffs(pending.filter((entry) => entry.state !== state));
   }
 }

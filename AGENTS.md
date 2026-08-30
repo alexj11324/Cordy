@@ -48,8 +48,9 @@ These are developer commands, not the default agent verification path:
 
 ```bash
 make dev              # Auto-setup + start everything
-make web-dev          # Next.js + local fixture API; real product UI, no Rust
-make api-dev          # Rust API only (pair with PATCHBAY_UI_FIXTURES=0 make web-dev)
+make web-dev          # Vite-hosted shared Desktop renderer + local preview API
+make web-next-dev     # Next.js web frontend
+make api-dev          # Rust API only (set VITE_API_URL when using it with Vite)
 pnpm typecheck        # TypeScript check
 pnpm test             # TS unit tests (Vitest)
 make test             # Developer helper for Rust tests; GitHub Actions is authoritative
