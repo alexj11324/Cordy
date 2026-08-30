@@ -228,7 +228,19 @@ pub async fn attach_work_product_relation(
         "relation source does not match its authenticated execution actor"
     );
     let query = format!(
-        r#"INSERT INTO work_product_relation (
+        r#"WITH locked_issue AS MATERIALIZED (
+    SELECT issue.id
+    FROM issue
+    WHERE issue.id = $3
+      AND issue.workspace_id = $1
+    FOR UPDATE
+), issue_fence AS MATERIALIZED (
+    -- Consume the lock CTE before the INSERT. MATERIALIZED alone does not
+    -- guarantee evaluation order; this fence keeps the issue -> relation
+    -- order consistent with issue deletion.
+    SELECT count(*) AS locked_count FROM locked_issue
+)
+INSERT INTO work_product_relation (
     workspace_id, work_product_id, issue_id, task_id, run_id, relation_key,
     relation_source, attached_by_type, attached_by_id, close_intent
 ) SELECT $1, $2, $3, $4, $5,
@@ -246,14 +258,14 @@ pub async fn attach_work_product_relation(
         $6
     ),
     $7, $8, $9, $10
+FROM issue_fence
+LEFT JOIN locked_issue ON TRUE
 WHERE EXISTS (
     SELECT 1 FROM work_product
     WHERE id = $2 AND workspace_id = $1
 )
-  AND ($3::uuid IS NULL OR EXISTS (
-      SELECT 1 FROM issue
-      WHERE issue.id = $3 AND issue.workspace_id = $1
-  ))
+  AND issue_fence.locked_count >= 0
+  AND ($3::uuid IS NULL OR locked_issue.id IS NOT NULL)
   AND ($4::uuid IS NULL OR EXISTS (
       SELECT 1
       FROM agent_task_queue task
@@ -483,9 +495,10 @@ pub async fn get_execution_provenance(
 }
 
 /// Records the task-owned execution workspace before the agent starts and
-/// refreshes it at terminal delivery. A terminal delivery replaces the
-/// execution head fields, including clearing a branch that no longer carries
-/// work; a late start replay cannot resurrect those terminal facts.
+/// refreshes it at terminal delivery. A terminal delivery replaces known
+/// execution head fields, while an adapter that has no local checkout reports
+/// `unknown` and preserves facts already recorded by the checkout endpoint; a
+/// late start replay cannot resurrect terminal facts.
 pub async fn upsert_execution_provenance(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     task_id: Uuid,
@@ -512,20 +525,24 @@ ON CONFLICT (task_id) DO UPDATE SET
     repo_identity = COALESCE(agent_task_execution_provenance.repo_identity, EXCLUDED.repo_identity),
     execution_workspace = COALESCE(agent_task_execution_provenance.execution_workspace, EXCLUDED.execution_workspace),
     head_branch = CASE
-        WHEN $9 THEN EXCLUDED.head_branch
+        WHEN $9 AND EXCLUDED.head_state <> 'unknown' THEN EXCLUDED.head_branch
+        WHEN $9 THEN COALESCE(agent_task_execution_provenance.head_branch, EXCLUDED.head_branch)
         WHEN agent_task_execution_provenance.finished_at IS NOT NULL
         THEN agent_task_execution_provenance.head_branch
         ELSE COALESCE(agent_task_execution_provenance.head_branch, EXCLUDED.head_branch)
     END,
     head_sha = CASE
-        WHEN $9 AND EXCLUDED.head_sha IS NOT NULL
+        WHEN $9 AND EXCLUDED.head_state <> 'unknown'
         THEN EXCLUDED.head_sha
+        WHEN $9
+        THEN COALESCE(agent_task_execution_provenance.head_sha, EXCLUDED.head_sha)
         WHEN agent_task_execution_provenance.finished_at IS NOT NULL
         THEN agent_task_execution_provenance.head_sha
         ELSE COALESCE(agent_task_execution_provenance.head_sha, EXCLUDED.head_sha)
     END,
     head_state = CASE
-        WHEN $9 THEN EXCLUDED.head_state
+        WHEN $9 AND EXCLUDED.head_state <> 'unknown' THEN EXCLUDED.head_state
+        WHEN $9 THEN agent_task_execution_provenance.head_state
         WHEN agent_task_execution_provenance.finished_at IS NOT NULL
         THEN agent_task_execution_provenance.head_state
         WHEN agent_task_execution_provenance.head_state <> 'unknown'
@@ -654,7 +671,11 @@ WHERE workspace_id = $1
   AND work_product_id = $2
   AND issue_id = $3
   AND detached_at IS NULL
-  AND ($8::uuid IS NULL OR task_id = $8)"#,
+  AND ($8::uuid IS NULL OR (
+      task_id = $8
+      AND attached_by_type = 'agent'
+      AND relation_source IN ('task_explicit', 'execution_branch_discovery')
+  ))"#,
     )
     .bind(workspace_id)
     .bind(work_product_id)

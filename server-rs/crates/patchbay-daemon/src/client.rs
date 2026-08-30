@@ -472,6 +472,38 @@ impl Client {
         .await
     }
 
+    /// Records the exact repository checkout created after StartTask. The
+    /// server derives task, workspace, and run identity from the authenticated
+    /// daemon route; these arguments are only facts observed in that task's
+    /// execution workspace.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) async fn record_execution_provenance(
+        &self,
+        ctx: &crate::repocache::Ctx,
+        task_id: &str,
+        execution_repo_identity: &str,
+        execution_workspace: &str,
+        execution_head_branch: &str,
+        execution_head_sha: &str,
+        execution_head_state: &str,
+    ) -> anyhow::Result<()> {
+        let mut body = serde_json::Map::new();
+        Self::add_execution_provenance(
+            &mut body,
+            execution_repo_identity,
+            execution_workspace,
+            execution_head_branch,
+            execution_head_sha,
+            execution_head_state,
+        );
+        self.post_json_unit(
+            ctx,
+            &format!("/api/daemon/tasks/{task_id}/execution-provenance"),
+            Value::Object(body),
+        )
+        .await
+    }
+
     /// `MarkTaskWaitingLocalDirectory` (client.go:365): parks a
     /// freshly-dispatched task in waiting_local_directory. Idempotent
     /// daemon-side.

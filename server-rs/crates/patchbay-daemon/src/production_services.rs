@@ -369,6 +369,9 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
     ) -> Result<Value, RepoCheckoutFailure> {
         self.ensure_repo_ready(&ctx, &request.workspace_id, &request.url)
             .await?;
+        let task_id = request.task_id.clone();
+        let repo_identity = request.url.clone();
+        let workspace_id = request.workspace_id.clone();
         let reference = if request.r#ref.trim().is_empty() {
             self.repo_state
                 .task_default_ref(&request.workspace_id, &request.task_id, &request.url)
@@ -393,8 +396,35 @@ impl<P: ProviderRuntimeAdapter, R: RuntimeRegistrationSource> DaemonProductionSe
             isolated_git_metadata: request.checkout_mode == "isolated",
         };
         match self.repo_cache.create_worktree_ctx(&ctx, params).await {
-            Ok(result) => serde_json::to_value(result)
-                .map_err(|error| checkout_failure(500, error.to_string())),
+            Ok(result) => {
+                // The checkout is created after StartTask, so persist its
+                // exact path and branch through the task-scoped daemon API
+                // before returning it to the agent. The branch is discovery
+                // input only; durable identity remains the Work Product
+                // relation written by the server.
+                let execution_workspace = result.path.to_string_lossy().into_owned();
+                self.client
+                    .record_execution_provenance(
+                        &ctx,
+                        &task_id,
+                        &repo_identity,
+                        &execution_workspace,
+                        &result.branch_name,
+                        "",
+                        "attached",
+                    )
+                    .await
+                    .map_err(|error| {
+                        checkout_failure(
+                            500,
+                            format!(
+                                "record execution provenance for workspace {workspace_id}: {error}"
+                            ),
+                        )
+                    })?;
+                serde_json::to_value(result)
+                    .map_err(|error| checkout_failure(500, error.to_string()))
+            }
             Err(error) if request.retry_busy && is_repo_busy(&error) => Err(RepoCheckoutFailure {
                 status_code: 503,
                 message: "repository is busy with another operation; retry later".to_string(),

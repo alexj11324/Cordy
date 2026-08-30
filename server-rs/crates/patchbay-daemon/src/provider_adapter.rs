@@ -802,7 +802,7 @@ impl ProductionProviderAdapter {
                 Some(&environment),
             );
             drop(path_guard);
-            return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
+            return finalize_environment(&ctx, outcome, &mut environment, assignment.as_ref()).await;
         }
         // Worktree mode holds the source-path lock only while taking its
         // consistent snapshot. In-place mode deliberately retains it until
@@ -829,7 +829,7 @@ impl ProductionProviderAdapter {
                         },
                         Some(&environment),
                     );
-                    return finalize_environment(outcome, &mut environment, assignment.as_ref())
+                    return finalize_environment(&ctx, outcome, &mut environment, assignment.as_ref())
                         .await;
                 }
             };
@@ -844,7 +844,7 @@ impl ProductionProviderAdapter {
                 Some(&environment),
             );
             close_task_temp_dir(&task.id, task_temp_dir);
-            return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
+            return finalize_environment(&ctx, outcome, &mut environment, assignment.as_ref()).await;
         };
         if let Err(error) = plan.set_task_temp_dir(task_temp_dir_path) {
             let outcome = failed_with_reason(
@@ -857,20 +857,19 @@ impl ProductionProviderAdapter {
                 Some(&environment),
             );
             close_task_temp_dir(&task.id, task_temp_dir);
-            return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
+            return finalize_environment(&ctx, outcome, &mut environment, assignment.as_ref()).await;
         }
         let run = async {
-            let (repo_identity, execution_workspace, head_branch, head_sha, head_state) =
-                execution_provenance_for_start(&environment);
+            let provenance = execution_provenance_for_start(&preparation_ctx, &environment).await;
             let start_result = client
                 .start_task(
                     &preparation_ctx,
                     &task.id,
-                    repo_identity,
-                    execution_workspace,
-                    head_branch,
-                    head_sha,
-                    head_state,
+                    &provenance.repo_identity,
+                    &provenance.execution_workspace,
+                    &provenance.head_branch,
+                    &provenance.head_sha,
+                    &provenance.head_state,
                 )
                 .await;
             // The dispatched-task lease remains owned through temp allocation
@@ -1079,7 +1078,7 @@ impl ProductionProviderAdapter {
             Err(error) => failed(error, Some(&environment)),
         };
         close_task_temp_dir(&task.id, task_temp_dir);
-        outcome = finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
+        outcome = finalize_environment(&ctx, outcome, &mut environment, assignment.as_ref()).await;
         drop(path_guard);
         outcome
     }
@@ -2634,6 +2633,7 @@ fn skill_ref_from_bundle(bundle: &SkillData) -> SkillRefData {
 }
 
 async fn finalize_environment(
+    ctx: &Ctx,
     mut outcome: TaskRunOutcome,
     environment: &mut Environment,
     assignment: Option<&LocalDirectoryAssignment>,
@@ -2646,6 +2646,22 @@ async fn finalize_environment(
                     "could not remove daemon sidecars before worktree delivery: {error}"
                 ));
             }
+        }
+    }
+    if environment.local_worktree.is_none() {
+        // Standard GitHub checkouts are created by the provider during the
+        // task, while in-place local-directory executions already point at a
+        // user repository. Capture the terminal facts from that exact
+        // execution workspace when it is a Git worktree. This also covers a
+        // resumed standard workdir and makes the terminal callback safe when
+        // no intermediate checkout request was delivered.
+        let provenance = execution_provenance_for_start(ctx, environment).await;
+        if !provenance.repo_identity.is_empty() {
+            outcome.result.execution_repo_identity = provenance.repo_identity;
+            outcome.result.execution_workspace = provenance.execution_workspace;
+            outcome.result.execution_head_branch = provenance.head_branch;
+            outcome.result.execution_head_sha = provenance.head_sha;
+            outcome.result.execution_head_state = provenance.head_state;
         }
     }
     if let Some(worktree) = environment.local_worktree.as_ref() {
@@ -2691,17 +2707,76 @@ async fn finalize_environment(
     outcome
 }
 
-fn execution_provenance_for_start(environment: &Environment) -> (&str, &str, &str, &str, &str) {
-    let Some(worktree) = environment.local_worktree.as_ref() else {
-        return ("", "", "", "", "");
-    };
-    (
-        &worktree.repo_identity,
-        &worktree.path,
-        &worktree.branch,
-        &worktree.base_commit,
-        "attached",
+#[derive(Debug, Default)]
+struct ExecutionProvenanceFacts {
+    repo_identity: String,
+    execution_workspace: String,
+    head_branch: String,
+    head_sha: String,
+    head_state: String,
+}
+
+async fn execution_provenance_for_start(
+    ctx: &Ctx,
+    environment: &Environment,
+) -> ExecutionProvenanceFacts {
+    if let Some(worktree) = environment.local_worktree.as_ref() {
+        return ExecutionProvenanceFacts {
+            repo_identity: worktree.repo_identity.clone(),
+            execution_workspace: worktree.path.clone(),
+            head_branch: worktree.branch.clone(),
+            head_sha: worktree.base_commit.clone(),
+            head_state: "attached".to_string(),
+        };
+    }
+
+    let work_dir = environment.work_dir.trim();
+    if work_dir.is_empty()
+        || (!environment.local_directory && !Path::new(work_dir).join(".git").exists())
+    {
+        return ExecutionProvenanceFacts::default();
+    }
+
+    let repo_identity = git_fact(ctx, work_dir, ["remote", "get-url", "origin"]).await;
+    let execution_workspace = git_fact(ctx, work_dir, ["rev-parse", "--show-toplevel"]).await;
+    let head_branch = git_fact(ctx, work_dir, ["symbolic-ref", "--quiet", "--short", "HEAD"])
+        .await;
+    let head_sha = git_fact(ctx, work_dir, ["rev-parse", "--verify", "HEAD"]).await;
+    let default_branch = git_fact(
+        ctx,
+        work_dir,
+        ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
     )
+    .await
+    .strip_prefix("origin/")
+    .map(str::to_string)
+    .unwrap_or_default();
+    let head_state = if repo_identity.is_empty() {
+        "unknown"
+    } else if head_branch.is_empty() {
+        "detached"
+    } else if head_branch == default_branch && !default_branch.is_empty() {
+        "default"
+    } else {
+        "attached"
+    };
+    ExecutionProvenanceFacts {
+        repo_identity,
+        execution_workspace,
+        head_branch,
+        head_sha,
+        head_state: head_state.to_string(),
+    }
+}
+
+async fn git_fact<const N: usize>(ctx: &Ctx, work_dir: &str, args: [&str; N]) -> String {
+    let mut command = tokio::process::Command::new("git");
+    command.arg("-C").arg(work_dir).args(args);
+    crate::gc::processtree::output(ctx, command, Duration::from_secs(2))
+        .await
+        .ok()
+        .map(|output| String::from_utf8_lossy(&output).trim().to_string())
+        .unwrap_or_default()
 }
 
 fn reusable_workdir(workspaces_root: &str, task: &Task) -> bool {

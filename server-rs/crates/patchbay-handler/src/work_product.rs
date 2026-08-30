@@ -7,12 +7,19 @@
 //! intentionally absent from this module: titles, bodies, and branch naming
 //! conventions never establish identity or authorization.
 
+use std::collections::BTreeSet;
+
 use axum::extract::{Extension, Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use patchbay_db::models::{AgentTaskExecutionProvenance, WorkProduct, WorkProductRelation};
-use patchbay_db::queries::{agent, github, work_product as work_product_q, workspace};
+use patchbay_db::models::{
+    AgentTaskExecutionProvenance, AgentTaskQueue, WorkProduct, WorkProductRelation, Workspace,
+};
+use patchbay_db::queries::{
+    agent, chat, github, issue as issue_q, project, project_resource,
+    work_product as work_product_q, workspace,
+};
 use patchbay_middleware::workspace::WorkspaceContext;
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -335,6 +342,10 @@ pub(crate) async fn detach(
         task_id: actor.task_id.map(|id| id.to_string()).unwrap_or_default(),
         ..Default::default()
     });
+    // Detaching a blocking product changes the same completion predicate used
+    // by webhook updates. Re-evaluate it for every successful detach so an
+    // issue with only merged/closed products can finish immediately.
+    crate::vcs_webhook::maybe_complete_issue(&state, issue.clone()).await;
     Json(json!({ "detached": detached })).into_response()
 }
 
@@ -439,11 +450,15 @@ pub(crate) async fn record_execution_provenance(
     let execution_workspace = nonempty(&input.execution_workspace);
     let head_branch = nonempty(&input.head_branch);
     let head_sha = nonempty(&input.head_sha);
-    let mut head_state = match input.head_state.as_str() {
-        "attached" | "detached" | "default" | "unknown" => input.head_state.as_str(),
+    let mut head_state = match input.head_state.trim() {
+        "attached" | "detached" | "default" | "unknown" => input.head_state.trim(),
         _ => "unknown",
     };
-    if head_branch.is_none() {
+    // An omitted terminal fact means that this adapter did not have a local
+    // checkout to inspect. Preserve the server-recorded checkout provenance
+    // in that case; an explicit detached/default state still remains
+    // authoritative and can clear the branch as appropriate.
+    if head_branch.is_none() && head_state == "attached" {
         head_state = "detached";
     } else if repo_identity.is_none() {
         head_state = "unknown";
@@ -506,7 +521,10 @@ pub(crate) async fn validate_task_explicit_product(
         .await
         .map_err(|_| "workspace_unavailable")?
         .ok_or("workspace_unavailable")?;
-    if !workspace_contains_repo(&workspace.repos, repo_identity) {
+    if !task_repository_is_authorized(state, &workspace, &task, repo_identity)
+        .await
+        .map_err(|_| "task_repository_authorization_unavailable")?
+    {
         return Err("repository_not_authorized_for_workspace");
     }
     if provenance.repo_identity.as_deref() != Some(repo_identity)
@@ -522,6 +540,67 @@ pub(crate) async fn validate_task_explicit_product(
         return Err("provider_head_repository_mismatch");
     }
     Ok(())
+}
+
+/// Resolves the effective repository scope for a claimed task from
+/// server-owned workspace, issue/chat, project, and project-resource rows.
+/// Project resources are intentionally additive to workspace repositories:
+/// claim delivery may narrow the task's UI payload to project repositories,
+/// but authorization must still accept that same server-owned scope.
+async fn task_repository_is_authorized(
+    state: &HandlerState,
+    workspace: &Workspace,
+    task: &AgentTaskQueue,
+    repo_identity: &str,
+) -> anyhow::Result<bool> {
+    if workspace_contains_repo(&workspace.repos, repo_identity) {
+        return Ok(true);
+    }
+
+    let mut project_ids = BTreeSet::new();
+    if let Some(issue_id) = task.issue_id {
+        let issue = issue_q::get_issue_in_workspace(&state.pool, issue_id, workspace.id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("task issue is not in the task workspace"))?;
+        if let Some(project_id) = issue.project_id {
+            project_ids.insert(project_id);
+        }
+    }
+    if let Some(chat_session_id) = task.chat_session_id {
+        let chat = chat::get_chat_session_in_workspace(
+            &state.pool,
+            chat_session_id,
+            workspace.id,
+        )
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("task chat session is not in the task workspace"))?;
+        if let Some(project_id) = chat.project_id {
+            project_ids.insert(project_id);
+        }
+    }
+
+    for project_id in project_ids {
+        if project::get_project_in_workspace(&state.pool, project_id, workspace.id)
+            .await?
+            .is_none()
+        {
+            return Err(anyhow::anyhow!(
+                "task project is not in the task workspace"
+            ));
+        }
+        for resource in project_resource::list_project_resources(&state.pool, project_id).await? {
+            if resource.workspace_id != workspace.id || resource.resource_type != "github_repo" {
+                continue;
+            }
+            let Some(url) = resource.resource_ref.get("url").and_then(Value::as_str) else {
+                continue;
+            };
+            if normalize_repo_identity(url).as_deref() == Some(repo_identity) {
+                return Ok(true);
+            }
+        }
+    }
+    Ok(false)
 }
 
 /// Best-effort terminal discovery. No error from GitHub or the relation write
@@ -687,17 +766,33 @@ pub(crate) async fn discover_after_task(
         .await;
         return;
     };
-    if !workspace_contains_repo(&workspace.repos, repo_identity) {
-        record_discovery_failure(
-            state,
-            workspace_id,
-            task.id,
-            work_product_q::DISCOVERY_INELIGIBLE,
-            0,
-            Some("repository_not_authorized_for_workspace"),
-        )
-        .await;
-        return;
+    match task_repository_is_authorized(state, &workspace, task, repo_identity).await {
+        Ok(true) => {}
+        Ok(false) => {
+            record_discovery_failure(
+                state,
+                workspace_id,
+                task.id,
+                work_product_q::DISCOVERY_INELIGIBLE,
+                0,
+                Some("repository_not_authorized_for_workspace"),
+            )
+            .await;
+            return;
+        }
+        Err(error) => {
+            record_discovery_failure(
+                state,
+                workspace_id,
+                task.id,
+                work_product_q::DISCOVERY_INELIGIBLE,
+                0,
+                Some("task_repository_authorization_unavailable"),
+            )
+            .await;
+            tracing::warn!(%error, task_id = %task.id, "branch discovery project repository authorization failed");
+            return;
+        }
     }
     if let Ok(other_executions) = work_product_q::list_other_branch_executions(
         &state.pool,

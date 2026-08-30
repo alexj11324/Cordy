@@ -26,7 +26,7 @@ use patchbay_authorization::{
 use patchbay_daemon::hub::{
     ClientIdentity, HeartbeatHandler, RpcHandler, RpcHandlerError, RpcOutcome,
 };
-use patchbay_db::models::AgentRuntime;
+use patchbay_db::models::{AgentRuntime, AgentTaskQueue};
 use patchbay_db::queries::{
     agent, autopilot, chat, comment as comment_q, issue, member, runtime, runtime_profile,
     task_message, task_token, team, workspace,
@@ -125,6 +125,10 @@ pub fn router() -> Router<HandlerState> {
         .route(
             "/api/daemon/tasks/{task_id}/start",
             axum::routing::post(start_task),
+        )
+        .route(
+            "/api/daemon/tasks/{task_id}/execution-provenance",
+            axum::routing::post(record_task_execution_provenance),
         )
         .route(
             "/api/daemon/tasks/{task_id}/wait-local-directory",
@@ -2886,6 +2890,84 @@ async fn start_task(
     }
 }
 
+/// POST /api/daemon/tasks/{taskId}/execution-provenance. Repository checkout
+/// commands run after StartTask, so the daemon records the exact checkout
+/// facts through this task-scoped authenticated route before an agent can
+/// register a provider product. The URL carries no caller-selected task,
+/// workspace, issue, or run identity.
+async fn record_task_execution_provenance(
+    State(state): State<HandlerState>,
+    Path(task_id): Path<String>,
+    headers: HeaderMap,
+    body: Option<Json<TaskStartRequest>>,
+) -> Response {
+    let access = Access::new(&state, &headers);
+    let (task, ws_id) =
+        match require_daemon_task_access_with_workspace(&access, None, &task_id).await {
+            Ok(v) => v,
+            Err(res) => return res,
+        };
+    if task.status != "running" {
+        return error_response(
+            StatusCode::CONFLICT,
+            "execution provenance requires a running task",
+        );
+    }
+    let Some(Json(request)) = body else {
+        return error_response(StatusCode::BAD_REQUEST, "invalid request body");
+    };
+    let Ok(task_uuid) = Uuid::parse_str(task_id.trim()) else {
+        return error_response(StatusCode::BAD_REQUEST, "invalid task_id");
+    };
+    let Ok(workspace_id) = Uuid::parse_str(&ws_id) else {
+        tracing::error!(task_id = %task_uuid, workspace_id = %ws_id, "execution provenance resolved an invalid workspace id");
+        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "invalid task workspace");
+    };
+    let request = TaskStartRequest {
+        execution_repo_identity: sanitize(&request.execution_repo_identity),
+        execution_workspace: sanitize(&request.execution_workspace),
+        execution_head_branch: sanitize(&request.execution_head_branch),
+        execution_head_sha: sanitize(&request.execution_head_sha),
+        execution_head_state: sanitize(&request.execution_head_state),
+    };
+    if request.execution_repo_identity.trim().is_empty()
+        || request.execution_workspace.trim().is_empty()
+        || request.execution_head_branch.trim().is_empty()
+        || request.execution_head_state.trim().is_empty()
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "repository, execution workspace, head branch, and head state are required",
+        );
+    }
+    let input = crate::work_product::ExecutionProvenanceInput {
+        repo_identity: request.execution_repo_identity,
+        execution_workspace: request.execution_workspace,
+        head_branch: request.execution_head_branch,
+        head_sha: request.execution_head_sha,
+        head_state: request.execution_head_state,
+    };
+    match crate::work_product::record_execution_provenance(
+        &state,
+        task_uuid,
+        workspace_id,
+        task.autopilot_run_id,
+        &input,
+        false,
+    )
+    .await
+    {
+        Ok(_) => Json(json!({ "status": "ok" })).into_response(),
+        Err(error) => {
+            tracing::warn!(%error, task_id = %task_uuid, "record execution provenance failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to record execution provenance",
+            )
+        }
+    }
+}
+
 #[derive(Deserialize, Default)]
 struct WaitLocalDirectoryRequest {
     #[serde(default)]
@@ -3004,6 +3086,22 @@ fn sanitize(s: &str) -> String {
     }
 }
 
+/// Terminal task delivery must not hold the daemon callback open while a
+/// provider exact-head lookup walks GitHub App installations. Discovery is
+/// best-effort and separately audited, so it can run after the task result,
+/// notification, and token revocation have completed.
+fn spawn_work_product_discovery(
+    state: &HandlerState,
+    task: AgentTaskQueue,
+    workspace_id: Uuid,
+    execution: crate::work_product::ExecutionProvenanceInput,
+) {
+    let state = state.clone();
+    tokio::spawn(async move {
+        crate::work_product::discover_after_task(&state, &task, workspace_id, &execution).await;
+    });
+}
+
 /// POST /api/daemon/tasks/{taskId}/complete. A context-exhaustion notice in the
 /// output is re-routed to the failure path so a run that ran out of context is
 /// recorded as failed rather than published as a clean success (GH #6402).
@@ -3097,8 +3195,7 @@ async fn complete_task(
                 head_state: req.execution_head_state,
             };
             if let Ok(workspace_id) = Uuid::parse_str(&ws_id) {
-                crate::work_product::discover_after_task(&state, &task, workspace_id, &execution)
-                    .await;
+                spawn_work_product_discovery(&state, task.clone(), workspace_id, execution);
             } else {
                 tracing::warn!(task_id = %task_id, workspace_id = %ws_id, "complete: invalid resolved workspace id for work product discovery");
             }
@@ -3223,8 +3320,7 @@ async fn fail_task_impl(
                 head_state: req.execution_head_state,
             };
             if let Ok(workspace_uuid) = Uuid::parse_str(workspace_id) {
-                crate::work_product::discover_after_task(state, &task, workspace_uuid, &execution)
-                    .await;
+                spawn_work_product_discovery(state, task.clone(), workspace_uuid, execution);
             } else {
                 tracing::warn!(task_id = %task_id, workspace_id = %workspace_id, "fail: invalid resolved workspace id for work product discovery");
             }
@@ -3642,7 +3738,7 @@ async fn ack_task_cancelled(
         .await
         .and_then(|value| Uuid::parse_str(&value).ok())
     {
-        crate::work_product::discover_after_task(&state, &task, workspace_id, &execution).await;
+        spawn_work_product_discovery(&state, task.clone(), workspace_id, execution);
     } else {
         tracing::warn!(task_id = %task_id, "cancel ack: invalid resolved workspace id for work product discovery");
     }
