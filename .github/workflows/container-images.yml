@@ -1,4 +1,4 @@
-name: Container Images (manual)
+name: Container Images (manual publish)
 
 on:
   workflow_dispatch:
@@ -12,17 +12,46 @@ on:
           - all
           - backend
           - web
+      source_ref:
+        description: Git ref or commit SHA to publish (defaults to the workflow ref)
+        required: false
+        type: string
 
 permissions:
   contents: read
+  packages: write
 
 jobs:
+  resolve-source:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - name: Checkout requested source
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.source_ref || github.ref }}
+
+      - name: Resolve immutable source SHA
+        id: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   backend:
     if: ${{ inputs.image == 'all' || inputs.image == 'backend' }}
-    runs-on: ubuntu-latest
+    needs: resolve-source
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve-source.outputs.sha }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Docker Buildx
         id: backend-buildx
@@ -48,10 +77,9 @@ jobs:
 
       - name: Compute backend image date
         id: backend-image
-        env:
-          COMMIT: ${{ github.sha }}
         run: |
-          DATE="$(git show -s --format=%cI "$COMMIT")"
+          SOURCE_SHA="${{ needs.resolve-source.outputs.sha }}"
+          DATE="$(git show -s --format=%cI "$SOURCE_SHA")"
           echo "date=$DATE" >> "$GITHUB_OUTPUT"
 
       - name: Build production backend image
@@ -59,21 +87,32 @@ jobs:
         with:
           context: .
           file: Dockerfile
-          load: true
-          tags: patchbay-backend:manual
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/patchbay-backend:sha-${{ needs.resolve-source.outputs.sha }}
           build-args: |
-            VERSION=manual
-            COMMIT=${{ github.sha }}
+            VERSION=sha-${{ needs.resolve-source.outputs.sha }}
+            COMMIT=${{ needs.resolve-source.outputs.sha }}
             DATE=${{ steps.backend-image.outputs.date }}
           cache-from: type=gha,scope=ci-backend
           cache-to: type=gha,mode=max,scope=ci-backend
 
   web:
     if: ${{ inputs.image == 'all' || inputs.image == 'web' }}
-    runs-on: ubuntu-latest
+    needs: resolve-source
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.resolve-source.outputs.sha }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Require Clerk publishable key for web image
         env:
@@ -93,10 +132,11 @@ jobs:
         with:
           context: .
           file: Dockerfile.web
-          load: true
-          tags: patchbay-web:manual
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/patchbay-web:sha-${{ needs.resolve-source.outputs.sha }}
           build-args: |
-            NEXT_PUBLIC_APP_VERSION=manual
+            NEXT_PUBLIC_APP_VERSION=sha-${{ needs.resolve-source.outputs.sha }}
             NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
             NEXT_PUBLIC_DESKTOP_APP_ORIGIN=${{ vars.NEXT_PUBLIC_DESKTOP_APP_ORIGIN }}
           cache-from: type=gha,scope=ci-web
