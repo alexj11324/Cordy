@@ -2116,7 +2116,7 @@ async fn table_facets(
             }
             "working_agents" => {
                 let mut query = QueryBuilder::<Postgres>::new(
-                    "SELECT atq.agent_id::text, count(DISTINCT i.id)::bigint FROM issue i JOIN agent_task_queue atq ON atq.issue_id=i.id AND atq.workspace_id=i.workspace_id AND atq.status='running' WHERE ",
+                    "SELECT atq.agent_id::text, count(DISTINCT i.id)::bigint FROM issue i JOIN agent_task_queue atq ON atq.issue_id=i.id AND atq.status='running' WHERE ",
                 );
                 if let Err(response) = push_table_filters(
                     &mut query,
