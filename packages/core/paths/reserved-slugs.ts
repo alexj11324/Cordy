@@ -91,6 +91,7 @@ export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
   "skills",
   "settings",
   "workspaces",
+  "integrations",
 
   // API / integration prefixes
   // `api` above already covers `/api/*`; these guard against future top-level

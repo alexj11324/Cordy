@@ -146,7 +146,13 @@ function ConnectionStatus({ query }: { query: IntegrationQuery }) {
   }
   const nonActive = query.data.installations.find((installation) => installation.status !== "active");
   if (nonActive) {
-    return <Badge variant="outline">{t(($) => $.page.integrations_status, { status: nonActive.status })}</Badge>;
+    return (
+      <Badge variant="outline">
+        {nonActive.status === "revoked"
+          ? t(($) => $.page.integrations_revoked)
+          : t(($) => $.page.integrations_status)}
+      </Badge>
+    );
   }
   if (!query.data.configured) {
     return <Badge variant="outline">{t(($) => $.page.integrations_setup_required)}</Badge>;
@@ -378,8 +384,8 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
           ? t(($) => $.page.integrations_reconnect_ready)
           : t(($) => $.page.integrations_disconnected_toast),
       );
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : t(($) => $.page.integrations_action_failed));
+    } catch {
+      toast.error(t(($) => $.page.integrations_action_failed));
     } finally {
       setMutating(false);
       setPendingAction(null);
