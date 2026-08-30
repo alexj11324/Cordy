@@ -98,7 +98,9 @@ function LoginContent() {
   if (cliCallback && !validCliCallback) {
     return (
       <ClerkAuthShell>
-        <p role="alert">Invalid CLI callback URL.</p>
+        <p role="alert">
+          {t(($) => $.web.cli_authorization.invalid_callback)}
+        </p>
       </ClerkAuthShell>
     );
   }
@@ -129,20 +131,20 @@ function LoginContent() {
         if (!token) throw new Error("Patchbay CLI token unavailable");
         redirectToCliCallback(cliCallback, token, cliState);
       } catch {
-        setError("Could not authorize the CLI. Please try again.");
+        setError(t(($) => $.web.cli_authorization.failed));
       }
     };
 
     return (
       <ClerkAuthShell>
         <div className="flex flex-col items-center gap-3">
-          <p>Authorize Patchbay CLI for this signed-in account?</p>
+          <p>{t(($) => $.web.cli_authorization.prompt)}</p>
           <button
             type="button"
             onClick={authorize}
             className="rounded bg-primary px-4 py-2 text-primary-foreground"
           >
-            Authorize CLI
+            {t(($) => $.web.cli_authorization.authorize_button)}
           </button>
           {error && <p role="alert">{error}</p>}
         </div>
