@@ -1566,6 +1566,7 @@ async fn attach_relation(
 /// Serializes explicit relation insertion with product cleanup. The product
 /// lock must be held in the same transaction as the relation write; locking it
 /// in a standalone pool statement would not protect the insert.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn attach_work_product_relation_locked(
     state: &HandlerState,
     workspace_id: Uuid,
