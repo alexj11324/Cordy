@@ -255,23 +255,3 @@ describe("proxy root and locale handling", () => {
     expect(await redirectLocation("/auth/callback")).toBeNull();
   });
 });
-
-describe("proxy UI fixtures", () => {
-  it("skips Clerk login and serves product routes when fixtures are on", async () => {
-    const previous = process.env.PATCHBAY_UI_FIXTURES;
-    process.env.PATCHBAY_UI_FIXTURES = "1";
-    try {
-      const login = await proxy(makeRequest("/login"));
-      expect(login.status).toBe(307);
-      expect(login.headers.get("location")).toBe(
-        "https://app.patchbay.test/ui-preview",
-      );
-      const issues = await proxy(makeRequest("/preview/issues"));
-      expect(issues.status).toBe(200);
-      expect(issues.headers.get("location")).toBeNull();
-    } finally {
-      if (previous === undefined) delete process.env.PATCHBAY_UI_FIXTURES;
-      else process.env.PATCHBAY_UI_FIXTURES = previous;
-    }
-  });
-});

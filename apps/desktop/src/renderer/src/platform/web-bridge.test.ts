@@ -6,7 +6,6 @@ const bridgeKeys = [
   "daemonAPI",
   "updater",
   "electron",
-  "__PATCHBAY_VITE_DESKTOP_PREVIEW__",
 ] as const;
 
 function clearWebBridge(): void {
@@ -22,13 +21,14 @@ describe("Vite browser Desktop bridge", () => {
     clearWebBridge();
 
     expect(installWebDesktopBridge()).toBe(true);
+    expect(window.desktopAPI.host).toBe("browser");
 
     await expect(window.desktopAPI.pickDirectory()).resolves.toEqual({
       ok: false,
       reason: "unsupported",
     });
     await expect(
-      window.desktopAPI.validateLocalDirectory("/preview-only"),
+      window.desktopAPI.validateLocalDirectory("/tmp/local-directory"),
     ).resolves.toEqual({
       ok: false,
       reason: "unsupported",

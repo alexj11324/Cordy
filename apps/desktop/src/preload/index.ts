@@ -98,6 +98,8 @@ function subscribeToMainRendererChannel<T>(
 }
 
 const desktopAPI = {
+  /** Identifies the native host for renderer capability decisions. */
+  host: "electron" as const,
   /** App version + normalized OS. Read once at preload time so the renderer
    *  can use it synchronously when initializing the API client. */
   appInfo,

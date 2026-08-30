@@ -62,12 +62,16 @@ function GuestSessionEntry() {
 
 export function DesktopLoginPage() {
   const webUrl = requireRuntimeAppUrl();
-  const handleGoogleLogin = async () => {
-    // Open web login page in the default browser with a PKCE-bound desktop
-    // handoff. The web callback returns a one-time code, never the bearer.
-    const url = await createDesktopLoginUrl(webUrl);
-    await window.desktopAPI.openExternal(url);
-  };
+  const handleGoogleLogin =
+    window.desktopAPI.host === "browser"
+      ? undefined
+      : async () => {
+          // Open web login page in the default browser with a PKCE-bound
+          // desktop handoff. The web callback returns a one-time code, never
+          // the bearer.
+          const url = await createDesktopLoginUrl(webUrl);
+          await window.desktopAPI.openExternal(url);
+        };
 
   return (
     <div className="flex h-screen flex-col">

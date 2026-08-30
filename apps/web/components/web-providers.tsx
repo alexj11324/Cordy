@@ -14,7 +14,6 @@ import {
 } from "@/features/auth/auth-cookie";
 import { detectWebOS } from "@/platform/client-os";
 import { ClerkAuthAdapter } from "./clerk-auth-adapter";
-import { UiFixturesProvider } from "@/lib/ui-fixtures/context";
 
 // Derive WebSocket URL from the page origin so self-hosted / LAN deployments
 // work without an explicit runtime wsUrl. The Next.js runtime proxy handles
@@ -37,20 +36,13 @@ export function WebProviders({
   resources,
   apiBaseUrl,
   wsUrl,
-  uiFixtures = false,
 }: {
   children: React.ReactNode;
   locale: SupportedLocale;
   resources: Record<string, LocaleResources>;
   apiBaseUrl?: string;
   wsUrl?: string;
-  uiFixtures?: boolean;
 }) {
-  // Normal web sessions are initialized by ClerkAuthAdapter. UI fixtures omit
-  // ClerkProvider, so they must use the cookie-auth initializer to reach the
-  // fixture /api/me endpoint instead of remaining in "authenticating" forever.
-  const clerkAuth = !uiFixtures;
-
   // Stable identity reference so downstream effects keyed on it don't see a
   // new object on every parent render.
   const identity = useMemo(
@@ -64,24 +56,22 @@ export function WebProviders({
     </WebNavigationProvider>
   );
   return (
-    <UiFixturesProvider enabled={uiFixtures}>
-      <CoreProvider
-        apiBaseUrl={apiBaseUrl}
-        wsUrl={wsUrl || deriveWsUrl()}
-        clerkAuth={clerkAuth}
-        cookieAuth
-        onLogin={setLoggedInCookie}
-        onLogout={() => {
-          useWelcomeStore.getState().reset();
-          clearLoggedInCookie();
-        }}
-        identity={identity}
-        locale={locale}
-        resources={resources}
-        localeAdapter={localeAdapter}
-      >
-        {uiFixtures ? tree : <ClerkAuthAdapter>{tree}</ClerkAuthAdapter>}
-      </CoreProvider>
-    </UiFixturesProvider>
+    <CoreProvider
+      apiBaseUrl={apiBaseUrl}
+      wsUrl={wsUrl || deriveWsUrl()}
+      clerkAuth
+      cookieAuth
+      onLogin={setLoggedInCookie}
+      onLogout={() => {
+        useWelcomeStore.getState().reset();
+        clearLoggedInCookie();
+      }}
+      identity={identity}
+      locale={locale}
+      resources={resources}
+      localeAdapter={localeAdapter}
+    >
+      <ClerkAuthAdapter>{tree}</ClerkAuthAdapter>
+    </CoreProvider>
   );
 }
