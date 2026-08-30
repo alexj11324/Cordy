@@ -663,6 +663,7 @@ fn isolate_macos(
              (literal \"/etc\")\n\
              (literal \"/tmp\")\n\
              (literal \"/var\"))\n\
+         (allow file-write-data (subpath \"/dev/fd\"))\n\
          (allow file-write* (literal \"/dev/null\"))\n",
     );
     for path in &readable {
