@@ -20,20 +20,25 @@ on:
         description: Optional PR body, used only for an oversized-image exemption
         required: false
         type: string
+      run_rust:
+        description: Run the Rust validation suite
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # Decides whether the heavy frontend and Rust backend validation jobs have
-  # anything to do.
+  # Decides whether the frontend and installer validation jobs have anything
+  # to do. Rust is deliberately excluded from automatic path classification:
+  # it runs only when a maintainer explicitly selects run_rust in a manual run.
   # The frontend jobs validate the web/desktop apps, the shared packages,
   # the install graph, and the selfhost / reserved-slugs scripts it runs;
   # a pure backend-only or docs-only PR touches none of those and gains
-  # nothing from a full web build. Symmetrically, the backend jobs validate
-  # server-rs/, so a frontend-only or docs-only PR gains nothing from a full
-  # Cargo workspace run. The outputs are consumed by the focused jobs below.
+  # nothing from a full web build. The outputs are consumed by the focused
+  # jobs below.
   changes:
     runs-on: ubuntu-latest
     permissions:
@@ -41,7 +46,7 @@ jobs:
       pull-requests: read
     outputs:
       frontend: ${{ steps.decide.outputs.frontend }}
-      backend: ${{ steps.decide.outputs.backend }}
+      rust: ${{ steps.decide.outputs.rust }}
       installer: ${{ steps.decide.outputs.installer }}
       images: ${{ steps.filter.outputs.images }}
       auth_broker_release: ${{ steps.auth-impact.outputs.auth_broker_release }}
@@ -114,20 +119,6 @@ jobs:
               - 'docker-compose.selfhost.build.yml'
               - 'docker-compose.labs.yml'
               - 'Makefile'
-            # Rust owns all production backend entrypoints and migrations.
-            backend:
-              - 'server-rs/**'
-              - 'migrations/**'
-              - 'Dockerfile'
-              - '.dockerignore'
-              - 'docker/entrypoint.sh'
-              - 'deploy/helm/**'
-              - 'scripts/**'
-              - 'packages/core/runtimes/cli-version.ts'
-              - 'Makefile'
-              - '.github/workflows/ci.yml'
-              - '.github/workflows/macos-release.yml'
-              - '.github/workflows/release.yml'
             installer:
               - 'scripts/install.sh'
               - 'scripts/install.ps1'
@@ -178,27 +169,26 @@ jobs:
 
       - name: Decide
         id: decide
-        # Always run everything on push to main (full validation); on
-        # pull_request, run only the areas whose paths changed.
-        # Frontend workers gate their steps; Rust workers gate the whole job so
-        # database and cross-platform runners are not allocated unnecessarily.
+        # Frontend and installer workers run automatically for relevant PRs
+        # and for pushes. Rust workers are independent of paths and can be
+        # enabled only by explicitly selecting run_rust in workflow_dispatch.
         # The stable frontend/backend aggregate checks distinguish intentional
-        # path-filter skips from a failed classifier or missing worker.
+        # path/manual skips from a failed classifier or missing worker.
         env:
           EVENT_NAME: ${{ github.event_name }}
           FRONTEND_CHANGED: ${{ steps.filter.outputs.frontend }}
-          BACKEND_CHANGED: ${{ steps.filter.outputs.backend }}
           INSTALLER_CHANGED: ${{ steps.filter.outputs.installer }}
+          RUN_RUST: ${{ github.event_name == 'workflow_dispatch' && inputs.run_rust == true }}
         run: |
           if [ "$EVENT_NAME" != "pull_request" ] || [ "$FRONTEND_CHANGED" = "true" ]; then
             echo "frontend=true" >> "$GITHUB_OUTPUT"
           else
             echo "frontend=false" >> "$GITHUB_OUTPUT"
           fi
-          if [ "$EVENT_NAME" != "pull_request" ] || [ "$BACKEND_CHANGED" = "true" ]; then
-            echo "backend=true" >> "$GITHUB_OUTPUT"
+          if [ "$RUN_RUST" = "true" ]; then
+            echo "rust=true" >> "$GITHUB_OUTPUT"
           else
-            echo "backend=false" >> "$GITHUB_OUTPUT"
+            echo "rust=false" >> "$GITHUB_OUTPUT"
           fi
           if [ "$EVENT_NAME" != "pull_request" ] || [ "$INSTALLER_CHANGED" = "true" ]; then
             echo "installer=true" >> "$GITHUB_OUTPUT"
@@ -485,7 +475,7 @@ jobs:
 
   rust-deployment-contracts:
     needs: changes
-    if: ${{ needs.changes.outputs.backend == 'true' }}
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -504,7 +494,7 @@ jobs:
 
   rust-quality:
     needs: changes
-    if: ${{ needs.changes.outputs.backend == 'true' }}
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -539,7 +529,7 @@ jobs:
 
   rust-tests:
     needs: changes
-    if: ${{ needs.changes.outputs.backend == 'true' }}
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-latest
     # The workspace suite normally completes in about ten minutes. Keep a
     # bounded upper limit so a single hung test cannot hold the merge gate
@@ -611,7 +601,7 @@ jobs:
 
   rust-audit:
     needs: changes
-    if: ${{ needs.changes.outputs.backend == 'true' }}
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -640,7 +630,7 @@ jobs:
       - name: Check Rust backend job results
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
-          BACKEND_CHANGED: ${{ needs.changes.outputs.backend }}
+          RUN_RUST: ${{ needs.changes.outputs.rust }}
           DEPLOYMENT_RESULT: ${{ needs.rust-deployment-contracts.result }}
           QUALITY_RESULT: ${{ needs.rust-quality.result }}
           TEST_RESULT: ${{ needs.rust-tests.result }}
@@ -648,7 +638,7 @@ jobs:
           AUDIT_RESULT: ${{ needs.rust-audit.result }}
         run: |
           echo "changes:       $CHANGES_RESULT"
-          echo "backend path:  $BACKEND_CHANGED"
+          echo "run Rust:      $RUN_RUST"
           echo "rust-deploy:   $DEPLOYMENT_RESULT"
           echo "rust-quality:  $QUALITY_RESULT"
           echo "rust-tests:    $TEST_RESULT"
@@ -658,8 +648,8 @@ jobs:
             echo "::error::change classification failed"
             exit 1
           fi
-          if [ "$BACKEND_CHANGED" != "true" ]; then
-            echo "No backend paths changed."
+          if [ "$RUN_RUST" != "true" ]; then
+            echo "Rust validation was not manually requested."
             exit 0
           fi
           if [ "$DEPLOYMENT_RESULT" != "success" ] || [ "$QUALITY_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ] || [ "$PLATFORM_RESULT" != "success" ] || [ "$AUDIT_RESULT" != "success" ]; then
@@ -670,7 +660,7 @@ jobs:
   rust-platform:
     name: rust-platform (${{ matrix.os }})
     needs: changes
-    if: ${{ needs.changes.outputs.backend == 'true' }}
+    if: ${{ needs.changes.outputs.rust == 'true' }}
     strategy:
       fail-fast: false
       matrix:
