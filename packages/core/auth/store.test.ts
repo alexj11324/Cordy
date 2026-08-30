@@ -121,6 +121,35 @@ describe("authStore", () => {
     expect(store.getState().status).toBe("unauthenticated");
   });
 
+  it("waits for platform auth cleanup before logout resolves", async () => {
+    let finishPlatformLogout: (() => void) | undefined;
+    const platformLogout = new Promise<void>((resolve) => {
+      finishPlatformLogout = resolve;
+    });
+    const onLogout = vi.fn(() => platformLogout);
+    const store = createAuthStore({
+      api: makeApi(),
+      storage: makeStorage({ patchbay_token: "t" }),
+      onLogout,
+    });
+
+    let settled = false;
+    const logout = store
+      .getState()
+      .logout()
+      .then(() => {
+        settled = true;
+      });
+
+    expect(onLogout).toHaveBeenCalledOnce();
+    await Promise.resolve();
+    expect(settled).toBe(false);
+
+    finishPlatformLogout?.();
+    await logout;
+    expect(settled).toBe(true);
+  });
+
   it("exchanges a Clerk session for the UUID-backed cookie session", async () => {
     const storage = makeStorage();
     const onLogin = vi.fn();
