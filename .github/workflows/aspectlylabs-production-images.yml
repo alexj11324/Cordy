@@ -1,9 +1,6 @@
 name: Aspectlylabs production images
 
 on:
-  push:
-    branches:
-      - codex/aspectlylabs-fce7-build
   workflow_dispatch:
 
 permissions:
@@ -56,7 +53,7 @@ jobs:
 
       - name: Require the production Clerk publishable key
         env:
-          CLERK_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          CLERK_KEY: pk_live_Y2xlcmsuYXNwZWN0bHlsYWJzLmNvbSQ
         run: |
           test -n "${CLERK_KEY:-}" || {
             echo "::error::Missing NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"
@@ -83,6 +80,6 @@ jobs:
           tags: ghcr.io/${{ github.repository_owner }}/patchbay-web:fce7fead
           build-args: |
             NEXT_PUBLIC_APP_VERSION=fce7fead
-            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_Y2xlcmsuYXNwZWN0bHlsYWJzLmNvbSQ
           cache-from: type=gha,scope=aspectlylabs-web
           cache-to: type=gha,mode=max,scope=aspectlylabs-web
