@@ -44,9 +44,12 @@ export function runtimeConfigFromDevEnv(env: RuntimeConfigEnv): RuntimeConfig {
     env.apiUrl || LOCAL_DEV_RUNTIME_CONFIG.apiUrl,
     "VITE_API_URL",
   );
+  const usesHostedApi = apiUrl === DEFAULT_RUNTIME_CONFIG.apiUrl;
   const appUrl = env.appUrl
     ? normalizeHttpUrl(env.appUrl, "VITE_APP_URL")
-    : deriveDevAppUrl(apiUrl);
+    : usesHostedApi
+      ? DEFAULT_RUNTIME_CONFIG.appUrl
+      : deriveDevAppUrl(apiUrl);
   return {
     schemaVersion: 1,
     apiUrl,
@@ -56,7 +59,9 @@ export function runtimeConfigFromDevEnv(env: RuntimeConfigEnv): RuntimeConfig {
     appUrl,
     accountsUrl: env.accountsUrl
       ? normalizeHttpUrl(env.accountsUrl, "VITE_ACCOUNTS_URL")
-      : appUrl,
+      : usesHostedApi
+        ? DEFAULT_RUNTIME_CONFIG.accountsUrl
+        : appUrl,
   };
 }
 
@@ -85,9 +90,12 @@ export function parseRuntimeConfig(raw: string): RuntimeConfig {
   const wsUrl = optionalString(obj.wsUrl, "wsUrl");
 
   const normalizedApiUrl = normalizeHttpUrl(apiUrl, "apiUrl");
+  const usesHostedApi = normalizedApiUrl === DEFAULT_RUNTIME_CONFIG.apiUrl;
   const normalizedAppUrl = appUrl
     ? normalizeHttpUrl(appUrl, "appUrl")
-    : deriveAppUrl(normalizedApiUrl);
+    : usesHostedApi
+      ? DEFAULT_RUNTIME_CONFIG.appUrl
+      : deriveAppUrl(normalizedApiUrl);
   return {
     schemaVersion: 1,
     apiUrl: normalizedApiUrl,
@@ -95,7 +103,9 @@ export function parseRuntimeConfig(raw: string): RuntimeConfig {
     appUrl: normalizedAppUrl,
     accountsUrl: accountsUrl
       ? normalizeHttpUrl(accountsUrl, "accountsUrl")
-      : normalizedAppUrl,
+      : usesHostedApi
+        ? DEFAULT_RUNTIME_CONFIG.accountsUrl
+        : normalizedAppUrl,
   };
 }
 
