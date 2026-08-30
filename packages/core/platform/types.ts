@@ -4,6 +4,7 @@ import type {
   SupportedLocale,
 } from "../i18n";
 import type { StorageAdapter } from "../types/storage";
+import type { AuthLogoutHandler } from "../auth";
 
 /** Identifies the calling client to the server. Threaded through to
  *  ApiClient and WSClient so all HTTP requests and WS connections from
@@ -32,7 +33,7 @@ export interface CoreProviderProps {
   /** Called after successful login (e.g. set cookie for Next.js middleware). */
   onLogin?: () => void;
   /** Called during logout (e.g. clear cookie or revoke platform auth). */
-  onLogout?: () => void | Promise<void>;
+  onLogout?: AuthLogoutHandler;
   /** Identifies the calling client (web/desktop + version + os) to the server. */
   identity?: ClientIdentity;
   /** Active locale, determined server-side (web) or at app boot (desktop). */

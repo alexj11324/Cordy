@@ -10,7 +10,11 @@ const {
   signOut,
 } = vi.hoisted(() => ({
     coreProps: {
-      current: null as null | { onLogout?: () => void | Promise<void> },
+      current: null as null | {
+        onLogout?: (
+          serverLogout?: Promise<void>,
+        ) => void | Promise<void>;
+      },
     },
     resetWelcome: vi.fn(),
     clearLoggedInCookie: vi.fn(),
@@ -29,7 +33,9 @@ vi.mock("@patchbay/core/auth", () => ({
 vi.mock("@patchbay/core/platform", () => ({
   CoreProvider: (props: {
     children: ReactNode;
-    onLogout?: () => void | Promise<void>;
+    onLogout?: (
+      serverLogout?: Promise<void>,
+    ) => void | Promise<void>;
   }) => {
     coreProps.current = props;
     return props.children;
@@ -116,6 +122,36 @@ describe("WebProviders", () => {
     expect(signOut).toHaveBeenCalledOnce();
     expect(resetWelcome).toHaveBeenCalledOnce();
     expect(clearLoggedInCookie).toHaveBeenCalledOnce();
+    expect(retryAuthentication).toHaveBeenCalledOnce();
+    warn.mockRestore();
+  });
+
+  it("waits for server revocation before retrying the Clerk exchange", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    signOut.mockRejectedValue(new TypeError("offline"));
+    let releaseServerLogout!: () => void;
+    const serverLogout = new Promise<void>((resolve) => {
+      releaseServerLogout = resolve;
+    });
+    render(
+      <WebProviders locale="en" resources={{}}>
+        <div>content</div>
+      </WebProviders>,
+    );
+
+    const onLogout = coreProps.current?.onLogout;
+    expect(onLogout).toBeTypeOf("function");
+    const logoutPromise = onLogout?.(serverLogout);
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(retryAuthentication).not.toHaveBeenCalled();
+    releaseServerLogout();
+    await act(async () => {
+      await logoutPromise;
+    });
+
     expect(retryAuthentication).toHaveBeenCalledOnce();
     warn.mockRestore();
   });

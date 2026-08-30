@@ -8,10 +8,15 @@ export interface AuthStoreOptions {
   api: ApiClient;
   storage: StorageAdapter;
   onLogin?: () => void;
-  onLogout?: () => void | Promise<void>;
+  onLogout?: AuthLogoutHandler;
   /** When true, rely on HttpOnly cookies instead of localStorage for auth tokens. */
   cookieAuth?: boolean;
 }
+
+/** Optional promise that platform auth cleanup can await before re-authentication. */
+export type AuthLogoutHandler = (
+  serverLogout?: Promise<void>,
+) => void | Promise<void>;
 
 export type AuthStatus =
   | "authenticating"
@@ -135,7 +140,7 @@ export function createAuthStore(options: AuthStoreOptions) {
         cookieAuth || get().user?.is_guest === true
           ? api.logout().catch(() => {})
           : Promise.resolve();
-      const platformLogout = onLogout?.();
+      const platformLogout = onLogout?.(serverLogout);
       // Keep the promise so callers that are about to start a new Clerk
       // exchange or navigate away can serialize behind both server-side
       // session revocation and platform auth cleanup (for example Clerk).
