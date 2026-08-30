@@ -209,8 +209,10 @@ async fn replay_terminal_expiry_revocation_and_child_narrowing_are_enforced() ->
         .await?
         .is_some());
 
-    sqlx::query("UPDATE agent_task_queue SET runtime_id = NULL WHERE id = $1")
+    let replacement_runtime_id = Uuid::now_v7();
+    sqlx::query("UPDATE agent_task_queue SET runtime_id = $2 WHERE id = $1")
         .bind(task_id)
+        .bind(replacement_runtime_id)
         .execute(&rows.pool)
         .await?;
     assert!(
