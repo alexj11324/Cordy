@@ -156,7 +156,11 @@ mod tests {
             refs.iter()
                 .any(|f| f.path == "references/automations-source-map.md"),
             "subdirectory paths must survive: {:?}",
-            automations.files.iter().map(|f| &f.path).collect::<Vec<_>>()
+            automations
+                .files
+                .iter()
+                .map(|f| &f.path)
+                .collect::<Vec<_>>()
         );
         assert!(refs.iter().all(|f| !f.content.is_empty()));
         // SKILL.md itself is not duplicated into files.

@@ -1127,8 +1127,8 @@ async fn automation_get_resolves_prefix_and_preserves_detail_envelope() {
     assert!(output.stdout.contains(ID));
     assert!(output.stdout.contains("Planner"));
 
-    let json =
-        Cli::try_parse_from(["patchbay", "automation", "get", ID]).expect("automation get JSON CLI");
+    let json = Cli::try_parse_from(["patchbay", "automation", "get", ID])
+        .expect("automation get JSON CLI");
     let output = run_with_input(&json, &environment, &mut Cursor::new(Vec::<u8>::new()))
         .await
         .expect("get automation JSON");

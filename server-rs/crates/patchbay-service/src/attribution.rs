@@ -514,7 +514,10 @@ mod tests {
         assert_eq!(Source::unattributed().as_str(), "unattributed");
         assert_eq!(evidence_chat().as_str(), "chat");
         assert_eq!(evidence_delegated_failure().as_str(), "delegated_failure");
-        assert_eq!(TriggerKind::AutomationWebhook.as_str(), "automation_webhook");
+        assert_eq!(
+            TriggerKind::AutomationWebhook.as_str(),
+            "automation_webhook"
+        );
     }
 
     #[test]

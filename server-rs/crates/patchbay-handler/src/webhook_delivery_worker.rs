@@ -142,21 +142,22 @@ impl WebhookDeliveryWorker {
             return Ok(true);
         }
 
-        let trigger = match automation::get_automation_trigger(&self.pool, delivery.trigger_id).await
-        {
-            Ok(Some(trigger)) => trigger,
-            Ok(None) => {
-                self.retry_or_fail(&delivery, lease_token, "load trigger: no row")
-                    .await?;
-                return Ok(true);
-            }
-            Err(error) => {
-                self.retry_or_fail(&delivery, lease_token, &format!("load trigger: {error}"))
-                    .await?;
-                return Ok(true);
-            }
-        };
-        let automation_row = match automation::get_automation(&self.pool, delivery.automation_id).await
+        let trigger =
+            match automation::get_automation_trigger(&self.pool, delivery.trigger_id).await {
+                Ok(Some(trigger)) => trigger,
+                Ok(None) => {
+                    self.retry_or_fail(&delivery, lease_token, "load trigger: no row")
+                        .await?;
+                    return Ok(true);
+                }
+                Err(error) => {
+                    self.retry_or_fail(&delivery, lease_token, &format!("load trigger: {error}"))
+                        .await?;
+                    return Ok(true);
+                }
+            };
+        let automation_row = match automation::get_automation(&self.pool, delivery.automation_id)
+            .await
         {
             Ok(Some(automation)) => automation,
             Ok(None) => {
@@ -200,23 +201,24 @@ impl WebhookDeliveryWorker {
                 return Ok(true);
             }
         };
-        let admitted = match patchbay_db::queries::automation::get_automation_run_by_webhook_delivery(
-            &self.pool,
-            delivery.id,
-        )
-        .await
-        {
-            Ok(run) => run,
-            Err(error) => {
-                self.retry_or_fail(
-                    &delivery,
-                    lease_token,
-                    &format!("load admitted run: {error}"),
-                )
-                .await?;
-                return Ok(true);
-            }
-        };
+        let admitted =
+            match patchbay_db::queries::automation::get_automation_run_by_webhook_delivery(
+                &self.pool,
+                delivery.id,
+            )
+            .await
+            {
+                Ok(run) => run,
+                Err(error) => {
+                    self.retry_or_fail(
+                        &delivery,
+                        lease_token,
+                        &format!("load admitted run: {error}"),
+                    )
+                    .await?;
+                    return Ok(true);
+                }
+            };
         if admitted.is_none() {
             let ignored = if !trigger.enabled {
                 Some("trigger_disabled")

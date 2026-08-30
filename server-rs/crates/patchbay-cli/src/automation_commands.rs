@@ -73,9 +73,12 @@ pub(super) async fn run_automation_get(
         OutputFormat::Json => format!("{}\n", serde_json::to_string_pretty(&response)?),
         OutputFormat::Table => {
             let automation = response.get("automation").unwrap_or(&Value::Null);
-            let agents =
-                load_automation_agent_names(&client, &workspace_id, std::slice::from_ref(automation))
-                    .await;
+            let agents = load_automation_agent_names(
+                &client,
+                &workspace_id,
+                std::slice::from_ref(automation),
+            )
+            .await;
             format_automation_table(std::slice::from_ref(automation), true, &agents)
         }
     };

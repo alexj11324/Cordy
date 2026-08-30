@@ -1,3 +1,11 @@
+//! Historical migration index map.
+//!
+//! Entries for old schema objects intentionally mirror immutable migration
+//! filenames and relation names. They are migration-runner compatibility data,
+//! not runtime product identifiers. Keep them until the final schema rename is
+//! deployed everywhere and the corresponding pre-rename rollback window is
+//! retired; never use these names in new application code.
+
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
     (
         "035_task_queue_issue_id_index",
@@ -81,8 +89,8 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "agent_system_identity_unique",
     ),
     (
-        "177_automation_run_webhook_delivery_index",
-        "uq_automation_run_webhook_delivery",
+        "177_autopilot_run_webhook_delivery_index",
+        "uq_autopilot_run_webhook_delivery",
     ),
     (
         "178_webhook_delivery_queue_index",
@@ -97,8 +105,8 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "idx_chat_draft_restore_session",
     ),
     (
-        "187_automation_rule_version_index",
-        "idx_automation_rule_version_active",
+        "187_autopilot_rule_version_index",
+        "idx_autopilot_rule_version_active",
     ),
     ("192_issue_properties_gin_index", "idx_issue_properties_gin"),
     (
@@ -236,8 +244,8 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "idx_chat_draft_restore_task_id",
     ),
     (
-        "277_automation_run_task_id_index",
-        "idx_automation_run_task_id",
+        "277_autopilot_run_task_id_index",
+        "idx_autopilot_run_task_id",
     ),
     (
         "278_agent_task_queue_agent_id_keyset_index",
@@ -403,28 +411,28 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "idx_agent_task_queue_chat_retired_session",
     ),
     (
-        "353_automation_quota_period_scope_index",
-        "uq_automation_quota_period_scope",
+        "353_autopilot_quota_period_scope_index",
+        "uq_autopilot_quota_period_scope",
     ),
     (
-        "354_automation_quota_reservation_id_index",
-        "automation_quota_reservation_pkey_uidx",
+        "354_autopilot_quota_reservation_id_index",
+        "autopilot_quota_reservation_pkey_uidx",
     ),
     (
-        "355_automation_quota_reservation_key_index",
-        "uq_automation_quota_reservation_key",
+        "355_autopilot_quota_reservation_key_index",
+        "uq_autopilot_quota_reservation_key",
     ),
     (
-        "356_automation_run_quota_reservation_index",
-        "uq_automation_run_quota_reservation",
+        "356_autopilot_run_quota_reservation_index",
+        "uq_autopilot_run_quota_reservation",
     ),
     (
         "357_webhook_delivery_replay_idempotency_index",
         "uq_webhook_delivery_replay_idempotency",
     ),
     (
-        "358_automation_quota_reservation_state_index",
-        "idx_automation_quota_reservation_state",
+        "358_autopilot_quota_reservation_state_index",
+        "idx_autopilot_quota_reservation_state",
     ),
     (
         "361_issue_last_activity_index",

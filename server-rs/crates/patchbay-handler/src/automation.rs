@@ -78,7 +78,10 @@ pub fn router() -> Router<HandlerState> {
             "/api/automations/{id}/triggers/{trigger_id}/signing-secret",
             axum::routing::put(set_signing_secret),
         )
-        .route("/api/automations/{id}/collaborators", post(add_collaborator))
+        .route(
+            "/api/automations/{id}/collaborators",
+            post(add_collaborator),
+        )
         .route(
             "/api/automations/{id}/collaborators/{user_id}",
             axum::routing::delete(remove_collaborator),
@@ -125,7 +128,10 @@ async fn load_automation(
     let workspace_id = workspace_id(context)?;
     match automation_q::get_automation_in_workspace(&state.pool, id, workspace_id).await {
         Ok(Some(automation)) => Ok(automation),
-        Ok(None) | Err(_) => Err(error_response(StatusCode::NOT_FOUND, "automation not found")),
+        Ok(None) | Err(_) => Err(error_response(
+            StatusCode::NOT_FOUND,
+            "automation not found",
+        )),
     }
 }
 
@@ -144,8 +150,12 @@ async fn can_write(
         return true;
     }
     matches!(
-        automation_q::is_automation_collaborator(&state.pool, automation.id, context.member.user_id,)
-            .await,
+        automation_q::is_automation_collaborator(
+            &state.pool,
+            automation.id,
+            context.member.user_id,
+        )
+        .await,
         Ok(Some(true))
     )
 }
@@ -199,7 +209,10 @@ async fn collaborators_response(
     }
 }
 
-fn automation_map(automation: &Automation, subscribers: &[AutomationSubscriber]) -> Map<String, Value> {
+fn automation_map(
+    automation: &Automation,
+    subscribers: &[AutomationSubscriber],
+) -> Map<String, Value> {
     let mut value = Map::new();
     value.insert("id".into(), json!(automation.id.to_string()));
     value.insert(
@@ -683,7 +696,8 @@ async fn create_automation(
         );
     }
     if let Some(template) = &req.issue_title_template {
-        if let Err(message) = patchbay_service::automation::validate_issue_title_template(template) {
+        if let Err(message) = patchbay_service::automation::validate_issue_title_template(template)
+        {
             return error_response(StatusCode::BAD_REQUEST, &message);
         }
     }
@@ -1815,7 +1829,9 @@ async fn trigger_automation(
                 .downcast_ref::<AutomationQuotaExceededError>()
                 .is_some() =>
         {
-            let quota = error.downcast_ref::<AutomationQuotaExceededError>().unwrap();
+            let quota = error
+                .downcast_ref::<AutomationQuotaExceededError>()
+                .unwrap();
             let retry_after = (quota.reset_at - Utc::now()).num_seconds().max(1);
             let mut response_headers = HeaderMap::new();
             if let Ok(value) = retry_after.to_string().parse() {
@@ -2013,7 +2029,8 @@ async fn replay_delivery(
     if ap.status != "active" {
         return error_response(StatusCode::BAD_REQUEST, "automation is not active");
     }
-    let trigger = match automation_q::get_automation_trigger(&state.pool, original.trigger_id).await {
+    let trigger = match automation_q::get_automation_trigger(&state.pool, original.trigger_id).await
+    {
         Ok(Some(v)) if v.automation_id == ap.id && v.enabled => v,
         Ok(Some(_)) => return error_response(StatusCode::BAD_REQUEST, "trigger is disabled"),
         _ => return error_response(StatusCode::NOT_FOUND, "trigger not found"),

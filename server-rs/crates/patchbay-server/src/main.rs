@@ -795,7 +795,9 @@ async fn main() -> anyhow::Result<()> {
     }
     match quota_shutdown {
         patchbay_service::automation_failure_monitor::ShutdownOutcome::TimedOut => {
-            tracing::warn!("automation quota reconciler exceeded shutdown deadline and was aborted");
+            tracing::warn!(
+                "automation quota reconciler exceeded shutdown deadline and was aborted"
+            );
         }
         patchbay_service::automation_failure_monitor::ShutdownOutcome::Panicked => {
             tracing::error!("automation quota reconciler task panicked during shutdown");
@@ -886,7 +888,9 @@ async fn main() -> anyhow::Result<()> {
     }
     match automation_event_listeners_shutdown {
         Some(patchbay_handler::automation_listeners::AutomationEventShutdownOutcome::TimedOut) => {
-            tracing::warn!("automation event listeners exceeded shutdown deadline and were aborted");
+            tracing::warn!(
+                "automation event listeners exceeded shutdown deadline and were aborted"
+            );
         }
         Some(patchbay_handler::automation_listeners::AutomationEventShutdownOutcome::Panicked) => {
             tracing::error!("automation event listener task panicked during shutdown");

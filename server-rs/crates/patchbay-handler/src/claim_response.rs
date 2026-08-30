@@ -993,8 +993,7 @@ pub(crate) async fn build_claimed_task_response(
             // Message Bus turns already carry the exact parent session and
             // checkout. Keep the copied workdir as a defensive fallback for
             // mixed-version rows where the parent did not have one.
-            if is_message_bus_continuation && !obj.contains_key("prior_work_dir")
-            {
+            if is_message_bus_continuation && !obj.contains_key("prior_work_dir") {
                 set_if_not_empty(
                     obj,
                     "prior_work_dir",
@@ -1251,11 +1250,15 @@ pub(crate) async fn build_claimed_task_response(
                 "automation_id".into(),
                 Value::String(run.automation_id.to_string()),
             );
-            obj.insert("automation_source".into(), Value::String(run.source.clone()));
+            obj.insert(
+                "automation_source".into(),
+                Value::String(run.source.clone()),
+            );
             if let Some(tp) = run.trigger_payload {
                 obj.insert("automation_trigger_payload".into(), tp);
             }
-            if let Ok(Some(ap)) = automation_q::get_automation(&state.pool, run.automation_id).await {
+            if let Ok(Some(ap)) = automation_q::get_automation(&state.pool, run.automation_id).await
+            {
                 obj.insert("automation_title".into(), Value::String(ap.title.clone()));
                 obj.insert("thread_name".into(), Value::String(ap.title.clone()));
                 if let Some(desc) = &ap.description {

@@ -504,7 +504,9 @@ impl BusinessMetrics {
             analytics::EVENT_AUTOMATION_CREATED => self
                 .events
                 .automation_created
-                .with_label_values(&[&normalize_automation_cadence(&string_prop(props, "cadence"))])
+                .with_label_values(&[&normalize_automation_cadence(&string_prop(
+                    props, "cadence",
+                ))])
                 .inc(),
             analytics::EVENT_ISSUE_EXECUTED => self
                 .events

@@ -23,14 +23,14 @@ use patchbay_db::queries::agent::{
     create_deferred_agent_task, create_deferred_channel_issue_task, create_quick_create_task,
     create_task_message_bus_continuation, extend_agent_task_prepare_lease, get_agent,
     get_agent_for_claim_update, get_agent_task, get_agent_thread_continuation_by_idempotency,
-    list_queued_claim_candidates_by_runtime,
-    list_queued_claim_candidates_by_runtimes, lock_task_for_message_bus,
-    mark_agent_task_waiting_local_directory, mark_chat_finalize_deferred, merge_agent_task_context,
-    promote_deferred_channel_issue_task, promote_due_deferred_tasks_for_runtime,
-    promote_due_deferred_tasks_for_runtimes, reclaim_stale_dispatched_task_for_runtime,
-    reclaim_stale_dispatched_tasks_for_runtimes, refresh_agent_status_from_tasks,
-    requeue_agent_task_after_claim_failure, set_deferred_channel_issue_task_runtime_overlay,
-    set_task_delivered_comment_i_ds, start_agent_task,
+    list_queued_claim_candidates_by_runtime, list_queued_claim_candidates_by_runtimes,
+    lock_task_for_message_bus, mark_agent_task_waiting_local_directory,
+    mark_chat_finalize_deferred, merge_agent_task_context, promote_deferred_channel_issue_task,
+    promote_due_deferred_tasks_for_runtime, promote_due_deferred_tasks_for_runtimes,
+    reclaim_stale_dispatched_task_for_runtime, reclaim_stale_dispatched_tasks_for_runtimes,
+    refresh_agent_status_from_tasks, requeue_agent_task_after_claim_failure,
+    set_deferred_channel_issue_task_runtime_overlay, set_task_delivered_comment_i_ds,
+    start_agent_task,
 };
 use patchbay_db::queries::attachment::detach_attachments_from_user_chat_message_by_task;
 use patchbay_db::queries::attachment::link_attachments_to_chat_message;
@@ -2614,13 +2614,10 @@ impl TaskService {
             return Err(TaskServiceError::AgentThreadUnavailable(reason));
         }
 
-        if let Some(existing) = get_agent_thread_continuation_by_idempotency(
-            &mut *tx,
-            parent_task_id,
-            &idempotency_key,
-        )
-        .await
-        .map_err(downcast_sqlx)?
+        if let Some(existing) =
+            get_agent_thread_continuation_by_idempotency(&mut *tx, parent_task_id, &idempotency_key)
+                .await
+                .map_err(downcast_sqlx)?
         {
             if existing.content != content {
                 return Err(TaskServiceError::AgentThreadIdempotencyConflict);
@@ -2646,9 +2643,7 @@ impl TaskService {
         .await
         .map_err(downcast_sqlx)?
         .ok_or_else(|| {
-            TaskServiceError::Internal(
-                "agent thread continuation could not be created".to_string(),
-            )
+            TaskServiceError::Internal("agent thread continuation could not be created".to_string())
         })?;
         let continuation = get_agent_task(&mut *tx, continuation_task_id)
             .await

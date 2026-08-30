@@ -1685,7 +1685,10 @@ async fn delete_workspace(
     );
     step!(
         "delete automations",
-        patchbay_db::queries::workspace_delete::delete_workspace_automations(&mut *tx, workspace_id)
+        patchbay_db::queries::workspace_delete::delete_workspace_automations(
+            &mut *tx,
+            workspace_id
+        )
     );
     step!(
         "delete pull requests",

@@ -193,7 +193,10 @@ fn plans_for_trigger(
     Ok(vec![latest_due])
 }
 
-fn automation_handler(pool: PgPool, dispatcher: Arc<dyn AutomationScheduleDispatcher>) -> JobHandler {
+fn automation_handler(
+    pool: PgPool,
+    dispatcher: Arc<dyn AutomationScheduleDispatcher>,
+) -> JobHandler {
     Arc::new(move |_, input| {
         let pool = pool.clone();
         let dispatcher = dispatcher.clone();

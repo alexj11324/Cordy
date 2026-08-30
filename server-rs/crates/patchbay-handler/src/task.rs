@@ -22,10 +22,7 @@ use crate::state::HandlerState;
 pub fn router() -> Router<HandlerState> {
     Router::new()
         .route("/api/tasks/{task_id}/messages", get(list_messages))
-        .route(
-            "/api/tasks/{task_id}/agent-thread",
-            get(get_agent_thread),
-        )
+        .route("/api/tasks/{task_id}/agent-thread", get(get_agent_thread))
         .route(
             "/api/tasks/{task_id}/agent-thread/continue",
             post(continue_agent_thread),
@@ -100,16 +97,15 @@ async fn load_agent_thread_access(
     context: &WorkspaceContext,
     task_id: Uuid,
 ) -> Result<AgentThreadAccess, Response> {
-    let task = match agent::get_agent_task_in_workspace(
-        &state.pool,
-        task_id,
-        context.member.workspace_id,
-    )
-    .await
-    {
-        Ok(Some(task)) => task,
-        Ok(None) | Err(_) => return Err(error_response(StatusCode::NOT_FOUND, "task not found")),
-    };
+    let task =
+        match agent::get_agent_task_in_workspace(&state.pool, task_id, context.member.workspace_id)
+            .await
+        {
+            Ok(Some(task)) => task,
+            Ok(None) | Err(_) => {
+                return Err(error_response(StatusCode::NOT_FOUND, "task not found"))
+            }
+        };
     let target = match agent::get_agent_in_workspace(
         &state.pool,
         task.agent_id,
@@ -156,15 +152,15 @@ async fn load_agent_thread_access(
                 return Err(error_response(StatusCode::NOT_FOUND, "task not found"))
             }
         };
-        let automation = match automation_query::get_automation(&state.pool, run.automation_id).await
-        {
-            Ok(Some(automation)) if automation.workspace_id == context.member.workspace_id => {
-                automation
-            }
-            Ok(Some(_)) | Ok(None) | Err(_) => {
-                return Err(error_response(StatusCode::NOT_FOUND, "task not found"))
-            }
-        };
+        let automation =
+            match automation_query::get_automation(&state.pool, run.automation_id).await {
+                Ok(Some(automation)) if automation.workspace_id == context.member.workspace_id => {
+                    automation
+                }
+                Ok(Some(_)) | Ok(None) | Err(_) => {
+                    return Err(error_response(StatusCode::NOT_FOUND, "task not found"))
+                }
+            };
         let owns_automation = matches!(context.member.role.as_str(), "owner" | "admin")
             || (automation.created_by_type == "member"
                 && automation.created_by_id == context.member.user_id);
@@ -228,9 +224,11 @@ async fn get_agent_thread(
     let mut events = Vec::new();
     for thread_task in &thread_tasks {
         match task_message::list_task_messages(&state.pool, thread_task.id).await {
-            Ok(task_events) => events.extend(task_events.iter().map(|event| {
-                crate::daemon::task_message_payload(event, thread_task.issue_id)
-            })),
+            Ok(task_events) => events.extend(
+                task_events
+                    .iter()
+                    .map(|event| crate::daemon::task_message_payload(event, thread_task.issue_id)),
+            ),
             Err(error) => {
                 tracing::warn!(%error, task_id = %thread_task.id, "failed to load Agent thread events");
                 return error_response(

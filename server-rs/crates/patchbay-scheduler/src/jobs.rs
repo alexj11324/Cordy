@@ -11,8 +11,9 @@ use crate::{static_scopes, CatchUpMode, HandlerResult, JobSpec, GLOBAL_SCOPE};
 mod automation;
 
 pub use automation::{
-    automation_schedule_dispatch_job, AutomationScheduleDispatcher, AUTOMATION_SCHEDULE_DISPATCH_JOB,
-    AUTOMATION_TRIGGER_SCOPE, DEFAULT_AUTOMATION_SCHEDULE_TIMEZONE,
+    automation_schedule_dispatch_job, AutomationScheduleDispatcher,
+    AUTOMATION_SCHEDULE_DISPATCH_JOB, AUTOMATION_TRIGGER_SCOPE,
+    DEFAULT_AUTOMATION_SCHEDULE_TIMEZONE,
 };
 
 /// Stable audit name. Renaming it would detach existing execution history.

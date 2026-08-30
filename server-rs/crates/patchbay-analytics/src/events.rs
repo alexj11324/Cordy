@@ -1185,7 +1185,8 @@ mod tests {
             assignee_type: "team".into(),
             team_id: "team".into(),
         };
-        let started = automation_run_started("u", "ws", "ap", "run", "daily", &assignee, "schedule");
+        let started =
+            automation_run_started("u", "ws", "ap", "run", "daily", &assignee, "schedule");
         let p = started.properties.as_ref().unwrap();
         assert_eq!(p["trigger_source"], json!("schedule"));
         assert_eq!(p["trigger_kind"], json!("schedule"));

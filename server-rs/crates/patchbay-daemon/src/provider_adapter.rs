@@ -410,6 +410,7 @@ impl ProductionProviderAdapter {
         runtime: ProviderRuntimeContext,
     ) -> TaskRunOutcome {
         let _active = CounterGuard::new(&self.active_tasks);
+        let is_message_bus_continuation = !task.message_bus_messages.is_empty();
         // Old servers can still dispatch this retired synthetic task. It has
         // no user prompt and must complete empty before registration lookup,
         // Remote MCP discovery, skill fetch, or filesystem preparation.
@@ -3640,11 +3641,7 @@ mod tests {
             true,
         ));
         assert!(!should_retry_with_fresh_session(
-            &rejected,
-            "",
-            0,
-            "qwen",
-            true
+            &rejected, "", 0, "qwen", true
         ));
         assert!(!should_retry_with_fresh_session(
             &rejected,

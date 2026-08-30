@@ -599,8 +599,11 @@ mod tests {
             workspace_id,
         )
         .await?;
-        patchbay_db::queries::workspace_delete::delete_workspace_automations(&mut *tx, workspace_id)
-            .await?;
+        patchbay_db::queries::workspace_delete::delete_workspace_automations(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_pull_requests(
             &mut *tx,
             workspace_id,

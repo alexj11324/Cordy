@@ -984,10 +984,9 @@ impl HandlerState {
         let mut service =
             AutomationService::new(self.pool.clone(), self.bus.clone(), self.tasks.clone());
         service.entitlements = entitlements;
-        service.quota_metrics = self
-            .business_metrics
-            .clone()
-            .map(|metrics| metrics as Arc<dyn patchbay_service::automation::AutomationQuotaMetrics>);
+        service.quota_metrics = self.business_metrics.clone().map(|metrics| {
+            metrics as Arc<dyn patchbay_service::automation::AutomationQuotaMetrics>
+        });
         self.automations = Arc::new(service);
         self
     }

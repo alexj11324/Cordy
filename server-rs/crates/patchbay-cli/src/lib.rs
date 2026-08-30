@@ -183,8 +183,8 @@ use auth_commands::{run_auth_logout, run_auth_status};
 pub(crate) use automation_commands::{
     run_automation_create, run_automation_delete, run_automation_get, run_automation_list,
     run_automation_runs, run_automation_trigger, run_automation_trigger_add,
-    run_automation_trigger_delete, run_automation_trigger_rotate_url, run_automation_trigger_update,
-    run_automation_update, AutomationArgs, AutomationCommand,
+    run_automation_trigger_delete, run_automation_trigger_rotate_url,
+    run_automation_trigger_update, run_automation_update, AutomationArgs, AutomationCommand,
 };
 use automation_output::{
     automation_webhook_url, format_automation_runs_table, format_automation_table,

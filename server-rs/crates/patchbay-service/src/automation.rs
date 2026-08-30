@@ -19,9 +19,10 @@ use patchbay_db::models::{Agent, Automation, AutomationRun};
 use patchbay_db::queries::agent::has_active_task_for_issue;
 use patchbay_db::queries::agent_invocation_target::list_agent_invocation_targets;
 use patchbay_db::queries::automation::{
-    create_automation_rule_version, get_automation, get_automation_run, get_automation_run_by_issue,
-    get_automation_trigger, update_automation_last_run_at, update_automation_run_skipped,
-    update_automation_run_terminal_with_quota, UpdateAutomationRunTerminalWithQuotaRow,
+    create_automation_rule_version, get_automation, get_automation_run,
+    get_automation_run_by_issue, get_automation_trigger, update_automation_last_run_at,
+    update_automation_run_skipped, update_automation_run_terminal_with_quota,
+    UpdateAutomationRunTerminalWithQuotaRow,
 };
 use patchbay_db::queries::automation::{
     create_automation_run, get_automation_run_by_quota_reservation,
@@ -800,7 +801,8 @@ impl AutomationService {
     /// Keeps create_issue consumption immutable while releasing still-reserved
     /// run_only slots before deletion clears issue_id.
     pub async fn fail_runs_by_issue(&self, issue_id: Uuid) -> anyhow::Result<()> {
-        patchbay_db::queries::automation::fail_automation_runs_by_issue(&self.pool, issue_id).await?;
+        patchbay_db::queries::automation::fail_automation_runs_by_issue(&self.pool, issue_id)
+            .await?;
         Ok(())
     }
 }
@@ -1337,12 +1339,14 @@ impl AutomationService {
                 .await
                 .map_err(|e| quota_admission_internal("commit blocked quota admission", e))?;
             self.record_quota_decision(&policy.action, source, "blocked");
-            return Err(QuotaAdmissionError::Exceeded(AutomationQuotaExceededError {
-                used: period.used_count,
-                reserved: period.reserved_count,
-                limit: policy.limit,
-                reset_at: policy.reset_at,
-            }));
+            return Err(QuotaAdmissionError::Exceeded(
+                AutomationQuotaExceededError {
+                    used: period.used_count,
+                    reserved: period.reserved_count,
+                    limit: policy.limit,
+                    reset_at: policy.reset_at,
+                },
+            ));
         }
         // Observe-only would-blocks stay in the bounded decision metric;
         // durable blocked counts back the usage API only for decisions that
@@ -1604,7 +1608,10 @@ impl AutomationService {
         // creator's; automation falls back to the creator. Admins do NOT
         // bypass a private agent they do not own; agent-created automations are
         // judged as workspace principals.
-        if !self.automation_admit_invoke(ap, &agent, actor_user_id).await {
+        if !self
+            .automation_admit_invoke(ap, &agent, actor_user_id)
+            .await
+        {
             if actor_user_id.is_some() {
                 return Some((
                     "you are not allowed to trigger this automation's assignee agent".to_string(),
@@ -2074,9 +2081,15 @@ impl AutomationService {
             .await
             .map_err(|e| de("list automation subscribers", e))?;
         for sub in &template_subs {
-            add_issue_subscriber(&mut *tx, issue.id, &sub.user_type, sub.user_id, "automation")
-                .await
-                .map_err(|e| de("add automation subscriber to issue", e))?;
+            add_issue_subscriber(
+                &mut *tx,
+                issue.id,
+                &sub.user_type,
+                sub.user_id,
+                "automation",
+            )
+            .await
+            .map_err(|e| de("add automation subscriber to issue", e))?;
         }
 
         // Linking the run in the same tx makes the recent-duplicate guard
@@ -2291,7 +2304,9 @@ impl AutomationService {
         // Team invocation gate re-check (admission principal = manual clicker,
         // else creator).
         if ap.assignee_type == "team"
-            && !self.automation_admit_invoke(ap, &agent, actor_user_id).await
+            && !self
+                .automation_admit_invoke(ap, &agent, actor_user_id)
+                .await
         {
             return Err(DispatchError::Skipped(ErrDispatchSkipped {
                 reason: format_admission_reason(

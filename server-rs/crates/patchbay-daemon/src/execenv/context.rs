@@ -1230,7 +1230,10 @@ fn render_automation_context(ctx: &TaskContextForEnv) -> String {
         b.push_str(&format!("**Title:** {}\n\n", ctx.automation_title));
     }
     if !ctx.automation_source.is_empty() {
-        b.push_str(&format!("**Trigger source:** {}\n\n", ctx.automation_source));
+        b.push_str(&format!(
+            "**Trigger source:** {}\n\n",
+            ctx.automation_source
+        ));
     }
     if !ctx.automation_trigger_payload.is_empty() {
         b.push_str(&format!(

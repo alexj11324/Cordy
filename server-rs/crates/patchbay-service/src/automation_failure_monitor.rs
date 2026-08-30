@@ -368,7 +368,8 @@ impl AutomationFailureMonitor {
         };
 
         let mut side_effect_failures = 0;
-        if let Err(error) = record_automation_rule_version(&self.pool, &paused, "system", None).await
+        if let Err(error) =
+            record_automation_rule_version(&self.pool, &paused, "system", None).await
         {
             side_effect_failures += 1;
             self.record_classified_error("rule_version", &error);
