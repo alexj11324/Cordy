@@ -2834,9 +2834,9 @@ async fn start_task(
     let access = Access::new(&state, &headers);
     let (task, ws_id) =
         match require_daemon_task_access_with_workspace(&access, None, &task_id).await {
-        Ok(v) => v,
-        Err(res) => return res,
-    };
+            Ok(v) => v,
+            Err(res) => return res,
+        };
     let Ok(task_uuid) = Uuid::parse_str(task_id.trim()) else {
         return error_response(StatusCode::BAD_REQUEST, "invalid task_id");
     };

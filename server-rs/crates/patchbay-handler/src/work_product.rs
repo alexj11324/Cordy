@@ -119,9 +119,7 @@ pub(crate) fn product_response(
     })
 }
 
-pub(crate) fn provenance_response(
-    provenance: Option<&AgentTaskExecutionProvenance>,
-) -> Value {
+pub(crate) fn provenance_response(provenance: Option<&AgentTaskExecutionProvenance>) -> Value {
     let Some(provenance) = provenance else {
         return json!(null);
     };
@@ -181,7 +179,10 @@ pub(crate) async fn attach_existing(
         Ok(None) => return error_response(StatusCode::NOT_FOUND, "work product not found"),
         Err(error) => {
             tracing::warn!(%error, "work product lookup failed");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load work product");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load work product",
+            );
         }
     };
     if let Some(task_id) = actor.task_id {
@@ -217,15 +218,8 @@ pub(crate) async fn attach_existing(
             );
         }
     }
-    let relation = match attach_relation(
-        &state,
-        &issue,
-        &product,
-        &actor,
-        request.close_intent,
-    )
-    .await
-    {
+    let relation =
+        match attach_relation(&state, &issue, &product, &actor, request.close_intent).await {
         Ok(relation) => relation,
         Err(response) => return response,
     };
@@ -261,7 +255,10 @@ pub(crate) async fn list_for_issue(
         .into_response(),
         Err(error) => {
             tracing::warn!(%error, issue_id = %issue.id, "work product list failed");
-            error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to list work products")
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to list work products",
+            )
         }
     }
 }
@@ -283,18 +280,18 @@ pub(crate) async fn detach(
         Ok(actor) => actor,
         Err(response) => return response,
     };
-    let product = match work_product_q::get_work_product_by_id(
-        &state.pool,
-        issue.workspace_id,
-        product_id,
-    )
-    .await
+    let product =
+        match work_product_q::get_work_product_by_id(&state.pool, issue.workspace_id, product_id)
+            .await
     {
         Ok(Some(product)) => product,
         Ok(None) => return error_response(StatusCode::NOT_FOUND, "work product not found"),
         Err(error) => {
             tracing::warn!(%error, "work product lookup failed");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load work product");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load work product",
+            );
         }
     };
     let detached = match work_product_q::detach_work_product_relations(
@@ -313,7 +310,10 @@ pub(crate) async fn detach(
         Ok(count) => count,
         Err(error) => {
             tracing::warn!(%error, "work product detach failed");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to detach work product");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to detach work product",
+            );
         }
     };
     if detached == 0 {
@@ -339,11 +339,8 @@ pub(crate) async fn list_unassociated(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
 ) -> Response {
-    match work_product_q::list_unassociated_work_products(
-        &state.pool,
-        context.member.workspace_id,
-    )
-    .await
+    match work_product_q::list_unassociated_work_products(&state.pool, context.member.workspace_id)
+        .await
     {
         Ok(products) => Json(json!({
             "work_products": products
@@ -370,12 +367,9 @@ pub(crate) async fn list_for_task(
     let Ok(task_id) = Uuid::parse_str(raw_task.trim()) else {
         return error_response(StatusCode::BAD_REQUEST, "invalid task id");
     };
-    let task = match agent::get_agent_task_in_workspace(
-        &state.pool,
-        task_id,
-        context.member.workspace_id,
-    )
-    .await
+    let task =
+        match agent::get_agent_task_in_workspace(&state.pool, task_id, context.member.workspace_id)
+            .await
     {
         Ok(Some(task)) => task,
         Ok(None) => return error_response(StatusCode::NOT_FOUND, "task not found"),
@@ -394,7 +388,10 @@ pub(crate) async fn list_for_task(
         Ok(provenance) => provenance,
         Err(error) => {
             tracing::warn!(%error, task_id = %task.id, "execution provenance lookup failed");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load execution provenance");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load execution provenance",
+            );
         }
     };
     let products = match work_product_q::list_work_products_by_task(
@@ -407,7 +404,10 @@ pub(crate) async fn list_for_task(
         Ok(relations) => relations,
         Err(error) => {
             tracing::warn!(%error, task_id = %task.id, "task work product lookup failed");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to list task work products");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to list task work products",
+            );
         }
     };
     Json(json!({
@@ -811,9 +811,10 @@ pub(crate) async fn discover_after_task(
                         lookup_failed = true;
                         continue;
                     }
-                    if !matches.iter().any(|found: &DiscoveredPullRequest| {
-                        found.number == item.number
-                    }) {
+                    if !matches
+                        .iter()
+                        .any(|found: &DiscoveredPullRequest| found.number == item.number)
+                    {
                         matches.push(DiscoveredPullRequest {
                             installation_id: installation.installation_id,
                             number: item.number,
@@ -955,7 +956,8 @@ pub(crate) async fn discover_after_task(
                     return;
                 }
             };
-            let relation_key = work_product_q::relation_key(task.issue_id, Some(task.id), task.autopilot_run_id);
+            let relation_key =
+                work_product_q::relation_key(task.issue_id, Some(task.id), task.autopilot_run_id);
             let relation = match work_product_q::attach_work_product_relation(
                 &state.pool,
                 workspace_id,
@@ -1214,7 +1216,10 @@ pub(crate) fn normalize_repo_identity(raw: &str) -> Option<String> {
     } else if let Some(rest) = value.strip_prefix("ssh://git@github.com/") {
         value = rest.to_string();
     }
-    value = value.trim_end_matches('/').trim_end_matches(".git").to_string();
+    value = value
+        .trim_end_matches('/')
+        .trim_end_matches(".git")
+        .to_string();
     let mut parts = value.split('/');
     let owner = parts.next()?.trim();
     let repo = parts.next()?.trim();
@@ -1226,7 +1231,11 @@ pub(crate) fn normalize_repo_identity(raw: &str) -> Option<String> {
     {
         return None;
     }
-    Some(format!("{}/{}", owner.to_ascii_lowercase(), repo.to_ascii_lowercase()))
+    Some(format!(
+        "{}/{}",
+        owner.to_ascii_lowercase(),
+        repo.to_ascii_lowercase()
+    ))
 }
 
 fn valid_repo_byte(byte: u8) -> bool {
