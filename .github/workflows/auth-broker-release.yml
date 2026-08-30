@@ -22,7 +22,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE: ghcr.io/patchbay-ai/patchbay-auth-broker
+  IMAGE: ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker
 
 jobs:
   validate-and-build:
