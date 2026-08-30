@@ -444,6 +444,7 @@ impl Client {
     }
 
     /// `StartTask` (client.go:352).
+    #[allow(clippy::too_many_arguments)]
     pub(crate) async fn start_task(
         &self,
         ctx: &crate::repocache::Ctx,
