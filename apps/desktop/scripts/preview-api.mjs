@@ -652,6 +652,7 @@ function previewTrigger(
   cronExpression,
   nextRunAt,
   lastFiredAt = enabled ? previewTime(-30) : null,
+  createdAt = NOW,
 ) {
   return {
     id,
@@ -667,15 +668,15 @@ function previewTrigger(
     label: "Preview schedule",
     event_filters: null,
     last_fired_at: lastFiredAt,
-    created_at: NOW,
+    created_at: createdAt,
     updated_at: NOW,
   };
 }
 
 const PREVIEW_TRIGGERS = {
-  "autopilot-pr-review": [previewTrigger("trigger-pr-review", "autopilot-pr-review", true, "*/30 * * * *", PREVIEW_NEXT_PR_REVIEW_AT, previewTime(-97))],
-  "autopilot-ci-watch": [previewTrigger("trigger-ci-watch", "autopilot-ci-watch", true, "*/15 * * * *", PREVIEW_NEXT_CI_WATCH_AT, previewTime(-241))],
-  "autopilot-weekly-summary": [previewTrigger("trigger-weekly-summary", "autopilot-weekly-summary", false, "0 9 * * 1", null)],
+  "autopilot-pr-review": [previewTrigger("trigger-pr-review", "autopilot-pr-review", true, "*/30 * * * *", PREVIEW_NEXT_PR_REVIEW_AT, previewTime(-97), previewTime(-4322))],
+  "autopilot-ci-watch": [previewTrigger("trigger-ci-watch", "autopilot-ci-watch", true, "*/15 * * * *", PREVIEW_NEXT_CI_WATCH_AT, previewTime(-241), previewTime(-242))],
+  "autopilot-weekly-summary": [previewTrigger("trigger-weekly-summary", "autopilot-weekly-summary", false, "0 9 * * 1", null, null, previewTime(-10081))],
 };
 
 function previewRun({

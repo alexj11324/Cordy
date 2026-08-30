@@ -221,6 +221,24 @@ describe("IssueAgentWorkingStatus", () => {
     expect(screen.queryByTestId("agent-working-reply")).not.toBeInTheDocument();
   });
 
+  it("does not expose live-task controls in read-only mode", () => {
+    mockState.tasks = [
+      makeTask({
+        id: CODING_ID,
+        agent_id: "agent-coding",
+        status: "running",
+        completed_at: null,
+        result: null,
+      }),
+    ];
+    renderLive(<IssueAgentWorkingStatus issueId="issue-1" readOnly />);
+    expect(screen.queryByTestId("thinking-orb")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("agent-working-reply")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Open conversation" }),
+    ).not.toBeInTheDocument();
+  });
+
   it("does not render a Working card for a side-chat task", () => {
     mockState.tasks = [
       makeTask({

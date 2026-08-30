@@ -14,6 +14,8 @@ interface IssueDetailRouteProps {
    * human-readable identifier such as `PB-123`.
    */
   routeId: string;
+  /** Suppress live-task write controls for a read-only host. */
+  readOnly?: boolean;
   onDelete?: () => void;
 }
 
@@ -52,7 +54,7 @@ export function useCanonicalIssueUrl(routeId: string, identifier: string | undef
  *    the route and only the route — the inbox renders `IssueDetail` in a side
  *    panel, where replacing the URL would navigate the user out of the inbox.
  */
-export function IssueDetailRoute({ routeId, onDelete }: IssueDetailRouteProps) {
+export function IssueDetailRoute({ routeId, readOnly = false, onDelete }: IssueDetailRouteProps) {
   const wsId = useWorkspaceId();
   const { canonicalId, issue, isResolving, notFound } = useCanonicalIssue(wsId, routeId);
 
@@ -66,5 +68,5 @@ export function IssueDetailRoute({ routeId, onDelete }: IssueDetailRouteProps) {
   // unbounded request loop that never settles. See `CanonicalIssue.notFound`.
   if (notFound || !canonicalId) return <IssueNotFound showBackLink={!onDelete} />;
 
-  return <IssueDetail issueId={canonicalId} onDelete={onDelete} />;
+  return <IssueDetail issueId={canonicalId} readOnly={readOnly} onDelete={onDelete} />;
 }

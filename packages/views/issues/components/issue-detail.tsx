@@ -1007,6 +1007,8 @@ function SubIssueDisplayPopover({
 
 interface IssueDetailProps {
   issueId: string;
+  /** Suppress live-task write controls for read-only hosts such as preview. */
+  readOnly?: boolean;
   onDelete?: () => void;
   /** Called after the issue is marked as done via the toolbar button. */
   onDone?: () => void;
@@ -1152,7 +1154,7 @@ export function IssueDetailSkeleton({ leading }: { leading?: ReactNode } = {}) {
 // IssueDetail
 // ---------------------------------------------------------------------------
 
-export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = true, layoutId = "patchbay_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction }: IssueDetailProps) {
+export function IssueDetail({ issueId, readOnly = false, onDelete, onDone, defaultSidebarOpen = true, layoutId = "patchbay_issue_detail_layout", highlightCommentId, highlightRequestToken, leadingAction }: IssueDetailProps) {
   const { t } = useT("issues");
   const timeAgo = useTimeAgo();
   const id = issueId;
@@ -3476,7 +3478,7 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
 
             {/* Live agent turn — same thread as human comments, not a chip
                 above the composer. */}
-            <IssueAgentWorkingStatus issueId={id} />
+            <IssueAgentWorkingStatus issueId={id} readOnly={readOnly} />
 
           </div>
 

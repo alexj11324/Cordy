@@ -187,8 +187,10 @@ function IssueAgentWorkingCard({
  */
 export const IssueAgentWorkingStatus = memo(function IssueAgentWorkingStatus({
   issueId,
+  readOnly = false,
 }: {
   issueId: string;
+  readOnly?: boolean;
 }) {
   const tasks = useIssueAgentTasks(issueId);
   const liveTasks = useMemo(
@@ -199,7 +201,10 @@ export const IssueAgentWorkingStatus = memo(function IssueAgentWorkingStatus({
   useEffect(() => {
     setOpened(null);
   }, [issueId]);
-  if (liveTasks.length === 0 && !opened) return null;
+  // A live task's reply composer and conversation dialog are write paths.
+  // Keep the shared status surface available to writable hosts, but do not
+  // advertise controls that the preview API intentionally cannot persist.
+  if (readOnly || (liveTasks.length === 0 && !opened)) return null;
 
   return (
     <>

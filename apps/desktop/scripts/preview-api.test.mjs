@@ -462,10 +462,24 @@ describe("local Vite preview API", () => {
         "GET",
         `/api/autopilots/${autopilot.id}/runs`,
       );
+      const autopilotDetail = await call(
+        "GET",
+        `/api/autopilots/${autopilot.id}`,
+      );
       const oldestRun = Math.min(
         ...autopilotRuns.body.runs.map((run) => Date.parse(run.triggered_at)),
       );
       expect(Date.parse(autopilot.created_at)).toBeLessThan(oldestRun);
+      expect(autopilotDetail.body.triggers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            created_at: expect.any(String),
+          }),
+        ]),
+      );
+      for (const trigger of autopilotDetail.body.triggers) {
+        expect(Date.parse(trigger.created_at)).toBeLessThanOrEqual(oldestRun);
+      }
       expect(autopilot).toMatchObject({
         last_run_at: autopilotRuns.body.runs[0].triggered_at,
         last_run_status: autopilotRuns.body.runs[0].status,
