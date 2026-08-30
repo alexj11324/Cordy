@@ -317,11 +317,7 @@ fn stamp_task_identity(req: &mut Request, identity: TaskIdentity) {
     set_header(req, "x-agent-id", &identity.agent_id.to_string());
     set_header(req, "x-task-id", &identity.task_id.to_string());
     set_header(req, "x-workspace-id", &identity.workspace_id.to_string());
-    set_header(
-        req,
-        "x-capability-lease-id",
-        &identity.lease_id.to_string(),
-    );
+    set_header(req, "x-capability-lease-id", &identity.lease_id.to_string());
     if let Some(on_behalf_of_user_id) = identity.on_behalf_of_user_id {
         set_header(
             req,

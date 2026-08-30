@@ -108,7 +108,10 @@ fn remove_legacy_task_credentials(env_root: &str) -> anyhow::Result<()> {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
             Err(error) => {
                 return Err(error).with_context(|| {
-                    format!("remove legacy OpenClaw task credential file {}", path.display())
+                    format!(
+                        "remove legacy OpenClaw task credential file {}",
+                        path.display()
+                    )
                 });
             }
         }

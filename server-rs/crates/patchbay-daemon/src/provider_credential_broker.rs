@@ -272,7 +272,10 @@ async fn proxy_provider_request_inner(
         .await
         .context("read provider request")?;
     let payload: Value = serde_json::from_slice(&body).context("parse provider request JSON")?;
-    anyhow::ensure!(payload.is_object(), "provider request must be a JSON object");
+    anyhow::ensure!(
+        payload.is_object(),
+        "provider request must be a JSON object"
+    );
     let local_path = parts
         .uri
         .path_and_query()
@@ -822,9 +825,7 @@ fn validate_provider_operation(
             "/openai/v1",
             &["/responses", "/responses/compact", "/chat/completions"],
         ),
-        CredentialMode::CodexOauth => {
-            ("/openai", &["/responses", "/responses/compact"])
-        }
+        CredentialMode::CodexOauth => ("/openai", &["/responses", "/responses/compact"]),
         CredentialMode::AnthropicApiKey | CredentialMode::ClaudeOauth => {
             ("/anthropic", &["/v1/messages", "/v1/messages/count_tokens"])
         }
