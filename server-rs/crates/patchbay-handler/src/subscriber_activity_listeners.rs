@@ -36,24 +36,24 @@ struct Mention {
     user_id: String,
 }
 
-pub(crate) async fn handle_event(pool: &PgPool, bus: &Bus, event: &Event) {
+pub(crate) async fn handle_event(pool: &PgPool, bus: &Bus, event: &Event) -> anyhow::Result<()> {
     match event.event_type.as_str() {
         patchbay_protocol::EVENT_ISSUE_CREATED => handle_issue_created(pool, bus, event).await,
         patchbay_protocol::EVENT_ISSUE_UPDATED => handle_issue_updated(pool, bus, event).await,
         patchbay_protocol::EVENT_COMMENT_CREATED => handle_comment_created(pool, bus, event).await,
         patchbay_protocol::EVENT_TASK_COMPLETED => {
-            handle_task_activity(pool, bus, event, "task_completed").await;
+            handle_task_activity(pool, bus, event, "task_completed").await
         }
         patchbay_protocol::EVENT_TASK_FAILED => {
-            handle_task_activity(pool, bus, event, "task_failed").await;
+            handle_task_activity(pool, bus, event, "task_failed").await
         }
-        _ => {}
+        _ => Ok(()),
     }
 }
 
-async fn handle_issue_created(pool: &PgPool, bus: &Bus, event: &Event) {
+async fn handle_issue_created(pool: &PgPool, bus: &Bus, event: &Event) -> anyhow::Result<()> {
     let Some(fields) = scoped_issue(event) else {
-        return;
+        return Ok(());
     };
 
     // Go registration order: creator, direct assignee, mentions, delegated
@@ -68,7 +68,7 @@ async fn handle_issue_created(pool: &PgPool, bus: &Bus, event: &Event) {
         fields.creator_id,
         "creator",
     )
-    .await;
+    .await?;
     if let (Some(user_type), Some(user_id)) = (fields.assignee_type.as_deref(), fields.assignee_id)
     {
         if is_assignment_recipient(user_type)
@@ -83,13 +83,13 @@ async fn handle_issue_created(pool: &PgPool, bus: &Bus, event: &Event) {
                 user_id,
                 "assignee",
             )
-            .await;
+            .await?;
         }
     }
     if let Some(description) = fields.description.as_deref() {
         for mention in parse_mentions(description) {
             let Ok(user_id) = mention.user_id.parse() else {
-                return;
+                return Ok(());
             };
             add_subscriber(
                 pool,
@@ -100,10 +100,10 @@ async fn handle_issue_created(pool: &PgPool, bus: &Bus, event: &Event) {
                 user_id,
                 "mentioned",
             )
-            .await;
+            .await?;
         }
     }
-    subscribe_delegated_human(pool, bus, fields.workspace_id, fields.id).await;
+    subscribe_delegated_human(pool, bus, fields.workspace_id, fields.id).await?;
 
     // Go records creation activity only for handler.IssueResponse, not the map
     // used by Autopilot. The handler payload uniquely carries `labels`.
@@ -113,13 +113,14 @@ async fn handle_issue_created(pool: &PgPool, bus: &Bus, event: &Event) {
         .and_then(Value::as_object)
         .is_some_and(|issue| issue.contains_key("labels"))
     {
-        create_activity(pool, bus, event, &fields, "created", json!({})).await;
+        create_activity(pool, bus, event, &fields, "created", json!({})).await?;
     }
+    Ok(())
 }
 
-async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
+async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) -> anyhow::Result<()> {
     let Some(fields) = scoped_issue(event) else {
-        return;
+        return Ok(());
     };
 
     if flag(&event.payload, "assignee_changed") {
@@ -136,7 +137,7 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
                     user_id,
                     "assignee",
                 )
-                .await;
+                .await?;
             }
         }
     }
@@ -156,7 +157,7 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
                     continue;
                 }
                 let Ok(user_id) = mention.user_id.parse() else {
-                    return;
+                    return Ok(());
                 };
                 add_subscriber(
                     pool,
@@ -167,7 +168,7 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
                     user_id,
                     "mentioned",
                 )
-                .await;
+                .await?;
             }
         }
     }
@@ -175,7 +176,7 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
     // Handler events always carry this flag, including false. Background map
     // events omit it and Go deliberately excludes them from activity/inbox.
     if event.payload.get("priority_changed").is_none() {
-        return;
+        return Ok(());
     }
     let review_handoff = flag(&event.payload, "review_handoff");
     let reviewer_assignment = review_handoff || flag(&event.payload, "reviewer_changed");
@@ -193,7 +194,7 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
                     user_id,
                     "assignee",
                 )
-                .await;
+                .await?;
             }
         }
         let mut details = Map::new();
@@ -231,7 +232,7 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
             "review_handoff",
             Value::Object(details),
         )
-        .await;
+        .await?;
     }
     if flag(&event.payload, "status_changed") && !review_handoff {
         create_activity(
@@ -242,7 +243,7 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
             "status_changed",
             json!({"from": string(&event.payload, "prev_status"), "to": fields.status.as_str()}),
         )
-        .await;
+        .await?;
     }
     if flag(&event.payload, "priority_changed") {
         create_activity(
@@ -253,7 +254,7 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
             "priority_changed",
             json!({"from": string(&event.payload, "prev_priority"), "to": fields.priority.as_str()}),
         )
-        .await;
+        .await?;
     }
     if flag(&event.payload, "assignee_changed") && !review_handoff {
         let mut details = Map::new();
@@ -281,7 +282,7 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
             "assignee_changed",
             Value::Object(details),
         )
-        .await;
+        .await?;
     }
     if flag(&event.payload, "start_date_changed") {
         create_activity(
@@ -292,7 +293,7 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
             "start_date_changed",
             json!({"from": string(&event.payload, "prev_start_date"), "to": fields.start_date.as_deref().unwrap_or_default()}),
         )
-        .await;
+        .await?;
     }
     if flag(&event.payload, "due_date_changed") {
         create_activity(
@@ -303,7 +304,7 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
             "due_date_changed",
             json!({"from": string(&event.payload, "prev_due_date"), "to": fields.due_date.as_deref().unwrap_or_default()}),
         )
-        .await;
+        .await?;
     }
     if flag(&event.payload, "title_changed") {
         create_activity(
@@ -314,38 +315,39 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) {
             "title_changed",
             json!({"from": string(&event.payload, "prev_title"), "to": fields.title.as_str()}),
         )
-        .await;
+        .await?;
     }
     if flag(&event.payload, "description_changed") {
-        create_activity(pool, bus, event, &fields, "description_updated", json!({})).await;
+        create_activity(pool, bus, event, &fields, "description_updated", json!({})).await?;
     }
+    Ok(())
 }
 
-async fn handle_comment_created(pool: &PgPool, bus: &Bus, event: &Event) {
+async fn handle_comment_created(pool: &PgPool, bus: &Bus, event: &Event) -> anyhow::Result<()> {
     let Some(comment) = event.payload.get("comment") else {
-        return;
+        return Ok(());
     };
     let Some(issue_id) = uuid(comment, "issue_id") else {
-        return;
+        return Ok(());
     };
     let Some(author_id) = uuid(comment, "author_id") else {
-        return;
+        return Ok(());
     };
     let Some(author_type) = comment.get("author_type").and_then(Value::as_str) else {
-        return;
+        return Ok(());
     };
     if author_type == "system" {
-        return;
+        return Ok(());
     }
     let Some(workspace_id) = event_workspace(event) else {
-        return;
+        return Ok(());
     };
-    let Ok(Some(owner)) = issue::get_issue(pool, issue_id).await else {
-        return;
+    let Some(owner) = issue::get_issue(pool, issue_id).await? else {
+        return Ok(());
     };
     if owner.workspace_id != workspace_id {
         tracing::warn!(%issue_id, %workspace_id, "subscriber listener: comment workspace mismatch");
-        return;
+        return Ok(());
     }
     add_subscriber(
         pool,
@@ -356,7 +358,8 @@ async fn handle_comment_created(pool: &PgPool, bus: &Bus, event: &Event) {
         author_id,
         "commenter",
     )
-    .await;
+    .await?;
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -368,77 +371,53 @@ async fn add_subscriber(
     user_type: &str,
     user_id: Uuid,
     reason: &str,
-) {
-    match subscriber::add_issue_subscriber(pool, issue_id, user_type, user_id, reason).await {
-        Ok(0) => {}
-        Ok(_) => publish_subscriber_added(bus, workspace_id, issue_id, user_type, user_id, reason),
-        Err(error) => tracing::error!(
-            %error, %issue_id, user_type, %user_id, reason,
-            "subscriber listener: add failed"
-        ),
+) -> anyhow::Result<()> {
+    match subscriber::add_issue_subscriber(pool, issue_id, user_type, user_id, reason).await? {
+        0 => {}
+        _ => publish_subscriber_added(bus, workspace_id, issue_id, user_type, user_id, reason),
     }
+    Ok(())
 }
 
-async fn subscribe_delegated_human(pool: &PgPool, bus: &Bus, workspace_id: Uuid, issue_id: Uuid) {
-    let issue = match issue::get_issue(pool, issue_id).await {
-        Ok(Some(issue)) if issue.workspace_id == workspace_id => issue,
-        Ok(_) => return,
-        Err(error) => {
-            tracing::error!(%error, %issue_id, "delegated subscribe: load issue failed");
-            return;
-        }
+async fn subscribe_delegated_human(
+    pool: &PgPool,
+    bus: &Bus,
+    workspace_id: Uuid,
+    issue_id: Uuid,
+) -> anyhow::Result<()> {
+    let issue = match issue::get_issue(pool, issue_id).await? {
+        Some(issue) if issue.workspace_id == workspace_id => issue,
+        _ => return Ok(()),
     };
     let (Some(origin_type), Some(origin_id)) = (issue.origin_type.as_deref(), issue.origin_id)
     else {
-        return;
+        return Ok(());
     };
     if issue.creator_type != "agent" {
-        return;
+        return Ok(());
     }
-    let origin = match agent::get_agent_task_in_workspace(pool, origin_id, workspace_id).await {
-        Ok(Some(origin)) => origin,
-        Ok(None) => return,
-        Err(error) => {
-            tracing::debug!(%error, %issue_id, origin_type, "delegated subscribe: origin task not resolvable");
-            return;
-        }
+    let origin = match agent::get_agent_task_in_workspace(pool, origin_id, workspace_id).await? {
+        Some(origin) => origin,
+        None => return Ok(()),
     };
     let Some((human, reason)) = delegated_subscriber(SubscriptionFacts {
         creator_type: issue.creator_type.clone(),
         origin_type: origin_type.to_string(),
         origin_originator: origin.originator_user_id,
     }) else {
-        return;
+        return Ok(());
     };
 
-    let mut tx = match pool.begin().await {
-        Ok(tx) => tx,
-        Err(error) => {
-            tracing::error!(%error, %issue_id, "delegated subscribe: begin failed");
-            return;
-        }
-    };
-    if let Err(error) = subscriber::lock_subscriber_writes(&mut *tx, workspace_id, human).await {
-        tracing::error!(%error, %issue_id, "delegated subscribe: lock failed");
-        return;
-    }
+    let mut tx = pool.begin().await?;
+    subscriber::lock_subscriber_writes(&mut *tx, workspace_id, human).await?;
     let affected =
-        match subscriber::add_delegated_subscriber(&mut *tx, issue_id, human, reason, workspace_id)
-            .await
-        {
-            Ok(affected) => affected,
-            Err(error) => {
-                tracing::error!(%error, %issue_id, "delegated subscribe: insert failed");
-                return;
-            }
-        };
-    if let Err(error) = tx.commit().await {
-        tracing::error!(%error, %issue_id, "delegated subscribe: commit failed");
-        return;
-    }
+        subscriber::add_delegated_subscriber(&mut *tx, issue_id, human, reason, workspace_id)
+            .await?;
+    tx.commit().await?;
     if affected > 0 {
         publish_subscriber_added(bus, workspace_id, issue_id, "member", human, reason);
     }
+    Ok(())
 }
 
 fn publish_subscriber_added(
@@ -462,23 +441,24 @@ fn publish_subscriber_added(
     });
 }
 
-async fn handle_task_activity(pool: &PgPool, bus: &Bus, event: &Event, action: &str) {
+async fn handle_task_activity(
+    pool: &PgPool,
+    bus: &Bus,
+    event: &Event,
+    action: &str,
+) -> anyhow::Result<()> {
     let Some(issue_id) = uuid(&event.payload, "issue_id") else {
-        return;
+        return Ok(());
     };
     let Some(workspace_id) = event_workspace(event) else {
-        return;
+        return Ok(());
     };
-    let issue = match issue::get_issue(pool, issue_id).await {
-        Ok(Some(issue)) if issue.workspace_id == workspace_id => issue,
-        Ok(_) => return,
-        Err(error) => {
-            tracing::error!(%error, %issue_id, action, "activity listener: task issue load failed");
-            return;
-        }
+    let issue = match issue::get_issue(pool, issue_id).await? {
+        Some(issue) if issue.workspace_id == workspace_id => issue,
+        _ => return Ok(()),
     };
     let Some(actor_id) = uuid(&event.payload, "agent_id") else {
-        return;
+        return Ok(());
     };
     insert_activity(
         pool,
@@ -491,7 +471,7 @@ async fn handle_task_activity(pool: &PgPool, bus: &Bus, event: &Event, action: &
         action,
         json!({}),
     )
-    .await;
+    .await
 }
 
 async fn create_activity(
@@ -501,13 +481,13 @@ async fn create_activity(
     fields: &IssueFields,
     action: &str,
     details: Value,
-) {
+) -> anyhow::Result<()> {
     let actor_type = (!event.actor_type.is_empty()).then_some(event.actor_type.as_str());
     let actor_id = if event.actor_id.is_empty() {
         None
     } else {
         let Ok(actor_id) = event.actor_id.parse() else {
-            return;
+            return Ok(());
         };
         Some(actor_id)
     };
@@ -522,7 +502,7 @@ async fn create_activity(
         action,
         details,
     )
-    .await;
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -536,7 +516,7 @@ async fn insert_activity(
     actor_id: Option<Uuid>,
     action: &str,
     details: Value,
-) {
+) -> anyhow::Result<()> {
     match activity::create_activity(
         pool,
         workspace_id,
@@ -547,14 +527,12 @@ async fn insert_activity(
         &details,
         durable_coordination_activity_id(event).unwrap_or_else(patchbay_db::dbid::new_v7),
     )
-    .await
+    .await?
     {
-        Ok(Some(row)) => publish_activity(bus, event, row),
-        Ok(None) => {}
-        Err(error) => {
-            tracing::error!(%error, %issue_id, action, "activity listener: create failed")
-        }
+        Some(row) => publish_activity(bus, event, row),
+        None => {}
     }
+    Ok(())
 }
 
 fn publish_activity(bus: &Bus, original: &Event, row: ActivityLog) {

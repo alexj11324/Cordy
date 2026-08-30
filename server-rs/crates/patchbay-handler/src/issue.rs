@@ -3211,6 +3211,23 @@ fn move_position(
     Ok(position)
 }
 
+const MOVE_ALLOWED_FIELDS: &[&str] = &[
+    "status",
+    "assignee_type",
+    "assignee_id",
+    "parent_issue_id",
+    "project_id",
+    "before_id",
+    "after_id",
+    "expected_revision",
+    "suppress_run",
+    "handoff_note",
+];
+
+fn is_allowed_move_field(field: &str) -> bool {
+    MOVE_ALLOWED_FIELDS.contains(&field)
+}
+
 async fn move_issue(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
@@ -3226,20 +3243,7 @@ async fn move_issue(
         Ok(fields) => fields,
         Err(response) => return response,
     };
-    const ALLOWED: &[&str] = &[
-        "status",
-        "assignee_type",
-        "assignee_id",
-        "parent_issue_id",
-        "project_id",
-        "before_id",
-        "after_id",
-        "expected_revision",
-    ];
-    if let Some(field) = fields
-        .keys()
-        .find(|field| !ALLOWED.contains(&field.as_str()))
-    {
+    if let Some(field) = fields.keys().find(|field| !is_allowed_move_field(field)) {
         return error_response(
             StatusCode::BAD_REQUEST,
             &format!("unsupported move field: {field}"),
@@ -8088,6 +8092,13 @@ mod tests {
             update_field::<String>(&fields, "project_id").unwrap(),
             UpdateField::Missing
         ));
+    }
+
+    #[test]
+    fn move_request_allows_review_run_controls() {
+        assert!(is_allowed_move_field("suppress_run"));
+        assert!(is_allowed_move_field("handoff_note"));
+        assert!(!is_allowed_move_field("move_intent"));
     }
 
     #[test]

@@ -45,34 +45,32 @@ struct InboxSpec<'a> {
     details: &'a Value,
 }
 
-type ListenerFuture = std::pin::Pin<Box<dyn Future<Output = ()> + Send>>;
+type ListenerFuture = std::pin::Pin<Box<dyn Future<Output = anyhow::Result<()>> + Send>>;
 
-pub(crate) async fn handle_event(pool: PgPool, bus: Arc<Bus>, event: Event) {
+pub(crate) async fn handle_event(pool: PgPool, bus: Arc<Bus>, event: Event) -> anyhow::Result<()> {
     match event.event_type.as_str() {
         patchbay_protocol::EVENT_ISSUE_CREATED => handle_issue_created(pool, bus, event).await,
         patchbay_protocol::EVENT_ISSUE_UPDATED => handle_issue_updated(pool, bus, event).await,
         patchbay_protocol::EVENT_COMMENT_CREATED => handle_comment_created(pool, bus, event).await,
         patchbay_protocol::EVENT_ISSUE_REACTION_ADDED => {
-            handle_issue_reaction_added(pool, bus, event).await;
+            handle_issue_reaction_added(pool, bus, event).await
         }
         patchbay_protocol::EVENT_REACTION_ADDED => handle_reaction_added(pool, bus, event).await,
         patchbay_protocol::EVENT_TASK_FAILED => handle_task_failed(pool, bus, event).await,
-        _ => {}
+        _ => Ok(()),
     }
 }
 
 fn handle_issue_created(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFuture {
     Box::pin(async move {
         let Some(fields) = handler_issue(&event, true) else {
-            return;
+            return Ok(());
         };
         if issue::get_issue_in_workspace(&pool, fields.id, fields.workspace_id)
-            .await
-            .ok()
-            .flatten()
+            .await?
             .is_none()
         {
-            return;
+            return Ok(());
         }
         let mut skip = HashSet::from_iter(event_actor(&event));
         if let (Some(recipient_type), Some(recipient_id)) =
@@ -96,7 +94,7 @@ fn handle_issue_created(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
                         details: &json!({}),
                     },
                 )
-                .await;
+                .await?;
             }
         }
         if let Some(description) = fields.description.as_deref() {
@@ -109,23 +107,22 @@ fn handle_issue_created(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
                 &skip,
                 &json!({}),
             )
-            .await;
+            .await?;
         }
+        Ok(())
     })
 }
 
 fn handle_issue_updated(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFuture {
     Box::pin(async move {
         let Some(fields) = handler_issue(&event, false) else {
-            return;
+            return Ok(());
         };
         if issue::get_issue_in_workspace(&pool, fields.id, fields.workspace_id)
-            .await
-            .ok()
-            .flatten()
+            .await?
             .is_none()
         {
-            return;
+            return Ok(());
         }
         if flag(&event.payload, "assignee_changed") {
             let mut details = Map::new();
@@ -168,7 +165,7 @@ fn handle_issue_updated(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
                             details: &details,
                         },
                     )
-                    .await;
+                    .await?;
                 }
             }
             let previous_type = optional_string(&event.payload, "prev_assignee_type");
@@ -191,7 +188,7 @@ fn handle_issue_updated(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
                             details: &details,
                         },
                     )
-                    .await;
+                    .await?;
                 }
             }
             let exclude = previous_id.into_iter().chain(fields.assignee_id).collect();
@@ -206,7 +203,7 @@ fn handle_issue_updated(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
                 "",
                 &details,
             )
-            .await;
+            .await?;
         }
         if flag(&event.payload, "review_handoff") || flag(&event.payload, "reviewer_changed") {
             if let (Some(recipient_type), Some(recipient_id)) =
@@ -234,7 +231,7 @@ fn handle_issue_updated(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
                             details: &details,
                         },
                     )
-                    .await;
+                    .await?;
                 }
             }
         }
@@ -253,7 +250,7 @@ fn handle_issue_updated(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
                 "",
                 &details,
             )
-            .await;
+            .await?;
             let effective = patchbay_service::issue_status::effective(
                 &pool,
                 fields.workspace_id,
@@ -261,7 +258,7 @@ fn handle_issue_updated(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
             )
             .await;
             if matches!(effective.as_str(), "in_review" | "done" | "cancelled") {
-                archive_task_failures(&pool, &bus, fields.workspace_id, fields.id).await;
+                archive_task_failures(&pool, &bus, fields.workspace_id, fields.id).await?;
             }
         }
         if flag(&event.payload, "priority_changed") {
@@ -278,7 +275,7 @@ fn handle_issue_updated(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
                 "",
                 &details,
             )
-            .await;
+            .await?;
         }
         if flag(&event.payload, "start_date_changed") {
             let details = json!({"from": string(&event.payload, "prev_start_date"), "to": fields.start_date.as_deref().unwrap_or_default()});
@@ -293,7 +290,7 @@ fn handle_issue_updated(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
                 "",
                 &details,
             )
-            .await;
+            .await?;
         }
         if flag(&event.payload, "due_date_changed") {
             let details = json!({"from": string(&event.payload, "prev_due_date"), "to": fields.due_date.as_deref().unwrap_or_default()});
@@ -308,7 +305,7 @@ fn handle_issue_updated(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
                 "",
                 &details,
             )
-            .await;
+            .await?;
         }
         if flag(&event.payload, "description_changed") {
             let previous = optional_string(&event.payload, "prev_description")
@@ -322,25 +319,26 @@ fn handle_issue_updated(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
                     })
                     .collect();
                 let skip = HashSet::from_iter(event_actor(&event));
-                notify_mentions(&pool, &bus, &event, added, &fields, &skip, &json!({})).await;
+                notify_mentions(&pool, &bus, &event, added, &fields, &skip, &json!({})).await?;
             }
         }
+        Ok(())
     })
 }
 
 fn handle_comment_created(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFuture {
     Box::pin(async move {
         let Some(comment) = event.payload.get("comment") else {
-            return;
+            return Ok(());
         };
         if string(comment, "author_type") == "system" {
-            return;
+            return Ok(());
         }
         let Some(issue_id) = uuid(comment, "issue_id") else {
-            return;
+            return Ok(());
         };
-        let Some(issue) = scoped_db_issue(&pool, &event, issue_id).await else {
-            return;
+        let Some(issue) = scoped_db_issue(&pool, &event, issue_id).await? else {
+            return Ok(());
         };
         let comment_id = optional_string(comment, "id");
         let content = string(comment, "content");
@@ -357,7 +355,7 @@ fn handle_comment_created(pool: PgPool, bus: Arc<Bus>, event: Event) -> Listener
             &content,
             &details,
         )
-        .await;
+        .await?;
         let skip = HashSet::from_iter(event_actor(&event));
         notify_mentions(
             &pool,
@@ -368,24 +366,25 @@ fn handle_comment_created(pool: PgPool, bus: Arc<Bus>, event: Event) -> Listener
             &skip,
             &details,
         )
-        .await;
+        .await?;
+        Ok(())
     })
 }
 
 fn handle_issue_reaction_added(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFuture {
     Box::pin(async move {
         let Some(issue_id) = uuid(&event.payload, "issue_id") else {
-            return;
+            return Ok(());
         };
-        let Some(issue) = scoped_db_issue(&pool, &event, issue_id).await else {
-            return;
+        let Some(issue) = scoped_db_issue(&pool, &event, issue_id).await? else {
+            return Ok(());
         };
         let Some(recipient_id) = uuid(&event.payload, "creator_id") else {
-            return;
+            return Ok(());
         };
         let recipient_type = string(&event.payload, "creator_type");
         if recipient_type.is_empty() {
-            return;
+            return Ok(());
         }
         let emoji = event
             .payload
@@ -409,24 +408,25 @@ fn handle_issue_reaction_added(pool: PgPool, bus: Arc<Bus>, event: Event) -> Lis
                 details: &details,
             },
         )
-        .await;
+        .await?;
+        Ok(())
     })
 }
 
 fn handle_reaction_added(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFuture {
     Box::pin(async move {
         let Some(issue_id) = uuid(&event.payload, "issue_id") else {
-            return;
+            return Ok(());
         };
-        let Some(issue) = scoped_db_issue(&pool, &event, issue_id).await else {
-            return;
+        let Some(issue) = scoped_db_issue(&pool, &event, issue_id).await? else {
+            return Ok(());
         };
         let Some(recipient_id) = uuid(&event.payload, "comment_author_id") else {
-            return;
+            return Ok(());
         };
         let recipient_type = string(&event.payload, "comment_author_type");
         if recipient_type.is_empty() {
-            return;
+            return Ok(());
         }
         let emoji = event
             .payload
@@ -452,20 +452,21 @@ fn handle_reaction_added(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerF
                 details: &details,
             },
         )
-        .await;
+        .await?;
+        Ok(())
     })
 }
 
 fn handle_task_failed(pool: PgPool, bus: Arc<Bus>, mut event: Event) -> ListenerFuture {
     Box::pin(async move {
         let Some(issue_id) = uuid(&event.payload, "issue_id") else {
-            return;
+            return Ok(());
         };
-        let Some(issue) = scoped_db_issue(&pool, &event, issue_id).await else {
-            return;
+        let Some(issue) = scoped_db_issue(&pool, &event, issue_id).await? else {
+            return Ok(());
         };
         let Some(agent_id) = uuid(&event.payload, "agent_id") else {
-            return;
+            return Ok(());
         };
         event.actor_type = "agent".into();
         event.actor_id = agent_id.to_string();
@@ -481,7 +482,8 @@ fn handle_task_failed(pool: PgPool, bus: Arc<Bus>, mut event: Event) -> Listener
             "",
             &json!({}),
         )
-        .await;
+        .await?;
+        Ok(())
     })
 }
 
@@ -496,31 +498,29 @@ async fn notify_subscribers(
     severity: &str,
     body: &str,
     details: &Value,
-) {
+) -> anyhow::Result<()> {
     let (notified, suppressed) = notify_issue_subscribers(
         pool, bus, event, fields, fields.id, fields.id, exclude, notif_type, severity, body,
         details,
     )
-    .await;
+    .await?;
     if notif_type != "status_changed" {
-        return;
+        return Ok(());
     }
-    let Ok(Some(child)) = issue::get_issue(pool, fields.id).await else {
-        return;
+    let Some(child) = issue::get_issue(pool, fields.id).await? else {
+        return Ok(());
     };
     if child.workspace_id != fields.workspace_id {
-        return;
+        return Ok(());
     }
     let Some(parent_id) = child.parent_issue_id else {
-        return;
+        return Ok(());
     };
     if issue::get_issue_in_workspace(pool, parent_id, fields.workspace_id)
-        .await
-        .ok()
-        .flatten()
+        .await?
         .is_none()
     {
-        return;
+        return Ok(());
     }
     let mut parent_exclude = exclude.clone();
     parent_exclude.extend(notified);
@@ -538,7 +538,8 @@ async fn notify_subscribers(
         body,
         details,
     )
-    .await;
+    .await?;
+    Ok(())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -554,24 +555,18 @@ async fn notify_issue_subscribers(
     severity: &str,
     body: &str,
     details: &Value,
-) -> (HashSet<Uuid>, HashSet<Uuid>) {
+) -> anyhow::Result<(HashSet<Uuid>, HashSet<Uuid>)> {
     let mut notified = HashSet::new();
     let mut suppressed = HashSet::new();
     let effective =
         patchbay_service::issue_status::effective(pool, fields.workspace_id, &fields.status).await;
-    let subs = match subscriber::list_issue_subscribers(pool, subscriber_issue_id).await {
-        Ok(subs) => subs,
-        Err(error) => {
-            tracing::error!(%error, %subscriber_issue_id, "notification listener: list subscribers failed");
-            return (notified, suppressed);
-        }
-    };
+    let subs = subscriber::list_issue_subscribers(pool, subscriber_issue_id).await?;
     let member_ids = subs
         .iter()
         .filter(|sub| sub.user_type == "member")
         .map(|sub| sub.user_id)
         .collect::<Vec<_>>();
-    let prefs = load_preferences(pool, fields.workspace_id, member_ids).await;
+    let prefs = load_preferences(pool, fields.workspace_id, member_ids).await?;
     let actor_id = event_actor(event);
     for sub in subs {
         if sub.user_type != "member"
@@ -601,35 +596,46 @@ async fn notify_issue_subscribers(
             body: (!body.is_empty()).then_some(body),
             details,
         };
-        if create_and_publish(pool, bus, event, spec).await {
+        if create_and_publish(pool, bus, event, spec).await? {
             notified.insert(sub.user_id);
         }
     }
-    (notified, suppressed)
+    Ok((notified, suppressed))
 }
 
-async fn notify_direct(pool: &PgPool, bus: &Bus, event: &Event, spec: InboxSpec<'_>) {
+async fn notify_direct(
+    pool: &PgPool,
+    bus: &Bus,
+    event: &Event,
+    spec: InboxSpec<'_>,
+) -> anyhow::Result<()> {
     if event_actor(event) == Some(spec.recipient_id) {
-        return;
+        return Ok(());
     }
     let Some(workspace_id) = event_workspace(event) else {
-        return;
+        return Ok(());
     };
     if spec.recipient_type == "member" {
-        let prefs = load_preferences(pool, workspace_id, vec![spec.recipient_id]).await;
+        let prefs = load_preferences(pool, workspace_id, vec![spec.recipient_id]).await?;
         if prefs
             .get(&spec.recipient_id)
             .is_some_and(|p| is_muted(p, spec.notif_type))
         {
-            return;
+            return Ok(());
         }
     }
-    create_and_publish(pool, bus, event, spec).await;
+    create_and_publish(pool, bus, event, spec).await?;
+    Ok(())
 }
 
-async fn create_and_publish(pool: &PgPool, bus: &Bus, event: &Event, spec: InboxSpec<'_>) -> bool {
+async fn create_and_publish(
+    pool: &PgPool,
+    bus: &Bus,
+    event: &Event,
+    spec: InboxSpec<'_>,
+) -> anyhow::Result<bool> {
     let Some(workspace_id) = event_workspace(event) else {
-        return false;
+        return Ok(false);
     };
     let actor_type = (!event.actor_type.is_empty()).then_some(event.actor_type.as_str());
     let actor_id = if event.actor_id.is_empty() {
@@ -652,18 +658,13 @@ async fn create_and_publish(pool: &PgPool, bus: &Bus, event: &Event, spec: Inbox
         spec.details,
         durable_coordination_inbox_id(event, &spec),
     )
-    .await
+    .await?
     {
-        Ok(Some(item)) => item,
-        Ok(None) => return false,
-        Err(error) => {
-            tracing::error!(%error, issue_id = %spec.issue_id, recipient_id = %spec.recipient_id,
-                notif_type = spec.notif_type, "notification listener: inbox create failed");
-            return false;
-        }
+        Some(item) => item,
+        None => return Ok(false),
     };
     publish_inbox(bus, event, item, spec.issue_status);
-    true
+    Ok(true)
 }
 
 async fn notify_mentions(
@@ -674,9 +675,9 @@ async fn notify_mentions(
     fields: &IssueFields,
     skip: &HashSet<Uuid>,
     details: &Value,
-) {
+) -> anyhow::Result<()> {
     let Some(workspace_id) = event_workspace(event) else {
-        return;
+        return Ok(());
     };
     let mut recipients = HashSet::new();
     let mut all = false;
@@ -693,35 +694,25 @@ async fn notify_mentions(
                     continue;
                 };
                 if team::get_team_in_workspace(pool, id, workspace_id)
-                    .await
-                    .ok()
-                    .flatten()
+                    .await?
                     .is_none()
                 {
                     continue;
                 }
-                match team::list_team_members(pool, id).await {
-                    Ok(members) => recipients.extend(
-                        members
-                            .into_iter()
-                            .filter(|m| m.member_type == "member")
-                            .map(|m| m.member_id),
-                    ),
-                    Err(error) => {
-                        tracing::error!(%error, team_id = %id, "notification listener: team expansion failed")
-                    }
-                }
+                let members = team::list_team_members(pool, id).await?;
+                recipients.extend(
+                    members
+                        .into_iter()
+                        .filter(|m| m.member_type == "member")
+                        .map(|m| m.member_id),
+                );
             }
             _ => {}
         }
     }
     if all {
-        match member::list_members(pool, workspace_id).await {
-            Ok(members) => recipients.extend(members.into_iter().map(|m| m.user_id)),
-            Err(error) => {
-                tracing::error!(%error, %workspace_id, "notification listener: all expansion failed")
-            }
-        }
+        let members = member::list_members(pool, workspace_id).await?;
+        recipients.extend(members.into_iter().map(|m| m.user_id));
     }
     let actor = event_actor(event);
     let candidates = recipients
@@ -729,7 +720,7 @@ async fn notify_mentions(
         .copied()
         .filter(|id| Some(*id) != actor && !skip.contains(id))
         .collect();
-    let prefs = load_preferences(pool, workspace_id, candidates).await;
+    let prefs = load_preferences(pool, workspace_id, candidates).await?;
     for recipient_id in recipients {
         if Some(recipient_id) == actor || skip.contains(&recipient_id) {
             continue;
@@ -756,25 +747,19 @@ async fn notify_mentions(
                 details,
             },
         )
-        .await;
+        .await?;
     }
+    Ok(())
 }
 
-async fn archive_task_failures(pool: &PgPool, bus: &Bus, workspace_id: Uuid, issue_id: Uuid) {
-    let rows = match inbox::archive_inbox_by_issue_and_type(
-        pool,
-        workspace_id,
-        issue_id,
-        "task_failed",
-    )
-    .await
-    {
-        Ok(rows) => rows,
-        Err(error) => {
-            tracing::error!(%error, %workspace_id, %issue_id, "notification listener: archive task failures failed");
-            return;
-        }
-    };
+async fn archive_task_failures(
+    pool: &PgPool,
+    bus: &Bus,
+    workspace_id: Uuid,
+    issue_id: Uuid,
+) -> anyhow::Result<()> {
+    let rows =
+        inbox::archive_inbox_by_issue_and_type(pool, workspace_id, issue_id, "task_failed").await?;
     let mut counts = HashMap::<Uuid, usize>::new();
     for row in rows {
         if row.recipient_type == "member" {
@@ -792,36 +777,31 @@ async fn archive_task_failures(pool: &PgPool, bus: &Bus, workspace_id: Uuid, iss
             ..Default::default()
         });
     }
+    Ok(())
 }
 
 async fn load_preferences(
     pool: &PgPool,
     workspace_id: Uuid,
     user_ids: Vec<Uuid>,
-) -> HashMap<Uuid, HashMap<String, String>> {
+) -> anyhow::Result<HashMap<Uuid, HashMap<String, String>>> {
     if user_ids.is_empty() {
-        return HashMap::new();
+        return Ok(HashMap::new());
     }
-    let rows = match notification_preference::list_notification_preferences_by_users(
+    let rows = notification_preference::list_notification_preferences_by_users(
         pool,
         workspace_id,
         user_ids,
     )
-    .await
-    {
-        Ok(rows) => rows,
-        Err(error) => {
-            tracing::error!(%error, %workspace_id, "notification listener: load preferences failed");
-            return HashMap::new();
-        }
-    };
-    rows.into_iter()
+    .await?;
+    Ok(rows
+        .into_iter()
         .filter_map(|row| {
             serde_json::from_value(row.preferences)
                 .ok()
                 .map(|prefs| (row.user_id, prefs))
         })
-        .collect()
+        .collect())
 }
 
 fn publish_inbox(bus: &Bus, original: &Event, item: InboxItem, issue_status: &str) {
@@ -874,12 +854,11 @@ fn handler_issue(event: &Event, created: bool) -> Option<IssueFields> {
     })
 }
 
-async fn scoped_db_issue(pool: &PgPool, event: &Event, id: Uuid) -> Option<Issue> {
-    let workspace_id = event_workspace(event)?;
-    issue::get_issue_in_workspace(pool, id, workspace_id)
-        .await
-        .ok()
-        .flatten()
+async fn scoped_db_issue(pool: &PgPool, event: &Event, id: Uuid) -> anyhow::Result<Option<Issue>> {
+    let Some(workspace_id) = event_workspace(event) else {
+        return Ok(None);
+    };
+    Ok(issue::get_issue_in_workspace(pool, id, workspace_id).await?)
 }
 
 fn fields_from_issue(issue: Issue) -> IssueFields {
@@ -944,14 +923,61 @@ fn durable_coordination_inbox_id(event: &Event, spec: &InboxSpec<'_>) -> Uuid {
     else {
         return patchbay_db::dbid::new_v7();
     };
+    let publication = coordination_publication(event);
+    let transition = coordination_reviewer_transition(event, publication);
     Uuid::new_v5(
         &Uuid::NAMESPACE_OID,
         format!(
-            "patchbay:coordination:inbox:{event_id}:{}:{}:{}:{}",
+            "patchbay:coordination:inbox:{event_id}:{publication}{transition}:{}:{}:{}:{}",
             spec.recipient_type, spec.recipient_id, spec.notif_type, spec.issue_id
         )
         .as_bytes(),
     )
+}
+
+fn coordination_publication(event: &Event) -> &str {
+    event
+        .payload
+        .get("coordination_publication")
+        .and_then(Value::as_str)
+        .unwrap_or(if flag(&event.payload, "review_handoff") {
+            "review_handoff"
+        } else if flag(&event.payload, "reviewer_changed") {
+            "reviewer_replacement"
+        } else {
+            "coordination"
+        })
+}
+
+fn coordination_reviewer_transition(event: &Event, publication: &str) -> String {
+    if !matches!(publication, "review_handoff" | "reviewer_replacement") {
+        return String::new();
+    }
+    let (previous_type_key, previous_id_key) = if publication == "review_handoff" {
+        ("prev_assignee_type", "prev_assignee_id")
+    } else {
+        ("prev_reviewer_type", "prev_reviewer_id")
+    };
+    let previous_type = event
+        .payload
+        .get(previous_type_key)
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let previous_id = event
+        .payload
+        .get(previous_id_key)
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let issue = event.payload.get("issue");
+    let reviewer_type = issue
+        .and_then(|issue| issue.get("reviewer_type"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let reviewer_id = issue
+        .and_then(|issue| issue.get("reviewer_id"))
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    format!(":{previous_type}:{previous_id}->{reviewer_type}:{reviewer_id}")
 }
 
 fn is_muted(prefs: &HashMap<String, String>, notif_type: &str) -> bool {
@@ -1052,11 +1078,20 @@ mod tests {
 
     #[test]
     fn reviewer_replacement_notifications_are_idempotent_per_recipient() {
+        let previous_reviewer_id = "55555555-5555-4555-8555-555555555555";
+        let next_reviewer_id = "66666666-6666-4666-8666-666666666666";
         let event = Event {
             task_id: "11111111-1111-4111-8111-111111111111".into(),
             payload: json!({
                 "reviewer_changed": true,
+                "coordination_publication": "reviewer_replacement",
                 "coordination_event_id": "11111111-1111-4111-8111-111111111111",
+                "prev_reviewer_type": "agent",
+                "prev_reviewer_id": previous_reviewer_id,
+                "issue": {
+                    "reviewer_type": "agent",
+                    "reviewer_id": next_reviewer_id,
+                },
             }),
             ..Default::default()
         };
@@ -1092,6 +1127,24 @@ mod tests {
         assert_ne!(
             durable_coordination_inbox_id(&event, &spec),
             durable_coordination_inbox_id(&event, &other)
+        );
+        let replacement_after_that = Event {
+            payload: json!({
+                "reviewer_changed": true,
+                "coordination_publication": "reviewer_replacement",
+                "coordination_event_id": "11111111-1111-4111-8111-111111111111",
+                "prev_reviewer_type": "agent",
+                "prev_reviewer_id": next_reviewer_id,
+                "issue": {
+                    "reviewer_type": "agent",
+                    "reviewer_id": "77777777-7777-4777-8777-777777777777",
+                },
+            }),
+            ..Default::default()
+        };
+        assert_ne!(
+            durable_coordination_inbox_id(&event, &spec),
+            durable_coordination_inbox_id(&replacement_after_that, &spec)
         );
     }
 }

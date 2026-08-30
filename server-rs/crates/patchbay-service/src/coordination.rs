@@ -264,23 +264,12 @@ RETURNING event.id, event.event_key, event.workspace_id, event.issue_id,
             String::new()
         };
 
-        let Some(current_issue) = self
-            .revalidate_before_publication(&event, &plan, task_id)
+        let Some(_current_issue) = self
+            .revalidate_before_publication(&event, &mut plan, task_id, &issue_prefix)
             .await?
         else {
             return Ok(());
         };
-        // Carry unrelated edits observed by the revalidation into the event
-        // snapshot, so a valid handoff cannot publish an older title or
-        // description after the user's update has already committed.
-        plan.issue = current_issue;
-
-        if plan.publish_issue_update {
-            self.publish_review_handoff(&plan, &issue_prefix);
-        }
-        if plan.publish_reviewer_update {
-            self.publish_reviewer_update(&plan, &issue_prefix);
-        }
         if plan.publish_issue_update || plan.publish_reviewer_update {
             self.wait_for_issue_update_publication(&event, &plan)
                 .await?;
@@ -1285,8 +1274,9 @@ LIMIT 1"#,
     async fn revalidate_before_publication(
         &self,
         event: &CoordinationEvent,
-        plan: &DispatchPlan,
+        plan: &mut DispatchPlan,
         task_id: Uuid,
+        issue_prefix: &str,
     ) -> anyhow::Result<Option<Issue>> {
         let mut tx = self.pool.begin().await?;
         let assignment = sqlx::query(
@@ -1328,6 +1318,11 @@ FOR UPDATE"#,
         .bind(plan.assignment_id.to_string())
         .fetch_optional(&mut *tx)
         .await?;
+        if !coordinated_task_is_promotable(coordinated_task_status.as_deref()) {
+            return Err(anyhow::anyhow!(
+                "coordinator task is missing or no longer promotable before publication"
+            ));
+        }
         let issue = sqlx::query_as::<_, Issue>(
             "SELECT * FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
         )
@@ -1341,8 +1336,25 @@ FOR UPDATE"#,
             false
         };
         if issue_is_current {
+            let current_issue = issue.ok_or_else(|| {
+                anyhow::anyhow!("current coordinator issue disappeared during revalidation")
+            })?;
+            // Carry unrelated edits observed by the revalidation into the
+            // event snapshot, so a valid handoff cannot publish an older
+            // title or description after the user's update has committed.
+            plan.issue = current_issue.clone();
+            // Bus::publish is synchronous. Keep the task row lock until this
+            // publication is enqueued, so a cancellation that commits first
+            // is observed above and a cancellation that commits later is
+            // ordered after the handoff publication.
+            if plan.publish_issue_update {
+                self.publish_review_handoff(plan, issue_prefix);
+            }
+            if plan.publish_reviewer_update {
+                self.publish_reviewer_update(plan, issue_prefix);
+            }
             tx.commit().await?;
-            return Ok(issue);
+            return Ok(Some(current_issue));
         }
 
         let reason = "coordinator handoff became stale before publication";

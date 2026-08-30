@@ -52,8 +52,19 @@ impl OrderedEventSideEffects {
             let bus = processor_bus.clone();
             let autopilots = autopilots.clone();
             Box::pin(async move {
-                crate::subscriber_activity_listeners::handle_event(&pool, &bus, &event).await;
-                crate::notification_listeners::handle_event(pool.clone(), bus, event.clone()).await;
+                if let Err(error) =
+                    crate::subscriber_activity_listeners::handle_event(&pool, &bus, &event).await
+                {
+                    tracing::error!(%error, "ordered subscriber/activity side effects failed");
+                    return;
+                }
+                if let Err(error) =
+                    crate::notification_listeners::handle_event(pool.clone(), bus, event.clone())
+                        .await
+                {
+                    tracing::error!(%error, "ordered notification side effects failed");
+                    return;
+                }
                 crate::autopilot_listeners::handle_event(&autopilots, &event).await;
                 if let Err(error) =
                     patchbay_service::coordination::acknowledge_coordination_publication(

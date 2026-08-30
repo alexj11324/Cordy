@@ -73,6 +73,8 @@ export interface MoveIssueRequest
     | "assignee_id"
     | "parent_issue_id"
     | "project_id"
+    | "suppress_run"
+    | "handoff_note"
   > {
   before_id: string | null;
   after_id: string | null;

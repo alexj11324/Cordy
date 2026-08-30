@@ -592,10 +592,18 @@ async fn enqueue_one(
         }
     }
     let result = match (trigger.source, trigger.team_id) {
-        (
-            CommentTriggerSource::MentionTeamLeader | CommentTriggerSource::IssueAssignee,
-            Some(team_id),
-        ) => {
+        (CommentTriggerSource::MentionTeamLeader, Some(team_id)) => {
+            state
+                .tasks
+                .enqueue_task_for_team_leader_without_owner_context(
+                    issue,
+                    trigger.agent.id,
+                    team_id,
+                    Some(trigger_comment_id),
+                )
+                .await
+        }
+        (CommentTriggerSource::IssueAssignee, Some(team_id)) => {
             state
                 .tasks
                 .enqueue_task_for_team_leader(

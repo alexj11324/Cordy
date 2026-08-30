@@ -1895,20 +1895,50 @@ impl TaskService {
         let prep = self
             .prepare_issue_enqueue(issue, trigger_comment_id, actor_user_id, true)
             .await?;
-        let owner_generation: i64 =
-            sqlx::query_scalar("SELECT assignee_generation FROM issue WHERE id = $1")
-                .bind(issue.id)
-                .fetch_one(&self.pool)
-                .await?;
-        let initial_context =
-            issue_task_context(issue, coordination_assignment_id, Some(owner_generation));
+        let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        let (current_owner_type, current_owner_id, owner_generation): (
+            Option<String>,
+            Option<Uuid>,
+            i64,
+        ) = sqlx::query_as(
+            "SELECT assignee_type, assignee_id, assignee_generation FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
+        )
+        .bind(issue.id)
+        .bind(issue.workspace_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(TaskServiceError::Sql)?
+        .ok_or_else(|| {
+            TaskServiceError::Internal("issue disappeared while enqueuing task".to_string())
+        })?;
+        if coordination_assignment_id.is_none()
+            && (current_owner_type.as_deref() != issue.assignee_type.as_deref()
+                || current_owner_id != issue.assignee_id)
+        {
+            return Err(TaskServiceError::Internal(
+                "issue owner changed while enqueuing task".to_string(),
+            ));
+        }
+        let initial_context_issue = if coordination_assignment_id.is_none() {
+            let mut snapshot = issue.clone();
+            snapshot.assignee_type = current_owner_type;
+            snapshot.assignee_id = current_owner_id;
+            snapshot
+        } else {
+            issue.clone()
+        };
+        let initial_context = issue_task_context(
+            &initial_context_issue,
+            coordination_assignment_id,
+            Some(owner_generation),
+        );
         let initial_status = coordination_assignment_id
             .map(|_| "deferred")
             .unwrap_or("queued");
 
         let created = if fire_at.is_some() {
             create_deferred_channel_issue_task(
-                &self.pool,
+                &mut *tx,
                 prep.assignee_id,
                 prep.runtime_id,
                 issue.id,
@@ -1938,7 +1968,7 @@ impl TaskService {
             .await
         } else {
             create_agent_task(
-                &self.pool,
+                &mut *tx,
                 prep.assignee_id,
                 prep.runtime_id,
                 issue.id,
@@ -1975,6 +2005,7 @@ impl TaskService {
                 return Err(TaskServiceError::Sql(downcast_sqlx(e)));
             }
         };
+        tx.commit().await.map_err(TaskServiceError::Sql)?;
 
         tracing::info!(
             task_id = %task.id,
@@ -2135,7 +2166,7 @@ impl TaskService {
         agent_id: Uuid,
         trigger_comment_id: Option<Uuid>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
-        self.enqueue_mention_task(
+        self.enqueue_mention_task_internal(
             issue,
             agent_id,
             trigger_comment_id,
@@ -2147,6 +2178,7 @@ impl TaskService {
             None,
             None,
             None,
+            false,
         )
         .await
     }
@@ -2184,7 +2216,7 @@ impl TaskService {
         team_id: Uuid,
         trigger_comment_id: Option<Uuid>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
-        self.enqueue_mention_task(
+        self.enqueue_mention_task_internal(
             issue,
             leader_id,
             trigger_comment_id,
@@ -2195,6 +2227,8 @@ impl TaskService {
             "",
             None,
             None,
+            None,
+            true,
             None,
         )
         .await
@@ -2210,7 +2244,7 @@ impl TaskService {
         handoff_note: &str,
         actor_user_id: Option<Uuid>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
-        self.enqueue_mention_task(
+        self.enqueue_mention_task_internal(
             issue,
             leader_id,
             None,
@@ -2221,6 +2255,36 @@ impl TaskService {
             handoff_note,
             actor_user_id,
             None,
+            None,
+            true,
+            None,
+        )
+        .await
+    }
+
+    /// Team-leader briefing for an explicit @team mention. It remains a
+    /// leader task for prompt construction, but the mention itself is not an
+    /// implementation-owner transition and must not carry owner-generation
+    /// fencing context.
+    pub async fn enqueue_task_for_team_leader_without_owner_context(
+        &self,
+        issue: &Issue,
+        leader_id: Uuid,
+        team_id: Uuid,
+        trigger_comment_id: Option<Uuid>,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        self.enqueue_mention_task_internal(
+            issue,
+            leader_id,
+            trigger_comment_id,
+            vec![],
+            true,
+            Some(team_id),
+            false,
+            "",
+            None,
+            None,
+            false,
             None,
         )
         .await
@@ -2250,6 +2314,7 @@ impl TaskService {
             actor_user_id,
             None,
             None,
+            true,
             Some(coordination_assignment_id),
         )
         .await
@@ -2450,6 +2515,7 @@ impl TaskService {
             actor_user_id,
             rerun_of_task_id,
             side_chat,
+            false,
             None,
         )
         .await
@@ -2469,6 +2535,7 @@ impl TaskService {
         actor_user_id: Option<Uuid>,
         rerun_of_task_id: Option<Uuid>,
         side_chat: Option<SideChatSeed>,
+        owner_context: bool,
         coordination_assignment_id: Option<Uuid>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
         let agent = get_agent(&self.pool, agent_id)
@@ -2513,22 +2580,51 @@ impl TaskService {
         // context, and the pending-task index must be able to distinguish the
         // Side Chat at INSERT time.
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
-        let owner_generation: Option<i64> = if coordination_assignment_id.is_some() || is_leader {
+        let owner_snapshot = if coordination_assignment_id.is_some() || owner_context {
             Some(
-                sqlx::query_scalar("SELECT assignee_generation FROM issue WHERE id = $1")
-                    .bind(issue.id)
-                    .fetch_one(&mut *tx)
-                    .await
-                    .map_err(TaskServiceError::Sql)?,
+                sqlx::query_as::<_, (Option<String>, Option<Uuid>, i64)>(
+                    "SELECT assignee_type, assignee_id, assignee_generation FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
+                )
+                .bind(issue.id)
+                .bind(issue.workspace_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(TaskServiceError::Sql)?
+                .ok_or_else(|| {
+                    TaskServiceError::Internal("issue disappeared while enqueuing task".to_string())
+                })?,
             )
         } else {
             None
         };
+        if owner_context
+            && coordination_assignment_id.is_none()
+            && (owner_snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.0.as_deref())
+                != issue.assignee_type.as_deref()
+                || owner_snapshot.as_ref().and_then(|snapshot| snapshot.1) != issue.assignee_id)
+        {
+            return Err(TaskServiceError::Internal(
+                "issue owner changed while enqueuing mention task".to_string(),
+            ));
+        }
+        let owner_generation = owner_snapshot.as_ref().map(|snapshot| snapshot.2);
+        let initial_context_issue = if owner_context && coordination_assignment_id.is_none() {
+            let mut snapshot = issue.clone();
+            snapshot.assignee_type = owner_snapshot
+                .as_ref()
+                .and_then(|snapshot| snapshot.0.clone());
+            snapshot.assignee_id = owner_snapshot.as_ref().and_then(|snapshot| snapshot.1);
+            snapshot
+        } else {
+            issue.clone()
+        };
         let initial_context = mention_task_context(
-            issue,
+            &initial_context_issue,
             side_chat.as_ref(),
             coordination_assignment_id,
-            is_leader,
+            owner_context,
             owner_generation,
         );
         let initial_status = coordination_assignment_id
@@ -5225,6 +5321,10 @@ mod tests {
 
         let plain_mention = mention_task_context(&issue, None, None, false, None);
         assert!(plain_mention
+            .as_object()
+            .is_some_and(|object| object.is_empty()));
+        let team_mention = mention_task_context(&issue, None, None, false, Some(3));
+        assert!(team_mention
             .as_object()
             .is_some_and(|object| object.is_empty()));
 
