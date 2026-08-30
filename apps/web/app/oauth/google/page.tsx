@@ -87,8 +87,9 @@ function GoogleOAuthContent() {
     }
 
     // An ambient Clerk cookie is not proof that this desktop-initiated Google
-    // attempt completed. Clear only the active session, then restart from a
-    // canonical URL so the next document can safely begin Google SSO.
+    // attempt completed. Clear every session on this Clerk client, then
+    // restart from a canonical URL so another cached session cannot become
+    // active before the next document begins Google SSO.
     if (clerk.session) {
       if (searchParams.get("clerk_reset") === "1") {
         setError(t(($) => $.web.google_oauth.failed));
@@ -107,7 +108,7 @@ function GoogleOAuthContent() {
         window.location.origin,
       ).href;
       void clerk
-        .signOut({ sessionId: clerk.session.id, redirectUrl: restartUrl })
+        .signOut({ redirectUrl: restartUrl })
         .catch(() => {
           clearingSession.current = false;
           setError(t(($) => $.web.google_oauth.failed));

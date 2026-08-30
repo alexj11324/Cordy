@@ -181,7 +181,7 @@ describe("GoogleOAuthPage", () => {
     await waitFor(() => expect(sso).toHaveBeenCalledOnce());
   });
 
-  it("clears only the active Clerk session before starting Google SSO", async () => {
+  it("clears every Clerk client session before starting Google SSO", async () => {
     const codeChallenge = "a".repeat(43);
     const state = "b".repeat(43);
     search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
@@ -196,7 +196,6 @@ describe("GoogleOAuthPage", () => {
     await waitFor(() => expect(signOut).toHaveBeenCalledOnce());
     const resetQuery = `${search.current}&clerk_reset=1`;
     expect(signOut).toHaveBeenCalledWith({
-      sessionId: "sess_leftover",
       redirectUrl: `${window.location.origin}/oauth/google?${resetQuery}`,
     });
     expect(sso).not.toHaveBeenCalled();
