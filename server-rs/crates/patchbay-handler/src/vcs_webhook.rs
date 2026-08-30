@@ -92,16 +92,16 @@ async fn handle(
     }
     let outcome = match provider.event_kind(&headers) {
         EventKind::PullRequest => match provider.parse_pull_request(&body) {
-            Ok(event) => mirror_pull_request(&mut *transaction, &connection, event)
+            Ok(event) => mirror_pull_request(&mut transaction, &connection, event)
                 .await
-                .map(WebhookMirrorOutcome::PullRequest),
+                .map(|mirrored| WebhookMirrorOutcome::PullRequest(Box::new(mirrored))),
             Err(error) => {
                 tracing::warn!(provider = %connection.provider, %error, "vcs: bad pull_request payload");
-                Ok(WebhookMirrorOutcome::PullRequest(None))
+                Ok(WebhookMirrorOutcome::PullRequest(Box::new(None)))
             }
         },
         EventKind::CiStatus => match provider.parse_ci_status(&body) {
-            Ok(event) => mirror_ci_status(&mut *transaction, &connection, event)
+            Ok(event) => mirror_ci_status(&mut transaction, &connection, event)
                 .await
                 .map(WebhookMirrorOutcome::CiStatus),
             Err(error) => {
@@ -129,29 +129,30 @@ async fn handle(
         );
     }
     match outcome {
-        WebhookMirrorOutcome::PullRequest(Some(mirrored)) => {
-            if mirrored.terminal {
-                for issue_id in &mirrored.issue_ids {
-                    let Ok(Some(issue)) = patchbay_db::queries::issue::get_issue_in_workspace(
-                        &state.pool,
-                        *issue_id,
-                        connection.workspace_id,
-                    )
-                    .await
-                    else {
-                        continue;
-                    };
-                    maybe_complete_issue(&state, issue).await;
+        WebhookMirrorOutcome::PullRequest(mirrored) => {
+            if let Some(mirrored) = *mirrored {
+                if mirrored.terminal {
+                    for issue_id in &mirrored.issue_ids {
+                        let Ok(Some(issue)) = patchbay_db::queries::issue::get_issue_in_workspace(
+                            &state.pool,
+                            *issue_id,
+                            connection.workspace_id,
+                        )
+                        .await
+                        else {
+                            continue;
+                        };
+                        maybe_complete_issue(&state, issue).await;
+                    }
                 }
+                let linked_issue_ids = mirrored
+                    .issue_ids
+                    .into_iter()
+                    .map(|issue_id| issue_id.to_string())
+                    .collect();
+                publish_pull_request(&state, &mirrored.pull_request, linked_issue_ids);
             }
-            let linked_issue_ids = mirrored
-                .issue_ids
-                .into_iter()
-                .map(|issue_id| issue_id.to_string())
-                .collect();
-            publish_pull_request(&state, &mirrored.pull_request, linked_issue_ids);
         }
-        WebhookMirrorOutcome::PullRequest(None) => {}
         WebhookMirrorOutcome::CiStatus(issue_ids) => {
             for issue_id in issue_ids {
                 state.bus.publish(&patchbay_events::Event {
@@ -195,7 +196,7 @@ fn decrypt_secret(
 }
 
 enum WebhookMirrorOutcome {
-    PullRequest(Option<MirroredPullRequest>),
+    PullRequest(Box<Option<MirroredPullRequest>>),
     CiStatus(Vec<Uuid>),
 }
 

@@ -664,7 +664,7 @@ pub(crate) async fn attach(
         work_product_q::RELATION_SOURCE_MANUAL_EXPLICIT
     };
     let relation = match crate::work_product::attach_work_product_relation_in_transaction(
-        &mut *association_transaction,
+        &mut association_transaction,
         issue.workspace_id,
         work_product.id,
         Some(issue.id),

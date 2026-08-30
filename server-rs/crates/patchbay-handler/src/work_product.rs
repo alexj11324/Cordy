@@ -1711,7 +1711,7 @@ pub(crate) async fn attach_work_product_relation_locked(
             .await?;
     }
     let relation = attach_work_product_relation_in_transaction(
-        &mut *transaction,
+        &mut transaction,
         workspace_id,
         work_product_id,
         issue_id,
