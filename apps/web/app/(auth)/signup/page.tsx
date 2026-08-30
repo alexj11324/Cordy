@@ -5,6 +5,10 @@ import { SignUp } from "@clerk/nextjs";
 import { useSearchParams } from "next/navigation";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
 import { buildDesktopHandoffQuery } from "@/features/auth/desktop-handoff";
+import {
+  authRouteWithRedirect,
+  resolveSafeRedirectUrl,
+} from "@/features/auth/safe-redirect";
 
 export default function SignUpPage() {
   return (
@@ -20,16 +24,19 @@ function SignUpContent() {
   const desktopHandoffQuery = desktopHandoff
     ? buildDesktopHandoffQuery(searchParams)
     : "";
+  const redirectUrl = resolveSafeRedirectUrl(searchParams.get("redirect_url"));
   return (
     <ClerkAuthShell>
       <SignUp
         routing="path"
         path="/signup"
         signInUrl={
-          desktopHandoff ? `/login?${desktopHandoffQuery}` : "/login"
+          desktopHandoff
+            ? `/login?${desktopHandoffQuery}`
+            : authRouteWithRedirect("/login", redirectUrl)
         }
         fallbackRedirectUrl={
-          desktopHandoff ? `/login?${desktopHandoffQuery}` : "/"
+          desktopHandoff ? `/login?${desktopHandoffQuery}` : redirectUrl
         }
       />
     </ClerkAuthShell>

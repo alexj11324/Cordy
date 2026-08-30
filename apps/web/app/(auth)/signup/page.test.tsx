@@ -50,4 +50,26 @@ describe("SignUpPage", () => {
         "/login?platform=desktop&code_challenge=challenge-value&state=opaque-state",
     });
   });
+
+  it("preserves a validated web redirect through signup and sign-in", () => {
+    search.current = "redirect_url=%2Fusage%3Ftab%3Dbilling%23summary";
+
+    render(<SignUpPage />);
+
+    expect(signUpProps.current).toMatchObject({
+      signInUrl: "/login?redirect_url=%2Fusage%3Ftab%3Dbilling%23summary",
+      fallbackRedirectUrl: "/usage?tab=billing#summary",
+    });
+  });
+
+  it("rejects an external web redirect", () => {
+    search.current = "redirect_url=https%3A%2F%2Fevil.example%2Ftakeover";
+
+    render(<SignUpPage />);
+
+    expect(signUpProps.current).toMatchObject({
+      signInUrl: "/login",
+      fallbackRedirectUrl: "/",
+    });
+  });
 });

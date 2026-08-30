@@ -441,6 +441,7 @@ jobs:
         run: |
           bash scripts/helm-config.test.sh
           bash scripts/makefile-build.test.sh
+          bash scripts/macos-release-contract.test.sh
 
   rust-quality:
     needs: changes

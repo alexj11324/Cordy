@@ -98,6 +98,9 @@ describe("LoginPage", () => {
     expect(signInProps.current.forceRedirectUrl).toBe(
       "/usage?tab=billing#summary",
     );
+    expect(signInProps.current.signUpUrl).toBe(
+      "/signup?redirect_url=%2Fusage%3Ftab%3Dbilling%23summary",
+    );
   });
 
   it("rejects an external post-login redirect", () => {
@@ -107,6 +110,7 @@ describe("LoginPage", () => {
     render(<LoginPage />);
 
     expect(signInProps.current.forceRedirectUrl).toBe("/");
+    expect(signInProps.current.signUpUrl).toBe("/signup");
   });
 
   it("preserves the desktop handoff through Clerk sign-in", () => {

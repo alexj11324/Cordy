@@ -277,13 +277,15 @@ function OnboardingStepFlow({
         }
         return;
       }
-      try {
-        await completeOnboarding("runtime_skipped", workspace.id);
-      } catch (err) {
-        toast.error(
-          err instanceof Error ? err.message : t(($) => $.errors.skip_failed),
-        );
-        return;
+      if (!backendFree) {
+        try {
+          await completeOnboarding("runtime_skipped", workspace.id);
+        } catch (err) {
+          toast.error(
+            err instanceof Error ? err.message : t(($) => $.errors.skip_failed),
+          );
+          return;
+        }
       }
       useWelcomeStore.getState().set({
         workspaceId: workspace.id,
@@ -291,7 +293,7 @@ function OnboardingStepFlow({
       });
       onComplete(workspace, undefined);
     },
-    [answers, bootstrapMika, i18n.language, workspace, onComplete, t],
+    [answers, backendFree, bootstrapMika, i18n.language, workspace, onComplete, t],
   );
 
   const handleBack = useCallback((from: OnboardingStep) => {

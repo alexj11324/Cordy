@@ -19,33 +19,16 @@ import {
 } from "@patchbay/views/auth";
 import { useT } from "@patchbay/views/i18n";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
+import {
+  authRouteWithRedirect,
+  resolveSafeRedirectUrl,
+} from "@/features/auth/safe-redirect";
 
 function desktopHandoffQuery(codeChallenge: string, state: string): string {
   const params = new URLSearchParams({ platform: "desktop" });
   if (codeChallenge) params.set("code_challenge", codeChallenge);
   if (state) params.set("state", state);
   return params.toString();
-}
-
-function resolveSafeRedirectUrl(raw: string | null): string {
-  if (!raw) return "/";
-
-  // The proxy emits an internal path. Keep the query/hash because they can
-  // carry the original deep-link state, but never turn an arbitrary external
-  // URL into a post-login redirect.
-  if (raw.startsWith("/") && !raw.startsWith("//")) {
-    const url = new URL(raw, "https://patchbay.invalid");
-    return `${url.pathname}${url.search}${url.hash}` || "/";
-  }
-
-  if (typeof window === "undefined") return "/";
-  try {
-    const url = new URL(raw);
-    if (url.origin !== window.location.origin) return "/";
-    return `${url.pathname}${url.search}${url.hash}` || "/";
-  } catch {
-    return "/";
-  }
 }
 
 export default function LoginPage() {
@@ -150,7 +133,7 @@ function LoginContent() {
         signUpUrl={
           desktopHandoff
             ? `/signup?${desktopHandoffQuery(desktopCodeChallenge, desktopState)}`
-            : "/signup"
+            : authRouteWithRedirect("/signup", returnUrl)
         }
         forceRedirectUrl={returnUrl}
       />
