@@ -5603,6 +5603,7 @@ mod tests {
         let service = TaskService::new(pool.clone(), Arc::new(patchbay_events::Bus::new()));
         let workspace_id = Uuid::now_v7();
         let agent_id = Uuid::now_v7();
+        let runtime_id = Uuid::now_v7();
         let issue_id = Uuid::now_v7();
         let member_review_issue_id = Uuid::now_v7();
         let promoted_event_id = Uuid::now_v7();
@@ -5630,10 +5631,18 @@ mod tests {
         .execute(&mut *tx)
         .await
         .expect("create archive actor");
-        sqlx::query("INSERT INTO agent (id, workspace_id, name, runtime_mode, status, max_concurrent_tasks, owner_id) VALUES ($1, $2, 'reviewer', 'local', 'idle', 4, $3)")
+        sqlx::query("INSERT INTO agent_runtime (id, workspace_id, daemon_id, name, runtime_mode, provider, status, last_seen_at) VALUES ($1, $2, $3, 'review archive runtime', 'local', $3, 'online', now())")
+            .bind(runtime_id)
+            .bind(workspace_id)
+            .bind(format!("review-archive-{runtime_id}"))
+            .execute(&mut *tx)
+            .await
+            .expect("create reviewer runtime");
+        sqlx::query("INSERT INTO agent (id, workspace_id, name, runtime_mode, status, max_concurrent_tasks, owner_id, runtime_id) VALUES ($1, $2, 'reviewer', 'local', 'idle', 4, $3, $4)")
             .bind(agent_id)
             .bind(workspace_id)
             .bind(actor_id)
+            .bind(runtime_id)
             .execute(&mut *tx)
             .await
             .expect("create reviewer");
@@ -5671,9 +5680,10 @@ mod tests {
                 .execute(&mut *tx)
                 .await
                 .expect("create original outbox");
-            sqlx::query("INSERT INTO agent_task_queue (id, agent_id, issue_id, status, priority, context) VALUES ($1, $2, $3, $4, 0, $5)")
+            sqlx::query("INSERT INTO agent_task_queue (id, agent_id, runtime_id, issue_id, status, priority, context) VALUES ($1, $2, $3, $4, $5, 0, $6)")
                 .bind(task_id)
                 .bind(agent_id)
+                .bind(runtime_id)
                 .bind(issue_id)
                 .bind(if finalized { "dispatched" } else { "deferred" })
                 .bind(serde_json::json!({ (COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY): assignment_id }))
