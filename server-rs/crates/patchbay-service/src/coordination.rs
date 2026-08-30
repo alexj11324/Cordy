@@ -25,8 +25,8 @@ use crate::issue_status;
 use crate::task_notify::{issue_to_map_with_category, rfc3339};
 use crate::task_service::{
     TaskService, TaskServiceError, COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY,
-    COORDINATION_ISSUE_REVISION_CONTEXT_KEY, COORDINATION_OWNER_ID_CONTEXT_KEY,
-    COORDINATION_OWNER_TYPE_CONTEXT_KEY,
+    COORDINATION_ISSUE_REVISION_CONTEXT_KEY, COORDINATION_OWNER_GENERATION_CONTEXT_KEY,
+    COORDINATION_OWNER_ID_CONTEXT_KEY, COORDINATION_OWNER_TYPE_CONTEXT_KEY,
 };
 
 pub const EVENT_TASK_COMPLETED: &str = "task_completed";
@@ -1560,6 +1560,7 @@ WHERE id = $1
                 "assignee_changed": false,
                 "status_changed": true,
                 "review_handoff": true,
+                "coordination_publication": "review_handoff",
                 "coordination_event_id": plan.event_id,
                 "priority_changed": false,
                 "project_changed": false,
@@ -1588,6 +1589,7 @@ WHERE id = $1
                 "status_changed": false,
                 "review_handoff": false,
                 "reviewer_changed": true,
+                "coordination_publication": "reviewer_replacement",
                 "coordination_event_id": plan.event_id,
                 "priority_changed": false,
                 "project_changed": false,
@@ -2112,6 +2114,9 @@ pub async fn record_task_completed(
         .and_then(|context| context.get(COORDINATION_OWNER_ID_CONTEXT_KEY))
         .and_then(Value::as_str)
         .and_then(|value| Uuid::parse_str(value).ok());
+    let captured_owner_generation = context
+        .and_then(|context| context.get(COORDINATION_OWNER_GENERATION_CONTEXT_KEY))
+        .and_then(Value::as_i64);
     let captured_issue_revision = context
         .and_then(|context| context.get(COORDINATION_ISSUE_REVISION_CONTEXT_KEY))
         .and_then(Value::as_i64);
@@ -2143,17 +2148,19 @@ pub async fn record_task_completed(
         ));
     }
 
-    let issue =
-        sqlx::query("SELECT workspace_id, assignee_type, assignee_id FROM issue WHERE id = $1")
-            .bind(issue_id)
-            .fetch_optional(&mut *executor)
-            .await?;
+    let issue = sqlx::query(
+        "SELECT workspace_id, assignee_type, assignee_id, assignee_generation FROM issue WHERE id = $1",
+    )
+    .bind(issue_id)
+    .fetch_optional(&mut *executor)
+    .await?;
     let Some(issue) = issue else {
         return Ok(());
     };
     let workspace_id: Uuid = issue.try_get(0)?;
     let current_owner_type: Option<String> = issue.try_get(1)?;
     let current_owner_id: Option<Uuid> = issue.try_get(2)?;
+    let current_owner_generation: i64 = issue.try_get(3)?;
     if let (Some(captured_owner_type), Some(captured_owner_id)) =
         (captured_owner_type, captured_owner_id)
     {
@@ -2162,6 +2169,8 @@ pub async fn record_task_completed(
             current_owner_id,
             captured_owner_type,
             captured_owner_id,
+            captured_owner_generation,
+            current_owner_generation,
         ) {
             tracing::info!(
                 task_id = %task.id,
@@ -2170,6 +2179,8 @@ pub async fn record_task_completed(
                 captured_owner_id = %captured_owner_id,
                 current_owner_type = ?current_owner_type,
                 current_owner_id = ?current_owner_id,
+                captured_owner_generation,
+                current_owner_generation,
                 captured_issue_revision,
                 "ignoring completion from a superseded implementation owner"
             );
@@ -2183,6 +2194,7 @@ pub async fn record_task_completed(
         "source_role": source_role.unwrap_or_else(|| "implementation".to_string()),
         "implementation_owner_type": captured_owner_type,
         "implementation_owner_id": captured_owner_id,
+        "implementation_owner_generation": captured_owner_generation,
         "implementation_issue_revision": captured_issue_revision,
         "coordination_assignment_id": coordination_assignment_id,
     });
@@ -2204,8 +2216,12 @@ fn implementation_completion_is_superseded(
     current_owner_id: Option<Uuid>,
     captured_owner_type: &str,
     captured_owner_id: Uuid,
+    captured_owner_generation: Option<i64>,
+    current_owner_generation: i64,
 ) -> bool {
-    current_owner_type != Some(captured_owner_type) || current_owner_id != Some(captured_owner_id)
+    current_owner_type != Some(captured_owner_type)
+        || current_owner_id != Some(captured_owner_id)
+        || captured_owner_generation.is_some_and(|captured| current_owner_generation > captured)
 }
 
 /// Writes the review-return outbox event and its pending executor assignment
@@ -2335,12 +2351,24 @@ mod tests {
             Some(owner_id),
             "agent",
             owner_id,
+            Some(0),
+            0,
         ));
         assert!(implementation_completion_is_superseded(
             Some("agent"),
             Some(Uuid::from_u128(2)),
             "agent",
             owner_id,
+            Some(0),
+            0,
+        ));
+        assert!(implementation_completion_is_superseded(
+            Some("agent"),
+            Some(owner_id),
+            "agent",
+            owner_id,
+            Some(0),
+            1,
         ));
     }
 

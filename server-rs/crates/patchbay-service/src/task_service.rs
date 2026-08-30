@@ -268,9 +268,14 @@ pub struct SideChatSeed {
 pub(crate) const COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY: &str = "coordination_assignment_id";
 pub(crate) const COORDINATION_OWNER_TYPE_CONTEXT_KEY: &str = "coordination_owner_type";
 pub(crate) const COORDINATION_OWNER_ID_CONTEXT_KEY: &str = "coordination_owner_id";
+pub(crate) const COORDINATION_OWNER_GENERATION_CONTEXT_KEY: &str = "coordination_owner_generation";
 pub(crate) const COORDINATION_ISSUE_REVISION_CONTEXT_KEY: &str = "coordination_issue_revision";
 
-fn issue_task_context(issue: &Issue, assignment_id: Option<Uuid>) -> serde_json::Value {
+fn issue_task_context(
+    issue: &Issue,
+    assignment_id: Option<Uuid>,
+    owner_generation: Option<i64>,
+) -> serde_json::Value {
     let mut context = serde_json::Map::new();
     if let (Some(owner_type), Some(owner_id)) = (&issue.assignee_type, issue.assignee_id) {
         context.insert(
@@ -281,6 +286,12 @@ fn issue_task_context(issue: &Issue, assignment_id: Option<Uuid>) -> serde_json:
             COORDINATION_OWNER_ID_CONTEXT_KEY.to_string(),
             serde_json::json!(owner_id.to_string()),
         );
+        if let Some(owner_generation) = owner_generation {
+            context.insert(
+                COORDINATION_OWNER_GENERATION_CONTEXT_KEY.to_string(),
+                serde_json::json!(owner_generation),
+            );
+        }
         context.insert(
             COORDINATION_ISSUE_REVISION_CONTEXT_KEY.to_string(),
             serde_json::json!(issue.revision),
@@ -300,6 +311,7 @@ fn mention_task_context(
     side_chat: Option<&SideChatSeed>,
     assignment_id: Option<Uuid>,
     include_owner_context: bool,
+    owner_generation: Option<i64>,
 ) -> serde_json::Value {
     let mut context = match side_chat {
         Some(side_chat) => serde_json::json!({
@@ -310,7 +322,7 @@ fn mention_task_context(
     };
     if assignment_id.is_some() || include_owner_context {
         if let Some(object) = context.as_object_mut() {
-            let coordination = issue_task_context(issue, assignment_id);
+            let coordination = issue_task_context(issue, assignment_id, owner_generation);
             if let Some(coordination) = coordination.as_object() {
                 object.extend(coordination.clone());
             }
@@ -1883,7 +1895,17 @@ impl TaskService {
         let prep = self
             .prepare_issue_enqueue(issue, trigger_comment_id, actor_user_id, true)
             .await?;
-        let initial_context = issue_task_context(issue, coordination_assignment_id);
+        let owner_generation: i64 = sqlx::query_scalar(
+            "SELECT assignee_generation FROM issue WHERE id = $1",
+        )
+        .bind(issue.id)
+        .fetch_one(&self.pool)
+        .await?;
+        let initial_context = issue_task_context(
+            issue,
+            coordination_assignment_id,
+            Some(owner_generation),
+        );
         let initial_status = coordination_assignment_id
             .map(|_| "deferred")
             .unwrap_or("queued");
@@ -2069,7 +2091,13 @@ impl TaskService {
             trigger_summary: None,
             head_sha,
         };
-        let initial_context = issue_task_context(issue, None);
+        let owner_generation: i64 = sqlx::query_scalar(
+            "SELECT assignee_generation FROM issue WHERE id = $1",
+        )
+        .bind(issue.id)
+        .fetch_one(&mut *tx)
+        .await?;
+        let initial_context = issue_task_context(issue, None, Some(owner_generation));
 
         let task = create_deferred_channel_issue_task(
             tx,
@@ -2490,11 +2518,24 @@ impl TaskService {
         // context, and the pending-task index must be able to distinguish the
         // Side Chat at INSERT time.
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        let owner_generation: Option<i64> = if coordination_assignment_id.is_some() || is_leader
+        {
+            Some(
+                sqlx::query_scalar("SELECT assignee_generation FROM issue WHERE id = $1")
+                    .bind(issue.id)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .map_err(TaskServiceError::Sql)?,
+            )
+        } else {
+            None
+        };
         let initial_context = mention_task_context(
             issue,
             side_chat.as_ref(),
             coordination_assignment_id,
             is_leader,
+            owner_generation,
         );
         let initial_status = coordination_assignment_id
             .map(|_| "deferred")
@@ -5155,12 +5196,13 @@ mod tests {
         let assignment_id = Uuid::now_v7();
         let issue = issue_context_fixture(owner_id);
 
-        let context = issue_task_context(&issue, Some(assignment_id));
+        let context = issue_task_context(&issue, Some(assignment_id), Some(0));
         assert_eq!(context[COORDINATION_OWNER_TYPE_CONTEXT_KEY], "agent");
         assert_eq!(
             context[COORDINATION_OWNER_ID_CONTEXT_KEY],
             owner_id.to_string()
         );
+        assert_eq!(context[COORDINATION_OWNER_GENERATION_CONTEXT_KEY], 0);
         assert_eq!(context[COORDINATION_ISSUE_REVISION_CONTEXT_KEY], 7);
         assert_eq!(
             context[COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY],
@@ -5171,7 +5213,13 @@ mod tests {
             parent_task_id: Uuid::now_v7(),
             root_comment_id: Uuid::now_v7(),
         };
-        let mention = mention_task_context(&issue, Some(&side_chat), Some(assignment_id), false);
+        let mention = mention_task_context(
+            &issue,
+            Some(&side_chat),
+            Some(assignment_id),
+            false,
+            Some(0),
+        );
         assert_eq!(
             mention["side_chat_parent_task_id"],
             side_chat.parent_task_id.to_string()
@@ -5181,12 +5229,12 @@ mod tests {
             assignment_id.to_string()
         );
 
-        let plain_mention = mention_task_context(&issue, None, None, false);
+        let plain_mention = mention_task_context(&issue, None, None, false, None);
         assert!(plain_mention
             .as_object()
             .is_some_and(|object| object.is_empty()));
 
-        let leader_mention = mention_task_context(&issue, None, None, true);
+        let leader_mention = mention_task_context(&issue, None, None, true, Some(0));
         assert_eq!(leader_mention[COORDINATION_OWNER_TYPE_CONTEXT_KEY], "agent");
         assert_eq!(
             leader_mention[COORDINATION_OWNER_ID_CONTEXT_KEY],

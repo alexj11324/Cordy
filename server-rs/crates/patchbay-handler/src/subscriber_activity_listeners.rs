@@ -651,9 +651,20 @@ fn durable_coordination_activity_id(event: &Event) -> Option<Uuid> {
         .get("coordination_event_id")
         .and_then(Value::as_str)
         .and_then(|value| value.parse::<Uuid>().ok())?;
+    let publication = event
+        .payload
+        .get("coordination_publication")
+        .and_then(Value::as_str)
+        .unwrap_or(if flag(&event.payload, "review_handoff") {
+            "review_handoff"
+        } else if flag(&event.payload, "reviewer_changed") {
+            "reviewer_replacement"
+        } else {
+            "coordination"
+        });
     Some(Uuid::new_v5(
         &Uuid::NAMESPACE_OID,
-        format!("patchbay:coordination:activity:{event_id}").as_bytes(),
+        format!("patchbay:coordination:activity:{event_id}:{publication}").as_bytes(),
     ))
 }
 
@@ -727,6 +738,7 @@ mod tests {
             task_id: "11111111-1111-4111-8111-111111111111".into(),
             payload: json!({
                 "reviewer_changed": true,
+                "coordination_publication": "reviewer_replacement",
                 "coordination_event_id": "11111111-1111-4111-8111-111111111111",
             }),
             ..Default::default()
@@ -736,6 +748,18 @@ mod tests {
             durable_coordination_activity_id(&event)
         );
         assert!(durable_coordination_activity_id(&event).is_some());
+        let handoff = Event {
+            payload: json!({
+                "review_handoff": true,
+                "coordination_publication": "review_handoff",
+                "coordination_event_id": "11111111-1111-4111-8111-111111111111",
+            }),
+            ..Default::default()
+        };
+        assert_ne!(
+            durable_coordination_activity_id(&event),
+            durable_coordination_activity_id(&handoff)
+        );
         assert!(durable_coordination_activity_id(&Event::default()).is_none());
     }
 }
