@@ -2752,10 +2752,7 @@ async fn execution_provenance_for_start(
     execution_provenance_for_work_dir(ctx, work_dir).await
 }
 
-async fn execution_provenance_for_work_dir(
-    ctx: &Ctx,
-    work_dir: &str,
-) -> ExecutionProvenanceFacts {
+async fn execution_provenance_for_work_dir(ctx: &Ctx, work_dir: &str) -> ExecutionProvenanceFacts {
     let repo_identity = git_fact(ctx, work_dir, ["remote", "get-url", "origin"]).await;
     let execution_workspace = git_fact(ctx, work_dir, ["rev-parse", "--show-toplevel"]).await;
     let head_branch = git_fact(

@@ -140,7 +140,7 @@ pub struct ActiveRepoCheckoutTask {
     /// Server-issued `mdt_` credential. It is used only by the daemon when
     /// reporting checkout provenance and is never copied into the agent env.
     pub execution_daemon_token: String,
-    checkouts: std::sync::Arc<std::sync::Mutex<Vec<RepoCheckoutProvenance>>>,
+    pub(crate) checkouts: std::sync::Arc<std::sync::Mutex<Vec<RepoCheckoutProvenance>>>,
 }
 
 impl std::fmt::Debug for ActiveRepoCheckoutTask {
@@ -216,11 +216,7 @@ impl RepoCheckoutRegistry {
     /// checkout path is retained in memory until terminal provenance has been
     /// refreshed, so a task that checks out multiple repositories does not
     /// collapse to whichever checkout happened to be last.
-    pub(crate) fn record_checkout(
-        &self,
-        task_id: &str,
-        checkout: RepoCheckoutProvenance,
-    ) -> bool {
+    pub(crate) fn record_checkout(&self, task_id: &str, checkout: RepoCheckoutProvenance) -> bool {
         let task = self
             .tasks
             .lock()

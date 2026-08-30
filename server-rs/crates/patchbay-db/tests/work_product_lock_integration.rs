@@ -39,23 +39,28 @@ async fn task_work_product_scope_serializes_attach_and_discovery_critical_sectio
             .expect("first task lock");
         first_locked_tx.send(()).expect("signal first lock");
         release_first_rx.await.expect("release first transaction");
-        transaction.commit().await.expect("commit first transaction");
+        transaction
+            .commit()
+            .await
+            .expect("commit first transaction");
     });
 
-    first_locked_rx.await.expect("first transaction acquired lock");
+    first_locked_rx
+        .await
+        .expect("first transaction acquired lock");
 
     let second_pool = pool.clone();
     let second = tokio::spawn(async move {
-        let mut transaction = second_pool
-            .begin()
-            .await
-            .expect("begin second transaction");
+        let mut transaction = second_pool.begin().await.expect("begin second transaction");
         second_started_tx.send(()).expect("signal second start");
         work_product::lock_task_work_product_scope(&mut *transaction, workspace_id, task_id)
             .await
             .expect("second task lock");
         second_acquired_tx.send(()).expect("signal second lock");
-        transaction.commit().await.expect("commit second transaction");
+        transaction
+            .commit()
+            .await
+            .expect("commit second transaction");
     });
 
     second_started_rx.await.expect("second transaction started");

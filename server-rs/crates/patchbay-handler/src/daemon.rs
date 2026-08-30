@@ -2516,8 +2516,7 @@ async fn finalize_claim_enriched_full(
         daemon_id: daemon_id.to_string(),
         expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(24)),
     });
-    let raw_remote_mcp_token = carries_daemon_mcp_capability
-        .then(|| raw_execution_token.clone());
+    let raw_remote_mcp_token = carries_daemon_mcp_capability.then(|| raw_execution_token.clone());
 
     let receipt = state
         .tasks
@@ -2721,13 +2720,7 @@ async fn claim_task_by_runtime(
     match finalize_claim_enriched_with_runtime(&claim_services, &task, owner, &built, Some(&rt))
         .await
     {
-        Ok((
-            token,
-            remote_mcp_token,
-            execution_daemon_token,
-            receipt,
-            provider_authorization,
-        )) => {
+        Ok((token, remote_mcp_token, execution_daemon_token, receipt, provider_authorization)) => {
             let mut payload = built.payload;
             if let Some(obj) = payload.as_object_mut() {
                 set_claim_tokens(
@@ -2915,11 +2908,11 @@ async fn start_task(
     headers: HeaderMap,
 ) -> Response {
     let access = Access::new(&state, &headers);
-    let (_, ws_id) =
-        match require_daemon_task_access_with_workspace(&access, None, &task_id).await {
-            Ok(v) => v,
-            Err(res) => return res,
-        };
+    let (_, ws_id) = match require_daemon_task_access_with_workspace(&access, None, &task_id).await
+    {
+        Ok(v) => v,
+        Err(res) => return res,
+    };
     let Ok(task_uuid) = Uuid::parse_str(task_id.trim()) else {
         return error_response(StatusCode::BAD_REQUEST, "invalid task_id");
     };
@@ -2970,17 +2963,16 @@ async fn record_execution_provenance(
         );
     }
     let access = Access::new(&state, &headers);
-    let (task, workspace_id) =
-        match require_daemon_task_access_with_workspace(
-            &access,
-            Some(daemon_context.clone()),
-            &task_id,
-        )
-            .await
-        {
-            Ok(value) => value,
-            Err(response) => return response,
-        };
+    let (task, workspace_id) = match require_daemon_task_access_with_workspace(
+        &access,
+        Some(daemon_context.clone()),
+        &task_id,
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(response) => return response,
+    };
     if task.status != "running" {
         return error_response(
             StatusCode::CONFLICT,
@@ -3192,8 +3184,7 @@ async fn schedule_work_product_discovery(
     task: AgentTaskQueue,
     workspace_id: Uuid,
 ) {
-    if let Err(error) =
-        crate::work_product::queue_task_discovery(state, &task, workspace_id).await
+    if let Err(error) = crate::work_product::queue_task_discovery(state, &task, workspace_id).await
     {
         tracing::warn!(%error, task_id = %task.id, "durable work product discovery enqueue failed");
         return;
@@ -5199,7 +5190,10 @@ mod tests {
             "agent_id": "forged-agent",
             "workspace_id": "forged-workspace"
         }));
-        assert!(forged.is_err(), "identity fields must not be accepted in the body");
+        assert!(
+            forged.is_err(),
+            "identity fields must not be accepted in the body"
+        );
 
         let request: ExecutionProvenanceRequest = serde_json::from_value(json!({
             "execution_repo_identity": "https://github.com/example/repo",

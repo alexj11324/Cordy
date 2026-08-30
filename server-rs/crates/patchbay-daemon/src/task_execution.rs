@@ -405,8 +405,13 @@ async fn execute_claimed_task<H: DaemonTaskExecutionHost>(
     // server-issued daemon capability bound to this claimed runtime. Never
     // put these facts on the task-token lifecycle requests: that credential is
     // intentionally insufficient to author its own provenance.
-    record_execution_provenance(&client, &task.execution_daemon_token, &task.id, &outcome.result)
-        .await;
+    record_execution_provenance(
+        &client,
+        &task.execution_daemon_token,
+        &task.id,
+        &outcome.result,
+    )
+    .await;
 
     if cancelled_by_server.load(Ordering::Acquire) {
         acknowledge_cancelled_run(&client, &task.id, &outcome).await;

@@ -1018,8 +1018,7 @@ async fn discover_one_execution(
         return;
     }
     if let Err(error) =
-        work_product_q::lock_task_work_product_scope(&mut *transaction, workspace_id, task.id)
-            .await
+        work_product_q::lock_task_work_product_scope(&mut *transaction, workspace_id, task.id).await
     {
         drop(transaction);
         record_discovery_failure(
