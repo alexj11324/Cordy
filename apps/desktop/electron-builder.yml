@@ -127,10 +127,9 @@ publish:
   provider: github
   owner: patchbay-ai
   repo: Patchbay
-  # The release workflow pre-creates a draft and publishes it only after the
-  # CLI archives, every Desktop matrix asset, images, and chart have passed
-  # their gates. This must match the existing GitHub Release type exactly:
-  # electron-builder silently skips uploads when existingType and releaseType
-  # disagree.
+  # Release jobs invoke electron-builder with `--publish never` and stage the
+  # generated installers as workflow artifacts. The final workflow job uploads
+  # the complete set only after CLI, Desktop, image, and chart gates pass. Keep
+  # the provider metadata for update-feed generation and local release tooling.
   releaseType: draft
 npmRebuild: false

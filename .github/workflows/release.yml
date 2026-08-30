@@ -339,8 +339,8 @@ jobs:
 
   release:
     needs: [macos-release-preflight, verify, rust-cli-build]
-    # Only the canonical repository may publish release assets. A fork can
-    # still run verification and builds without creating a Release.
+    # Only the canonical repository stages the final release asset set. A fork
+    # can still run verification and builds without creating release artifacts.
     if: github.repository == 'patchbay-ai/patchbay'
     runs-on: ubuntu-latest
     steps:
@@ -355,74 +355,20 @@ jobs:
         working-directory: release-assets
         run: sha256sum -- ./* > checksums.txt
 
-      - name: Create or reuse draft Rust CLI release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
-          IS_STABLE: ${{ needs.verify.outputs.is_stable }}
-        run: |
-          release_channel=(--latest=true)
-          if [ "$IS_STABLE" != "true" ]; then
-            release_channel=(--prerelease --latest=false)
-          fi
-
-          # The tag is the immutable release target. Resolve annotated tags
-          # until the underlying commit and ensure it is still the commit that
-          # triggered this workflow before reusing or creating any release.
-          tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME")"
-          tag_type="$(jq -r '.object.type' <<<"$tag_object")"
-          tag_sha="$(jq -r '.object.sha' <<<"$tag_object")"
-          while [ "$tag_type" = "tag" ]; do
-            tag_object="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$tag_sha")"
-            tag_type="$(jq -r '.object.type' <<<"$tag_object")"
-            tag_sha="$(jq -r '.object.sha' <<<"$tag_object")"
-          done
-          if [ "$tag_type" != "commit" ] || [ "$tag_sha" != "${{ needs.verify.outputs.commit_sha }}" ]; then
-            echo "::error::Tag $TAG_NAME no longer resolves to workflow commit ${{ needs.verify.outputs.commit_sha }}"
-            exit 1
-          fi
-
-          # A failed upload must be recoverable with GitHub's "rerun failed
-          # jobs" button. Reuse an existing release for this exact tag. The
-          # automatic macOS workflow may have already published the matching
-          # ARM64 release, in which case this manual workflow appends the
-          # remaining assets after rechecking the immutable tag and channel.
-          if release_json="$(gh release view "$TAG_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --json isDraft,isPrerelease 2>/dev/null)"; then
-            is_draft="$(jq -r '.isDraft' <<<"$release_json")"
-            is_prerelease="$(jq -r '.isPrerelease' <<<"$release_json")"
-            expected_prerelease=false
-            if [ "$IS_STABLE" != "true" ]; then
-              expected_prerelease=true
-            fi
-            if [ "$is_prerelease" != "$expected_prerelease" ]; then
-              echo "::error::Release $TAG_NAME already exists with an incompatible channel"
-              exit 1
-            fi
-            if [ "$is_draft" = "true" ]; then
-              echo "Reusing the draft release for $TAG_NAME"
-            else
-              echo "Appending verified assets to the already-public release for $TAG_NAME"
-            fi
-          else
-            gh release create "$TAG_NAME" \
-              --repo "$GITHUB_REPOSITORY" \
-              --verify-tag \
-              --title "$TAG_NAME" \
-              --generate-notes \
-              --draft \
-              "${release_channel[@]}"
-          fi
-          gh release upload "$TAG_NAME" release-assets/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
+      - name: Stage Rust CLI release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: github-release-rust-cli
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 1
 
   # Multi-arch images are built natively per platform on dedicated runners
   # (amd64 on ubuntu-latest, arm64 on ubuntu-24.04-arm) and merged into a
   # manifest list. This avoids QEMU emulation, which was making the Next.js
-  # arm64 build run for 30+ minutes. These self-hosted artifacts are manual
-  # so desktop releases never wait for container publication.
+  # arm64 build run for 30+ minutes. These self-hosted artifacts are manual;
+  # the full manual release stages Desktop assets until container and chart
+  # publication has also succeeded.
   docker-backend-build:
     needs: [self-hosted-prepare, verify]
     strategy:
@@ -822,10 +768,11 @@ jobs:
               "ghcr.io/${GITHUB_REPOSITORY_OWNER}/${image}:latest"
           done
 
-  # Build the Desktop installers for every supported platform and upload them
-  # to the draft GitHub Release created above. The release remains private
-  # until every matrix entry succeeds. macOS production builds require a
-  # Developer ID Application identity and successful Apple notarization.
+  # Build the Desktop installers for every supported platform and stage them
+  # as workflow artifacts. No matrix leg mutates the GitHub Release; the final
+  # publication job uploads only after every required build succeeds. macOS
+  # production builds require a Developer ID Application identity and
+  # successful Apple notarization.
   desktop:
     needs: [release, verify]
     strategy:
@@ -912,27 +859,16 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Verify release tag before Desktop publication
-        if: matrix.target != 'mac'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG_NAME: ${{ needs.verify.outputs.tag_name }}
-          EXPECTED_COMMIT: ${{ needs.verify.outputs.commit_sha }}
-        run: bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
-
       - name: Package Desktop installers (${{ matrix.target }})
         if: matrix.target != 'mac'
         working-directory: apps/desktop
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # electron-builder's GitHub publisher reads this:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Disable code signing on Linux/Windows for now — the public
           # release is unsigned for these platforms, the CLI carries the
           # trust boundary. Set CSC_LINK in repo secrets to enable
           # Windows signing later.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: node scripts/package.mjs --${{ matrix.target }} --${{ matrix.arch }} --publish always
+        run: node scripts/package.mjs --${{ matrix.target }} --${{ matrix.arch }} --publish never
 
       - name: Package Desktop installers (macOS)
         if: matrix.target == 'mac'
@@ -981,46 +917,101 @@ jobs:
             exit 1
           }
 
-      - name: Upload verified macOS release assets
-        if: matrix.target == 'mac'
+      - name: Collect Desktop release assets
         working-directory: apps/desktop
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
-          EXPECTED_COMMIT: ${{ needs.verify.outputs.commit_sha }}
+          TARGET: ${{ matrix.target }}
+          ARCH: ${{ matrix.arch }}
         shell: bash
         run: |
-          bash ../../scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
           version="${TAG_NAME#v}"
-          metadata='latest-mac.yml'
-          if [ "${{ matrix.arch }}" = 'x64' ]; then
-            metadata='latest-x64-mac.yml'
-          fi
-
-          required_assets=(
-            "dist/patchbay-desktop-$version-mac-${{ matrix.arch }}.dmg"
-            "dist/patchbay-desktop-$version-mac-${{ matrix.arch }}.zip"
-            "dist/$metadata"
-          )
+          stage_dir="$RUNNER_TEMP/patchbay-desktop-release"
+          mkdir -p "$stage_dir"
+          case "$TARGET:$ARCH" in
+            linux:x64)
+              required_assets=(
+                "dist/patchbay-desktop-$version-linux-x86_64.AppImage"
+                "dist/patchbay-desktop-$version-linux-amd64.deb"
+                "dist/patchbay-desktop-$version-linux-x86_64.rpm"
+                "dist/latest-linux.yml"
+              )
+              ;;
+            linux:arm64)
+              required_assets=(
+                "dist/patchbay-desktop-$version-linux-arm64.AppImage"
+                "dist/patchbay-desktop-$version-linux-arm64.deb"
+                "dist/patchbay-desktop-$version-linux-aarch64.rpm"
+                "dist/latest-linux-arm64.yml"
+              )
+              ;;
+            mac:x64)
+              required_assets=(
+                "dist/patchbay-desktop-$version-mac-x64.dmg"
+                "dist/patchbay-desktop-$version-mac-x64.zip"
+                "dist/latest-x64-mac.yml"
+              )
+              ;;
+            mac:arm64)
+              required_assets=(
+                "dist/patchbay-desktop-$version-mac-arm64.dmg"
+                "dist/patchbay-desktop-$version-mac-arm64.zip"
+                "dist/latest-mac.yml"
+              )
+              ;;
+            win:x64)
+              required_assets=(
+                "dist/patchbay-desktop-$version-windows-x64.exe"
+                "dist/patchbay-desktop-$version-windows-x64.exe.blockmap"
+                "dist/latest.yml"
+              )
+              ;;
+            win:arm64)
+              required_assets=(
+                "dist/patchbay-desktop-$version-windows-arm64.exe"
+                "dist/patchbay-desktop-$version-windows-arm64.exe.blockmap"
+                "dist/latest-arm64.yml"
+              )
+              ;;
+            *)
+              echo "::error::Unsupported Desktop release target $TARGET:$ARCH"
+              exit 1
+              ;;
+          esac
           for asset in "${required_assets[@]}"; do
             if [ ! -f "$asset" ]; then
-              echo "::error::Missing verified macOS release asset $asset"
+              echo "::error::Missing Desktop release asset $asset"
               exit 1
             fi
+            cp "$asset" "$stage_dir/"
           done
 
-          blockmap="dist/patchbay-desktop-$version-mac-${{ matrix.arch }}.zip.blockmap"
-          if [ -f "$blockmap" ]; then
-            required_assets+=("$blockmap")
+          if [ "$TARGET" = 'mac' ]; then
+            blockmap="dist/patchbay-desktop-$version-mac-$ARCH.zip.blockmap"
+            if [ -f "$blockmap" ]; then
+              cp "$blockmap" "$stage_dir/"
+            fi
           fi
-          gh release upload "$TAG_NAME" \
-            "${required_assets[@]}" \
-            --repo "$GITHUB_REPOSITORY" \
-            --clobber
+
+      - name: Stage Desktop release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-release-${{ matrix.target }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/patchbay-desktop-release/*
+          if-no-files-found: error
+          retention-days: 1
 
   publish-release:
-    needs: [verify, release, desktop]
-    if: github.repository == 'patchbay-ai/patchbay'
+    needs: [verify, release, desktop, helm-chart, promote-self-hosted-latest]
+    if: >-
+      always() &&
+      github.repository == 'patchbay-ai/patchbay' &&
+      needs.verify.result == 'success' &&
+      needs.release.result == 'success' &&
+      needs.desktop.result == 'success' &&
+      needs.helm-chart.result == 'success' &&
+      (needs.promote-self-hosted-latest.result == 'success' ||
+       needs.promote-self-hosted-latest.result == 'skipped')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout verified release commit
@@ -1029,23 +1020,24 @@ jobs:
           ref: ${{ needs.verify.outputs.commit_sha }}
           fetch-depth: 0
 
-      - name: Download Rust CLI archives
+      - name: Download staged Rust CLI release assets
         uses: actions/download-artifact@v4
         with:
-          pattern: rust-cli-*
+          name: github-release-rust-cli
+          path: release-assets
+
+      - name: Download staged Desktop release assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-release-*
           path: release-assets
           merge-multiple: true
 
-      - name: Verify draft assets
+      - name: Verify staged release assets
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
         run: |
           version="${TAG_NAME#v}"
-          published_assets="$(gh release view "$TAG_NAME" \
-            --repo "$GITHUB_REPOSITORY" \
-            --json assets \
-            --jq '.assets[].name')"
           # electron-builder maps its `${arch}` macro per Linux package type:
           # x64 becomes x86_64 for AppImage/RPM and amd64 for deb, while arm64
           # becomes aarch64 for RPM. These are the actual uploaded filenames.
@@ -1077,17 +1069,51 @@ jobs:
             "patchbay-desktop-$version-windows-arm64.exe.blockmap" \
             "latest.yml" \
             "latest-arm64.yml"; do
-            grep -Fxq "$asset" <<<"$published_assets" || {
-              echo "::error::Draft release is missing required asset $asset"
+            test -f "release-assets/$asset" || {
+              echo "::error::Staged release is missing required asset $asset"
               exit 1
             }
           done
 
-      - name: Publish complete GitHub release
+      - name: Upload and publish complete GitHub release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ needs.verify.outputs.tag_name }}
           EXPECTED_COMMIT: ${{ needs.verify.outputs.commit_sha }}
+          IS_STABLE: ${{ needs.verify.outputs.is_stable }}
         run: |
           bash scripts/verify-release-tag.sh "$TAG_NAME" "$EXPECTED_COMMIT"
+          release_channel=(--latest=true)
+          if [ "$IS_STABLE" != "true" ]; then
+            release_channel=(--prerelease --latest=false)
+          fi
+
+          # A failed final upload must be recoverable with GitHub's "rerun
+          # failed jobs" button. The automatic macOS workflow may already have
+          # published this exact tag; validate its channel before appending the
+          # now-complete staged asset set.
+          if release_json="$(gh release view "$TAG_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,isPrerelease 2>/dev/null)"; then
+            is_prerelease="$(jq -r '.isPrerelease' <<<"$release_json")"
+            expected_prerelease=false
+            if [ "$IS_STABLE" != "true" ]; then
+              expected_prerelease=true
+            fi
+            if [ "$is_prerelease" != "$expected_prerelease" ]; then
+              echo "::error::Release $TAG_NAME already exists with an incompatible channel"
+              exit 1
+            fi
+          else
+            gh release create "$TAG_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --verify-tag \
+              --title "$TAG_NAME" \
+              --generate-notes \
+              --draft \
+              "${release_channel[@]}"
+          fi
+          gh release upload "$TAG_NAME" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
           gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
