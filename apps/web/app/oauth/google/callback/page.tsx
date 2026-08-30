@@ -23,10 +23,7 @@ function GoogleOAuthCallbackContent() {
   const searchParams = useWebSearchParams();
   const binding = useMemo(
     () =>
-      readDesktopHandoffBinding(
-        searchParams,
-        process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN,
-      ),
+      readDesktopHandoffBinding(searchParams),
     [searchParams],
   );
   const clerk = useClerk();
