@@ -802,7 +802,8 @@ impl ProductionProviderAdapter {
                 Some(&environment),
             );
             drop(path_guard);
-            return finalize_environment(&ctx, outcome, &mut environment, assignment.as_ref()).await;
+            return finalize_environment(&ctx, outcome, &mut environment, assignment.as_ref())
+                .await;
         }
         // Worktree mode holds the source-path lock only while taking its
         // consistent snapshot. In-place mode deliberately retains it until
@@ -829,8 +830,13 @@ impl ProductionProviderAdapter {
                         },
                         Some(&environment),
                     );
-                    return finalize_environment(&ctx, outcome, &mut environment, assignment.as_ref())
-                        .await;
+                    return finalize_environment(
+                        &ctx,
+                        outcome,
+                        &mut environment,
+                        assignment.as_ref(),
+                    )
+                    .await;
                 }
             };
         let Some(task_temp_dir_path) = task_temp_dir.path().to_str() else {
@@ -844,7 +850,8 @@ impl ProductionProviderAdapter {
                 Some(&environment),
             );
             close_task_temp_dir(&task.id, task_temp_dir);
-            return finalize_environment(&ctx, outcome, &mut environment, assignment.as_ref()).await;
+            return finalize_environment(&ctx, outcome, &mut environment, assignment.as_ref())
+                .await;
         };
         if let Err(error) = plan.set_task_temp_dir(task_temp_dir_path) {
             let outcome = failed_with_reason(
@@ -857,7 +864,8 @@ impl ProductionProviderAdapter {
                 Some(&environment),
             );
             close_task_temp_dir(&task.id, task_temp_dir);
-            return finalize_environment(&ctx, outcome, &mut environment, assignment.as_ref()).await;
+            return finalize_environment(&ctx, outcome, &mut environment, assignment.as_ref())
+                .await;
         }
         let run = async {
             let provenance = execution_provenance_for_start(&preparation_ctx, &environment).await;
@@ -2739,13 +2747,22 @@ async fn execution_provenance_for_start(
 
     let repo_identity = git_fact(ctx, work_dir, ["remote", "get-url", "origin"]).await;
     let execution_workspace = git_fact(ctx, work_dir, ["rev-parse", "--show-toplevel"]).await;
-    let head_branch = git_fact(ctx, work_dir, ["symbolic-ref", "--quiet", "--short", "HEAD"])
-        .await;
+    let head_branch = git_fact(
+        ctx,
+        work_dir,
+        ["symbolic-ref", "--quiet", "--short", "HEAD"],
+    )
+    .await;
     let head_sha = git_fact(ctx, work_dir, ["rev-parse", "--verify", "HEAD"]).await;
     let default_branch = git_fact(
         ctx,
         work_dir,
-        ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"],
+        [
+            "symbolic-ref",
+            "--quiet",
+            "--short",
+            "refs/remotes/origin/HEAD",
+        ],
     )
     .await
     .strip_prefix("origin/")

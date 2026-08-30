@@ -567,13 +567,9 @@ async fn task_repository_is_authorized(
         }
     }
     if let Some(chat_session_id) = task.chat_session_id {
-        let chat = chat::get_chat_session_in_workspace(
-            &state.pool,
-            chat_session_id,
-            workspace.id,
-        )
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("task chat session is not in the task workspace"))?;
+        let chat = chat::get_chat_session_in_workspace(&state.pool, chat_session_id, workspace.id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("task chat session is not in the task workspace"))?;
         if let Some(project_id) = chat.project_id {
             project_ids.insert(project_id);
         }
@@ -584,9 +580,7 @@ async fn task_repository_is_authorized(
             .await?
             .is_none()
         {
-            return Err(anyhow::anyhow!(
-                "task project is not in the task workspace"
-            ));
+            return Err(anyhow::anyhow!("task project is not in the task workspace"));
         }
         for resource in project_resource::list_project_resources(&state.pool, project_id).await? {
             if resource.workspace_id != workspace.id || resource.resource_type != "github_repo" {
