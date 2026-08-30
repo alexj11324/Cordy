@@ -280,6 +280,15 @@
   background-color: transparent;
 }
 
+/* An offcanvas sidebar lands exactly outside the viewport. Suppress its
+ * outward glow while hidden; hover reveal changes the parent back to expanded
+ * before the material moves onscreen, restoring the normal shadow above. */
+[data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
+  [data-slot="sidebar"][data-state="collapsed"][data-collapsible="offcanvas"]
+  > [data-slot="sidebar-container"] {
+  box-shadow: none;
+}
+
 @media (prefers-reduced-transparency: reduce) {
   [data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
     [data-slot="sidebar-container"] {

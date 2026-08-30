@@ -105,8 +105,12 @@ vi.mock("./tab-content", () => ({
 
 const { DesktopShell } = await import("./desktop-layout");
 
-function renderShell(os: "macos" | "windows" = "macos") {
+function renderShell(
+  os: "macos" | "windows" = "macos",
+  host: "electron" | "browser" = "electron",
+) {
   (window as unknown as { desktopAPI: Record<string, unknown> }).desktopAPI = {
+    host,
     appInfo: { version: "0.0.0-test", os },
     onNavigationGesture: () => () => {},
     onInboxOpen: () => () => {},
@@ -133,6 +137,7 @@ describe("DesktopShell sidebar trigger", () => {
     )!;
 
     expect(mac).toHaveAttribute("data-sidebar-glass", "true");
+    expect(mac).toHaveAttribute("data-native-vibrancy", "true");
     expect(mac).toHaveClass("bg-transparent");
     expect(mac.parentElement).toHaveClass("bg-transparent");
 
@@ -141,8 +146,19 @@ describe("DesktopShell sidebar trigger", () => {
     )!;
 
     expect(windows).toHaveAttribute("data-sidebar-glass", "true");
+    expect(windows).not.toHaveAttribute("data-native-vibrancy");
     expect(windows).toHaveClass("bg-app-shell");
     expect(windows.parentElement).toHaveClass("bg-app-shell");
+
+    const browserMac = renderShell(
+      "macos",
+      "browser",
+    ).container.querySelector<HTMLElement>("[data-slot='sidebar-wrapper']")!;
+
+    expect(browserMac).toHaveAttribute("data-sidebar-glass", "true");
+    expect(browserMac).not.toHaveAttribute("data-native-vibrancy");
+    expect(browserMac).toHaveClass("bg-app-shell");
+    expect(browserMac.parentElement).toHaveClass("bg-app-shell");
   });
 
   // The window toolbar parks a trigger beside the traffic lights that never

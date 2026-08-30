@@ -77,7 +77,7 @@ html[lang|="ja"] {
 
 /* Let the native macOS material show through only after a glass dashboard
    mounts. Login, onboarding, and issue windows keep the normal body fill. */
-html[data-platform="desktop"]:has([data-sidebar-glass="true"]),
-html[data-platform="desktop"]:has([data-sidebar-glass="true"]) body {
+html[data-platform="desktop"]:has([data-native-vibrancy="true"]),
+html[data-platform="desktop"]:has([data-native-vibrancy="true"]) body {
   background: transparent;
 }
