@@ -662,9 +662,33 @@ fn durable_coordination_activity_id(event: &Event) -> Option<Uuid> {
         } else {
             "coordination"
         });
+    let transition = if matches!(publication, "review_handoff" | "reviewer_replacement") {
+        let issue = event.payload.get("issue");
+        let previous_reviewer_type = event
+            .payload
+            .get("prev_reviewer_type")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let previous_reviewer_id = event
+            .payload
+            .get("prev_reviewer_id")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let reviewer_type = issue
+            .and_then(|issue| issue.get("reviewer_type"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let reviewer_id = issue
+            .and_then(|issue| issue.get("reviewer_id"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        format!(":{previous_reviewer_type}:{previous_reviewer_id}->{reviewer_type}:{reviewer_id}")
+    } else {
+        String::new()
+    };
     Some(Uuid::new_v5(
         &Uuid::NAMESPACE_OID,
-        format!("patchbay:coordination:activity:{event_id}:{publication}").as_bytes(),
+        format!("patchbay:coordination:activity:{event_id}:{publication}{transition}").as_bytes(),
     ))
 }
 
@@ -734,12 +758,17 @@ mod tests {
 
     #[test]
     fn reviewer_replacement_uses_a_stable_activity_id() {
+        let reviewer_a = "22222222-2222-4222-8222-222222222222";
+        let reviewer_b = "33333333-3333-4333-8333-333333333333";
         let event = Event {
             task_id: "11111111-1111-4111-8111-111111111111".into(),
             payload: json!({
                 "reviewer_changed": true,
                 "coordination_publication": "reviewer_replacement",
                 "coordination_event_id": "11111111-1111-4111-8111-111111111111",
+                "prev_reviewer_type": "agent",
+                "prev_reviewer_id": reviewer_a,
+                "issue": {"reviewer_type": "agent", "reviewer_id": reviewer_b},
             }),
             ..Default::default()
         };
@@ -759,6 +788,24 @@ mod tests {
         assert_ne!(
             durable_coordination_activity_id(&event),
             durable_coordination_activity_id(&handoff)
+        );
+        let replacement_after_that = Event {
+            payload: json!({
+                "reviewer_changed": true,
+                "coordination_publication": "reviewer_replacement",
+                "coordination_event_id": "11111111-1111-4111-8111-111111111111",
+                "prev_reviewer_type": "agent",
+                "prev_reviewer_id": reviewer_b,
+                "issue": {
+                    "reviewer_type": "agent",
+                    "reviewer_id": "44444444-4444-4444-8444-444444444444",
+                },
+            }),
+            ..Default::default()
+        };
+        assert_ne!(
+            durable_coordination_activity_id(&event),
+            durable_coordination_activity_id(&replacement_after_that)
         );
         assert!(durable_coordination_activity_id(&Event::default()).is_none());
     }
