@@ -20,6 +20,14 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 1
 
+      - name: Resolve immutable source metadata
+        id: source
+        run: |
+          source_sha="$(git rev-parse HEAD)"
+          echo "sha=${source_sha}" >> "$GITHUB_OUTPUT"
+          echo "tag=${source_sha:0:8}" >> "$GITHUB_OUTPUT"
+          echo "date=$(git show -s --format=%cI HEAD)" >> "$GITHUB_OUTPUT"
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -37,11 +45,11 @@ jobs:
           file: Dockerfile
           platforms: linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/patchbay-backend:fce7fead
+          tags: ghcr.io/${{ github.repository_owner }}/patchbay-backend:${{ steps.source.outputs.tag }}
           build-args: |
-            VERSION=fce7fead
-            COMMIT=fce7fead79d71908e2475111940671995c9f1b6b
-            DATE=2026-08-30T14:31:05Z
+            VERSION=${{ steps.source.outputs.tag }}
+            COMMIT=${{ steps.source.outputs.sha }}
+            DATE=${{ steps.source.outputs.date }}
           cache-from: type=gha,scope=aspectlylabs-backend
           cache-to: type=gha,mode=max,scope=aspectlylabs-backend
 
@@ -54,9 +62,16 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 1
 
+      - name: Resolve immutable source metadata
+        id: source
+        run: |
+          source_sha="$(git rev-parse HEAD)"
+          echo "sha=${source_sha}" >> "$GITHUB_OUTPUT"
+          echo "tag=${source_sha:0:8}" >> "$GITHUB_OUTPUT"
+
       - name: Require the production Clerk publishable key
         env:
-          CLERK_KEY: pk_live_Y2xlcmsuYXNwZWN0bHlsYWJzLmNvbSQ
+          CLERK_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
         run: |
           test -n "${CLERK_KEY:-}" || {
             echo "::error::Missing NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"
@@ -80,10 +95,10 @@ jobs:
           file: Dockerfile.web
           platforms: linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/patchbay-web:fce7fead
+          tags: ghcr.io/${{ github.repository_owner }}/patchbay-web:${{ steps.source.outputs.tag }}
           build-args: |
-            NEXT_PUBLIC_APP_VERSION=fce7fead
-            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_live_Y2xlcmsuYXNwZWN0bHlsYWJzLmNvbSQ
+            NEXT_PUBLIC_APP_VERSION=${{ steps.source.outputs.tag }}
+            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
           cache-from: type=gha,scope=aspectlylabs-web
           cache-to: type=gha,mode=max,scope=aspectlylabs-web
 
@@ -95,6 +110,12 @@ jobs:
         with:
           ref: ${{ github.sha }}
           fetch-depth: 1
+
+      - name: Resolve immutable source metadata
+        id: source
+        run: |
+          source_sha="$(git rev-parse HEAD)"
+          echo "tag=${source_sha:0:8}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
@@ -113,6 +134,6 @@ jobs:
           file: Dockerfile.docs
           platforms: linux/arm64
           push: true
-          tags: ghcr.io/${{ github.repository_owner }}/patchbay-docs:fce7fead
+          tags: ghcr.io/${{ github.repository_owner }}/patchbay-docs:${{ steps.source.outputs.tag }}
           cache-from: type=gha,scope=aspectlylabs-docs
           cache-to: type=gha,mode=max,scope=aspectlylabs-docs
