@@ -4303,8 +4303,16 @@ export class ApiClient {
 
   /** Uses the authenticated workspace context, so a caller cannot enumerate
    * unassociated products from another workspace by changing a body field. */
-  async listUnassociatedWorkProducts(): Promise<UnassociatedWorkProductsResponse> {
-    const raw = await this.fetch<unknown>("/api/work-products/unassociated");
+  async listUnassociatedWorkProducts(
+    options: { page?: number; per_page?: number; query?: string } = {},
+  ): Promise<UnassociatedWorkProductsResponse> {
+    const params = new URLSearchParams({
+      page: String(options.page ?? 1),
+      per_page: String(options.per_page ?? 20),
+    });
+    const query = options.query?.trim();
+    if (query) params.set("query", query);
+    const raw = await this.fetch<unknown>(`/api/work-products/unassociated?${params}`);
     return parseWithFallback(
       raw,
       UnassociatedWorkProductsResponseSchema,

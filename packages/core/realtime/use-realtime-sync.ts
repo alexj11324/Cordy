@@ -896,7 +896,12 @@ export function useRealtimeSync(
       },
       vcs_connection: () => {
         const wsId = getCurrentWsId();
-        if (wsId) qc.invalidateQueries({ queryKey: ["vcs", wsId] });
+        if (wsId) {
+          qc.invalidateQueries({ queryKey: ["vcs", wsId] });
+          qc.invalidateQueries({ queryKey: ["github", "pull-requests"] });
+          qc.invalidateQueries({ queryKey: ["work-products", "issue"] });
+          qc.invalidateQueries({ queryKey: githubKeys.unassociatedWorkProducts(wsId) });
+        }
       },
       wecom_installation: () => {
         const wsId = getCurrentWsId();
@@ -920,6 +925,7 @@ export function useRealtimeSync(
         const wsId = getCurrentWsId();
         if (wsId) {
           qc.invalidateQueries({ queryKey: githubKeys.unassociatedWorkProducts(wsId) });
+          qc.invalidateQueries({ queryKey: ["work-products", "issue"] });
         }
       },
       // Powers the agent presence cache: any task lifecycle change

@@ -750,6 +750,20 @@ async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) -> anyhow:
         "open"
     };
     for installation in installations {
+        // Workspace teardown takes this same row lock before deleting its
+        // provider mirrors and Work Products. Keep the lock and all webhook
+        // writes in one transaction so a webhook that started before teardown
+        // cannot insert a product after the teardown snapshot has completed.
+        let mut transaction = state.pool.begin().await?;
+        if patchbay_db::queries::workspace::lock_workspace_for_delete(
+            &mut *transaction,
+            installation.workspace_id,
+        )
+        .await?
+        .is_none()
+        {
+            continue;
+        }
         let base_changed = event
             .changes
             .as_ref()
@@ -760,7 +774,7 @@ async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) -> anyhow:
             matches!(event.action.as_str(), "opened" | "synchronize" | "reopened")
                 || (event.action == "edited" && base_changed);
         let pr = github::upsert_git_hub_pull_request(
-            &state.pool,
+            &mut *transaction,
             installation.workspace_id,
             event.installation.id,
             &owner,
@@ -796,7 +810,7 @@ async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) -> anyhow:
         .await?;
         if let Some(pr) = pr {
             let product = work_product_q::upsert_work_product(
-                &state.pool,
+                &mut *transaction,
                 pr.workspace_id,
                 "pull_request",
                 "github",
@@ -807,11 +821,12 @@ async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) -> anyhow:
             )
             .await?;
             let issue_ids = work_product_q::list_issue_ids_for_work_product(
-                &state.pool,
+                &mut *transaction,
                 pr.workspace_id,
                 product.id,
             )
             .await?;
+            transaction.commit().await?;
             if matches!(pr.state.as_str(), "merged" | "closed") {
                 for issue_id in &issue_ids {
                     let Ok(Some(issue)) = patchbay_db::queries::issue::get_issue_in_workspace(
@@ -834,6 +849,8 @@ async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) -> anyhow:
                     .map(|issue_id| issue_id.to_string())
                     .collect(),
             );
+        } else {
+            transaction.commit().await?;
         }
     }
     state.github_snapshots.enqueue(

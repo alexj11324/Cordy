@@ -87,6 +87,7 @@ export type TaskWorkProductsResponse = {
 
 export type UnassociatedWorkProductsResponse = {
   work_products: WorkProduct[];
+  next_page: number | null;
 };
 
 export type AttachIssuePullRequestRequest = {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
   CheckCircle2,
@@ -143,67 +143,119 @@ export function PullRequestList({ issueId, workspaceId }: { issueId: string; wor
 
 function UnassociatedPullRequests({ issueId, workspaceId }: { issueId: string; workspaceId: string }) {
   const { t } = useT("issues");
-  const { data } = useQuery(unassociatedWorkProductsOptions(workspaceId));
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [searchInput, setSearchInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const { data, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage } = useInfiniteQuery(
+    unassociatedWorkProductsOptions(workspaceId, searchQuery, pickerOpen),
+  );
   const mutation = useAttachIssueWorkProduct(issueId, workspaceId);
   const [attachingId, setAttachingId] = useState<string | null>(null);
   const [closeIntent, setCloseIntent] = useState(false);
-  const products = (data?.work_products ?? []).filter(
-    (product) =>
-      product.kind === "pull_request" &&
-      product.external_url,
+  const products = (data?.pages ?? []).flatMap((page) => page.work_products).filter(
+    (product) => product.external_url,
   );
 
-  if (products.length === 0) return null;
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSearchQuery(searchInput.trim());
+  }
 
   return (
-    <div
-      data-testid="unassociated-pull-requests"
-      className="space-y-1 rounded-md border border-dashed border-border/70 px-2 py-1.5"
-    >
-      <p className="text-micro font-medium text-muted-foreground">
-        {t(($) => $.detail.pull_requests_unassociated_heading)}
-      </p>
-      <label className="flex items-center gap-2 text-micro text-muted-foreground">
-        <Checkbox
-          checked={closeIntent}
-          onCheckedChange={(checked) => setCloseIntent(checked === true)}
-          aria-label={t(($) => $.detail.pull_requests_close_intent)}
-        />
-        <span>{t(($) => $.detail.pull_requests_close_intent)}</span>
-      </label>
-      {products.map((product) => (
-        <div key={product.id} className="flex items-center gap-2 text-micro">
-          <a
-            href={product.external_url ?? undefined}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="min-w-0 flex-1 truncate text-muted-foreground hover:text-foreground"
-          >
-            {product.external_identity}
-          </a>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={mutation.isPending}
-            onClick={() => {
-              setAttachingId(product.id);
-              mutation.mutate(
-                { work_product_id: product.id, close_intent: closeIntent },
-                {
-                  onSuccess: () => toast.success(t(($) => $.detail.pull_requests_attach_success)),
-                  onError: () => toast.error(t(($) => $.detail.pull_requests_attach_failed)),
-                  onSettled: () => setAttachingId(null),
-                },
-              );
-            }}
-          >
-            {mutation.isPending && attachingId === product.id
-              ? t(($) => $.detail.pull_requests_attaching)
-              : t(($) => $.detail.pull_requests_unassociated_attach)}
-          </Button>
+    <div className="space-y-1 px-2 pt-1">
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={() => setPickerOpen((open) => !open)}
+      >
+        {pickerOpen
+          ? t(($) => $.detail.pull_requests_unassociated_hide)
+          : t(($) => $.detail.pull_requests_unassociated_browse)}
+      </Button>
+      {pickerOpen ? (
+        <div
+          data-testid="unassociated-pull-requests"
+          className="space-y-2 rounded-md border border-dashed border-border/70 px-2 py-1.5"
+        >
+          <p className="text-micro font-medium text-muted-foreground">
+            {t(($) => $.detail.pull_requests_unassociated_heading)}
+          </p>
+          <form onSubmit={submitSearch} className="flex items-center gap-2">
+            <input
+              type="search"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder={t(($) => $.detail.pull_requests_unassociated_search_placeholder)}
+              aria-label={t(($) => $.detail.pull_requests_unassociated_search_placeholder)}
+              className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-micro outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
+            />
+            <Button type="submit" size="sm" variant="ghost">
+              {t(($) => $.detail.pull_requests_unassociated_search)}
+            </Button>
+          </form>
+          <label className="flex items-center gap-2 text-micro text-muted-foreground">
+            <Checkbox
+              checked={closeIntent}
+              onCheckedChange={(checked) => setCloseIntent(checked === true)}
+              aria-label={t(($) => $.detail.pull_requests_close_intent)}
+            />
+            <span>{t(($) => $.detail.pull_requests_close_intent)}</span>
+          </label>
+          {isLoading ? (
+            <p className="text-micro text-muted-foreground">
+              {t(($) => $.detail.pull_requests_loading)}
+            </p>
+          ) : products.length === 0 ? (
+            <p className="text-micro text-muted-foreground">
+              {t(($) => $.detail.pull_requests_unassociated_empty)}
+            </p>
+          ) : products.map((product) => (
+            <div key={product.id} className="flex items-center gap-2 text-micro">
+              <a
+                href={product.external_url ?? undefined}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="min-w-0 flex-1 truncate text-muted-foreground hover:text-foreground"
+              >
+                {product.external_identity}
+              </a>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={mutation.isPending}
+                onClick={() => {
+                  setAttachingId(product.id);
+                  mutation.mutate(
+                    { work_product_id: product.id, close_intent: closeIntent },
+                    {
+                      onSuccess: () => toast.success(t(($) => $.detail.pull_requests_attach_success)),
+                      onError: () => toast.error(t(($) => $.detail.pull_requests_attach_failed)),
+                      onSettled: () => setAttachingId(null),
+                    },
+                  );
+                }}
+              >
+                {mutation.isPending && attachingId === product.id
+                  ? t(($) => $.detail.pull_requests_attaching)
+                  : t(($) => $.detail.pull_requests_unassociated_attach)}
+              </Button>
+            </div>
+          ))}
+          {hasNextPage ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={isFetchingNextPage}
+              onClick={() => void fetchNextPage()}
+            >
+              {t(($) => $.detail.pull_requests_unassociated_load_more)}
+            </Button>
+          ) : null}
         </div>
-      ))}
+      ) : null}
     </div>
   );
 }

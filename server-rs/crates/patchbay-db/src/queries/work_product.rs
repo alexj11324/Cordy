@@ -487,11 +487,21 @@ pub async fn has_active_relation_for_task(
 pub async fn list_unassociated_work_products(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
+    kind: &str,
+    search: &str,
+    limit: i32,
+    offset: i32,
 ) -> anyhow::Result<Vec<WorkProduct>> {
     let query = format!(
         r#"SELECT {WORK_PRODUCT_COLUMNS}
 FROM work_product wp
 WHERE wp.workspace_id = $1
+  AND wp.kind = $2
+  AND (
+      $3 = ''
+      OR strpos(lower(wp.external_identity), lower($3)) > 0
+      OR strpos(lower(COALESCE(wp.external_url, '')), lower($3)) > 0
+  )
   AND NOT EXISTS (
       SELECT 1 FROM work_product_relation wpr
       WHERE wpr.workspace_id = wp.workspace_id
@@ -499,10 +509,15 @@ WHERE wp.workspace_id = $1
         AND wpr.detached_at IS NULL
         AND wpr.issue_id IS NOT NULL
   )
-ORDER BY wp.updated_at DESC, wp.id DESC"#
+ORDER BY wp.updated_at DESC, wp.id DESC
+LIMIT $4 OFFSET $5"#
     );
     let rows = sqlx::query(&query)
         .bind(workspace_id)
+        .bind(kind)
+        .bind(search)
+        .bind(limit)
+        .bind(offset)
         .fetch_all(executor)
         .await?;
     rows.iter().map(work_product_from_row).collect()

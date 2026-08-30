@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "@patchbay/core/i18n/react";
-import type { GitHubPullRequest } from "@patchbay/core/types";
+import type { GitHubPullRequest, WorkProduct } from "@patchbay/core/types";
 import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
 
@@ -12,6 +12,7 @@ const hookMocks = vi.hoisted(() => ({
   attachIssuePullRequest: vi.fn(),
   attachIssueWorkProduct: vi.fn(),
   detachIssueWorkProduct: vi.fn(),
+  listUnassociatedWorkProducts: vi.fn(),
 }));
 
 vi.mock("@patchbay/core/github/queries", async () => {
@@ -30,10 +31,16 @@ vi.mock("@patchbay/core/github/queries", async () => {
       queryFn: async () => ({ work_products: mockWorkProducts }),
       enabled: !!issueId,
     }),
-    unassociatedWorkProductsOptions: (workspaceId: string) => ({
-      queryKey: ["work-products", workspaceId, "unassociated"],
-      queryFn: async () => ({ work_products: [] }),
-      enabled: true,
+    unassociatedWorkProductsOptions: (workspaceId: string, query: string, enabled: boolean) => ({
+      queryKey: ["work-products", workspaceId, "unassociated", { query }],
+      queryFn: async ({ pageParam }: { pageParam: number }) => {
+        hookMocks.listUnassociatedWorkProducts(query, pageParam);
+        return { work_products: mockUnassociatedWorkProducts, next_page: null };
+      },
+      initialPageParam: 1,
+      getNextPageParam: (lastPage: { next_page: number | null }) =>
+        lastPage.next_page ?? undefined,
+      enabled,
     }),
   };
 });
@@ -69,6 +76,8 @@ let mockWorkProducts: Array<{
   provider: string;
   provider_record_id: string | null;
 }> = [];
+
+let mockUnassociatedWorkProducts: WorkProduct[] = [];
 
 function makePR(overrides: Partial<GitHubPullRequest> = {}): GitHubPullRequest {
   return {
@@ -180,6 +189,41 @@ describe("PullRequestList sidebar rows", () => {
     expect(hookMocks.detachIssueWorkProduct).toHaveBeenCalledWith(
       "work-product-1",
       expect.any(Object),
+    );
+  });
+
+  it("loads and searches the unassociated PR picker only after the member opens it", async () => {
+    hookMocks.listUnassociatedWorkProducts.mockClear();
+    mockPRs = [];
+    mockUnassociatedWorkProducts = [
+      {
+        id: "work-product-unassociated-1",
+        workspace_id: "ws-1",
+        kind: "pull_request",
+        provider: "github",
+        external_identity: "github:acme/widget#7",
+        external_url: "https://github.com/acme/widget/pull/7",
+        provider_record_type: "github_pull_request",
+        provider_record_id: "github-pr-7",
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+        association_state: "unassociated",
+        relation: null,
+      },
+    ];
+    renderList();
+    await screen.findByTestId("attach-pull-request-form");
+
+    expect(hookMocks.listUnassociatedWorkProducts).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Browse unassociated PRs" }));
+
+    expect(await screen.findByText("github:acme/widget#7")).toBeInTheDocument();
+    expect(hookMocks.listUnassociatedWorkProducts).toHaveBeenCalledWith("", 1);
+
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "acme/widget" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    await waitFor(() =>
+      expect(hookMocks.listUnassociatedWorkProducts).toHaveBeenCalledWith("acme/widget", 1),
     );
   });
 

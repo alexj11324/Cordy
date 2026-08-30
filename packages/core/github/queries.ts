@@ -48,9 +48,16 @@ export const issueWorkProductsOptions = (issueId: string) =>
     enabled: !!issueId,
   });
 
-export const unassociatedWorkProductsOptions = (wsId: string) =>
-  queryOptions({
-    queryKey: githubKeys.unassociatedWorkProducts(wsId),
-    queryFn: () => api.listUnassociatedWorkProducts(),
-    enabled: !!wsId,
+export const unassociatedWorkProductsOptions = (
+  wsId: string,
+  query: string,
+  enabled: boolean,
+) =>
+  infiniteQueryOptions({
+    queryKey: [...githubKeys.unassociatedWorkProducts(wsId), { query }] as const,
+    queryFn: ({ pageParam }) =>
+      api.listUnassociatedWorkProducts({ page: pageParam, per_page: 20, query }),
+    initialPageParam: 1,
+    getNextPageParam: (lastPage) => lastPage.next_page ?? undefined,
+    enabled: enabled && !!wsId,
   });

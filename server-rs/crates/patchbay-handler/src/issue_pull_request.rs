@@ -709,7 +709,14 @@ pub(crate) async fn attach(
         task_id: task_id.map(|id| id.to_string()).unwrap_or_default(),
         chat_session_id: String::new(),
     });
-    if request.close_intent {
+    // A caller-provided state is only a display hint. Completion may be
+    // triggered by a verified provider response, never by an unmirrored URL
+    // carrying `state: "merged"` in the request body.
+    if request.close_intent
+        && metadata
+            .as_ref()
+            .is_some_and(|(_, value)| value.state == "merged")
+    {
         crate::vcs_webhook::maybe_complete_issue(&state, issue.clone()).await;
     }
     let status = if is_new {

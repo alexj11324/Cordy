@@ -9,7 +9,7 @@
 
 use std::collections::BTreeSet;
 
-use axum::extract::{Extension, Path, State};
+use axum::extract::{Extension, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
@@ -42,6 +42,13 @@ pub(crate) struct AttachExistingRequest {
     work_product_id: Uuid,
     #[serde(default)]
     close_intent: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ListUnassociatedQuery {
+    page: Option<i32>,
+    per_page: Option<i32>,
+    query: Option<String>,
 }
 
 #[derive(Debug)]
@@ -350,17 +357,43 @@ pub(crate) async fn detach(
 pub(crate) async fn list_unassociated(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
+    Query(query): Query<ListUnassociatedQuery>,
 ) -> Response {
-    match work_product_q::list_unassociated_work_products(&state.pool, context.member.workspace_id)
-        .await
+    let page = query.page.unwrap_or(1);
+    let per_page = query.per_page.unwrap_or(20);
+    if !(1..=100_000).contains(&page) {
+        return error_response(StatusCode::BAD_REQUEST, "invalid page");
+    }
+    if !(1..=50).contains(&per_page) {
+        return error_response(StatusCode::BAD_REQUEST, "invalid per_page");
+    }
+    let search = query.query.unwrap_or_default().trim().to_owned();
+    if search.chars().count() > 200 {
+        return error_response(StatusCode::BAD_REQUEST, "query is too long");
+    }
+    let offset = (page - 1) * per_page;
+    match work_product_q::list_unassociated_work_products(
+        &state.pool,
+        context.member.workspace_id,
+        "pull_request",
+        &search,
+        per_page + 1,
+        offset,
+    )
+    .await
     {
-        Ok(products) => Json(json!({
-            "work_products": products
-                .iter()
-                .map(|product| product_response(product, None))
-                .collect::<Vec<_>>(),
-        }))
-        .into_response(),
+        Ok(mut products) => {
+            let next_page = (products.len() > per_page as usize).then_some(page + 1);
+            products.truncate(per_page as usize);
+            Json(json!({
+                "work_products": products
+                    .iter()
+                    .map(|product| product_response(product, None))
+                    .collect::<Vec<_>>(),
+                "next_page": next_page,
+            }))
+            .into_response()
+        }
         Err(error) => {
             tracing::warn!(%error, "unassociated work product list failed");
             error_response(
@@ -1167,6 +1200,7 @@ async fn discover_one_execution(
 
     let mut matches = Vec::new();
     let mut lookup_failed = false;
+    let mut installation_lookup_failed = false;
     let mut head_sha_mismatch = false;
     for installation in installations {
         match client
@@ -1231,7 +1265,11 @@ async fn discover_one_execution(
                 );
             }
             Err(error) => {
-                lookup_failed = true;
+                // An installation can be present in the same workspace while
+                // not owning this repository. Its provider lookup must not
+                // suppress an exact match returned by another installation;
+                // retain the failure only for the no-match audit below.
+                installation_lookup_failed = true;
                 tracing::warn!(
                     %error,
                     task_id = %task.id,
@@ -1294,7 +1332,7 @@ async fn discover_one_execution(
         }
     }
 
-    if lookup_failed {
+    if lookup_failed || (installation_lookup_failed && matches.is_empty()) {
         if let Err(error) = commit_discovery_status(
             transaction,
             provenance,
@@ -1708,11 +1746,17 @@ pub(crate) async fn attach_work_product_relation_in_transaction(
     attached_by_id: Uuid,
     close_intent: bool,
 ) -> anyhow::Result<WorkProductRelation> {
-    if !work_product_q::lock_work_product(transaction, workspace_id, work_product_id).await? {
+    if !work_product_q::lock_work_product(
+        &mut *transaction,
+        workspace_id,
+        work_product_id,
+    )
+    .await?
+    {
         anyhow::bail!("work product is not in the requested workspace");
     }
     work_product_q::attach_work_product_relation(
-        transaction,
+        &mut *transaction,
         workspace_id,
         work_product_id,
         issue_id,

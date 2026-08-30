@@ -449,10 +449,12 @@ export const EMPTY_TASK_WORK_PRODUCTS_RESPONSE: TaskWorkProductsResponse = {
 
 export const UnassociatedWorkProductsResponseSchema = z.object({
   work_products: z.array(WorkProductSchema).default([]),
+  next_page: z.number().int().positive().nullable().default(null),
 }).loose();
 
 export const EMPTY_UNASSOCIATED_WORK_PRODUCTS_RESPONSE: UnassociatedWorkProductsResponse = {
   work_products: [],
+  next_page: null,
 };
 
 // Label responses are consumed by settings tables and resource pickers. Keep
