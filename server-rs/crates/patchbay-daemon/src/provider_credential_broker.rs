@@ -271,12 +271,20 @@ async fn proxy_provider_request_inner(
     let body = to_bytes(body, MAX_PROVIDER_REQUEST_BYTES)
         .await
         .context("read provider request")?;
-    let payload: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+    let payload: Value = serde_json::from_slice(&body).context("parse provider request JSON")?;
+    anyhow::ensure!(payload.is_object(), "provider request must be a JSON object");
+    let local_path = parts
+        .uri
+        .path_and_query()
+        .map(|value| value.as_str())
+        .unwrap_or("/");
+    validate_provider_operation(state.credential_mode, &parts.method, local_path)?;
     let model = payload
         .get("model")
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_string();
+    anyhow::ensure!(!model.is_empty(), "provider request model is required");
     if !state.authorization.models.is_empty() {
         anyhow::ensure!(
             state
@@ -287,11 +295,22 @@ async fn proxy_provider_request_inner(
             "provider model is outside grant"
         );
     }
+    let counts_tokens_only = parts.uri.path() == "/anthropic/v1/messages/count_tokens";
     let requested_tokens = payload
         .get("max_output_tokens")
         .or_else(|| payload.get("max_tokens"))
-        .and_then(Value::as_u64)
-        .unwrap_or(4096);
+        .and_then(Value::as_u64);
+    if state.authorization.max_tokens.is_some() && !counts_tokens_only {
+        anyhow::ensure!(
+            requested_tokens.is_some(),
+            "budgeted provider request must declare maximum output tokens"
+        );
+    }
+    let requested_tokens = if counts_tokens_only {
+        0
+    } else {
+        requested_tokens.unwrap_or(4096)
+    };
     reserve_token_budget(&state, requested_tokens)?;
     state
         .client
@@ -312,11 +331,6 @@ async fn proxy_provider_request_inner(
         credential.mode() == state.credential_mode,
         "host provider login mode changed"
     );
-    let local_path = parts
-        .uri
-        .path_and_query()
-        .map(|value| value.as_str())
-        .unwrap_or("/");
     let rejected_access_token = credential.refreshable_access_token().map(str::to_string);
     let mut upstream_response = send_upstream_request(
         &state.http,
@@ -373,6 +387,7 @@ async fn send_upstream_request(
     body: axum::body::Bytes,
     credential: &HostCredential,
 ) -> anyhow::Result<reqwest::Response> {
+    validate_provider_operation(credential.mode(), method, local_path)?;
     let upstream = upstream_url(credential, local_path)?;
     let mut request = http.request(method.clone(), upstream).body(body);
     for (name, value) in headers {
@@ -793,6 +808,39 @@ fn upstream_url(credential: &HostCredential, local_path: &str) -> anyhow::Result
     Ok(format!("{base}{suffix}"))
 }
 
+fn validate_provider_operation(
+    mode: CredentialMode,
+    method: &axum::http::Method,
+    local_path: &str,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        method == axum::http::Method::POST,
+        "provider broker permits inference POST requests only"
+    );
+    let (prefix, allowed): (&str, &[&str]) = match mode {
+        CredentialMode::OpenAiApiKey => (
+            "/openai/v1",
+            &["/responses", "/responses/compact", "/chat/completions"],
+        ),
+        CredentialMode::CodexOauth => {
+            ("/openai", &["/responses", "/responses/compact"])
+        }
+        CredentialMode::AnthropicApiKey | CredentialMode::ClaudeOauth => {
+            ("/anthropic", &["/v1/messages", "/v1/messages/count_tokens"])
+        }
+    };
+    let suffix = local_path
+        .split('?')
+        .next()
+        .and_then(|path| path.strip_prefix(prefix))
+        .ok_or_else(|| anyhow!("provider request path is outside broker route"))?;
+    anyhow::ensure!(
+        allowed.contains(&suffix),
+        "provider request is outside the granted inference action"
+    );
+    Ok(())
+}
+
 fn apply_host_credential(
     request: reqwest::RequestBuilder,
     credential: &HostCredential,
@@ -821,7 +869,14 @@ fn apply_host_credential(
 fn is_forwardable_request_header(name: &HeaderName) -> bool {
     !matches!(
         name.as_str(),
-        "authorization" | "x-api-key" | "host" | "content-length" | "cookie"
+        "authorization"
+            | "x-api-key"
+            | "host"
+            | "content-length"
+            | "cookie"
+            | "chatgpt-account-id"
+            | "openai-organization"
+            | "openai-project"
     )
 }
 
@@ -851,6 +906,34 @@ mod tests {
             "https://api.openai.com/v1/responses"
         );
         assert!(upstream_url(&credential, "/anthropic/v1/messages").is_err());
+    }
+
+    #[test]
+    fn broker_allows_only_explicit_inference_actions() {
+        assert!(validate_provider_operation(
+            CredentialMode::OpenAiApiKey,
+            &axum::http::Method::POST,
+            "/openai/v1/responses"
+        )
+        .is_ok());
+        assert!(validate_provider_operation(
+            CredentialMode::OpenAiApiKey,
+            &axum::http::Method::GET,
+            "/openai/v1/models"
+        )
+        .is_err());
+        assert!(validate_provider_operation(
+            CredentialMode::OpenAiApiKey,
+            &axum::http::Method::POST,
+            "/openai/v1/files"
+        )
+        .is_err());
+        assert!(validate_provider_operation(
+            CredentialMode::OpenAiApiKey,
+            &axum::http::Method::POST,
+            "/openai/v1/organizations"
+        )
+        .is_err());
     }
 
     #[test]
