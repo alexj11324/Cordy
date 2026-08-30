@@ -239,7 +239,8 @@
         },
         "autopilot-ci-watch": {
           "title": "CI watch",
-          "description": "Keeps an eye on checks for the active implementation branch."
+          "description": "Keeps an eye on checks for the active implementation branch.",
+          "issue_title_template": "CI watch follow-up"
         },
         "autopilot-weekly-summary": {
           "title": "Weekly workspace summary",

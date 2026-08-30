@@ -191,9 +191,9 @@ const PREVIEW_MEMBER = {
 
 const PREVIEW_ISSUES = [
   previewIssue("101", "backlog", "Refine workspace onboarding", "Make the first-run path easier to understand.", "high"),
-  previewIssue("102", "todo", "Polish issue board empty states", "Keep the board useful before real work arrives.", "medium"),
-  previewIssue("103", "todo", "Add keyboard shortcuts", "Expose the common actions without extra chrome.", "low"),
-  previewIssue("104", "in_progress", "Add real-time status indicator", "Show when an agent is actively working on an issue.", "urgent", "agent"),
+  previewIssue("102", "todo", "Polish issue board empty states", "Keep the board useful before real work arrives.", "medium", "member", null, previewTime(-29)),
+  previewIssue("103", "todo", "Add keyboard shortcuts", "Expose the common actions without extra chrome.", "low", "member", null, previewTime(-20)),
+  previewIssue("104", "in_progress", "Add real-time status indicator", "Show when an agent is actively working on an issue.", "urgent", "agent", null, previewTime(-242)),
   previewIssue(
     "105",
     "in_review",
@@ -202,8 +202,9 @@ const PREVIEW_ISSUES = [
     "medium",
     "agent",
     { type: "agent", id: "agent-mika" },
+    previewTime(-1501),
   ),
-  previewIssue("106", "done", "Split web and API dev commands", "Let visual work start without the full local stack.", "none"),
+  previewIssue("106", "done", "Split web and API dev commands", "Let visual work start without the full local stack.", "none", "member", null, previewTime(-4322)),
 ];
 
 const PREVIEW_DIRECTORY_AGENT = {
@@ -259,6 +260,11 @@ const PREVIEW_EMPTY_DINGTALK_GROUP_ROUTES = { routes: [] };
 const PREVIEW_EMPTY_RUNTIME_PROFILES = { runtime_profiles: [] };
 const PREVIEW_EMPTY_PLUGINS = { plugins: [] };
 const PREVIEW_EMPTY_MCP_SERVERS = [];
+const PREVIEW_CHAT_SESSION_ID = "chat-session-preview-mika";
+const PREVIEW_EMPTY_CHAT_PENDING_TASK = {
+  supports_queue: false,
+  queued_tasks: [],
+};
 
 function previewRuntimeLocalSkills(runtimeId) {
   return {
@@ -271,6 +277,31 @@ function previewRuntimeLocalSkills(runtimeId) {
     mcp_supported: false,
     created_at: NOW,
     updated_at: NOW,
+  };
+}
+
+function previewRuntimeModels(runtimeId) {
+  return {
+    id: `preview-models-${runtimeId}`,
+    runtime_id: runtimeId,
+    status: "completed",
+    models: [],
+    supported: true,
+    created_at: NOW,
+    updated_at: NOW,
+  };
+}
+
+function previewChatMessagesPage(url) {
+  const requestedLimit = Number(url.searchParams.get("limit") ?? 50);
+  const limit = Number.isInteger(requestedLimit) && requestedLimit > 0
+    ? requestedLimit
+    : 50;
+  return {
+    messages: [],
+    limit,
+    has_more: false,
+    next_cursor: null,
   };
 }
 
@@ -513,6 +544,7 @@ function previewAutopilot({
   assigneeId,
   status,
   executionMode,
+  issueTitleTemplate = null,
   nextRunAt,
   triggerKinds,
   createdAt,
@@ -529,7 +561,7 @@ function previewAutopilot({
     status,
     pause_reason: pauseReason,
     execution_mode: executionMode,
-    issue_title_template: executionMode === "create_issue" ? "Weekly automation summary" : null,
+    issue_title_template: executionMode === "create_issue" ? issueTitleTemplate : null,
     created_by_type: "member",
     created_by_id: PREVIEW_USER_ID,
     last_run_at: null,
@@ -554,6 +586,7 @@ const PREVIEW_AUTOPILOTS = [
     assigneeId: "agent-mika",
     status: "active",
     executionMode: "create_issue",
+    issueTitleTemplate: "PR review follow-up",
     nextRunAt: PREVIEW_NEXT_PR_REVIEW_AT,
     triggerKinds: ["schedule"],
     createdAt: previewTime(-4322),
@@ -564,7 +597,8 @@ const PREVIEW_AUTOPILOTS = [
     description: "Keeps an eye on checks for the active implementation branch.",
     assigneeId: PREVIEW_AGENT_ID,
     status: "active",
-    executionMode: "run_only",
+    executionMode: "create_issue",
+    issueTitleTemplate: "CI watch follow-up",
     nextRunAt: PREVIEW_NEXT_CI_WATCH_AT,
     triggerKinds: ["schedule"],
     createdAt: previewTime(-270),
@@ -576,6 +610,7 @@ const PREVIEW_AUTOPILOTS = [
     assigneeId: "agent-quill",
     status: "paused",
     executionMode: "create_issue",
+    issueTitleTemplate: "Weekly automation summary",
     nextRunAt: null,
     triggerKinds: ["schedule"],
     createdAt: previewTime(-10110),
@@ -612,7 +647,7 @@ function previewTrigger(
 
 const PREVIEW_TRIGGERS = {
   "autopilot-pr-review": [previewTrigger("trigger-pr-review", "autopilot-pr-review", true, "*/30 * * * *", PREVIEW_NEXT_PR_REVIEW_AT, previewTime(-97))],
-  "autopilot-ci-watch": [previewTrigger("trigger-ci-watch", "autopilot-ci-watch", true, "*/15 * * * *", PREVIEW_NEXT_CI_WATCH_AT, previewTime(-238))],
+  "autopilot-ci-watch": [previewTrigger("trigger-ci-watch", "autopilot-ci-watch", true, "*/15 * * * *", PREVIEW_NEXT_CI_WATCH_AT, previewTime(-241))],
   "autopilot-weekly-summary": [previewTrigger("trigger-weekly-summary", "autopilot-weekly-summary", false, "0 9 * * 1", null)],
 };
 
@@ -692,7 +727,7 @@ const PREVIEW_RUNS = {
       status: "running",
       issueNumber: "104",
       taskId: "task-pre-104",
-      triggeredAt: previewTime(-238),
+      triggeredAt: previewTime(-241),
     }),
   ],
   "autopilot-weekly-summary": [
@@ -935,6 +970,7 @@ function previewIssue(
   priority,
   assignee = "member",
   reviewer = null,
+  createdAt = NOW,
 ) {
   const id = issueId(number);
   const isAgent = assignee === "agent";
@@ -964,7 +1000,7 @@ function previewIssue(
     metadata: {},
     properties: {},
     labels: [],
-    created_at: NOW,
+    created_at: createdAt,
     updated_at: NOW,
   };
 }
@@ -1236,6 +1272,24 @@ export async function handlePreviewRequest(req, res) {
       ? json(res, PREVIEW_EMPTY_MCP_SERVERS)
       : json(res, { error: "Preview workspace not found" }, 404);
   }
+  const chatMessagesPage = /^\/api\/chat\/sessions\/([^/]+)\/messages\/page$/.exec(path);
+  if (method === "GET" && chatMessagesPage) {
+    return decodeURIComponent(chatMessagesPage[1]) === PREVIEW_CHAT_SESSION_ID
+      ? json(res, previewChatMessagesPage(url))
+      : json(res, { error: "Preview chat session not found" }, 404);
+  }
+  const chatMessages = /^\/api\/chat\/sessions\/([^/]+)\/messages$/.exec(path);
+  if (method === "GET" && chatMessages) {
+    return decodeURIComponent(chatMessages[1]) === PREVIEW_CHAT_SESSION_ID
+      ? json(res, [])
+      : json(res, { error: "Preview chat session not found" }, 404);
+  }
+  const chatPendingTask = /^\/api\/chat\/sessions\/([^/]+)\/pending-task$/.exec(path);
+  if (method === "GET" && chatPendingTask) {
+    return decodeURIComponent(chatPendingTask[1]) === PREVIEW_CHAT_SESSION_ID
+      ? json(res, PREVIEW_EMPTY_CHAT_PENDING_TASK)
+      : json(res, { error: "Preview chat session not found" }, 404);
+  }
   if (method === "GET" && path === "/api/agents") {
     return json(res, PREVIEW_DIRECTORY_AGENTS.map((agent) => localizePreviewAgent(agent, copy)));
   }
@@ -1261,6 +1315,13 @@ export async function handlePreviewRequest(req, res) {
   }
   if (method === "GET" && path === "/api/runtimes") {
     return json(res, PREVIEW_RUNTIMES.map((runtime) => localizePreviewRuntime(runtime, copy)));
+  }
+  const runtimeModels = /^\/api\/runtimes\/([^/]+)\/models$/.exec(path);
+  if (method === "POST" && runtimeModels) {
+    const runtimeId = decodeURIComponent(runtimeModels[1]);
+    return PREVIEW_RUNTIMES.some((runtime) => runtime.id === runtimeId)
+      ? json(res, previewRuntimeModels(runtimeId))
+      : json(res, { error: "Preview runtime not found" }, 404);
   }
   const runtimeUsage = /^\/api\/runtimes\/([^/]+)\/usage$/.exec(path);
   if (method === "GET" && runtimeUsage) {

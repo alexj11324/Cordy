@@ -238,7 +238,8 @@
         },
         "autopilot-ci-watch": {
           "title": "CI 監視",
-          "description": "現在の実装ブランチのチェックを監視します。"
+          "description": "現在の実装ブランチのチェックを監視します。",
+          "issue_title_template": "CI 監視のフォローアップ"
         },
         "autopilot-weekly-summary": {
           "title": "週間ワークスペース概要",

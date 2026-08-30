@@ -207,6 +207,31 @@ describe("local Vite preview API", () => {
     expect(unknown).toMatchObject({ handled: true, status: 404 });
   });
 
+  it("serves completed empty model catalogs for every seeded runtime", async () => {
+    const runtimes = await call("GET", "/api/runtimes");
+
+    expect(runtimes.body).toHaveLength(4);
+    for (const runtime of runtimes.body) {
+      const models = await call("POST", `/api/runtimes/${runtime.id}/models`);
+      expect(models).toMatchObject({
+        handled: true,
+        status: 200,
+        body: {
+          id: `preview-models-${runtime.id}`,
+          runtime_id: runtime.id,
+          status: "completed",
+          models: [],
+          supported: true,
+        },
+      });
+      expect(models.body.created_at).toEqual(expect.any(String));
+      expect(models.body.updated_at).toEqual(expect.any(String));
+    }
+
+    const unknown = await call("POST", "/api/runtimes/runtime-unknown/models");
+    expect(unknown).toMatchObject({ handled: true, status: 404 });
+  });
+
   it("serves completed empty capability responses for every seeded runtime", async () => {
     const runtimes = await call("GET", "/api/runtimes");
 
@@ -313,7 +338,20 @@ describe("local Vite preview API", () => {
 
     const ciWatchDetail = await call("GET", "/api/autopilots/autopilot-ci-watch");
     const ciWatchTrigger = ciWatchDetail.body.triggers[0];
+    const ciWatchRuns = await call("GET", "/api/autopilots/autopilot-ci-watch/runs");
+    const ciWatchRun = ciWatchRuns.body.runs[0];
+    const ciWatchTask = tasks.body.find((task) => task.id === ciWatchRun.task_id);
+    expect(ciWatchDetail.body.autopilot).toMatchObject({
+      execution_mode: "create_issue",
+      issue_title_template: "CI watch follow-up",
+    });
     expect(ciWatchDetail.body.autopilot.next_run_at).toBe(ciWatchTrigger.next_run_at);
+    expect(Date.parse(ciWatchRun.triggered_at)).toBeLessThan(
+      Date.parse(ciWatchTask.created_at),
+    );
+    expect(Date.parse(ciWatchRun.triggered_at)).toBeLessThan(
+      Date.parse(ciWatchTask.dispatched_at),
+    );
     expect(Date.parse(ciWatchTrigger.next_run_at)).toBeGreaterThan(Date.now() - 60_000);
     expect(Number(new Intl.DateTimeFormat("en-US", {
       timeZone: ciWatchTrigger.timezone,
@@ -339,6 +377,8 @@ describe("local Vite preview API", () => {
     }
 
     const tasksById = new Map(tasks.body.map((task) => [task.id, task]));
+    const issues = await call("GET", "/api/issues?limit=50");
+    const issuesById = new Map(issues.body.issues.map((issue) => [issue.id, issue]));
     const autopilotsById = new Map(
       list.body.autopilots.map((autopilot) => [autopilot.id, autopilot]),
     );
@@ -357,6 +397,27 @@ describe("local Vite preview API", () => {
       expect(task.issue_id).not.toBe("");
     }
     for (const task of tasks.body) {
+      const issue = issuesById.get(task.issue_id);
+      expect(issue).toBeDefined();
+      expect(Date.parse(issue.created_at)).toBeLessThanOrEqual(
+        Date.parse(task.created_at),
+      );
+    }
+    for (const autopilot of list.body.autopilots) {
+      const autopilotRuns = await call(
+        "GET",
+        `/api/autopilots/${autopilot.id}/runs`,
+      );
+      for (const run of autopilotRuns.body.runs) {
+        if (!run.issue_id) continue;
+        const issue = issuesById.get(run.issue_id);
+        expect(issue).toBeDefined();
+        expect(Date.parse(issue.created_at)).toBeLessThanOrEqual(
+          Date.parse(run.triggered_at),
+        );
+      }
+    }
+    for (const task of tasks.body) {
       expect(task).not.toHaveProperty("chat_session_id");
       expect(task).not.toHaveProperty("transcript");
       expect(task).not.toHaveProperty("messages");
@@ -367,6 +428,38 @@ describe("local Vite preview API", () => {
       "/api/autopilots/autopilot-pr-review/trigger",
     );
     expect(unsupportedTrigger.handled).toBe(false);
+  });
+
+  it("serves empty read contracts for the seeded Mika chat session", async () => {
+    const page = await call(
+      "GET",
+      "/api/chat/sessions/chat-session-preview-mika/messages/page?limit=25",
+    );
+    const messages = await call(
+      "GET",
+      "/api/chat/sessions/chat-session-preview-mika/messages",
+    );
+    const pending = await call(
+      "GET",
+      "/api/chat/sessions/chat-session-preview-mika/pending-task",
+    );
+    const unknown = await call(
+      "GET",
+      "/api/chat/sessions/chat-session-unknown/messages/page",
+    );
+
+    expect(page).toEqual({
+      handled: true,
+      status: 200,
+      body: { messages: [], limit: 25, has_more: false, next_cursor: null },
+    });
+    expect(messages).toEqual({ handled: true, status: 200, body: [] });
+    expect(pending).toEqual({
+      handled: true,
+      status: 200,
+      body: { supports_queue: false, queued_tasks: [] },
+    });
+    expect(unknown).toMatchObject({ handled: true, status: 404 });
   });
 
   it("keeps shared issue list and optional detail reads on the JSON boundary", async () => {

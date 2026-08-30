@@ -238,7 +238,8 @@
         },
         "autopilot-ci-watch": {
           "title": "CI 监控",
-          "description": "持续关注当前实现分支的检查结果。"
+          "description": "持续关注当前实现分支的检查结果。",
+          "issue_title_template": "CI 监控后续"
         },
         "autopilot-weekly-summary": {
           "title": "每周工作区摘要",

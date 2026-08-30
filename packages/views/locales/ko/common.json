@@ -238,7 +238,8 @@
         },
         "autopilot-ci-watch": {
           "title": "CI 모니터링",
-          "description": "현재 구현 브랜치의 검사 결과를 계속 확인합니다."
+          "description": "현재 구현 브랜치의 검사 결과를 계속 확인합니다.",
+          "issue_title_template": "CI 모니터링 후속 작업"
         },
         "autopilot-weekly-summary": {
           "title": "주간 워크스페이스 요약",
