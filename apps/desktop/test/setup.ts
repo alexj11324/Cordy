@@ -57,4 +57,19 @@ if (typeof window !== "undefined") {
         dispatchEvent: () => false,
       }) as MediaQueryList;
   }
+
+  // jsdom doesn't provide ResizeObserver; input-otp uses it while rendering
+  // the in-app email verification flow.
+  if (typeof globalThis.ResizeObserver === "undefined") {
+    globalThis.ResizeObserver = class ResizeObserver {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver;
+  }
+
+  // jsdom doesn't implement elementFromPoint; input-otp uses it internally.
+  if (typeof document.elementFromPoint !== "function") {
+    document.elementFromPoint = () => null;
+  }
 }

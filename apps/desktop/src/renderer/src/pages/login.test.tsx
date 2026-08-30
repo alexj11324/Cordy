@@ -154,13 +154,11 @@ describe("DesktopLoginPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Continue with Google" }));
 
-    await waitFor(() =>
-      expect(
-        screen.getByRole("alert", {
-          name: "Could not open the login page. Please try again.",
-        }),
-      ).toBeInTheDocument(),
-    );
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Could not open the login page. Please try again.",
+      );
+    });
   });
 
   it("starts a real guest session without opening the browser", async () => {
