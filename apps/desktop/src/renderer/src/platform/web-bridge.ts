@@ -101,7 +101,12 @@ export function installWebDesktopBridge(): boolean {
   const existingWindow = window as unknown as { desktopAPI?: unknown };
   if (existingWindow.desktopAPI) return false;
 
-  const preview = import.meta.env.VITE_DESKTOP_PREVIEW !== "false";
+  // The documented backend-enabled Vite path is selected by VITE_API_URL.
+  // VITE_DESKTOP_PREVIEW remains an explicit fixture-only override when no
+  // backend URL is present.
+  const preview =
+    !import.meta.env.VITE_API_URL &&
+    import.meta.env.VITE_DESKTOP_PREVIEW !== "false";
   let pendingBrowserAuthHandoff = preview ? null : takeBrowserAuthHandoff();
   const runtimeConfig = runtimeConfigFromDevEnv({
     // The browser preview owns a same-origin local API middleware by default.
@@ -141,17 +146,36 @@ export function installWebDesktopBridge(): boolean {
     ackFreeze: (_ts: number) => undefined,
     reportAuthSession: (_userId: string | null) => undefined,
     onAuthHandoff: (
-      callback: (payload: { code: string; state: string }) => void,
+      callback: (payload: {
+        code: string;
+        state: string;
+      }) => boolean | Promise<boolean>,
     ) => {
-      const pending = pendingBrowserAuthHandoff;
-      if (!pending) return noopUnsubscribe();
-      pendingBrowserAuthHandoff = null;
+      if (!pendingBrowserAuthHandoff) return noopUnsubscribe();
       let cancelled = false;
-      queueMicrotask(() => {
-        if (!cancelled) callback(pending);
-      });
+      let deliveryInFlight = false;
+      const deliver = async () => {
+        const pending = pendingBrowserAuthHandoff;
+        if (!pending || cancelled || deliveryInFlight) return;
+        deliveryInFlight = true;
+        try {
+          const acknowledged = await callback(pending);
+          if (acknowledged && pendingBrowserAuthHandoff === pending) {
+            pendingBrowserAuthHandoff = null;
+            window.removeEventListener("online", retry);
+          }
+        } catch {
+          // Keep the PKCE-bound code for an explicit browser-online retry.
+        } finally {
+          deliveryInFlight = false;
+        }
+      };
+      const retry = () => void deliver();
+      window.addEventListener("online", retry);
+      queueMicrotask(retry);
       return () => {
         cancelled = true;
+        window.removeEventListener("online", retry);
       };
     },
     onInviteOpen: (_callback: (invitationId: string) => void) =>

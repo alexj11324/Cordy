@@ -1,8 +1,44 @@
 import { homedir } from "os";
 import { join } from "path";
+import { DEFAULT_RUNTIME_CONFIG } from "../shared/runtime-config";
 
 // Keep this in sync with patchbay_daemon::control_client::health_port_for_profile.
 export const DEFAULT_HEALTH_PORT = 19514;
+const LEGACY_PACKAGED_API_URL = "https://api.patchbay.ai";
+
+export type LegacyDesktopProfile = {
+  name: string;
+  serverUrl: string;
+};
+
+/**
+ * Return the one Desktop-owned profile that must be retired when an installed
+ * app moves from the previous packaged API host to the canonical host. Custom
+ * and self-hosted endpoint switches deliberately do not stop other profiles.
+ */
+export function legacyDesktopProfileForTarget(
+  targetUrl: string,
+): LegacyDesktopProfile | null {
+  try {
+    const target = new URL(targetUrl);
+    const canonical = new URL(DEFAULT_RUNTIME_CONFIG.apiUrl);
+    if (
+      target.origin !== canonical.origin ||
+      target.pathname.replace(/\/+$/, "") !==
+        canonical.pathname.replace(/\/+$/, "") ||
+      target.search ||
+      target.hash
+    ) {
+      return null;
+    }
+    return {
+      name: deriveProfileName(LEGACY_PACKAGED_API_URL),
+      serverUrl: LEGACY_PACKAGED_API_URL,
+    };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Desktop owns only `~/.patchbay/profiles/desktop-<host>/`. The default profile

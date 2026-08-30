@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSignIn } from "@clerk/nextjs";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
+import { buildBrokerRoute } from "@/features/auth/broker-path";
 import { readDesktopHandoffBinding } from "@/features/auth/desktop-handoff";
 import { useT } from "@patchbay/views/i18n";
 import { useWebSearchParams } from "@/platform/client-navigation";
@@ -38,8 +39,17 @@ function GoogleOAuthContent() {
       return;
     }
 
-    const returnUrl = `/login?${binding.query}`;
-    const callbackUrl = `/oauth/google/callback?${binding.query}`;
+    const currentPathname = window.location.pathname;
+    const returnUrl = `${buildBrokerRoute(
+      currentPathname,
+      "/oauth/google",
+      "/login",
+    )}?${binding.query}`;
+    const callbackUrl = `${buildBrokerRoute(
+      currentPathname,
+      "/oauth/google",
+      "/oauth/google/callback",
+    )}?${binding.query}`;
     // Existing Google users stay on sign-in. The callback transfers a new
     // external account to sign-up when Clerk marks this attempt transferable.
     void signIn

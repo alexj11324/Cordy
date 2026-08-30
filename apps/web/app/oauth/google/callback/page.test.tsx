@@ -65,6 +65,7 @@ import GoogleOAuthCallbackPage from "./page";
 
 describe("GoogleOAuthCallbackPage", () => {
   beforeEach(() => {
+    window.history.replaceState(null, "", "/");
     vi.clearAllMocks();
     delete process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN;
     mocks.search.current = "";
@@ -149,6 +150,24 @@ describe("GoogleOAuthCallbackPage", () => {
     expect(mocks.signIn.finalize).not.toHaveBeenCalled();
     expect(mocks.replace).toHaveBeenCalledWith(
       `/login?platform=desktop&code_challenge=${codeChallenge}&state=${state}`,
+    );
+  });
+
+  it("preserves a configured broker base path after Clerk finalizes", async () => {
+    const codeChallenge = "a".repeat(43);
+    const state = "b".repeat(43);
+    window.history.replaceState(
+      null,
+      "",
+      "/patchbay/oauth/google/callback",
+    );
+    mocks.search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
+
+    render(<GoogleOAuthCallbackPage />);
+
+    await waitFor(() => expect(mocks.signIn.finalize).toHaveBeenCalledOnce());
+    expect(mocks.replace).toHaveBeenCalledWith(
+      `/patchbay/login?platform=desktop&code_challenge=${codeChallenge}&state=${state}`,
     );
   });
 

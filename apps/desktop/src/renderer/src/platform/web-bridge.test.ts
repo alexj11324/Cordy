@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   installWebDesktopBridge,
   isDesktopWebHost,
+  isDesktopWebPreview,
 } from "./web-bridge";
 
 const bridgeKeys = [
@@ -24,7 +25,6 @@ function clearWebBridge(): void {
 beforeEach(() => {
   clearWebBridge();
   window.history.replaceState(null, "", "/");
-  vi.stubEnv("VITE_DESKTOP_PREVIEW", "false");
 });
 
 afterEach(() => {
@@ -68,6 +68,7 @@ describe("Vite Desktop auth handoff", () => {
   });
 
   it("delivers a validated one-time callback to the backend-enabled renderer", async () => {
+    vi.stubEnv("VITE_API_URL", "https://api.aspectlylabs.com");
     const code = `pbd_${"a".repeat(43)}`;
     const state = "b".repeat(43);
     window.history.replaceState(
@@ -78,10 +79,11 @@ describe("Vite Desktop auth handoff", () => {
 
     expect(installWebDesktopBridge()).toBe(true);
     expect(isDesktopWebHost()).toBe(true);
+    expect(isDesktopWebPreview()).toBe(false);
     expect(window.location.pathname).toBe("/");
     expect(window.location.search).toBe("");
 
-    const callback = vi.fn();
+    const callback = vi.fn().mockResolvedValue(true);
     window.desktopAPI.onAuthHandoff(callback);
     await Promise.resolve();
 
@@ -89,6 +91,7 @@ describe("Vite Desktop auth handoff", () => {
   });
 
   it("does not deliver malformed or reusable credentials from the URL", async () => {
+    vi.stubEnv("VITE_API_URL", "https://api.aspectlylabs.com");
     window.history.replaceState(
       null,
       "",
@@ -96,7 +99,7 @@ describe("Vite Desktop auth handoff", () => {
     );
 
     expect(installWebDesktopBridge()).toBe(true);
-    const callback = vi.fn();
+    const callback = vi.fn().mockResolvedValue(true);
     window.desktopAPI.onAuthHandoff(callback);
     await Promise.resolve();
 
@@ -116,11 +119,45 @@ describe("Vite Desktop auth handoff", () => {
     );
 
     expect(installWebDesktopBridge()).toBe(true);
-    const callback = vi.fn();
+    const callback = vi.fn().mockResolvedValue(true);
     window.desktopAPI.onAuthHandoff(callback);
     await Promise.resolve();
 
     expect(callback).not.toHaveBeenCalled();
+  });
+
+  it("retains a browser handoff until redemption is acknowledged", async () => {
+    vi.stubEnv("VITE_API_URL", "https://api.aspectlylabs.com");
+    const code = `pbd_${"a".repeat(43)}`;
+    const state = "b".repeat(43);
+    window.history.replaceState(
+      null,
+      "",
+      `/auth/callback?code=${code}&state=${state}`,
+    );
+
+    expect(installWebDesktopBridge()).toBe(true);
+    const callback = vi
+      .fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
+    const unsubscribe = window.desktopAPI.onAuthHandoff(callback);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(callback).toHaveBeenCalledOnce();
+
+    window.dispatchEvent(new Event("online"));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(callback).toHaveBeenCalledTimes(2);
+
+    window.dispatchEvent(new Event("online"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(callback).toHaveBeenCalledTimes(2);
+    unsubscribe();
   });
 });
 

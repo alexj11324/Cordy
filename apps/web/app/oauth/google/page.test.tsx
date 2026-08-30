@@ -42,6 +42,7 @@ import GoogleOAuthPage from "./page";
 
 describe("GoogleOAuthPage", () => {
   beforeEach(() => {
+    window.history.replaceState(null, "", "/");
     search.current = "";
     sso.mockReset();
     sso.mockResolvedValue({ error: null });
@@ -86,6 +87,24 @@ describe("GoogleOAuthPage", () => {
       oidcPrompt: "select_account",
     });
     expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
+  });
+
+  it("preserves a configured broker base path through Clerk", async () => {
+    const codeChallenge = "a".repeat(43);
+    const state = "b".repeat(43);
+    window.history.replaceState(null, "", "/patchbay/oauth/google");
+    search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
+
+    render(<GoogleOAuthPage />);
+
+    await waitFor(() => expect(sso).toHaveBeenCalledOnce());
+    const query = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
+    expect(sso).toHaveBeenCalledWith(
+      expect.objectContaining({
+        redirectUrl: `/patchbay/login?${query}`,
+        redirectCallbackUrl: `/patchbay/oauth/google/callback?${query}`,
+      }),
+    );
   });
 
   it("fails closed before Clerk when the state binding is missing", async () => {

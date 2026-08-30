@@ -9,6 +9,12 @@ type PendingHandoff = {
   expiresAt: number;
 };
 
+export type DesktopHandoffCompletion = {
+  /** The callback is terminal and must not be offered to the renderer again. */
+  acknowledged: boolean;
+  authenticated: boolean;
+};
+
 function isPendingHandoff(value: unknown): value is PendingHandoff {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Record<string, unknown>;
@@ -133,17 +139,17 @@ export async function completeDesktopHandoff(
     login: (token: string) => Promise<unknown>;
     recoverPersistedToken: () => void;
   },
-): Promise<boolean> {
+): Promise<DesktopHandoffCompletion> {
   const verifier = readDesktopHandoffVerifier(state);
-  if (!verifier) return false;
+  if (!verifier) return { acknowledged: true, authenticated: false };
 
   const { token } = await dependencies.redeem(code, verifier);
   clearDesktopHandoffVerifier(state);
   try {
     await dependencies.login(token);
-    return true;
+    return { acknowledged: true, authenticated: true };
   } catch {
     dependencies.recoverPersistedToken();
-    return false;
+    return { acknowledged: true, authenticated: false };
   }
 }
