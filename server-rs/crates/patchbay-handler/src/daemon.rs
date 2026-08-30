@@ -5154,10 +5154,7 @@ mod tests {
         assert!(task_status_allows_execution_provenance("running", false));
         assert!(task_status_allows_execution_provenance("running", true));
         assert!(task_status_allows_execution_provenance("cancelled", true));
-        assert!(!task_status_allows_execution_provenance(
-            "cancelled",
-            false
-        ));
+        assert!(!task_status_allows_execution_provenance("cancelled", false));
         assert!(!task_status_allows_execution_provenance("completed", true));
         assert!(!task_status_allows_execution_provenance("failed", true));
     }
