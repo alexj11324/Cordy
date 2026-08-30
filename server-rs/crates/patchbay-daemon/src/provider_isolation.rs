@@ -526,14 +526,20 @@ fn add_sensitive_directory(paths: &mut BTreeSet<SensitivePath>, path: PathBuf) {
 }
 
 fn add_sensitive_path(paths: &mut BTreeSet<SensitivePath>, path: PathBuf, kind: SensitivePathKind) {
-    paths.insert(SensitivePath {
-        path: path.clone(),
-        kind: kind.clone(),
-    });
+    let mut candidates = BTreeSet::from([path.clone()]);
     if let Ok(canonical) = fs::canonicalize(path) {
+        candidates.insert(canonical);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        for candidate in candidates.clone() {
+            candidates.extend(macos_path_aliases(&candidate));
+        }
+    }
+    for path in candidates {
         paths.insert(SensitivePath {
-            path: canonical,
-            kind,
+            path,
+            kind: kind.clone(),
         });
     }
 }
@@ -639,9 +645,14 @@ fn isolate_macos(
         temp_dir.to_path_buf(),
     ];
     readable.extend(provider_readable_roots);
-    readable.retain(|path| path.exists());
-    readable.sort();
-    readable.dedup();
+    let mut readable_aliases = BTreeSet::new();
+    for path in readable {
+        readable_aliases.extend(macos_path_aliases(&path));
+    }
+    let readable = readable_aliases
+        .into_iter()
+        .filter(|path| path.exists())
+        .collect::<Vec<_>>();
     let mut profile = String::from(
         "(version 1)\n\
          (deny default)\n\
@@ -696,6 +707,24 @@ fn sandbox_quote(path: &Path) -> String {
     path.to_string_lossy()
         .replace('\\', "\\\\")
         .replace('"', "\\\"")
+}
+
+#[cfg(target_os = "macos")]
+fn macos_path_aliases(path: &Path) -> BTreeSet<PathBuf> {
+    let mut aliases = BTreeSet::from([path.to_path_buf()]);
+    for (public, private) in [
+        (Path::new("/etc"), Path::new("/private/etc")),
+        (Path::new("/tmp"), Path::new("/private/tmp")),
+        (Path::new("/var"), Path::new("/private/var")),
+    ] {
+        if let Ok(relative) = path.strip_prefix(public) {
+            aliases.insert(private.join(relative));
+        }
+        if let Ok(relative) = path.strip_prefix(private) {
+            aliases.insert(public.join(relative));
+        }
+    }
+    aliases
 }
 
 #[cfg(target_os = "macos")]
@@ -1221,6 +1250,19 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
+    fn macos_system_symlink_aliases_are_bidirectional() {
+        for (public, private) in [
+            ("/var/folders/task/.env", "/private/var/folders/task/.env"),
+            ("/tmp/task/.env", "/private/tmp/task/.env"),
+            ("/etc/hosts", "/private/etc/hosts"),
+        ] {
+            assert!(macos_path_aliases(Path::new(public)).contains(Path::new(private)));
+            assert!(macos_path_aliases(Path::new(private)).contains(Path::new(public)));
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
     fn macos_profile_denies_sensitive_files_after_readable_roots() {
         let mut profile = "(allow file-read* (subpath \"/task\"))\n".to_string();
         append_macos_sensitive_rules(
@@ -1284,7 +1326,8 @@ mod tests {
             .unwrap();
         assert!(
             allowed_output.status.success(),
-            "sandboxed template read failed: {}",
+            "sandboxed template read failed with {:?}: {}",
+            allowed_output.status,
             String::from_utf8_lossy(&allowed_output.stderr)
         );
         assert!(String::from_utf8_lossy(&allowed_output.stdout).contains("replace-me"));
