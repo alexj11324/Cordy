@@ -359,6 +359,13 @@ FOR UPDATE"#,
             tx.commit().await?;
             return Ok(None);
         };
+        let current_owner_generation: i64 = sqlx::query_scalar(
+            "SELECT assignee_generation FROM issue WHERE id = $1 AND workspace_id = $2",
+        )
+        .bind(issue.id)
+        .bind(issue.workspace_id)
+        .fetch_one(&mut *tx)
+        .await?;
 
         if event.event_type == EVENT_TASK_COMPLETED
             && event.payload.get("source_role").and_then(Value::as_str) == Some(ASSIGNMENT_REVIEWER)
@@ -425,11 +432,15 @@ FOR UPDATE"#,
         }
 
         // The task captures the implementation owner when it is enqueued.
-        // A still-running task must not promote a newer owner after an
-        // explicit reassignment (A -> B); the current owner is authoritative
-        // for the issue. The issue revision remains audit metadata only because
-        // unrelated edits (title, description, priority, etc.) also advance it.
-        if is_task_completion {
+        // A still-running implementation task must not promote a newer owner
+        // after an explicit reassignment (A -> B -> A); the current owner and
+        // its monotonic generation are authoritative for the issue. Reviewer
+        // tasks carry their selected reviewer in the same context, but their
+        // completion is only an assignment acknowledgement and must not be
+        // checked against the implementation owner.
+        if is_task_completion
+            && event.payload.get("source_role").and_then(Value::as_str) != Some(ASSIGNMENT_REVIEWER)
+        {
             let captured_owner_type = event
                 .payload
                 .get("implementation_owner_type")
@@ -439,11 +450,17 @@ FOR UPDATE"#,
                 .get("implementation_owner_id")
                 .and_then(Value::as_str)
                 .and_then(|value| Uuid::parse_str(value).ok());
+            let captured_owner_generation = event
+                .payload
+                .get("implementation_owner_generation")
+                .and_then(Value::as_i64);
             if let (Some(captured_owner_type), Some(captured_owner_id)) =
                 (captured_owner_type, captured_owner_id)
             {
                 if issue.assignee_type.as_deref() != Some(captured_owner_type)
                     || issue.assignee_id != Some(captured_owner_id)
+                    || captured_owner_generation
+                        .is_some_and(|captured| captured != current_owner_generation)
                 {
                     complete_claimed_tx(
                         &mut *tx,
@@ -456,8 +473,10 @@ FOR UPDATE"#,
                             "reason": "implementation owner changed after task was assigned",
                             "captured_owner_type": captured_owner_type,
                             "captured_owner_id": captured_owner_id,
+                            "captured_owner_generation": captured_owner_generation,
                             "current_owner_type": issue.assignee_type,
                             "current_owner_id": issue.assignee_id,
+                            "current_owner_generation": current_owner_generation,
                         }),
                         Some("implementation owner changed after task was assigned"),
                     )
@@ -945,14 +964,28 @@ RETURNING *"#,
                 };
                 if issue.assignee_type.as_deref() != Some(target_type.as_str())
                     || issue.assignee_id != Some(target_id)
+                    || event
+                        .payload
+                        .get("owner_generation")
+                        .and_then(Value::as_i64)
+                        .is_some_and(|captured| captured != current_owner_generation)
                 {
+                    let captured_owner_generation = event
+                        .payload
+                        .get("owner_generation")
+                        .and_then(Value::as_i64);
                     complete_claimed_tx(
                         &mut *tx,
                         event,
                         &assignment,
                         "completed",
                         None,
-                        json!({"outcome": "stale_assignment"}),
+                        json!({
+                            "outcome": "stale_assignment",
+                            "reason": "issue owner changed after review returned work",
+                            "captured_owner_generation": captured_owner_generation,
+                            "current_owner_generation": current_owner_generation,
+                        }),
                         Some("issue owner changed after review returned work"),
                     )
                     .await?;
@@ -2161,30 +2194,32 @@ pub async fn record_task_completed(
     let current_owner_type: Option<String> = issue.try_get(1)?;
     let current_owner_id: Option<Uuid> = issue.try_get(2)?;
     let current_owner_generation: i64 = issue.try_get(3)?;
-    if let (Some(captured_owner_type), Some(captured_owner_id)) =
-        (captured_owner_type, captured_owner_id)
-    {
-        if implementation_completion_is_superseded(
-            current_owner_type.as_deref(),
-            current_owner_id,
-            captured_owner_type,
-            captured_owner_id,
-            captured_owner_generation,
-            current_owner_generation,
-        ) {
-            tracing::info!(
-                task_id = %task.id,
-                issue_id = %issue_id,
+    if source_role.as_deref() != Some(ASSIGNMENT_REVIEWER) {
+        if let (Some(captured_owner_type), Some(captured_owner_id)) =
+            (captured_owner_type, captured_owner_id)
+        {
+            if implementation_completion_is_superseded(
+                current_owner_type.as_deref(),
+                current_owner_id,
                 captured_owner_type,
-                captured_owner_id = %captured_owner_id,
-                current_owner_type = ?current_owner_type,
-                current_owner_id = ?current_owner_id,
+                captured_owner_id,
                 captured_owner_generation,
                 current_owner_generation,
-                captured_issue_revision,
-                "ignoring completion from a superseded implementation owner"
-            );
-            return Ok(());
+            ) {
+                tracing::info!(
+                    task_id = %task.id,
+                    issue_id = %issue_id,
+                    captured_owner_type,
+                    captured_owner_id = %captured_owner_id,
+                    current_owner_type = ?current_owner_type,
+                    current_owner_id = ?current_owner_id,
+                    captured_owner_generation,
+                    current_owner_generation,
+                    captured_issue_revision,
+                    "ignoring completion from a superseded implementation owner"
+                );
+                return Ok(());
+            }
         }
     }
     let payload = json!({
@@ -2221,7 +2256,7 @@ fn implementation_completion_is_superseded(
 ) -> bool {
     current_owner_type != Some(captured_owner_type)
         || current_owner_id != Some(captured_owner_id)
-        || captured_owner_generation.is_some_and(|captured| current_owner_generation > captured)
+        || captured_owner_generation.is_some_and(|captured| current_owner_generation != captured)
 }
 
 /// Writes the review-return outbox event and its pending executor assignment
@@ -2232,10 +2267,18 @@ pub async fn record_review_return(
     source_task_id: Option<Uuid>,
     handoff_note: Option<&str>,
 ) -> anyhow::Result<()> {
+    let owner_generation: i64 = sqlx::query_scalar(
+        "SELECT assignee_generation FROM issue WHERE id = $1 AND workspace_id = $2",
+    )
+    .bind(issue.id)
+    .bind(issue.workspace_id)
+    .fetch_one(&mut *executor)
+    .await?;
     let payload = json!({
         "issue_id": issue.id,
         "owner_type": issue.assignee_type,
         "owner_id": issue.assignee_id,
+        "owner_generation": owner_generation,
         "issue_revision": issue.revision,
         "handoff_note": handoff_note,
     });
@@ -2369,6 +2412,14 @@ mod tests {
             owner_id,
             Some(0),
             1,
+        ));
+        assert!(implementation_completion_is_superseded(
+            Some("agent"),
+            Some(owner_id),
+            "agent",
+            owner_id,
+            Some(1),
+            0,
         ));
     }
 

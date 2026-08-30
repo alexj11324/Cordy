@@ -262,9 +262,9 @@ pub struct SideChatSeed {
 }
 
 // These task-context fields are the durable correlation contract between a
-// coordinator assignment and the task that will execute it. They live in the
-// existing JSONB context so the handoff can be rolled out without a schema
-// migration; the assignment row remains the authoritative audit record.
+// coordinator assignment and the task that will execute it. The owner
+// generation is read from the issue row and copied into the existing JSONB
+// context; the assignment row remains the authoritative audit record.
 pub(crate) const COORDINATION_ASSIGNMENT_ID_CONTEXT_KEY: &str = "coordination_assignment_id";
 pub(crate) const COORDINATION_OWNER_TYPE_CONTEXT_KEY: &str = "coordination_owner_type";
 pub(crate) const COORDINATION_OWNER_ID_CONTEXT_KEY: &str = "coordination_owner_id";
@@ -1895,17 +1895,13 @@ impl TaskService {
         let prep = self
             .prepare_issue_enqueue(issue, trigger_comment_id, actor_user_id, true)
             .await?;
-        let owner_generation: i64 = sqlx::query_scalar(
-            "SELECT assignee_generation FROM issue WHERE id = $1",
-        )
-        .bind(issue.id)
-        .fetch_one(&self.pool)
-        .await?;
-        let initial_context = issue_task_context(
-            issue,
-            coordination_assignment_id,
-            Some(owner_generation),
-        );
+        let owner_generation: i64 =
+            sqlx::query_scalar("SELECT assignee_generation FROM issue WHERE id = $1")
+                .bind(issue.id)
+                .fetch_one(&self.pool)
+                .await?;
+        let initial_context =
+            issue_task_context(issue, coordination_assignment_id, Some(owner_generation));
         let initial_status = coordination_assignment_id
             .map(|_| "deferred")
             .unwrap_or("queued");
@@ -2091,12 +2087,11 @@ impl TaskService {
             trigger_summary: None,
             head_sha,
         };
-        let owner_generation: i64 = sqlx::query_scalar(
-            "SELECT assignee_generation FROM issue WHERE id = $1",
-        )
-        .bind(issue.id)
-        .fetch_one(&mut *tx)
-        .await?;
+        let owner_generation: i64 =
+            sqlx::query_scalar("SELECT assignee_generation FROM issue WHERE id = $1")
+                .bind(issue.id)
+                .fetch_one(&mut *tx)
+                .await?;
         let initial_context = issue_task_context(issue, None, Some(owner_generation));
 
         let task = create_deferred_channel_issue_task(
@@ -2518,8 +2513,7 @@ impl TaskService {
         // context, and the pending-task index must be able to distinguish the
         // Side Chat at INSERT time.
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
-        let owner_generation: Option<i64> = if coordination_assignment_id.is_some() || is_leader
-        {
+        let owner_generation: Option<i64> = if coordination_assignment_id.is_some() || is_leader {
             Some(
                 sqlx::query_scalar("SELECT assignee_generation FROM issue WHERE id = $1")
                     .bind(issue.id)
