@@ -17,7 +17,10 @@ export function buildDesktopGoogleLoginUrl(
   accountsUrl: string,
   browserReturnOrigin?: string,
 ): string {
-  const url = new URL("/oauth/google", accountsUrl);
+  const url = new URL(accountsUrl);
+  url.pathname = `${url.pathname.replace(/\/+$/, "")}/oauth/google`;
+  url.search = "";
+  url.hash = "";
   url.searchParams.set("platform", "desktop");
   if (browserReturnOrigin) {
     url.searchParams.set(
