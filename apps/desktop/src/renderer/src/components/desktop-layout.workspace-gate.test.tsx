@@ -116,6 +116,7 @@ function renderShell() {
   (
     window as unknown as { desktopAPI: Record<string, unknown> }
   ).desktopAPI = {
+    appInfo: { version: "0.0.0-test", os: "macos" },
     onNavigationGesture: () => () => {},
     onInboxOpen: () => () => {},
   };
