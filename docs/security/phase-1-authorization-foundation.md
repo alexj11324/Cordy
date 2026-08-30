@@ -121,9 +121,13 @@ legacy resource handlers, introduce a universal resource registry, expose
 long-lived secrets, add an external policy service, or reinterpret
 `team_member.role`. That field remains an orchestration label (`leader`,
 `worker`, `reviewer`, and similar); future team security membership must use a
-separate field/table. Workspace database roles remain owner/admin/member; the
-authorizer vocabulary reserves guest as a deny-by-default boundary without
-making guest a valid persisted membership in this migration.
+separate field/table. Workspace database roles remain owner/admin/member.
+Server-backed guest accounts merged on `main` are identified separately from
+membership role, are limited to one workspace, and remain excluded from formal
+account operations such as invitations and external authorization. The
+authorizer vocabulary keeps `guest` as a deny-by-default policy boundary; this
+slice does not reinterpret a guest account's single-workspace owner row as a
+general cross-member delegation role.
 
 ## Effective-permission invariant
 
@@ -171,8 +175,9 @@ integration brokers before re-enabling additional Agent execution configuration
 or local checkout projection; move remaining private
 Agent, Chat, Integration/Connection, plugin/tool, and device-management
 handlers onto the same interface; add separate team
-security membership; add Guest membership storage and invitation rules; add an
-explicit System-task workspace principal; and replace remaining member-shaped
+security membership; extend guest-specific authorizer context beyond the
+existing formal-account guards; add an explicit System-task workspace
+principal; and replace remaining member-shaped
 task-token compatibility reads. Runtime listing should also batch relationship
 and grant evaluation before it becomes a large-workspace path; Phase 1 keeps the
 per-resource audit writes for explainability. Those are not prerequisites for
