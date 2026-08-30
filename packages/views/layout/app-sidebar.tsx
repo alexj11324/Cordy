@@ -448,7 +448,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   // pinned items, the workspace switcher's programmatic push, and anything
   // added later. `setOpenMobile` is a no-op on desktop, where the sheet is not
   // the sidebar's rendering at all.
-  const { setOpenMobile, setHoverRevealSuspended } = useSidebar();
+  const { state: sidebarState, setOpenMobile, setHoverRevealSuspended } = useSidebar();
   useEffect(() => {
     setOpenMobile(false);
   }, [pathname, setOpenMobile]);
@@ -919,7 +919,9 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
                     </DropdownMenuGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>
-                <HelpLauncher onOpenChange={setHoverRevealSuspended} />
+                {sidebarState !== "collapsed" && (
+                  <HelpLauncher onOpenChange={setHoverRevealSuspended} />
+                )}
               </div>
             </SidebarMenuItem>
           </SidebarMenu>
