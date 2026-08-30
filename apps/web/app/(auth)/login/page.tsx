@@ -22,22 +22,13 @@ import {
   authRouteWithRedirect,
   resolveSafeRedirectUrl,
 } from "@/features/auth/safe-redirect";
-import {
-  readDesktopBrowserAppOrigin,
-  redirectToDesktopBrowserApp,
-} from "@/features/auth/desktop-handoff";
 import { useClerkSessionExchangeReady } from "@/components/clerk-auth-adapter";
 import { useWebSearchParams } from "@/platform/client-navigation";
 
-function desktopHandoffQuery(
-  codeChallenge: string,
-  state: string,
-  appOrigin: string | null,
-): string {
+function desktopHandoffQuery(codeChallenge: string, state: string): string {
   const params = new URLSearchParams({ platform: "desktop" });
   if (codeChallenge) params.set("code_challenge", codeChallenge);
   if (state) params.set("state", state);
-  if (appOrigin) params.set("app_origin", appOrigin);
   return params.toString();
 }
 
@@ -61,13 +52,6 @@ function LoginContent() {
   const desktopHandoff = searchParams.get("platform") === "desktop";
   const desktopCodeChallenge = searchParams.get("code_challenge") ?? "";
   const desktopState = searchParams.get("state") ?? "";
-  const requestedDesktopAppOrigin = searchParams.get("app_origin");
-  const desktopAppOrigin = readDesktopBrowserAppOrigin(
-    searchParams,
-    process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN,
-  );
-  const invalidDesktopAppOrigin =
-    requestedDesktopAppOrigin !== null && desktopAppOrigin === null;
   const requestedRedirectUrl = searchParams.get("redirect_url");
   const validCliCallback = cliCallback !== "" && validateCliCallback(cliCallback);
   const returnUrl = useMemo(() => {
@@ -75,7 +59,6 @@ function LoginContent() {
       return `/login?${desktopHandoffQuery(
         desktopCodeChallenge,
         desktopState,
-        desktopAppOrigin,
       )}`;
     }
     if (!validCliCallback) return resolveSafeRedirectUrl(requestedRedirectUrl);
@@ -89,7 +72,6 @@ function LoginContent() {
     cliState,
     desktopCodeChallenge,
     desktopHandoff,
-    desktopAppOrigin,
     desktopState,
     requestedRedirectUrl,
     validCliCallback,
@@ -100,16 +82,6 @@ function LoginContent() {
       <ClerkAuthShell>
         <p role="alert">
           {t(($) => $.web.cli_authorization.invalid_callback)}
-        </p>
-      </ClerkAuthShell>
-    );
-  }
-
-  if (desktopHandoff && invalidDesktopAppOrigin) {
-    return (
-      <ClerkAuthShell>
-        <p role="alert">
-          {t(($) => $.web.desktop_handoff.invalid_app_origin)}
         </p>
       </ClerkAuthShell>
     );
@@ -157,7 +129,6 @@ function LoginContent() {
       <DesktopHandoff
         codeChallenge={desktopCodeChallenge}
         state={desktopState}
-        appOrigin={desktopAppOrigin}
         clerkSessionExchangeReady={clerkSessionExchangeReady}
       />
     );
@@ -173,7 +144,6 @@ function LoginContent() {
             ? `/signup?${desktopHandoffQuery(
                 desktopCodeChallenge,
                 desktopState,
-                desktopAppOrigin,
               )}`
             : authRouteWithRedirect("/signup", returnUrl)
         }
@@ -186,12 +156,10 @@ function LoginContent() {
 function DesktopHandoff({
   codeChallenge,
   state,
-  appOrigin,
   clerkSessionExchangeReady,
 }: {
   codeChallenge: string;
   state: string;
-  appOrigin: string | null;
   clerkSessionExchangeReady: boolean;
 }) {
   const { t } = useT("auth");
@@ -211,17 +179,13 @@ function DesktopHandoff({
       }
       const { code } = await api.issueDesktopHandoff(codeChallenge);
       if (!code) throw new Error("Patchbay desktop handoff code unavailable");
-      if (appOrigin) {
-        redirectToDesktopBrowserApp(appOrigin, code, state);
-      } else {
-        redirectToDesktopApp(code, state);
-      }
+      redirectToDesktopApp(code, state);
       setLoading(false);
     } catch {
       setError(t(($) => $.web.desktop_handoff.prepare_failed));
       setLoading(false);
     }
-  }, [appOrigin, codeChallenge, state, t]);
+  }, [codeChallenge, state, t]);
 
   useEffect(() => {
     if (!backendSessionReady || automaticAttempted.current) return;

@@ -78,24 +78,17 @@ PATCHBAY_DEV_VERIFICATION_CODE=888888
 
 ## Google 로그인
 
-1. [Google Cloud Console](https://console.cloud.google.com/)에서 OAuth 2.0 client를 만듭니다.
-2. Patchbay 프런트엔드의 callback 주소를 **Authorized redirect URIs**에 추가합니다.
+1. 관리되는 `accounts` 서비스에서 Google provider를 구성합니다.
+2. broker callback 주소를 **Authorized redirect URIs**에 추가합니다.
 
    ```text
-   https://patchbay.example.com/auth/callback
+   https://accounts.example.com/oauth/google/callback
    ```
 
-3. 다음을 설정합니다.
-
-   ```dotenv
-   GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com
-   GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxxxxx
-   GOOGLE_REDIRECT_URI=https://patchbay.example.com/auth/callback
-   ```
-
-4. API 서비스를 다시 시작합니다.
-
-Google Console과 `GOOGLE_REDIRECT_URI`의 주소는 프로토콜, 포트, 마지막 슬래시까지 완전히 같아야 합니다. 설정이 적용되면 로그인 페이지에 Google 로그인 버튼이 표시됩니다. 프런트엔드 이미지를 다시 빌드할 필요는 없습니다.
+3. Desktop 로그인은 broker의 `/oauth/google` 및
+   `/oauth/google/callback`만 사용합니다. broker는
+   `patchbay://auth/callback`으로 한 번만 사용할 수 있는 PKCE code를
+   반환하고, Rust API가 `/api/desktop-handoff/redeem`에서 교환합니다.
 
 ## 가입 범위 제어
 

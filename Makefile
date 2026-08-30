@@ -22,16 +22,6 @@ PATCHBAY_APP_URL ?= $(FRONTEND_ORIGIN)
 DATABASE_URL ?= postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable
 NEXT_PUBLIC_API_URL ?= http://localhost:$(PORT)
 NEXT_PUBLIC_WS_URL ?= ws://localhost:$(PORT)/ws
-# The shared Desktop renderer is also served by Vite. Keep its public
-# endpoint variables aligned with the worktree values used by the Next.js
-# client, so `make web-dev` cannot silently fall back to localhost:8080.
-ifeq ($(strip $(VITE_API_URL)),)
-VITE_API_URL := $(NEXT_PUBLIC_API_URL)
-endif
-ifeq ($(strip $(VITE_WS_URL)),)
-VITE_WS_URL := $(NEXT_PUBLIC_WS_URL)
-endif
-GOOGLE_REDIRECT_URI ?= $(FRONTEND_ORIGIN)/auth/callback
 PATCHBAY_SERVER_URL ?= ws://localhost:$(PORT)/ws
 LOCAL_UPLOAD_BASE_URL ?= http://localhost:$(PORT)
 

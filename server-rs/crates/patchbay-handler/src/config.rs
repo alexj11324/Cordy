@@ -16,7 +16,6 @@ pub struct PublicConfigSettings {
     pub cdn_signed: bool,
     pub server_version: String,
     pub allow_signup: bool,
-    pub google_client_id: String,
     pub daemon_server_url: String,
     pub daemon_app_url: String,
     pub official_cloud: bool,
@@ -29,7 +28,6 @@ impl Default for PublicConfigSettings {
             cdn_signed: false,
             server_version: String::new(),
             allow_signup: true,
-            google_client_id: String::new(),
             daemon_server_url: String::new(),
             daemon_app_url: String::new(),
             official_cloud: false,
@@ -63,13 +61,6 @@ impl PublicConfigSettings {
             cdn_signed,
             server_version,
             allow_signup: config.auth.allow_signup.as_deref().map(str::trim) != Some("false"),
-            google_client_id: config
-                .auth
-                .google_client_id
-                .as_deref()
-                .unwrap_or_default()
-                .trim()
-                .to_string(),
             daemon_server_url,
             daemon_app_url,
             official_cloud,
@@ -83,8 +74,6 @@ struct AppConfig {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     cdn_signed: bool,
     allow_signup: bool,
-    #[serde(skip_serializing_if = "String::is_empty")]
-    google_client_id: String,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     workspace_creation_disabled: bool,
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -152,7 +141,6 @@ async fn get_config(State(state): State<HandlerState>) -> Json<AppConfig> {
         cdn_domain: state.public_config.cdn_domain.clone(),
         cdn_signed: state.public_config.cdn_signed,
         allow_signup: state.public_config.allow_signup,
-        google_client_id: state.public_config.google_client_id.clone(),
         workspace_creation_disabled: workspace_creation_disabled(),
         daemon_server_url: state.public_config.daemon_server_url.clone(),
         daemon_app_url: state.public_config.daemon_app_url.clone(),
@@ -249,13 +237,11 @@ mod tests {
     fn loaded_config_drives_public_auth_and_daemon_urls() {
         let mut config = patchbay_config::Config::default();
         config.auth.allow_signup = Some(" false ".into());
-        config.auth.google_client_id = Some(" google-client ".into());
         config.urls.public_url = Some("https://api.example/".into());
         config.urls.app_url = Some("https://app.example/".into());
         let settings =
             PublicConfigSettings::from_config(&config, String::new(), false, "v1".into());
         assert!(!settings.allow_signup);
-        assert_eq!(settings.google_client_id, "google-client");
         assert_eq!(settings.daemon_server_url, "https://api.example");
         assert_eq!(settings.daemon_app_url, "https://app.example");
         assert!(!settings.official_cloud);
@@ -278,7 +264,6 @@ mod tests {
             cdn_domain: String::new(),
             cdn_signed: false,
             allow_signup: true,
-            google_client_id: String::new(),
             workspace_creation_disabled: false,
             daemon_server_url: String::new(),
             daemon_app_url: String::new(),
@@ -324,7 +309,6 @@ mod tests {
     async fn loaded_public_config_is_served_before_authentication() {
         let mut config = patchbay_config::Config::default();
         config.auth.allow_signup = Some("false".into());
-        config.auth.google_client_id = Some("google-from-toml".into());
         config.urls.public_url = Some("https://api.example".into());
         config.urls.app_url = Some("https://app.example".into());
         let state = HandlerState::new(
@@ -347,7 +331,6 @@ mod tests {
         let body = response.into_body().collect().await.unwrap().to_bytes();
         let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
         assert_eq!(value["allow_signup"], false);
-        assert_eq!(value["google_client_id"], "google-from-toml");
         assert_eq!(value["daemon_server_url"], "https://api.example");
         assert_eq!(value["daemon_app_url"], "https://app.example");
         assert_eq!(value["server_version"], "v-test");

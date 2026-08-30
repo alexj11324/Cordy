@@ -95,7 +95,6 @@ function randomBase64Url(byteLength: number): string {
  */
 export async function createDesktopGoogleLoginUrl(
   accountsUrl: string,
-  browserReturnOrigin?: string,
 ): Promise<string> {
   const verifier = randomBase64Url(32);
   const digest = await crypto.subtle.digest(
@@ -114,9 +113,7 @@ export async function createDesktopGoogleLoginUrl(
     (entry) => entry.state !== state,
   );
   writePendingHandoffs([...pendingHandoffs, pending]);
-  const url = new URL(
-    buildDesktopGoogleLoginUrl(accountsUrl, browserReturnOrigin),
-  );
+  const url = new URL(buildDesktopGoogleLoginUrl(accountsUrl));
   url.searchParams.set("code_challenge", codeChallenge);
   url.searchParams.set("state", state);
   return url.href;
