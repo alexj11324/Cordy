@@ -431,10 +431,45 @@ pub(crate) async fn attach(
         }
     }
 
+    // Task-scoped attach and execution-branch discovery use the same
+    // transaction-scoped lock. Hold it before any provider lookup and keep
+    // this transaction through the ownership fence and relation write, so a
+    // discovery worker cannot commit a competing relation mid-attach.
+    let mut association_transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, "github: begin work product attach transaction failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to attach work product",
+            );
+        }
+    };
+    if let Some(execution) = execution.as_ref() {
+        if let Err(error) = work_product_q::lock_task_work_product_scope(
+            &mut *association_transaction,
+            issue.workspace_id,
+            execution.task_id,
+        )
+        .await
+        {
+            drop(association_transaction);
+            tracing::warn!(%error, task_id = %execution.task_id, "github: lock task work product scope failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to attach work product",
+            );
+        }
+    }
+
     let mut metadata = None;
     if let (Some(client), Ok(installations)) = (
         state.github_snapshots.client(),
-        github::list_git_hub_installations_by_workspace(&state.pool, issue.workspace_id).await,
+        github::list_git_hub_installations_by_workspace(
+            &mut *association_transaction,
+            issue.workspace_id,
+        )
+        .await,
     ) {
         for installation in installations {
             if let Ok(value) = client
@@ -526,7 +561,7 @@ pub(crate) async fn attach(
     }
 
     let is_new = match github::get_git_hub_pull_request(
-        &state.pool,
+        &mut *association_transaction,
         issue.workspace_id,
         &owner,
         &repo,
@@ -545,7 +580,7 @@ pub(crate) async fn attach(
     };
     let canonical_url = format!("https://github.com/{owner}/{repo}/pull/{number}");
     let pull_request = match github::attach_git_hub_pull_request(
-        &state.pool,
+        &mut *association_transaction,
         issue.workspace_id,
         installation_id,
         &owner,
@@ -602,7 +637,7 @@ pub(crate) async fn attach(
         ),
     };
     let work_product = match work_product_q::upsert_work_product(
-        &state.pool,
+        &mut *association_transaction,
         issue.workspace_id,
         "pull_request",
         "github",
@@ -628,8 +663,8 @@ pub(crate) async fn attach(
     } else {
         work_product_q::RELATION_SOURCE_MANUAL_EXPLICIT
     };
-    let relation = match crate::work_product::attach_work_product_relation_locked(
-        &state,
+    let relation = match crate::work_product::attach_work_product_relation_in_transaction(
+        &mut *association_transaction,
         issue.workspace_id,
         work_product.id,
         Some(issue.id),
@@ -652,6 +687,13 @@ pub(crate) async fn attach(
             );
         }
     };
+    if let Err(error) = association_transaction.commit().await {
+        tracing::warn!(%error, "github: commit work product attach transaction failed");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to attach work product",
+        );
+    }
 
     let response = github_model_response(pull_request, state.github_snapshots.enabled());
     state.bus.publish(&patchbay_events::Event {

@@ -978,27 +978,6 @@ async fn discover_one_execution(
         .await;
         return;
     };
-    let installations = match github::list_git_hub_installations_by_workspace(
-        &state.pool,
-        workspace_id,
-    )
-    .await
-    {
-        Ok(installations) => installations,
-        Err(error) => {
-            record_discovery_failure(
-                state,
-                provenance,
-                work_product_q::DISCOVERY_INELIGIBLE,
-                0,
-                Some("github_installation_lookup_failed"),
-            )
-            .await;
-            tracing::warn!(%error, task_id = %task.id, "branch discovery installation lookup failed");
-            return;
-        }
-    };
-
     // Keep the advisory lock alive on the same transaction through the branch
     // ownership check, provider lookup, mirror upsert, and durable relation.
     // This prevents two terminal deliveries from both deciding a shared head
@@ -1036,6 +1015,22 @@ async fn discover_one_execution(
         )
         .await;
         tracing::warn!(%error, task_id = %task.id, "branch discovery lock failed");
+        return;
+    }
+    if let Err(error) =
+        work_product_q::lock_task_work_product_scope(&mut *transaction, workspace_id, task.id)
+            .await
+    {
+        drop(transaction);
+        record_discovery_failure(
+            state,
+            provenance,
+            work_product_q::DISCOVERY_AMBIGUOUS,
+            0,
+            Some("task_work_product_lock_failed"),
+        )
+        .await;
+        tracing::warn!(%error, task_id = %task.id, "task work product lock failed");
         return;
     }
 
@@ -1108,8 +1103,8 @@ async fn discover_one_execution(
     }
 
     // An explicit task registration is authoritative over discovery. Recheck
-    // after the provider-installation lookup, immediately before the durable
-    // discovery transaction can create a second relation.
+    // before any provider lookup, immediately before the durable discovery
+    // transaction can create a relation.
     match work_product_q::has_active_relation_for_task(&mut *transaction, workspace_id, task.id)
         .await
     {
@@ -1148,6 +1143,28 @@ async fn discover_one_execution(
             return;
         }
     }
+
+    let installations = match github::list_git_hub_installations_by_workspace(
+        &mut *transaction,
+        workspace_id,
+    )
+    .await
+    {
+        Ok(installations) => installations,
+        Err(error) => {
+            drop(transaction);
+            record_discovery_failure(
+                state,
+                provenance,
+                work_product_q::DISCOVERY_INELIGIBLE,
+                0,
+                Some("github_installation_lookup_failed"),
+            )
+            .await;
+            tracing::warn!(%error, task_id = %task.id, "branch discovery installation lookup failed");
+            return;
+        }
+    };
 
     let mut matches = Vec::new();
     let mut lookup_failed = false;
@@ -1225,6 +1242,59 @@ async fn discover_one_execution(
             }
         }
     }
+
+    // The task lock is held across every provider request above. This second
+    // fence closes the other ordering: an explicit attach that committed
+    // before discovery acquired the lock must suppress discovery even when
+    // the provider lookup itself took a long time.
+    match work_product_q::has_active_relation_for_task(&mut *transaction, workspace_id, task.id)
+        .await
+    {
+        Ok(true) => {
+            if let Err(error) = work_product_q::mark_task_discovery_skipped_for_explicit_relation(
+                &mut *transaction,
+                workspace_id,
+                task.id,
+            )
+            .await
+            {
+                drop(transaction);
+                record_discovery_failure(
+                    state,
+                    provenance,
+                    work_product_q::DISCOVERY_AMBIGUOUS,
+                    0,
+                    Some("explicit_relation_skip_audit_failed"),
+                )
+                .await;
+                tracing::warn!(%error, task_id = %task.id, "mark explicit work product discovery skip failed after provider lookup");
+                return;
+            }
+            if let Err(error) = transaction.commit().await {
+                tracing::warn!(%error, task_id = %task.id, "commit explicit work product discovery skip failed after provider lookup");
+            }
+            return;
+        }
+        Ok(false) => {}
+        Err(error) => {
+            drop(transaction);
+            record_discovery_failure(
+                state,
+                provenance,
+                work_product_q::DISCOVERY_AMBIGUOUS,
+                0,
+                Some("explicit_relation_fence_failed_after_provider_lookup"),
+            )
+            .await;
+            tracing::warn!(
+                %error,
+                task_id = %task.id,
+                "check explicit work product relation after provider lookup failed"
+            );
+            return;
+        }
+    }
+
     if lookup_failed {
         if let Err(error) = commit_discovery_status(
             transaction,
@@ -1599,10 +1669,11 @@ pub(crate) async fn attach_work_product_relation_locked(
     close_intent: bool,
 ) -> anyhow::Result<WorkProductRelation> {
     let mut transaction = state.pool.begin().await?;
-    if !work_product_q::lock_work_product(&mut *transaction, workspace_id, work_product_id).await? {
-        anyhow::bail!("work product is not in the requested workspace");
+    if let Some(task_id) = task_id {
+        work_product_q::lock_task_work_product_scope(&mut *transaction, workspace_id, task_id)
+            .await?;
     }
-    let relation = work_product_q::attach_work_product_relation(
+    let relation = attach_work_product_relation_in_transaction(
         &mut *transaction,
         workspace_id,
         work_product_id,
@@ -1618,6 +1689,43 @@ pub(crate) async fn attach_work_product_relation_locked(
     .await?;
     transaction.commit().await?;
     Ok(relation)
+}
+
+/// Inserts an explicit relation on a caller-owned transaction. Task-scoped
+/// provider attaches use this form so the task advisory lock acquired before
+/// provider lookup remains held through the Work Product row lock and relation
+/// upsert. The caller owns commit/rollback.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn attach_work_product_relation_in_transaction(
+    transaction: &mut sqlx::PgConnection,
+    workspace_id: Uuid,
+    work_product_id: Uuid,
+    issue_id: Option<Uuid>,
+    task_id: Option<Uuid>,
+    run_id: Option<Uuid>,
+    relation_key: &str,
+    relation_source: &str,
+    attached_by_type: &str,
+    attached_by_id: Uuid,
+    close_intent: bool,
+) -> anyhow::Result<WorkProductRelation> {
+    if !work_product_q::lock_work_product(transaction, workspace_id, work_product_id).await? {
+        anyhow::bail!("work product is not in the requested workspace");
+    }
+    work_product_q::attach_work_product_relation(
+        transaction,
+        workspace_id,
+        work_product_id,
+        issue_id,
+        task_id,
+        run_id,
+        relation_key,
+        relation_source,
+        attached_by_type,
+        attached_by_id,
+        close_intent,
+    )
+    .await
 }
 
 fn publish_relation_event(

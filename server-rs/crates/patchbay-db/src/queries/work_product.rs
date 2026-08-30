@@ -799,6 +799,29 @@ pub async fn lock_branch_discovery(
     Ok(())
 }
 
+/// Serializes every Work Product association decision for one task within a
+/// workspace. Both explicit task attaches and execution-branch discovery hold
+/// this transaction-scoped lock through provider lookup and relation writes.
+pub async fn lock_task_work_product_scope(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+    task_id: Uuid,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"SELECT pg_advisory_xact_lock(
+    hashtextextended(
+        $1::uuid::text || ':' || $2::uuid::text || ':work_product_task',
+        0
+    )
+)"#,
+    )
+    .bind(workspace_id)
+    .bind(task_id)
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
 /// Returns every other potentially overlapping execution using the same
 /// workspace-scoped repository identity and exact branch. An unfinished row
 /// represents a currently active/shared checkout; a finished row matters only
