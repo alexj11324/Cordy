@@ -69,33 +69,11 @@ export function readGoogleSso(
   return null;
 }
 
-export function readGoogleRedirect(
-  signIn: unknown,
-):
-  | ((params: {
-      strategy: "oauth_google";
-      redirectUrl: string;
-      redirectUrlComplete: string;
-      oidcPrompt: "select_account";
-    }) => Promise<unknown>)
-  | null {
-  const record = asRecord(signIn);
-  if (!record || typeof record.authenticateWithRedirect !== "function") {
-    return null;
-  }
-  return record.authenticateWithRedirect as (params: {
-    strategy: "oauth_google";
-    redirectUrl: string;
-    redirectUrlComplete: string;
-    oidcPrompt: "select_account";
-  }) => Promise<unknown>;
-}
-
 export function canStartGoogleOAuth(signIn: unknown): boolean {
-  return readGoogleSso(signIn) !== null || readGoogleRedirect(signIn) !== null;
+  return readGoogleSso(signIn) !== null;
 }
 
-/** Start Google SSO through Core 3 `sso` or the Core 2 redirect helper. */
+/** Start Google SSO through the Core 3 flow consumed by our callback page. */
 export async function startGoogleOAuth(
   signIn: unknown,
   params: { returnUrl: string; callbackUrl: string; origin: string },
@@ -103,25 +81,13 @@ export async function startGoogleOAuth(
   const returnUrl = toSameOriginUrl(params.returnUrl, params.origin);
   const callbackUrl = toSameOriginUrl(params.callbackUrl, params.origin);
   const sso = readGoogleSso(signIn);
-  if (sso) {
-    return sso({
-      strategy: "oauth_google",
-      redirectUrl: returnUrl,
-      redirectCallbackUrl: callbackUrl,
-      oidcPrompt: "select_account",
-    });
-  }
-  const redirect = readGoogleRedirect(signIn);
-  if (redirect) {
-    await redirect({
-      strategy: "oauth_google",
-      redirectUrl: callbackUrl,
-      redirectUrlComplete: returnUrl,
-      oidcPrompt: "select_account",
-    });
-    return { error: null };
-  }
-  throw new Error("Google sign-in is unavailable");
+  if (!sso) throw new Error("Google sign-in is unavailable");
+  return sso({
+    strategy: "oauth_google",
+    redirectUrl: returnUrl,
+    redirectCallbackUrl: callbackUrl,
+    oidcPrompt: "select_account",
+  });
 }
 
 export function googleOAuthAttemptIsReady(
@@ -145,16 +111,17 @@ export function googleOAuthAttemptIsReady(
 export async function consumeGoogleOAuthNonce(
   signIn: unknown,
   rotatingTokenNonce: string | null,
-): Promise<void> {
-  if (!rotatingTokenNonce) return;
+): Promise<boolean> {
+  if (!rotatingTokenNonce) return true;
   const record = asRecord(signIn);
-  if (!record) return;
+  if (!record) return false;
   const future = asRecord(record.__internal_future);
   const reload =
     (typeof record.reload === "function" ? record.reload : null) ??
     (future && typeof future.reload === "function" ? future.reload : null);
-  if (typeof reload !== "function") return;
+  if (typeof reload !== "function") return false;
   await (
     reload as (params: { rotatingTokenNonce: string }) => Promise<unknown>
   )({ rotatingTokenNonce });
+  return true;
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useAuth, useClerk, useSignIn } from "@clerk/nextjs";
+import { useClerk, useSignIn } from "@clerk/nextjs";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
 import { buildBrokerRoute } from "@/features/auth/broker-path";
 import { readDesktopHandoffBinding } from "@/features/auth/desktop-handoff";
@@ -12,10 +12,7 @@ import {
   startGoogleOAuth,
 } from "@/features/auth/google-oauth";
 import { useT } from "@patchbay/views/i18n";
-import {
-  useWebRouter,
-  useWebSearchParams,
-} from "@/platform/client-navigation";
+import { useWebSearchParams } from "@/platform/client-navigation";
 
 export default function GoogleOAuthPage() {
   return (
@@ -32,11 +29,10 @@ function GoogleOAuthContent() {
     [searchParams],
   );
   const clerk = useClerk();
-  const { isSignedIn } = useAuth();
   const { signIn } = useSignIn();
-  const router = useWebRouter();
   const { t } = useT("auth");
   const attempted = useRef(false);
+  const clearingSession = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -71,9 +67,32 @@ function GoogleOAuthContent() {
       return;
     }
 
-    if (isSignedIn) {
-      attempted.current = true;
-      router.replace(returnUrl);
+    // An ambient Clerk cookie is not proof that this desktop-initiated Google
+    // attempt completed. Clear only the active session, then restart from a
+    // canonical URL so the next document can safely begin Google SSO.
+    if (clerk.session) {
+      if (searchParams.get("clerk_reset") === "1") {
+        setError(t(($) => $.web.google_oauth.failed));
+        return;
+      }
+      if (clearingSession.current) return;
+      clearingSession.current = true;
+      const resetQuery = new URLSearchParams(binding.query);
+      resetQuery.set("clerk_reset", "1");
+      const restartUrl = new URL(
+        `${buildBrokerRoute(
+          currentPathname,
+          "/oauth/google",
+          "/oauth/google",
+        )}?${resetQuery}`,
+        window.location.origin,
+      ).href;
+      void clerk
+        .signOut({ sessionId: clerk.session.id, redirectUrl: restartUrl })
+        .catch(() => {
+          clearingSession.current = false;
+          setError(t(($) => $.web.google_oauth.failed));
+        });
       return;
     }
 
@@ -95,7 +114,7 @@ function GoogleOAuthContent() {
       .catch(() => {
         setError(t(($) => $.web.google_oauth.failed));
       });
-  }, [binding, clerk.loaded, isSignedIn, router, searchParams, signIn, t]);
+  }, [binding, clerk, searchParams, signIn, t]);
 
   return (
     <ClerkAuthShell>

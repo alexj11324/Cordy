@@ -81,27 +81,6 @@ describe("startGoogleOAuth", () => {
     });
   });
 
-  it("falls back to authenticateWithRedirect when sso is absent", async () => {
-    const authenticateWithRedirect = vi.fn().mockResolvedValue(undefined);
-
-    await expect(
-      startGoogleOAuth(
-        { authenticateWithRedirect },
-        {
-          returnUrl: "/login",
-          callbackUrl: "/oauth/google/callback",
-          origin: "https://accounts.aspectlylabs.com",
-        },
-      ),
-    ).resolves.toEqual({ error: null });
-    expect(authenticateWithRedirect).toHaveBeenCalledWith({
-      strategy: "oauth_google",
-      redirectUrl: "https://accounts.aspectlylabs.com/oauth/google/callback",
-      redirectUrlComplete: "https://accounts.aspectlylabs.com/login",
-      oidcPrompt: "select_account",
-    });
-  });
-
   it("reads sso off Clerk's future resource wrapper", async () => {
     const sso = vi.fn().mockResolvedValue({ error: null });
 
@@ -139,13 +118,21 @@ describe("googleOAuthAttemptIsReady", () => {
 describe("consumeGoogleOAuthNonce", () => {
   it("reloads the SignIn resource with the rotating token", async () => {
     const reload = vi.fn().mockResolvedValue(undefined);
-    await consumeGoogleOAuthNonce({ reload }, "nonce-value");
+    await expect(
+      consumeGoogleOAuthNonce({ reload }, "nonce-value"),
+    ).resolves.toBe(true);
     expect(reload).toHaveBeenCalledWith({ rotatingTokenNonce: "nonce-value" });
   });
 
-  it("does nothing without a nonce", async () => {
+  it("is ready without a nonce", async () => {
     const reload = vi.fn();
-    await consumeGoogleOAuthNonce({ reload }, null);
+    await expect(consumeGoogleOAuthNonce({ reload }, null)).resolves.toBe(true);
     expect(reload).not.toHaveBeenCalled();
+  });
+
+  it("waits when Clerk has not exposed its reload helper yet", async () => {
+    await expect(consumeGoogleOAuthNonce({}, "nonce-value")).resolves.toBe(
+      false,
+    );
   });
 });

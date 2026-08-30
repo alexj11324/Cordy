@@ -1,7 +1,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useAuth, useClerk, useSignIn, useSignUp } from "@clerk/nextjs";
+import { useClerk, useSignIn, useSignUp } from "@clerk/nextjs";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
 import { buildBrokerRoute } from "@/features/auth/broker-path";
 import { readDesktopHandoffBinding } from "@/features/auth/desktop-handoff";
@@ -30,7 +30,6 @@ function GoogleOAuthCallbackContent() {
     [searchParams],
   );
   const clerk = useClerk();
-  const { isSignedIn } = useAuth();
   const { signIn } = useSignIn();
   const { signUp } = useSignUp();
   const router = useWebRouter();
@@ -45,19 +44,9 @@ function GoogleOAuthCallbackContent() {
       return;
     }
     if (!clerk.loaded || attempted.current) return;
-    if (!signIn || !signUp) {
-      if (isSignedIn) {
-        attempted.current = true;
-        router.replace(
-          `${buildBrokerRoute(
-            window.location.pathname,
-            "/oauth/google/callback",
-            "/login",
-          )}?${binding.query}`,
-        );
-      }
-      return;
-    }
+    // Wait for this OAuth attempt to hydrate. A pre-existing browser session
+    // is not authorization to mint a desktop handoff.
+    if (!signIn || !signUp) return;
 
     const destination = `${buildBrokerRoute(
       window.location.pathname,
@@ -156,27 +145,22 @@ function GoogleOAuthCallbackContent() {
 
     const run = async () => {
       if (!nonceConsumed.current) {
-        nonceConsumed.current = true;
-        await consumeGoogleOAuthNonce(
+        const ready = await consumeGoogleOAuthNonce(
           signIn,
           searchParams.get("rotating_token_nonce"),
         );
+        if (!ready) return;
+        nonceConsumed.current = true;
       }
 
       if (googleOAuthAttemptIsReady(signIn, signUp)) {
         attempted.current = true;
         await complete();
-        return;
-      }
-
-      if (isSignedIn) {
-        attempted.current = true;
-        router.replace(destination);
       }
     };
 
     void run().catch(failClosed);
-  }, [binding, clerk, isSignedIn, router, searchParams, signIn, signUp, t]);
+  }, [binding, clerk, router, searchParams, signIn, signUp, t]);
 
   return (
     <ClerkAuthShell>

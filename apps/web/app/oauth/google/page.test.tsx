@@ -2,19 +2,23 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
-const { clerkLoaded, isSignedIn, search, signInResource, sso, replace } =
+const { clerkLoaded, session, search, signInResource, sso, signOut, replace } =
   vi.hoisted(() => ({
     clerkLoaded: { current: true },
-    isSignedIn: { current: false },
+    session: { current: null as { id: string } | null },
     search: { current: "" },
     signInResource: { current: { sso: vi.fn() } as Record<string, unknown> },
     sso: vi.fn(),
+    signOut: vi.fn(),
     replace: vi.fn(),
   }));
 
 vi.mock("@clerk/nextjs", () => ({
-  useClerk: () => ({ loaded: clerkLoaded.current }),
-  useAuth: () => ({ isSignedIn: isSignedIn.current }),
+  useClerk: () => ({
+    loaded: clerkLoaded.current,
+    session: session.current,
+    signOut,
+  }),
   useSignIn: () => ({ signIn: signInResource.current }),
 }));
 
@@ -52,11 +56,13 @@ describe("GoogleOAuthPage", () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
     clerkLoaded.current = true;
-    isSignedIn.current = false;
+    session.current = null;
     window.history.replaceState(null, "", "/");
     search.current = "";
     sso.mockReset();
     sso.mockResolvedValue({ error: null });
+    signOut.mockReset();
+    signOut.mockResolvedValue(undefined);
     replace.mockReset();
     signInResource.current = { sso };
   });
@@ -139,19 +145,58 @@ describe("GoogleOAuthPage", () => {
     await waitFor(() => expect(sso).toHaveBeenCalledOnce());
   });
 
-  it("hands an already-signed-in Clerk session to desktop login", async () => {
+  it("clears only the active Clerk session before starting Google SSO", async () => {
     const codeChallenge = "a".repeat(43);
     const state = "b".repeat(43);
     search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
-    isSignedIn.current = true;
+    session.current = { id: "sess_leftover" };
+    window.history.replaceState(null, "", `/oauth/google?${search.current}`);
+    signOut.mockImplementation(async () => {
+      session.current = null;
+    });
+
+    const view = render(<GoogleOAuthPage />);
+
+    await waitFor(() => expect(signOut).toHaveBeenCalledOnce());
+    const resetQuery = `${search.current}&clerk_reset=1`;
+    expect(signOut).toHaveBeenCalledWith({
+      sessionId: "sess_leftover",
+      redirectUrl: `${window.location.origin}/oauth/google?${resetQuery}`,
+    });
+    expect(sso).not.toHaveBeenCalled();
+    expect(replace).not.toHaveBeenCalled();
+
+    view.rerender(<GoogleOAuthPage />);
+    await waitFor(() => expect(sso).toHaveBeenCalledOnce());
+  });
+
+  it("fails closed when Clerk cannot clear the ambient session", async () => {
+    const codeChallenge = "a".repeat(43);
+    const state = "b".repeat(43);
+    search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
+    session.current = { id: "sess_leftover" };
+    signOut.mockRejectedValue(new Error("network failed"));
 
     render(<GoogleOAuthPage />);
 
-    await waitFor(() =>
-      expect(replace).toHaveBeenCalledWith(
-        `/login?platform=desktop&code_challenge=${codeChallenge}&state=${state}`,
-      ),
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Google sign-in failed",
     );
+    expect(sso).not.toHaveBeenCalled();
+  });
+
+  it("does not loop when a reset returns with the session still active", async () => {
+    const codeChallenge = "a".repeat(43);
+    const state = "b".repeat(43);
+    search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}&clerk_reset=1`;
+    session.current = { id: "sess_leftover" };
+
+    render(<GoogleOAuthPage />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Google sign-in failed",
+    );
+    expect(signOut).not.toHaveBeenCalled();
     expect(sso).not.toHaveBeenCalled();
   });
 

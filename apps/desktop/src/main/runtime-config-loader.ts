@@ -1,5 +1,5 @@
 import { app } from "electron";
-import { readFile } from "fs/promises";
+import { readFile, writeFile } from "fs/promises";
 import { join } from "path";
 import {
   DEFAULT_RUNTIME_CONFIG,
@@ -28,11 +28,18 @@ export async function loadRuntimeConfig(options: {
   try {
     const raw = await readFile(configPath, "utf-8");
     const config = parseRuntimeConfig(raw);
+    if (isStaleDevelopmentRuntimeConfig(config)) {
+      const migrated = { ...DEFAULT_RUNTIME_CONFIG };
+      await writeFile(
+        configPath,
+        `${JSON.stringify(migrated, null, 2)}\n`,
+        "utf-8",
+      );
+      return { ok: true, config: migrated };
+    }
     return {
       ok: true,
-      config: isStaleDevelopmentRuntimeConfig(config)
-        ? { ...DEFAULT_RUNTIME_CONFIG }
-        : config,
+      config,
     };
   } catch (err) {
     if (isMissingFileError(err)) {
