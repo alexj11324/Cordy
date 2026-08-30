@@ -86,6 +86,7 @@ import type {
   User,
   WebhookDelivery,
   WorkspaceMcpServer,
+  ListDependencyGraphsResponse,
 } from "../types";
 import type { CloudRuntimeNode } from "../runtimes/cloud-runtime";
 import type { CreateFeedbackResponse } from "../feedback/types";
@@ -1111,6 +1112,96 @@ export const ListIssuesResponseSchema = z.object({
   issues: z.array(IssueSchema).default([]),
   total: z.number().default(0),
 }).loose();
+
+const DependencyGraphAssigneeSchema = z.object({
+  type: z.string(),
+  id: z.string(),
+}).loose();
+
+const DependencyGraphPlanSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  parent_issue_id: z.string(),
+  idempotency_key: z.string(),
+  goal: z.string(),
+  status: z.string(),
+  attention_required: z.boolean().default(false),
+  attention_reason: z.string().nullable().default(null),
+  created_by_type: z.string(),
+  created_by_id: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+}).loose();
+
+const DependencyGraphReadinessSchema = z.object({
+  total: z.number().default(0),
+  ready: z.number().default(0),
+  running: z.number().default(0),
+  blocked: z.number().default(0),
+  done: z.number().default(0),
+  cancelled: z.number().default(0),
+}).loose();
+
+const DependencyGraphNodeReadinessSchema = z.object({
+  state: z.string(),
+  gate_open: z.boolean(),
+  satisfied_prerequisites: z.number().default(0),
+  total_prerequisites: z.number().default(0),
+  unlock_condition: z.string(),
+}).loose();
+
+const DependencyGraphNodeSchema = z.object({
+  id: z.string(),
+  temp_id: z.string(),
+  issue_id: z.string(),
+  issue: IssueSchema,
+  title: z.string(),
+  description: z.string(),
+  acceptance_criteria: z.array(z.string()).default([]),
+  context: z.record(z.string(), z.unknown()).default({}),
+  outputs: z.array(z.string()).default([]),
+  assignee_type: z.string().nullable().default(null),
+  assignee_id: z.string().nullable().default(null),
+  candidate_assignees: z.array(DependencyGraphAssigneeSchema).default([]),
+  wave: z.number().int(),
+  status: z.string(),
+  readiness: DependencyGraphNodeReadinessSchema,
+}).loose();
+
+const DependencyGraphEdgeSchema = z.object({
+  id: z.string(),
+  plan_id: z.string(),
+  from_issue_id: z.string(),
+  to_issue_id: z.string(),
+  from: z.string(),
+  to: z.string(),
+  type: z.string(),
+  reason: z.string(),
+  consumed_output: z.string(),
+  prerequisite_status: z.string(),
+  satisfied: z.boolean(),
+  satisfied_prerequisites: z.number().default(0),
+  total_prerequisites: z.number().default(0),
+  unlock_condition: z.string(),
+}).loose();
+
+export const DependencyGraphResponseSchema = z.object({
+  plan: DependencyGraphPlanSchema,
+  parent: IssueSchema,
+  children: z.array(IssueSchema).default([]),
+  nodes: z.array(DependencyGraphNodeSchema).default([]),
+  edges: z.array(DependencyGraphEdgeSchema).default([]),
+  waves: z.array(z.array(z.string())).default([]),
+  readiness: DependencyGraphReadinessSchema,
+}).loose();
+
+export const ListDependencyGraphsResponseSchema = z.object({
+  graphs: z.array(DependencyGraphResponseSchema).default([]),
+}).loose();
+
+export const EMPTY_LIST_DEPENDENCY_GRAPHS_RESPONSE: ListDependencyGraphsResponse = {
+  graphs: [],
+};
 
 // Response schema for POST /api/issues. Two tightenings over IssueSchema:
 //

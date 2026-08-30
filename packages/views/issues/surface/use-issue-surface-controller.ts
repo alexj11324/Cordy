@@ -73,6 +73,7 @@ export interface IssueSurfaceController {
   createDefaults: IssueCreateDefaults;
   viewMode: IssueSurfaceMode;
   allowGantt: boolean;
+  allowGraph: boolean;
   surfaceIssues: Issue[];
   projectIssues: Issue[];
   issues: Issue[];
@@ -872,6 +873,7 @@ export function useIssueSurfaceController({
     createDefaults: resolvedCreateDefaults,
     viewMode: effectiveViewMode,
     allowGantt: allowedModes.has("gantt") && !!projectId,
+    allowGraph: allowedModes.has("graph"),
     ...surfaceData,
     workingAgents,
     droppableHiddenStatuses,

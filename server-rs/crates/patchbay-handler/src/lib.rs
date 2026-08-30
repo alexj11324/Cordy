@@ -43,6 +43,7 @@ pub mod daemon;
 pub mod daemon_ws;
 pub mod dashboard;
 pub mod desktop_handoff;
+pub mod dependency_graph;
 pub mod error;
 pub mod feedback;
 pub mod github;

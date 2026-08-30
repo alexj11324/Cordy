@@ -383,7 +383,10 @@ pub(crate) async fn build_claimed_task_response(
     // Skills: slim refs when the daemon advertises skill-bundles-v1, full
     // content otherwise.
     if use_skill_refs {
-        let (_, refs) = state.tasks.load_agent_skill_bundles(task.agent_id).await;
+        let (_, refs) = state
+            .tasks
+            .load_agent_skill_bundles_for_task(task.agent_id, task.is_leader_task)
+            .await;
         if !refs.is_empty() {
             if let Ok(v) = serde_json::to_value(&refs) {
                 agent_obj.insert("skill_refs".into(), v);
@@ -391,7 +394,9 @@ pub(crate) async fn build_claimed_task_response(
         }
     } else {
         let mut skills = state.tasks.load_agent_skills(task.agent_id).await;
-        skills.extend(patchbay_service::builtin_skills::load_builtin_skills());
+        skills.extend(patchbay_service::builtin_skills::load_builtin_skills_for_task(
+            task.is_leader_task,
+        ));
         if !skills.is_empty() {
             if let Ok(v) = serde_json::to_value(&skills) {
                 agent_obj.insert("skills".into(), v);

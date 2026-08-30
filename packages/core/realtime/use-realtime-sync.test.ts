@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { setApiInstance } from "../api";
 import type { ApiClient } from "../api/client";
 import { chatKeys } from "../chat/queries";
+import { dependencyGraphKeys } from "../dependency-graphs";
 import { inboxKeys } from "../inbox/queries";
 import { issueKeys } from "../issues/queries";
 import { notificationPreferenceKeys } from "../notification-preferences/queries";
@@ -29,6 +30,7 @@ import {
   applyChatSessionUpdatedToCache,
   applyWorkspaceUpdatedToCache,
   handleInboxNew,
+  invalidateDependencyGraphQueries,
   invalidateChatMessageQueries,
   refetchPendingChatAggregate,
   resolveInboxSourceSlug,
@@ -311,6 +313,19 @@ describe("invalidateChatMessageQueries", () => {
 
     expect(invalidate).toHaveBeenCalledWith({ queryKey: chatKeys.messages(sessionId) });
     expect(invalidate).toHaveBeenCalledWith({ queryKey: chatKeys.messagesPage(sessionId) });
+  });
+});
+
+describe("invalidateDependencyGraphQueries", () => {
+  it("refreshes both graph lists and mounted issue-detail graph queries", () => {
+    const qc = createQueryClient();
+    const invalidate = vi.spyOn(qc, "invalidateQueries");
+
+    invalidateDependencyGraphQueries(qc, "ws-graph");
+
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: dependencyGraphKeys.all("ws-graph"),
+    });
   });
 });
 

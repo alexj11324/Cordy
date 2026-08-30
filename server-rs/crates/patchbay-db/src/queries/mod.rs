@@ -16,6 +16,7 @@ pub mod composio;
 pub mod contact_sales;
 pub mod daemon_token;
 pub mod dingtalk;
+pub mod dependency_graph;
 pub mod feedback;
 pub mod github;
 pub mod github_snapshot;

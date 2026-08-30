@@ -251,6 +251,23 @@ impl ApiClient {
         .await
     }
 
+    pub async fn post_json_with_header<B: Serialize + ?Sized, T: DeserializeOwned>(
+        &self,
+        path: &str,
+        body: &B,
+        header_name: &str,
+        header_value: &str,
+    ) -> Result<T> {
+        self.send_json(
+            Method::POST,
+            path,
+            self.request(Method::POST, path)
+                .header(header_name, header_value)
+                .json(body),
+        )
+        .await
+    }
+
     /// Import a local skill archive through the same multipart endpoint used
     /// by the Go CLI. Archive parsing and all decompression/path limits remain
     /// server-side; this method only builds the authenticated request.

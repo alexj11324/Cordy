@@ -10,6 +10,7 @@ pub const EVENT_ISSUE_UPDATED: &str = "issue:updated";
 pub const EVENT_ISSUE_DELETED: &str = "issue:deleted";
 pub const EVENT_ISSUE_METADATA_CHANGED: &str = "issue_metadata:changed";
 pub const EVENT_ISSUE_ATTACHMENTS_CHANGED: &str = "issue_attachments:changed";
+pub const EVENT_DEPENDENCY_GRAPH_UPDATED: &str = "dependency_graph:updated";
 
 // Comment events
 pub const EVENT_COMMENT_CREATED: &str = "comment:created";

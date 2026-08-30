@@ -55,6 +55,7 @@ use patchbay_db::queries::chat::{
 };
 use patchbay_db::queries::comment::get_comment_in_workspace;
 use patchbay_db::queries::daemon_token::{create_daemon_token, delete_expired_daemon_tokens};
+use patchbay_db::queries::dependency_graph as dependency_graph_q;
 use patchbay_db::queries::github::get_issue_review_head_sha;
 use patchbay_db::queries::issue::get_issue;
 use patchbay_db::queries::runtime::get_agent_runtime;
@@ -172,6 +173,14 @@ pub enum TaskServiceError {
     AgentArchived,
     #[error("agent has no runtime")]
     AgentNoRuntime,
+    #[error(
+        "dependency gate is closed for issue {issue_id}: {satisfied_prerequisites}/{total_prerequisites} prerequisites succeeded"
+    )]
+    DependencyGateClosed {
+        issue_id: Uuid,
+        satisfied_prerequisites: i64,
+        total_prerequisites: i64,
+    },
     #[error("chat task: agent archived")]
     ChatAgentArchived,
     #[error("chat task: agent has no runtime")]
@@ -230,6 +239,32 @@ async fn lock_task_owner_rows_before_issue(
             "task owner disappeared while enqueuing task".to_string(),
         ))
     }
+}
+
+/// Every issue-task enqueue path performs this cheap service-level check
+/// before attribution, agent lookup, or queue writes. The database trigger
+/// remains the final authority for legacy/direct SQL paths.
+async fn require_dependency_gate<'e, E>(
+    executor: E,
+    workspace_id: Uuid,
+    issue_id: Uuid,
+) -> Result<(), TaskServiceError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
+    let gate = dependency_graph_q::get_gate_state(executor, workspace_id, issue_id)
+        .await
+        .map_err(|error| {
+            TaskServiceError::Internal(format!("dependency gate lookup failed: {error}"))
+        })?;
+    if gate.gate_open {
+        return Ok(());
+    }
+    Err(TaskServiceError::DependencyGateClosed {
+        issue_id,
+        satisfied_prerequisites: gate.satisfied_prerequisites,
+        total_prerequisites: gate.total_prerequisites,
+    })
 }
 
 /// Seam for building the per-task Composio MCP overlay at enqueue time.
@@ -1458,6 +1493,221 @@ impl TaskService {
         }
     }
 
+    /// Applies the ready transition and admits every currently ready agent
+    /// node for one plan. Promotion and queue insertion are intentionally
+    /// separate commits: the graph remains the source of truth, while the
+    /// queue's unique pending slot and the DB admission trigger make retries
+    /// safe if the process stops between them.
+    pub async fn wake_dependency_graph_ready_tasks(
+        &self,
+        workspace_id: Uuid,
+        plan_id: Uuid,
+    ) -> Result<(), TaskServiceError> {
+        let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        let promoted = dependency_graph_q::promote_ready_issues_for_plan(
+            &mut *tx,
+            workspace_id,
+            plan_id,
+        )
+        .await
+        .map_err(|error| TaskServiceError::Internal(format!("promote graph tasks: {error}")))?;
+        tx.commit().await.map_err(TaskServiceError::Sql)?;
+
+        if !promoted.is_empty() {
+            self.publish_dependency_graph_wakeup(workspace_id, Some(plan_id), &promoted);
+        }
+        let issue_ids = dependency_graph_q::list_ready_issue_ids_for_plan(
+            &self.pool,
+            workspace_id,
+            plan_id,
+        )
+        .await
+        .map_err(|error| TaskServiceError::Internal(format!("list ready graph tasks: {error}")))?;
+        self.enqueue_ready_dependency_issue_ids(issue_ids).await;
+        Ok(())
+    }
+
+    /// Completion-path wakeup. The SQL update checks the source's effective
+    /// status and all incoming edges, so failed/cancelled/replayed terminal
+    /// events cannot unlock a dependent.
+    pub async fn wake_dependency_dependents(
+        &self,
+        workspace_id: Uuid,
+        prerequisite_issue_id: Uuid,
+    ) -> Result<(), TaskServiceError> {
+        let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        let promoted = dependency_graph_q::promote_ready_dependents(
+            &mut *tx,
+            workspace_id,
+            prerequisite_issue_id,
+        )
+        .await
+        .map_err(|error| TaskServiceError::Internal(format!("promote graph dependents: {error}")))?;
+        tx.commit().await.map_err(TaskServiceError::Sql)?;
+
+        if !promoted.is_empty() {
+            self.publish_dependency_graph_wakeup(workspace_id, None, &promoted);
+        }
+        let issue_ids = dependency_graph_q::list_ready_issue_ids_for_workspace(
+            &self.pool,
+            workspace_id,
+        )
+        .await
+        .map_err(|error| TaskServiceError::Internal(format!("list ready graph dependents: {error}")))?;
+        self.enqueue_ready_dependency_issue_ids(issue_ids).await;
+        Ok(())
+    }
+
+    /// Records that an active graph needs replanning/attention because one of
+    /// its prerequisites failed or was cancelled. This never opens a gate.
+    pub async fn flag_dependency_attention(
+        &self,
+        workspace_id: Uuid,
+        prerequisite_issue_id: Uuid,
+        reason: &str,
+    ) -> Result<(), TaskServiceError> {
+        let plan_ids = dependency_graph_q::mark_attention_for_prerequisite(
+            &self.pool,
+            workspace_id,
+            prerequisite_issue_id,
+            reason,
+        )
+        .await
+        .map_err(|error| TaskServiceError::Internal(format!("mark graph attention: {error}")))?;
+        if !plan_ids.is_empty() {
+            self.bus.publish(&patchbay_events::Event {
+                event_type: patchbay_protocol::EVENT_DEPENDENCY_GRAPH_UPDATED.to_string(),
+                workspace_id: workspace_id.to_string(),
+                actor_type: "system".to_string(),
+                actor_id: String::new(),
+                payload: serde_json::json!({
+                    "plan_ids": plan_ids.iter().map(|id| id.to_string()).collect::<Vec<_>>(),
+                    "attention_required": true,
+                    "prerequisite_issue_id": prerequisite_issue_id,
+                    "reason": reason,
+                }),
+                task_id: String::new(),
+                chat_session_id: String::new(),
+            });
+        }
+        Ok(())
+    }
+
+    /// Batch cancellation uses the same fail-closed dependency attention
+    /// contract as single-task cancellation. The graph lookup is deliberately
+    /// best-effort here: cancellation must still finish if the issue was
+    /// deleted as part of the surrounding lifecycle operation.
+    async fn flag_dependency_attention_for_cancelled_task(&self, task: &AgentTaskQueue) {
+        let Some(issue_id) = task.issue_id else {
+            return;
+        };
+        let Ok(Some(issue)) = get_issue(&self.pool, issue_id).await else {
+            return;
+        };
+        let reason = task
+            .failure_reason
+            .as_deref()
+            .filter(|reason| !reason.trim().is_empty())
+            .unwrap_or("prerequisite task cancelled");
+        if let Err(error) = self
+            .flag_dependency_attention(issue.workspace_id, issue.id, reason)
+            .await
+        {
+            tracing::warn!(
+                %error,
+                issue_id = %issue.id,
+                "dependency attention update after batch task cancellation failed"
+            );
+        }
+    }
+
+    /// Claim recovery closes the only unsafe window left by a two-phase
+    /// promotion/enqueue handoff: a process may die after the blocked→todo
+    /// commit and before it writes the queue row.
+    async fn reconcile_dependency_tasks_for_runtime(
+        &self,
+        runtime_id: Uuid,
+    ) -> Result<(), TaskServiceError> {
+        let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        let promoted = dependency_graph_q::promote_ready_issues_for_runtime(&mut *tx, runtime_id)
+            .await
+            .map_err(|error| {
+                TaskServiceError::Internal(format!("promote runtime graph tasks: {error}"))
+            })?;
+        tx.commit().await.map_err(TaskServiceError::Sql)?;
+
+        if !promoted.is_empty() {
+            let workspace_id = get_issue(&self.pool, promoted[0])
+                .await
+                .ok()
+                .flatten()
+                .map(|issue| issue.workspace_id);
+            if let Some(workspace_id) = workspace_id {
+                self.publish_dependency_graph_wakeup(workspace_id, None, &promoted);
+            }
+        }
+        let issue_ids = dependency_graph_q::list_ready_issue_ids_for_runtime(&self.pool, runtime_id)
+            .await
+            .map_err(|error| {
+                TaskServiceError::Internal(format!("list runtime graph tasks: {error}"))
+            })?;
+        self.enqueue_ready_dependency_issue_ids(issue_ids).await;
+        Ok(())
+    }
+
+    async fn enqueue_ready_dependency_issue_ids(&self, issue_ids: Vec<Uuid>) {
+        for issue_id in issue_ids {
+            let issue = match get_issue(&self.pool, issue_id).await {
+                Ok(Some(issue)) => issue,
+                Ok(None) => {
+                    tracing::warn!(%issue_id, "ready dependency task disappeared before enqueue");
+                    continue;
+                }
+                Err(error) => {
+                    tracing::warn!(%issue_id, %error, "failed to load ready dependency task");
+                    continue;
+                }
+            };
+            match self.enqueue_task_for_issue(&issue, None).await {
+                Ok(task) => tracing::info!(
+                    issue_id = %issue.id,
+                    task_id = %task.id,
+                    "ready dependency task enqueued"
+                ),
+                Err(TaskServiceError::DuplicatePendingTask(_)) => {}
+                Err(TaskServiceError::DependencyGateClosed { .. }) => {}
+                Err(error) => tracing::warn!(
+                    issue_id = %issue.id,
+                    %error,
+                    "ready dependency task admission deferred"
+                ),
+            }
+        }
+    }
+
+    fn publish_dependency_graph_wakeup(
+        &self,
+        workspace_id: Uuid,
+        plan_id: Option<Uuid>,
+        promoted_issue_ids: &[Uuid],
+    ) {
+        self.bus.publish(&patchbay_events::Event {
+            event_type: patchbay_protocol::EVENT_DEPENDENCY_GRAPH_UPDATED.to_string(),
+            workspace_id: workspace_id.to_string(),
+            actor_type: "system".to_string(),
+            actor_id: String::new(),
+            payload: serde_json::json!({
+                "plan_id": plan_id.map(|id| id.to_string()),
+                "promoted_issue_ids": promoted_issue_ids
+                    .iter()
+                    .map(|id| id.to_string())
+                    .collect::<Vec<_>>(),
+            }),
+            task_id: String::new(),
+            chat_session_id: String::new(),
+        });
+    }
+
     async fn notify_runtime_may_have_work(&self, runtime_id: Option<Uuid>, task_id: Option<&str>) {
         let Some(runtime_id) = runtime_id else {
             return;
@@ -1825,6 +2075,7 @@ impl TaskService {
         actor_user_id: Option<Uuid>,
         build_overlay: bool,
     ) -> Result<PreparedIssueEnqueue, TaskServiceError> {
+        require_dependency_gate(&self.pool, issue.workspace_id, issue.id).await?;
         let Some(assignee_id) = issue.assignee_id else {
             tracing::error!(issue_id = %issue.id, "task enqueue failed: issue has no assignee");
             return Err(TaskServiceError::NoAssignee);
@@ -2091,6 +2342,7 @@ impl TaskService {
         issue: &Issue,
         fire_at: chrono::DateTime<chrono::Utc>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
+        require_dependency_gate(&mut *tx, issue.workspace_id, issue.id).await?;
         let assignee_id = issue.assignee_id.ok_or(TaskServiceError::NoAssignee)?;
         let agent = get_agent(&mut *tx, assignee_id)
             .await
@@ -2586,6 +2838,7 @@ impl TaskService {
         owner_context: bool,
         coordination_assignment_id: Option<Uuid>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
+        require_dependency_gate(&self.pool, issue.workspace_id, issue.id).await?;
         let agent = get_agent(&self.pool, agent_id)
             .await
             .map_err(|e| TaskServiceError::LoadAgent(downcast_sqlx(e)))?
@@ -2763,6 +3016,7 @@ impl TaskService {
         trigger_comment_id: Option<Uuid>,
         fire_at: chrono::DateTime<chrono::Utc>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
+        require_dependency_gate(&self.pool, issue.workspace_id, issue.id).await?;
         let agent = get_agent(&self.pool, agent_id)
             .await
             .map_err(|e| TaskServiceError::LoadAgent(downcast_sqlx(e)))?
@@ -3006,6 +3260,7 @@ impl TaskService {
             .await
             .map_err(|e| TaskServiceError::Sql(downcast_sqlx(e)))?;
         for t in &cancelled {
+            self.flag_dependency_attention_for_cancelled_task(t).await;
             self.capture_task_cancelled(t).await;
             self.broadcast_task_event(
                 patchbay_protocol::EVENT_TASK_CANCELLED,
@@ -3889,6 +4144,7 @@ impl TaskService {
             .await
             .map_err(|e| TaskServiceError::Sql(downcast_sqlx(e)))?;
         for t in &cancelled {
+            self.flag_dependency_attention_for_cancelled_task(t).await;
             self.capture_task_cancelled(t).await;
             self.broadcast_task_event(
                 patchbay_protocol::EVENT_TASK_CANCELLED,
@@ -3915,6 +4171,7 @@ impl TaskService {
         cancelled: &[AgentTaskQueue],
     ) {
         for t in cancelled {
+            self.flag_dependency_attention_for_cancelled_task(t).await;
             self.capture_task_cancelled(t).await;
             self.reconcile_agent_status(t.agent_id).await;
             self.publish_task_event(
@@ -4106,6 +4363,25 @@ impl TaskService {
         };
 
         tracing::info!(task_id = %task.id, issue_id = ?task.issue_id, "task cancelled");
+        if let Some(issue_id) = task.issue_id {
+            if let Ok(Some(issue)) = get_issue(&self.pool, issue_id).await {
+                let reason = if opts.failure_reason.is_empty() {
+                    "prerequisite task cancelled"
+                } else {
+                    opts.failure_reason.as_str()
+                };
+                if let Err(error) = self
+                    .flag_dependency_attention(issue.workspace_id, issue.id, reason)
+                    .await
+                {
+                    tracing::warn!(
+                        %error,
+                        issue_id = %issue.id,
+                        "dependency attention update after task cancellation failed"
+                    );
+                }
+            }
+        }
         self.capture_task_cancelled(&task).await;
         if !opts.queued_only {
             cancelled_chat_message = self.finalize_cancelled_chat_message(&task, &opts).await;
@@ -4758,6 +5034,10 @@ impl TaskService {
             }
         }
 
+        if let Err(error) = self.reconcile_dependency_tasks_for_runtime(runtime_id).await {
+            tracing::warn!(%error, %runtime_id, "dependency task recovery before claim failed");
+        }
+
         let runtime_key = runtime_id.to_string();
         let empty_claim = self.empty_claim_cache();
         if empty_claim.is_empty(&runtime_key).await {
@@ -4931,6 +5211,12 @@ impl TaskService {
         if claimed.len() >= max_tasks {
             claimed.truncate(max_tasks);
             return Ok(claimed);
+        }
+
+        for runtime_id in &unique_ids {
+            if let Err(error) = self.reconcile_dependency_tasks_for_runtime(*runtime_id).await {
+                tracing::warn!(%error, %runtime_id, "dependency task recovery before batch claim failed");
+            }
         }
 
         // 3. Short-circuit cached-empty runtimes and sample each remaining

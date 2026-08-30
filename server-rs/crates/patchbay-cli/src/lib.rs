@@ -49,6 +49,9 @@ mod issue_actor_resolver;
 mod issue_assign_commands;
 mod issue_children_commands;
 mod issue_command_schema;
+mod issue_dependency_graph_commands;
+#[cfg(test)]
+mod issue_dependency_graph_command_tests;
 mod issue_comment_add_commands;
 mod issue_comment_list_commands;
 mod issue_comment_mutation_commands;
@@ -252,8 +255,12 @@ use issue_assign_commands::run_issue_assign;
 use issue_children_commands::run_issue_children;
 #[cfg(test)]
 use issue_children_commands::{child_stage, format_issue_children_table, group_issue_children};
+use issue_dependency_graph_commands::{
+    run_issue_dependency_graph_apply, run_issue_dependency_graph_get,
+};
 pub(crate) use issue_command_schema::{
-    IssueArgs, IssueAssignArgs, IssueCommand, IssueCreateArgs, IssueReorderArgs, IssueStatusArgs,
+    IssueArgs, IssueAssignArgs, IssueCommand, IssueCreateArgs, IssueDependencyGraphApplyArgs,
+    IssueDependencyGraphArgs, IssueDependencyGraphCommand, IssueReorderArgs, IssueStatusArgs,
     IssueUpdateArgs,
 };
 #[cfg(test)]
