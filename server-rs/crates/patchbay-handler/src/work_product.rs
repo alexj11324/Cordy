@@ -661,22 +661,6 @@ pub(crate) async fn queue_task_discovery(
     Ok(())
 }
 
-/// Best-effort terminal discovery. No provider or relation error changes the
-/// already-recorded task outcome; every branch is written to the provenance
-/// audit row so the UI can distinguish no match from uncertainty.
-pub(crate) async fn discover_after_task(
-    state: &HandlerState,
-    task: &patchbay_db::models::AgentTaskQueue,
-    workspace_id: Uuid,
-    input: &ExecutionProvenanceInput,
-) {
-    if let Err(error) = queue_task_discovery(state, task, workspace_id, input).await {
-        tracing::warn!(%error, task_id = %task.id, "queue terminal work product discovery failed");
-        return;
-    }
-    discover_pending_for_task(state, task, workspace_id).await;
-}
-
 /// Processes every persisted checkout for one task. This is deliberately
 /// plural: one task can check out several authorized repositories and each
 /// exact workspace/head gets an independent first-discovery attempt.
