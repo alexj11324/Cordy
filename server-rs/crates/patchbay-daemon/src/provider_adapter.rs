@@ -45,7 +45,7 @@ use crate::execution_plan::{
     strip_hermes_profile_selectors, PreparedEnvironmentInputs, ProviderExecutionInputs,
     ProviderExecutionPlan,
 };
-use crate::health::{ActiveRepoCheckoutTask, HealthResponse};
+use crate::health::{ActiveRepoCheckoutTask, HealthResponse, RepoCheckoutRegistry};
 use crate::local_directory::{
     is_git_work_tree, local_directory_assignment_for_task, validate_local_path,
     LocalDirectoryAssignment, LocalPathLocker, PathLockRelease,
@@ -803,7 +803,8 @@ impl ProductionProviderAdapter {
                 Some(&environment),
             );
             drop(path_guard);
-            return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
+            return finalize_environment(&ctx, outcome, &mut environment, assignment.as_ref())
+                .await;
         }
         // Worktree mode holds the source-path lock only while taking its
         // consistent snapshot. In-place mode deliberately retains it until
@@ -830,8 +831,13 @@ impl ProductionProviderAdapter {
                         },
                         Some(&environment),
                     );
-                    return finalize_environment(outcome, &mut environment, assignment.as_ref())
-                        .await;
+                    return finalize_environment(
+                        &ctx,
+                        outcome,
+                        &mut environment,
+                        assignment.as_ref(),
+                    )
+                    .await;
                 }
             };
         let Some(task_temp_dir_path) = task_temp_dir.path().to_str() else {
@@ -845,7 +851,8 @@ impl ProductionProviderAdapter {
                 Some(&environment),
             );
             close_task_temp_dir(&task.id, task_temp_dir);
-            return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
+            return finalize_environment(&ctx, outcome, &mut environment, assignment.as_ref())
+                .await;
         };
         if let Err(error) = plan.set_task_temp_dir(task_temp_dir_path) {
             let outcome = failed_with_reason(
@@ -858,8 +865,30 @@ impl ProductionProviderAdapter {
                 Some(&environment),
             );
             close_task_temp_dir(&task.id, task_temp_dir);
-            return finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
+            return finalize_environment(&ctx, outcome, &mut environment, assignment.as_ref())
+                .await;
         }
+        // Keep the daemon-owned checkout authorization alive through terminal
+        // provenance refresh. `/repo/checkout` records each path while this
+        // guard is active; the final heads are read below before it is
+        // dropped. The task token remains the localhost-only registry key, not
+        // the credential used for server provenance writes.
+        let checkout_guard = runtime.checkout_registry().register_owned(
+            task.auth_token.trim().to_string(),
+            ActiveRepoCheckoutTask {
+                workspace_id: task.workspace_id.clone(),
+                task_id: task.id.clone(),
+                agent_id: task.agent_id.clone(),
+                agent_name: task
+                    .agent
+                    .as_ref()
+                    .map(|agent| agent.name.clone())
+                    .unwrap_or_default(),
+                work_dir: environment.work_dir.clone(),
+                execution_daemon_token: task.execution_daemon_token.clone(),
+                ..ActiveRepoCheckoutTask::default()
+            },
+        );
         let run = async {
             let start_result = client.start_task(&preparation_ctx, &task.id).await;
             // The dispatched-task lease remains owned through temp allocation
@@ -869,6 +898,14 @@ impl ProductionProviderAdapter {
             preparation.stop();
             prepare_lease.stop().await;
             start_result.map_err(|error| anyhow::anyhow!("start task failed: {error}"))?;
+            record_initial_environment_provenance(
+                &preparation_ctx,
+                &client,
+                &task.execution_daemon_token,
+                &task.id,
+                &environment,
+            )
+            .await?;
             if let Err(error) = client
                 .report_progress(
                     &ctx,
@@ -959,21 +996,6 @@ impl ProductionProviderAdapter {
             let backend = patchbay_agent::build_backend(&target.provider, backend_config)
                 .map_err(|error| anyhow::anyhow!("create agent backend: {error}"))?;
             let _provider_broker = provider_broker;
-            let token = task.auth_token.trim().to_string();
-            let _checkout = runtime.checkout_registry().register_owned(
-                token,
-                ActiveRepoCheckoutTask {
-                    workspace_id: task.workspace_id.clone(),
-                    task_id: task.id.clone(),
-                    agent_id: task.agent_id.clone(),
-                    agent_name: task
-                        .agent
-                        .as_ref()
-                        .map(|agent| agent.name.clone())
-                        .unwrap_or_default(),
-                    work_dir: environment.work_dir.clone(),
-                },
-            );
             let prompt = build_prompt(task.clone(), &target.provider);
             let _running = CounterGuard::new(&self.running_tasks);
             let mut agent_events = AgentEventBatch::default();
@@ -1069,7 +1091,16 @@ impl ProductionProviderAdapter {
             Err(error) => failed(error, Some(&environment)),
         };
         close_task_temp_dir(&task.id, task_temp_dir);
-        outcome = finalize_environment(outcome, &mut environment, assignment.as_ref()).await;
+        outcome = finalize_environment(&ctx, outcome, &mut environment, assignment.as_ref()).await;
+        record_checkout_terminal_provenance(
+            &ctx,
+            &client,
+            &task.execution_daemon_token,
+            &task.id,
+            &runtime.checkout_registry(),
+        )
+        .await;
+        drop(checkout_guard);
         drop(path_guard);
         outcome
     }
@@ -2636,6 +2667,7 @@ fn skill_ref_from_bundle(bundle: &SkillData) -> SkillRefData {
 }
 
 async fn finalize_environment(
+    ctx: &Ctx,
     mut outcome: TaskRunOutcome,
     environment: &mut Environment,
     assignment: Option<&LocalDirectoryAssignment>,
@@ -2650,10 +2682,39 @@ async fn finalize_environment(
             }
         }
     }
+    if environment.local_worktree.is_none() {
+        // Standard GitHub checkouts are created by the provider during the
+        // task, while in-place local-directory executions already point at a
+        // user repository. Capture the terminal facts from that exact
+        // execution workspace when it is a Git worktree. This also covers a
+        // resumed standard workdir and makes the terminal callback safe when
+        // no intermediate checkout request was delivered.
+        let provenance = execution_provenance_for_start(ctx, environment).await;
+        if !provenance.repo_identity.is_empty() {
+            outcome.result.execution_repo_identity = provenance.repo_identity;
+            outcome.result.execution_workspace = provenance.execution_workspace;
+            outcome.result.execution_head_branch = provenance.head_branch;
+            outcome.result.execution_head_sha = provenance.head_sha;
+            outcome.result.execution_head_state = provenance.head_state;
+        }
+    }
     if let Some(worktree) = environment.local_worktree.as_ref() {
+        // Capture the task-owned execution facts before Finalize removes the
+        // disposable worktree. The server uses these values only to perform
+        // a repository-scoped exact-head lookup after the run; no PR text is
+        // inspected and the branch is not stored as a durable relation key.
+        outcome.result.execution_repo_identity = worktree.repo_identity.clone();
+        outcome.result.execution_workspace = worktree.path.clone();
+        outcome.result.execution_head_branch = worktree.branch.clone();
+        outcome.result.execution_head_state = "attached".to_string();
         match worktree.finalize().await {
             Ok(finalized) => {
                 outcome.result.branch_name = finalized.branch;
+                outcome.result.execution_repo_identity = finalized.repo_identity;
+                outcome.result.execution_workspace = finalized.execution_workspace;
+                outcome.result.execution_head_branch = outcome.result.branch_name.clone();
+                outcome.result.execution_head_sha = finalized.head_sha;
+                outcome.result.execution_head_state = finalized.head_state;
                 if let Some(assignment) = assignment {
                     outcome.result.durable_work_dir = assignment.abs_path.clone();
                 }
@@ -2678,6 +2739,197 @@ async fn finalize_environment(
         }
     }
     outcome
+}
+
+#[derive(Debug, Default)]
+struct ExecutionProvenanceFacts {
+    repo_identity: String,
+    execution_workspace: String,
+    head_branch: String,
+    head_sha: String,
+    head_state: String,
+}
+
+async fn execution_provenance_for_start(
+    ctx: &Ctx,
+    environment: &Environment,
+) -> ExecutionProvenanceFacts {
+    if let Some(worktree) = environment.local_worktree.as_ref() {
+        return ExecutionProvenanceFacts {
+            repo_identity: worktree.repo_identity.clone(),
+            execution_workspace: worktree.path.clone(),
+            head_branch: worktree.branch.clone(),
+            head_sha: worktree.base_commit.clone(),
+            head_state: "attached".to_string(),
+        };
+    }
+
+    let work_dir = environment.work_dir.trim();
+    if work_dir.is_empty()
+        || (!environment.local_directory && !Path::new(work_dir).join(".git").exists())
+    {
+        return ExecutionProvenanceFacts::default();
+    }
+
+    execution_provenance_for_work_dir(ctx, work_dir).await
+}
+
+/// Persists the prepared checkout before the provider process is launched so
+/// an in-run explicit attach can prove ownership immediately after StartTask.
+async fn record_initial_environment_provenance(
+    ctx: &Ctx,
+    client: &Client,
+    daemon_token: &str,
+    task_id: &str,
+    environment: &Environment,
+) -> anyhow::Result<()> {
+    let facts = execution_provenance_for_start(ctx, environment).await;
+    if facts.repo_identity.is_empty() {
+        return Ok(());
+    }
+    if daemon_token.trim().is_empty() {
+        anyhow::bail!("execution daemon credential is missing");
+    }
+    client
+        .record_execution_provenance(
+            ctx,
+            daemon_token,
+            task_id,
+            &facts.repo_identity,
+            &facts.execution_workspace,
+            &facts.head_branch,
+            &facts.head_sha,
+            &facts.head_state,
+            false,
+        )
+        .await
+        .context("record initial execution provenance")
+}
+
+async fn execution_provenance_for_work_dir(ctx: &Ctx, work_dir: &str) -> ExecutionProvenanceFacts {
+    let repo_identity = git_fact(ctx, work_dir, ["remote", "get-url", "origin"]).await;
+    let execution_workspace = git_fact(ctx, work_dir, ["rev-parse", "--show-toplevel"]).await;
+    let head_branch = git_fact(
+        ctx,
+        work_dir,
+        ["symbolic-ref", "--quiet", "--short", "HEAD"],
+    )
+    .await;
+    let head_sha = git_fact(ctx, work_dir, ["rev-parse", "--verify", "HEAD"]).await;
+    let default_branch = git_fact(
+        ctx,
+        work_dir,
+        [
+            "symbolic-ref",
+            "--quiet",
+            "--short",
+            "refs/remotes/origin/HEAD",
+        ],
+    )
+    .await
+    .strip_prefix("origin/")
+    .map(str::to_string)
+    .unwrap_or_default();
+    let head_state = classify_execution_head_state(&repo_identity, &head_branch, &default_branch);
+    ExecutionProvenanceFacts {
+        repo_identity,
+        execution_workspace,
+        head_branch,
+        head_sha,
+        head_state: head_state.to_string(),
+    }
+}
+
+/// Refreshes every provider checkout from its actual terminal filesystem
+/// state. A task may check out several repositories; each exact checkout path
+/// gets its own terminal head before the server queues branch discovery.
+async fn record_checkout_terminal_provenance(
+    ctx: &Ctx,
+    client: &Client,
+    daemon_token: &str,
+    task_id: &str,
+    registry: &RepoCheckoutRegistry,
+) {
+    for checkout in registry.checkouts_for_task(task_id) {
+        let mut facts = execution_provenance_for_work_dir(ctx, &checkout.path).await;
+        if facts.repo_identity.is_empty() {
+            // The repository identity was captured when this daemon-owned
+            // checkout was created. It is safe to retain that exact identity;
+            // no provider text or branch name is consulted here.
+            facts.repo_identity = checkout.repo_identity.clone();
+        }
+        // The execution workspace is the exact path returned by checkout, not
+        // a newly inferred parent path. This keeps the database natural key
+        // stable across the initial and terminal provenance writes.
+        facts.execution_workspace = checkout.path.clone();
+        if facts.head_branch.is_empty() && facts.head_state == "unknown" {
+            tracing::warn!(
+                task_id = %task_id,
+                path = %checkout.path,
+                "terminal checkout head could not be inspected; recording unknown provenance"
+            );
+        }
+        if daemon_token.trim().is_empty() {
+            tracing::warn!(
+                task_id = %task_id,
+                path = %checkout.path,
+                "terminal checkout provenance skipped because execution daemon credential is missing"
+            );
+            continue;
+        }
+        if let Err(error) = client
+            .record_execution_provenance(
+                ctx,
+                daemon_token,
+                task_id,
+                &facts.repo_identity,
+                &facts.execution_workspace,
+                &facts.head_branch,
+                &facts.head_sha,
+                &facts.head_state,
+                true,
+            )
+            .await
+        {
+            tracing::warn!(
+                %error,
+                task_id = %task_id,
+                path = %checkout.path,
+                "terminal checkout provenance refresh failed"
+            );
+        }
+    }
+}
+
+fn classify_execution_head_state(
+    repo_identity: &str,
+    head_branch: &str,
+    default_branch: &str,
+) -> &'static str {
+    if repo_identity.is_empty() || (head_branch.is_empty() && default_branch.is_empty()) {
+        "unknown"
+    } else if head_branch.is_empty() {
+        "detached"
+    } else if default_branch.is_empty() {
+        // Without a verified remote default branch, a named head is not
+        // enough to prove that it is a task branch. Fail closed so discovery
+        // cannot attach a PR from an incompletely inspected checkout.
+        "unknown"
+    } else if head_branch == default_branch {
+        "default"
+    } else {
+        "attached"
+    }
+}
+
+async fn git_fact<const N: usize>(ctx: &Ctx, work_dir: &str, args: [&str; N]) -> String {
+    let mut command = tokio::process::Command::new("git");
+    command.arg("-C").arg(work_dir).args(args);
+    crate::gc::processtree::output(ctx, command, Duration::from_secs(2))
+        .await
+        .ok()
+        .map(|output| String::from_utf8_lossy(&output).trim().to_string())
+        .unwrap_or_default()
 }
 
 fn reusable_workdir(workspaces_root: &str, task: &Task) -> bool {
@@ -4028,6 +4280,26 @@ mod tests {
         .unwrap();
         assert_eq!(candidate.path, "C:/releases/0.101.0/codex.exe");
         assert_eq!(candidate.version, None);
+    }
+
+    #[test]
+    fn execution_head_state_fails_closed_when_remote_default_is_unknown() {
+        assert_eq!(
+            classify_execution_head_state("owner/repo", "feature", ""),
+            "unknown"
+        );
+        assert_eq!(
+            classify_execution_head_state("owner/repo", "main", "main"),
+            "default"
+        );
+        assert_eq!(
+            classify_execution_head_state("owner/repo", "feature", "main"),
+            "attached"
+        );
+        assert_eq!(
+            classify_execution_head_state("owner/repo", "", "main"),
+            "detached"
+        );
     }
 
     #[test]

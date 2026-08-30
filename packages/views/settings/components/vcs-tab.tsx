@@ -26,6 +26,7 @@ import {
   AlertDialogTitle,
 } from "@patchbay/ui/components/ui/alert-dialog";
 import { useWorkspaceId } from "@patchbay/core/hooks";
+import { githubKeys } from "@patchbay/core/github";
 import { vcsConnectionsOptions } from "@patchbay/core/vcs";
 import { api } from "@patchbay/core/api";
 import type { ConnectVCSResponse, VCSProvider } from "@patchbay/core/types";
@@ -105,7 +106,12 @@ export function VCSTab() {
     setDeleting(true);
     try {
       await api.deleteVCSConnection(wsId, deleteTarget);
-      await qc.invalidateQueries({ queryKey: ["vcs", wsId] });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["vcs", wsId] }),
+        qc.invalidateQueries({ queryKey: ["github", "pull-requests"] }),
+        qc.invalidateQueries({ queryKey: ["work-products", "issue"] }),
+        qc.invalidateQueries({ queryKey: githubKeys.unassociatedWorkProducts(wsId) }),
+      ]);
       if (justConnected?.id === deleteTarget) setJustConnected(null);
       toast.success(t(($) => $.vcs.toast_disconnected));
       setDeleteTarget(null);

@@ -15,7 +15,7 @@ METHOD_PATTERN = re.compile(
 )
 WILDCARD_PARAMETER_PATTERN = re.compile(r"\{\*[^{}]+\}")
 PARAMETER_PATTERN = re.compile(r"\{[^{}]+\}")
-EXPECTED_CONTRACT_SIZE = 450
+EXPECTED_CONTRACT_SIZE = 456
 
 
 def route_call_starts(source: str):

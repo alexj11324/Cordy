@@ -1,8 +1,5 @@
 //! Public webhook ingress for token-based Git providers.
 
-use std::collections::HashSet;
-use std::sync::LazyLock;
-
 use axum::body::Body;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
@@ -14,22 +11,14 @@ use base64::Engine as _;
 use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use patchbay_db::models::{Issue, VcsConnection, VcsPullRequest};
+use patchbay_db::queries::work_product as work_product_q;
 use patchbay_vcs::{CiStatusEvent, EventKind, PullRequestEvent};
-use regex::Regex;
 use uuid::Uuid;
 
 use crate::error::error_response;
 use crate::state::HandlerState;
 
 const MAX_BODY_BYTES: usize = 10 << 20;
-
-static IDENTIFIER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b([a-z][a-z0-9]{1,9})-(\d+)\b").expect("issue identifier regex is valid")
-});
-static CLOSING_IDENTIFIER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)[:\s]+([a-z][a-z0-9]{1,9})-(\d+)\b")
-        .expect("closing identifier regex is valid")
-});
 
 pub fn router() -> Router<HandlerState> {
     Router::new().route("/api/webhooks/vcs/{connection_id}", post(handle))
@@ -61,16 +50,32 @@ async fn handle(
             return error_response(StatusCode::BAD_REQUEST, "read body failed");
         }
     };
-    let connection =
-        match patchbay_db::queries::vcs::get_vcs_connection_by_id(&state.pool, connection_id).await
-        {
-            Ok(Some(connection)) => connection,
-            Ok(None) => return error_response(StatusCode::NOT_FOUND, "unknown connection"),
-            Err(error) => {
-                tracing::warn!(%error, %connection_id, "vcs: lookup connection failed");
-                return error_response(StatusCode::NOT_FOUND, "unknown connection");
-            }
-        };
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, %connection_id, "vcs: begin webhook transaction failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "webhook persistence unavailable",
+            );
+        }
+    };
+    let connection = match patchbay_db::queries::vcs::get_vcs_connection_by_id_for_update(
+        &mut *transaction,
+        connection_id,
+    )
+    .await
+    {
+        Ok(Some(connection)) => connection,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "unknown connection"),
+        Err(error) => {
+            tracing::warn!(%error, %connection_id, "vcs: lookup connection failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "webhook persistence unavailable",
+            );
+        }
+    };
     let Some(provider) = patchbay_vcs::for_kind(&connection.provider) else {
         tracing::error!(provider = %connection.provider, "vcs: connection has unknown provider");
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, "unknown provider");
@@ -85,20 +90,80 @@ async fn handle(
     if !provider.verify_signature(&secret, &headers, &body) {
         return error_response(StatusCode::UNAUTHORIZED, "invalid signature");
     }
-    match provider.event_kind(&headers) {
+    let outcome = match provider.event_kind(&headers) {
         EventKind::PullRequest => match provider.parse_pull_request(&body) {
-            Ok(event) => mirror_pull_request(&state, &connection, event).await,
+            Ok(event) => mirror_pull_request(&mut transaction, &connection, event)
+                .await
+                .map(|mirrored| WebhookMirrorOutcome::PullRequest(Box::new(mirrored))),
             Err(error) => {
-                tracing::warn!(provider = %connection.provider, %error, "vcs: bad pull_request payload")
+                tracing::warn!(provider = %connection.provider, %error, "vcs: bad pull_request payload");
+                Ok(WebhookMirrorOutcome::PullRequest(Box::new(None)))
             }
         },
         EventKind::CiStatus => match provider.parse_ci_status(&body) {
-            Ok(event) => mirror_ci_status(&state, &connection, event).await,
+            Ok(event) => mirror_ci_status(&mut transaction, &connection, event)
+                .await
+                .map(WebhookMirrorOutcome::CiStatus),
             Err(error) => {
-                tracing::warn!(provider = %connection.provider, %error, "vcs: bad status payload")
+                tracing::warn!(provider = %connection.provider, %error, "vcs: bad status payload");
+                Ok(WebhookMirrorOutcome::CiStatus(Vec::new()))
             }
         },
-        EventKind::Other => {}
+        EventKind::Other => Ok(WebhookMirrorOutcome::CiStatus(Vec::new())),
+    };
+    let outcome = match outcome {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            tracing::warn!(%error, %connection_id, "vcs: webhook persistence failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "webhook persistence failed",
+            );
+        }
+    };
+    if let Err(error) = transaction.commit().await {
+        tracing::warn!(%error, %connection_id, "vcs: commit webhook transaction failed");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "webhook persistence failed",
+        );
+    }
+    match outcome {
+        WebhookMirrorOutcome::PullRequest(mirrored) => {
+            if let Some(mirrored) = *mirrored {
+                if mirrored.terminal {
+                    for issue_id in &mirrored.issue_ids {
+                        let Ok(Some(issue)) = patchbay_db::queries::issue::get_issue_in_workspace(
+                            &state.pool,
+                            *issue_id,
+                            connection.workspace_id,
+                        )
+                        .await
+                        else {
+                            continue;
+                        };
+                        maybe_complete_issue(&state, issue).await;
+                    }
+                }
+                let linked_issue_ids = mirrored
+                    .issue_ids
+                    .into_iter()
+                    .map(|issue_id| issue_id.to_string())
+                    .collect();
+                publish_pull_request(&state, &mirrored.pull_request, linked_issue_ids);
+            }
+        }
+        WebhookMirrorOutcome::CiStatus(issue_ids) => {
+            for issue_id in issue_ids {
+                state.bus.publish(&patchbay_events::Event {
+                    event_type: patchbay_protocol::EVENT_PULL_REQUEST_UPDATED.into(),
+                    workspace_id: connection.workspace_id.to_string(),
+                    actor_type: "system".into(),
+                    payload: serde_json::json!({ "issue_id": issue_id.to_string() }),
+                    ..Default::default()
+                });
+            }
+        }
     }
     StatusCode::ACCEPTED.into_response()
 }
@@ -130,18 +195,29 @@ fn decrypt_secret(
     Ok(String::from_utf8(plaintext)?)
 }
 
+enum WebhookMirrorOutcome {
+    PullRequest(Box<Option<MirroredPullRequest>>),
+    CiStatus(Vec<Uuid>),
+}
+
+struct MirroredPullRequest {
+    pull_request: VcsPullRequest,
+    issue_ids: Vec<Uuid>,
+    terminal: bool,
+}
+
 async fn mirror_pull_request(
-    state: &HandlerState,
+    transaction: &mut sqlx::PgConnection,
     connection: &VcsConnection,
     event: PullRequestEvent,
-) {
+) -> anyhow::Result<Option<MirroredPullRequest>> {
     if event.repo_owner.is_empty() || event.repo_name.is_empty() || event.number == 0 {
         tracing::warn!(provider = %connection.provider, "vcs: pull_request missing repo identity");
-        return;
+        return Ok(None);
     }
     let event_updated_at = event_time(&event.updated_at);
     let pull_request = match patchbay_db::queries::vcs::upsert_vcs_pull_request(
-        &state.pool,
+        &mut *transaction,
         connection.workspace_id,
         connection.id,
         &connection.provider,
@@ -163,84 +239,54 @@ async fn mirror_pull_request(
         optional_event_time(&event.merged_at),
         optional_event_time(&event.closed_at),
     )
-    .await
+    .await?
     {
-        Ok(Some(row)) => row,
-        Ok(None) => return,
-        Err(error) => {
-            tracing::warn!(%error, "vcs: upsert pr failed");
-            return;
-        }
+        Some(row) => row,
+        None => return Ok(None),
     };
     if pull_request.pr_updated_at > event_updated_at {
-        return;
+        return Ok(None);
     }
 
-    let prefix =
-        match patchbay_db::queries::workspace::get_workspace(&state.pool, connection.workspace_id)
-            .await
-        {
-            Ok(Some(workspace)) => workspace.issue_prefix,
-            _ => String::new(),
-        };
-    let identifiers = extract_identifiers([
-        event.title.as_str(),
-        event.body.as_str(),
-        event.branch.as_str(),
-    ]);
-    let closing: HashSet<String> =
-        extract_closing_identifiers([event.title.as_str(), event.body.as_str()])
-            .into_iter()
-            .collect();
-    let qualifying: HashSet<String> =
-        extract_identifiers([event.title.as_str(), event.branch.as_str()])
-            .into_iter()
-            .chain(closing.iter().cloned())
-            .collect();
-    let preserve_close_intent =
-        !event.terminal() && matches!(event.state.as_str(), "merged" | "closed");
-    let mut linked_issue_ids = Vec::new();
-    let mut reevaluate = Vec::new();
-    for identifier in identifiers {
-        let Some(issue) = lookup_issue(state, connection.workspace_id, &prefix, &identifier).await
-        else {
-            continue;
-        };
-        let close_intent = closing.contains(&identifier) && !preserve_close_intent;
-        let reference_only = !qualifying.contains(&identifier);
-        match patchbay_db::queries::vcs::link_issue_to_vcs_pull_request(
-            &state.pool,
-            issue.id,
-            pull_request.id,
-            close_intent,
-            Some("system"),
-            None,
-            reference_only,
-            preserve_close_intent,
-        )
-        .await
-        {
-            Ok(_) => {
-                linked_issue_ids.push(issue.id.to_string());
-                reevaluate.push(issue);
-            }
-            Err(error) => tracing::warn!(%error, "vcs: link failed"),
-        }
-    }
-    if matches!(event.state.as_str(), "merged" | "closed") {
-        for issue in reevaluate {
-            maybe_complete_issue(state, issue).await;
-        }
-    }
-    publish_pull_request(state, &pull_request, linked_issue_ids);
+    let work_product = work_product_q::upsert_work_product(
+        &mut *transaction,
+        connection.workspace_id,
+        "pull_request",
+        &connection.provider,
+        &work_product_q::external_identity_for_vcs(
+            connection.id,
+            &event.repo_owner,
+            &event.repo_name,
+            event.number,
+        ),
+        Some(&event.html_url),
+        Some("vcs_pull_request"),
+        Some(pull_request.id),
+    )
+    .await?;
+    let issue_ids = work_product_q::list_issue_ids_for_work_product(
+        &mut *transaction,
+        connection.workspace_id,
+        work_product.id,
+    )
+    .await?;
+    Ok(Some(MirroredPullRequest {
+        pull_request,
+        issue_ids,
+        terminal: matches!(event.state.as_str(), "merged" | "closed"),
+    }))
 }
 
-async fn mirror_ci_status(state: &HandlerState, connection: &VcsConnection, event: CiStatusEvent) {
+async fn mirror_ci_status(
+    transaction: &mut sqlx::PgConnection,
+    connection: &VcsConnection,
+    event: CiStatusEvent,
+) -> anyhow::Result<Vec<Uuid>> {
     if event.sha.is_empty() || event.state.is_empty() {
-        return;
+        return Ok(Vec::new());
     }
-    if let Err(error) = patchbay_db::queries::vcs::upsert_vcs_commit_status(
-        &state.pool,
+    patchbay_db::queries::vcs::upsert_vcs_commit_status(
+        &mut *transaction,
         connection.id,
         &event.sha,
         &event.context,
@@ -249,33 +295,14 @@ async fn mirror_ci_status(state: &HandlerState, connection: &VcsConnection, even
         nonempty(&event.target_url),
         nonempty(&event.description),
     )
-    .await
-    {
-        tracing::warn!(%error, "vcs: upsert commit status failed");
-        return;
-    }
-    let issue_ids = match patchbay_db::queries::vcs::list_issue_i_ds_for_vcspr_head(
-        &state.pool,
+    .await?;
+    let issue_ids = patchbay_db::queries::vcs::list_issue_i_ds_for_vcspr_head(
+        &mut *transaction,
         connection.id,
         &event.sha,
     )
-    .await
-    {
-        Ok(ids) => ids,
-        Err(error) => {
-            tracing::warn!(%error, "vcs: lookup issues for status failed");
-            return;
-        }
-    };
-    for issue_id in issue_ids.into_iter().flatten() {
-        state.bus.publish(&patchbay_events::Event {
-            event_type: patchbay_protocol::EVENT_PULL_REQUEST_UPDATED.into(),
-            workspace_id: connection.workspace_id.to_string(),
-            actor_type: "system".into(),
-            payload: serde_json::json!({ "issue_id": issue_id.to_string() }),
-            ..Default::default()
-        });
-    }
+    .await?;
+    Ok(issue_ids)
 }
 
 pub(crate) async fn maybe_complete_issue(state: &HandlerState, issue: Issue) {
@@ -321,47 +348,6 @@ fn publish_pull_request(
     });
 }
 
-pub(crate) async fn lookup_issue(
-    state: &HandlerState,
-    workspace_id: Uuid,
-    prefix: &str,
-    identifier: &str,
-) -> Option<Issue> {
-    let captures = IDENTIFIER.captures(identifier)?;
-    if !captures[1].eq_ignore_ascii_case(prefix) {
-        return None;
-    }
-    let number = captures[2].parse::<i32>().ok()?;
-    patchbay_db::queries::issue::get_issue_by_number(&state.pool, workspace_id, number)
-        .await
-        .ok()
-        .flatten()
-}
-
-pub(crate) fn extract_identifiers<'a>(texts: impl IntoIterator<Item = &'a str>) -> Vec<String> {
-    extract_with(&IDENTIFIER, texts)
-}
-
-pub(crate) fn extract_closing_identifiers<'a>(
-    texts: impl IntoIterator<Item = &'a str>,
-) -> Vec<String> {
-    extract_with(&CLOSING_IDENTIFIER, texts)
-}
-
-fn extract_with<'a>(regex: &Regex, texts: impl IntoIterator<Item = &'a str>) -> Vec<String> {
-    let mut seen = HashSet::new();
-    let mut output = Vec::new();
-    for text in texts {
-        for captures in regex.captures_iter(text) {
-            let identifier = format!("{}-{}", captures[1].to_ascii_uppercase(), &captures[2]);
-            if seen.insert(identifier.clone()) {
-                output.push(identifier);
-            }
-        }
-    }
-    output
-}
-
 fn event_time(raw: &str) -> DateTime<Utc> {
     optional_event_time(raw).unwrap_or_else(Utc::now)
 }
@@ -381,18 +367,6 @@ mod tests {
     use super::*;
     use axum::http::Request;
     use tower::ServiceExt;
-
-    #[test]
-    fn identifiers_match_go_link_and_close_grammar() {
-        assert_eq!(
-            extract_identifiers(["CORD-2 then cord-1 and CORD-2"]),
-            vec!["CORD-2", "CORD-1"]
-        );
-        assert_eq!(
-            extract_closing_identifiers(["Related CORD-1. Fixes: cord-2; resolve CORD-3"]),
-            vec!["CORD-2", "CORD-3"]
-        );
-    }
 
     #[tokio::test]
     async fn limited_reader_matches_go_prefix_contract() {

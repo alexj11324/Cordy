@@ -169,6 +169,13 @@ import type {
   PluginInstallRequest,
   PluginConfigRequest,
   GitHubPullRequest,
+  AttachIssuePullRequestRequest,
+  AttachIssuePullRequestResponse,
+  AttachWorkProductRequest,
+  AttachWorkProductResponse,
+  IssueWorkProductsResponse,
+  TaskWorkProductsResponse,
+  UnassociatedWorkProductsResponse,
   ListGitHubInstallationsResponse,
   ListGitHubRepositoriesResponse,
   GitHubConnectResponse,
@@ -413,6 +420,12 @@ import {
   EMPTY_ISSUE_PROPERTIES_RESPONSE,
   EMPTY_ISSUE_PULL_REQUESTS_RESPONSE,
   IssuePullRequestsResponseSchema,
+  EMPTY_ISSUE_WORK_PRODUCTS_RESPONSE,
+  IssueWorkProductsResponseSchema,
+  EMPTY_TASK_WORK_PRODUCTS_RESPONSE,
+  TaskWorkProductsResponseSchema,
+  EMPTY_UNASSOCIATED_WORK_PRODUCTS_RESPONSE,
+  UnassociatedWorkProductsResponseSchema,
   ResourceLabelsResponseSchema,
   EMPTY_LABEL,
   EMPTY_LIST_LABELS_RESPONSE,
@@ -4290,6 +4303,78 @@ export class ApiClient {
       IssuePullRequestsResponseSchema,
       EMPTY_ISSUE_PULL_REQUESTS_RESPONSE,
       { endpoint: "GET /api/issues/:id/pull-requests" },
+    );
+  }
+
+  /**
+   * Explicitly attaches a PR to the issue selected by the caller. The server
+   * derives task/run provenance from authenticated task headers when present;
+   * this request never accepts an issue or task identity in its body.
+   */
+  async attachIssuePullRequest(
+    issueId: string,
+    body: AttachIssuePullRequestRequest,
+  ): Promise<AttachIssuePullRequestResponse> {
+    return this.fetch<AttachIssuePullRequestResponse>(`/api/issues/${issueId}/pull-requests`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async attachIssueWorkProduct(
+    issueId: string,
+    body: AttachWorkProductRequest,
+  ): Promise<AttachWorkProductResponse> {
+    return this.fetch<AttachWorkProductResponse>(`/api/issues/${issueId}/work-products`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async detachIssueWorkProduct(issueId: string, workProductId: string): Promise<{ detached: number }> {
+    return this.fetch<{ detached: number }>(
+      `/api/issues/${issueId}/work-products/${workProductId}`,
+      { method: "DELETE" },
+    );
+  }
+
+  async listIssueWorkProducts(issueId: string): Promise<IssueWorkProductsResponse> {
+    const raw = await this.fetch<unknown>(`/api/issues/${issueId}/work-products`);
+    return parseWithFallback(
+      raw,
+      IssueWorkProductsResponseSchema,
+      EMPTY_ISSUE_WORK_PRODUCTS_RESPONSE,
+      { endpoint: "GET /api/issues/:id/work-products" },
+    );
+  }
+
+  async listTaskWorkProducts(taskId: string): Promise<TaskWorkProductsResponse> {
+    const raw = await this.fetch<unknown>(`/api/tasks/${taskId}/work-products`);
+    return parseWithFallback(
+      raw,
+      TaskWorkProductsResponseSchema,
+      { ...EMPTY_TASK_WORK_PRODUCTS_RESPONSE, task_id: taskId },
+      { endpoint: "GET /api/tasks/:taskId/work-products" },
+    );
+  }
+
+  /** Uses the authenticated workspace context, so a caller cannot enumerate
+   * unassociated products from another workspace by changing a body field. */
+  async listUnassociatedWorkProducts(
+    options: { page?: number; per_page?: number; query?: string } = {},
+  ): Promise<UnassociatedWorkProductsResponse> {
+    const params = new URLSearchParams({
+      page: String(options.page ?? 1),
+      per_page: String(options.per_page ?? 20),
+    });
+    const query = options.query?.trim();
+    if (query) params.set("query", query);
+    const raw = await this.fetch<unknown>(`/api/work-products/unassociated?${params}`);
+    return parseWithFallback(
+      raw,
+      UnassociatedWorkProductsResponseSchema,
+      EMPTY_UNASSOCIATED_WORK_PRODUCTS_RESPONSE,
+      { endpoint: "GET /api/work-products/unassociated" },
     );
   }
 

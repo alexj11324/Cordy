@@ -201,8 +201,6 @@ pub struct TaskProgressPayload {
 pub struct TaskCompletedPayload {
     #[serde(rename = "task_id")]
     pub task_id: String,
-    #[serde(default, skip_serializing_if = "String::is_empty", rename = "pr_url")]
-    pub pr_url: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub output: String,
 }

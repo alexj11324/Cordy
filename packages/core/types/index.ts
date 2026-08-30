@@ -290,6 +290,21 @@ export type {
   GitHubConnectResponse,
 } from "./github";
 export type {
+  AttachIssuePullRequestRequest,
+  AttachIssuePullRequestResponse,
+  AttachWorkProductRequest,
+  AttachWorkProductResponse,
+  ExecutionProvenance,
+  IssueWorkProductsResponse,
+  TaskWorkProductsResponse,
+  UnassociatedWorkProductsResponse,
+  WorkProduct,
+  WorkProductDiscoveryStatus,
+  WorkProductKind,
+  WorkProductRelation,
+  WorkProductRelationSource,
+} from "./work-product";
+export type {
   VCSProvider,
   VCSConnection,
   ListVCSConnectionsResponse,

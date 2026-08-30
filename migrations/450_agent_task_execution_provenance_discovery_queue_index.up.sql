@@ -1,0 +1,1 @@
+CREATE INDEX CONCURRENTLY agent_task_execution_provenance_discovery_queue_idx ON agent_task_execution_provenance (discovery_status, updated_at, workspace_id, task_id) WHERE discovery_status IN ('pending', 'in_progress');

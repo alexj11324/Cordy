@@ -1567,6 +1567,13 @@ async fn delete_workspace(
         workspace::lock_workspace_for_delete(&mut *tx, workspace_id)
     );
     step!(
+        "lock work products",
+        patchbay_db::queries::workspace_delete::lock_workspace_work_products(
+            &mut *tx,
+            workspace_id
+        )
+    );
+    step!(
         "lock chat sessions",
         patchbay_db::queries::chat::lock_chat_sessions_by_workspace(&mut *tx, workspace_id)
     );

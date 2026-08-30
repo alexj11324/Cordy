@@ -1,0 +1,1 @@
+ALTER TABLE agent_task_execution_provenance DROP CONSTRAINT IF EXISTS agent_task_execution_provenance_pkey;

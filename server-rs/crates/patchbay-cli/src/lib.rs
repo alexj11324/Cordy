@@ -1402,6 +1402,7 @@ mod tests {
             "cli",
             "--head-sha",
             "abc123",
+            "--close-intent",
             "--output",
             "json",
         ])
@@ -1419,6 +1420,7 @@ mod tests {
                 assert_eq!(args.state.as_deref(), Some("open"));
                 assert_eq!(args.branch.as_deref(), Some("cli"));
                 assert_eq!(args.head_sha.as_deref(), Some("abc123"));
+                assert!(args.close_intent);
                 assert_eq!(args.output, OutputFormat::Json);
             }
             _ => panic!("expected issue pull-request attach"),
@@ -1523,6 +1525,7 @@ mod tests {
         assert_eq!(body["url"], "https://github.com/owner/repo/pull/42");
         assert_eq!(body["title"], "Rust CLI");
         assert_eq!(body["branch"], "cli");
+        assert!(body.get("close_intent").is_none());
         assert!(body.get("state").is_none());
         assert!(body.get("head_sha").is_none());
         task.abort();

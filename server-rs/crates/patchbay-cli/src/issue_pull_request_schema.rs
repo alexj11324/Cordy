@@ -10,7 +10,7 @@ pub(super) struct IssuePullRequestArgs {
 
 #[derive(Debug, Subcommand)]
 pub(super) enum IssuePullRequestCommand {
-    #[command(about = "Attach an existing GitHub pull request to an issue")]
+    #[command(about = "Explicitly attach an existing GitHub pull request to an issue")]
     Attach(IssuePullRequestAttachArgs),
 }
 
@@ -34,6 +34,11 @@ pub(super) struct IssuePullRequestAttachArgs {
     pub(super) branch: Option<String>,
     #[arg(long, help = "Optional head commit SHA")]
     pub(super) head_sha: Option<String>,
+    #[arg(
+        long,
+        help = "Record explicit close intent so a merged PR may move the issue to Done"
+    )]
+    pub(super) close_intent: bool,
     #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
     pub(super) output: OutputFormat,
 }

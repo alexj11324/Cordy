@@ -1099,6 +1099,7 @@ impl HandlerState {
                 };
                 let Ok(issue_ids) = patchbay_db::queries::github::list_issue_i_ds_for_pull_request(
                     &pool,
+                    pull_request.workspace_id,
                     pull_request_id,
                 )
                 .await
@@ -1113,7 +1114,7 @@ impl HandlerState {
                     actor_type: "system".into(),
                     payload: serde_json::json!({
                         "pull_request": payload,
-                        "linked_issue_ids": issue_ids.into_iter().flatten().map(|id| id.to_string()).collect::<Vec<_>>(),
+                        "linked_issue_ids": issue_ids.into_iter().map(|id| id.to_string()).collect::<Vec<_>>(),
                     }),
                     ..Default::default()
                 });

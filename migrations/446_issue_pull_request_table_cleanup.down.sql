@@ -1,0 +1,3 @@
+-- The retired provider-specific relation has no historical data to restore.
+-- Reapplying the pre-Work Product schema requires the earlier provider
+-- migration, so this irreversible cleanup is intentionally a no-op on down.

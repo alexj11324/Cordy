@@ -34,6 +34,10 @@ pub fn router() -> Router<HandlerState> {
             post(continue_agent_thread),
         )
         .route(
+            "/api/tasks/{task_id}/work-products",
+            get(crate::work_product::list_for_task),
+        )
+        .route(
             "/api/tasks/{task_id}/message-bus",
             post(send_message_to_main_task),
         )
