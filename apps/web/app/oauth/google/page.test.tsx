@@ -2,12 +2,14 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 
-const { search, sso } = vi.hoisted(() => ({
+const { clerkLoaded, search, sso } = vi.hoisted(() => ({
+  clerkLoaded: { current: true },
   search: { current: "" },
   sso: vi.fn(),
 }));
 
 vi.mock("@clerk/nextjs", () => ({
+  useClerk: () => ({ loaded: clerkLoaded.current }),
   useSignIn: () => ({ signIn: { sso } }),
 }));
 
@@ -42,6 +44,7 @@ import GoogleOAuthPage from "./page";
 
 describe("GoogleOAuthPage", () => {
   beforeEach(() => {
+    clerkLoaded.current = true;
     window.history.replaceState(null, "", "/");
     search.current = "";
     sso.mockReset();
@@ -116,5 +119,20 @@ describe("GoogleOAuthPage", () => {
       "Invalid desktop binding",
     );
     expect(sso).not.toHaveBeenCalled();
+  });
+
+  it("waits for Clerk readiness before consuming a Google attempt", async () => {
+    const codeChallenge = "a".repeat(43);
+    const state = "b".repeat(43);
+    search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
+    clerkLoaded.current = false;
+
+    const view = render(<GoogleOAuthPage />);
+    await Promise.resolve();
+    expect(sso).not.toHaveBeenCalled();
+
+    clerkLoaded.current = true;
+    view.rerender(<GoogleOAuthPage />);
+    await waitFor(() => expect(sso).toHaveBeenCalledOnce());
   });
 });
