@@ -100,6 +100,7 @@ jobs:
               - '.env.example'
               - 'docker-compose.selfhost.yml'
               - 'docker-compose.selfhost.build.yml'
+              - 'docker-compose.labs.yml'
               - 'Makefile'
             # Rust owns all production backend entrypoints and migrations.
             backend:

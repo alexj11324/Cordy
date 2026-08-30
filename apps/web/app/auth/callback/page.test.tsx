@@ -17,6 +17,7 @@ describe("AuthCallbackPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     search.current = "";
+    delete process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN;
   });
 
   it("returns a Clerk-established session to the app root", async () => {
@@ -32,6 +33,22 @@ describe("AuthCallbackPage", () => {
 
     await waitFor(() =>
       expect(mockReplace).toHaveBeenCalledWith("/login?platform=desktop"),
+    );
+  });
+
+  it("preserves the allowlisted browser origin with desktop PKCE state", async () => {
+    process.env.NEXT_PUBLIC_DESKTOP_APP_ORIGIN = "https://app.patchbay.ai";
+    search.current =
+      "platform=desktop&code_challenge=challenge-value&state=opaque-state" +
+      "&app_origin=https%3A%2F%2Fapp.patchbay.ai";
+
+    render(<AuthCallbackPage />);
+
+    await waitFor(() =>
+      expect(mockReplace).toHaveBeenCalledWith(
+        "/login?platform=desktop&code_challenge=challenge-value" +
+          "&state=opaque-state&app_origin=https%3A%2F%2Fapp.patchbay.ai",
+      ),
     );
   });
 });
