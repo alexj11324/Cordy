@@ -1746,13 +1746,7 @@ pub(crate) async fn attach_work_product_relation_in_transaction(
     attached_by_id: Uuid,
     close_intent: bool,
 ) -> anyhow::Result<WorkProductRelation> {
-    if !work_product_q::lock_work_product(
-        &mut *transaction,
-        workspace_id,
-        work_product_id,
-    )
-    .await?
-    {
+    if !work_product_q::lock_work_product(&mut *transaction, workspace_id, work_product_id).await? {
         anyhow::bail!("work product is not in the requested workspace");
     }
     work_product_q::attach_work_product_relation(
