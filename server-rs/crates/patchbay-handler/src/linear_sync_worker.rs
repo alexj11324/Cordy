@@ -106,12 +106,9 @@ fn is_agent_session_event(row: &LinearSyncInbox) -> bool {
         .contains("agentsession")
         || row.payload.get("agentSession").is_some()
         || row.payload.get("agentSessionEvent").is_some()
-        || row
-            .payload
-            .get("data")
-            .is_some_and(|data| {
-                data.get("agentSession").is_some() || data.get("agentSessionEvent").is_some()
-            })
+        || row.payload.get("data").is_some_and(|data| {
+            data.get("agentSession").is_some() || data.get("agentSessionEvent").is_some()
+        })
 }
 
 fn event_data(payload: &Value) -> &Value {
@@ -167,9 +164,7 @@ fn parse_agent_session_event(payload: &Value) -> Result<LinearAgentSessionEvent,
         .or_else(|| first_string(session, &["action"]))
         .map(|value| value.to_ascii_lowercase())
         .ok_or_else(|| {
-            SyncError::permanent(anyhow::anyhow!(
-                "Linear Agent Session event has no action"
-            ))
+            SyncError::permanent(anyhow::anyhow!("Linear Agent Session event has no action"))
         })?;
     if !matches!(action.as_str(), "created" | "prompted") {
         return Err(SyncError::permanent(anyhow::anyhow!(
@@ -1224,13 +1219,9 @@ impl LinearSyncWorker {
             if row.event_type == "linear.agentSession.terminal"
                 || row.payload.get("linearAgentSessionTerminal").is_some()
             {
-                return self
-                    .process_agent_session_terminal(row, &connection)
-                    .await;
+                return self.process_agent_session_terminal(row, &connection).await;
             }
-            return self
-                .process_agent_session_event(row, &connection)
-                .await;
+            return self.process_agent_session_event(row, &connection).await;
         }
         if !self
             .state
@@ -1413,13 +1404,10 @@ impl LinearSyncWorker {
             .map_err(SyncError::retry)?;
             return Ok(());
         };
-        let agent = agent_q::get_agent_in_workspace(
-            &self.state.pool,
-            agent_id,
-            connection.workspace_id,
-        )
-        .await
-        .map_err(SyncError::retry)?;
+        let agent =
+            agent_q::get_agent_in_workspace(&self.state.pool, agent_id, connection.workspace_id)
+                .await
+                .map_err(SyncError::retry)?;
         if agent
             .as_ref()
             .map(|agent| agent.archived_at.is_some())
@@ -1462,13 +1450,9 @@ impl LinearSyncWorker {
             .as_ref()
             .and_then(|session| session.task_id)
         {
-            agent_q::get_agent_task_in_workspace(
-                &self.state.pool,
-                task_id,
-                connection.workspace_id,
-            )
-            .await
-            .map_err(SyncError::retry)?
+            agent_q::get_agent_task_in_workspace(&self.state.pool, task_id, connection.workspace_id)
+                .await
+                .map_err(SyncError::retry)?
         } else {
             None
         };
@@ -1631,9 +1615,7 @@ impl LinearSyncWorker {
             manager
                 .update_agent_session_external_url(connection.id, &event.session_id, &url)
                 .await
-                .map_err(|error| {
-                    classify_token_error(error, "update Linear Agent Session URL")
-                })?;
+                .map_err(|error| classify_token_error(error, "update Linear Agent Session URL"))?;
         }
         let activity = if event.action == "prompted" {
             "Linear prompt accepted and queued for the selected Agent."
@@ -2087,9 +2069,7 @@ impl LinearSyncWorker {
                             due_date,
                             owner_type: remote_owner_id.map(|_| "member".to_string()),
                             owner_id: remote_owner_id,
-                            executor_type: agent_decision
-                                .agent_id
-                                .map(|_| "agent".to_string()),
+                            executor_type: agent_decision.agent_id.map(|_| "agent".to_string()),
                             executor_id: agent_decision.agent_id,
                             origin_type: Some("linear".to_string()),
                             origin_id: Some(remote_uuid),
@@ -3346,8 +3326,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            agent_label_ids_for_issue(&binding, Some("agent"), Some(agent_id), &existing)
-                .unwrap(),
+            agent_label_ids_for_issue(&binding, Some("agent"), Some(agent_id), &existing).unwrap(),
             Some(vec!["bug".to_string(), "agent-backend".to_string()])
         );
         assert_eq!(
@@ -3357,8 +3336,7 @@ mod tests {
 
         binding.agent_label_mapping = json!({});
         assert_eq!(
-            agent_label_ids_for_issue(&binding, Some("agent"), Some(agent_id), &existing)
-                .unwrap(),
+            agent_label_ids_for_issue(&binding, Some("agent"), Some(agent_id), &existing).unwrap(),
             None
         );
     }

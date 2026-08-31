@@ -707,7 +707,10 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "499_linear_sync_conflict_id_index",
         "uq_linear_sync_conflict_id",
     ),
-    ("501_linear_agent_session_id_index", "uq_linear_agent_session_id"),
+    (
+        "501_linear_agent_session_id_index",
+        "uq_linear_agent_session_id",
+    ),
     (
         "502_linear_agent_session_remote_index",
         "uq_linear_agent_session_remote",
@@ -969,7 +972,10 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
         "499_linear_sync_conflict_id_index",
         "uq_linear_sync_conflict_id",
     ),
-    ("501_linear_agent_session_id_index", "uq_linear_agent_session_id"),
+    (
+        "501_linear_agent_session_id_index",
+        "uq_linear_agent_session_id",
+    ),
     (
         "502_linear_agent_session_remote_index",
         "uq_linear_agent_session_remote",

@@ -821,7 +821,10 @@ async fn resolve_conflict(
         Ok(transaction) => transaction,
         Err(error) => {
             tracing::warn!(%error, "Linear conflict transaction failed to start");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to resolve Linear conflict");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to resolve Linear conflict",
+            );
         }
     };
     let Some(conflict) = (match linear_q::get_linear_sync_conflict_for_update(
@@ -834,7 +837,10 @@ async fn resolve_conflict(
         Ok(conflict) => conflict,
         Err(error) => {
             tracing::warn!(%error, "Linear conflict lookup failed before resolution");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load Linear conflict");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear conflict",
+            );
         }
     }) else {
         return error_response(StatusCode::NOT_FOUND, "Linear conflict not found");
@@ -868,7 +874,10 @@ async fn resolve_conflict(
         Ok(link) => link,
         Err(error) => {
             tracing::warn!(%error, "Linear conflict link lookup failed");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load Linear link");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear link",
+            );
         }
     }) else {
         return error_response(StatusCode::NOT_FOUND, "Linear Issue Link not found");
@@ -877,7 +886,10 @@ async fn resolve_conflict(
         || link.binding_id != conflict.binding_id
         || link.sync_status == "deleted"
     {
-        return error_response(StatusCode::CONFLICT, "Linear Issue Link is no longer syncable");
+        return error_response(
+            StatusCode::CONFLICT,
+            "Linear Issue Link is no longer syncable",
+        );
     }
     let Some(binding) = (match linear_q::get_project_binding_for_update(
         &mut *transaction,
@@ -889,7 +901,10 @@ async fn resolve_conflict(
         Ok(binding) => binding,
         Err(error) => {
             tracing::warn!(%error, "Linear conflict binding lookup failed");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load Linear binding");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear binding",
+            );
         }
     }) else {
         return error_response(StatusCode::CONFLICT, "Linear binding is no longer syncable");
@@ -954,10 +969,15 @@ async fn resolve_conflict(
     .await
     {
         Ok(Some(conflict)) => conflict,
-        Ok(None) => return error_response(StatusCode::CONFLICT, "Linear conflict is already resolved"),
+        Ok(None) => {
+            return error_response(StatusCode::CONFLICT, "Linear conflict is already resolved")
+        }
         Err(error) => {
             tracing::warn!(%error, "Linear conflict resolution persistence failed");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to save Linear conflict resolution");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to save Linear conflict resolution",
+            );
         }
     };
     let open_conflicts = match linear_q::count_open_linear_sync_conflicts_for_link(
@@ -970,7 +990,10 @@ async fn resolve_conflict(
         Ok(count) => count,
         Err(error) => {
             tracing::warn!(%error, "Linear conflict count failed");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update Linear conflict");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update Linear conflict",
+            );
         }
     };
     // The remote value is the latest common evidence. Keeping it as the
@@ -980,7 +1003,11 @@ async fn resolve_conflict(
     if let Some(object) = common_snapshot.as_object_mut() {
         object.insert(conflict.field.clone(), conflict.remote_value.clone());
     }
-    let link_status = if open_conflicts == 0 { "active" } else { "conflict" };
+    let link_status = if open_conflicts == 0 {
+        "active"
+    } else {
+        "conflict"
+    };
     let link_updated = match linear_q::set_linear_issue_link_state(
         &mut *transaction,
         link.id,
@@ -996,17 +1023,20 @@ async fn resolve_conflict(
         Ok(updated) => updated,
         Err(error) => {
             tracing::warn!(%error, conflict_id = %resolved.id, "Linear conflict link update failed");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update Linear link");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update Linear link",
+            );
         }
     };
     if !link_updated {
-        return error_response(StatusCode::CONFLICT, "Linear Issue Link disappeared during resolution");
+        return error_response(
+            StatusCode::CONFLICT,
+            "Linear Issue Link disappeared during resolution",
+        );
     }
     if open_conflicts == 0 && matches!(request.resolution.as_str(), "local" | "manual") {
-        let updated_issue = applied
-            .updated
-            .as_ref()
-            .unwrap_or(&applied.previous);
+        let updated_issue = applied.updated.as_ref().unwrap_or(&applied.previous);
         if let Err(error) = linear_q::enqueue_issue_outbox(
             &mut *transaction,
             workspace_id,
@@ -1019,12 +1049,18 @@ async fn resolve_conflict(
         .await
         {
             tracing::warn!(%error, conflict_id = %conflict.id, "Linear conflict outbound resolution enqueue failed");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to queue Linear conflict resolution");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to queue Linear conflict resolution",
+            );
         }
     }
     if let Err(error) = transaction.commit().await {
         tracing::warn!(%error, conflict_id = %conflict.id, "Linear conflict transaction commit failed");
-        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to commit Linear conflict resolution");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to commit Linear conflict resolution",
+        );
     }
     state.issues.publish_external_issue_apply(&applied).await;
     state.notify_linear_sync();

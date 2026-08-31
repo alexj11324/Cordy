@@ -6950,7 +6950,7 @@ pub(crate) async fn advance_issue_to_done_from_pr(
         "done",
         previous.workspace_id,
     )
-        .await
+    .await
     {
         Ok(Some(issue)) => issue,
         Ok(None) => return None,

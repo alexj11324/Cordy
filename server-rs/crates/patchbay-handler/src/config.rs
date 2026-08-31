@@ -265,7 +265,10 @@ mod tests {
         assert!(settings.official_cloud);
         assert!(settings.daemon_server_url.is_empty());
         assert!(settings.daemon_app_url.is_empty());
-        assert_eq!(settings.frontend_app_url, "https://patchbay.aspectlylabs.com");
+        assert_eq!(
+            settings.frontend_app_url,
+            "https://patchbay.aspectlylabs.com"
+        );
     }
 
     #[test]
