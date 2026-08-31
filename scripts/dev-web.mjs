@@ -18,14 +18,17 @@ export async function runStandaloneWeb({
   repoRoot = defaultRepoRoot,
   env = process.env,
   argv = process.argv.slice(2),
+  ensureEnv = ensureDevCheckoutEnv,
+  bootstrap = bootstrapDevClerkAuth,
+  spawnImpl = spawn,
 } = {}) {
-  await ensureDevCheckoutEnv({ repoRoot, env });
-  const auth = await bootstrapDevClerkAuth({ env });
+  await ensureEnv({ repoRoot, env });
+  const auth = await bootstrap({ env });
   const baseEnv = withoutDevClerkEnvironment(env);
   const port = env.FRONTEND_PORT || "3000";
-  const child = spawn(
+  const child = spawnImpl(
     process.execPath,
-    ["node_modules/next/dist/bin/next", "dev", "--webpack", "--port", port, ...argv],
+    ["node_modules/next/dist/bin/next", "dev", "--port", port, ...argv],
     {
       cwd: join(repoRoot, "apps", "web"),
       env: {
