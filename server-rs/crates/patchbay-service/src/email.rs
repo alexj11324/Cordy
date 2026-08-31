@@ -1184,7 +1184,9 @@ mod tests {
         // Body escapes everything dangerous.
         assert!(req.html.contains("Eve &lt;script&gt;"));
         assert!(req.html.contains("Acme &amp; Co &#34;inc&#34;"));
-        assert!(req.html.contains(r#"href="https://patchbay.aspectlylabs.com/invite/x""#));
+        assert!(req
+            .html
+            .contains(r#"href="https://patchbay.aspectlylabs.com/invite/x""#));
         // Subject is sanitized (control chars stripped, length capped), not
         // HTML-escaped.
         assert_eq!(

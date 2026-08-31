@@ -20,8 +20,8 @@ static ALLOC: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 #[export_name = "malloc_conf"]
 pub static malloc_conf: &[u8] = b"prof:true,prof_active:true,lg_prof_sample:19\0";
 
-mod channel_runtime;
 mod channel_bootstrap;
+mod channel_runtime;
 mod http_serve;
 mod profiling;
 mod realtime_runtime;
