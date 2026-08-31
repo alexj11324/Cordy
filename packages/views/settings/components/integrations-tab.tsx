@@ -528,7 +528,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
 
     return (
       <div className="space-y-5">
-        <IntegrationSetupGuide channel={channel} />
+        <IntegrationSetupGuide channel={channel} managed={messaging?.mode === "managed"} />
         {listing?.configured && listing.install_supported ? (
           <div className="flex justify-end">{renderSetupAction(channel)}</div>
         ) : (

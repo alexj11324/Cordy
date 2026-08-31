@@ -84,6 +84,7 @@ pub mod runtime_usage;
 pub mod session;
 pub mod skill;
 mod skill_import;
+pub mod slack_managed;
 pub mod state;
 mod subscriber_activity_listeners;
 pub mod task;
@@ -691,6 +692,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(avatar::router())
         .merge(automation_webhook::router())
         .merge(github::public_router())
+        .merge(slack_managed::public_router())
         .merge(config::router())
         .merge(contact_sales)
         .merge(stripe_webhooks)

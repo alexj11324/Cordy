@@ -413,6 +413,10 @@ pub struct HandlerState {
     /// during shutdown.
     pub channel_tasks: Arc<patchbay_channel::RuntimeTasks>,
     pub channel_cancel: tokio_util::sync::CancellationToken,
+    /// Shared provider-neutral inbound entry point. Production wires this
+    /// after the ChannelRuntime builds the router; HTTP transports such as the
+    /// managed Slack Events API use the same path as Socket Mode/polling.
+    pub channel_inbound_handler: Option<patchbay_channel::InboundHandler>,
     /// Prometheus business counters. None when METRICS_ADDR is disabled.
     pub business_metrics: Option<Arc<patchbay_metrics::BusinessMetrics>>,
     /// HTTP request metrics. None when METRICS_ADDR is disabled.
@@ -644,6 +648,7 @@ impl HandlerState {
             bus,
             channel_tasks: Arc::new(patchbay_channel::RuntimeTasks::new()),
             channel_cancel: tokio_util::sync::CancellationToken::new(),
+            channel_inbound_handler: None,
             business_metrics,
             http_metrics: None,
             heartbeat_scheduler,
@@ -804,6 +809,14 @@ impl HandlerState {
 
     pub fn with_integrations(mut self, integrations: patchbay_config::IntegrationsConfig) -> Self {
         self.integrations = integrations;
+        self
+    }
+
+    pub fn with_channel_inbound_handler(
+        mut self,
+        handler: patchbay_channel::InboundHandler,
+    ) -> Self {
+        self.channel_inbound_handler = Some(handler);
         self
     }
 

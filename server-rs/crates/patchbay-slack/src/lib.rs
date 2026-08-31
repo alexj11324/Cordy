@@ -6,8 +6,9 @@
 //! `channel_installation` therefore carries its OWN app-level token and gets
 //! its OWN Socket Mode connection, supervised per-installation by the engine —
 //! so several agents can each have a distinct bot identity in one Slack
-//! workspace. Installations are keyed and routed by the real Slack app id
-//! (`config->>'app_id'` == the inbound event's `api_app_id`).
+//! workspace. BYO installations are keyed by the real Slack app id. Managed
+//! installations use `api_app_id:team_id` in the same database routing slot,
+//! while preserving the real provider id separately as `api_app_id`.
 //!
 //! Module map (Go file → Rust module):
 //!

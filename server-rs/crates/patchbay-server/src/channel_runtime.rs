@@ -32,6 +32,7 @@ pub struct ChannelRuntime {
     maintenance: Vec<tokio::task::JoinHandle<()>>,
     wecom_relay: Option<Arc<patchbay_wecom::outbound_relay::OutboundRelay>>,
     router: Arc<ChannelRouter>,
+    inbound_handler: patchbay_channel::InboundHandler,
 }
 
 impl ChannelRuntime {
@@ -112,6 +113,7 @@ impl ChannelRuntime {
         }
 
         let channel_types = registry.types();
+        let inbound_handler = channel_inbound_handler(router.clone());
         let supervisor = if channel_types.is_empty() {
             tracing::info!(
                 "channel supervisor disabled: no adapter secret keys configured; maintenance ownership remains active"
@@ -128,21 +130,11 @@ impl ChannelRuntime {
             };
             match lease_store {
                 Some(lease_store) => {
-                    let inbound_router = router.clone();
-                    let handler = patchbay_channel::InboundHandler::new(move |ctx, message| {
-                        let router = inbound_router.clone();
-                        Box::pin(async move {
-                            tokio::select! {
-                                result = router.handle(message) => result,
-                                _ = ctx.cancelled() => Ok(()),
-                            }
-                        })
-                    });
                     match ChannelSupervisor::new(
                         store,
                         lease_store,
                         registry,
-                        handler,
+                        inbound_handler.clone(),
                         supervisor_config_from_env(),
                         lease_metrics.map(|metrics| {
                             Arc::new(RuntimeLeaseMetrics(metrics)) as Arc<dyn LeaseMetrics>
@@ -178,7 +170,12 @@ impl ChannelRuntime {
             maintenance,
             wecom_relay: wecom.relay,
             router,
+            inbound_handler,
         })
+    }
+
+    pub fn inbound_handler(&self) -> patchbay_channel::InboundHandler {
+        self.inbound_handler.clone()
     }
 
     pub async fn shutdown(mut self) {
@@ -228,6 +225,18 @@ impl ChannelRuntime {
             ),
         }
     }
+}
+
+fn channel_inbound_handler(router: Arc<ChannelRouter>) -> patchbay_channel::InboundHandler {
+    patchbay_channel::InboundHandler::new(move |ctx, message| {
+        let router = router.clone();
+        Box::pin(async move {
+            tokio::select! {
+                result = router.handle(message) => result,
+                _ = ctx.cancelled() => Ok(()),
+            }
+        })
+    })
 }
 
 fn start_media_reconciler(
@@ -364,6 +373,11 @@ fn configure_slack(
             respond: None,
         },
     ));
+    // Keep the per-installation factory enabled in managed cloud too. Existing
+    // BYO rows have `transport` unset and still require their Socket Mode
+    // connection after a cloud upgrade. Managed webhook rows are accepted by
+    // the same factory but remain passive; their inbound transport is the
+    // signed Events API route.
     patchbay_slack::channel::register_slack(
         registry,
         patchbay_slack::channel::ChannelDeps {

@@ -73,9 +73,27 @@ export function SlackTab({ installationId }: { installationId?: string } = {}) {
   // entry points and surface a "coming soon" notice. Already-installed bots
   // still appear below and remain manageable.
   const installSupported = data?.install_supported === true;
+  const setupWritable = data?.setup_mode !== "server_configured";
 
   const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+
+  async function handleManagedConnect() {
+    if (connecting || data?.setup_mode !== "managed_oauth") return;
+    setConnecting(true);
+    try {
+      const begun = await api.beginSlackOAuth(wsId, {
+        redirect_url: currentSettingsRedirect(),
+      });
+      openExternal(begun.authorization_url, { webTarget: "same-tab" });
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : t(($) => $.slack.connect_failed_toast),
+      );
+      setConnecting(false);
+    }
+  }
 
   async function handleDisconnect() {
     if (!disconnectTarget || disconnecting) return;
@@ -133,10 +151,18 @@ export function SlackTab({ installationId }: { installationId?: string } = {}) {
               <CardContent className="space-y-2">
                 <p className="text-body font-medium">{t(($) => $.slack.empty_title)}</p>
                 <p className="text-caption text-muted-foreground">
-                  {t(($) => $.slack.empty_description_prefix)}{" "}
-                  <strong>{t(($) => $.slack.empty_description_cta)}</strong>{" "}
-                  {t(($) => $.slack.empty_description_suffix)}
+                  {data?.setup_mode === "managed_oauth"
+                    ? t(($) => $.slack.managed_empty_description)
+                    : `${t(($) => $.slack.empty_description_prefix)} ${t(($) => $.slack.empty_description_cta)} ${t(($) => $.slack.empty_description_suffix)}`}
                 </p>
+                {canManage && data?.setup_mode === "managed_oauth" ? (
+                  <Button onClick={handleManagedConnect} disabled={connecting}>
+                    <SlackMark className="h-3 w-3" />
+                    {connecting
+                      ? t(($) => $.slack.connecting)
+                      : t(($) => $.slack.connect_workspace)}
+                  </Button>
+                ) : null}
               </CardContent>
             </Card>
           ) : (
@@ -146,7 +172,7 @@ export function SlackTab({ installationId }: { installationId?: string } = {}) {
                   <InstallationRow
                     key={inst.id}
                     installation={inst}
-                    canManage={canManage}
+                    canManage={canManage && setupWritable}
                     onDisconnect={() => setDisconnectTarget(inst.id)}
                   />
                 ))}
@@ -294,6 +320,7 @@ export function SlackAgentBindButton({
     enabled: !!wsId,
   });
   const installSupported = listing?.install_supported === true;
+  const managedOAuth = listing?.setup_mode === "managed_oauth";
 
   const { data: members = [] } = useQuery({
     ...memberListOptions(wsId),
@@ -322,12 +349,29 @@ export function SlackAgentBindButton({
       <SlackAgentBotConnectedBadge
         installation={existing}
         healthy={healthy}
+        canDisconnect={listing?.setup_mode !== "server_configured"}
         className={className}
       />
     );
   }
 
   if (!installSupported) return null;
+
+  async function handleManagedConnect() {
+    if (submitting) return;
+    setSubmitting(true);
+    try {
+      const begun = await api.beginSlackOAuth(wsId, {
+        redirect_url: currentSettingsRedirect(),
+      });
+      openExternal(begun.authorization_url, { webTarget: "same-tab" });
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : t(($) => $.slack.connect_failed_toast),
+      );
+      setSubmitting(false);
+    }
+  }
 
   function closeDialog() {
     if (submitting) return;
@@ -370,7 +414,8 @@ export function SlackAgentBindButton({
       <Button
         variant="outline"
         size="sm"
-        onClick={() => setDialogOpen(true)}
+        onClick={() => (managedOAuth ? void handleManagedConnect() : setDialogOpen(true))}
+        disabled={submitting}
         title={
           agentName
             ? t(($) => $.slack.bind_button_title, { agent: agentName })
@@ -379,10 +424,12 @@ export function SlackAgentBindButton({
         data-testid="slack-agent-connect"
       >
         <SlackMark className="h-3 w-3" />
-        {t(($) => $.slack.bind_button)}
+        {submitting && managedOAuth
+          ? t(($) => $.slack.connecting)
+          : t(($) => $.slack.bind_button)}
       </Button>
 
-      <Dialog
+      {!managedOAuth ? <Dialog
         open={dialogOpen}
         onOpenChange={(v) => (v ? setDialogOpen(true) : closeDialog())}
       >
@@ -467,9 +514,14 @@ export function SlackAgentBindButton({
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog> : null}
     </div>
   );
+}
+
+function currentSettingsRedirect(): string {
+  if (typeof window === "undefined") return "/";
+  return `${window.location.pathname}${window.location.search}`;
 }
 
 // SlackAgentBotStatusRow is the compact, read-only connected affordance the
@@ -518,10 +570,12 @@ function SlackAgentBotStatusRow({
 function SlackAgentBotConnectedBadge({
   installation,
   healthy,
+  canDisconnect,
   className,
 }: {
   installation: SlackInstallation;
   healthy: boolean;
+  canDisconnect: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -567,7 +621,7 @@ function SlackAgentBotConnectedBadge({
               : t(($) => $.page.integrations_status)}
           </span>
         </span>
-        <Button
+        {canDisconnect ? <Button
           variant="destructive"
           size="sm"
           onClick={() => setConfirmOpen(true)}
@@ -580,7 +634,7 @@ function SlackAgentBotConnectedBadge({
           {disconnecting
             ? t(($) => $.slack.disconnecting)
             : t(($) => $.slack.disconnect)}
-        </Button>
+        </Button> : null}
       </div>
 
       {installation.team_id && (
@@ -598,7 +652,7 @@ function SlackAgentBotConnectedBadge({
       )}
 
       <AlertDialog
-        open={confirmOpen}
+        open={canDisconnect && confirmOpen}
         onOpenChange={(v) => {
           if (!v && !disconnecting) setConfirmOpen(false);
         }}

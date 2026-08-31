@@ -191,6 +191,8 @@ import type {
   ComposioConnectInitResponse,
   SlackInstallation,
   ListSlackInstallationsResponse,
+  BeginSlackOAuthRequest,
+  BeginSlackOAuthResponse,
   RegisterSlackBYORequest,
   RedeemSlackBindingTokenResponse,
   DingTalkGroupRoute,
@@ -4558,6 +4560,16 @@ export class ApiClient {
   // Slack integration (PB-3666)
   async listSlackInstallations(workspaceId: string): Promise<ListSlackInstallationsResponse> {
     return this.fetch(`/api/workspaces/${workspaceId}/slack/installations`);
+  }
+
+  async beginSlackOAuth(
+    workspaceId: string,
+    body: BeginSlackOAuthRequest,
+  ): Promise<BeginSlackOAuthResponse> {
+    return this.fetch(`/api/workspaces/${workspaceId}/slack/install/begin`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
   }
 
   // registerSlackBYO performs a bring-your-own-app install: the admin pastes the

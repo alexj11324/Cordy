@@ -33,11 +33,20 @@ export interface ListSlackInstallationsResponse {
    * the connect entry points are hidden and the panel renders an "ask the
    * operator to enable Slack" state. */
   configured: boolean;
-  /** Whether the install path is available (true whenever Slack is configured,
-   * i.e. the at-rest key is set — a bring-your-own-app install needs no hosted
-   * OAuth credentials). Kept as a separate flag for forward/backward compat;
-   * optional so an older desktop build that predates it treats it as off. */
+  /** Whether the deployment's selected setup path is ready. Managed mode
+   * requires the hosted OAuth client, signing secret, callback, and at-rest
+   * key; server-configured mode remains read-only in the App. */
   install_supported?: boolean;
+  setup_mode?: "managed_oauth" | "server_configured" | string;
+}
+
+export interface BeginSlackOAuthRequest {
+  /** Public-app path or same-origin HTTPS URL used after Slack returns. */
+  redirect_url: string;
+}
+
+export interface BeginSlackOAuthResponse {
+  authorization_url: string;
 }
 
 /** Request body for a bring-your-own-app (BYO) install: the two tokens the

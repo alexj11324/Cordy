@@ -615,6 +615,10 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "462_issue_category_policy_workspace_category_index",
         "uq_workspace_issue_category_policy_workspace_category",
     ),
+    (
+        "466_slack_oauth_state_hash_index",
+        "slack_oauth_state_hash_uidx",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[

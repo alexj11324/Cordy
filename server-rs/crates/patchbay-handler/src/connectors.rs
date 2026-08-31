@@ -30,7 +30,7 @@ use crate::{
 const BODY_LIMIT: usize = 16 * 1024;
 
 #[derive(Clone, Copy)]
-enum Provider {
+pub(crate) enum Provider {
     DingTalk,
     Lark,
     Slack,
@@ -174,8 +174,12 @@ pub fn admin_router() -> Router<HandlerState> {
             post(install_slack),
         )
         .route(
+            "/api/workspaces/{id}/slack/install/begin",
+            post(crate::slack_managed::begin_install),
+        )
+        .route(
             "/api/workspaces/{id}/slack/installations/{installation_id}",
-            delete(revoke_slack),
+            delete(crate::slack_managed::revoke_install),
         )
         .route(
             "/api/workspaces/{id}/telegram/install",
@@ -200,7 +204,7 @@ fn secret_box(provider: Provider) -> Option<patchbay_util::secretbox::SecretBox>
     patchbay_util::secretbox::SecretBox::new(&key).ok()
 }
 
-fn user_id(headers: &HeaderMap) -> Result<Uuid, Response> {
+pub(crate) fn user_id(headers: &HeaderMap) -> Result<Uuid, Response> {
     headers
         .get("x-user-id")
         .and_then(|value| value.to_str().ok())
@@ -212,7 +216,7 @@ fn user_id(headers: &HeaderMap) -> Result<Uuid, Response> {
 /// auth middleware marks the authenticated request with this server-owned
 /// header; reject it at the backend boundary rather than relying on the
 /// integrations page to hide its button.
-fn require_formal_user(headers: &HeaderMap) -> Result<(), Response> {
+pub(crate) fn require_formal_user(headers: &HeaderMap) -> Result<(), Response> {
     if headers
         .get("x-guest-user")
         .and_then(|value| value.to_str().ok())
@@ -227,7 +231,7 @@ fn require_formal_user(headers: &HeaderMap) -> Result<(), Response> {
     Ok(())
 }
 
-fn require_setup_writable(state: &HandlerState) -> Result<(), Response> {
+pub(crate) fn require_setup_writable(state: &HandlerState) -> Result<(), Response> {
     if state.public_config.messaging.setup_writable {
         return Ok(());
     }
@@ -250,7 +254,7 @@ fn provider_capability(
         .find(|platform| platform.channel_type == provider.capability_type())
 }
 
-fn workspace_id(context: &WorkspaceContext) -> Result<Uuid, Response> {
+pub(crate) fn workspace_id(context: &WorkspaceContext) -> Result<Uuid, Response> {
     Uuid::parse_str(&context.workspace_id)
         .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid workspace id"))
 }
@@ -317,12 +321,7 @@ fn installation_response(
         .iter()
         .find(|platform| platform.channel_type == provider.capability_type());
     if let Some(target) = value.as_object_mut() {
-        let setup_mode = match messaging.mode.as_str() {
-            "managed" if matches!(provider, Provider::Slack | Provider::Lark) => "managed_oauth",
-            "managed" => "managed_token",
-            "server_configured" => "server_configured",
-            _ => "managed_token",
-        };
+        let setup_mode = provider_setup_mode(provider, messaging);
         target.insert(
             "setup".into(),
             json!({
@@ -339,6 +338,18 @@ fn installation_response(
         target.extend(fields.clone());
     }
     value
+}
+
+fn provider_setup_mode(
+    provider: Provider,
+    messaging: &crate::config::MessagingCapabilities,
+) -> &'static str {
+    match messaging.mode.as_str() {
+        "managed" if matches!(provider, Provider::Slack | Provider::Lark) => "managed_oauth",
+        "managed" => "managed_token",
+        "server_configured" => "server_configured",
+        _ => "managed_token",
+    }
 }
 
 /// Projects the supervisor's durable lease observation into the public
@@ -389,7 +400,9 @@ async fn list(state: HandlerState, context: WorkspaceContext, provider: Provider
         Ok(rows) => Json(json!({
             "installations": rows.into_iter().map(|row| installation_response(provider, row, &state.public_config.messaging)).collect::<Vec<_>>(),
             "configured": true,
-            "install_supported": state.public_config.messaging.setup_writable,
+            "install_supported": state.public_config.messaging.setup_writable
+                && (!matches!(provider, Provider::Slack) || crate::slack_managed::configured(&state)),
+            "setup_mode": provider_setup_mode(provider, &state.public_config.messaging),
         }))
         .into_response(),
         Err(error) => {
@@ -1931,7 +1944,7 @@ async fn update_dingtalk_group_route(
     .into_response()
 }
 
-async fn revoke(
+pub(crate) async fn revoke(
     state: HandlerState,
     context: WorkspaceContext,
     headers: HeaderMap,
@@ -2027,7 +2040,6 @@ macro_rules! revoke_handler {
 }
 revoke_handler!(revoke_dingtalk, Provider::DingTalk);
 revoke_handler!(revoke_lark, Provider::Lark);
-revoke_handler!(revoke_slack, Provider::Slack);
 revoke_handler!(revoke_telegram, Provider::Telegram);
 revoke_handler!(revoke_wecom, Provider::WeCom);
 revoke_handler!(revoke_weixin, Provider::Weixin);
@@ -2094,7 +2106,7 @@ fn managed_installation_limit() -> Option<i64> {
     }
 }
 
-fn hosted_installation_limit(state: &HandlerState) -> Option<i64> {
+pub(crate) fn hosted_installation_limit(state: &HandlerState) -> Option<i64> {
     (state.public_config.messaging.mode == "managed")
         .then(managed_installation_limit)
         .flatten()
@@ -2124,7 +2136,7 @@ fn decode_body<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<T, Response
         .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid request body"))
 }
 
-fn publish_created(
+pub(crate) fn publish_created(
     state: &HandlerState,
     provider: Provider,
     row: &ChannelInstallation,
@@ -2655,6 +2667,13 @@ async fn install_slack(
     Query(query): Query<AgentQuery>,
     bytes: axum::body::Bytes,
 ) -> Response {
+    if state.public_config.messaging.mode == "managed" {
+        return error_code_response(
+            StatusCode::CONFLICT,
+            "managed_oauth_required",
+            "managed Slack installations must use OAuth",
+        );
+    }
     if let Err(response) = require_setup_writable(&state) {
         return response;
     }

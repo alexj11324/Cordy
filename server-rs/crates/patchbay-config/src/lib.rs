@@ -175,6 +175,12 @@ pub struct IntegrationsConfig {
     /// and `disabled` turns the channel surface off.  The handler still
     /// derives a safe default when this value is absent for older deployments.
     pub messaging_mode: Option<String>,
+    /// Managed Slack OAuth + Events API. Self-hosted Socket Mode does not use
+    /// these values.
+    pub slack_client_id: Option<String>,
+    pub slack_client_secret: Option<String>,
+    pub slack_signing_secret: Option<String>,
+    pub slack_oauth_redirect_url: Option<String>,
     /// Composio: `COMPOSIO_API_KEY` / `_CALLBACK_BASE_URL` / `_STATE_SECRET`.
     pub composio_api_key: Option<String>,
     pub composio_callback_base_url: Option<String>,
@@ -372,6 +378,22 @@ impl Config {
         env_str(
             &mut self.integrations.messaging_mode,
             "PATCHBAY_MESSAGING_MODE",
+        );
+        env_str(
+            &mut self.integrations.slack_client_id,
+            "PATCHBAY_SLACK_CLIENT_ID",
+        );
+        env_str(
+            &mut self.integrations.slack_client_secret,
+            "PATCHBAY_SLACK_CLIENT_SECRET",
+        );
+        env_str(
+            &mut self.integrations.slack_signing_secret,
+            "PATCHBAY_SLACK_SIGNING_SECRET",
+        );
+        env_str(
+            &mut self.integrations.slack_oauth_redirect_url,
+            "PATCHBAY_SLACK_OAUTH_REDIRECT_URL",
         );
         env_str(&mut self.integrations.composio_api_key, "COMPOSIO_API_KEY");
         env_str(

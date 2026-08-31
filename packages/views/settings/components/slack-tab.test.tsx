@@ -18,9 +18,11 @@ const installationsRef = vi.hoisted(() => ({
     installations: [] as unknown[],
     configured: true,
     install_supported: true,
+    setup_mode: undefined as "managed_oauth" | "server_configured" | undefined,
   },
 }));
 const mockRegisterBYO = vi.hoisted(() => vi.fn());
+const mockBeginOAuth = vi.hoisted(() => vi.fn());
 const mockDeleteInstallation = vi.hoisted(() => vi.fn());
 const mockOpenExternal = vi.hoisted(() => vi.fn());
 const mockInvalidate = vi.hoisted(() => vi.fn());
@@ -35,15 +37,19 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
     if (opts.enabled === false) return { data: undefined, isLoading: false };
     const key = JSON.stringify(opts.queryKey);
-    if (key.includes("members")) return { data: membersRef.current, isLoading: false };
-    if (key.includes("installations")) return { data: installationsRef.current, isLoading: false };
+    if (key.includes("members"))
+      return { data: membersRef.current, isLoading: false };
+    if (key.includes("installations"))
+      return { data: installationsRef.current, isLoading: false };
     return { data: undefined, isLoading: false };
   },
   useQueryClient: () => ({ invalidateQueries: mockInvalidate }),
   queryOptions: <T,>(opts: T) => opts,
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
+vi.mock("@patchbay/core/hooks", () => ({
+  useWorkspaceId: () => "workspace-1",
+}));
 
 vi.mock("@patchbay/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
@@ -71,12 +77,15 @@ vi.mock("@patchbay/core/slack", () => ({
     queryKey: ["slack", "installations"],
     queryFn: vi.fn(),
   }),
-  slackKeys: { installations: (wsId: string) => ["slack", "installations", wsId] },
+  slackKeys: {
+    installations: (wsId: string) => ["slack", "installations", wsId],
+  },
 }));
 
 vi.mock("@patchbay/core/api", () => ({
   api: {
     registerSlackBYO: mockRegisterBYO,
+    beginSlackOAuth: mockBeginOAuth,
     deleteSlackInstallation: mockDeleteInstallation,
   },
 }));
@@ -111,7 +120,12 @@ function renderUI(children: ReactNode) {
 function resetFixtures() {
   vi.clearAllMocks();
   membersRef.current = [{ user_id: "user-1", role: "owner" }];
-  installationsRef.current = { installations: [], configured: true, install_supported: true };
+  installationsRef.current = {
+    installations: [],
+    configured: true,
+    install_supported: true,
+    setup_mode: undefined,
+  };
 }
 
 describe("SlackAgentBindButton", () => {
@@ -127,13 +141,14 @@ describe("SlackAgentBindButton", () => {
     renderUI(<SlackAgentBindButton agentId="agent-1" agentName="Bot" />);
     await userEvent.click(screen.getByTestId("slack-agent-connect"));
     const botInput = await screen.findByTestId("slack-byo-bot-token");
+    const appToken = ["xapp", "1", "TEST", "1", "placeholder"].join("-");
     await userEvent.type(botInput, "xoxb-bot");
-    await userEvent.type(screen.getByTestId("slack-byo-app-token"), "xapp-1-A0X-1-secret");
+    await userEvent.type(screen.getByTestId("slack-byo-app-token"), appToken);
     await userEvent.click(screen.getByTestId("slack-byo-submit"));
     await waitFor(() =>
       expect(mockRegisterBYO).toHaveBeenCalledWith("workspace-1", "agent-1", {
         bot_token: "xoxb-bot",
-        app_token: "xapp-1-A0X-1-secret",
+        app_token: appToken,
       }),
     );
     // No OAuth redirect anymore — install is a direct API call.
@@ -142,14 +157,43 @@ describe("SlackAgentBindButton", () => {
 
   it("shows the connected badge (not the CTA) when the agent already has an active install", () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-1", status: "active", team_id: "T1", runtime: healthyRuntime }],
+      installations: [
+        {
+          id: "i1",
+          agent_id: "agent-1",
+          status: "active",
+          team_id: "T1",
+          runtime: healthyRuntime,
+        },
+      ],
       configured: true,
       install_supported: true,
+      setup_mode: undefined,
     };
     renderUI(<SlackAgentBindButton agentId="agent-1" />);
     expect(screen.getByTestId("slack-agent-bot-connected")).toBeTruthy();
     expect(screen.getByTestId("slack-agent-bot-disconnect")).toBeTruthy();
     expect(screen.queryByTestId("slack-agent-connect")).toBeNull();
+  });
+
+  it("keeps an operator-managed installation read-only", () => {
+    installationsRef.current = {
+      installations: [
+        {
+          id: "i1",
+          agent_id: "agent-1",
+          status: "active",
+          team_id: "T1",
+          runtime: healthyRuntime,
+        },
+      ],
+      configured: true,
+      install_supported: false,
+      setup_mode: "server_configured",
+    };
+    renderUI(<SlackAgentBindButton agentId="agent-1" />);
+    expect(screen.getByTestId("slack-agent-bot-connected")).toBeTruthy();
+    expect(screen.queryByTestId("slack-agent-bot-disconnect")).toBeNull();
   });
 
   it("renders nothing for a non-manager", () => {
@@ -159,9 +203,40 @@ describe("SlackAgentBindButton", () => {
   });
 
   it("renders nothing when install is unavailable and the agent is unbound", () => {
-    installationsRef.current = { installations: [], configured: true, install_supported: false };
+    installationsRef.current = {
+      installations: [],
+      configured: true,
+      install_supported: false,
+      setup_mode: undefined,
+    };
     const { container } = renderUI(<SlackAgentBindButton agentId="agent-1" />);
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it("starts hosted OAuth instead of opening the BYO token dialog", async () => {
+    installationsRef.current = {
+      installations: [],
+      configured: true,
+      install_supported: true,
+      setup_mode: "managed_oauth",
+    };
+    mockBeginOAuth.mockResolvedValue({
+      authorization_url: "https://slack.com/oauth/v2/authorize?state=opaque",
+    });
+    renderUI(<SlackAgentBindButton agentId="agent-1" />);
+
+    await userEvent.click(screen.getByTestId("slack-agent-connect"));
+
+    await waitFor(() =>
+      expect(mockBeginOAuth).toHaveBeenCalledWith("workspace-1", {
+        redirect_url: "/",
+      }),
+    );
+    expect(mockOpenExternal).toHaveBeenCalledWith(
+      "https://slack.com/oauth/v2/authorize?state=opaque",
+      { webTarget: "same-tab" },
+    );
+    expect(screen.queryByTestId("slack-byo-dialog")).toBeNull();
   });
 });
 
@@ -169,7 +244,12 @@ describe("SlackTab", () => {
   beforeEach(resetFixtures);
 
   it("surfaces the not-enabled notice when the deployment has no Slack key", () => {
-    installationsRef.current = { installations: [], configured: false, install_supported: false };
+    installationsRef.current = {
+      installations: [],
+      configured: false,
+      install_supported: false,
+      setup_mode: undefined,
+    };
     renderUI(<SlackTab />);
     expect(screen.getByText(/Slack integration not enabled/i)).toBeTruthy();
   });
@@ -181,12 +261,62 @@ describe("SlackTab", () => {
 
   it("lists a connected installation with its agent name and a disconnect control", () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-7", status: "active", team_id: "T1", runtime: healthyRuntime }],
+      installations: [
+        {
+          id: "i1",
+          agent_id: "agent-7",
+          status: "active",
+          team_id: "T1",
+          runtime: healthyRuntime,
+        },
+      ],
       configured: true,
       install_supported: true,
+      setup_mode: undefined,
     };
     renderUI(<SlackTab />);
     expect(screen.getByText("Agent agent-7")).toBeTruthy();
     expect(screen.getByText(/Disconnect/i)).toBeTruthy();
+  });
+
+  it("does not expose disconnect controls for server-configured Slack", () => {
+    installationsRef.current = {
+      installations: [
+        {
+          id: "i1",
+          agent_id: "agent-7",
+          status: "active",
+          team_id: "T1",
+          runtime: healthyRuntime,
+        },
+      ],
+      configured: true,
+      install_supported: false,
+      setup_mode: "server_configured",
+    };
+    renderUI(<SlackTab />);
+    expect(screen.getByText("Agent agent-7")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Disconnect/i })).toBeNull();
+  });
+
+  it("offers workspace OAuth from the managed empty state", async () => {
+    installationsRef.current = {
+      installations: [],
+      configured: true,
+      install_supported: true,
+      setup_mode: "managed_oauth",
+    };
+    mockBeginOAuth.mockResolvedValue({
+      authorization_url: "https://slack.com/oauth/v2/authorize?state=opaque",
+    });
+    renderUI(<SlackTab />);
+
+    await userEvent.click(screen.getByRole("button", { name: /Connect Slack/i }));
+
+    await waitFor(() => expect(mockBeginOAuth).toHaveBeenCalledOnce());
+    expect(mockOpenExternal).toHaveBeenCalledWith(
+      "https://slack.com/oauth/v2/authorize?state=opaque",
+      { webTarget: "same-tab" },
+    );
   });
 });

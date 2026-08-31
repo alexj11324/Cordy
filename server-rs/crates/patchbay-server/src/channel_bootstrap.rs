@@ -46,7 +46,7 @@ pub(crate) async fn provision_from_environment(
     pool: &PgPool,
     config: &patchbay_config::Config,
 ) -> Result<()> {
-    if config.integrations.messaging_mode.as_deref() != Some("server_configured") {
+    if patchbay_handler::config::resolved_messaging_mode(config) != "server_configured" {
         return Ok(());
     }
     if !env_flag(BOOTSTRAP_FLAG)? {

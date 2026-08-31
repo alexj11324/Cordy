@@ -177,6 +177,9 @@ impl From<&SocketSlashCommand> for SlashCommand {
 pub struct SlackChannel {
     app_id: String,
     bot_user_id: String,
+    /// Managed OAuth installations receive inbound events through the signed
+    /// HTTP Events API and therefore must not open a Socket Mode connection.
+    socket_mode: bool,
     /// Decrypted xapp- — authorizes the Socket Mode connection.
     app_token: String,
     /// Bot-token client for outbound send.
@@ -200,6 +203,10 @@ impl patchbay_channel::Channel for SlackChannel {
     /// its OWN app-level token) and runs the receive loop until ctx is
     /// cancelled or the link drops.
     async fn connect(&self, ctx: CancellationToken) -> anyhow::Result<()> {
+        if !self.socket_mode {
+            ctx.cancelled().await;
+            return Ok(());
+        }
         // The Socket Mode connection authenticates with the app-level token
         // alone; the bot token is only for outbound Web API calls.
         let app_client = SlackClient::new(&self.app_token);
@@ -435,16 +442,23 @@ pub fn new_slack_factory(deps: ChannelDeps) -> patchbay_channel::Factory {
         Box::pin(async move {
             let ic: InstallConfig = serde_json::from_value(cfg.raw.clone())
                 .map_err(|e| anyhow::anyhow!("slack: decode installation config: {e}"))?;
-            let app_token = decrypt_token(&ic.app_token_encrypted, decrypt.as_deref())
-                .map_err(|e| anyhow::anyhow!("slack: decrypt app token: {e}"))?;
-            if app_token.is_empty() {
-                anyhow::bail!("slack: installation has no app-level token");
-            }
+            let socket_mode = ic.transport != "webhook";
+            let app_token = if socket_mode {
+                let token = decrypt_token(&ic.app_token_encrypted, decrypt.as_deref())
+                    .map_err(|e| anyhow::anyhow!("slack: decrypt app token: {e}"))?;
+                if token.is_empty() {
+                    anyhow::bail!("slack: installation has no app-level token");
+                }
+                token
+            } else {
+                String::new()
+            };
             let bot_token = decrypt_token(&ic.bot_token_encrypted, decrypt.as_deref())
                 .map_err(|e| anyhow::anyhow!("slack: decrypt bot token: {e}"))?;
             Ok(Arc::new(SlackChannel {
                 app_id: ic.app_id,
                 bot_user_id: ic.bot_user_id,
+                socket_mode,
                 app_token,
                 bot_api: SlackClient::new(bot_token),
                 handler: cfg.handler,
@@ -504,6 +518,7 @@ mod tests {
         let ch = SlackChannel {
             app_id: "A1".into(),
             bot_user_id: "U1".into(),
+            socket_mode: true,
             app_token: "xapp-".into(),
             bot_api: SlackClient::new("xoxb-"),
             handler: None,
@@ -523,6 +538,7 @@ mod tests {
         let channel = SlackChannel {
             app_id: "A1".into(),
             bot_user_id: "U_BOT".into(),
+            socket_mode: true,
             app_token: "xapp-".into(),
             bot_api: SlackClient::new("xoxb-"),
             handler: Some(InboundHandler::new(move |ctx, _message| {
@@ -646,5 +662,30 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(built.r#type().0, TYPE_SLACK);
+
+        // Managed OAuth rows are served by the signed HTTP Events API. They
+        // remain registered with the supervisor so legacy BYO rows continue
+        // running in the same deployment, but require no app-level token and
+        // never dial Socket Mode.
+        let managed = reg
+            .build(ChannelConfig {
+                r#type: Type(TYPE_SLACK.to_string()),
+                raw: serde_json::json!({
+                    "app_id": "A1:T1",
+                    "api_app_id": "A1",
+                    "team_id": "T1",
+                    "bot_user_id": "U_BOT",
+                    "bot_token_encrypted": enc(b"xoxb-managed"),
+                    "transport": "webhook",
+                }),
+                id: None,
+                handler: None,
+                generation: None,
+            })
+            .await
+            .unwrap();
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        managed.connect(cancelled).await.unwrap();
     }
 }

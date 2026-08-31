@@ -228,6 +228,15 @@ pub fn public_bind_url(config: &patchbay_config::Config) -> String {
     public_bind_url_from_config(config, is_official_cloud_daemon_config(&app_url))
 }
 
+/// Resolves the authoritative messaging deployment mode used by both the
+/// anonymous capability response and server runtime components.
+pub fn resolved_messaging_mode(config: &patchbay_config::Config) -> String {
+    let app_url = resolve_frontend_app_url_from_config(config);
+    let official_cloud = is_official_cloud_daemon_config(&app_url);
+    let public_bind_available = !public_bind_url_from_config(config, official_cloud).is_empty();
+    messaging_capabilities(config, official_cloud, public_bind_available).mode
+}
+
 fn messaging_capabilities(
     config: &patchbay_config::Config,
     official_cloud: bool,
@@ -578,6 +587,19 @@ mod tests {
             .platforms
             .iter()
             .all(|platform| !platform.enabled));
+    }
+
+    #[test]
+    fn runtime_mode_matches_public_capabilities() {
+        let mut config = patchbay_config::Config::default();
+        config.urls.app_url = Some("https://patchbay.aspectlylabs.com".into());
+        assert_eq!(resolved_messaging_mode(&config), "managed");
+
+        config.integrations.messaging_mode = Some(" managed ".into());
+        assert_eq!(resolved_messaging_mode(&config), "managed");
+
+        config.urls.app_url = Some("http://localhost:3000".into());
+        assert_eq!(resolved_messaging_mode(&config), "disabled");
     }
 
     #[test]
