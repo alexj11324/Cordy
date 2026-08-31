@@ -1799,15 +1799,14 @@ fn external_patch_from_snapshot(snapshot: &Value) -> Result<ExternalIssuePatch, 
     };
     let owner_type = owner_id
         .as_ref()
-        .and_then(|value| value.as_ref())
-        .map(|_| Some("member".to_string()))
-        .unwrap_or(Some(None));
+        .map(|value| value.as_ref().map(|_| "member".to_string()));
     Ok(ExternalIssuePatch {
         title: Some(required_snapshot_string(snapshot, "title")?),
         description,
         status: Some(required_snapshot_string(snapshot, "status")?),
         priority: Some(required_snapshot_string(snapshot, "priority")?),
         due_date,
+        project_id: None,
         owner_type,
         owner_id,
     })
@@ -1820,6 +1819,7 @@ fn classify_external_error(error: ExternalIssueError, context: &str) -> SyncErro
         | ExternalIssueError::InvalidOwner
         | ExternalIssueError::ActiveExecutorRequired
         | ExternalIssueError::ReviewReviewerRequired
+        | ExternalIssueError::ProjectNotFound
         | ExternalIssueError::NotFound) => {
             SyncError::permanent(anyhow::anyhow!("{context}: {error}"))
         }
