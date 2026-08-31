@@ -596,6 +596,10 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "agent_task_execution_provenance_discovery_queue_idx",
     ),
     (
+        "452_chat_message_channel_task_index",
+        "idx_chat_message_channel_task",
+    ),
+    (
         "453_patrick_workspace_unique_index",
         "uq_agent_workspace_patrick",
     ),
