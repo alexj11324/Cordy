@@ -205,15 +205,14 @@ export async function bootstrapDevClerkAuth({
 }
 
 export function scopedDevClerkEnvironment(authEnv, scope) {
-  const common = {
-    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
-      authEnv.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
-    CLERK_PUBLISHABLE_KEY: authEnv.CLERK_PUBLISHABLE_KEY,
-    CLERK_SECRET_KEY: authEnv.CLERK_SECRET_KEY,
-    PATCHBAY_DEV_AUTH_READY: "1",
-  };
-  if (scope === "web") return common;
-  if (scope === "backend") return { ...common, ...authEnv };
+  if (scope === "web") {
+    return {
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
+        authEnv.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+      PATCHBAY_DEV_AUTH_READY: "1",
+    };
+  }
+  if (scope === "backend") return { ...authEnv, PATCHBAY_DEV_AUTH_READY: "1" };
   throw new Error(`Unknown Clerk development auth scope: ${scope}`);
 }
 
