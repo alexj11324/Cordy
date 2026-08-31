@@ -102,6 +102,11 @@ test("complete development auth contracts run outside path-filtered jobs", () =>
   assert.match(contractStep, /scripts\/dev-runtime-command\.test\.mjs/u);
   assert.match(contractStep, /bash scripts\/dev-env\.test\.sh/u);
   assert.doesNotMatch(contractStep, /^\s+if:/mu);
+  assert.doesNotMatch(
+    ci,
+    /vitest run[^\n]*scripts\/dev-(?:auth|runtime)-command\.test\.mjs/u,
+    "node:test development contracts must not also be routed through Vitest",
+  );
 });
 
 test("the obsolete fixed-commit Desktop artifact workflow is gone", async () => {

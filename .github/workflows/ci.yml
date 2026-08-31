@@ -298,13 +298,6 @@ jobs:
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         run: pnpm install
 
-      - name: Test root development launcher boundaries
-        if: ${{ needs.changes.outputs.frontend == 'true' }}
-        run: >-
-          pnpm --filter @patchbay/desktop exec vitest run --root ../..
-          ../../scripts/dev-auth-command.test.mjs
-          ../../scripts/dev-runtime-command.test.mjs
-
       # `node-version: 22` above floats across patch releases, and turbo's
       # global hash does not include the interpreter at all (`engines` is null
       # in its dry-run cache inputs). Without the resolved version in the key,
