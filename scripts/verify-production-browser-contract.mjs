@@ -9,6 +9,10 @@ export function requiredString(value, label) {
   return value.trim();
 }
 
+export function isExpectedBrowserRequestCancellation(errorText) {
+  return errorText === "net::ERR_ABORTED";
+}
+
 export function decodeClerkFrontendApi(publishableKey) {
   const key = requiredString(publishableKey, "CLERK_PUBLISHABLE_KEY");
   const match = /^pk_(?:live|test)_(.+)$/u.exec(key);

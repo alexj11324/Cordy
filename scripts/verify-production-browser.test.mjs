@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   buildGoogleOAuthProbeUrl,
   decodeClerkFrontendApi,
+  isExpectedBrowserRequestCancellation,
   requireBrowserReceipt,
   requireGoogleOAuthNavigation,
   requireProtectedNavigation,
@@ -130,4 +131,17 @@ test("reads the settled page URL after Playwright waitForURL", () => {
     /await downstreamNavigation;\n\s+requireGoogleOAuthNavigation\(page\.url\(\)\);/u,
   );
   assert.doesNotMatch(browserVerifierSource, /downstream\.href/u);
+});
+
+test("ignores expected Chromium navigation cancellations only", () => {
+  assert.equal(
+    isExpectedBrowserRequestCancellation("net::ERR_ABORTED"),
+    true,
+  );
+  assert.equal(isExpectedBrowserRequestCancellation("net::ERR_FAILED"), false);
+  assert.equal(isExpectedBrowserRequestCancellation(undefined), false);
+  assert.match(
+    browserVerifierSource,
+    /if \(isExpectedBrowserRequestCancellation\(failure\?\.errorText\)\) return;/u,
+  );
 });
