@@ -12,7 +12,9 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render } from "@testing-library/react";
 
 const authState = { user: null as { id: string } | null };
-const overlayState = { overlay: null as { type: string } | null };
+const overlayState = {
+  overlay: null as { type: string; path?: string } | null,
+};
 const tabState = {
   slug: null as string | null,
   tabId: null as string | null,
@@ -106,6 +108,20 @@ describe("DiagnosticRouteReporter", () => {
     expect(setRendererRouteContext).toHaveBeenCalledWith({
       surface: "overlay",
       path: "/onboarding",
+    });
+  });
+
+  it("reports Settings as a window-level surface without leaking the workspace slug", () => {
+    overlayState.overlay = {
+      type: "settings",
+      path: "/acme/settings?tab=tokens",
+    };
+
+    render(<DiagnosticRouteReporter />);
+
+    expect(setRendererRouteContext).toHaveBeenCalledWith({
+      surface: "overlay",
+      path: "/:slug/settings",
     });
   });
 

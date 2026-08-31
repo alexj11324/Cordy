@@ -4,6 +4,7 @@ import { arrayMove } from "@dnd-kit/sortable";
 import { createPersistStorage, defaultStorage } from "@patchbay/core/platform";
 import { createSafeId } from "@patchbay/core/utils";
 import { isReservedSlug } from "@patchbay/core/paths";
+import { isStandaloneSettingsPath } from "@/platform/standalone-settings";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -328,7 +329,9 @@ export function resourceKeyForUrl(url: string): string {
  *     pre-workspace flows rendered by the window overlay on desktop, not
  *     tab routes. The navigation adapter normally intercepts these before
  *     they reach the store; this guard catches older persisted state.
- *  2. **Malformed workspace-scoped paths** like a stray `/issues/abc` that
+ *  2. **Settings paths** (`/{slug}/settings`). Settings is a first-class,
+ *     window-level page on desktop and must never become a tab session.
+ *  3. **Malformed workspace-scoped paths** like a stray `/issues/abc` that
  *     was constructed without the workspace prefix. The router would
  *     interpret `issues` as a workspace slug → NoAccessPage.
  *
@@ -341,6 +344,7 @@ export function resourceKeyForUrl(url: string): string {
  * dropping the tab or substituting a default).
  */
 export function sanitizeTabPath(path: string): string | null {
+  if (isStandaloneSettingsPath(path)) return null;
   const { pathname, suffix } = splitTabUrl(path);
   const segments = pathname.split("/").filter(Boolean);
   const firstSegment = segments[0] ?? "";

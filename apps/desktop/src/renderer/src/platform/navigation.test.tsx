@@ -8,15 +8,18 @@ import { useEffect } from "react";
 // mocked so we can spy on their entry points.
 
 const overlay = vi.hoisted(() => ({
-  overlay: null as null | { type: string },
+  overlay: null as null | { type: string; path?: string },
   open: vi.fn(),
   close: vi.fn(),
 }));
 
 vi.mock("@/stores/window-overlay-store", () => ({
-  useWindowOverlayStore: Object.assign(() => null, {
+  useWindowOverlayStore: Object.assign(
+    (selector: (state: typeof overlay) => unknown) => selector(overlay),
+    {
     getState: () => overlay,
-  }),
+    },
+  ),
 }));
 
 const auth = vi.hoisted(() => ({ logout: vi.fn() }));
@@ -160,6 +163,32 @@ describe("push", () => {
     expect(overlay.open).toHaveBeenCalledWith({ type: "new-workspace" });
     expect(acmeGroup()).toBe(before);
   });
+
+  it("opens Settings as a window-level page without touching sessions", () => {
+    const getAdapter = renderProvider();
+    const before = acmeGroup();
+
+    getAdapter().push("/acme/settings?tab=tokens");
+
+    expect(overlay.open).toHaveBeenCalledWith({
+      type: "settings",
+      path: "/acme/settings?tab=tokens",
+    });
+    expect(acmeGroup()).toBe(before);
+  });
+
+  it("switches workspace before opening that workspace's Settings page", () => {
+    const getAdapter = renderProvider();
+
+    getAdapter().push("/butter/settings");
+
+    expect(useTabStore.getState().activeWorkspaceSlug).toBe("butter");
+    expect(getActiveTab(useTabStore.getState())?.url).toBe("/butter/issues");
+    expect(overlay.open).toHaveBeenCalledWith({
+      type: "settings",
+      path: "/butter/settings",
+    });
+  });
 });
 
 describe("push with pinned active tab", () => {
@@ -217,6 +246,17 @@ describe("back", () => {
     expect(active.url).toBe("/acme/issues");
     expect(active.history.index).toBe(0);
   });
+
+  it("returns from the standalone Settings page without changing tab history", () => {
+    const getAdapter = renderProvider();
+    const before = getActiveTab(useTabStore.getState())!.history;
+    overlay.overlay = { type: "settings", path: "/acme/settings" };
+
+    getAdapter().back!();
+
+    expect(overlay.close).toHaveBeenCalledOnce();
+    expect(getActiveTab(useTabStore.getState())!.history).toEqual(before);
+  });
 });
 
 // Consumed by `useBackOrReplace` — a page whose subject was deleted steps back
@@ -254,6 +294,13 @@ describe("canGoBack", () => {
     getAdapter().openInNewTab!("/acme/agents", "Agents", { activate: true });
 
     expect(getAdapter().canGoBack!()).toBe(false);
+  });
+
+  it("is true in Settings because back returns to the app", () => {
+    const getAdapter = renderProvider();
+    overlay.overlay = { type: "settings", path: "/acme/settings" };
+
+    expect(getAdapter().canGoBack!()).toBe(true);
   });
 });
 

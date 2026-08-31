@@ -4,7 +4,7 @@ import { render } from "@testing-library/react";
 import { useTabStore } from "@/stores/tab-store";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 import {
-  openSettingsTab,
+  openSettingsPage,
   useOpenSettingsShortcut,
 } from "./use-open-settings-shortcut";
 
@@ -41,11 +41,6 @@ function tabUrls(): string[] {
   return useTabStore.getState().byWorkspace.acme?.tabs.map((t) => t.url) ?? [];
 }
 
-function activeTabUrl(): string | undefined {
-  const group = useTabStore.getState().byWorkspace.acme;
-  return group?.tabs.find((t) => t.id === group.activeTabId)?.url;
-}
-
 /** Installs a desktopAPI stub; `deliver()` plays the chord main would send. */
 function stubDesktopAPI(kind: "main" | "issue") {
   let handler: (() => void) | null = null;
@@ -65,32 +60,35 @@ function stubDesktopAPI(kind: "main" | "issue") {
   return { onOpenSettings, deliver: () => handler?.() };
 }
 
-describe("openSettingsTab", () => {
+describe("openSettingsPage", () => {
   beforeEach(() => {
     seedTabs();
     useWindowOverlayStore.setState({ overlay: null });
   });
 
-  it("opens Settings for the active workspace and focuses it", () => {
-    openSettingsTab();
+  it("opens Settings for the active workspace without changing tabs", () => {
+    openSettingsPage();
 
-    expect(tabUrls()).toEqual(["/acme/issues", "/acme/settings"]);
-    expect(activeTabUrl()).toBe("/acme/settings");
+    expect(tabUrls()).toEqual(["/acme/issues"]);
+    expect(useWindowOverlayStore.getState().overlay).toEqual({
+      type: "settings",
+      path: "/acme/settings",
+    });
   });
 
-  it("reuses the Settings tab instead of stacking duplicates", () => {
-    openSettingsTab();
-    useTabStore.getState().setActiveTab("t1");
-    openSettingsTab();
+  it("keeps an already-open Settings page stable", () => {
+    openSettingsPage();
+    const first = useWindowOverlayStore.getState().overlay;
+    openSettingsPage();
 
-    expect(tabUrls()).toEqual(["/acme/issues", "/acme/settings"]);
-    expect(activeTabUrl()).toBe("/acme/settings");
+    expect(useWindowOverlayStore.getState().overlay).toBe(first);
+    expect(tabUrls()).toEqual(["/acme/issues"]);
   });
 
   it("does nothing while a pre-workspace overlay covers the window", () => {
     useWindowOverlayStore.setState({ overlay: { type: "onboarding" } });
 
-    openSettingsTab();
+    openSettingsPage();
 
     expect(tabUrls()).toEqual(["/acme/issues"]);
   });
@@ -98,7 +96,7 @@ describe("openSettingsTab", () => {
   it("does nothing without an active workspace (logged out)", () => {
     useTabStore.setState({ activeWorkspaceSlug: null });
 
-    expect(() => openSettingsTab()).not.toThrow();
+    expect(() => openSettingsPage()).not.toThrow();
     expect(tabUrls()).toEqual(["/acme/issues"]);
   });
 });
@@ -115,10 +113,13 @@ describe("useOpenSettingsShortcut", () => {
 
     deliver();
 
-    expect(activeTabUrl()).toBe("/acme/settings");
+    expect(useWindowOverlayStore.getState().overlay).toEqual({
+      type: "settings",
+      path: "/acme/settings",
+    });
   });
 
-  // Main routes the chord to the tabbed window; an issue renderer that also
+  // Main routes the chord to the app window; an issue renderer that also
   // subscribed would mark the channel ready and drain the request into a
   // window that has no tabs to open it in.
   it("does not subscribe in a dedicated issue window", () => {

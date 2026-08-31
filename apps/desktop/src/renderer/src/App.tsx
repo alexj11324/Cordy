@@ -60,6 +60,11 @@ function useCmdWCloseTab() {
         window.desktopAPI.closeWindow();
         return;
       }
+      const overlay = useWindowOverlayStore.getState();
+      if (overlay.overlay?.type === "settings") {
+        overlay.close();
+        return;
+      }
       const store = useTabStore.getState();
       const { activeWorkspaceSlug, byWorkspace } = store;
       if (!activeWorkspaceSlug) {

@@ -304,6 +304,7 @@
   },
   "page": {
     "title": "設定",
+    "back_to_app": "アプリに戻る",
     "my_account": "マイアカウント",
     "workspace_fallback": "ワークスペース",
     "integrations_title": "連携",

@@ -114,6 +114,33 @@ describe("SettingsPage nav trigger", () => {
     ).not.toBeInTheDocument();
     expect(screen.getByText("Settings")).toBeInTheDocument();
   });
+
+  it("uses a platform navigation header instead of the app-sidebar trigger", () => {
+    renderWithI18n(
+      <SettingsPage
+        navigationHeader={<button type="button">Back to app</button>}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Back to app" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Toggle Sidebar" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("uses the shared sidebar language for a standalone settings surface", () => {
+    const { container } = renderWithI18n(
+      <SettingsPage variant="standalone" />,
+    );
+
+    const settings = container.querySelector('[data-settings-variant="standalone"]');
+    expect(settings).toHaveClass("bg-page-canvas");
+    expect(screen.getByRole("tab", { name: "Profile" })).toHaveClass(
+      "data-active:!bg-sidebar-item-active",
+    );
+  });
 });
 
 describe("SettingsPage Plugin feature flag", () => {

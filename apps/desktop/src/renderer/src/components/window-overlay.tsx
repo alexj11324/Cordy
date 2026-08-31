@@ -7,11 +7,12 @@ import { paths } from "@patchbay/core/paths";
 import { workspaceListOptions } from "@patchbay/core/workspace/queries";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 import { useLocalRuntimesPending } from "../platform/use-local-runtimes-pending";
+import { DesktopSettingsPage } from "./desktop-settings-page";
 
 /**
- * Window-level transition overlay: renders above the tab system when the
- * user is in a pre-workspace flow (onboarding, create workspace, accept
- * invite).
+ * Window-level destination overlay: renders above the tab system for
+ * first-class pages such as Settings and for pre-workspace flows (onboarding,
+ * create workspace, accept invite).
  *
  * This component is intentionally thin — just a fixed positioning shell
  * that covers the tab system. It does NOT hide traffic lights or provide
@@ -28,7 +29,23 @@ import { useLocalRuntimesPending } from "../platform/use-local-runtimes-pending"
 export function WindowOverlay() {
   const overlay = useWindowOverlayStore((s) => s.overlay);
   if (!overlay) return null;
+  if (overlay.type === "settings") return <SettingsWindow />;
   return <WindowOverlayInner />;
+}
+
+function SettingsWindow() {
+  const close = useWindowOverlayStore((s) => s.close);
+
+  return (
+    <div className="fixed inset-0 z-50 flex min-h-0 bg-background">
+      <div
+        aria-hidden
+        className="fixed inset-x-0 top-0 z-10 h-10"
+        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
+      />
+      <DesktopSettingsPage onBack={close} />
+    </div>
+  );
 }
 
 function WindowOverlayInner() {

@@ -304,6 +304,7 @@
   },
   "page": {
     "title": "Settings",
+    "back_to_app": "Back to app",
     "my_account": "My Account",
     "workspace_fallback": "Workspace",
     "integrations_title": "Integrations",

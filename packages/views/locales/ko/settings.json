@@ -304,6 +304,7 @@
   },
   "page": {
     "title": "설정",
+    "back_to_app": "앱으로 돌아가기",
     "my_account": "내 계정",
     "workspace_fallback": "워크스페이스",
     "integrations_title": "연동",

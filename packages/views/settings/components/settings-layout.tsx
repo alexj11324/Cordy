@@ -17,9 +17,9 @@ export function SettingsTab({
   return (
     <div className="space-y-8">
       <header>
-        <h2 className="text-title-lg font-semibold tracking-tight">{title}</h2>
+        <h2 className="text-title-lg font-medium">{title}</h2>
         {description ? (
-          <p className="mt-1 max-w-2xl text-body leading-6 text-muted-foreground">
+          <p className="mt-1 max-w-2xl text-body leading-5 text-muted-foreground">
             {description}
           </p>
         ) : null}
@@ -47,9 +47,9 @@ export function SettingsSection({
       {title || description || action ? (
         <div className="flex min-w-0 items-end justify-between gap-4 px-0.5">
           <div className="min-w-0">
-            {title ? <h3 className="text-body font-semibold">{title}</h3> : null}
+            {title ? <h3 className="text-body font-medium">{title}</h3> : null}
             {description ? (
-              <p className="mt-1 text-caption leading-5 text-muted-foreground">
+              <p className="mt-0.5 text-caption leading-5 text-muted-foreground">
                 {description}
               </p>
             ) : null}
@@ -70,7 +70,7 @@ export function SettingsCard({
   className?: string;
 }) {
   return (
-    <Card className={cn("gap-0 py-0 shadow-none", className)}>
+    <Card className={cn("gap-0 rounded-lg py-0 shadow-none", className)}>
       <CardContent className="divide-y divide-surface-border px-0">
         {children}
       </CardContent>

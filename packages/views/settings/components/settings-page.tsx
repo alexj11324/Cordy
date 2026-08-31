@@ -53,6 +53,7 @@ import { McpTab } from "./mcp-tab";
 import { BillingTab } from "./billing-tab";
 import { CollapsedNavTrigger } from "../../layout/page-header";
 import { useT } from "../../i18n";
+import { cn } from "@patchbay/ui/lib/utils";
 
 const ACCOUNT_TAB_KEYS = ["profile", "preferences", "shortcuts", "issue", "chat", "notifications", "tokens"] as const;
 const ACCOUNT_TAB_ICONS = {
@@ -123,7 +124,11 @@ const LEGACY_WORKSPACE_TAB_REDIRECTS: Record<string, string> = {
 };
 
 const SETTINGS_TAB_TRIGGER_CLASS =
-  "h-8 shrink-0 px-2.5 hover:bg-surface-hover data-active:!bg-surface-selected data-active:!text-surface-selected-foreground data-active:hover:!bg-surface-selected md:!w-full md:px-2 md:after:hidden";
+  "h-8 shrink-0 px-2.5 md:!w-full md:px-2 md:after:hidden";
+const SETTINGS_EMBEDDED_TAB_TRIGGER_CLASS =
+  "hover:bg-surface-hover data-active:!bg-surface-selected data-active:!text-surface-selected-foreground data-active:hover:!bg-surface-selected";
+const SETTINGS_STANDALONE_TAB_TRIGGER_CLASS =
+  "text-sidebar-text-secondary hover:bg-sidebar-item-hover hover:text-sidebar-item-active-foreground data-active:!bg-sidebar-item-active data-active:!text-sidebar-item-active-foreground data-active:hover:!bg-sidebar-item-active";
 
 export interface ExtraSettingsTab {
   value: string;
@@ -132,12 +137,20 @@ export interface ExtraSettingsTab {
   content: React.ReactNode;
 }
 
-interface SettingsPageProps {
+export interface SettingsPageProps {
   /** Additional tabs injected by platform (e.g. desktop daemon settings) */
   extraAccountTabs?: ExtraSettingsTab[];
+  /** Platform-owned control rendered above the settings navigation. */
+  navigationHeader?: React.ReactNode;
+  /** Use the app sidebar's visual language for a first-class settings surface. */
+  variant?: "embedded" | "standalone";
 }
 
-export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
+export function SettingsPage({
+  extraAccountTabs,
+  navigationHeader,
+  variant = "embedded",
+}: SettingsPageProps = {}) {
   const { t } = useT("settings");
   const workspaceName = useCurrentWorkspace()?.name;
   const navigation = useNavigation();
@@ -146,6 +159,13 @@ export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
   const billingEnabled = useFeatureEnabled(
     BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
     false,
+  );
+  const isStandalone = variant === "standalone";
+  const tabTriggerClass = cn(
+    SETTINGS_TAB_TRIGGER_CLASS,
+    isStandalone
+      ? SETTINGS_STANDALONE_TAB_TRIGGER_CLASS
+      : SETTINGS_EMBEDDED_TAB_TRIGGER_CLASS,
   );
 
   const visibleWorkspaceTabKeys = React.useMemo(
@@ -193,13 +213,23 @@ export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
       value={activeTab}
       onValueChange={handleTabChange}
       orientation={isMobile ? "horizontal" : "vertical"}
-      className="flex flex-1 min-h-0 flex-col gap-0 overflow-y-auto md:flex-row md:overflow-hidden"
+      data-settings-variant={variant}
+      className={cn(
+        "flex min-h-0 flex-1 flex-col gap-0 overflow-y-auto md:flex-row md:overflow-hidden",
+        isStandalone && "bg-page-canvas text-foreground",
+      )}
     >
-      {/* Structural navigation; bounded setting groups remain in the content surface.
-          Stays on the content surface color (no shell tint): the desktop's active
-          tab merges into the card top, and a tinted panel under the first tabs
-          breaks that seam (PB-4439). Zoning comes from the divider instead. */}
-      <div className="shrink-0 overflow-x-auto border-b border-surface-border p-2 md:w-56 md:overflow-y-auto md:border-b-0 md:border-r md:p-4">
+      <div
+        className={cn(
+          "shrink-0 overflow-x-auto border-b p-2 md:w-80 md:overflow-y-auto md:border-b-0 md:border-r md:p-4",
+          isStandalone
+            ? "border-sidebar-border bg-sidebar text-sidebar-text-primary"
+            : "border-surface-border",
+        )}
+      >
+        {navigationHeader ? (
+          <div>{navigationHeader}</div>
+        ) : null}
         {/* This page builds its own chrome instead of a PageHeader, so it has
             to supply the nav trigger itself — below `xl` the nav is a sheet or
             auto-collapsed, and settings has no other way back to it. */}
@@ -207,8 +237,15 @@ export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
             `items-center`, a bottom margin on the `h1` is part of the box being
             centred, so it offsets the heading against the trigger beside it. */}
         <div className="flex items-center md:mb-4">
-          <CollapsedNavTrigger />
-          <h1 className="sr-only text-body font-semibold md:not-sr-only md:px-2">{t(($) => $.page.title)}</h1>
+          {navigationHeader ? null : <CollapsedNavTrigger />}
+          <h1
+            className={cn(
+              "sr-only font-semibold md:not-sr-only md:px-2",
+              isStandalone ? "text-title" : "text-body",
+            )}
+          >
+            {t(($) => $.page.title)}
+          </h1>
         </div>
         <TabsList
           variant="line"
@@ -224,7 +261,7 @@ export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
               <TabsTrigger
                 key={key}
                 value={key}
-                className={SETTINGS_TAB_TRIGGER_CLASS}
+                className={tabTriggerClass}
               >
                 <Icon className="h-4 w-4" />
                 {t(($) => $.page.tabs[key])}
@@ -235,7 +272,7 @@ export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
             <TabsTrigger
               key={tab.value}
               value={tab.value}
-              className={SETTINGS_TAB_TRIGGER_CLASS}
+              className={tabTriggerClass}
             >
               <tab.icon className="h-4 w-4" />
               {tab.label}
@@ -252,7 +289,7 @@ export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
               <TabsTrigger
                 key={key}
                 value={WORKSPACE_TAB_VALUES[key]}
-                className={SETTINGS_TAB_TRIGGER_CLASS}
+                className={tabTriggerClass}
               >
                 <Icon className="h-4 w-4" />
                 {t(($) => $.page.tabs[key])}
@@ -263,10 +300,15 @@ export function SettingsPage({ extraAccountTabs }: SettingsPageProps = {}) {
       </div>
 
       {/* Right content */}
-      <div className="min-w-0 flex-1 md:overflow-y-auto">
-        <div className={`mx-auto w-full p-4 sm:p-6 md:p-8 ${activeTab === "integrations" || activeTab === "labels" || activeTab === "issue-statuses" || activeTab === "properties" || activeTab === "quick-actions"
+      <div
+        className={cn(
+          "min-w-0 flex-1 md:overflow-y-auto",
+          isStandalone && "bg-page-canvas",
+        )}
+      >
+        <div className={`mx-auto w-full p-4 sm:p-6 md:px-8 ${isStandalone ? "md:pb-8 md:pt-20" : "md:py-7"} ${activeTab === "integrations" || activeTab === "labels" || activeTab === "issue-statuses" || activeTab === "properties" || activeTab === "quick-actions"
               ? "max-w-5xl"
-              : "max-w-3xl"}`}>
+              : "max-w-[57rem]"}`}>
           <TabsContent value="profile"><AccountTab /></TabsContent>
           <TabsContent value="preferences"><PreferencesTab /></TabsContent>
           <TabsContent value="shortcuts"><KeyboardShortcutsTab /></TabsContent>
