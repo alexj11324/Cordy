@@ -962,7 +962,7 @@ fn push_table_filters(
                             "invalid filters.actors",
                         ));
                     }
-                }
+                };
                 has_clause = true;
             }
             if include_no_executor {
