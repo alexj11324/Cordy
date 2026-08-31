@@ -129,7 +129,8 @@ impl IssueService {
         if let Some(project_id) = patch.project_id {
             if let Some(project_id) = project_id {
                 if get_project_in_workspace(&mut *tx, project_id, workspace_id)
-                    .await?
+                    .await
+                    .map_err(|error| ExternalIssueError::Internal(format!("validate external project: {error}")))?
                     .is_none()
                 {
                     return Err(ExternalIssueError::ProjectNotFound);
