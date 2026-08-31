@@ -529,13 +529,15 @@ impl LinearSyncWorker {
                 }
                 let updated = linear_q::update_linear_issue_link(
                     &mut *transaction,
-                    link.id,
-                    row.workspace_id,
-                    &base_snapshot,
-                    Some(remote_updated_at),
-                    link.last_remote_event_at_ms,
-                    link.last_remote_event_id.as_deref(),
-                    "conflict",
+                    &linear_q::LinearIssueLinkUpdate {
+                        link_id: link.id,
+                        workspace_id: row.workspace_id,
+                        last_common_snapshot: &base_snapshot,
+                        remote_updated_at: Some(remote_updated_at),
+                        last_remote_event_at_ms: link.last_remote_event_at_ms,
+                        last_remote_event_id: link.last_remote_event_id.as_deref(),
+                        sync_status: "conflict",
+                    },
                 )
                 .await
                 .map_err(SyncError::retry)?;
@@ -1394,13 +1396,15 @@ impl LinearSyncWorker {
             }
             let updated = linear_q::update_linear_issue_link(
                 &mut *transaction,
-                link.id,
-                connection.workspace_id,
-                &base_snapshot,
-                Some(remote_updated_at),
-                last_event_at_ms,
-                last_event_id,
-                "conflict",
+                &linear_q::LinearIssueLinkUpdate {
+                    link_id: link.id,
+                    workspace_id: connection.workspace_id,
+                    last_common_snapshot: &base_snapshot,
+                    remote_updated_at: Some(remote_updated_at),
+                    last_remote_event_at_ms: last_event_at_ms,
+                    last_remote_event_id: last_event_id,
+                    sync_status: "conflict",
+                },
             )
             .await
             .map_err(SyncError::retry)?;
@@ -1433,13 +1437,15 @@ impl LinearSyncWorker {
 
         let updated = linear_q::update_linear_issue_link(
             &self.state.pool,
-            link.id,
-            connection.workspace_id,
-            &merge.common,
-            Some(remote_updated_at),
-            last_event_at_ms,
-            last_event_id,
-            "active",
+            &linear_q::LinearIssueLinkUpdate {
+                link_id: link.id,
+                workspace_id: connection.workspace_id,
+                last_common_snapshot: &merge.common,
+                remote_updated_at: Some(remote_updated_at),
+                last_remote_event_at_ms: last_event_at_ms,
+                last_remote_event_id: last_event_id,
+                sync_status: "active",
+            },
         )
         .await
         .map_err(SyncError::retry)?;

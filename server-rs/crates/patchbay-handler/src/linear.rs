@@ -782,6 +782,7 @@ fn external_conflict_error_status(error: &ExternalIssueError) -> StatusCode {
         | ExternalIssueError::InvalidOwner
         | ExternalIssueError::ActiveExecutorRequired
         | ExternalIssueError::ReviewReviewerRequired
+        | ExternalIssueError::ProjectNotFound
         | ExternalIssueError::Internal(_)
         | ExternalIssueError::MissingSourceEvent
         | ExternalIssueError::ExternalOutboxNotSuppressed => StatusCode::BAD_REQUEST,
