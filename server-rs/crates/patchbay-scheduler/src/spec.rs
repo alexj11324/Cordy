@@ -178,7 +178,7 @@ pub fn floor_plan(eligible: DateTime<Utc>, cadence: Duration) -> DateTime<Utc> {
     let nanos = floored.rem_euclid(1_000_000_000);
     i64::try_from(seconds)
         .ok()
-        .and_then(|seconds| u32::try_from(nanos).ok().map(|nanos| (seconds, nanos)))
+        .zip(u32::try_from(nanos).ok())
         .and_then(|(seconds, nanos)| DateTime::from_timestamp(seconds, nanos))
         .context("floor plan timestamp overflow")
         .unwrap_or(eligible)
