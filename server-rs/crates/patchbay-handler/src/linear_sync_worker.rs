@@ -44,10 +44,8 @@ fn linear_sync_activity_id(
 ) -> Uuid {
     Uuid::new_v5(
         &Uuid::NAMESPACE_OID,
-        format!(
-            "patchbay:linear:activity:{action}:{connection_id}:{issue_id}:{source_event_id}"
-        )
-        .as_bytes(),
+        format!("patchbay:linear:activity:{action}:{connection_id}:{issue_id}:{source_event_id}")
+            .as_bytes(),
     )
 }
 

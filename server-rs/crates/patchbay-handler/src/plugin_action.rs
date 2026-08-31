@@ -13,7 +13,9 @@ use axum::routing::get;
 use axum::{Json, Router};
 use chrono::SecondsFormat;
 use patchbay_db::models::{Comment, Issue, Member};
-use patchbay_db::queries::{comment, issue as issue_q, linear as linear_q, member, user, workspace};
+use patchbay_db::queries::{
+    comment, issue as issue_q, linear as linear_q, member, user, workspace,
+};
 use patchbay_plugincontract::{
     SCOPE_COMMENTS_READ, SCOPE_COMMENTS_WRITE, SCOPE_ISSUES_READ, SCOPE_ISSUES_WRITE,
     SCOPE_STORAGE_USER, SCOPE_STORAGE_WORKSPACE, TRIGGER_MANUAL, TRIGGER_UI,
@@ -434,7 +436,10 @@ async fn patch_issue(
         Ok(tx) => tx,
         Err(error) => {
             tracing::warn!(%error, "failed to begin plugin issue update");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update the issue");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update the issue",
+            );
         }
     };
     let updated = sqlx::query(
@@ -483,7 +488,10 @@ WHERE id=$1 AND workspace_id=$4"#,
             }
             if let Err(error) = tx.commit().await {
                 tracing::warn!(%error, issue_id = %updated.id, "failed to commit plugin issue update");
-                return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update the issue");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to update the issue",
+                );
             }
             crate::issue::publish_issue_updated(
                 &state,

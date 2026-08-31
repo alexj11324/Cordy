@@ -1080,8 +1080,7 @@ impl HandlerState {
     /// prevents a worker from acknowledging another workspace's receipt just
     /// because the global feature flag is enabled.
     pub fn linear_pull_import_workspace_filter(&self) -> Option<Vec<uuid::Uuid>> {
-        let allowlist = std::env::var("PATCHBAY_LINEAR_PULL_IMPORT_WORKSPACES")
-            .unwrap_or_default();
+        let allowlist = std::env::var("PATCHBAY_LINEAR_PULL_IMPORT_WORKSPACES").unwrap_or_default();
         if allowlist
             .split(',')
             .map(str::trim)

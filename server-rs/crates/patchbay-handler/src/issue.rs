@@ -6944,7 +6944,12 @@ pub(crate) async fn advance_issue_to_done_from_pr(
             return None;
         }
     };
-    let updated = match issue_q::update_issue_status(&mut *tx, previous.id, "done", previous.workspace_id)
+    let updated = match issue_q::update_issue_status(
+        &mut *tx,
+        previous.id,
+        "done",
+        previous.workspace_id,
+    )
         .await
     {
         Ok(Some(issue)) => issue,

@@ -34,8 +34,8 @@ use patchbay_db::queries::automation_quota::{
     increment_automation_quota_reserved, list_recoverable_automation_quota_reservations,
     release_automation_quota_reservation,
 };
-use patchbay_db::queries::member::get_member_by_user_and_workspace;
 use patchbay_db::queries::linear as linear_q;
+use patchbay_db::queries::member::get_member_by_user_and_workspace;
 
 use crate::dispatch_reason::ReasonCode;
 use crate::task_service::{TaskService, TaskServiceError};

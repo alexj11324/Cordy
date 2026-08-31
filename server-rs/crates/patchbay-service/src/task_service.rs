@@ -1684,15 +1684,12 @@ impl TaskService {
                     TaskServiceError::Internal(format!("promote graph tasks: {error}"))
                 })?;
         if !promoted.is_empty() {
-            let promoted_issues = list_issues_in_workspace_by_ids(
-                &mut *tx,
-                workspace_id,
-                promoted.clone(),
-            )
-            .await
-            .map_err(|error| {
-                TaskServiceError::Internal(format!("load promoted graph tasks: {error}"))
-            })?;
+            let promoted_issues =
+                list_issues_in_workspace_by_ids(&mut *tx, workspace_id, promoted.clone())
+                    .await
+                    .map_err(|error| {
+                        TaskServiceError::Internal(format!("load promoted graph tasks: {error}"))
+                    })?;
             for issue in &promoted_issues {
                 enqueue_linear_issue_update_tx(&mut *tx, issue)
                     .await
@@ -1737,15 +1734,14 @@ impl TaskService {
             TaskServiceError::Internal(format!("promote graph dependents: {error}"))
         })?;
         if !promoted.is_empty() {
-            let promoted_issues = list_issues_in_workspace_by_ids(
-                &mut *tx,
-                workspace_id,
-                promoted.clone(),
-            )
-            .await
-            .map_err(|error| {
-                TaskServiceError::Internal(format!("load promoted graph dependents: {error}"))
-            })?;
+            let promoted_issues =
+                list_issues_in_workspace_by_ids(&mut *tx, workspace_id, promoted.clone())
+                    .await
+                    .map_err(|error| {
+                        TaskServiceError::Internal(format!(
+                            "load promoted graph dependents: {error}"
+                        ))
+                    })?;
             for issue in &promoted_issues {
                 enqueue_linear_issue_update_tx(&mut *tx, issue)
                     .await
@@ -1867,15 +1863,14 @@ impl TaskService {
             )
         };
         if let Some(workspace_id) = workspace_id {
-            let promoted_issues = list_issues_in_workspace_by_ids(
-                &mut *tx,
-                workspace_id,
-                promoted.clone(),
-            )
-            .await
-            .map_err(|error| {
-                TaskServiceError::Internal(format!("load promoted runtime graph tasks: {error}"))
-            })?;
+            let promoted_issues =
+                list_issues_in_workspace_by_ids(&mut *tx, workspace_id, promoted.clone())
+                    .await
+                    .map_err(|error| {
+                        TaskServiceError::Internal(format!(
+                            "load promoted runtime graph tasks: {error}"
+                        ))
+                    })?;
             for issue in &promoted_issues {
                 enqueue_linear_issue_update_tx(&mut *tx, issue)
                     .await

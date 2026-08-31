@@ -267,9 +267,9 @@ pub async fn delete_workspace_linear_data(
                SELECT id FROM linear_project_binding WHERE workspace_id = $1
            )"#,
     )
-        .bind(workspace_id)
-        .execute(&mut *executor)
-        .await?;
+    .bind(workspace_id)
+    .execute(&mut *executor)
+    .await?;
 
     sqlx::query(r#"DELETE FROM linear_issue_link WHERE workspace_id = $1"#)
         .bind(workspace_id)

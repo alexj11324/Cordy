@@ -16,8 +16,7 @@ use patchbay_db::models::{
 use patchbay_db::queries::workspace::increment_issue_counter;
 use patchbay_db::queries::{
     agent as agent_q, dependency_graph as graph_q, issue as issue_q, linear as linear_q,
-    runtime as runtime_q,
-    workspace_issue_category_policy as category_policy_q,
+    runtime as runtime_q, workspace_issue_category_policy as category_policy_q,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
