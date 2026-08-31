@@ -182,6 +182,7 @@ import type {
   LinearConnectResponse,
   LinearConnectionResponse,
   LinearCatalogResponse,
+  LinearDryRunResponse,
   LinearProjectBinding,
   ListLinearBindingsResponse,
   SaveLinearProjectBindingRequest,
@@ -447,11 +448,13 @@ import {
   LinearConnectResponseSchema,
   LinearConnectionResponseSchema,
   LinearCatalogResponseSchema,
+  LinearDryRunResponseSchema,
   ListLinearBindingsResponseSchema,
   LinearProjectBindingSchema,
   EMPTY_LINEAR_CONNECT_RESPONSE,
   EMPTY_LINEAR_CONNECTION_RESPONSE,
   EMPTY_LINEAR_CATALOG_RESPONSE,
+  EMPTY_LINEAR_DRY_RUN_RESPONSE,
   EMPTY_LIST_LINEAR_BINDINGS_RESPONSE,
   EMPTY_LINEAR_PROJECT_BINDING,
   RuntimeModelListRequestSchema,
@@ -4389,6 +4392,22 @@ export class ApiClient {
       LinearCatalogResponseSchema,
       EMPTY_LINEAR_CATALOG_RESPONSE,
       { endpoint: "GET /api/workspaces/:id/linear/catalog" },
+    );
+  }
+
+  async dryRunLinearBinding(
+    workspaceId: string,
+    body: SaveLinearProjectBindingRequest,
+  ): Promise<LinearDryRunResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/dry-run`,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+    return parseWithFallback(
+      raw,
+      LinearDryRunResponseSchema,
+      EMPTY_LINEAR_DRY_RUN_RESPONSE,
+      { endpoint: "POST /api/workspaces/:id/linear/dry-run" },
     );
   }
 

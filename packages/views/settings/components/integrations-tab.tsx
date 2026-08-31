@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { CheckCircle2, CircleAlert, Loader2, Settings2, Trash2 } from "lucide-react";
@@ -391,7 +391,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
     }[channel];
   }
 
-  function renderSetupAction(channel: IntegrationChannel) {
+  function renderSetupAction(channel: HubIntegrationChannel) {
     return {
       lark: <LarkAgentBindButton workspaceScoped />,
       slack: <SlackAgentBindButton />,
@@ -402,7 +402,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
     }[channel];
   }
 
-  function renderManagedContent(channel: IntegrationChannel) {
+  function renderManagedContent(channel: HubIntegrationChannel) {
     const listing = listings[channel].data;
     if (hasActiveInstallation(listing)) return renderManagedTab(channel);
 

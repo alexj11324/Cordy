@@ -435,6 +435,22 @@ pub async fn project_belongs_to_workspace(
     .await?)
 }
 
+pub async fn count_issues_in_project(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    project_id: Uuid,
+) -> anyhow::Result<i64> {
+    Ok(sqlx::query_scalar(
+        r#"SELECT COUNT(*)::bigint
+           FROM issue
+           WHERE workspace_id = $1 AND project_id = $2"#,
+    )
+    .bind(workspace_id)
+    .bind(project_id)
+    .fetch_one(executor)
+    .await?)
+}
+
 pub struct LinearProjectBindingInput<'a> {
     pub id: Uuid,
     pub workspace_id: Uuid,

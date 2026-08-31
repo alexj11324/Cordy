@@ -14,6 +14,7 @@ import {
 import { projectListOptions } from "@patchbay/core/projects";
 import type {
   LinearCatalogResponse,
+  LinearDryRunResponse,
   LinearProjectBinding,
   LinearSyncMode,
   SaveLinearProjectBindingRequest,
@@ -82,13 +83,16 @@ function formatLastSync(value: string | null | undefined) {
 }
 
 function connectionLabel(status: string | undefined, t: ReturnType<typeof useT<"settings">>["t"]) {
+  if (status === "active") {
+    return t(($) => $.page.linear.healthy);
+  }
   if (status === "reauthorization_required") {
     return t(($) => $.page.linear.reauthorization_required);
   }
   if (status === "revoked") {
     return t(($) => $.page.linear.disconnected);
   }
-  return t(($) => $.page.linear.healthy);
+  return t(($) => $.page.linear.unavailable);
 }
 
 function SyncModeLabel({ mode }: { mode: LinearSyncMode }) {
@@ -145,6 +149,7 @@ function WizardProgress({ step }: { step: WizardStep }) {
 function BindingWizard({
   bindings,
   catalog,
+  connectionId,
   onClose,
   onSaved,
   projects,
@@ -152,6 +157,7 @@ function BindingWizard({
 }: {
   bindings: LinearProjectBinding[];
   catalog: LinearCatalogResponse;
+  connectionId: string;
   onClose: () => void;
   onSaved: () => void;
   projects: readonly { id: string; title: string }[];
@@ -161,6 +167,9 @@ function BindingWizard({
   const [step, setStep] = useState<WizardStep>(1);
   const [draft, setDraft] = useState<BindingDraft>(emptyDraft);
   const [saving, setSaving] = useState(false);
+  const [dryRun, setDryRun] = useState<LinearDryRunResponse | null>(null);
+  const [dryRunLoading, setDryRunLoading] = useState(false);
+  const [dryRunError, setDryRunError] = useState(false);
   const qc = useQueryClient();
 
   const selectedBinding = bindings.find(
@@ -206,6 +215,59 @@ function BindingWizard({
       }));
     }
   }, [bindings, draft.patchbayProjectId, draft.linearProjectId, suggestedLinearProject]);
+
+  useEffect(() => {
+    if (
+      step !== 5 ||
+      !connectionId ||
+      !draft.patchbayProjectId ||
+      !draft.linearProjectId
+    ) {
+      setDryRun(null);
+      setDryRunLoading(false);
+      setDryRunError(false);
+      return;
+    }
+    let cancelled = false;
+    setDryRun(null);
+    setDryRunError(false);
+    setDryRunLoading(true);
+    const body: SaveLinearProjectBindingRequest = {
+      connection_id: connectionId,
+      patchbay_project_id: draft.patchbayProjectId,
+      linear_project_id: draft.linearProjectId,
+      linear_team_id: draft.linearTeamId || null,
+      status: draft.syncMode === "not_synced" ? "draft" : "active",
+      sync_mode: draft.syncMode,
+      initial_source_of_truth:
+        draft.syncMode === "not_synced" ? null : draft.initialSourceOfTruth,
+      status_mapping: draft.statusMapping,
+    };
+    void api
+      .dryRunLinearBinding(workspaceId, body)
+      .then((result) => {
+        if (!cancelled) setDryRun(result);
+      })
+      .catch(() => {
+        if (!cancelled) setDryRunError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setDryRunLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    connectionId,
+    draft.initialSourceOfTruth,
+    draft.linearProjectId,
+    draft.linearTeamId,
+    draft.patchbayProjectId,
+    draft.statusMapping,
+    draft.syncMode,
+    step,
+    workspaceId,
+  ]);
 
   function setDraftValue<T extends keyof BindingDraft>(key: T, value: BindingDraft[T]) {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -459,7 +521,47 @@ function BindingWizard({
               <div className="mt-1 text-body font-medium"><SyncModeLabel mode={draft.syncMode} /></div>
             </div>
           </div>
-          <p className="text-body text-muted-foreground">{t(($) => $.page.linear.preview_no_mutations)}</p>
+          {dryRunLoading ? (
+            <p className="flex items-center gap-2 text-body text-muted-foreground">
+              <Loader2 className="animate-spin" />
+              {t(($) => $.page.linear.preview_loading)}
+            </p>
+          ) : dryRunError ? (
+            <p className="text-body text-destructive">{t(($) => $.page.linear.preview_failed)}</p>
+          ) : dryRun ? (
+            <>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-md bg-muted/50 p-3">
+                  <div className="text-micro text-muted-foreground">{t(($) => $.page.linear.preview_local_issues)}</div>
+                  <div className="mt-1 text-body font-medium">{dryRun.local_issue_count}</div>
+                </div>
+                <div className="rounded-md bg-muted/50 p-3">
+                  <div className="text-micro text-muted-foreground">{t(($) => $.page.linear.preview_remote_issues)}</div>
+                  <div className="mt-1 text-body font-medium">{dryRun.remote_issue_count}</div>
+                </div>
+                <div className="rounded-md bg-muted/50 p-3">
+                  <div className="text-micro text-muted-foreground">{t(($) => $.page.linear.preview_candidate_import)}</div>
+                  <div className="mt-1 text-body font-medium">{dryRun.candidate_import_count}</div>
+                </div>
+                <div className="rounded-md bg-muted/50 p-3">
+                  <div className="text-micro text-muted-foreground">{t(($) => $.page.linear.preview_candidate_publish)}</div>
+                  <div className="mt-1 text-body font-medium">{dryRun.candidate_publish_count}</div>
+                </div>
+              </div>
+              {dryRun.unmapped_remote_status_count > 0 ? (
+                <p className="text-body text-destructive">
+                  {t(($) => $.page.linear.preview_unmapped_statuses, {
+                    count: dryRun.unmapped_remote_status_count,
+                  })}
+                </p>
+              ) : null}
+              {dryRun.remote_issue_count_truncated ? (
+                <p className="text-body text-destructive">{t(($) => $.page.linear.preview_truncated)}</p>
+              ) : null}
+              <p className="text-body text-muted-foreground">{t(($) => $.page.linear.preview_estimated)}</p>
+              <p className="text-body text-muted-foreground">{t(($) => $.page.linear.preview_no_mutations)}</p>
+            </>
+          ) : null}
         </div>
       ) : null}
 
@@ -485,7 +587,7 @@ function BindingWizard({
         {step < 6 ? (
           <Button onClick={goNext}>{t(($) => $.page.linear.next)}</Button>
         ) : (
-          <Button disabled={saving} onClick={() => void saveBinding()}>
+          <Button disabled={saving || dryRunLoading || !dryRun || dryRunError} onClick={() => void saveBinding()}>
             {saving ? <Loader2 className="animate-spin" /> : null}
             {t(($) => $.page.linear.activate)}
           </Button>
@@ -514,8 +616,11 @@ export function LinearIntegrationCard({
     enabled: wizardOpen,
   });
   const connection = connectionQuery.data?.connection;
-  const isConnected = Boolean(connection && connection.status !== "revoked");
+  const isConnected = connection?.status === "active";
   const isReauthorizationRequired = connection?.status === "reauthorization_required";
+  const hasUnknownStatus = Boolean(
+    connection && !["active", "reauthorization_required", "revoked"].includes(connection.status),
+  );
   const configured = connectionQuery.data?.configured ?? false;
   const bindings = bindingsQuery.data?.bindings ?? [];
   const lastSync = formatLastSync(connection?.last_success_at);
@@ -551,6 +656,8 @@ export function LinearIntegrationCard({
     <Badge variant="outline">{t(($) => $.page.linear.not_configured)}</Badge>
   ) : isReauthorizationRequired ? (
     <Badge variant="destructive"><CircleAlert />{t(($) => $.page.linear.reauthorization_required)}</Badge>
+  ) : hasUnknownStatus ? (
+    <Badge variant="outline"><CircleAlert />{connectionLabel(connection?.status, t)}</Badge>
   ) : isConnected ? (
     <Badge className="bg-emerald-600 text-white hover:bg-emerald-600"><CheckCircle2 />{connectionLabel(connection?.status, t)}</Badge>
   ) : (
@@ -606,6 +713,7 @@ export function LinearIntegrationCard({
           <BindingWizard
             bindings={bindings}
             catalog={catalogQuery.data}
+            connectionId={connection?.id ?? ""}
             onClose={() => setWizardOpen(false)}
             onSaved={() => void qc.invalidateQueries({ queryKey: linearKeys.connection(workspaceId) })}
             projects={projectsQuery.data ?? []}

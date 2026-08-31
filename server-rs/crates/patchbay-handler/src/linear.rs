@@ -56,6 +56,7 @@ pub fn admin_router() -> Router<HandlerState> {
         .route("/api/workspaces/{id}/linear/connect", post(start_oauth))
         .route("/api/workspaces/{id}/linear", delete(disconnect))
         .route("/api/workspaces/{id}/linear/bindings", post(create_binding))
+        .route("/api/workspaces/{id}/linear/dry-run", post(dry_run_binding))
         .route(
             "/api/workspaces/{id}/linear/bindings/{binding_id}",
             patch(update_binding).delete(delete_binding),
@@ -206,10 +207,12 @@ async fn get_connection(
 
 fn linear_token_error_response(error: LinearTokenError) -> Response {
     match error {
-        LinearTokenError::InvalidGrant => error_response(
-            StatusCode::CONFLICT,
-            "Linear authorization requires reauthorization",
-        ),
+        LinearTokenError::InvalidGrant | LinearTokenError::ReauthorizationRequired => {
+            error_response(
+                StatusCode::CONFLICT,
+                "Linear authorization requires reauthorization",
+            )
+        }
         LinearTokenError::NotConfigured => error_response(
             StatusCode::SERVICE_UNAVAILABLE,
             "Linear OAuth is not configured",
@@ -277,6 +280,116 @@ async fn get_catalog(
         Ok(catalog) => Json(catalog).into_response(),
         Err(error) => linear_token_error_response(error),
     }
+}
+
+async fn dry_run_binding(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Json(request): Json<SaveLinearProjectBindingRequest>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let request = match validate_binding_request(request) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    if let Err(response) = connection_for_binding(&state, workspace_id, request.connection_id).await
+    {
+        return response;
+    }
+    match linear_q::project_belongs_to_workspace(
+        &state.pool,
+        workspace_id,
+        request.patchbay_project_id,
+    )
+    .await
+    {
+        Ok(true) => {}
+        Ok(false) => return error_response(StatusCode::NOT_FOUND, "Patchbay project not found"),
+        Err(error) => {
+            tracing::warn!(%error, "Patchbay project lookup for Linear dry run failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Patchbay project",
+            );
+        }
+    }
+    let local_issue_count = match linear_q::count_issues_in_project(
+        &state.pool,
+        workspace_id,
+        request.patchbay_project_id,
+    )
+    .await
+    {
+        Ok(count) => count,
+        Err(error) => {
+            tracing::warn!(%error, "Patchbay issue count for Linear dry run failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to count Patchbay issues",
+            );
+        }
+    };
+
+    let remote_counts = if request.sync_mode == "not_synced" {
+        RemoteDryRunCounts {
+            issue_count: 0,
+            unmapped_status_count: 0,
+            truncated: false,
+        }
+    } else {
+        let manager = match LinearTokenManager::from_state(&state) {
+            Ok(manager) => manager,
+            Err(error) => return linear_token_error_response(error),
+        };
+        match manager
+            .dry_run_counts(
+                request.connection_id,
+                request.linear_project_id.trim(),
+                &request.status_mapping,
+            )
+            .await
+        {
+            Ok(counts) => counts,
+            Err(error) => return linear_token_error_response(error),
+        }
+    };
+
+    let candidate_import_count = if request.sync_mode == "import"
+        || (request.sync_mode == "two_way"
+            && request.initial_source_of_truth.as_deref() == Some("linear"))
+    {
+        remote_counts.issue_count
+    } else {
+        0
+    };
+    let candidate_publish_count = if request.sync_mode == "publish"
+        || (request.sync_mode == "two_way"
+            && request.initial_source_of_truth.as_deref() == Some("patchbay"))
+    {
+        local_issue_count
+    } else {
+        0
+    };
+    Json(LinearDryRunResponse {
+        patchbay_project_id: request.patchbay_project_id,
+        linear_project_id: request.linear_project_id.trim().to_string(),
+        sync_mode: request.sync_mode,
+        initial_source_of_truth: request.initial_source_of_truth,
+        local_issue_count,
+        remote_issue_count: remote_counts.issue_count,
+        remote_issue_count_truncated: remote_counts.truncated,
+        candidate_import_count,
+        candidate_publish_count,
+        unmapped_remote_status_count: remote_counts.unmapped_status_count,
+        exact_link_counts_available: false,
+    })
+    .into_response()
 }
 
 async fn list_bindings(
@@ -908,6 +1021,58 @@ struct LinearCatalogResponse {
     labels: Vec<LinearCatalogLabelResponse>,
 }
 
+#[derive(Debug, Deserialize)]
+struct LinearIssuePreviewPage {
+    nodes: Vec<LinearIssuePreview>,
+    #[serde(rename = "pageInfo")]
+    page_info: LinearIssuePreviewPageInfo,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearIssuePreview {
+    state: Option<LinearIssuePreviewState>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearIssuePreviewState {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearIssuePreviewPageInfo {
+    #[serde(rename = "hasNextPage")]
+    has_next_page: bool,
+    #[serde(rename = "endCursor")]
+    end_cursor: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearIssuePreviewData {
+    issues: LinearIssuePreviewPage,
+}
+
+#[derive(Debug, Serialize)]
+struct LinearDryRunResponse {
+    patchbay_project_id: Uuid,
+    linear_project_id: String,
+    sync_mode: String,
+    initial_source_of_truth: Option<String>,
+    local_issue_count: i64,
+    remote_issue_count: i64,
+    remote_issue_count_truncated: bool,
+    candidate_import_count: i64,
+    candidate_publish_count: i64,
+    unmapped_remote_status_count: i64,
+    exact_link_counts_available: bool,
+}
+
+#[derive(Debug)]
+struct RemoteDryRunCounts {
+    issue_count: i64,
+    unmapped_status_count: i64,
+    truncated: bool,
+}
+
 #[derive(Debug)]
 struct LinearIdentity {
     actor_id: String,
@@ -1164,6 +1329,110 @@ impl LinearTokenManager {
             return Err(LinearTokenError::Provider);
         }
         payload.data.ok_or(LinearTokenError::InvalidResponse)
+    }
+
+    async fn query_issue_preview_page(
+        &self,
+        access_token: &str,
+        linear_project_id: &str,
+        after: Option<String>,
+    ) -> Result<LinearIssuePreviewData, LinearTokenError> {
+        let response = self
+            .client
+            .post(&self.graphql_url)
+            .bearer_auth(access_token)
+            .json(&json!({
+                "query": "query LinearProjectIssuePreview($projectId: ID!, $after: String) { issues(first: 250, after: $after, filter: { project: { id: { eq: $projectId } } }) { nodes { state { id } } pageInfo { hasNextPage endCursor } } }",
+                "variables": {
+                    "projectId": linear_project_id,
+                    "after": after,
+                },
+            }))
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear issue preview request failed");
+                LinearTokenError::Provider
+            })?;
+        let status = response.status();
+        let payload = response
+            .json::<GraphQlResponse<LinearIssuePreviewData>>()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear issue preview response is invalid JSON");
+                LinearTokenError::InvalidResponse
+            })?;
+        if !status.is_success() {
+            tracing::warn!(%status, "Linear issue preview request returned an error");
+            return Err(LinearTokenError::Provider);
+        }
+        if let Some(errors) = payload.errors.as_ref().filter(|errors| !errors.is_empty()) {
+            let message = errors
+                .first()
+                .and_then(|error| error.message.as_deref())
+                .unwrap_or("unknown GraphQL error");
+            tracing::warn!(message, "Linear issue preview GraphQL request failed");
+            return Err(LinearTokenError::Provider);
+        }
+        payload.data.ok_or(LinearTokenError::InvalidResponse)
+    }
+
+    async fn dry_run_counts(
+        &self,
+        connection_id: Uuid,
+        linear_project_id: &str,
+        status_mapping: &Value,
+    ) -> Result<RemoteDryRunCounts, LinearTokenError> {
+        const MAX_PREVIEW_ISSUES: i64 = 10_000;
+
+        let access_token = self.access_token(connection_id).await?;
+        let mut after = None;
+        let mut issue_count = 0;
+        let mut unmapped_status_count = 0;
+        let mut truncated = false;
+        loop {
+            let page = self
+                .query_issue_preview_page(&access_token, linear_project_id, after.clone())
+                .await?;
+            for issue in page.issues.nodes {
+                if issue_count >= MAX_PREVIEW_ISSUES {
+                    truncated = true;
+                    break;
+                }
+                issue_count += 1;
+                let is_mapped = issue.state.as_ref().is_some_and(|state| {
+                    if state.id.trim().is_empty() {
+                        return false;
+                    }
+                    status_mapping
+                        .as_object()
+                        .and_then(|mapping| mapping.get(&state.id))
+                        .is_some_and(|value| match value {
+                            Value::String(value) => !value.trim().is_empty(),
+                            Value::Null => false,
+                            _ => true,
+                        })
+                });
+                if !is_mapped {
+                    unmapped_status_count += 1;
+                }
+            }
+            if truncated || !page.issues.page_info.has_next_page {
+                break;
+            }
+            let Some(next_cursor) = page.issues.page_info.end_cursor else {
+                return Err(LinearTokenError::InvalidResponse);
+            };
+            if after.as_deref() == Some(next_cursor.as_str()) {
+                return Err(LinearTokenError::InvalidResponse);
+            }
+            after = Some(next_cursor);
+        }
+        Ok(RemoteDryRunCounts {
+            issue_count,
+            unmapped_status_count,
+            truncated,
+        })
     }
 
     pub async fn catalog(

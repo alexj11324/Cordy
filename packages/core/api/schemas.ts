@@ -53,6 +53,7 @@ import type {
   LinearCatalogResponse,
   LinearConnectResponse,
   LinearConnectionResponse,
+  LinearDryRunResponse,
   ListLinearBindingsResponse,
   LinearProjectBinding,
   IssueWorkProductsResponse,
@@ -385,6 +386,34 @@ export const EMPTY_LINEAR_CATALOG_RESPONSE: LinearCatalogResponse = {
   states: [],
   users: [],
   labels: [],
+};
+
+export const LinearDryRunResponseSchema = z.object({
+  patchbay_project_id: z.string(),
+  linear_project_id: z.string(),
+  sync_mode: z.string(),
+  initial_source_of_truth: z.string().nullable(),
+  local_issue_count: z.number().int().nonnegative(),
+  remote_issue_count: z.number().int().nonnegative(),
+  remote_issue_count_truncated: z.boolean(),
+  candidate_import_count: z.number().int().nonnegative(),
+  candidate_publish_count: z.number().int().nonnegative(),
+  unmapped_remote_status_count: z.number().int().nonnegative(),
+  exact_link_counts_available: z.boolean(),
+}).loose();
+
+export const EMPTY_LINEAR_DRY_RUN_RESPONSE: LinearDryRunResponse = {
+  patchbay_project_id: "",
+  linear_project_id: "",
+  sync_mode: "not_synced",
+  initial_source_of_truth: null,
+  local_issue_count: 0,
+  remote_issue_count: 0,
+  remote_issue_count_truncated: false,
+  candidate_import_count: 0,
+  candidate_publish_count: 0,
+  unmapped_remote_status_count: 0,
+  exact_link_counts_available: false,
 };
 
 export const LinearProjectBindingSchema = z.object({

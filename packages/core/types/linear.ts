@@ -75,6 +75,20 @@ export type LinearCatalogResponse = {
   labels: LinearCatalogLabel[];
 };
 
+export type LinearDryRunResponse = {
+  patchbay_project_id: string;
+  linear_project_id: string;
+  sync_mode: string;
+  initial_source_of_truth: string | null;
+  local_issue_count: number;
+  remote_issue_count: number;
+  remote_issue_count_truncated: boolean;
+  candidate_import_count: number;
+  candidate_publish_count: number;
+  unmapped_remote_status_count: number;
+  exact_link_counts_available: boolean;
+};
+
 export type LinearBindingStatus =
   | "draft"
   | "active"
