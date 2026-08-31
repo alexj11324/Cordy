@@ -1,6 +1,6 @@
 const SHA_PATTERN = /^[0-9a-f]{40}$/u;
-const GOOGLE_OAUTH_ENTRY =
-  "https://accounts.aspectlylabs.com/oauth/google";
+const HANDOFF_VALUE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/u;
+const GOOGLE_OAUTH_ENTRY = "https://accounts.aspectlylabs.com/oauth/google";
 
 export function requiredString(value, label) {
   if (typeof value !== "string" || value.trim() === "") {
@@ -73,6 +73,12 @@ export function requireProtectedNavigation({
 }
 
 export function buildGoogleOAuthProbeUrl({ codeChallenge, state }) {
+  if (
+    !HANDOFF_VALUE_PATTERN.test(codeChallenge) ||
+    !HANDOFF_VALUE_PATTERN.test(state)
+  ) {
+    throw new Error("Google OAuth probe requires a valid desktop handoff");
+  }
   const url = new URL(GOOGLE_OAUTH_ENTRY);
   url.search = new URLSearchParams({
     platform: "desktop",
@@ -84,14 +90,13 @@ export function buildGoogleOAuthProbeUrl({ codeChallenge, state }) {
 
 export function requireGoogleOAuthNavigation(url) {
   const parsed = new URL(url);
-  if (parsed.protocol !== "https:") {
-    throw new Error(`Google OAuth left the broker over ${parsed.protocol}`);
-  }
   if (
-    parsed.hostname === "accounts.aspectlylabs.com" &&
-    parsed.pathname === "/oauth/google"
+    parsed.protocol !== "https:" ||
+    parsed.hostname !== "accounts.google.com"
   ) {
-    throw new Error("Google OAuth did not leave the broker entry page");
+    throw new Error(
+      `Google OAuth did not reach accounts.google.com (ended at ${parsed.origin})`,
+    );
   }
   return parsed;
 }

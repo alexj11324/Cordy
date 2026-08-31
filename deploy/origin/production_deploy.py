@@ -30,6 +30,7 @@ REPOSITORY_URL = "https://github.com/alexj11324/Cordy.git"  # legacy-brand-compa
 DEFAULT_ROOT = Path("/var/lib/patchbay-production")
 DEFAULT_STATIC_DIRECTORY = Path("/usr/local/share/patchbay-production")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+WORKFLOW_RUN_ID_RE = re.compile(r"^[1-9][0-9]{0,19}$")
 DIGEST_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 COMPOSE_VARIABLE_RE = re.compile(r"\$\{([A-Z][A-Z0-9_]*)")
 EXPECTED_IMAGE_REPOSITORIES = {
@@ -89,6 +90,15 @@ def require_sha(value: Any, label: str = "source_sha") -> str:
     return value
 
 
+def require_workflow_run_id(
+    value: Any, label: str = "workflow_run_id"
+) -> str:
+    normalized = str(value) if isinstance(value, (str, int)) else ""
+    if not WORKFLOW_RUN_ID_RE.fullmatch(normalized):
+        raise DeploymentError(f"{label} must be a positive GitHub Actions run ID")
+    return normalized
+
+
 def validate_image_ref(name: str, value: Any, *, immutable: bool = True) -> str:
     repository = EXPECTED_IMAGE_REPOSITORIES[name]
     if not isinstance(value, str):
@@ -124,7 +134,7 @@ def validate_deploy_request(value: Any) -> dict[str, Any]:
         "action": "deploy",
         "repository": REPOSITORY,
         "source_sha": source_sha,
-        "workflow_run_id": str(value.get("workflow_run_id", "")),
+        "workflow_run_id": require_workflow_run_id(value.get("workflow_run_id")),
         "images": normalized_images,
         "bootstrap": False,
     }
@@ -676,21 +686,31 @@ class ProductionDeployment:
             "ok": True,
             "action": "deploy",
             "source_sha": source_sha,
+            "workflow_run_id": request["workflow_run_id"],
             "unchanged": unchanged,
             "browser_auth": browser_auth,
         }
 
-    def rollback(self, failed_source_sha: str) -> dict[str, Any]:
+    def rollback(
+        self, failed_source_sha: str, failed_workflow_run_id: str
+    ) -> dict[str, Any]:
         failed_source_sha = require_sha(failed_source_sha, "failed_source_sha")
+        failed_workflow_run_id = require_workflow_run_id(
+            failed_workflow_run_id, "failed_workflow_run_id"
+        )
         current_raw = self.read_json(self.current_path)
         if current_raw is None:
             raise DeploymentError("cannot roll back without a current deployment")
         current = validate_stored_manifest(current_raw)
-        if current["source_sha"] != failed_source_sha:
+        if (
+            current["source_sha"] != failed_source_sha
+            or current.get("workflow_run_id") != failed_workflow_run_id
+        ):
             return {
                 "ok": True,
                 "action": "rollback",
                 "source_sha": current["source_sha"],
+                "workflow_run_id": current.get("workflow_run_id", ""),
                 "unchanged": True,
             }
         previous_raw = self.read_json(self.previous_path)
@@ -707,6 +727,7 @@ class ProductionDeployment:
             "action": "rollback",
             "source_sha": previous["source_sha"],
             "failed_source_sha": failed_source_sha,
+            "failed_workflow_run_id": failed_workflow_run_id,
             "unchanged": False,
         }
 
@@ -720,7 +741,10 @@ class ProductionDeployment:
             if request.get("action") == "deploy":
                 return self.deploy(validate_deploy_request(request))
             if request.get("action") == "rollback":
-                return self.rollback(request.get("failed_source_sha"))
+                return self.rollback(
+                    request.get("failed_source_sha"),
+                    request.get("failed_workflow_run_id"),
+                )
             raise DeploymentError("unsupported deployment action")
 
 

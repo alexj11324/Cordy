@@ -98,11 +98,23 @@ test("builds a valid desktop OAuth handoff and requires downstream navigation", 
   assert.equal(url.searchParams.get("state"), "b".repeat(43));
   assert.throws(
     () => requireGoogleOAuthNavigation(url.href),
-    /did not leave the broker/u,
+    /did not reach accounts\.google\.com/u,
+  );
+  assert.throws(
+    () => requireGoogleOAuthNavigation("https://example.com/oauth"),
+    /did not reach accounts\.google\.com/u,
   );
   assert.equal(
     requireGoogleOAuthNavigation("https://accounts.google.com/o/oauth2/auth")
       .hostname,
     "accounts.google.com",
+  );
+  assert.throws(
+    () =>
+      buildGoogleOAuthProbeUrl({
+        codeChallenge: "too-short",
+        state: "b".repeat(43),
+      }),
+    /valid desktop handoff/u,
   );
 });

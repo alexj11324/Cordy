@@ -178,13 +178,8 @@ async function verifyGoogleOAuthStart(browser) {
     { timeout: 30_000 },
   );
   const downstreamNavigation = page.waitForURL(
-    (url) => {
-      const parsed = new URL(url);
-      return !(
-        parsed.origin === ACCOUNTS_BASE_URL &&
-        parsed.pathname === "/oauth/google"
-      );
-    },
+    (url) =>
+      url.protocol === "https:" && url.hostname === "accounts.google.com",
     { timeout: 30_000 },
   );
 
@@ -200,8 +195,19 @@ async function verifyGoogleOAuthStart(browser) {
         `Google OAuth handoff registration returned HTTP ${response.status()}`,
       );
     }
+    const attempt = await response.json().catch(() => null);
+    if (attempt?.registered !== true) {
+      throw new Error(
+        "Google OAuth handoff registration returned an invalid response",
+      );
+    }
     const downstream = await downstreamNavigation;
     requireGoogleOAuthNavigation(downstream.href);
+  } catch (error) {
+    await page
+      .screenshot({ path: SCREENSHOT_PATH, fullPage: true })
+      .catch(() => {});
+    throw error;
   } finally {
     await context.close();
   }

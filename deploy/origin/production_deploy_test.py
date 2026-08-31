@@ -46,6 +46,15 @@ class ProductionDeployContractTests(unittest.TestCase):
         with self.assertRaisesRegex(production_deploy.DeploymentError, "exactly"):
             production_deploy.validate_deploy_request(manifest)
 
+    def test_rejects_a_missing_or_invalid_workflow_run_id(self):
+        for value in (None, "", "0", "local", "-1"):
+            manifest = self.manifest()
+            manifest["workflow_run_id"] = value
+            with self.subTest(value=value), self.assertRaisesRegex(
+                production_deploy.DeploymentError, "GitHub Actions run ID"
+            ):
+                production_deploy.validate_deploy_request(manifest)
+
     def test_extracts_compose_variables_without_values(self):
         with tempfile.TemporaryDirectory() as directory:
             compose = Path(directory) / "compose.yml"
@@ -190,6 +199,7 @@ class ProductionDeployContractTests(unittest.TestCase):
             receipt = deployment.deploy(self.manifest())
 
             self.assertEqual(receipt["browser_auth"]["sign_in_ticket"], "sign-in-ticket")
+            self.assertEqual(receipt["workflow_run_id"], "123")
             self.assertFalse(receipt["unchanged"])
             deployment.prune_releases.assert_called_once_with()
 
@@ -211,6 +221,49 @@ class ProductionDeployContractTests(unittest.TestCase):
                 deployment.deploy(current)
 
             deployment.apply.assert_called_once_with(current)
+
+    def test_rollback_ignores_an_unchanged_redeployment_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            deployment = production_deploy.ProductionDeployment(Path(directory))
+            deployment.initialize_directories()
+            current = self.manifest()
+            current["workflow_run_id"] = "111"
+            previous = self.manifest()
+            previous["source_sha"] = "b" * 40
+            previous["workflow_run_id"] = "99"
+            deployment.atomic_json(deployment.current_path, current)
+            deployment.atomic_json(deployment.previous_path, previous)
+            deployment.apply = mock.Mock()
+
+            receipt = deployment.rollback("a" * 40, "222")
+
+            self.assertTrue(receipt["unchanged"])
+            self.assertEqual(receipt["source_sha"], "a" * 40)
+            self.assertEqual(receipt["workflow_run_id"], "111")
+            deployment.apply.assert_not_called()
+
+    def test_rollback_reverts_only_the_matching_deployment_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            deployment = production_deploy.ProductionDeployment(Path(directory))
+            deployment.initialize_directories()
+            current = self.manifest()
+            current["workflow_run_id"] = "222"
+            previous = self.manifest()
+            previous["source_sha"] = "b" * 40
+            previous["workflow_run_id"] = "111"
+            deployment.atomic_json(deployment.current_path, current)
+            deployment.atomic_json(deployment.previous_path, previous)
+            deployment.apply = mock.Mock()
+            deployment.prune_releases = mock.Mock()
+            normalized_previous = production_deploy.validate_stored_manifest(previous)
+
+            receipt = deployment.rollback("a" * 40, "222")
+
+            self.assertFalse(receipt["unchanged"])
+            self.assertEqual(receipt["source_sha"], "b" * 40)
+            self.assertEqual(receipt["failed_workflow_run_id"], "222")
+            deployment.apply.assert_called_once_with(normalized_previous)
+            deployment.prune_releases.assert_called_once_with()
 
     def test_release_pruning_retains_only_current_and_rollback_worktrees(self):
         with tempfile.TemporaryDirectory() as directory:

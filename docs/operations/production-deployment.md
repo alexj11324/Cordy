@@ -15,9 +15,10 @@ revision. Completion means all of the following are true:
 5. `/login` and `/docs` render with HTTP 200 through the public domain; API
    config and readiness routes return 200; the Accounts OAuth entry remains
    reachable.
-6. A real headless Chromium session starts a valid desktop Google OAuth handoff
-   and reaches its Clerk/Google downstream, then signs in as the dedicated synthetic user,
-   exchanges Clerk for the normal HttpOnly application session, and renders
+6. A real headless Chromium session starts a valid desktop Google OAuth handoff,
+   registers the attempt through the Rust API, and reaches `accounts.google.com`.
+   It then signs in as the dedicated synthetic user, exchanges Clerk for the
+   normal HttpOnly application session, and renders
    `/production-smoke/issues` plus `/production-smoke/task-graph` at the exact
    deployed Web SHA without a redirect, page exception, failed first-party
    request, or server error. The task graph canvas itself must become visible.
