@@ -356,17 +356,17 @@ mod tests {
     #[test]
     fn mention_markdown_round_trips_shape() {
         assert_eq!(
-            format_mention("Mika", "agent", "abc"),
-            "[@Mika](mention://agent/abc)"
+            format_mention("Patrick", "agent", "abc"),
+            "[@Patrick](mention://agent/abc)"
         );
     }
 
     #[test]
     fn roster_row_formats_role_and_skills() {
-        let row = format_roster_row("Mika", "agent", "lead", "skills: go, rust", "@x");
+        let row = format_roster_row("Patrick", "agent", "lead", "skills: go, rust", "@x");
         assert_eq!(
             row,
-            "- Mika — agent, role: \"lead\" — skills: go, rust — `@x`\n"
+            "- Patrick — agent, role: \"lead\" — skills: go, rust — `@x`\n"
         );
         let bare = format_roster_row("Ann", "member (human)", "", "", "@y");
         assert_eq!(bare, "- Ann — member (human) — `@y`\n");

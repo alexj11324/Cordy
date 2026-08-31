@@ -256,6 +256,7 @@ PATCH	/api/workspaces/{}/runtime-profiles/{}
 POST	/api/agent-builder/sessions
 POST	/api/agents
 POST	/api/agents/mika
+POST	/api/agents/patrick
 POST	/api/agents/{}/archive
 POST	/api/agents/{}/cancel-tasks
 POST	/api/agents/{}/labels

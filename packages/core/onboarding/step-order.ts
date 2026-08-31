@@ -24,10 +24,10 @@ import type { OnboardingStep } from "./types";
  *   - "about_you" (role / use_case) was a questionnaire screen before
  *     the workspace step. It is no longer asked in-flow; the JSONB
  *     slots remain so source-backfill and any previously stored
- *     answers still round-trip, and Mika bootstrap still reads them
+ *     answers still round-trip, and Patrick bootstrap still reads them
  *     when present.
  *
- * Runtime is the final form step. A connected path provisions Mika and opens
+ * Runtime is the final form step. A connected path provisions Patrick and opens
  * the interactive onboarding chat as part of the runtime step's submit action;
  * that chat is the product experience itself, not another progress-screen step.
  */

@@ -22,7 +22,7 @@ import type {
   IssueTableRowsRequest,
   IssueTableRowsResponse,
   Agent,
-  MikaBootstrapResponse,
+  PatrickBootstrapResponse,
   CreateAgentRequest,
   AgentBuilderRuntimeSwitch,
   AgentBuilderSession,
@@ -102,7 +102,7 @@ import type {
   PendingChatTasksResponse,
   HasPendingChatTasksResponse,
   SendChatMessageResponse,
-  StartMikaOnboardingResponse,
+  StartPatrickOnboardingResponse,
   CancelTaskResponse,
   Project,
   CreateProjectRequest,
@@ -266,7 +266,7 @@ import {
   ChatPendingTaskSchema,
   PrioritizeQueuedChatTaskResponseSchema,
   SendChatMessageResponseSchema,
-  StartMikaOnboardingResponseSchema,
+  StartPatrickOnboardingResponseSchema,
   ChildIssuesResponseSchema,
   CommentsListSchema,
   CommentTriggerPreviewSchema,
@@ -1471,24 +1471,33 @@ export class ApiClient {
    * client cannot mint an agent that would claim them. The server is also the
    * idempotency boundary — calling twice yields the same agent.
    */
-  async createMikaAgent(
+  async createPatrickAgent(
     data: {
       runtime_id: string;
       language: "en" | "zh" | "ko" | "ja";
       /** Empty means "whatever the runtime defaults to". */
       model?: string;
       /** Label for the onboarding conversation, used only if this call is the
-       *  one that creates it. The session's identity is the member and Mika,
+       *  one that creates it. The session's identity is the member and Patrick,
        *  never this string — it is localized. */
       session_title?: string;
     },
     workspaceSlug?: string,
-  ): Promise<MikaBootstrapResponse> {
-    return this.fetch("/api/agents/mika", {
+  ): Promise<PatrickBootstrapResponse> {
+    const init = {
       method: "POST",
       headers: workspaceHeader(workspaceSlug),
       body: JSON.stringify(data),
-    });
+    } satisfies RequestInit;
+    try {
+      return await this.fetch("/api/agents/patrick", init);
+    } catch (error) {
+      // Keep old and new independently deployed bundles compatible during the
+      // rename. The backend adapter is temporary and only a missing canonical
+      // route may fall back; auth, validation, and server errors must surface.
+      if (!(error instanceof ApiError) || error.status !== 404) throw error;
+      return this.fetch("/api/agents/mika", init);
+    }
   }
 
   async createAgentBuilderSession(data: {
@@ -3323,13 +3332,13 @@ export class ApiClient {
     return response;
   }
 
-  async startMikaOnboarding(
+  async startPatrickOnboarding(
     sessionId: string,
     data: {
       language: "en" | "zh" | "ko" | "ja";
     },
     workspaceSlug?: string,
-  ): Promise<StartMikaOnboardingResponse> {
+  ): Promise<StartPatrickOnboardingResponse> {
     const raw = await this.fetch<unknown>(`/api/chat/sessions/${sessionId}/onboarding`, {
       method: "POST",
       headers: workspaceHeader(workspaceSlug),
@@ -3337,7 +3346,7 @@ export class ApiClient {
     });
     return parseWithFallback(
       raw,
-      StartMikaOnboardingResponseSchema,
+      StartPatrickOnboardingResponseSchema,
       { started: false },
       { endpoint: "POST /api/chat/sessions/:id/onboarding" },
     );
@@ -3523,7 +3532,7 @@ export class ApiClient {
 
   // `workspaceSlug` overrides the ambient `X-Workspace-Slug` header. Onboarding
   // creates projects in a workspace the app has not navigated to yet, so it
-  // must name the target the same way Mika bootstrap does.
+  // must name the target the same way Patrick bootstrap does.
   async createProject(
     data: CreateProjectRequest,
     workspaceSlug?: string,

@@ -401,7 +401,7 @@ describe("ChatMessageList quick actions skeleton", () => {
 });
 
 describe("ChatMessageList onboarding kickoff", () => {
-  it("hides the product-authored kickoff while rendering Mika's reply", async () => {
+  it("hides the product-authored kickoff while rendering Patrick's reply", async () => {
     render(
       <I18nProvider locale="en" resources={TEST_RESOURCES}>
         <QueryClientProvider client={new QueryClient()}>
@@ -420,7 +420,7 @@ describe("ChatMessageList onboarding kickoff", () => {
                 id: "reply",
                 chat_session_id: "s1",
                 role: "assistant",
-                content: "Hi, I'm Mika.",
+                content: "Hi, I'm Patrick.",
                 task_id: TASK_ID,
                 created_at: new Date(1).toISOString(),
               },
@@ -432,7 +432,7 @@ describe("ChatMessageList onboarding kickoff", () => {
       </I18nProvider>,
     );
 
-    expect(await screen.findByText("Hi, I'm Mika.")).toBeInTheDocument();
+    expect(await screen.findByText("Hi, I'm Patrick.")).toBeInTheDocument();
     expect(
       screen.queryByText("INTERNAL ONBOARDING PROMPT"),
     ).not.toBeInTheDocument();
@@ -508,14 +508,14 @@ describe("ChatMessageList failure copy (PB-5370 regression)", () => {
 });
 
 describe("ChatMessageList onboarding starter cards", () => {
-  // The opening self-describes: the completion path stamps Mika's reply to the
+  // The opening self-describes: the completion path stamps Patrick's reply to the
   // hidden kickoff with message_kind "onboarding_opening" (the kickoff row
   // itself never reaches clients).
   const opening = {
     id: "opening",
     chat_session_id: "s1",
     role: "assistant" as const,
-    content: "Hi, I'm Mika.",
+    content: "Hi, I'm Patrick.",
     task_id: null,
     created_at: new Date(1).toISOString(),
     message_kind: "onboarding_opening" as const,

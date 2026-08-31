@@ -47,7 +47,7 @@ use patchbay_db::queries::channel::{
 use patchbay_db::queries::chat::{
     adopt_orphan_onboarding_kickoff, advance_cancelled_chat_session_pointer,
     chat_session_has_user_message, create_chat_draft_restore, create_chat_message,
-    create_chat_task, create_mika_onboarding_opening, defer_chat_task_for_sealed_pending_media,
+    create_chat_task, create_patrick_onboarding_opening, defer_chat_task_for_sealed_pending_media,
     delete_user_chat_message_by_task, get_channel_media_pending_until, get_chat_session,
     get_latest_assistant_chat_message_for_session, has_active_chat_task_for_session,
     has_pending_chat_turn_for_session, link_unowned_channel_chat_messages_to_task,
@@ -4247,15 +4247,15 @@ impl TaskService {
         Ok(out)
     }
 
-    /// Writes a Mika conversation's first two rows in one transaction: hidden
+    /// Writes a Patrick conversation's first two rows in one transaction: hidden
     /// kickoff + product-authored opening (PB-5827). Nothing is enqueued.
     /// "Session still empty" is enforced under the chat-session lock.
-    pub async fn open_mika_onboarding_chat(
+    pub async fn open_patrick_onboarding_chat(
         &self,
         session: &ChatSession,
         kickoff: &str,
         opening: &str,
-    ) -> Result<MikaOnboardingOpenResult, TaskServiceError> {
+    ) -> Result<PatrickOnboardingOpenResult, TaskServiceError> {
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
         // Same lock and ORDER as the send path, so an opening racing a first
         // send or a runtime rebind serializes instead of deadlocking.
@@ -4299,7 +4299,7 @@ impl TaskService {
 
         // Ordered after the kickoff — see the query comment for why a shared
         // transaction timestamp is not good enough.
-        let opening_row = create_mika_onboarding_opening(
+        let opening_row = create_patrick_onboarding_opening(
             &mut *tx,
             session.id,
             opening,
@@ -4313,11 +4313,11 @@ impl TaskService {
         touch_chat_session(&mut *tx, session.id)
             .await
             .map_err(|e| TaskServiceError::Internal(format!("touch chat session: {e}")))?;
-        tx.commit()
-            .await
-            .map_err(|e| TaskServiceError::Internal(format!("commit mika onboarding open: {e}")))?;
+        tx.commit().await.map_err(|e| {
+            TaskServiceError::Internal(format!("commit patrick onboarding open: {e}"))
+        })?;
 
-        Ok(MikaOnboardingOpenResult {
+        Ok(PatrickOnboardingOpenResult {
             kickoff: kickoff_row,
             opening: opening_row,
         })
@@ -4422,9 +4422,9 @@ pub fn workspace_channel_dispatch(task: &AgentTaskQueue) -> Option<WorkspaceChan
     })
 }
 
-/// The two rows that open a Mika conversation (PB-5827).
+/// The two rows that open a Patrick conversation (PB-5827).
 #[derive(Debug, Clone)]
-pub struct MikaOnboardingOpenResult {
+pub struct PatrickOnboardingOpenResult {
     /// Hidden product context, written WITHOUT a task; the member's first real
     /// send adopts it.
     pub kickoff: ChatMessage,

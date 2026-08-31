@@ -34,7 +34,7 @@ test("onboarding — welcome → workspace", async ({ page }) => {
   await expect(page.getByText("Tell us a bit about you.")).toHaveCount(0);
   await expect(page.locator('[data-slot="stepper-title"]')).toHaveText([
     "Workspace",
-    "Meet Mika",
+    "Meet Patrick",
   ]);
   await expect(
     page.locator('[aria-current="step"]').filter({ hasText: "Workspace" }),
@@ -46,7 +46,7 @@ test("onboarding — welcome → workspace", async ({ page }) => {
   await page.getByRole("textbox").first().fill(`Rail QA ${Date.now()}`);
   await page.getByRole("button", { name: /^Create /i }).click();
   await expect(
-    page.locator('[aria-current="step"]').filter({ hasText: "Meet Mika" }),
+    page.locator('[aria-current="step"]').filter({ hasText: "Meet Patrick" }),
   ).toBeVisible({ timeout: 20000 });
   await page.waitForTimeout(800);
   await page.screenshot({ path: `${SHOTS_DIR}/06-runtime.png` });

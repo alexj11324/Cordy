@@ -11,7 +11,7 @@
       "description": "이름과 URL 정하기."
     },
     "runtime": {
-      "label": "Mika 소개",
+      "label": "Patrick 소개",
       "description": "첫 번째 에이전트 팀원과 실행 환경."
     }
   },
@@ -119,7 +119,7 @@
     "skip": {
       "loading": "워크스페이스 설정 중...",
       "title": "Patchbay에 오신 것을 환영합니다!",
-      "subtitle": "기기 연결을 돕는 태스크 하나를 추가했습니다. 준비되면 「기기」에서 Mika와 시작하세요.",
+      "subtitle": "기기 연결을 돕는 태스크 하나를 추가했습니다. 준비되면 「기기」에서 Patrick과 시작하세요.",
       "got_it": "알겠습니다",
       "status_in_progress": "진행 중",
       "error_title": "준비하지 못했습니다",
@@ -129,7 +129,7 @@
       "cards": {
         "install_runtime": {
           "title": "기기 연결",
-          "subtitle": "Codex 또는 Kimi를 설치한 뒤 「기기」에서 Mika 안내 채팅을 시작하세요."
+          "subtitle": "Codex 또는 Kimi를 설치한 뒤 「기기」에서 Patrick 안내 채팅을 시작하세요."
         }
       }
     }
@@ -187,7 +187,7 @@
     "scanning_headline": "이 컴퓨터 연결 중...",
     "scanning_lede_prefix": "에이전트는 이미 사용하는 AI 코딩 도구를 통해 작업합니다. 예: ",
     "scanning_lede_suffix": " 등. 이 컴퓨터에 설치된 도구를 확인하는 중입니다.",
-    "found_headline": "Mika를 어디서 실행할까요?",
+    "found_headline": "Patrick을 어디서 실행할까요?",
     "found_lede": "이 컴퓨터에서 찾은 기기입니다. 나중에 바꾸거나 더 추가할 수 있습니다.",
     "runtime_count_other": "기기 {{count}}대",
     "status_all_online": "모두 온라인",
@@ -208,15 +208,15 @@
     "refresh": "새로고침",
     "refreshing": "새로고침 중...",
     "hint_selected": "선택됨: {{name}}",
-    "hint_pick": "Mika와 시작하려면 위에서 기기를 선택하세요.",
+    "hint_pick": "Patrick과 시작하려면 위에서 기기를 선택하세요.",
     "hint_waiting": "첫 결과를 기다리는 중...",
     "hint_skip_or_refresh": "설치 후 새로고침하거나 건너뛰고 워크스페이스로 들어가세요.",
-    "continue": "Mika와 시작"
+    "continue": "Patrick과 시작"
   },
   "step_platform": {
     "eyebrow": "컴퓨터 연결",
     "headline": "에이전트를 실행할 컴퓨터를 연결하세요.",
-    "lede": "이 워크스페이스의 참모장인 Mika는 Patchbay에 연결한 실제 컴퓨터에서 실행됩니다. 연결 방법을 선택하세요.",
+    "lede": "이 워크스페이스의 참모장인 Patrick은 Patchbay에 연결한 실제 컴퓨터에서 실행됩니다. 연결 방법을 선택하세요.",
     "hint_default": "연결 방법을 선택하세요. 건너뛰고 나중에 연결할 수도 있습니다.",
     "download_title": "이 컴퓨터 사용",
     "download_subtitle": "데스크톱 앱을 설치해 이 컴퓨터를 연결하세요. 새 탭에서 열리며, 거기서 플랫폼을 고르면 됩니다.",
@@ -245,12 +245,12 @@
   },
   "errors": {
     "skip_failed": "온보딩을 마치지 못했습니다",
-    "mika_setup_failed": "Mika 워크스페이스를 시작하지 못했습니다"
+    "patrick_setup_failed": "Patrick 워크스페이스를 시작하지 못했습니다"
   },
-  "mika_intro": {
-    "headline": "첫 번째 에이전트 팀원 Mika를 소개합니다.",
-    "name": "Mika",
+  "patrick_intro": {
+    "headline": "첫 번째 에이전트 팀원 Patrick을 소개합니다.",
+    "name": "Patrick",
     "role": "참모장",
-    "blurb": "하고 싶은 일을 Mika에게 알려주면 태스크가 되고, 알맞은 에이전트가 맡습니다."
+    "blurb": "하고 싶은 일을 Patrick에게 알려주면 태스크가 되고, 알맞은 에이전트가 맡습니다."
   }
 }
