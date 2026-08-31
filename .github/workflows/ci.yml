@@ -311,7 +311,7 @@ jobs:
       - name: Restore turbo cache
         id: turbo-cache
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .turbo/cache
           key: turbo-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.runtime.outputs.node }}-${{ github.sha }}
@@ -456,7 +456,7 @@ jobs:
       - name: Restore turbo cache
         id: turbo-cache
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .turbo/cache
           key: turbo-test-${{ runner.os }}-${{ runner.arch }}-${{ steps.runtime.outputs.node }}-${{ github.sha }}
@@ -531,7 +531,7 @@ jobs:
       - name: Restore turbo cache
         id: turbo-cache
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .turbo/cache
           key: turbo-views-test-${{ matrix.index }}-of-${{ matrix.total }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.runtime.outputs.node }}-${{ github.sha }}
@@ -682,7 +682,7 @@ jobs:
         run: rustup default stable
 
       - name: Restore Cargo registry and git downloads
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -761,7 +761,7 @@ jobs:
         run: rustup default stable
 
       - name: Restore Cargo registry and git downloads
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -883,7 +883,7 @@ jobs:
         run: rustup default stable
 
       - name: Restore Cargo registry and git downloads
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
