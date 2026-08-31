@@ -713,7 +713,10 @@ impl TaskService {
                 )
             });
         }
-        Some(ChannelQuotaWindow::current_month(fallback, chrono::Utc::now()))
+        Some(ChannelQuotaWindow::current_month(
+            fallback,
+            chrono::Utc::now(),
+        ))
     }
 
     /// Resolves the displayable hosted IM policy for the usage endpoint.

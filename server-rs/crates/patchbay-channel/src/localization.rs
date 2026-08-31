@@ -10,7 +10,8 @@ use serde_json::Value;
 use crate::message::InboundMessage;
 
 const QUOTA_EN: &str = "⚠️ This workspace has reached its hosted messaging limit for the month. Existing runs will finish; upgrade to continue starting new runs.";
-const QUOTA_ZH: &str = "⚠️ 本月托管消息额度已用尽。现有任务会继续完成；升级套餐后即可继续发送新的消息。";
+const QUOTA_ZH: &str =
+    "⚠️ 本月托管消息额度已用尽。现有任务会继续完成；升级套餐后即可继续发送新的消息。";
 const QUOTA_JA: &str = "⚠️ このワークスペースの今月のホスト型メッセージ上限に達しました。実行中のタスクは完了します。新しい実行を開始するにはプランをアップグレードしてください。";
 const QUOTA_KO: &str = "⚠️ 이 워크스페이스의 이번 달 호스팅 메시지 한도에 도달했습니다. 진행 중인 실행은 완료됩니다. 새 실행을 시작하려면 요금제를 업그레이드하세요.";
 
@@ -52,11 +53,13 @@ pub fn quota_exceeded_notice_for_text(text: &str) -> &'static str {
 }
 
 fn locale_from_text(text: &str) -> Option<&'static str> {
-    if text.chars().any(|ch| ('\u{AC00}'..='\u{D7AF}').contains(&ch)) {
+    if text
+        .chars()
+        .any(|ch| ('\u{AC00}'..='\u{D7AF}').contains(&ch))
+    {
         Some("ko")
     } else if text.chars().any(|ch| {
-        ('\u{3040}'..='\u{30FF}').contains(&ch)
-            || ('\u{31F0}'..='\u{31FF}').contains(&ch)
+        ('\u{3040}'..='\u{30FF}').contains(&ch) || ('\u{31F0}'..='\u{31FF}').contains(&ch)
     }) {
         Some("ja")
     } else if text

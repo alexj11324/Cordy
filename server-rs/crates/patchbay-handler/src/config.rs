@@ -314,12 +314,12 @@ fn is_public_https_url(raw: &str) -> bool {
             IpAddr::V4(ip) => {
                 !(ip.is_unspecified() || ip.is_loopback() || ip.is_private() || ip.is_link_local())
             }
-            IpAddr::V6(ip) => !(
-                ip.is_loopback()
+            IpAddr::V6(ip) => {
+                !(ip.is_loopback()
                     || ip.is_unspecified()
                     || ip.is_unique_local()
-                    || ip.is_unicast_link_local()
-            ),
+                    || ip.is_unicast_link_local())
+            }
         };
     }
     true
@@ -578,7 +578,10 @@ mod tests {
         let mut config = patchbay_config::Config::default();
         config.urls.frontend_origin = Some("https://app.example/".into());
         config.urls.public_url = Some("https://api.example/".into());
-        assert_eq!(resolve_frontend_app_url_from_config(&config), "https://app.example");
+        assert_eq!(
+            resolve_frontend_app_url_from_config(&config),
+            "https://app.example"
+        );
     }
 
     #[test]

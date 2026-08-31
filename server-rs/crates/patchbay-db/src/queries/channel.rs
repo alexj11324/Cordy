@@ -1961,12 +1961,11 @@ pub async fn channel_installation_limit_allows(
     agent_id: Option<Uuid>,
     limit: i64,
 ) -> anyhow::Result<bool> {
-    let workspace_exists = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM workspace WHERE id = $1 FOR UPDATE",
-    )
-    .bind(workspace_id)
-    .fetch_optional(&mut *executor)
-    .await?;
+    let workspace_exists =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM workspace WHERE id = $1 FOR UPDATE")
+            .bind(workspace_id)
+            .fetch_optional(&mut *executor)
+            .await?;
     if workspace_exists.is_none() {
         return Ok(false);
     }

@@ -208,7 +208,7 @@ impl OutcomeReplier for LarkOutcomeReplier {
                     msg,
                     patchbay_channel::quota_exceeded_notice_for_text(&msg.body),
                 )
-                    .await
+                .await
             }
             "fresh_pending" => {
                 self.send_chat_notice(_ctx.clone(), inst, msg, FRESH_PENDING_COPY)

@@ -203,8 +203,8 @@ impl ReplierSeam for OutboundReplier {
                 msg,
                 patchbay_channel::quota_exceeded_notice_for_message(msg),
             )
-                .await
-                .map_err(|e| ("dingtalk replier: quota notice failed", e))
+            .await
+            .map_err(|e| ("dingtalk replier: quota notice failed", e))
         } else if outcome == Outcome::fresh_pending() {
             self.post(inst, msg, FRESH_PENDING_TEXT)
                 .await

@@ -170,13 +170,16 @@ impl ByoInstallService {
         // AppKey so the robot can move to this agent, and refuses a LIVE owner
         // with an accurate conflict sentinel.
         self.install
-            .persist_install_with_limit(&InstallPersist {
-                ws_id: p.workspace_id,
-                agent_id: p.agent_id,
-                installer_id: p.initiator_id,
-                app_id_key: app_key.to_string(),
-                config_json,
-            }, installation_limit)
+            .persist_install_with_limit(
+                &InstallPersist {
+                    ws_id: p.workspace_id,
+                    agent_id: p.agent_id,
+                    installer_id: p.initiator_id,
+                    app_id_key: app_key.to_string(),
+                    config_json,
+                },
+                installation_limit,
+            )
             .await
     }
 }

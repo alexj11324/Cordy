@@ -2215,13 +2215,16 @@ async fn install_dingtalk(
         "",
     );
     match service
-        .register_byo_with_limit(patchbay_dingtalk::byo_install::RegisterByoParams {
-            workspace_id,
-            agent_id,
-            initiator_id: actor,
-            app_key: input.client_id,
-            app_secret: input.client_secret,
-        }, hosted_installation_limit(&state))
+        .register_byo_with_limit(
+            patchbay_dingtalk::byo_install::RegisterByoParams {
+                workspace_id,
+                agent_id,
+                initiator_id: actor,
+                app_key: input.client_id,
+                app_secret: input.client_secret,
+            },
+            hosted_installation_limit(&state),
+        )
         .await
     {
         Ok(row) => {
