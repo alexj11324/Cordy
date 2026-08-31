@@ -5,7 +5,7 @@ import {
   decodeClerkFrontendApi,
   requireBrowserReceipt,
   requireProtectedNavigation,
-} from "./verify-production-browser.mjs";
+} from "./verify-production-browser-contract.mjs";
 
 const SOURCE_SHA = "a".repeat(40);
 const EXPECTED_BUILD = `sha-${SOURCE_SHA}`;

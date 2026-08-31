@@ -414,4 +414,4 @@ jobs:
           name: production-browser-failure-${{ needs.resolve-source.outputs.sha }}
           path: /tmp/production-browser-failure.png
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 1
