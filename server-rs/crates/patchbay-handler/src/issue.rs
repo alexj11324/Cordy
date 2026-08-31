@@ -41,7 +41,7 @@ use serde_json::{json, Value};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
-use crate::error::{error_code_response, error_response};
+use crate::error::error_response;
 use crate::state::HandlerState;
 
 const PRIORITIES: &[&str] = &["urgent", "high", "medium", "low", "none"];
@@ -7190,7 +7190,7 @@ async fn batch_update_issues(
         pending.push(previous);
     }
     for previous in &pending {
-        if let Err(response) = prevalidate_issue_workflow_update(&state, previous, updates).await {
+        if let Err(response) = prevalidate_issue_workflow_update(&state, previous, &updates).await {
             return response;
         }
     }
@@ -7200,7 +7200,7 @@ async fn batch_update_issues(
     for previous in pending {
         let previous_snapshot = previous.clone();
         if let Ok(issue) =
-            apply_issue_update(&state, &context, &headers, previous, updates, false).await
+            apply_issue_update(&state, &context, &headers, previous, &updates, false).await
         {
             if previous_snapshot.status != issue.status {
                 if let Some(parent_id) = issue.parent_issue_id {
