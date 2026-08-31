@@ -1791,7 +1791,7 @@ pub struct LinearProjectBinding {
     pub activated_at: Option<DateTime<Utc>>,
     pub agent_label_mapping: serde_json::Value,
     pub connection_id: Uuid,
-    pub cordy_project_id: Uuid,
+    pub patchbay_project_id: Uuid,
     pub created_at: DateTime<Utc>,
     pub created_by_id: Uuid,
     pub id: Uuid,

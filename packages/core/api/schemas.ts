@@ -391,7 +391,7 @@ export const LinearProjectBindingSchema = z.object({
   id: z.string(),
   workspace_id: z.string(),
   connection_id: z.string(),
-  cordy_project_id: z.string(),
+  patchbay_project_id: z.string(),
   linear_project_id: z.string(),
   linear_team_id: z.string().nullable(),
   // Keep provider state/mode forward-compatible at the response boundary.
@@ -411,7 +411,7 @@ export const EMPTY_LINEAR_PROJECT_BINDING: LinearProjectBinding = {
   id: "",
   workspace_id: "",
   connection_id: "",
-  cordy_project_id: "",
+  patchbay_project_id: "",
   linear_project_id: "",
   linear_team_id: null,
   status: "draft",
