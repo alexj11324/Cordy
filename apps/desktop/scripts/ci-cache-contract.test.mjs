@@ -16,7 +16,9 @@ describe("CI cache and release artifact contract", () => {
       expect(contents).not.toMatch(
         /uses: actions\/cache@[^\n]*\n(?:[^\n]*\n){0,12}[^\n]*path:[^\n]*(?:server-rs\/)?target/,
       );
-      expect(contents).toContain("mozilla-actions/sccache-action@v0.0.11");
+      expect(contents).toContain(
+        "mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11",
+      );
       expect(contents).toContain("~/.cargo/registry");
       expect(contents).toContain("~/.cargo/git");
     },

@@ -28,7 +28,7 @@ jobs:
       # Always execute repository-owned code from main. A workflow with
       # actions:write must never check out the closed pull request's head.
       - name: Checkout trusted cleanup implementation
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: main
 

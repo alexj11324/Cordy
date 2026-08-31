@@ -28,7 +28,7 @@ jobs:
       sha: ${{ steps.source.outputs.sha }}
     steps:
       - name: Checkout requested source
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.source_ref || github.ref }}
 
@@ -58,12 +58,12 @@ jobs:
           echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.resolve-source.outputs.sha }}
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -71,11 +71,11 @@ jobs:
 
       - name: Setup Docker Buildx
         id: backend-buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Restore Cargo image cache
         id: backend-cargo-cache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .buildkit-cache/backend
           key: buildkit-backend-${{ runner.os }}-${{ env.PLATFORM_PAIR }}-${{ hashFiles('server-rs/Cargo.lock') }}-${{ needs.resolve-source.outputs.sha }}
@@ -84,7 +84,7 @@ jobs:
             buildkit-backend-${{ runner.os }}-${{ env.PLATFORM_PAIR }}-
 
       - name: Mount Cargo cache in BuildKit
-        uses: reproducible-containers/buildkit-cache-dance@v3
+        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3
         with:
           builder: ${{ steps.backend-buildx.outputs.name }}
           cache-dir: .buildkit-cache/backend
@@ -100,7 +100,7 @@ jobs:
 
       - name: Build production backend image
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: Dockerfile
@@ -120,7 +120,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload backend digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: manual-digests-backend-${{ env.PLATFORM_PAIR }}
           path: /tmp/digests/*
@@ -136,17 +136,17 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Download backend digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: /tmp/digests
           pattern: manual-digests-backend-*
           merge-multiple: true
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -197,12 +197,12 @@ jobs:
           echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.resolve-source.outputs.sha }}
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -219,11 +219,11 @@ jobs:
           fi
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Build production web image
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: Dockerfile.web
@@ -243,7 +243,7 @@ jobs:
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload web digest
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: manual-digests-web-${{ env.PLATFORM_PAIR }}
           path: /tmp/digests/*
@@ -259,17 +259,17 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Download web digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: /tmp/digests
           pattern: manual-digests-web-*
           merge-multiple: true
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -313,24 +313,24 @@ jobs:
       cancel-in-progress: false
     steps:
       - name: Download backend digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: /tmp/digests/backend
           pattern: manual-digests-backend-*
           merge-multiple: true
 
       - name: Download web digests
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: /tmp/digests/web
           pattern: manual-digests-web-*
           merge-multiple: true
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

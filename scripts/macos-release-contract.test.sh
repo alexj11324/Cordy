@@ -48,9 +48,9 @@ require_literal 'matrix: ${{ fromJSON(needs.prepare.outputs.package_matrix) }}'
 require_count 3 'EXPECTED_COMMIT: ${{ needs.prepare.outputs.commit_sha }}'
 require_count 2 'repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG_NAME'
 require_count 2 'if [ "$tag_type" != "commit" ] || [ "$tag_sha" != "$EXPECTED_COMMIT" ]; then'
-require_literal 'uses: actions/upload-artifact@v4'
+require_literal 'uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4'
 require_literal 'name: macos-release-${{ matrix.arch }}'
-require_literal 'uses: actions/download-artifact@v4'
+require_literal 'uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4'
 require_literal 'pattern: macos-release-*'
 if [ "$(grep -Fc -- 'gh release upload "$TAG_NAME"' "$workflow" || true)" -ne 1 ]; then
   echo "verified macOS assets must reach GitHub Release in one post-matrix upload" >&2

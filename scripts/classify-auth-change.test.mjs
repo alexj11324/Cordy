@@ -65,7 +65,7 @@ test("broker-only image builds check out their source context", () => {
   assert.ok(
     ciWorkflow.includes(`      - name: Checkout
         if: \${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.auth_broker_release == 'true' }}
-        uses: actions/checkout@v6`),
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7`),
   );
 });
 
