@@ -18,7 +18,7 @@
   "main": "./out/main/index.js",
   "scripts": {
     "brand-dev-electron": "node scripts/brand-dev-electron.mjs",
-    "dev": "bash ../../scripts/dev.sh",
+    "dev": "node ../../scripts/dev-launcher.mjs",
     "dev:doctor": "node scripts/dev-environment-doctor.mjs",
     "build": "electron-vite build",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",

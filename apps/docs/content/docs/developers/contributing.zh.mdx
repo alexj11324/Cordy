@@ -5,7 +5,7 @@ description: 配置 Patchbay 本地开发环境，运行测试，并按仓库约
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay 是 Rust backend 与 pnpm monorepo。最简单的本地启动方式是 `make dev`；它会为当前 checkout 准备环境、源码匹配 runtime、数据库和 migration，再启动完整 Electron 与 API。
+Patchbay 是 Rust backend 与 pnpm monorepo。最简单的本地启动方式是 `pnpm dev`；它会为当前 checkout 准备环境、源码匹配 runtime、数据库和 migration，再启动完整 Electron 与 API。
 
 ## 环境要求
 
@@ -13,7 +13,11 @@ Patchbay 是 Rust backend 与 pnpm monorepo。最简单的本地启动方式是 
 - pnpm 10.28.2；
 - Rust stable 与 Cargo（dev runtime 缓存未命中时需要）；
 - Docker Engine/Desktop，或本机 PostgreSQL 15+；
-- Git 和 Make。
+- Git；Make 只是 POSIX 环境的可选便捷入口。
+
+`pnpm dev` 可跨平台使用。`PATCHBAY_POSTGRES_RUNTIME=auto` 只会在 Compose
+固定发布的 `localhost:5432` 上选择 Docker；若该地址存在歧义，请显式设置为
+`native` 或 `docker`。
 
 版本和依赖以根目录 `package.json`、`server-rs/Cargo.toml`、`server-rs/Cargo.lock` 和 CI workflow 为准。
 
@@ -22,10 +26,10 @@ Patchbay 是 Rust backend 与 pnpm monorepo。最简单的本地启动方式是 
 ```bash
 git clone https://github.com/patchbay-ai/patchbay.git
 cd patchbay
-make dev
+pnpm dev
 ```
 
-主 checkout 会使用 `.env`。文件不存在时，`make dev` 会从 `.env.example` 创建；然后启动共享 PostgreSQL、安装依赖、执行 migration，并运行 API 与 Web。
+主 checkout 会使用 `.env`。文件不存在时，`pnpm dev` 会从 `.env.example` 创建；然后启动共享 PostgreSQL、安装依赖、执行 migration，并运行 API 与 Electron。
 
 默认地址：
 

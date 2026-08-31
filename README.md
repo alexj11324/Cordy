@@ -67,10 +67,11 @@ Patchbay is an open-source Harness for orchestrating multi-agents on long-horizo
 ```bash
 git clone https://github.com/patchbay-ai/patchbay.git patchbay
 cd patchbay
-make dev
+pnpm dev
 ```
 
-`make dev` (or `pnpm dev`) is the single complete Desktop development entry. It
+`pnpm dev` (or the POSIX convenience alias `make dev`) is the single complete
+Desktop development entry on macOS, Linux, and Windows. It
 creates an isolated worktree environment, installs dependencies through the
 shared pnpm store, starts PostgreSQL, applies migrations, waits for the local
 Rust backend and database, prepares a source-matched dev runtime (CLI, backend,
@@ -86,6 +87,9 @@ incremental dev profile; install `sccache`
 to share compiler outputs while each worktree keeps an independent
 `server-rs/target`. Run `pnpm dev:doctor` to repeat the capability checks. For
 the separate Next.js web client, use `pnpm dev:web:next`.
+`PATCHBAY_POSTGRES_RUNTIME=auto` uses Docker only for its published
+`localhost:5432` endpoint; set it to `native` or `docker` when that endpoint is
+intentionally ambiguous.
 
 For an explicit build:
 

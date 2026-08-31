@@ -71,10 +71,11 @@ Rust server、CLI、迁移 runner 和 backfill 二进制是生产入口。
 ```bash
 git clone https://github.com/patchbay-ai/patchbay.git patchbay
 cd patchbay
-make dev
+pnpm dev
 ```
 
-`make dev`（或 `pnpm dev`）是唯一的完整 Desktop 开发入口。它会创建隔离的
+`pnpm dev`（POSIX 环境也可使用便捷别名 `make dev`）是 macOS、Linux 和 Windows
+唯一的完整 Desktop 开发入口。它会创建隔离的
 worktree 环境，通过共享 pnpm store 安装依赖，启动 PostgreSQL、执行迁移，等待
 本地 Rust 后端和数据库就绪，准备与当前源码匹配的 dev runtime（CLI、后端、
 迁移 runner），验证本机智能体检测
@@ -87,6 +88,9 @@ profile 和构建变量存入用户级缓存。重复启动以及 Rust 源码相
 可以跨 worktree 共享编译对象，但每个 worktree 的 `server-rs/target` 仍保持隔离。
 可用 `pnpm dev:doctor` 重新运行能力诊断；独立的 Next.js Web 客户端使用
 `pnpm dev:web:next`。
+`PATCHBAY_POSTGRES_RUNTIME=auto` 只会在 Compose 固定发布的
+`localhost:5432` 上选择 Docker；如果该地址存在歧义，请显式设为 `native` 或
+`docker`。
 
 需要显式构建时运行：
 

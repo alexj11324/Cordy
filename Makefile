@@ -164,7 +164,7 @@ setup: ## Prepare the current checkout from its env file: install deps, ensure D
 
 start: ## Start the complete Electron development environment for this checkout
 	$(REQUIRE_ENV)
-	@ENV_FILE="$(ENV_FILE)" bash scripts/dev.sh
+	@ENV_FILE="$(ENV_FILE)" node scripts/dev-launcher.mjs
 
 stop: ## Stop backend and frontend processes for the current checkout
 	$(REQUIRE_ENV)
@@ -254,7 +254,7 @@ remove-worktree: ## Drop a linked worktree's database, then remove it (WORKTREE=
 ##@ Individual commands
 
 dev: ## Start complete Electron + source CLI + backend + isolated DB development
-	@bash scripts/dev.sh
+	@ENV_FILE="" node scripts/dev-launcher.mjs
 
 web-next-dev: ## Run only the Next.js web frontend (API-dependent screens need a separate backend)
 	@echo "Frontend: http://localhost:$(FRONTEND_PORT)"

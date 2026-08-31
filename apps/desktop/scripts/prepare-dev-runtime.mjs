@@ -3,16 +3,16 @@
 import { access, chmod, copyFile, mkdir, rm } from "node:fs/promises";
 import { constants } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   binaryNameForPlatform,
   cargoTargetDirectory,
+  devRustTargetFor,
   devBuildVariables,
   resolveCargoCommand,
   rustBuildEnvironment,
-  rustTargetFor,
 } from "./bundle-cli.mjs";
 import {
   defaultDevCliCacheDir,
@@ -39,7 +39,7 @@ export function devRuntimeComponents({
     join(repoRoot, "server-rs"),
   ),
 } = {}) {
-  const rustTarget = rustTargetFor(platform, arch);
+  const rustTarget = devRustTargetFor(platform, arch);
   const builtDir = join(cargoTargetDir, rustTarget, "debug");
   const stagedDir = join(repoRoot, ".patchbay-dev", "bin");
   return [
@@ -97,6 +97,16 @@ export function devRuntimeBuildArguments(rustTarget, components) {
   ];
 }
 
+export function devRuntimeBuildEnvironment(env, cargoCommand) {
+  const buildEnv = rustBuildEnvironment(env);
+  if (isAbsolute(cargoCommand)) {
+    buildEnv.PATH = [dirname(cargoCommand), buildEnv.PATH]
+      .filter(Boolean)
+      .join(delimiter);
+  }
+  return buildEnv;
+}
+
 async function exists(path) {
   try {
     await access(path, constants.F_OK);
@@ -124,7 +134,7 @@ export async function prepareDevRuntime({
   arch = process.arch,
 } = {}) {
   const serverRsDir = join(repoRoot, "server-rs");
-  const rustTarget = rustTargetFor(platform, arch);
+  const rustTarget = devRustTargetFor(platform, arch);
   const cargoTargetDir = cargoTargetDirectory(env, serverRsDir);
   const sourceFingerprint = rustSourceFingerprint(repoRoot);
   const toolchainIdentity = rustToolchainIdentity(env);
@@ -163,7 +173,7 @@ export async function prepareDevRuntime({
       "[dev-runtime] cache miss requires Rust/Cargo; install Rust or set CARGO to its executable path",
     );
   }
-  const buildEnv = rustBuildEnvironment(env);
+  const buildEnv = devRuntimeBuildEnvironment(env, cargoCommand);
   console.log(
     `[dev-runtime] cache miss ${sourceFingerprint.slice(0, 12)}; building CLI, backend and migrations once${buildEnv.RUSTC_WRAPPER ? ` with ${buildEnv.RUSTC_WRAPPER}` : ""}`,
   );

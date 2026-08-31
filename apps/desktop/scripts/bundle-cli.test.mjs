@@ -7,6 +7,7 @@ import {
   cargoBuildArguments,
   cargoProfileDirectory,
   cargoTargetDirectory,
+  devRustTargetFor,
   devBuildVariables,
   enforceCliAvailability,
   normalizeRuntimeArch,
@@ -35,6 +36,20 @@ describe("bundle-cli Rust target selection", () => {
     expect(binaryNameForPlatform("darwin")).toBe("patchbay");
   });
 
+  it.each([
+    ["darwin", "x64", "x86_64-apple-darwin"],
+    ["darwin", "arm64", "aarch64-apple-darwin"],
+    ["linux", "x64", "x86_64-unknown-linux-gnu"],
+    ["linux", "arm64", "aarch64-unknown-linux-gnu"],
+    ["win32", "x64", "x86_64-pc-windows-msvc"],
+    ["win32", "arm64", "aarch64-pc-windows-msvc"],
+  ])(
+    "maps development %s/%s to the native host target %s",
+    (platform, arch, target) => {
+      expect(devRustTargetFor(platform, arch)).toBe(target);
+    },
+  );
+
   it("rejects unsupported target combinations", () => {
     expect(() => normalizeRuntimePlatform("freebsd")).toThrow(
       /unsupported target platform/,
@@ -43,6 +58,9 @@ describe("bundle-cli Rust target selection", () => {
       /unsupported target architecture/,
     );
     expect(() => rustTargetFor("linux", "ia32")).toThrow(/no Rust target/);
+    expect(() => devRustTargetFor("linux", "ia32")).toThrow(
+      /no native Rust target/,
+    );
   });
 
   it("uses Cargo's default, relative, and absolute target directory semantics", () => {

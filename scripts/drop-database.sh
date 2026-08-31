@@ -74,7 +74,8 @@ case "$answer" in
 esac
 
 cd "$root_dir"
-if postgres_docker_available; then
+postgres_provider="$(postgres_runtime_provider "$DATABASE_URL" "$POSTGRES_PORT")"
+if [ "$postgres_provider" = "docker" ]; then
   docker compose exec -T postgres \
     dropdb \
     --username "$POSTGRES_USER" \

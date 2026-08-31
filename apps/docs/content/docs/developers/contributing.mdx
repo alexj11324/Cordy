@@ -5,7 +5,7 @@ description: Set up a local Patchbay development environment, run tests, and sub
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay is a Rust backend and pnpm monorepo. The simplest way to start locally is `make dev`; it prepares the environment, source-matched runtime, database, and migrations for the current checkout, then starts the complete Electron client and API.
+Patchbay is a Rust backend and pnpm monorepo. The simplest way to start locally is `pnpm dev`; it prepares the environment, source-matched runtime, database, and migrations for the current checkout, then starts the complete Electron client and API.
 
 ## Requirements
 
@@ -13,7 +13,11 @@ Patchbay is a Rust backend and pnpm monorepo. The simplest way to start locally 
 - pnpm 10.28.2
 - Rust stable with Cargo (required on a dev runtime cache miss)
 - Docker Engine/Desktop, or native PostgreSQL 15+
-- Git and Make
+- Git; Make is an optional POSIX convenience
+
+`pnpm dev` is cross-platform. `PATCHBAY_POSTGRES_RUNTIME=auto` selects Docker
+only for the Compose-published `localhost:5432` endpoint; set `native` or
+`docker` to resolve an intentional ambiguity.
 
 Treat the root `package.json`, `server-rs/Cargo.toml`, `server-rs/Cargo.lock`, and CI workflows as the source of truth for versions and dependencies.
 
@@ -22,10 +26,10 @@ Treat the root `package.json`, `server-rs/Cargo.toml`, `server-rs/Cargo.lock`, a
 ```bash
 git clone https://github.com/patchbay-ai/patchbay.git
 cd patchbay
-make dev
+pnpm dev
 ```
 
-The primary checkout uses `.env`. If the file does not exist, `make dev` creates it from `.env.example`, then starts the shared PostgreSQL instance, installs dependencies, runs migrations, and starts API and Web.
+The primary checkout uses `.env`. If the file does not exist, `pnpm dev` creates it from `.env.example`, then starts the shared PostgreSQL instance, installs dependencies, runs migrations, and starts the API and Electron client.
 
 Default addresses:
 

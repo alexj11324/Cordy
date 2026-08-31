@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 
 postgres_docker_available() {
-  command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1
+  command -v docker >/dev/null 2>&1 &&
+    docker compose version >/dev/null 2>&1 &&
+    docker info >/dev/null 2>&1
 }
 
 find_postgres_tool() {
@@ -55,4 +57,41 @@ parse_postgres_endpoint() {
     fi
   fi
   export POSTGRES_RUNTIME_HOST POSTGRES_RUNTIME_PORT
+}
+
+postgres_runtime_provider() {
+  local database_url="$1"
+  local default_port="$2"
+  local mode="${PATCHBAY_POSTGRES_RUNTIME:-auto}"
+
+  parse_postgres_endpoint "$database_url" "$default_port"
+  case "$mode" in
+    auto)
+      if { [ "$POSTGRES_RUNTIME_HOST" = "localhost" ] || [ "$POSTGRES_RUNTIME_HOST" = "127.0.0.1" ] || [ "$POSTGRES_RUNTIME_HOST" = "::1" ]; } &&
+        [ "$POSTGRES_RUNTIME_PORT" = "5432" ] && postgres_docker_available; then
+        printf 'docker\n'
+      else
+        printf 'native\n'
+      fi
+      ;;
+    docker)
+      if ! { [ "$POSTGRES_RUNTIME_HOST" = "localhost" ] || [ "$POSTGRES_RUNTIME_HOST" = "127.0.0.1" ] || [ "$POSTGRES_RUNTIME_HOST" = "::1" ]; } ||
+        [ "$POSTGRES_RUNTIME_PORT" != "5432" ]; then
+        echo "PATCHBAY_POSTGRES_RUNTIME=docker requires localhost:5432; configured endpoint is ${POSTGRES_RUNTIME_HOST}:${POSTGRES_RUNTIME_PORT}." >&2
+        return 1
+      fi
+      if ! postgres_docker_available; then
+        echo "PATCHBAY_POSTGRES_RUNTIME=docker but Docker Compose or its daemon is unavailable." >&2
+        return 1
+      fi
+      printf 'docker\n'
+      ;;
+    native)
+      printf 'native\n'
+      ;;
+    *)
+      echo "PATCHBAY_POSTGRES_RUNTIME must be auto, docker, or native (received '$mode')." >&2
+      return 1
+      ;;
+  esac
 }

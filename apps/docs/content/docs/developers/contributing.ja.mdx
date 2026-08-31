@@ -5,7 +5,7 @@ description: Patchbay のローカル開発環境を構築し、テストを実�
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay は Rust バックエンドと pnpm monorepo で構成されています。ローカルで起動する最も簡単な方法は `make dev` です。現在の checkout 用に環境、ソース一致 runtime、データベース、migration を準備し、完全な Electron と API を起動します。
+Patchbay は Rust バックエンドと pnpm monorepo で構成されています。ローカルで起動する最も簡単な方法は `pnpm dev` です。現在の checkout 用に環境、ソース一致 runtime、データベース、migration を準備し、完全な Electron と API を起動します。
 
 ## 必要な環境
 
@@ -13,7 +13,11 @@ Patchbay は Rust バックエンドと pnpm monorepo で構成されていま�
 - pnpm 10.28.2
 - Rust stable と Cargo（dev runtime cache miss 時に必要）
 - Docker Engine/Desktop、または native PostgreSQL 15+
-- Git と Make
+- Git（Make は POSIX 向けの任意の短縮手段）
+
+`pnpm dev` はクロスプラットフォームです。`PATCHBAY_POSTGRES_RUNTIME=auto`
+は Compose が公開する `localhost:5432` の場合だけ Docker を選びます。この
+endpoint が曖昧な場合は `native` または `docker` を明示してください。
 
 バージョンと依存関係については、ルートの `package.json`、`server-rs/Cargo.toml`、`server-rs/Cargo.lock`、CI workflow を信頼できる情報源としてください。
 
@@ -22,10 +26,10 @@ Patchbay は Rust バックエンドと pnpm monorepo で構成されていま�
 ```bash
 git clone https://github.com/patchbay-ai/patchbay.git
 cd patchbay
-make dev
+pnpm dev
 ```
 
-メイン checkout は `.env` を使用します。ファイルがなければ `make dev` が `.env.example` から作成し、共有 PostgreSQL を起動して依存関係をインストールし、migration を実行して API と Web を起動します。
+メイン checkout は `.env` を使用します。ファイルがなければ `pnpm dev` が `.env.example` から作成し、共有 PostgreSQL を起動して依存関係をインストールし、migration を実行して API と Electron を起動します。
 
 デフォルトのアドレス:
 

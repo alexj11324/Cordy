@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bash scripts/dev.sh",
+    "dev": "node scripts/dev-launcher.mjs",
     "dev:web:next": "turbo dev --filter=@patchbay/web",
     "dev:docs": "turbo dev --filter=@patchbay/docs",
-    "dev:desktop": "bash scripts/dev.sh",
+    "dev:desktop": "node scripts/dev-launcher.mjs",
     "dev:doctor": "node apps/desktop/scripts/dev-environment-doctor.mjs",
     "dev:mobile": "pnpm -C apps/mobile dev",
     "dev:mobile:staging": "pnpm -C apps/mobile dev:staging",

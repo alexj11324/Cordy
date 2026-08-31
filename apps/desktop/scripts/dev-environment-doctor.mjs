@@ -10,7 +10,8 @@ import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { binaryNameForPlatform, rustTargetFor } from "./bundle-cli.mjs";
+import { binaryNameForPlatform, devRustTargetFor } from "./bundle-cli.mjs";
+import { loadDevCheckoutEnv } from "./dev-checkout-env.mjs";
 import { rustSourceFingerprint } from "./dev-cli-cache.mjs";
 
 const execFile = promisify(execFileCallback);
@@ -137,7 +138,7 @@ export async function inspectDevEnvironment({
   );
   const manifestPath = `${binaryPath}.dev-manifest.json`;
   const sourceFingerprint = rustSourceFingerprint(repoRoot);
-  const rustTarget = rustTargetFor(platform, arch);
+  const rustTarget = devRustTargetFor(platform, arch);
   const apiUrl = backendUrlFromEnv(env);
   const checks = [];
 
@@ -245,7 +246,8 @@ export function printDevEnvironmentReport(report, log = console) {
 
 async function main() {
   const warnOnly = process.argv.includes("--warn-only");
-  const report = await inspectDevEnvironment();
+  const { env } = loadDevCheckoutEnv({ repoRoot: defaultRepoRoot });
+  const report = await inspectDevEnvironment({ env });
   printDevEnvironmentReport(report);
   if (!report.ok && !warnOnly) process.exitCode = 1;
 }

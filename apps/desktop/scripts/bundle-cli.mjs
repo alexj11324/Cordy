@@ -58,6 +58,18 @@ const RUST_TARGETS = {
   },
 };
 
+// Development uses the host toolchain target so a fresh checkout only needs
+// the documented stable Rust/Cargo installation. Release Linux binaries stay
+// on musl above for distribution compatibility.
+const DEV_RUST_TARGETS = {
+  darwin: RUST_TARGETS.darwin,
+  linux: {
+    x64: "x86_64-unknown-linux-gnu",
+    arm64: "aarch64-unknown-linux-gnu",
+  },
+  win32: RUST_TARGETS.win32,
+};
+
 function runtimePlatformFromArgs(argv) {
   const flagIndex = argv.indexOf("--target-platform");
   if (flagIndex === -1) return process.platform;
@@ -98,6 +110,20 @@ export function rustTargetFor(platform, arch) {
   if (!target) {
     throw new Error(
       `[bundle-cli] no Rust target for ${platform}/${arch}. ` +
+        "Use darwin, linux, or win32 with x64 or arm64.",
+    );
+  }
+  return target;
+}
+
+export function devRustTargetFor(platform, arch) {
+  const platformTargets = Object.hasOwn(DEV_RUST_TARGETS, platform)
+    ? DEV_RUST_TARGETS[platform]
+    : undefined;
+  const target = platformTargets?.[arch];
+  if (!target) {
+    throw new Error(
+      `[dev-runtime] no native Rust target for ${platform}/${arch}. ` +
         "Use darwin, linux, or win32 with x64 or arm64.",
     );
   }

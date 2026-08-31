@@ -75,11 +75,15 @@ describe("Desktop development build plan", () => {
     expect(desktopPackage.scripts.build).toBe("electron-vite build");
     expect(desktopPackage.scripts["bundle-cli"]).toBeUndefined();
     expect(desktopPackage.scripts["bundle-cli:release"]).toBeUndefined();
-    expect(desktopPackage.scripts.dev).toBe("bash ../../scripts/dev.sh");
+    expect(desktopPackage.scripts.dev).toBe(
+      "node ../../scripts/dev-launcher.mjs",
+    );
     expect(desktopPackage.scripts["dev:rust"]).toBeUndefined();
     expect(desktopPackage.scripts["dev:web"]).toBeUndefined();
-    expect(rootPackage.scripts["dev:desktop"]).toBe("bash scripts/dev.sh");
-    expect(rootPackage.scripts.dev).toBe("bash scripts/dev.sh");
+    expect(rootPackage.scripts["dev:desktop"]).toBe(
+      "node scripts/dev-launcher.mjs",
+    );
+    expect(rootPackage.scripts.dev).toBe("node scripts/dev-launcher.mjs");
     expect(rootPackage.scripts["dev:desktop:rust"]).toBeUndefined();
     expect(rootPackage.scripts["dev:desktop:web"]).toBeUndefined();
     expect(rootPackage.scripts.build).toBe(

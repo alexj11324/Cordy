@@ -104,9 +104,11 @@ jobs:
               - 'scripts/check-ui-wildcard-exports.test.sh'
               - 'scripts/selfhost-config.test.sh'
               - 'scripts/drop-database.sh'
+              - 'scripts/ensure-dev-integration-secrets.mjs'
               - 'scripts/postgres-runtime.sh'
               - 'scripts/postgres-runtime.test.sh'
               - 'scripts/remove-worktree.sh'
+              - 'scripts/run-rust.sh'
               - 'scripts/worktree-db.test.sh'
               - 'scripts/selfhost-wait.sh'
               # selfhost-config.test.sh asserts on the installers' side of
@@ -115,6 +117,9 @@ jobs:
               - 'scripts/install.ps1'
               - 'scripts/check.sh'
               - 'scripts/dev.sh'
+              - 'scripts/dev.ps1'
+              - 'scripts/dev.ps1.test.ps1'
+              - 'scripts/dev-launcher.mjs'
               - 'scripts/local-env.sh'
               - '.env.example'
               - 'docker-compose.selfhost.yml'
@@ -126,6 +131,9 @@ jobs:
               - 'scripts/install.ps1'
               - 'scripts/install.test.sh'
               - 'scripts/install.ps1.test.ps1'
+              - 'scripts/dev.ps1'
+              - 'scripts/dev.ps1.test.ps1'
+              - 'scripts/dev-launcher.mjs'
               - 'docker/entrypoint.sh'
               - 'docker-compose.selfhost.yml'
               - '.env.example'
@@ -789,4 +797,6 @@ jobs:
       - name: Test PowerShell installer
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ./scripts/install.ps1.test.ps1
+        run: |
+          ./scripts/install.ps1.test.ps1
+          ./scripts/dev.ps1.test.ps1

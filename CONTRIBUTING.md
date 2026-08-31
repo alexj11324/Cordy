@@ -39,6 +39,9 @@ Local development uses one shared PostgreSQL service and one database per checko
 
 The service may be Docker Compose or a native local PostgreSQL installation;
 schema and data remain isolated either way.
+`PATCHBAY_POSTGRES_RUNTIME=auto` selects Docker only for the Compose-published
+`localhost:5432` endpoint and uses the configured native endpoint otherwise.
+Set it to `native` or `docker` when localhost:5432 is intentionally ambiguous.
 
 ## Prerequisites
 
@@ -46,6 +49,9 @@ schema and data remain isolated either way.
 - `pnpm` `10.28.2`
 - stable Rust toolchain with Cargo (required on a dev runtime cache miss)
 - Docker, or native PostgreSQL 15+
+
+`pnpm dev` is the cross-platform entrypoint. `make dev` is a POSIX convenience
+alias and is not required on Windows.
 
 ## Important Rules
 

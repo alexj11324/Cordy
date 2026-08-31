@@ -20,7 +20,7 @@ set +a
 
 POSTGRES_DB="${POSTGRES_DB:-patchbay}"
 POSTGRES_USER="${POSTGRES_USER:-patchbay}"
-POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-patchbay}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
 DATABASE_URL="${DATABASE_URL:-}"
 
 export PGPASSWORD="$POSTGRES_PASSWORD"
@@ -71,7 +71,8 @@ is_local() {
 }
 
 if is_local; then
-  if postgres_docker_available; then
+  postgres_provider="$(postgres_runtime_provider "$DATABASE_URL" "$db_port")"
+  if [ "$postgres_provider" = "docker" ]; then
     # ---------- Local Docker ----------
     echo "==> Ensuring shared PostgreSQL container is running on localhost:5432..."
     docker compose up -d postgres
@@ -99,8 +100,8 @@ if is_local; then
     ready_command="$(find_postgres_tool pg_isready || true)"
     createdb_command="$(find_postgres_tool createdb || true)"
     if [ -z "$psql_command" ] || [ -z "$ready_command" ] || [ -z "$createdb_command" ]; then
-      echo "✗ Local PostgreSQL is required, but neither Docker Compose nor native PostgreSQL tools are available." >&2
-      echo "  Install Docker, or on macOS run: brew install postgresql@17" >&2
+      echo "✗ Native PostgreSQL tools are required for ${db_host:-localhost}:$db_port." >&2
+      echo "  Install PostgreSQL, or use localhost:5432 with PATCHBAY_POSTGRES_RUNTIME=docker." >&2
       exit 1
     fi
     if [[ ! "$POSTGRES_DB" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then

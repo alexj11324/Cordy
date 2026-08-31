@@ -23,29 +23,14 @@ if [ ${#missing[@]} -gt 0 ]; then
 fi
 
 # ---------- Environment file ----------
-if [ -n "${ENV_FILE:-}" ]; then
-  if [ ! -f "$ENV_FILE" ]; then
-    echo "✗ Configured env file does not exist: $ENV_FILE"
-    exit 1
-  fi
-elif [ -f .git ]; then
-  # Inside a git worktree (.git is a file, not a directory)
-  ENV_FILE=".env.worktree"
-  if [ ! -f "$ENV_FILE" ]; then
-    echo "==> Worktree detected. Generating $ENV_FILE..."
-    bash scripts/init-worktree-env.sh "$ENV_FILE"
-  fi
-else
-  ENV_FILE=".env"
-  if [ ! -f "$ENV_FILE" ]; then
-    echo "==> Creating $ENV_FILE from .env.example..."
-    cp .env.example "$ENV_FILE"
-  fi
+# The public Node launcher selects/creates this file, loads it into the child
+# environment on every platform, and then dispatches to this POSIX phase.
+if [ -z "${ENV_FILE:-}" ] || [ ! -f "$ENV_FILE" ]; then
+  echo "✗ Complete development environment was not prepared. Run 'pnpm dev'."
+  exit 1
 fi
 
 echo "==> Using $ENV_FILE"
-
-node scripts/ensure-dev-integration-secrets.mjs "$ENV_FILE"
 
 set -a
 # shellcheck disable=SC1090
@@ -101,10 +86,16 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+backend_ready_url="http://127.0.0.1:${PORT:-8080}/healthz"
+if curl --fail --silent --show-error "$backend_ready_url" >/dev/null 2>&1; then
+  echo "✗ Backend port ${PORT:-8080} is already serving another Patchbay instance." >&2
+  echo "  Stop it or use this checkout's isolated PORT before running pnpm dev." >&2
+  exit 1
+fi
+
 (cd server-rs && "$dev_backend") &
 backend_pid=$!
 
-backend_ready_url="http://127.0.0.1:${PORT:-8080}/healthz"
 deadline=$((SECONDS + 1800))
 until curl --fail --silent --show-error "$backend_ready_url" >/dev/null 2>&1; do
   if ! kill -0 "$backend_pid" >/dev/null 2>&1; then
@@ -118,10 +109,15 @@ until curl --fail --silent --show-error "$backend_ready_url" >/dev/null 2>&1; do
   fi
   sleep 1
 done
+if ! kill -0 "$backend_pid" >/dev/null 2>&1; then
+  wait "$backend_pid" || true
+  echo "✗ Spawned backend exited during readiness verification." >&2
+  exit 1
+fi
 
 export VITE_API_URL="http://127.0.0.1:${PORT:-8080}"
 export VITE_WS_URL="ws://127.0.0.1:${PORT:-8080}/ws"
 export PATCHBAY_REQUIRE_SOURCE_CLI=1
 export PATCHBAY_DEV_ENV_FILE="$ENV_FILE"
 
-node apps/desktop/scripts/dev.mjs
+node apps/desktop/scripts/dev.mjs "$@"

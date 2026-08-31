@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   devRuntimeBuildArguments,
+  devRuntimeBuildEnvironment,
   devRuntimeComponents,
 } from "./prepare-dev-runtime.mjs";
 
@@ -35,12 +36,12 @@ describe("complete development runtime artifacts", () => {
       cargoTargetDir: "/repo/server-rs/target",
     });
     expect(
-      devRuntimeBuildArguments("x86_64-unknown-linux-musl", components),
+      devRuntimeBuildArguments("x86_64-unknown-linux-gnu", components),
     ).toEqual([
       "build",
       "--locked",
       "--target",
-      "x86_64-unknown-linux-musl",
+      "x86_64-unknown-linux-gnu",
       "-p",
       "patchbay-cli",
       "-p",
@@ -49,5 +50,15 @@ describe("complete development runtime artifacts", () => {
       "patchbay-migrate",
       "--bins",
     ]);
+  });
+
+  it("keeps rustup proxies discoverable when Cargo is resolved outside PATH", () => {
+    const env = { PATH: "/usr/bin", RUSTC_WRAPPER: "sccache" };
+    expect(
+      devRuntimeBuildEnvironment(env, "/home/dev/.cargo/bin/cargo"),
+    ).toMatchObject({
+      PATH: expect.stringMatching(/^\/home\/dev\/\.cargo\/bin:/),
+      RUSTC_WRAPPER: "sccache",
+    });
   });
 });
