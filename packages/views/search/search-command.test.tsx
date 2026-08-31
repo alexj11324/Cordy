@@ -180,6 +180,7 @@ vi.mock("@patchbay/core/paths", async (importOriginal) => ({
     channels: () => "/ws-test/channels",
     myIssues: () => "/ws-test/my-issues",
     issues: () => "/ws-test/issues",
+    taskGraph: () => "/ws-test/task-graph",
     projects: () => "/ws-test/projects",
     automations: () => "/ws-test/automations",
     agents: () => "/ws-test/agents",

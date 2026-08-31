@@ -106,6 +106,11 @@ describe("openLink", () => {
     expect(navigatedPaths()).toEqual(["/acme/issues/PB-1"]);
   });
 
+  it("prefixes the current slug on the task graph route", () => {
+    openLink("/task-graph", "acme", APP_ORIGIN);
+    expect(navigatedPaths()).toEqual(["/acme/task-graph"]);
+  });
+
   it("leaves a path that already carries a slug alone", () => {
     openLink("/other/issues/PB-1", "acme", APP_ORIGIN);
     expect(navigatedPaths()).toEqual(["/other/issues/PB-1"]);
