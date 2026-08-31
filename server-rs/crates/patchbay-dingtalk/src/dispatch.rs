@@ -340,10 +340,24 @@ mod tests {
 
     #[tokio::test]
     async fn different_conversations_run_in_parallel() {
+        let started = Arc::new(tokio::sync::Barrier::new(4));
         let done = Arc::new(AtomicUsize::new(0));
-        let handle = counting_handle(done.clone(), Duration::from_millis(50));
+        let handle: DispatchHandle = {
+            let started = started.clone();
+            let done = done.clone();
+            Arc::new(move |_ctx, msg| {
+                let started = started.clone();
+                let done = done.clone();
+                Box::pin(async move {
+                    // All four conversations must enter the handler before
+                    // any one can finish, so this checks concurrency without
+                    // relying on a wall-clock threshold under CI load.
+                    started.wait().await;
+                    done.fetch_add(msg.text.parse::<usize>().unwrap_or(0), Ordering::SeqCst);
+                })
+            })
+        };
         let d = Dispatcher::new(handle);
-        let started = std::time::Instant::now();
         for c in ["a", "b", "c", "d"] {
             d.enqueue(
                 c,
@@ -353,13 +367,13 @@ mod tests {
                 },
             );
         }
-        assert!(d.drain_and_close(CancellationToken::new()).await);
-        // Four 50ms jobs in parallel finish well under serial time.
-        assert!(
-            started.elapsed() < Duration::from_millis(190),
-            "{:?}",
-            started.elapsed()
-        );
+        let drained = tokio::time::timeout(
+            Duration::from_secs(5),
+            d.drain_and_close(CancellationToken::new()),
+        )
+        .await
+        .expect("different conversations should reach the handler concurrently");
+        assert!(drained);
         assert_eq!(done.load(Ordering::SeqCst), 4);
     }
 
