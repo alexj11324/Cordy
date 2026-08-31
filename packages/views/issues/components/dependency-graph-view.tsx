@@ -77,6 +77,8 @@ const FILTER_KEYS: Record<GraphFilter, "all" | "ready" | "running" | "blocked"> 
   blocked: "blocked",
 };
 
+const EMPTY_GRAPHS: DependencyGraphResponse[] = [];
+
 function nodeKey(planId: string, tempId: string): string {
   return `${planId}:${tempId}`;
 }
@@ -214,7 +216,7 @@ export function DependencyGraphView({ projectId }: { projectId?: string }) {
   useWSEvent("dependency_graph:updated", invalidateGraphs);
   useWSReconnect(invalidateGraphs);
 
-  const graphs = query.data ?? [];
+  const graphs = query.data ?? EMPTY_GRAPHS;
   const layout = useMemo(() => layoutGraphs(graphs), [graphs]);
   const selectedGraph = selectedNode
     ? graphs.find((graph) => graph.plan.id === selectedNode.planId)
@@ -351,11 +353,23 @@ export function DependencyGraphView({ projectId }: { projectId?: string }) {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 p-3 md:p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-caption text-muted-foreground">
-          <Network className="size-4" />
-          <span>{t(($) => $.graph.active_plans, { count: graphs.length })}</span>
-          <span aria-hidden>·</span>
-          <span>{t(($) => $.graph.task_summary, totals)}</span>
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <Network className="size-4" aria-hidden="true" />
+            <span>{t(($) => $.graph.active_plans, { count: graphs.length })}</span>
+            <span aria-hidden>·</span>
+            <span>{t(($) => $.graph.task_summary, totals)}</span>
+          </div>
+          <div className="flex items-center gap-2 text-micro" aria-label={t(($) => $.graph.legend)}>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-5 border-t-2 border-dashed border-emerald-500" aria-hidden="true" />
+              {t(($) => $.graph.edge_satisfied)}
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-5 border-t-2 border-amber-500" aria-hidden="true" />
+              {t(($) => $.graph.edge_blocked)}
+            </span>
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-1" role="toolbar" aria-label={t(($) => $.graph.toolbar)}>
           {(Object.keys(FILTER_KEYS) as GraphFilter[]).map((value) => (
@@ -475,12 +489,13 @@ export function DependencyGraphView({ projectId }: { projectId?: string }) {
                     <g
                       key={edgeKey(graph.plan.id, edge.id)}
                       data-graph-edge
+                      data-edge-state={edge.satisfied ? "satisfied" : "blocked"}
                       role="button"
                       tabIndex={0}
-                      aria-label={t(($) => $.graph.edge_label, {
+                      aria-label={`${t(($) => $.graph.edge_label, {
                         from: source.node.issue.identifier,
                         to: target.node.issue.identifier,
-                      })}
+                      })} — ${edge.satisfied ? t(($) => $.graph.edge_satisfied) : t(($) => $.graph.edge_blocked)}`}
                       className={cn(
                         "pointer-events-auto cursor-pointer outline-none",
                         !isRelated && "opacity-20",
@@ -508,9 +523,9 @@ export function DependencyGraphView({ projectId }: { projectId?: string }) {
                         fill="none"
                         stroke="currentColor"
                         strokeWidth={isSelected ? 2.5 : 1.5}
-                        strokeDasharray={edge.satisfied ? "4 4" : undefined}
+                        strokeDasharray={edge.satisfied ? "6 4" : undefined}
                         className={cn(
-                          edge.satisfied ? "text-emerald-500" : "text-muted-foreground",
+                          edge.satisfied ? "text-emerald-500" : "text-amber-500",
                           isSelected && "text-brand",
                         )}
                       />
@@ -520,7 +535,7 @@ export function DependencyGraphView({ projectId }: { projectId?: string }) {
                         stroke="currentColor"
                         strokeWidth={isSelected ? 2.5 : 1.5}
                         className={cn(
-                          edge.satisfied ? "text-emerald-500" : "text-muted-foreground",
+                          edge.satisfied ? "text-emerald-500" : "text-amber-500",
                           isSelected && "text-brand",
                         )}
                       />
@@ -557,11 +572,12 @@ export function DependencyGraphView({ projectId }: { projectId?: string }) {
                     isRelated ? "opacity-100" : "opacity-25",
                   )}
                   style={{ left: item.x, top: item.y, width: NODE_WIDTH, height: NODE_HEIGHT }}
-                  onClick={() => {
-                    // AppLink still opens the real Issue on a normal click.
-                    // Selection is also exposed by hover/focus so the graph's
-                    // upstream/downstream explanation remains observable
-                    // before navigation, including for keyboard users.
+                  onClick={(event) => {
+                    // Plain clicks select a node so its acceptance criteria
+                    // stay visible in the inspector. Modifier clicks retain
+                    // AppLink's normal new-tab behavior.
+                    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                    event.preventDefault();
                     selectNode();
                   }}
                   onMouseEnter={selectNode}
@@ -572,6 +588,7 @@ export function DependencyGraphView({ projectId }: { projectId?: string }) {
                     status: item.node.issue.status,
                     readiness: readinessLabel,
                     assignee: assignee ?? t(($) => $.graph.unassigned),
+                    acceptance: item.node.acceptance_criteria.length,
                   })}
                 >
                   <span className="flex min-w-0 items-center justify-between gap-2">
@@ -606,6 +623,16 @@ export function DependencyGraphView({ projectId }: { projectId?: string }) {
                         className="shrink-0"
                       />
                     ) : null}
+                    {item.node.acceptance_criteria.length > 0 && (
+                      <span
+                        className="inline-flex shrink-0 items-center gap-1 text-micro text-muted-foreground"
+                        title={t(($) => $.graph.acceptance_count, { count: item.node.acceptance_criteria.length })}
+                        aria-label={t(($) => $.graph.acceptance_count, { count: item.node.acceptance_criteria.length })}
+                      >
+                        <Check className="size-3" aria-hidden="true" />
+                        <span className="tabular-nums">{item.node.acceptance_criteria.length}</span>
+                      </span>
+                    )}
                   </span>
                 </AppLink>
               );
@@ -649,7 +676,11 @@ function NodeInspector({
     <div className="space-y-3">
       <div>
         <p className="text-micro uppercase tracking-wide text-muted-foreground">{t(($) => $.graph.task)}</p>
-        <AppLink href={paths.issueDetail(node.issue.identifier || node.issue.id)} className="mt-1 block text-body font-medium hover:underline">
+        <AppLink
+          href={paths.issueDetail(node.issue.identifier || node.issue.id)}
+          className="mt-1 block text-body font-medium hover:underline"
+          aria-label={t(($) => $.graph.open_issue, { identifier: node.issue.identifier })}
+        >
           {node.issue.identifier} · {node.title}
         </AppLink>
       </div>
@@ -674,6 +705,9 @@ function NodeInspector({
         </span>{" "}
         {t(($) => $.graph.prerequisites)}
       </InspectorRow>
+      <InspectorRow label={t(($) => $.graph.acceptance_criteria)}>
+        <AcceptanceCriteriaList items={node.acceptance_criteria} t={t} />
+      </InspectorRow>
       <p className="rounded-md bg-muted/50 p-2 text-micro text-muted-foreground">
         {node.readiness.unlock_condition}
       </p>
@@ -694,6 +728,7 @@ function DependencyGateInspector({
 }) {
   const source = graph.nodes.find((node) => node.temp_id === edge.from);
   const target = graph.nodes.find((node) => node.temp_id === edge.to);
+  const gateLabel = edge.satisfied ? t(($) => $.graph.gate_open) : t(($) => $.graph.gate_blocked);
   return (
     <div className="space-y-3">
       <div>
@@ -716,6 +751,30 @@ function DependencyGateInspector({
       </div>
       <InspectorRow label={t(($) => $.graph.reason)}>{edge.reason}</InspectorRow>
       <InspectorRow label={t(($) => $.graph.consumed_output)}>{edge.consumed_output}</InspectorRow>
+      <InspectorRow label={t(($) => $.graph.gate_status)}>
+        <span className={cn(edge.satisfied ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400")}>
+          {gateLabel}
+        </span>
+      </InspectorRow>
+      {source && (
+        <>
+          <InspectorRow label={t(($) => $.graph.prerequisite_task)}>
+            <AppLink href={paths.issueDetail(source.issue.identifier || source.issue.id)} className="hover:underline">
+              {source.issue.identifier} · {source.title}
+            </AppLink>
+          </InspectorRow>
+          <InspectorRow label={t(($) => $.graph.acceptance_criteria)}>
+            <AcceptanceCriteriaList items={source.acceptance_criteria} t={t} />
+          </InspectorRow>
+        </>
+      )}
+      {target && (
+        <InspectorRow label={t(($) => $.graph.dependent_task)}>
+          <AppLink href={paths.issueDetail(target.issue.identifier || target.issue.id)} className="hover:underline">
+            {target.issue.identifier} · {target.title}
+          </AppLink>
+        </InspectorRow>
+      )}
       <InspectorRow label={t(($) => $.graph.prerequisite_status)}>
         <span className={cn(edge.satisfied ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400")}>
           {edge.prerequisite_status}
@@ -730,6 +789,29 @@ function DependencyGateInspector({
         {edge.satisfied ? t(($) => $.graph.satisfied) : edge.unlock_condition}
       </div>
     </div>
+  );
+}
+
+function AcceptanceCriteriaList({
+  items,
+  t,
+}: {
+  items: string[];
+  t: ReturnType<typeof useT<"issues">>["t"];
+}) {
+  if (items.length === 0) {
+    return <span className="text-muted-foreground">{t(($) => $.graph.no_acceptance_criteria)}</span>;
+  }
+
+  return (
+    <ul className="space-y-1.5" role="list">
+      {items.map((criterion, index) => (
+        <li key={`${criterion}-${index}`} className="flex items-start gap-2">
+          <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-muted-foreground" aria-hidden="true" />
+          <span>{criterion}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
