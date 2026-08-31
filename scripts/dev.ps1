@@ -135,6 +135,16 @@ function Stop-TrackedProcessTree {
     $Process.WaitForExit()
 }
 
+function ConvertTo-WindowsCommandLineArgument {
+    param([AllowEmptyString()][string]$Argument)
+    if ($Argument.Length -gt 0 -and $Argument -notmatch '[\s"]') {
+        return $Argument
+    }
+    $escaped = [regex]::Replace($Argument, '(\\*)"', '$1$1\"')
+    $escaped = [regex]::Replace($escaped, '(\\+)$', '$1$1')
+    return '"' + $escaped + '"'
+}
+
 $DatabaseUri = [Uri]$env:DATABASE_URL
 $DatabaseHost = $DatabaseUri.Host
 $DatabasePort = if ($DatabaseUri.Port -gt 0) { $DatabaseUri.Port } else { [int]$env:POSTGRES_PORT }
@@ -243,7 +253,12 @@ $BackendStderrLog = Join-Path $LogDir "backend.stderr.log"
 $FrontendStdoutLog = Join-Path $LogDir "frontend.stdout.log"
 $FrontendStderrLog = Join-Path $LogDir "frontend.stderr.log"
 try {
-    $BackendProcess = Start-Process -FilePath "node" -ArgumentList @("../scripts/dev-auth-command.mjs", "backend", $DevBackend) -WorkingDirectory (Join-Path $RepoRoot "server-rs") -PassThru -RedirectStandardOutput $BackendStdoutLog -RedirectStandardError $BackendStderrLog
+    $BackendArguments = @(
+        (ConvertTo-WindowsCommandLineArgument "../scripts/dev-auth-command.mjs"),
+        (ConvertTo-WindowsCommandLineArgument "backend"),
+        (ConvertTo-WindowsCommandLineArgument $DevBackend)
+    )
+    $BackendProcess = Start-Process -FilePath "node" -ArgumentList $BackendArguments -WorkingDirectory (Join-Path $RepoRoot "server-rs") -PassThru -RedirectStandardOutput $BackendStdoutLog -RedirectStandardError $BackendStderrLog
     $BackendTimeoutSeconds = Get-PositiveTimeoutSeconds "PATCHBAY_DEV_BACKEND_TIMEOUT_SECONDS"
     $Deadline = [DateTime]::UtcNow.AddSeconds($BackendTimeoutSeconds)
     while ($true) {
