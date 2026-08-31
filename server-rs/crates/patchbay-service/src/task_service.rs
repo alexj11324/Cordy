@@ -4122,7 +4122,7 @@ impl TaskService {
         // the reservation; any later failure rolls it back with this tx.
         if let Some(limit) = hosted_channel_limit {
             let channel_turn =
-                channel_quota::has_channel_ingested_message(&mut *tx, chat_session.id)
+                channel_quota::has_channel_ingested_message(&mut tx, chat_session.id)
                     .await
                     .map_err(|error| {
                         TaskServiceError::Internal(format!(
@@ -4130,7 +4130,7 @@ impl TaskService {
                         ))
                     })?;
             if channel_turn {
-                match channel_quota::admit_turn(&mut *tx, agent.workspace_id, limit).await {
+                match channel_quota::admit_turn(&mut tx, agent.workspace_id, limit).await {
                     Ok(()) => {}
                     Err(channel_quota::ChannelQuotaAdmissionError::Exceeded(error)) => {
                         return Err(TaskServiceError::ChannelQuotaExceeded {
