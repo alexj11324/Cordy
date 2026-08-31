@@ -24,11 +24,12 @@ rendered="$({
 })"
 
 for expected in \
-  'image: "ghcr.io/patchbay-ai/patchbay-auth-broker@sha256:' \
+  'image: "ghcr.io/alexj11324/patchbay-auth-broker@sha256:' \
   'value: "https://api.aspectlylabs.com"' \
   'value: "https://accounts.aspectlylabs.com"' \
   'name: "patchbay-auth-broker"' \
   'key: "CLERK_PUBLISHABLE_KEY"' \
+  'key: "PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN"' \
   'automountServiceAccountToken: false' \
   'readOnlyRootFilesystem: true'; do
   if ! grep -Fq -- "$expected" <<<"$rendered"; then

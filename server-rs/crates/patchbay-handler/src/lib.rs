@@ -248,8 +248,22 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         state.auth_rate_limit.clone(),
         state.auth_verify_rate_limit.clone(),
     );
-    let desktop_handoff_public =
-        desktop_handoff::public_router().route_layer(middleware::from_fn_with_state(
+    let desktop_google_public = desktop_handoff::google_router()
+        .route_layer(middleware::from_fn(
+            desktop_handoff::reject_invalid_broker_credential,
+        ))
+        .route_layer(middleware::from_fn_with_state(
+            desktop_handoff::DesktopHandoffIngressState::new(
+                state.auth_verify_rate_limit.clone(),
+                state.auth_settings.desktop_broker_auth_token(),
+            ),
+            desktop_handoff::rate_limit_desktop_google,
+        ));
+    let desktop_redeem_public = desktop_handoff::redeem_router()
+        .route_layer(middleware::from_fn(
+            desktop_handoff::reject_broker_credential_on_redeem,
+        ))
+        .route_layer(middleware::from_fn_with_state(
             state.auth_verify_rate_limit.clone(),
             patchbay_middleware::ratelimit::rate_limit,
         ));
@@ -667,7 +681,8 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
     let app = Router::new()
         .merge(health::router())
         .merge(public_auth)
-        .merge(desktop_handoff_public)
+        .merge(desktop_google_public)
+        .merge(desktop_redeem_public)
         .merge(public_guest_auth)
         .merge(session::public_router())
         .merge(workspace::public_router())
