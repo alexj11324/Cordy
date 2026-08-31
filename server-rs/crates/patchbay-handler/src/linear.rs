@@ -877,6 +877,64 @@ async fn seed_binding_outbox(
     Ok(inserted)
 }
 
+fn binding_is_publishable(binding: &LinearProjectBinding) -> bool {
+    binding.status == "active"
+        && binding.linear_team_id.is_some()
+        && (binding.sync_mode == "publish"
+            || (binding.sync_mode == "two_way"
+                && binding.initial_source_of_truth.as_deref() == Some("patchbay")))
+}
+
+fn binding_needs_outbox_seed(
+    previous: Option<&LinearProjectBinding>,
+    next: &LinearProjectBinding,
+) -> bool {
+    if !binding_is_publishable(next) {
+        return false;
+    }
+    let Some(previous) = previous else {
+        return true;
+    };
+    !binding_is_publishable(previous)
+        || (next.sync_mode == "two_way"
+            && next.initial_source_of_truth.as_deref() == Some("patchbay")
+            && previous.initial_source_of_truth.as_deref() != Some("patchbay"))
+}
+
+async fn seed_binding_outbox(
+    executor: &mut sqlx::PgConnection,
+    binding: &LinearProjectBinding,
+) -> anyhow::Result<u64> {
+    if !binding_is_publishable(binding) {
+        return Ok(0);
+    }
+    let issues = issue_q::list_issues_in_project(
+        &mut *executor,
+        binding.workspace_id,
+        binding.patchbay_project_id,
+    )
+    .await?;
+    let mut inserted = 0;
+    for issue in issues {
+        let event_key = format!("issue:{}:revision:{}", issue.id, issue.revision);
+        if linear_q::enqueue_issue_outbox_for_binding(
+            &mut *executor,
+            binding.workspace_id,
+            binding.id,
+            issue.id,
+            &event_key,
+            "issue_updated",
+            &patchbay_service::issue_service::linear_issue_sync_payload(&issue),
+        )
+        .await?
+        .is_some()
+        {
+            inserted += 1;
+        }
+    }
+    Ok(inserted)
+}
+
 async fn create_binding(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
