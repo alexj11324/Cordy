@@ -85,7 +85,6 @@ vi.mock("@patchbay/views/i18n", () => ({
         common: { or_continue_with: "Or continue with" },
         desktop: {
           entry: {
-            login_label: "Login",
             brand: "Patchbay",
             quote: "Patchbay keeps work in one clear place.",
             opening_google: "Opening Google sign-in…",
@@ -125,36 +124,37 @@ beforeEach(() => {
 });
 
 describe("DesktopLoginPage", () => {
-  it("keeps the authentication example hierarchy within the available window height", () => {
+  it("keeps the two-column authentication hierarchy within the available window", () => {
     render(<DesktopLoginPage />);
 
     const example = screen.getByTestId("authentication-example");
     expect(example).toHaveClass(
-      "container",
+      "grid",
       "min-h-0",
+      "w-full",
       "flex-1",
-      "md:grid",
-      "lg:max-w-none",
-      "lg:grid-cols-2",
-      "lg:px-0",
+      "grid-cols-2",
     );
+    expect(example).not.toHaveClass("container");
     expect(example).not.toHaveClass("shrink-0");
     expect(example).not.toHaveClass("overflow-hidden");
     const formPanel = screen.getByTestId("authentication-form-panel");
     expect(formPanel).toHaveClass("h-full", "min-h-0", "p-6", "lg:p-8");
     expect(formPanel.className).not.toMatch(/h-\[\d+px\]/);
     expect(screen.getByTestId("authentication-brand-panel")).toHaveClass(
+      "flex",
+      "h-full",
+      "min-h-0",
       "p-10",
       "text-primary",
-      "lg:flex",
+    );
+    expect(screen.getByTestId("authentication-brand-panel")).not.toHaveClass(
+      "hidden",
     );
     expect(screen.getByTestId("authentication-brand-panel")).not.toHaveClass(
       "min-h-[32rem]",
     );
-    expect(screen.getByRole("link", { name: "Login" })).toHaveAttribute(
-      "href",
-      "#desktop-login",
-    );
+    expect(screen.queryByRole("link", { name: "Login" })).toBeNull();
     expect(screen.getByTestId("email-otp-flow")).toHaveAttribute(
       "data-embedded",
       "true",
