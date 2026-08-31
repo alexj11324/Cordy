@@ -25,6 +25,7 @@ from urllib.request import Request, urlopen
 
 
 SCHEMA_VERSION = 1
+ROLLBACK_SCHEMA_VERSION = 2
 REPOSITORY = "alexj11324/Cordy"  # legacy-brand-compat: current GitHub repository identity
 REPOSITORY_URL = "https://github.com/alexj11324/Cordy.git"  # legacy-brand-compat
 DEFAULT_ROOT = Path("/var/lib/patchbay-production")
@@ -736,11 +737,13 @@ class ProductionDeployment:
         lock_path = self.root / "deployment.lock"
         with lock_path.open("a+", encoding="utf-8") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
-            if request.get("schema_version") != SCHEMA_VERSION:
-                raise DeploymentError("unsupported deployment protocol")
             if request.get("action") == "deploy":
+                if request.get("schema_version") != SCHEMA_VERSION:
+                    raise DeploymentError("unsupported deployment protocol")
                 return self.deploy(validate_deploy_request(request))
             if request.get("action") == "rollback":
+                if request.get("schema_version") != ROLLBACK_SCHEMA_VERSION:
+                    raise DeploymentError("unsupported rollback protocol")
                 return self.rollback(
                     request.get("failed_source_sha"),
                     request.get("failed_workflow_run_id"),

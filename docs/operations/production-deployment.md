@@ -131,6 +131,12 @@ mutation, and then updates the existing Compose projects and ports:
 - `cordy`: Docs on `127.0.0.1:4000`. <!-- legacy-brand-compat -->
 - `patchbay-auth-broker`: Broker on `127.0.0.1:43100`.
 
+Rollback is bound to both the failed source SHA and the exact GitHub Actions
+run that changed production. An unchanged redeployment cannot roll production
+back to an older revision if a later external probe fails. The rollback request
+uses a newer fail-closed protocol version, so an older gateway rejects it rather
+than applying an unbound rollback.
+
 After a successful state transition, the gateway keeps only the current and
 immediately preceding detached release worktrees. Older release worktrees are
 removed through the bare repository; compact JSON history remains for audit.
@@ -141,7 +147,8 @@ command, local probe, or short-lived browser credential request fails, the
 gateway immediately reapplies the preceding manifest. If the later public or
 authenticated-browser probes fail, GitHub Actions sends a separate rollback
 request; it is accepted only when the failed SHA is still the current
-deployment, preventing rollback from racing a newer release.
+deployment and that exact workflow run performed the state transition. This
+prevents rollback from racing a newer release or downgrading an unchanged one.
 
 Database migrations must remain backward-compatible with the immediately prior
 application image. Automatic image rollback cannot reverse a destructive

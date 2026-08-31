@@ -68,7 +68,9 @@ test("production uses a protected serialized deployment with rollback and runtim
   assert.match(workflow, /PRODUCTION_SSH_PRIVATE_KEY/u);
   assert.match(workflow, /StrictHostKeyChecking=yes/u);
   assert.match(workflow, /action: "rollback"/u);
+  assert.match(workflow, /schema_version: 2/u);
   assert.match(workflow, /failed_workflow_run_id/u);
+  assert.match(workflow, /\.unchanged == true/u);
   assert.match(workflow, /verify-production-deployment\.mjs/u);
   assert.match(workflow, /verify-production-browser\.mjs/u);
   assert.match(workflow, /playwright install --with-deps chromium/u);

@@ -365,7 +365,7 @@ jobs:
               jq -n \
                 --arg source_sha "$SOURCE_SHA" \
                 --arg workflow_run_id "$deployment_run_id" \
-                '{schema_version: 1, action: "rollback", failed_source_sha: $source_sha, failed_workflow_run_id: $workflow_run_id}' |
+                '{schema_version: 2, action: "rollback", failed_source_sha: $source_sha, failed_workflow_run_id: $workflow_run_id}' |
                 ssh "${ssh_args[@]}" || true
             fi
             exit "$status"
@@ -380,11 +380,18 @@ jobs:
 
           # Treat a lost SSH response as an ambiguous deployment, not as proof
           # that the server stayed untouched. The rollback protocol is
-          # idempotent and no-ops when this SHA is not the current deployment.
+          # idempotent and no-ops unless this exact run changed the current SHA.
           deployment_attempted=true
           ssh "${ssh_args[@]}" \
             < /tmp/production/production-manifest.json \
             > /tmp/production/deployment-receipt.json
+          if jq -e \
+            --arg source_sha "$SOURCE_SHA" \
+            '.ok == true and .action == "deploy" and .source_sha == $source_sha
+              and .unchanged == true' \
+            /tmp/production/deployment-receipt.json >/dev/null; then
+            deployment_attempted=false
+          fi
           jq -e \
             --arg source_sha "$SOURCE_SHA" \
             --arg workflow_run_id "$deployment_run_id" \

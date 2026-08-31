@@ -242,6 +242,21 @@ class ProductionDeployContractTests(unittest.TestCase):
             self.assertEqual(receipt["workflow_run_id"], "111")
             deployment.apply.assert_not_called()
 
+    def test_legacy_rollback_protocol_cannot_bypass_run_binding(self):
+        with tempfile.TemporaryDirectory() as directory:
+            deployment = production_deploy.ProductionDeployment(Path(directory))
+            with self.assertRaisesRegex(
+                production_deploy.DeploymentError, "unsupported rollback protocol"
+            ):
+                deployment.handle(
+                    {
+                        "schema_version": 1,
+                        "action": "rollback",
+                        "failed_source_sha": "a" * 40,
+                        "failed_workflow_run_id": "222",
+                    }
+                )
+
     def test_rollback_reverts_only_the_matching_deployment_run(self):
         with tempfile.TemporaryDirectory() as directory:
             deployment = production_deploy.ProductionDeployment(Path(directory))
