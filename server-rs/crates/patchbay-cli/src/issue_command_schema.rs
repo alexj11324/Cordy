@@ -182,10 +182,7 @@ pub(super) struct IssueCreateArgs {
     pub(super) executor_id: Option<String>,
     #[arg(long, help = "Human owner name (workspace member; fuzzy match)")]
     pub(super) owner: Option<String>,
-    #[arg(
-        long,
-        help = "Human owner UUID (mutually exclusive with --owner)"
-    )]
+    #[arg(long, help = "Human owner UUID (mutually exclusive with --owner)")]
     pub(super) owner_id: Option<String>,
     #[arg(long, help = "Reviewer name (member, agent, or team; fuzzy match)")]
     pub(super) reviewer: Option<String>,

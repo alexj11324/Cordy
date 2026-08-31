@@ -751,10 +751,7 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
         "453_patrick_workspace_unique_index",
         "uq_agent_workspace_patrick",
     ),
-    (
-        "455_drop_issue_assignee_index",
-        "idx_issue_assignee",
-    ),
+    ("455_drop_issue_assignee_index", "idx_issue_assignee"),
     (
         "456_drop_issue_workspace_assignee_index",
         "idx_issue_workspace_assignee",

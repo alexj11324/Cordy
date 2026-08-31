@@ -7,9 +7,8 @@ use url::form_urlencoded;
 use super::{
     format_issue_list_table, load_issue_actor_names, new_api_client, resolve_current_workspace_id,
     resolve_issue_executor_id, resolve_issue_executor_name, resolve_issue_owner_id,
-    resolve_issue_owner_name, resolve_issue_project_id, ApiClient, Cli, Environment,
-    IssueListArgs, IssueListResponse, OutputFormat, RunOutput,
-    VALID_ISSUE_SORT_COLUMNS,
+    resolve_issue_owner_name, resolve_issue_project_id, ApiClient, Cli, Environment, IssueListArgs,
+    IssueListResponse, OutputFormat, RunOutput, VALID_ISSUE_SORT_COLUMNS,
 };
 
 #[derive(Debug, Serialize)]

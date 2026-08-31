@@ -15,8 +15,8 @@ use patchbay_db::models::{
 };
 use patchbay_db::queries::workspace::increment_issue_counter;
 use patchbay_db::queries::{
-    agent as agent_q, dependency_graph as graph_q, issue as issue_q,
-    runtime as runtime_q, workspace_issue_category_policy as category_policy_q,
+    agent as agent_q, dependency_graph as graph_q, issue as issue_q, runtime as runtime_q,
+    workspace_issue_category_policy as category_policy_q,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -191,17 +191,12 @@ fn validate_execution_executor_shape(
 ) -> Result<(), DependencyGraphError> {
     validate_executor_shape(executor, field)?;
     if !matches!(executor.type_.as_str(), "agent" | "team") {
-        return Err(invalid(format!(
-            "{field}.type must be agent or team"
-        )));
+        return Err(invalid(format!("{field}.type must be agent or team")));
     }
     Ok(())
 }
 
-fn validate_owner_shape(
-    owner: &PlanExecutor,
-    field: &str,
-) -> Result<(), DependencyGraphError> {
+fn validate_owner_shape(owner: &PlanExecutor, field: &str) -> Result<(), DependencyGraphError> {
     validate_executor_shape(owner, field)?;
     if owner.type_ != "member" {
         return Err(invalid(format!("{field}.type must be member")));
@@ -218,7 +213,9 @@ fn validate_execution_target(
         (None, None) => Ok(()),
         (Some(runtime_id), Some(model_id)) => {
             if runtime_id.is_nil() {
-                return Err(invalid(format!("{field}.runtime_id must be a non-nil UUID")));
+                return Err(invalid(format!(
+                    "{field}.runtime_id must be a non-nil UUID"
+                )));
             }
             validate_text(model_id, &format!("{field}.model_id"), 255, true)
         }
@@ -1288,7 +1285,10 @@ pub async fn apply_dependency_plan(
             .or(default_execution_agent_id);
         let owner_type = task.owner.as_ref().map(|owner| owner.type_.as_str());
         let owner_id = task.owner.as_ref().map(|owner| owner.id);
-        let reviewer_type = task.reviewer.as_ref().map(|reviewer| reviewer.type_.as_str());
+        let reviewer_type = task
+            .reviewer
+            .as_ref()
+            .map(|reviewer| reviewer.type_.as_str());
         let reviewer_id = task.reviewer.as_ref().map(|reviewer| reviewer.id);
         let issue = issue_q::create_issue(
             &mut *tx,

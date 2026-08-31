@@ -8,8 +8,8 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, patch, put};
 use axum::{Json, Router};
 use patchbay_db::models::{IssueStatus, WorkspaceIssueCategoryPolicy};
-use patchbay_db::queries::workspace_issue_category_policy as category_policy_q;
 use patchbay_db::queries::issue_status as status_q;
+use patchbay_db::queries::workspace_issue_category_policy as category_policy_q;
 use patchbay_middleware::workspace::WorkspaceContext;
 use patchbay_service::{category_policy, issue_status};
 use serde::{Deserialize, Serialize};
@@ -72,7 +72,10 @@ pub fn router() -> Router<HandlerState> {
         .route("/api/issue-statuses/{id}", patch(update).delete(archive))
         .route("/api/issue-statuses/{id}/", patch(update).delete(archive))
         .route("/api/issue-category-policies", get(list_policies))
-        .route("/api/issue-category-policies/{category}", put(upsert_policy))
+        .route(
+            "/api/issue-category-policies/{category}",
+            put(upsert_policy),
+        )
 }
 
 fn workspace_id(context: &WorkspaceContext) -> Result<Uuid, Response> {
@@ -159,7 +162,10 @@ async fn upsert_policy(
     if let Err(response) = require_admin(&context) {
         return response;
     }
-    if !matches!(category.as_str(), category_policy::EXECUTION_CATEGORY | category_policy::REVIEW_CATEGORY) {
+    if !matches!(
+        category.as_str(),
+        category_policy::EXECUTION_CATEGORY | category_policy::REVIEW_CATEGORY
+    ) {
         return error_response(StatusCode::BAD_REQUEST, "unsupported issue category policy");
     }
     let workspace_id = match workspace_id(&context) {
