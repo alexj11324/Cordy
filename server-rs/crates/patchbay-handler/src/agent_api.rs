@@ -1554,8 +1554,8 @@ async fn create_patrick(
         Ok(v) => v,
         Err(r) => return r,
     };
-    let existing_target = match agent::get_agent_by_system_key(&state.pool, ws, Some("patrick")).await
-    {
+    let existing_target =
+        match agent::get_agent_by_system_key(&state.pool, ws, Some("patrick")).await {
         Ok(target) => target,
         Err(_) => {
             return error_response(
