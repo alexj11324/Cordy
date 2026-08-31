@@ -148,7 +148,8 @@ describe("SettingsPage nav trigger", () => {
     );
     expect(settings).toHaveClass("bg-page-canvas");
     expect(container.querySelector('[data-settings-ui="lobe"]')).toBeInTheDocument();
-    expect(navigation).toHaveClass("md:w-80");
+    expect(navigation).toHaveClass("md:w-64");
+    expect(navigation).not.toHaveClass("md:w-80");
     expect(navigation).not.toHaveClass("md:w-56");
     expect(container.querySelector("[data-settings-content]")).toHaveClass(
       "max-w-[57rem]",
@@ -156,6 +157,19 @@ describe("SettingsPage nav trigger", () => {
     expect(screen.getByRole("tab", { name: "Profile" })).toHaveClass(
       "data-active:!bg-sidebar-item-active",
     );
+  });
+
+  it("does not repeat the settings title in the standalone navigation", async () => {
+    const { container } = renderWithI18n(<SettingsPage variant="standalone" />);
+
+    await waitFor(() => {
+      expect(
+        container.querySelector('[data-settings-ui="lobe-runtime"]'),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.queryByRole("heading", { name: "Settings" }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps every existing settings destination visible in the standalone nav", async () => {

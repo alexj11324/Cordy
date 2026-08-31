@@ -16,8 +16,9 @@ The sparse screenshot is rejected as implementation evidence: it came from a fix
 
 - `SettingsPage` still defines every existing account and workspace destination and maps each visible destination to its existing panel component. The standalone branch passes those same items to `LobeSettingsTabs`; the migration did not delete the right-hand settings panels.
 - The standalone navigation now has regression coverage for all account, desktop, and workspace destinations, including API Tokens, Daemon, Updates, General, Repositories, GitHub, Integrations, Labs, Members, Labels, Issue Statuses, Properties, Quick Actions, and MCP. Chromium smoke verification found all 20 tabs and no console/page errors.
+- The standalone navigation width is 256px, matching the app Sidebar default, and the redundant large standalone “Settings” heading is removed while the back-to-app control remains.
 - The Lobe provider is explicitly synchronized with the app's `dark` class and `next-themes` value, so antd/Lobe tokens stay readable on the existing page-canvas palette.
-- Sidebar width, selected/hover states, typography hierarchy, card borders, and content inset remain aligned with the existing sidebar tokens. Embedded settings continue to use the existing controls through the adapter fallback.
+- Standalone settings navigation is 256px (`md:w-64`), matching the app Sidebar's `SIDEBAR_WIDTH_DEFAULT`; selected/hover states, typography hierarchy, card borders, and content inset remain aligned with the existing sidebar tokens. Embedded settings continue to use the existing controls through the adapter fallback.
 - Chinese text rendered correctly with the installed system Noto CJK fonts.
 
 The old visual fixture must not be used to claim that the production right-hand content is sparse. The corrected implementation evidence and regression test preserve the original settings surface while retaining the Lobe UI migration.
