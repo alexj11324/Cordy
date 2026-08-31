@@ -303,7 +303,7 @@ export function SettingsPage({
           header={standaloneHeader}
           dataSettingsVariant="standalone"
           className="flex min-h-0 flex-1 flex-col gap-0 overflow-y-auto bg-page-canvas text-foreground md:flex-row md:overflow-hidden"
-          listClassName="flex w-max min-w-full flex-row items-center gap-1 overflow-x-auto border-b !border-sidebar-border !bg-sidebar p-2 !shadow-none md:w-64 md:min-w-0 md:flex-col md:items-stretch md:overflow-y-auto md:border-b-0 md:border-r md:p-4"
+          listClassName="flex w-max min-w-full flex-row items-center gap-1 overflow-x-auto border-b border-sidebar-border bg-sidebar p-2 md:w-64 md:min-w-0 md:flex-col md:items-stretch md:overflow-y-auto md:border-b-0 md:border-r md:p-4"
           contentClassName={cn(
             "mx-auto w-full p-4 sm:p-6 md:px-8",
             "md:pb-8 md:pt-20",

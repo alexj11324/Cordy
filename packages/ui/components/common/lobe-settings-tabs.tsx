@@ -65,6 +65,9 @@ export function LobeSettingsTabs({
       <TabsList
         variant="square"
         className={cn("shrink-0", listClassName)}
+        data-settings-sidebar-glass={
+          dataSettingsVariant === "standalone" ? "true" : undefined
+        }
       >
         <TabsIndicator variant="square" className="hidden" />
         {header}

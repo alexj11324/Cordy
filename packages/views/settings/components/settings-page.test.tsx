@@ -148,6 +148,7 @@ describe("SettingsPage nav trigger", () => {
     );
     expect(settings).toHaveClass("bg-page-canvas");
     expect(container.querySelector('[data-settings-ui="lobe"]')).toBeInTheDocument();
+    expect(navigation).toHaveAttribute("data-settings-sidebar-glass", "true");
     expect(navigation).toHaveClass("md:w-64");
     expect(navigation).not.toHaveClass("md:w-80");
     expect(navigation).not.toHaveClass("md:w-56");

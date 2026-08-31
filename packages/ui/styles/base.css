@@ -257,7 +257,8 @@
  * vibrancy on macOS; this translucent surface is also the browser fallback.
  * The compact Sheet is portalled outside the opted-in wrapper and stays solid. */
 [data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
-  [data-slot="sidebar-container"] {
+  [data-slot="sidebar-container"],
+[data-settings-sidebar-glass="true"] {
   background-color: var(--sidebar);
   background: linear-gradient(
       180deg,
@@ -273,6 +274,17 @@
   box-shadow: 10px 0 30px color-mix(in oklab, var(--foreground) 7%, transparent);
   -webkit-backdrop-filter: blur(24px) saturate(125%);
   backdrop-filter: blur(24px) saturate(125%);
+}
+
+/* Standalone settings keeps the same material on desktop while its compact
+ * horizontal tab strip remains opaque, matching the mobile Sidebar sheet. */
+@media (max-width: 767px) {
+  [data-settings-sidebar-glass="true"] {
+    background: var(--sidebar);
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
 }
 
 [data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
@@ -291,7 +303,8 @@
 
 @media (prefers-reduced-transparency: reduce) {
   [data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
-    [data-slot="sidebar-container"] {
+    [data-slot="sidebar-container"],
+  [data-settings-sidebar-glass="true"] {
     background: var(--sidebar);
     border-inline-end-color: var(--sidebar-border);
     box-shadow: none;
