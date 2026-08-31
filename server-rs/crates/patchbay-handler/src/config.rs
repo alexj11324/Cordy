@@ -261,10 +261,10 @@ fn messaging_capabilities(
     let enabled = mode != "disabled";
     MessagingCapabilities {
         mode: mode.into(),
-        // Server-configured deployments still need the normal setup API until
-        // their provider environment variables are materialised into encrypted
-        // channel_installation rows by a dedicated provisioning path.
-        setup_writable: mode != "disabled",
+        // Self-hosted installations are provisioned by the server operator.
+        // The app remains read-only and every write route is rejected by the
+        // same capability gate in `connectors.rs`.
+        setup_writable: mode == "managed",
         platforms: messaging_platforms(enabled),
     }
 }
