@@ -41,12 +41,23 @@ into the other role.
 For an existing production route, preserve `ORIGIN_AUTH_TOKEN` unless this is
 an explicitly coordinated rotation. Verify only the secret name with
 `wrangler secret list`; do not retrieve or log its value. For a new route or a
-rotation, provision the origin nginx value first, then run
+rotation, provision the root-owned
+`/etc/nginx/snippets/patchbay-accounts-origin-auth.conf` comparison from the
+approved secrets store first, keep the source-controlled
+`cloudflare-only.conf` and origin-auth includes enabled, then run
 `wrangler secret put ORIGIN_AUTH_TOKEN` using the Worker config, verify the
 origin rejects a missing or wrong origin header, and only then deploy the
 Worker.
 
-Deploy the reviewed limiter-boundary change in this order:
+For a **first cutover** to `accounts-origin.aspectlylabs.com`, stage the Broker
+and Rust credential privately first. Confirm Broker readiness, direct-origin
+403 responses without the origin token, and Rust's valid/invalid broker-token
+state machine before changing the Worker's `ORIGIN` or public route. The Worker
+origin switch is the cutover and must not be used as a staging step.
+
+When the public Worker already routes through the ready Broker and the origin
+gate has been verified, deploy the reviewed limiter-boundary change in this
+order:
 
 1. Deploy the accounts Worker with both rate-limit bindings. Rust's old limiter
    still applies during this temporary double-limit phase. Verify attempt and

@@ -1,9 +1,27 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import worker from "./index.js";
 
 const TOKEN = "a".repeat(64);
+
+test("the source-controlled accounts origin enforces both network and token gates", () => {
+  const nginx = readFileSync(
+    new URL("../../../origin/nginx/aspectlylabs-origin.conf", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    nginx,
+    /server_name accounts-origin\.aspectlylabs\.com;[\s\S]*?include \/etc\/nginx\/snippets\/cloudflare-only\.conf;[\s\S]*?include \/etc\/nginx\/snippets\/patchbay-accounts-origin-auth\.conf;/,
+  );
+  assert.match(
+    nginx,
+    /server_name accounts-origin\.aspectlylabs\.com;[\s\S]*?proxy_pass http:\/\/127\.0\.0\.1:43100;/,
+  );
+  assert.match(nginx, /proxy_set_header X-Patchbay-Origin-Auth "";/);
+});
 
 function allowLimiter(calls = []) {
   return {
