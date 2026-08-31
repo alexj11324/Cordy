@@ -10,7 +10,7 @@ use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Extension, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
-use axum::routing::{delete, get, patch, post};
+use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine as _;
@@ -18,6 +18,7 @@ use chrono::{Duration, Utc};
 use hmac::{Hmac, Mac};
 use patchbay_db::models::LinearConnection;
 use patchbay_db::queries::linear as linear_q;
+use patchbay_db::queries::member as member_q;
 use patchbay_middleware::workspace::WorkspaceContext;
 use rand::rngs::OsRng;
 use rand::RngCore;
@@ -49,6 +50,10 @@ pub fn member_router() -> Router<HandlerState> {
         .route("/api/workspaces/{id}/linear", get(get_connection))
         .route("/api/workspaces/{id}/linear/catalog", get(get_catalog))
         .route("/api/workspaces/{id}/linear/bindings", get(list_bindings))
+        .route(
+            "/api/workspaces/{id}/linear/members",
+            get(list_member_bindings),
+        )
 }
 
 pub fn admin_router() -> Router<HandlerState> {
@@ -56,6 +61,14 @@ pub fn admin_router() -> Router<HandlerState> {
         .route("/api/workspaces/{id}/linear/connect", post(start_oauth))
         .route("/api/workspaces/{id}/linear", delete(disconnect))
         .route("/api/workspaces/{id}/linear/bindings", post(create_binding))
+        .route(
+            "/api/workspaces/{id}/linear/members",
+            put(save_member_binding),
+        )
+        .route(
+            "/api/workspaces/{id}/linear/members/{user_id}",
+            delete(delete_member_binding),
+        )
         .route("/api/workspaces/{id}/linear/dry-run", post(dry_run_binding))
         .route(
             "/api/workspaces/{id}/linear/bindings/{binding_id}/import",
@@ -191,6 +204,7 @@ async fn get_connection(
             "configured": true,
             "connected": connection.status == "active",
             "pull_import_enabled": state.linear_pull_import_enabled(workspace_id),
+            "push_enabled": state.linear_push_enabled(workspace_id),
             "connection": connection_json(connection),
         }))
         .into_response(),
@@ -198,6 +212,7 @@ async fn get_connection(
             "configured": true,
             "connected": false,
             "pull_import_enabled": state.linear_pull_import_enabled(workspace_id),
+            "push_enabled": state.linear_push_enabled(workspace_id),
             "connection": Value::Null,
         }))
         .into_response(),
@@ -230,6 +245,13 @@ fn linear_token_error_response(error: LinearTokenError) -> Response {
             StatusCode::BAD_GATEWAY,
             "Linear provider returned an invalid response",
         ),
+        LinearTokenError::MutationRejected(message) => {
+            tracing::warn!(%message, "Linear mutation was rejected");
+            error_response(
+                StatusCode::BAD_REQUEST,
+                "Linear rejected the requested mutation",
+            )
+        }
         LinearTokenError::Storage(error) => {
             tracing::warn!(%error, "Linear storage operation failed");
             error_response(
@@ -420,6 +442,164 @@ async fn list_bindings(
             error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to load Linear project bindings",
+            )
+        }
+    }
+}
+
+async fn list_member_bindings(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let Some(connection) =
+        (match linear_q::get_connection_for_workspace(&state.pool, workspace_id).await {
+            Ok(connection) => connection,
+            Err(error) => {
+                tracing::warn!(%error, "Linear member binding connection lookup failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to load Linear connection",
+                );
+            }
+        })
+    else {
+        return error_response(StatusCode::NOT_FOUND, "Linear is not connected");
+    };
+    match linear_q::list_linear_member_bindings(&state.pool, workspace_id, connection.id).await {
+        Ok(bindings) => Json(json!({ "bindings": bindings })).into_response(),
+        Err(error) => {
+            tracing::warn!(%error, "Linear member binding lookup failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear member mappings",
+            )
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct SaveLinearMemberBindingRequest {
+    connection_id: Uuid,
+    patchbay_user_id: Uuid,
+    linear_user_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearMemberBindingPath {
+    id: Uuid,
+    user_id: Uuid,
+}
+
+async fn save_member_binding(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Json(request): Json<SaveLinearMemberBindingRequest>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let linear_user_id = request.linear_user_id.trim();
+    if request.patchbay_user_id.is_nil() || linear_user_id.is_empty() {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "Patchbay and Linear member ids are required",
+        );
+    }
+    if let Err(response) = connection_for_binding(&state, workspace_id, request.connection_id).await
+    {
+        return response;
+    }
+    if member_q::get_member_by_user_and_workspace(
+        &state.pool,
+        request.patchbay_user_id,
+        workspace_id,
+    )
+    .await
+    .ok()
+    .flatten()
+    .is_none()
+    {
+        return error_response(StatusCode::NOT_FOUND, "Patchbay member not found");
+    }
+    match linear_q::upsert_linear_member_binding(
+        &state.pool,
+        Uuid::now_v7(),
+        workspace_id,
+        request.connection_id,
+        request.patchbay_user_id,
+        linear_user_id,
+    )
+    .await
+    {
+        Ok(binding) => (StatusCode::OK, Json(binding)).into_response(),
+        Err(error) => {
+            tracing::warn!(%error, "Linear member binding save failed");
+            error_response(
+                StatusCode::CONFLICT,
+                "Linear member is already mapped to another Patchbay member",
+            )
+        }
+    }
+}
+
+async fn delete_member_binding(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(path): Path<LinearMemberBindingPath>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    if path.id != workspace_id || path.user_id.is_nil() {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid Linear member mapping path",
+        );
+    }
+    let Some(connection) =
+        (match linear_q::get_connection_for_workspace(&state.pool, workspace_id).await {
+            Ok(connection) => connection,
+            Err(error) => {
+                tracing::warn!(%error, "Linear member binding connection lookup failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to load Linear connection",
+                );
+            }
+        })
+    else {
+        return error_response(StatusCode::NOT_FOUND, "Linear is not connected");
+    };
+    match linear_q::delete_linear_member_binding(
+        &state.pool,
+        workspace_id,
+        connection.id,
+        path.user_id,
+    )
+    .await
+    {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => error_response(StatusCode::NOT_FOUND, "Linear member mapping not found"),
+        Err(error) => {
+            tracing::warn!(%error, "Linear member binding delete failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to delete Linear member mapping",
             )
         }
     }
@@ -2142,7 +2322,7 @@ impl LinearTokenManager {
         priority: i64,
         state_id: Option<&str>,
         due_date: Option<&str>,
-        assignee_id: Option<&str>,
+        assignee_id: Option<Option<&str>>,
     ) -> Result<LinearRemoteIssue, LinearTokenError> {
         let access_token = self.access_token(connection_id).await?;
         let mut input = serde_json::Map::new();

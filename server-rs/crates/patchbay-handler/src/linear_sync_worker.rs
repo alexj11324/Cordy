@@ -462,10 +462,31 @@ impl LinearSyncWorker {
         let due_date = issue
             .due_date
             .map(|date| date.format("%Y-%m-%d").to_string());
-        // Human-owner mapping is resolved by the member-binding catalog in the
-        // next mapping slice. Omitting assigneeId is deliberate: it never
-        // overwrites a Linear human owner with a Cordy UUID.
-        let assignee_id = None;
+        let linear_owner_id = match (issue.owner_type.as_deref(), issue.owner_id) {
+            (None, None) => None,
+            (Some("member"), Some(owner_id)) => Some(
+                linear_q::get_linear_member_binding(
+                    &self.state.pool,
+                    row.workspace_id,
+                    connection.id,
+                    owner_id,
+                )
+                .await
+                .map_err(SyncError::retry)?
+                .ok_or_else(|| {
+                    SyncError::permanent(anyhow::anyhow!(
+                        "Cordy human owner has no Linear member mapping"
+                    ))
+                })?
+                .linear_user_id,
+            ),
+            _ => {
+                return Err(SyncError::permanent(anyhow::anyhow!(
+                    "Cordy Issue owner is not a supported human member"
+                )))
+            }
+        };
+        let update_assignee = Some(linear_owner_id.as_deref());
         let remote = if let Some(remote) = current_remote {
             manager
                 .update_issue(
@@ -477,7 +498,7 @@ impl LinearSyncWorker {
                     priority,
                     state_id.as_deref(),
                     due_date.as_deref(),
-                    assignee_id,
+                    update_assignee,
                 )
                 .await
                 .map_err(|error| classify_token_error(error, "update Linear Issue"))?
@@ -504,7 +525,7 @@ impl LinearSyncWorker {
                     priority,
                     state_id.as_deref(),
                     due_date.as_deref(),
-                    assignee_id,
+                    linear_owner_id.as_deref(),
                 )
                 .await
                 .map_err(|error| classify_token_error(error, "create Linear Issue"))?

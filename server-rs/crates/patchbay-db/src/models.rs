@@ -1882,6 +1882,20 @@ pub struct LinearSyncOutbox {
     pub workspace_id: Uuid,
 }
 
+/// Explicit mapping between a Cordy human owner and a Linear user. The two
+/// providers use different identity domains, so this row is required before
+/// publishing an owner change.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct LinearMemberBinding {
+    pub connection_id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub id: Uuid,
+    pub linear_user_id: String,
+    pub patchbay_user_id: Uuid,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
+}
+
 /// Server-persisted execution provenance used by the post-run branch
 /// discovery path. One task may have multiple rows, one per exact repository
 /// checkout/workspace key. The task id is the ownership boundary: callers can

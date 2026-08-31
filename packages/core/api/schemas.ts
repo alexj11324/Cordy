@@ -55,7 +55,9 @@ import type {
   LinearConnectionResponse,
   LinearDryRunResponse,
   LinearInitialImportResponse,
+  LinearMemberBinding,
   ListLinearBindingsResponse,
+  ListLinearMemberBindingsResponse,
   LinearProjectBinding,
   IssueWorkProductsResponse,
   TaskWorkProductsResponse,
@@ -321,6 +323,7 @@ export const LinearConnectionResponseSchema = z.object({
   configured: z.boolean().default(false),
   connected: z.boolean().default(false),
   pull_import_enabled: z.boolean().default(false),
+  push_enabled: z.boolean().default(false),
   connection: LinearConnectionSchema.nullable().default(null),
 }).loose();
 
@@ -328,6 +331,7 @@ export const EMPTY_LINEAR_CONNECTION_RESPONSE: LinearConnectionResponse = {
   configured: false,
   connected: false,
   pull_import_enabled: false,
+  push_enabled: false,
   connection: null,
 };
 
@@ -389,6 +393,34 @@ export const EMPTY_LINEAR_CATALOG_RESPONSE: LinearCatalogResponse = {
   states: [],
   users: [],
   labels: [],
+};
+
+export const LinearMemberBindingSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  connection_id: z.string(),
+  patchbay_user_id: z.string(),
+  linear_user_id: z.string(),
+  created_at: z.string(),
+  updated_at: z.string(),
+}).loose();
+
+export const ListLinearMemberBindingsResponseSchema = z.object({
+  bindings: z.array(LinearMemberBindingSchema).default([]),
+}).loose();
+
+export const EMPTY_LINEAR_MEMBER_BINDING: LinearMemberBinding = {
+  id: "",
+  workspace_id: "",
+  connection_id: "",
+  patchbay_user_id: "",
+  linear_user_id: "",
+  created_at: "",
+  updated_at: "",
+};
+
+export const EMPTY_LIST_LINEAR_MEMBER_BINDINGS_RESPONSE: ListLinearMemberBindingsResponse = {
+  bindings: [],
 };
 
 export const LinearDryRunResponseSchema = z.object({

@@ -184,8 +184,11 @@ import type {
   LinearCatalogResponse,
   LinearDryRunResponse,
   LinearInitialImportResponse,
+  LinearMemberBinding,
   LinearProjectBinding,
   ListLinearBindingsResponse,
+  ListLinearMemberBindingsResponse,
+  SaveLinearMemberBindingRequest,
   SaveLinearProjectBindingRequest,
   ListVCSConnectionsResponse,
   ConnectVCSRequest,
@@ -451,6 +454,8 @@ import {
   LinearCatalogResponseSchema,
   LinearDryRunResponseSchema,
   LinearInitialImportResponseSchema,
+  LinearMemberBindingSchema,
+  ListLinearMemberBindingsResponseSchema,
   ListLinearBindingsResponseSchema,
   LinearProjectBindingSchema,
   EMPTY_LINEAR_CONNECT_RESPONSE,
@@ -458,6 +463,8 @@ import {
   EMPTY_LINEAR_CATALOG_RESPONSE,
   EMPTY_LINEAR_DRY_RUN_RESPONSE,
   EMPTY_LINEAR_INITIAL_IMPORT_RESPONSE,
+  EMPTY_LINEAR_MEMBER_BINDING,
+  EMPTY_LIST_LINEAR_MEMBER_BINDINGS_RESPONSE,
   EMPTY_LIST_LINEAR_BINDINGS_RESPONSE,
   EMPTY_LINEAR_PROJECT_BINDING,
   RuntimeModelListRequestSchema,
@@ -4395,6 +4402,46 @@ export class ApiClient {
       LinearCatalogResponseSchema,
       EMPTY_LINEAR_CATALOG_RESPONSE,
       { endpoint: "GET /api/workspaces/:id/linear/catalog" },
+    );
+  }
+
+  async listLinearMemberBindings(
+    workspaceId: string,
+  ): Promise<ListLinearMemberBindingsResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/members`,
+    );
+    return parseWithFallback(
+      raw,
+      ListLinearMemberBindingsResponseSchema,
+      EMPTY_LIST_LINEAR_MEMBER_BINDINGS_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/linear/members" },
+    );
+  }
+
+  async saveLinearMemberBinding(
+    workspaceId: string,
+    body: SaveLinearMemberBindingRequest,
+  ): Promise<LinearMemberBinding> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/members`,
+      { method: "PUT", body: JSON.stringify(body) },
+    );
+    return parseWithFallback(
+      raw,
+      LinearMemberBindingSchema,
+      EMPTY_LINEAR_MEMBER_BINDING,
+      { endpoint: "PUT /api/workspaces/:id/linear/members" },
+    );
+  }
+
+  async deleteLinearMemberBinding(
+    workspaceId: string,
+    patchbayUserId: string,
+  ): Promise<void> {
+    await this.fetch(
+      `/api/workspaces/${workspaceId}/linear/members/${patchbayUserId}`,
+      { method: "DELETE" },
     );
   }
 

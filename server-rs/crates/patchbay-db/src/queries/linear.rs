@@ -5,8 +5,8 @@
 //! accidentally accept an unverified provider payload.
 
 use crate::models::{
-    Issue, LinearConnection, LinearIssueLink, LinearOAuthState, LinearProjectBinding,
-    LinearSyncInbox, LinearSyncOutbox,
+    Issue, LinearConnection, LinearIssueLink, LinearMemberBinding, LinearOAuthState,
+    LinearProjectBinding, LinearSyncInbox, LinearSyncOutbox,
 };
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -407,6 +407,92 @@ pub async fn update_tokens(
     .execute(&mut *executor)
     .await?;
     Ok(())
+}
+
+fn member_binding_columns() -> &'static str {
+    "id, workspace_id, connection_id, patchbay_user_id, linear_user_id, created_at, updated_at"
+}
+
+pub async fn list_linear_member_bindings(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    connection_id: Uuid,
+) -> anyhow::Result<Vec<LinearMemberBinding>> {
+    let query = format!(
+        "SELECT {columns} FROM linear_member_binding\
+         WHERE workspace_id = $1 AND connection_id = $2\
+         ORDER BY updated_at DESC, id DESC",
+        columns = member_binding_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearMemberBinding>(&query)
+        .bind(workspace_id)
+        .bind(connection_id)
+        .fetch_all(executor)
+        .await?)
+}
+
+pub async fn get_linear_member_binding(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    connection_id: Uuid,
+    patchbay_user_id: Uuid,
+) -> anyhow::Result<Option<LinearMemberBinding>> {
+    let query = format!(
+        "SELECT {columns} FROM linear_member_binding\
+         WHERE workspace_id = $1 AND connection_id = $2 AND patchbay_user_id = $3",
+        columns = member_binding_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearMemberBinding>(&query)
+        .bind(workspace_id)
+        .bind(connection_id)
+        .bind(patchbay_user_id)
+        .fetch_optional(executor)
+        .await?)
+}
+
+pub async fn upsert_linear_member_binding(
+    executor: impl Executor<'_, Database = Postgres>,
+    id: Uuid,
+    workspace_id: Uuid,
+    connection_id: Uuid,
+    patchbay_user_id: Uuid,
+    linear_user_id: &str,
+) -> anyhow::Result<LinearMemberBinding> {
+    let query = format!(
+        "INSERT INTO linear_member_binding\
+         (id, workspace_id, connection_id, patchbay_user_id, linear_user_id)\
+         VALUES ($1, $2, $3, $4, $5)\
+         ON CONFLICT (workspace_id, connection_id, patchbay_user_id) DO UPDATE\
+         SET linear_user_id = EXCLUDED.linear_user_id, updated_at = now()\
+         RETURNING {columns}",
+        columns = member_binding_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearMemberBinding>(&query)
+        .bind(id)
+        .bind(workspace_id)
+        .bind(connection_id)
+        .bind(patchbay_user_id)
+        .bind(linear_user_id)
+        .fetch_one(executor)
+        .await?)
+}
+
+pub async fn delete_linear_member_binding(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    connection_id: Uuid,
+    patchbay_user_id: Uuid,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"DELETE FROM linear_member_binding
+           WHERE workspace_id = $1 AND connection_id = $2 AND patchbay_user_id = $3"#,
+    )
+    .bind(workspace_id)
+    .bind(connection_id)
+    .bind(patchbay_user_id)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() == 1)
 }
 
 pub async fn insert_sync_inbox(

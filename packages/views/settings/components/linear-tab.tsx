@@ -9,14 +9,18 @@ import {
   linearBindingsOptions,
   linearCatalogOptions,
   linearConnectionOptions,
+  linearMemberBindingsOptions,
   linearKeys,
 } from "@patchbay/core/linear";
 import { projectListOptions } from "@patchbay/core/projects";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
 import type {
   LinearCatalogResponse,
   LinearDryRunResponse,
+  LinearMemberBinding,
   LinearProjectBinding,
   LinearSyncMode,
+  MemberWithUser,
   SaveLinearProjectBindingRequest,
 } from "@patchbay/core/types";
 import { Badge } from "@patchbay/ui/components/ui/badge";
@@ -150,6 +154,8 @@ function BindingWizard({
   bindings,
   catalog,
   connectionId,
+  memberBindings,
+  members,
   pullImportEnabled,
   onClose,
   onSaved,
@@ -159,6 +165,8 @@ function BindingWizard({
   bindings: LinearProjectBinding[];
   catalog: LinearCatalogResponse;
   connectionId: string;
+  memberBindings: LinearMemberBinding[];
+  members: MemberWithUser[];
   pullImportEnabled: boolean;
   onClose: () => void;
   onSaved: () => void;
@@ -172,6 +180,11 @@ function BindingWizard({
   const [dryRun, setDryRun] = useState<LinearDryRunResponse | null>(null);
   const [dryRunLoading, setDryRunLoading] = useState(false);
   const [dryRunError, setDryRunError] = useState(false);
+  const [memberMappings, setMemberMappings] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      memberBindings.map((binding) => [binding.patchbay_user_id, binding.linear_user_id]),
+    ),
+  );
   const qc = useQueryClient();
 
   const selectedBinding = bindings.find(
@@ -329,7 +342,25 @@ function BindingWizard({
       if (shouldQueueInitialImport && savedBinding.status === "active") {
         await api.enqueueLinearInitialImport(workspaceId, savedBinding.id);
       }
+      await Promise.all(
+        members.map(async (member) => {
+          const linearUserId = memberMappings[member.user_id]?.trim() ?? "";
+          const existing = memberBindings.some(
+            (binding) => binding.patchbay_user_id === member.user_id,
+          );
+          if (linearUserId) {
+            await api.saveLinearMemberBinding(workspaceId, {
+              connection_id: body.connection_id,
+              patchbay_user_id: member.user_id,
+              linear_user_id: linearUserId,
+            });
+          } else if (existing) {
+            await api.deleteLinearMemberBinding(workspaceId, member.user_id);
+          }
+        }),
+      );
       await qc.invalidateQueries({ queryKey: linearKeys.bindings(workspaceId) });
+      await qc.invalidateQueries({ queryKey: linearKeys.memberBindings(workspaceId) });
       toast.success(t(($) => $.page.linear.saved));
       onSaved();
       onClose();
@@ -516,6 +547,43 @@ function BindingWizard({
               ))}
             </div>
           )}
+          <div className="space-y-2 border-t pt-4">
+            <h4 className="font-medium">{t(($) => $.page.linear.member_mapping_title)}</h4>
+            <p className="text-body text-muted-foreground">
+              {t(($) => $.page.linear.member_mapping_description)}
+            </p>
+            {members.length === 0 ? (
+              <p className="text-body text-muted-foreground">
+                {t(($) => $.page.linear.no_members)}
+              </p>
+            ) : (
+              members.map((member) => (
+                <label
+                  className="grid items-center gap-2 text-body sm:grid-cols-[1fr_1fr]"
+                  key={member.user_id}
+                >
+                  <span>{member.name || member.email}</span>
+                  <select
+                    className={selectClassName()}
+                    value={memberMappings[member.user_id] ?? ""}
+                    onChange={(event) =>
+                      setMemberMappings((current) => ({
+                        ...current,
+                        [member.user_id]: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">{t(($) => $.page.linear.member_not_mapped)}</option>
+                    {catalog.users.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {user.name}{user.email ? ` · ${user.email}` : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))
+            )}
+          </div>
         </div>
       ) : null}
 
@@ -632,6 +700,7 @@ export function LinearIntegrationCard({
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const connectionQuery = useQuery(linearConnectionOptions(workspaceId));
   const bindingsQuery = useQuery(linearBindingsOptions(workspaceId));
+  const membersQuery = useQuery(memberListOptions(workspaceId));
   const catalogQuery = useQuery(
     linearCatalogOptions(workspaceId, wizardOpen && Boolean(connectionQuery.data?.connection)),
   );
@@ -641,6 +710,10 @@ export function LinearIntegrationCard({
   });
   const connection = connectionQuery.data?.connection;
   const isConnected = connection?.status === "active";
+  const memberBindingsQuery = useQuery({
+    ...linearMemberBindingsOptions(workspaceId),
+    enabled: Boolean(isConnected),
+  });
   const isReauthorizationRequired = connection?.status === "reauthorization_required";
   const hasUnknownStatus = Boolean(
     connection && !["active", "reauthorization_required", "revoked"].includes(connection.status),
@@ -741,6 +814,8 @@ export function LinearIntegrationCard({
             bindings={bindings}
             catalog={catalogQuery.data}
             connectionId={connection?.id ?? ""}
+            memberBindings={memberBindingsQuery.data?.bindings ?? []}
+            members={membersQuery.data ?? []}
             pullImportEnabled={connectionQuery.data?.pull_import_enabled ?? false}
             onClose={() => setWizardOpen(false)}
             onSaved={() => void qc.invalidateQueries({ queryKey: linearKeys.connection(workspaceId) })}

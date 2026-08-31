@@ -27,6 +27,7 @@ export type LinearConnectionResponse = {
   configured: boolean;
   connected: boolean;
   pull_import_enabled: boolean;
+  push_enabled: boolean;
   connection: LinearConnection | null;
 };
 
@@ -74,6 +75,26 @@ export type LinearCatalogResponse = {
   states: LinearCatalogState[];
   users: LinearCatalogUser[];
   labels: LinearCatalogLabel[];
+};
+
+export type LinearMemberBinding = {
+  id: string;
+  workspace_id: string;
+  connection_id: string;
+  patchbay_user_id: string;
+  linear_user_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ListLinearMemberBindingsResponse = {
+  bindings: LinearMemberBinding[];
+};
+
+export type SaveLinearMemberBindingRequest = {
+  connection_id: string;
+  patchbay_user_id: string;
+  linear_user_id: string;
 };
 
 export type LinearDryRunResponse = {
