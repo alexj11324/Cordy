@@ -67,12 +67,12 @@ if grep -Fq -- 'BUILD_TARGET' "$workflow"; then
   exit 1
 fi
 if ! grep -Fq -- 'run_rust:' "$ci_workflow" ||
-  ! grep -Fq -- "RUN_RUST: \${{ github.event_name == 'workflow_dispatch' && inputs.run_rust == true }}" "$ci_workflow"; then
-  echo "CI must expose an explicit manual-only Rust validation input" >&2
+  ! grep -Fq -- "RUST_CHANGED: \${{ steps.filter.outputs.rust }}" "$ci_workflow"; then
+  echo "CI must expose manual release authorization and automatic Rust path classification" >&2
   exit 1
 fi
 if [ "$(grep -Fc -- "needs.changes.outputs.rust == 'true'" "$ci_workflow" || true)" -lt 5 ]; then
-  echo "every Rust worker must use the manual Rust validation gate" >&2
+  echo "every Rust worker must use the classified Rust validation gate" >&2
   exit 1
 fi
 

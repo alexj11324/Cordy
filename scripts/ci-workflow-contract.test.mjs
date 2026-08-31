@@ -1,0 +1,98 @@
+import assert from "node:assert/strict";
+import { readFile, readdir } from "node:fs/promises";
+import test from "node:test";
+
+const ci = await readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+const cacheCleanup = await readFile(
+  new URL("./cleanup-actions-caches.mjs", import.meta.url),
+  "utf8",
+);
+const workflowDirectory = new URL("../.github/workflows/", import.meta.url);
+
+function stepBlocks(source) {
+  const lines = source.split("\n");
+  const blocks = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(/^(\s*)- name:/u);
+    if (!match) continue;
+    const indentation = match[1].length;
+    let end = index + 1;
+    while (end < lines.length) {
+      const next = lines[end].match(/^(\s*)- name:/u);
+      if (next && next[1].length === indentation) break;
+      end += 1;
+    }
+    blocks.push(lines.slice(index, end).join("\n"));
+  }
+  return blocks;
+}
+
+test("Rust and Mobile validation are automatic path-classified merge gates", () => {
+  assert.match(ci, /^\s{12}rust:\n/mu);
+  assert.match(ci, /^\s{12}mobile:\n/mu);
+  assert.match(ci, /RUST_CHANGED: \$\{\{ steps\.filter\.outputs\.rust \}\}/u);
+  assert.match(ci, /MOBILE_CHANGED: \$\{\{ steps\.filter\.outputs\.mobile \}\}/u);
+  assert.match(ci, /^  backend:\n/mu);
+  assert.match(ci, /^  mobile:\n/mu);
+  assert.match(ci, /^  frontend:\n/mu);
+  assert.match(ci, /^  installer:\n/mu);
+  assert.doesNotMatch(ci, /Rust validation was not manually requested/u);
+  assert.match(ci, /- 'scripts\/verify-release-tag\.sh'/u);
+});
+
+test("Rust uses one workspace test invocation and PR compiler caches are read-only", () => {
+  assert.match(ci, /cargo test --workspace --all-targets --locked/u);
+  assert.doesNotMatch(ci, /cargo metadata --locked --no-deps/u);
+  assert.equal(
+    [...ci.matchAll(/SCCACHE_GHA_RW_MODE: \$\{\{ github\.event_name == 'pull_request' && 'READ_ONLY' \|\| 'READ_WRITE' \}\}/gu)].length,
+    3,
+  );
+});
+
+test("Actions caches never store a Cargo target directory", async () => {
+  const names = (await readdir(workflowDirectory)).filter((name) => name.endsWith(".yml"));
+  for (const name of names) {
+    const source = await readFile(new URL(name, workflowDirectory), "utf8");
+    for (const block of stepBlocks(source).filter((value) => value.includes("uses: actions/cache@"))) {
+      assert.doesNotMatch(block, /^\s+[-]?\s*server-rs\/target\/?\s*$/mu, `${name} caches server-rs/target`);
+      assert.doesNotMatch(block, /^\s+[-]?\s*target\/?\s*$/mu, `${name} caches target`);
+    }
+  }
+});
+
+test("every intermediate uploaded artifact expires after one day", async () => {
+  const names = (await readdir(workflowDirectory)).filter((name) => name.endsWith(".yml"));
+  for (const name of names) {
+    const source = await readFile(new URL(name, workflowDirectory), "utf8");
+    for (const block of stepBlocks(source).filter((value) => value.includes("uses: actions/upload-artifact@"))) {
+      assert.match(block, /retention-days: 1/u, `${name} has an unbounded intermediate artifact`);
+    }
+  }
+});
+
+test("Turbo cache lifecycle is bounded for active, closed, and main refs", async () => {
+  const closedPrWorkflow = await readFile(
+    new URL("cache-maintenance.yml", workflowDirectory),
+    "utf8",
+  );
+  assert.match(closedPrWorkflow, /workflow_run:/u);
+  assert.match(closedPrWorkflow, /mode=prune-pr/u);
+  assert.match(closedPrWorkflow, /mode=prune-main/u);
+  assert.match(closedPrWorkflow, /--keep 2/u);
+  assert.match(closedPrWorkflow, /types: \[closed\]/u);
+  assert.match(closedPrWorkflow, /mode=delete-ref/u);
+  assert.match(closedPrWorkflow, /pull-requests: read/u);
+  assert.match(closedPrWorkflow, /gh api "repos\/\$GITHUB_REPOSITORY\/pulls\/\$RUN_PR_NUMBER"/u);
+  assert.match(closedPrWorkflow, /if \[ "\$pr_state" = "closed" \]/u);
+  assert.match(cacheCleanup, /AbortSignal\.timeout\(GITHUB_API_TIMEOUT_MS\)/u);
+});
+
+test("CI runs cache cleanup tests and classifies new development scripts", () => {
+  assert.match(ci, /scripts\/cleanup-actions-caches\.test\.mjs/u);
+  assert.equal([...ci.matchAll(/- 'scripts\/dev-\*\.mjs'/gu)].length, 2);
+});
+
+test("the obsolete fixed-commit Desktop artifact workflow is gone", async () => {
+  const names = await readdir(workflowDirectory);
+  assert.ok(!names.includes("aspectlylabs-desktop-artifact.yml"));
+});
