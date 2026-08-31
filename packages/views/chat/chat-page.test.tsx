@@ -80,7 +80,11 @@ vi.mock("@patchbay/core/paths", () => ({
 // DOM frozen on the first commit — which silently hides exactly the class of
 // bug the StrictMode regression below exists to catch.
 const storeRef = vi.hoisted(() => ({
-  current: { activeSessionId: null as string | null },
+  current: {
+    activeSessionId: null as string | null,
+    agentIntentRevision: 0,
+    topicsViewRequest: 0,
+  },
 }));
 const storeListeners = vi.hoisted(() => new Set<() => void>());
 const availableAgentsRef = vi.hoisted(() => ({ current: [] as Agent[] }));
@@ -90,6 +94,15 @@ const mockToastError = vi.hoisted(() => vi.fn());
 const mockSetActiveSession = vi.hoisted(() =>
   vi.fn((id: string | null) => {
     storeRef.current = { ...storeRef.current, activeSessionId: id };
+    storeListeners.forEach((l) => l());
+  }),
+);
+const mockSupersedeAgentIntent = vi.hoisted(() =>
+  vi.fn(() => {
+    storeRef.current = {
+      ...storeRef.current,
+      agentIntentRevision: storeRef.current.agentIntentRevision + 1,
+    };
     storeListeners.forEach((l) => l());
   }),
 );
@@ -104,9 +117,19 @@ vi.mock("sonner", () => ({
 
 vi.mock("@patchbay/core/chat", () => ({
   useChatStore: Object.assign(
-    (selector?: (s: { activeSessionId: string | null }) => unknown) =>
+    (selector?: (s: {
+      activeSessionId: string | null;
+      agentIntentRevision: number;
+      topicsViewRequest: number;
+    }) => unknown) =>
       selector ? selector(storeRef.current) : storeRef.current,
-    { getState: () => storeRef.current },
+    {
+      getState: () => ({
+        ...storeRef.current,
+        setActiveSession: mockSetActiveSession,
+        supersedeAgentIntent: mockSupersedeAgentIntent,
+      }),
+    },
   ),
 }));
 
@@ -220,7 +243,11 @@ function renderPage(search: string, { strict = false } = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  storeRef.current = { activeSessionId: null };
+  storeRef.current = {
+    activeSessionId: null,
+    agentIntentRevision: 0,
+    topicsViewRequest: 0,
+  };
   storeListeners.clear();
   availableAgentsRef.current = [agent];
   agentsSettledRef.current = true;
@@ -302,6 +329,7 @@ describe("ChatPage ?agent= deep link", () => {
     expect(mockStartNewChat).not.toHaveBeenCalled();
     expect(mockToastError).not.toHaveBeenCalled();
     expect(replace).not.toHaveBeenCalled();
+    expect(mockSupersedeAgentIntent).toHaveBeenCalledTimes(1);
   });
 
   it("opens the compose pane under StrictMode with a persisted previous session", () => {
@@ -309,7 +337,11 @@ describe("ChatPage ?agent= deep link", () => {
     // P2): the composingNew reset must read the LIVE store value, or the
     // stale persisted session re-closes the pane the intent just opened —
     // while the consumed-intent guard rightly refuses to fire again.
-    storeRef.current = { activeSessionId: "old-session" };
+    storeRef.current = {
+      activeSessionId: "old-session",
+      agentIntentRevision: 0,
+      topicsViewRequest: 0,
+    };
     const { replace } = renderPage("agent=agent-1", { strict: true });
     expect(mockStartNewChat).toHaveBeenCalledTimes(1);
     expect(replace).toHaveBeenCalledWith("/acme/chat");
@@ -339,7 +371,11 @@ describe("ChatPage responsive layout", () => {
     layout.width = FOLD_INNER;
     // The page reconciles the store against `?session=`, so the open thread has
     // to be in the URL too — otherwise the sync effect closes it.
-    storeRef.current = { activeSessionId: "session-1" };
+    storeRef.current = {
+      activeSessionId: "session-1",
+      agentIntentRevision: 0,
+      topicsViewRequest: 0,
+    };
     renderPage("session=session-1");
 
     expect(
@@ -349,12 +385,32 @@ describe("ChatPage responsive layout", () => {
     expect(screen.getByRole("button", { name: "Chat" })).toBeInTheDocument();
   });
 
+  it("returns compact new-chat compose to the topic list when the sidebar requests it", () => {
+    layout.width = FOLD_INNER;
+    const view = renderPage("agent=agent-1");
+    expect(screen.getByText("chat-input")).toBeInTheDocument();
+
+    storeRef.current = {
+      ...storeRef.current,
+      activeSessionId: null,
+      topicsViewRequest: storeRef.current.topicsViewRequest + 1,
+    };
+    view.rerender();
+
+    expect(screen.getByRole("button", { name: "select-thread" })).toBeInTheDocument();
+    expect(screen.queryByText("chat-input")).not.toBeInTheDocument();
+  });
+
   it("keeps a single conversation canvas at the 1024px desktop breakpoint", () => {
     // 1024px is the first width treated as desktop by useIsCompact. The app
     // sidebar may collapse there, but the Agent sidebar owns topic history, so
     // ChatPage still renders one conversation canvas.
     layout.width = TABLET;
-    storeRef.current = { activeSessionId: "session-1" };
+    storeRef.current = {
+      activeSessionId: "session-1",
+      agentIntentRevision: 0,
+      topicsViewRequest: 0,
+    };
     renderPage("session=session-1");
 
     expect(

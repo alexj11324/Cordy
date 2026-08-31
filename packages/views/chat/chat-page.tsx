@@ -68,6 +68,8 @@ export function ChatPage() {
   const regenerateQuickActions = useRegenerateChatQuickActions();
   const urlSession = searchParams.get("session") || null;
   const urlAgent = searchParams.get("agent") || null;
+  const topicsViewRequest = useChatStore((s) => s.topicsViewRequest);
+  const agentIntentRevision = useChatStore((s) => s.agentIntentRevision);
 
   // "Composing a brand-new chat" — the user hit ⊕ but hasn't sent yet, so no
   // session exists. At compact widths this decides list-vs-conversation; on desktop the
@@ -82,6 +84,13 @@ export function ChatPage() {
     // composingNew=true that the later `?agent=` intent effect just set.
     if (useChatStore.getState().activeSessionId) setComposingNew(false);
   }, [c.activeSessionId]);
+
+  // The desktop sidebar and compact thread list are sibling surfaces. A
+  // sidebar click must be able to leave compact compose mode even though its
+  // local `composingNew` state belongs to this page.
+  useEffect(() => {
+    setComposingNew(false);
+  }, [topicsViewRequest]);
 
   // Two-way sync between the URL (`?session=`) and the chat store's
   // activeSessionId. Both effects read the LIVE store value via
@@ -120,8 +129,9 @@ export function ChatPage() {
   // and a deferred intent firing after the user picked a thread (or started
   // another chat) would clobber that choice.
   const consumedAgentIntent = useRef<string | null>(null);
+  const observedAgentIntentRevision = useRef(agentIntentRevision);
   const supersedeAgentIntent = () => {
-    if (urlAgent) consumedAgentIntent.current = urlAgent;
+    useChatStore.getState().supersedeAgentIntent();
   };
 
   const handleSelect = (session: ChatSession) => {
@@ -180,23 +190,34 @@ export function ChatPage() {
   useEffect(() => {
     if (!urlAgent) {
       consumedAgentIntent.current = null;
+      observedAgentIntentRevision.current = agentIntentRevision;
       return;
     }
     if (consumedAgentIntent.current === urlAgent) return;
+    if (agentIntentRevision !== observedAgentIntentRevision.current) {
+      // A sibling surface (currently the Lobe-style Agent sidebar) made an
+      // explicit selection while this deep link was still pending. Consume
+      // the stale intent without starting a different chat.
+      consumedAgentIntent.current = urlAgent;
+      observedAgentIntentRevision.current = agentIntentRevision;
+      return;
+    }
     const agent = c.availableAgents.find((a) => a.id === urlAgent);
     if (agent) {
       consumedAgentIntent.current = urlAgent;
+      observedAgentIntentRevision.current = agentIntentRevision;
       startNewChat(agent);
       replace(wsPaths.chat());
       return;
     }
     if (c.agentsSettled) {
       consumedAgentIntent.current = urlAgent;
+      observedAgentIntentRevision.current = agentIntentRevision;
       toast.error(t(($) => $.page.agent_link_no_access));
       replace(wsPaths.chat());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- consume when the URL param or the resolving agent list changes
-  }, [urlAgent, c.availableAgents, c.agentsSettled]);
+  }, [urlAgent, agentIntentRevision, c.availableAgents, c.agentsSettled]);
 
   const newChatButton = (
     <NewChatButton

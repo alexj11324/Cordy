@@ -74,7 +74,7 @@ import {
 import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { inboxKeys, deduplicateInboxItems, inboxUnreadSummaryOptions, hasOtherWorkspaceUnread, unreadWorkspaceIds } from "@patchbay/core/inbox/queries";
-import { chatSessionsOptions } from "@patchbay/core/chat/queries";
+import { chatSessionsOptions, sortChatSessions } from "@patchbay/core/chat/queries";
 import { countUnreadChatMessages } from "@patchbay/core/chat/unread";
 import { useChatStore } from "@patchbay/core/chat";
 import { useSetChatSessionArchived } from "@patchbay/core/chat/mutations";
@@ -463,7 +463,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   // pinned items, the workspace switcher's programmatic push, and anything
   // added later. `setOpenMobile` is a no-op on desktop, where the sheet is not
   // the sidebar's rendering at all.
-  const { state: sidebarState, setOpenMobile, setHoverRevealSuspended } = useSidebar();
+  const { isCompact, state: sidebarState, setOpenMobile, setHoverRevealSuspended } = useSidebar();
   useEffect(() => {
     setOpenMobile(false);
   }, [pathname, setOpenMobile]);
@@ -646,6 +646,7 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   const startChatFromSidebar = useCallback(
     (agent: Agent | null) => {
       setOpenMobile(false);
+      useChatStore.getState().supersedeAgentIntent();
       push(agent ? p.chatWithAgent(agent.id) : p.chat());
     },
     [p, push, setOpenMobile],
@@ -653,12 +654,21 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   const selectChatSessionFromSidebar = useCallback((session: ChatSession) => {
     setOpenMobile(false);
     const chatStore = useChatStore.getState();
+    // This is the same intent-arbitration boundary used by ChatPage's compact
+    // list. The URL push also removes a still-pending `?agent=` deep link
+    // immediately; the revision protects the async gap before navigation
+    // commits.
+    chatStore.supersedeAgentIntent();
     chatStore.setSelectedAgentId(session.agent_id);
     chatStore.setActiveSession(session.id);
-  }, [setOpenMobile]);
+    push(`${chatHref}?session=${encodeURIComponent(session.id)}`);
+  }, [chatHref, push, setOpenMobile]);
   const openChatTopics = useCallback(() => {
     setOpenMobile(false);
-    useChatStore.getState().setActiveSession(null);
+    const chatStore = useChatStore.getState();
+    chatStore.supersedeAgentIntent();
+    chatStore.requestTopicsView();
+    chatStore.setActiveSession(null);
   }, [setOpenMobile]);
   const openChatProfile = useCallback(() => {
     setOpenMobile(false);
@@ -685,8 +695,24 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
         myInvitations={myInvitations}
         onAcceptInvitation={(id) => acceptInvitationMut.mutate(id)}
         onArchive={(session) => {
+          const chatStore = useChatStore.getState();
           if (session.id === activeChatSessionId) {
-            useChatStore.getState().setActiveSession(null);
+            chatStore.supersedeAgentIntent();
+            if (isCompact) {
+              chatStore.setActiveSession(null);
+            } else {
+              const history = sortChatSessions(
+                chatSessions.filter((item) => item.status !== "archived"),
+              );
+              const index = history.findIndex((item) => item.id === session.id);
+              const next = history[index + 1] ?? history[index - 1] ?? null;
+              if (next) {
+                chatStore.setSelectedAgentId(next.agent_id);
+                chatStore.setActiveSession(next.id);
+              } else {
+                chatStore.setActiveSession(null);
+              }
+            }
           }
           archiveChatSession.mutate({ sessionId: session.id, archived: true });
         }}

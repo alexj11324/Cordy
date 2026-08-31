@@ -187,6 +187,13 @@ export function LobeAgentSidebar({
     [agents, sessions, sessionFilter],
   );
   const historyCount = sessions.filter((session) => session.status !== "archived").length;
+  // An archived or revoked agent can remain the truthful identity of the
+  // currently open historical session, but it must not become the target of a
+  // brand-new topic. Fall back to an eligible agent for the new-topic action.
+  const newTopicAgent =
+    (activeAgent && availableAgents.some((agent) => agent.id === activeAgent.id)
+      ? activeAgent
+      : availableAgents[0]) ?? null;
 
   const workspaceTrigger = (
     <SidebarMenuButton
@@ -325,7 +332,7 @@ export function LobeAgentSidebar({
               size="middle"
               icon={<MessageSquarePlus className="size-4" />}
               aria-label={chatT(($) => $.navigation.new_topic)}
-              onClick={() => onStartChat(activeAgent)}
+              onClick={() => onStartChat(newTopicAgent)}
               className="!h-9 !justify-start !rounded-lg !px-2 !text-sidebar-text-primary hover:!bg-sidebar-item-hover group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!px-0"
             >
               <span className="group-data-[collapsible=icon]:hidden">{chatT(($) => $.navigation.new_topic)}</span>

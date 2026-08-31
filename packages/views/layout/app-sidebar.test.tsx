@@ -7,11 +7,19 @@ const { appForeground, chatSessions, chatStore, detail, deletePin, inboxItems, n
   appForeground: { current: true },
   sidebarState: {
     current: "expanded" as "expanded" | "collapsed",
+    isCompact: false,
     setHoverRevealSuspended: vi.fn(),
     setOpenMobile: vi.fn(),
   },
   chatSessions: { current: [] as { id?: string; unread_count?: number }[] },
-  chatStore: { current: { activeSessionId: null as string | null, isOpen: false } },
+  chatStore: {
+    current: {
+      activeSessionId: null as string | null,
+      isOpen: false,
+      supersedeAgentIntent: vi.fn(),
+      requestTopicsView: vi.fn(),
+    },
+  },
   detail: { current: { isPending: false, isError: false, data: null as unknown, error: null as unknown } },
   deletePin: vi.fn(),
   inboxItems: { current: [] as { id: string; read: boolean }[] },
@@ -80,6 +88,7 @@ vi.mock("@patchbay/ui/components/ui/sidebar", () => ({
   SidebarMenuItem: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SidebarRail: () => null,
   useSidebar: () => ({
+    isCompact: sidebarState.isCompact,
     state: sidebarState.current,
     setHoverRevealSuspended: sidebarState.setHoverRevealSuspended,
     setOpenMobile: sidebarState.setOpenMobile,
@@ -130,7 +139,12 @@ vi.mock("@patchbay/core/auth", () => ({
 // Callable-store shape (selectorFn + getState) per the repo testing rules.
 vi.mock("@patchbay/core/chat", () => ({
   useChatStore: Object.assign(
-    (selector: (state: { activeSessionId: string | null; isOpen: boolean }) => unknown) =>
+    (selector: (state: {
+      activeSessionId: string | null;
+      isOpen: boolean;
+      supersedeAgentIntent: () => void;
+      requestTopicsView: () => void;
+    }) => unknown) =>
       selector(chatStore.current),
     { getState: () => chatStore.current },
   ),
@@ -388,7 +402,11 @@ describe("personal nav — Chat", () => {
     chatSessions.current = [];
     inboxItems.current = [];
     navigation.current = { pathname: "/acme/issues" };
-    chatStore.current = { activeSessionId: null, isOpen: false };
+    chatStore.current = {
+      ...chatStore.current,
+      activeSessionId: null,
+      isOpen: false,
+    };
     appForeground.current = true;
   });
 
@@ -435,7 +453,7 @@ describe("personal nav — Chat", () => {
     // count with no matching row.
     chatSessions.current = [{ id: "a", unread_count: 2 }, { id: "b", unread_count: 3 }];
     navigation.current = { pathname: "/acme/chat" };
-    chatStore.current = { activeSessionId: "a", isOpen: false };
+    chatStore.current = { ...chatStore.current, activeSessionId: "a", isOpen: false };
     const { container } = render(<AppSidebar />);
     expect(chatBadge(container)).toHaveAttribute("aria-label", "3");
   });
@@ -443,7 +461,7 @@ describe("personal nav — Chat", () => {
   it("excludes the viewed session when the floating chat window is open off-route", () => {
     chatSessions.current = [{ id: "a", unread_count: 2 }, { id: "b", unread_count: 3 }];
     navigation.current = { pathname: "/acme/issues" };
-    chatStore.current = { activeSessionId: "a", isOpen: true };
+    chatStore.current = { ...chatStore.current, activeSessionId: "a", isOpen: true };
     const { container } = render(<AppSidebar />);
     expect(chatBadge(container)).toHaveAttribute("aria-label", "3");
   });
@@ -453,7 +471,7 @@ describe("personal nav — Chat", () => {
     // surfaces closed nothing will auto mark-read, so the badge must count.
     chatSessions.current = [{ id: "a", unread_count: 2 }, { id: "b", unread_count: 3 }];
     navigation.current = { pathname: "/acme/issues" };
-    chatStore.current = { activeSessionId: "a", isOpen: false };
+    chatStore.current = { ...chatStore.current, activeSessionId: "a", isOpen: false };
     const { container } = render(<AppSidebar />);
     expect(chatBadge(container)).toHaveAttribute("aria-label", "5");
   });
@@ -464,7 +482,7 @@ describe("personal nav — Chat", () => {
     // notification is silently eaten while the user is away.
     chatSessions.current = [{ id: "a", unread_count: 2 }, { id: "b", unread_count: 3 }];
     navigation.current = { pathname: "/acme/issues" };
-    chatStore.current = { activeSessionId: "a", isOpen: true };
+    chatStore.current = { ...chatStore.current, activeSessionId: "a", isOpen: true };
     appForeground.current = false;
     const { container } = render(<AppSidebar />);
     expect(chatBadge(container)).toHaveAttribute("aria-label", "5");
@@ -473,7 +491,7 @@ describe("personal nav — Chat", () => {
   it("counts the active session on the chat route while the app is backgrounded", () => {
     chatSessions.current = [{ id: "a", unread_count: 2 }, { id: "b", unread_count: 3 }];
     navigation.current = { pathname: "/acme/chat" };
-    chatStore.current = { activeSessionId: "a", isOpen: false };
+    chatStore.current = { ...chatStore.current, activeSessionId: "a", isOpen: false };
     appForeground.current = false;
     const { container } = render(<AppSidebar />);
     expect(chatBadge(container)).toHaveAttribute("aria-label", "5");
