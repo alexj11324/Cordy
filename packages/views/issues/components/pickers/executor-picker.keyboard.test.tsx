@@ -1,4 +1,4 @@
-// Keyboard behaviour of the assignee picker's search box. Uses the REAL
+// Keyboard behaviour of the executor picker's search box. Uses the REAL
 // PropertyPicker / Base UI Popover — the regression under test lives in
 // PropertyPicker's highlight bookkeeping, so mocking it would test nothing.
 //
@@ -13,7 +13,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import enIssues from "../../../locales/en/issues.json";
-import { AssigneePicker } from "./assignee-picker";
+import { ExecutorPicker } from "./executor-picker";
 
 const MEMBERS = [
   { user_id: "user-1", name: "Ada Lovelace", role: "member" },
@@ -40,7 +40,7 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"] }),
   agentListOptions: () => ({ queryKey: ["agents"] }),
   teamListOptions: () => ({ queryKey: ["teams"] }),
-  assigneeFrequencyOptions: () => ({ queryKey: ["frequency"] }),
+  executorFrequencyOptions: () => ({ queryKey: ["frequency"] }),
 }));
 vi.mock("../../../common/actor-avatar", () => ({
   ActorAvatar: () => <span data-testid="actor-avatar" />,
@@ -52,9 +52,9 @@ function renderPicker(onUpdate: () => void) {
   return render(
     <I18nProvider locale="en" resources={{ en: { issues: enIssues } }}>
       {/* Controlled open: the picker is the subject, its trigger is not. */}
-      <AssigneePicker
-        assigneeType={null}
-        assigneeId={null}
+      <ExecutorPicker
+        executorType={null}
+        executorId={null}
         onUpdate={onUpdate}
         open
         onOpenChange={() => {}}
@@ -63,7 +63,7 @@ function renderPicker(onUpdate: () => void) {
   );
 }
 
-describe("AssigneePicker search keyboard defaults", () => {
+describe("ExecutorPicker search keyboard defaults", () => {
   it("assigns the first match on Enter instead of unassigning", async () => {
     const user = userEvent.setup();
     const onUpdate = vi.fn();
@@ -74,8 +74,7 @@ describe("AssigneePicker search keyboard defaults", () => {
     await user.keyboard("{Enter}");
 
     expect(onUpdate).toHaveBeenCalledWith({
-      assignee_type: "member",
-      assignee_id: "user-2",
+      owner_type: "member", owner_id: "user-2",
     });
   });
 

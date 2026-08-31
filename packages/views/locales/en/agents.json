@@ -679,6 +679,7 @@
         "deferred": "Retrying",
         "dispatched": "Dispatched",
         "waiting_local_directory": "Waiting for directory",
+        "waiting_capacity": "Waiting for model capacity",
         "running": "Running",
         "completed": "Succeeded",
         "failed": "Failed",

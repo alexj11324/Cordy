@@ -250,7 +250,7 @@ describe("Settings IntegrationsTab", () => {
         "Connect a platform once, then use /agents in the chat to choose which Agent handles each conversation.",
       ),
     ).toBeInTheDocument();
-    expect(screen.getAllByText("Workspace admin only")).toHaveLength(6);
+    expect(screen.getAllByText("Workspace admin only")).toHaveLength(7);
   });
 
   it("shows a login gate for guests instead of an external connection action", () => {
@@ -259,7 +259,7 @@ describe("Settings IntegrationsTab", () => {
 
     renderTab();
 
-    expect(screen.getAllByText("Log in to connect")).toHaveLength(6);
+    expect(screen.getAllByText("Log in to connect")).toHaveLength(7);
     expect(screen.queryByText("Workspace admin only")).toBeNull();
   });
 

@@ -49,7 +49,7 @@ interface ActorAvatarProps {
   enableHoverCard?: boolean;
   /**
    * Overlay an agent-presence dot at the avatar's bottom-right. Use at
-   * decision moments (picker rows, current-assignee display, agent-centric
+   * decision moments (picker rows, current-executor display, agent-centric
    * surfaces). Has no effect for non-agent actors. Independent of
    * `enableHoverCard` so picker rows can show the dot without nesting a
    * popover inside the dropdown.

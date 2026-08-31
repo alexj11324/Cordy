@@ -85,13 +85,13 @@ vi.mock("@patchbay/core/workspace/hooks", () => ({
 vi.mock("../common/actor-avatar", () => ({
   ActorAvatar: ({ actorId }: { actorId: string }) => <span data-testid={`avatar-${actorId}`} />,
 }));
-vi.mock("../issues/components/pickers/assignee-picker", () => ({
-  AssigneePicker: ({ onUpdate }: { onUpdate: (value: Record<string, string>) => void }) => (
+vi.mock("../issues/components/pickers/executor-picker", () => ({
+  ExecutorPicker: ({ onUpdate }: { onUpdate: (value: Record<string, string>) => void }) => (
     <div>
-      <button type="button" onClick={() => onUpdate({ assignee_type: "agent", assignee_id: "agent-1" })}>
+      <button type="button" onClick={() => onUpdate({ executor_type: "agent", executor_id: "agent-1" })}>
         Choose current
       </button>
-      <button type="button" onClick={() => onUpdate({ assignee_type: "agent", assignee_id: "agent-2" })}>
+      <button type="button" onClick={() => onUpdate({ executor_type: "agent", executor_id: "agent-2" })}>
         Choose Jessie
       </button>
     </div>
@@ -106,7 +106,7 @@ vi.mock("../i18n", () => ({
     ) => {
       // Resolve the accessor against a flat label map so assertions can target
       // text, then interpolate {{name}} / {{count}} the way i18next would — the
-      // headline substitutes the assignee name and the batch count.
+      // headline substitutes the executor name and the batch count.
       const labels = {
         run_confirm: {
           title_assign: "Confirm assignment?",
@@ -195,8 +195,8 @@ const noteBox = () => screen.getByPlaceholderText("scope...");
 const single = {
   issueIds: ["issue-1"],
   mode: "assign" as const,
-  assigneeType: "agent" as const,
-  assigneeId: "agent-1",
+  executorType: "agent" as const,
+  executorId: "agent-1",
 };
 
 // Promoting a parked issue out of backlog starts the run on its own, so it
@@ -206,18 +206,18 @@ const promote = {
   issueIds: ["issue-1"],
   mode: "promote" as const,
   status: "rework",
-  assigneeType: "agent" as const,
-  assigneeId: "agent-1",
+  executorType: "agent" as const,
+  executorId: "agent-1",
 };
 
 const review = {
   issueIds: ["issue-1"],
   mode: "review" as const,
   status: "in_review",
-  fromAssigneeType: "agent" as const,
-  fromAssigneeId: "agent-1",
-  assigneeType: null,
-  assigneeId: null,
+  fromExecutorType: "agent" as const,
+  fromExecutorId: "agent-1",
+  executorType: null,
+  executorId: null,
   issueRevision: 7,
 };
 
@@ -225,8 +225,8 @@ const reviewReturn = {
   issueIds: ["issue-1"],
   mode: "review-return" as const,
   status: "in_progress",
-  assigneeType: "agent" as const,
-  assigneeId: "agent-1",
+  executorType: "agent" as const,
+  executorId: "agent-1",
   issueRevision: 7,
 };
 
@@ -237,26 +237,26 @@ describe("RunConfirmModal", () => {
     expect(screen.queryByTestId("spinner")).not.toBeInTheDocument();
     expect(noteBox()).not.toBeDisabled();
     expect(confirmButton()).not.toBeDisabled();
-    // Headline reads across elements — the assignee name is bolded in place.
+    // Headline reads across elements — the executor name is bolded in place.
     expect(container.textContent).toContain("assign to Walt");
   });
 
-  it("single assign sends the assignee change with the handoff note", async () => {
+  it("single assign sends the executor change with the handoff note", async () => {
     render(<RunConfirmModal onClose={vi.fn()} data={single} />);
     fireEvent.change(noteBox(), { target: { value: "only login" } });
     fireEvent.click(confirmButton());
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     expect(mockUpdate).toHaveBeenCalledWith({
       id: "issue-1",
-      assignee_type: "agent",
-      assignee_id: "agent-1",
+      executor_type: "agent",
+      executor_id: "agent-1",
       handoff_note: "only login",
     });
     expect(mockBatch).not.toHaveBeenCalled();
   });
 
   it("completes silently on success — closes with no result toast", async () => {
-    // Final scope: the dialog only confirms the assignment. The assignee and any
+    // Final scope: the dialog only confirms the assignment. The executor and any
     // run surface through the issue's normal updates, so submit adds no toast.
     const onClose = vi.fn();
     render(<RunConfirmModal onClose={onClose} data={single} />);
@@ -284,9 +284,9 @@ describe("RunConfirmModal", () => {
     expect(screen.getByText("runtime too old")).toBeInTheDocument();
   });
 
-  it("promote sends the status change with the handoff note and no assignee fields", async () => {
+  it("promote sends the status change with the handoff note and no executor fields", async () => {
     // The owner is already on the issue: re-sending it would turn a status
-    // write into an assignee write on the server's side of the predicate.
+    // write into an executor write on the server's side of the predicate.
     render(<RunConfirmModal onClose={vi.fn()} data={promote} />);
     fireEvent.change(noteBox(), { target: { value: "redo the migration" } });
     fireEvent.click(screen.getByRole("button", { name: "Move and start" }));
@@ -368,7 +368,7 @@ describe("RunConfirmModal", () => {
     render(
       <RunConfirmModal
         onClose={vi.fn()}
-        data={{ ...single, assigneeType: "team", assigneeId: "team-1" }}
+        data={{ ...single, executorType: "team", executorId: "team-1" }}
       />,
     );
     expect(noteBox()).toBeDisabled();
@@ -376,7 +376,7 @@ describe("RunConfirmModal", () => {
   });
 
   it("leaves the note box enabled when the target runtime can't be resolved", () => {
-    // Unknown assignee → no verdict. The note is a soft gate, so an
+    // Unknown executor → no verdict. The note is a soft gate, so an
     // unresolvable target must not produce a spurious warning.
     cache.agents = [];
     render(<RunConfirmModal onClose={vi.fn()} data={single} />);
@@ -393,7 +393,7 @@ describe("RunConfirmModal", () => {
     await waitFor(() => expect(mockBatch).toHaveBeenCalledTimes(1));
     expect(mockBatch).toHaveBeenCalledWith({
       ids: ["i1", "i2"],
-      updates: { assignee_type: "agent", assignee_id: "agent-1" },
+      updates: { executor_type: "agent", executor_id: "agent-1" },
     });
     expect(mockUpdate).not.toHaveBeenCalled();
     expect(mockToast.success).not.toHaveBeenCalled();
@@ -411,8 +411,8 @@ describe("RunConfirmModal", () => {
     await waitFor(() => expect(mockUpdate).toHaveBeenCalledTimes(1));
     expect(mockUpdate).toHaveBeenCalledWith({
       id: "issue-1",
-      assignee_type: "agent",
-      assignee_id: "agent-1",
+      executor_type: "agent",
+      executor_id: "agent-1",
       handoff_note: "only login",
     });
     await waitFor(() => expect(onClose).toHaveBeenCalled());

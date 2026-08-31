@@ -41,6 +41,9 @@ const session = {
 const input = {
   workspaceSlug: "venus",
   runtimeId: "runtime-1",
+  model: "claude-sonnet-4-6",
+  executionRuntimeId: "runtime-2",
+  executionModel: "gpt-5.4",
   title: "Getting started with Patrick",
   language: "en",
 } as const;
@@ -70,6 +73,9 @@ describe("bootstrapPatrick", () => {
       {
         runtime_id: "runtime-1",
         language: "en",
+        model: "claude-sonnet-4-6",
+        execution_runtime_id: "runtime-2",
+        execution_model: "gpt-5.4",
         session_title: "Getting started with Patrick",
       },
       "venus",

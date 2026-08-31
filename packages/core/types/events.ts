@@ -28,6 +28,8 @@ export type WSEventType =
   | "task:dispatch"
   | "task:running"
   | "task:waiting_local_directory"
+  | "task:waiting_capacity"
+  | "task:available"
   | "task:progress"
   | "task:completed"
   | "task:failed"
@@ -109,7 +111,7 @@ export interface IssueCreatedPayload {
 export interface IssueUpdatedPayload {
   issue: Issue;
   // The server stamps issue:updated with which fields actually changed
-  // in the Rust issue publisher. assignee_changed lets the
+  // in the Rust issue publisher. owner_changed / executor_changed let the
   // realtime layer keep filtered myList caches in place on a non-membership
   // change instead of refetching; status_changed lets it reconcile board column
   // counts when a status change lands on an off-screen (unloaded) issue;
@@ -117,7 +119,8 @@ export interface IssueUpdatedPayload {
   // list (the client-side cache diff is unreliable after an optimistic local
   // move — PB-3669 / #4548). Other change flags are present on the wire too and
   // can be surfaced here when needed.
-  assignee_changed?: boolean;
+  owner_changed?: boolean;
+  executor_changed?: boolean;
   status_changed?: boolean;
   project_changed?: boolean;
 }
@@ -336,6 +339,25 @@ export interface TaskWaitingLocalDirectoryPayload {
   chat_session_id?: string;
   status: string;
   wait_reason?: string;
+}
+
+/** Emitted when a task's immutable ACP/model target is rate-limited or out of quota. */
+export interface TaskWaitingCapacityPayload {
+  task_id: string;
+  agent_id: string;
+  issue_id: string;
+  chat_session_id?: string;
+  status: string;
+  reason?: string;
+}
+
+export interface TaskAvailablePayload {
+  task_id: string;
+  agent_id: string;
+  issue_id: string;
+  chat_session_id?: string;
+  status: string;
+  reason?: string;
 }
 
 export interface TaskCompletedPayload {
@@ -572,6 +594,8 @@ export interface WSEventPayloadMap {
   "task:dispatch": TaskDispatchPayload;
   "task:running": TaskRunningPayload;
   "task:waiting_local_directory": TaskWaitingLocalDirectoryPayload;
+  "task:waiting_capacity": TaskWaitingCapacityPayload;
+  "task:available": TaskAvailablePayload;
   "task:completed": TaskCompletedPayload;
   "task:failed": TaskFailedPayload;
   "task:message": TaskMessagePayload;

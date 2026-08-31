@@ -16,8 +16,11 @@ export interface BootstrapPatrickInput {
    */
   workspaceSlug: string;
   runtimeId: string;
-  /** Runtime model for Patrick. Empty falls back to the runtime's own default. */
-  model?: string;
+  /** Concrete ACP model for Patrick. Required by the server. */
+  model: string;
+  /** Separate runtime/model pair used by default execution and review agents. */
+  executionRuntimeId: string;
+  executionModel: string;
   /** Localized title for the opening conversation. */
   title: string;
   language: PatrickOnboardingLanguage;
@@ -50,6 +53,8 @@ export async function bootstrapPatrick(
       runtime_id: input.runtimeId,
       language: input.language,
       model: input.model,
+      execution_runtime_id: input.executionRuntimeId,
+      execution_model: input.executionModel,
       session_title: input.title,
     },
     input.workspaceSlug,

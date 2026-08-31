@@ -2271,7 +2271,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "데몬 cancelled 상태 보고와 agent status reconciliation, server heartbeat 분리와 slow-log가 개선되었습니다.",
           ],
           fixes: [
-            "태스크 create/update의 assignee_id 검증, DeleteIssue ID 해석, Pi skills 경로, Windows console popup을 수정했습니다.",
+            "태스크 create/update의 executor_id 검증, DeleteIssue ID 해석, Pi skills 경로, Windows console popup을 수정했습니다.",
           ],
         },
         {

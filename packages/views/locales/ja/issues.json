@@ -55,11 +55,11 @@
     "search_status": "ステータスを検索...",
     "no_results": "結果なし",
     "no_labels": "まだラベルがありません",
-    "no_assignee": "担当者なし",
+    "no_executor": "担当者なし",
     "no_project": "プロジェクトなし",
     "section_status": "ステータス",
     "section_priority": "優先度",
-    "section_assignee": "担当者",
+    "section_executor": "担当者",
     "section_creator": "作成者",
     "section_project": "プロジェクト",
     "section_label": "ラベル",
@@ -97,7 +97,7 @@
     "ascending_title": "昇順",
     "descending_title": "降順",
     "group_status": "ステータス",
-    "group_assignee": "担当者",
+    "group_executor": "担当者",
     "group_parent": "親タスク",
     "group_project": "プロジェクト",
     "sort_manual": "手動",
@@ -110,7 +110,7 @@
     "sort_title": "タイトル",
     "card_priority": "優先度",
     "card_description": "説明",
-    "card_assignee": "担当者",
+    "card_executor": "担当者",
     "card_start_date": "開始日",
     "card_due_date": "期限",
     "card_project": "プロジェクト",
@@ -143,7 +143,7 @@
     "task_summary": "タスク {{total}} 件 · 準備完了 {{ready}} · 実行中 {{running}} · ブロック {{blocked}}",
     "toolbar": "依存関係グラフの操作",
     "canvas_label": "依存関係グラフのキャンバス",
-    "node_label": "{{identifier}} {{title}} — 状態：{{status}} — 準備状態：{{readiness}} — 担当者：{{assignee}}",
+    "node_label": "{{identifier}} {{title}} — 状態：{{status}} — 準備状態：{{readiness}} — 担当者：{{executor}}",
     "filter": {
       "all": "すべて",
       "ready": "準備完了",
@@ -166,7 +166,7 @@
     "task": "タスク",
     "readiness": "準備状態",
     "prerequisites": "件の前提条件を満たしています",
-    "assignee": "担当者",
+    "executor": "担当者",
     "unassigned": "未割り当て",
     "open_issue": "{{identifier}} を開く",
     "edge_label": "{{from}} から {{to}} への依存",
@@ -227,7 +227,7 @@
       "identifier": "ID",
       "status": "ステータス",
       "priority": "優先度",
-      "assignee": "担当者",
+      "executor": "担当者",
       "labels": "ラベル",
       "project": "プロジェクト",
       "start_date": "開始日",
@@ -287,7 +287,7 @@
     "no_parent": "親タスクなし",
     "other_parents": "その他の親タスク",
     "no_project": "プロジェクトなし",
-    "no_assignee": "未割り当て",
+    "no_executor": "未割り当て",
     "open_parent": "親タスクを開く",
     "toggle_collapse": "レーンの開閉"
   },
@@ -388,7 +388,8 @@
     "prop_status": "ステータス",
     "prop_priority": "優先度",
     "prop_stage": "ステージ",
-    "prop_assignee": "担当者",
+    "prop_owner": "責任者",
+    "prop_executor": "実行者",
     "prop_reviewer": "レビュアー",
     "handoff_history": "引き継ぎ履歴",
     "handoff_stack_aria": "引き継ぎチェーンは {{count}} 人",
@@ -464,8 +465,8 @@
     "created": "このタスクを作成しました",
     "self_assigned": "このタスクを自分に割り当てました",
     "assigned_to": "{{name}} に割り当てました",
-    "removed_assignee": "担当者を削除しました",
-    "changed_assignee": "担当者を変更しました",
+    "removed_executor": "担当者を削除しました",
+    "changed_executor": "担当者を変更しました",
     "review_handoff": "レビューを {{from}} から {{to}} へ引き継ぎました",
     "review_handoff_short": "レビューを引き継ぎ",
     "status_changed": "ステータスを {{from}} から {{to}} に変更しました",
@@ -525,7 +526,7 @@
     "reply_count_other": "返信 {{count}} 件",
     "leave_comment_placeholder": "コメントを残す...",
     "send_tooltip": "送信",
-    "trigger_source_issue_assignee": "担当",
+    "trigger_source_issue_executor": "担当",
     "trigger_source_mention_agent": "@メンション",
     "trigger_source_mention_team_leader": "Team",
     "trigger_source_unknown": "トリガー",
@@ -644,6 +645,7 @@
     "status_deferred": "再試行中",
     "status_dispatched": "開始中",
     "status_waiting_local_directory": "ローカルディレクトリ待機中",
+    "status_waiting_capacity": "モデルの容量を待機中",
     "status_running": "作業中",
     "status_completed": "完了",
     "status_failed": "失敗",
@@ -697,10 +699,10 @@
   },
   "batch": {
     "selected": "{{count}} 件選択中",
-    "selected_owners": "選択した担当者",
+    "selected_executors": "選択した実行者",
     "status": "ステータス",
     "priority": "優先度",
-    "assignee": "担当者",
+    "executor": "担当者",
     "delete": "削除",
     "update_success_other": "タスク {{count}} 件を更新しました",
     "update_failed": "タスクを更新できませんでした",
@@ -718,7 +720,7 @@
   "actions": {
     "status": "ステータス",
     "priority": "優先度",
-    "assignee": "担当者",
+    "executor": "担当者",
     "start_date": "開始日",
     "start_today": "今日",
     "start_tomorrow": "明日",
@@ -745,6 +747,10 @@
     "delete_issue": "タスクを削除"
   },
   "pickers": {
+    "owner": {
+      "trigger_unassigned": "担当者なし",
+      "search_placeholder": "メンバーを検索..."
+    },
     "custom_property": {
       "empty": "空",
       "none": "値なし",
@@ -761,7 +767,7 @@
     },
     "filter_options_aria": "フィルターオプション",
     "no_results": "結果なし",
-    "assignee": {
+    "executor": {
       "trigger_unassigned": "未割り当て",
       "search_placeholder": "担当者を割り当て...",
       "members_group": "メンバー",
@@ -769,6 +775,10 @@
       "teams_group": "チーム",
       "agent_runtime_required": "作業を割り当てる前に、このエージェントにデバイスをバインドしてください",
       "team_runtime_required": "作業を割り当てる前に、このチームのリーダーにデバイスをバインドしてください"
+    },
+    "reviewer": {
+      "trigger_unassigned": "レビュアーなし",
+      "search_placeholder": "レビュアーを検索..."
     },
     "start_date": {
       "trigger_label": "開始日",

@@ -35,14 +35,16 @@ import { useMentionInput } from "@/lib/use-mention-input";
 export default function NewIssueModal() {
   const [title, setTitle] = useState("");
   const description = useMentionInput();
-  // Attribute chips (status / priority / assignee / due date / project)
+  // Attribute chips (status / priority / executor / due date / project)
   // live in `useNewIssueDraftStore` so the new-issue-picker/* formSheet
   // routes can read and write the same values without a parent-child
   // React relationship. The store is reset on mount + on unmount so
   // re-opening the new-issue modal starts clean.
   const status = useNewIssueDraftStore((s) => s.status);
   const priority = useNewIssueDraftStore((s) => s.priority);
-  const assignee = useNewIssueDraftStore((s) => s.assignee);
+  const owner = useNewIssueDraftStore((s) => s.owner);
+  const executor = useNewIssueDraftStore((s) => s.executor);
+  const reviewer = useNewIssueDraftStore((s) => s.reviewer);
   const dueDate = useNewIssueDraftStore((s) => s.dueDate);
   const project = useNewIssueDraftStore((s) => s.project);
   const resetDraft = useNewIssueDraftStore((s) => s.reset);
@@ -69,8 +71,14 @@ export default function NewIssueModal() {
         description: finalDescription || undefined,
         status,
         priority,
-        ...(assignee
-          ? { assignee_type: assignee.type, assignee_id: assignee.id }
+        ...(owner?.type === "member"
+          ? { owner_type: "member" as const, owner_id: owner.id }
+          : {}),
+        ...(executor
+          ? { executor_type: executor.type, executor_id: executor.id }
+          : {}),
+        ...(reviewer
+          ? { reviewer_type: reviewer.type, reviewer_id: reviewer.id }
           : {}),
         ...(dueDate ? { due_date: dueDate } : {}),
         ...(project ? { project_id: project.id } : {}),
@@ -87,7 +95,9 @@ export default function NewIssueModal() {
     description,
     status,
     priority,
-    assignee,
+    owner,
+    executor,
+    reviewer,
     dueDate,
     project,
     createIssue,

@@ -22,6 +22,7 @@ const ACTIVE_STATUS_RANK: Partial<Record<AgentTask["status"], number>> = {
   running: 0,
   dispatched: 1,
   waiting_local_directory: 2,
+  waiting_capacity: 2,
   queued: 3,
   deferred: 4,
 };

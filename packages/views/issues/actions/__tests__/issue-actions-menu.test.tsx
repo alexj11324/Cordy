@@ -52,8 +52,8 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
     queryKey: ["workspaces", "ws-1", "teams"],
     queryFn: () => Promise.resolve([]),
   }),
-  assigneeFrequencyOptions: () => ({
-    queryKey: ["workspaces", "ws-1", "assignee-frequency"],
+  executorFrequencyOptions: () => ({
+    queryKey: ["workspaces", "ws-1", "executor-frequency"],
     queryFn: () => Promise.resolve([]),
   }),
 }));
@@ -151,8 +151,12 @@ const mockIssue: Issue = {
   description: null,
   status: "todo",
   priority: "medium",
-  assignee_type: null,
-  assignee_id: null,
+  owner_type: null,
+  owner_id: null,
+  executor_type: null,
+  executor_id: null,
+  reviewer_type: null,
+  reviewer_id: null,
   creator_type: "member",
   creator_id: "user-1",
   parent_issue_id: null,
@@ -202,7 +206,7 @@ describe("IssueActionsDropdown", () => {
     // Base UI portals the popup; role=menu lands on the popup wrapper.
     expect(await screen.findByText("Status")).toBeInTheDocument();
     expect(screen.getByText("Priority")).toBeInTheDocument();
-    expect(screen.getByText("Assignee")).toBeInTheDocument();
+    expect(screen.getByText("Executor")).toBeInTheDocument();
     expect(screen.getByText("Due date")).toBeInTheDocument();
     expect(screen.getByText("Open in new tab")).toBeInTheDocument();
     expect(screen.getByText("Copy link")).toBeInTheDocument();
@@ -214,7 +218,7 @@ describe("IssueActionsDropdown", () => {
     expect(screen.queryByText("Add sub-issue...")).not.toBeInTheDocument();
   });
 
-  it("clicking the Assignee item opens the shared AssigneePicker popover", async () => {
+  it("clicking the Executor item opens the shared ExecutorPicker popover", async () => {
     render(
       wrap(
         <IssueActionsDropdown
@@ -225,10 +229,10 @@ describe("IssueActionsDropdown", () => {
     );
 
     fireEvent.click(screen.getByTestId("trigger"));
-    fireEvent.click(await screen.findByText("Assignee"));
+    fireEvent.click(await screen.findByText("Executor"));
 
     // The shared picker exposes a search input and renders the workspace
-    // member under a "Members" group — both come from `AssigneePicker`, not
+    // member under a "Members" group — both come from `ExecutorPicker`, not
     // the legacy submenu (which had neither).
     expect(
       await screen.findByPlaceholderText("Assign to..."),

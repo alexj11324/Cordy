@@ -237,7 +237,7 @@ impl AutomationService {
     /// Repairs the create_issue crash window after the issue/run transaction
     /// commits but before the ordinary task enqueue does. Any existing issue
     /// task proves ownership already moved downstream; otherwise enqueue via
-    /// exactly the assignee path used by the original dispatch.
+    /// exactly the executor path used by the original dispatch.
     async fn ensure_webhook_create_issue_task(
         &self,
         automation: &Automation,
@@ -265,12 +265,12 @@ impl AutomationService {
         if effective != "todo" && effective != "in_progress" {
             return Ok(());
         }
-        if automation.assignee_type == "team" {
+        if automation.executor_type == "team" {
             let (leader, _) = self.resolve_leader(automation).await.map_err(|e| {
                 anyhow::anyhow!("dispatch for webhook delivery: resolve team leader: {e}")
             })?;
             self.task_svc
-                .enqueue_task_for_team_leader(&issue, leader.id, automation.assignee_id, None)
+                .enqueue_task_for_team_leader(&issue, leader.id, automation.executor_id, None)
                 .await
                 .map_err(|e| {
                     anyhow::anyhow!("dispatch for webhook delivery: repair team task: {e}")

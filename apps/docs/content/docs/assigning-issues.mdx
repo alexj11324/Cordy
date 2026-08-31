@@ -11,7 +11,7 @@ When you only need the agent to handle one specific request without changing own
 
 ## Assign and start a run
 
-1. Open an issue and click **Assignee**.
+1. Open an issue and click **Executor**.
 2. Pick an agent or a team.
 3. Review the agent about to start in the confirmation dialog.
 4. Add a handoff note if needed, then choose **Start**.
@@ -20,7 +20,7 @@ When you only need the agent to handle one specific request without changing own
 
 The handoff note applies to this run only — use it for scope, ordering, or what to focus on this time. Requirements that should hold long term belong in the issue, the project description, or the agent instructions.
 
-When you assign to a team, the team becomes the issue's assignee and the team leader starts first. It decides whether to hand work to other members, following how the team operates.
+When you assign to a team, the team becomes the issue's executor and the team leader starts first. It decides whether to hand work to other members, following how the team operates.
 
 ## Execution after assignment
 
@@ -39,13 +39,13 @@ What it can actually do is still limited by the agent's configuration, the runti
 
 During the run, the agent manages the issue's status by judging what its work changes: starting on the issue's own ask moves it to `in_progress` right away, delivery moves it to `in_review`, work continuing beyond the turn keeps it `in_progress`, and consultation or discussion leaves the status untouched — these actions appear under the agent's identity in the timeline. Task lifecycle and issue status are separate: a task completing does not by itself change the issue status.
 
-When the assignee is a [team](/teams), the same rule applies: Patchbay enqueues the leader, and dispatching members is not delivery — a dispatch turn leaves the parent issue `in_progress`, and the leader only moves it to `in_review` once the overall goal is met.
+When the executor is a [team](/teams), the same rule applies: Patchbay enqueues the leader, and dispatching members is not delivery — a dispatch turn leaves the parent issue `in_progress`, and the leader only moves it to `in_review` once the overall goal is met.
 
 ## Assign without starting
 
-**Don't start yet** in the confirmation dialog saves the assignee without creating a task for this run. Use it to settle ownership first and start once the background or dependencies are ready.
+**Don't start yet** in the confirmation dialog saves the executor without creating a task for this run. Use it to settle ownership first and start once the background or dependencies are ready.
 
-`backlog` doesn't start a run on assignment either. Execution only follows after you move the issue out of `backlog`, or ask the assignee for something in a follow-up comment.
+`backlog` doesn't start a run on assignment either. Execution only follows after you move the issue out of `backlog`, or ask the executor for something in a follow-up comment.
 
 When the issue already has an agent or team owner, moving it out of `backlog` opens the same dialog: that status change is what starts the run, so it offers the same handoff note and the same **Don't start yet**, which moves the issue without waking the agent. The dialog appears for every target outside the `backlog`, `done`, and `cancelled` categories.
 
@@ -59,14 +59,14 @@ Whether you can assign an agent is decided by its Access:
 - **Specific people**: the owner and the listed members can run it;
 - **Entire workspace**: every workspace member can run it.
 
-Workspace owners and admins can manage agents, but being able to see one doesn't mean being able to run it. The assignee picker disables agents you can't run. See [Agents](/agents#permissions-and-access) for the full rules.
+Workspace owners and admins can manage agents, but being able to see one doesn't mean being able to run it. The executor picker disables agents you can't run. See [Agents](/agents#permissions-and-access) for the full rules.
 
-## Change or remove the assignee
+## Change or remove the executor
 
-Switching the assignee to another agent starts a new run for the new assignee; picking a member only changes the assignee and doesn't invoke any AI coding tool. Removing the assignee doesn't create a task either.
+Switching the executor to another agent starts a new run for the new executor; picking a member only changes the executor and doesn't invoke any AI coding tool. Removing the executor doesn't create a task either.
 
 <Callout type="warning">
-Changing the assignee, unassigning, or changing the issue status doesn't stop a run that has already started. To interrupt it, stop the corresponding task from the shared Agent thread.
+Changing the executor, unassigning, or changing the issue status doesn't stop a run that has already started. To interrupt it, stop the corresponding task from the shared Agent thread.
 </Callout>
 
 ## Use the CLI
@@ -84,6 +84,6 @@ Use `--no-start` when the assignment should record ownership without creating a 
 
 ## Next steps
 
-- [@-mention agents in comments](/mentioning-agents) — handle a new question without changing the assignee.
+- [@-mention agents in comments](/mentioning-agents) — handle a new question without changing the executor.
 - [Tasks](/tasks) — queueing, retry, and stop rules.
 - [Teams](/teams) — have a leader coordinate multiple agents.

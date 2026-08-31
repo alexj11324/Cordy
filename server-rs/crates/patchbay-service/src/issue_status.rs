@@ -29,11 +29,23 @@ pub const DONE: &str = "done";
 pub const BLOCKED: &str = "blocked";
 pub const CANCELLED: &str = "cancelled";
 
-/// Categories that represent work already underway. Issues in these columns
-/// must always have a concrete owner so progress, blockers, and review cannot
-/// become an ownerless queue.
-pub fn requires_assignee(category: &str) -> bool {
-    matches!(category, IN_PROGRESS | IN_REVIEW | BLOCKED)
+/// Categories that retain a concrete execution target. Blocked and Todo are
+/// queues and never start work; In Review keeps the implementation executor
+/// while its independent reviewer runs.
+pub fn requires_executor(category: &str) -> bool {
+    matches!(category, IN_PROGRESS | IN_REVIEW)
+}
+
+pub fn requires_reviewer(category: &str) -> bool {
+    category == IN_REVIEW
+}
+
+pub fn runs_executor(category: &str) -> bool {
+    category == IN_PROGRESS
+}
+
+pub fn runs_reviewer(category: &str) -> bool {
+    category == IN_REVIEW
 }
 
 /// The historical STATUS_ORDER from the frontend's static status config.
@@ -491,12 +503,19 @@ mod tests {
     }
 
     #[test]
-    fn underway_categories_require_an_assignee() {
-        for category in [IN_PROGRESS, IN_REVIEW, BLOCKED] {
-            assert!(requires_assignee(category), "{category}");
+    fn underway_categories_require_an_executor() {
+        for category in [IN_PROGRESS, IN_REVIEW] {
+            assert!(requires_executor(category), "{category}");
         }
-        for category in [BACKLOG, TODO, DONE, CANCELLED] {
-            assert!(!requires_assignee(category), "{category}");
+        for category in [BACKLOG, TODO, BLOCKED, DONE, CANCELLED] {
+            assert!(!requires_executor(category), "{category}");
+        }
+        assert!(requires_reviewer(IN_REVIEW));
+        assert!(runs_executor(IN_PROGRESS));
+        assert!(runs_reviewer(IN_REVIEW));
+        for category in [BACKLOG, TODO, BLOCKED, DONE, CANCELLED] {
+            assert!(!runs_executor(category), "{category}");
+            assert!(!runs_reviewer(category), "{category}");
         }
     }
 

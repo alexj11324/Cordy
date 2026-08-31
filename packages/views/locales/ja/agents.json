@@ -560,6 +560,7 @@
         "deferred": "再試行中",
         "dispatched": "ディスパッチ済み",
         "waiting_local_directory": "ディレクトリ待機中",
+        "waiting_capacity": "モデルの容量を待機中",
         "running": "実行中",
         "completed": "成功",
         "failed": "失敗",

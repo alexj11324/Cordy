@@ -55,11 +55,11 @@
     "search_status": "搜索状态...",
     "no_results": "无结果",
     "no_labels": "还没有标签",
-    "no_assignee": "无负责人",
+    "no_executor": "无负责人",
     "no_project": "无项目",
     "section_status": "状态",
     "section_priority": "优先级",
-    "section_assignee": "负责人",
+    "section_executor": "负责人",
     "section_creator": "创建者",
     "section_project": "项目",
     "section_label": "标签",
@@ -97,7 +97,7 @@
     "ascending_title": "升序",
     "descending_title": "降序",
     "group_status": "状态",
-    "group_assignee": "负责人",
+    "group_executor": "负责人",
     "group_parent": "父级任务",
     "group_project": "项目",
     "sort_manual": "手动",
@@ -110,7 +110,7 @@
     "sort_title": "标题",
     "card_priority": "优先级",
     "card_description": "描述",
-    "card_assignee": "负责人",
+    "card_executor": "负责人",
     "card_start_date": "开始日期",
     "card_due_date": "截止日期",
     "card_project": "项目",
@@ -143,7 +143,7 @@
     "task_summary": "{{total}} 个任务 · {{ready}} 个就绪 · {{running}} 个运行中 · {{blocked}} 个阻塞",
     "toolbar": "依赖图控制",
     "canvas_label": "依赖图画布",
-    "node_label": "{{identifier}} {{title}} — 状态：{{status}} — 就绪：{{readiness}} — 负责人：{{assignee}}",
+    "node_label": "{{identifier}} {{title}} — 状态：{{status}} — 就绪：{{readiness}} — 负责人：{{executor}}",
     "filter": {
       "all": "全部",
       "ready": "就绪",
@@ -166,7 +166,7 @@
     "task": "任务",
     "readiness": "就绪状态",
     "prerequisites": "个先决条件已满足",
-    "assignee": "负责人",
+    "executor": "负责人",
     "unassigned": "未分配",
     "open_issue": "打开 {{identifier}}",
     "edge_label": "从 {{from}} 到 {{to}} 的依赖",
@@ -227,7 +227,7 @@
       "identifier": "编号",
       "status": "状态",
       "priority": "优先级",
-      "assignee": "负责人",
+      "executor": "负责人",
       "labels": "标签",
       "project": "项目",
       "start_date": "开始日期",
@@ -287,7 +287,7 @@
     "no_parent": "无父级",
     "other_parents": "其他父级",
     "no_project": "无项目",
-    "no_assignee": "未分配",
+    "no_executor": "未分配",
     "open_parent": "打开父级任务",
     "toggle_collapse": "切换泳道"
   },
@@ -388,7 +388,8 @@
     "prop_status": "状态",
     "prop_priority": "优先级",
     "prop_stage": "阶段",
-    "prop_assignee": "负责人",
+    "prop_owner": "责任人",
+    "prop_executor": "执行者",
     "prop_reviewer": "审核人",
     "handoff_history": "交接记录",
     "handoff_stack_aria": "交接链中有 {{count}} 人",
@@ -464,8 +465,8 @@
     "created": "创建了这个任务",
     "self_assigned": "把这个任务分配给了自己",
     "assigned_to": "分配给 {{name}}",
-    "removed_assignee": "移除了负责人",
-    "changed_assignee": "更改了负责人",
+    "removed_executor": "移除了负责人",
+    "changed_executor": "更改了负责人",
     "review_handoff": "将审核从 {{from}} 移交给 {{to}}",
     "review_handoff_short": "移交审核",
     "status_changed": "状态从 {{from}} 改为 {{to}}",
@@ -525,7 +526,7 @@
     "reply_count_other": "{{count}} 条回复",
     "leave_comment_placeholder": "留下评论...",
     "send_tooltip": "发送",
-    "trigger_source_issue_assignee": "assignee",
+    "trigger_source_issue_executor": "executor",
     "trigger_source_mention_agent": "@mention",
     "trigger_source_mention_team_leader": "team",
     "trigger_source_unknown": "将触发",
@@ -644,6 +645,7 @@
     "status_deferred": "重试中",
     "status_dispatched": "启动中",
     "status_waiting_local_directory": "等待本地目录释放",
+    "status_waiting_capacity": "等待模型额度",
     "status_running": "正在工作",
     "status_completed": "已完成",
     "status_failed": "失败",
@@ -697,10 +699,10 @@
   },
   "batch": {
     "selected": "已选择 {{count}} 个",
-    "selected_owners": "所选任务的负责人",
+    "selected_executors": "所选任务的执行者",
     "status": "状态",
     "priority": "优先级",
-    "assignee": "负责人",
+    "executor": "执行者",
     "delete": "删除",
     "update_success_other": "已更新 {{count}} 个任务",
     "update_failed": "更新任务失败",
@@ -718,7 +720,7 @@
   "actions": {
     "status": "状态",
     "priority": "优先级",
-    "assignee": "负责人",
+    "executor": "负责人",
     "start_date": "开始日期",
     "start_today": "今天",
     "start_tomorrow": "明天",
@@ -745,6 +747,10 @@
     "delete_issue": "删除任务"
   },
   "pickers": {
+    "owner": {
+      "trigger_unassigned": "无负责人",
+      "search_placeholder": "搜索成员..."
+    },
     "custom_property": {
       "empty": "空",
       "true_label": "是",
@@ -761,7 +767,7 @@
     },
     "filter_options_aria": "筛选选项",
     "no_results": "无结果",
-    "assignee": {
+    "executor": {
       "trigger_unassigned": "未分配",
       "search_placeholder": "分配给...",
       "members_group": "成员",
@@ -769,6 +775,10 @@
       "teams_group": "团队",
       "agent_runtime_required": "请先为该智能体绑定设备，再分配工作",
       "team_runtime_required": "请先为该团队的负责人绑定设备，再分配工作"
+    },
+    "reviewer": {
+      "trigger_unassigned": "无评审人",
+      "search_placeholder": "搜索评审人..."
     },
     "start_date": {
       "trigger_label": "开始日期",

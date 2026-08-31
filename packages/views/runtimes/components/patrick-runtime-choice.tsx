@@ -7,7 +7,7 @@ import { CompactRuntimeRow } from "./compact-runtime-row";
 
 export interface PatrickRuntimeSelection {
   runtimeId: string;
-  /** Empty means "whatever the runtime defaults to". */
+  /** Empty means the onboarding choice is incomplete; the server rejects it. */
   model: string;
 }
 

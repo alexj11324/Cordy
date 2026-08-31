@@ -59,6 +59,7 @@ pub mod issue_status;
 pub mod issue_view;
 pub mod issue_view_preference;
 pub mod label;
+pub mod linear;
 pub mod mcp_merge;
 pub mod me;
 pub mod notification;
@@ -161,6 +162,7 @@ fn cors_layer() -> CorsLayer {
         HeaderName::from_static("x-client-version"),
         HeaderName::from_static("x-client-os"),
         HeaderName::from_static("x-client-capabilities"),
+        HeaderName::from_static("x-patchbay-correlation-id"),
         HeaderName::from_static("x-patchbay-plugin-installation"),
         HeaderName::from_static("x-cordy-plugin-installation"), // legacy-brand-compat
     ];
@@ -361,6 +363,22 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
             ),
         )))
         .merge(formal_guard(vcs::admin_router().route_layer(
+            middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url_with_roles(
+                    state.pool.clone(),
+                    "id",
+                    vec!["owner".into(), "admin".into()],
+                ),
+                patchbay_middleware::workspace::require_workspace,
+            ),
+        )))
+        .merge(formal_guard(linear::member_router().route_layer(
+            middleware::from_fn_with_state(
+                WorkspaceGuardState::from_url(state.pool.clone(), "id"),
+                patchbay_middleware::workspace::require_workspace,
+            ),
+        )))
+        .merge(formal_guard(linear::admin_router().route_layer(
             middleware::from_fn_with_state(
                 WorkspaceGuardState::from_url_with_roles(
                     state.pool.clone(),
@@ -694,6 +712,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
         .merge(contact_sales)
         .merge(stripe_webhooks)
         .merge(vcs_webhook::router())
+        .merge(linear::public_router())
         .merge(composio::public_router().with_state::<HandlerState>(composio_state))
         .merge(plugin_action)
         .merge(authenticated)
@@ -773,7 +792,7 @@ mod tests {
             "/api/issues/grouped",
             "/api/issues/children?parent_ids=018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/issues/child-progress",
-            "/api/assignee-frequency",
+            "/api/executor-frequency",
             "/api/issues/CORD-14/usage",
             "/api/issues/CORD-14/attachments",
             "/api/issues/CORD-14/active-task",

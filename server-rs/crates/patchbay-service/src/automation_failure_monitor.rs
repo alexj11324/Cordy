@@ -749,7 +749,7 @@ fn automation_event_payload(value: &Automation) -> Value {
         "workspace_id": value.workspace_id.to_string(),
         "title": value.title,
         "description": value.description,
-        "assignee_id": value.assignee_id.to_string(),
+        "executor_id": value.executor_id.to_string(),
         "status": value.status,
         "execution_mode": value.execution_mode,
         "issue_title_template": value.issue_title_template,

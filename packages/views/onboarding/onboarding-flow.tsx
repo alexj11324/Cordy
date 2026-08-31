@@ -246,12 +246,25 @@ function OnboardingStepFlow({
   );
 
   const handleRuntimeNext = useCallback(
-    async (rt: AgentRuntime | null, model?: string) => {
+    async (
+      rt: AgentRuntime | null,
+      model?: string,
+      executionRuntime?: AgentRuntime | null,
+      executionModel?: string,
+    ) => {
       if (!workspace) return;
-      // A connected runtime provisions only Patrick and immediately opens the
-      // real interactive onboarding conversation. Specialists are created
-      // later, only when the member's actual workflow justifies them.
+      // A connected runtime provisions Patrick plus the editable execution and
+      // review defaults, then immediately opens the interactive onboarding
+      // conversation. The server performs this as one idempotent bootstrap.
       if (rt) {
+        if (
+          !model?.trim() ||
+          !executionRuntime ||
+          !executionModel?.trim()
+        ) {
+          toast.error(t(($) => $.errors.model_required));
+          return;
+        }
         const contentLang = pickContentLang(i18n.language);
         try {
           // The earlier questionnaire saves are deliberately optimistic. Flush
@@ -262,6 +275,8 @@ function OnboardingStepFlow({
             workspaceSlug: workspace.slug,
             runtimeId: rt.id,
             model,
+            executionRuntimeId: executionRuntime.id,
+            executionModel,
             ...getPatrickOnboarding(contentLang),
           });
           await completeOnboarding("full", workspace.id);

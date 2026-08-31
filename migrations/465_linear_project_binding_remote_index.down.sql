@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS idx_linear_project_binding_remote;

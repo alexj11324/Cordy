@@ -595,6 +595,48 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "450_agent_task_execution_provenance_discovery_queue_index",
         "agent_task_execution_provenance_discovery_queue_idx",
     ),
+    ("456_issue_workspace_executor_index", "idx_issue_workspace_executor"),
+    ("457_issue_workspace_owner_index", "idx_issue_workspace_owner"),
+    (
+        "461_issue_category_policy_workspace_category_index",
+        "uq_workspace_issue_category_policy_workspace_category",
+    ),
+    ("463_linear_connection_workspace_index", "idx_linear_connection_workspace"),
+    ("464_linear_oauth_state_hash_index", "idx_linear_oauth_state_hash"),
+    (
+        "465_linear_project_binding_remote_index",
+        "idx_linear_project_binding_remote",
+    ),
+    (
+        "466_linear_project_binding_local_index",
+        "idx_linear_project_binding_local",
+    ),
+    ("467_linear_issue_link_remote_index", "idx_linear_issue_link_remote"),
+    ("468_linear_issue_link_local_index", "idx_linear_issue_link_local"),
+    (
+        "469_linear_member_binding_email_index",
+        "idx_linear_member_binding_email",
+    ),
+    ("470_linear_agent_binding_label_index", "idx_linear_agent_binding_label"),
+    (
+        "471_linear_sync_inbox_delivery_index",
+        "idx_linear_sync_inbox_delivery",
+    ),
+    (
+        "472_linear_sync_outbox_correlation_index",
+        "idx_linear_sync_outbox_correlation",
+    ),
+    ("473_linear_relation_link_index", "idx_linear_relation_link_pair"),
+    ("474_linear_sync_conflict_open_index", "idx_linear_sync_conflict_open"),
+    ("475_linear_member_binding_user_index", "idx_linear_member_binding_user"),
+    ("477_patrick_workspace_unique_index", "uq_agent_workspace_patrick"),
+    ("478_linear_member_binding_member_index", "idx_linear_member_binding_member"),
+    (
+        "480_agent_task_waiting_capacity_index",
+        "idx_agent_task_queue_waiting_capacity_issue_agent",
+    ),
+    ("481_linear_status_binding_key_index", "idx_linear_status_binding_key"),
+    ("482_linear_agent_binding_agent_index", "idx_linear_agent_binding_agent"),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
@@ -731,4 +773,51 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
         "450_agent_task_execution_provenance_discovery_queue_index",
         "agent_task_execution_provenance_discovery_queue_idx",
     ),
+    ("454_drop_issue_assignee_index", "idx_issue_assignee"),
+    (
+        "455_drop_issue_workspace_assignee_index",
+        "idx_issue_workspace_assignee",
+    ),
+    ("456_issue_workspace_executor_index", "idx_issue_workspace_executor"),
+    ("457_issue_workspace_owner_index", "idx_issue_workspace_owner"),
+    (
+        "461_issue_category_policy_workspace_category_index",
+        "uq_workspace_issue_category_policy_workspace_category",
+    ),
+    ("463_linear_connection_workspace_index", "idx_linear_connection_workspace"),
+    ("464_linear_oauth_state_hash_index", "idx_linear_oauth_state_hash"),
+    (
+        "465_linear_project_binding_remote_index",
+        "idx_linear_project_binding_remote",
+    ),
+    (
+        "466_linear_project_binding_local_index",
+        "idx_linear_project_binding_local",
+    ),
+    ("467_linear_issue_link_remote_index", "idx_linear_issue_link_remote"),
+    ("468_linear_issue_link_local_index", "idx_linear_issue_link_local"),
+    (
+        "469_linear_member_binding_email_index",
+        "idx_linear_member_binding_email",
+    ),
+    ("470_linear_agent_binding_label_index", "idx_linear_agent_binding_label"),
+    (
+        "471_linear_sync_inbox_delivery_index",
+        "idx_linear_sync_inbox_delivery",
+    ),
+    (
+        "472_linear_sync_outbox_correlation_index",
+        "idx_linear_sync_outbox_correlation",
+    ),
+    ("473_linear_relation_link_index", "idx_linear_relation_link_pair"),
+    ("474_linear_sync_conflict_open_index", "idx_linear_sync_conflict_open"),
+    ("475_linear_member_binding_user_index", "idx_linear_member_binding_user"),
+    ("477_patrick_workspace_unique_index", "uq_agent_workspace_patrick"),
+    ("478_linear_member_binding_member_index", "idx_linear_member_binding_member"),
+    (
+        "480_agent_task_waiting_capacity_index",
+        "idx_agent_task_queue_waiting_capacity_issue_agent",
+    ),
+    ("481_linear_status_binding_key_index", "idx_linear_status_binding_key"),
+    ("482_linear_agent_binding_agent_index", "idx_linear_agent_binding_agent"),
 ];

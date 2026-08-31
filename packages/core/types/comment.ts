@@ -63,7 +63,7 @@ export interface CommentTriggerOutcome {
 }
 
 export type CommentTriggerSource =
-  | "issue_assignee"
+  | "issue_executor"
   | "mention_agent"
   | "mention_team_leader";
 

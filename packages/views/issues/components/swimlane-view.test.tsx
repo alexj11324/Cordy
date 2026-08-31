@@ -53,7 +53,7 @@ vi.mock("@patchbay/core/paths", async () => {
   };
 });
 
-// Stub backend-bound hooks that the swimlane invokes for assignee groupings.
+// Stub backend-bound hooks that the swimlane invokes for executor groupings.
 // The hook MUST return a stable reference each call
 // — production `useActorName` wraps its returns in `useMemo`, and the
 // swimlane feeds the result into a `useMemo(..., [getActorName, ...])`
@@ -124,7 +124,7 @@ vi.mock("@patchbay/core/issues/config", () => ({
   },
 }));
 
-type SwimlaneGroupingMock = "parent" | "project" | "assignee";
+type SwimlaneGroupingMock = "parent" | "project" | "executor";
 
 // Mock view store. The lane order and collapsed-lane fields are mutable
 // records on the captured object so tests can simulate persisted state
@@ -145,8 +145,8 @@ const mockViewState: {
   hideStatus: (s: string) => void;
   showStatus: (s: string) => void;
   priorityFilters?: string[];
-  assigneeFilters?: any[];
-  includeNoAssignee?: boolean;
+  executorFilters?: any[];
+  includeNoExecutor?: boolean;
   creatorFilters?: any[];
   projectFilters?: string[];
   includeNoProject?: boolean;
@@ -157,18 +157,18 @@ const mockViewState: {
 } = {
   sortBy: "position",
   sortDirection: "asc",
-  cardProperties: { priority: true, description: true, assignee: true, dueDate: true, project: true, childProgress: true, labels: true },
+  cardProperties: { priority: true, description: true, executor: true, dueDate: true, project: true, childProgress: true, labels: true },
   swimlaneGrouping: "parent",
-  swimlaneOrders: { parent: [], project: [], assignee: [] },
-  collapsedSwimlanes: { parent: [], project: [], assignee: [] },
+  swimlaneOrders: { parent: [], project: [], executor: [] },
+  collapsedSwimlanes: { parent: [], project: [], executor: [] },
   setSwimlaneGrouping: vi.fn(),
   setSwimlaneOrder: vi.fn(),
   toggleSwimlaneCollapsed: vi.fn(),
   hideStatus: vi.fn(),
   showStatus: vi.fn(),
   priorityFilters: [],
-  assigneeFilters: [],
-  includeNoAssignee: false,
+  executorFilters: [],
+  includeNoExecutor: false,
   creatorFilters: [],
   projectFilters: [],
   includeNoProject: false,
@@ -265,8 +265,12 @@ const mockIssues: Issue[] = [
     description: "Parent description",
     status: "todo",
     priority: "high",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -289,8 +293,11 @@ const mockIssues: Issue[] = [
     description: "Child description",
     status: "in_progress",
     priority: "medium",
-    assignee_type: "member",
-    assignee_id: "user-1",
+    owner_type: "member", owner_id: "user-1",
+    executor_type: "agent",
+    executor_id: "agent-1",
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: "parent-1",
@@ -313,8 +320,12 @@ const mockIssues: Issue[] = [
     description: "No parent",
     status: "backlog",
     priority: "low",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -390,11 +401,11 @@ describe("SwimLaneView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockViewState.swimlaneGrouping = "parent";
-    mockViewState.swimlaneOrders = { parent: [], project: [], assignee: [] };
-    mockViewState.collapsedSwimlanes = { parent: [], project: [], assignee: [] };
+    mockViewState.swimlaneOrders = { parent: [], project: [], executor: [] };
+    mockViewState.collapsedSwimlanes = { parent: [], project: [], executor: [] };
     mockViewState.priorityFilters = [];
-    mockViewState.assigneeFilters = [];
-    mockViewState.includeNoAssignee = false;
+    mockViewState.executorFilters = [];
+    mockViewState.includeNoExecutor = false;
     mockViewState.creatorFilters = [];
     mockViewState.projectFilters = [];
     mockViewState.includeNoProject = false;
@@ -430,8 +441,12 @@ describe("SwimLaneView", () => {
     description: "A cancelled orphan",
     status: "cancelled",
     priority: "none",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -602,8 +617,11 @@ describe("SwimLaneView", () => {
     description: null,
     status: "todo",
     priority: "medium",
-    assignee_type: "member",
-    assignee_id: "user-1",
+    owner_type: "member", owner_id: "user-1",
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: "missing-parent",
@@ -1023,8 +1041,12 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "high",
-      assignee_type: null,
-      assignee_id: null,
+      owner_type: null,
+      owner_id: null,
+      executor_type: null,
+      executor_id: null,
+      reviewer_type: null,
+      reviewer_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -1047,8 +1069,12 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "high",
-      assignee_type: null,
-      assignee_id: null,
+      owner_type: null,
+      owner_id: null,
+      executor_type: null,
+      executor_id: null,
+      reviewer_type: null,
+      reviewer_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -1071,8 +1097,12 @@ describe("SwimLaneView", () => {
       description: null,
       status: "in_progress",
       priority: "medium",
-      assignee_type: null,
-      assignee_id: null,
+      owner_type: null,
+      owner_id: null,
+      executor_type: null,
+      executor_id: null,
+      reviewer_type: null,
+      reviewer_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: "parent-1",
@@ -1095,8 +1125,12 @@ describe("SwimLaneView", () => {
       description: null,
       status: "in_progress",
       priority: "medium",
-      assignee_type: null,
-      assignee_id: null,
+      owner_type: null,
+      owner_id: null,
+      executor_type: null,
+      executor_id: null,
+      reviewer_type: null,
+      reviewer_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: "parent-2",
@@ -1397,17 +1431,16 @@ describe("SwimLaneView", () => {
   });
 
   // ------------------------------------------------------------------
-  // Assignee grouping
+  // Executor grouping
   // ------------------------------------------------------------------
 
-  const assigneeIssues: Issue[] = [
+  const executorIssues: Issue[] = [
     {
       ...mockIssues[0]!,
       id: "issue-x",
       identifier: "PROJ-200",
       title: "Issue X",
-      assignee_type: "member",
-      assignee_id: "user-1",
+      owner_type: "member", owner_id: "user-1",
       parent_issue_id: null,
       project_id: null,
       status: "todo",
@@ -1417,8 +1450,8 @@ describe("SwimLaneView", () => {
       id: "issue-y",
       identifier: "PROJ-201",
       title: "Issue Y",
-      assignee_type: "agent",
-      assignee_id: "agent-1",
+      executor_type: "agent",
+      executor_id: "agent-1",
       parent_issue_id: null,
       project_id: null,
       status: "in_progress",
@@ -1428,19 +1461,19 @@ describe("SwimLaneView", () => {
       id: "issue-z",
       identifier: "PROJ-202",
       title: "Issue Z",
-      assignee_type: null,
-      assignee_id: null,
+      executor_type: null,
+      executor_id: null,
       parent_issue_id: null,
       project_id: null,
       status: "todo",
     },
   ];
 
-  it("groups by assignee when swimlaneGrouping is 'assignee'", () => {
-    mockViewState.swimlaneGrouping = "assignee";
+  it("groups by executor when swimlaneGrouping is 'executor'", () => {
+    mockViewState.swimlaneGrouping = "executor";
 
     renderWithI18n(
-      <SwimLaneView issues={assigneeIssues} onMoveIssue={vi.fn()} />,
+      <SwimLaneView issues={executorIssues} onMoveIssue={vi.fn()} />,
     );
 
     // Unassigned pinned lane is always rendered.
@@ -1452,15 +1485,15 @@ describe("SwimLaneView", () => {
     expect(screen.getByText("Issue Z")).toBeInTheDocument();
   });
 
-  it("emits assignee_type + assignee_id when a card is dropped into an actor lane", () => {
-    mockViewState.swimlaneGrouping = "assignee";
+  it("emits executor_type + executor_id when a card is dropped into an actor lane", () => {
+    mockViewState.swimlaneGrouping = "executor";
     const mockOnMoveIssue = vi.fn();
 
     renderWithI18n(
-      <SwimLaneView issues={assigneeIssues} onMoveIssue={mockOnMoveIssue} />,
+      <SwimLaneView issues={executorIssues} onMoveIssue={mockOnMoveIssue} />,
     );
 
-    const target = "swim:assignee:member:user-1:in_review";
+    const target = "swim:executor:member:user-1:in_review";
     act(() => {
       lastOnDragOver({ active: { id: "issue-z" }, over: { id: target } });
     });
@@ -1471,23 +1504,22 @@ describe("SwimLaneView", () => {
     expect(mockOnMoveIssue).toHaveBeenCalledWith(
       "issue-z",
       expect.objectContaining({
-        assignee_type: "member",
-        assignee_id: "user-1",
+        owner_type: "member", owner_id: "user-1",
         status: "in_review",
       }),
       expect.objectContaining({ onSettled: expect.any(Function) }),
     );
   });
 
-  it("emits null assignee when a card is dropped into the 'Unassigned' lane", () => {
-    mockViewState.swimlaneGrouping = "assignee";
+  it("emits null executor when a card is dropped into the 'Unassigned' lane", () => {
+    mockViewState.swimlaneGrouping = "executor";
     const mockOnMoveIssue = vi.fn();
 
     renderWithI18n(
-      <SwimLaneView issues={assigneeIssues} onMoveIssue={mockOnMoveIssue} />,
+      <SwimLaneView issues={executorIssues} onMoveIssue={mockOnMoveIssue} />,
     );
 
-    const target = "swim:assignee:none:done";
+    const target = "swim:executor:none:done";
     act(() => {
       lastOnDragOver({ active: { id: "issue-x" }, over: { id: target } });
     });
@@ -1498,8 +1530,8 @@ describe("SwimLaneView", () => {
     expect(mockOnMoveIssue).toHaveBeenCalledWith(
       "issue-x",
       expect.objectContaining({
-        assignee_type: null,
-        assignee_id: null,
+        executor_type: null,
+        executor_id: null,
         status: "done",
       }),
       expect.objectContaining({ onSettled: expect.any(Function) }),
@@ -1552,8 +1584,12 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "none",
-      assignee_type: null,
-      assignee_id: null,
+      owner_type: null,
+      owner_id: null,
+      executor_type: null,
+      executor_id: null,
+      reviewer_type: null,
+      reviewer_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -1627,8 +1663,12 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "none",
-      assignee_type: null,
-      assignee_id: null,
+      owner_type: null,
+      owner_id: null,
+      executor_type: null,
+      executor_id: null,
+      reviewer_type: null,
+      reviewer_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -1709,8 +1749,12 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "high",
-      assignee_type: null,
-      assignee_id: null,
+      owner_type: null,
+      owner_id: null,
+      executor_type: null,
+      executor_id: null,
+      reviewer_type: null,
+      reviewer_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -1769,8 +1813,8 @@ describe("SwimLaneView", () => {
         issues={[grandparent, parent]}
         activeFilters={{
           priorityFilters: ["high"],
-          assigneeFilters: [],
-          includeNoAssignee: false,
+          executorFilters: [],
+          includeNoExecutor: false,
           creatorFilters: [],
           projectFilters: [],
           includeNoProject: false,
@@ -1803,8 +1847,12 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "medium",
-      assignee_type: null,
-      assignee_id: null,
+      owner_type: null,
+      owner_id: null,
+      executor_type: null,
+      executor_id: null,
+      reviewer_type: null,
+      reviewer_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -1834,8 +1882,8 @@ describe("SwimLaneView", () => {
       identifier: "PROJ-32",
       title: "Running Child",
       status: "in_progress",
-      assignee_type: "agent",
-      assignee_id: "idle-agent",
+      executor_type: "agent",
+      executor_id: "idle-agent",
       parent_issue_id: "p-3",
       position: 12,
     };
@@ -1846,8 +1894,8 @@ describe("SwimLaneView", () => {
       identifier: "PROJ-33",
       title: "Non-running Child",
       status: "in_progress",
-      assignee_type: "agent",
-      assignee_id: "working-agent",
+      executor_type: "agent",
+      executor_id: "working-agent",
       parent_issue_id: "p-3",
       position: 13,
     };
@@ -1865,8 +1913,8 @@ describe("SwimLaneView", () => {
         issues={[grandparent, parent]}
         activeFilters={{
           priorityFilters: [],
-          assigneeFilters: [],
-          includeNoAssignee: false,
+          executorFilters: [],
+          includeNoExecutor: false,
           agentRunningFilter: true,
           runningIssueIds: new Set(["gc-running"]),
           creatorFilters: [],
@@ -1908,8 +1956,8 @@ describe("SwimLaneView", () => {
         issues={[parent]}
         activeFilters={{
           priorityFilters: [],
-          assigneeFilters: [],
-          includeNoAssignee: false,
+          executorFilters: [],
+          includeNoExecutor: false,
           agentRunningFilter: true,
           runningIssueIds: new Set(),
           creatorFilters: [],
@@ -1943,8 +1991,12 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "medium",
-      assignee_type: null,
-      assignee_id: null,
+      owner_type: null,
+      owner_id: null,
+      executor_type: null,
+      executor_id: null,
+      reviewer_type: null,
+      reviewer_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -1991,8 +2043,8 @@ describe("SwimLaneView", () => {
         issues={[grandparent, parent]}
         activeFilters={{
           priorityFilters: [],
-          assigneeFilters: [],
-          includeNoAssignee: false,
+          executorFilters: [],
+          includeNoExecutor: false,
           creatorFilters: [],
           projectFilters: [],
           includeNoProject: false,

@@ -667,6 +667,7 @@
         "deferred": "重试中",
         "dispatched": "已派发",
         "waiting_local_directory": "等待目录",
+        "waiting_capacity": "等待模型额度",
         "running": "进行中",
         "completed": "成功",
         "failed": "失败",

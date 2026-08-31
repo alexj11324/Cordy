@@ -122,14 +122,14 @@ const mockTimeline = [
   },
 ];
 
-type Assignee = {
+type Executor = {
   type: "member" | "agent" | null;
   id: string | null;
   name: string;
   initials?: string;
 };
 
-const allAssignees: Assignee[] = [
+const allExecutors: Executor[] = [
   { type: null, id: null, name: "Unassigned" },
   { type: "member", id: "ar", name: "Alex Rivera", initials: "AR" },
   { type: "member", id: "sk", name: "Sarah Kim", initials: "SK" },
@@ -143,7 +143,7 @@ const priorityCycle: IssuePriority[] = ["none", "low", "medium", "high", "urgent
 function TeammatesVisual() {
   const [status, setStatus] = useState<IssueStatusCategory>("in_progress");
   const [priority, setPriority] = useState<IssuePriority>("medium");
-  const [assignee, setAssignee] = useState<Assignee>(allAssignees[3]!); // Claude
+  const [executor, setExecutor] = useState<Executor>(allExecutors[3]!); // Claude
   const [pickerOpen, setPickerOpen] = useState(true);
   const [statusOpen, setStatusOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
@@ -300,17 +300,17 @@ function TeammatesVisual() {
                   )}
                 </div>
 
-                {/* Assignee — clickable to toggle picker */}
-                <PropRow label="Assignee">
+                {/* Executor — clickable to toggle picker */}
+                <PropRow label="Executor">
                   <button
                     type="button"
                     className="flex items-center gap-1.5 cursor-pointer rounded px-1 -mx-1 hover:bg-accent/30 transition-colors"
                     onClick={() => { setPickerOpen(!pickerOpen); setStatusOpen(false); setPriorityOpen(false); }}
                   >
-                    {assignee.type ? (
+                    {executor.type ? (
                       <>
-                        <MockAvatar type={assignee.type} initials={assignee.initials} size={18} />
-                        <span>{assignee.name}</span>
+                        <MockAvatar type={executor.type} initials={executor.initials} size={18} />
+                        <span>{executor.name}</span>
                       </>
                     ) : (
                       <span className="text-muted-foreground">Unassigned</span>
@@ -320,7 +320,7 @@ function TeammatesVisual() {
               </div>
             </div>
 
-            {/* Assignee picker — togglable */}
+            {/* Executor picker — togglable */}
             {pickerOpen && (
               <div className="overflow-hidden rounded-md border bg-popover shadow-md">
                 <div className="border-b px-3 py-1.5 text-caption text-muted-foreground">
@@ -331,32 +331,32 @@ function TeammatesVisual() {
                     type="button"
                     className={cn(
                       "flex w-full items-center gap-2 rounded-sm px-2 py-1 text-caption text-muted-foreground hover:bg-accent transition-colors",
-                      !assignee.type && "bg-accent",
+                      !executor.type && "bg-accent",
                     )}
-                    onClick={() => { setAssignee(allAssignees[0]!); setPickerOpen(false); }}
+                    onClick={() => { setExecutor(allExecutors[0]!); setPickerOpen(false); }}
                   >
                     <UserMinus className="h-3.5 w-3.5" />
                     <span>Unassigned</span>
-                    {!assignee.type && <Check className="ml-auto h-3.5 w-3.5" />}
+                    {!executor.type && <Check className="ml-auto h-3.5 w-3.5" />}
                   </button>
                 </div>
                 <div className="px-3 py-0.5">
                   <span className="text-micro font-medium uppercase tracking-wider text-muted-foreground">Members</span>
                 </div>
                 <div className="p-1 pt-0">
-                  {allAssignees.filter((a) => a.type === "member").map((m) => (
+                  {allExecutors.filter((a) => a.type === "member").map((m) => (
                     <button
                       type="button"
                       key={m.id}
                       className={cn(
                         "flex w-full items-center gap-2 rounded-sm px-2 py-1 text-caption hover:bg-accent transition-colors",
-                        assignee.id === m.id && "bg-accent",
+                        executor.id === m.id && "bg-accent",
                       )}
-                      onClick={() => { setAssignee(m); setPickerOpen(false); }}
+                      onClick={() => { setExecutor(m); setPickerOpen(false); }}
                     >
                       <MockAvatar type="member" initials={m.initials} size={16} />
                       <span>{m.name}</span>
-                      {assignee.id === m.id && <Check className="ml-auto h-3.5 w-3.5" />}
+                      {executor.id === m.id && <Check className="ml-auto h-3.5 w-3.5" />}
                     </button>
                   ))}
                 </div>
@@ -364,21 +364,21 @@ function TeammatesVisual() {
                   <span className="text-micro font-medium uppercase tracking-wider text-muted-foreground">Agents</span>
                 </div>
                 <div className="p-1 pt-0">
-                  {allAssignees.filter((a) => a.type === "agent").map((a) => (
+                  {allExecutors.filter((a) => a.type === "agent").map((a) => (
                     <button
                       type="button"
                       key={a.id}
                       className={cn(
                         "flex w-full items-center gap-2 rounded-sm px-2 py-1 text-caption hover:bg-accent transition-colors",
-                        assignee.id === a.id && "bg-accent",
+                        executor.id === a.id && "bg-accent",
                       )}
-                      onClick={() => { setAssignee(a); setPickerOpen(false); }}
+                      onClick={() => { setExecutor(a); setPickerOpen(false); }}
                     >
                       <div className="inline-flex size-4 shrink-0 items-center justify-center rounded-full bg-info/10 text-info">
                         <Bot className="size-2.5" />
                       </div>
                       <span>{a.name}</span>
-                      {assignee.id === a.id && <Check className="ml-auto h-3.5 w-3.5" />}
+                      {executor.id === a.id && <Check className="ml-auto h-3.5 w-3.5" />}
                     </button>
                   ))}
                 </div>

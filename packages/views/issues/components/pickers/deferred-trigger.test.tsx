@@ -4,7 +4,7 @@ import { cleanup, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithI18n } from "../../../test/i18n";
 import { PillButton } from "../../../common/pill-button";
-import { AssigneePicker } from "./assignee-picker";
+import { ExecutorPicker } from "./executor-picker";
 import { PriorityPicker } from "./priority-picker";
 
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
@@ -36,9 +36,9 @@ describe("deferred picker triggers", () => {
           onUpdate={() => {}}
           triggerRender={<PillButton />}
         />
-        <AssigneePicker
-          assigneeType={null}
-          assigneeId={null}
+        <ExecutorPicker
+          executorType={null}
+          executorId={null}
           onUpdate={() => {}}
           triggerRender={<PillButton />}
         />

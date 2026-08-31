@@ -178,7 +178,7 @@ describe("StepPlatformFork", () => {
     ).toBeDisabled();
   });
 
-  it("CLI dialog with a selected runtime: Connect enables and fires onNext(runtime)", async () => {
+  it("CLI dialog requires both concrete model selections", async () => {
     const rt = makeRuntime({ id: "rt_claude", name: "Claude Code" });
     resetPicker({
       runtimes: [rt],
@@ -193,20 +193,13 @@ describe("StepPlatformFork", () => {
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText(/1 computer connected/i)).toBeInTheDocument();
-    expect(
-      within(dialog).getByText(/selected: claude code/i),
-    ).toBeInTheDocument();
+    expect(within(dialog).getByText(/^Claude Code$/i)).toBeInTheDocument();
 
     const connect = within(dialog).getByRole("button", {
       name: /start with patrick/i,
     });
-    expect(connect).toBeEnabled();
-    await user.click(connect);
-    expect(onNext).toHaveBeenCalledTimes(1);
-    // The web CLI path now carries a model alongside the runtime, like the
-    // desktop step does. Nothing was picked here, so it stays undefined and
-    // the runtime's own default applies.
-    expect(onNext).toHaveBeenCalledWith(rt, undefined);
+    expect(connect).toBeDisabled();
+    expect(onNext).not.toHaveBeenCalled();
   });
 
 });

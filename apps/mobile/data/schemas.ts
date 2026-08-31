@@ -638,7 +638,7 @@ const AgentInvocationTargetSchema: z.ZodType<AgentInvocationTarget> = z
 
 // Agent schema is loose on every enum / structural field — the agent table is
 // where new modes/visibilities/statuses get added most often. We need only id,
-// name, avatar_url, and a couple of flags for the assignee picker + chat
+// name, avatar_url, and a couple of flags for the executor picker + chat
 // header; everything else is informational and safe to default.
 export const AgentSchema: z.ZodType<Agent> = z.object({
   id: z.string(),
@@ -750,8 +750,12 @@ export const EMPTY_ISSUE_FALLBACK: import("@patchbay/core/types").Issue = {
   description: null,
   status: "backlog",
   priority: "none",
-  assignee_type: null,
-  assignee_id: null,
+  owner_type: null,
+  owner_id: null,
+  executor_type: null,
+  executor_id: null,
+  reviewer_type: null,
+  reviewer_id: null,
   creator_type: "member",
   creator_id: "",
   parent_issue_id: null,

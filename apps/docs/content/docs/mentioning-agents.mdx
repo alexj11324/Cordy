@@ -1,18 +1,18 @@
 ---
 title: "@-mention agents in comments"
-description: "@-mention an agent in an issue comment, or keep replying, to have it handle new information without changing the assignee."
+description: "@-mention an agent in an issue comment, or keep replying, to have it handle new information without changing the executor."
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-@-mention an agent in a comment when you want it to look at a new piece of information, answer a question, or help the current assignee. The comment becomes the starting point for the run; the issue's assignee and status stay unchanged.
+@-mention an agent in a comment when you want it to look at a new piece of information, answer a question, or help the current executor. The comment becomes the starting point for the run; the issue's executor and status stay unchanged.
 
 ## Assigning vs. @-mentioning
 
 | | Assign to an agent | @-mention in a comment |
 |---|---|---|
 | Best for | Making the agent own the whole issue | Having the agent handle the current comment |
-| Changes the assignee | Yes | No |
+| Changes the executor | Yes | No |
 | Changes the status | No | No |
 | Targets per action | One agent or team | Multiple agents or teams |
 | Focus of the run | The whole issue | The triggering comment, plus comments merged in the same batch |
@@ -24,7 +24,7 @@ Use [assignment](/assigning-issues) when the issue needs a clear owner; use an @
 After you pick an agent or team in the comment editor, a trigger preview appears under the input:
 
 - which agents will start working once you send;
-- whether each target comes from a direct @-mention, the issue assignee, or a team leader;
+- whether each target comes from a direct @-mention, the issue executor, or a team leader;
 - whether a target is unavailable, or you lack permission to run it.
 
 Unticking an agent skips this one trigger only — you don't need to delete its name from the comment, and the agent's Access is not changed.
@@ -39,11 +39,11 @@ A plain comment (containing no @ at all) is routed by discussion context:
 
 1. Replying to an agent's comment hands it to that agent.
 2. Replying inside a discussion an agent already participates in keeps that discussion's agent.
-3. A top-level comment that matches neither case goes to the issue's agent assignee; when the assignee is a team, the leader handles it. A plain reply directly to a member does not fall back to the assignee; @-mention an agent or team explicitly when you want one to join.
+3. A top-level comment that matches neither case goes to the issue's agent executor; when the executor is a team, the leader handles it. A plain reply directly to a member does not fall back to the executor; @-mention an agent or team explicitly when you want one to join.
 
-When a comment explicitly @-mentions other targets (including members), the assignee fallback no longer applies.
+When a comment explicitly @-mentions other targets (including members), the executor fallback no longer applies.
 
-When a reply triggers an agent other than the assignee, Patchbay schedules a delayed fallback run for the assignee: if the target agent replies within about 5 minutes, the fallback is cancelled automatically; otherwise the assignee starts a run too.
+When a reply triggers an agent other than the executor, Patchbay schedules a delayed fallback run for the executor: if the target agent replies within about 5 minutes, the fallback is cancelled automatically; otherwise the executor starts a run too.
 
 ## Coalescing consecutive comments
 
@@ -56,7 +56,7 @@ When one comment @-mentions several different agents, each agent gets its own ta
 Two ways:
 
 - Start the comment with `/note`: it's posted as a note between members and triggers no agent.
-- Use `@all`: it notifies every workspace member and switches off this comment's automatic trigger for the assignee.
+- Use `@all`: it notifies every workspace member and switches off this comment's automatic trigger for the executor.
 
 If the trigger preview still lists an agent, untick it before sending.
 

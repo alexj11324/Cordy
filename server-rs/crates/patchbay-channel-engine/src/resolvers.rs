@@ -469,14 +469,14 @@ pub struct ResolverSet {
 }
 
 /// Mirrors Go `service.IssueCreateParams` for the /issue path: the fields
-/// the Router actually sets (status "todo", priority "none", assignee
+/// the Router actually sets (status "todo", priority "none", executor
 /// type "agent" are fixed by create_issue_for_router).
 #[derive(Debug, Clone)]
 pub struct RouterIssueCreateParams {
     pub workspace_id: Uuid,
     pub title: String,
     pub description: String,
-    pub assignee_agent_id: Uuid,
+    pub executor_agent_id: Uuid,
     pub creator_user_id: Uuid,
     /// Empty string = Go's invalid pgtype.Text (omitted).
     pub origin_type: String,

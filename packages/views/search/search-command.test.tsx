@@ -127,7 +127,7 @@ vi.mock("../common/actor-avatar", () => ({
             : undefined;
     return (
       <span
-        data-testid="issue-assignee-avatar"
+        data-testid="issue-executor-avatar"
         title={name ?? `${actorType}:${actorId}`}
       />
     );
@@ -776,7 +776,7 @@ describe("SearchCommand", () => {
     expect(screen.queryByText("deleted-issue")).not.toBeInTheDocument();
   });
 
-  it("shows the assignee avatar instead of status text for issue search results", async () => {
+  it("shows the executor avatar instead of status text for issue search results", async () => {
     const user = userEvent.setup();
     mockMembers.current = [
       {
@@ -801,8 +801,7 @@ describe("SearchCommand", () => {
           description: null,
           status: "in_review",
           priority: "none",
-          assignee_type: "member",
-          assignee_id: "user-1",
+          owner_type: "member", owner_id: "user-1",
           creator_type: "member",
           creator_id: "user-1",
           parent_issue_id: null,
@@ -839,7 +838,7 @@ describe("SearchCommand", () => {
     expect(screen.queryByText("In Review")).not.toBeInTheDocument();
   });
 
-  it("shows the assignee avatar instead of status text for recent issues", () => {
+  it("shows the executor avatar instead of status text for recent issues", () => {
     mockRecentItems.current = [{ id: "issue-1", visitedAt: 1000 }];
     mockAgents.current = [{ id: "agent-1", name: "Niko", avatar_url: null }];
     mockAllIssues.current = [
@@ -848,8 +847,8 @@ describe("SearchCommand", () => {
         identifier: "PB-1",
         title: "Recent assigned issue",
         status: "done",
-        assignee_type: "agent",
-        assignee_id: "agent-1",
+        executor_type: "agent",
+        executor_id: "agent-1",
       },
     ];
 
@@ -873,8 +872,12 @@ describe("SearchCommand", () => {
           description: null,
           status: "todo",
           priority: "none",
-          assignee_type: null,
-          assignee_id: null,
+          owner_type: null,
+          owner_id: null,
+          executor_type: null,
+          executor_id: null,
+          reviewer_type: null,
+          reviewer_id: null,
           creator_type: "member",
           creator_id: "user-1",
           parent_issue_id: null,
@@ -982,8 +985,12 @@ describe("SearchCommand", () => {
       description: null,
       status: "todo",
       priority: "none",
-      assignee_type: null,
-      assignee_id: null,
+      owner_type: null,
+      owner_id: null,
+      executor_type: null,
+      executor_id: null,
+      reviewer_type: null,
+      reviewer_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -1179,8 +1186,12 @@ describe("SearchCommand", () => {
       description: null,
       status: "todo",
       priority: "none",
-      assignee_type: null,
-      assignee_id: null,
+      owner_type: null,
+      owner_id: null,
+      executor_type: null,
+      executor_id: null,
+      reviewer_type: null,
+      reviewer_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,

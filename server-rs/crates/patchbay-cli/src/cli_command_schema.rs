@@ -72,6 +72,8 @@ pub(super) enum Command {
     Attachment(AttachmentArgs),
     #[command(about = "Work with repositories")]
     Repo(RepoArgs),
+    #[command(name = "github", about = "Use the local GitHub CLI capability")]
+    Github(GithubArgs),
     #[command(about = "Work with agent runtimes")]
     Runtime(RuntimeArgs),
     #[command(about = "Run the local Patchbay daemon")]

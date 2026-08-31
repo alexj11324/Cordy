@@ -32,6 +32,8 @@
     "description": "Patrick 会把你的目标转化为任务、协调合适的智能体，并在工作流需要时帮你添加可复用的 specialist。",
     "action": "和 Patrick 开始",
     "failed": "无法启动 Patrick",
+    "execution_model": "默认执行模型",
+    "execution_same_as_patrick": "与 Patrick 相同",
     "dialog_title": "让 Patrick 在哪台电脑上运行？",
     "dialog_description": "选择 Patrick 使用的设备。之后可以在设置里更改。",
     "cancel": "取消"

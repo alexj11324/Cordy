@@ -37,7 +37,7 @@ export function isKnownPropertyType(type: string): type is IssuePropertyType {
 }
 
 /**
- * Actor properties (PB-6286) reference a workspace member. The assignee field
+ * Actor properties (PB-6286) reference a workspace member. The executor field
  * also accepts agents and teams; actor properties deliberately do not — an
  * agent reference would drag in agent-visibility rules, and a team is a
  * routing target rather than a person.
@@ -54,7 +54,7 @@ export const MAX_ISSUE_PROPERTY_ACTOR_VALUES = 20;
 
 export interface IssuePropertyActorRef {
   kind: IssuePropertyActorKind;
-  /** Members are referenced by `user_id`, matching the issue assignee pair. */
+  /** Members are referenced by `user_id`, matching the issue executor pair. */
   id: string;
 }
 

@@ -218,9 +218,9 @@ CLI 配置文件包含可代表你访问 Patchbay 的令牌。不要提交到仓
 
 | 命令 | 子命令 | 用途 | 关键 flag |
 | --- | --- | --- | --- |
-| `issue` | `list` | 列出 issue | `--status`、`--priority`、`--assignee`、`--project`、`--metadata`（可重复）、`--limit`、`--offset`、`--sort`、`--full-id` |
+| `issue` | `list` | 列出 issue | `--status`、`--priority`、`--executor`、`--project`、`--metadata`（可重复）、`--limit`、`--offset`、`--sort`、`--full-id` |
 | | `get <id>` | 查看单个 issue | |
-| | `create` | 创建 issue | `--title`（必填）、`--description` / `--description-stdin` / `--description-file`、`--status`、`--priority`、`--assignee`、`--parent`、`--stage`、`--project`、`--start-date`、`--due-date`、`--attachment`（可重复） |
+| | `create` | 创建 issue | `--title`（必填）、`--description` / `--description-stdin` / `--description-file`、`--status`、`--priority`、`--executor`、`--parent`、`--stage`、`--project`、`--start-date`、`--due-date`、`--attachment`（可重复） |
 | | `update <id>` | 更新 issue 字段 | 与 `create` 同类字段，另有 `--position`、`--no-start` |
 | | `assign <id>` | 指派或取消指派 | `--to`（名称模糊匹配成员、智能体或团队）、`--to-id`、`--unassign`、`--no-start` |
 | | `status <id> <status>` | 修改状态 | `--no-start` |

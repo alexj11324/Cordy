@@ -144,8 +144,12 @@ describe("ApiClient schema fallback", () => {
       description: null,
       status: "todo",
       priority: "none",
-      assignee_type: null,
-      assignee_id: null,
+      owner_type: null,
+      owner_id: null,
+      executor_type: null,
+      executor_id: null,
+      reviewer_type: null,
+      reviewer_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -212,8 +216,12 @@ describe("ApiClient schema fallback", () => {
       description: null,
       status: "todo",
       priority: "none",
-      assignee_type: null,
-      assignee_id: null,
+      owner_type: null,
+      owner_id: null,
+      executor_type: null,
+      executor_id: null,
+      reviewer_type: null,
+      reviewer_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -305,7 +313,7 @@ describe("ApiClient schema fallback", () => {
       workspace_id: "ws-1",
       title: "Daily triage",
       description: null,
-      assignee_id: "agent-1",
+      executor_id: "agent-1",
       status: "active",
       execution_mode: "run_only",
       issue_title_template: null,
@@ -323,15 +331,15 @@ describe("ApiClient schema fallback", () => {
       expect(res).toEqual({ automations: [], total: 0 });
     });
 
-    it("accepts an old-server row without assignee_type or derived fields", async () => {
-      // Pre-PB-2429 servers omit assignee_type; servers older than the
+    it("accepts an old-server row without executor_type or derived fields", async () => {
+      // Pre-PB-2429 servers omit executor_type; servers older than the
       // list-derived-fields change omit trigger_kinds/next_run_at/
       // last_run_status. Both must parse, not fall back.
       stubFetchJson({ automations: [baseAutomation], total: 1 });
       const client = new ApiClient("https://api.example.test");
       const res = await client.listAutomations();
       expect(res.automations).toHaveLength(1);
-      expect(res.automations[0]?.assignee_type).toBe("agent");
+      expect(res.automations[0]?.executor_type).toBe("agent");
       expect(res.automations[0]?.trigger_kinds).toBeUndefined();
       expect(res.automations[0]?.last_run_status).toBeUndefined();
     });
@@ -341,7 +349,7 @@ describe("ApiClient schema fallback", () => {
         automations: [
           {
             ...baseAutomation,
-            assignee_type: "team",
+            executor_type: "team",
             trigger_kinds: ["schedule", "some_future_kind"],
             next_run_at: "2026-06-13T09:00:00Z",
             last_run_status: "some_future_status",
@@ -530,7 +538,7 @@ describe("ApiClient schema fallback", () => {
     it("falls back to empty groups when the response is malformed", async () => {
       stubFetchJson({ groups: "not-an-array" });
       const client = new ApiClient("https://api.example.test");
-      const res = await client.listGroupedIssues({ group_by: "assignee" });
+      const res = await client.listGroupedIssues({ group_by: "executor" });
       expect(res).toEqual({ groups: [] });
     });
   });

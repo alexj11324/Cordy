@@ -10,7 +10,7 @@ use sqlx::{Executor, Row};
 use uuid::Uuid;
 
 const PLAN_COLUMNS: &str = "id, workspace_id, parent_issue_id, idempotency_key, request_hash, goal, status, created_by_type, created_by_id, attention_required, attention_reason, created_at, updated_at";
-const NODE_COLUMNS: &str = "id, plan_id, workspace_id, temp_id, issue_id, title, description, acceptance_criteria, context, outputs, assignee_type, assignee_id, candidate_assignees, wave, created_at, updated_at";
+const NODE_COLUMNS: &str = "id, plan_id, workspace_id, temp_id, issue_id, title, description, acceptance_criteria, context, outputs, executor_type, executor_id, candidate_executors, owner_type, owner_id, reviewer_type, reviewer_id, runtime_id, model_id, wave, created_at, updated_at";
 const EDGE_COLUMNS: &str = "id, plan_id, workspace_id, from_issue_id, to_issue_id, type AS type_, reason, consumed_output, created_at";
 
 pub async fn get_plan_by_id<'e, E>(
@@ -190,7 +190,7 @@ where
     E: Executor<'e, Database = sqlx::Postgres>,
 {
     Ok(sqlx::query_as::<_, DependencyGraphNode>(&format!(
-        "INSERT INTO dependency_graph_node (id, plan_id, workspace_id, temp_id, issue_id, title, description, acceptance_criteria, context, outputs, assignee_type, assignee_id, candidate_assignees, wave) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING {NODE_COLUMNS}"
+        "INSERT INTO dependency_graph_node (id, plan_id, workspace_id, temp_id, issue_id, title, description, acceptance_criteria, context, outputs, executor_type, executor_id, candidate_executors, owner_type, owner_id, reviewer_type, reviewer_id, runtime_id, model_id, wave) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20) RETURNING {NODE_COLUMNS}"
     ))
     .bind(node.id)
     .bind(node.plan_id)
@@ -202,9 +202,15 @@ where
     .bind(&node.acceptance_criteria)
     .bind(&node.context)
     .bind(&node.outputs)
-    .bind(node.assignee_type.as_deref())
-    .bind(node.assignee_id)
-    .bind(&node.candidate_assignees)
+    .bind(node.executor_type.as_deref())
+    .bind(node.executor_id)
+    .bind(&node.candidate_executors)
+    .bind(node.owner_type.as_deref())
+    .bind(node.owner_id)
+    .bind(node.reviewer_type.as_deref())
+    .bind(node.reviewer_id)
+    .bind(node.runtime_id)
+    .bind(node.model_id.as_deref())
     .bind(node.wave)
     .fetch_one(executor)
     .await?)
@@ -222,9 +228,15 @@ pub struct DependencyGraphNodeInsert {
     pub acceptance_criteria: serde_json::Value,
     pub context: serde_json::Value,
     pub outputs: serde_json::Value,
-    pub assignee_type: Option<String>,
-    pub assignee_id: Option<Uuid>,
-    pub candidate_assignees: serde_json::Value,
+    pub executor_type: Option<String>,
+    pub executor_id: Option<Uuid>,
+    pub candidate_executors: serde_json::Value,
+    pub owner_type: Option<String>,
+    pub owner_id: Option<Uuid>,
+    pub reviewer_type: Option<String>,
+    pub reviewer_id: Option<Uuid>,
+    pub runtime_id: Option<Uuid>,
+    pub model_id: Option<String>,
     pub wave: i32,
 }
 
@@ -738,19 +750,19 @@ SET status = 'todo',
 FROM agent agent_owner
 WHERE target.workspace_id = agent_owner.workspace_id
   AND agent_owner.id = CASE
-      WHEN target.assignee_type = 'team' THEN (
+      WHEN target.executor_type = 'team' THEN (
           SELECT team.leader_id
           FROM team
-          WHERE team.id = target.assignee_id
+          WHERE team.id = target.executor_id
             AND team.workspace_id = target.workspace_id
             AND team.archived_at IS NULL
       )
-      ELSE target.assignee_id
+      ELSE target.executor_id
   END
   AND agent_owner.runtime_id = $1
   AND agent_owner.archived_at IS NULL
   AND issue_effective_status(target.workspace_id, target.status) = 'blocked'
-  AND target.assignee_type IN ('agent', 'team')
+  AND target.executor_type IN ('agent', 'team')
   AND EXISTS (
       SELECT 1
       FROM dependency_graph_node node
@@ -793,14 +805,14 @@ JOIN dependency_graph_plan plan
 JOIN issue ON issue.id = node.issue_id
          AND issue.workspace_id = node.workspace_id
 LEFT JOIN team team_owner
-  ON team_owner.id = issue.assignee_id
+  ON team_owner.id = issue.executor_id
  AND team_owner.workspace_id = issue.workspace_id
  AND team_owner.archived_at IS NULL
 WHERE node.workspace_id = $1
   AND node.plan_id = $2
   AND (
-      (issue.assignee_type = 'agent' AND issue.assignee_id IS NOT NULL)
-      OR (issue.assignee_type = 'team' AND team_owner.id IS NOT NULL)
+      (issue.executor_type = 'agent' AND issue.executor_id IS NOT NULL)
+      OR (issue.executor_type = 'team' AND team_owner.id IS NOT NULL)
   )
   AND issue_effective_status(issue.workspace_id, issue.status) = 'todo'
   AND dependency_graph_issue_gate_open(issue.workspace_id, issue.id)
@@ -809,10 +821,10 @@ WHERE node.workspace_id = $1
       FROM agent_task_queue pending
       WHERE pending.issue_id = issue.id
         AND pending.agent_id = CASE
-            WHEN issue.assignee_type = 'team' THEN team_owner.leader_id
-            ELSE issue.assignee_id
+            WHEN issue.executor_type = 'team' THEN team_owner.leader_id
+            ELSE issue.executor_id
         END
-        AND pending.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+        AND pending.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
   )
 ORDER BY node.wave ASC, node.temp_id ASC"#,
     )
@@ -844,13 +856,13 @@ JOIN dependency_graph_plan plan
 JOIN issue ON issue.id = node.issue_id
          AND issue.workspace_id = node.workspace_id
 LEFT JOIN team team_owner
-  ON team_owner.id = issue.assignee_id
+  ON team_owner.id = issue.executor_id
  AND team_owner.workspace_id = issue.workspace_id
  AND team_owner.archived_at IS NULL
 WHERE node.workspace_id = $1
   AND (
-      (issue.assignee_type = 'agent' AND issue.assignee_id IS NOT NULL)
-      OR (issue.assignee_type = 'team' AND team_owner.id IS NOT NULL)
+      (issue.executor_type = 'agent' AND issue.executor_id IS NOT NULL)
+      OR (issue.executor_type = 'team' AND team_owner.id IS NOT NULL)
   )
   AND issue_effective_status(issue.workspace_id, issue.status) = 'todo'
   AND dependency_graph_issue_gate_open(issue.workspace_id, issue.id)
@@ -859,10 +871,10 @@ WHERE node.workspace_id = $1
       FROM agent_task_queue pending
       WHERE pending.issue_id = issue.id
         AND pending.agent_id = CASE
-            WHEN issue.assignee_type = 'team' THEN team_owner.leader_id
-            ELSE issue.assignee_id
+            WHEN issue.executor_type = 'team' THEN team_owner.leader_id
+            ELSE issue.executor_id
         END
-        AND pending.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+        AND pending.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
   )
 ORDER BY node.wave ASC, node.temp_id ASC"#,
     )
@@ -893,20 +905,20 @@ JOIN dependency_graph_plan plan
 JOIN issue ON issue.id = node.issue_id
          AND issue.workspace_id = node.workspace_id
 LEFT JOIN team team_owner
-  ON team_owner.id = issue.assignee_id
+  ON team_owner.id = issue.executor_id
  AND team_owner.workspace_id = issue.workspace_id
  AND team_owner.archived_at IS NULL
 JOIN agent agent_owner
   ON agent_owner.id = CASE
-      WHEN issue.assignee_type = 'team' THEN team_owner.leader_id
-      ELSE issue.assignee_id
+      WHEN issue.executor_type = 'team' THEN team_owner.leader_id
+      ELSE issue.executor_id
   END
  AND agent_owner.workspace_id = issue.workspace_id
 WHERE agent_owner.runtime_id = $1
   AND agent_owner.archived_at IS NULL
   AND (
-      (issue.assignee_type = 'agent' AND issue.assignee_id IS NOT NULL)
-      OR (issue.assignee_type = 'team' AND team_owner.id IS NOT NULL)
+      (issue.executor_type = 'agent' AND issue.executor_id IS NOT NULL)
+      OR (issue.executor_type = 'team' AND team_owner.id IS NOT NULL)
   )
   AND issue_effective_status(issue.workspace_id, issue.status) = 'todo'
   AND dependency_graph_issue_gate_open(issue.workspace_id, issue.id)
@@ -915,10 +927,10 @@ WHERE agent_owner.runtime_id = $1
       FROM agent_task_queue pending
       WHERE pending.issue_id = issue.id
         AND pending.agent_id = CASE
-            WHEN issue.assignee_type = 'team' THEN team_owner.leader_id
-            ELSE issue.assignee_id
+            WHEN issue.executor_type = 'team' THEN team_owner.leader_id
+            ELSE issue.executor_id
         END
-        AND pending.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+        AND pending.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
   )
 ORDER BY node.wave ASC, node.temp_id ASC"#,
     )
@@ -929,6 +941,41 @@ ORDER BY node.wave ASC, node.temp_id ASC"#,
         .into_iter()
         .map(|row| row.get::<Uuid, _>("id"))
         .collect())
+}
+
+/// Atomically admits one dependency-graph issue into the execution lane.
+/// Graph creation and dependency promotion intentionally leave work in Todo;
+/// this is the coordinator's admission boundary.  The gate and status are
+/// checked again while the row is updated so a replay cannot start a blocked
+/// issue, and only one concurrent coordinator can move a Todo row to
+/// In Progress.
+pub async fn admit_ready_issue_for_execution<'e, E>(
+    executor: E,
+    workspace_id: Uuid,
+    issue_id: Uuid,
+) -> anyhow::Result<bool>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    let row = sqlx::query(
+        r#"UPDATE issue
+SET status = 'in_progress',
+    revision = revision + 1,
+    last_activity_at = GREATEST(COALESCE(last_activity_at, updated_at), now()),
+    updated_at = now()
+WHERE id = $1
+  AND workspace_id = $2
+  AND issue_effective_status(workspace_id, status) = 'todo'
+  AND executor_type IN ('agent', 'team')
+  AND executor_id IS NOT NULL
+  AND dependency_graph_issue_gate_open(workspace_id, id)
+RETURNING id"#,
+    )
+    .bind(issue_id)
+    .bind(workspace_id)
+    .fetch_optional(executor)
+    .await?;
+    Ok(row.is_some())
 }
 
 /// Persists a fail-closed attention marker when a prerequisite fails or is
@@ -990,34 +1037,34 @@ where
     Ok(())
 }
 
-pub async fn validate_assignee<'e, E>(
+pub async fn validate_executor<'e, E>(
     executor: E,
     workspace_id: Uuid,
-    assignee_type: &str,
-    assignee_id: Uuid,
+    executor_type: &str,
+    executor_id: Uuid,
 ) -> anyhow::Result<bool>
 where
     E: Executor<'e, Database = sqlx::Postgres>,
 {
-    let exists = match assignee_type {
+    let exists = match executor_type {
         "member" => sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS (SELECT 1 FROM member WHERE user_id = $1 AND workspace_id = $2)",
         )
-        .bind(assignee_id)
+        .bind(executor_id)
         .bind(workspace_id)
         .fetch_one(executor)
         .await?,
         "agent" => sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS (SELECT 1 FROM agent WHERE id = $1 AND workspace_id = $2 AND archived_at IS NULL)",
         )
-        .bind(assignee_id)
+        .bind(executor_id)
         .bind(workspace_id)
         .fetch_one(executor)
         .await?,
         "team" => sqlx::query_scalar::<_, bool>(
             "SELECT EXISTS (SELECT 1 FROM team WHERE id = $1 AND workspace_id = $2 AND archived_at IS NULL)",
         )
-        .bind(assignee_id)
+        .bind(executor_id)
         .bind(workspace_id)
         .fetch_one(executor)
         .await?,

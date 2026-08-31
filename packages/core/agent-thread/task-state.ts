@@ -5,6 +5,7 @@ const ACTIVE_TASK_STATUSES = new Set([
   "deferred",
   "dispatched",
   "waiting_local_directory",
+  "waiting_capacity",
   "running",
 ]);
 

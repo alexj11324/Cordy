@@ -41,7 +41,7 @@
     },
     "categories": {
       "backlog": "Parked. Assigning an issue here never starts an agent run.",
-      "todo": "Queued. Moving an issue here starts the assigned agent.",
+      "todo": "Queued. The coordinator admits this issue when dependencies and capacity allow; it does not start work by itself.",
       "in_progress": "Actively being worked on.",
       "in_review": "Delivered, waiting on human review. Finalizes the automation run.",
       "done": "Completed.",
@@ -273,7 +273,9 @@
     "fields": {
       "status": "Status",
       "priority": "Priority",
-      "assignee": "Assignee",
+      "owner": "Owner",
+      "executor": "Executor",
+      "reviewer": "Reviewer",
       "labels": "Labels",
       "project": "Project",
       "due_date": "Due date",
@@ -339,6 +341,19 @@
     "integrations_reconnect_ready": "Connection removed. Connect it again to finish reconnecting.",
     "integrations_disconnected_toast": "Platform disconnected",
     "integrations_action_failed": "Could not update the platform connection",
+    "linear": {
+      "section_title": "Linear",
+      "description": "Sync explicitly bound Linear projects with Patchbay issues. Human assignees match by unique active email; Patchbay roles remain separate.",
+      "not_connected": "Not connected",
+      "connected": "Connected to {{organization}}",
+      "loading": "Checking Linear connection…",
+      "project_bindings": "{{count}} project binding(s)",
+      "connect": "Connect Linear",
+      "connecting": "Opening Linear…",
+      "admin_only": "Workspace admin only",
+      "login_required": "Log in to connect",
+      "connect_failed": "Could not start Linear connection"
+    },
     "tabs": {
       "profile": "Profile",
       "preferences": "Preferences",

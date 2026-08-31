@@ -189,6 +189,9 @@
     "scanning_lede_suffix": ", and others. We're checking this computer for ones you've installed.",
     "found_headline": "Where should Patrick run?",
     "found_lede": "These are the devices we found on this computer. You can switch it or add more later.",
+    "patrick_selection_label": "Patrick model",
+    "execution_selection_label": "Default execution model",
+    "execution_same_as_patrick": "Use the same as Patrick",
     "runtime_count_one": "{{count}} device",
     "runtime_count_other": "{{count}} devices",
     "status_all_online": "all online",
@@ -247,7 +250,8 @@
   },
   "errors": {
     "skip_failed": "Failed to finish onboarding",
-    "patrick_setup_failed": "Couldn't start your Patrick workspace"
+    "patrick_setup_failed": "Couldn't start your Patrick workspace",
+    "model_required": "Choose a concrete model for Patrick and default execution."
   },
   "patrick_intro": {
     "headline": "Meet Patrick, your first agent teammate.",

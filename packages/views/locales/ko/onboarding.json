@@ -189,6 +189,9 @@
     "scanning_lede_suffix": " 등. 이 컴퓨터에 설치된 도구를 확인하는 중입니다.",
     "found_headline": "Patrick를 어디서 실행할까요?",
     "found_lede": "이 컴퓨터에서 찾은 기기입니다. 나중에 바꾸거나 더 추가할 수 있습니다.",
+    "patrick_selection_label": "Patrick 모델",
+    "execution_selection_label": "기본 실행 모델",
+    "execution_same_as_patrick": "Patrick과 동일하게 사용",
     "runtime_count_other": "기기 {{count}}대",
     "status_all_online": "모두 온라인",
     "status_none_online": "온라인 없음",
@@ -245,7 +248,8 @@
   },
   "errors": {
     "skip_failed": "온보딩을 마치지 못했습니다",
-    "patrick_setup_failed": "Patrick 워크스페이스를 시작하지 못했습니다"
+    "patrick_setup_failed": "Patrick 워크스페이스를 시작하지 못했습니다",
+    "model_required": "Patrick과 기본 실행에 사용할 구체적인 모델을 선택하세요."
   },
   "patrick_intro": {
     "headline": "첫 번째 에이전트 팀원 Patrick를 소개합니다.",

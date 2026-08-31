@@ -102,9 +102,9 @@ function stateLabel(
   return t(($) => $.graph.readiness_state[READINESS_KEYS[state] ?? "todo"]);
 }
 
-function formatAssignee(node: DependencyGraphNode): string | null {
-  if (!node.assignee_type || !node.assignee_id) return null;
-  return `${node.assignee_type}:${node.assignee_id.slice(0, 8)}`;
+function formatExecutor(node: DependencyGraphNode): string | null {
+  if (!node.executor_type || !node.executor_id) return null;
+  return `${node.executor_type}:${node.executor_id.slice(0, 8)}`;
 }
 
 function layoutGraphs(graphs: DependencyGraphResponse[]): {
@@ -535,7 +535,7 @@ export function DependencyGraphView({ projectId }: { projectId?: string }) {
               const isSelected = selectedNode?.planId === item.graph.plan.id && selectedNode.tempId === item.node.temp_id;
               const isRelated = !selectedNode || isSelected || nodeRelation.upstream.has(key) || nodeRelation.downstream.has(key);
               const readinessLabel = stateLabel(t, item.node.readiness.state);
-              const assignee = formatAssignee(item.node);
+              const executor = formatExecutor(item.node);
               const selectNode = () => {
                 setSelectedNode({ planId: item.graph.plan.id, tempId: item.node.temp_id });
                 setSelectedEdge(null);
@@ -571,7 +571,7 @@ export function DependencyGraphView({ projectId }: { projectId?: string }) {
                     title: item.node.title,
                     status: item.node.issue.status,
                     readiness: readinessLabel,
-                    assignee: assignee ?? t(($) => $.graph.unassigned),
+                    executor: executor ?? t(($) => $.graph.unassigned),
                   })}
                 >
                   <span className="flex min-w-0 items-center justify-between gap-2">
@@ -596,13 +596,13 @@ export function DependencyGraphView({ projectId }: { projectId?: string }) {
                         {item.node.readiness.satisfied_prerequisites}/{item.node.readiness.total_prerequisites}
                       </span>
                     </span>
-                    {assignee && item.node.assignee_type && item.node.assignee_id ? (
+                    {executor && item.node.executor_type && item.node.executor_id ? (
                       <ActorAvatar
-                        actorType={item.node.assignee_type}
-                        actorId={item.node.assignee_id}
+                        actorType={item.node.executor_type}
+                        actorId={item.node.executor_id}
                         size="xs"
                         profileLink={false}
-                        showStatusDot={item.node.assignee_type === "agent"}
+                        showStatusDot={item.node.executor_type === "agent"}
                         className="shrink-0"
                       />
                     ) : null}
@@ -644,7 +644,7 @@ function NodeInspector({
   t: ReturnType<typeof useT<"issues">>["t"];
   paths: ReturnType<typeof useWorkspacePaths>;
 }) {
-  const assignee = formatAssignee(node);
+  const executor = formatExecutor(node);
   return (
     <div className="space-y-3">
       <div>
@@ -658,11 +658,11 @@ function NodeInspector({
         <span className="text-caption">{stateLabel(t, node.readiness.state)}</span>
         <CustomStatusChip status={node.issue.status} />
       </div>
-      <InspectorRow label={t(($) => $.graph.assignee)}>
-        {assignee && node.assignee_type && node.assignee_id ? (
+      <InspectorRow label={t(($) => $.graph.executor)}>
+        {executor && node.executor_type && node.executor_id ? (
           <span className="flex items-center gap-1.5">
-            <ActorAvatar actorType={node.assignee_type} actorId={node.assignee_id} size="xs" profileLink={false} />
-            <span className="truncate">{assignee}</span>
+            <ActorAvatar actorType={node.executor_type} actorId={node.executor_id} size="xs" profileLink={false} />
+            <span className="truncate">{executor}</span>
           </span>
         ) : (
           t(($) => $.graph.unassigned)

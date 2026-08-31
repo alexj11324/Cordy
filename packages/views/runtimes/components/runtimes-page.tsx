@@ -247,28 +247,40 @@ function PatrickSetupCard({
   const bootstrapPatrick = useBootstrapPatrick(workspaceId);
 
   const [open, setOpen] = useState(false);
-  // Seeded with the old heuristic so the dialog opens on a sensible default;
-  // the point is that it is now visible and changeable, not that it is unset.
-  const defaultRuntimeId =
-    runtimes.find((runtime) => runtime.status === "online")?.id ??
-    runtimes[0]?.id ??
-    "";
+  // The two required ACP/model pairs intentionally start empty. Selecting a
+  // runtime implicitly used to hide the execution target and could dispatch
+  // Patrick on a machine the member never chose.
   const [choice, setChoice] = useState<PatrickRuntimeSelection | null>(null);
+  const [executionChoice, setExecutionChoice] =
+    useState<PatrickRuntimeSelection | null>(null);
 
   const value: PatrickRuntimeSelection = choice ?? {
-    runtimeId: defaultRuntimeId,
+    runtimeId: "",
     model: "",
   };
   const runtimeId = value.runtimeId;
+  const executionValue = executionChoice ?? {
+    runtimeId: "",
+    model: "",
+  };
 
   const handleStart = async () => {
-    if (!runtimeId || bootstrapPatrick.isPending) return;
+    if (
+      !runtimeId ||
+      !value.model.trim() ||
+      !executionValue.runtimeId ||
+      !executionValue.model.trim() ||
+      bootstrapPatrick.isPending
+    )
+      return;
     const lang = pickContentLang(i18n.language);
     try {
       const result = await bootstrapPatrick.mutateAsync({
         workspaceSlug: wsSlug,
         runtimeId,
-        model: value.model || undefined,
+        model: value.model,
+        executionRuntimeId: executionValue.runtimeId,
+        executionModel: executionValue.model,
         ...getPatrickOnboarding(lang),
       });
       setOpen(false);
@@ -320,6 +332,29 @@ function PatrickSetupCard({
             onChange={setChoice}
             disabled={bootstrapPatrick.isPending}
           />
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <span className="text-caption font-medium text-muted-foreground">
+              {t(($) => $.patrick_setup.execution_model)}
+            </span>
+            <Button
+              type="button"
+              variant="link"
+              className="h-auto px-0 text-caption"
+              disabled={!value.model}
+              onClick={() =>
+                setExecutionChoice({ runtimeId, model: value.model })
+              }
+            >
+              {t(($) => $.patrick_setup.execution_same_as_patrick)}
+            </Button>
+          </div>
+          <PatrickRuntimeChoice
+            runtimes={runtimes}
+            currentUserId={currentUserId}
+            value={executionValue}
+            onChange={setExecutionChoice}
+            disabled={bootstrapPatrick.isPending}
+          />
 
           <DialogFooter>
             <Button
@@ -331,7 +366,13 @@ function PatrickSetupCard({
             </Button>
             <Button
               onClick={handleStart}
-              disabled={!runtimeId || bootstrapPatrick.isPending}
+              disabled={
+                !runtimeId ||
+                !value.model.trim() ||
+                !executionValue.runtimeId ||
+                !executionValue.model.trim() ||
+                bootstrapPatrick.isPending
+              }
             >
               {bootstrapPatrick.isPending && (
                 <Loader2 aria-hidden className="size-4 animate-spin" />

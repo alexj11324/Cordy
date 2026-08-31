@@ -396,6 +396,46 @@ deleted_dependency_graph_nodes AS (
 deleted_dependency_graph_plans AS (
     DELETE FROM dependency_graph_plan WHERE workspace_id = $1
 ),
+deleted_issue_category_policies AS (
+    DELETE FROM workspace_issue_category_policy WHERE workspace_id = $1
+),
+deleted_linear_conflicts AS (
+    DELETE FROM linear_sync_conflict WHERE workspace_id = $1
+),
+deleted_linear_outbox AS (
+    DELETE FROM linear_sync_outbox WHERE workspace_id = $1
+),
+deleted_linear_inbox AS (
+    DELETE FROM linear_sync_inbox
+    WHERE connection_id IN (SELECT id FROM linear_connection WHERE workspace_id = $1)
+),
+deleted_linear_relations AS (
+    DELETE FROM linear_relation_link WHERE workspace_id = $1
+),
+deleted_linear_agents AS (
+    DELETE FROM linear_agent_binding WHERE workspace_id = $1
+),
+deleted_linear_members AS (
+    DELETE FROM linear_member_binding WHERE workspace_id = $1
+),
+deleted_linear_issue_links AS (
+    DELETE FROM linear_issue_link WHERE workspace_id = $1
+),
+deleted_linear_status_bindings AS (
+    DELETE FROM linear_status_binding
+    WHERE project_binding_id IN (
+        SELECT id FROM linear_project_binding WHERE workspace_id = $1
+    )
+),
+deleted_linear_projects AS (
+    DELETE FROM linear_project_binding WHERE workspace_id = $1
+),
+deleted_linear_oauth_states AS (
+    DELETE FROM linear_oauth_state WHERE workspace_id = $1
+),
+deleted_linear_connections AS (
+    DELETE FROM linear_connection WHERE workspace_id = $1
+),
 deleted_issue_dependencies AS (
     DELETE FROM issue_dependency
     WHERE issue_id IN (SELECT id FROM ws_issues)

@@ -134,6 +134,10 @@ pub struct RepoCheckoutProvenance {
 pub struct ActiveRepoCheckoutTask {
     pub workspace_id: String,
     pub task_id: String,
+    /// Issue associated with the execution. Keeping this identity in the
+    /// daemon-owned capability prevents a PR response from guessing an issue
+    /// from a branch or title.
+    pub issue_id: String,
     pub agent_id: String,
     pub agent_name: String,
     pub work_dir: String,
@@ -149,6 +153,7 @@ impl std::fmt::Debug for ActiveRepoCheckoutTask {
             .debug_struct("ActiveRepoCheckoutTask")
             .field("workspace_id", &self.workspace_id)
             .field("task_id", &self.task_id)
+            .field("issue_id", &self.issue_id)
             .field("agent_id", &self.agent_id)
             .field("agent_name", &self.agent_name)
             .field("work_dir", &self.work_dir)

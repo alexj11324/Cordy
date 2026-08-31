@@ -24,7 +24,7 @@ import { canAssignAgentToIssue } from "../permissions";
 export type WorkspaceAgentAvailability = "loading" | "none" | "available";
 
 /**
- * Mirrors the per-agent visibility/archived filter used by AssigneePicker
+ * Mirrors the per-agent visibility/archived filter used by ExecutorPicker
  * and the chat agent dropdown, so the three pickers can never disagree on
  * "is this agent reachable?".
  *

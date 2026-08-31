@@ -11,6 +11,7 @@ pub mod assembly;
 pub mod auth_lifecycle;
 pub mod bootstrap;
 pub mod canonical_path;
+pub mod capacity;
 pub mod client;
 pub mod config;
 pub mod control_client;
@@ -44,6 +45,7 @@ pub mod wakeup;
 pub mod wsrpc;
 
 pub mod gc;
+pub mod github_cli;
 pub mod hub;
 pub mod notifier;
 pub mod repocache;

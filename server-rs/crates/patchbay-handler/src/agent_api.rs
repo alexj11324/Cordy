@@ -11,7 +11,8 @@ use axum::{Json, Router};
 use patchbay_config::agent_concurrency;
 use patchbay_db::models::{Agent, AgentInvocationTarget};
 use patchbay_db::queries::{
-    agent, agent_invocation_target, chat, issue_label, runtime, skill, workspace,
+    agent, agent_invocation_target, chat, issue_label, runtime, skill,
+    workspace, workspace_issue_category_policy as category_policy_q,
 };
 use patchbay_middleware::workspace::WorkspaceContext;
 use rand::Rng;
@@ -1485,10 +1486,17 @@ async fn update_agent(
 }
 
 #[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PatrickRequest {
     runtime_id: String,
     language: String,
-    model: Option<String>,
+    /// Concrete Patrick model. Runtime defaults are intentionally not
+    /// accepted during onboarding: task execution must be reproducible.
+    model: String,
+    /// The separate default execution ACP/runtime and concrete model used by
+    /// the generated Execution and Review agents.
+    execution_runtime_id: String,
+    execution_model: String,
     #[serde(default)]
     session_title: String,
 }
@@ -1533,6 +1541,143 @@ async fn get_or_create_patrick_session(
     Ok(created)
 }
 
+/// Provision the two editable defaults that make category admission
+/// deterministic. They deliberately have no `system_key`: unlike Patrick,
+/// members may rename, edit, archive, or replace these agents. The policy rows
+/// are the durable identity mapping and are filled atomically under the same
+/// workspace lock used by Patrick bootstrap.
+async fn ensure_patrick_role_agents(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    owner_id: Uuid,
+    runtime: &patchbay_db::models::AgentRuntime,
+    model: &str,
+) -> anyhow::Result<(Agent, Agent)> {
+    let mut tx = state.pool.begin().await?;
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(format!("patrick:{workspace_id}"))
+        .execute(&mut *tx)
+        .await?;
+
+    async fn policy_agent(
+        tx: &mut sqlx::PgConnection,
+        workspace_id: Uuid,
+        category: &str,
+        reviewer: bool,
+    ) -> anyhow::Result<Option<Agent>> {
+        let Some(policy) = category_policy_q::get_workspace_issue_category_policy(
+            &mut *tx,
+            workspace_id,
+            category,
+        )
+        .await?
+        else {
+            return Ok(None);
+        };
+        let id = if reviewer {
+            policy.default_reviewer_agent_id
+        } else {
+            policy.default_execution_agent_id
+        };
+        let Some(id) = id else { return Ok(None) };
+        Ok(agent::get_agent_in_workspace(&mut *tx, id, workspace_id)
+            .await?
+            .filter(|agent| agent.archived_at.is_none()))
+    }
+
+    let mut execution = policy_agent(
+        &mut tx,
+        workspace_id,
+        patchbay_service::category_policy::EXECUTION_CATEGORY,
+        false,
+    )
+    .await?;
+    if execution.is_none() {
+        execution = agent::create_system_user_agent(
+            &mut *tx,
+            workspace_id,
+            "Execution Agent",
+            "Default agent for admitted In Progress issues.",
+            Some("emoji:⚙️"),
+            &runtime.runtime_mode,
+            runtime.id,
+            Some(model),
+            "workspace",
+            "public_to",
+            3,
+            owner_id,
+            None,
+        )
+        .await?;
+        if let Some(agent) = execution.as_ref() {
+            replace_invocation_targets(
+                &mut tx,
+                agent.id,
+                owner_id,
+                &[("workspace".to_string(), workspace_id)],
+            )
+            .await?;
+        }
+    }
+    let execution = execution.ok_or_else(|| anyhow::anyhow!("failed to provision execution agent"))?;
+
+    let mut reviewer = policy_agent(
+        &mut tx,
+        workspace_id,
+        patchbay_service::category_policy::REVIEW_CATEGORY,
+        true,
+    )
+    .await?;
+    if reviewer.is_none() {
+        reviewer = agent::create_system_user_agent(
+            &mut *tx,
+            workspace_id,
+            "Review Agent",
+            "Default agent for In Review issues.",
+            Some("emoji:🔍"),
+            &runtime.runtime_mode,
+            runtime.id,
+            Some(model),
+            "workspace",
+            "public_to",
+            3,
+            owner_id,
+            None,
+        )
+        .await?;
+        if let Some(agent) = reviewer.as_ref() {
+            replace_invocation_targets(
+                &mut tx,
+                agent.id,
+                owner_id,
+                &[("workspace".to_string(), workspace_id)],
+            )
+            .await?;
+        }
+    }
+    let reviewer = reviewer.ok_or_else(|| anyhow::anyhow!("failed to provision review agent"))?;
+    anyhow::ensure!(execution.id != reviewer.id, "execution and review agents must differ");
+
+    patchbay_service::category_policy::upsert(
+        &mut tx,
+        workspace_id,
+        patchbay_service::category_policy::EXECUTION_CATEGORY,
+        Some(execution.id),
+        None,
+    )
+    .await?;
+    patchbay_service::category_policy::upsert(
+        &mut tx,
+        workspace_id,
+        patchbay_service::category_policy::REVIEW_CATEGORY,
+        Some(execution.id),
+        Some(reviewer.id),
+    )
+    .await?;
+    tx.commit().await?;
+    Ok((execution, reviewer))
+}
+
 async fn create_patrick(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
@@ -1554,6 +1699,76 @@ async fn create_patrick(
         Ok(v) => v,
         Err(r) => return r,
     };
+    let patrick_model = request.model.trim();
+    if patrick_model.is_empty() {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "model is required for Patrick onboarding",
+        );
+    }
+    let execution_model = request.execution_model.trim();
+    if execution_model.is_empty() {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "execution_model is required for Patrick onboarding",
+        );
+    }
+    let patrick_runtime_id = match Uuid::parse_str(request.runtime_id.trim()) {
+        Ok(id) => id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"),
+    };
+    let execution_runtime_id = match Uuid::parse_str(request.execution_runtime_id.trim()) {
+        Ok(id) => id,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid execution_runtime_id"),
+    };
+    let patrick_runtime = match runtime::get_agent_runtime_for_workspace(
+        &state.pool,
+        patrick_runtime_id,
+        ws,
+    )
+    .await
+    {
+        Ok(Some(runtime)) => runtime,
+        _ => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "runtime not found in this workspace",
+            )
+        }
+    };
+    let execution_runtime = match runtime::get_agent_runtime_for_workspace(
+        &state.pool,
+        execution_runtime_id,
+        ws,
+    )
+    .await
+    {
+        Ok(Some(runtime)) => runtime,
+        _ => {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "execution runtime not found in this workspace",
+            )
+        }
+    };
+    for (runtime, label) in [(&patrick_runtime, "Patrick"), (&execution_runtime, "execution")] {
+        if runtime.owner_id.is_none()
+            || runtime.visibility != "public" && runtime.owner_id != Some(context.member.user_id)
+        {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                &format!("you cannot bind {label} to this runtime"),
+            );
+        }
+    }
+    if model_known_incompatible(&patrick_runtime.provider, patrick_model)
+        || model_known_incompatible(&execution_runtime.provider, execution_model)
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "selected model is not valid for its runtime provider",
+        );
+    }
     let existing_target = match agent::get_agent_by_system_key(&state.pool, ws, Some("patrick")).await
     {
         Ok(target) => target,
@@ -1564,33 +1779,7 @@ async fn create_patrick(
             )
         }
     };
-    let (runtime_id, runtime) = if existing_target.is_some() {
-        (None, None)
-    } else {
-        let runtime_id = match Uuid::parse_str(&request.runtime_id) {
-            Ok(v) => v,
-            Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid runtime_id"),
-        };
-        let runtime =
-            match runtime::get_agent_runtime_for_workspace(&state.pool, runtime_id, ws).await {
-                Ok(Some(v)) => v,
-                _ => {
-                    return error_response(
-                        StatusCode::BAD_REQUEST,
-                        "runtime not found in this workspace",
-                    )
-                }
-            };
-        if runtime.owner_id.is_none()
-            || runtime.visibility != "public" && runtime.owner_id != Some(context.member.user_id)
-        {
-            return error_response(
-                StatusCode::FORBIDDEN,
-                "you cannot bind an agent to this runtime",
-            );
-        }
-        (Some(runtime_id), Some(runtime))
-    };
+    let (runtime_id, runtime) = (Some(patrick_runtime_id), Some(patrick_runtime.clone()));
     let mut created_now = false;
     let mut target = match existing_target {
         Some(existing) => existing,
@@ -1631,10 +1820,7 @@ async fn create_patrick(
                         Some("emoji:🦄"),
                         &runtime.runtime_mode,
                         runtime_id,
-                        request
-                            .model
-                            .as_deref()
-                            .filter(|model| !model.trim().is_empty()),
+                        Some(patrick_model),
                         "workspace",
                         "public_to",
                         3,
@@ -1697,6 +1883,24 @@ async fn create_patrick(
     if created_now {
         publish(&state, "agent:created", &target, context.member.user_id);
     }
+    let (execution_agent, review_agent) = match ensure_patrick_role_agents(
+        &state,
+        ws,
+        context.member.user_id,
+        &execution_runtime,
+        execution_model,
+    )
+    .await
+    {
+        Ok(agents) => agents,
+        Err(error) => {
+            tracing::warn!(%error, workspace_id = %ws, "failed to provision Patrick role agents");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to provision default execution and review agents",
+            );
+        }
+    };
     let session = match get_or_create_patrick_session(
         &state,
         ws,
@@ -1719,6 +1923,10 @@ async fn create_patrick(
         Ok(response) => response,
         Err(response) => return response,
     };
+    response["execution_agent_id"] = json!(execution_agent.id.to_string());
+    response["review_agent_id"] = json!(review_agent.id.to_string());
+    response["execution_runtime_id"] = json!(execution_agent.runtime_id.map(|id| id.to_string()));
+    response["execution_model"] = json!(execution_agent.model);
     response["onboarding_session"] = crate::chat_api::session_json(&session);
     (
         if created_now {

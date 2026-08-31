@@ -11,7 +11,7 @@ When you assign an issue to an agent, Patchbay creates a task that a runtime on 
 
 ![Diagram of a run: on the left, the Patchbay area records and schedules — an issue triggers the creation of a task; on the right, in the "your computer" area, the daemon claims the task, launches the AI coding tool, and reads and writes the working directory; progress messages stream back to the Agent thread in real time, and the daemon writes the final result back to the issue](/images/docs/how-a-run-works.webp)
 
-1. **The issue provides the context.** The issue holds the work description, the discussion, and the assignee. When it is assigned to an agent, the system uses that agent's instructions, model, skills, and runtime configuration.
+1. **The issue provides the context.** The issue holds the work description, the discussion, and the executor. When it is assigned to an agent, the system uses that agent's instructions, model, skills, and runtime configuration.
 2. **Patchbay creates a task.** The task enters the queue; if no runtime is online, it waits there.
 3. **A runtime claims the task.** An online runtime on a connected computer claims the task and invokes the AI coding tool the agent is configured to use.
 4. **The AI coding tool executes locally.** The tool reads the working directory, runs commands, and produces results.

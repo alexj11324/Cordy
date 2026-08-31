@@ -25,7 +25,7 @@
     "display_settings": "Display settings",
     "grouping": "Grouping",
     "group_status": "Status",
-    "group_assignee": "Assignee",
+    "group_executor": "Executor",
     "ordering": "Ordering",
     "ascending": "Ascending",
     "descending": "Descending",

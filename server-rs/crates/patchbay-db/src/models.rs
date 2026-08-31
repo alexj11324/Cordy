@@ -291,6 +291,18 @@ pub struct AgentTaskQueue {
     pub work_dir: Option<String>,
 }
 
+/// Immutable execution selection captured when an Agent task is created.
+///
+/// The daemon must use this snapshot instead of re-reading the Agent's mutable
+/// runtime/model configuration while claiming a queued task.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct AgentTaskExecutionTarget {
+    pub failover_reason: Option<String>,
+    pub model_id: Option<String>,
+    pub policy_revision: i64,
+    pub runtime_id: Option<Uuid>,
+}
+
 /// Row of `agent_to_label`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct AgentToLabel {
@@ -321,8 +333,8 @@ pub struct Attachment {
 /// Row of `automation`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct Automation {
-    pub assignee_id: Uuid,
-    pub assignee_type: String,
+    pub executor_id: Uuid,
+    pub executor_type: String,
     pub created_at: DateTime<Utc>,
     pub created_by_id: Uuid,
     pub created_by_type: String,
@@ -915,8 +927,8 @@ pub struct InboxItem {
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct Issue {
     pub acceptance_criteria: serde_json::Value,
-    pub assignee_id: Option<Uuid>,
-    pub assignee_type: Option<String>,
+    pub executor_id: Option<Uuid>,
+    pub executor_type: Option<String>,
     pub context_refs: serde_json::Value,
     pub created_at: DateTime<Utc>,
     pub creator_id: Uuid,
@@ -928,6 +940,8 @@ pub struct Issue {
     pub last_activity_at: Option<DateTime<Utc>>,
     pub metadata: serde_json::Value,
     pub number: i32,
+    pub owner_id: Option<Uuid>,
+    pub owner_type: Option<String>,
     pub origin_id: Option<Uuid>,
     pub origin_type: Option<String>,
     pub parent_issue_id: Option<Uuid>,
@@ -978,16 +992,22 @@ pub struct DependencyGraphPlan {
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct DependencyGraphNode {
     pub acceptance_criteria: serde_json::Value,
-    pub assignee_id: Option<Uuid>,
-    pub assignee_type: Option<String>,
-    pub candidate_assignees: serde_json::Value,
+    pub executor_id: Option<Uuid>,
+    pub executor_type: Option<String>,
+    pub candidate_executors: serde_json::Value,
     pub context: serde_json::Value,
     pub created_at: DateTime<Utc>,
     pub description: String,
     pub id: Uuid,
     pub issue_id: Uuid,
+    pub model_id: Option<String>,
+    pub owner_id: Option<Uuid>,
+    pub owner_type: Option<String>,
     pub outputs: serde_json::Value,
     pub plan_id: Uuid,
+    pub reviewer_id: Option<Uuid>,
+    pub reviewer_type: Option<String>,
+    pub runtime_id: Option<Uuid>,
     pub temp_id: String,
     pub title: String,
     pub updated_at: DateTime<Utc>,
@@ -1067,6 +1087,19 @@ pub struct IssueStatus {
     pub key: String,
     pub name: String,
     pub position: f64,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
+}
+
+/// Workspace-wide execution and review defaults for an issue status category.
+/// Agent relationships are validated and cleaned up by the application layer;
+/// the database deliberately has no foreign keys for this configuration.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct WorkspaceIssueCategoryPolicy {
+    pub category: String,
+    pub created_at: DateTime<Utc>,
+    pub default_execution_agent_id: Option<Uuid>,
+    pub default_reviewer_agent_id: Option<Uuid>,
     pub updated_at: DateTime<Utc>,
     pub workspace_id: Uuid,
 }
@@ -1355,8 +1388,8 @@ pub struct ProjectResource {
 /// Row of `quick_action`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct QuickAction {
-    pub assignee_id: Uuid,
-    pub assignee_type: String,
+    pub executor_id: Uuid,
+    pub executor_type: String,
     pub created_at: DateTime<Utc>,
     pub created_by_id: Uuid,
     pub created_by_type: String,
@@ -1726,6 +1759,162 @@ pub struct WorkProductRelation {
     pub run_id: Option<Uuid>,
     pub task_id: Option<Uuid>,
     pub work_product_id: Uuid,
+    pub workspace_id: Uuid,
+}
+
+/// OAuth and immutable organization identity for one workspace's Linear
+/// connection. Secrets are encrypted before they reach this row.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct LinearConnection {
+    pub access_token_encrypted: String,
+    pub actor_id: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub created_by_id: Uuid,
+    pub id: Uuid,
+    pub organization_id: String,
+    pub organization_name: Option<String>,
+    pub refresh_token_encrypted: String,
+    pub scopes: serde_json::Value,
+    pub status: String,
+    pub token_expires_at: Option<DateTime<Utc>>,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct LinearOAuthState {
+    pub code_verifier_encrypted: String,
+    pub consumed_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: DateTime<Utc>,
+    pub id: Uuid,
+    pub redirect_uri: String,
+    pub state_hash: String,
+    pub user_id: Uuid,
+    pub workspace_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct LinearProjectBinding {
+    pub connection_id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub default_linear_team_id: Option<String>,
+    pub id: Uuid,
+    pub linear_project_id: String,
+    pub patchbay_project_id: Option<Uuid>,
+    pub status: String,
+    pub sync_mode: String,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct LinearStatusBinding {
+    pub created_at: DateTime<Utc>,
+    pub id: Uuid,
+    pub linear_status_id: String,
+    pub patchbay_status: String,
+    pub project_binding_id: Uuid,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct LinearIssueLink {
+    pub created_at: DateTime<Utc>,
+    pub id: Uuid,
+    pub issue_id: Uuid,
+    pub last_pulled_at: Option<DateTime<Utc>>,
+    pub last_pushed_at: Option<DateTime<Utc>>,
+    pub linear_identifier: Option<String>,
+    pub linear_issue_id: String,
+    pub project_binding_id: Uuid,
+    pub remote_snapshot: serde_json::Value,
+    pub remote_updated_at: Option<DateTime<Utc>>,
+    pub status: String,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct LinearMemberBinding {
+    pub created_at: DateTime<Utc>,
+    pub diagnostic: Option<String>,
+    pub id: Uuid,
+    pub linear_user_id: String,
+    pub member_id: Option<Uuid>,
+    pub normalized_email: String,
+    pub status: String,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct LinearAgentBinding {
+    pub agent_id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub id: Uuid,
+    pub label_name: String,
+    pub linear_label_group_id: String,
+    pub linear_label_id: String,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct LinearRelationLink {
+    pub created_at: DateTime<Utc>,
+    pub from_issue_id: Uuid,
+    pub id: Uuid,
+    pub linear_relation_id: Option<String>,
+    pub relation_type: String,
+    pub status: String,
+    pub to_issue_id: Uuid,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct LinearSyncInbox {
+    pub attempts: i32,
+    pub connection_id: Uuid,
+    pub delivery_id: String,
+    pub event_type: String,
+    pub id: Uuid,
+    pub last_error: Option<String>,
+    pub payload: serde_json::Value,
+    pub processed_at: Option<DateTime<Utc>>,
+    pub received_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct LinearSyncOutbox {
+    pub attempts: i32,
+    pub available_at: DateTime<Utc>,
+    pub connection_id: Uuid,
+    pub correlation_id: Uuid,
+    pub id: Uuid,
+    pub issue_id: Option<Uuid>,
+    pub last_error: Option<String>,
+    pub operation: String,
+    pub payload: serde_json::Value,
+    pub sent_at: Option<DateTime<Utc>>,
+    pub workspace_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct LinearSyncConflict {
+    pub correlation_id: Option<Uuid>,
+    pub created_at: DateTime<Utc>,
+    pub field: String,
+    pub id: Uuid,
+    pub issue_id: Option<Uuid>,
+    pub linear_issue_id: Option<String>,
+    pub local_revision: Option<i64>,
+    pub local_value: Option<serde_json::Value>,
+    pub remote_updated_at: Option<DateTime<Utc>>,
+    pub remote_value: Option<serde_json::Value>,
+    pub resolved_at: Option<DateTime<Utc>>,
+    pub status: String,
     pub workspace_id: Uuid,
 }
 

@@ -30,6 +30,7 @@ import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
 import { useAuthStore } from "@patchbay/core/auth";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { linearConnectionOptions } from "@patchbay/core/linear";
 import { larkInstallationsOptions, larkKeys } from "@patchbay/core/lark";
 import { slackInstallationsOptions, slackKeys } from "@patchbay/core/slack";
 import { dingtalkInstallationsOptions, dingtalkKeys } from "@patchbay/core/dingtalk";
@@ -315,6 +316,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
     reconnect: boolean;
   } | null>(null);
   const [mutating, setMutating] = useState(false);
+  const [linearConnecting, setLinearConnecting] = useState(false);
   const user = useAuthStore((state) => state.user);
   const { data: members = [] } = useQuery({
     ...memberListOptions(wsId),
@@ -367,6 +369,22 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
     composioToolkits.error instanceof ApiError &&
     composioToolkits.error.status === 503;
   const vcsAvailable = useConfigStore((state) => state.vcsIntegrationAvailable);
+  const linear = useQuery({
+    ...linearConnectionOptions(wsId),
+    enabled: !!wsId,
+  });
+
+  async function connectLinear() {
+    if (linearConnecting || isGuest || !canManage || !wsId) return;
+    setLinearConnecting(true);
+    try {
+      const response = await api.startLinearOAuth(wsId);
+      window.location.assign(response.authorization_url);
+    } catch {
+      toast.error(t(($) => $.page.linear.connect_failed));
+      setLinearConnecting(false);
+    }
+  }
 
   const listings = { lark, slack, dingtalk, wecom, telegram, weixin };
   const managedListing = managedChannel ? listings[managedChannel].data : undefined;
@@ -506,6 +524,75 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
           <ComposioTab />
         </SettingsSection>
       ) : null}
+      <SettingsSection
+        title={t(($) => $.page.linear.section_title)}
+        description={t(($) => $.page.linear.description)}
+      >
+        <Card className="border-surface-border/80 shadow-none" data-testid="linear-integration-card">
+          <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-body font-semibold">Linear</h3>
+                {linear.isLoading ? (
+                  <Badge variant="secondary">
+                    <Loader2 className="animate-spin" />
+                    {t(($) => $.page.linear.loading)}
+                  </Badge>
+                ) : linear.data?.connected ? (
+                  <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+                    <CheckCircle2 />
+                    {t(($) => $.page.linear.connected, {
+                      organization:
+                        linear.data.connection?.organization_name ??
+                        linear.data.connection?.organization_id ??
+                        "Linear",
+                    })}
+                  </Badge>
+                ) : (
+                  <Badge variant="outline">{t(($) => $.page.linear.not_connected)}</Badge>
+                )}
+              </div>
+              {linear.data?.connected ? (
+                <p className="text-caption text-muted-foreground">
+                  {t(($) => $.page.linear.project_bindings, {
+                    count: linear.data.project_bindings.length,
+                  })}
+                </p>
+              ) : null}
+              {linear.isError ? (
+                <p className="text-caption text-destructive" role="alert">
+                  {t(($) => $.page.linear.connect_failed)}
+                </p>
+              ) : null}
+            </div>
+            <div className="shrink-0">
+              {isGuest ? (
+                <span className="text-caption text-muted-foreground">
+                  {t(($) => $.page.linear.login_required)}
+                </span>
+              ) : canManage ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={linearConnecting}
+                  onClick={() => void connectLinear()}
+                >
+                  {linearConnecting ? <Loader2 className="animate-spin" /> : null}
+                  {t(($) =>
+                    linearConnecting
+                      ? $.page.linear.connecting
+                      : $.page.linear.connect,
+                  )}
+                </Button>
+              ) : (
+                <span className="text-caption text-muted-foreground">
+                  {t(($) => $.page.linear.admin_only)}
+                </span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </SettingsSection>
       {vcsAvailable ? (
         <SettingsSection title={t(($) => $.vcs.section_title)}>
           <VCSTab />

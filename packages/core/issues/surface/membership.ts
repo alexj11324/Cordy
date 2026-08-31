@@ -15,11 +15,12 @@ export type IssueMembership = true | false | "unknown";
 
 /**
  * The field groups a write can touch that move an issue in or out of a
- * filtered list (assignee / project) or shift per-status bucket totals
+ * filtered list (executor / project) or shift per-status bucket totals
  * (status). Creator is not here: it is immutable after create.
  */
 export interface IssueChangedDims {
-  assignee: boolean;
+  owner: boolean;
+  executor: boolean;
   project: boolean;
   status: boolean;
 }
@@ -39,9 +40,12 @@ export function issueChangedDims(
     Object.prototype.hasOwnProperty.call(patch, field);
   const p = patch as Partial<Issue>;
   return {
-    assignee:
-      (has("assignee_id") && (!base || base.assignee_id !== p.assignee_id)) ||
-      (has("assignee_type") && (!base || base.assignee_type !== p.assignee_type)),
+    owner:
+      (has("owner_id") && (!base || base.owner_id !== p.owner_id)) ||
+      (has("owner_type") && (!base || base.owner_type !== p.owner_type)),
+    executor:
+      (has("executor_id") && (!base || base.executor_id !== p.executor_id)) ||
+      (has("executor_type") && (!base || base.executor_type !== p.executor_type)),
     project: has("project_id") && (!base || base.project_id !== p.project_id),
     status: has("status") && p.status !== undefined && (!base || base.status !== p.status),
   };
@@ -60,13 +64,21 @@ export function listFilterDependsOn(
   changed: IssueChangedDims,
 ): boolean {
   // my:all is the union of assigned / created / involved — the assigned and
-  // involved legs key on the assignee.
-  if (scope === "all") return changed.assignee;
+  // involved legs key on the executor.
+  if (scope === "all") return changed.owner || changed.executor;
   if (
-    changed.assignee &&
-    (filter.assignee_id !== undefined ||
-      filter.assignee_ids !== undefined ||
-      filter.assignee_types !== undefined ||
+    changed.owner &&
+    (filter.owner_id !== undefined ||
+      filter.owner_ids !== undefined ||
+      filter.owner_types !== undefined)
+  ) {
+    return true;
+  }
+  if (
+    changed.executor &&
+    (filter.executor_id !== undefined ||
+      filter.executor_ids !== undefined ||
+      filter.executor_types !== undefined ||
       filter.involves_user_id !== undefined)
   ) {
     return true;
@@ -93,24 +105,41 @@ export function issueMatchesListFilter(
 
   let unknown = false;
 
-  if (filter.assignee_id !== undefined) {
-    if (issue.assignee_id === undefined) unknown = true;
-    else if (issue.assignee_id !== filter.assignee_id) return false;
+  if (filter.owner_id !== undefined) {
+    if (issue.owner_id === undefined) unknown = true;
+    else if (issue.owner_id !== filter.owner_id) return false;
   }
-  if (filter.assignee_ids !== undefined) {
-    if (issue.assignee_id === undefined) unknown = true;
+  if (filter.owner_ids !== undefined) {
+    if (issue.owner_id === undefined) unknown = true;
+    else if (issue.owner_id === null || !filter.owner_ids.includes(issue.owner_id)) {
+      return false;
+    }
+  }
+  if (filter.owner_types !== undefined) {
+    if (issue.owner_type === undefined) unknown = true;
+    else if (issue.owner_type === null || !filter.owner_types.includes(issue.owner_type)) {
+      return false;
+    }
+  }
+
+  if (filter.executor_id !== undefined) {
+    if (issue.executor_id === undefined) unknown = true;
+    else if (issue.executor_id !== filter.executor_id) return false;
+  }
+  if (filter.executor_ids !== undefined) {
+    if (issue.executor_id === undefined) unknown = true;
     else if (
-      issue.assignee_id === null ||
-      !filter.assignee_ids.includes(issue.assignee_id)
+      issue.executor_id === null ||
+      !filter.executor_ids.includes(issue.executor_id)
     ) {
       return false;
     }
   }
-  if (filter.assignee_types !== undefined) {
-    if (issue.assignee_type === undefined) unknown = true;
+  if (filter.executor_types !== undefined) {
+    if (issue.executor_type === undefined) unknown = true;
     else if (
-      issue.assignee_type === null ||
-      !filter.assignee_types.includes(issue.assignee_type)
+      issue.executor_type === null ||
+      !filter.executor_types.includes(issue.executor_type)
     ) {
       return false;
     }
@@ -124,7 +153,7 @@ export function issueMatchesListFilter(
     else if (issue.project_id !== filter.project_id) return false;
   }
   if (filter.involves_user_id !== undefined) {
-    // Indirect-assignee predicate (owned agents / teams) — server-only.
+    // Indirect-executor predicate (owned agents / teams) — server-only.
     unknown = true;
   }
 

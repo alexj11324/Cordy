@@ -189,6 +189,9 @@
     "scanning_lede_suffix": " など。このコンピュータにインストール済みのものを確認しています。",
     "found_headline": "Patrick はどこで動かしますか？",
     "found_lede": "このコンピュータで見つかったデバイスです。あとで切り替えたり追加したりできます。",
+    "patrick_selection_label": "Patrick のモデル",
+    "execution_selection_label": "デフォルト実行モデル",
+    "execution_same_as_patrick": "Patrick と同じにする",
     "runtime_count_other": "デバイス {{count}} 台",
     "status_all_online": "すべてオンライン",
     "status_none_online": "オンラインなし",
@@ -245,7 +248,8 @@
   },
   "errors": {
     "skip_failed": "オンボーディングを完了できませんでした",
-    "patrick_setup_failed": "Patrick ワークスペースを開始できませんでした"
+    "patrick_setup_failed": "Patrick ワークスペースを開始できませんでした",
+    "model_required": "Patrick とデフォルト実行に使用する具体的なモデルを選択してください。"
   },
   "patrick_intro": {
     "headline": "最初のエージェント仲間、Patrick を紹介します。",

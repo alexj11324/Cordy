@@ -279,11 +279,28 @@ async fn graph_apply_allowed(
     let Some(agent_id) = authorization.via_agent_id else {
         return false;
     };
-    agent::get_agent_task_in_workspace(&state.pool, authorization.task_id, workspace_id)
+    let is_leader_task = agent::get_agent_task_in_workspace(
+        &state.pool,
+        authorization.task_id,
+        workspace_id,
+    )
+    .await
+    .ok()
+    .flatten()
+    .is_some_and(|task| task.agent_id == agent_id && task.is_leader_task);
+    if !is_leader_task {
+        return false;
+    }
+    // Planner task credentials are intentionally narrower than ordinary
+    // leader credentials: only the workspace's configured Patrick may apply
+    // or retire the authoritative dependency graph. Human members retain the
+    // explicit planning path above, while delegated agents cannot impersonate
+    // the orchestrator by forging an x-agent-id header.
+    agent::get_agent_by_system_key(&state.pool, workspace_id, Some("patrick"))
         .await
         .ok()
         .flatten()
-        .is_some_and(|task| task.agent_id == agent_id && task.is_leader_task)
+        .is_some_and(|patrick| patrick.id == agent_id)
 }
 
 fn graph_error(error: DependencyGraphError) -> Response {
@@ -294,8 +311,11 @@ fn graph_error(error: DependencyGraphError) -> Response {
         }
         DependencyGraphError::ActivePlanExists => (StatusCode::CONFLICT, "active_plan_exists"),
         DependencyGraphError::IdempotencyConflict => (StatusCode::CONFLICT, "idempotency_conflict"),
-        DependencyGraphError::AssigneeNotFound { .. } => {
-            (StatusCode::UNPROCESSABLE_ENTITY, "invalid_assignee")
+        DependencyGraphError::ExecutorNotFound { .. } => {
+            (StatusCode::UNPROCESSABLE_ENTITY, "invalid_executor")
+        }
+        DependencyGraphError::RuntimeNotFound(_) => {
+            (StatusCode::UNPROCESSABLE_ENTITY, "invalid_runtime")
         }
         DependencyGraphError::Integrity(_) => {
             (StatusCode::INTERNAL_SERVER_ERROR, "graph_integrity")
@@ -447,19 +467,19 @@ async fn apply_issue_dependency_graph(
     }
     let task_authorization = crate::issue::TaskAuthorizationContext::from_headers(&headers);
     for task in &input.tasks {
-        for assignee in task.assignee.iter().chain(task.candidate_assignees.iter()) {
-            if let Err(message) = crate::issue::validate_assignee(
+        for executor in task.executor.iter().chain(task.candidate_executors.iter()) {
+            if let Err(message) = crate::issue::validate_executor(
                 &state,
                 &context,
-                &assignee.type_,
-                assignee.id,
+                &executor.type_,
+                executor.id,
                 task_authorization,
             )
             .await
             {
                 return error_code_response(
                     StatusCode::UNPROCESSABLE_ENTITY,
-                    "invalid_assignee",
+                    "invalid_executor",
                     &message,
                 );
             }
@@ -469,6 +489,14 @@ async fn apply_issue_dependency_graph(
         Ok(creator) => creator,
         Err(response) => return response,
     };
+    if let Some(authorization) = task_authorization {
+        if created_by_type != "agent" || authorization.via_agent_id != Some(created_by_id) {
+            return error_response(
+                StatusCode::FORBIDDEN,
+                "planner identity does not match the task credential",
+            );
+        }
+    }
 
     match apply_dependency_plan(
         &state.pool,
@@ -600,9 +628,15 @@ fn snapshot_value(snapshot: &DependencyGraphSnapshot, prefix: &str) -> Value {
             "acceptance_criteria": node.node.acceptance_criteria,
             "context": node.node.context,
             "outputs": node.node.outputs,
-            "assignee_type": node.node.assignee_type,
-            "assignee_id": node.node.assignee_id,
-            "candidate_assignees": node.node.candidate_assignees,
+            "owner_type": node.node.owner_type,
+            "owner_id": node.node.owner_id,
+            "executor_type": node.node.executor_type,
+            "executor_id": node.node.executor_id,
+            "candidate_executors": node.node.candidate_executors,
+            "reviewer_type": node.node.reviewer_type,
+            "reviewer_id": node.node.reviewer_id,
+            "runtime_id": node.node.runtime_id,
+            "model_id": node.node.model_id,
             "wave": node.node.wave,
             "status": node.issue.status,
             "readiness": {

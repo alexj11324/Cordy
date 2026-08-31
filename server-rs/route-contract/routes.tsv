@@ -63,7 +63,7 @@ GET	/api/agents/{}/labels
 GET	/api/agents/{}/mcp-servers
 GET	/api/agents/{}/skills
 GET	/api/agents/{}/tasks
-GET	/api/assignee-frequency
+GET	/api/executor-frequency
 GET	/api/attachments/{}
 GET	/api/attachments/{}/content
 GET	/api/attachments/{}/download
@@ -138,6 +138,7 @@ GET	/api/integrations/composio/toolkits
 GET	/api/invitations
 GET	/api/invitations/{}
 GET	/api/issue-statuses
+GET	/api/issue-category-policies
 GET	/api/issue-view-preferences
 GET	/api/issue-views
 GET	/api/issue-views/{}
@@ -160,6 +161,14 @@ GET	/api/issues/{}/task-runs
 GET	/api/issues/{}/timeline
 GET	/api/issues/{}/usage
 GET	/api/issues/{}/work-products
+GET	/api/linear/oauth/callback
+GET	/api/workspaces/{}/linear
+GET	/api/workspaces/{}/linear/member-bindings
+GET	/api/workspaces/{}/linear/agent-bindings
+GET	/api/workspaces/{}/linear/conflicts
+GET	/api/workspaces/{}/linear/project-bindings
+GET	/api/workspaces/{}/linear/project-bindings/{}/status-bindings
+GET	/api/workspaces/{}/linear/issues/{}/relations
 GET	/api/labels
 GET	/api/labels/{}
 GET	/api/me
@@ -256,6 +265,7 @@ PATCH	/api/workspaces/{}/runtime-profiles/{}
 POST	/api/agent-builder/sessions
 POST	/api/agents
 POST	/api/agents/patrick
+POST	/api/issues/{}/patrick-mutation
 POST	/api/agents/{}/archive
 POST	/api/agents/{}/cancel-tasks
 POST	/api/agents/{}/labels
@@ -399,6 +409,7 @@ POST	/api/v1/plugin/hooks/{}
 POST	/api/v1/plugin/issues/{}/comments
 POST	/api/webhooks/automations/{}
 POST	/api/webhooks/github
+POST	/api/webhooks/linear/{}
 POST	/api/webhooks/stripe
 POST	/api/webhooks/vcs/{}
 POST	/api/wecom/binding/redeem
@@ -407,6 +418,13 @@ POST	/api/workspaces
 POST	/api/workspaces/{}/dingtalk/install/byo
 POST	/api/workspaces/{}/lark/install/begin
 POST	/api/workspaces/{}/leave
+POST	/api/workspaces/{}/linear/connect
+POST	/api/workspaces/{}/linear/agent-bindings
+POST	/api/workspaces/{}/linear/member-bindings
+POST	/api/workspaces/{}/linear/project-bindings
+POST	/api/workspaces/{}/linear/project-bindings/{}/tombstone
+PUT	/api/workspaces/{}/linear/project-bindings/{}/status-bindings
+PUT	/api/workspaces/{}/linear/issues/{}/relations
 POST	/api/workspaces/{}/mcp-servers
 POST	/api/workspaces/{}/members
 POST	/api/workspaces/{}/plugins
@@ -437,6 +455,7 @@ PUT	/api/agents/{}/skills/{}/enabled
 PUT	/api/automations/{}/triggers/{}/signing-secret
 PUT	/api/comments/{}
 PUT	/api/issue-view-preferences
+PUT	/api/issue-category-policies/{}
 PUT	/api/issues/{}
 PUT	/api/issues/{}/metadata/{}
 PUT	/api/issues/{}/properties/{}

@@ -107,6 +107,8 @@ import type {
   TaskDispatchPayload,
   TaskRunningPayload,
   TaskWaitingLocalDirectoryPayload,
+  TaskWaitingCapacityPayload,
+  TaskAvailablePayload,
   TaskCompletedPayload,
   TaskFailedPayload,
   TaskCancelledPayload,
@@ -815,7 +817,7 @@ export function useRealtimeSync(
         const wsId = getCurrentWsId();
         if (wsId) {
           qc.invalidateQueries({ queryKey: workspaceKeys.teams(wsId) });
-          // team:deleted triggers assignee transfer — refresh issues too.
+          // team:deleted triggers executor transfer — refresh issues too.
           qc.invalidateQueries({ queryKey: issueKeys.all(wsId) });
         }
       },
@@ -946,7 +948,7 @@ export function useRealtimeSync(
         qc.invalidateQueries({ queryKey: agentTaskSnapshotKeys.list(wsId) });
         qc.invalidateQueries({ queryKey: workspaceWorkingAgentsKeys.all(wsId) });
         invalidateDependencyGraphQueries(qc, wsId);
-        // The Table working-agent shortcut derives an assignee set from the
+        // The Table working-agent shortcut derives an executor set from the
         // projection above. Refresh its server-owned graph alongside that set
         // so rows/groups/facets cannot remain on an old task transition while
         // the projection refetches (global staleTime is Infinity).
@@ -984,7 +986,7 @@ export function useRealtimeSync(
         qc.invalidateQueries({ queryKey: issueKeys.commentTriggerPreviewAll() });
         // Issue-trigger previews (assign/status/create/batch) are deliberately
         // NOT invalidated here. Unlike comment triggers, the assign source
-        // (create / assignee change) cancels existing tasks before enqueuing, so
+        // (create / executor change) cancels existing tasks before enqueuing, so
         // a task event can never change its verdict; only the status source's
         // pending dedup could, and that preview is advisory — the write path
         // re-evaluates authoritatively, so a rare stale label is harmless.
@@ -1053,7 +1055,8 @@ export function useRealtimeSync(
       const wsId = getCurrentWsId();
       if (wsId) {
         onIssueUpdated(qc, wsId, issue, {
-          assigneeChanged: payload.assignee_changed,
+          ownerChanged: payload.owner_changed,
+          executorChanged: payload.executor_changed,
           statusChanged: payload.status_changed,
           projectChanged: payload.project_changed,
         });
@@ -1629,6 +1632,34 @@ export function useRealtimeSync(
       },
     );
 
+    // A capacity wait is distinct from local-directory contention: the task
+    // keeps its immutable ACP/model target and is resumed once a fresh local
+    // snapshot or an explicit user override makes that target available.
+    const unsubTaskWaitingCapacity = ws.on("task:waiting_capacity", (p) => {
+      const payload = p as TaskWaitingCapacityPayload;
+      if (!payload.chat_session_id) return;
+      qc.setQueryData<ChatPendingTask>(
+        chatKeys.pendingTask(payload.chat_session_id),
+        (old) =>
+          promotePendingChatTask(old, payload.task_id, "waiting_capacity"),
+      );
+      invalidateChatMessageQueries(qc, payload.chat_session_id);
+      qc.invalidateQueries({ queryKey: chatKeys.pendingTask(payload.chat_session_id) });
+      invalidatePendingAggregate();
+    });
+
+    const unsubTaskAvailable = ws.on("task:available", (p) => {
+      const payload = p as TaskAvailablePayload;
+      if (!payload.chat_session_id) return;
+      qc.setQueryData<ChatPendingTask>(
+        chatKeys.pendingTask(payload.chat_session_id),
+        (old) => promotePendingChatTask(old, payload.task_id, "queued"),
+      );
+      invalidateChatMessageQueries(qc, payload.chat_session_id);
+      qc.invalidateQueries({ queryKey: chatKeys.pendingTask(payload.chat_session_id) });
+      invalidatePendingAggregate();
+    });
+
     // task:cancelled reaches us when:
     //   1. handleStop already cleared the cache locally (this is a no-op confirm)
     //   2. another tab / admin / system cancels — this is the only path that
@@ -1789,6 +1820,8 @@ export function useRealtimeSync(
       unsubTaskDispatch();
       unsubTaskRunning();
       unsubTaskWaitingLocalDir();
+      unsubTaskWaitingCapacity();
+      unsubTaskAvailable();
       unsubTaskCancelled();
       unsubTaskCompleted();
       unsubTaskFailed();

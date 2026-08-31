@@ -148,7 +148,7 @@ export function useAgentPresenceDetail(
 
     const agent = safeAgents.find((a) => a.id === agentId);
     // Agent referenced but not in the workspace's active list (most often:
-    // archived assignee on an old issue). Render a gray-offline fallback
+    // archived executor on an old issue). Render a gray-offline fallback
     // instead of looping in "loading".
     if (!agent) return MISSING_AGENT_DETAIL;
     // Missing runtime is a legitimate state (offline) — pass null and let

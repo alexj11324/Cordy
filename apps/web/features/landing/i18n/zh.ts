@@ -2134,7 +2134,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "搜索结果排序更准确，也会展示更有帮助的摘要片段",
         ],
         fixes: [
-          "自动化 创建任务时可以稳定重复触发，并正确归属到负责的 assignee agent",
+          "自动化 创建任务时可以稳定重复触发，并正确归属到负责的 executor agent",
           "Runtime 设置默认优先选择本地机器，机器列表中的名称也更清晰",
           "Team 页面可以正常滚动，并能看到成员当前是否已经在处理工作",
           "桌面端缩放快捷键在常见组合下恢复正常",
@@ -2248,7 +2248,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "任务描述内联渲染 Mermaid 图表",
-          "Sub-任务行支持就地切换状态与 assignee，并支持跨行批量选中",
+          "Sub-任务行支持就地切换状态与 executor，并支持跨行批量选中",
           "Token 用量按每个 runtime 自己的时区聚合，每日 rollup 与本地日期对齐",
           "私有 Agent 通过 `allowed_principals` 判定可见性，权限粒度更细",
           "成员离开或被移出 workspace 时，自动吊销其名下的 runtime",
@@ -2290,7 +2290,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         improvements: [
           "Issue Timeline 不再因每个 WS 事件做完整 re-render，长任务滚动更顺",
           "Editor 跳过对超大文本 / JSON 粘贴的解析，避免卡顿",
-          "自动化 在 assignee runtime 离线时跳过 dispatch，避免空跑",
+          "自动化 在 executor runtime 离线时跳过 dispatch，避免空跑",
           "Inbox 自动归档处于终态的 `task_failed` 行",
           "Hermes 把 agent instructions 直接随请求内联传入",
           "Timeline / Comment 改为纯客户端虚拟化，去掉服务端分页",
@@ -2367,7 +2367,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "支持删除 Chat 会话，History 面板移至 chat header",
           "Runtime 在线判断改走 Redis（DB 兜底）",
           "Desktop 支持加载 runtime 自托管配置",
-          "CLI 新增 `--assignee-id` / `--to-id` / `--user-id`，重名时定位更准",
+          "CLI 新增 `--executor-id` / `--to-id` / `--user-id`，重名时定位更准",
         ],
         improvements: [
           "Settings 的 Appearance Tab 改名为 Preferences，并把当前激活的 Tab 反映到 URL，深链可分享",
@@ -2462,7 +2462,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         improvements: [
           "Server 用 Redis 缓存 PAT / Daemon Token 校验，大型团队不再让 DB 抗下每次请求",
           "后端支持通过 `PATCHBAY_CLAUDE_ARGS` / `PATCHBAY_CODEX_ARGS` 配置 Agent CLI 默认参数",
-          "Manual 与 Agent 创建任务共享同一个 Dialog 外壳，picker Agent 会被默认设为 assignee",
+          "Manual 与 Agent 创建任务共享同一个 Dialog 外壳，picker Agent 会被默认设为 executor",
         ],
         fixes: [
           "Create Issue by Agent 不再卡住 queued task，也不再因附件上传失败而重复创建任务",
@@ -2479,7 +2479,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         features: [
           "新增 Kiro CLI 作为本地 Agent runtime 选项",
           "macOS Dock 显示未读任务红点；窗口失焦时弹出原生通知，点击直达对应任务",
-          "任务列表新增 Label 过滤，可与状态、优先级、Assignee 等组合使用",
+          "任务列表新增 Label 过滤，可与状态、优先级、Executor 等组合使用",
           "Daemon 通过 WebSocket 接收 task 唤醒，task 起跑延迟显著降低",
         ],
         improvements: [
@@ -2531,7 +2531,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Server 心跳拆成 probe/claim 两步，并补上慢日志和 model-list running-timeout，丢心跳不再卡住 UI",
         ],
         fixes: [
-          "Server 在任务创建/更新时校验 `assignee_id` 真实存在；DeleteIssue 改用解析后的任务 ID",
+          "Server 在任务创建/更新时校验 `executor_id` 真实存在；DeleteIssue 改用解析后的任务 ID",
           "Pi Runtime 改为读写 `.pi/skills`，不再使用旧的 `.pi/agent/skills` 路径",
           "Windows 下 Daemon 启动 Agent 改用 `CREATE_NEW_CONSOLE`，孙子进程不再弹出额外终端窗口",
           "自动化 的 run-only 上下文正确传给被调起的 Agent",

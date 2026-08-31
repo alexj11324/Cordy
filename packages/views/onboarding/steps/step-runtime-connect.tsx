@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState  } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
@@ -50,7 +50,12 @@ export function StepRuntimeConnect({
    *  the workspace being set up rather than whichever one the app is currently
    *  showing. */
   wsSlug?: string;
-  onNext: (runtime: AgentRuntime | null, model?: string) => void | Promise<void>;
+  onNext: (
+    runtime: AgentRuntime | null,
+    model?: string,
+    executionRuntime?: AgentRuntime | null,
+    executionModel?: string,
+  ) => void | Promise<void>;
   /** Runtime picker labels rows by owner; injected for the same reason. */
   currentUserId?: string | null;
   /** Platform-level rescan hook. Desktop wires this to restart the
@@ -114,7 +119,12 @@ function FancyView({
   selected: AgentRuntime | null;
   selectedId: string | null;
   setSelectedId: (id: string) => void;
-  onNext: (runtime: AgentRuntime | null, model?: string) => void | Promise<void>;
+  onNext: (
+    runtime: AgentRuntime | null,
+    model?: string,
+    executionRuntime?: AgentRuntime | null,
+    executionModel?: string,
+  ) => void | Promise<void>;
   onRefresh?: () => void | Promise<void>;
   runtimesPending?: boolean;
   /** Runtime picker labels rows by owner; injected so this step does not read
@@ -168,6 +178,10 @@ function FancyView({
 
   const [submitting, setSubmitting] = useState(false);
   const [model, setModel] = useState("");
+  const [executionChoice, setExecutionChoice] = useState({
+    runtimeId: "",
+    model: "",
+  });
   const [refreshing, setRefreshing] = useState(false);
 
   // Refresh triggers a re-scan: restart the daemon (if the platform
@@ -200,12 +214,24 @@ function FancyView({
     }
   };
   // Starting with Patrick only makes sense when a runtime is selected.
-  const canContinue = phase === "found" && selected !== null;
+  const executionRuntime =
+    runtimes.find((runtime) => runtime.id === executionChoice.runtimeId) ?? null;
+  const canContinue =
+    phase === "found" &&
+    selected !== null &&
+    model.trim().length > 0 &&
+    executionRuntime !== null &&
+    executionChoice.model.trim().length > 0;
   const handleContinue = async () => {
     if (!canContinue || submitting) return;
     setSubmitting(true);
     try {
-      await onNext(selected, model);
+      await onNext(
+        selected,
+        model,
+        executionRuntime,
+        executionChoice.model,
+      );
     } finally {
       setSubmitting(false);
     }
@@ -246,6 +272,15 @@ function FancyView({
             model={model}
             onModelChange={setModel}
             currentUserId={currentUserId ?? null}
+            executionChoice={executionChoice}
+            onExecutionChoiceChange={setExecutionChoice}
+            patrickModel={model}
+            onUsePatrickModel={() =>
+              setExecutionChoice({
+                runtimeId: selectedId ?? "",
+                model,
+              })
+            }
           />
         )}
         {phase === "empty" && (
@@ -330,6 +365,10 @@ function FoundView({
   model,
   onModelChange,
   currentUserId,
+  executionChoice,
+  onExecutionChoiceChange,
+  patrickModel,
+  onUsePatrickModel,
 }: {
   runtimes: AgentRuntime[];
   selectedId: string | null;
@@ -340,6 +379,10 @@ function FoundView({
   model: string;
   onModelChange: (value: string) => void;
   currentUserId: string | null;
+  executionChoice: { runtimeId: string; model: string };
+  onExecutionChoiceChange: (value: { runtimeId: string; model: string }) => void;
+  patrickModel: string;
+  onUsePatrickModel: () => void;
 }) {
   const { t } = useT("onboarding");
   const total = runtimes.length;
@@ -384,6 +427,9 @@ function FoundView({
       </div>
 
       <div className="mt-6 flex flex-col gap-4">
+        <h3 className="text-body font-medium text-foreground">
+          {t(($) => $.step_runtime.patrick_selection_label)}
+        </h3>
         <PatrickRuntimeChoice
           runtimes={runtimes}
           currentUserId={currentUserId}
@@ -392,6 +438,26 @@ function FoundView({
             if (next.runtimeId !== selectedId) onSelect(next.runtimeId);
             if (next.model !== model) onModelChange(next.model);
           }}
+        />
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <h3 className="text-body font-medium text-foreground">
+            {t(($) => $.step_runtime.execution_selection_label)}
+          </h3>
+          <Button
+            type="button"
+            variant="link"
+            className="h-auto px-0 text-caption"
+            disabled={!patrickModel}
+            onClick={onUsePatrickModel}
+          >
+            {t(($) => $.step_runtime.execution_same_as_patrick)}
+          </Button>
+        </div>
+        <PatrickRuntimeChoice
+          runtimes={runtimes}
+          currentUserId={currentUserId}
+          value={executionChoice}
+          onChange={onExecutionChoiceChange}
         />
       </div>
     </div>

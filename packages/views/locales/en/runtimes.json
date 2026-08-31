@@ -32,6 +32,8 @@
     "description": "Patrick turns your goal into an issue, coordinates the right agent, and helps you add reusable specialists when your workflow needs them.",
     "action": "Start with Patrick",
     "failed": "Couldn't start Patrick",
+    "execution_model": "Default execution model",
+    "execution_same_as_patrick": "Use the same as Patrick",
     "dialog_title": "Where should Patrick run?",
     "dialog_description": "Pick the device Patrick will use. You can change it later in settings.",
     "cancel": "Cancel"

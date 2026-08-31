@@ -34,8 +34,12 @@ function makeIssue(
     title: overrides.id,
     description: null,
     priority: "none",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -406,7 +410,7 @@ describe("useIssueSurfaceController", () => {
     await waitFor(() => expect(listIssueTableRows).toHaveBeenCalled());
     expect(result.current.scopeKey).toBe("actor:agent:agent-1:assigned");
     expect(result.current.tableQuerySpec.scope).toEqual({
-      kind: "assignee",
+      kind: "executor",
       actor: { type: "agent", id: "agent-1" },
     });
   });
@@ -423,8 +427,7 @@ describe("useIssueSurfaceController", () => {
       surfaceKey: "my:user-1:assigned",
       scope: { type: "my" as const, relation: "assigned" as const, userId: "user-1" },
       expected: {
-        assignee_type: "member",
-        assignee_id: "user-1",
+        owner_type: "member", owner_id: "user-1",
         status: "todo",
       },
     },
@@ -438,8 +441,8 @@ describe("useIssueSurfaceController", () => {
         relation: "assigned" as const,
       },
       expected: {
-        assignee_type: "agent",
-        assignee_id: "agent-1",
+        executor_type: "agent",
+        executor_id: "agent-1",
         status: "todo",
       },
     },
@@ -543,8 +546,8 @@ describe("useIssueSurfaceController", () => {
       makeIssue({
         id: "issue-review",
         status: "in_progress",
-        assignee_type: "agent",
-        assignee_id: "agent-1",
+        executor_type: "agent",
+        executor_id: "agent-1",
         revision: 9,
       }),
     ];
@@ -589,8 +592,8 @@ describe("useIssueSurfaceController", () => {
       makeIssue({
         id: "issue-review-return",
         status: "in_review",
-        assignee_type: "agent",
-        assignee_id: "agent-1",
+        executor_type: "agent",
+        executor_id: "agent-1",
         revision: 10,
       }),
     ];
@@ -609,8 +612,8 @@ describe("useIssueSurfaceController", () => {
     act(() => {
       committed = result.current.moveIssue("issue-review-return", {
         status: "in_progress",
-        assignee_type: "agent",
-        assignee_id: "agent-1",
+        executor_type: "agent",
+        executor_id: "agent-1",
         position: 42,
         before_id: null,
         after_id: null,
@@ -622,12 +625,12 @@ describe("useIssueSurfaceController", () => {
       "issue-run-confirm",
       expect.objectContaining({
         mode: "review-return",
-        assigneeType: "agent",
-        assigneeId: "agent-1",
+        executorType: "agent",
+        executorId: "agent-1",
         issueRevision: 10,
         additionalUpdates: expect.objectContaining({
-          assignee_type: "agent",
-          assignee_id: "agent-1",
+          executor_type: "agent",
+          executor_id: "agent-1",
           position: 42,
           move_intent: { before_id: null, after_id: null },
         }),
@@ -801,10 +804,10 @@ describe("useIssueSurfaceController", () => {
 
   it.each([
     {
-      name: "Assignee Board",
+      name: "Executor Board",
       configure: (store: ReturnType<typeof getIssueSurfaceViewStore>) => {
         store.getState().setViewMode("board");
-        store.getState().setGrouping("assignee");
+        store.getState().setGrouping("executor");
       },
       properties: [],
     },
@@ -1054,7 +1057,7 @@ describe("useIssueSurfaceController", () => {
         "issue-running-2",
       ]),
     );
-    expect(result.current.tableQuerySpec.filters.assignees).toBeUndefined();
+    expect(result.current.tableQuerySpec.filters.executors).toBeUndefined();
     expect(result.current.tableQuerySpec.filters.working_only).toBeUndefined();
     expect(getWorkspaceWorkingAgents).toHaveBeenCalledWith("issue", undefined, undefined);
     expect(listIssues).not.toHaveBeenCalled();
@@ -1128,20 +1131,20 @@ describe("useIssueSurfaceController", () => {
           result.current.tableQuerySpec.filters.working_issue_ids,
         ).toEqual(["issue-from-working-api"]),
       );
-      expect(result.current.tableQuerySpec.filters.assignees).toBeUndefined();
+      expect(result.current.tableQuerySpec.filters.executors).toBeUndefined();
       expect(result.current.tableQuerySpec.filters.working_only).toBeUndefined();
       expect(getWorkspaceWorkingAgents).toHaveBeenCalledWith("issue", undefined, undefined);
       expect(getAgentTaskSnapshot).not.toHaveBeenCalled();
     },
   );
 
-  it("combines regular assignees with the independent running-task predicate", async () => {
+  it("combines regular executors with the independent running-task predicate", async () => {
     const store = getIssueSurfaceViewStore("project:p1");
     store.getState().setViewMode("list");
-    store.getState().toggleAssigneeFilter({ type: "agent", id: "agent-1" });
-    store.getState().toggleAssigneeFilter({ type: "agent", id: "agent-2" });
-    store.getState().toggleAssigneeFilter({ type: "member", id: "member-1" });
-    store.getState().toggleNoAssignee();
+    store.getState().toggleExecutorFilter({ type: "agent", id: "agent-1" });
+    store.getState().toggleExecutorFilter({ type: "agent", id: "agent-2" });
+    store.getState().toggleExecutorFilter({ type: "member", id: "member-1" });
+    store.getState().toggleNoExecutor();
     store.getState().toggleAgentRunningFilter();
     mockWorkingAgents([
       makeWorkingAgent("agent-2", ["member-assigned-running-issue"]),
@@ -1158,7 +1161,7 @@ describe("useIssueSurfaceController", () => {
     );
 
     await waitFor(() => {
-      expect(result.current.tableQuerySpec.filters.assignees).toEqual([
+      expect(result.current.tableQuerySpec.filters.executors).toEqual([
         { type: "agent", id: "agent-1" },
         { type: "agent", id: "agent-2" },
         { type: "member", id: "member-1" },
@@ -1168,7 +1171,7 @@ describe("useIssueSurfaceController", () => {
         "unassigned-running-issue",
       ]);
     });
-    expect(result.current.tableQuerySpec.filters.include_no_assignee).toBe(true);
+    expect(result.current.tableQuerySpec.filters.include_no_executor).toBe(true);
   });
 
   it("does not subscribe Table to the legacy offset window", async () => {
@@ -1432,7 +1435,7 @@ describe("useIssueSurfaceController", () => {
       "todo-1",
       "prog-1",
     ]);
-    expect(result.current.tableQuerySpec.filters.assignees).toBeUndefined();
+    expect(result.current.tableQuerySpec.filters.executors).toBeUndefined();
     expect(result.current.tableQuerySpec.filters.working_only).toBeUndefined();
     expect(getAgentTaskSnapshot).not.toHaveBeenCalled();
     // Cursor-paged server membership no longer forces an unknown count: the
@@ -1514,7 +1517,7 @@ describe("useIssueSurfaceController", () => {
       "todo-1",
       "prog-1",
     ]);
-    expect(result.current.tableQuerySpec.filters.assignees).toBeUndefined();
+    expect(result.current.tableQuerySpec.filters.executors).toBeUndefined();
     expect(result.current.tableQuerySpec.filters.working_only).toBeUndefined();
     // agent-2 works only on `prog-1`, which the active status filter hides. The
     // chip must not count an agent whose rows the list will not show.
@@ -1671,16 +1674,16 @@ describe("useIssueSurfaceController", () => {
     makeIssue({
       id: "gantt-open",
       status: "in_progress",
-      assignee_type: "agent",
-      assignee_id: "agent-1",
+      executor_type: "agent",
+      executor_id: "agent-1",
       start_date: "2026-01-01",
       due_date: "2026-01-05",
     }),
     makeIssue({
       id: "gantt-done",
       status: "done",
-      assignee_type: "agent",
-      assignee_id: "agent-2",
+      executor_type: "agent",
+      executor_id: "agent-2",
       start_date: "2026-01-01",
       due_date: "2026-01-05",
     }),
@@ -1689,15 +1692,15 @@ describe("useIssueSurfaceController", () => {
     makeIssue({
       id: "gantt-undated",
       status: "in_progress",
-      assignee_type: "agent",
-      assignee_id: "agent-3",
+      executor_type: "agent",
+      executor_id: "agent-3",
     }),
   ];
 
-  it("filters Gantt by running-task issue ids rather than issue assignees", async () => {
+  it("filters Gantt by running-task issue ids rather than issue executors", async () => {
     mockGanttIssues(ganttFixture);
     mockWorkingAgents([
-      // The editing agent deliberately differs from the issue assignee.
+      // The editing agent deliberately differs from the issue executor.
       makeWorkingAgent("agent-editor", ["gantt-open"]),
     ]);
     // Contradictory legacy membership must not affect the canvas.
@@ -1742,16 +1745,16 @@ describe("useIssueSurfaceController", () => {
     {
       name: "the working-agent API returns no agents",
       workingAgents: [] as WorkspaceWorkingAgent[],
-      selectedAssigneeId: null,
+      selectedExecutorId: null,
     },
     {
-      name: "the selected assignee excludes all running-task issues",
+      name: "the selected executor excludes all running-task issues",
       workingAgents: [makeWorkingAgent("agent-1", ["gantt-open"])],
-      selectedAssigneeId: "agent-2",
+      selectedExecutorId: "agent-2",
     },
   ])("keeps Gantt empty when $name", async ({
     workingAgents,
-    selectedAssigneeId,
+    selectedExecutorId,
   }) => {
     mockGanttIssues(ganttFixture);
     mockWorkingAgents(workingAgents);
@@ -1759,10 +1762,10 @@ describe("useIssueSurfaceController", () => {
     const store = getIssueSurfaceViewStore("project:p1");
     act(() => {
       store.getState().setViewMode("gantt");
-      if (selectedAssigneeId) {
-        store.getState().toggleAssigneeFilter({
+      if (selectedExecutorId) {
+        store.getState().toggleExecutorFilter({
           type: "agent",
-          id: selectedAssigneeId,
+          id: selectedExecutorId,
         });
       }
       store.getState().toggleAgentRunningFilter();
@@ -1789,9 +1792,9 @@ describe("useIssueSurfaceController", () => {
     expect(result.current.tableQuerySpec.filters.working_issue_ids).toEqual(
       workingAgents.flatMap((agent) => agent.issue_ids),
     );
-    expect(result.current.tableQuerySpec.filters.assignees).toEqual(
-      selectedAssigneeId
-        ? [{ type: "agent", id: selectedAssigneeId }]
+    expect(result.current.tableQuerySpec.filters.executors).toEqual(
+      selectedExecutorId
+        ? [{ type: "agent", id: selectedExecutorId }]
         : undefined,
     );
     expect(result.current.filteredGanttIssues).toEqual([]);

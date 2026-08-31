@@ -1,0 +1,11 @@
+DROP TABLE IF EXISTS linear_sync_conflict;
+DROP TABLE IF EXISTS linear_sync_outbox;
+DROP TABLE IF EXISTS linear_sync_inbox;
+DROP TABLE IF EXISTS linear_relation_link;
+DROP TABLE IF EXISTS linear_agent_binding;
+DROP TABLE IF EXISTS linear_member_binding;
+DROP TABLE IF EXISTS linear_issue_link;
+DROP TABLE IF EXISTS linear_status_binding;
+DROP TABLE IF EXISTS linear_project_binding;
+DROP TABLE IF EXISTS linear_oauth_state;
+DROP TABLE IF EXISTS linear_connection;

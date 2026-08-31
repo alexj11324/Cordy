@@ -99,6 +99,7 @@ export function ActivityTab({
       running: 0,
       dispatched: 1,
       waiting_local_directory: 2,
+      waiting_capacity: 2,
       queued: 3,
       deferred: 4,
     };
@@ -837,6 +838,8 @@ function taskStatusLabel(status: AgentTask["status"], t: AgentsT): string {
       return t(($) => $.tab_body.activity.status.dispatched);
     case "waiting_local_directory":
       return t(($) => $.tab_body.activity.status.waiting_local_directory);
+    case "waiting_capacity":
+      return t(($) => $.tab_body.activity.status.waiting_capacity);
     case "running":
       return t(($) => $.tab_body.activity.status.running);
     case "completed":

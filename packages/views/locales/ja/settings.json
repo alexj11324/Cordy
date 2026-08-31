@@ -41,7 +41,7 @@
     },
     "categories": {
       "backlog": "保留。ここに移動してもエージェントは起動しません。",
-      "todo": "待機中。ここに移動すると担当エージェントが起動します。",
+      "todo": "待機中。依存関係と容量が整ったときにコーディネーターが受け入れます。ここへ移動しただけでは実行しません。",
       "in_progress": "作業中。",
       "in_review": "納品済み、レビュー待ち。自動化の実行を完了します。",
       "done": "完了。",
@@ -273,7 +273,9 @@
     "fields": {
       "status": "ステータス",
       "priority": "優先度",
-      "assignee": "担当者",
+      "owner": "責任者",
+      "executor": "実行者",
+      "reviewer": "レビュー担当者",
       "labels": "ラベル",
       "project": "プロジェクト",
       "due_date": "期限",
@@ -339,6 +341,19 @@
     "integrations_reconnect_ready": "接続を削除しました。再接続を行ってください。",
     "integrations_disconnected_toast": "プラットフォームの接続を解除しました",
     "integrations_action_failed": "プラットフォーム接続を更新できませんでした",
+    "linear": {
+      "section_title": "Linear",
+      "description": "明示的にバインドした Linear プロジェクトを Patchbay のタスクと同期します。人の担当者は一意の有効なメールアドレスで照合し、Patchbay の役割は分離して保持します。",
+      "not_connected": "未接続",
+      "connected": "{{organization}} に接続済み",
+      "loading": "Linear の接続を確認中…",
+      "project_bindings": "{{count}} 件のプロジェクトバインド",
+      "connect": "Linear に接続",
+      "connecting": "Linear を開いています…",
+      "admin_only": "ワークスペース管理者のみ",
+      "login_required": "ログインして接続",
+      "connect_failed": "Linear の接続を開始できませんでした"
+    },
     "tabs": {
       "profile": "プロフィール",
       "preferences": "環境設定",

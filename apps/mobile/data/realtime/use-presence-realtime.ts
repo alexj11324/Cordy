@@ -6,8 +6,8 @@
  *   - runtimeListOptions      ← daemon:register, runtime sweeper transitions
  *   - agentListOptions        ← agent:status / created / archived / restored
  *   - agentTaskSnapshotOptions← task:queued / dispatch / running /
- *                               waiting_local_directory / completed /
- *                               failed / cancelled
+ *                               waiting_local_directory / waiting_capacity /
+ *                               completed / failed / cancelled
  *   - agentThreadKeys          ← the same lifecycle transitions, so an open
  *                               thread refreshes its current task envelope
  *
@@ -75,6 +75,14 @@ export function usePresenceRealtime() {
           invalidateAgentThreads();
         }),
         ws.on("task:waiting_local_directory", () => {
+          invalidateSnapshot();
+          invalidateAgentThreads();
+        }),
+        ws.on("task:waiting_capacity", () => {
+          invalidateSnapshot();
+          invalidateAgentThreads();
+        }),
+        ws.on("task:available", () => {
           invalidateSnapshot();
           invalidateAgentThreads();
         }),

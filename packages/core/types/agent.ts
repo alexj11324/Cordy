@@ -278,6 +278,7 @@ export type AgentTaskStatus =
   | "deferred"
   | "dispatched"
   | "waiting_local_directory"
+  | "waiting_capacity"
   | "running"
   | "completed"
   | "failed"
@@ -295,9 +296,10 @@ export interface AgentTask {
   // automation-spawned. Check chat_session_id / automation_run_id to tell
   // which source produced it.
   issue_id: string;
-  // `waiting_local_directory` is the daemon-emitted hold state for the
-  // local_directory flow: a task that has been dispatched but is parked
-  // because another task currently owns the same on-disk path lock.
+  // `waiting_local_directory` and `waiting_capacity` are daemon-emitted hold
+  // states: the first waits for a path lock, while the second waits for a
+  // selected ACP/model to become available. Both remain active work and are
+  // resumed without changing the task's immutable execution target.
   // Treated as an active (non-terminal) state alongside queued/dispatched/
   // running by every consumer that buckets tasks into "active vs done".
   status: AgentTaskStatus;
@@ -330,7 +332,7 @@ export interface AgentTask {
   side_chat_root_comment_id?: string;
   /** 1-based attempt counter; >1 means this is a retry. */
   attempt?: number;
-  /** Set when an issue comment triggered this task (@mention or assignee comment). */
+  /** Set when an issue comment triggered this task (@mention or executor comment). */
   trigger_comment_id?: string;
   /**
    * Complete user-authored turn for an Agent-thread continuation. The bounded
@@ -479,6 +481,11 @@ export interface PatrickBootstrapResponse extends Agent {
   /** Absent only when the server could not resolve the session; retry the
    *  same call rather than creating one client-side. */
   onboarding_session?: ChatSession;
+  /** Defaults provisioned atomically with Patrick during onboarding. */
+  execution_agent_id?: string;
+  review_agent_id?: string;
+  execution_runtime_id?: string;
+  execution_model?: string;
 }
 
 export interface Agent {

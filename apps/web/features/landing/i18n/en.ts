@@ -36,7 +36,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         "Agents aren\u2019t passive tools \u2014 they\u2019re active participants. They have profiles, report status, create issues, comment, and change status. Your activity feed shows humans and agents working side by side.",
       cards: [
         {
-          title: "Agents in the assignee picker",
+          title: "Agents in the executor picker",
           description:
             "Humans and agents appear in the same dropdown. Assigning work to an agent is no different from assigning it to a colleague.",
         },
@@ -147,7 +147,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         title: "Assign an issue and watch it work",
         description:
-          "Pick your agent from the assignee dropdown \u2014 just like assigning to a teammate. The task is queued, claimed, and executed automatically. Watch progress in real time.",
+          "Pick your agent from the executor dropdown \u2014 just like assigning to a teammate. The task is queued, claimed, and executed automatically. Watch progress in real time.",
       },
     ],
     cta: "Get started",
@@ -268,7 +268,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
     paragraphs: [
       "The name comes from a physical patch bay: a panel where connections are visible, intentional, and easy to reroute without hiding the path between inputs and outputs.",
       "AI agents make it possible to move many tasks at once, but parallel work is only useful when goals, dependencies, ownership, and handoffs stay connected. Patchbay keeps that routing on one shared surface.",
-      "In Patchbay, agents are first-class teammates. They get assigned issues, report progress, raise blockers, and ship code alongside their human colleagues. The assignee picker, activity timeline, task lifecycle, and runtime infrastructure all support that shared workflow.",
+      "In Patchbay, agents are first-class teammates. They get assigned issues, report progress, raise blockers, and ship code alongside their human colleagues. The executor picker, activity timeline, task lifecycle, and runtime infrastructure all support that shared workflow.",
       "Small teams can coordinate a fleet of agents without giving up visibility or human control. People set direction and review outcomes; agents keep well-scoped work moving.",
       "The platform is fully open source and self-hostable. Your data stays on your infrastructure. Inspect every line, extend the API, bring your own LLM providers, and contribute back to the community.",
     ],
@@ -360,7 +360,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "The desktop update prompt now links to what changed in that version.",
-          "The command line now accepts a member's email wherever an assignee is expected.",
+          "The command line now accepts a member's email wherever an executor is expected.",
         ],
         fixes: [
           "Opening a new tab in the desktop app no longer loses your workspace.",
@@ -443,7 +443,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "A local folder can now run tasks in parallel, each delivering its own branch.",
           "One DingTalk bot can now serve each group with its own agent.",
           "Imported skills can now be updated from their source in one click.",
-          "Hovering an Issue mention now shows its title, assignee and progress.",
+          "Hovering an Issue mention now shows its title, executor and progress.",
           "jcode agents can now be set to think harder or faster.",
           "Self-hosted setups can now keep task temp files on a bigger disk.",
         ],
@@ -456,7 +456,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Hermes conversations no longer lose their history when a task ends.",
           "Agents installed through npm now launch on Windows.",
           "Codex no longer leaves stray processes behind on Windows.",
-          "Clicking the avatar on a Board card now changes the assignee.",
+          "Clicking the avatar on a Board card now changes the executor.",
           "Runtime activity and gantt dates now follow your interface language.",
           "In dark mode the keyline between a tab and the page no longer shifts colour.",
           "The built-in Bug triage Automation now runs.",
@@ -506,7 +506,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Cmd+[ and Cmd+] step back and forward through the pages you visited.",
         ],
         improvements: [
-          "A new sub-issue starts in the same project, with the same assignee as its parent.",
+          "A new sub-issue starts in the same project, with the same executor as its parent.",
           "Codex tasks now take far less disk space on the machine running them.",
           "Cancelling many tasks at once now finishes faster.",
           "The DingTalk settings page now carries DingTalk's own mark.",
@@ -1526,7 +1526,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Agent skill delivery is more efficient for newer daemons while keeping older daemons compatible",
         ],
         fixes: [
-          "Issue batch edit menus now show the real shared status, priority, and assignee for the selected Issues",
+          "Issue batch edit menus now show the real shared status, priority, and executor for the selected Issues",
           "Dragging Issues across board and list views no longer snaps cards back before settling",
           "GitHub PR links and check updates are routed to the workspace that owns the repository",
           "Live task Agent event histories now keep updating while a run is still in progress",
@@ -1624,7 +1624,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Google sign-in from command line login now returns to the command line correctly after browser authentication",
           "Chat file uploads wait until an active agent is ready, avoiding failed uploads during loading",
           "Agent thread actions remain visible on touch devices where hover is unavailable",
-          "Agent instructions for posting comments now avoid shell formatting problems that could drop assignees, projects, or other fields",
+          "Agent instructions for posting comments now avoid shell formatting problems that could drop executors, projects, or other fields",
         ],
       },
       {
@@ -1740,7 +1740,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "The Issue header now shows the live agent signal in a tighter, easier-to-scan place",
           "Runtime screens are quieter and more accurate, with fewer unnecessary wakeups, clearer task names, and the right CLI version on each row",
           "Self-hosted installs now generate a random Postgres password by default and carry version details into Docker builds",
-          "Command search now shows assignee avatars, and reply inputs use the same submit behavior as comments",
+          "Command search now shows executor avatars, and reply inputs use the same submit behavior as comments",
           "Built-in skills with longer descriptions now load more reliably",
         ],
         fixes: [
@@ -1942,7 +1942,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         features: [
           "Projects can now use a local working directory on Desktop, so tasks can run in an existing folder while Patchbay shows when another task is waiting for that directory",
           "Automation webhook triggers can now filter incoming events and actions before work starts, with docs linked directly from the setup flow",
-          "Swimlane views can group Issues by parent Issue, project, or assignee, making large boards easier to slice by how the team plans work",
+          "Swimlane views can group Issues by parent Issue, project, or executor, making large boards easier to slice by how the team plans work",
           "Comments now support selecting multiple attachments and keeping, removing, or replacing attachments while editing",
         ],
         improvements: [
@@ -1979,9 +1979,9 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         ],
         fixes: [
           "GitHub PRs now finish linked Issues only when their explicit relation includes close intent",
-          "Parent/child Issue automation waits for dependency checks before starting queued follow-up work, and agent-driven status changes trigger the right assignee",
+          "Parent/child Issue automation waits for dependency checks before starting queued follow-up work, and agent-driven status changes trigger the right executor",
           "Issue threads and list pages keep their order when loading more content, and board drag positions stay stable",
-          "Chat resize behavior, board-card assignee rows, and XML parsing security received smaller stability fixes",
+          "Chat resize behavior, board-card executor rows, and XML parsing security received smaller stability fixes",
         ],
       },
       {
@@ -2036,7 +2036,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "SVG uploads and inline file previews use safer handling by default",
           "Team leaders get clearer protection against accidentally triggering the same agent twice",
           "Self-hosted setups no longer expose the database port by default, and cloud runtime deletion sends the correct request details",
-          "Desktop update settings, mobile skill pages, and assignee pickers now fit better across languages and small screens",
+          "Desktop update settings, mobile skill pages, and executor pickers now fit better across languages and small screens",
         ],
       },
       {
@@ -2128,7 +2128,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "Automations can now start from webhook events, show delivery history, and replay a delivery when a connected system needs another attempt",
-          "Issue boards can group work by assignee, show linked pull request status, and include start dates for clearer planning",
+          "Issue boards can group work by executor, show linked pull request status, and include start dates for clearer planning",
           "Runtime pages now have a redesigned machine view plus time and task trends in usage charts",
           "Skills can be copied from local runtimes in bulk, making workspace setup faster",
           "HTML attachments and HTML code blocks can be previewed directly inside issue discussions",
@@ -2140,7 +2140,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Search results are ranked more usefully and include better snippets",
         ],
         fixes: [
-          "Automation-created issues can repeat reliably and are attributed to the right assignee agent",
+          "Automation-created issues can repeat reliably and are attributed to the right executor agent",
           "Runtime setup now prefers the local machine by default and uses cleaner labels in machine lists",
           "Team pages scroll correctly and show which members are already working",
           "Desktop zoom shortcuts work again across the common keyboard combinations",
@@ -2181,7 +2181,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         features: [
           "Teams let teams assign work to a group, with a leader agent coordinating the next step",
           "Attachments can be previewed in place for PDFs, audio, video, markdown, code, logs, and plain text",
-          "Chinese names can be found by pinyin across mentions, assignees, subscribers, agents, projects, and teams",
+          "Chinese names can be found by pinyin across mentions, executors, subscribers, agents, projects, and teams",
         ],
         improvements: [
           "Team pages now include member management, faster agent creation from a team, clearer row actions, and a wider detail layout",
@@ -2254,7 +2254,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "Mermaid diagrams render inline in issue descriptions",
-          "Sub-issue rows gain inline status and assignee pickers, with batch select across rows",
+          "Sub-issue rows gain inline status and executor pickers, with batch select across rows",
           "Per-runtime timezone for token-usage aggregation, so daily rollups respect your local day",
           "Private agents are gated by an `allowed_principals` predicate, with fine-grained visibility",
           "A member leaving or being removed from a workspace now revokes their runtimes automatically",
@@ -2296,7 +2296,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         improvements: [
           "Issue timeline no longer fully re-renders on every WebSocket event — long issues scroll smoothly",
           "Editor skips parsing very large or JSON pastes, eliminating freezes",
-          "Automation skips dispatch when the assignee runtime is offline, avoiding empty runs",
+          "Automation skips dispatch when the executor runtime is offline, avoiding empty runs",
           "Inbox auto-archives `task_failed` rows once they reach a terminal state",
           "Hermes sends agent instructions inline with each request",
           "Timeline and Comment switched to client-side virtualization, dropping server-side pagination",
@@ -2373,7 +2373,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Delete chat sessions; History panel surfaced on the chat header",
           "Runtime liveness backed by Redis, with DB fallback",
           "Desktop loads runtime self-host config",
-          "CLI adds `--assignee-id` / `--to-id` / `--user-id` for unambiguous targeting",
+          "CLI adds `--executor-id` / `--to-id` / `--user-id` for unambiguous targeting",
         ],
         improvements: [
           "Settings 'Appearance' tab is renamed to 'Preferences', and the active tab is reflected in the URL so deep links work",
@@ -2468,7 +2468,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         improvements: [
           "Server caches PAT / daemon token lookups in Redis, so large fleets stop hammering the database on every request",
           "Backend default agent CLI args via `PATCHBAY_CLAUDE_ARGS` / `PATCHBAY_CODEX_ARGS` env vars",
-          "Manual and agent create-issue flows share one dialog shell, and picker agents become the default assignee",
+          "Manual and agent create-issue flows share one dialog shell, and picker agents become the default executor",
         ],
         fixes: [
           "Create-issue-by-agent no longer leaves tasks stuck queued, and no longer duplicates the issue when an attachment upload fails",
@@ -2485,7 +2485,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         features: [
           "Kiro CLI added as a local agent runtime option",
           "macOS dock badge for unread issues, plus a native notification when the window is unfocused — click to jump straight to the issue",
-          "Issue list now supports filtering by label, combinable with status / priority / assignee",
+          "Issue list now supports filtering by label, combinable with status / priority / executor",
           "Daemon receives task wakeups over WebSocket — task startup latency drops noticeably",
         ],
         improvements: [
@@ -2537,7 +2537,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Server heartbeat split into probe/claim with slow-log + a model-list running-timeout, so a lost heartbeat no longer wedges the UI",
         ],
         fixes: [
-          "Server validates `assignee_id` on issue create/update so phantom IDs are rejected, and `DeleteIssue` uses the resolved issue ID",
+          "Server validates `executor_id` on issue create/update so phantom IDs are rejected, and `DeleteIssue` uses the resolved issue ID",
           "Pi runtime now reads/writes `.pi/skills` instead of the old `.pi/agent/skills` path",
           "Windows daemon uses `CREATE_NEW_CONSOLE` so grandchild console popups no longer appear when launching agents",
           "Automation run-only context is now properly forwarded to the agent",
@@ -2820,7 +2820,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Project filter in Issues tab",
           "Project completion progress in project list",
           "Auto-fill project when creating issue via 'C' shortcut on project page",
-          "Assignee dropdown sorted by user's assignment frequency",
+          "Executor dropdown sorted by user's assignment frequency",
         ],
         fixes: [
           "Markdown XSS — sanitize HTML rendering in comments with rehype-sanitize and server-side bluemonday",
@@ -2853,7 +2853,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "Search result keyword highlighting",
           "Daily token usage chart with cleaner Y-axis and per-category tooltip",
           "Master Agent multiline input support",
-          "Unified picker components (Status, Priority, DueDate, Project, Assignee) across all views",
+          "Unified picker components (Status, Priority, DueDate, Project, Executor) across all views",
           "Workspace-scoped storage isolation with auto-rehydration on switch",
           "Startup warnings for missing env vars in self-hosted deployments",
         ],

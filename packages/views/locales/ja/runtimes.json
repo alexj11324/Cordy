@@ -32,6 +32,8 @@
     "description": "Patrick は目標をタスクに落とし込み、適切なエージェントを調整し、ワークフローに必要な再利用可能な specialist の追加を支援します。",
     "action": "Patrick と始める",
     "failed": "Patrick を開始できませんでした",
+    "execution_model": "デフォルト実行モデル",
+    "execution_same_as_patrick": "Patrick と同じにする",
     "dialog_title": "Patrick をどこで実行しますか？",
     "dialog_description": "Patrick が使うデバイスを選んでください。後から設定で変更できます。",
     "cancel": "キャンセル"

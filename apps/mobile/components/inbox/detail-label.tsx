@@ -38,7 +38,7 @@ const TYPE_LABEL: Record<InboxItemType, string> = {
   issue_assigned: "Assigned",
   issue_subscribed: "Subscribed",
   unassigned: "Unassigned",
-  assignee_changed: "Reassigned",
+  executor_changed: "Reassigned",
   status_changed: "Status changed",
   priority_changed: "Priority changed",
   start_date_changed: "Start date changed",
@@ -114,17 +114,17 @@ export function InboxDetailLabel({
   const text = (() => {
     switch (item.type) {
       case "issue_assigned":
-      case "assignee_changed":
-        if (details.new_assignee_id) {
+      case "executor_changed":
+        if (details.new_executor_id) {
           const name = getName(
-            (details.new_assignee_type ?? "member") as "member" | "agent",
-            details.new_assignee_id,
+            (details.new_executor_type ?? "member") as "member" | "agent",
+            details.new_executor_id,
           );
           return `Assigned to ${name}`;
         }
         return TYPE_LABEL[item.type];
       case "unassigned":
-        return "Removed assignee";
+        return "Removed executor";
       case "due_date_changed":
         return details.to
           ? `Set due date to ${shortDate(details.to)}`

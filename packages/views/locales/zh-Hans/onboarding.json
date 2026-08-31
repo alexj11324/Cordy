@@ -189,6 +189,9 @@
     "scanning_lede_suffix": " 等。我们正在检测这台电脑上装了哪些。",
     "found_headline": "让 Patrick 在哪台电脑上运行？",
     "found_lede": "以下是在这台电脑上找到的设备。之后可以随时切换，或添加更多。",
+    "patrick_selection_label": "Patrick 模型",
+    "execution_selection_label": "默认执行模型",
+    "execution_same_as_patrick": "与 Patrick 相同",
     "runtime_count_other": "{{count}} 台设备",
     "status_all_online": "全部在线",
     "status_none_online": "全部离线",
@@ -245,7 +248,8 @@
   },
   "errors": {
     "skip_failed": "完成上手引导失败",
-    "patrick_setup_failed": "无法启动 Patrick 工作区"
+    "patrick_setup_failed": "无法启动 Patrick 工作区",
+    "model_required": "请选择 Patrick 和默认执行使用的具体模型。"
   },
   "patrick_intro": {
     "headline": "认识一下 Patrick，你的第一个智能体队友。",

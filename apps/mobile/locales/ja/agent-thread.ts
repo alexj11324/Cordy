@@ -50,6 +50,7 @@ const agentThread = {
     deferred: "再試行中",
     dispatched: "開始中",
     waiting_local_directory: "ディレクトリ待ち",
+    waiting_capacity: "モデルの容量待ち",
     running: "実行中",
     completed: "完了",
     failed: "失敗",

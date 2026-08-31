@@ -138,8 +138,12 @@ describe("ApiClient edit guards", () => {
       description: null,
       status: "todo",
       priority: "none",
-      assignee_type: null,
-      assignee_id: null,
+      owner_type: null,
+      owner_id: null,
+      executor_type: null,
+      executor_id: null,
+      reviewer_type: null,
+      reviewer_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -480,7 +484,7 @@ describe("ApiClient server Table query", () => {
           {
             key: "service:bot-1",
             value: {
-              kind: "assignee",
+              kind: "executor",
               actor: { type: "service", id: "bot-1" },
             },
             count: 1,
@@ -513,11 +517,11 @@ describe("ApiClient server Table query", () => {
       groups: [{ value: { kind: "status", status: "paused" } }],
     });
     await expect(
-      client.listIssueTableGroups({ query, group: { kind: "assignee" } }),
+      client.listIssueTableGroups({ query, group: { kind: "executor" } }),
     ).resolves.toMatchObject({
       total: 1,
       groups: [
-        { value: { kind: "assignee", actor: { type: "service", id: "bot-1" } } },
+        { value: { kind: "executor", actor: { type: "service", id: "bot-1" } } },
       ],
     });
   });
@@ -1027,7 +1031,7 @@ describe("ApiClient", () => {
     await client.createAutomation({
       title: "Daily triage",
       project_id: "project-1",
-      assignee_id: "agent-1",
+      executor_id: "agent-1",
       execution_mode: "create_issue",
     });
     await client.updateAutomation("ap-1", { status: "paused", project_id: null });
@@ -1060,7 +1064,7 @@ describe("ApiClient", () => {
         body: JSON.stringify({
           title: "Daily triage",
           project_id: "project-1",
-          assignee_id: "agent-1",
+          executor_id: "agent-1",
           execution_mode: "create_issue",
         }),
       },
@@ -1987,7 +1991,13 @@ describe("ApiClient explicit workspace targeting", () => {
   it("sends the given slug on Patrick creation", async () => {
     const fetchMock = stubOk({ id: "agent-1" });
     await new ApiClient("https://api.example.test").createPatrickAgent(
-      { runtime_id: "runtime-1", language: "en" },
+      {
+        runtime_id: "runtime-1",
+        language: "en",
+        model: "claude-sonnet-4-6",
+        execution_runtime_id: "runtime-2",
+        execution_model: "gpt-5.4",
+      },
       "proxima-centauri",
     );
     expect(slugHeaderOf(fetchMock)).toBe("proxima-centauri");

@@ -115,7 +115,7 @@ pub(super) async fn run_automation_create(
         .map_err(|error| anyhow::anyhow!("resolve agent: {error:#}"))?;
     let mut body = serde_json::Map::from_iter([
         ("title".into(), Value::String(title.into())),
-        ("assignee_id".into(), Value::String(agent_id)),
+        ("executor_id".into(), Value::String(agent_id)),
         ("execution_mode".into(), Value::String(mode.into())),
     ]);
     if !args.description.is_empty() {
@@ -193,8 +193,8 @@ pub(super) async fn run_automation_update(
         let agent_id = resolve_automation_agent(&client, &workspace_id, agent)
             .await
             .map_err(|error| anyhow::anyhow!("resolve agent: {error:#}"))?;
-        body.insert("assignee_type".into(), Value::String("agent".into()));
-        body.insert("assignee_id".into(), Value::String(agent_id));
+        body.insert("executor_type".into(), Value::String("agent".into()));
+        body.insert("executor_id".into(), Value::String(agent_id));
     }
     if let Some(project) = &args.project {
         let value = if project.is_empty() {
@@ -682,7 +682,7 @@ pub(super) struct AutomationCreateArgs {
         help = "Automation description (used as task prompt)"
     )]
     pub(super) description: String,
-    #[arg(long, help = "Assignee agent (name or ID) — required")]
+    #[arg(long, help = "Executor agent (name or ID) — required")]
     pub(super) agent: Option<String>,
     #[arg(long, help = "Execution mode: create_issue or run_only (required)")]
     pub(super) mode: Option<String>,
@@ -717,7 +717,7 @@ pub(super) struct AutomationUpdateArgs {
     pub(super) title: Option<String>,
     #[arg(long)]
     pub(super) description: Option<String>,
-    #[arg(long, help = "New assignee agent (name or ID)")]
+    #[arg(long, help = "New executor agent (name or ID)")]
     pub(super) agent: Option<String>,
     #[arg(long, help = "New project ID (use empty string to clear)")]
     pub(super) project: Option<String>,

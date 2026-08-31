@@ -66,7 +66,12 @@ export function StepPlatformFork({
    *  the workspace being set up rather than whichever one the app is currently
    *  showing. */
   wsSlug?: string;
-  onNext: (runtime: AgentRuntime | null, model?: string) => void | Promise<void>;
+  onNext: (
+    runtime: AgentRuntime | null,
+    model?: string,
+    executionRuntime?: AgentRuntime | null,
+    executionModel?: string,
+  ) => void | Promise<void>;
   /** Platform-specific CLI install card, rendered inside the CLI dialog. */
   cliInstructions?: ReactNode;
   /** Disable runtime discovery for local UI previews. */
@@ -77,6 +82,10 @@ export function StepPlatformFork({
   const [dialog, setDialog] = useState<DialogState>(null);
   const [connecting, setConnecting] = useState(false);
   const [model, setModel] = useState("");
+  const [executionChoice, setExecutionChoice] = useState({
+    runtimeId: "",
+    model: "",
+  });
 
   const picker = useRuntimePicker(wsId, wsSlug, { enabled: !backendFree });
 
@@ -94,10 +103,24 @@ export function StepPlatformFork({
   };
 
   const handleCliConnect = async () => {
-    if (!picker.selected || connecting) return;
+    const executionRuntime =
+      picker.runtimes.find((runtime) => runtime.id === executionChoice.runtimeId) ?? null;
+    if (
+      !picker.selected ||
+      !model.trim() ||
+      !executionRuntime ||
+      !executionChoice.model.trim() ||
+      connecting
+    )
+      return;
     setConnecting(true);
     try {
-      await onNext(picker.selected, model || undefined);
+      await onNext(
+        picker.selected,
+        model,
+        executionRuntime,
+        executionChoice.model,
+      );
       setDialog(null);
     } finally {
       setConnecting(false);
@@ -163,12 +186,26 @@ export function StepPlatformFork({
         setModel(next.model);
       }}
       hasRuntimes={picker.hasRuntimes}
-      canConnect={picker.selected !== null}
+      canConnect={
+        picker.selected !== null &&
+        model.trim().length > 0 &&
+        executionChoice.runtimeId.length > 0 &&
+        executionChoice.model.trim().length > 0
+      }
       selectedName={
         picker.selected ? runtimeDisplayLabel(picker.selected) : null
       }
       connecting={connecting}
       cliInstructions={cliInstructions}
+      executionChoice={executionChoice}
+      onExecutionChoiceChange={setExecutionChoice}
+      patrickModel={model}
+      onUsePatrickModel={() =>
+        setExecutionChoice({
+          runtimeId: picker.selectedId ?? "",
+          model,
+        })
+      }
     />
     </>
   );
@@ -282,6 +319,10 @@ function CliInstallDialog({
   selectedName,
   connecting,
   cliInstructions,
+  executionChoice,
+  onExecutionChoiceChange,
+  patrickModel,
+  onUsePatrickModel,
 }: {
   open: boolean;
   onClose: () => void;
@@ -294,6 +335,10 @@ function CliInstallDialog({
   selectedName: string | null;
   connecting: boolean;
   cliInstructions?: ReactNode;
+  executionChoice: PatrickRuntimeSelection;
+  onExecutionChoiceChange: (next: PatrickRuntimeSelection) => void;
+  patrickModel: string;
+  onUsePatrickModel: () => void;
 }) {
   const { t } = useT("onboarding");
   return (
@@ -325,6 +370,26 @@ function CliInstallDialog({
                 runtimes={runtimes}
                 value={choice}
                 onChange={onChoiceChange}
+                disabled={connecting}
+              />
+              <div className="mt-2 flex items-center justify-between gap-3">
+                <span className="text-body font-medium">
+                  {t(($) => $.step_runtime.execution_selection_label)}
+                </span>
+                <Button
+                  type="button"
+                  variant="link"
+                  className="h-auto px-0 text-caption"
+                  disabled={!patrickModel}
+                  onClick={onUsePatrickModel}
+                >
+                  {t(($) => $.step_runtime.execution_same_as_patrick)}
+                </Button>
+              </div>
+              <PatrickRuntimeChoice
+                runtimes={runtimes}
+                value={executionChoice}
+                onChange={onExecutionChoiceChange}
                 disabled={connecting}
               />
             </>

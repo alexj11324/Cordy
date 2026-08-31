@@ -49,7 +49,7 @@ describe("reviewHandoffHops", () => {
 });
 
 describe("handoffStackActors", () => {
-  it("dedupes in chain order and appends current assignee and reviewer", () => {
+  it("dedupes in chain order and appends current executor and reviewer", () => {
     const hops = reviewHandoffHops([
       {
         action: "review_handoff",

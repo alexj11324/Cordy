@@ -9,7 +9,9 @@ export type QuickCreateField = "project" | "priority" | "due_date";
 export type ManualCreateField =
   | "status"
   | "priority"
-  | "assignee"
+  | "owner"
+  | "executor"
+  | "reviewer"
   | "labels"
   | "project"
   | "due_date"
@@ -22,7 +24,8 @@ export const QUICK_CREATE_FIELDS: QuickCreateField[] = ["project", "priority", "
 export const MANUAL_CREATE_FIELDS: ManualCreateField[] = [
   "status",
   "priority",
-  "assignee",
+  "owner",
+  "executor",
   "labels",
   "project",
   "due_date",
@@ -35,7 +38,8 @@ export const DEFAULT_QUICK_CREATE_FIELDS: QuickCreateField[] = ["project"];
 export const DEFAULT_MANUAL_CREATE_FIELDS: ManualCreateField[] = [
   "status",
   "priority",
-  "assignee",
+  "owner",
+  "executor",
   "labels",
   "project",
 ];

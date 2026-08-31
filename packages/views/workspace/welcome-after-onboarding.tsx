@@ -121,8 +121,8 @@ function SkipWelcome({ workspaceId, onDismiss }: SkipWelcomeProps) {
             description: INSTALL_RUNTIME_ISSUE_BODY[lang],
             status: "in_progress",
             priority: "high",
-            assignee_type: "member",
-            assignee_id: me.id,
+            owner_type: "member",
+            owner_id: me.id,
           },
         );
         void queryClient.invalidateQueries({

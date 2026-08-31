@@ -153,18 +153,18 @@ function matchesMember(member: MemberWithUser, query: string) {
   );
 }
 
-function IssueAssigneeAvatar({
-  assigneeType,
-  assigneeId,
+function IssueExecutorAvatar({
+  executorType,
+  executorId,
 }: {
-  assigneeType?: string | null;
-  assigneeId?: string | null;
+  executorType?: string | null;
+  executorId?: string | null;
 }) {
-  if (!assigneeType || !assigneeId) return null;
+  if (!executorType || !executorId) return null;
   return (
     <ActorAvatar
-      actorType={assigneeType}
-      actorId={assigneeId}
+      actorType={executorType}
+      actorId={executorId}
       size="sm"
       profileLink={false}
       className="shrink-0"
@@ -247,9 +247,9 @@ function IssueResultRow({
         <span className="min-w-0 flex-1 truncate">
           <HighlightText text={issue.title} query={query} />
         </span>
-        <IssueAssigneeAvatar
-          assigneeType={issue.assignee_type}
-          assigneeId={issue.assignee_id}
+        <IssueExecutorAvatar
+          executorType={issue.executor_type}
+          executorId={issue.executor_id}
         />
       </div>
       {issue.matched_description_snippet && (
@@ -951,9 +951,9 @@ export function SearchCommand() {
                       {item.identifier}
                     </span>
                     <span className="min-w-0 flex-1 truncate">{item.title}</span>
-                    <IssueAssigneeAvatar
-                      assigneeType={item.assignee_type}
-                      assigneeId={item.assignee_id}
+                    <IssueExecutorAvatar
+                      executorType={item.executor_type}
+                      executorId={item.executor_id}
                     />
                   </CommandPrimitive.Item>
                 ))}

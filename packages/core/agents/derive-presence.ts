@@ -68,7 +68,9 @@ export function deriveWorkloadDetail(tasks: readonly AgentTask[]): WorkloadDetai
       // The daemon parked this task on a busy local_directory path. It's
       // still on the agent's plate (counts toward "queued" presence), but
       // it hasn't reached the run phase yet.
-      t.status === "waiting_local_directory"
+      t.status === "waiting_local_directory" ||
+      // Capacity-waiting work is durable queued work, not a terminal state.
+      t.status === "waiting_capacity"
     ) {
       queuedCount += 1;
     }

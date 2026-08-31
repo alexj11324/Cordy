@@ -2,21 +2,27 @@ import type {
   Issue,
   IssueStatus,
   IssuePriority,
-  IssueAssigneeType,
+  IssueExecutorType,
+  IssueOwnerType,
 } from "../types";
 
-/**
- * Shared assignee across a selection. `{ type: null, id: null }` means every
- * selected issue is unassigned — a real shared value, distinct from a mixed
- * selection (which {@link commonIssueFields} reports as `assignee: null`).
- */
-export interface CommonAssignee {
-  type: IssueAssigneeType | null;
+export interface CommonOwner {
+  type: IssueOwnerType | null;
   id: string | null;
 }
 
 /**
- * The status / priority / assignee shared by every issue in a batch selection.
+ * Shared executor across a selection. `{ type: null, id: null }` means every
+ * selected issue is unassigned — a real shared value, distinct from a mixed
+ * selection (which {@link commonIssueFields} reports as `executor: null`).
+ */
+export interface CommonExecutor {
+  type: IssueExecutorType | null;
+  id: string | null;
+}
+
+/**
+ * The status / priority / executor shared by every issue in a batch selection.
  * A field is `null` when the selection is empty or the issues disagree
  * ("mixed"). Batch property pickers use this to reflect the real common value
  * and fall back to an empty (no-checkmark) state when the values differ,
@@ -25,7 +31,8 @@ export interface CommonAssignee {
 export interface CommonIssueFields {
   status: IssueStatus | null;
   priority: IssuePriority | null;
-  assignee: CommonAssignee | null;
+  owner: CommonOwner | null;
+  executor: CommonExecutor | null;
 }
 
 /**
@@ -39,19 +46,19 @@ function sharedValue<T>(values: readonly T[]): T | null {
   return values.every((v) => v === first) ? first : null;
 }
 
-const ASSIGNEE_KEY_SEP = "\u0000";
+const EXECUTOR_KEY_SEP = "\u0000";
 
 /**
- * Collapse a polymorphic assignee (type + id, either nullable) into a single
+ * Collapse a polymorphic executor (type + id, either nullable) into a single
  * comparable key so all-unassigned issues compare equal to each other and
  * distinct from any assigned actor.
  */
-function assigneeKey(type: IssueAssigneeType | null, id: string | null): string {
-  return `${type ?? ""}${ASSIGNEE_KEY_SEP}${id ?? ""}`;
+function roleKey(type: string | null, id: string | null): string {
+  return `${type ?? ""}${EXECUTOR_KEY_SEP}${id ?? ""}`;
 }
 
 /**
- * Derive the common status / priority / assignee of the selected issues.
+ * Derive the common status / priority / executor of the selected issues.
  * Pass the already-filtered selection (the issues that are actually selected),
  * mirroring how the skill list filters its rows by `selectedIds` before
  * handing them to its batch toolbar.
@@ -60,13 +67,21 @@ export function commonIssueFields(issues: readonly Issue[]): CommonIssueFields {
   const status = sharedValue(issues.map((i) => i.status));
   const priority = sharedValue(issues.map((i) => i.priority));
 
-  const sharedAssigneeKey = sharedValue(
-    issues.map((i) => assigneeKey(i.assignee_type, i.assignee_id)),
+  const sharedOwnerKey = sharedValue(
+    issues.map((issue) => roleKey(issue.owner_type, issue.owner_id)),
   );
-  const assignee =
-    sharedAssigneeKey !== null && issues.length > 0
-      ? { type: issues[0]!.assignee_type, id: issues[0]!.assignee_id }
+  const owner =
+    sharedOwnerKey !== null && issues.length > 0
+      ? { type: issues[0]!.owner_type, id: issues[0]!.owner_id }
       : null;
 
-  return { status, priority, assignee };
+  const sharedExecutorKey = sharedValue(
+    issues.map((i) => roleKey(i.executor_type, i.executor_id)),
+  );
+  const executor =
+    sharedExecutorKey !== null && issues.length > 0
+      ? { type: issues[0]!.executor_type, id: issues[0]!.executor_id }
+      : null;
+
+  return { status, priority, owner, executor };
 }

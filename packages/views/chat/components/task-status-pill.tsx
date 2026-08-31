@@ -28,6 +28,7 @@ type StageKey =
   | "retrying"
   | "queued"
   | "waiting_local_directory"
+  | "waiting_capacity"
   | "starting_up"
   | "thinking"
   | "typing";
@@ -86,6 +87,9 @@ export function pickStageKeys(
   // why a queued task isn't moving.
   if (status === "waiting_local_directory") {
     return { stageKey: "waiting_local_directory", static: true };
+  }
+  if (status === "waiting_capacity") {
+    return { stageKey: "waiting_capacity", static: true };
   }
   if (status === "queued") return { stageKey: "queued" };
   if (status === "dispatched") return { stageKey: "starting_up" };

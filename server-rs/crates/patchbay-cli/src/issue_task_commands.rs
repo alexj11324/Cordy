@@ -32,8 +32,8 @@ pub(super) async fn run_issue_runs(
                 .iter()
                 .map(|run| {
                     serde_json::json!({
-                        "assignee_type":"agent",
-                        "assignee_id":run.get("agent_id").cloned().unwrap_or(Value::Null)
+                        "executor_type":"agent",
+                        "executor_id":run.get("agent_id").cloned().unwrap_or(Value::Null)
                     })
                 })
                 .collect::<Vec<_>>();

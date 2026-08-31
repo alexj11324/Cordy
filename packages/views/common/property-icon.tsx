@@ -59,7 +59,7 @@ interface PropertyIconOption {
 export const PROPERTY_ICON_OPTIONS = [
   { value: "circle-dot", label: "Status", Icon: CircleDot },
   { value: "signal-high", label: "Priority", Icon: SignalHigh },
-  { value: "user-round", label: "Assignee", Icon: UserRound },
+  { value: "user-round", label: "Executor", Icon: UserRound },
   { value: "folder-kanban", label: "Project", Icon: FolderKanban },
   { value: "calendar-days", label: "Date", Icon: CalendarDays },
   { value: "tag", label: "Label", Icon: Tag },

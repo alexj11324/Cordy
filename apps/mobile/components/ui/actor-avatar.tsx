@@ -8,7 +8,7 @@
  *     useActorLookup which reads the same MemberWithUser / Agent lists.
  *   - Agents get distinct visual treatment (brand-tinted background) to
  *     match web's "agents render with distinct styling" rule from the
- *     repo-root AGENTS.md "Agent Assignees" section.
+ *     repo-root AGENTS.md "Agent Executors" section.
  *
  * Presence dot: opt-in via `showPresence`. Mirrors web's `showStatusDot`
  * (`packages/views/common/actor-avatar.tsx:51`). The prop is opt-in (default
@@ -30,7 +30,7 @@ import { THEME } from "@/lib/theme";
 // `system` actors are server-side automation (state changes triggered by the
 // platform itself, not a member or an agent). InboxItem.actor_type carries
 // this third value (packages/core/types/inbox.ts:28). `team` is a third
-// assignee polymorph (packages/core/types/issue.ts IssueAssigneeType) — when
+// executor polymorph (packages/core/types/issue.ts IssueExecutorType) — when
 // a team has an avatar_url we render it; otherwise fall back to a generic
 // group glyph so team-assigned issues from web never render blank.
 interface Props {

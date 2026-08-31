@@ -53,6 +53,11 @@ pub(super) enum IssueCommand {
     Create(IssueCreateArgs),
     #[command(about = "Update an issue")]
     Update(IssueUpdateArgs),
+    #[command(
+        name = "patrick-mutate",
+        about = "Apply an audited, revision-guarded issue mutation as Patrick"
+    )]
+    PatrickMutate(IssuePatrickMutationArgs),
     #[command(about = "Assign an issue to a member, agent, or team")]
     Assign(IssueAssignArgs),
     #[command(about = "Change issue status")]
@@ -89,7 +94,7 @@ pub(super) enum IssueCommand {
     Metadata(IssueMetadataArgs),
     #[command(
         alias = "history",
-        about = "Chronological issue history — status, assignee, and comments"
+        about = "Chronological issue history — status, executor, and comments"
     )]
     Timeline(IssueTimelineArgs),
     #[command(about = "Manage custom property values on an issue")]
@@ -173,13 +178,27 @@ pub(super) struct IssueCreateArgs {
     pub(super) status: Option<String>,
     #[arg(long, help = "Issue priority")]
     pub(super) priority: Option<String>,
-    #[arg(long, help = "Assignee name (member, agent, or team; fuzzy match)")]
-    pub(super) assignee: Option<String>,
+    #[arg(long, help = "Execution target name (agent or team; fuzzy match)")]
+    pub(super) executor: Option<String>,
     #[arg(
         long,
-        help = "Assignee UUID — member, agent, or team (mutually exclusive with --assignee)"
+        help = "Execution target UUID — agent or team (mutually exclusive with --executor)"
     )]
-    pub(super) assignee_id: Option<String>,
+    pub(super) executor_id: Option<String>,
+    #[arg(long, help = "Human owner name (workspace member; fuzzy match)")]
+    pub(super) owner: Option<String>,
+    #[arg(
+        long,
+        help = "Human owner UUID (mutually exclusive with --owner)"
+    )]
+    pub(super) owner_id: Option<String>,
+    #[arg(long, help = "Reviewer name (member, agent, or team; fuzzy match)")]
+    pub(super) reviewer: Option<String>,
+    #[arg(
+        long,
+        help = "Reviewer UUID — member, agent, or team (mutually exclusive with --reviewer)"
+    )]
+    pub(super) reviewer_id: Option<String>,
     #[arg(long, help = "Parent issue ID")]
     pub(super) parent: Option<String>,
     #[arg(
@@ -238,10 +257,18 @@ pub(super) struct IssueUpdateArgs {
     pub(super) status: Option<String>,
     #[arg(long, help = "New priority")]
     pub(super) priority: Option<String>,
-    #[arg(long, help = "New assignee name (member, agent, or team; fuzzy match)")]
-    pub(super) assignee: Option<String>,
-    #[arg(long, help = "New assignee UUID — member, agent, or team")]
-    pub(super) assignee_id: Option<String>,
+    #[arg(long, help = "New execution target name (agent or team; fuzzy match)")]
+    pub(super) executor: Option<String>,
+    #[arg(long, help = "New execution target UUID — agent or team")]
+    pub(super) executor_id: Option<String>,
+    #[arg(long, help = "New human owner name (workspace member; fuzzy match)")]
+    pub(super) owner: Option<String>,
+    #[arg(long, help = "New human owner UUID")]
+    pub(super) owner_id: Option<String>,
+    #[arg(long, help = "New reviewer name (member, agent, or team; fuzzy match)")]
+    pub(super) reviewer: Option<String>,
+    #[arg(long, help = "New reviewer UUID — member, agent, or team")]
+    pub(super) reviewer_id: Option<String>,
     #[arg(long, help = "Project ID; pass an empty string to clear")]
     pub(super) project: Option<String>,
     #[arg(long, help = "New start date; pass an empty string to clear")]
@@ -261,14 +288,50 @@ pub(super) struct IssueUpdateArgs {
 }
 
 #[derive(Debug, Args)]
+#[command(group(
+    ArgGroup::new("changes_source")
+        .required(true)
+        .multiple(false)
+        .args(["changes_json", "changes_file", "changes_stdin"])
+))]
+pub(super) struct IssuePatrickMutationArgs {
+    #[arg(value_name = "ID")]
+    pub(super) id: String,
+    #[arg(long, help = "Expected current issue revision")]
+    pub(super) expected_revision: i64,
+    #[arg(long, help = "Human-readable reason recorded in the audit trail")]
+    pub(super) change_reason: String,
+    #[arg(long, help = "Idempotency/correlation UUID for this mutation")]
+    pub(super) correlation_id: String,
+    #[arg(long, help = "JSON object containing only the allowed issue fields")]
+    pub(super) changes_json: Option<String>,
+    #[arg(long, value_name = "PATH", help = "Read the changes JSON object from a file")]
+    pub(super) changes_file: Option<std::path::PathBuf>,
+    #[arg(long, help = "Read the changes JSON object from stdin")]
+    pub(super) changes_stdin: bool,
+    #[arg(long, help = "Task UUID that authorized this mutation")]
+    pub(super) task_id: Option<String>,
+    #[arg(long, help = "Run UUID that authorized this mutation")]
+    pub(super) run_id: Option<String>,
+    #[arg(long, help = "Observed Linear updatedAt timestamp (RFC3339)")]
+    pub(super) linear_remote_updated_at: Option<String>,
+    #[arg(long, help = "Observed Linear issue snapshot as a JSON object")]
+    pub(super) linear_remote_snapshot: Option<String>,
+    #[arg(long, help = "Allow --changes-file outside the current working directory")]
+    pub(super) allow_external_file: bool,
+    #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
+    pub(super) output: OutputFormat,
+}
+
+#[derive(Debug, Args)]
 pub(super) struct IssueAssignArgs {
     #[arg(value_name = "ID")]
     pub(super) id: String,
-    #[arg(long, help = "Assignee name (member, agent, or team; fuzzy match)")]
+    #[arg(long, help = "Owner or execution target name (fuzzy match)")]
     pub(super) to: Option<String>,
-    #[arg(long, help = "Assignee UUID — member, agent, or team")]
+    #[arg(long, help = "Owner or execution target UUID")]
     pub(super) to_id: Option<String>,
-    #[arg(long, help = "Remove current assignee")]
+    #[arg(long, help = "Remove the current owner and execution target")]
     pub(super) unassign: bool,
     #[arg(long, help = "Assign ownership without starting an agent run")]
     pub(super) no_start: bool,

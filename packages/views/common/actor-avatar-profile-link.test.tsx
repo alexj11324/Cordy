@@ -99,7 +99,7 @@ function renderCardPicker(adapter: NavigationAdapter) {
                   actorId={MEMBER_ID}
                   enableHoverCard
                 />
-                <span>Change assignee</span>
+                <span>Change executor</span>
               </span>
             }
           >
@@ -135,7 +135,7 @@ describe("ActorAvatar profile link", () => {
     const push = vi.fn();
     renderCardPicker(makeAdapter({ push }));
 
-    expect(fireEvent.click(screen.getByText("Change assignee"))).toBe(false);
+    expect(fireEvent.click(screen.getByText("Change executor"))).toBe(false);
     expect(screen.getByTestId("mounted-picker")).toHaveAttribute("data-open", "true");
     expect(push).not.toHaveBeenCalled();
   });

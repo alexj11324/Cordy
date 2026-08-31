@@ -84,7 +84,7 @@ import type {
   CreateRuntimeLocalSkillImportRequest,
   RuntimeLocalSkillImportRequest,
   TimelineEntry,
-  AssigneeFrequencyEntry,
+  ExecutorFrequencyEntry,
   TaskMessagePayload,
   Attachment,
   Channel,
@@ -179,6 +179,24 @@ import type {
   ListGitHubInstallationsResponse,
   ListGitHubRepositoriesResponse,
   GitHubConnectResponse,
+  LinearConnectionResponse,
+  LinearProjectBindingsResponse,
+  LinearMemberBindingsResponse,
+  LinearOAuthStartResponse,
+  LinearProjectBinding,
+  LinearProjectBindingRequest,
+  LinearMemberBinding,
+  LinearMemberBindingRequest,
+  LinearStatusBinding,
+  LinearStatusBindingsResponse,
+  LinearStatusBindingRequest,
+  LinearIssueRelationsResponse,
+  LinearRelationLink,
+  LinearIssueRelationRequest,
+  LinearAgentBindingsResponse,
+  LinearAgentBinding,
+  LinearAgentBindingRequest,
+  LinearConflictsResponse,
   ListVCSConnectionsResponse,
   ConnectVCSRequest,
   ConnectVCSResponse,
@@ -913,15 +931,22 @@ export class ApiClient {
     if (params?.statuses?.length) search.set("statuses", params.statuses.join(","));
     if (params?.priority) search.set("priority", params.priority);
     if (params?.priorities?.length) search.set("priorities", params.priorities.join(","));
-    if (params?.assignee_id) search.set("assignee_id", params.assignee_id);
-    if (params?.assignee_ids?.length) search.set("assignee_ids", params.assignee_ids.join(","));
-    if (params?.assignee_types?.length) search.set("assignee_types", params.assignee_types.join(","));
+    if (params?.owner_id) search.set("owner_id", params.owner_id);
+    if (params?.owner_ids?.length) search.set("owner_ids", params.owner_ids.join(","));
+    if (params?.owner_types?.length) search.set("owner_types", params.owner_types.join(","));
+    if (params?.executor_id) search.set("executor_id", params.executor_id);
+    if (params?.executor_ids?.length) search.set("executor_ids", params.executor_ids.join(","));
+    if (params?.executor_types?.length) search.set("executor_types", params.executor_types.join(","));
     if (params?.creator_id) search.set("creator_id", params.creator_id);
     if (params?.project_id) search.set("project_id", params.project_id);
-    if (params?.assignee_filters?.length) {
-      search.set("assignee_filters", params.assignee_filters.map((f) => `${f.type}:${f.id}`).join(","));
+    if (params?.owner_filters?.length) {
+      search.set("owner_filters", params.owner_filters.map((f) => `${f.type}:${f.id}`).join(","));
     }
-    if (params?.include_no_assignee) search.set("include_no_assignee", "true");
+    if (params?.include_no_owner) search.set("include_no_owner", "true");
+    if (params?.executor_filters?.length) {
+      search.set("executor_filters", params.executor_filters.map((f) => `${f.type}:${f.id}`).join(","));
+    }
+    if (params?.include_no_executor) search.set("include_no_executor", "true");
     if (params?.creator_filters?.length) {
       search.set("creator_filters", params.creator_filters.map((f) => `${f.type}:${f.id}`).join(","));
     }
@@ -974,9 +999,12 @@ export class ApiClient {
     if (params.workspace_id) search.set("workspace_id", params.workspace_id);
     if (params.statuses?.length) search.set("statuses", params.statuses.join(","));
     if (params.priorities?.length) search.set("priorities", params.priorities.join(","));
-    if (params.assignee_types?.length) search.set("assignee_types", params.assignee_types.join(","));
-    if (params.assignee_id) search.set("assignee_id", params.assignee_id);
-    if (params.assignee_ids?.length) search.set("assignee_ids", params.assignee_ids.join(","));
+    if (params.owner_types?.length) search.set("owner_types", params.owner_types.join(","));
+    if (params.owner_id) search.set("owner_id", params.owner_id);
+    if (params.owner_ids?.length) search.set("owner_ids", params.owner_ids.join(","));
+    if (params.executor_types?.length) search.set("executor_types", params.executor_types.join(","));
+    if (params.executor_id) search.set("executor_id", params.executor_id);
+    if (params.executor_ids?.length) search.set("executor_ids", params.executor_ids.join(","));
     if (params.creator_id) search.set("creator_id", params.creator_id);
     if (params.project_id) search.set("project_id", params.project_id);
     if (params.involves_user_id) search.set("involves_user_id", params.involves_user_id);
@@ -986,18 +1014,22 @@ export class ApiClient {
     if (params.properties && Object.keys(params.properties).length > 0) {
       search.set("properties", JSON.stringify(params.properties));
     }
-    if (params.assignee_filters?.length) {
-      search.set("assignee_filters", params.assignee_filters.map((f) => `${f.type}:${f.id}`).join(","));
+    if (params.owner_filters?.length) {
+      search.set("owner_filters", params.owner_filters.map((f) => `${f.type}:${f.id}`).join(","));
     }
-    if (params.include_no_assignee) search.set("include_no_assignee", "true");
+    if (params.include_no_owner) search.set("include_no_owner", "true");
+    if (params.executor_filters?.length) {
+      search.set("executor_filters", params.executor_filters.map((f) => `${f.type}:${f.id}`).join(","));
+    }
+    if (params.include_no_executor) search.set("include_no_executor", "true");
     if (params.creator_filters?.length) {
       search.set("creator_filters", params.creator_filters.map((f) => `${f.type}:${f.id}`).join(","));
     }
     if (params.project_ids?.length) search.set("project_ids", params.project_ids.join(","));
     if (params.include_no_project) search.set("include_no_project", "true");
     if (params.label_ids?.length) search.set("label_ids", params.label_ids.join(","));
-    if (params.group_assignee_type) search.set("group_assignee_type", params.group_assignee_type);
-    if (params.group_assignee_id) search.set("group_assignee_id", params.group_assignee_id);
+    if (params.group_executor_type) search.set("group_executor_type", params.group_executor_type);
+    if (params.group_executor_id) search.set("group_executor_id", params.group_executor_id);
     if (params.date_field) search.set("date_field", params.date_field);
     if (params.date_start) search.set("date_start", params.date_start);
     if (params.date_end) search.set("date_end", params.date_end);
@@ -1315,8 +1347,8 @@ export class ApiClient {
       body: JSON.stringify({
         ...(params.issueIds?.length ? { issue_ids: params.issueIds } : {}),
         ...(params.isCreate ? { is_create: true } : {}),
-        ...(params.assigneeType ? { assignee_type: params.assigneeType } : {}),
-        ...(params.assigneeId ? { assignee_id: params.assigneeId } : {}),
+        ...(params.executorType ? { executor_type: params.executorType } : {}),
+        ...(params.executorId ? { executor_id: params.executorId } : {}),
         ...(params.status ? { status: params.status } : {}),
       }),
     });
@@ -1334,8 +1366,8 @@ export class ApiClient {
     });
   }
 
-  async getAssigneeFrequency(): Promise<AssigneeFrequencyEntry[]> {
-    return this.fetch("/api/assignee-frequency");
+  async getExecutorFrequency(): Promise<ExecutorFrequencyEntry[]> {
+    return this.fetch("/api/executor-frequency");
   }
 
   async updateComment(commentId: string, content: string, attachmentIds?: string[], suppressAgentIds?: string[], contentBase?: string, expectedRevision?: number): Promise<Comment> {
@@ -1466,17 +1498,21 @@ export class ApiClient {
    * Provisions the workspace's built-in Chief of Staff, or returns the
    * existing one.
    *
-   * Only a runtime and a language are sent: name, description, avatar,
-   * permissions, and the system instruction layer are server constants, so a
-   * client cannot mint an agent that would claim them. The server is also the
-   * idempotency boundary — calling twice yields the same agent.
+   * Only the two explicitly selected runtime/model pairs and language are
+   * sent: name, description, avatar, permissions, and the system instruction
+   * layer are server constants, so a client cannot mint an agent that would
+   * claim them. The server is also the idempotency boundary — calling twice
+   * yields the same agent.
    */
   async createPatrickAgent(
     data: {
       runtime_id: string;
       language: "en" | "zh" | "ko" | "ja";
-      /** Empty means "whatever the runtime defaults to". */
-      model?: string;
+      /** Concrete model selected for Patrick. */
+      model: string;
+      /** Concrete runtime/model pair selected for default execution. */
+      execution_runtime_id: string;
+      execution_model: string;
       /** Label for the onboarding conversation, used only if this call is the
        *  one that creates it. The session's identity is the member and Patrick,
        *  never this string — it is localized. */
@@ -4311,6 +4347,120 @@ export class ApiClient {
     await this.fetch(`/api/workspaces/${workspaceId}/github/installations/${installationId}`, {
       method: "DELETE",
     });
+  }
+
+  // Linear integration
+  async getLinearConnection(workspaceId: string): Promise<LinearConnectionResponse> {
+    return this.fetch(`/api/workspaces/${workspaceId}/linear`);
+  }
+
+  async startLinearOAuth(workspaceId: string): Promise<LinearOAuthStartResponse> {
+    return this.fetch(`/api/workspaces/${workspaceId}/linear/connect`, {
+      method: "POST",
+    });
+  }
+
+  async listLinearProjectBindings(workspaceId: string): Promise<LinearProjectBindingsResponse> {
+    return this.fetch(`/api/workspaces/${workspaceId}/linear/project-bindings`);
+  }
+
+  async createLinearProjectBinding(
+    workspaceId: string,
+    body: LinearProjectBindingRequest,
+  ): Promise<LinearProjectBinding> {
+    return this.fetch(`/api/workspaces/${workspaceId}/linear/project-bindings`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async tombstoneLinearProjectBinding(
+    workspaceId: string,
+    bindingId: string,
+  ): Promise<LinearProjectBinding> {
+    return this.fetch(
+      `/api/workspaces/${workspaceId}/linear/project-bindings/${bindingId}/tombstone`,
+      { method: "POST" },
+    );
+  }
+
+  async listLinearMemberBindings(workspaceId: string): Promise<LinearMemberBindingsResponse> {
+    return this.fetch(`/api/workspaces/${workspaceId}/linear/member-bindings`);
+  }
+
+  async bindLinearMember(
+    workspaceId: string,
+    body: LinearMemberBindingRequest,
+  ): Promise<LinearMemberBinding> {
+    return this.fetch(`/api/workspaces/${workspaceId}/linear/member-bindings`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+  }
+
+  async listLinearStatusBindings(
+    workspaceId: string,
+    projectBindingId: string,
+  ): Promise<LinearStatusBindingsResponse> {
+    return this.fetch(
+      `/api/workspaces/${workspaceId}/linear/project-bindings/${projectBindingId}/status-bindings`,
+    );
+  }
+
+  async upsertLinearStatusBinding(
+    workspaceId: string,
+    projectBindingId: string,
+    body: LinearStatusBindingRequest,
+  ): Promise<LinearStatusBinding> {
+    const response = await this.fetch<{ binding: LinearStatusBinding }>(
+      `/api/workspaces/${workspaceId}/linear/project-bindings/${projectBindingId}/status-bindings`,
+      { method: "PUT", body: JSON.stringify(body) },
+    );
+    return response.binding;
+  }
+
+  async listLinearIssueRelations(
+    workspaceId: string,
+    issueId: string,
+  ): Promise<LinearIssueRelationsResponse> {
+    return this.fetch(
+      `/api/workspaces/${workspaceId}/linear/issues/${issueId}/relations`,
+    );
+  }
+
+  async upsertLinearIssueRelation(
+    workspaceId: string,
+    issueId: string,
+    body: LinearIssueRelationRequest,
+  ): Promise<LinearRelationLink> {
+    const response = await this.fetch<{ relation: LinearRelationLink }>(
+      `/api/workspaces/${workspaceId}/linear/issues/${issueId}/relations`,
+      { method: "PUT", body: JSON.stringify(body) },
+    );
+    return response.relation;
+  }
+
+  async listLinearAgentBindings(
+    workspaceId: string,
+  ): Promise<LinearAgentBindingsResponse> {
+    return this.fetch(`/api/workspaces/${workspaceId}/linear/agent-bindings`);
+  }
+
+  async bindLinearAgent(
+    workspaceId: string,
+    body: LinearAgentBindingRequest,
+  ): Promise<LinearAgentBinding> {
+    const response = await this.fetch<{ binding: LinearAgentBinding }>(
+      `/api/workspaces/${workspaceId}/linear/agent-bindings`,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+    return response.binding;
+  }
+
+  async listLinearConflicts(
+    workspaceId: string,
+  ): Promise<LinearConflictsResponse> {
+    return this.fetch(`/api/workspaces/${workspaceId}/linear/conflicts`);
   }
 
   async listIssuePullRequests(issueId: string): Promise<{ pull_requests: GitHubPullRequest[] }> {

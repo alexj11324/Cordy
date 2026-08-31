@@ -17,7 +17,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-use chrono::{NaiveDate, SecondsFormat};
+use chrono::{DateTime, NaiveDate, SecondsFormat, Utc};
 use patchbay_authorization::{
     Action, AuthorizationContext, AuthorizationRequest, Principal, PrincipalType, Resource,
     ResourceType, WorkspaceRole,
@@ -29,7 +29,8 @@ use patchbay_db::queries::issue_reaction::AddIssueReactionRow;
 use patchbay_db::queries::{
     activity, agent, agent_invocation_target, attachment, automation, comment as comment_q,
     dependency_graph as dependency_graph_q, issue as issue_q, issue_label, issue_property,
-    issue_reaction, member, quick_action, runtime, subscriber, task_usage, team, user, workspace,
+    issue_reaction, linear as linear_q, member, quick_action, runtime, subscriber, task_usage,
+    team, user, workspace,
 };
 use patchbay_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
 use patchbay_service::issue_service::{
@@ -41,14 +42,14 @@ use serde_json::{json, Value};
 use sqlx::{FromRow, Postgres, QueryBuilder};
 use uuid::Uuid;
 
-use crate::error::error_response;
+use crate::error::{error_code_response, error_response};
 use crate::state::HandlerState;
 
 const PRIORITIES: &[&str] = &["urgent", "high", "medium", "low", "none"];
 
 pub fn router() -> Router<HandlerState> {
     Router::new()
-        .route("/api/assignee-frequency", get(get_assignee_frequency))
+        .route("/api/executor-frequency", get(get_executor_frequency))
         .route("/api/issues", get(list_issues).post(create_issue))
         .route("/api/issues/", get(list_issues).post(create_issue))
         .route("/api/issues/query", post(query_issues))
@@ -70,6 +71,14 @@ pub fn router() -> Router<HandlerState> {
         .route(
             "/api/issues/{id}/",
             get(get_issue).put(update_issue).delete(delete_issue),
+        )
+        .route(
+            "/api/issues/{id}/patrick-mutation",
+            post(patrick_mutate_issue),
+        )
+        .route(
+            "/api/issues/{id}/patrick-mutation/",
+            post(patrick_mutate_issue),
         )
         .route("/api/issues/{id}/move", post(move_issue))
         .route("/api/issues/{id}/children", get(list_child_issues))
@@ -147,7 +156,7 @@ fn context_workspace(context: &WorkspaceContext) -> Result<Uuid, Response> {
         .map_err(|_| error_response(StatusCode::NOT_FOUND, "workspace not found"))
 }
 
-const ISSUE_COLUMNS: &str = "id, workspace_id, title, description, status, priority, assignee_type, assignee_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id";
+const ISSUE_COLUMNS: &str = "id, workspace_id, title, description, status, priority, executor_type, executor_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id, owner_type, owner_id";
 
 fn search_patterns(raw: &str) -> Vec<String> {
     raw.split_whitespace()
@@ -415,7 +424,7 @@ async fn grouped_issues(
     Extension(context): Extension<WorkspaceContext>,
     Query(params): Query<ListParams>,
 ) -> Response {
-    if params.group_by.as_deref().unwrap_or("assignee") != "assignee" {
+    if params.group_by.as_deref().unwrap_or("executor") != "executor" {
         return error_response(StatusCode::BAD_REQUEST, "unsupported group_by");
     }
     let workspace_id = match context_workspace(&context) {
@@ -451,16 +460,27 @@ async fn grouped_issues(
     if !priorities.is_empty() {
         filters.insert("priorities".into(), Value::Array(priorities));
     }
-    if let Some(raw) = params.assignee_filters.as_deref() {
+    if let Some(raw) = params.owner_filters.as_deref() {
         let actors = raw
             .split(',')
             .filter_map(|entry| entry.split_once(':'))
             .map(|(kind, id)| json!({"type":kind,"id":id}))
             .collect::<Vec<_>>();
-        filters.insert("assignees".into(), Value::Array(actors));
+        filters.insert("owners".into(), Value::Array(actors));
     }
-    if params.include_no_assignee.as_deref() == Some("true") {
-        filters.insert("include_no_assignee".into(), Value::Bool(true));
+    if params.include_no_owner.as_deref() == Some("true") {
+        filters.insert("include_no_owner".into(), Value::Bool(true));
+    }
+    if let Some(raw) = params.executor_filters.as_deref() {
+        let actors = raw
+            .split(',')
+            .filter_map(|entry| entry.split_once(':'))
+            .map(|(kind, id)| json!({"type":kind,"id":id}))
+            .collect::<Vec<_>>();
+        filters.insert("executors".into(), Value::Array(actors));
+    }
+    if params.include_no_executor.as_deref() == Some("true") {
+        filters.insert("include_no_executor".into(), Value::Bool(true));
     }
     let projects = list(
         params
@@ -481,8 +501,19 @@ async fn grouped_issues(
     if params.top_level_only.as_deref() == Some("true") {
         filters.insert("include_sub_issues".into(), Value::Bool(false));
     }
+    let mut scope = json!({"kind":"workspace"});
+    if let Some(object) = scope.as_object_mut() {
+        let owner_types = list(params.owner_types.as_deref());
+        if !owner_types.is_empty() {
+            object.insert("owner_types".into(), Value::Array(owner_types));
+        }
+        let executor_types = list(params.executor_types.as_deref());
+        if !executor_types.is_empty() {
+            object.insert("executor_types".into(), Value::Array(executor_types));
+        }
+    }
     let request = TableRequest {
-        query: json!({"scope":{"kind":"workspace"},"filters":filters,"search":params.q.clone().unwrap_or_default(),"sort":{"field":params.sort.clone().unwrap_or_else(|| "position".into()),"direction":params.direction.clone().unwrap_or_else(|| "asc".into())}}),
+        query: json!({"scope":scope,"filters":filters,"search":params.q.clone().unwrap_or_default(),"sort":{"field":params.sort.clone().unwrap_or_else(|| "position".into()),"direction":params.direction.clone().unwrap_or_else(|| "asc".into())}}),
         group: Value::Null,
         group_key: None,
         hierarchy: Value::Null,
@@ -505,13 +536,13 @@ async fn grouped_issues(
     let mut grouped: std::collections::BTreeMap<String, IssueGroup> =
         std::collections::BTreeMap::new();
     for row in rows {
-        let key = match (&row.assignee_type, row.assignee_id) {
+        let key = match (&row.executor_type, row.executor_id) {
             (Some(kind), Some(id)) => format!("{kind}:{id}"),
             _ => "none".to_string(),
         };
         grouped
             .entry(key)
-            .or_insert_with(|| (row.assignee_type.clone(), row.assignee_id, Vec::new()))
+            .or_insert_with(|| (row.executor_type.clone(), row.executor_id, Vec::new()))
             .2
             .push(IssueResponse::from_issue(&row, &prefix));
     }
@@ -525,7 +556,7 @@ async fn grouped_issues(
                 .take(limit as usize)
                 .collect::<Vec<_>>();
             json!({
-                "id": id, "assignee_type": kind, "assignee_id": actor_id,
+                "id": id, "executor_type": kind, "executor_id": actor_id,
                 "total": total, "issues": issues,
             })
         })
@@ -778,7 +809,7 @@ fn push_table_filters(
                 .push(" AND i.project_id=")
                 .push_bind(parse_table_uuid(&scope["project_id"], "scope.project_id")?);
         }
-        "assignee" | "creator" => {
+        "owner" | "executor" | "creator" => {
             let kind = scope["kind"].as_str().unwrap();
             let actor = scope.get("actor").ok_or_else(|| {
                 error_response(StatusCode::BAD_REQUEST, "scope.actor is required")
@@ -786,7 +817,13 @@ fn push_table_filters(
             let actor_type = actor
                 .get("type")
                 .and_then(Value::as_str)
-                .filter(|v| matches!(*v, "member" | "agent" | "team"))
+                .filter(|value| {
+                    match kind {
+                        "owner" => *value == "member",
+                        "executor" => matches!(*value, "agent" | "team"),
+                        _ => matches!(*value, "member" | "agent"),
+                    }
+                })
                 .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "invalid scope.actor"))?;
             let id = parse_table_uuid(&actor["id"], "scope.actor")?;
             builder
@@ -806,7 +843,7 @@ fn push_table_filters(
         {
             "assigned" => {
                 builder
-                    .push(" AND i.assignee_type='member' AND i.assignee_id=")
+                    .push(" AND i.owner_type='member' AND i.owner_id=")
                     .push_bind(user_id);
             }
             "created" => {
@@ -815,10 +852,10 @@ fn push_table_filters(
                     .push_bind(user_id);
             }
             "involved" => {
-                builder.push(" AND ((i.assignee_type='agent' AND i.assignee_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push(")) OR (i.assignee_type='team' AND i.assignee_id IN(SELECT sm.team_id FROM team_member sm JOIN team s ON s.id=sm.team_id WHERE s.workspace_id=").push_bind(workspace_id).push(" AND ((sm.member_type='member' AND sm.member_id=").push_bind(user_id).push(") OR (sm.member_type='agent' AND sm.member_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push(")))))");
+                builder.push(" AND ((i.executor_type='agent' AND i.executor_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push(")) OR (i.executor_type='team' AND i.executor_id IN(SELECT sm.team_id FROM team_member sm JOIN team s ON s.id=sm.team_id WHERE s.workspace_id=").push_bind(workspace_id).push(" AND ((sm.member_type='member' AND sm.member_id=").push_bind(user_id).push(") OR (sm.member_type='agent' AND sm.member_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push(")))))");
             }
             "any" => {
-                builder.push(" AND ((i.assignee_type='member' AND i.assignee_id=").push_bind(user_id).push(") OR (i.creator_type='member' AND i.creator_id=").push_bind(user_id).push(") OR (i.assignee_type='agent' AND i.assignee_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push(")) OR (i.assignee_type='team' AND i.assignee_id IN(SELECT sm.team_id FROM team_member sm JOIN team s ON s.id=sm.team_id WHERE s.workspace_id=").push_bind(workspace_id).push(" AND ((sm.member_type='member' AND sm.member_id=").push_bind(user_id).push(") OR (sm.member_type='agent' AND sm.member_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push("))))))");
+                builder.push(" AND ((i.owner_type='member' AND i.owner_id=").push_bind(user_id).push(") OR (i.creator_type='member' AND i.creator_id=").push_bind(user_id).push(") OR (i.executor_type='agent' AND i.executor_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push(")) OR (i.executor_type='team' AND i.executor_id IN(SELECT sm.team_id FROM team_member sm JOIN team s ON s.id=sm.team_id WHERE s.workspace_id=").push_bind(workspace_id).push(" AND ((sm.member_type='member' AND sm.member_id=").push_bind(user_id).push(") OR (sm.member_type='agent' AND sm.member_id IN(SELECT id FROM agent WHERE workspace_id=").push_bind(workspace_id).push(" AND owner_id=").push_bind(user_id).push("))))))");
             }
             _ => {
                 return Err(error_response(
@@ -834,7 +871,7 @@ fn push_table_filters(
             ));
         }
     }
-    if let Some(types) = scope.get("assignee_types").and_then(Value::as_array) {
+    if let Some(types) = scope.get("executor_types").and_then(Value::as_array) {
         let values = types
             .iter()
             .filter_map(Value::as_str)
@@ -842,16 +879,35 @@ fn push_table_filters(
             .collect::<Vec<_>>();
         if values
             .iter()
-            .any(|v| !matches!(v.as_str(), "member" | "agent" | "team"))
+            .any(|v| !matches!(v.as_str(), "agent" | "team"))
         {
             return Err(error_response(
                 StatusCode::BAD_REQUEST,
-                "invalid scope.assignee_types",
+                "invalid scope.executor_types",
             ));
         }
         if !values.is_empty() {
             builder
-                .push(" AND i.assignee_type=ANY(")
+                .push(" AND i.executor_type=ANY(")
+                .push_bind(values)
+                .push(")");
+        }
+    }
+    if let Some(types) = scope.get("owner_types").and_then(Value::as_array) {
+        let values = types
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        if values.iter().any(|value| value != "member") {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "invalid scope.owner_types",
+            ));
+        }
+        if !values.is_empty() {
+            builder
+                .push(" AND i.owner_type=ANY(")
                 .push_bind(values)
                 .push(")");
         }
@@ -875,11 +931,12 @@ fn push_table_filters(
         }
     }
     for (field, type_col, id_col) in [
-        ("assignees", "assignee_type", "assignee_id"),
+        ("owners", "owner_type", "owner_id"),
+        ("executors", "executor_type", "executor_id"),
         ("creators", "creator_type", "creator_id"),
     ] {
         if let Some(actors) = filters.get(field).and_then(Value::as_array) {
-            if actors.is_empty() && field == "assignees" {
+            if actors.is_empty() && matches!(field, "owners" | "executors") {
                 builder.push(" AND FALSE");
                 continue;
             }
@@ -892,7 +949,11 @@ fn push_table_filters(
                     let actor_type = actor
                         .get("type")
                         .and_then(Value::as_str)
-                        .filter(|v| matches!(*v, "member" | "agent" | "team"))
+                        .filter(|value| match field {
+                            "owners" => *value == "member",
+                            "executors" => matches!(*value, "agent" | "team"),
+                            _ => matches!(*value, "member" | "agent"),
+                        })
                         .ok_or_else(|| {
                             error_response(
                                 StatusCode::BAD_REQUEST,
@@ -911,23 +972,38 @@ fn push_table_filters(
                         .push_bind(id)
                         .push(")");
                 }
-                if field == "assignees"
+                if field == "executors"
                     && filters
-                        .get("include_no_assignee")
+                        .get("include_no_executor")
                         .and_then(Value::as_bool)
                         .unwrap_or(false)
                 {
-                    builder.push(" OR (i.assignee_type IS NULL AND i.assignee_id IS NULL)");
+                    builder.push(" OR (i.executor_type IS NULL AND i.executor_id IS NULL)");
+                }
+                if field == "owners"
+                    && filters
+                        .get("include_no_owner")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false)
+                {
+                    builder.push(" OR (i.owner_type IS NULL AND i.owner_id IS NULL)");
                 }
                 builder.push(")");
             }
-        } else if field == "assignees"
+        } else if field == "owners"
             && filters
-                .get("include_no_assignee")
+                .get("include_no_owner")
                 .and_then(Value::as_bool)
                 .unwrap_or(false)
         {
-            builder.push(" AND i.assignee_id IS NULL");
+            builder.push(" AND i.owner_id IS NULL");
+        } else if field == "executors"
+            && filters
+                .get("include_no_executor")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        {
+            builder.push(" AND i.executor_id IS NULL");
         }
     }
     if let Some(values) = filters.get("project_ids").and_then(Value::as_array) {
@@ -1140,17 +1216,17 @@ fn push_table_branch(
                 .push(" AND issue_effective_status(i.workspace_id,i.status)=")
                 .push_bind(value.to_string());
         }
-        "assignee" => {
+        "executor" => {
             if matches!(value, "unassigned" | "__none__") {
-                builder.push(" AND i.assignee_id IS NULL");
+                builder.push(" AND i.executor_id IS NULL");
             } else {
                 let (actor_type, id) = value
                     .split_once(':')
                     .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "invalid group_key"))?;
                 builder
-                    .push(" AND i.assignee_type=")
+                    .push(" AND i.executor_type=")
                     .push_bind(actor_type.to_string())
-                    .push(" AND i.assignee_id=")
+                    .push(" AND i.executor_id=")
                     .push_bind(Uuid::parse_str(id).map_err(|_| {
                         error_response(StatusCode::BAD_REQUEST, "invalid group_key")
                     })?);
@@ -1255,7 +1331,7 @@ fn push_compound_group_predicate(
         .group
         .get("primary")
         .and_then(Value::as_str)
-        .unwrap_or("assignee");
+        .unwrap_or("executor");
     push_group_dimension_predicate(builder, primary, &decoded)?;
     match secondary {
         "status_category" => {
@@ -1277,17 +1353,17 @@ fn push_group_dimension_predicate(
 ) -> Result<(), Response> {
     let value = raw_key.strip_prefix(&format!("{kind}:")).unwrap_or(raw_key);
     match kind {
-        "assignee" => {
+        "executor" => {
             if matches!(value, "unassigned" | "__none__" | "__unassigned__") {
-                builder.push(" AND i.assignee_id IS NULL");
+                builder.push(" AND i.executor_id IS NULL");
             } else {
                 let (actor_type, id) = value
                     .split_once(':')
                     .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "invalid group_key"))?;
                 builder
-                    .push(" AND i.assignee_type=")
+                    .push(" AND i.executor_type=")
                     .push_bind(actor_type.to_string())
-                    .push(" AND i.assignee_id=")
+                    .push(" AND i.executor_id=")
                     .push_bind(Uuid::parse_str(id).map_err(|_| {
                         error_response(StatusCode::BAD_REQUEST, "invalid group_key")
                     })?);
@@ -1596,7 +1672,7 @@ fn table_dimension_expr(kind: &str, property_id: Option<&str>) -> Result<String,
         "status" => "i.status".into(),
         "status_category" => "issue_effective_status(i.workspace_id, i.status)".into(),
         "priority" => "i.priority".into(),
-        "assignee" => "CASE WHEN i.assignee_id IS NULL THEN 'unassigned' ELSE i.assignee_type || ':' || i.assignee_id::text END".into(),
+        "executor" => "CASE WHEN i.executor_id IS NULL THEN 'unassigned' ELSE i.executor_type || ':' || i.executor_id::text END".into(),
         "creator" => "i.creator_type || ':' || i.creator_id::text".into(),
         "project" => "COALESCE(i.project_id::text, 'unassigned')".into(),
         "parent" => "COALESCE(i.parent_issue_id::text, 'root')".into(),
@@ -1771,23 +1847,23 @@ fn table_group_descriptor(kind: &str, raw: &str, count: i64, property_id: Option
             "value": { "kind": "status", "status": raw },
             "count": count,
         }),
-        "assignee" => {
+        "executor" => {
             if matches!(raw, "unassigned" | "__unassigned__" | "__none__") {
                 json!({
-                    "key": "assignee:unassigned",
-                    "value": { "kind": "assignee", "actor": Value::Null },
+                    "key": "executor:unassigned",
+                    "value": { "kind": "executor", "actor": Value::Null },
                     "count": count,
                 })
             } else if let Some((actor_type, id)) = raw.split_once(':') {
                 json!({
-                    "key": format!("assignee:{raw}"),
-                    "value": { "kind": "assignee", "actor": { "type": actor_type, "id": id } },
+                    "key": format!("executor:{raw}"),
+                    "value": { "kind": "executor", "actor": { "type": actor_type, "id": id } },
                     "count": count,
                 })
             } else {
                 json!({
-                    "key": format!("assignee:{raw}"),
-                    "value": { "kind": "assignee", "actor": Value::Null },
+                    "key": format!("executor:{raw}"),
+                    "value": { "kind": "executor", "actor": Value::Null },
                     "count": count,
                 })
             }
@@ -1882,7 +1958,7 @@ async fn table_groups(
         .unwrap_or("status");
     if !matches!(
         kind,
-        "status" | "status_category" | "assignee" | "project" | "parent" | "property" | "compound"
+        "status" | "status_category" | "executor" | "project" | "parent" | "property" | "compound"
     ) {
         return error_response(StatusCode::BAD_REQUEST, "unsupported table group");
     }
@@ -1898,7 +1974,7 @@ async fn table_groups(
         .group
         .get("primary")
         .and_then(Value::as_str)
-        .unwrap_or("assignee");
+        .unwrap_or("executor");
     let secondary = request
         .group
         .get("secondary")
@@ -2045,7 +2121,7 @@ async fn table_facets(
             kind,
             "status"
                 | "priority"
-                | "assignee"
+                | "executor"
                 | "creator"
                 | "project"
                 | "label"
@@ -2067,9 +2143,9 @@ async fn table_facets(
                 "priority" => {
                     filters.remove("priorities");
                 }
-                "assignee" => {
-                    filters.remove("assignees");
-                    filters.remove("include_no_assignee");
+                "executor" => {
+                    filters.remove("executors");
+                    filters.remove("include_no_executor");
                 }
                 "creator" => {
                     filters.remove("creators");
@@ -2404,12 +2480,12 @@ async fn quick_create_issue(
         Ok(id) => id,
         Err(response) => return response,
     };
-    let requested_assignee = if has_team {
+    let requested_executor = if has_team {
         ("team", request.team_id.trim())
     } else {
         ("agent", request.agent_id.trim())
     };
-    let requested_id = match Uuid::parse_str(requested_assignee.1) {
+    let requested_id = match Uuid::parse_str(requested_executor.1) {
         Ok(id) => id,
         Err(_) => {
             return error_response(
@@ -2423,7 +2499,7 @@ async fn quick_create_issue(
         }
     };
     if let Err(message) =
-        validate_assignee(&state, &context, requested_assignee.0, requested_id, None).await
+        validate_executor(&state, &context, requested_executor.0, requested_id, None).await
     {
         return error_response(StatusCode::FORBIDDEN, &message);
     }
@@ -2527,8 +2603,8 @@ struct TriggerPreviewRequest {
     issue_ids: Vec<String>,
     #[serde(default)]
     is_create: bool,
-    assignee_type: Option<String>,
-    assignee_id: Option<String>,
+    executor_type: Option<String>,
+    executor_id: Option<String>,
     status: Option<String>,
 }
 
@@ -2545,14 +2621,14 @@ async fn preview_trigger(
         Err(response) => return response,
     };
     let prospective_id = match request
-        .assignee_id
+        .executor_id
         .as_deref()
         .filter(|value| !value.is_empty())
         .map(Uuid::parse_str)
         .transpose()
     {
         Ok(id) => id,
-        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid assignee_id"),
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid executor_id"),
     };
     let mut candidates = Vec::new();
     if request.is_create {
@@ -2569,8 +2645,10 @@ async fn preview_trigger(
                     .filter(|v| !v.is_empty())
                     .unwrap_or_else(|| "todo".into()),
                 priority: "none".into(),
-                assignee_type: request.assignee_type.clone(),
-                assignee_id: prospective_id,
+                owner_type: None,
+                owner_id: None,
+                executor_type: request.executor_type.clone(),
+                executor_id: prospective_id,
                 creator_type: "member".into(),
                 creator_id: context.member.user_id,
                 parent_issue_id: None,
@@ -2609,8 +2687,8 @@ async fn preview_trigger(
             };
             let previous = issue.status.clone();
             if prospective_id.is_some() {
-                issue.assignee_id = prospective_id;
-                issue.assignee_type = request.assignee_type.clone();
+                issue.executor_id = prospective_id;
+                issue.executor_type = request.executor_type.clone();
             }
             if let Some(status) = request.status.as_ref().filter(|value| !value.is_empty()) {
                 issue.status = status.clone();
@@ -2629,7 +2707,7 @@ async fn preview_trigger(
     let mut triggers = Vec::new();
     for (issue, previous, is_create) in candidates {
         let input = IssueTriggerInput {
-            assignee_changed: prospective_id.is_some(),
+            executor_changed: prospective_id.is_some(),
             status_changed: issue.status != previous,
             prev_status: previous,
             is_create,
@@ -2677,7 +2755,7 @@ async fn allowed_member_run_agent(
     user_id: Uuid,
     issue: &Issue,
 ) -> Option<Uuid> {
-    let agent_id = match (issue.assignee_type.as_deref(), issue.assignee_id) {
+    let agent_id = match (issue.executor_type.as_deref(), issue.executor_id) {
         (Some("agent"), Some(agent_id)) => agent_id,
         (Some("team"), Some(team_id)) => {
             team::get_team_in_workspace(&state.pool, team_id, issue.workspace_id)
@@ -2892,7 +2970,7 @@ async fn rerun_issue(
 
     // Resolve and authorize the actual rerun target before the service clears
     // or enqueues anything. A historical task may belong to an agent that is
-    // no longer the issue assignee, so checking only the current assignee would
+    // no longer the issue executor, so checking only the current executor would
     // cross the private-agent invocation boundary.
     let target_agent_id = if let Some(task_id) = source_task_id {
         match agent::get_agent_task(&state.pool, task_id).await {
@@ -2912,7 +2990,7 @@ async fn rerun_issue(
             }
         }
     } else {
-        match (issue.assignee_type.as_deref(), issue.assignee_id) {
+        match (issue.executor_type.as_deref(), issue.executor_id) {
             (Some("agent"), Some(agent_id)) => agent_id,
             (Some("team"), Some(team_id)) => {
                 match team::get_team_in_workspace(&state.pool, team_id, issue.workspace_id).await {
@@ -3010,8 +3088,8 @@ async fn quick_action_for_issue(
     let (name, agent, _) = crate::quick_action::target(
         state,
         issue.workspace_id,
-        &action.assignee_type,
-        action.assignee_id,
+        &action.executor_type,
+        action.executor_id,
     )
     .await?;
     if !can_member_invoke_agent(state, context.member.user_id, issue.workspace_id, &agent).await {
@@ -3026,7 +3104,7 @@ async fn quick_action_for_issue(
 fn quick_action_body(action: &patchbay_db::models::QuickAction, name: &str) -> String {
     format!(
         "[@{name}](mention://{}/{})\n\n{}",
-        action.assignee_type, action.assignee_id, action.prompt
+        action.executor_type, action.executor_id, action.prompt
     )
 }
 
@@ -3092,13 +3170,13 @@ async fn run_quick_action(
     .ok()
     .flatten()
     .expect("created comment");
-    let trigger = if action.assignee_type == "team" {
+    let trigger = if action.executor_type == "team" {
         state
             .tasks
             .enqueue_task_for_team_leader(
                 &issue,
                 target_agent.id,
-                action.assignee_id,
+                action.executor_id,
                 Some(comment.id),
             )
             .await
@@ -3156,8 +3234,8 @@ async fn record_team_evaluated(
         Err(response) => return response,
     };
     let Some(team_id) = issue
-        .assignee_id
-        .filter(|_| issue.assignee_type.as_deref() == Some("team"))
+        .executor_id
+        .filter(|_| issue.executor_type.as_deref() == Some("team"))
     else {
         return error_response(StatusCode::BAD_REQUEST, "issue is not assigned to a team");
     };
@@ -3272,8 +3350,8 @@ fn move_position(
 
 const MOVE_ALLOWED_FIELDS: &[&str] = &[
     "status",
-    "assignee_type",
-    "assignee_id",
+    "executor_type",
+    "executor_id",
     "parent_issue_id",
     "project_id",
     "before_id",
@@ -4190,13 +4268,18 @@ struct ListParams {
     status_categories: Option<String>,
     priority: Option<String>,
     priorities: Option<String>,
-    assignee_id: Option<String>,
-    assignee_ids: Option<String>,
-    assignee_types: Option<String>,
+    owner_id: Option<String>,
+    owner_ids: Option<String>,
+    owner_types: Option<String>,
+    executor_id: Option<String>,
+    executor_ids: Option<String>,
+    executor_types: Option<String>,
     creator_id: Option<String>,
-    assignee_filters: Option<String>,
+    owner_filters: Option<String>,
+    executor_filters: Option<String>,
     creator_filters: Option<String>,
-    include_no_assignee: Option<String>,
+    include_no_executor: Option<String>,
+    include_no_owner: Option<String>,
     include_no_project: Option<String>,
     label_ids: Option<String>,
     involves_user_id: Option<String>,
@@ -4308,36 +4391,36 @@ async fn child_issue_progress(
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
-struct AssigneeFrequencyResponse {
-    assignee_type: String,
-    assignee_id: String,
+struct ExecutorFrequencyResponse {
+    executor_type: String,
+    executor_id: String,
     frequency: i64,
 }
 
 #[derive(Debug, FromRow)]
-struct AssigneeActivityFrequencyRow {
-    assignee_type: String,
-    assignee_id: String,
+struct ExecutorActivityFrequencyRow {
+    executor_type: String,
+    executor_id: String,
     frequency: i64,
 }
 
-async fn get_assignee_frequency(
+async fn get_executor_frequency(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
 ) -> Response {
     let workspace_id = context.member.workspace_id;
     let user_id = context.member.user_id;
     let (activity_counts, issue_counts) = tokio::join!(
-        sqlx::query_as::<_, AssigneeActivityFrequencyRow>(
+        sqlx::query_as::<_, ExecutorActivityFrequencyRow>(
             r#"SELECT
-                  details->>'to_type' AS assignee_type,
-                  details->>'to_id' AS assignee_id,
+                  details->>'to_type' AS executor_type,
+                  details->>'to_id' AS executor_id,
                   COUNT(*)::bigint AS frequency
                FROM activity_log
               WHERE workspace_id = $1
                 AND actor_id = $2
                 AND actor_type = 'member'
-                AND action = 'assignee_changed'
+                AND action = 'executor_changed'
                 AND details->>'to_type' IS NOT NULL
                 AND details->>'to_id' IS NOT NULL
               GROUP BY details->>'to_type', details->>'to_id'"#,
@@ -4345,7 +4428,7 @@ async fn get_assignee_frequency(
         .bind(workspace_id)
         .bind(user_id)
         .fetch_all(&state.pool),
-        issue_q::count_created_issue_assignees(&state.pool, workspace_id, user_id),
+        issue_q::count_created_issue_executors(&state.pool, workspace_id, user_id),
     );
     let (activity_counts, issue_counts) = match (activity_counts, issue_counts) {
         (Ok(activity_counts), Ok(issue_counts)) => (activity_counts, issue_counts),
@@ -4354,11 +4437,11 @@ async fn get_assignee_frequency(
                 workspace_id = %workspace_id,
                 activity_error = ?activity_result.err(),
                 issue_error = ?issue_result.err(),
-                "failed to get assignee frequency"
+                "failed to get executor frequency"
             );
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to get assignee frequency",
+                "failed to get executor frequency",
             );
         }
     };
@@ -4366,13 +4449,13 @@ async fn get_assignee_frequency(
     let mut frequencies = HashMap::<(String, String), i64>::new();
     for row in activity_counts {
         *frequencies
-            .entry((row.assignee_type, row.assignee_id))
+            .entry((row.executor_type, row.executor_id))
             .or_default() += row.frequency;
     }
     for row in issue_counts {
-        if let (Some(assignee_type), Some(assignee_id)) = (row.assignee_type, row.assignee_id) {
+        if let (Some(executor_type), Some(executor_id)) = (row.executor_type, row.executor_id) {
             *frequencies
-                .entry((assignee_type, assignee_id.to_string()))
+                .entry((executor_type, executor_id.to_string()))
                 .or_default() += row.frequency;
         }
     }
@@ -4380,9 +4463,9 @@ async fn get_assignee_frequency(
     let mut response = frequencies
         .into_iter()
         .map(
-            |((assignee_type, assignee_id), frequency)| AssigneeFrequencyResponse {
-                assignee_type,
-                assignee_id,
+            |((executor_type, executor_id), frequency)| ExecutorFrequencyResponse {
+                executor_type,
+                executor_id,
                 frequency,
             },
         )
@@ -4394,8 +4477,10 @@ async fn get_assignee_frequency(
 #[derive(Debug, FromRow)]
 struct ListRow {
     acceptance_criteria: Value,
-    assignee_id: Option<Uuid>,
-    assignee_type: Option<String>,
+    owner_id: Option<Uuid>,
+    owner_type: Option<String>,
+    executor_id: Option<Uuid>,
+    executor_type: Option<String>,
     reviewer_id: Option<Uuid>,
     reviewer_type: Option<String>,
     context_refs: Value,
@@ -4429,8 +4514,10 @@ impl ListRow {
     fn into_issue(self) -> Issue {
         Issue {
             acceptance_criteria: self.acceptance_criteria,
-            assignee_id: self.assignee_id,
-            assignee_type: self.assignee_type,
+            owner_id: self.owner_id,
+            owner_type: self.owner_type,
+            executor_id: self.executor_id,
+            executor_type: self.executor_type,
             reviewer_id: self.reviewer_id,
             reviewer_type: self.reviewer_type,
             context_refs: self.context_refs,
@@ -4488,16 +4575,21 @@ struct IssueFilters {
     category_statuses: Option<Vec<String>>,
     closed_statuses: Vec<String>,
     priorities: Vec<String>,
-    assignee_id: Option<Uuid>,
-    assignee_ids: Vec<Uuid>,
-    assignee_types: Vec<String>,
+    owner_id: Option<Uuid>,
+    owner_ids: Vec<Uuid>,
+    owner_types: Vec<String>,
+    executor_id: Option<Uuid>,
+    executor_ids: Vec<Uuid>,
+    executor_types: Vec<String>,
     creator_id: Option<Uuid>,
     project_id: Option<Uuid>,
     project_ids: Vec<Uuid>,
     ids: Option<Vec<Uuid>>,
-    assignee_filters: Vec<ActorFilter>,
+    owner_filters: Vec<ActorFilter>,
+    executor_filters: Vec<ActorFilter>,
     creator_filters: Vec<ActorFilter>,
-    include_no_assignee: bool,
+    include_no_executor: bool,
+    include_no_owner: bool,
     include_no_project: bool,
     label_ids: Vec<Uuid>,
     involves_user_id: Option<Uuid>,
@@ -4538,19 +4630,34 @@ fn push_issue_filters(query: &mut QueryBuilder<'_, Postgres>, filters: &IssueFil
             .push_bind(filters.priorities.clone())
             .push(")");
     }
-    if let Some(id) = filters.assignee_id {
-        query.push(" AND i.assignee_id = ").push_bind(id);
+    if let Some(id) = filters.owner_id {
+        query.push(" AND i.owner_id = ").push_bind(id);
     }
-    if !filters.assignee_ids.is_empty() {
+    if !filters.owner_ids.is_empty() {
         query
-            .push(" AND i.assignee_id = ANY(")
-            .push_bind(filters.assignee_ids.clone())
+            .push(" AND i.owner_id = ANY(")
+            .push_bind(filters.owner_ids.clone())
             .push(")");
     }
-    if !filters.assignee_types.is_empty() {
+    if !filters.owner_types.is_empty() {
         query
-            .push(" AND i.assignee_type = ANY(")
-            .push_bind(filters.assignee_types.clone())
+            .push(" AND i.owner_type = ANY(")
+            .push_bind(filters.owner_types.clone())
+            .push(")");
+    }
+    if let Some(id) = filters.executor_id {
+        query.push(" AND i.executor_id = ").push_bind(id);
+    }
+    if !filters.executor_ids.is_empty() {
+        query
+            .push(" AND i.executor_id = ANY(")
+            .push_bind(filters.executor_ids.clone())
+            .push(")");
+    }
+    if !filters.executor_types.is_empty() {
+        query
+            .push(" AND i.executor_type = ANY(")
+            .push_bind(filters.executor_types.clone())
             .push(")");
     }
     if let Some(id) = filters.creator_id {
@@ -4581,19 +4688,35 @@ fn push_issue_filters(query: &mut QueryBuilder<'_, Postgres>, filters: &IssueFil
             .push_bind(ids.clone())
             .push(")");
     }
-    if !filters.assignee_filters.is_empty() || filters.include_no_assignee {
+    if !filters.owner_filters.is_empty() || filters.include_no_owner {
         query.push(" AND (");
         let mut separated = query.separated(" OR ");
-        for actor in &filters.assignee_filters {
+        for actor in &filters.owner_filters {
             separated
-                .push("(i.assignee_type = ")
+                .push("(i.owner_type = ")
                 .push_bind(actor.actor_type.clone())
-                .push(" AND i.assignee_id = ")
+                .push(" AND i.owner_id = ")
                 .push_bind(actor.actor_id)
                 .push(")");
         }
-        if filters.include_no_assignee {
-            separated.push("(i.assignee_type IS NULL AND i.assignee_id IS NULL)");
+        if filters.include_no_owner {
+            separated.push("(i.owner_type IS NULL AND i.owner_id IS NULL)");
+        }
+        separated.push_unseparated(")");
+    }
+    if !filters.executor_filters.is_empty() || filters.include_no_executor {
+        query.push(" AND (");
+        let mut separated = query.separated(" OR ");
+        for actor in &filters.executor_filters {
+            separated
+                .push("(i.executor_type = ")
+                .push_bind(actor.actor_type.clone())
+                .push(" AND i.executor_id = ")
+                .push_bind(actor.actor_id)
+                .push(")");
+        }
+        if filters.include_no_executor {
+            separated.push("(i.executor_type IS NULL AND i.executor_id IS NULL)");
         }
         separated.push_unseparated(")");
     }
@@ -4615,9 +4738,9 @@ fn push_issue_filters(query: &mut QueryBuilder<'_, Postgres>, filters: &IssueFil
             .push_bind(filters.label_ids.clone()).push("))");
     }
     if let Some(user_id) = filters.involves_user_id {
-        query.push(" AND ((i.assignee_type = 'agent' AND i.assignee_id IN (SELECT a.id FROM agent a WHERE a.workspace_id = ")
+        query.push(" AND ((i.executor_type = 'agent' AND i.executor_id IN (SELECT a.id FROM agent a WHERE a.workspace_id = ")
             .push_bind(filters.workspace_id).push(" AND a.owner_id = ").push_bind(user_id)
-            .push(")) OR (i.assignee_type = 'team' AND i.assignee_id IN (SELECT sm.team_id FROM team_member sm JOIN team s ON s.id = sm.team_id WHERE s.workspace_id = ")
+            .push(")) OR (i.executor_type = 'team' AND i.executor_id IN (SELECT sm.team_id FROM team_member sm JOIN team s ON s.id = sm.team_id WHERE s.workspace_id = ")
             .push_bind(filters.workspace_id).push(" AND sm.member_type = 'member' AND sm.member_id = ").push_bind(user_id)
             .push(" UNION SELECT s.id FROM team s JOIN agent a ON a.id = s.leader_id WHERE s.workspace_id = ")
             .push_bind(filters.workspace_id).push(" AND a.workspace_id = ").push_bind(filters.workspace_id).push(" AND a.owner_id = ").push_bind(user_id)
@@ -4735,7 +4858,11 @@ async fn list_issues_with_params(
         .filter(|v| *v >= 0)
         .unwrap_or(0);
 
-    let assignee_id = match optional_uuid(params.assignee_id.as_deref(), "assignee_id") {
+    let executor_id = match optional_uuid(params.executor_id.as_deref(), "executor_id") {
+        Ok(value) => value,
+        Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
+    };
+    let owner_id = match optional_uuid(params.owner_id.as_deref(), "owner_id") {
         Ok(value) => value,
         Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
     };
@@ -4747,10 +4874,18 @@ async fn list_issues_with_params(
         Ok(value) => value,
         Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
     };
-    let assignee_ids = match uuid_list(params.assignee_ids.as_deref(), "assignee_ids") {
+    let executor_ids = match uuid_list(params.executor_ids.as_deref(), "executor_ids") {
         Ok(value) => value,
         Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
     };
+    let owner_ids = match uuid_list(params.owner_ids.as_deref(), "owner_ids") {
+        Ok(value) => value,
+        Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
+    };
+    let owner_types = comma_list(params.owner_types.as_deref());
+    if owner_types.iter().any(|kind| kind != "member") {
+        return error_response(StatusCode::BAD_REQUEST, "invalid owner_types");
+    }
     let project_ids = match uuid_list(params.project_ids.as_deref(), "project_ids") {
         Ok(value) => value,
         Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
@@ -4759,12 +4894,12 @@ async fn list_issues_with_params(
         Ok(value) => value,
         Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
     };
-    let assignee_types = comma_list(params.assignee_types.as_deref());
-    if assignee_types
+    let executor_types = comma_list(params.executor_types.as_deref());
+    if executor_types
         .iter()
-        .any(|kind| !matches!(kind.as_str(), "member" | "agent" | "team"))
+        .any(|kind| !matches!(kind.as_str(), "agent" | "team"))
     {
-        return error_response(StatusCode::BAD_REQUEST, "invalid assignee_types");
+        return error_response(StatusCode::BAD_REQUEST, "invalid executor_types");
     }
 
     let statuses = comma_list(params.statuses.as_deref().or(params.status.as_deref()));
@@ -4793,9 +4928,21 @@ async fn list_issues_with_params(
         Vec::new()
     };
     let priorities = comma_list(params.priorities.as_deref().or(params.priority.as_deref()));
-    let assignee_filters =
-        match actor_filters(params.assignee_filters.as_deref(), "assignee_filters") {
-            Ok(value) => value,
+    let owner_filters = match actor_filters(params.owner_filters.as_deref(), "owner_filters") {
+        Ok(value) if value.iter().all(|actor| actor.actor_type == "member") => value,
+        Ok(_) => return error_response(StatusCode::BAD_REQUEST, "invalid owner_filters"),
+        Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
+    };
+    let executor_filters =
+        match actor_filters(params.executor_filters.as_deref(), "executor_filters") {
+            Ok(value)
+                if value
+                    .iter()
+                    .all(|actor| matches!(actor.actor_type.as_str(), "agent" | "team")) =>
+            {
+                value
+            }
+            Ok(_) => return error_response(StatusCode::BAD_REQUEST, "invalid executor_filters"),
             Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
         };
     let creator_filters = match actor_filters(params.creator_filters.as_deref(), "creator_filters")
@@ -4835,16 +4982,21 @@ async fn list_issues_with_params(
         category_statuses,
         closed_statuses,
         priorities,
-        assignee_id,
-        assignee_ids,
-        assignee_types,
+        owner_id,
+        owner_ids,
+        owner_types,
+        executor_id,
+        executor_ids,
+        executor_types,
         creator_id,
         project_id,
         project_ids,
         ids: params.ids.is_some().then_some(ids),
-        assignee_filters,
+        owner_filters,
+        executor_filters,
         creator_filters,
-        include_no_assignee: params.include_no_assignee.as_deref() == Some("true"),
+        include_no_executor: params.include_no_executor.as_deref() == Some("true"),
+        include_no_owner: params.include_no_owner.as_deref() == Some("true"),
         include_no_project: params.include_no_project.as_deref() == Some("true"),
         label_ids,
         involves_user_id,
@@ -5336,12 +5488,12 @@ fn update_object(body: &[u8]) -> Result<serde_json::Map<String, Value>, Response
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IssueWorkflowViolation {
-    ActiveAssigneeRequired,
+    ActiveExecutorRequired,
     ReviewHandoffRequired,
 }
 
-fn issue_owner(issue: &Issue) -> Option<(&str, Uuid)> {
-    issue.assignee_type.as_deref().zip(issue.assignee_id)
+fn issue_executor(issue: &Issue) -> Option<(&str, Uuid)> {
+    issue.executor_type.as_deref().zip(issue.executor_id)
 }
 
 fn issue_reviewer(issue: &Issue) -> Option<(&str, Uuid)> {
@@ -5377,71 +5529,20 @@ fn review_return_actions(leaving_review: bool, suppress_run: bool) -> ReviewRetu
     }
 }
 
-struct LegacyReviewRemap<'a> {
-    previous_category: &'a str,
-    next_category: &'a str,
-    previous_owner: Option<(&'a str, Uuid)>,
-    reviewer_in_request: bool,
-    assignee_touched: bool,
-    next_owner_type: &'a mut Option<String>,
-    next_owner_id: &'a mut Option<Uuid>,
-    next_reviewer_type: &'a mut Option<String>,
-    next_reviewer_id: &'a mut Option<Uuid>,
-}
-
-/// Older clients entered `in_review` by swapping the assignee to the
-/// reviewer. The worker stays on `assignee_*`; the incoming assignee
-/// becomes `reviewer_*` when the request did not set a reviewer.
-fn remap_legacy_review_assignee(args: LegacyReviewRemap<'_>) -> bool {
-    if args.reviewer_in_request
-        || args.next_reviewer_type.is_some()
-        || args.next_reviewer_id.is_some()
-        || !args.assignee_touched
-        || args.previous_category == patchbay_service::issue_status::IN_REVIEW
-        || args.next_category != patchbay_service::issue_status::IN_REVIEW
-    {
-        return false;
-    }
-    let Some((prev_type, prev_id)) = args.previous_owner else {
-        return false;
-    };
-    let Some(new_type) = args.next_owner_type.as_deref() else {
-        return false;
-    };
-    let Some(new_id) = *args.next_owner_id else {
-        return false;
-    };
-    if new_type == prev_type && new_id == prev_id {
-        return false;
-    }
-    *args.next_reviewer_type = Some(new_type.to_string());
-    *args.next_reviewer_id = Some(new_id);
-    *args.next_owner_type = Some(prev_type.to_string());
-    *args.next_owner_id = Some(prev_id);
-    true
-}
-
-fn reviewer_cannot_clear_response() -> Response {
-    issue_workflow_error(
-        "reviewer_cannot_clear",
-        "a reviewer cannot be removed once set",
-    )
-}
-
 fn issue_workflow_violation(
     previous_category: &str,
     next_category: &str,
-    previous_owner: Option<(&str, Uuid)>,
-    next_owner: Option<(&str, Uuid)>,
+    previous_executor: Option<(&str, Uuid)>,
+    next_executor: Option<(&str, Uuid)>,
     next_reviewer: Option<(&str, Uuid)>,
 ) -> Option<IssueWorkflowViolation> {
-    let _ = previous_owner;
-    if patchbay_service::issue_status::requires_assignee(next_category) && next_owner.is_none() {
-        return Some(IssueWorkflowViolation::ActiveAssigneeRequired);
+    let _ = previous_executor;
+    if patchbay_service::issue_status::requires_executor(next_category) && next_executor.is_none() {
+        return Some(IssueWorkflowViolation::ActiveExecutorRequired);
     }
     if previous_category != patchbay_service::issue_status::IN_REVIEW
         && next_category == patchbay_service::issue_status::IN_REVIEW
-        && (next_reviewer.is_none() || next_reviewer == next_owner)
+        && (next_reviewer.is_none() || next_reviewer == next_executor)
     {
         return Some(IssueWorkflowViolation::ReviewHandoffRequired);
     }
@@ -5458,9 +5559,9 @@ fn issue_workflow_error(code: &str, message: &str) -> Response {
 
 fn issue_workflow_violation_response(violation: IssueWorkflowViolation) -> Response {
     match violation {
-        IssueWorkflowViolation::ActiveAssigneeRequired => issue_workflow_error(
-            "active_issue_requires_assignee",
-            "issues in progress, in review, or blocked must have an assignee",
+        IssueWorkflowViolation::ActiveExecutorRequired => issue_workflow_error(
+            "active_issue_requires_executor",
+            "issues in progress or in review must have an executor",
         ),
         IssueWorkflowViolation::ReviewHandoffRequired => issue_workflow_error(
             "review_handoff_required",
@@ -5483,34 +5584,31 @@ async fn prevalidate_issue_workflow_update(
         }
         UpdateField::Missing | UpdateField::Null => previous.status.clone(),
     };
-    let mut next_type = previous.assignee_type.clone();
-    let mut next_id = previous.assignee_id;
-    match update_field::<String>(fields, "assignee_type")? {
+    let mut next_type = previous.executor_type.clone();
+    let mut next_id = previous.executor_id;
+    match update_field::<String>(fields, "executor_type")? {
         UpdateField::Missing => {}
         UpdateField::Null => next_type = None,
         UpdateField::Value(value) => next_type = Some(value),
     }
-    match update_field::<String>(fields, "assignee_id")? {
+    match update_field::<String>(fields, "executor_id")? {
         UpdateField::Missing => {}
         UpdateField::Null => next_id = None,
         UpdateField::Value(value) => {
             next_id = Some(
                 Uuid::parse_str(&value)
-                    .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid assignee_id"))?,
+                    .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid executor_id"))?,
             );
         }
     }
     if next_type.is_some() != next_id.is_some() {
         return Err(error_response(
             StatusCode::BAD_REQUEST,
-            "assignee_type and assignee_id must be set together",
+            "executor_type and executor_id must be set together",
         ));
     }
-    let assignee_touched = update_field::<String>(fields, "assignee_type")?.is_present()
-        || update_field::<String>(fields, "assignee_id")?.is_present();
     let reviewer_type_field = update_field::<String>(fields, "reviewer_type")?;
     let reviewer_id_field = update_field::<String>(fields, "reviewer_id")?;
-    let reviewer_in_request = reviewer_type_field.is_present() || reviewer_id_field.is_present();
     let mut next_reviewer_type = previous.reviewer_type.clone();
     let mut next_reviewer_id = previous.reviewer_id;
     match reviewer_type_field {
@@ -5534,9 +5632,6 @@ async fn prevalidate_issue_workflow_update(
             "reviewer_type and reviewer_id must be set together",
         ));
     }
-    if issue_reviewer(previous).is_some() && next_reviewer_type.is_none() {
-        return Err(reviewer_cannot_clear_response());
-    }
     let previous_category = patchbay_service::issue_status::effective(
         &state.pool,
         previous.workspace_id,
@@ -5546,21 +5641,10 @@ async fn prevalidate_issue_workflow_update(
     let next_category =
         patchbay_service::issue_status::effective(&state.pool, previous.workspace_id, &next_status)
             .await;
-    remap_legacy_review_assignee(LegacyReviewRemap {
-        previous_category: &previous_category,
-        next_category: &next_category,
-        previous_owner: issue_owner(previous),
-        reviewer_in_request,
-        assignee_touched,
-        next_owner_type: &mut next_type,
-        next_owner_id: &mut next_id,
-        next_reviewer_type: &mut next_reviewer_type,
-        next_reviewer_id: &mut next_reviewer_id,
-    });
     if let Some(violation) = issue_workflow_violation(
         &previous_category,
         &next_category,
-        issue_owner(previous),
+        issue_executor(previous),
         next_type.as_deref().zip(next_id),
         next_reviewer_type.as_deref().zip(next_reviewer_id),
     ) {
@@ -5603,6 +5687,352 @@ async fn update_issue(
         Ok(issue) => issue_response(&state, issue).await,
         Err(response) => response,
     }
+}
+
+/// The planner mutation boundary is intentionally narrower than the regular
+/// issue endpoint.  Only the workspace's configured Patrick agent may call
+/// it, every request carries a revision and reason, and the delegated task
+/// must be bound to the issue being changed.  Keeping this check at the
+/// handler boundary prevents a worker from impersonating the orchestrator by
+/// merely sending an agent-shaped request.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PatrickMutationRequest {
+    expected_revision: i64,
+    change_reason: String,
+    correlation_id: Uuid,
+    #[serde(default)]
+    task_id: Option<Uuid>,
+    #[serde(default)]
+    run_id: Option<Uuid>,
+    /// The Linear snapshot is carried through the mutation boundary so a
+    /// Linear worker can reject a stale remote version before issuing its
+    /// GraphQL write.  The actual remote comparison lives in the Linear
+    /// adapter; this API never treats a local revision as a substitute.
+    #[serde(default)]
+    linear_remote_updated_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    linear_remote_snapshot: Option<Value>,
+    changes: serde_json::Map<String, Value>,
+}
+
+const PATRICK_MUTABLE_FIELDS: &[&str] = &[
+    "title",
+    "description",
+    "acceptance_criteria",
+    "priority",
+    "status",
+    "owner_type",
+    "owner_id",
+    "executor_type",
+    "executor_id",
+    "reviewer_type",
+    "reviewer_id",
+    "parent_issue_id",
+    "project_id",
+    "stage",
+    "start_date",
+    "due_date",
+];
+
+async fn patrick_mutate_issue(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let request: PatrickMutationRequest = match serde_json::from_slice(&body) {
+        Ok(request) => request,
+        Err(_) => return error_response(StatusCode::BAD_REQUEST, "invalid Patrick mutation body"),
+    };
+    if request.expected_revision <= 0 {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "expected_revision must be a positive integer",
+        );
+    }
+    if request.change_reason.trim().is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "change_reason is required");
+    }
+    if request.changes.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "changes must not be empty");
+    }
+    for field in request.changes.keys() {
+        if !PATRICK_MUTABLE_FIELDS.contains(&field.as_str()) {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                &format!("Patrick cannot mutate field: {field}"),
+            );
+        }
+    }
+    let issue = match resolve_issue(&state, &context, &id).await {
+        Ok(issue) => issue,
+        Err(response) => return response,
+    };
+    let Some(execution) = trusted_agent_execution_context(&state, &context, &headers).await else {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "Patrick mutations require a trusted task execution token",
+        );
+    };
+    if execution.issue_id != Some(issue.id)
+        || request.task_id.is_some_and(|task_id| task_id != execution.task_id)
+        || request.run_id.is_some_and(|run_id| Some(run_id) != execution.run_id)
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "the mutation task is not bound to this issue",
+        );
+    }
+    let Some(patrick) = agent::get_agent_by_system_key(
+        &state.pool,
+        issue.workspace_id,
+        Some("patrick"),
+    )
+    .await
+    .ok()
+    .flatten()
+    else {
+        return error_response(StatusCode::CONFLICT, "Patrick is not configured for this workspace");
+    };
+    if patrick.id != execution.agent_id {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "only the configured Patrick agent may mutate issues",
+        );
+    }
+
+    // The correlation UUID is also the activity-log id. Replaying a request
+    // after a worker timeout must return the already-applied projection rather
+    // than incrementing the issue revision a second time. Reusing a UUID for
+    // a different action is rejected instead of silently conflating audits.
+    match activity::get_activity(&state.pool, request.correlation_id).await {
+        Ok(Some(entry))
+            if entry.issue_id == Some(issue.id) && entry.action == "patrick_issue_mutated" =>
+        {
+            let current = issue_q::get_issue_in_workspace(
+                &state.pool,
+                issue.id,
+                issue.workspace_id,
+            )
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or(issue.clone());
+            return Json(json!({
+                "issue": issue_response_projection(&state, &current).await,
+                "correlation_id": request.correlation_id,
+                "revision": current.revision,
+                "idempotent_replay": true,
+            }))
+            .into_response();
+        }
+        Ok(Some(_)) => {
+            return error_code_response(
+                StatusCode::CONFLICT,
+                "correlation_id_conflict",
+                "correlation_id is already associated with another mutation",
+            );
+        }
+        Ok(None) => {}
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                correlation_id = %request.correlation_id,
+                "failed to check Patrick mutation idempotency"
+            );
+        }
+    }
+
+    if !task_project_resource_allows(
+        &state,
+        &headers,
+        issue.workspace_id,
+        Some(issue.id),
+        true,
+        Action::RESOURCE_USE,
+    )
+    .await
+    {
+        return error_response(
+            StatusCode::FORBIDDEN,
+            "task capability does not allow updating this issue",
+        );
+    }
+
+    // A Linear-bound issue must carry the remote version that Patrick
+    // observed. This keeps a planner from overwriting a human's concurrent
+    // Linear edit; the worker still re-reads Linear immediately before its
+    // GraphQL write.
+    match linear_q::get_issue_link(&state.pool, issue.workspace_id, issue.id).await {
+        Ok(Some(link)) if link.status == "active" => {
+            let Some(observed_updated_at) = request.linear_remote_updated_at else {
+                return error_code_response(
+                    StatusCode::CONFLICT,
+                    "linear_remote_version_required",
+                    "Linear-bound Patrick mutations require linear_remote_updated_at",
+                );
+            };
+            let Some(snapshot) = request.linear_remote_snapshot.as_ref() else {
+                return error_code_response(
+                    StatusCode::CONFLICT,
+                    "linear_remote_snapshot_required",
+                    "Linear-bound Patrick mutations require linear_remote_snapshot",
+                );
+            };
+            if !snapshot.is_object() {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "linear_remote_snapshot must be a JSON object",
+                );
+            }
+            if link
+                .remote_updated_at
+                .is_some_and(|stored| stored != observed_updated_at)
+            {
+                return error_code_response(
+                    StatusCode::CONFLICT,
+                    "linear_remote_version_conflict",
+                    "the stored Linear version differs from the observed version",
+                );
+            }
+            if let Some(project_value) = request.changes.get("project_id") {
+                let Some(target_project_id) = (match project_value {
+                    Value::Null => None,
+                    Value::String(value) => Some(Uuid::parse_str(value).map_err(|_| {
+                        error_response(StatusCode::BAD_REQUEST, "invalid project_id")
+                    })?),
+                    _ => {
+                        return error_response(
+                            StatusCode::BAD_REQUEST,
+                            "project_id must be a UUID or null",
+                        )
+                    }
+                }) else {
+                    return error_response(
+                        StatusCode::FORBIDDEN,
+                        "Linear-bound issues must stay inside a bound Project",
+                    );
+                };
+                let bindings = match linear_q::list_project_bindings(
+                    &state.pool,
+                    issue.workspace_id,
+                )
+                .await
+                {
+                    Ok(bindings) => bindings,
+                    Err(error) => {
+                        tracing::warn!(%error, issue_id = %issue.id, "failed to validate Linear project scope");
+                        return error_response(
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            "failed to validate Linear project scope",
+                        );
+                    }
+                };
+                if !bindings.iter().any(|binding| {
+                    binding.status == "active"
+                        && binding.patchbay_project_id == Some(target_project_id)
+                }) {
+                    return error_response(
+                        StatusCode::FORBIDDEN,
+                        "Patrick cannot move a Linear-bound issue outside the sync scope",
+                    );
+                }
+            }
+        }
+        Ok(_) => {}
+        Err(error) => {
+            tracing::warn!(%error, issue_id = %issue.id, "failed to load Linear issue link for Patrick mutation");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to validate the Linear issue version",
+            );
+        }
+    }
+    let mut fields = request.changes.clone();
+    fields.insert(
+        "expected_revision".to_string(),
+        json!(request.expected_revision),
+    );
+    fields.insert("suppress_run".to_string(), json!(true));
+    let mut mutation_headers = headers.clone();
+    if let Ok(value) = axum::http::HeaderValue::from_str(&request.correlation_id.to_string()) {
+        mutation_headers.insert("x-patchbay-correlation-id", value);
+    }
+    let updated = match apply_issue_update(
+        &state,
+        &context,
+        &mutation_headers,
+        issue.clone(),
+        &fields,
+        true,
+    )
+    .await
+    {
+        Ok(updated) => updated,
+        Err(response) => return response,
+    };
+
+    let audit_details = json!({
+        "change_reason": request.change_reason.trim(),
+        "correlation_id": request.correlation_id,
+        "task_id": execution.task_id,
+        "run_id": execution.run_id,
+        "expected_revision": request.expected_revision,
+        "fields": request.changes.keys().collect::<Vec<_>>(),
+        "linear_remote_updated_at": request.linear_remote_updated_at,
+        "linear_remote_snapshot": request.linear_remote_snapshot,
+    });
+    match activity::create_activity(
+        &state.pool,
+        updated.workspace_id,
+        updated.id,
+        Some("agent"),
+        Some(execution.agent_id),
+        "patrick_issue_mutated",
+        &audit_details,
+        request.correlation_id,
+    )
+    .await
+    {
+        Ok(Some(entry)) => {
+            state.bus.publish(&patchbay_events::Event {
+                event_type: patchbay_protocol::EVENT_ACTIVITY_CREATED.into(),
+                workspace_id: updated.workspace_id.to_string(),
+                actor_type: "agent".into(),
+                actor_id: execution.agent_id.to_string(),
+                payload: json!({
+                    "issue_id": updated.id,
+                    "entry": {
+                        "type": "activity",
+                        "id": entry.id,
+                        "actor_type": "agent",
+                        "actor_id": execution.agent_id,
+                        "action": entry.action,
+                        "details": audit_details,
+                        "created_at": crate::timefmt::rfc3339(entry.created_at),
+                    }
+                }),
+                task_id: execution.task_id.to_string(),
+                chat_session_id: String::new(),
+            });
+        }
+        Ok(None) => {}
+        Err(error) => {
+            tracing::warn!(%error, issue_id = %updated.id, "failed to write Patrick mutation audit");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to record Patrick mutation audit",
+            );
+        }
+    }
+    Json(json!({
+        "issue": issue_response_projection(&state, &updated).await,
+        "correlation_id": request.correlation_id,
+        "revision": updated.revision,
+    }))
+    .into_response()
 }
 
 async fn apply_issue_update(
@@ -5649,6 +6079,9 @@ async fn apply_issue_update(
     if let UpdateField::Value(value) = update_field::<String>(fields, "description")? {
         next.description = Some(value);
     }
+    if let UpdateField::Value(value) = update_field::<Value>(fields, "acceptance_criteria")? {
+        next.acceptance_criteria = value;
+    }
     if let UpdateField::Value(value) = update_field::<String>(fields, "status")? {
         next.status = match patchbay_service::issue_status::resolve(
             &state.pool,
@@ -5680,28 +6113,61 @@ async fn apply_issue_update(
         next.position = value;
     }
 
-    let assignee_type = update_field::<String>(fields, "assignee_type")?;
-    let assignee_id = update_field::<String>(fields, "assignee_id")?;
-    let assignee_touched = assignee_type.is_present() || assignee_id.is_present();
-    match assignee_type {
+    let owner_type = update_field::<String>(fields, "owner_type")?;
+    let owner_id = update_field::<String>(fields, "owner_id")?;
+    let owner_touched = owner_type.is_present() || owner_id.is_present();
+    match owner_type {
         UpdateField::Missing => {}
-        UpdateField::Null => next.assignee_type = None,
-        UpdateField::Value(value) => next.assignee_type = Some(value),
+        UpdateField::Null => next.owner_type = None,
+        UpdateField::Value(value) => next.owner_type = Some(value),
     }
-    match assignee_id {
+    match owner_id {
         UpdateField::Missing => {}
-        UpdateField::Null => next.assignee_id = None,
+        UpdateField::Null => next.owner_id = None,
         UpdateField::Value(value) => {
-            next.assignee_id = Some(
+            next.owner_id = Some(
                 Uuid::parse_str(&value)
-                    .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid assignee_id"))?,
+                    .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid owner_id"))?,
             )
         }
     }
-    if assignee_touched {
-        match (next.assignee_type.as_deref(), next.assignee_id) {
+    if owner_touched {
+        match (next.owner_type.as_deref(), next.owner_id) {
             (None, None) => {}
-            (Some(kind), Some(id)) => validate_assignee(
+            (Some(kind), Some(id)) => validate_owner(state, context, kind, id)
+                .await
+                .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?,
+            _ => {
+                return Err(error_response(
+                    StatusCode::BAD_REQUEST,
+                    "owner_type and owner_id must be set together",
+                ));
+            }
+        }
+    }
+
+    let executor_type = update_field::<String>(fields, "executor_type")?;
+    let executor_id = update_field::<String>(fields, "executor_id")?;
+    let executor_touched = executor_type.is_present() || executor_id.is_present();
+    match executor_type {
+        UpdateField::Missing => {}
+        UpdateField::Null => next.executor_type = None,
+        UpdateField::Value(value) => next.executor_type = Some(value),
+    }
+    match executor_id {
+        UpdateField::Missing => {}
+        UpdateField::Null => next.executor_id = None,
+        UpdateField::Value(value) => {
+            next.executor_id = Some(
+                Uuid::parse_str(&value)
+                    .map_err(|_| error_response(StatusCode::BAD_REQUEST, "invalid executor_id"))?,
+            )
+        }
+    }
+    if executor_touched {
+        match (next.executor_type.as_deref(), next.executor_id) {
+            (None, None) => {}
+            (Some(kind), Some(id)) => validate_executor(
                 state,
                 context,
                 kind,
@@ -5713,7 +6179,7 @@ async fn apply_issue_update(
             _ => {
                 return Err(error_response(
                     StatusCode::BAD_REQUEST,
-                    "assignee_type and assignee_id must be set together",
+                    "executor_type and executor_id must be set together",
                 ));
             }
         }
@@ -5740,7 +6206,7 @@ async fn apply_issue_update(
     if reviewer_in_request {
         match (next.reviewer_type.as_deref(), next.reviewer_id) {
             (None, None) => {}
-            (Some(kind), Some(id)) => validate_assignee(
+            (Some(kind), Some(id)) => validate_reviewer(
                 state,
                 context,
                 kind,
@@ -5871,10 +6337,10 @@ async fn apply_issue_update(
     let task_authorization = TaskAuthorizationContext::from_headers(headers);
     if task_authorization.is_some()
         && !suppress_run
-        && (assignee_touched || fields.contains_key("status"))
+        && (executor_touched || fields.contains_key("status"))
     {
-        if let (Some(kind), Some(id)) = (next.assignee_type.as_deref(), next.assignee_id) {
-            validate_assignee(state, context, kind, id, task_authorization)
+        if let (Some(kind), Some(id)) = (next.executor_type.as_deref(), next.executor_id) {
+            validate_executor(state, context, kind, id, task_authorization)
                 .await
                 .map_err(|message| error_response(StatusCode::FORBIDDEN, &message))?;
         }
@@ -6006,17 +6472,6 @@ async fn apply_issue_update(
             locked.revision,
         ));
     }
-    let remapped = remap_legacy_review_assignee(LegacyReviewRemap {
-        previous_category: &previous_category,
-        next_category: &next_category,
-        previous_owner: issue_owner(&locked),
-        reviewer_in_request,
-        assignee_touched,
-        next_owner_type: &mut next.assignee_type,
-        next_owner_id: &mut next.assignee_id,
-        next_reviewer_type: &mut next.reviewer_type,
-        next_reviewer_id: &mut next.reviewer_id,
-    });
     let reviewer_reassigned = changes_reviewer_while_in_review(
         &previous_category,
         &next_category,
@@ -6030,27 +6485,11 @@ async fn apply_issue_update(
             locked.revision,
         ));
     }
-    if issue_reviewer(&locked).is_some() && next.reviewer_type.is_none() {
-        return Err(reviewer_cannot_clear_response());
-    }
-    if remapped {
-        if let (Some(kind), Some(id)) = (next.reviewer_type.as_deref(), next.reviewer_id) {
-            validate_assignee(
-                state,
-                context,
-                kind,
-                id,
-                TaskAuthorizationContext::from_headers(headers),
-            )
-            .await
-            .map_err(|message| error_response(StatusCode::BAD_REQUEST, &message))?;
-        }
-    }
     if let Some(violation) = issue_workflow_violation(
         &previous_category,
         &next_category,
-        issue_owner(&locked),
-        issue_owner(&next),
+        issue_executor(&locked),
+        issue_executor(&next),
         issue_reviewer(&next),
     ) {
         return Err(issue_workflow_violation_response(violation));
@@ -6065,24 +6504,26 @@ async fn apply_issue_update(
     let mut updated = if did_change {
         let updated = sqlx::query_as::<_, Issue>(
         r#"UPDATE issue SET
-title = $3, description = $4, status = $5, priority = $6,
-assignee_type = $7, assignee_id = $8, position = $9, start_date = $10,
-due_date = $11, parent_issue_id = $12, project_id = $13, stage = $14,
-reviewer_type = $15, reviewer_id = $16,
+title = $3, description = $4, acceptance_criteria = $5, status = $6, priority = $7,
+executor_type = $8, executor_id = $9, position = $10, start_date = $11,
+due_date = $12, parent_issue_id = $13, project_id = $14, stage = $15,
+reviewer_type = $16, reviewer_id = $17,
+owner_type = $18, owner_id = $19,
 revision = revision + 1, updated_at = now(),
-last_activity_at = CASE WHEN $17 THEN GREATEST(COALESCE(last_activity_at, updated_at), now()) ELSE last_activity_at END
+last_activity_at = CASE WHEN $20 THEN GREATEST(COALESCE(last_activity_at, updated_at), now()) ELSE last_activity_at END
 WHERE id = $1 AND workspace_id = $2
-  AND ($18::bigint IS NULL OR revision = $18)
+  AND ($21::bigint IS NULL OR revision = $21)
 RETURNING *"#,
     )
         .bind(previous.id)
         .bind(previous.workspace_id)
         .bind(&next.title)
         .bind(&next.description)
+        .bind(&next.acceptance_criteria)
         .bind(&next.status)
         .bind(&next.priority)
-        .bind(&next.assignee_type)
-        .bind(next.assignee_id)
+        .bind(&next.executor_type)
+        .bind(next.executor_id)
         .bind(next.position)
         .bind(next.start_date)
         .bind(next.due_date)
@@ -6091,6 +6532,8 @@ RETURNING *"#,
         .bind(next.stage)
         .bind(&next.reviewer_type)
         .bind(next.reviewer_id)
+        .bind(&next.owner_type)
+        .bind(next.owner_id)
         .bind(did_activity)
         .bind(expected_revision)
         .fetch_optional(&mut *tx)
@@ -6198,6 +6641,17 @@ RETURNING *"#,
             )
         })?;
     }
+    let correlation_id = header_uuid(headers, "x-patchbay-correlation-id")
+        .unwrap_or_else(Uuid::now_v7);
+    crate::linear::enqueue_issue_outbox_tx(&mut *tx, &previous, &updated, correlation_id)
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, issue_id = %previous.id, "failed to enqueue Linear issue outbox");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to enqueue Linear synchronization",
+            )
+        })?;
     tx.commit().await.map_err(|error| {
         tracing::warn!(%error, issue_id = %previous.id, "failed to commit issue update");
         error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
@@ -6216,8 +6670,8 @@ RETURNING *"#,
     if attachments_changed {
         publish_issue_attachments_changed(state, &updated, &actor_type, actor_id, task_id);
     }
-    let assignee_changed = previous.assignee_type != updated.assignee_type
-        || previous.assignee_id != updated.assignee_id;
+    let executor_changed = previous.executor_type != updated.executor_type
+        || previous.executor_id != updated.executor_id;
     let status_changed = previous.status != updated.status;
     if !suppress_run && !leaving_review && !reviewer_reassigned {
         let is_self_loop = if let Some(task_id) = task_id {
@@ -6230,8 +6684,8 @@ RETURNING *"#,
             false
         };
         let suppress_active_self_assignment = if actor_type == "agent"
-            && updated.assignee_type.as_deref() == Some("agent")
-            && updated.assignee_id == Some(actor_id)
+            && updated.executor_type.as_deref() == Some("agent")
+            && updated.executor_id == Some(actor_id)
         {
             agent::has_active_task_for_issue_and_agent(&state.pool, updated.id, actor_id)
                 .await
@@ -6241,7 +6695,7 @@ RETURNING *"#,
             false
         };
         let gate_direct_member =
-            task_authorization.is_none() && (assignee_changed || status_changed);
+            task_authorization.is_none() && (executor_changed || status_changed);
         let allowed_run_agent_id = if gate_direct_member {
             allowed_member_run_agent(state, context.member.user_id, &updated).await
         } else {
@@ -6258,7 +6712,7 @@ RETURNING *"#,
                     issue: updated.clone(),
                     prev_status: previous.status.clone(),
                     is_create: false,
-                    assignee_changed,
+                    executor_changed,
                     status_changed,
                 },
                 IssueTriggerProbe {
@@ -6274,13 +6728,13 @@ RETURNING *"#,
             let actor_user_id = task_authorization
                 .and_then(|authorization| authorization.on_behalf_of_user_id)
                 .or_else(|| (actor_type == "member").then_some(actor_id));
-            let result = if trigger.assignee_type == "team" {
+            let result = if trigger.executor_type == "team" {
                 state
                     .tasks
                     .enqueue_task_for_team_leader_with_handoff(
                         &updated,
                         trigger.agent_id,
-                        updated.assignee_id.unwrap_or_default(),
+                        updated.executor_id.unwrap_or_default(),
                         &handoff_note,
                         actor_user_id,
                     )
@@ -6320,10 +6774,13 @@ fn revision_conflict(issue: &Issue, expected: i64, actual: i64) -> Response {
 fn issue_mutable_fields_differ(left: &Issue, right: &Issue) -> bool {
     left.title != right.title
         || left.description != right.description
+        || left.acceptance_criteria != right.acceptance_criteria
         || left.status != right.status
         || left.priority != right.priority
-        || left.assignee_type != right.assignee_type
-        || left.assignee_id != right.assignee_id
+        || left.owner_type != right.owner_type
+        || left.owner_id != right.owner_id
+        || left.executor_type != right.executor_type
+        || left.executor_id != right.executor_id
         || left.reviewer_type != right.reviewer_type
         || left.reviewer_id != right.reviewer_id
         || left.position != right.position
@@ -6337,10 +6794,13 @@ fn issue_mutable_fields_differ(left: &Issue, right: &Issue) -> bool {
 fn issue_activity_fields_differ(left: &Issue, right: &Issue) -> bool {
     left.title != right.title
         || left.description != right.description
+        || left.acceptance_criteria != right.acceptance_criteria
         || left.status != right.status
         || left.priority != right.priority
-        || left.assignee_type != right.assignee_type
-        || left.assignee_id != right.assignee_id
+        || left.owner_type != right.owner_type
+        || left.owner_id != right.owner_id
+        || left.executor_type != right.executor_type
+        || left.executor_id != right.executor_id
         || left.reviewer_type != right.reviewer_type
         || left.reviewer_id != right.reviewer_id
         || left.start_date != right.start_date
@@ -6361,6 +6821,9 @@ fn refresh_untouched_fields(
     if !fields.contains_key("description") {
         next.description = current.description.clone();
     }
+    if !fields.contains_key("acceptance_criteria") {
+        next.acceptance_criteria = current.acceptance_criteria.clone();
+    }
     if !fields.contains_key("status") {
         next.status = current.status.clone();
     }
@@ -6370,9 +6833,13 @@ fn refresh_untouched_fields(
     if !fields.contains_key("position") {
         next.position = current.position;
     }
-    if !fields.contains_key("assignee_type") && !fields.contains_key("assignee_id") {
-        next.assignee_type = current.assignee_type.clone();
-        next.assignee_id = current.assignee_id;
+    if !fields.contains_key("owner_type") && !fields.contains_key("owner_id") {
+        next.owner_type = current.owner_type.clone();
+        next.owner_id = current.owner_id;
+    }
+    if !fields.contains_key("executor_type") && !fields.contains_key("executor_id") {
+        next.executor_type = current.executor_type.clone();
+        next.executor_id = current.executor_id;
     }
     if !fields.contains_key("reviewer_type") && !fields.contains_key("reviewer_id") {
         next.reviewer_type = current.reviewer_type.clone();
@@ -6605,8 +7072,10 @@ pub(crate) async fn publish_issue_updated(
         &previous.status,
     )
     .await;
-    let assignee_changed =
-        previous.assignee_type != issue.assignee_type || previous.assignee_id != issue.assignee_id;
+    let executor_changed =
+        previous.executor_type != issue.executor_type || previous.executor_id != issue.executor_id;
+    let owner_changed =
+        previous.owner_type != issue.owner_type || previous.owner_id != issue.owner_id;
     let review_handoff = previous_category != patchbay_service::issue_status::IN_REVIEW
         && category == patchbay_service::issue_status::IN_REVIEW
         && issue_reviewer(issue).is_some();
@@ -6619,7 +7088,8 @@ pub(crate) async fn publish_issue_updated(
         actor_id: actor_id.to_string(),
         payload: json!({
             "issue": response,
-            "assignee_changed": assignee_changed,
+            "owner_changed": owner_changed,
+            "executor_changed": executor_changed,
             "status_changed": previous.status != issue.status,
             "review_handoff": review_handoff,
             "priority_changed": previous.priority != issue.priority,
@@ -6629,8 +7099,10 @@ pub(crate) async fn publish_issue_updated(
             "description_changed": previous.description != issue.description,
             "title_changed": previous.title != issue.title,
             "prev_title": previous.title,
-            "prev_assignee_type": previous.assignee_type,
-            "prev_assignee_id": previous.assignee_id.map(|id| id.to_string()),
+            "prev_owner_type": previous.owner_type,
+            "prev_owner_id": previous.owner_id.map(|id| id.to_string()),
+            "prev_executor_type": previous.executor_type,
+            "prev_executor_id": previous.executor_id.map(|id| id.to_string()),
             "prev_status": previous.status,
             "prev_priority": previous.priority,
             "prev_start_date": previous.start_date.map(|date| date.format("%Y-%m-%d").to_string()),
@@ -6693,7 +7165,7 @@ pub(crate) async fn advance_issue_to_done_from_pr(
 fn pr_completion_event_payload(previous: &Issue, response: IssueResponse, source: &str) -> Value {
     json!({
         "issue": response,
-        "assignee_changed": false,
+        "executor_changed": false,
         "status_changed": true,
         "priority_changed": false,
         "project_changed": false,
@@ -6770,9 +7242,7 @@ async fn notify_parent_of_child_done(state: &HandlerState, previous: &Issue, iss
         return;
     };
     let parent_category = resolver.effective(&state.pool, &parent.status).await;
-    if matches!(parent_category.as_str(), "backlog" | "done" | "cancelled")
-        || parent.assignee_type.as_deref() == Some("member")
-    {
+    if matches!(parent_category.as_str(), "backlog" | "done" | "cancelled") {
         return;
     }
     let children = match issue_q::list_child_issues(&state.pool, parent.id).await {
@@ -6803,9 +7273,9 @@ async fn notify_parent_of_child_done(state: &HandlerState, previous: &Issue, iss
     }
 
     let (mention, target_agent, team_id) =
-        match (parent.assignee_type.as_deref(), parent.assignee_id) {
+        match (parent.executor_type.as_deref(), parent.executor_id) {
             (Some("agent"), Some(agent_id)) => (
-                format!("[@assignee](mention://agent/{agent_id}) "),
+                format!("[@executor](mention://agent/{agent_id}) "),
                 Some(agent_id),
                 None,
             ),
@@ -6896,7 +7366,7 @@ async fn notify_parent_of_child_done(state: &HandlerState, previous: &Issue, iss
                 .await
         };
         if let Err(error) = result {
-            tracing::warn!(%error, parent_id = %parent.id, "failed to wake parent assignee");
+            tracing::warn!(%error, parent_id = %parent.id, "failed to wake parent executor");
         }
     }
 }
@@ -6925,11 +7395,14 @@ async fn batch_update_issues(
     let mutation_keys = [
         "title",
         "description",
+        "acceptance_criteria",
         "status",
         "priority",
         "position",
-        "assignee_type",
-        "assignee_id",
+        "owner_type",
+        "owner_id",
+        "executor_type",
+        "executor_id",
         "start_date",
         "due_date",
         "parent_issue_id",
@@ -7175,8 +7648,12 @@ struct CreateIssueRequest {
     status: String,
     #[serde(default)]
     priority: String,
-    assignee_type: Option<String>,
-    assignee_id: Option<String>,
+    owner_type: Option<String>,
+    owner_id: Option<String>,
+    executor_type: Option<String>,
+    executor_id: Option<String>,
+    reviewer_type: Option<String>,
+    reviewer_id: Option<String>,
     parent_issue_id: Option<String>,
     project_id: Option<String>,
     stage: Option<i32>,
@@ -7224,12 +7701,16 @@ async fn create_issue(
                 allowed_attachments.sort_unstable();
                 allowed_attachments.dedup();
                 let team_matches = if quick_create.team_id.is_empty() {
-                    request.assignee_type.as_deref() != Some("team")
+                    request.executor_type.as_deref() != Some("team")
                 } else {
-                    request.assignee_type.as_deref() == Some("team")
-                        && request.assignee_id.as_deref() == Some(quick_create.team_id.as_str())
+                    request.executor_type.as_deref() == Some("team")
+                        && request.executor_id.as_deref() == Some(quick_create.team_id.as_str())
                 };
                 authorization.via_agent_id == Some(task.agent_id)
+                    && request.owner_type.is_none()
+                    && request.owner_id.is_none()
+                    && request.reviewer_type.is_none()
+                    && request.reviewer_id.is_none()
                     && quick_create.workspace_id == workspace_id.to_string()
                     && authorization
                         .on_behalf_of_user_id
@@ -7301,25 +7782,66 @@ async fn create_issue(
     if request.stage.is_some_and(|stage| stage < 1) {
         return error_response(StatusCode::BAD_REQUEST, "stage must be >= 1");
     }
-    let assignee_id = match optional_uuid(request.assignee_id.as_deref(), "assignee_id") {
+    let executor_id = match optional_uuid(request.executor_id.as_deref(), "executor_id") {
         Ok(value) => value,
         Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
     };
-    if request.assignee_type.is_some() != assignee_id.is_some() {
+    if request.executor_type.is_some() != executor_id.is_some() {
         return error_response(
             StatusCode::BAD_REQUEST,
-            "assignee_type and assignee_id must be provided together",
+            "executor_type and executor_id must be provided together",
         );
     }
     if request
-        .assignee_type
+        .executor_type
         .as_deref()
-        .is_some_and(|kind| !matches!(kind, "member" | "agent" | "team"))
+        .is_some_and(|kind| !matches!(kind, "agent" | "team"))
     {
-        return error_response(StatusCode::BAD_REQUEST, "invalid assignee_type");
+        return error_response(StatusCode::BAD_REQUEST, "invalid executor_type");
     }
-    if let (Some(kind), Some(id)) = (request.assignee_type.as_deref(), assignee_id) {
-        if let Err(message) = validate_assignee(
+    if let (Some(kind), Some(id)) = (request.executor_type.as_deref(), executor_id) {
+        if let Err(message) = validate_executor(
+            &state,
+            &context,
+            kind,
+            id,
+            TaskAuthorizationContext::from_headers(&headers),
+        )
+        .await
+        {
+            return error_response(StatusCode::BAD_REQUEST, &message);
+        }
+    }
+    let owner_id = match optional_uuid(request.owner_id.as_deref(), "owner_id") {
+        Ok(value) => value,
+        Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
+    };
+    if request.owner_type.is_some() != owner_id.is_some() {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "owner_type and owner_id must be provided together",
+        );
+    }
+    if request.owner_type.as_deref().is_some_and(|kind| kind != "member") {
+        return error_response(StatusCode::BAD_REQUEST, "invalid owner_type");
+    }
+    if let (Some(kind), Some(id)) = (request.owner_type.as_deref(), owner_id) {
+        if let Err(message) = validate_owner(&state, &context, kind, id).await {
+            return error_response(StatusCode::BAD_REQUEST, &message);
+        }
+    }
+    let reviewer_id = match optional_uuid(request.reviewer_id.as_deref(), "reviewer_id") {
+        Ok(value) => value,
+        Err(message) => return error_response(StatusCode::BAD_REQUEST, &message),
+    };
+    if request.reviewer_type.is_some() != reviewer_id.is_some() {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "reviewer_type and reviewer_id must be provided together",
+        );
+    }
+    if let (Some(kind), Some(id)) = (request.reviewer_type.as_deref(), reviewer_id) {
+        if let Err(message) = validate_reviewer(
             &state,
             &context,
             kind,
@@ -7398,8 +7920,12 @@ async fn create_issue(
                 description: request.description,
                 status,
                 priority,
-                assignee_type: request.assignee_type,
-                assignee_id,
+                owner_type: request.owner_type,
+                owner_id,
+                executor_type: request.executor_type,
+                executor_id,
+                reviewer_type: request.reviewer_type,
+                reviewer_id,
                 creator_type,
                 creator_id,
                 parent_issue_id,
@@ -7471,9 +7997,13 @@ async fn create_issue(
             StatusCode::CONFLICT,
             "the target status was archived while this request was in flight; reload the status list and retry",
         ),
-        Err(IssueCreateError::ActiveAssigneeRequired) => issue_workflow_error(
-            "active_issue_requires_assignee",
-            "issues in progress, in review, or blocked must have an assignee",
+        Err(IssueCreateError::ActiveExecutorRequired) => issue_workflow_error(
+            "active_issue_requires_executor",
+            "issues in progress or in review must have an executor",
+        ),
+        Err(IssueCreateError::ReviewReviewerRequired) => issue_workflow_error(
+            "review_handoff_required",
+            "issues in review require a reviewer different from the executor",
         ),
         Err(IssueCreateError::CapabilityConsumed) => error_response(
             StatusCode::CONFLICT,
@@ -7617,7 +8147,7 @@ fn header_uuid(headers: &HeaderMap, name: &str) -> Option<Uuid> {
         .and_then(|value| Uuid::parse_str(value).ok())
 }
 
-pub(crate) async fn validate_assignee(
+pub(crate) async fn validate_executor(
     state: &HandlerState,
     context: &WorkspaceContext,
     kind: &str,
@@ -7626,23 +8156,13 @@ pub(crate) async fn validate_assignee(
 ) -> Result<(), String> {
     let workspace_id = context.member.workspace_id;
     match kind {
-        "member" => {
-            if member::get_member_by_user_and_workspace(&state.pool, id, workspace_id)
-                .await
-                .ok()
-                .flatten()
-                .is_none()
-            {
-                return Err("assignee member not found in this workspace".to_string());
-            }
-        }
         "agent" => {
             let target = agent::get_agent_in_workspace(&state.pool, id, workspace_id)
                 .await
                 .ok()
                 .flatten()
                 .filter(|agent| agent.archived_at.is_none())
-                .ok_or_else(|| "assignee agent not found in this workspace".to_string())?;
+                .ok_or_else(|| "executor agent not found in this workspace".to_string())?;
             if !can_invoke_agent(
                 state,
                 if task_authorization.is_some() {
@@ -7669,7 +8189,7 @@ pub(crate) async fn validate_assignee(
                 .ok()
                 .flatten()
                 .filter(|team| team.archived_at.is_none())
-                .ok_or_else(|| "assignee team not found in this workspace".to_string())?;
+                .ok_or_else(|| "executor team not found in this workspace".to_string())?;
             let leader = agent::get_agent_in_workspace(&state.pool, target.leader_id, workspace_id)
                 .await
                 .ok()
@@ -7696,9 +8216,47 @@ pub(crate) async fn validate_assignee(
                 return Err("you do not have permission to invoke this team".to_string());
             }
         }
-        _ => return Err("invalid assignee_type".to_string()),
+        _ => return Err("invalid executor_type".to_string()),
     }
     Ok(())
+}
+
+async fn validate_owner(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    kind: &str,
+    id: Uuid,
+) -> Result<(), String> {
+    if kind != "member" {
+        return Err("invalid owner_type".to_string());
+    }
+    if member::get_member_by_user_and_workspace(
+        &state.pool,
+        id,
+        context.member.workspace_id,
+    )
+    .await
+    .ok()
+    .flatten()
+    .is_none()
+    {
+        return Err("owner member not found in this workspace".to_string());
+    }
+    Ok(())
+}
+
+async fn validate_reviewer(
+    state: &HandlerState,
+    context: &WorkspaceContext,
+    kind: &str,
+    id: Uuid,
+    task_authorization: Option<TaskAuthorizationContext>,
+) -> Result<(), String> {
+    if kind == "member" {
+        validate_owner(state, context, kind, id).await
+    } else {
+        validate_executor(state, context, kind, id, task_authorization).await
+    }
 }
 
 pub(crate) async fn can_member_invoke_agent(
@@ -8313,8 +8871,10 @@ pub(crate) struct IssueResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     status_category: Option<String>,
     priority: String,
-    assignee_type: Option<String>,
-    assignee_id: Option<String>,
+    owner_type: Option<String>,
+    owner_id: Option<String>,
+    executor_type: Option<String>,
+    executor_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reviewer_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -8354,8 +8914,10 @@ impl IssueResponse {
             status_category: patchbay_service::issue_status::is_built_in(&issue.status)
                 .then(|| issue.status.clone()),
             priority: issue.priority.clone(),
-            assignee_type: issue.assignee_type.clone(),
-            assignee_id: issue.assignee_id.map(|id| id.to_string()),
+            owner_type: issue.owner_type.clone(),
+            owner_id: issue.owner_id.map(|id| id.to_string()),
+            executor_type: issue.executor_type.clone(),
+            executor_id: issue.executor_id.map(|id| id.to_string()),
             reviewer_type: issue.reviewer_type.clone(),
             reviewer_id: issue.reviewer_id.map(|id| id.to_string()),
             creator_type: issue.creator_type.clone(),
@@ -8564,8 +9126,10 @@ mod tests {
             .to_utc();
         Issue {
             acceptance_criteria: json!([]),
-            assignee_id: None,
-            assignee_type: None,
+            owner_id: None,
+            owner_type: None,
+            executor_id: None,
+            executor_type: None,
             context_refs: json!([]),
             created_at: timestamp,
             creator_id: Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f12").unwrap(),
@@ -8624,7 +9188,7 @@ mod tests {
         assert_eq!(value["created_at"], "2026-08-23T03:30:00Z");
         assert_eq!(value["last_activity_at"], "2026-08-23T03:30:00.1234Z");
         assert!(value.get("description").is_some_and(Value::is_null));
-        assert!(value.get("assignee_id").is_some_and(Value::is_null));
+        assert!(value.get("executor_id").is_some_and(Value::is_null));
         assert!(value.get("parent_issue_id").is_some_and(Value::is_null));
         assert!(value.get("project_id").is_some_and(Value::is_null));
         assert!(value.get("start_date").is_some_and(Value::is_null));
@@ -8650,7 +9214,7 @@ mod tests {
             pr_completion_event_payload(&previous, response, "github_pr_merged"),
             json!({
                 "issue": issue,
-                "assignee_changed": false,
+                "executor_changed": false,
                 "status_changed": true,
                 "priority_changed": false,
                 "project_changed": false,
@@ -8664,7 +9228,7 @@ mod tests {
 
     #[test]
     fn list_parameter_validation_rejects_malformed_ids() {
-        assert!(optional_uuid(Some("not-a-uuid"), "assignee_id").is_err());
+        assert!(optional_uuid(Some("not-a-uuid"), "executor_id").is_err());
         assert!(uuid_list(Some("not-a-uuid"), "ids").is_err());
         assert!(uuid_list(Some(""), "ids").unwrap().is_empty());
     }
@@ -8710,10 +9274,10 @@ mod tests {
     #[test]
     fn actor_and_property_filters_preserve_table_facet_semantics() {
         let id = "018f03a0-c4d2-7a37-ae4d-5aa45de12f11";
-        let actors = actor_filters(Some(&format!("member:{id}")), "assignee_filters").unwrap();
+        let actors = actor_filters(Some(&format!("member:{id}")), "executor_filters").unwrap();
         assert_eq!(actors.len(), 1);
         assert_eq!(actors[0].actor_type, "member");
-        assert!(actor_filters(Some("unknown:value"), "assignee_filters").is_err());
+        assert!(actor_filters(Some("unknown:value"), "executor_filters").is_err());
 
         let groups =
             properties_filter(Some(&format!(r#"{{"{id}":["choice","__none__"]}}"#))).unwrap();
@@ -8739,9 +9303,9 @@ mod tests {
 
     #[test]
     fn update_parser_distinguishes_missing_null_and_value() {
-        let fields = update_object(br#"{"assignee_id":null,"stage":4}"#).unwrap();
+        let fields = update_object(br#"{"executor_id":null,"stage":4}"#).unwrap();
         assert!(matches!(
-            update_field::<String>(&fields, "assignee_id").unwrap(),
+            update_field::<String>(&fields, "executor_id").unwrap(),
             UpdateField::Null
         ));
         assert!(matches!(
@@ -8792,7 +9356,7 @@ mod tests {
 
         assert_eq!(
             issue_workflow_violation("todo", "in_progress", None, None, None),
-            Some(IssueWorkflowViolation::ActiveAssigneeRequired)
+            Some(IssueWorkflowViolation::ActiveExecutorRequired)
         );
         assert_eq!(
             issue_workflow_violation(
@@ -8845,28 +9409,18 @@ mod tests {
     }
 
     #[test]
-    fn legacy_in_review_assignee_swap_becomes_the_reviewer() {
-        let owner_a = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f21").unwrap();
-        let owner_b = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f22").unwrap();
-        let mut next_type = Some("agent".to_string());
-        let mut next_id = Some(owner_b);
-        let mut reviewer_type = None;
-        let mut reviewer_id = None;
-        assert!(remap_legacy_review_assignee(LegacyReviewRemap {
-            previous_category: "in_progress",
-            next_category: "in_review",
-            previous_owner: Some(("agent", owner_a)),
-            reviewer_in_request: false,
-            assignee_touched: true,
-            next_owner_type: &mut next_type,
-            next_owner_id: &mut next_id,
-            next_reviewer_type: &mut reviewer_type,
-            next_reviewer_id: &mut reviewer_id,
-        }));
-        assert_eq!(next_type.as_deref(), Some("agent"));
-        assert_eq!(next_id, Some(owner_a));
-        assert_eq!(reviewer_type.as_deref(), Some("agent"));
-        assert_eq!(reviewer_id, Some(owner_b));
+    fn entering_review_without_explicit_reviewer_is_rejected() {
+        let executor = Uuid::parse_str("018f03a0-c4d2-7a37-ae4d-5aa45de12f21").unwrap();
+        assert_eq!(
+            issue_workflow_violation(
+                "in_progress",
+                "in_review",
+                Some(("agent", executor)),
+                Some(("agent", executor)),
+                None,
+            ),
+            Some(IssueWorkflowViolation::ReviewHandoffRequired)
+        );
     }
 
     #[test]
@@ -9366,7 +9920,7 @@ mod tests {
         assert!(!can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
         let issue_id = Uuid::now_v7();
         sqlx::query(
-            "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number, position) \
+            "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, executor_type, executor_id, number, position) \
              VALUES ($1, $2, 'provider status gate', 'backlog', 'medium', 'member', $3, 'agent', $4, 1, 0)",
         )
         .bind(issue_id)
@@ -9550,7 +10104,7 @@ mod tests {
             .expect("create team grant");
         assert!(can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
         sqlx::query(
-            "UPDATE issue SET status = 'backlog', assignee_type = 'team', assignee_id = $1 WHERE id = $2",
+            "UPDATE issue SET status = 'backlog', executor_type = 'team', executor_id = $1 WHERE id = $2",
         )
         .bind(team.id)
         .bind(issue_id)
@@ -9602,7 +10156,7 @@ mod tests {
         .expect("make runtime public cloud");
         assert!(!can_member_invoke_agent(&state, colleague_id, workspace_id, &target).await);
         sqlx::query(
-            "UPDATE issue SET status = 'backlog', assignee_type = 'agent', assignee_id = $1 WHERE id = $2",
+            "UPDATE issue SET status = 'backlog', executor_type = 'agent', executor_id = $1 WHERE id = $2",
         )
         .bind(agent_id)
         .bind(issue_id)
@@ -9747,7 +10301,7 @@ mod tests {
             (denied_issue_id, 2, "denied issue"),
         ] {
             sqlx::query(
-                "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number, position) \
+                "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, executor_type, executor_id, number, position) \
                  VALUES ($1, $2, $3, 'in_progress', 'medium', 'member', $4, 'agent', $5, $6, 0)",
             )
             .bind(issue_id)
@@ -10221,20 +10775,20 @@ mod tests {
 
     #[test]
     fn group_descriptors_include_required_discriminator_fields() {
-        let assignee = table_group_descriptor(
-            "assignee",
+        let executor = table_group_descriptor(
+            "executor",
             "member:018f03a0-c4d2-7a37-ae4d-5aa45de12f12",
             3,
             None,
         );
-        assert_eq!(assignee["value"]["kind"], "assignee");
-        assert_eq!(assignee["value"]["actor"]["type"], "member");
+        assert_eq!(executor["value"]["kind"], "executor");
+        assert_eq!(executor["value"]["actor"]["type"], "member");
         assert_eq!(
-            assignee["value"]["actor"]["id"],
+            executor["value"]["actor"]["id"],
             "018f03a0-c4d2-7a37-ae4d-5aa45de12f12"
         );
 
-        let unassigned = table_group_descriptor("assignee", "unassigned", 1, None);
+        let unassigned = table_group_descriptor("executor", "unassigned", 1, None);
         assert_eq!(unassigned["value"]["actor"], Value::Null);
 
         let project =
@@ -10267,7 +10821,7 @@ mod tests {
 
     #[test]
     fn compound_group_keys_round_trip_primary_and_status() {
-        let key = compound_cell_group_key("assignee:member:abc", "todo", false);
+        let key = compound_cell_group_key("executor:member:abc", "todo", false);
         assert!(key.starts_with("compound:"));
         assert!(key.contains(":status:todo"));
         let category = compound_cell_group_key("project:none", "in_progress", true);

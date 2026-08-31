@@ -231,6 +231,9 @@ pub(super) async fn run_with_input<R: Read>(
             command: IssueCommand::Update(args),
         }) => run_issue_update(cli, environment, args, input).await,
         Command::Issue(IssueArgs {
+            command: IssueCommand::PatrickMutate(args),
+        }) => run_issue_patrick_mutation(cli, environment, args, input).await,
+        Command::Issue(IssueArgs {
             command: IssueCommand::Assign(args),
         }) => run_issue_assign(cli, environment, args).await,
         Command::Issue(IssueArgs {
@@ -632,6 +635,19 @@ pub(super) async fn run_with_input<R: Read>(
         Command::Repo(RepoArgs {
             command: RepoCommand::Checkout { url, checkout_ref },
         }) => run_repo_checkout(environment, url, checkout_ref.as_deref()).await,
+        Command::Github(GithubArgs {
+            command: GithubCommand::Status { output },
+        }) => run_github_status(cli, environment, *output).await,
+        Command::Github(GithubArgs {
+            command: GithubCommand::Pr(GithubPrArgs {
+                command: GithubPrCommand::Create(args),
+            }),
+        }) => run_github_pr_create(cli, environment, args).await,
+        Command::Github(GithubArgs {
+            command: GithubCommand::Pr(GithubPrArgs {
+                command: GithubPrCommand::View(args),
+            }),
+        }) => run_github_pr_view(cli, environment, args).await,
         Command::Runtime(RuntimeArgs {
             command: RuntimeCommand::List { output },
         }) => run_runtime_list(cli, environment, *output).await,

@@ -68,7 +68,7 @@ describe("IssueTab", () => {
     expect(useIssueCreateSettingsStore.getState().manualCreateFields).toEqual([
       "status",
       "priority",
-      "assignee",
+      "executor",
       "project",
     ]);
     expect(useIssueCreateSettingsStore.getState().quickCreateFields).toEqual(["project"]);

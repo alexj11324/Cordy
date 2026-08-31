@@ -1,6 +1,6 @@
 ---
 title: Issues
-description: An issue holds one piece of work's context, assignee, status, and execution history.
+description: An issue holds one piece of work's context, executor, status, and execution history.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
@@ -13,7 +13,7 @@ An issue is Patchbay's basic unit for organizing work: a feature, a bug, an inve
 |---|---|
 | **Title and description** | Goal, background, requirements, and acceptance criteria. |
 | **Status and priority** | Where the work stands and what to handle first. |
-| **Assignee** | A workspace member, an agent, or a team. |
+| **Executor** | A workspace member, an agent, or a team. |
 | **Dates, labels, and custom properties** | Planning, categorization, and your team's own fields. |
 | **Project and parent-child relationships** | Fits into a larger body of work, or splits into sub-issues. |
 | **Activity and Agent thread** | Comments, status changes, tasks, and results returned by agents. |
@@ -26,9 +26,9 @@ Create one from the **Issues** page or inside a project — a title is enough, a
 
 Each issue has a number, such as `PB-123`. The digits increment within the workspace; after an admin changes the workspace's issue prefix, numbers display with the new prefix. See [Workspaces](/workspaces#create-a-workspace).
 
-## Choose an assignee
+## Choose an executor
 
-| Assignee | Effect |
+| Executor | Effect |
 |---|---|
 | **Member** | That member owns the follow-up; no task is created. |
 | **Agent** | A task is created for that agent. |
@@ -100,11 +100,11 @@ An issue belongs to at most one [project](/projects); the project provides share
 
 Larger work can be split into sub-issues: the parent issue keeps the overall goal while sub-issues progress independently. Parent and child statuses do not affect each other.
 
-Sub-issues can be given a **stage** to advance in batches — 1, 2, 3. When every sub-issue in the earliest unfinished stage reaches `done` or `cancelled`, the parent issue receives a "sub-issues completed" notification; when the parent's assignee is an agent, it wakes up and decides whether to start the next stage. Sub-issues without a stage count as one batch and notify once when they all finish.
+Sub-issues can be given a **stage** to advance in batches — 1, 2, 3. When every sub-issue in the earliest unfinished stage reaches `done` or `cancelled`, the parent issue receives a "sub-issues completed" notification; when the parent's executor is an agent, it wakes up and decides whether to start the next stage. Sub-issues without a stage count as one batch and notify once when they all finish.
 
 ## Switch views
 
-The Issues page offers five views — list, board, table, Gantt, and swimlane — filterable and sortable by status, assignee, project, and other properties. They all show the same issues.
+The Issues page offers five views — list, board, table, Gantt, and swimlane — filterable and sortable by status, executor, project, and other properties. They all show the same issues.
 
 ## Delete an issue
 

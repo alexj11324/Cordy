@@ -41,7 +41,7 @@
     },
     "categories": {
       "backlog": "보류. 여기로 옮겨도 에이전트가 시작되지 않습니다.",
-      "todo": "대기 중. 여기로 옮기면 담당 에이전트가 시작됩니다.",
+      "todo": "대기 중. 의존성과 용량이 충족되면 코디네이터가 작업을 허용하며, 여기로 옮긴 것만으로 실행하지 않습니다.",
       "in_progress": "진행 중.",
       "in_review": "전달 완료, 리뷰 대기. 자동화 실행을 마무리합니다.",
       "done": "완료.",
@@ -273,7 +273,9 @@
     "fields": {
       "status": "상태",
       "priority": "우선순위",
-      "assignee": "담당자",
+      "owner": "책임자",
+      "executor": "실행자",
+      "reviewer": "검토자",
       "labels": "레이블",
       "project": "프로젝트",
       "due_date": "마감일",
@@ -339,6 +341,19 @@
     "integrations_reconnect_ready": "연결을 제거했습니다. 다시 연결해 완료하세요.",
     "integrations_disconnected_toast": "플랫폼 연결을 해제했습니다",
     "integrations_action_failed": "플랫폼 연결을 업데이트하지 못했습니다",
+    "linear": {
+      "section_title": "Linear",
+      "description": "명시적으로 연결한 Linear 프로젝트를 Patchbay 작업과 동기화합니다. 사람 담당자는 고유한 활성 이메일로 매칭하며 Patchbay 역할은 별도로 유지합니다.",
+      "not_connected": "연결 안 됨",
+      "connected": "{{organization}}에 연결됨",
+      "loading": "Linear 연결 확인 중…",
+      "project_bindings": "프로젝트 연결 {{count}}개",
+      "connect": "Linear 연결",
+      "connecting": "Linear 여는 중…",
+      "admin_only": "워크스페이스 관리자만 가능",
+      "login_required": "로그인 후 연결",
+      "connect_failed": "Linear 연결을 시작하지 못했습니다"
+    },
     "tabs": {
       "profile": "프로필",
       "preferences": "환경설정",

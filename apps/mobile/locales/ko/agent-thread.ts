@@ -49,6 +49,7 @@ const agentThread = {
     deferred: "재시도 중",
     dispatched: "시작 중",
     waiting_local_directory: "디렉터리 대기 중",
+    waiting_capacity: "모델 용량 대기 중",
     running: "실행 중",
     completed: "완료",
     failed: "실패",

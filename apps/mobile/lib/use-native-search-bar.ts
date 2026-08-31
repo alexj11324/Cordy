@@ -35,7 +35,7 @@ export function useNativeSearchBar(
         placeholder,
         autoCapitalize: "none",
         hideWhenScrolling: false,
-        // Opt-in: pickers whose primary action is typing (assignee, label,
+        // Opt-in: pickers whose primary action is typing (executor, label,
         // project, lead) set this so the keyboard appears on mount. Apple
         // HIG cautions against auto-keyboard for browse-first lists; pass
         // `autoFocus: true` only when the picker is search-first.

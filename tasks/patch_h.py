@@ -27,12 +27,12 @@ NEW = '''    /// Attribution/guard/metadata phase shared by every issue-task enq
         actor_user_id: Option<Uuid>,
         build_overlay: bool,
     ) -> Result<PreparedIssueEnqueue, TaskServiceError> {
-        let Some(assignee_id) = issue.assignee_id else {
-            tracing::error!(issue_id = %issue.id, "task enqueue failed: issue has no assignee");
-            return Err(TaskServiceError::NoAssignee);
+        let Some(executor_id) = issue.executor_id else {
+            tracing::error!(issue_id = %issue.id, "task enqueue failed: issue has no executor");
+            return Err(TaskServiceError::NoExecutor);
         };
 
-        let agent = get_agent(&self.pool, assignee_id)
+        let agent = get_agent(&self.pool, executor_id)
             .await
             .map_err(|e| TaskServiceError::LoadAgent(downcast_sqlx(e)))?
             .ok_or(TaskServiceError::LoadAgent(sqlx::Error::RowNotFound))?;
@@ -45,7 +45,7 @@ NEW = '''    /// Attribution/guard/metadata phase shared by every issue-task enq
             return Err(TaskServiceError::AgentNoRuntime);
         };
 
-        // Issue assignee reacting to an agent-authored comment is
+        // Issue executor reacting to an agent-authored comment is
         // comment_source (a delegation special case); member comment or direct
         // assignment is direct_human.
         let attr = self
@@ -57,7 +57,7 @@ NEW = '''    /// Attribution/guard/metadata phase shared by every issue-task enq
             )
             .await;
         let attr = self.apply_attribution_fallback(attr, &agent).await.inspect_err(|_e| {
-            tracing::warn!(issue_id = %issue.id, agent_id = %assignee_id, "task enqueue refused: attribution fail-closed");
+            tracing::warn!(issue_id = %issue.id, agent_id = %executor_id, "task enqueue refused: attribution fail-closed");
         })?;
         let originator_user_id = attr.user_id;
         let runtime_mcp_overlay = match originator_user_id {
@@ -75,7 +75,7 @@ NEW = '''    /// Attribution/guard/metadata phase shared by every issue-task enq
         let head_sha = self.resolve_issue_review_sha(issue.id).await;
 
         Ok(PreparedIssueEnqueue {
-            assignee_id,
+            executor_id,
             runtime_id,
             originator_user_id,
             accountable_user_id: attr.accountable_user_id,
@@ -109,7 +109,7 @@ NEW = '''    /// Attribution/guard/metadata phase shared by every issue-task enq
         let created = if fire_at.is_some() {
             create_deferred_channel_issue_task(
                 &self.pool,
-                prep.assignee_id,
+                prep.executor_id,
                 prep.runtime_id,
                 issue.id,
                 priority_to_int(&issue.priority),
@@ -138,7 +138,7 @@ NEW = '''    /// Attribution/guard/metadata phase shared by every issue-task enq
         } else {
             create_agent_task(
                 &self.pool,
-                prep.assignee_id,
+                prep.executor_id,
                 prep.runtime_id,
                 issue.id,
                 priority_to_int(&issue.priority),
@@ -176,7 +176,7 @@ NEW = '''    /// Attribution/guard/metadata phase shared by every issue-task enq
         tracing::info!(
             task_id = %task.id,
             issue_id = %issue.id,
-            agent_id = %prep.assignee_id,
+            agent_id = %prep.executor_id,
             force_fresh_session,
             "task enqueued"
         );
@@ -208,7 +208,7 @@ NEW = '''    /// Attribution/guard/metadata phase shared by every issue-task enq
 
         let task = create_deferred_channel_issue_task(
             tx,
-            prep.assignee_id,
+            prep.executor_id,
             prep.runtime_id,
             issue.id,
             priority_to_int(&issue.priority),
@@ -249,7 +249,7 @@ s = s.replace(
     """/// Everything the two issue-task INSERT shapes need, resolved by
 /// prepare_issue_enqueue.
 struct PreparedIssueEnqueue {
-    assignee_id: Uuid,
+    executor_id: Uuid,
     runtime_id: Uuid,
     originator_user_id: Option<Uuid>,
     accountable_user_id: Option<Uuid>,

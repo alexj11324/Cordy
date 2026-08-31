@@ -20,7 +20,7 @@ import { useActorName } from "@patchbay/core/workspace/hooks";
 import { useTimeAgo } from "../../i18n";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { PriorityIcon } from "./priority-icon";
-import { PriorityPicker, AssigneePicker, StartDatePicker, DueDatePicker } from "./pickers";
+import { PriorityPicker, ExecutorPicker, StartDatePicker, DueDatePicker } from "./pickers";
 import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
 import { ProgressRing } from "./progress-ring";
 import type { ChildProgress } from "./list-row";
@@ -86,8 +86,8 @@ export const BoardCardContent = memo(function BoardCardContent({
 
   const showPriority = storeProperties.priority;
   const showDescription = storeProperties.description && issue.description;
-  const showAssigneeSection = storeProperties.assignee;
-  const hasAssignee = !!issue.assignee_type && !!issue.assignee_id;
+  const showExecutorSection = storeProperties.executor;
+  const hasExecutor = !!issue.executor_type && !!issue.executor_id;
   const showStartDate = storeProperties.startDate && issue.start_date;
   const showDueDate = storeProperties.dueDate && issue.due_date;
   const showProject = storeProperties.project && project;
@@ -97,12 +97,12 @@ export const BoardCardContent = memo(function BoardCardContent({
   // chip is the only thing in it and it decides to render nothing.
   const showCustomStatus = useIsCustomStatus(issue.status);
 
-  const showAssigneeName = showAssigneeSection && hasAssignee && !showStartDate && !showDueDate;
-  const showUpdatedHint = showAssigneeName && !showChildProgress;
+  const showExecutorName = showExecutorSection && hasExecutor && !showStartDate && !showDueDate;
+  const showUpdatedHint = showExecutorName && !showChildProgress;
   const { getActorName } = useActorName();
-  const assigneeName =
-    showAssigneeName && issue.assignee_type && issue.assignee_id
-      ? getActorName(issue.assignee_type, issue.assignee_id)
+  const executorName =
+    showExecutorName && issue.executor_type && issue.executor_id
+      ? getActorName(issue.executor_type, issue.executor_id)
       : null;
 
   const priorityLabel = t(($) => $.priority[issue.priority]);
@@ -135,49 +135,49 @@ export const BoardCardContent = memo(function BoardCardContent({
 
   // The parent row gives this container the leftover space; min-w-0 and
   // max-w-full make the nested picker trigger respect that limit.
-  const assigneeContainerClass = assigneeName
+  const executorContainerClass = executorName
     ? "flex min-w-0 max-w-full items-center"
     : "inline-flex items-center";
 
-  const assigneeInner = hasAssignee ? (
+  const executorInner = hasExecutor ? (
     <span className="flex min-w-0 max-w-full items-center gap-1.5">
       <ActorAvatar
-        actorType={issue.assignee_type!}
-        actorId={issue.assignee_id!}
+        actorType={issue.executor_type!}
+        actorId={issue.executor_id!}
         size="sm"
         enableHoverCard
         profileLink={false}
         className="shrink-0"
       />
-      {assigneeName && (
-        <span className="min-w-0 truncate text-caption text-foreground">{assigneeName}</span>
+      {executorName && (
+        <span className="min-w-0 truncate text-caption text-foreground">{executorName}</span>
       )}
     </span>
   ) : (
-    <span className="text-caption text-muted-foreground">{t(($) => $.pickers.assignee.trigger_unassigned)}</span>
+    <span className="text-caption text-muted-foreground">{t(($) => $.pickers.executor.trigger_unassigned)}</span>
   );
 
-  const assigneeNode = showAssigneeSection ? (
+  const executorNode = showExecutorSection ? (
     canEdit ? (
-      <PickerWrapper className={assigneeContainerClass}>
-        <AssigneePicker
-          assigneeType={issue.assignee_type}
-          assigneeId={issue.assignee_id}
+      <PickerWrapper className={executorContainerClass}>
+        <ExecutorPicker
+          executorType={issue.executor_type}
+          executorId={issue.executor_id}
           onUpdate={handleUpdate}
-          trigger={assigneeInner}
+          trigger={executorInner}
         />
       </PickerWrapper>
     ) : (
-      <span className={assigneeContainerClass}>{assigneeInner}</span>
+      <span className={executorContainerClass}>{executorInner}</span>
     )
   ) : null;
 
-  const showMetaRow = showAssigneeSection || showStartDate || showDueDate || showChildProgress;
+  const showMetaRow = showExecutorSection || showStartDate || showDueDate || showChildProgress;
   const showRightMeta = !!showStartDate || !!showDueDate || !!showChildProgress || showUpdatedHint;
 
   return (
     <div className="running-task-card border-beam rounded-lg border-[0.5px] border-surface-border bg-surface py-3 px-2.5 shadow-[var(--surface-shadow)] transition-colors group-hover/card:border-foreground/15 group-hover/card:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
-      {/* Row 1: priority + identifier (left), agent activity + assignee (right) */}
+      {/* Row 1: priority + identifier (left), agent activity + executor (right) */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
           {priorityIconNode}
@@ -230,12 +230,12 @@ export const BoardCardContent = memo(function BoardCardContent({
 
       <DependencyBlockerBadge issueId={issue.id} className="mt-1.5" />
 
-      {/* Meta row: assignee (left), start date, due date, child progress (right) */}
+      {/* Meta row: executor (left), start date, due date, child progress (right) */}
       {showMetaRow && (
         <div className="mt-2 flex items-center justify-between gap-2">
-          {showAssigneeSection && (
+          {showExecutorSection && (
             <div className="min-w-0 flex-1">
-              {assigneeNode}
+              {executorNode}
             </div>
           )}
           {showRightMeta && (

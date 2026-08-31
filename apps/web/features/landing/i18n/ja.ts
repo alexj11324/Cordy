@@ -2250,7 +2250,7 @@ export function createJaDict(allowSignup: boolean): LandingDict {
             "デーモンの cancelled 状態の報告と agent status の reconciliation、server heartbeat の分離と slow-log が改善されました。",
           ],
           fixes: [
-            "タスクの create/update における assignee_id の検証、DeleteIssue の ID 解決、Pi skills のパス、Windows console popup を修正しました。",
+            "タスクの create/update における executor_id の検証、DeleteIssue の ID 解決、Pi skills のパス、Windows console popup を修正しました。",
           ],
         },
         {

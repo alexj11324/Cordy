@@ -33,6 +33,7 @@ use crate::config::Config;
 use crate::control_lifecycle::{run_daemon_control, ControlEventConsumer, DaemonControlLifecycle};
 use crate::daemon_core::{DaemonCoreDependencies, DaemonCoreHost, DaemonCoreServices};
 use crate::gc::gc_loop;
+use crate::github_cli;
 use crate::health::{
     authorize_repo_checkout_workdir, ActiveRepoCheckoutTask, HealthResponse, RepoCheckoutRegistry,
     RepoCheckoutRequest,
@@ -623,6 +624,9 @@ fn spawn_health_server<S: ProductionRuntimeServices>(
                 .route("/health", get(health_handler::<S>))
                 .route("/shutdown", post(shutdown_handler::<S>))
                 .route("/repo/checkout", post(repo_checkout_handler::<S>))
+                .route("/github/status", post(github_status_handler::<S>))
+                .route("/github/pr/create", post(github_pr_create_handler::<S>))
+                .route("/github/pr/view", post(github_pr_view_handler::<S>))
                 .with_state(state);
             axum::serve(listener, app)
                 .with_graceful_shutdown(async move { ctx.cancelled().await })
@@ -782,6 +786,95 @@ async fn repo_checkout_handler<S: ProductionRuntimeServices>(
             RepoCheckoutHttpError::new(status, headers, format!("{}\n", failure.message))
         })?;
     Ok(Json(result))
+}
+
+fn github_active_task<S: ProductionRuntimeServices>(
+    state: &HealthState<S>,
+    headers: &HeaderMap,
+) -> Result<ActiveRepoCheckoutTask, RepoCheckoutHttpError> {
+    let authorization = headers
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(|| response_error(StatusCode::UNAUTHORIZED, "GitHub CLI requires an active task credential"))?;
+    state
+        .checkout_registry
+        .resolve(authorization)
+        .ok_or_else(|| response_error(StatusCode::UNAUTHORIZED, "GitHub CLI requires an active task credential"))
+}
+
+fn github_error(error: github_cli::GhError) -> RepoCheckoutHttpError {
+    let status = match &error {
+        github_cli::GhError::NotFound => StatusCode::SERVICE_UNAVAILABLE,
+        github_cli::GhError::CommandFailed { .. } => StatusCode::BAD_GATEWAY,
+        github_cli::GhError::InvalidOutput(_) => StatusCode::BAD_GATEWAY,
+        github_cli::GhError::Io(_) => StatusCode::BAD_GATEWAY,
+    };
+    response_owned_error(status, error.to_string())
+}
+
+async fn github_status_handler<S: ProductionRuntimeServices>(
+    State(state): State<Arc<HealthState<S>>>,
+    headers: HeaderMap,
+) -> Result<Json<Value>, RepoCheckoutHttpError> {
+    let active = github_active_task(&state, &headers)?;
+    let workdir = PathBuf::from(&active.work_dir);
+    let capability = github_cli::status(None, &workdir, &active.task_id)
+        .await
+        .map_err(github_error)?;
+    Ok(Json(json!({
+        "capability": capability,
+        "workspace_id": active.workspace_id,
+        "agent_id": active.agent_id,
+        "task_id": active.task_id,
+    })))
+}
+
+async fn github_pr_create_handler<S: ProductionRuntimeServices>(
+    State(state): State<Arc<HealthState<S>>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<Value>, RepoCheckoutHttpError> {
+    let active = github_active_task(&state, &headers)?;
+    let request: github_cli::GhPrCreateRequest = serde_json::from_slice(&body)
+        .map_err(|error| response_owned_error(StatusCode::BAD_REQUEST, format!("invalid request body: {error}")))?;
+    let workdir = PathBuf::from(&active.work_dir);
+    let pull_request = github_cli::pr_create(None, &workdir, &active.task_id, &request)
+        .await
+        .map_err(github_error)?;
+    Ok(Json(json!({
+        "pull_request": pull_request,
+        "workspace_id": active.workspace_id,
+        "agent_id": active.agent_id,
+        "task_id": active.task_id,
+        "issue_id": if active.issue_id.trim().is_empty() {
+            Value::Null
+        } else {
+            Value::String(active.issue_id.clone())
+        },
+        "provenance": {
+            "runtime": state.config.daemon_id.clone(),
+            "workdir": active.work_dir,
+        },
+    })))
+}
+
+async fn github_pr_view_handler<S: ProductionRuntimeServices>(
+    State(state): State<Arc<HealthState<S>>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<Value>, RepoCheckoutHttpError> {
+    let active = github_active_task(&state, &headers)?;
+    let request: github_cli::GhPrViewRequest = serde_json::from_slice(&body)
+        .map_err(|error| response_owned_error(StatusCode::BAD_REQUEST, format!("invalid request body: {error}")))?;
+    let view = github_cli::pr_view(None, &PathBuf::from(&active.work_dir), &request)
+        .await
+        .map_err(github_error)?;
+    Ok(Json(json!({
+        "pull_request": view,
+        "workspace_id": active.workspace_id,
+        "agent_id": active.agent_id,
+        "task_id": active.task_id,
+    })))
 }
 
 struct RequestLifetime(Ctx);

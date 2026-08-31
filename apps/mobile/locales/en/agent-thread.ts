@@ -51,6 +51,7 @@ const agentThread = {
     deferred: "Retrying",
     dispatched: "Starting",
     waiting_local_directory: "Waiting for directory",
+    waiting_capacity: "Waiting for model capacity",
     running: "Running",
     completed: "Done",
     failed: "Failed",

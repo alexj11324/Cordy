@@ -121,7 +121,7 @@ The provider adapter layer normalizes startup, streaming events, cancellation, a
 
 Business queries must be scoped by `workspace_id`, and membership is checked before a request enters a workspace route. `X-Workspace-ID` selects the current workspace but does not replace authorization checks.
 
-An issue's assignee is polymorphic and may point to a member, agent, or team. New queries, cache keys, and realtime events must preserve both the workspace and assignee type instead of assuming that a resource ID is globally unique context.
+An issue's executor is polymorphic and may point to a member, agent, or team. New queries, cache keys, and realtime events must preserve both the workspace and executor type instead of assuming that a resource ID is globally unique context.
 
 ## Next steps
 

@@ -44,6 +44,7 @@ const agentThread = {
     deferred: "重试中",
     dispatched: "启动中",
     waiting_local_directory: "等待目录",
+    waiting_capacity: "等待模型额度",
     running: "运行中",
     completed: "已完成",
     failed: "失败",

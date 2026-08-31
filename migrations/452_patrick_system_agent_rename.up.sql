@@ -2,6 +2,16 @@ DO $$
 BEGIN
     IF EXISTS (
         SELECT 1
+        FROM agent
+        WHERE system_key IN ('mika', 'patrick')
+        GROUP BY workspace_id
+        HAVING COUNT(*) > 1
+    ) THEN
+        RAISE EXCEPTION
+            'cannot rename the built-in agent to patrick: a workspace contains multiple orchestrator identities';
+    END IF;
+    IF EXISTS (
+        SELECT 1
         FROM agent legacy
         JOIN agent canonical
           ON canonical.workspace_id = legacy.workspace_id

@@ -7,7 +7,7 @@ import { cn } from "@patchbay/ui/lib/utils";
 // variant puts it on the shell that holds the trigger and the clear button, so
 // both read as the same object.
 //
-// Hard width cap: pills carry user-generated text (project title, assignee
+// Hard width cap: pills carry user-generated text (project title, executor
 // name, label names), and the create toolbars are flex-wrap rows — an uncapped
 // pill stretches until it owns the whole line and pushes every sibling to the
 // next one. 14rem matches the chat composer's project pill. `min-w-0` +
