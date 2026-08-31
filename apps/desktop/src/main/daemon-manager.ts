@@ -27,6 +27,8 @@ import {
   runDesktopProfileHelper,
   type DesktopProfileRequest,
 } from "./desktop-profile-helper";
+import { commitDesktopCredentials } from "./desktop-credential-flow";
+import type { DesktopCredentialFlowResult } from "./desktop-credential-flow";
 import {
   daemonLifecycleUnreachable,
   isDaemonExternallyManaged,
@@ -47,6 +49,7 @@ const LOG_TAIL_MAX_RETRIES = 5;
 // take a while (it renews the PAT and lists workspaces before serving /health), so we
 // wait past the common case to avoid probing healthy-but-slow starts.
 const AUTH_PROBE_GRACE_MS = 10_000;
+const AUTH_MINT_TIMEOUT_MS = 10_000;
 // `patchbay daemon start` blocks until the daemon reports ready, polling /health
 // for up to its own startup timeout (45s in patchbay-daemon's lifecycle) to
 // cover cold-start agent-version detection. This execFile timeout MUST stay
@@ -637,30 +640,37 @@ async function ensureRunningDaemonVersionMatches(): Promise<
  */
 async function mintPat(jwt: string, serverUrl: string): Promise<string> {
   const url = `${serverUrl.replace(/\/+$/, "")}/api/tokens`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${jwt}`,
-    },
-    // Omit expires_in_days → server treats as null → non-expiring PAT.
-    body: JSON.stringify({ name: "Patchbay Desktop" }),
-  });
-  if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    // Attach the status so callers can tell a genuine auth rejection (401 — the
-    // session token is dead) apart from a transient failure (5xx, etc.) without
-    // string-matching the message.
-    throw Object.assign(
-      new Error(`mint PAT failed: ${res.status} ${res.statusText} ${body}`),
-      { status: res.status },
-    );
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), AUTH_MINT_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${jwt}`,
+      },
+      signal: controller.signal,
+      // Omit expires_in_days → server treats as null → non-expiring PAT.
+      body: JSON.stringify({ name: "Patchbay Desktop" }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      // Attach the status so callers can tell a genuine auth rejection (401 —
+      // the session token is dead) apart from a transient failure (5xx, etc.)
+      // without string-matching the message.
+      throw Object.assign(
+        new Error(`mint PAT failed: ${res.status} ${res.statusText} ${body}`),
+        { status: res.status },
+      );
+    }
+    const data = (await res.json()) as { token?: unknown };
+    if (typeof data.token !== "string" || !data.token.startsWith("pby_")) {
+      throw new Error("mint PAT: response missing token");
+    }
+    return data.token;
+  } finally {
+    clearTimeout(timeout);
   }
-  const data = (await res.json()) as { token?: unknown };
-  if (typeof data.token !== "string" || !data.token.startsWith("pby_")) {
-    throw new Error("mint PAT: response missing token");
-  }
-  return data.token;
 }
 
 /**
@@ -682,15 +692,13 @@ async function syncToken(
   tokenFromRenderer: string,
   userId: string,
 ): Promise<void> {
-  return serializeProfileMutation(() =>
-    syncTokenUnlocked(tokenFromRenderer, userId),
-  );
+  await serializeProfileMutation(() => syncTokenUnlocked(tokenFromRenderer, userId));
 }
 
 async function syncTokenUnlocked(
   tokenFromRenderer: string,
   userId: string,
-): Promise<void> {
+): Promise<DesktopCredentialFlowResult> {
   const serverUrl = targetApiBaseUrl;
   if (!serverUrl) {
     throw new Error("daemon service address disappeared during token sync");
@@ -714,63 +722,57 @@ async function syncTokenUnlocked(
   const previousToken =
     typeof config.token === "string" ? config.token : null;
   const userChanged = Boolean(previousUserId) && previousUserId !== userId;
+  const previousServerUrl =
+    typeof config.server_url === "string" ? config.server_url : null;
   const sameUserWithCachedPat =
     !userChanged &&
     previousUserId === userId &&
+    previousServerUrl === serverUrl &&
     typeof config.token === "string" &&
     config.token.startsWith("pby_");
-
-  let finalToken: string;
-  if (tokenFromRenderer.startsWith("pby_")) {
-    finalToken = tokenFromRenderer;
-  } else if (sameUserWithCachedPat) {
-    finalToken = config.token as string;
-  } else {
-    try {
-      finalToken = await mintPat(tokenFromRenderer, serverUrl);
-      console.log(
-        `[daemon] minted PAT for profile "${active.name}" (user_changed=${userChanged})`,
-      );
-    } catch (err) {
-      console.error("[daemon] failed to mint PAT:", err);
-      throw err;
-    }
-  }
-
-  await applyDesktopProfileRequest({
-    action: "set_credentials",
-    profile: active.name,
-    server_url: serverUrl,
-    token: finalToken,
-    user_id: userId,
-  });
-
-  // If the atomic write changed any credential or target field on a running
-  // daemon, restart it so the Rust process cannot keep an older in-memory
-  // token. The owner-id comparison also covers first-run migration from the
-  // legacy sidecar, where config.desktop_user_id was previously absent.
-  const credentialsChanged =
-    previousToken !== finalToken ||
-    previousUserId !== userId ||
-    config.server_url !== serverUrl;
-  if (credentialsChanged) {
-    try {
-      const existing = await fetchHealthAtPort(active.port);
-      if (daemonStatusAlive(existing?.status)) {
-        // Restart whether it's "running" or still "starting" — a booting
-        // daemon already loaded the old token at startup, so it must be
-        // restarted to pick up the rotated credentials. Awaiting this call is
-        // part of the mutation so a later target switch cannot interleave with
-        // stop/start and move the daemon to a different profile.
+  return commitDesktopCredentials({
+    previousToken,
+    previousUserId,
+    previousServerUrl,
+    userId,
+    serverUrl,
+    incomingToken: tokenFromRenderer,
+    cachedTokenReusable: sameUserWithCachedPat,
+    resolveToken: async () => {
+      try {
+        const token = await mintPat(tokenFromRenderer, serverUrl);
         console.log(
-          "[daemon] credentials changed — restarting daemon with new credentials",
+          `[daemon] minted PAT for profile "${active.name}" (user_changed=${userChanged})`,
         );
-        await restartDaemon();
+        return token;
+      } catch (err) {
+        console.error("[daemon] failed to mint PAT:", err);
+        throw err;
       }
-    } catch (err) {
-      console.warn("[daemon] restart-on-user-switch failed:", err);
-    }
-  }
+    },
+    inspectDaemon: async () => {
+      const existing = await fetchHealthAtPort(active.port);
+      return {
+        running: daemonStatusAlive(existing?.status),
+        externallyManaged:
+          existing !== null &&
+          isDaemonExternallyManaged(
+            existing.os,
+            normalizeHostOS(process.platform),
+          ),
+      };
+    },
+    stopDaemon: stopDaemonUnlocked,
+    writeCredentials: (token) =>
+      applyDesktopProfileRequest({
+        action: "set_credentials",
+        profile: active.name,
+        server_url: serverUrl,
+        token,
+        user_id: userId,
+      }),
+    restartDaemon: restartDaemonUnlocked,
+  });
 }
 
 async function loadPrefs(): Promise<DaemonPrefs> {
@@ -845,18 +847,18 @@ async function reauthenticateUnlocked(
     const active = await ensureActiveProfile();
     if (active) await clearProfileCredentialsUnlocked(active.name);
     // syncToken mints a fresh PAT because clearToken just removed any cache.
-    await syncTokenUnlocked(token, userId);
+    const sync = await syncTokenUnlocked(token, userId);
+    if (!sync.daemonRestarted) {
+      const start = await startDaemonUnlocked();
+      if (!start.success || start.blocked) {
+        throw new Error(
+          start.error ?? "daemon did not start after re-authentication",
+        );
+      }
+    }
   } catch (err) {
     if (isAuthStatusError(err)) return { ok: false, reason: "session_invalid" };
     return { ok: false, reason: "transient", message: errorMessage(err) };
-  }
-  const restart = await restartDaemon();
-  if (!restart.success) {
-    return {
-      ok: false,
-      reason: "transient",
-      message: restart.error ?? "failed to restart daemon",
-    };
   }
   return { ok: true };
 }
@@ -1000,7 +1002,7 @@ async function configureDesktopProfile(
   );
 }
 
-async function startDaemon(): Promise<{ success: boolean; error?: string }> {
+async function startDaemonUnlocked(): Promise<DaemonOperationResult> {
   const bin = await resolveCliBinary();
   if (!bin) return { success: false, error: "patchbay CLI is not installed" };
 
@@ -1015,6 +1017,19 @@ async function startDaemon(): Promise<{ success: boolean; error?: string }> {
   }
   const existing = await fetchHealthAtPort(active.port);
   if (daemonStatusAlive(existing?.status)) {
+    if (
+      existing !== null &&
+      isDaemonExternallyManaged(
+        existing.os,
+        normalizeHostOS(process.platform),
+      )
+    ) {
+      return {
+        success: true,
+        blocked: true,
+        error: "daemon is externally managed and cannot be started here",
+      };
+    }
     // A daemon is already up ("running") or booting ("starting") on this port —
     // don't spawn a second one (the CLI rejects that as "already running").
     // Let polling track it through to "running".
@@ -1070,7 +1085,13 @@ async function lifecycleBlockedByForeignDaemon(): Promise<boolean> {
   );
 }
 
-async function stopDaemon(): Promise<{ success: boolean; error?: string }> {
+type DaemonOperationResult = {
+  success: boolean;
+  error?: string;
+  blocked?: boolean;
+};
+
+async function stopDaemonUnlocked(): Promise<DaemonOperationResult> {
   // Central lifecycle guard: a daemon running in an environment we can't drive
   // (e.g. Linux in WSL2 behind a Windows desktop) can't be stopped by the
   // native CLI — it would act on the host process namespace and no-op, while
@@ -1078,7 +1099,13 @@ async function stopDaemon(): Promise<{ success: boolean; error?: string }> {
   // caller (logout, quit, restart, the Runtime card) is covered in one place
   // rather than each remembering to check. Preflighted against live /health so
   // it holds even when no poll ran first. #3916.
-  if (await lifecycleBlockedByForeignDaemon()) return { success: true };
+  if (await lifecycleBlockedByForeignDaemon()) {
+    return {
+      success: true,
+      blocked: true,
+      error: "daemon is externally managed and cannot be stopped here",
+    };
+  }
 
   const bin = await resolveCliBinary();
   if (!bin) return { success: false, error: "patchbay CLI is not installed" };
@@ -1106,15 +1133,37 @@ async function stopDaemon(): Promise<{ success: boolean; error?: string }> {
   });
 }
 
-async function restartDaemon(): Promise<{ success: boolean; error?: string }> {
+async function restartDaemonUnlocked(): Promise<DaemonOperationResult> {
   // Same central, live-preflighted guard as stopDaemon: we can neither stop nor
   // start a daemon we don't manage, so don't try (user-switch, reauth,
   // first-workspace, and any future restart caller all route through here).
   // #3916.
-  if (await lifecycleBlockedByForeignDaemon()) return { success: true };
-  const stopResult = await stopDaemon();
+  if (await lifecycleBlockedByForeignDaemon()) {
+    return {
+      success: true,
+      blocked: true,
+      error: "daemon is externally managed and cannot be restarted here",
+    };
+  }
+  const stopResult = await stopDaemonUnlocked();
   if (!stopResult.success) return stopResult;
-  return startDaemon();
+  return startDaemonUnlocked();
+}
+
+// Lifecycle operations share the same queue as credential mutations. This
+// prevents a manual start/stop/restart IPC call from interleaving with the
+// account-switch stop → mint → atomic-write → start sequence. Internal callers
+// already holding the queue use the *_unlocked variants above.
+async function startDaemon(): Promise<DaemonOperationResult> {
+  return serializeProfileMutation(() => startDaemonUnlocked());
+}
+
+async function stopDaemon(): Promise<DaemonOperationResult> {
+  return serializeProfileMutation(() => stopDaemonUnlocked());
+}
+
+async function restartDaemon(): Promise<DaemonOperationResult> {
+  return serializeProfileMutation(() => restartDaemonUnlocked());
 }
 
 async function pollOnce(): Promise<void> {

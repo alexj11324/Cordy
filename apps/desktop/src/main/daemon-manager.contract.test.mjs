@@ -33,8 +33,24 @@ describe("daemon manager mutation contracts", () => {
     expect(syncEnd).toBeGreaterThan(syncStart);
 
     const sync = source.slice(syncStart, syncEnd);
-    expect(sync).toContain("const credentialsChanged =");
-    expect(sync).toContain("await restartDaemon();");
+    expect(sync).toContain("return commitDesktopCredentials({");
+    expect(sync).toContain("stopDaemon: stopDaemonUnlocked");
+    expect(sync).toContain("restartDaemon: restartDaemonUnlocked");
     expect(sync).not.toContain("void restartDaemon();");
+
+    const lifecycleStart = source.indexOf("async function startDaemonUnlocked");
+    const lifecycleEnd = source.indexOf("async function pollOnce", lifecycleStart);
+    expect(lifecycleStart).toBeGreaterThan(-1);
+    expect(lifecycleEnd).toBeGreaterThan(lifecycleStart);
+    const lifecycle = source.slice(lifecycleStart, lifecycleEnd);
+    expect(lifecycle).toContain(
+      "return serializeProfileMutation(() => startDaemonUnlocked())",
+    );
+    expect(lifecycle).toContain(
+      "return serializeProfileMutation(() => stopDaemonUnlocked())",
+    );
+    expect(lifecycle).toContain(
+      "return serializeProfileMutation(() => restartDaemonUnlocked())",
+    );
   });
 });
