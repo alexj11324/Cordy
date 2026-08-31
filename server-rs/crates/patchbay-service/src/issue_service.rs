@@ -165,19 +165,24 @@ impl IssueService {
         match (next.owner_type.as_deref(), next.owner_id) {
             (None, None) => {}
             (Some("member"), Some(owner_id)) => {
-                if member_q::get_member_by_user_and_workspace(&mut *executor, owner_id, workspace_id)
-                    .await
-                    .map_err(|error| {
-                        ExternalIssueError::Internal(format!("validate external owner: {error}"))
-                    })?
-                    .is_none()
+                if member_q::get_member_by_user_and_workspace(
+                    &mut *executor,
+                    owner_id,
+                    workspace_id,
+                )
+                .await
+                .map_err(|error| {
+                    ExternalIssueError::Internal(format!("validate external owner: {error}"))
+                })?
+                .is_none()
                 {
                     return Err(ExternalIssueError::InvalidOwner);
                 }
             }
             _ => return Err(ExternalIssueError::InvalidOwner),
         }
-        let next_category = issue_status::effective(&mut *executor, workspace_id, &next.status).await;
+        let next_category =
+            issue_status::effective(&mut *executor, workspace_id, &next.status).await;
         validate_external_workflow(
             &next_category,
             next.executor_type.as_deref(),
