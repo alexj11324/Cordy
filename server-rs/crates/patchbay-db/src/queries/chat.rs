@@ -441,7 +441,7 @@ RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, c
     }))
 }
 
-pub async fn create_mika_onboarding_opening(
+pub async fn create_patrick_onboarding_opening(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     chat_session_id: Uuid,
     content: &str,

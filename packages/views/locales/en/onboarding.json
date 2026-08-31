@@ -11,7 +11,7 @@
       "description": "Name it and pick its URL."
     },
     "runtime": {
-      "label": "Meet Mika",
+      "label": "Meet Patrick",
       "description": "Your first agent teammate, and where it runs."
     }
   },
@@ -119,7 +119,7 @@
     "skip": {
       "loading": "Setting up your workspace…",
       "title": "Welcome to Patchbay!",
-      "subtitle": "We've added one issue to help you connect a device. When it's ready, start with Mika from Devices.",
+      "subtitle": "We've added one issue to help you connect a device. When it's ready, start with Patrick from Devices.",
       "got_it": "Got it",
       "status_in_progress": "In progress",
       "error_title": "We couldn't set that up",
@@ -129,7 +129,7 @@
       "cards": {
         "install_runtime": {
           "title": "Connect a device",
-          "subtitle": "Install Codex or Kimi, then start the guided Mika chat from Devices."
+          "subtitle": "Install Codex or Kimi, then start the guided Patrick chat from Devices."
         }
       }
     }
@@ -187,7 +187,7 @@
     "scanning_headline": "Connecting this computer…",
     "scanning_lede_prefix": "Your agent works through an AI coding tool you already have — like ",
     "scanning_lede_suffix": ", and others. We're checking this computer for ones you've installed.",
-    "found_headline": "Where should Mika run?",
+    "found_headline": "Where should Patrick run?",
     "found_lede": "These are the devices we found on this computer. You can switch it or add more later.",
     "runtime_count_one": "{{count}} device",
     "runtime_count_other": "{{count}} devices",
@@ -209,15 +209,15 @@
     "refresh": "Refresh",
     "refreshing": "Refreshing…",
     "hint_selected": "Selected: {{name}}",
-    "hint_pick": "Pick a device above to start with Mika.",
+    "hint_pick": "Pick a device above to start with Patrick.",
     "hint_waiting": "Waiting for the first result…",
     "hint_skip_or_refresh": "Refresh after installing one, or skip to enter your workspace.",
-    "continue": "Start with Mika"
+    "continue": "Start with Patrick"
   },
   "step_platform": {
     "eyebrow": "Connect a computer",
     "headline": "Connect a computer to run your agent.",
-    "lede": "Mika, your workspace's Chief of Staff, runs on a real computer that you connect to Patchbay. Pick how you want to connect one.",
+    "lede": "Patrick, your workspace's Chief of Staff, runs on a real computer that you connect to Patchbay. Pick how you want to connect one.",
     "hint_default": "Pick a way to connect — or skip and connect a computer later.",
     "download_title": "Use this computer",
     "download_subtitle": "Install our desktop app to connect this computer. Opens in a new tab — pick your platform there.",
@@ -247,12 +247,12 @@
   },
   "errors": {
     "skip_failed": "Failed to finish onboarding",
-    "mika_setup_failed": "Couldn't start your Mika workspace"
+    "patrick_setup_failed": "Couldn't start your Patrick workspace"
   },
-  "mika_intro": {
-    "headline": "Meet Mika, your first agent teammate.",
-    "name": "Mika",
+  "patrick_intro": {
+    "headline": "Meet Patrick, your first agent teammate.",
+    "name": "Patrick",
     "role": "Chief of Staff",
-    "blurb": "Tell Mika what you want done. It becomes an issue, with the right agent on it."
+    "blurb": "Tell Patrick what you want done. It becomes an issue, with the right agent on it."
   }
 }

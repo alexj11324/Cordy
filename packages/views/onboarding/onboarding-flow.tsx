@@ -7,7 +7,7 @@ import {
   completeOnboarding,
   ONBOARDING_STEP_ORDER,
   saveQuestionnaire,
-  useBootstrapMika,
+  useBootstrapPatrick,
   useWelcomeStore,
   type OnboardingStep,
   type QuestionnaireAnswers,
@@ -20,7 +20,7 @@ import { StepWorkspace } from "./steps/step-workspace";
 import { StepRuntimeConnect } from "./steps/step-runtime-connect";
 import { StepPlatformFork } from "./steps/step-platform-fork";
 import { OnboardingLogoutButton } from "./components/onboarding-logout-button";
-import { getMikaOnboarding, pickContentLang } from "./templates";
+import { getPatrickOnboarding, pickContentLang } from "./templates";
 import { useT } from "../i18n";
 
 const EMPTY_QUESTIONNAIRE: QuestionnaireAnswers = {
@@ -81,7 +81,7 @@ function mergeQuestionnaire(
 
 /**
  * Shell's onComplete contract carries the workspace plus an optional
- * destination. Runtime-connected onboarding opens the real Mika conversation
+ * destination. Runtime-connected onboarding opens the real Patrick conversation
  * started by the final step; other exits land on the workspace issue list.
  *
  * Three exit shapes feed onComplete:
@@ -91,9 +91,9 @@ function mergeQuestionnaire(
  *     onboarded; we push a {choice:"skip"} welcome signal and navigate
  *     to the workspace. The welcome hook in the workspace shell creates
  *     one install-runtime guide issue on landing.
- *   - Runtime-connected: create or repair the workspace's Mika on the selected
+ *   - Runtime-connected: create or repair the workspace's Patrick on the selected
  *     runtime, start one hidden onboarding kickoff, mark onboarding complete,
- *     and open Mika's real chat. No fixed specialist team is created.
+ *     and open Patrick's real chat. No fixed specialist team is created.
  *
  * This file never touches createAgent / createIssue. The runtime-skipped
  * guide flow remains in `packages/views/workspace/welcome-after-onboarding.tsx`.
@@ -165,7 +165,7 @@ function OnboardingStepFlow({
   // Raised by whichever step has a request in flight; locks Back and the
   // rail. Only the workspace step sets it today.
   const [stepBusy, setStepBusy] = useState(false);
-  const bootstrapMika = useBootstrapMika(workspace?.id ?? "");
+  const bootstrapPatrick = useBootstrapPatrick(workspace?.id ?? "");
 
   // Fetched at Step 0 + Step 2. Step 2 uses it to detect a pre-existing
   // workspace from an earlier abandoned onboarding (so StepWorkspace shows
@@ -236,7 +236,7 @@ function OnboardingStepFlow({
       setWorkspace(ws);
       // Deliberately NOT setCurrentWorkspace: that singleton is also written by
       // the desktop tab system, which reclaims it whenever the new workspace
-      // has no tab group yet. Racing it sent the rest of this flow — Mika, the
+      // has no tab group yet. Racing it sent the rest of this flow — Patrick, the
       // session, the kickoff — into the previously-active workspace. Every call
       // from here on names its target workspace instead, and the switch happens
       // once, on the navigation in onComplete.
@@ -248,7 +248,7 @@ function OnboardingStepFlow({
   const handleRuntimeNext = useCallback(
     async (rt: AgentRuntime | null, model?: string) => {
       if (!workspace) return;
-      // A connected runtime provisions only Mika and immediately opens the
+      // A connected runtime provisions only Patrick and immediately opens the
       // real interactive onboarding conversation. Specialists are created
       // later, only when the member's actual workflow justifies them.
       if (rt) {
@@ -258,11 +258,11 @@ function OnboardingStepFlow({
           // the latest snapshot here so the server-authored kickoff can read
           // reliable role/use-case context instead of racing the last PATCH.
           await saveQuestionnaire(answers);
-          const result = await bootstrapMika.mutateAsync({
+          const result = await bootstrapPatrick.mutateAsync({
             workspaceSlug: workspace.slug,
             runtimeId: rt.id,
             model,
-            ...getMikaOnboarding(contentLang),
+            ...getPatrickOnboarding(contentLang),
           });
           await completeOnboarding("full", workspace.id);
           onComplete(workspace, {
@@ -273,7 +273,7 @@ function OnboardingStepFlow({
           toast.error(
             err instanceof Error
               ? err.message
-              : t(($) => $.errors.mika_setup_failed),
+              : t(($) => $.errors.patrick_setup_failed),
           );
           throw err;
         }
@@ -295,7 +295,7 @@ function OnboardingStepFlow({
       });
       onComplete(workspace, undefined);
     },
-    [answers, backendFree, bootstrapMika, i18n.language, workspace, onComplete, t],
+    [answers, backendFree, bootstrapPatrick, i18n.language, workspace, onComplete, t],
   );
 
   const handleBack = useCallback((from: OnboardingStep) => {
@@ -321,10 +321,10 @@ function OnboardingStepFlow({
   // Once a workspace exists there is nothing left to cancel, so new-workspace
   // mode drops the back affordance on the runtime step. Walking back would
   // reach the workspace step, whose own back button means "leave" — and
-  // leaving there would strand a workspace with no runtime, no Mika, and no
+  // leaving there would strand a workspace with no runtime, no Patrick, and no
   // guidance. The remaining exits both end somewhere coherent: Skip runs the
   // runtime-skipped path (guide issue + land in the new workspace), and
-  // continuing provisions Mika.
+  // continuing provisions Patrick.
   // Log out lives at the foot of the progress rail rather than pinned to the
   // window corner: pinned put it outside the measure and above Back, which
   // read as a second header row.

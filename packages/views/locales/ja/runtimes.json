@@ -27,13 +27,13 @@
       "hint": "通常は数秒かかります。デーモンがワークスペースに登録しています。"
     }
   },
-  "mika_setup": {
-    "title": "デバイスの準備ができました。Mika と始めましょう。",
-    "description": "Mika は目標をタスクに落とし込み、適切なエージェントを調整し、ワークフローに必要な再利用可能な specialist の追加を支援します。",
-    "action": "Mika と始める",
-    "failed": "Mika を開始できませんでした",
-    "dialog_title": "Mika をどこで実行しますか？",
-    "dialog_description": "Mika が使うデバイスを選んでください。後から設定で変更できます。",
+  "patrick_setup": {
+    "title": "デバイスの準備ができました。Patrick と始めましょう。",
+    "description": "Patrick は目標をタスクに落とし込み、適切なエージェントを調整し、ワークフローに必要な再利用可能な specialist の追加を支援します。",
+    "action": "Patrick と始める",
+    "failed": "Patrick を開始できませんでした",
+    "dialog_title": "Patrick をどこで実行しますか？",
+    "dialog_description": "Patrick が使うデバイスを選んでください。後から設定で変更できます。",
     "cancel": "キャンセル"
   },
   "machine": {

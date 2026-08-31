@@ -542,7 +542,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
           "When WeCom cannot connect, the page now says whether it was refused or simply unreachable.",
         ],
         improvements: [
-          "Signing up now lands you on Mika's opening message right away.",
+          "Signing up now lands you on Patrick's opening message right away.",
           "A saved view can be sorted ascending or descending.",
           "The project tag on a new Issue clears in one click, and no longer remembers your last project.",
           "A bare /new or /issue in a channel now tells you exactly what happened.",
@@ -599,11 +599,11 @@ export function createEnDict(allowSignup: boolean): LandingDict {
       {
         version: "0.4.20",
         date: "2026-08-06",
-        title: "DingTalk bots, a guided first run with Mika, and per-run token costs",
+        title: "DingTalk bots, a guided first run with Patrick, and per-run token costs",
         changes: [],
         features: [
           "Your agents can now live in DingTalk — DM them or @-mention them in a group.",
-          "Signing up now ends with Mika ready to talk, plus cards to start your first task.",
+          "Signing up now ends with Patrick ready to talk, plus cards to start your first task.",
           "The Agent thread shows what each run cost, and the whole Issue's total.",
           "Muting comment notifications no longer hides messages that @-mention you.",
           "Chat on a phone opens full screen and the composer rides above the keyboard.",
@@ -2016,7 +2016,7 @@ export function createEnDict(allowSignup: boolean): LandingDict {
         title: "Smarter Welcome, Live Work Signals & Safer Collaboration",
         changes: [],
         features: [
-          "New users now enter a guided Mika conversation that helps them complete one real first task and add specialists only when needed",
+          "New users now enter a guided Patrick conversation that helps them complete one real first task and add specialists only when needed",
           "Issue lists now show when agents are actively working, with per-Issue indicators, hover details, and a quick filter for work in progress",
           "When a child Issue is finished, the parent Issue now receives a platform-generated update and can notify the right parent owner without creating loops",
           "The public site now includes a Contact Sales flow with a business-email form and submission protection",

@@ -26,7 +26,7 @@ vi.mock("@patchbay/core/onboarding", async () => {
   return {
     ...actual,
     completeOnboarding: mocks.completeOnboarding,
-    useBootstrapMika: () => ({ mutateAsync: vi.fn() }),
+    useBootstrapPatrick: () => ({ mutateAsync: vi.fn() }),
     useWelcomeStore: { getState: () => ({ set: mocks.setWelcome }) },
   };
 });

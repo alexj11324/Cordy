@@ -376,8 +376,8 @@ pub(crate) async fn build_claimed_task_response(
     // System agents carry a product-owned instruction layer shipped with the
     // binary (hot-updatable); workspace notes stay in the row.
     let mut instructions = agent.instructions.clone();
-    if agent.system_key.as_deref() == Some(patchbay_service::builtin_agents::MIKA_SYSTEM_KEY) {
-        instructions = patchbay_service::builtin_agents::compose_mika_instructions(
+    if agent.system_key.as_deref() == Some(patchbay_service::builtin_agents::PATRICK_SYSTEM_KEY) {
+        instructions = patchbay_service::builtin_agents::compose_patrick_instructions(
             &agent.name,
             &agent.instructions,
         );

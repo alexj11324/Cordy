@@ -27,13 +27,13 @@
       "hint": "通常需要几秒钟。守护进程正在向工作区注册。"
     }
   },
-  "mika_setup": {
-    "title": "设备已准备好，和 Mika 开始。",
-    "description": "Mika 会把你的目标转化为任务、协调合适的智能体，并在工作流需要时帮你添加可复用的 specialist。",
-    "action": "和 Mika 开始",
-    "failed": "无法启动 Mika",
-    "dialog_title": "让 Mika 在哪台电脑上运行？",
-    "dialog_description": "选择 Mika 使用的设备。之后可以在设置里更改。",
+  "patrick_setup": {
+    "title": "设备已准备好，和 Patrick 开始。",
+    "description": "Patrick 会把你的目标转化为任务、协调合适的智能体，并在工作流需要时帮你添加可复用的 specialist。",
+    "action": "和 Patrick 开始",
+    "failed": "无法启动 Patrick",
+    "dialog_title": "让 Patrick 在哪台电脑上运行？",
+    "dialog_description": "选择 Patrick 使用的设备。之后可以在设置里更改。",
     "cancel": "取消"
   },
   "machine": {

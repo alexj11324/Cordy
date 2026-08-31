@@ -263,7 +263,7 @@ export function ChatMessageList({
     return null;
   }, [messages]);
 
-  // Mika's onboarding opening self-describes (message_kind stamped by the
+  // Patrick's onboarding opening self-describes (message_kind stamped by the
   // completion path — the hidden kickoff row never reaches clients) and
   // carries the product's starter cards instead of that turn's quick-action
   // chips (PB-5765).
@@ -300,7 +300,7 @@ export function ChatMessageList({
   // row for it. When the assistant message persists, `hasLive` goes false and
   // the message takes the SAME key at the SAME position — an in-place data
   // swap, not a remount. The onboarding kickoff is a server-authored carrier
-  // for Mika's first task, not something the member typed, so it never becomes
+  // for Patrick's first task, not something the member typed, so it never becomes
   // a visible bubble.
   const renderItems: ChatRenderItem[] = useMemo(() => {
     const items: ChatRenderItem[] = messages
@@ -701,7 +701,7 @@ function AssistantMessage({
   onRegenerateQuickActions?: (message: ChatMessage) => void | Promise<unknown>;
   canRegenerateQuickActions?: boolean;
   quickActionsPending?: boolean;
-  /** This turn is Mika's onboarding opening — render starter cards, not chips. */
+  /** This turn is Patrick's onboarding opening — render starter cards, not chips. */
   showStarterCards?: boolean;
 }) {
   const canFetchTaskMessages = isTaskMessageTaskId(taskId);
