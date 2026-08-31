@@ -132,8 +132,8 @@ jobs:
     needs: [resolve-source, backend-build]
     runs-on: ubuntu-latest
     concurrency:
-      group: manual-container-backend-publish-${{ needs.resolve-source.outputs.sha }}
-      cancel-in-progress: true
+      group: manual-container-publish-${{ needs.resolve-source.outputs.sha }}
+      cancel-in-progress: false
     steps:
       - name: Download backend digests
         uses: actions/download-artifact@v4
@@ -255,8 +255,8 @@ jobs:
     needs: [resolve-source, web-build]
     runs-on: ubuntu-latest
     concurrency:
-      group: manual-container-web-publish-${{ needs.resolve-source.outputs.sha }}
-      cancel-in-progress: true
+      group: manual-container-publish-${{ needs.resolve-source.outputs.sha }}
+      cancel-in-progress: false
     steps:
       - name: Download web digests
         uses: actions/download-artifact@v4
@@ -309,8 +309,8 @@ jobs:
     needs: [resolve-source, backend-build, web-build]
     runs-on: ubuntu-latest
     concurrency:
-      group: manual-container-pair-publish-${{ needs.resolve-source.outputs.sha }}
-      cancel-in-progress: true
+      group: manual-container-publish-${{ needs.resolve-source.outputs.sha }}
+      cancel-in-progress: false
     steps:
       - name: Download backend digests
         uses: actions/download-artifact@v4
@@ -336,18 +336,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Stage and verify paired manifests
-        env:
-          SOURCE_SHA: ${{ needs.resolve-source.outputs.sha }}
+      - name: Render and verify paired manifests
         run: |
           set -Eeuo pipefail
           shopt -s nullglob
 
-          stage_manifest() {
+          verify_manifest() {
             local repository="$1"
             local digest_dir="$2"
-            local staging_tag="$3"
-            local label="$4"
+            local label="$3"
             local digest_files=("$digest_dir"/*)
             if [ "${#digest_files[@]}" -ne 2 ]; then
               echo "::error::Expected two $label image digests, found ${#digest_files[@]}"
@@ -361,23 +358,22 @@ jobs:
               digest_args+=("$repository@sha256:$digest")
             done
 
-            docker buildx imagetools create \
-              --tag "$staging_tag" \
-              "${digest_args[@]}"
-            docker buildx imagetools inspect "$staging_tag"
+            docker buildx imagetools create --dry-run \
+              "${digest_args[@]}" >"/tmp/$label-manifest.json"
+            jq -e \
+              '.mediaType and (.manifests | type == "array") and (.manifests | length >= 2)' \
+              "/tmp/$label-manifest.json" >/dev/null
           }
 
           backend_repository="ghcr.io/${{ github.repository_owner }}/patchbay-backend"
           web_repository="ghcr.io/${{ github.repository_owner }}/patchbay-web"
-          stage_manifest \
+          verify_manifest \
             "$backend_repository" \
             /tmp/digests/backend \
-            "$backend_repository:staging-sha-$SOURCE_SHA-run-${{ github.run_id }}" \
             backend
-          stage_manifest \
+          verify_manifest \
             "$web_repository" \
             /tmp/digests/web \
-            "$web_repository:staging-sha-$SOURCE_SHA-run-${{ github.run_id }}" \
             web
 
       - name: Promote paired commit tags
@@ -393,21 +389,10 @@ jobs:
           web_repository="ghcr.io/$owner/patchbay-web"
           backend_final="$backend_repository:$final_tag"
           web_final="$web_repository:$final_tag"
-          backend_staging="$backend_repository:staging-sha-$SOURCE_SHA-run-${{ github.run_id }}"
-          web_staging="$web_repository:staging-sha-$SOURCE_SHA-run-${{ github.run_id }}"
-
-          manifest_digest() {
-            local manifest
-            if ! manifest="$(docker buildx imagetools inspect "$1" 2>/dev/null)"; then
-              return 0
-            fi
-            awk '$1 == "Digest:" { print $2; exit }' <<<"$manifest"
-          }
+          owner_type="$(gh api "/users/$owner" --jq .type)"
 
           package_versions_endpoint() {
             local package="$1"
-            local owner_type
-            owner_type="$(gh api "/users/$owner" --jq .type)"
             if [ "$owner_type" = "Organization" ]; then
               printf '/orgs/%s/packages/container/%s/versions' "$owner" "$package"
             else
@@ -415,26 +400,57 @@ jobs:
             fi
           }
 
-          delete_tag_version() {
+          find_tag_version_field() {
             local package="$1"
             local tag="$2"
-            local endpoint version_id
+            local field="$3"
+            local endpoint page response match count
             endpoint="$(package_versions_endpoint "$package")"
-            version_id="$(
-              gh api "$endpoint?per_page=100" |
-                jq -r --arg tag "$tag" '
+            page=1
+            while :; do
+              if ! response="$(gh api "$endpoint?per_page=100&page=$page")"; then
+                echo "::error::Failed to snapshot $package package versions" >&2
+                return 1
+              fi
+              match="$(
+                jq -r --arg tag "$tag" --arg field "$field" '
                   first(
                     .[] |
                     select((.metadata.container.tags // []) | index($tag)) |
-                    .id
+                    .[$field]
                   ) // empty
-                '
-            )"
-            if [ -z "$version_id" ]; then
-              echo "::error::Could not find $package package version for tag $tag"
+                ' <<<"$response"
+              )"
+              if [ -n "$match" ]; then
+                printf '%s' "$match"
+                return 0
+              fi
+              count="$(jq 'length' <<<"$response")"
+              if [ "$count" -lt 100 ]; then
+                return 0
+              fi
+              page=$((page + 1))
+            done
+          }
+
+          publish_manifest() {
+            local repository="$1"
+            local digest_dir="$2"
+            local final_ref="$3"
+            local digest_files=("$digest_dir"/*)
+            local digest_args=()
+            local digest_file digest
+            if [ "${#digest_files[@]}" -ne 2 ]; then
+              echo "::error::Expected two image digests, found ${#digest_files[@]}"
               return 1
             fi
-            gh api -X DELETE "$endpoint/$version_id"
+            for digest_file in "${digest_files[@]}"; do
+              digest="${digest_file##*/}"
+              digest_args+=("$repository@sha256:$digest")
+            done
+            docker buildx imagetools create \
+              --tag "$final_ref" \
+              "${digest_args[@]}"
           }
 
           restore_or_remove() {
@@ -442,6 +458,7 @@ jobs:
             local package="$2"
             local final_ref="$3"
             local previous_digest="$4"
+            local endpoint version_id
             if [ -n "$previous_digest" ]; then
               docker buildx imagetools create \
                 --tag "$final_ref" \
@@ -449,24 +466,28 @@ jobs:
               return
             fi
 
-            if [ -n "$(manifest_digest "$final_ref")" ]; then
-              delete_tag_version "$package" "$final_tag"
+            version_id="$(find_tag_version_field "$package" "$final_tag" id)"
+            if [ -n "$version_id" ]; then
+              endpoint="$(package_versions_endpoint "$package")"
+              gh api -X DELETE "$endpoint/$version_id"
             fi
           }
 
-          previous_backend="$(manifest_digest "$backend_final")"
-          previous_web="$(manifest_digest "$web_final")"
+          previous_backend="$(find_tag_version_field patchbay-backend "$final_tag" name)"
+          previous_web="$(find_tag_version_field patchbay-web "$final_tag" name)"
           promotion_failed=0
 
-          if ! docker buildx imagetools create \
-            --tag "$backend_final" \
-            "$backend_staging"; then
+          if ! publish_manifest \
+            "$backend_repository" \
+            /tmp/digests/backend \
+            "$backend_final"; then
             promotion_failed=1
           fi
           if [ "$promotion_failed" -eq 0 ] &&
-            ! docker buildx imagetools create \
-              --tag "$web_final" \
-              "$web_staging"; then
+            ! publish_manifest \
+              "$web_repository" \
+              /tmp/digests/web \
+              "$web_final"; then
             promotion_failed=1
           fi
 
