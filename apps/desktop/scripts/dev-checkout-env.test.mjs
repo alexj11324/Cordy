@@ -94,8 +94,18 @@ describe("development checkout environment", () => {
       join(sandbox, ".env.worktree"),
     );
     expect(contents).toContain("POSTGRES_DB=patchbay_patchbay_feature_");
-    expect(contents).toMatch(/PATCHBAY_TELEGRAM_SECRET_KEY=[A-Za-z0-9+/]{43}=/);
-    expect(contents).toMatch(/PATCHBAY_WEIXIN_SECRET_KEY=[A-Za-z0-9+/]{43}=/);
+    for (const key of [
+      "PATCHBAY_LARK_SECRET_KEY",
+      "PATCHBAY_SLACK_SECRET_KEY",
+      "PATCHBAY_DINGTALK_SECRET_KEY",
+      "PATCHBAY_WECOM_SECRET_KEY",
+      "PATCHBAY_TELEGRAM_SECRET_KEY",
+      "PATCHBAY_WEIXIN_SECRET_KEY",
+    ]) {
+      expect(contents).toMatch(
+        new RegExp(`${key}=[A-Za-z0-9+/]{43}=`),
+      );
+    }
     expect(Number(env.PORT)).toBeGreaterThanOrEqual(18080);
     expect(Number(env.PORT)).toBeLessThanOrEqual(19079);
   });

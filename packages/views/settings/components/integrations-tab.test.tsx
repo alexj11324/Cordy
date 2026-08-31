@@ -2,7 +2,13 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { ApiError } from "@patchbay/core/api";
 import { configStore } from "@patchbay/core/config";
 import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
@@ -22,18 +28,11 @@ const authUserRef = vi.hoisted(() => ({
 const membersRef = vi.hoisted(() => ({
   current: [] as { user_id: string; role: string }[],
 }));
-const dingtalkInstallationsRef = vi.hoisted(() => ({
-  current: undefined as
-    | {
-        configured: boolean;
-        install_supported: boolean;
-        installations: { id: string; agent_id: string | null; status: string }[];
-      }
-    | undefined,
-}));
-const larkInstallationsRef = vi.hoisted(() => ({
-  current: undefined as
-    | {
+const channelInstallationsRef = vi.hoisted(() => ({
+  current: {} as Partial<
+    Record<
+      "lark" | "slack" | "dingtalk" | "wecom" | "telegram" | "weixin",
+      {
         configured: boolean;
         install_supported: boolean;
         installations: {
@@ -43,27 +42,27 @@ const larkInstallationsRef = vi.hoisted(() => ({
           region?: string;
         }[];
       }
-    | undefined,
+    >
+  >,
 }));
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
     queryCallsRef.current.push(opts);
     const isMemberQuery = opts.queryKey[opts.queryKey.length - 1] === "members";
-    const isDingTalkInstallationsQuery =
-      opts.queryKey[0] === "dingtalk" &&
-      opts.queryKey[opts.queryKey.length - 1] === "installations";
-    const isLarkInstallationsQuery =
-      opts.queryKey[0] === "lark" &&
+    const channel = opts.queryKey[0];
+    const isChannelInstallationsQuery =
+      typeof channel === "string" &&
+      channel in channelInstallationsRef.current &&
       opts.queryKey[opts.queryKey.length - 1] === "installations";
     return {
       data: isMemberQuery
         ? membersRef.current
-        : isDingTalkInstallationsQuery
-          ? dingtalkInstallationsRef.current
-          : isLarkInstallationsQuery
-            ? larkInstallationsRef.current
-            : undefined,
+        : isChannelInstallationsQuery
+          ? channelInstallationsRef.current[
+              channel as keyof typeof channelInstallationsRef.current
+            ]
+          : undefined,
       error: opts.enabled === false ? null : composioErrorRef.current,
       isError: opts.enabled !== false && composioErrorRef.current != null,
       isLoading: false,
@@ -142,8 +141,7 @@ describe("Settings IntegrationsTab", () => {
     composioErrorRef.current = null;
     authUserRef.current = null;
     membersRef.current = [];
-    dingtalkInstallationsRef.current = undefined;
-    larkInstallationsRef.current = undefined;
+    channelInstallationsRef.current = {};
     configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: true });
     // Reset the self-host-only VCS gate to its default (hidden) so tests stay
     // isolated; individual tests opt in below.
@@ -192,7 +190,7 @@ describe("Settings IntegrationsTab", () => {
   it("shows connected Hub management actions without an Agent preselection", () => {
     authUserRef.current = { id: "admin-user" };
     membersRef.current = [{ user_id: "admin-user", role: "owner" }];
-    dingtalkInstallationsRef.current = {
+    channelInstallationsRef.current.dingtalk = {
       configured: true,
       install_supported: true,
       installations: [{ id: "hub-1", agent_id: null, status: "active" }],
@@ -206,10 +204,10 @@ describe("Settings IntegrationsTab", () => {
     expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
   });
 
-  it("opens the real provider setup panel when the deployment has not enabled it", () => {
+  it("opens an actionable setup detail instead of exposing a deployment variable", () => {
     authUserRef.current = { id: "admin-user" };
     membersRef.current = [{ user_id: "admin-user", role: "owner" }];
-    dingtalkInstallationsRef.current = {
+    channelInstallationsRef.current.dingtalk = {
       configured: false,
       install_supported: false,
       installations: [],
@@ -223,13 +221,49 @@ describe("Settings IntegrationsTab", () => {
     fireEvent.click(screen.getByRole("button", { name: "Configure" }));
 
     expect(screen.getByRole("heading", { name: "Platform setup" })).toBeInTheDocument();
-    expect(screen.getByTestId("dingtalk-tab")).toBeInTheDocument();
+    expect(screen.getByTestId("integration-setup-guide-dingtalk")).toBeInTheDocument();
+    expect(screen.getByText("Connection setup is temporarily unavailable.")).toBeInTheDocument();
+    expect(screen.queryByText("PATCHBAY_DINGTALK_SECRET_KEY")).toBeNull();
   });
+
+  it.each([
+    ["lark", "Connect Lark"],
+    ["slack", "Connect Slack"],
+    ["dingtalk", "Connect DingTalk"],
+    ["wecom", "Connect WeCom"],
+    ["telegram", "Connect Telegram"],
+    ["weixin", "Connect WeChat"],
+  ] as const)(
+    "keeps the complete %s setup and real connection action on this page",
+    (channel, connectLabel) => {
+      authUserRef.current = { id: "admin-user" };
+      membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+      channelInstallationsRef.current[channel] = {
+        configured: true,
+        install_supported: true,
+        installations: [],
+      };
+
+      renderTab();
+
+      const card = screen.getByTestId(`integration-channel-card-${channel}`);
+      fireEvent.click(
+        within(card).getByRole("button", { name: "Set up" }),
+      );
+
+      expect(
+        screen.getByTestId(`integration-setup-guide-${channel}`),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: connectLabel }),
+      ).toBeInTheDocument();
+    },
+  );
 
   it("hides reconnect for an active international Lark Hub while that flow is disabled", () => {
     authUserRef.current = { id: "admin-user" };
     membersRef.current = [{ user_id: "admin-user", role: "owner" }];
-    larkInstallationsRef.current = {
+    channelInstallationsRef.current.lark = {
       configured: true,
       install_supported: true,
       installations: [{ id: "lark-hub", agent_id: null, status: "active", region: "lark" }],
@@ -278,7 +312,7 @@ describe("Settings IntegrationsTab", () => {
   });
 
   it("keeps legacy DingTalk route management available", () => {
-    dingtalkInstallationsRef.current = {
+    channelInstallationsRef.current.dingtalk = {
       configured: true,
       install_supported: true,
       installations: [{ id: "legacy-1", agent_id: "legacy-agent", status: "active" }],
@@ -296,6 +330,12 @@ describe("Settings IntegrationsTab", () => {
     renderTab();
 
     expect(screen.queryByTestId("composio-tab")).toBeNull();
+    expect(
+      screen.getAllByText(
+        "Patchbay could not load this platform's connection status.",
+      ),
+    ).toHaveLength(6);
+    expect(screen.queryByText(/connection health/i)).toBeNull();
   });
 
   it("hides the Git providers section when the deployment reports it unavailable", () => {

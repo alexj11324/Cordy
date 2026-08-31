@@ -12,14 +12,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { binaryNameForPlatform, devRustTargetFor } from "./bundle-cli.mjs";
 import { loadDevCheckoutEnv } from "./dev-checkout-env.mjs";
 import { rustSourceFingerprint } from "./dev-cli-cache.mjs";
+import { INTEGRATION_SECRET_KEYS } from "../../../scripts/ensure-dev-integration-secrets.mjs";
 
 const execFile = promisify(execFileCallback);
 const here = dirname(fileURLToPath(import.meta.url));
 const defaultRepoRoot = resolve(here, "..", "..", "..");
-const REQUIRED_INTEGRATION_KEYS = [
-  "PATCHBAY_TELEGRAM_SECRET_KEY",
-  "PATCHBAY_WEIXIN_SECRET_KEY",
-];
 
 async function sha256File(path) {
   const hash = createHash("sha256");
@@ -41,7 +38,7 @@ export function isValidSecretBoxKey(value) {
 
 export function integrationKeyStatus(env) {
   return Object.fromEntries(
-    REQUIRED_INTEGRATION_KEYS.map((key) => [
+    INTEGRATION_SECRET_KEYS.map((key) => [
       key,
       isValidSecretBoxKey(env[key]),
     ]),
@@ -247,7 +244,7 @@ export async function inspectDevEnvironment({
           id: "integrations",
           ok: true,
           message:
-            "Telegram and Weixin credential encryption are enabled; account credentials remain UI-supplied",
+            "all six messaging integrations have local credential encryption; account credentials remain UI-supplied",
         }
       : {
           id: "integrations",
