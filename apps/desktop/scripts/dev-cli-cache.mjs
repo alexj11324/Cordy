@@ -577,7 +577,7 @@ export async function inspectDevRuntimeCache({ cacheRoot }) {
   const entries = await listRuntimeCacheEntries(cacheRoot);
   const fingerprints = new Map();
   for (const entry of entries) {
-    if (!entry.identityKey) continue;
+    if (!entry.sourceFingerprint || !entry.identityKey) continue;
     const key = entry.identityKey;
     const group = fingerprints.get(key) || {
       identityKey: key,
