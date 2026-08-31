@@ -23,6 +23,24 @@ test("the source-controlled accounts origin enforces both network and token gate
   assert.match(nginx, /proxy_set_header X-Patchbay-Origin-Auth "";/);
 });
 
+test("the OCI broker deployment durably owns nginx's loopback upstream", () => {
+  const compose = readFileSync(
+    new URL("../../../origin/auth-broker.compose.yml", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(
+    compose,
+    /image: \$\{PATCHBAY_AUTH_BROKER_IMAGE:\?[^\n]+immutable GHCR digest\}/,
+  );
+  assert.match(compose, /"127\.0\.0\.1:43100:3000"/);
+  assert.match(
+    compose,
+    /PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN: \$\{PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN:\?[^\n]+\}/,
+  );
+  assert.match(compose, /http:\/\/127\.0\.0\.1:3000\/readyz/);
+});
+
 function allowLimiter(calls = []) {
   return {
     async limit(input) {

@@ -55,6 +55,15 @@ and Rust credential privately first. Confirm Broker readiness, direct-origin
 state machine before changing the Worker's `ORIGIN` or public route. The Worker
 origin switch is the cutover and must not be used as a staging step.
 
+On the OCI origin host, deploy `deploy/origin/auth-broker.compose.yml` with an
+immutable `PATCHBAY_AUTH_BROKER_IMAGE` digest. Its durable loopback publication
+on `127.0.0.1:43100` is the upstream owned by the source-controlled nginx
+server. Require the Compose health check and a host-side `/readyz` probe to pass
+before the Worker switch. Do not substitute a transient port-forward. A Helm
+deployment instead requires an explicitly provisioned durable ingress or
+reverse-proxy upstream; the chart's default ClusterIP cannot satisfy the OCI
+nginx loopback contract.
+
 When the public Worker already routes through the ready Broker and the origin
 gate has been verified, deploy the reviewed limiter-boundary change in this
 order:
@@ -84,14 +93,16 @@ prevents a secret-removal outage.
 
 ## Stage without public traffic
 
-1. Run **Auth Broker Release (manual)** for the reviewed commit and build an
+1. Run **Auth Broker Release (manual)** for the reviewed commit and build a
    versioned image tag. Publishing the image does not deploy it.
-2. Resolve the published digest and render the independent chart with
-   `enabled=true` and that digest. Keep `ingress.enabled=false`.
-3. Install the chart under its own Helm release name and Secret. The ordinary
-   Patchbay release must not be upgraded as part of this step.
+2. Resolve the published digest. For the OCI origin, render and validate
+   `deploy/origin/auth-broker.compose.yml`; for Kubernetes, render the
+   independent chart with `enabled=true` and that digest.
+3. Install only the selected independent Broker deployment and its Secret. The
+   ordinary Patchbay release must not be upgraded as part of this step. Keep a
+   Kubernetes ingress disabled only while staging; provision and verify its
+   durable production transport before changing Worker traffic.
 4. Through a private port-forward or internal probe, require:
-
    - `/healthz` returns process health and contract version 1;
    - `/readyz` returns ready only with valid runtime configuration;
    - `/v1/contract` exactly matches `contracts/auth-broker/v1.json`;
