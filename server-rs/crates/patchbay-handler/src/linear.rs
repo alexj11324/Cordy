@@ -16,7 +16,7 @@ use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine as _;
 use chrono::{Duration, Utc};
 use hmac::{Hmac, Mac};
-use patchbay_db::models::{LinearConnection, LinearProjectBinding};
+use patchbay_db::models::LinearConnection;
 use patchbay_db::queries::linear as linear_q;
 use patchbay_middleware::workspace::WorkspaceContext;
 use rand::rngs::OsRng;
@@ -1193,7 +1193,7 @@ impl LinearTokenManager {
                         .as_deref()
                         .map_or(false, |email| email.trim().is_empty())
             })
-            || catalog.labels.nodes.iter().any(|label| {
+            || catalog.issue_labels.nodes.iter().any(|label| {
                 label.id.trim().is_empty()
                     || label.name.trim().is_empty()
                     || label.color.trim().is_empty()
