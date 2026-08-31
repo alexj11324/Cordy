@@ -147,50 +147,43 @@ async function probeCliVersion(binaryPath, execImpl) {
 }
 
 async function probeRuntimeDetection(binaryPath, env, execImpl) {
-  const configRoot = await mkdtemp(join(tmpdir(), "patchbay-dev-doctor-"));
-  try {
-    const { stdout } = await execImpl(
-      binaryPath,
-      ["daemon", "probe-runtimes", "--profile", "desktop-dev-doctor"],
-      {
-        timeout: 15_000,
-        env: {
-          ...env,
-          PATCHBAY_TASK_CONFIG_ROOT: configRoot,
-        },
-      },
+  // `daemon probe-runtimes` is a host-local, read-only command. Do not set
+  // PATCHBAY_TASK_CONFIG_ROOT here: the CLI reserves that marker for an
+  // actual daemon-managed task and correctly rejects human-local commands in
+  // that context. The explicit doctor profile has no write path, while using
+  // the caller's normal HOME preserves login-shell and app-bundle discovery.
+  const { stdout } = await execImpl(
+    binaryPath,
+    ["daemon", "probe-runtimes", "--profile", "desktop-dev-doctor"],
+    {
+      timeout: 15_000,
+      env,
+    },
+  );
+  const parsed = JSON.parse(stdout);
+  if (parsed.probe_result !== "success") {
+    throw new Error(
+      `runtime probe returned ${parsed.probe_result || "unknown"}`,
     );
-    const parsed = JSON.parse(stdout);
-    if (parsed.probe_result !== "success") {
-      throw new Error(
-        `runtime probe returned ${parsed.probe_result || "unknown"}`,
-      );
-    }
-    if (
-      !Number.isSafeInteger(parsed.runtime_count) ||
-      parsed.runtime_count < 0 ||
-      !parsed.provider_summary ||
-      typeof parsed.provider_summary !== "object" ||
-      Array.isArray(parsed.provider_summary)
-    ) {
-      throw new Error("runtime probe returned a malformed discovery summary");
-    }
-    const providerCounts = Object.values(parsed.provider_summary);
-    if (
-      providerCounts.some(
-        (count) => !Number.isSafeInteger(count) || count < 0,
-      ) ||
-      providerCounts.reduce((sum, count) => sum + count, 0) !==
-        parsed.runtime_count
-    ) {
-      throw new Error(
-        "runtime probe provider counts do not match runtime_count",
-      );
-    }
-    return parsed;
-  } finally {
-    await rm(configRoot, { recursive: true, force: true });
   }
+  if (
+    !Number.isSafeInteger(parsed.runtime_count) ||
+    parsed.runtime_count < 0 ||
+    !parsed.provider_summary ||
+    typeof parsed.provider_summary !== "object" ||
+    Array.isArray(parsed.provider_summary)
+  ) {
+    throw new Error("runtime probe returned a malformed discovery summary");
+  }
+  const providerCounts = Object.values(parsed.provider_summary);
+  if (
+    providerCounts.some((count) => !Number.isSafeInteger(count) || count < 0) ||
+    providerCounts.reduce((sum, count) => sum + count, 0) !==
+      parsed.runtime_count
+  ) {
+    throw new Error("runtime probe provider counts do not match runtime_count");
+  }
+  return parsed;
 }
 
 async function probeBackend(apiUrl, fetchImpl) {

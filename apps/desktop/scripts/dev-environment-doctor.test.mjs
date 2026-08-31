@@ -375,8 +375,8 @@ describe("complete Desktop development doctor", () => {
       managedDaemonToBackendVerified: false,
       agentExecutionVerified: false,
     });
-    expect(execImpl.mock.calls[1][2].env.PATCHBAY_TASK_CONFIG_ROOT).toContain(
-      "patchbay-dev-doctor-",
+    expect(execImpl.mock.calls[1][2].env).not.toHaveProperty(
+      "PATCHBAY_TASK_CONFIG_ROOT",
     );
     expect(execImpl.mock.calls[0][0]).toBe(execImpl.mock.calls[1][0]);
     expect(execImpl.mock.calls[0][0]).not.toBe(report.binaryPath);
