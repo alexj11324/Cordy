@@ -1500,6 +1500,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
+ "base64",
  "backtrace",
  "chrono",
  "console-subscriber",
