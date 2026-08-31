@@ -25,7 +25,7 @@ test("a PR keeps only the newest Turbo entry in each cache family", () => {
   );
 });
 
-test("main keeps two generations per Turbo cache family", () => {
+test("main keeps only the newest Turbo entry per cache family", () => {
   const caches = [
     cache(1, `turbo-build-linux-${"a".repeat(40)}`, "2026-08-31T03:00:00Z"),
     cache(2, `turbo-build-linux-${"b".repeat(40)}`, "2026-08-31T02:00:00Z"),
@@ -34,8 +34,8 @@ test("main keeps two generations per Turbo cache family", () => {
   ];
 
   assert.deepEqual(
-    selectCacheIdsForDeletion(caches, { mode: "prune-main", keep: 2 }),
-    [3],
+    selectCacheIdsForDeletion(caches, { mode: "prune-main", keep: 1 }),
+    [2, 3],
   );
 });
 

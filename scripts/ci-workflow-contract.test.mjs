@@ -78,7 +78,7 @@ test("Turbo cache lifecycle is bounded for active, closed, and main refs", async
   assert.match(closedPrWorkflow, /workflow_run:/u);
   assert.match(closedPrWorkflow, /mode=prune-pr/u);
   assert.match(closedPrWorkflow, /mode=prune-main/u);
-  assert.match(closedPrWorkflow, /--keep 2/u);
+  assert.match(closedPrWorkflow, /--keep 1/u);
   assert.match(closedPrWorkflow, /types: \[closed\]/u);
   assert.match(closedPrWorkflow, /mode=delete-ref/u);
   assert.match(closedPrWorkflow, /pull-requests: read/u);

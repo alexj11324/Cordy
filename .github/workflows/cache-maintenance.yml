@@ -68,6 +68,6 @@ jobs:
         run: |
           args=(--mode "$CLEANUP_MODE" --ref "$CACHE_REF")
           if [ "$CLEANUP_MODE" = "prune-main" ]; then
-            args+=(--keep 2)
+            args+=(--keep 1)
           fi
           node scripts/cleanup-actions-caches.mjs "${args[@]}"
