@@ -13,6 +13,7 @@ const AUTH_BROKER_RELEASE_PATTERNS = [
 
 const FULL_GOOGLE_OAUTH_E2E_PATTERNS = [
   /^contracts\/auth-broker\//,
+  /^deploy\/cloudflare\/accounts-origin-proxy\//,
   /^apps\/auth-broker\/app\/oauth\/google\//,
   /^apps\/auth-broker\/app\/login\//,
   /^apps\/auth-broker\/app\/v1\/desktop\//,

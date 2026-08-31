@@ -1,13 +1,12 @@
-// The accounts hostname is a transport alias for the canonical Web origin.
-// Authentication, provider selection, Clerk state, PKCE, and desktop handoff
-// all remain in the maintained Web application and Rust API. This Worker only
-// replaces the retired static accounts page so `/oauth/google*` reaches that
-// provider-specific implementation without a `/sign-in` hop.
+// The accounts hostname is the public transport edge for the independently
+// released Auth Broker. Identity verification, one-time grants, PKCE
+// redemption, and Patchbay sessions remain authoritative in the Rust API.
+// This Worker performs no authentication ceremony itself.
 
-const DEFAULT_ORIGIN = "https://origin.aspectlylabs.com";
+const ORIGIN_AUTH_HEADER = "x-patchbay-origin-auth";
 
 function resolveOrigin(env) {
-  const raw = String(env.ORIGIN || DEFAULT_ORIGIN).trim();
+  const raw = String(env.ORIGIN || "").trim();
   let origin;
   try {
     origin = new URL(raw);
@@ -38,13 +37,19 @@ function healthResponse() {
   });
 }
 
+function resolveOriginAuthToken(env) {
+  const token = String(env.ORIGIN_AUTH_TOKEN || "").trim();
+  return /^[a-f0-9]{64}$/.test(token) ? token : null;
+}
+
 export default {
   async fetch(request, env) {
     const incoming = new URL(request.url);
     if (incoming.pathname === "/health") return healthResponse();
 
     const origin = resolveOrigin(env);
-    if (!origin) {
+    const originAuthToken = resolveOriginAuthToken(env);
+    if (!origin || !originAuthToken) {
       return new Response("accounts origin is not configured\n", {
         status: 500,
         headers: { "content-type": "text/plain; charset=utf-8" },
@@ -63,6 +68,7 @@ export default {
     headers.set("x-forwarded-host", incoming.host);
     headers.set("x-forwarded-proto", "https");
     headers.set("x-patchbay-accounts-proxy", "canonical-origin");
+    headers.set(ORIGIN_AUTH_HEADER, originAuthToken);
 
     const init = {
       method: request.method,

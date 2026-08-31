@@ -40,6 +40,7 @@ test("broker packaging changes remain in the independent release lane", () => {
 test("protocol, provider callback, session exchange, and desktop boundaries require full OAuth E2E", () => {
   for (const path of [
     "contracts/auth-broker/v1.json",
+    "deploy/cloudflare/accounts-origin-proxy/src/index.js",
     "apps/auth-broker/app/oauth/google/callback/page.tsx",
     "apps/auth-broker/lib/rust-api-proxy.ts",
     "deploy/helm/patchbay-auth-broker/values.yaml",
@@ -65,5 +66,13 @@ test("broker-only image builds check out their source context", () => {
     ciWorkflow.includes(`      - name: Checkout
         if: \${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.auth_broker_release == 'true' }}
         uses: actions/checkout@v6`),
+  );
+});
+
+test("CI always runs the accounts origin proxy contract tests", () => {
+  assert.ok(
+    ciWorkflow.includes(
+      "node --test deploy/cloudflare/accounts-origin-proxy/src/index.test.mjs",
+    ),
   );
 });
