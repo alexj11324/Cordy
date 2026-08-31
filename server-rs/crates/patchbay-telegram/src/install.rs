@@ -93,7 +93,7 @@ impl InstallService {
             .map_err(|error| anyhow::anyhow!("begin Telegram install: {error:#}"))?;
         if let Some(limit) = installation_limit {
             let allowed = patchbay_db::queries::channel::channel_installation_limit_allows(
-                &mut *tx,
+                &mut tx,
                 params.workspace_id,
                 TYPE_TELEGRAM,
                 (!params.agent_id.is_nil()).then_some(params.agent_id),

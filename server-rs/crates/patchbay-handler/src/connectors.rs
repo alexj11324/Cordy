@@ -1570,7 +1570,7 @@ async fn run_lark_registration(
         }
         if let Some(limit) = runtime.installation_limit {
             let allowed = match channel::channel_installation_limit_allows(
-                &mut *tx,
+                &mut tx,
                 workspace_id,
                 Provider::Lark.channel_type(),
                 (!agent_id.is_nil()).then_some(agent_id),

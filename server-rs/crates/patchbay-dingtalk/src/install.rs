@@ -146,7 +146,7 @@ impl InstallService {
             .map_err(|e| anyhow::anyhow!("begin install tx: {e:#}"))?;
         if let Some(limit) = installation_limit {
             let allowed = patchbay_db::queries::channel::channel_installation_limit_allows(
-                &mut *tx,
+                &mut tx,
                 p.ws_id,
                 TYPE_DINGTALK,
                 (!p.agent_id.is_nil()).then_some(p.agent_id),
