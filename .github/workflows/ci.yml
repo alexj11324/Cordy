@@ -67,9 +67,11 @@ jobs:
 
       - name: Filter paths
         id: filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
-          base: ${{ inputs.base_ref || github.base_ref || 'main' }}
+          # Pull requests use the GitHub API, where v4 intentionally ignores
+          # `base`; push and manual runs still compare against the chosen base.
+          base: ${{ github.event_name != 'pull_request' && (inputs.base_ref || 'main') || '' }}
           # apps/docs is excluded from the frontend turbo run, but knip does
           # analyze it, so a docs-only change still needs this job.
           # apps/mobile has its own mobile-verify workflow. Everything else
