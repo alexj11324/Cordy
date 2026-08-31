@@ -60,7 +60,7 @@ export function StepWelcome({
 
   return (
     <div className="dark animate-onboarding-enter flex h-full min-h-[640px] flex-col bg-black font-[system-ui,-apple-system,BlinkMacSystemFont,'Segoe_UI',sans-serif]">
-      <DragStrip />
+      <DragStrip reserveTrailingControls />
       <div className="flex flex-1 flex-col justify-center px-6 pb-12 sm:px-10 md:px-20">
         <div className="mx-auto flex w-full max-w-[540px] flex-col items-center gap-8 text-center">
           <div className="flex items-center justify-center gap-3">

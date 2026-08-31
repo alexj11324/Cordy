@@ -47,6 +47,11 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.existingSecret | quote }}
                   key: {{ .Values.clerkPublishableKeySecretKey | quote }}
+            - name: PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret | quote }}
+                  key: {{ .Values.rustBrokerAuthTokenSecretKey | quote }}
           livenessProbe:
             httpGet:
               path: /healthz

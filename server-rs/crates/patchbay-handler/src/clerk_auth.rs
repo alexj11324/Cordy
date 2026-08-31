@@ -4,6 +4,11 @@
 use async_trait::async_trait;
 use jsonwebtoken::{decode, Algorithm, DecodingKey, Validation};
 use serde::Deserialize;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+// Match Clerk's documented Backend SDK default for cross-service clock skew.
+const CLERK_CLOCK_SKEW_SECS: u64 = 5;
+const CLERK_SESSION_CLOCK_SKEW_MS: i64 = 5_000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ClerkIdentity {
@@ -21,6 +26,20 @@ pub enum ClerkAuthError {
 #[async_trait]
 pub trait ClerkSessionVerifier: Send + Sync {
     async fn verify(&self, token: &str) -> Result<ClerkIdentity, ClerkAuthError>;
+
+    /// Verifies that the token belongs to a new, active session created after
+    /// the server registered the desktop authorization attempt. The browser
+    /// route owns provider selection because Clerk's Backend API exposes the
+    /// last authentication strategy only at client scope, not per session.
+    /// Implementations used by tests that do not exercise desktop OAuth fail
+    /// closed by default.
+    async fn verify_fresh_session(
+        &self,
+        _token: &str,
+        _not_before_ms: i64,
+    ) -> Result<ClerkIdentity, ClerkAuthError> {
+        Err(ClerkAuthError::Invalid)
+    }
 }
 
 pub struct ClerkAuthClient {
@@ -59,6 +78,7 @@ impl ClerkAuthClient {
                 anyhow::anyhow!("CLERK_JWT_KEY is not a valid RSA public key: {error}")
             })?;
         let mut validation = Validation::new(Algorithm::RS256);
+        validation.leeway = CLERK_CLOCK_SKEW_SECS;
         validation.validate_nbf = true;
         validation.set_required_spec_claims(&["exp", "nbf", "iss", "sub"]);
         validation.set_issuer(&[issuer.trim_end_matches('/')]);
@@ -161,6 +181,31 @@ impl ClerkAuthClient {
                 .filter(|value| !value.is_empty()),
         })
     }
+
+    async fn fetch_session(&self, session_id: &str) -> Result<ClerkSession, ClerkAuthError> {
+        let mut url = url::Url::parse("https://api.clerk.com/v1/sessions/")
+            .map_err(|_| ClerkAuthError::Unavailable)?;
+        url.path_segments_mut()
+            .map_err(|_| ClerkAuthError::Unavailable)?
+            .push(session_id);
+        let response = self
+            .http
+            .get(url)
+            .bearer_auth(&self.secret_key)
+            .send()
+            .await
+            .map_err(|_| ClerkAuthError::Unavailable)?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err(ClerkAuthError::Invalid);
+        }
+        if !response.status().is_success() {
+            return Err(ClerkAuthError::Unavailable);
+        }
+        response
+            .json::<ClerkSession>()
+            .await
+            .map_err(|_| ClerkAuthError::Unavailable)
+    }
 }
 
 #[async_trait]
@@ -169,15 +214,54 @@ impl ClerkSessionVerifier for ClerkAuthClient {
         let claims = self.verify_claims(token)?;
         self.fetch_identity(&claims.sub).await
     }
+
+    async fn verify_fresh_session(
+        &self,
+        token: &str,
+        not_before_ms: i64,
+    ) -> Result<ClerkIdentity, ClerkAuthError> {
+        let claims = self.verify_claims(token)?;
+        let session_id = claims
+            .sid
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or(ClerkAuthError::Invalid)?;
+        let session = self.fetch_session(session_id).await?;
+        let now_ms = unix_epoch_ms()?;
+        if session.id != session_id
+            || session.user_id != claims.sub
+            || session.status != "active"
+            || session.actor.is_some()
+            || !session_is_fresh(session.created_at, not_before_ms, now_ms)
+            || session.client_id.trim().is_empty()
+        {
+            return Err(ClerkAuthError::Invalid);
+        }
+        self.fetch_identity(&claims.sub).await
+    }
 }
 
 #[derive(Debug, Deserialize)]
 struct ClerkClaims {
     sub: String,
     #[serde(default)]
+    sid: Option<String>,
+    #[serde(default)]
     azp: Option<String>,
     #[serde(default)]
     sts: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClerkSession {
+    id: String,
+    user_id: String,
+    client_id: String,
+    created_at: i64,
+    status: String,
+    #[serde(default)]
+    actor: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -243,6 +327,19 @@ fn is_authorized_party(authorized_parties: &[String], party: Option<&str>) -> bo
     })
 }
 
+fn unix_epoch_ms() -> Result<i64, ClerkAuthError> {
+    let millis = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| ClerkAuthError::Unavailable)?
+        .as_millis();
+    i64::try_from(millis).map_err(|_| ClerkAuthError::Unavailable)
+}
+
+fn session_is_fresh(created_at_ms: i64, not_before_ms: i64, now_ms: i64) -> bool {
+    created_at_ms >= not_before_ms.saturating_sub(CLERK_SESSION_CLOCK_SKEW_MS)
+        && created_at_ms <= now_ms.saturating_add(CLERK_SESSION_CLOCK_SKEW_MS)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -273,6 +370,37 @@ mod tests {
         assert!(is_authorized_party(
             &allowed,
             Some("https://app.example.com/")
+        ));
+    }
+
+    #[test]
+    fn fresh_session_allows_only_bounded_clock_skew() {
+        let attempt_started_at_ms = 100_000;
+        let now_ms = attempt_started_at_ms + 10_000;
+        assert!(session_is_fresh(
+            attempt_started_at_ms + 1,
+            attempt_started_at_ms,
+            now_ms,
+        ));
+        assert!(session_is_fresh(
+            attempt_started_at_ms - CLERK_SESSION_CLOCK_SKEW_MS,
+            attempt_started_at_ms,
+            now_ms,
+        ));
+        assert!(!session_is_fresh(
+            attempt_started_at_ms - CLERK_SESSION_CLOCK_SKEW_MS - 1,
+            attempt_started_at_ms,
+            now_ms,
+        ));
+        assert!(session_is_fresh(
+            now_ms + CLERK_SESSION_CLOCK_SKEW_MS,
+            attempt_started_at_ms,
+            now_ms,
+        ));
+        assert!(!session_is_fresh(
+            now_ms + CLERK_SESSION_CLOCK_SKEW_MS + 1,
+            attempt_started_at_ms,
+            now_ms,
         ));
     }
 }

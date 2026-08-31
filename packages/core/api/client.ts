@@ -807,15 +807,32 @@ export class ApiClient {
     return this.fetch("/api/cli-token", { method: "POST" });
   }
 
-  /**
-   * Create a short-lived desktop login code bound to a PKCE challenge. The
-   * code, unlike the resulting bearer, is safe to carry through a custom URL
-   * scheme and can be redeemed only once by the initiating renderer.
-   */
-  async issueDesktopHandoff(codeChallenge: string): Promise<{ code: string }> {
-    return this.fetch("/api/desktop-handoff", {
+  /** Register the renderer binding before the browser leaves for Google. */
+  async registerDesktopGoogleAttempt(
+    state: string,
+    codeChallenge: string,
+  ): Promise<{ registered: boolean }> {
+    return this.fetch("/api/desktop-google/attempt", {
       method: "POST",
-      body: JSON.stringify({ code_challenge: codeChallenge }),
+      body: JSON.stringify({ state, code_challenge: codeChallenge }),
+    });
+  }
+
+  /**
+   * Complete the registered attempt with the current Clerk token. The browser
+   * route owns Google provider selection; Rust independently proves that the
+   * token belongs to a newly-created active Clerk session before issuing the
+   * one-time PKCE-bound app handoff code.
+   */
+  async completeDesktopGoogleAttempt(
+    sessionToken: string,
+    state: string,
+    codeChallenge: string,
+  ): Promise<{ code: string }> {
+    return this.fetch("/api/desktop-google/complete", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${sessionToken}` },
+      body: JSON.stringify({ state, code_challenge: codeChallenge }),
     });
   }
 

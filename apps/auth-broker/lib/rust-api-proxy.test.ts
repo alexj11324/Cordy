@@ -4,6 +4,8 @@ import { proxyRustDesktopGoogleRequest } from "./rust-api-proxy";
 
 const brokerOrigin = "https://accounts.aspectlylabs.com";
 const apiOrigin = "https://api.aspectlylabs.com";
+const rustBrokerAuthToken = "a".repeat(64);
+const config = { apiOrigin, brokerOrigin, rustBrokerAuthToken };
 const state = "s".repeat(43);
 const codeChallenge = "c".repeat(43);
 const code = `pbd_${"g".repeat(43)}`;
@@ -15,6 +17,7 @@ function request(
     body?: unknown;
     authorization?: string;
     contractVersion?: string;
+    serviceSecret?: string;
     origin?: string;
   } = {},
 ) {
@@ -24,6 +27,9 @@ function request(
     [AUTH_CONTRACT_HEADER]: init.contractVersion ?? "1",
   });
   if (init.authorization) headers.set("authorization", init.authorization);
+  if (init.serviceSecret) {
+    headers.set("x-patchbay-desktop-broker-auth", init.serviceSecret);
+  }
   return new Request(`${brokerOrigin}${path}`, {
     method: "POST",
     headers,
@@ -38,9 +44,11 @@ describe("Rust desktop Google proxy", () => {
     );
 
     const response = await proxyRustDesktopGoogleRequest(
-      request("/v1/desktop/google/attempt"),
+      request("/v1/desktop/google/attempt", {
+        serviceSecret: "b".repeat(64),
+      }),
       "attempt",
-      { apiOrigin, brokerOrigin },
+      config,
       fetcher,
     );
 
@@ -54,6 +62,9 @@ describe("Rust desktop Google proxy", () => {
     const headers = new Headers(init.headers);
     expect(headers.get("authorization")).toBeNull();
     expect(headers.get(AUTH_CONTRACT_HEADER)).toBe("1");
+    expect(headers.get("x-patchbay-desktop-broker-auth")).toBe(
+      rustBrokerAuthToken,
+    );
   });
 
   it("uses a Clerk bearer only on complete and returns only the one-time grant", async () => {
@@ -70,7 +81,7 @@ describe("Rust desktop Google proxy", () => {
         authorization: "Bearer clerk-session-token",
       }),
       "complete",
-      { apiOrigin, brokerOrigin },
+      config,
       fetcher,
     );
 
@@ -87,7 +98,7 @@ describe("Rust desktop Google proxy", () => {
     const crossOrigin = await proxyRustDesktopGoogleRequest(
       request("/v1/desktop/google/attempt", { origin: "https://attacker.example" }),
       "attempt",
-      { apiOrigin, brokerOrigin },
+      config,
       fetcher,
     );
     const malformed = await proxyRustDesktopGoogleRequest(
@@ -95,19 +106,19 @@ describe("Rust desktop Google proxy", () => {
         body: { state: "short", code_challenge: codeChallenge },
       }),
       "attempt",
-      { apiOrigin, brokerOrigin },
+      config,
       fetcher,
     );
     const noSession = await proxyRustDesktopGoogleRequest(
       request("/v1/desktop/google/complete"),
       "complete",
-      { apiOrigin, brokerOrigin },
+      config,
       fetcher,
     );
     const wrongVersion = await proxyRustDesktopGoogleRequest(
       request("/v1/desktop/google/attempt", { contractVersion: "2" }),
       "attempt",
-      { apiOrigin, brokerOrigin },
+      config,
       fetcher,
     );
 
@@ -124,7 +135,7 @@ describe("Rust desktop Google proxy", () => {
         authorization: "Bearer clerk-session-token",
       }),
       "complete",
-      { apiOrigin, brokerOrigin },
+      config,
       vi.fn().mockResolvedValue(
         Response.json({ error: "provider-internal-detail" }, { status: 409 }),
       ),
@@ -136,7 +147,7 @@ describe("Rust desktop Google proxy", () => {
     const unavailable = await proxyRustDesktopGoogleRequest(
       request("/v1/desktop/google/attempt"),
       "attempt",
-      { apiOrigin, brokerOrigin },
+      config,
       vi.fn().mockRejectedValue(new Error("network detail")),
     );
     await expect(unavailable.json()).resolves.toEqual({
@@ -148,7 +159,7 @@ describe("Rust desktop Google proxy", () => {
     const response = await proxyRustDesktopGoogleRequest(
       request("/v1/desktop/google/attempt"),
       "attempt",
-      { apiOrigin, brokerOrigin },
+      config,
       vi.fn().mockResolvedValue(
         new Response("x", { headers: { "content-length": "5000" } }),
       ),
@@ -179,7 +190,7 @@ describe("Rust desktop Google proxy", () => {
     const response = await proxyRustDesktopGoogleRequest(
       request("/v1/desktop/google/attempt"),
       "attempt",
-      { apiOrigin, brokerOrigin },
+      config,
       vi.fn().mockResolvedValue(upstream),
     );
 
@@ -198,7 +209,7 @@ describe("Rust desktop Google proxy", () => {
     const response = await proxyRustDesktopGoogleRequest(
       oversized,
       "attempt",
-      { apiOrigin, brokerOrigin },
+      config,
       fetcher,
     );
 

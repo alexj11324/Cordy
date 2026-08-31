@@ -11,9 +11,14 @@ const MAX_REQUEST_BYTES = 4096;
 const MAX_SESSION_TOKEN_BYTES = 8192;
 const MAX_UPSTREAM_RESPONSE_BYTES = 4096;
 const UPSTREAM_TIMEOUT_MS = 10_000;
+const BROKER_AUTH_HEADER = "x-patchbay-desktop-broker-auth";
 
 type ProxyOperation = "attempt" | "complete";
-type ProxyConfig = { apiOrigin: string; brokerOrigin: string };
+type ProxyConfig = {
+  apiOrigin: string;
+  brokerOrigin: string;
+  rustBrokerAuthToken: string;
+};
 type FetchLike = typeof fetch;
 
 export async function proxyRustDesktopGoogleRequest(
@@ -63,6 +68,7 @@ export async function proxyRustDesktopGoogleRequest(
     accept: "application/json",
     "content-type": "application/json",
     [AUTH_CONTRACT_HEADER]: String(AUTH_CONTRACT_VERSION),
+    [BROKER_AUTH_HEADER]: config.rustBrokerAuthToken,
   });
   if (operation === "complete") {
     const authorization = request.headers.get("authorization") ?? "";

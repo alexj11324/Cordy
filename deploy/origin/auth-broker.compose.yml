@@ -1,0 +1,31 @@
+name: patchbay-auth-broker
+
+services:
+  broker:
+    # Supply the complete immutable image reference, including @sha256:... .
+    # A mutable tag is not an accepted production cutover input.
+    image: ${PATCHBAY_AUTH_BROKER_IMAGE:?Set PATCHBAY_AUTH_BROKER_IMAGE to an immutable GHCR digest}
+    ports:
+      - "127.0.0.1:43100:3000"
+    environment:
+      PATCHBAY_API_ORIGIN: ${PATCHBAY_API_ORIGIN:-https://api.aspectlylabs.com}
+      PATCHBAY_AUTH_BROKER_ORIGIN: ${PATCHBAY_AUTH_BROKER_ORIGIN:-https://accounts.aspectlylabs.com}
+      CLERK_PUBLISHABLE_KEY: ${CLERK_PUBLISHABLE_KEY:?CLERK_PUBLISHABLE_KEY must be set}
+      PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN: ${PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN:?PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN must be set}
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+      - /app/apps/auth-broker/.next/cache:rw,noexec,nosuid,size=32m,uid=1001,gid=1001
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - wget -q -O - http://127.0.0.1:3000/readyz >/dev/null || exit 1
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 20s

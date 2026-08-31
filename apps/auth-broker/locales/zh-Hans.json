@@ -11,7 +11,7 @@
     },
     "desktop_handoff": {
       "preparing": "正在准备桌面登录...",
-      "opening_description": "应该会看到打开 Patchbay 桌面应用的提示。如果没有反应，请点击下方按钮。",
+      "opening_description": "如果没有反应，请点击下方按钮。",
       "open_button": "打开 Patchbay 桌面应用",
       "prepare_failed": "桌面登录准备失败"
     }

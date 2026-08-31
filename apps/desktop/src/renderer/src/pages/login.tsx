@@ -1,12 +1,8 @@
 import { useState } from "react";
 import { useAuthStore } from "@patchbay/core/auth";
 import { Alert, AlertDescription } from "@patchbay/ui/components/ui/alert";
-import {
-  Button,
-  buttonVariants,
-} from "@patchbay/ui/components/ui/button";
+import { Button } from "@patchbay/ui/components/ui/button";
 import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
-import { cn } from "@patchbay/ui/lib/utils";
 import { LoginPage } from "@patchbay/views/auth";
 import { useT } from "@patchbay/views/i18n";
 import { DragStrip } from "@patchbay/views/platform";
@@ -95,21 +91,11 @@ export function DesktopLoginPage() {
       >
         <div
           data-testid="authentication-example"
-          className="relative container flex flex-1 shrink-0 items-center justify-center md:grid lg:max-w-none lg:grid-cols-2 lg:px-0"
+          className="relative grid min-h-0 w-full flex-1 grid-cols-2"
         >
-          <a
-            href="#desktop-login"
-            aria-current="page"
-            className={cn(
-              buttonVariants({ variant: "ghost" }),
-              "absolute top-4 right-4 md:top-8 md:right-8",
-            )}
-          >
-            {t(($) => $.desktop.entry.login_label)}
-          </a>
           <div
             data-testid="authentication-brand-panel"
-            className="relative hidden h-full flex-col p-10 text-primary lg:flex dark:border-r"
+            className="relative flex h-full min-h-0 flex-col p-10 text-primary dark:border-r"
           >
             <div className="absolute inset-0 bg-primary/5" aria-hidden="true" />
             <div className="relative z-20 flex items-center text-title font-medium">
@@ -122,7 +108,10 @@ export function DesktopLoginPage() {
               </blockquote>
             </div>
           </div>
-          <div className="flex items-center justify-center lg:h-[1000px] lg:p-8">
+          <div
+            data-testid="authentication-form-panel"
+            className="flex h-full min-h-0 items-center justify-center p-6 lg:p-8"
+          >
             <LoginPage
               embedded
               externalError={

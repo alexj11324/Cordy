@@ -3,7 +3,7 @@
 enabled: false
 
 image:
-  repository: ghcr.io/patchbay-ai/patchbay-auth-broker
+  repository: ghcr.io/alexj11324/patchbay-auth-broker
   digest: ""
   pullPolicy: IfNotPresent
 
@@ -15,6 +15,7 @@ config:
 
 existingSecret: patchbay-auth-broker
 clerkPublishableKeySecretKey: CLERK_PUBLISHABLE_KEY
+rustBrokerAuthTokenSecretKey: PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN
 
 service:
   port: 3000

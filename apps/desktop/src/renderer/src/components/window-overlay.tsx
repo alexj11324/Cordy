@@ -15,12 +15,11 @@ import { useLocalRuntimesPending } from "../platform/use-local-runtimes-pending"
  *
  * This component is intentionally thin — just a fixed positioning shell
  * that covers the tab system. It does NOT hide traffic lights or provide
- * a drag strip: each contained view (OnboardingFlow, NewWorkspacePage,
- * InvitePage) renders its own `<DragStrip />` as a flex-child at top so
- * native macOS traffic lights stay visible and the page content can fill
- * the window edge-to-edge. This matches the Linear/Notion/Arc pattern for
- * pre-dashboard flows and keeps platform chrome consistent across every
- * "not-in-dashboard" surface.
+ * a drag strip: each contained view owns either a native-only fixed
+ * `<DragStrip />` overlay or an integrated titlebar surface. Neither reserves
+ * a blank layout row, so native macOS traffic lights sit on the view itself.
+ * This keeps platform chrome consistent across every "not-in-dashboard"
+ * surface.
  *
  * All UX affordances (Back button, Log out button, welcome copy, invite
  * card) live inside the shared view components under `packages/views/`,
@@ -80,10 +79,7 @@ function WindowOverlayInner() {
         />
       )}
       {overlay.type === "invite" && (
-        <InvitePage
-          invitationId={overlay.invitationId}
-          onBack={onBack}
-        />
+        <InvitePage invitationId={overlay.invitationId} onBack={onBack} />
       )}
       {overlay.type === "invitations" && <InvitationsPage />}
       {overlay.type === "onboarding" && (
@@ -91,13 +87,9 @@ function WindowOverlayInner() {
           onComplete={(ws, destination) => {
             close();
             if (ws && destination?.kind === "chat") {
-              push(
-                paths.workspace(ws.slug).chatSession(destination.sessionId),
-              );
+              push(paths.workspace(ws.slug).chatSession(destination.sessionId));
             } else if (ws && destination?.kind === "issue") {
-              push(
-                paths.workspace(ws.slug).issueDetail(destination.issueId),
-              );
+              push(paths.workspace(ws.slug).issueDetail(destination.issueId));
             } else if (ws) {
               push(paths.workspace(ws.slug).issues());
             } else {

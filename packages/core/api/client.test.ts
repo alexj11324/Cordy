@@ -42,6 +42,43 @@ describe("ApiClient edit guards", () => {
     );
   });
 
+  it("binds desktop Google completion to the explicit Clerk token", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ code: "pbd_code" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ApiClient("https://api.example.test");
+    client.setToken("patchbay-native-token");
+    const state = "s".repeat(43);
+    const codeChallenge = "c".repeat(43);
+
+    await expect(
+      client.completeDesktopGoogleAttempt(
+        "clerk-session-token",
+        state,
+        codeChallenge,
+      ),
+    ).resolves.toEqual({ code: "pbd_code" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.test/api/desktop-google/complete",
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        headers: expect.objectContaining({
+          Authorization: "Bearer clerk-session-token",
+        }),
+        body: JSON.stringify({
+          state,
+          code_challenge: codeChallenge,
+        }),
+      }),
+    );
+  });
+
   it("creates a guest session through the dedicated endpoint", async () => {
     const user = {
       id: "guest-user",

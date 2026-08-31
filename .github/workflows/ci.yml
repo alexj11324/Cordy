@@ -65,6 +65,9 @@ jobs:
         with:
           args: -color
 
+      - name: Test accounts origin proxy contract
+        run: node --test deploy/cloudflare/accounts-origin-proxy/src/index.test.mjs
+
       - name: Filter paths
         id: filter
         uses: dorny/paths-filter@v4

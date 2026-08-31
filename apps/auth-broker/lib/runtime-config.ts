@@ -4,6 +4,7 @@ export type AuthBrokerRuntimeConfig = {
   apiOrigin: string;
   brokerOrigin: string;
   clerkPublishableKey: string;
+  rustBrokerAuthToken: string;
 };
 
 export type RuntimeConfigResult =
@@ -23,9 +24,13 @@ export function readAuthBrokerRuntimeConfig(
       env.CLERK_PUBLISHABLE_KEY,
       "CLERK_PUBLISHABLE_KEY",
     );
+    const rustBrokerAuthToken = requiredHexSecret(
+      env.PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN,
+      "PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN",
+    );
     return {
       ok: true,
-      config: { apiOrigin, brokerOrigin, clerkPublishableKey },
+      config: { apiOrigin, brokerOrigin, clerkPublishableKey, rustBrokerAuthToken },
     };
   } catch (error) {
     return {
@@ -33,6 +38,14 @@ export function readAuthBrokerRuntimeConfig(
       error: error instanceof Error ? error.message : "invalid runtime configuration",
     };
   }
+}
+
+function requiredHexSecret(value: string | undefined, name: string): string {
+  const normalized = requiredString(value, name);
+  if (!/^[a-f0-9]{64}$/.test(normalized)) {
+    throw new Error(`${name} must be 64 lowercase hexadecimal characters`);
+  }
+  return normalized;
 }
 
 function requiredString(value: string | undefined, name: string): string {

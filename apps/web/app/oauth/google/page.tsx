@@ -5,7 +5,14 @@ import { useClerk, useSignIn } from "@clerk/nextjs";
 import { ClerkAuthShell } from "@/components/clerk-auth-shell";
 import { buildBrokerRoute } from "@/features/auth/broker-path";
 import { readDesktopHandoffBinding } from "@/features/auth/desktop-handoff";
+import {
+  canStartGoogleOAuth,
+  googleOAuthCallbackHref,
+  hasClerkOAuthReturn,
+  startGoogleOAuth,
+} from "@/features/auth/google-oauth";
 import { useT } from "@patchbay/views/i18n";
+import { api } from "@patchbay/core/api";
 import { useWebSearchParams } from "@/platform/client-navigation";
 
 export default function GoogleOAuthPage() {
@@ -26,6 +33,9 @@ function GoogleOAuthContent() {
   const { signIn } = useSignIn();
   const { t } = useT("auth");
   const attempted = useRef(false);
+  const registeringAttempt = useRef(false);
+  const clearingSession = useRef(false);
+  const [attemptRegistered, setAttemptRegistered] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -35,7 +45,6 @@ function GoogleOAuthContent() {
       return;
     }
     if (!clerk.loaded) return;
-    attempted.current = true;
 
     const currentPathname = window.location.pathname;
     const returnUrl = `${buildBrokerRoute(
@@ -48,15 +57,75 @@ function GoogleOAuthContent() {
       "/oauth/google",
       "/oauth/google/callback",
     )}?${binding.query}`;
+
+    if (hasClerkOAuthReturn(searchParams, window.location.hash)) {
+      attempted.current = true;
+      window.location.replace(
+        googleOAuthCallbackHref({
+          pathname: currentPathname,
+          search: window.location.search,
+          hash: window.location.hash,
+        }),
+      );
+      return;
+    }
+
+    if (!attemptRegistered) {
+      if (registeringAttempt.current) return;
+      registeringAttempt.current = true;
+      void api
+        .registerDesktopGoogleAttempt(binding.state, binding.codeChallenge)
+        .then(({ registered }) => {
+          if (!registered) throw new Error("Desktop Google OAuth attempt unavailable");
+          setAttemptRegistered(true);
+        })
+        .catch(() => {
+          registeringAttempt.current = false;
+          setError(t(($) => $.web.google_oauth.failed));
+        });
+      return;
+    }
+
+    // An ambient Clerk cookie is not proof that this desktop-initiated Google
+    // attempt completed. Clear every session on this Clerk client, then
+    // restart from a canonical URL so another cached session cannot become
+    // active before the next document begins Google SSO.
+    if (clerk.session) {
+      if (searchParams.get("clerk_reset") === "1") {
+        setError(t(($) => $.web.google_oauth.failed));
+        return;
+      }
+      if (clearingSession.current) return;
+      clearingSession.current = true;
+      const resetQuery = new URLSearchParams(binding.query);
+      resetQuery.set("clerk_reset", "1");
+      const restartUrl = new URL(
+        `${buildBrokerRoute(
+          currentPathname,
+          "/oauth/google",
+          "/oauth/google",
+        )}?${resetQuery}`,
+        window.location.origin,
+      ).href;
+      void clerk
+        .signOut({ redirectUrl: restartUrl })
+        .catch(() => {
+          clearingSession.current = false;
+          setError(t(($) => $.web.google_oauth.failed));
+        });
+      return;
+    }
+
+    if (!canStartGoogleOAuth(signIn)) return;
+
+    attempted.current = true;
     // Existing Google users stay on sign-in. The callback transfers a new
     // external account to sign-up when Clerk marks this attempt transferable.
-    void signIn
-      .sso({
-        strategy: "oauth_google",
-        redirectUrl: returnUrl,
-        redirectCallbackUrl: callbackUrl,
-        oidcPrompt: "select_account",
-      })
+    void startGoogleOAuth(signIn, {
+      returnUrl,
+      callbackUrl,
+      origin: window.location.origin,
+    })
       .then(({ error: clerkError }) => {
         if (clerkError) {
           setError(t(($) => $.web.google_oauth.failed));
@@ -65,7 +134,7 @@ function GoogleOAuthContent() {
       .catch(() => {
         setError(t(($) => $.web.google_oauth.failed));
       });
-  }, [binding, clerk.loaded, signIn, t]);
+  }, [attemptRegistered, binding, clerk, searchParams, signIn, t]);
 
   return (
     <ClerkAuthShell>

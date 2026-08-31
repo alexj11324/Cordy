@@ -22,11 +22,11 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  IMAGE: ghcr.io/patchbay-ai/patchbay-auth-broker
+  IMAGE: ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker
 
 jobs:
   validate-and-build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout selected ref
         uses: actions/checkout@v6
@@ -81,6 +81,7 @@ jobs:
         with:
           context: .
           file: Dockerfile.auth-broker
+          platforms: linux/arm64
           push: ${{ inputs.publish }}
           tags: ${{ env.IMAGE }}:${{ inputs.image_tag }}
           cache-from: type=gha,scope=auth-broker

@@ -10,7 +10,7 @@ import {
 } from "react";
 import { SignIn, useAuth } from "@clerk/nextjs";
 import { useAuthStore } from "@patchbay/core/auth";
-import { api } from "@patchbay/core/api";
+import { api, ApiError } from "@patchbay/core/api";
 import {
   redirectToCliCallback,
   redirectToDesktopApp,
@@ -24,6 +24,7 @@ import {
 } from "@/features/auth/safe-redirect";
 import { useClerkSessionExchangeReady } from "@/components/clerk-auth-adapter";
 import { useWebSearchParams } from "@/platform/client-navigation";
+import { buildBrokerRoute } from "@/features/auth/broker-path";
 
 function desktopHandoffQuery(codeChallenge: string, state: string): string {
   const params = new URLSearchParams({ platform: "desktop" });
@@ -162,6 +163,7 @@ function DesktopHandoff({
   state: string;
   clerkSessionExchangeReady: boolean;
 }) {
+  const { getToken } = useAuth();
   const { t } = useT("auth");
   const authStatus = useAuthStore((state) => state.status);
   const backendSessionReady =
@@ -177,15 +179,35 @@ function DesktopHandoff({
       if (!codeChallenge || !state) {
         throw new Error("Patchbay desktop handoff is missing its binding");
       }
-      const { code } = await api.issueDesktopHandoff(codeChallenge);
+      const sessionToken = await getToken();
+      if (!sessionToken) throw new Error("Clerk session token unavailable");
+      const { code } = await api.completeDesktopGoogleAttempt(
+        sessionToken,
+        state,
+        codeChallenge,
+      );
       if (!code) throw new Error("Patchbay desktop handoff code unavailable");
       redirectToDesktopApp(code, state);
       setLoading(false);
-    } catch {
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        (error.status === 401 || error.status === 409)
+      ) {
+        const startPath = buildBrokerRoute(
+          window.location.pathname,
+          "/login",
+          "/oauth/google",
+        );
+        window.location.replace(
+          `${startPath}?${desktopHandoffQuery(codeChallenge, state)}`,
+        );
+        return;
+      }
       setError(t(($) => $.web.desktop_handoff.prepare_failed));
       setLoading(false);
     }
-  }, [codeChallenge, state, t]);
+  }, [codeChallenge, getToken, state, t]);
 
   useEffect(() => {
     if (!backendSessionReady || automaticAttempted.current) return;
