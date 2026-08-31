@@ -5,6 +5,7 @@
 //! the same typed `DaemonStartAssembly` snapshot.
 
 use anyhow::{bail, Context, Result};
+use serde::Deserialize;
 use std::ffi::OsString;
 use std::fmt::Write as FmtWrite;
 use std::fs;
@@ -763,6 +764,79 @@ pub(super) fn validate_daemon_health_port(
 pub(super) fn parse_cli_duration(value: &str) -> std::result::Result<Duration, String> {
     patchbay_daemon::helpers::parse_go_duration(value).map_err(|error| error.to_string())
 }
+
+const DESKTOP_PROFILE_HELPER_ARG: &str = "--patchbay-private-desktop-profile";
+
+#[derive(Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
+enum DesktopProfileRequest {
+    Configure {
+        profile: String,
+        server_url: String,
+    },
+    SetCredentials {
+        profile: String,
+        server_url: String,
+        token: String,
+        user_id: String,
+    },
+    ClearCredentials {
+        profile: String,
+    },
+}
+
+fn apply_desktop_profile_request(
+    environment: &Environment,
+    request: DesktopProfileRequest,
+) -> Result<()> {
+    match request {
+        DesktopProfileRequest::Configure {
+            profile,
+            server_url,
+        } => environment.update_desktop_profile(&profile, Some(&server_url), None, None),
+        DesktopProfileRequest::SetCredentials {
+            profile,
+            server_url,
+            token,
+            user_id,
+        } => environment.update_desktop_profile(
+            &profile,
+            Some(&server_url),
+            Some(Some(&token)),
+            Some(Some(&user_id)),
+        ),
+        DesktopProfileRequest::ClearCredentials { profile } => {
+            environment.update_desktop_profile(&profile, None, Some(None), Some(None))
+        }
+    }
+}
+
+fn run_desktop_profile_helper_with_environment<I, O>(
+    input: I,
+    output: &mut O,
+    environment: &Environment,
+) -> Result<()>
+where
+    I: Read,
+    O: IoWrite,
+{
+    let request: DesktopProfileRequest =
+        serde_json::from_reader(input).context("parse Desktop profile request")?;
+    apply_desktop_profile_request(environment, request)?;
+    serde_json::to_writer(output, &serde_json::json!({ "ok": true }))
+        .context("write Desktop profile response")?;
+    Ok(())
+}
+
+fn run_desktop_profile_helper<I, O>(input: I, output: &mut O) -> Result<()>
+where
+    I: Read,
+    O: IoWrite,
+{
+    let environment = Environment::from_process_for_desktop_profile()?;
+    run_desktop_profile_helper_with_environment(input, output, &environment)
+}
+
 /// Handles the daemon's private execution-environment helper mode before
 /// normal CLI parsing or profile loading. The protocol never places task
 /// configuration or gateway credentials in argv; all payload data stays on
@@ -772,9 +846,79 @@ where
     I: Read,
     O: IoWrite,
 {
-    if args.len() != 2 || args[1] != patchbay_daemon::execenv::isolation::PREPARATION_HELPER_ARG {
+    if args.len() != 2 {
         return Ok(false);
     }
-    patchbay_daemon::execenv::isolation::run_preparation_helper(input, output).await?;
-    Ok(true)
+    if args[1] == patchbay_daemon::execenv::isolation::PREPARATION_HELPER_ARG {
+        patchbay_daemon::execenv::isolation::run_preparation_helper(input, output).await?;
+        return Ok(true);
+    }
+    if args[1] == DESKTOP_PROFILE_HELPER_ARG {
+        run_desktop_profile_helper(input, output)?;
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+#[cfg(test)]
+mod desktop_profile_helper_tests {
+    use super::*;
+
+    #[test]
+    fn private_desktop_profile_protocol_sets_and_clears_credentials() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+        let profile = "desktop-api.example.com";
+        let mut output = Vec::new();
+
+        run_desktop_profile_helper_with_environment(
+            serde_json::to_vec(&serde_json::json!({
+                "action": "set_credentials",
+                "profile": profile,
+                "server_url": "https://api.example.com",
+                "token": "pby_fixture",
+                "user_id": "user-1"
+            }))
+            .expect("request"),
+            &mut output,
+            &environment,
+        )
+        .expect("set credentials");
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&output).expect("response")["ok"],
+            true
+        );
+        let configured = environment.load_config(profile).expect("configured profile");
+        assert_eq!(configured.server_url, "https://api.example.com");
+        assert_eq!(configured.token, "pby_fixture");
+        assert_eq!(
+            environment
+                .load_profile_document(profile)
+                .expect("profile document")["desktop_user_id"],
+            "user-1"
+        );
+
+        output.clear();
+        run_desktop_profile_helper_with_environment(
+            serde_json::to_vec(&serde_json::json!({
+                "action": "clear_credentials",
+                "profile": profile
+            }))
+            .expect("request"),
+            &mut output,
+            &environment,
+        )
+        .expect("clear credentials");
+        assert!(environment
+            .load_config(profile)
+            .expect("cleared profile")
+            .token
+            .is_empty());
+        assert!(environment
+            .load_profile_document(profile)
+            .expect("cleared profile document")
+            .get("desktop_user_id")
+            .is_none());
+    }
 }

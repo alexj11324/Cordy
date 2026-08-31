@@ -57,6 +57,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version-file: .nvmrc
+
       - name: Reject legacy product markers
         run: bash scripts/check-legacy-brand-markers.sh
 
@@ -73,7 +78,9 @@ jobs:
           scripts/github-actions-pinning-contract.test.mjs \
           scripts/dev-clerk-auth.test.mjs \
           scripts/dev-auth-command.test.mjs \
-          scripts/dev-runtime-command.test.mjs
+          scripts/dev-runtime-command.test.mjs \
+          apps/desktop/src/main/desktop-profile-helper.node-test.mjs \
+          apps/desktop/src/main/private-profile-storage.node-test.mjs
           bash scripts/dev-env.test.sh
 
       - name: Test accounts origin proxy contract

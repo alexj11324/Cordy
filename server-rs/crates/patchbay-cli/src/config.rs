@@ -10,6 +10,7 @@ use std::path::{Component, Path, PathBuf};
 use std::time::Duration;
 
 pub const TASK_CONFIG_ROOT_ENV: &str = "PATCHBAY_TASK_CONFIG_ROOT";
+const DESKTOP_USER_ID_CONFIG_KEY: &str = "desktop_user_id";
 const TASK_CONTEXT_MARKER_REL_PATH: &str = ".patchbay/daemon_task_context.json";
 const LEGACY_TASK_CONTEXT_MARKER_REL_PATH: &str = ".cordy/daemon_task_context.json"; // legacy-brand-compat
 const TASK_CONTEXT_MARKER_MANAGED_BY: &str = "patchbay-daemon-task";
@@ -76,6 +77,15 @@ impl Environment {
             current_dir: std::env::current_dir().context("resolve current directory")?,
             home_dir,
         })
+    }
+
+    pub(crate) fn from_process_for_desktop_profile() -> Result<Self> {
+        let mut environment = Self::from_process()?;
+        // A Desktop-owned profile always lives under the signed-in user's
+        // ~/.patchbay directory. Inheriting an agent task's private config
+        // root would silently redirect the helper into a disposable sandbox.
+        environment.values.remove(TASK_CONFIG_ROOT_ENV);
+        Ok(environment)
     }
 
     #[cfg(test)]
@@ -255,6 +265,77 @@ impl Environment {
             }
         }
         write_json_atomically(&path, &document)
+    }
+
+    /// Apply the Desktop-owned credential fields under the same cross-process
+    /// lock and atomic replacement protocol used by terminal CLI writes.
+    ///
+    /// `token_update` distinguishes preserving the current token (`None`),
+    /// removing it (`Some(None)`), and replacing it (`Some(Some(token))`).
+    /// The Desktop owner id is stored in the same JSON document as the token,
+    /// so an account switch can never expose a token/id pair from different
+    /// atomic commits. This lets Electron avoid ever carrying a bearer token
+    /// in argv while still preserving config fields owned by the daemon or
+    /// terminal CLI.
+    pub fn update_desktop_profile(
+        &self,
+        profile: &str,
+        server_url: Option<&str>,
+        token_update: Option<Option<&str>>,
+        user_id_update: Option<Option<&str>>,
+    ) -> Result<()> {
+        validate_desktop_profile_name(profile)?;
+        let path = self.config_path(profile)?;
+        let directory = path.parent().context("resolve CLI config directory")?;
+        ensure_config_directory(directory, self.trimmed(TASK_CONFIG_ROOT_ENV))?;
+        restrict_directory_permissions(directory)?;
+        let lock_path = directory.join(".config.lock");
+        let lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .context("open CLI config lock")?;
+        restrict_file_permissions(&lock_path)?;
+        lock.lock().context("lock CLI config")?;
+
+        let mut document = read_config_document(&path)?;
+        let object = document
+            .as_object_mut()
+            .context("parse CLI config: expected a JSON object")?;
+        if let Some(server_url) = server_url {
+            object.insert("server_url".into(), Value::String(server_url.into()));
+        }
+        if let Some(token_update) = token_update {
+            match token_update {
+                Some(token) => {
+                    object.insert("token".into(), Value::String(token.into()));
+                }
+                None => {
+                    object.remove("token");
+                }
+            }
+        }
+        if let Some(user_id_update) = user_id_update {
+            match user_id_update {
+                Some(user_id) => {
+                    anyhow::ensure!(
+                        !user_id.trim().is_empty(),
+                        "Desktop profile user id must not be empty"
+                    );
+                    object.insert(
+                        DESKTOP_USER_ID_CONFIG_KEY.into(),
+                        Value::String(user_id.into()),
+                    );
+                }
+                None => {
+                    object.remove(DESKTOP_USER_ID_CONFIG_KEY);
+                }
+            }
+        }
+        write_json_atomically(&path, &document)?;
+        Ok(())
     }
 
     /// Atomically persist the credentials established by `login --token`.
@@ -595,14 +676,33 @@ fn ensure_config_directory(directory: &Path, task_root: Option<&str>) -> Result<
     }
 }
 
+fn validate_desktop_profile_name(profile: &str) -> Result<()> {
+    let valid_prefix = profile == "desktop" || profile.starts_with("desktop-");
+    let valid_chars = profile
+        .bytes()
+        .all(|byte| {
+            byte.is_ascii_lowercase()
+                || byte.is_ascii_digit()
+                || matches!(byte, b'.' | b'-')
+        });
+    if !valid_prefix || !valid_chars || profile.len() > 255 {
+        bail!("invalid Desktop-owned profile name")
+    }
+    Ok(())
+}
+
 fn write_json_atomically(path: &Path, document: &Value) -> Result<()> {
-    let directory = path.parent().context("resolve CLI config directory")?;
     let mut data = serde_json::to_vec_pretty(document).context("encode CLI config")?;
     data.push(b'\n');
+    write_bytes_atomically(path, &data)
+}
+
+fn write_bytes_atomically(path: &Path, data: &[u8]) -> Result<()> {
+    let directory = path.parent().context("resolve CLI config directory")?;
     let (mut temporary, temporary_path) = create_config_temp_file(directory)?;
     let result = (|| -> Result<()> {
         temporary
-            .write_all(&data)
+            .write_all(data)
             .context("write temp config file")?;
         temporary.sync_all().context("sync temp config file")?;
         drop(temporary);
@@ -1458,6 +1558,102 @@ mod tests {
             fs::read(profile_dir.join(".config.lock")).expect("lock file"),
             b"lock-sentinel"
         );
+    }
+
+    #[test]
+    fn desktop_profile_updates_share_the_cli_lock_and_preserve_other_fields() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let profile = "desktop-api.example.com";
+        let profile_dir = home.path().join(".patchbay/profiles").join(profile);
+        fs::create_dir_all(&profile_dir).expect("profile dir");
+        fs::write(
+            profile_dir.join("config.json"),
+            br#"{"future":{"kept":true}}"#,
+        )
+        .expect("profile config");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+
+        std::thread::scope(|scope| {
+            let credentials = environment.clone();
+            let workspace = environment.clone();
+            let credentials = scope.spawn(move || {
+                credentials
+                    .update_desktop_profile(
+                        profile,
+                        Some("https://api.example.com"),
+                        Some(Some("pby_desktop")),
+                        Some(Some("user-1")),
+                    )
+                    .expect("set Desktop credentials")
+            });
+            let workspace = scope.spawn(move || {
+                workspace
+                    .set_profile_value(
+                        profile,
+                        "workspace_id",
+                        Some(Value::String("workspace-1".into())),
+                    )
+                    .expect("set workspace")
+            });
+            credentials.join().expect("credential thread");
+            workspace.join().expect("workspace thread");
+        });
+
+        let saved = environment
+            .load_profile_document(profile)
+            .expect("saved profile");
+        assert_eq!(saved["server_url"], "https://api.example.com");
+        assert_eq!(saved["token"], "pby_desktop");
+        assert_eq!(saved["workspace_id"], "workspace-1");
+        assert_eq!(saved["future"]["kept"], true);
+
+        environment
+            .update_desktop_profile(profile, None, Some(None), Some(None))
+            .expect("clear Desktop token");
+        let cleared = environment
+            .load_profile_document(profile)
+            .expect("cleared profile");
+        assert!(cleared.get("token").is_none());
+        assert_eq!(cleared["workspace_id"], "workspace-1");
+        assert!(!profile_dir.join(".desktop-user-id").exists());
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&profile_dir)
+                    .expect("profile metadata")
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o700
+            );
+            for name in ["config.json", ".config.lock"] {
+                assert_eq!(
+                    fs::metadata(profile_dir.join(name))
+                        .expect("private file metadata")
+                        .permissions()
+                        .mode()
+                        & 0o777,
+                    0o600
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn desktop_profile_update_rejects_non_desktop_profiles() {
+        let home = tempfile::tempdir().expect("temp home");
+        let cwd = tempfile::tempdir().expect("temp cwd");
+        let environment = Environment::for_test(home.path().into(), cwd.path().into());
+
+        for profile in ["", "work", "desktop-../work", "desktop-UPPER"] {
+            assert!(environment
+                .update_desktop_profile(profile, Some("https://api.example.com"), None, None)
+                .is_err());
+        }
+        assert!(!home.path().join(".patchbay/config.json").exists());
     }
 
     #[test]
