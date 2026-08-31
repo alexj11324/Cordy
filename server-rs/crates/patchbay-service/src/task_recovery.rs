@@ -996,7 +996,7 @@ mod tests {
         )
         .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_linear_data(
-            &mut *tx,
+            &mut tx,
             workspace_id,
         )
         .await?;

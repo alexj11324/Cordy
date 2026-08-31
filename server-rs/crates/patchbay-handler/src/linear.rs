@@ -526,8 +526,8 @@ impl LinearTokenManager {
             LinearTokenError::InvalidResponse
         })?;
         if token.access_token.trim().is_empty()
-            || token.refresh_token.as_deref().map_or(true, str::is_empty)
-            || token.expires_in.map_or(true, |value| value <= 0)
+            || token.refresh_token.as_deref().is_none_or(str::is_empty)
+            || token.expires_in.is_none_or(|value| value <= 0)
         {
             return Err(LinearTokenError::InvalidResponse);
         }
@@ -596,7 +596,7 @@ impl LinearTokenManager {
     pub async fn access_token(&self, connection_id: Uuid) -> Result<String, LinearTokenError> {
         let mut transaction = self.pool.begin().await.map_err(storage_error)?;
         let Some(connection) =
-            linear_q::get_connection_for_update(&mut *transaction, connection_id)
+            linear_q::get_connection_for_update(&mut transaction, connection_id)
                 .await
                 .map_err(storage_error)?
         else {
@@ -617,7 +617,7 @@ impl LinearTokenManager {
             Ok(token) => token,
             Err(LinearTokenError::InvalidGrant) => {
                 linear_q::mark_reauthorization_required(
-                    &mut *transaction,
+                    &mut transaction,
                     connection_id,
                     "invalid_grant",
                 )
@@ -642,7 +642,7 @@ impl LinearTokenManager {
             .map(LinearScopeResponse::into_json)
             .unwrap_or_else(|| connection.scopes.clone());
         linear_q::update_tokens(
-            &mut *transaction,
+            &mut transaction,
             connection_id,
             &access_encrypted,
             &refresh_encrypted,
@@ -864,7 +864,7 @@ async fn oauth_callback(
         return linear_callback_redirect(&state, "unauthorized");
     }
     match linear_q::get_connection_for_workspace_for_update(
-        &mut *transaction,
+        &mut transaction,
         oauth_state.workspace_id,
     )
     .await
@@ -1131,7 +1131,7 @@ async fn linear_webhook(
         }
     };
     let candidates = match linear_q::find_connections_for_webhook(
-        &mut *transaction,
+        &mut transaction,
         &verified.organization_id,
         &verified.webhook_id,
     )
@@ -1151,7 +1151,7 @@ async fn linear_webhook(
     }
     let connection = &candidates[0];
     if connection.webhook_id.is_none() {
-        match linear_q::bind_webhook(&mut *transaction, connection.id, &verified.webhook_id).await {
+        match linear_q::bind_webhook(&mut transaction, connection.id, &verified.webhook_id).await {
             Ok(true) => {}
             Ok(false) => {
                 return error_response(StatusCode::CONFLICT, "Linear Webhook installation changed")
@@ -1166,7 +1166,7 @@ async fn linear_webhook(
         }
     }
     let inserted = match linear_q::insert_sync_inbox(
-        &mut *transaction,
+        &mut transaction,
         Uuid::now_v7(),
         connection.id,
         &verified.delivery_id,
@@ -1184,7 +1184,7 @@ async fn linear_webhook(
             );
         }
     };
-    if let Err(error) = linear_q::mark_webhook_accepted(&mut *transaction, connection.id).await {
+    if let Err(error) = linear_q::mark_webhook_accepted(&mut transaction, connection.id).await {
         tracing::warn!(%error, "Linear Webhook health update failed");
         return error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
