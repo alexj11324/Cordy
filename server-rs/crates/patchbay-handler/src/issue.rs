@@ -573,6 +573,9 @@ struct TableRequest {
     page: Value,
 }
 
+const WORKING_AGENT_FACET_QUERY: &str =
+    "SELECT atq.agent_id::text, count(DISTINCT i.id)::bigint FROM issue i JOIN agent_task_queue atq ON atq.issue_id=i.id AND atq.status='running' WHERE ";
+
 #[derive(Debug, Serialize, Deserialize)]
 struct TableCursor {
     v: u8,
@@ -2256,9 +2259,7 @@ async fn table_facets(
                 }
             }
             "working_agents" => {
-                let mut query = QueryBuilder::<Postgres>::new(
-                    "SELECT atq.agent_id::text, count(DISTINCT i.id)::bigint FROM issue i JOIN agent_task_queue atq ON atq.issue_id=i.id AND atq.workspace_id=i.workspace_id AND atq.status='running' WHERE ",
-                );
+                let mut query = QueryBuilder::<Postgres>::new(WORKING_AGENT_FACET_QUERY);
                 if let Err(response) = push_table_filters(
                     &mut query,
                     &facet_request,
@@ -9127,6 +9128,12 @@ mod tests {
         assert!(groups[0].iter().any(
             |alternative| matches!(alternative, PropertyAlternative::Missing(value) if value == id)
         ));
+    }
+
+    #[test]
+    fn working_agent_facet_joins_queue_through_issue_identity() {
+        assert!(WORKING_AGENT_FACET_QUERY.contains("atq.issue_id=i.id"));
+        assert!(!WORKING_AGENT_FACET_QUERY.contains("atq.workspace_id"));
     }
 
     #[test]
