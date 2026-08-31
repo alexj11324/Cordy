@@ -726,10 +726,6 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
         onOpenTopics={openChatTopics}
         onSelectSession={selectChatSessionFromSidebar}
         onStartChat={startChatFromSidebar}
-        onSwitchWorkspace={(nextWorkspace) => {
-          setOpenMobile(false);
-          push(paths.workspace(nextWorkspace.slug).issues());
-        }}
         onCreateWorkspace={() => {
           setOpenMobile(false);
           push(paths.newWorkspace());

@@ -114,7 +114,6 @@ export type LobeAgentSidebarProps = {
   onOpenTopics: () => void;
   onSelectSession: (session: ChatSession) => void;
   onStartChat: (agent: Agent | null) => void;
-  onSwitchWorkspace: (workspace: Workspace) => void;
   onCreateWorkspace: () => void;
   otherWorkspaceUnread: boolean;
   sidebarState: "expanded" | "collapsed";
@@ -164,7 +163,6 @@ export function LobeAgentSidebar({
   onOpenTopics,
   onSelectSession,
   onStartChat,
-  onSwitchWorkspace,
   onCreateWorkspace,
   otherWorkspaceUnread,
   sidebarState,
@@ -238,7 +236,6 @@ export function LobeAgentSidebar({
                     <DropdownMenuItem
                       key={item.id}
                       render={<AppLink href={paths.workspace(item.slug).issues()} />}
-                      onClick={() => onSwitchWorkspace(item)}
                     >
                       <WorkspaceAvatar name={item.name} avatarUrl={item.avatar_url} size="sm" />
                       <span className="min-w-0 flex-1 truncate">{item.name}</span>
