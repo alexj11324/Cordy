@@ -152,6 +152,7 @@ const STATUS_CLASS: Record<string, string> = {
   deferred: "text-muted-foreground",
   dispatched: "text-brand",
   waiting_local_directory: "text-muted-foreground",
+  waiting_capacity: "text-muted-foreground",
   running: "text-brand",
   completed: "text-muted-foreground",
   failed: "text-destructive",

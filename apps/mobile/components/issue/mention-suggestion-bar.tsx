@@ -122,7 +122,7 @@ export function MentionSuggestionBar({
   );
 
   const myFilter = useMemo(
-    () => (userId ? { assignee_id: userId } : { assignee_id: "" }),
+    () => (userId ? { owner_id: userId } : { owner_id: "" }),
     [userId],
   );
   const { data: myIssuesAll = [] } = useQuery({
@@ -166,7 +166,7 @@ export function MentionSuggestionBar({
     // Agents: filter archived + drop ones the current user can't assign —
     // mirrors web (packages/views/editor/extensions/mention-suggestion.tsx:418-424).
     // A private agent shown in the suggestion list would create a mention the
-    // assignee can never act on; web hides them, mobile must too.
+    // executor can never act on; web hides them, mobile must too.
     const myRole =
       members.find((m) => m.user_id === userId)?.role ?? null;
     const runnableAgentIds = new Set(

@@ -94,7 +94,7 @@ import {
 } from "@patchbay/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 import { useAppForeground } from "../common/use-app-foreground";
-import { canAssignAgent } from "../issues/components/pickers/assignee-picker";
+import { canAssignAgent } from "../issues/components/pickers/executor-picker";
 import { LobeAgentSidebar } from "./lobe-agent-sidebar";
 import { useSearchStore } from "../search/search-store";
 

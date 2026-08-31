@@ -1,7 +1,6 @@
 ---
 name: patchbay-working-on-issues
 description: "Use when acting on a Patchbay issue beyond what the brief covers: PR linking vs close intent, reading a linked PR's real state, metadata keys, status-change side effects, sub-issue todo vs backlog."
-user-invocable: false
 allowed-tools: Bash(patchbay *), Bash(git *), Bash(gh *)
 ---
 
@@ -192,14 +191,17 @@ patchbay issue property unset <issue-id> --name Environment
 A status change is not cosmetic — the server enqueues or skips agent work based
 on it. These are the contracts, not advice:
 
-- **`backlog`** parks an agent-assigned issue: the assignee is set but no task
-  fires. Moving `backlog → todo` (or any non-done/non-cancelled status) enqueues
-  the assigned agent then.
+- **`backlog` and `todo` are non-running queues.** A graph root is persisted as
+  `todo`; a dependent is persisted as `blocked`. Neither state starts an agent.
+  The coordinator admits a ready `todo` issue to `in_progress` only after all
+  hard dependencies are `done`, the executor has capacity, and its ACP/model is
+  available. When the last hard dependency completes, `blocked` becomes `todo`
+  and waits for that admission pass.
 - **`in_progress` / `in_review`** are agent-managed CLI mutations, not
   `StartTask` / `CompleteTask` side effects. The runtime brief asks agents to
   write the state the issue is in whenever their work changes it — not from
   the trigger type or the run's lifecycle, and not gated on being the
-  assignee. Writes happen whenever the state changes, mid-turn included: a
+  executor. Writes happen whenever the state changes, mid-turn included: a
   turn that advances the issue's own ask sets `in_progress` as soon as that
   is known, so the board shows the work while it runs; a blocker is recorded
   when it is hit; and the turn must not exit with a stale value — delivered
@@ -214,18 +216,14 @@ on it. These are the contracts, not advice:
   Team leaders: dispatching members is not delivery — a dispatch turn
   leaves the parent `in_progress`, and it moves to `in_review` only when a
   later re-trigger confirms the overall goal is met.
-- **Every active status needs an owner.** `in_progress`, `in_review`, `blocked`,
-  and custom statuses in those categories are rejected without a member,
-  agent, or team assignee. `backlog`, `todo`, `done`, and `cancelled` may be
-  unassigned. When claiming an unassigned issue, write status and assignee in
-  one `patchbay issue update` call.
-- **Entering `in_review` is a handoff, not a status-only update.** Select a
-  reviewer who is different from the current assignee and atomically update
-  both fields, for example
-  `patchbay issue update <issue-id> --status in_review --assignee-id <reviewer-id>`.
-  The server rejects a missing or unchanged reviewer. If no suitable reviewer
-  is available, keep the issue in its current active state and ask a human to
-  choose one; do not leave it ownerless or parked in review.
+- **Every active status needs roles.** `in_progress` and `in_review` require an
+  executor; `in_review` additionally requires a reviewer different from it.
+  `owner` is the accountable human and is independent from `executor` and
+  `reviewer`. `backlog`, `todo`, `done`, and `cancelled` may be unassigned.
+  Entering `in_review` is a handoff, not a status-only update: the executor is
+  retained, the independent reviewer is persisted, and the server creates a
+  reviewer task. If no suitable reviewer is available, keep the issue in its
+  current active state and ask a human to choose one.
 - **`done`** on a child issue posts a system comment on its parent. If an
   explicitly attached Work Product relation carries close intent, it advances
   the Issue to `done` on merge — PR text alone never sets that intent.
@@ -245,8 +243,7 @@ already underway and the write only records ownership or progress, pass
 does not suppress a later status update:
 
 ```bash
-patchbay issue assign <issue-id> --to-id <agent-id> --no-start
-patchbay issue update <issue-id> --assignee-id <agent-id> --no-start
+patchbay issue update <issue-id> --executor-id <agent-id> --no-start
 patchbay issue status <issue-id> in_progress --no-start
 ```
 
@@ -257,31 +254,29 @@ exact target `(issue, agent)` pair already has a non-terminal task, but it
 deliberately keeps same-agent handoffs to a fresh issue starting runs: cross-issue
 serial chains and triage batches rely on that.
 
-## Sub-issues: `todo` starts work now, `backlog` parks it
+## Dependency-graph sub-issues: `todo` is a queue, `blocked` is gated
 
-On an agent-assigned issue, create status decides whether the assignee fires
-immediately. A non-backlog status (e.g. `todo`) enqueues the agent at create
-time; `backlog` sets the assignee without triggering.
-
-Parallel children — all start now:
-
-```bash
-patchbay issue create --title "..." --parent <issue-id> --assignee <agent> --status todo
-```
-
-Strictly serial children — park later steps, promote one at a time:
+Do not create graph children one at a time. Use the planning skill's typed
+`dependency-graph apply`, which atomically creates all child issues, parent and
+hard-dependency relations, role assignments, and readiness state. Roots start
+as `todo`; every non-root starts as `blocked`. The server, not this prompt,
+validates cycles, duplicate edges, workspace scope, and output references.
 
 ```bash
-patchbay issue create --title "Step 2: ..." --parent <issue-id> --assignee <agent> --status backlog
-patchbay issue status <child-id> todo   # promote when the previous step is truly done
+patchbay issue dependency-graph apply <parent-id> \
+  --idempotency-key "<stable-plan-key>" --plan-stdin --output json < plan.json
 ```
 
-Creating every serial step as `todo` enqueues the whole chain at once.
+When a prerequisite reaches `done`, the coordinator promotes only dependents
+whose complete hard-prerequisite set is done to `todo`. It then performs the
+capacity/ACP admission to `in_progress` and creates exactly one executor task.
+Never use a manual status update to bypass this gate or to simulate a graph
+edge.
 
 ### Stages: order sub-issues into barrier groups
 
 `--stage <N>` (N ≥ 1) groups sub-issues under the same parent into ordered
-stages. The parent assignee is woken **once, when a whole stage finishes** —
+stages. The parent executor is woken **once, when a whole stage finishes** —
 i.e. every sub-issue in the lowest unfinished stage has reached a terminal
 status (`done`/`cancelled`). A completion that does not close a stage is silent
 (no comment, no wake). A sibling set with **no** stages is one implicit stage,
@@ -289,18 +284,18 @@ so the parent is woken once when the *last* sub-issue finishes — not on every
 child.
 
 Advancement is agent-driven: the server only detects the closed barrier and
-wakes the parent assignee, who then decides whether to promote the next stage's
+wakes the parent executor, who then decides whether to promote the next stage's
 `backlog` sub-issues to `todo`.
 
 ```bash
 # Stage 1 runs now; later stages parked until promoted
-patchbay issue create --title "Research A" --parent <id> --assignee <agent> --stage 1 --status todo
-patchbay issue create --title "Research B" --parent <id> --assignee <agent> --stage 1 --status todo
-patchbay issue create --title "Build"      --parent <id> --assignee <agent> --stage 2 --status backlog
-patchbay issue create --title "Ship"       --parent <id> --assignee <agent> --stage 3 --status backlog
+patchbay issue create --title "Research A" --parent <id> --executor <agent> --stage 1 --status todo
+patchbay issue create --title "Research B" --parent <id> --executor <agent> --stage 1 --status todo
+patchbay issue create --title "Build"      --parent <id> --executor <agent> --stage 2 --status backlog
+patchbay issue create --title "Ship"       --parent <id> --executor <agent> --stage 3 --status backlog
 ```
 
-When both Stage 1 sub-issues finish you (the parent assignee) are woken with a
+When both Stage 1 sub-issues finish you (the parent executor) are woken with a
 "Stage 1 complete" comment. Inspect the layout, then promote the next stage:
 
 ```bash
@@ -332,14 +327,14 @@ Serial / phased sub-issues (don't start the whole chain at once):
 
 ```bash
 # incorrect — all fire immediately, no ordering
-patchbay issue create --title "Step 2" --parent <issue-id> --assignee <agent> --status todo
-patchbay issue create --title "Step 3" --parent <issue-id> --assignee <agent> --status todo
+patchbay issue create --title "Step 2" --parent <issue-id> --executor <agent> --status todo
+patchbay issue create --title "Step 3" --parent <issue-id> --executor <agent> --status todo
 
 # correct — stage them; Stage 1 runs, later stages park and are promoted as
 # each stage's barrier closes
-patchbay issue create --title "Step 1" --parent <issue-id> --assignee <agent> --stage 1 --status todo
-patchbay issue create --title "Step 2" --parent <issue-id> --assignee <agent> --stage 2 --status backlog
-patchbay issue create --title "Step 3" --parent <issue-id> --assignee <agent> --stage 3 --status backlog
+patchbay issue create --title "Step 1" --parent <issue-id> --executor <agent> --stage 1 --status todo
+patchbay issue create --title "Step 2" --parent <issue-id> --executor <agent> --stage 2 --status backlog
+patchbay issue create --title "Step 3" --parent <issue-id> --executor <agent> --stage 3 --status backlog
 ```
 
 ## References

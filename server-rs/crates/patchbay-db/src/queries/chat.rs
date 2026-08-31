@@ -969,7 +969,7 @@ pub async fn get_pending_chat_task(
 ) -> anyhow::Result<Option<GetPendingChatTaskRow>> {
     let row = sqlx::query(
         r#"SELECT id, status, created_at FROM agent_task_queue
-WHERE chat_session_id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+WHERE chat_session_id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
   -- Background quick-actions regeneration passes are invisible to the chat UI:
   -- they own no assistant turn and must not raise the StatusPill or disable the
   -- composer (PB-5149 refresh follow-up).
@@ -1049,7 +1049,7 @@ pub async fn has_active_chat_task_for_session(
         r#"SELECT EXISTS (
   SELECT 1 FROM agent_task_queue
   WHERE chat_session_id = $1
-    AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+    AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
 ) AS has_active"#,
     )
     .bind(chat_session_id)
@@ -1071,7 +1071,7 @@ pub async fn has_pending_chat_tasks_by_creator(
   FROM agent_task_queue atq
   JOIN chat_session cs ON cs.id = atq.chat_session_id
   WHERE atq.chat_session_id IS NOT NULL
-    AND atq.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+    AND atq.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
     -- Background quick-actions regeneration passes own no visible turn and must
     -- never light the FAB "running" indicator (PB-5149 refresh follow-up).
     AND atq.regenerate_quick_actions_for IS NULL
@@ -1097,7 +1097,7 @@ pub async fn has_pending_chat_turn_for_session(
         r#"SELECT EXISTS (
   SELECT 1 FROM agent_task_queue
   WHERE chat_session_id = $1
-    AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+    AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
     AND regenerate_quick_actions_for IS NULL
 ) AS has_pending"#,
     )
@@ -1408,11 +1408,11 @@ WHERE message.chat_session_id = $1
           SELECT head.id
           FROM agent_task_queue AS head
           WHERE head.chat_session_id = $1
-            AND head.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+            AND head.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
             AND head.regenerate_quick_actions_for IS NULL
           ORDER BY
             CASE
-              WHEN head.status IN ('dispatched', 'running', 'waiting_local_directory') THEN 0
+              WHEN head.status IN ('dispatched', 'running', 'waiting_local_directory', 'waiting_capacity') THEN 0
               WHEN head.status = 'deferred' THEN 1
               ELSE 2
             END,
@@ -1467,11 +1467,11 @@ WHERE message.chat_session_id = $1
           SELECT head.id
           FROM agent_task_queue AS head
           WHERE head.chat_session_id = $1
-            AND head.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+            AND head.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
             AND head.regenerate_quick_actions_for IS NULL
           ORDER BY
             CASE
-              WHEN head.status IN ('dispatched', 'running', 'waiting_local_directory') THEN 0
+              WHEN head.status IN ('dispatched', 'running', 'waiting_local_directory', 'waiting_capacity') THEN 0
               WHEN head.status = 'deferred' THEN 1
               ELSE 2
             END,
@@ -1530,11 +1530,11 @@ WHERE message.chat_session_id = $1
           SELECT head.id
           FROM agent_task_queue AS head
           WHERE head.chat_session_id = $1
-            AND head.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+            AND head.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
             AND head.regenerate_quick_actions_for IS NULL
           ORDER BY
             CASE
-              WHEN head.status IN ('dispatched', 'running', 'waiting_local_directory') THEN 0
+              WHEN head.status IN ('dispatched', 'running', 'waiting_local_directory', 'waiting_capacity') THEN 0
               WHEN head.status = 'deferred' THEN 1
               ELSE 2
             END,
@@ -1698,7 +1698,7 @@ pub async fn list_pending_chat_tasks_by_creator(
 FROM agent_task_queue atq
 JOIN chat_session cs ON cs.id = atq.chat_session_id
 WHERE atq.chat_session_id IS NOT NULL
-  AND atq.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+  AND atq.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
   -- Exclude background quick-actions regeneration passes: they own no assistant
   -- turn and must not surface as "running" chat work (PB-5149 refresh follow-up).
   AND atq.regenerate_quick_actions_for IS NULL
@@ -1752,11 +1752,11 @@ LEFT JOIN LATERAL (
     LIMIT 1
 ) AS message ON TRUE
 WHERE task.chat_session_id = $1
-  AND task.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+  AND task.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
   AND task.regenerate_quick_actions_for IS NULL
 ORDER BY
     CASE
-      WHEN task.status IN ('dispatched', 'running', 'waiting_local_directory') THEN 0
+      WHEN task.status IN ('dispatched', 'running', 'waiting_local_directory', 'waiting_capacity') THEN 0
       WHEN task.status = 'deferred' THEN 1
       ELSE 2
     END,
@@ -1992,7 +1992,7 @@ pub async fn prioritize_queued_chat_task(
       SELECT 1
       FROM agent_task_queue AS active
       WHERE active.chat_session_id = $1
-        AND active.status IN ('dispatched', 'running', 'waiting_local_directory')
+        AND active.status IN ('dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
         AND active.regenerate_quick_actions_for IS NULL
     )
   FOR UPDATE
@@ -2017,7 +2017,7 @@ SELECT
     SELECT active.id
     FROM agent_task_queue AS active
     WHERE active.chat_session_id = $1
-      AND active.status IN ('dispatched', 'running', 'waiting_local_directory')
+      AND active.status IN ('dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
       AND active.regenerate_quick_actions_for IS NULL
     ORDER BY active.created_at ASC, active.id ASC
     LIMIT 1
@@ -2151,11 +2151,11 @@ pub async fn reanchor_claimed_direct_chat_input(
                   SELECT head.id
                   FROM agent_task_queue AS head
                   WHERE head.chat_session_id = claimed_input.chat_session_id
-                    AND head.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+                    AND head.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
                     AND head.regenerate_quick_actions_for IS NULL
                   ORDER BY
                     CASE
-                      WHEN head.status IN ('dispatched', 'running', 'waiting_local_directory') THEN 0
+                      WHEN head.status IN ('dispatched', 'running', 'waiting_local_directory', 'waiting_capacity') THEN 0
                       WHEN head.status = 'deferred' THEN 1
                       ELSE 2
                     END,
@@ -2225,11 +2225,11 @@ WHERE queued_input.chat_session_id = $1
         SELECT head.id
         FROM agent_task_queue AS head
         WHERE head.chat_session_id = queued_input.chat_session_id
-          AND head.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+          AND head.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
           AND head.regenerate_quick_actions_for IS NULL
         ORDER BY
           CASE
-            WHEN head.status IN ('dispatched', 'running', 'waiting_local_directory') THEN 0
+            WHEN head.status IN ('dispatched', 'running', 'waiting_local_directory', 'waiting_capacity') THEN 0
             WHEN head.status = 'deferred' THEN 1
             ELSE 2
           END,

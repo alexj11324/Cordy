@@ -15,6 +15,7 @@ use patchbay_db::dbid::new_v7;
 use patchbay_db::models::{
     Agent, AgentInvocationTarget, AgentTaskQueue, ChatMessage, ChatSession, Comment, Issue,
 };
+use patchbay_db::queries::activity;
 use patchbay_db::queries::agent::{
     append_task_message_bus_instruction, cancel_agent_task, cancel_agent_task_by_user,
     cancel_agent_task_with_reason, cancel_agent_tasks_by_agent, cancel_agent_tasks_by_issue,
@@ -27,11 +28,12 @@ use patchbay_db::queries::agent::{
     get_agent_for_claim_update, get_agent_task, get_agent_thread_continuation_by_idempotency,
     list_agent_thread_tasks, list_queued_claim_candidates_by_runtime,
     list_queued_claim_candidates_by_runtimes, lock_task_for_message_bus,
-    mark_agent_task_waiting_local_directory, mark_chat_finalize_deferred, merge_agent_task_context,
-    promote_deferred_channel_issue_task, promote_due_deferred_tasks_for_runtime,
-    promote_due_deferred_tasks_for_runtimes, reclaim_stale_dispatched_task_for_runtime,
-    reclaim_stale_dispatched_tasks_for_runtimes, refresh_agent_status_from_tasks,
-    requeue_agent_task_after_claim_failure, set_deferred_channel_issue_task_runtime_overlay,
+    mark_agent_task_waiting_capacity, mark_agent_task_waiting_local_directory,
+    mark_chat_finalize_deferred, merge_agent_task_context, promote_deferred_channel_issue_task,
+    promote_due_deferred_tasks_for_runtime, promote_due_deferred_tasks_for_runtimes,
+    reclaim_stale_dispatched_task_for_runtime, reclaim_stale_dispatched_tasks_for_runtimes,
+    refresh_agent_status_from_tasks, requeue_agent_task_after_claim_failure,
+    resume_agent_task_waiting_capacity, set_deferred_channel_issue_task_runtime_overlay,
     set_task_delivered_comment_i_ds, start_agent_task,
 };
 use patchbay_db::queries::agent_invocation_target::list_agent_invocation_targets;
@@ -77,6 +79,7 @@ use crate::attribution::{
     Result_ as AttributionResult,
 };
 use crate::feature_flags::{composio_mcp_apps_enabled, FlagSource};
+use crate::issue_status;
 use crate::task_helpers::{compute_chat_elapsed_ms, priority_to_int, truncate_for_summary};
 
 /// Cap for the trigger-comment snapshot stored on the task row: enough for a
@@ -294,8 +297,8 @@ pub enum TaskServiceError {
     Sql(#[from] sqlx::Error),
     #[error("load agent: {0}")]
     LoadAgent(sqlx::Error),
-    #[error("issue has no assignee")]
-    NoAssignee,
+    #[error("issue has no executor")]
+    NoExecutor,
     #[error("agent is archived")]
     AgentArchived,
     #[error("agent has no runtime")]
@@ -402,6 +405,21 @@ where
     })
 }
 
+/// Task rows for issue execution are claimable only for a status category that
+/// admits executor work. Keeping this guard in the shared enqueue path prevents
+/// legacy callers from accidentally running a parked/completed graph node even
+/// if they bypass the coordinator.
+async fn require_execution_status(pool: &PgPool, issue: &Issue) -> Result<(), TaskServiceError> {
+    let category = issue_status::effective(pool, issue.workspace_id, &issue.status).await;
+    if issue_status::runs_executor(&category) {
+        Ok(())
+    } else {
+        Err(TaskServiceError::Internal(
+            "issue is not admitted to the execution lane".to_string(),
+        ))
+    }
+}
+
 /// Seam for building the per-task Composio MCP overlay at enqueue time.
 ///
 /// Contract: `None` means "no overlay for this run". Any overlay value is the
@@ -484,7 +502,7 @@ pub(crate) fn issue_task_context(
     owner_generation: Option<i64>,
 ) -> serde_json::Value {
     let mut context = serde_json::Map::new();
-    if let (Some(owner_type), Some(owner_id)) = (&issue.assignee_type, issue.assignee_id) {
+    if let (Some(owner_type), Some(owner_id)) = (&issue.executor_type, issue.executor_id) {
         context.insert(
             COORDINATION_OWNER_TYPE_CONTEXT_KEY.to_string(),
             serde_json::json!(owner_type),
@@ -578,7 +596,7 @@ pub struct TaskService {
 /// Everything the two issue-task INSERT shapes need, resolved by
 /// prepare_issue_enqueue.
 struct PreparedIssueEnqueue {
-    assignee_id: Uuid,
+    executor_id: Uuid,
     runtime_id: Uuid,
     originator_user_id: Option<Uuid>,
     accountable_user_id: Option<Uuid>,
@@ -1804,8 +1822,64 @@ impl TaskService {
                     continue;
                 }
             };
-            let result = if issue.assignee_type.as_deref() == Some("team") {
-                match issue.assignee_id {
+            // Dependency graph nodes are deliberately created/promoted as
+            // Todo.  Admission is the only path allowed to start them: move
+            // the row to In Progress under a conditional update before
+            // enqueueing, then reload the snapshot used for the task context.
+            // A replay loses the race (or observes a human status change) and
+            // simply leaves the issue to the owning workflow.
+            let admitted = match dependency_graph_q::admit_ready_issue_for_execution(
+                &self.pool,
+                issue.workspace_id,
+                issue.id,
+            )
+            .await
+            {
+                Ok(admitted) => admitted,
+                Err(error) => {
+                    tracing::warn!(
+                        issue_id = %issue.id,
+                        %error,
+                        "failed to admit ready dependency task"
+                    );
+                    continue;
+                }
+            };
+            if !admitted {
+                continue;
+            }
+            if let Err(error) = activity::create_activity(
+                &self.pool,
+                issue.workspace_id,
+                issue.id,
+                Some("system"),
+                None,
+                "dependency_issue_admitted",
+                &serde_json::json!({
+                    "from_status": "todo",
+                    "to_status": "in_progress",
+                    "reason": "dependency_graph_coordinator",
+                }),
+                new_v7(),
+            )
+            .await
+            {
+                tracing::warn!(
+                    issue_id = %issue.id,
+                    %error,
+                    "failed to record dependency admission activity"
+                );
+            }
+            let issue = match get_issue(&self.pool, issue_id).await {
+                Ok(Some(issue)) => issue,
+                Ok(None) => continue,
+                Err(error) => {
+                    tracing::warn!(%issue_id, %error, "failed to reload admitted dependency task");
+                    continue;
+                }
+            };
+            let result = if issue.executor_type.as_deref() == Some("team") {
+                match issue.executor_id {
                     Some(team_id) => {
                         match get_team_in_workspace(&self.pool, team_id, issue.workspace_id).await {
                             Ok(Some(team)) if team.archived_at.is_none() => {
@@ -1826,7 +1900,7 @@ impl TaskService {
                         }
                     }
                     None => Err(TaskServiceError::Internal(
-                        "ready dependency team has no assignee".to_string(),
+                        "ready dependency team has no executor".to_string(),
                     )),
                 }
             } else {
@@ -2177,7 +2251,7 @@ impl TaskService {
 
     /// Creates an unpublished task for an explicitly selected agent while
     /// leaving the persisted issue owner untouched. The current issue
-    /// contract stores the implementation owner in `assignee_*` and the
+    /// contract stores the implementation owner in `executor_*` and the
     /// reviewer in `reviewer_*`; this local projection keeps team-owned issues
     /// dispatchable to the selected reviewer without rewriting ownership.
     pub async fn enqueue_task_for_agent_with_handoff_unpublished(
@@ -2189,8 +2263,8 @@ impl TaskService {
         coordination_assignment_id: Uuid,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
         let mut agent_issue = issue.clone();
-        agent_issue.assignee_type = Some("agent".to_string());
-        agent_issue.assignee_id = Some(agent_id);
+        agent_issue.executor_type = Some("agent".to_string());
+        agent_issue.executor_id = Some(agent_id);
         self.enqueue_task_for_issue_with_handoff_unpublished(
             &agent_issue,
             handoff_note,
@@ -2239,13 +2313,14 @@ impl TaskService {
         actor_user_id: Option<Uuid>,
         build_overlay: bool,
     ) -> Result<PreparedIssueEnqueue, TaskServiceError> {
+        require_execution_status(&self.pool, issue).await?;
         require_dependency_gate(&self.pool, issue.workspace_id, issue.id).await?;
-        let Some(assignee_id) = issue.assignee_id else {
-            tracing::error!(issue_id = %issue.id, "task enqueue failed: issue has no assignee");
-            return Err(TaskServiceError::NoAssignee);
+        let Some(executor_id) = issue.executor_id else {
+            tracing::error!(issue_id = %issue.id, "task enqueue failed: issue has no executor");
+            return Err(TaskServiceError::NoExecutor);
         };
 
-        let agent = get_agent(&self.pool, assignee_id)
+        let agent = get_agent(&self.pool, executor_id)
             .await
             .map_err(|e| TaskServiceError::LoadAgent(downcast_sqlx(e)))?
             .ok_or(TaskServiceError::LoadAgent(sqlx::Error::RowNotFound))?;
@@ -2258,7 +2333,7 @@ impl TaskService {
             return Err(TaskServiceError::AgentNoRuntime);
         };
 
-        // Issue assignee reacting to an agent-authored comment is
+        // Issue executor reacting to an agent-authored comment is
         // comment_source (a delegation special case); member comment or direct
         // assignment is direct_human.
         let attr = self
@@ -2270,7 +2345,7 @@ impl TaskService {
             )
             .await;
         let attr = self.apply_attribution_fallback(attr, &agent).await.inspect_err(|_e| {
-            tracing::warn!(issue_id = %issue.id, agent_id = %assignee_id, "task enqueue refused: attribution fail-closed");
+            tracing::warn!(issue_id = %issue.id, agent_id = %executor_id, "task enqueue refused: attribution fail-closed");
         })?;
         let originator_user_id = attr.user_id;
         let runtime_mcp_overlay = match originator_user_id {
@@ -2288,7 +2363,7 @@ impl TaskService {
         let head_sha = self.resolve_issue_review_sha(issue.id).await;
 
         Ok(PreparedIssueEnqueue {
-            assignee_id,
+            executor_id,
             runtime_id,
             originator_user_id,
             accountable_user_id: attr.accountable_user_id,
@@ -2354,14 +2429,14 @@ impl TaskService {
         // The owner-row fence acquires workspace → agent → issue → runtime
         // locks. Take it before the issue FOR UPDATE below so this transaction
         // cannot invert the teardown/merge lock order.
-        lock_task_owner_rows_before_issue(&mut tx, prep.assignee_id, issue.id, prep.runtime_id)
+        lock_task_owner_rows_before_issue(&mut tx, prep.executor_id, issue.id, prep.runtime_id)
             .await?;
         let (current_owner_type, current_owner_id, owner_generation): (
             Option<String>,
             Option<Uuid>,
             i64,
         ) = sqlx::query_as(
-            "SELECT assignee_type, assignee_id, assignee_generation FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
+            "SELECT executor_type, executor_id, executor_generation FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
         )
         .bind(issue.id)
         .bind(issue.workspace_id)
@@ -2372,8 +2447,8 @@ impl TaskService {
             TaskServiceError::Internal("issue disappeared while enqueuing task".to_string())
         })?;
         if coordination_assignment_id.is_none()
-            && (current_owner_type.as_deref() != issue.assignee_type.as_deref()
-                || current_owner_id != issue.assignee_id)
+            && (current_owner_type.as_deref() != issue.executor_type.as_deref()
+                || current_owner_id != issue.executor_id)
         {
             return Err(TaskServiceError::Internal(
                 "issue owner changed while enqueuing task".to_string(),
@@ -2381,8 +2456,8 @@ impl TaskService {
         }
         let initial_context_issue = if coordination_assignment_id.is_none() {
             let mut snapshot = issue.clone();
-            snapshot.assignee_type = current_owner_type;
-            snapshot.assignee_id = current_owner_id;
+            snapshot.executor_type = current_owner_type;
+            snapshot.executor_id = current_owner_id;
             snapshot
         } else {
             issue.clone()
@@ -2399,7 +2474,7 @@ impl TaskService {
         let created = if fire_at.is_some() {
             create_deferred_channel_issue_task(
                 &mut *tx,
-                prep.assignee_id,
+                prep.executor_id,
                 prep.runtime_id,
                 issue.id,
                 priority_to_int(&issue.priority),
@@ -2429,7 +2504,7 @@ impl TaskService {
         } else {
             create_agent_task(
                 &mut *tx,
-                prep.assignee_id,
+                prep.executor_id,
                 prep.runtime_id,
                 issue.id,
                 priority_to_int(&issue.priority),
@@ -2470,7 +2545,7 @@ impl TaskService {
         tracing::info!(
             task_id = %task.id,
             issue_id = %issue.id,
-            agent_id = %prep.assignee_id,
+            agent_id = %prep.executor_id,
             execution_lane_key = %task.execution_lane_key,
             force_fresh_session,
             "task enqueued"
@@ -2507,8 +2582,8 @@ impl TaskService {
         fire_at: chrono::DateTime<chrono::Utc>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
         require_dependency_gate(&mut *tx, issue.workspace_id, issue.id).await?;
-        let assignee_id = issue.assignee_id.ok_or(TaskServiceError::NoAssignee)?;
-        let agent = get_agent(&mut *tx, assignee_id)
+        let executor_id = issue.executor_id.ok_or(TaskServiceError::NoExecutor)?;
+        let agent = get_agent(&mut *tx, executor_id)
             .await
             .map_err(|e| TaskServiceError::LoadAgent(downcast_sqlx(e)))?
             .ok_or(TaskServiceError::LoadAgent(sqlx::Error::RowNotFound))?;
@@ -2567,7 +2642,7 @@ impl TaskService {
             .flatten()
             .unwrap_or_default();
         let prep = PreparedIssueEnqueue {
-            assignee_id,
+            executor_id,
             runtime_id,
             originator_user_id: attr.user_id,
             accountable_user_id: attr.accountable_user_id,
@@ -2581,7 +2656,7 @@ impl TaskService {
             head_sha,
         };
         let owner_generation: i64 =
-            sqlx::query_scalar("SELECT assignee_generation FROM issue WHERE id = $1")
+            sqlx::query_scalar("SELECT executor_generation FROM issue WHERE id = $1")
                 .bind(issue.id)
                 .fetch_one(&mut *tx)
                 .await?;
@@ -2589,7 +2664,7 @@ impl TaskService {
 
         let task = create_deferred_channel_issue_task(
             tx,
-            prep.assignee_id,
+            prep.executor_id,
             prep.runtime_id,
             issue.id,
             priority_to_int(&issue.priority),
@@ -3472,7 +3547,7 @@ impl TaskService {
         let owner_snapshot = if coordination_assignment_id.is_some() || owner_context {
             Some(
                 sqlx::query_as::<_, (Option<String>, Option<Uuid>, i64)>(
-                    "SELECT assignee_type, assignee_id, assignee_generation FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
+                    "SELECT executor_type, executor_id, executor_generation FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
                 )
                 .bind(issue.id)
                 .bind(issue.workspace_id)
@@ -3491,8 +3566,8 @@ impl TaskService {
             && (owner_snapshot
                 .as_ref()
                 .and_then(|snapshot| snapshot.0.as_deref())
-                != issue.assignee_type.as_deref()
-                || owner_snapshot.as_ref().and_then(|snapshot| snapshot.1) != issue.assignee_id)
+                != issue.executor_type.as_deref()
+                || owner_snapshot.as_ref().and_then(|snapshot| snapshot.1) != issue.executor_id)
         {
             return Err(TaskServiceError::Internal(
                 "issue owner changed while enqueuing mention task".to_string(),
@@ -3501,10 +3576,10 @@ impl TaskService {
         let owner_generation = owner_snapshot.as_ref().map(|snapshot| snapshot.2);
         let initial_context_issue = if owner_context && coordination_assignment_id.is_none() {
             let mut snapshot = issue.clone();
-            snapshot.assignee_type = owner_snapshot
+            snapshot.executor_type = owner_snapshot
                 .as_ref()
                 .and_then(|snapshot| snapshot.0.clone());
-            snapshot.assignee_id = owner_snapshot.as_ref().and_then(|snapshot| snapshot.1);
+            snapshot.executor_id = owner_snapshot.as_ref().and_then(|snapshot| snapshot.1);
             snapshot
         } else {
             issue.clone()
@@ -3589,8 +3664,8 @@ impl TaskService {
     }
 
     /// Inert task that becomes claimable only after promotion flips it from
-    /// deferred to queued (fallback assignee escalation).
-    pub async fn enqueue_deferred_assignee_fallback(
+    /// deferred to queued (fallback executor escalation).
+    pub async fn enqueue_deferred_executor_fallback(
         &self,
         issue: &Issue,
         agent_id: Uuid,
@@ -3613,7 +3688,7 @@ impl TaskService {
             return Err(TaskServiceError::AgentNoRuntime);
         };
 
-        // The fallback assignee reacts to the same trigger comment as the
+        // The fallback executor reacts to the same trigger comment as the
         // primary routed task; stamping at creation keeps the eventual run off
         // the NULL-source bypass (PB-4302 §2). Overlay intentionally left for
         // the promotion path.
@@ -6265,6 +6340,85 @@ impl TaskService {
         .await;
         Ok(task)
     }
+
+    /// Park a claimed task when its immutable ACP/model target is currently
+    /// rate-limited or out of quota.  The target snapshot remains unchanged;
+    /// resuming only makes the same task claimable again after a fresh local
+    /// capacity check or an explicit user-selected override.
+    pub async fn mark_task_waiting_capacity(
+        &self,
+        task_id: Uuid,
+        reason: &str,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        let reason = reason.trim();
+        let changed = mark_agent_task_waiting_capacity(
+            &self.pool,
+            task_id,
+            (!reason.is_empty()).then_some(reason),
+        )
+        .await
+        .map_err(downcast_sqlx)
+        .map_err(|error| {
+            TaskServiceError::Internal(format!("mark task waiting_capacity: {error}"))
+        })?;
+        if !changed {
+            return Err(TaskServiceError::Internal(
+                "mark task waiting_capacity: no queued or dispatched row".into(),
+            ));
+        }
+        let task = get_agent_task(&self.pool, task_id)
+            .await
+            .map_err(downcast_sqlx)
+            .map_err(|error| {
+                TaskServiceError::Internal(format!("load waiting_capacity task: {error}"))
+            })?
+            .ok_or_else(|| {
+                TaskServiceError::Internal("waiting_capacity task disappeared".into())
+            })?;
+        self.reconcile_agent_status(task.agent_id).await;
+        let mut event_extra = serde_json::Map::new();
+        event_extra.insert("reason".into(), serde_json::json!(reason));
+        self.broadcast_task_event(
+            patchbay_protocol::EVENT_TASK_WAITING_CAPACITY,
+            &task,
+            event_extra,
+        )
+        .await;
+        Ok(task)
+    }
+
+    /// Return a capacity-waiting task to the normal queued lane.  No task is
+    /// migrated while running, and the daemon still performs its ordinary
+    /// immutable-target validation when it claims the row.
+    pub async fn resume_task_waiting_capacity(
+        &self,
+        task_id: Uuid,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        let changed = resume_agent_task_waiting_capacity(&self.pool, task_id)
+            .await
+            .map_err(downcast_sqlx)
+            .map_err(|error| {
+                TaskServiceError::Internal(format!("resume waiting_capacity task: {error}"))
+            })?;
+        if !changed {
+            return Err(TaskServiceError::Internal(
+                "resume waiting_capacity task: no waiting row".into(),
+            ));
+        }
+        let task = get_agent_task(&self.pool, task_id)
+            .await
+            .map_err(downcast_sqlx)
+            .map_err(|error| TaskServiceError::Internal(format!("load resumed task: {error}")))?
+            .ok_or_else(|| TaskServiceError::Internal("resumed task disappeared".into()))?;
+        self.reconcile_agent_status(task.agent_id).await;
+        let mut event_extra = serde_json::Map::new();
+        event_extra.insert("reason".into(), serde_json::json!("capacity_available"));
+        self.broadcast_task_event(patchbay_protocol::EVENT_TASK_AVAILABLE, &task, event_extra)
+            .await;
+        self.notify_runtime_may_have_work(task.runtime_id, Some(&task.id.to_string()))
+            .await;
+        Ok(task)
+    }
 }
 
 #[cfg(test)]
@@ -6340,8 +6494,10 @@ mod tests {
             .with_timezone(&chrono::Utc);
         Issue {
             acceptance_criteria: serde_json::json!([]),
-            assignee_id: Some(owner_id),
-            assignee_type: Some("agent".to_string()),
+            owner_id: None,
+            owner_type: None,
+            executor_id: Some(owner_id),
+            executor_type: Some("agent".to_string()),
             context_refs: serde_json::json!([]),
             created_at: timestamp,
             creator_id: Uuid::nil(),
@@ -6810,7 +6966,7 @@ mod tests {
             .execute(&mut *tx)
             .await
             .expect("create reviewer");
-        sqlx::query("INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, reviewer_type, reviewer_id, number, position) VALUES ($1, $2, 'review contract', 'in_review', 'medium', 'member', $3, 'agent', $4, 'agent', $4, 1, 0)")
+        sqlx::query("INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, executor_type, executor_id, reviewer_type, reviewer_id, number, position) VALUES ($1, $2, 'review contract', 'in_review', 'medium', 'member', $3, 'agent', $4, 'agent', $4, 1, 0)")
             .bind(issue_id)
             .bind(workspace_id)
             .bind(actor_id)
@@ -6868,7 +7024,7 @@ mod tests {
                 .expect("create reviewer assignment");
         }
 
-        sqlx::query("INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, reviewer_type, reviewer_id, number, position) VALUES ($1, $2, 'member review contract', 'in_review', 'medium', 'member', $3, 'agent', $4, 'member', $3, 2, 0)")
+        sqlx::query("INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, executor_type, executor_id, reviewer_type, reviewer_id, number, position) VALUES ($1, $2, 'member review contract', 'in_review', 'medium', 'member', $3, 'agent', $4, 'member', $3, 2, 0)")
             .bind(member_review_issue_id)
             .bind(workspace_id)
             .bind(actor_id)

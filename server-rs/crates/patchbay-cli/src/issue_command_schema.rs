@@ -89,7 +89,7 @@ pub(super) enum IssueCommand {
     Metadata(IssueMetadataArgs),
     #[command(
         alias = "history",
-        about = "Chronological issue history — status, assignee, and comments"
+        about = "Chronological issue history — status, executor, and comments"
     )]
     Timeline(IssueTimelineArgs),
     #[command(about = "Manage custom property values on an issue")]
@@ -173,13 +173,24 @@ pub(super) struct IssueCreateArgs {
     pub(super) status: Option<String>,
     #[arg(long, help = "Issue priority")]
     pub(super) priority: Option<String>,
-    #[arg(long, help = "Assignee name (member, agent, or team; fuzzy match)")]
-    pub(super) assignee: Option<String>,
+    #[arg(long, help = "Execution target name (agent or team; fuzzy match)")]
+    pub(super) executor: Option<String>,
     #[arg(
         long,
-        help = "Assignee UUID — member, agent, or team (mutually exclusive with --assignee)"
+        help = "Execution target UUID — agent or team (mutually exclusive with --executor)"
     )]
-    pub(super) assignee_id: Option<String>,
+    pub(super) executor_id: Option<String>,
+    #[arg(long, help = "Human owner name (workspace member; fuzzy match)")]
+    pub(super) owner: Option<String>,
+    #[arg(long, help = "Human owner UUID (mutually exclusive with --owner)")]
+    pub(super) owner_id: Option<String>,
+    #[arg(long, help = "Reviewer name (member, agent, or team; fuzzy match)")]
+    pub(super) reviewer: Option<String>,
+    #[arg(
+        long,
+        help = "Reviewer UUID — member, agent, or team (mutually exclusive with --reviewer)"
+    )]
+    pub(super) reviewer_id: Option<String>,
     #[arg(long, help = "Parent issue ID")]
     pub(super) parent: Option<String>,
     #[arg(
@@ -238,10 +249,18 @@ pub(super) struct IssueUpdateArgs {
     pub(super) status: Option<String>,
     #[arg(long, help = "New priority")]
     pub(super) priority: Option<String>,
-    #[arg(long, help = "New assignee name (member, agent, or team; fuzzy match)")]
-    pub(super) assignee: Option<String>,
-    #[arg(long, help = "New assignee UUID — member, agent, or team")]
-    pub(super) assignee_id: Option<String>,
+    #[arg(long, help = "New execution target name (agent or team; fuzzy match)")]
+    pub(super) executor: Option<String>,
+    #[arg(long, help = "New execution target UUID — agent or team")]
+    pub(super) executor_id: Option<String>,
+    #[arg(long, help = "New human owner name (workspace member; fuzzy match)")]
+    pub(super) owner: Option<String>,
+    #[arg(long, help = "New human owner UUID")]
+    pub(super) owner_id: Option<String>,
+    #[arg(long, help = "New reviewer name (member, agent, or team; fuzzy match)")]
+    pub(super) reviewer: Option<String>,
+    #[arg(long, help = "New reviewer UUID — member, agent, or team")]
+    pub(super) reviewer_id: Option<String>,
     #[arg(long, help = "Project ID; pass an empty string to clear")]
     pub(super) project: Option<String>,
     #[arg(long, help = "New start date; pass an empty string to clear")]
@@ -264,11 +283,11 @@ pub(super) struct IssueUpdateArgs {
 pub(super) struct IssueAssignArgs {
     #[arg(value_name = "ID")]
     pub(super) id: String,
-    #[arg(long, help = "Assignee name (member, agent, or team; fuzzy match)")]
+    #[arg(long, help = "Owner or execution target name (fuzzy match)")]
     pub(super) to: Option<String>,
-    #[arg(long, help = "Assignee UUID — member, agent, or team")]
+    #[arg(long, help = "Owner or execution target UUID")]
     pub(super) to_id: Option<String>,
-    #[arg(long, help = "Remove current assignee")]
+    #[arg(long, help = "Remove the current owner and execution target")]
     pub(super) unassign: bool,
     #[arg(long, help = "Assign ownership without starting an agent run")]
     pub(super) no_start: bool,

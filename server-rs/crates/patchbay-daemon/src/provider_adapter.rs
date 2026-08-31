@@ -878,6 +878,7 @@ impl ProductionProviderAdapter {
             ActiveRepoCheckoutTask {
                 workspace_id: task.workspace_id.clone(),
                 task_id: task.id.clone(),
+                issue_id: task.issue_id.clone(),
                 agent_id: task.agent_id.clone(),
                 agent_name: task
                     .agent

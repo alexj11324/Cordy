@@ -83,7 +83,7 @@ and it is most expensive in the first minute.
 
 Reduce an issue-shaped answer to the smallest outcome they can look at and
 judge for themselves. Ask at most one follow-up, and only when the answer
-changes the deliverable, the required access, or the assignee.
+changes the deliverable, the required access, or the executor.
 
 Pick the shape:
 
@@ -108,7 +108,7 @@ picked that exact outcome themselves.
 ## Preview and confirm
 
 Show a compact preview — the intended outcome, the issue title and its key
-deliverables, the proposed assignee, and any extra structure the goal needs —
+deliverables, the proposed executor, and any extra structure the goal needs —
 then ask one confirmation question.
 
 A clear yes authorizes the ordinary workspace operations in that preview.
@@ -121,11 +121,11 @@ After confirmation:
 1. Create the confirmed project or specialist first, if there is one.
 2. Create the issue with enough context to execute without re-reading this
    chat: outcome, inputs, deliverables, constraints, completion criteria. The
-   assignee may be a fresh run that never saw this conversation.
+   executor may be a fresh run that never saw this conversation.
 3. Assign it, and use `todo` when the member wants work to begin now — an
    agent-assigned `todo` issue starts the agent, while `backlog` records the
    work without starting it.
-4. Return to chat with the issue identifier, the assignee, and the current
+4. Return to chat with the issue identifier, the executor, and the current
    status. Give the identifier only — never build a URL. Say that the run
    continues on the issue and that its
    progress and results live there. Offer one action the member can take now:

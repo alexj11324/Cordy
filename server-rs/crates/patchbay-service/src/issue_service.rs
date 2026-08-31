@@ -70,8 +70,12 @@ pub struct IssueCreateParams {
     pub description: Option<String>,
     pub status: String,
     pub priority: String,
-    pub assignee_type: Option<String>,
-    pub assignee_id: Option<Uuid>,
+    pub owner_type: Option<String>,
+    pub owner_id: Option<Uuid>,
+    pub executor_type: Option<String>,
+    pub executor_id: Option<Uuid>,
+    pub reviewer_type: Option<String>,
+    pub reviewer_id: Option<Uuid>,
     /// "agent" or "member".
     pub creator_type: String,
     pub creator_id: Uuid,
@@ -108,7 +112,7 @@ pub struct IssueCreateOpts {
     /// Overrides the broadcast/analytics actor when it differs from the row
     /// creator. Empty falls back to creator_id.
     pub actor_id: String,
-    /// Assignee agent (or creator agent for agent-created issues); resolved
+    /// Executor agent (or creator agent for agent-created issues); resolved
     /// by the caller because it depends on transport context.
     pub analytics_agent_id: String,
     /// Client surface tag for the analytics/metrics event.
@@ -140,8 +144,10 @@ pub enum IssueCreateError {
     LabelNotFound,
     #[error("issue status is no longer available")]
     StatusUnavailable,
-    #[error("issues with work underway require an assignee")]
-    ActiveAssigneeRequired,
+    #[error("issues with work underway require an executor")]
+    ActiveExecutorRequired,
+    #[error("issues in review require a reviewer different from the executor")]
+    ReviewReviewerRequired,
     #[error("task capability lease was already consumed")]
     CapabilityConsumed,
     #[error("{0}")]
@@ -157,7 +163,7 @@ pub enum IssueCreateError {
 pub struct IssueCreateResult {
     pub issue: Option<Issue>,
     pub attachments: Vec<Attachment>,
-    /// Set when Create enqueued the automatic task for an agent assignee,
+    /// Set when Create enqueued the automatic task for an agent executor,
     /// including a deferred-by-fire-at task.
     pub assigned_task_id: Option<Uuid>,
     /// Authoritative label snapshot attached in the create transaction.
@@ -221,10 +227,21 @@ RETURNING id"#,
         } else {
             p.status.clone()
         };
-        if issue_status::requires_assignee(&status_category)
-            && (p.assignee_type.is_none() || p.assignee_id.is_none())
+        if issue_status::requires_executor(&status_category)
+            && (p.executor_type.is_none() || p.executor_id.is_none())
         {
-            return Err(IssueCreateError::ActiveAssigneeRequired);
+            return Err(IssueCreateError::ActiveExecutorRequired);
+        }
+        if issue_status::requires_reviewer(&status_category)
+            && (p.reviewer_type.is_none() || p.reviewer_id.is_none())
+        {
+            return Err(IssueCreateError::ReviewReviewerRequired);
+        }
+        if p.executor_type.as_deref().zip(p.executor_id)
+            == p.reviewer_type.as_deref().zip(p.reviewer_id)
+            && p.reviewer_id.is_some()
+        {
+            return Err(IssueCreateError::ReviewReviewerRequired);
         }
 
         // Resolve and validate parent/project BEFORE the duplicate guard so a
@@ -299,8 +316,12 @@ RETURNING id"#,
                 p.description.as_deref(),
                 &p.status,
                 &p.priority,
-                p.assignee_type.as_deref(),
-                p.assignee_id.filter(|id| !id.is_nil()),
+                p.owner_type.as_deref(),
+                p.owner_id.filter(|id| !id.is_nil()),
+                p.executor_type.as_deref(),
+                p.executor_id.filter(|id| !id.is_nil()),
+                p.reviewer_type.as_deref(),
+                p.reviewer_id.filter(|id| !id.is_nil()),
                 &p.creator_type,
                 p.creator_id,
                 p.parent_issue_id.filter(|id| !id.is_nil()),
@@ -323,8 +344,12 @@ RETURNING id"#,
                 p.description.as_deref(),
                 &p.status,
                 &p.priority,
-                p.assignee_type.as_deref(),
-                p.assignee_id.filter(|id| !id.is_nil()),
+                p.owner_type.as_deref(),
+                p.owner_id.filter(|id| !id.is_nil()),
+                p.executor_type.as_deref(),
+                p.executor_id.filter(|id| !id.is_nil()),
+                p.reviewer_type.as_deref(),
+                p.reviewer_id.filter(|id| !id.is_nil()),
                 &p.creator_type,
                 p.creator_id,
                 p.parent_issue_id.filter(|id| !id.is_nil()),
@@ -398,7 +423,7 @@ RETURNING id"#,
                 }
             } else if self.should_enqueue_team_leader_on_assign(&issue).await {
                 // fire-at currently belongs to channel /issue, which always
-                // resolves an agent assignee; keep the ordinary team path for
+                // resolves an agent executor; keep the ordinary team path for
                 // future callers that supply the option with a team.
                 self.enqueue_team_leader_task(&issue, None, &p.creator_type, &actor_id)
                     .await;
@@ -578,7 +603,7 @@ impl IssueService {
                     &workspace.issue_prefix,
                     &effective,
                 ),
-                "assignee_changed": false,
+                "executor_changed": false,
                 "status_changed": false,
                 "project_changed": false,
             }),
@@ -639,11 +664,11 @@ impl IssueService {
     }
 
     /// Leaves the refusal on the issue when an assignment cannot be enqueued
-    /// because the assignee's CLI cannot run on its machine. Assignment has
+    /// because the executor's CLI cannot run on its machine. Assignment has
     /// no reply anyone reads, so without this the user gets exactly the
     /// silence PB-6164 removes. Best-effort: logged, never returned.
     async fn note_runtime_unusable(&self, issue: &Issue, verdict: &AgentVerdict) {
-        let name = get_agent(&self.pool, issue.assignee_id.unwrap_or_else(Uuid::nil))
+        let name = get_agent(&self.pool, issue.executor_id.unwrap_or_else(Uuid::nil))
             .await
             .ok()
             .flatten()
@@ -701,9 +726,10 @@ impl IssueService {
         });
     }
 
-    /// Assignment-time enqueue decision: backlog parks silently (PB-6243),
-    /// blocked runtimes leave a visible refusal notice (PB-6164), ready
-    /// agents enqueue immediately, teams route to their leader when ready.
+    /// Assignment-time enqueue decision. Backlog parks work; the existing
+    /// product contract admits Todo, In Progress, In Review, and Blocked to
+    /// executor runs, while In Review dispatches its independent reviewer
+    /// through coordination.
     async fn maybe_enqueue_on_assign(
         &self,
         issue: &Issue,
@@ -711,18 +737,15 @@ impl IssueService {
         actor_id: &str,
     ) -> Option<Uuid> {
         // Guard-only: the value re-reads from `issue` in each branch below.
-        issue.assignee_id?;
-        issue.assignee_type.as_deref()?;
-        // Backlog is the parking lot: nothing runs from it, so nothing here
-        // needs explaining either — a custom status in the backlog category
-        // parks the same way. (PB-6243)
-        if issue_status::effective(&self.pool, issue.workspace_id, &issue.status).await
-            == issue_status::BACKLOG
-        {
+        issue.executor_id?;
+        issue.executor_type.as_deref()?;
+        if !issue_status::runs_executor(
+            &issue_status::effective(&self.pool, issue.workspace_id, &issue.status).await,
+        ) {
             return None;
         }
         let (verdict, admitted) = match self.pool.acquire().await {
-            Ok(mut conn) => Self::agent_assignee_verdict(&mut conn, issue).await,
+            Ok(mut conn) => Self::agent_executor_verdict(&mut conn, issue).await,
             // Mirrors Go's lookup-error path: default (non-unusable) verdict
             // skips the direct enqueue while the team fallback still runs.
             Err(err) => {
@@ -757,40 +780,40 @@ impl IssueService {
     /// True when an issue create should trigger the assigned agent. Runs
     /// INSIDE the create transaction against its snapshot (PB-6243), where
     /// there is nothing to tell anyone yet — unlike the assignment path,
-    /// which learns WHY via agent_assignee_verdict.
+    /// which learns WHY via agent_executor_verdict.
     async fn should_enqueue_agent_task_with_queries(
         exec: &mut sqlx::PgConnection,
         issue: &Issue,
     ) -> bool {
-        if issue_status::effective(&mut *exec, issue.workspace_id, &issue.status).await
-            == issue_status::BACKLOG
-        {
+        if !issue_status::runs_executor(
+            &issue_status::effective(&mut *exec, issue.workspace_id, &issue.status).await,
+        ) {
             return false;
         }
-        Self::is_agent_assignee_ready_with_queries(exec, issue).await
+        Self::is_agent_executor_ready_with_queries(exec, issue).await
     }
 
-    async fn is_agent_assignee_ready_with_queries(
+    async fn is_agent_executor_ready_with_queries(
         exec: &mut sqlx::PgConnection,
         issue: &Issue,
     ) -> bool {
-        Self::agent_assignee_verdict(exec, issue).await.1
+        Self::agent_executor_verdict(exec, issue).await.1
     }
 
-    /// Resolves the issue's agent assignee through the shared readiness
+    /// Resolves the issue's agent executor through the shared readiness
     /// check. Only a BLOCKED verdict stops the enqueue: a merely offline
     /// machine still queues — that work runs when the laptop comes back.
-    async fn agent_assignee_verdict(
+    async fn agent_executor_verdict(
         exec: &mut sqlx::PgConnection,
         issue: &Issue,
     ) -> (AgentVerdict, bool) {
-        let Some(assignee_id) = issue.assignee_id else {
+        let Some(executor_id) = issue.executor_id else {
             return default_verdict();
         };
-        if issue.assignee_type.as_deref() != Some("agent") {
+        if issue.executor_type.as_deref() != Some("agent") {
             return default_verdict();
         }
-        let Ok(Some(agent)) = get_agent(&mut *exec, assignee_id).await else {
+        let Ok(Some(agent)) = get_agent(&mut *exec, executor_id).await else {
             return default_verdict();
         };
         let Ok(verdict) = agent_readiness(&mut *exec, &agent).await else {
@@ -801,22 +824,22 @@ impl IssueService {
     }
 
     async fn should_enqueue_team_leader_on_assign(&self, issue: &Issue) -> bool {
-        if issue_status::effective(&self.pool, issue.workspace_id, &issue.status).await
-            == issue_status::BACKLOG
-        {
+        if !issue_status::runs_executor(
+            &issue_status::effective(&self.pool, issue.workspace_id, &issue.status).await,
+        ) {
             return false;
         }
         self.is_team_leader_ready(issue).await
     }
 
     async fn is_team_leader_ready(&self, issue: &Issue) -> bool {
-        let Some(assignee_id) = issue.assignee_id else {
+        let Some(executor_id) = issue.executor_id else {
             return false;
         };
-        if issue.assignee_type.as_deref() != Some("team") {
+        if issue.executor_type.as_deref() != Some("team") {
             return false;
         }
-        let Some(team) = get_team_in_workspace(&self.pool, assignee_id, issue.workspace_id)
+        let Some(team) = get_team_in_workspace(&self.pool, executor_id, issue.workspace_id)
             .await
             .ok()
             .flatten()
@@ -841,10 +864,10 @@ impl IssueService {
         _author_type: &str,
         _author_id: &str,
     ) {
-        let Some(assignee_id) = issue.assignee_id else {
+        let Some(executor_id) = issue.executor_id else {
             return;
         };
-        let Some(team) = get_team_in_workspace(&self.pool, assignee_id, issue.workspace_id)
+        let Some(team) = get_team_in_workspace(&self.pool, executor_id, issue.workspace_id)
             .await
             .ok()
             .flatten()
@@ -897,7 +920,7 @@ fn default_verdict() -> (AgentVerdict, bool) {
 /// so the UI can explain each trigger.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunEnqueueSource {
-    /// Creation and assignee changes — the issue is handed to an agent/team.
+    /// Creation and executor changes — the issue is handed to an agent/team.
     Assign,
     /// Promoting an already-assigned issue out of backlog.
     Status,
@@ -936,17 +959,17 @@ pub struct IssueTriggerInput {
     pub issue: Issue,
     pub prev_status: String,
     pub is_create: bool,
-    pub assignee_changed: bool,
+    pub executor_changed: bool,
     pub status_changed: bool,
 }
 
 /// Resolved decision shared by preview and write paths. `agent_id` is who
-/// actually runs — assignee for agent issues, team leader otherwise.
+/// actually runs — executor for agent issues, team leader otherwise.
 #[derive(Debug, Clone)]
 pub struct IssueRunTrigger {
     pub issue_id: Uuid,
     pub agent_id: Uuid,
-    pub assignee_type: String,
+    pub executor_type: String,
     pub source: RunEnqueueSource,
 }
 
@@ -956,9 +979,9 @@ impl IssueService {
     /// batch-update write paths and the preview endpoint (PB-3375 replaced
     /// four drifting per-site copies).
     ///
-    /// Intentionally distinct from the comment trigger: issue writes park on
-    /// backlog while comments fire in any status; they share only leaf
-    /// readiness checks. The decision must equal the real enqueue conditions
+    /// Intentionally distinct from the comment trigger: issue writes leave
+    /// Backlog for an executor run while comments fire in any status; they
+    /// share only leaf readiness checks. The decision must equal the real enqueue conditions
     /// — the status source mirrors the pending-task unique index so preview
     /// never promises a run the write coalesces away, while the assign source
     /// skips that check (creates target fresh issues; reassignment no longer
@@ -970,37 +993,30 @@ impl IssueService {
         probe: IssueTriggerProbe,
     ) -> Option<IssueRunTrigger> {
         let issue = &input.issue;
-        let assignee_id = issue.assignee_id?;
-        let assignee_type = issue.assignee_type.as_deref()?;
+        let executor_id = issue.executor_id?;
+        let executor_type = issue.executor_type.as_deref()?;
 
         let can_access = |agent: &Agent| match &probe.can_access_agent {
             Some(f) => f(agent.clone()),
             None => true,
         };
 
-        // Both transition sides normalize to the canonical inherited status:
-        // a custom status in the backlog category parks exactly like Backlog,
-        // one in the todo category starts exactly like Todo (PB-6243). So
-        // the status source requires LEAVING the backlog CATEGORY, not merely
-        // changing the key (PB-6463). Built-ins resolve to themselves
-        // without a query, keeping workspaces with no custom statuses on the
-        // identical path.
+        // Both transition sides normalize to the canonical inherited status.
+        // Only an admission into In Progress starts executor work; custom
+        // statuses inherit their category exactly.
         let current_status =
             issue_status::effective(&self.pool, issue.workspace_id, &issue.status).await;
         let prev_status =
             issue_status::effective(&self.pool, issue.workspace_id, &input.prev_status).await;
 
-        let source = if input.is_create || input.assignee_changed {
-            // Backlog is the parking lot: assigning into it never starts a run.
-            if current_status == issue_status::BACKLOG {
+        let source = if input.is_create || input.executor_changed {
+            if !issue_status::runs_executor(&current_status) {
                 return None;
             }
             RunEnqueueSource::Assign
         } else if input.status_changed
-            && prev_status == issue_status::BACKLOG
-            && current_status != issue_status::BACKLOG
-            && current_status != issue_status::DONE
-            && current_status != issue_status::CANCELLED
+            && !issue_status::runs_executor(&prev_status)
+            && issue_status::runs_executor(&current_status)
         {
             if probe.is_self_loop.as_ref().is_some_and(|f| f(())) {
                 return None;
@@ -1010,9 +1026,9 @@ impl IssueService {
             return None;
         };
 
-        match assignee_type {
+        match executor_type {
             "agent" => {
-                let agent = get_agent(&self.pool, assignee_id).await.ok()??;
+                let agent = get_agent(&self.pool, executor_id).await.ok()??;
                 if agent.runtime_id.is_none() || agent.archived_at.is_some() {
                     return None;
                 }
@@ -1024,19 +1040,19 @@ impl IssueService {
                     && probe
                         .suppress_active_self_assignment
                         .as_ref()
-                        .is_some_and(|f| f(assignee_id))
+                        .is_some_and(|f| f(executor_id))
                 {
                     return None;
                 }
                 if source == RunEnqueueSource::Status
-                    && self.has_pending_run(issue.id, assignee_id).await
+                    && self.has_pending_run(issue.id, executor_id).await
                 {
                     return None;
                 }
                 Some(IssueRunTrigger {
                     issue_id: issue.id,
-                    agent_id: assignee_id,
-                    assignee_type: "agent".to_string(),
+                    agent_id: executor_id,
+                    executor_type: "agent".to_string(),
                     source,
                 })
             }
@@ -1046,7 +1062,7 @@ impl IssueService {
             // leader acting on its own team is an intentional group handoff.
             // The status path still uses the leader's pending-task guard.
             "team" => {
-                let team = get_team_in_workspace(&self.pool, assignee_id, issue.workspace_id)
+                let team = get_team_in_workspace(&self.pool, executor_id, issue.workspace_id)
                     .await
                     .ok()??;
                 let leader = get_agent(&self.pool, team.leader_id).await.ok()??;
@@ -1065,7 +1081,7 @@ impl IssueService {
                 Some(IssueRunTrigger {
                     issue_id: issue.id,
                     agent_id: team.leader_id,
-                    assignee_type: "team".to_string(),
+                    executor_type: "team".to_string(),
                     source,
                 })
             }
@@ -1162,8 +1178,10 @@ mod tests {
             title: title.into(),
             status: status.into(),
             priority: "none".into(),
-            assignee_type: Some("member".into()),
-            assignee_id: Some(creator_id),
+            owner_type: Some("member".into()),
+            owner_id: Some(creator_id),
+            executor_type: Some("agent".into()),
+            executor_id: Some(creator_id),
             creator_type: "member".into(),
             creator_id,
             ..IssueCreateParams::default()
@@ -1269,11 +1287,11 @@ mod tests {
         let service = service(&pool);
 
         let mut unassigned_active = params(workspace_id, "Owner required", "in_progress");
-        unassigned_active.assignee_type = None;
-        unassigned_active.assignee_id = None;
+        unassigned_active.executor_type = None;
+        unassigned_active.executor_id = None;
         assert!(matches!(
             create(&service, unassigned_active).await,
-            Err(IssueCreateError::ActiveAssigneeRequired)
+            Err(IssueCreateError::ActiveExecutorRequired)
         ));
 
         let first = create(&service, params(workspace_id, "First", "todo"))
@@ -1296,8 +1314,8 @@ mod tests {
         assert_eq!(next.position, -51.0);
 
         let mut unassigned_todo = params(workspace_id, "Parked without owner", "todo");
-        unassigned_todo.assignee_type = None;
-        unassigned_todo.assignee_id = None;
+        unassigned_todo.executor_type = None;
+        unassigned_todo.executor_id = None;
         create(&service, unassigned_todo)
             .await
             .expect("todo may remain unassigned");
@@ -1556,7 +1574,7 @@ mod tests {
         .await
         .expect("create agent");
         let automation_id: Uuid = sqlx::query_scalar(
-            "INSERT INTO automation (workspace_id, title, assignee_type, assignee_id, execution_mode, created_by_type, created_by_id) VALUES ($1, 'contract automation', 'agent', $2, 'create_issue', 'member', $3) RETURNING id",
+            "INSERT INTO automation (workspace_id, title, executor_type, executor_id, execution_mode, created_by_type, created_by_id) VALUES ($1, 'contract automation', 'agent', $2, 'create_issue', 'member', $3) RETURNING id",
         )
         .bind(workspace_id)
         .bind(agent_id)

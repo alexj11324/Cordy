@@ -4,19 +4,19 @@
  * `all / members / agents` scope tabs, group by status, allow status +
  * priority filtering.
  *
- * Scope is a **client-side** filter on `assignee_type` — matches web
+ * Scope is a **client-side** filter on `executor_type` — matches web
  * `issues-page.tsx:90-94`. This keeps `issueListOptions(wsId)` workspace-
  * scoped (no scope param on the wire), so `issueKeys.list(wsId)` and
  * `useIssuesRealtime` need no changes.
  *
  * Differences vs My Issues (`(tabs)/my-issues.tsx`):
  *   - Workspace-wide list (all issues), not user-scoped.
- *   - Three scopes are `all / members / agents` (assignee_type pre-filter),
+ *   - Three scopes are `all / members / agents` (executor_type pre-filter),
  *     not `assigned / created / agents` (per-user predicates).
  *   - Independent filter store (`useIssuesViewStore`) so workspace-level
  *     filters don't bleed into the per-user view.
  *
- * Filters beyond status/priority (assignee / project / label / creator)
+ * Filters beyond status/priority (executor / project / label / creator)
  * are deferred — power-user features with non-trivial picker cost; ship
  * after the parity-critical scope tabs land.
  */
@@ -100,11 +100,11 @@ export default function IssuesPage() {
   // status/priority filtering so chip filters operate on the visible slice.
   const scopedIssues = useMemo(() => {
     if (scope === "members") {
-      return allIssues.filter((i) => i.assignee_type === "member");
+      return allIssues.filter((i) => i.owner_type === "member");
     }
     if (scope === "agents") {
       return allIssues.filter(
-        (i) => i.assignee_type === "agent" || i.assignee_type === "team",
+        (i) => i.executor_type === "agent" || i.executor_type === "team",
       );
     }
     return allIssues;

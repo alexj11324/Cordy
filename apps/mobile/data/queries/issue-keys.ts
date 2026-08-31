@@ -13,7 +13,12 @@ export type MyIssuesScope = "assigned" | "created" | "agents";
 
 export type MyIssuesFilter = Pick<
   ListIssuesParams,
-  "assignee_id" | "assignee_ids" | "creator_id" | "involves_user_id"
+  | "owner_id"
+  | "owner_ids"
+  | "executor_id"
+  | "executor_ids"
+  | "creator_id"
+  | "involves_user_id"
 >;
 
 export const issueKeys = {

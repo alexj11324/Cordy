@@ -778,7 +778,7 @@ impl TaskService {
 
     /// Manual rerun endpoint core. Target resolution: source task's agent
     /// (with leader/team provenance + trigger inheritance) or the issue's
-    /// current assignee. A block fails closed before anything mutates
+    /// current executor. A block fails closed before anything mutates
     /// (PB-4525); the pending-slot clear/enqueue pair retries once against a
     /// concurrent system retry.
     pub async fn rerun_issue(
@@ -830,10 +830,10 @@ impl TaskService {
                 }
             }
         } else {
-            match (issue.assignee_type.as_deref(), issue.assignee_id) {
-                (Some("agent"), Some(assignee)) => agent_id = assignee,
-                (Some("team"), Some(team_assignee)) => {
-                    let team = patchbay_db::queries::team::get_team(&self.pool, team_assignee)
+            match (issue.executor_type.as_deref(), issue.executor_id) {
+                (Some("agent"), Some(executor)) => agent_id = executor,
+                (Some("team"), Some(team_executor)) => {
+                    let team = patchbay_db::queries::team::get_team(&self.pool, team_executor)
                         .await
                         .map_err(|_| {
                             TaskServiceError::Internal(
@@ -847,7 +847,7 @@ impl TaskService {
                         })?;
                     agent_id = team.leader_id;
                     is_leader = true;
-                    team_id = Some(team_assignee);
+                    team_id = Some(team_executor);
                 }
                 _ => {
                     return Err(TaskServiceError::Internal(
@@ -1025,8 +1025,8 @@ impl TaskService {
         Ok((Some(survivors[newest].id), remaining))
     }
 
-    /// Enqueues a fresh task for the given agent on the issue: assignee-driven
-    /// path when the target IS the single-agent assignee (keeps assignee
+    /// Enqueues a fresh task for the given agent on the issue: executor-driven
+    /// path when the target IS the single-agent executor (keeps executor
     /// bookkeeping in sync), mention path otherwise. force_fresh_session is
     /// pinned true on every rerun row — rollback-safe legacy signal for old
     /// claim handlers (PB-4869).
@@ -1042,9 +1042,9 @@ impl TaskService {
         actor_user_id: Option<Uuid>,
         rerun_of_task_id: Option<Uuid>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
-        if issue.assignee_type.as_deref() == Some("agent")
-            && issue.assignee_id.is_some()
-            && issue.assignee_id == Some(agent_id)
+        if issue.executor_type.as_deref() == Some("agent")
+            && issue.executor_id.is_some()
+            && issue.executor_id == Some(agent_id)
         {
             return self
                 .enqueue_issue_task_with_comment_plan(

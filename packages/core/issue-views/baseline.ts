@@ -15,8 +15,8 @@ export interface IssueViewBaseline {
   status: Set<string>;
   priority: Set<string>;
   /** Actor keys as `${type}:${id}`. */
-  assignee: Set<string>;
-  includeNoAssignee: boolean;
+  executor: Set<string>;
+  includeNoExecutor: boolean;
   creator: Set<string>;
   project: Set<string>;
   includeNoProject: boolean;
@@ -58,11 +58,12 @@ export function baselineFromQuery(query: Record<string, unknown>): IssueViewBase
   const priorityFilters = stringArray(query.priorityFilters).filter(
     (p): p is IssuePriority => (PRIORITY_DISPLAY_ORDER as readonly string[]).includes(p),
   );
-  const assigneeFilters = actorArray(query.assigneeFilters);
+  const executorFilters = actorArray(query.executorFilters ?? query.assigneeFilters);
   const creatorFilters = actorArray(query.creatorFilters);
   const projectFilters = stringArray(query.projectFilters);
   const labelFilters = stringArray(query.labelFilters);
-  const includeNoAssignee = query.includeNoAssignee === true;
+  const includeNoExecutor =
+    query.includeNoExecutor === true || query.includeNoAssignee === true;
   const includeNoProject = query.includeNoProject === true;
 
   const propertyFilters: Record<string, string[]> = {};
@@ -82,8 +83,8 @@ export function baselineFromQuery(query: Record<string, unknown>): IssueViewBase
   return {
     status: new Set(statusFilters),
     priority: new Set(priorityFilters),
-    assignee: new Set(assigneeFilters.map(actorFilterKey)),
-    includeNoAssignee,
+    executor: new Set(executorFilters.map(actorFilterKey)),
+    includeNoExecutor,
     creator: new Set(creatorFilters.map(actorFilterKey)),
     project: new Set(projectFilters),
     includeNoProject,
@@ -92,8 +93,8 @@ export function baselineFromQuery(query: Record<string, unknown>): IssueViewBase
     raw: {
       statusFilters,
       priorityFilters,
-      assigneeFilters,
-      includeNoAssignee,
+      executorFilters,
+      includeNoExecutor,
       creatorFilters,
       projectFilters,
       includeNoProject,

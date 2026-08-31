@@ -136,8 +136,8 @@ function getActiveFilterCount(
   state: {
     statusFilters: string[];
     priorityFilters: string[];
-    assigneeFilters: ActorFilterValue[];
-    includeNoAssignee: boolean;
+    executorFilters: ActorFilterValue[];
+    includeNoExecutor: boolean;
     creatorFilters: ActorFilterValue[];
     projectFilters: string[];
     includeNoProject: boolean;
@@ -154,10 +154,10 @@ function getActiveFilterCount(
     fixed ? values.filter((v) => !fixed.has(v)).length : values.length;
   if (delta(state.statusFilters, baseline?.status) > 0) count++;
   if (delta(state.priorityFilters, baseline?.priority) > 0) count++;
-  const assigneeDelta =
-    delta(state.assigneeFilters.map(actorFilterKey), baseline?.assignee) > 0 ||
-    (state.includeNoAssignee && !(baseline?.includeNoAssignee ?? false));
-  if (assigneeDelta) count++;
+  const executorDelta =
+    delta(state.executorFilters.map(actorFilterKey), baseline?.executor) > 0 ||
+    (state.includeNoExecutor && !(baseline?.includeNoExecutor ?? false));
+  if (executorDelta) count++;
   if (delta(state.creatorFilters.map(actorFilterKey), baseline?.creator) > 0) count++;
   const projectDelta =
     delta(state.projectFilters, baseline?.project) > 0 ||
@@ -195,14 +195,14 @@ function useIssueCounts(
   return useMemo(() => {
     const status = new Map<string, number>();
     const priority = new Map<string, number>();
-    const assignee = new Map<string, number>();
+    const executor = new Map<string, number>();
     const creator = new Map<string, number>();
     const project = new Map<string, number>();
     const label = new Map<string, number>();
     // property definition id → option key → count. Checkbox values count
     // under the "true"/"false" pseudo-option keys the filter store uses.
     const property = new Map<string, Map<string, number>>();
-    let noAssignee = 0;
+    let noExecutor = 0;
     let noProject = 0;
 
     if (serverFacets) {
@@ -212,8 +212,8 @@ function useIssueCounts(
             ? status
             : facet.kind === "priority"
               ? priority
-              : facet.kind === "assignee"
-                ? assignee
+              : facet.kind === "executor"
+                ? executor
                 : facet.kind === "creator"
                   ? creator
                   : facet.kind === "project"
@@ -229,8 +229,8 @@ function useIssueCounts(
           continue;
         }
         for (const value of facet.values) {
-          if (facet.kind === "assignee" && value.key === "__none__") {
-            noAssignee = value.count;
+          if (facet.kind === "executor" && value.key === "__none__") {
+            noExecutor = value.count;
           } else if (facet.kind === "project" && value.key === "__none__") {
             noProject = value.count;
           } else {
@@ -238,18 +238,18 @@ function useIssueCounts(
           }
         }
       }
-      return { status, priority, assignee, creator, noAssignee, project, noProject, label, property };
+      return { status, priority, executor, creator, noExecutor, project, noProject, label, property };
     }
 
     for (const issue of allIssues) {
       status.set(issue.status, (status.get(issue.status) ?? 0) + 1);
       priority.set(issue.priority, (priority.get(issue.priority) ?? 0) + 1);
 
-      if (!issue.assignee_id) {
-        noAssignee++;
+      if (!issue.executor_id) {
+        noExecutor++;
       } else {
-        const aKey = `${issue.assignee_type}:${issue.assignee_id}`;
-        assignee.set(aKey, (assignee.get(aKey) ?? 0) + 1);
+        const aKey = `${issue.executor_type}:${issue.executor_id}`;
+        executor.set(aKey, (executor.get(aKey) ?? 0) + 1);
       }
 
       const cKey = `${issue.creator_type}:${issue.creator_id}`;
@@ -288,7 +288,7 @@ function useIssueCounts(
       }
     }
 
-    return { status, priority, assignee, creator, noAssignee, project, noProject, label, property };
+    return { status, priority, executor, creator, noExecutor, project, noProject, label, property };
   }, [allIssues, serverFacets]);
 }
 
@@ -299,33 +299,33 @@ function useIssueCounts(
 const SCOPE_VALUES: IssuesScope[] = ["all", "members", "agents"];
 
 // ---------------------------------------------------------------------------
-// Actor sub-menu content (shared between Assignee and Creator)
+// Actor sub-menu content (shared between Executor and Creator)
 // ---------------------------------------------------------------------------
 
 function ActorSubContent({
   counts,
   selected,
   onToggle,
-  showNoAssignee,
-  includeNoAssignee,
-  onToggleNoAssignee,
-  noAssigneeCount,
+  showNoExecutor,
+  includeNoExecutor,
+  onToggleNoExecutor,
+  noExecutorCount,
   showTeams = true,
   fixedKeys,
-  noAssigneeFixed = false,
+  noExecutorFixed = false,
   fixedTitle,
 }: {
   counts: Map<string, number>;
   selected: ActorFilterValue[];
   onToggle: (value: ActorFilterValue) => void;
-  showNoAssignee?: boolean;
-  includeNoAssignee?: boolean;
-  onToggleNoAssignee?: () => void;
-  noAssigneeCount?: number;
+  showNoExecutor?: boolean;
+  includeNoExecutor?: boolean;
+  onToggleNoExecutor?: () => void;
+  noExecutorCount?: number;
   showTeams?: boolean;
   /** Actor keys (`type:id`) fixed by the open saved view. */
   fixedKeys?: Set<string>;
-  noAssigneeFixed?: boolean;
+  noExecutorFixed?: boolean;
   fixedTitle?: string;
 }) {
   const { t } = useT("issues");
@@ -362,21 +362,21 @@ function ActorSubContent({
       </div>
 
       <div className="max-h-64 overflow-y-auto p-1">
-        {showNoAssignee &&
-          (!query || "no assignee".includes(query) || "unassigned".includes(query)) && (
+        {showNoExecutor &&
+          (!query || "no executor".includes(query) || "unassigned".includes(query)) && (
             <DropdownMenuCheckboxItem
-              checked={includeNoAssignee ?? false}
-              disabled={noAssigneeFixed}
-              title={noAssigneeFixed ? fixedTitle : undefined}
-              onCheckedChange={() => onToggleNoAssignee?.()}
+              checked={includeNoExecutor ?? false}
+              disabled={noExecutorFixed}
+              title={noExecutorFixed ? fixedTitle : undefined}
+              onCheckedChange={() => onToggleNoExecutor?.()}
               className={FILTER_ITEM_CLASS}
             >
-              <HoverCheck checked={includeNoAssignee ?? false} />
+              <HoverCheck checked={includeNoExecutor ?? false} />
               <UserMinus className="size-3.5 text-muted-foreground" />
-              {t(($) => $.filters.no_assignee)}
-              {(noAssigneeCount ?? 0) > 0 && (
+              {t(($) => $.filters.no_executor)}
+              {(noExecutorCount ?? 0) > 0 && (
                 <span className="ml-auto text-caption text-muted-foreground">
-                  {noAssigneeCount}
+                  {noExecutorCount}
                 </span>
               )}
             </DropdownMenuCheckboxItem>
@@ -1219,8 +1219,8 @@ export function IssueFilterMenu({
   const [frozenAnchor, setFrozenAnchor] = useState<{ getBoundingClientRect: () => DOMRect } | null>(null);
   const statusFilters = useViewStore((s) => s.statusFilters);
   const priorityFilters = useViewStore((s) => s.priorityFilters);
-  const assigneeFilters = useViewStore((s) => s.assigneeFilters);
-  const includeNoAssignee = useViewStore((s) => s.includeNoAssignee);
+  const executorFilters = useViewStore((s) => s.executorFilters);
+  const includeNoExecutor = useViewStore((s) => s.includeNoExecutor);
   const creatorFilters = useViewStore((s) => s.creatorFilters);
   const projectFilters = useViewStore((s) => s.projectFilters);
   const includeNoProject = useViewStore((s) => s.includeNoProject);
@@ -1259,8 +1259,8 @@ export function IssueFilterMenu({
         statusFilters,
         priorityFilters,
         propertyFilters: effectivePropertyFilters,
-        assigneeFilters,
-        includeNoAssignee,
+        executorFilters,
+        includeNoExecutor,
         creatorFilters,
         projectFilters,
         includeNoProject,
@@ -1425,32 +1425,32 @@ export function IssueFilterMenu({
               </DropdownMenuSub>
             )}
 
-            {/* Assignee */}
+            {/* Executor */}
             <DropdownMenuSub
               onOpenChange={(open) =>
-                onTableFacetChange?.(open ? { kind: "assignee" } : null)
+                onTableFacetChange?.(open ? { kind: "executor" } : null)
               }
             >
               <DropdownMenuSubTrigger>
                 <User className="size-3.5" />
-                <span className="flex-1">{t(($) => $.filters.section_assignee)}</span>
-                {(assigneeFilters.length > 0 || includeNoAssignee) && (
+                <span className="flex-1">{t(($) => $.filters.section_executor)}</span>
+                {(executorFilters.length > 0 || includeNoExecutor) && (
                   <span className="text-caption text-primary font-medium">
-                    {assigneeFilters.length + (includeNoAssignee ? 1 : 0)}
+                    {executorFilters.length + (includeNoExecutor ? 1 : 0)}
                   </span>
                 )}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="w-auto min-w-52 p-0">
                 <ActorSubContent
-                  counts={counts.assignee}
-                  selected={assigneeFilters}
-                  onToggle={act.toggleAssigneeFilter}
-                  showNoAssignee
-                  includeNoAssignee={includeNoAssignee}
-                  onToggleNoAssignee={act.toggleNoAssignee}
-                  noAssigneeCount={counts.noAssignee}
-                  fixedKeys={viewBaseline?.assignee}
-                  noAssigneeFixed={viewBaseline?.includeNoAssignee === true}
+                  counts={counts.executor}
+                  selected={executorFilters}
+                  onToggle={act.toggleExecutorFilter}
+                  showNoExecutor
+                  includeNoExecutor={includeNoExecutor}
+                  onToggleNoExecutor={act.toggleNoExecutor}
+                  noExecutorCount={counts.noExecutor}
+                  fixedKeys={viewBaseline?.executor}
+                  noExecutorFixed={viewBaseline?.includeNoExecutor === true}
                   fixedTitle={fixedTitle}
                 />
               </DropdownMenuSubContent>
@@ -1646,8 +1646,8 @@ export function IssueDisplayControls({
   const viewMode = useViewStore((s) => s.viewMode);
   const statusFilters = useViewStore((s) => s.statusFilters);
   const priorityFilters = useViewStore((s) => s.priorityFilters);
-  const assigneeFilters = useViewStore((s) => s.assigneeFilters);
-  const includeNoAssignee = useViewStore((s) => s.includeNoAssignee);
+  const executorFilters = useViewStore((s) => s.executorFilters);
+  const includeNoExecutor = useViewStore((s) => s.includeNoExecutor);
   const creatorFilters = useViewStore((s) => s.creatorFilters);
   const projectFilters = useViewStore((s) => s.projectFilters);
   const includeNoProject = useViewStore((s) => s.includeNoProject);
@@ -1715,8 +1715,8 @@ export function IssueDisplayControls({
       statusFilters,
       priorityFilters,
       propertyFilters: effectivePropertyFilters,
-      assigneeFilters,
-      includeNoAssignee,
+      executorFilters,
+      includeNoExecutor,
       creatorFilters,
       projectFilters,
       includeNoProject,
@@ -1737,19 +1737,19 @@ export function IssueDisplayControls({
     updated_at: "sort_updated",
     title: "sort_title",
   };
-  const GROUPING_LABEL_KEY: Record<typeof GROUPING_OPTIONS[number]["value"], "group_status" | "group_assignee"> = {
+  const GROUPING_LABEL_KEY: Record<typeof GROUPING_OPTIONS[number]["value"], "group_status" | "group_executor"> = {
     status: "group_status",
-    assignee: "group_assignee",
+    executor: "group_executor",
   };
-  const SWIMLANE_GROUPING_LABEL_KEY: Record<SwimlaneGrouping, "group_parent" | "group_project" | "group_assignee"> = {
+  const SWIMLANE_GROUPING_LABEL_KEY: Record<SwimlaneGrouping, "group_parent" | "group_project" | "group_executor"> = {
     parent: "group_parent",
     project: "group_project",
-    assignee: "group_assignee",
+    executor: "group_executor",
   };
-  const CARD_PROPERTY_LABEL_KEY: Record<typeof CARD_PROPERTY_OPTIONS[number]["key"], "card_priority" | "card_description" | "card_assignee" | "card_start_date" | "card_due_date" | "card_project" | "card_labels" | "card_child_progress"> = {
+  const CARD_PROPERTY_LABEL_KEY: Record<typeof CARD_PROPERTY_OPTIONS[number]["key"], "card_priority" | "card_description" | "card_executor" | "card_start_date" | "card_due_date" | "card_project" | "card_labels" | "card_child_progress"> = {
     priority: "card_priority",
     description: "card_description",
-    assignee: "card_assignee",
+    executor: "card_executor",
     startDate: "card_start_date",
     dueDate: "card_due_date",
     project: "card_project",
@@ -1778,8 +1778,8 @@ export function IssueDisplayControls({
       t(($) => $.table.group_none)
     : effectiveTableGrouping === "status"
       ? t(($) => $.table.columns.status)
-      : effectiveTableGrouping === "assignee"
-        ? t(($) => $.table.columns.assignee)
+      : effectiveTableGrouping === "executor"
+        ? t(($) => $.table.columns.executor)
         : t(($) => $.table.group_none);
   const controlButtonClass = "h-8 w-8 gap-1 px-0 text-muted-foreground md:h-7 md:w-auto md:px-2.5";
 
@@ -1855,8 +1855,8 @@ export function IssueDisplayControls({
                 <DropdownMenuRadioItem value="status">
                   {t(($) => $.table.columns.status)}
                 </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="assignee">
-                  {t(($) => $.table.columns.assignee)}
+                <DropdownMenuRadioItem value="executor">
+                  {t(($) => $.table.columns.executor)}
                 </DropdownMenuRadioItem>
                 {tableGroupableProperties.map((property) => (
                   <DropdownMenuRadioItem

@@ -6,7 +6,7 @@ export type InboxItemType =
   | "issue_assigned"
   | "issue_subscribed"
   | "unassigned"
-  | "assignee_changed"
+  | "executor_changed"
   | "status_changed"
   | "priority_changed"
   | "start_date_changed"

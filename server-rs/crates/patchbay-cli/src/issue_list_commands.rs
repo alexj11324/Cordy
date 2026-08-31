@@ -6,9 +6,9 @@ use url::form_urlencoded;
 
 use super::{
     format_issue_list_table, load_issue_actor_names, new_api_client, resolve_current_workspace_id,
-    resolve_issue_assignee_id, resolve_issue_assignee_name, resolve_issue_project_id, ApiClient,
-    Cli, Environment, IssueListArgs, IssueListResponse, OutputFormat, RunOutput,
-    VALID_ISSUE_SORT_COLUMNS,
+    resolve_issue_executor_id, resolve_issue_executor_name, resolve_issue_owner_id,
+    resolve_issue_owner_name, resolve_issue_project_id, ApiClient, Cli, Environment, IssueListArgs,
+    IssueListResponse, OutputFormat, RunOutput, VALID_ISSUE_SORT_COLUMNS,
 };
 
 #[derive(Debug, Serialize)]
@@ -90,19 +90,39 @@ pub(super) async fn build_issue_list_query(
         params.insert("offset".into(), args.offset.to_string());
     }
 
-    if args.assignee.is_some() && args.assignee_id.is_some() {
-        bail!("--assignee and --assignee-id are mutually exclusive");
+    if args.executor.is_some() && args.executor_id.is_some() {
+        bail!("--executor and --executor-id are mutually exclusive");
     }
-    if let Some(id) = &args.assignee_id {
-        let assignee = resolve_issue_assignee_id(client, workspace_id, id)
+    if args.owner.is_some() && args.owner_id.is_some() {
+        bail!("--owner and --owner-id are mutually exclusive");
+    }
+    if let Some(id) = &args.executor_id {
+        let executor = resolve_issue_executor_id(client, workspace_id, id)
             .await
-            .context("resolve assignee")?;
-        params.insert("assignee_id".into(), assignee.id);
-    } else if let Some(name) = &args.assignee {
-        let assignee = resolve_issue_assignee_name(client, workspace_id, name)
+            .context("resolve executor")?;
+        if !matches!(executor.actor_type.as_str(), "agent" | "team") {
+            bail!("--executor resolves to a member; use --owner for human ownership");
+        }
+        params.insert("executor_id".into(), executor.id);
+    } else if let Some(name) = &args.executor {
+        let executor = resolve_issue_executor_name(client, workspace_id, name)
             .await
-            .context("resolve assignee")?;
-        params.insert("assignee_id".into(), assignee.id);
+            .context("resolve executor")?;
+        if !matches!(executor.actor_type.as_str(), "agent" | "team") {
+            bail!("--executor resolves to a member; use --owner for human ownership");
+        }
+        params.insert("executor_id".into(), executor.id);
+    }
+    if let Some(id) = &args.owner_id {
+        let owner = resolve_issue_owner_id(client, workspace_id, id)
+            .await
+            .context("resolve owner")?;
+        params.insert("owner_id".into(), owner.id);
+    } else if let Some(name) = &args.owner {
+        let owner = resolve_issue_owner_name(client, workspace_id, name)
+            .await
+            .context("resolve owner")?;
+        params.insert("owner_id".into(), owner.id);
     }
 
     if let Some(project) = args.project.as_deref().filter(|value| !value.is_empty()) {

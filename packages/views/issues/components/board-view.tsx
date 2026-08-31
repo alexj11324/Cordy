@@ -16,7 +16,7 @@ import { arrayMove } from "@dnd-kit/sortable";
 import { toast } from "sonner";
 import type {
   Issue,
-  IssueAssigneeType,
+  IssueExecutorType,
   IssueStatusCategory,
   Project,
   IssueProperty,
@@ -53,7 +53,7 @@ import {
   type DragMoveUpdates,
   makeKanbanCollision,
   statusGroupId,
-  assigneeGroupId,
+  executorGroupId,
   buildColumns,
   computePosition,
   findColumn,
@@ -84,7 +84,7 @@ function buildGroups(
   visibleStatuses: IssueStatusCategory[],
   grouping: IssueGrouping,
   getActorName: (type: string, id: string) => string,
-  noAssigneeLabel: string,
+  noExecutorLabel: string,
   groupingProperty: IssueProperty | null,
   noValueLabel: string,
 ): BoardColumnGroup[] {
@@ -116,18 +116,18 @@ function buildGroups(
 
   const groups = new Map<string, BoardColumnGroup>();
   for (const issue of issues) {
-    const id = assigneeGroupId(issue.assignee_type, issue.assignee_id);
+    const id = executorGroupId(issue.executor_type, issue.executor_id);
     if (groups.has(id)) continue;
 
-    if (issue.assignee_type && issue.assignee_id) {
+    if (issue.executor_type && issue.executor_id) {
       groups.set(id, {
         id,
-        title: getActorName(issue.assignee_type, issue.assignee_id),
-        assigneeType: issue.assignee_type,
-        assigneeId: issue.assignee_id,
+        title: getActorName(issue.executor_type, issue.executor_id),
+        executorType: issue.executor_type,
+        executorId: issue.executor_id,
         createData: {
-          assignee_type: issue.assignee_type,
-          assignee_id: issue.assignee_id,
+          executor_type: issue.executor_type,
+          executor_id: issue.executor_id,
         },
       });
       continue;
@@ -135,12 +135,12 @@ function buildGroups(
 
     groups.set(id, {
       id,
-      title: noAssigneeLabel,
-      assigneeType: null,
-      assigneeId: null,
+      title: noExecutorLabel,
+      executorType: null,
+      executorId: null,
       createData: {
-        assignee_type: null,
-        assignee_id: null,
+        executor_type: null,
+        executor_id: null,
       },
     });
   }
@@ -153,8 +153,8 @@ function buildGroups(
   };
 
   return Array.from(groups.values()).toSorted((a, b) => {
-    const aOrder = order[a.assigneeType ?? "none"] ?? 99;
-    const bOrder = order[b.assigneeType ?? "none"] ?? 99;
+    const aOrder = order[a.executorType ?? "none"] ?? 99;
+    const bOrder = order[b.executorType ?? "none"] ?? 99;
     if (aOrder !== bOrder) return aOrder - bOrder;
     return a.title.localeCompare(b.title);
   });
@@ -220,7 +220,7 @@ function BoardViewImpl({
   const applyPropertyGroupValue = useCallback(
     (group: BoardColumnGroup, issueId: string) => {
       if (group.propertyId === undefined) return;
-      // Surface failures like status/assignee drags do (use-issue-surface-
+      // Surface failures like status/executor drags do (use-issue-surface-
       // actions): the mutation rolls the card back, but without a toast the
       // snap-back reads as a UI glitch instead of a rejected write.
       const onError = (err: unknown) => {
@@ -262,29 +262,27 @@ function BoardViewImpl({
     () => (groupBranches?.enabled ? groupBranches.issues : issues),
     [groupBranches, issues],
   );
-  const hydratedAssigneeGroups = useMemo<BoardColumnGroup[] | undefined>(() => {
-    if (grouping === "assignee" && groupBranches?.enabled) {
+  const hydratedExecutorGroups = useMemo<BoardColumnGroup[] | undefined>(() => {
+    if (grouping === "executor" && groupBranches?.enabled) {
       return groupBranches.descriptors.flatMap((descriptor): BoardColumnGroup[] => {
-        if (descriptor.value.kind !== "assignee") return [];
+        if (descriptor.value.kind !== "executor") return [];
         const actorRef = descriptor.value.actor;
-        const actor: { type: IssueAssigneeType; id: string } | null =
+        const actor: { type: IssueExecutorType; id: string } | null =
           actorRef &&
-          (actorRef.type === "member" ||
-            actorRef.type === "agent" ||
-            actorRef.type === "team")
+          (actorRef.type === "agent" || actorRef.type === "team")
             ? { type: actorRef.type, id: actorRef.id }
             : null;
         return [{
           id: descriptor.key,
           title: actor
             ? getActorName(actor.type, actor.id)
-            : t(($) => $.filters.no_assignee),
-          assigneeType: actor?.type ?? null,
-          assigneeId: actor?.id ?? null,
+            : t(($) => $.filters.no_executor),
+          executorType: actor?.type ?? null,
+          executorId: actor?.id ?? null,
           totalCount: descriptor.count,
           createData: {
-            assignee_type: actor?.type ?? null,
-            assignee_id: actor?.id ?? null,
+            executor_type: actor?.type ?? null,
+            executor_id: actor?.id ?? null,
           },
         }];
       });
@@ -336,13 +334,13 @@ function BoardViewImpl({
   const groups = useMemo(
     () => {
       const built =
-        hydratedAssigneeGroups ??
+        hydratedExecutorGroups ??
         buildGroups(
         issues,
         visibleStatuses,
         grouping,
         getActorName,
-        t(($) => $.filters.no_assignee),
+        t(($) => $.filters.no_executor),
         groupingProperty,
         t(($) => $.board.no_value),
         );
@@ -351,7 +349,7 @@ function BoardViewImpl({
         totalCount: groupPagination?.[group.id]?.total ?? group.totalCount,
       }));
     },
-    [hydratedAssigneeGroups, issues, visibleStatuses, grouping, getActorName, groupingProperty, groupPagination, t],
+    [hydratedExecutorGroups, issues, visibleStatuses, grouping, getActorName, groupingProperty, groupPagination, t],
   );
   // Empty status columns remain server-backed drop targets, but they do not
   // earn a full 280px board column. Keep them in the local drag map and move
@@ -662,7 +660,7 @@ function BoardViewImpl({
       };
 
       if (sortBy !== "position") {
-        // Cross-column: only update group (status/assignee), keep original position.
+        // Cross-column: only update group (status/executor), keep original position.
         const currentIssue = map.get(activeId);
         if (!currentIssue || issueMatchesGroup(currentIssue, finalGroup)) {
           resetColumns();

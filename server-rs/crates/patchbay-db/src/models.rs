@@ -291,6 +291,18 @@ pub struct AgentTaskQueue {
     pub work_dir: Option<String>,
 }
 
+/// Immutable execution selection captured when an Agent task is created.
+///
+/// The daemon must use this snapshot instead of re-reading the Agent's mutable
+/// runtime/model configuration while claiming a queued task.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct AgentTaskExecutionTarget {
+    pub failover_reason: Option<String>,
+    pub model_id: Option<String>,
+    pub policy_revision: i64,
+    pub runtime_id: Option<Uuid>,
+}
+
 /// Row of `agent_to_label`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct AgentToLabel {
@@ -321,8 +333,8 @@ pub struct Attachment {
 /// Row of `automation`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct Automation {
-    pub assignee_id: Uuid,
-    pub assignee_type: String,
+    pub executor_id: Uuid,
+    pub executor_type: String,
     pub created_at: DateTime<Utc>,
     pub created_by_id: Uuid,
     pub created_by_type: String,
@@ -915,8 +927,8 @@ pub struct InboxItem {
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct Issue {
     pub acceptance_criteria: serde_json::Value,
-    pub assignee_id: Option<Uuid>,
-    pub assignee_type: Option<String>,
+    pub executor_id: Option<Uuid>,
+    pub executor_type: Option<String>,
     pub context_refs: serde_json::Value,
     pub created_at: DateTime<Utc>,
     pub creator_id: Uuid,
@@ -928,6 +940,8 @@ pub struct Issue {
     pub last_activity_at: Option<DateTime<Utc>>,
     pub metadata: serde_json::Value,
     pub number: i32,
+    pub owner_id: Option<Uuid>,
+    pub owner_type: Option<String>,
     pub origin_id: Option<Uuid>,
     pub origin_type: Option<String>,
     pub parent_issue_id: Option<Uuid>,
@@ -978,16 +992,22 @@ pub struct DependencyGraphPlan {
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct DependencyGraphNode {
     pub acceptance_criteria: serde_json::Value,
-    pub assignee_id: Option<Uuid>,
-    pub assignee_type: Option<String>,
-    pub candidate_assignees: serde_json::Value,
+    pub executor_id: Option<Uuid>,
+    pub executor_type: Option<String>,
+    pub candidate_executors: serde_json::Value,
     pub context: serde_json::Value,
     pub created_at: DateTime<Utc>,
     pub description: String,
     pub id: Uuid,
     pub issue_id: Uuid,
+    pub model_id: Option<String>,
+    pub owner_id: Option<Uuid>,
+    pub owner_type: Option<String>,
     pub outputs: serde_json::Value,
     pub plan_id: Uuid,
+    pub reviewer_id: Option<Uuid>,
+    pub reviewer_type: Option<String>,
+    pub runtime_id: Option<Uuid>,
     pub temp_id: String,
     pub title: String,
     pub updated_at: DateTime<Utc>,
@@ -1067,6 +1087,19 @@ pub struct IssueStatus {
     pub key: String,
     pub name: String,
     pub position: f64,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
+}
+
+/// Workspace-wide execution and review defaults for an issue status category.
+/// Agent relationships are validated and cleaned up by the application layer;
+/// the database deliberately has no foreign keys for this configuration.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct WorkspaceIssueCategoryPolicy {
+    pub category: String,
+    pub created_at: DateTime<Utc>,
+    pub default_execution_agent_id: Option<Uuid>,
+    pub default_reviewer_agent_id: Option<Uuid>,
     pub updated_at: DateTime<Utc>,
     pub workspace_id: Uuid,
 }
@@ -1355,8 +1388,8 @@ pub struct ProjectResource {
 /// Row of `quick_action`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct QuickAction {
-    pub assignee_id: Uuid,
-    pub assignee_type: String,
+    pub executor_id: Uuid,
+    pub executor_type: String,
     pub created_at: DateTime<Utc>,
     pub created_by_id: Uuid,
     pub created_by_type: String,

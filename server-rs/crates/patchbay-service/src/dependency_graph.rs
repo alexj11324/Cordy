@@ -14,7 +14,10 @@ use patchbay_db::models::{
     AgentTaskQueue, DependencyGraphEdge, DependencyGraphNode, DependencyGraphPlan, Issue,
 };
 use patchbay_db::queries::workspace::increment_issue_counter;
-use patchbay_db::queries::{agent as agent_q, dependency_graph as graph_q, issue as issue_q};
+use patchbay_db::queries::{
+    agent as agent_q, dependency_graph as graph_q, issue as issue_q, runtime as runtime_q,
+    workspace_issue_category_policy as category_policy_q,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -38,10 +41,10 @@ fn empty_object() -> Value {
     json!({})
 }
 
-/// A planner-selected assignee or candidate. The discriminator is deliberately
+/// A planner-selected executor or candidate. The discriminator is deliberately
 /// the same as the issue API (`member`, `agent`, or `team`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PlanAssignee {
+pub struct PlanExecutor {
     #[serde(rename = "type")]
     pub type_: String,
     pub id: Uuid,
@@ -60,9 +63,19 @@ pub struct DependencyGraphTaskInput {
     #[serde(default)]
     pub outputs: Vec<String>,
     #[serde(default)]
-    pub assignee: Option<PlanAssignee>,
+    pub owner: Option<PlanExecutor>,
     #[serde(default)]
-    pub candidate_assignees: Vec<PlanAssignee>,
+    pub executor: Option<PlanExecutor>,
+    #[serde(default)]
+    pub candidate_executors: Vec<PlanExecutor>,
+    #[serde(default)]
+    pub reviewer: Option<PlanExecutor>,
+    /// Optional concrete target for this node. When omitted, admission uses
+    /// the selected executor's configured runtime/model.
+    #[serde(default)]
+    pub runtime_id: Option<Uuid>,
+    #[serde(default)]
+    pub model_id: Option<String>,
 }
 
 /// Typed plan submitted by a planner. `waves` is intentionally absent: the
@@ -100,12 +113,14 @@ pub enum DependencyGraphError {
     #[error("idempotency key was already used for a different dependency graph plan")]
     IdempotencyConflict,
     #[error(
-        "assignee {assignee_type}:{assignee_id} was not found or is unavailable in this workspace"
+        "executor {executor_type}:{executor_id} was not found or is unavailable in this workspace"
     )]
-    AssigneeNotFound {
-        assignee_type: String,
-        assignee_id: Uuid,
+    ExecutorNotFound {
+        executor_type: String,
+        executor_id: Uuid,
     },
+    #[error("runtime {0} was not found in this workspace")]
+    RuntimeNotFound(Uuid),
     #[error("dependency graph {0} was not found")]
     NotFound(Uuid),
     #[error("dependency graph data is inconsistent: {0}")]
@@ -155,19 +170,59 @@ fn validate_text_list(values: &[String], field: &str) -> Result<(), DependencyGr
     Ok(())
 }
 
-fn validate_assignee_shape(
-    assignee: &PlanAssignee,
+fn validate_executor_shape(
+    executor: &PlanExecutor,
     field: &str,
 ) -> Result<(), DependencyGraphError> {
-    if assignee.id.is_nil() {
+    if executor.id.is_nil() {
         return Err(invalid(format!("{field}.id must be a non-nil UUID")));
     }
-    if !matches!(assignee.type_.as_str(), "member" | "agent" | "team") {
+    if !matches!(executor.type_.as_str(), "member" | "agent" | "team") {
         return Err(invalid(format!(
             "{field}.type must be member, agent, or team"
         )));
     }
     Ok(())
+}
+
+fn validate_execution_executor_shape(
+    executor: &PlanExecutor,
+    field: &str,
+) -> Result<(), DependencyGraphError> {
+    validate_executor_shape(executor, field)?;
+    if !matches!(executor.type_.as_str(), "agent" | "team") {
+        return Err(invalid(format!("{field}.type must be agent or team")));
+    }
+    Ok(())
+}
+
+fn validate_owner_shape(owner: &PlanExecutor, field: &str) -> Result<(), DependencyGraphError> {
+    validate_executor_shape(owner, field)?;
+    if owner.type_ != "member" {
+        return Err(invalid(format!("{field}.type must be member")));
+    }
+    Ok(())
+}
+
+fn validate_execution_target(
+    runtime_id: Option<Uuid>,
+    model_id: Option<&str>,
+    field: &str,
+) -> Result<(), DependencyGraphError> {
+    match (runtime_id, model_id) {
+        (None, None) => Ok(()),
+        (Some(runtime_id), Some(model_id)) => {
+            if runtime_id.is_nil() {
+                return Err(invalid(format!(
+                    "{field}.runtime_id must be a non-nil UUID"
+                )));
+            }
+            validate_text(model_id, &format!("{field}.model_id"), 255, true)
+        }
+        _ => Err(invalid(format!(
+            "{field}.runtime_id and {field}.model_id must be provided together"
+        ))),
+    }
 }
 
 fn has_path(
@@ -269,15 +324,26 @@ pub fn validate_dependency_plan(
                 )));
             }
         }
-        if let Some(assignee) = &task.assignee {
-            validate_assignee_shape(assignee, &format!("tasks[{index}].assignee"))?;
+        if let Some(executor) = &task.executor {
+            validate_execution_executor_shape(executor, &format!("tasks[{index}].executor"))?;
         }
-        for (candidate_index, candidate) in task.candidate_assignees.iter().enumerate() {
-            validate_assignee_shape(
+        for (candidate_index, candidate) in task.candidate_executors.iter().enumerate() {
+            validate_execution_executor_shape(
                 candidate,
-                &format!("tasks[{index}].candidate_assignees[{candidate_index}]"),
+                &format!("tasks[{index}].candidate_executors[{candidate_index}]"),
             )?;
         }
+        if let Some(owner) = &task.owner {
+            validate_owner_shape(owner, &format!("tasks[{index}].owner"))?;
+        }
+        if let Some(reviewer) = &task.reviewer {
+            validate_executor_shape(reviewer, &format!("tasks[{index}].reviewer"))?;
+        }
+        validate_execution_target(
+            task.runtime_id,
+            task.model_id.as_deref(),
+            &format!("tasks[{index}]"),
+        )?;
     }
 
     let mut adjacency = vec![Vec::<(usize, usize)>::new(); input.tasks.len()];
@@ -971,23 +1037,23 @@ pub async fn retire_dependency_plan(
     Ok(DependencyGraphRetirement { plan, cancellation })
 }
 
-async fn validate_persisted_assignee<'e, E>(
-    executor: E,
+async fn validate_persisted_executor<'e, E>(
+    db_executor: E,
     workspace_id: Uuid,
-    assignee: &PlanAssignee,
+    target: &PlanExecutor,
 ) -> Result<(), DependencyGraphError>
 where
     E: Executor<'e, Database = sqlx::Postgres>,
 {
-    let found = graph_q::validate_assignee(executor, workspace_id, &assignee.type_, assignee.id)
+    let found = graph_q::validate_executor(db_executor, workspace_id, &target.type_, target.id)
         .await
         .map_err(db_error)?;
     if found {
         Ok(())
     } else {
-        Err(DependencyGraphError::AssigneeNotFound {
-            assignee_type: assignee.type_.clone(),
-            assignee_id: assignee.id,
+        Err(DependencyGraphError::ExecutorNotFound {
+            executor_type: target.type_.clone(),
+            executor_id: target.id,
         })
     }
 }
@@ -1084,19 +1150,34 @@ pub async fn apply_dependency_plan(
     }
 
     for task in &input.tasks {
-        if let Some(assignee) = &task.assignee {
-            validate_persisted_assignee(&mut *tx, workspace_id, assignee).await?;
+        if let Some(executor) = &task.executor {
+            validate_persisted_executor(&mut *tx, workspace_id, executor).await?;
         }
-        for candidate in &task.candidate_assignees {
-            validate_persisted_assignee(&mut *tx, workspace_id, candidate).await?;
+        for candidate in &task.candidate_executors {
+            validate_persisted_executor(&mut *tx, workspace_id, candidate).await?;
+        }
+        if let Some(owner) = &task.owner {
+            validate_persisted_executor(&mut *tx, workspace_id, owner).await?;
+        }
+        if let Some(reviewer) = &task.reviewer {
+            validate_persisted_executor(&mut *tx, workspace_id, reviewer).await?;
+        }
+        if let Some(runtime_id) = task.runtime_id {
+            if runtime_q::get_agent_runtime_for_workspace(&mut *tx, runtime_id, workspace_id)
+                .await
+                .map_err(db_error)?
+                .is_none()
+            {
+                return Err(DependencyGraphError::RuntimeNotFound(runtime_id));
+            }
         }
     }
 
     if created_by_type == "agent" {
-        validate_persisted_assignee(
+        validate_persisted_executor(
             &mut *tx,
             workspace_id,
-            &PlanAssignee {
+            &PlanExecutor {
                 type_: "agent".to_string(),
                 id: created_by_id,
             },
@@ -1143,6 +1224,42 @@ pub async fn apply_dependency_plan(
     };
 
     let mut issue_by_temp_id = HashMap::with_capacity(input.tasks.len());
+    // Planner nodes may omit an executor. Resolve that omission once, while
+    // the plan transaction is open, from the workspace's category policy so
+    // every root is admitted with a concrete target (or remains explicitly
+    // unassigned when an administrator has not configured one yet).
+    let configured_default_execution_agent_id =
+        category_policy_q::get_workspace_issue_category_policy(
+            &mut *tx,
+            workspace_id,
+            issue_status::IN_PROGRESS,
+        )
+        .await
+        .map_err(db_error)?
+        .and_then(|policy| policy.default_execution_agent_id);
+    // Policies outlive their referenced agents. Resolve the configured default
+    // through the workspace-scoped agent row and only use it while the agent
+    // is active and has a runtime capable of executing work; stale policy
+    // references behave exactly like an unset default.
+    let default_execution_agent_id = match configured_default_execution_agent_id {
+        Some(agent_id) => agent_q::get_agent_in_workspace(&mut *tx, agent_id, workspace_id)
+            .await
+            .map_err(db_error)?
+            .filter(|agent| agent.archived_at.is_none() && agent.runtime_id.is_some())
+            .map(|_| agent_id),
+        None => None,
+    };
+    if let Some(agent_id) = default_execution_agent_id {
+        validate_persisted_executor(
+            &mut *tx,
+            workspace_id,
+            &PlanExecutor {
+                type_: "agent".to_string(),
+                id: agent_id,
+            },
+        )
+        .await?;
+    }
     let wave_by_temp_id = waves
         .iter()
         .enumerate()
@@ -1169,11 +1286,23 @@ pub async fn apply_dependency_plan(
         let position = next_top_position(&mut *tx, workspace_id, status)
             .await
             .map_err(db_error)?;
-        let assignee_type = task
-            .assignee
+        let executor_type = task
+            .executor
             .as_ref()
-            .map(|assignee| assignee.type_.as_str());
-        let assignee_id = task.assignee.as_ref().map(|assignee| assignee.id);
+            .map(|executor| executor.type_.as_str())
+            .or_else(|| default_execution_agent_id.map(|_| "agent"));
+        let executor_id = task
+            .executor
+            .as_ref()
+            .map(|executor| executor.id)
+            .or(default_execution_agent_id);
+        let owner_type = task.owner.as_ref().map(|owner| owner.type_.as_str());
+        let owner_id = task.owner.as_ref().map(|owner| owner.id);
+        let reviewer_type = task
+            .reviewer
+            .as_ref()
+            .map(|reviewer| reviewer.type_.as_str());
+        let reviewer_id = task.reviewer.as_ref().map(|reviewer| reviewer.id);
         let issue = issue_q::create_issue(
             &mut *tx,
             workspace_id,
@@ -1181,8 +1310,12 @@ pub async fn apply_dependency_plan(
             Some(&task.description),
             status,
             "none",
-            assignee_type,
-            assignee_id,
+            owner_type,
+            owner_id,
+            executor_type,
+            executor_id,
+            reviewer_type,
+            reviewer_id,
             if created_by_type == "agent" {
                 "agent"
             } else {
@@ -1225,12 +1358,15 @@ pub async fn apply_dependency_plan(
                 acceptance_criteria,
                 context: task.context.clone(),
                 outputs: json!(task.outputs),
-                assignee_type: task
-                    .assignee
-                    .as_ref()
-                    .map(|assignee| assignee.type_.clone()),
-                assignee_id,
-                candidate_assignees: json!(task.candidate_assignees),
+                executor_type: executor_type.map(str::to_string),
+                executor_id,
+                candidate_executors: json!(task.candidate_executors),
+                owner_type: owner_type.map(str::to_string),
+                owner_id,
+                reviewer_type: reviewer_type.map(str::to_string),
+                reviewer_id,
+                runtime_id: task.runtime_id,
+                model_id: task.model_id.clone(),
                 wave: *wave_by_temp_id
                     .get(task.temp_id.as_str())
                     .expect("validated task appears in a derived wave")
@@ -1288,8 +1424,12 @@ mod tests {
             acceptance_criteria: vec![format!("{temp_id} is verifiable")],
             context: json!({"source": temp_id}),
             outputs: vec![output.to_string()],
-            assignee: None,
-            candidate_assignees: Vec::new(),
+            owner: None,
+            executor: None,
+            candidate_executors: Vec::new(),
+            reviewer: None,
+            runtime_id: None,
+            model_id: None,
         }
     }
 
@@ -1462,6 +1602,10 @@ mod tests {
             "none",
             None,
             None,
+            None,
+            None,
+            None,
+            None,
             "member",
             creator_id,
             None,
@@ -1486,11 +1630,11 @@ mod tests {
         );
         input.parent_issue_id = parent.id;
 
-        // A validation/assignee failure must leave no plan or child issue
+        // A validation/executor failure must leave no plan or child issue
         // behind. This is the fail-closed side of atomic apply, before the
         // successful controlled flow below.
         let mut invalid_input = input.clone();
-        invalid_input.tasks[0].assignee = Some(PlanAssignee {
+        invalid_input.tasks[0].executor = Some(PlanExecutor {
             type_: "agent".to_string(),
             id: Uuid::now_v7(),
         });
@@ -1505,7 +1649,7 @@ mod tests {
         .await;
         assert!(matches!(
             invalid_result,
-            Err(DependencyGraphError::AssigneeNotFound { .. })
+            Err(DependencyGraphError::ExecutorNotFound { .. })
         ));
         let plans_after_rollback: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM dependency_graph_plan WHERE workspace_id = $1 AND parent_issue_id = $2",
@@ -1701,6 +1845,10 @@ mod tests {
             Some("contract delete parent"),
             issue_status::TODO,
             "none",
+            None,
+            None,
+            None,
+            None,
             None,
             None,
             "member",

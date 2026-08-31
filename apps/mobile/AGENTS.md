@@ -524,9 +524,9 @@ The mobile codebase started with ~15 Modal sheets. They almost all copied the sa
 The table above says "< 7 fixed picker options → centered card". That rule
 applies in isolation, but **breaks down when multiple pickers coexist in
 the same chip row** (issue-detail AttributeRow is the canonical case:
-status / priority / assignee / label / project / due-date all sit next
+status / priority / executor / owner / reviewer / label / project / due-date all sit next
 to each other). Mixing centered cards (for status/priority, short
-fixed lists) with formSheet routes (for assignee/label/project, long
+fixed lists) with formSheet routes (for executor/owner/reviewer/label/project, long
 lists) means the user gets two different gestures depending on which
 chip they tap — there's no muscle-memory carry-over.
 

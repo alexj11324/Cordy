@@ -498,8 +498,8 @@ pub fn issue_to_map(issue: &Issue, issue_prefix: &str) -> serde_json::Value {
         // resolve via the catalog. (PB-6243)
         "status_category": built_in_status_category(&issue.status),
         "priority": issue.priority,
-        "assignee_type": issue.assignee_type.clone(),
-        "assignee_id": issue.assignee_id.map(|u| u.to_string()),
+        "executor_type": issue.executor_type.clone(),
+        "executor_id": issue.executor_id.map(|u| u.to_string()),
         "reviewer_type": issue.reviewer_type.clone(),
         "reviewer_id": issue.reviewer_id.map(|u| u.to_string()),
         "creator_type": issue.creator_type,

@@ -96,8 +96,8 @@ pub async fn create_automation(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
     title: &str,
-    assignee_type: &str,
-    assignee_id: Uuid,
+    executor_type: &str,
+    executor_id: Uuid,
     status: &str,
     execution_mode: &str,
     created_by_type: &str,
@@ -108,19 +108,19 @@ pub async fn create_automation(
 ) -> anyhow::Result<Option<Automation>> {
     let row = sqlx::query(
         r#"INSERT INTO automation (
-    workspace_id, title, description, assignee_type, assignee_id,
+    workspace_id, title, description, executor_type, executor_id,
     status, execution_mode, issue_title_template, project_id,
     created_by_type, created_by_id
 ) VALUES (
     $1, $2, $9, $3, $4,
     $5, $6, $10, $11,
     $7, $8
-) RETURNING id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason"#
+) RETURNING id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason"#
     )
         .bind(workspace_id)
         .bind(title)
-        .bind(assignee_type)
-        .bind(assignee_id)
+        .bind(executor_type)
+        .bind(executor_id)
         .bind(status)
         .bind(execution_mode)
         .bind(created_by_type)
@@ -136,7 +136,7 @@ pub async fn create_automation(
         workspace_id: row.try_get(1)?,
         title: row.try_get(2)?,
         description: row.try_get(3)?,
-        assignee_id: row.try_get(4)?,
+        executor_id: row.try_get(4)?,
         status: row.try_get(5)?,
         execution_mode: row.try_get(6)?,
         issue_title_template: row.try_get(7)?,
@@ -145,7 +145,7 @@ pub async fn create_automation(
         last_run_at: row.try_get(10)?,
         created_at: row.try_get(11)?,
         updated_at: row.try_get(12)?,
-        assignee_type: row.try_get(13)?,
+        executor_type: row.try_get(13)?,
         project_id: row.try_get(14)?,
         pause_reason: row.try_get(15)?,
     }))
@@ -605,7 +605,7 @@ pub async fn get_automation(
     id: Uuid,
 ) -> anyhow::Result<Option<Automation>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason FROM automation
+        r#"SELECT id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason FROM automation
 WHERE id = $1"#
     )
         .bind(id)
@@ -617,7 +617,7 @@ WHERE id = $1"#
         workspace_id: row.try_get(1)?,
         title: row.try_get(2)?,
         description: row.try_get(3)?,
-        assignee_id: row.try_get(4)?,
+        executor_id: row.try_get(4)?,
         status: row.try_get(5)?,
         execution_mode: row.try_get(6)?,
         issue_title_template: row.try_get(7)?,
@@ -626,7 +626,7 @@ WHERE id = $1"#
         last_run_at: row.try_get(10)?,
         created_at: row.try_get(11)?,
         updated_at: row.try_get(12)?,
-        assignee_type: row.try_get(13)?,
+        executor_type: row.try_get(13)?,
         project_id: row.try_get(14)?,
         pause_reason: row.try_get(15)?,
     }))
@@ -638,7 +638,7 @@ pub async fn get_automation_in_workspace(
     workspace_id: Uuid,
 ) -> anyhow::Result<Option<Automation>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason FROM automation
+        r#"SELECT id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason FROM automation
 WHERE id = $1 AND workspace_id = $2"#
     )
         .bind(id)
@@ -651,7 +651,7 @@ WHERE id = $1 AND workspace_id = $2"#
         workspace_id: row.try_get(1)?,
         title: row.try_get(2)?,
         description: row.try_get(3)?,
-        assignee_id: row.try_get(4)?,
+        executor_id: row.try_get(4)?,
         status: row.try_get(5)?,
         execution_mode: row.try_get(6)?,
         issue_title_template: row.try_get(7)?,
@@ -660,7 +660,7 @@ WHERE id = $1 AND workspace_id = $2"#
         last_run_at: row.try_get(10)?,
         created_at: row.try_get(11)?,
         updated_at: row.try_get(12)?,
-        assignee_type: row.try_get(13)?,
+        executor_type: row.try_get(13)?,
         project_id: row.try_get(14)?,
         pause_reason: row.try_get(15)?,
     }))
@@ -1188,7 +1188,7 @@ pub async fn list_automations(
 ) -> anyhow::Result<Vec<ListAutomationsRow>> {
     let rows = sqlx::query(
         r#"SELECT
-  a.id, a.workspace_id, a.title, a.description, a.assignee_id, a.status, a.execution_mode, a.issue_title_template, a.created_by_type, a.created_by_id, a.last_run_at, a.created_at, a.updated_at, a.assignee_type, a.project_id, a.pause_reason,
+  a.id, a.workspace_id, a.title, a.description, a.executor_id, a.status, a.execution_mode, a.issue_title_template, a.created_by_type, a.created_by_id, a.last_run_at, a.created_at, a.updated_at, a.executor_type, a.project_id, a.pause_reason,
   (
     SELECT array_agg(DISTINCT t.kind ORDER BY t.kind)
     FROM automation_trigger t
@@ -1226,7 +1226,7 @@ ORDER BY a.created_at DESC"#
                 workspace_id: row.try_get(1)?,
                 title: row.try_get(2)?,
                 description: row.try_get(3)?,
-                assignee_id: row.try_get(4)?,
+                executor_id: row.try_get(4)?,
                 status: row.try_get(5)?,
                 execution_mode: row.try_get(6)?,
                 issue_title_template: row.try_get(7)?,
@@ -1235,7 +1235,7 @@ ORDER BY a.created_at DESC"#
                 last_run_at: row.try_get(10)?,
                 created_at: row.try_get(11)?,
                 updated_at: row.try_get(12)?,
-                assignee_type: row.try_get(13)?,
+                executor_type: row.try_get(13)?,
                 project_id: row.try_get(14)?,
                 pause_reason: row.try_get(15)?,
             },
@@ -1293,7 +1293,7 @@ pub async fn lock_automation_for_update(
     workspace_id: Uuid,
 ) -> anyhow::Result<Option<Automation>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason FROM automation
+        r#"SELECT id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason FROM automation
 WHERE id = $1 AND workspace_id = $2
 FOR UPDATE"#
     )
@@ -1307,7 +1307,7 @@ FOR UPDATE"#
         workspace_id: row.try_get(1)?,
         title: row.try_get(2)?,
         description: row.try_get(3)?,
-        assignee_id: row.try_get(4)?,
+        executor_id: row.try_get(4)?,
         status: row.try_get(5)?,
         execution_mode: row.try_get(6)?,
         issue_title_template: row.try_get(7)?,
@@ -1316,7 +1316,7 @@ FOR UPDATE"#
         last_run_at: row.try_get(10)?,
         created_at: row.try_get(11)?,
         updated_at: row.try_get(12)?,
-        assignee_type: row.try_get(13)?,
+        executor_type: row.try_get(13)?,
         project_id: row.try_get(14)?,
         pause_reason: row.try_get(15)?,
     }))
@@ -1333,18 +1333,18 @@ SET status = 'paused',
     updated_at = now()
 WHERE a.status = 'active'
   AND (
-    (a.assignee_type = 'agent' AND a.assignee_id = ANY($1::uuid[]))
+    (a.executor_type = 'agent' AND a.executor_id = ANY($1::uuid[]))
     OR (
-      a.assignee_type = 'team'
+      a.executor_type = 'team'
       AND EXISTS (
         SELECT 1
         FROM team s
-        WHERE s.id = a.assignee_id
+        WHERE s.id = a.executor_id
           AND s.leader_id = ANY($1::uuid[])
       )
     )
   )
-RETURNING a.id, a.workspace_id, a.title, a.description, a.assignee_id, a.status, a.execution_mode, a.issue_title_template, a.created_by_type, a.created_by_id, a.last_run_at, a.created_at, a.updated_at, a.assignee_type, a.project_id, a.pause_reason"#
+RETURNING a.id, a.workspace_id, a.title, a.description, a.executor_id, a.status, a.execution_mode, a.issue_title_template, a.created_by_type, a.created_by_id, a.last_run_at, a.created_at, a.updated_at, a.executor_type, a.project_id, a.pause_reason"#
     )
         .bind(agent_ids)
         .fetch_all(executor)
@@ -1356,7 +1356,7 @@ RETURNING a.id, a.workspace_id, a.title, a.description, a.assignee_id, a.status,
             workspace_id: row.try_get(1)?,
             title: row.try_get(2)?,
             description: row.try_get(3)?,
-            assignee_id: row.try_get(4)?,
+            executor_id: row.try_get(4)?,
             status: row.try_get(5)?,
             execution_mode: row.try_get(6)?,
             issue_title_template: row.try_get(7)?,
@@ -1365,7 +1365,7 @@ RETURNING a.id, a.workspace_id, a.title, a.description, a.assignee_id, a.status,
             last_run_at: row.try_get(10)?,
             created_at: row.try_get(11)?,
             updated_at: row.try_get(12)?,
-            assignee_type: row.try_get(13)?,
+            executor_type: row.try_get(13)?,
             project_id: row.try_get(14)?,
             pause_reason: row.try_get(15)?,
         });
@@ -1383,9 +1383,9 @@ SET status = 'paused',
     pause_reason = 'agent_runtime_required',
     updated_at = now()
 WHERE status = 'active'
-  AND assignee_type = 'team'
-  AND assignee_id = $1
-RETURNING id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason"#
+  AND executor_type = 'team'
+  AND executor_id = $1
+RETURNING id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason"#
     )
         .bind(team_id)
         .fetch_all(executor)
@@ -1397,7 +1397,7 @@ RETURNING id, workspace_id, title, description, assignee_id, status, execution_m
             workspace_id: row.try_get(1)?,
             title: row.try_get(2)?,
             description: row.try_get(3)?,
-            assignee_id: row.try_get(4)?,
+            executor_id: row.try_get(4)?,
             status: row.try_get(5)?,
             execution_mode: row.try_get(6)?,
             issue_title_template: row.try_get(7)?,
@@ -1406,7 +1406,7 @@ RETURNING id, workspace_id, title, description, assignee_id, status, execution_m
             last_run_at: row.try_get(10)?,
             created_at: row.try_get(11)?,
             updated_at: row.try_get(12)?,
-            assignee_type: row.try_get(13)?,
+            executor_type: row.try_get(13)?,
             project_id: row.try_get(14)?,
             pause_reason: row.try_get(15)?,
         });
@@ -1519,7 +1519,7 @@ pub struct SelectAutomationsExceedingFailureThresholdRow {
     pub id: Option<Uuid>,
     pub workspace_id: Option<Uuid>,
     pub title: String,
-    pub assignee_id: Option<Uuid>,
+    pub executor_id: Option<Uuid>,
     pub created_by_type: String,
     pub created_by_id: Option<Uuid>,
     pub total_runs: i64,
@@ -1541,7 +1541,7 @@ pub async fn select_automations_exceeding_failure_threshold(
     WHERE created_at >= $3::timestamptz
     GROUP BY automation_id
 )
-SELECT a.id, a.workspace_id, a.title, a.assignee_id,
+SELECT a.id, a.workspace_id, a.title, a.executor_id,
        a.created_by_type, a.created_by_id,
        s.total::bigint  AS total_runs,
        s.failed::bigint AS failed_runs
@@ -1563,7 +1563,7 @@ ORDER BY s.failed DESC, a.id ASC"#,
             id: row.try_get(0)?,
             workspace_id: row.try_get(1)?,
             title: row.try_get(2)?,
-            assignee_id: row.try_get(3)?,
+            executor_id: row.try_get(3)?,
             created_by_type: row.try_get(4)?,
             created_by_id: row.try_get(5)?,
             total_runs: row.try_get(6)?,
@@ -1696,7 +1696,7 @@ pub async fn system_pause_automation(
         r#"UPDATE automation
 SET status = 'paused', pause_reason = NULL, updated_at = now()
 WHERE id = $1 AND status = 'active'
-RETURNING id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason"#
+RETURNING id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason"#
     )
         .bind(id)
         .fetch_optional(executor)
@@ -1707,7 +1707,7 @@ RETURNING id, workspace_id, title, description, assignee_id, status, execution_m
         workspace_id: row.try_get(1)?,
         title: row.try_get(2)?,
         description: row.try_get(3)?,
-        assignee_id: row.try_get(4)?,
+        executor_id: row.try_get(4)?,
         status: row.try_get(5)?,
         execution_mode: row.try_get(6)?,
         issue_title_template: row.try_get(7)?,
@@ -1716,7 +1716,7 @@ RETURNING id, workspace_id, title, description, assignee_id, status, execution_m
         last_run_at: row.try_get(10)?,
         created_at: row.try_get(11)?,
         updated_at: row.try_get(12)?,
-        assignee_type: row.try_get(13)?,
+        executor_type: row.try_get(13)?,
         project_id: row.try_get(14)?,
         pause_reason: row.try_get(15)?,
     }))
@@ -1734,7 +1734,7 @@ pub async fn system_pause_automation_in_workspace(
         r#"UPDATE automation
 SET status = 'paused', pause_reason = NULL, updated_at = now()
 WHERE id = $1 AND workspace_id = $2 AND status = 'active'
-RETURNING id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason"#,
+RETURNING id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason"#,
     )
     .bind(id)
     .bind(workspace_id)
@@ -1746,7 +1746,7 @@ RETURNING id, workspace_id, title, description, assignee_id, status, execution_m
         workspace_id: row.try_get(1)?,
         title: row.try_get(2)?,
         description: row.try_get(3)?,
-        assignee_id: row.try_get(4)?,
+        executor_id: row.try_get(4)?,
         status: row.try_get(5)?,
         execution_mode: row.try_get(6)?,
         issue_title_template: row.try_get(7)?,
@@ -1755,7 +1755,7 @@ RETURNING id, workspace_id, title, description, assignee_id, status, execution_m
         last_run_at: row.try_get(10)?,
         created_at: row.try_get(11)?,
         updated_at: row.try_get(12)?,
-        assignee_type: row.try_get(13)?,
+        executor_type: row.try_get(13)?,
         project_id: row.try_get(14)?,
         pause_reason: row.try_get(15)?,
     }))
@@ -1782,8 +1782,8 @@ pub async fn update_automation(
     id: Uuid,
     title: Option<&str>,
     description: Option<&str>,
-    assignee_type: Option<&str>,
-    assignee_id: Uuid,
+    executor_type: Option<&str>,
+    executor_id: Uuid,
     status: Option<&str>,
     execution_mode: Option<&str>,
     issue_title_template: Option<&str>,
@@ -1793,8 +1793,8 @@ pub async fn update_automation(
         r#"UPDATE automation SET
     title = COALESCE($2, title),
     description = COALESCE($3, description),
-    assignee_type = COALESCE($4, assignee_type),
-    assignee_id = COALESCE($5::uuid, assignee_id),
+    executor_type = COALESCE($4, executor_type),
+    executor_id = COALESCE($5::uuid, executor_id),
     status = COALESCE($6, status),
     pause_reason = CASE
       WHEN $6::text IS NOT NULL THEN NULL
@@ -1805,13 +1805,13 @@ pub async fn update_automation(
     project_id = $9,
     updated_at = now()
 WHERE id = $1
-RETURNING id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason"#
+RETURNING id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason"#
     )
         .bind(id)
         .bind(title)
         .bind(description)
-        .bind(assignee_type)
-        .bind(assignee_id)
+        .bind(executor_type)
+        .bind(executor_id)
         .bind(status)
         .bind(execution_mode)
         .bind(issue_title_template)
@@ -1824,7 +1824,7 @@ RETURNING id, workspace_id, title, description, assignee_id, status, execution_m
         workspace_id: row.try_get(1)?,
         title: row.try_get(2)?,
         description: row.try_get(3)?,
-        assignee_id: row.try_get(4)?,
+        executor_id: row.try_get(4)?,
         status: row.try_get(5)?,
         execution_mode: row.try_get(6)?,
         issue_title_template: row.try_get(7)?,
@@ -1833,7 +1833,7 @@ RETURNING id, workspace_id, title, description, assignee_id, status, execution_m
         last_run_at: row.try_get(10)?,
         created_at: row.try_get(11)?,
         updated_at: row.try_get(12)?,
-        assignee_type: row.try_get(13)?,
+        executor_type: row.try_get(13)?,
         project_id: row.try_get(14)?,
         pause_reason: row.try_get(15)?,
     }))

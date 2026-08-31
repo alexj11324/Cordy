@@ -773,7 +773,7 @@ mod tests {
             "/api/issues/grouped",
             "/api/issues/children?parent_ids=018f03a0-c4d2-7a37-ae4d-5aa45de12f11",
             "/api/issues/child-progress",
-            "/api/assignee-frequency",
+            "/api/executor-frequency",
             "/api/issues/CORD-14/usage",
             "/api/issues/CORD-14/attachments",
             "/api/issues/CORD-14/active-task",

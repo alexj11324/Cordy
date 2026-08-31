@@ -104,13 +104,15 @@ async fn find_duplicate(
     issue::find_active_duplicate_issue(&mut **tx, workspace_id, None, None, &normalized).await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn seed_issue(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     workspace_id: Uuid,
     title: &str,
     description: &str,
-    assignee_type: &str,
-    assignee_id: Uuid,
+    status: &str,
+    executor_type: &str,
+    executor_id: Uuid,
     user_id: Uuid,
 ) -> anyhow::Result<Issue> {
     let number = workspace::increment_issue_counter(&mut **tx, workspace_id)
@@ -121,10 +123,14 @@ async fn seed_issue(
         workspace_id,
         title,
         Some(description),
-        "todo",
+        status,
         "high",
-        Some(assignee_type),
-        Some(assignee_id),
+        Some("member"),
+        Some(user_id),
+        Some(executor_type),
+        Some(executor_id),
+        None,
+        None,
         "member",
         user_id,
         None,
@@ -422,6 +428,7 @@ async fn with_runtime(
                 workspace_id,
                 RUNTIME_TITLE,
                 description,
+                "in_progress",
                 "agent",
                 helper.id,
                 user_id,
@@ -652,6 +659,7 @@ async fn without_runtime(
             workspace_id,
             NO_RUNTIME_TITLE,
             no_runtime_copy(before.language.as_deref()),
+            "todo",
             "member",
             user_id,
             user_id,

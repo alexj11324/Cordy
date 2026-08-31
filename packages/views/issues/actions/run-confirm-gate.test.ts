@@ -23,11 +23,11 @@ function entry(key: string, category: string): IssueStatusEntry {
   };
 }
 
-// `later` parks like Backlog, `rework` starts work like Todo, `qa` sits in
-// in_review — the three custom shapes a raw key comparison gets wrong.
+// Custom statuses cover each category whose scheduling semantics matter.
 const CATALOG = buildIssueStatusCatalog([
   entry("later", "backlog"),
   entry("rework", "todo"),
+  entry("doing", "in_progress"),
   entry("qa", "in_review"),
 ]);
 // A catalog that has not loaded: every custom key is unresolvable.
@@ -38,8 +38,10 @@ function issue(overrides: Partial<GateIssue> = {}): GateIssue {
     id: "issue-1",
     revision: 7,
     status: "backlog",
-    assignee_type: "agent",
-    assignee_id: "agent-1",
+    executor_type: "agent",
+    executor_id: "agent-1",
+    reviewer_type: null,
+    reviewer_id: null,
     ...overrides,
   };
 }
@@ -67,68 +69,90 @@ describe("resolveStatusCategory", () => {
 });
 
 describe("runConfirmIntent — assign", () => {
-  it("confirms when the issue is not parked", () => {
+  it("confirms when changing the executor of an In Progress issue", () => {
     expect(
-      runConfirmIntent(issue({ status: "todo" }), { assignee_type: "agent", assignee_id: "a-2" }, CATALOG),
-    ).toEqual({ issueIds: ["issue-1"], mode: "assign", assigneeType: "agent", assigneeId: "a-2" });
+      runConfirmIntent(
+        issue({ status: "in_progress" }),
+        { executor_type: "agent", executor_id: "a-2" },
+        CATALOG,
+      ),
+    ).toEqual({ issueIds: ["issue-1"], mode: "assign", executorType: "agent", executorId: "a-2" });
   });
 
   it.each([
-    ["built-in backlog", "backlog", undefined],
-    ["custom backlog-category status", "later", undefined],
-    ["custom key resolved by the payload", "anything", "backlog" as const],
-  ])("applies directly for a parked issue (%s) — assigning there never starts a run", (_label, status, carried) => {
+    ["Backlog", "backlog", undefined],
+    ["Done", "done", undefined],
+    ["category carried by the payload", "anything", "backlog" as const],
+  ])("applies directly for %s because assigning there does not start execution", (_label, status, carried) => {
     expect(
       runConfirmIntent(
         issue({ status, status_category: carried }),
-        { assignee_type: "agent", assignee_id: "a-2" },
+        { executor_type: "agent", executor_id: "a-2" },
         CATALOG,
       ),
     ).toBeNull();
+  });
+
+  it.each([
+    ["Todo", "todo", undefined],
+    ["Blocked", "blocked", undefined],
+    ["In Review", "in_review", undefined],
+    ["custom Todo", "rework", undefined],
+    ["category carried by the payload", "anything", "todo" as const],
+  ])("confirms assignment for %s because it runs an executor", (_label, status, carried) => {
+    expect(
+      runConfirmIntent(
+        issue({ status, status_category: carried }),
+        { executor_type: "agent", executor_id: "a-2" },
+        CATALOG,
+      ),
+    ).toEqual({ issueIds: ["issue-1"], mode: "assign", executorType: "agent", executorId: "a-2" });
   });
 
   it("confirms when the issue's own category is unresolvable", () => {
     // Fails toward the dialog: a dismissed dialog costs a click, a silent
     // start costs an agent run.
     expect(
-      runConfirmIntent(issue({ status: "later" }), { assignee_type: "agent", assignee_id: "a-2" }, COLD),
+      runConfirmIntent(issue({ status: "later" }), { executor_type: "agent", executor_id: "a-2" }, COLD),
     ).not.toBeNull();
   });
 
-  it("applies directly for a member assignee", () => {
+  it("applies directly when assigning a human owner", () => {
     expect(
-      runConfirmIntent(issue({ status: "todo" }), { assignee_type: "member", assignee_id: "u-1" }, CATALOG),
+      runConfirmIntent(issue({ status: "todo" }), { owner_type: "member", owner_id: "u-1" }, CATALOG),
     ).toBeNull();
   });
 });
 
 describe("runConfirmIntent — promote", () => {
   it.each([
-    ["built-in todo", "backlog", "todo"],
-    ["custom Todo-category status", "backlog", "rework"],
-    ["custom backlog-category origin", "later", "rework"],
-    ["a non-todo target that still starts a run", "backlog", "in_progress"],
+    ["Backlog", "backlog", "in_progress"],
+    ["Backlog to Todo", "backlog", "todo"],
+    ["Backlog to Blocked", "backlog", "blocked"],
+    ["Backlog to custom Todo", "backlog", "rework"],
+    ["custom Backlog origin", "later", "in_progress"],
   ])("confirms the promotion (%s)", (_label, from, to) => {
     expect(runConfirmIntent(issue({ status: from }), { status: to }, CATALOG)).toEqual({
       issueIds: ["issue-1"],
       mode: "promote",
       status: to,
-      assigneeType: "agent",
-      assigneeId: "agent-1",
+      executorType: "agent",
+      executorId: "agent-1",
     });
   });
 
-  it.each([
-    ["unresolvable origin", COLD, { status: "later" }, "todo"],
-    ["unresolvable target", CATALOG, { status: "backlog" }, "unknown"],
-  ])("confirms when %s leaves it unknown whether a run starts", (_label, catalog, from, to) => {
-    expect(runConfirmIntent(issue(from), { status: to }, catalog)).not.toBeNull();
+  it("confirms when the target is unresolvable and may start a run", () => {
+    expect(
+      runConfirmIntent(issue({ status: "backlog" }), { status: "unknown" }, CATALOG),
+    ).not.toBeNull();
   });
 
   it.each([
-    ["no owner", { status: "backlog", assignee_type: null, assignee_id: null }, "todo"],
-    ["member owner", { status: "backlog", assignee_type: "member" as const, assignee_id: "u-1" }, "todo"],
-    ["already active", { status: "todo" }, "in_progress"],
+    ["no executor", { status: "todo", executor_type: null, executor_id: null }, "in_progress"],
+    ["Todo to In Progress", { status: "todo" }, "in_progress"],
+    ["Blocked to In Progress", { status: "blocked" }, "in_progress"],
+    ["custom In Progress target", { status: "todo" }, "doing"],
+    ["already In Progress", { status: "in_progress" }, "doing"],
     ["closing the issue", { status: "backlog" }, "done"],
     ["cancelling the issue", { status: "backlog" }, "cancelled"],
     ["re-parking inside backlog", { status: "backlog" }, "later"],
@@ -149,10 +173,10 @@ describe("runConfirmIntent — review handoff", () => {
       issueIds: ["issue-1"],
       mode: "review",
       status,
-      fromAssigneeType: "agent",
-      fromAssigneeId: "agent-1",
-      assigneeType: null,
-      assigneeId: null,
+      fromExecutorType: "agent",
+      fromExecutorId: "agent-1",
+      executorType: null,
+      executorId: null,
       issueRevision: 7,
     });
   });
@@ -203,8 +227,8 @@ describe("runConfirmIntent — review return", () => {
       issueIds: ["issue-1"],
       mode: "review-return",
       status: "in_progress",
-      assigneeType: "agent",
-      assigneeId: "agent-1",
+      executorType: "agent",
+      executorId: "agent-1",
       issueRevision: 7,
     });
   });
@@ -215,8 +239,8 @@ describe("runConfirmIntent — review return", () => {
         issue({ status: "in_review" }),
         {
           status: "in_progress",
-          assignee_type: "agent",
-          assignee_id: "agent-1",
+          executor_type: "agent",
+          executor_id: "agent-1",
         },
         CATALOG,
       ),
@@ -224,8 +248,7 @@ describe("runConfirmIntent — review return", () => {
   });
 
   it.each([
-    ["member owner", { assignee_type: "member" as const, assignee_id: "user-1" }],
-    ["no owner", { assignee_type: null, assignee_id: null }],
+    ["no executor", { executor_type: null, executor_id: null }],
   ])("does not offer an agent handoff for a %s", (_label, owner) => {
     expect(
       runConfirmIntent(issue({ status: "in_review", ...owner }), { status: "in_progress" }, CATALOG),

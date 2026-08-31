@@ -29,11 +29,24 @@ pub const DONE: &str = "done";
 pub const BLOCKED: &str = "blocked";
 pub const CANCELLED: &str = "cancelled";
 
-/// Categories that represent work already underway. Issues in these columns
-/// must always have a concrete owner so progress, blockers, and review cannot
-/// become an ownerless queue.
-pub fn requires_assignee(category: &str) -> bool {
+/// Categories that retain a concrete execution target. This preserves the
+/// existing issue lifecycle contract: Backlog parks work, while Todo,
+/// In Progress, In Review, and Blocked can carry an executor. In Review also
+/// requires a separate reviewer.
+pub fn requires_executor(category: &str) -> bool {
     matches!(category, IN_PROGRESS | IN_REVIEW | BLOCKED)
+}
+
+pub fn requires_reviewer(category: &str) -> bool {
+    category == IN_REVIEW
+}
+
+pub fn runs_executor(category: &str) -> bool {
+    !matches!(category, BACKLOG | DONE | CANCELLED)
+}
+
+pub fn runs_reviewer(category: &str) -> bool {
+    category == IN_REVIEW
 }
 
 /// The historical STATUS_ORDER from the frontend's static status config.
@@ -491,12 +504,22 @@ mod tests {
     }
 
     #[test]
-    fn underway_categories_require_an_assignee() {
+    fn underway_categories_require_an_executor() {
         for category in [IN_PROGRESS, IN_REVIEW, BLOCKED] {
-            assert!(requires_assignee(category), "{category}");
+            assert!(requires_executor(category), "{category}");
         }
         for category in [BACKLOG, TODO, DONE, CANCELLED] {
-            assert!(!requires_assignee(category), "{category}");
+            assert!(!requires_executor(category), "{category}");
+        }
+        assert!(requires_reviewer(IN_REVIEW));
+        assert!(runs_executor(TODO));
+        assert!(runs_executor(IN_PROGRESS));
+        assert!(runs_executor(IN_REVIEW));
+        assert!(runs_executor(BLOCKED));
+        assert!(runs_reviewer(IN_REVIEW));
+        for category in [BACKLOG, DONE, CANCELLED] {
+            assert!(!runs_executor(category), "{category}");
+            assert!(!runs_reviewer(category), "{category}");
         }
     }
 

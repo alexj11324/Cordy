@@ -17,12 +17,12 @@ import {
 } from "@patchbay/ui/components/ui/alert-dialog";
 import type { Issue, UpdateIssueRequest } from "@patchbay/core/types";
 import { commonIssueFields } from "@patchbay/core/issues/batch";
-import { issueBehavesAs } from "@patchbay/core/issues";
+import { issueBehavesAs, issueBehavesAsAny } from "@patchbay/core/issues";
 import { useBatchUpdateIssues, useBatchDeleteIssues } from "@patchbay/core/issues/mutations";
 import { useModalStore } from "@patchbay/core/modals";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
-import { StatusPicker, PriorityPicker, AssigneePicker } from "./pickers";
+import { StatusPicker, PriorityPicker, ExecutorPicker, OwnerPicker } from "./pickers";
 import { useT } from "../../i18n";
 import { cn } from "@patchbay/ui/lib/utils";
 import {
@@ -39,7 +39,7 @@ export function BatchActionToolbar({
   /**
    * The universe of selectable issues at this call site (the same list the
    * rows are rendered from). The toolbar filters it by the active surface
-   * selection to reflect the real common status / priority / assignee of the
+   * selection to reflect the real common status / priority / executor of the
    * selected issues, mirroring how the skill list filters rows by `selectedIds`.
    */
   issues: Issue[];
@@ -80,7 +80,8 @@ export function BatchActionToolbar({
 
   const [statusOpen, setStatusOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
-  const [assigneeOpen, setAssigneeOpen] = useState(false);
+  const [ownerOpen, setOwnerOpen] = useState(false);
+  const [executorOpen, setExecutorOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const surfaceActions = useIssueSurfaceActionsOptional();
   const batchUpdate = useBatchUpdateIssues();
@@ -94,7 +95,8 @@ export function BatchActionToolbar({
     if (count > 0) return;
     setStatusOpen(false);
     setPriorityOpen(false);
-    setAssigneeOpen(false);
+    setOwnerOpen(false);
+    setExecutorOpen(false);
     setDeleteOpen(false);
   }, [count]);
 
@@ -115,23 +117,24 @@ export function BatchActionToolbar({
     }
   };
 
-  // Most status changes apply directly. Entering review first chooses one
-  // reviewer who differs from every current owner, then the modal submits the
-  // status + reviewer handoff together for the full selection.
+  // Entering an executable category confirms execution admission. Entering
+  // review first chooses one reviewer who differs from every current executor,
+  // then the modal submits the status + reviewer handoff for the full
+  // selection.
   const handleBatchStatus = (updates: Partial<UpdateIssueRequest>) => {
     if (!updates.status) return;
     if (
       categoryOf(updates.status) === "in_review" &&
       selectedIssues.some((issue) => !issueBehavesAs(issue, "in_review"))
     ) {
-      const excludedAssignees = Array.from(
+      const excludedExecutors = Array.from(
         new Map(
           selectedIssues.flatMap((issue) =>
-            issue.assignee_type && issue.assignee_id
+            issue.executor_type && issue.executor_id
               ? [
                   [
-                    `${issue.assignee_type}:${issue.assignee_id}`,
-                    { type: issue.assignee_type, id: issue.assignee_id },
+                    `${issue.executor_type}:${issue.executor_id}`,
+                    { type: issue.executor_type, id: issue.executor_id },
                   ] as const,
                 ]
               : [],
@@ -142,34 +145,48 @@ export function BatchActionToolbar({
         issueIds: ids,
         mode: "review",
         status: updates.status,
-        fromAssigneeType: null,
-        fromAssigneeId: null,
-        fromAssigneeName: t(($) => $.batch.selected_owners),
-        excludedAssignees,
-        assigneeType: null,
-        assigneeId: null,
+        fromExecutorType: null,
+        fromExecutorId: null,
+        fromExecutorName: t(($) => $.batch.selected_executors),
+        excludedExecutors,
+        executorType: null,
+        executorId: null,
+      });
+      return;
+    }
+    if (
+      ["todo", "in_progress", "blocked"].includes(categoryOf(updates.status)) &&
+      selectedIssues.some(
+        (issue) =>
+          !issueBehavesAsAny(issue, ["todo", "in_progress", "in_review", "blocked"]),
+      )
+    ) {
+      const executor = common.executor;
+      openModal("issue-run-confirm", {
+        issueIds: ids,
+        mode: "promote",
+        status: updates.status,
+        executorType: executor?.type ?? null,
+        executorId: executor?.id ?? null,
+        executorName: t(($) => $.batch.selected_executors),
       });
       return;
     }
     void handleBatchUpdate(updates);
   };
 
-  const handleBatchAssignee = (updates: Partial<UpdateIssueRequest>) => {
-    if ((updates.assignee_type === "agent" || updates.assignee_type === "team") && updates.assignee_id) {
-      // Backlog never starts a run on assign (parking lot), so if every selected
-      // issue is in backlog the confirm modal would only render an empty "won't
-      // start" box — apply directly, matching handleBatchStatus's backlog short-
-      // circuit. A mixed selection still routes through the modal: the non-backlog
-      // issues will trigger and need confirmation.
-      // Category, not key: a custom status in the backlog category is a parking
-      // lot too, and assigning into it never starts a run. (PB-6243)
-      const allBacklog = selectedIssues.every((i) => issueBehavesAs(i, "backlog"));
-      if (!allBacklog) {
+  const handleBatchExecutor = (updates: Partial<UpdateIssueRequest>) => {
+    if ((updates.executor_type === "agent" || updates.executor_type === "team") && updates.executor_id) {
+      // Executor assignment can start work from every executable category.
+      const hasRunningIssue = selectedIssues.some((issue) =>
+        issueBehavesAsAny(issue, ["todo", "in_progress", "in_review", "blocked"]),
+      );
+      if (hasRunningIssue) {
         openModal("issue-run-confirm", {
           issueIds: ids,
           mode: "assign",
-          assigneeType: updates.assignee_type,
-          assigneeId: updates.assignee_id,
+          executorType: updates.executor_type,
+          executorId: updates.executor_id,
         });
         return;
       }
@@ -272,16 +289,29 @@ export function BatchActionToolbar({
           align="center"
         />
 
-        {/* Assignee */}
-        <AssigneePicker
-          assigneeType={common.assignee?.type ?? null}
-          assigneeId={common.assignee?.id ?? null}
-          mixed={common.assignee === null}
-          onUpdate={handleBatchAssignee}
-          open={assigneeOpen}
-          onOpenChange={setAssigneeOpen}
+        {/* Owner */}
+        <OwnerPicker
+          ownerType={common.owner?.type ?? null}
+          ownerId={common.owner?.id ?? null}
+          mixed={common.owner === null}
+          onUpdate={handleBatchUpdate}
+          open={ownerOpen}
+          onOpenChange={setOwnerOpen}
           triggerRender={<Button variant="ghost" size="sm" disabled={loading} />}
-          trigger={t(($) => $.batch.assignee)}
+          trigger={t(($) => $.batch.owner)}
+          align="center"
+        />
+
+        {/* Executor */}
+        <ExecutorPicker
+          executorType={common.executor?.type ?? null}
+          executorId={common.executor?.id ?? null}
+          mixed={common.executor === null}
+          onUpdate={handleBatchExecutor}
+          open={executorOpen}
+          onOpenChange={setExecutorOpen}
+          triggerRender={<Button variant="ghost" size="sm" disabled={loading} />}
+          trigger={t(($) => $.batch.executor)}
           align="center"
         />
 

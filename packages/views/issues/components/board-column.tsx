@@ -7,7 +7,7 @@ import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import type {
   Issue,
-  IssueAssigneeType,
+  IssueExecutorType,
   IssueStatusCategory,
   Project,
 } from "@patchbay/core/types";
@@ -76,8 +76,8 @@ export interface BoardColumnGroup {
   title: string;
   /** Board columns are CATEGORIES, never raw status keys. (PB-6243) */
   status?: IssueStatusCategory;
-  assigneeType?: IssueAssigneeType | null;
-  assigneeId?: string | null;
+  executorType?: IssueExecutorType | null;
+  executorId?: string | null;
   /** Set when the board is grouped by a select-type custom property. */
   propertyId?: string;
   /** Option id for this column; null = the "No value" column. */
@@ -361,12 +361,12 @@ function BoardGroupHeading({
   }
 
   const actorIcon =
-    group.assigneeType && group.assigneeId ? (
+    group.executorType && group.executorId ? (
       <ActorAvatar
-        actorType={group.assigneeType}
-        actorId={group.assigneeId}
+        actorType={group.executorType}
+        actorId={group.executorId}
         size="sm"
-        showStatusDot={group.assigneeType === "agent"}
+        showStatusDot={group.executorType === "agent"}
       />
     ) : (
       <span className="flex size-[18px] shrink-0 items-center justify-center rounded-full bg-background text-muted-foreground">

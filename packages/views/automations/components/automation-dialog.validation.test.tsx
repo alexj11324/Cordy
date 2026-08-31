@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderWithI18n } from "../../test/i18n";
 
 // Regression cover for GitHub #6231: "Create Automation" was disabled whenever
-// a required field was empty, so a user who had not picked an assignee saw a
+// a required field was empty, so a user who had not picked an executor saw a
 // dead control and no reason for it. The button is now live whenever a save
 // isn't already in flight, and the click it accepts is what surfaces an inline
 // error on the field at fault.
@@ -118,7 +118,7 @@ function renderCreateDialog() {
 }
 
 const createButton = () => screen.getByRole("button", { name: "Create automation" });
-const assigneeTrigger = () => screen.getByRole("button", { name: /Select agent or team/ });
+const executorTrigger = () => screen.getByRole("button", { name: /Select agent or team/ });
 
 describe("AutomationDialog required-field feedback", () => {
   beforeEach(() => {
@@ -146,7 +146,7 @@ describe("AutomationDialog required-field feedback", () => {
     expect(mockCreateAutomation).not.toHaveBeenCalled();
   });
 
-  it("names the missing assignee once the title is filled, and marks the picker invalid", async () => {
+  it("names the missing executor once the title is filled, and marks the picker invalid", async () => {
     const user = userEvent.setup();
     renderCreateDialog();
 
@@ -159,11 +159,11 @@ describe("AutomationDialog required-field feedback", () => {
     // The title error clears itself the moment the field is filled — no second
     // submit needed to retire an error the user has already fixed.
     expect(screen.queryByText("Enter a name for this automation.")).not.toBeInTheDocument();
-    expect(assigneeTrigger()).toHaveAttribute("aria-invalid", "true");
+    expect(executorTrigger()).toHaveAttribute("aria-invalid", "true");
     expect(mockCreateAutomation).not.toHaveBeenCalled();
   });
 
-  it("clears the assignee error and submits once an agent is picked", async () => {
+  it("clears the executor error and submits once an agent is picked", async () => {
     const user = userEvent.setup();
     mockCreateAutomation.mockResolvedValue({ id: "ap-1" });
     mockCreateTrigger.mockResolvedValue({ id: "tr-1" });
@@ -173,7 +173,7 @@ describe("AutomationDialog required-field feedback", () => {
     await user.click(createButton());
     await screen.findByText("Choose the agent or team that will run this automation.");
 
-    await user.click(assigneeTrigger());
+    await user.click(executorTrigger());
     await user.click(await screen.findByRole("button", { name: /Scout/ }));
 
     await waitFor(() => {
@@ -186,8 +186,8 @@ describe("AutomationDialog required-field feedback", () => {
     await waitFor(() => expect(mockCreateAutomation).toHaveBeenCalledTimes(1));
     expect(mockCreateAutomation.mock.calls[0]?.[0]).toMatchObject({
       title: "Daily digest",
-      assignee_type: "agent",
-      assignee_id: "agent-1",
+      executor_type: "agent",
+      executor_id: "agent-1",
     });
   });
 });

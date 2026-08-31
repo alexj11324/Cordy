@@ -70,11 +70,11 @@ import { useT, useTimeAgo } from "../../i18n";
 //   the grid carries min-width = Σ(enabled tracks + gaps) and the wrapper
 //   scrolls horizontally when the enabled set outgrows the container. An
 //   enabled column must NEVER silently vanish (the "dead toggle" bug).
-// - Container < @2xl: static core set (name + assignee), no horizontal
+// - Container < @2xl: static core set (name + executor), no horizontal
 //   scroll, column toggles don't apply.
 const GRID_COLS =
-  "grid-cols-[0.75rem_1rem_minmax(120px,1fr)_var(--apc-assignee)_1.75rem_0.75rem] " +
-  "@2xl:grid-cols-[0.75rem_1rem_minmax(200px,1fr)_var(--apc-assignee)_var(--apc-trigger)_var(--apc-lastrun)_var(--apc-nextrun)_var(--apc-mode)_var(--apc-creator)_var(--apc-created)_1.75rem_0.75rem]";
+  "grid-cols-[0.75rem_1rem_minmax(120px,1fr)_var(--apc-executor)_1.75rem_0.75rem] " +
+  "@2xl:grid-cols-[0.75rem_1rem_minmax(200px,1fr)_var(--apc-executor)_var(--apc-trigger)_var(--apc-lastrun)_var(--apc-nextrun)_var(--apc-mode)_var(--apc-creator)_var(--apc-created)_1.75rem_0.75rem]";
 
 // h-12 rows; the virtualizer's fixed-size contract.
 const ROW_HEIGHT = 48;
@@ -82,7 +82,7 @@ const ROW_HEIGHT = 48;
 // Single source for hideable column widths: track vars and the grid's
 // min-width derive from the same numbers.
 const COLUMN_WIDTHS: Record<AutomationColumnKey, number> = {
-  assignee: 144,
+  executor: 144,
   trigger: 144,
   lastRun: 120,
   nextRun: 104,
@@ -108,7 +108,7 @@ function columnTrackVars(
       0,
     );
   return {
-    "--apc-assignee": width("assignee"),
+    "--apc-executor": width("executor"),
     "--apc-trigger": width("trigger"),
     "--apc-lastrun": width("lastRun"),
     "--apc-nextrun": width("nextRun"),
@@ -266,19 +266,19 @@ function NameCell({ automation }: { automation: Automation }) {
   );
 }
 
-function AssigneeCell({ automation }: { automation: Automation }) {
+function ExecutorCell({ automation }: { automation: Automation }) {
   const { getActorName } = useActorName();
   return (
     <ListGridCell className="gap-1.5">
       <ActorAvatar
-        actorType={automation.assignee_type}
-        actorId={automation.assignee_id}
+        actorType={automation.executor_type}
+        actorId={automation.executor_id}
         size="sm"
-        enableHoverCard={automation.assignee_type === "agent"}
-        showStatusDot={automation.assignee_type === "agent"}
+        enableHoverCard={automation.executor_type === "agent"}
+        showStatusDot={automation.executor_type === "agent"}
       />
       <span className="min-w-0 truncate text-caption text-muted-foreground">
-        {getActorName(automation.assignee_type, automation.assignee_id)}
+        {getActorName(automation.executor_type, automation.executor_id)}
       </span>
     </ListGridCell>
   );
@@ -468,9 +468,9 @@ function AutomationListHeader({
       <ListGridHeaderCell sorted={sorted("name")} onSort={() => onSort("name")}>
         {t(($) => $.page.table.name)}
       </ListGridHeaderCell>
-      {isColVisible("assignee") ? (
+      {isColVisible("executor") ? (
         <ListGridHeaderCell>
-          {t(($) => $.page.table.assignee)}
+          {t(($) => $.page.table.executor)}
         </ListGridHeaderCell>
       ) : (
         <ListGridHeaderCell className="px-0" />
@@ -673,9 +673,9 @@ export function AutomationsPage() {
   const rows = useMemo<Automation[]>(() => {
     const filtered = scopeRows.filter((a) => {
       if (
-        filters.assignees.length > 0 &&
-        !filters.assignees.includes(
-          actorFilterValue(a.assignee_type, a.assignee_id),
+        filters.executors.length > 0 &&
+        !filters.executors.includes(
+          actorFilterValue(a.executor_type, a.executor_id),
         )
       ) {
         return false;
@@ -906,8 +906,8 @@ export function AutomationsPage() {
                         onToggle={() => toggleSelected(automation.id)}
                       />
                       <NameCell automation={automation} />
-                      {isColVisible("assignee") ? (
-                        <AssigneeCell automation={automation} />
+                      {isColVisible("executor") ? (
+                        <ExecutorCell automation={automation} />
                       ) : (
                         <ListGridCell className="px-0" />
                       )}

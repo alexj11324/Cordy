@@ -16,8 +16,8 @@ export type GanttZoom = "day" | "week" | "month";
  * Persisted values may reference a since-archived definition — consumers must
  * fall back to "status" when the definition can't be resolved.
  */
-export type IssueGrouping = "status" | "assignee" | `property:${string}`;
-export type SwimlaneGrouping = "parent" | "project" | "assignee";
+export type IssueGrouping = "status" | "executor" | `property:${string}`;
+export type SwimlaneGrouping = "parent" | "project" | "executor";
 /**
  * Sort key. `property:<definitionId>` is resolved server-side against the
  * active property catalog; stale or unsupported definitions degrade to
@@ -41,7 +41,7 @@ export type TableSystemColumnKey =
   | "identifier"
   | "status"
   | "priority"
-  | "assignee"
+  | "executor"
   | "labels"
   | "project"
   | "start_date"
@@ -55,7 +55,7 @@ export interface TableColumnConfig {
   key: TableColumnKey;
   width?: number;
 }
-export type TableGrouping = "none" | "status" | "assignee" | `property:${string}`;
+export type TableGrouping = "none" | "status" | "executor" | `property:${string}`;
 export type TableCalculation = "none" | "sum" | "average" | "count";
 
 export const TABLE_SYSTEM_COLUMNS: readonly TableSystemColumnKey[] = [
@@ -63,7 +63,7 @@ export const TABLE_SYSTEM_COLUMNS: readonly TableSystemColumnKey[] = [
   "identifier",
   "status",
   "priority",
-  "assignee",
+  "executor",
   "labels",
   "project",
   "start_date",
@@ -78,7 +78,7 @@ export const DEFAULT_TABLE_COLUMNS: readonly TableColumnConfig[] = [
   { key: "title", width: 360 },
   { key: "status", width: 150 },
   { key: "priority", width: 130 },
-  { key: "assignee", width: 180 },
+  { key: "executor", width: 180 },
   { key: "due_date", width: 140 },
   { key: "labels", width: 220 },
 ];
@@ -89,12 +89,12 @@ export interface IssueDateFilter {
   to: string;
 }
 
-export const SWIMLANE_GROUPINGS: SwimlaneGrouping[] = ["parent", "project", "assignee"];
+export const SWIMLANE_GROUPINGS: SwimlaneGrouping[] = ["parent", "project", "executor"];
 
 export interface CardProperties {
   priority: boolean;
   description: boolean;
-  assignee: boolean;
+  executor: boolean;
   startDate: boolean;
   dueDate: boolean;
   project: boolean;
@@ -112,8 +112,8 @@ export interface ActorFilterValue {
 export interface FilterSnapshot {
   statusFilters: IssueStatus[];
   priorityFilters: IssuePriority[];
-  assigneeFilters: ActorFilterValue[];
-  includeNoAssignee: boolean;
+  executorFilters: ActorFilterValue[];
+  includeNoExecutor: boolean;
   creatorFilters: ActorFilterValue[];
   projectFilters: string[];
   includeNoProject: boolean;
@@ -126,7 +126,7 @@ export interface FilterSnapshot {
 export type FilterDimension =
   | "status"
   | "priority"
-  | "assignee"
+  | "executor"
   | "creator"
   | "project"
   | "label"
@@ -154,13 +154,13 @@ export const SORT_OPTIONS: { value: StaticSortField; label: string }[] = [
 
 export const GROUPING_OPTIONS: { value: StaticIssueGrouping; label: string }[] = [
   { value: "status", label: "Status" },
-  { value: "assignee", label: "Assignee" },
+  { value: "executor", label: "Executor" },
 ];
 
 export const CARD_PROPERTY_OPTIONS: { key: keyof CardProperties; label: string }[] = [
   { key: "priority", label: "Priority" },
   { key: "description", label: "Description" },
-  { key: "assignee", label: "Assignee" },
+  { key: "executor", label: "Executor" },
   { key: "startDate", label: "Start date" },
   { key: "dueDate", label: "Due date" },
   { key: "project", label: "Project" },
@@ -173,8 +173,8 @@ export interface IssueViewState {
   grouping: IssueGrouping;
   statusFilters: IssueStatus[];
   priorityFilters: IssuePriority[];
-  assigneeFilters: ActorFilterValue[];
-  includeNoAssignee: boolean;
+  executorFilters: ActorFilterValue[];
+  includeNoExecutor: boolean;
   creatorFilters: ActorFilterValue[];
   projectFilters: string[];
   includeNoProject: boolean;
@@ -219,7 +219,7 @@ export interface IssueViewState {
   /** Active swimlane grouping dimension. */
   swimlaneGrouping: SwimlaneGrouping;
   /** Persisted lane order, keyed by grouping. Entries are raw lane ids
-   *  (parent issue id, project id, or `<assigneeType>:<assigneeId>`). */
+   *  (parent issue id, project id, or `<executorType>:<executorId>`). */
   swimlaneOrders: Record<SwimlaneGrouping, string[]>;
   /** Persisted collapsed lanes, keyed by grouping. Same id space as
    *  `swimlaneOrders`, plus the sentinel `"none"` for the pinned
@@ -238,8 +238,8 @@ export interface IssueViewState {
   setGrouping: (grouping: IssueGrouping) => void;
   toggleStatusFilter: (status: IssueStatus) => void;
   togglePriorityFilter: (priority: IssuePriority) => void;
-  toggleAssigneeFilter: (value: ActorFilterValue) => void;
-  toggleNoAssignee: () => void;
+  toggleExecutorFilter: (value: ActorFilterValue) => void;
+  toggleNoExecutor: () => void;
   toggleCreatorFilter: (value: ActorFilterValue) => void;
   toggleProjectFilter: (projectId: string) => void;
   toggleNoProject: () => void;
@@ -251,7 +251,7 @@ export interface IssueViewState {
   showStatus: (category: IssueStatusCategory) => void;
   clearFilters: () => void;
   /** Clear one filter dimension (a filter-bar chip). `property:<id>` clears
-   *  that definition's entry only. Paired boolean flags (no-assignee /
+   *  that definition's entry only. Paired boolean flags (no-executor /
    *  no-project) clear with their dimension. */
   clearFilterDimension: (dimension: FilterDimension) => void;
   /** Replace every filter field at once — how "reset inside a saved view"
@@ -283,8 +283,8 @@ export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): Issue
   grouping: "status",
   statusFilters: [],
   priorityFilters: [],
-  assigneeFilters: [],
-  includeNoAssignee: false,
+  executorFilters: [],
+  includeNoExecutor: false,
   creatorFilters: [],
   projectFilters: [],
   includeNoProject: false,
@@ -297,7 +297,7 @@ export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): Issue
   cardProperties: {
     priority: true,
     description: true,
-    assignee: true,
+    executor: true,
     startDate: true,
     dueDate: true,
     project: true,
@@ -310,9 +310,9 @@ export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): Issue
   hiddenStatusCategories: [],
   ganttZoom: "week",
   ganttShowCompleted: false,
-  swimlaneGrouping: "assignee",
-  swimlaneOrders: { parent: [], project: [], assignee: [] },
-  collapsedSwimlanes: { parent: [], project: [], assignee: [] },
+  swimlaneGrouping: "executor",
+  swimlaneOrders: { parent: [], project: [], executor: [] },
+  collapsedSwimlanes: { parent: [], project: [], executor: [] },
   tableColumns: DEFAULT_TABLE_COLUMNS.map((column) => ({ ...column })),
   tableGrouping: "none",
   tableCollapsedGroups: [],
@@ -337,21 +337,21 @@ export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): Issue
         ? state.priorityFilters.filter((p) => p !== priority)
         : [...state.priorityFilters, priority],
     })),
-  toggleAssigneeFilter: (value) =>
+  toggleExecutorFilter: (value) =>
     set((state) => {
-      const exists = state.assigneeFilters.some(
+      const exists = state.executorFilters.some(
         (f) => f.type === value.type && f.id === value.id,
       );
       return {
-        assigneeFilters: exists
-          ? state.assigneeFilters.filter(
+        executorFilters: exists
+          ? state.executorFilters.filter(
               (f) => !(f.type === value.type && f.id === value.id),
             )
-          : [...state.assigneeFilters, value],
+          : [...state.executorFilters, value],
       };
     }),
-  toggleNoAssignee: () =>
-    set((state) => ({ includeNoAssignee: !state.includeNoAssignee })),
+  toggleNoExecutor: () =>
+    set((state) => ({ includeNoExecutor: !state.includeNoExecutor })),
   toggleCreatorFilter: (value) =>
     set((state) => {
       const exists = state.creatorFilters.some(
@@ -407,8 +407,8 @@ export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): Issue
     set({
       statusFilters: [],
       priorityFilters: [],
-      assigneeFilters: [],
-      includeNoAssignee: false,
+      executorFilters: [],
+      includeNoExecutor: false,
       creatorFilters: [],
       projectFilters: [],
       includeNoProject: false,
@@ -428,8 +428,8 @@ export const viewStoreSlice = (set: StoreApi<IssueViewState>["setState"]): Issue
           return { statusFilters: [] };
         case "priority":
           return { priorityFilters: [] };
-        case "assignee":
-          return { assigneeFilters: [], includeNoAssignee: false };
+        case "executor":
+          return { executorFilters: [], includeNoExecutor: false };
         case "creator":
           return { creatorFilters: [] };
         case "project":
@@ -546,8 +546,8 @@ export const viewStorePersistOptions = (name: string) => ({
     grouping: state.grouping,
     statusFilters: state.statusFilters,
     priorityFilters: state.priorityFilters,
-    assigneeFilters: state.assigneeFilters,
-    includeNoAssignee: state.includeNoAssignee,
+    executorFilters: state.executorFilters,
+    includeNoExecutor: state.includeNoExecutor,
     creatorFilters: state.creatorFilters,
     projectFilters: state.projectFilters,
     includeNoProject: state.includeNoProject,
@@ -589,16 +589,77 @@ export function mergeViewStatePersisted<T extends IssueViewState>(
   persisted: unknown,
   current: T,
 ): T {
-  const p = (persisted ?? {}) as Partial<T>;
+  const isRecord = (v: unknown): v is Record<string, unknown> =>
+    v !== null && typeof v === "object" && !Array.isArray(v);
+  const raw = isRecord(persisted) ? persisted : {};
+  const p = { ...raw } as Record<string, unknown>;
+
+  // The persist key predates the owner/executor split. Normalize the complete
+  // old shape before it is spread over defaults so stale enum values cannot
+  // reach query planning or overwrite the canonical fields. Member actor
+  // filters remain in `executorFilters` intentionally: the surface query
+  // projects member actors to owner filters and agent/team actors to executor
+  // filters in one place.
+  const actorArray = (value: unknown): ActorFilterValue[] =>
+    Array.isArray(value)
+      ? value.filter(
+          (actor): actor is ActorFilterValue =>
+            isRecord(actor) &&
+            (actor.type === "member" || actor.type === "agent" || actor.type === "team") &&
+            typeof actor.id === "string",
+        )
+      : [];
+  const legacyActors = actorArray(raw.assigneeFilters);
+  if (raw.executorFilters === undefined && legacyActors.length > 0) {
+    p.executorFilters = legacyActors;
+  }
+  if (raw.includeNoExecutor === undefined && raw.includeNoAssignee === true) {
+    p.includeNoExecutor = true;
+  }
+  delete p.assigneeFilters;
+  delete p.includeNoAssignee;
+
+  for (const key of ["grouping", "swimlaneGrouping", "tableGrouping"] as const) {
+    if (p[key] === "assignee") p[key] = "executor";
+  }
+
+  const migrateGroupingMap = (value: unknown): Record<string, unknown> | undefined => {
+    if (!isRecord(value)) return undefined;
+    const next = { ...value };
+    if (next.executor === undefined && next.assignee !== undefined) {
+      next.executor = next.assignee;
+    }
+    delete next.assignee;
+    return next;
+  };
+  const swimlaneOrders = migrateGroupingMap(raw.swimlaneOrders);
+  if (swimlaneOrders) p.swimlaneOrders = swimlaneOrders;
+  const collapsedSwimlanes = migrateGroupingMap(raw.collapsedSwimlanes);
+  if (collapsedSwimlanes) p.collapsedSwimlanes = collapsedSwimlanes;
+
+  if (isRecord(raw.cardProperties)) {
+    const cardProperties = { ...raw.cardProperties };
+    if (cardProperties.executor === undefined && typeof cardProperties.assignee === "boolean") {
+      cardProperties.executor = cardProperties.assignee;
+    }
+    delete cardProperties.assignee;
+    p.cardProperties = cardProperties;
+  }
+  if (Array.isArray(raw.tableColumns)) {
+    p.tableColumns = raw.tableColumns.map((column) => {
+      if (!isRecord(column)) return column;
+      return { ...column, key: column.key === "assignee" ? "executor" : column.key };
+    });
+  }
+
+  const normalized = p as Partial<T>;
   // `collapsedSwimlanes` changed shape from `string[]` to
   // `Record<SwimlaneGrouping, string[]>`. A snapshot saved in the old
   // shape would otherwise overwrite the default record with an array
   // and crash on first read — fall back to the default when the
   // persisted value isn't a plain object.
-  const isRecord = (v: unknown): v is Record<string, unknown> =>
-    v !== null && typeof v === "object" && !Array.isArray(v);
-  const persistedTableColumns = Array.isArray(p.tableColumns)
-    ? p.tableColumns.filter(
+  const persistedTableColumns = Array.isArray(normalized.tableColumns)
+    ? normalized.tableColumns.filter(
         (column): column is TableColumnConfig =>
           !!column &&
           typeof column === "object" &&
@@ -613,26 +674,26 @@ export function mergeViewStatePersisted<T extends IssueViewState>(
   );
   return {
     ...current,
-    ...p,
+    ...normalized,
     cardProperties: {
       ...current.cardProperties,
-      ...(p.cardProperties ?? {}),
+      ...(normalized.cardProperties ?? {}),
     },
-    swimlaneOrders: isRecord(p.swimlaneOrders)
-      ? { ...current.swimlaneOrders, ...p.swimlaneOrders }
+    swimlaneOrders: isRecord(normalized.swimlaneOrders)
+      ? { ...current.swimlaneOrders, ...normalized.swimlaneOrders }
       : current.swimlaneOrders,
-    collapsedSwimlanes: isRecord(p.collapsedSwimlanes)
-      ? { ...current.collapsedSwimlanes, ...p.collapsedSwimlanes }
+    collapsedSwimlanes: isRecord(normalized.collapsedSwimlanes)
+      ? { ...current.collapsedSwimlanes, ...normalized.collapsedSwimlanes }
       : current.collapsedSwimlanes,
     tableColumns: [
       persistedTitle ?? current.tableColumns[0] ?? { key: "title" },
       ...dedupedTableColumns,
     ],
-    tableCollapsedGroups: Array.isArray(p.tableCollapsedGroups)
-      ? p.tableCollapsedGroups
+    tableCollapsedGroups: Array.isArray(normalized.tableCollapsedGroups)
+      ? normalized.tableCollapsedGroups
       : current.tableCollapsedGroups,
-    tableCollapsedParents: Array.isArray(p.tableCollapsedParents)
-      ? p.tableCollapsedParents
+    tableCollapsedParents: Array.isArray(normalized.tableCollapsedParents)
+      ? normalized.tableCollapsedParents
       : current.tableCollapsedParents,
   };
 }

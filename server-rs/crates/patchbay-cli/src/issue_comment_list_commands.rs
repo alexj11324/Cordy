@@ -156,8 +156,8 @@ async fn load_comment_actor_names(
         .iter()
         .map(|comment| {
             serde_json::json!({
-                "assignee_type": comment.get("author_type").cloned().unwrap_or(Value::Null),
-                "assignee_id": comment.get("author_id").cloned().unwrap_or(Value::Null)
+                "executor_type": comment.get("author_type").cloned().unwrap_or(Value::Null),
+                "executor_id": comment.get("author_id").cloned().unwrap_or(Value::Null)
             })
         })
         .collect::<Vec<_>>();

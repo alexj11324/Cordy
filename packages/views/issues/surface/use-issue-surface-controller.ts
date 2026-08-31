@@ -27,7 +27,7 @@ import {
   type IssueSurfaceQueryPlan,
 } from "@patchbay/core/issues/surface/query-plan";
 import {
-  assigneeTypesForActorKind,
+  roleFiltersForActorKind,
   type IssueScope,
 } from "@patchbay/core/issues/surface/scope";
 import type { IssueDateFilter, SortField } from "@patchbay/core/issues/stores/view-store";
@@ -93,7 +93,7 @@ export interface IssueSurfaceController {
   droppableHiddenStatuses: IssueStatusCategory[];
   /** Exact server counts plus cursor controls for List/status Board. */
   statusPagination?: IssueStatusPagination;
-  /** Exact group catalog plus independent row cursors for Assignee/Property
+  /** Exact group catalog plus independent row cursors for Executor/Property
    * Board and compound Swimlane cells. */
   groupBranches?: IssueGroupBranches;
   activeFilters: Omit<IssueFilters, "statusFilters">;
@@ -226,8 +226,8 @@ export function useIssueSurfaceController({
   const dateFilter = useViewStore((s) => s.dateFilter);
   const statusFilters = useViewStore((s) => s.statusFilters);
   const priorityFilters = useViewStore((s) => s.priorityFilters);
-  const assigneeFilters = useViewStore((s) => s.assigneeFilters);
-  const includeNoAssignee = useViewStore((s) => s.includeNoAssignee);
+  const executorFilters = useViewStore((s) => s.executorFilters);
+  const includeNoExecutor = useViewStore((s) => s.includeNoExecutor);
   const creatorFilters = useViewStore((s) => s.creatorFilters);
   const projectFilters = useViewStore((s) => s.projectFilters);
   const includeNoProject = useViewStore((s) => s.includeNoProject);
@@ -415,8 +415,8 @@ export function useIssueSurfaceController({
   const hasActiveFilters =
     statusFilters.length > 0 ||
     priorityFilters.length > 0 ||
-    assigneeFilters.length > 0 ||
-    includeNoAssignee ||
+    executorFilters.length > 0 ||
+    includeNoExecutor ||
     creatorFilters.length > 0 ||
     viewProjectFilters.length > 0 ||
     viewIncludeNoProject ||
@@ -446,19 +446,21 @@ export function useIssueSurfaceController({
     let queryScope: IssueTableQuerySpec["scope"];
     switch (scope.type) {
       case "workspace": {
-        const assigneeTypes = assigneeTypesForActorKind(scope.actorKind);
+        const { ownerTypes, executorTypes } = roleFiltersForActorKind(scope.actorKind);
         queryScope = {
           kind: "workspace",
-          ...(assigneeTypes ? { assignee_types: assigneeTypes } : {}),
+          ...(ownerTypes ? { owner_types: ownerTypes } : {}),
+          ...(executorTypes ? { executor_types: executorTypes } : {}),
         };
         break;
       }
       case "project": {
-        const assigneeTypes = assigneeTypesForActorKind(scope.actorKind);
+        const { ownerTypes, executorTypes } = roleFiltersForActorKind(scope.actorKind);
         queryScope = {
           kind: "project",
           project_id: scope.projectId,
-          ...(assigneeTypes ? { assignee_types: assigneeTypes } : {}),
+          ...(ownerTypes ? { owner_types: ownerTypes } : {}),
+          ...(executorTypes ? { executor_types: executorTypes } : {}),
         };
         break;
       }
@@ -469,10 +471,22 @@ export function useIssueSurfaceController({
         };
         break;
       case "actor":
-        queryScope = {
-          kind: scope.relation === "assigned" ? "assignee" : "creator",
-          actor: { type: scope.actorType, id: scope.actorId },
-        };
+        if (scope.relation === "created") {
+          queryScope = {
+            kind: "creator",
+            actor: { type: scope.actorType, id: scope.actorId },
+          };
+        } else if (scope.actorType === "member") {
+          queryScope = {
+            kind: "owner",
+            actor: { type: "member", id: scope.actorId },
+          };
+        } else {
+          queryScope = {
+            kind: "executor",
+            actor: { type: scope.actorType, id: scope.actorId },
+          };
+        }
         break;
       case "team":
         throw new Error("Team issue scope is not supported by the Table query");
@@ -486,13 +500,41 @@ export function useIssueSurfaceController({
             end: dateParams.date_end,
           }
         : undefined;
+    const ownerFilters = executorFilters.flatMap((filter) =>
+      filter.type === "member"
+        ? [{ type: "member" as const, id: filter.id }]
+        : [],
+    );
+    const executionFilters = executorFilters.flatMap((filter) =>
+      filter.type === "agent" || filter.type === "team"
+        ? [{ type: filter.type, id: filter.id }]
+        : [],
+    );
+    // The picker presents owners and executors as one actor set (OR). The
+    // table API's `owners` and `executors` fields are independent predicates
+    // (AND), so use its explicit union field whenever a selection crosses the
+    // role boundary or combines an owner with the no-executor bucket.
+    const actorUnion = executorFilters.map((filter) => ({
+      type: filter.type,
+      id: filter.id,
+    }));
+    const useActorUnion =
+      ownerFilters.length > 0 &&
+      (executionFilters.length > 0 || includeNoExecutor);
     return {
       scope: queryScope,
       filters: {
         ...(statusFilters.length > 0 ? { statuses: statusFilters } : {}),
         ...(priorityFilters.length > 0 ? { priorities: priorityFilters } : {}),
-        ...(assigneeFilters.length > 0 ? { assignees: assigneeFilters } : {}),
-        ...(includeNoAssignee ? { include_no_assignee: true } : {}),
+        ...(useActorUnion
+          ? { actors: actorUnion }
+          : ownerFilters.length > 0
+            ? { owners: ownerFilters }
+            : {}),
+        ...(!useActorUnion && executionFilters.length > 0
+          ? { executors: executionFilters }
+          : {}),
+        ...(includeNoExecutor ? { include_no_executor: true } : {}),
         ...(creatorFilters.length > 0 ? { creators: creatorFilters } : {}),
         ...(viewProjectFilters.length > 0
           ? { project_ids: viewProjectFilters }
@@ -516,12 +558,12 @@ export function useIssueSurfaceController({
     };
   }, [
     agentRunningFilter,
-    assigneeFilters,
+    executorFilters,
     creatorFilters,
     dateParams,
     debouncedActiveSearch,
     effectivePropertyFilters,
-    includeNoAssignee,
+    includeNoExecutor,
     labelFilters,
     priorityFilters,
     scope,
@@ -663,7 +705,7 @@ export function useIssueSurfaceController({
         include_empty: true,
       };
     }
-    return { kind: "assignee" };
+    return { kind: "executor" };
   }, [
     effectiveGrouping,
     effectiveViewMode,
@@ -701,8 +743,8 @@ export function useIssueSurfaceController({
       JSON.stringify([
         statusFilters,
         priorityFilters,
-        assigneeFilters,
-        includeNoAssignee,
+        executorFilters,
+        includeNoExecutor,
         creatorFilters,
         viewProjectFilters,
         viewIncludeNoProject,
@@ -715,12 +757,12 @@ export function useIssueSurfaceController({
       ]),
     [
       agentRunningFilter,
-      assigneeFilters,
+      executorFilters,
       creatorFilters,
       dateParams,
       debouncedActiveSearch,
       effectivePropertyFilters,
-      includeNoAssignee,
+      includeNoExecutor,
       labelFilters,
       priorityFilters,
       showSubIssues,
@@ -748,8 +790,8 @@ export function useIssueSurfaceController({
     statusFilterPending,
     statusFilterError,
     priorityFilters,
-    assigneeFilters,
-    includeNoAssignee,
+    executorFilters,
+    includeNoExecutor,
     agentRunningFilter,
     creatorFilters,
     projectFilters: viewProjectFilters,
