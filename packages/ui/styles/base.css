@@ -253,6 +253,53 @@
   color: var(--sidebar-item-active-foreground);
 }
 
+/* Explicit desktop navigation glass. Electron supplies native `sidebar`
+ * vibrancy on macOS; this translucent surface is also the browser fallback.
+ * The compact Sheet is portalled outside the opted-in wrapper and stays solid. */
+[data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
+  [data-slot="sidebar-container"] {
+  background-color: var(--sidebar);
+  background: linear-gradient(
+      180deg,
+      color-mix(in oklab, white 9%, transparent),
+      transparent 36%
+    ),
+    color-mix(in oklab, var(--sidebar) 70%, transparent);
+  border-inline-end: 1px solid color-mix(
+    in oklab,
+    var(--foreground) 10%,
+    transparent
+  );
+  box-shadow: 10px 0 30px color-mix(in oklab, var(--foreground) 7%, transparent);
+  -webkit-backdrop-filter: blur(24px) saturate(125%);
+  backdrop-filter: blur(24px) saturate(125%);
+}
+
+[data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
+  [data-slot="sidebar-inner"] {
+  background-color: transparent;
+}
+
+/* An offcanvas sidebar lands exactly outside the viewport. Suppress its
+ * outward glow while hidden; hover reveal changes the parent back to expanded
+ * before the material moves onscreen, restoring the normal shadow above. */
+[data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
+  [data-slot="sidebar"][data-state="collapsed"][data-collapsible="offcanvas"]
+  > [data-slot="sidebar-container"] {
+  box-shadow: none;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  [data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
+    [data-slot="sidebar-container"] {
+    background: var(--sidebar);
+    border-inline-end-color: var(--sidebar-border);
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
 /* Sidebar resizing follows the same cursor contract as
  * react-resizable-panels: the resize cursor survives leaving the narrow rail
  * and wins over descendants with their own cursor declarations. Live width is

@@ -24,6 +24,10 @@ pub fn router() -> Router<HandlerState> {
     Router::new()
         .route("/api/tasks/{task_id}/messages", get(list_messages))
         .route(
+            "/api/tasks/{task_id}/work-products",
+            get(crate::work_product::list_for_task),
+        )
+        .route(
             "/api/tasks/{task_id}/message-bus",
             post(send_message_to_main_task),
         )

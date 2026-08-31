@@ -104,7 +104,7 @@ request is ambiguous, ask before acting.
 
 不用 GitHub CLI 的话，也可以自己在 GitHub 创建仓库，在同一页面手动添加，效果相同。
 
-最后在同一页面点**连接 GitHub**，按提示授权这个仓库。连接后，引用了 issue 编号的 pull request 会自动关联到对应 issue，PR 状态和 CI 结果直接显示在 issue 里。
+最后在同一页面点**连接 GitHub**，按提示授权这个仓库。连接后，PR 会镜像到 Patchbay；智能体必须通过经鉴权的 task/run 登记 PR，或者由你显式 Attach 镜像的 Work Product，之后 PR 状态和 CI 结果才会显示在 issue 里。Issue 编号只作为人类搜索上下文。
 
 ## 第一条 issue：建站
 
@@ -173,7 +173,7 @@ Open a pull request when it is ready.
 
 ![在聊天中引用 issue 提问](/images/docs/tutorial-chat-ask-in-issue.webp)
 
-Engineer 的回复分两部分：本地服务已经启动，给出访问地址；PR 其实已经提交了，只是标题、分支名和正文里都没有 `PB-1`，自动关联匹配不上——它随后把编号补进了 PR 标题。
+Engineer 的回复分两部分：本地服务已经启动，给出访问地址；PR 其实已经提交了，但尚未显式登记，因此即使标题、分支名或正文包含 `PB-1` 也仍保持未关联。你可以在 issue 的 Attach 控件中选择它，建立带审计的关系。
 
 ![Engineer 的回复：本地地址和 PR 未关联的原因](/images/docs/tutorial-chat-engineer-reply.webp)
 
@@ -187,9 +187,9 @@ Engineer 的回复分两部分：本地服务已经启动，给出访问地址�
 
 ## 把反馈写进指令
 
-这轮验收暴露了 Engineer 的两个工作习惯：完成后靠反复截图自查，占掉不少执行时间；提交 PR 时不带 issue 编号，关联不上。两个都不是这一次的偶然失误，而是它每次都会重复的做法——要改的不是这条 issue，而是它的指令。
+这轮验收暴露了 Engineer 的两个工作习惯：完成后靠反复截图自查，占掉不少执行时间；提交 PR 后没有显式登记。PR 中是否带 issue 编号只是可选的人类上下文，不能替代登记。两个都不是这一次的偶然失误，而是它每次都会重复的做法——要改的不是这条 issue，而是它的指令。
 
-指令不用你自己动手改：智能体可以用 patchbay CLI 更新自己的配置。继续在刚才的对话里告诉 Engineer 这两条规则——完成后不用截图自查，验收在浏览器里进行；PR 的分支名或标题里必须带 issue 编号——并让它写进自己的指令：
+指令不用你自己动手改：智能体可以用 patchbay CLI 更新自己的配置。继续在刚才的对话里告诉 Engineer 这两条规则——完成后不用截图自查，验收在浏览器里进行；每个 PR 必须通过经鉴权的 task/run 上下文登记，或执行显式 Attach——并让它写进自己的指令：
 
 ![让 Engineer 把规则写进自己的指令](/images/docs/tutorial-chat-update-instructions.webp)
 

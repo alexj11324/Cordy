@@ -105,8 +105,13 @@ vi.mock("./tab-content", () => ({
 
 const { DesktopShell } = await import("./desktop-layout");
 
-function renderShell() {
+function renderShell(
+  os: "macos" | "windows" = "macos",
+  host: "electron" | "browser" = "electron",
+) {
   (window as unknown as { desktopAPI: Record<string, unknown> }).desktopAPI = {
+    host,
+    appInfo: { version: "0.0.0-test", os },
     onNavigationGesture: () => () => {},
     onInboxOpen: () => () => {},
   };
@@ -126,6 +131,36 @@ function renderShell() {
 }
 
 describe("DesktopShell sidebar trigger", () => {
+  it("enables the glass shell while reserving native transparency for macOS", () => {
+    const mac = renderShell("macos").container.querySelector<HTMLElement>(
+      "[data-slot='sidebar-wrapper']",
+    )!;
+
+    expect(mac).toHaveAttribute("data-sidebar-glass", "true");
+    expect(mac).toHaveAttribute("data-native-vibrancy", "true");
+    expect(mac).toHaveClass("bg-transparent");
+    expect(mac.parentElement).toHaveClass("bg-transparent");
+
+    const windows = renderShell("windows").container.querySelector<HTMLElement>(
+      "[data-slot='sidebar-wrapper']",
+    )!;
+
+    expect(windows).toHaveAttribute("data-sidebar-glass", "true");
+    expect(windows).not.toHaveAttribute("data-native-vibrancy");
+    expect(windows).toHaveClass("bg-app-shell");
+    expect(windows.parentElement).toHaveClass("bg-app-shell");
+
+    const browserMac = renderShell(
+      "macos",
+      "browser",
+    ).container.querySelector<HTMLElement>("[data-slot='sidebar-wrapper']")!;
+
+    expect(browserMac).toHaveAttribute("data-sidebar-glass", "true");
+    expect(browserMac).not.toHaveAttribute("data-native-vibrancy");
+    expect(browserMac).toHaveClass("bg-app-shell");
+    expect(browserMac.parentElement).toHaveClass("bg-app-shell");
+  });
+
   // The window toolbar parks a trigger beside the traffic lights that never
   // scrolls away, so nothing inside the canvas may add a second one. Desktop
   // windows sit below `xl`, exactly the band where `PageHeader`'s fallback

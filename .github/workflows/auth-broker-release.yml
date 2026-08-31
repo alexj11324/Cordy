@@ -1,0 +1,100 @@
+name: Auth Broker Release (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Versioned image tag to build; deploy only its resolved digest
+        required: true
+        type: string
+      publish:
+        description: Publish the image to GHCR (does not deploy or change traffic)
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: auth-broker-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository_owner }}/patchbay-auth-broker
+
+jobs:
+  validate-and-build:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout selected ref
+        uses: actions/checkout@v6
+
+      - name: Validate image tag
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          if [[ ! "$IMAGE_TAG" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]]; then
+            echo "::error::image_tag is not a valid OCI tag"
+            exit 1
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify auth broker contract and release boundary
+        run: |
+          node --test scripts/classify-auth-change.test.mjs
+          pnpm --filter @patchbay/auth-broker typecheck
+          pnpm --filter @patchbay/auth-broker test
+          pnpm --filter @patchbay/auth-broker build
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Verify disabled-by-default deployment chart
+        run: bash scripts/auth-broker-helm.test.sh
+
+      - name: Login to GHCR
+        if: ${{ inputs.publish }}
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build independent auth broker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.auth-broker
+          platforms: linux/arm64
+          push: ${{ inputs.publish }}
+          tags: ${{ env.IMAGE }}:${{ inputs.image_tag }}
+          cache-from: type=gha,scope=auth-broker
+          cache-to: type=gha,mode=max,scope=auth-broker
+
+      - name: Summarize release boundary
+        env:
+          IMAGE_TAG: ${{ inputs.image_tag }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          {
+            echo "### Auth broker artifact"
+            echo "- Image: \`$IMAGE:$IMAGE_TAG\`"
+            echo "- Published: \`$PUBLISH\`"
+            echo "- Deployment and production traffic changes: \`none\`"
+          } >> "$GITHUB_STEP_SUMMARY"

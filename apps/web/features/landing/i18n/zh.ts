@@ -1293,7 +1293,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Codex 智能体的 MCP 设置能被正确读取了。",
           "Pi 智能体的 task 结果只显示最终答案，不再夹带中间步骤。",
           "自动化不再在单次运行超时的时候重复派发同一个任务。",
-          "任务的 PR 列表只显示真正关联到本任务的 PR，仅在描述里顺带提到「Related to PB-…」的 PR 不再露出。",
+          "任务的 PR 列表现在只显示与本任务存在显式关系的 PR；PR 文本不会创建关联。",
           "任务操作菜单里嵌套的「More」项改名为「Relations」，你不用点开也知道里面装的是关系类操作。",
           "所有附件上传按钮——对话输入、任务创建、任务描述、反馈——都支持在系统对话框里一次选多个文件。",
         ],
@@ -1973,7 +1973,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "依赖检查更严格，前端包会更早发现缺失依赖，减少打包和桌面端运行时的意外",
         ],
         fixes: [
-          "GitHub PR 只有写明关闭意图时才会自动完成关联任务，普通引用链接不会误关任务",
+          "GitHub PR 只有在显式关系包含关闭意图时才会自动完成对应任务",
           "父子任务的自动推进更稳：依赖未满足时不会提前启动后续任务，智能体把待处理任务切到进行中时也会正确触发负责人",
           "任务讨论串和列表加载更多内容时会保持正确顺序，看板拖拽后的位置也更稳定",
           "聊天窗口放大、看板卡片负责人行和 XML 解析依赖都做了稳定性修复",
@@ -2221,7 +2221,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "GitHub 集成、聊天附件与任务定位优化",
         changes: [],
         features: [
-          "接入 GitHub 后，关联的 Pull Request 会显示在 Patchbay 任务中，状态会同步到 Patchbay，关闭 PR 后会自动关闭对应任务",
+          "接入 GitHub 后，显式关联的 Pull Request 会显示在 Patchbay 任务中并同步状态；关闭 PR 后，带关闭意图的显式关系才会自动完成任务",
           "聊天消息支持添加文件附件和图片预览",
           "Agent 和 runtime 可以设置公开或私有，方便控制团队可见范围",
           "停止单个 agent task 前会先弹出确认，避免误操作",

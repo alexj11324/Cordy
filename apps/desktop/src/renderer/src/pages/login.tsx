@@ -92,7 +92,7 @@ export function DesktopLoginPage() {
       >
         <div
           data-testid="authentication-example"
-          className="relative container flex flex-1 shrink-0 items-center justify-center md:grid lg:max-w-none lg:grid-cols-2 lg:px-0"
+          className="relative container flex min-h-0 flex-1 items-center justify-center md:grid lg:max-w-none lg:grid-cols-2 lg:px-0"
         >
           <a
             href="#desktop-login"
@@ -120,7 +120,10 @@ export function DesktopLoginPage() {
               </blockquote>
             </div>
           </div>
-          <div className="flex items-center justify-center lg:h-[1000px] lg:p-8">
+          <div
+            data-testid="authentication-form-panel"
+            className="flex h-full min-h-0 items-center justify-center p-6 lg:p-8"
+          >
             <LoginPage
               embedded
               externalError={

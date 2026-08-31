@@ -501,16 +501,34 @@ To test the Electron desktop app against a local backend:
 ```bash
 # After backend is running (make dev)
 pnpm dev:desktop
+
+# Only when testing server-rs changes through Desktop
+pnpm dev:desktop:rust
 ```
 
-This automatically:
+The default command automatically:
 
-1. Compiles the `patchbay` CLI from the Rust `patchbay-cli` package in the
-   `server-rs` Cargo workspace into
-   `apps/desktop/resources/bin/patchbay`
+1. Resolves an available bundled, managed, downloadable, or PATH `patchbay`
+   CLI without compiling Rust
 2. Creates an isolated profile named `desktop-localhost-<PORT>`
 3. Starts and manages its own daemon instance
 4. Connects to the local backend
+
+Choose the narrowest path that matches what changed:
+
+| Situation | Command | Expected work |
+| --- | --- | --- |
+| Browser-only renderer/UI iteration | `pnpm dev:desktop:web` | Vite only; no Rust |
+| Normal renderer, Electron main, or preload iteration | `pnpm dev:desktop` | Electron/Vite only; no Rust |
+| Compile-check frontend/Electron output | `pnpm --filter @patchbay/desktop build` | Electron/Vite production bundles; no Rust |
+| Test unpublished `server-rs` / CLI behavior through Desktop | `pnpm dev:desktop:rust` | Incremental Cargo development CLI, then Electron/Vite |
+| Validate an installer, signing/notarization, updater, embedded CLI, or release | `pnpm --filter @patchbay/desktop package` | Release Rust CLI and installer packaging; may take tens of minutes |
+
+Do not use the package path for routine UI, TypeScript, CSS, main/preload, or
+documentation changes. The full release build is intentionally reserved for a
+distributable artifact or its production boundaries, plus GitHub Actions. The
+normal Electron path clears a source CLI left by an earlier Rust development
+run so a stale binary cannot affect fast-path verification.
 
 Login in the Desktop UI with `dev@localhost` and the generated code from the
 backend logs. If you set `PATCHBAY_DEV_VERIFICATION_CODE=888888` before starting

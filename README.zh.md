@@ -75,12 +75,22 @@ make dev
 
 `make dev` 会按需创建本地环境、安装依赖、启动 PostgreSQL、执行迁移，并启动 Rust 后端和 Web 客户端。
 
+日常 Desktop/Electron 开发使用 `pnpm dev:desktop`，它只启动 Electron/Vite，
+不会编译 Rust。只有修改了 `server-rs`、并且必须通过 Desktop 验证尚未发布的
+CLI 行为时，才使用 `pnpm dev:desktop:rust` 的增量开发构建。
+
 需要显式构建时运行：
 
 ```bash
 make build
 pnpm build
 ```
+
+`pnpm build` 只构建前端和 Electron bundle，不编译 Rust。只有验证安装包、
+签名/公证、自动更新、内置 CLI 或正式发布时，才运行
+`pnpm --filter @patchbay/desktop package`。该全量路径会构建 release Rust CLI
+和安装包，可能耗时几十分钟，不应该用于日常修改后的刷新验证。完整选择表见
+[贡献指南](CONTRIBUTING.md#desktop-app-local-testing)。
 
 ## 文档
 

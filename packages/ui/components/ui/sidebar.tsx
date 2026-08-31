@@ -45,10 +45,12 @@ const SIDEBAR_AUTO_COLLAPSE_QUERY = "(min-width: 1024px) and (max-width: 1279px)
  * A descendant that has to lay down an opaque layer over the wrapper — rather
  * than over its own parent — must match the wrapper's fill exactly, and that
  * fill is conditional: `bg-sidebar` while an inset-variant sidebar is mounted,
- * the consumer's own background otherwise. Naming a token at the descendant
- * reproduces that condition in a second place, which then drifts (#6874). Use
- * this class instead: the wrapper publishes its fill as `--sidebar-wrapper-fill`
- * under the same `:has()` condition that paints it, so the two cannot disagree.
+ * the consumer's own background otherwise. A glass shell changes the inset
+ * fill to transparent while keeping opaque descendants on the app-shell token.
+ * Naming a token at the descendant reproduces that condition in a second place,
+ * which then drifts (#6874). Use this class instead: the wrapper publishes its
+ * fill as `--sidebar-wrapper-fill` under the same `:has()` condition that paints
+ * it, so the two cannot disagree.
  *
  * Consumers that give the wrapper a background must declare the matching
  * non-inset half, e.g. `bg-app-shell [--sidebar-wrapper-fill:var(--app-shell)]`.
@@ -132,6 +134,7 @@ function SidebarProvider({
   onOpenChange: setOpenProp,
   hasExternalTrigger = false,
   hoverReveal = false,
+  glass = false,
   className,
   style,
   children,
@@ -151,6 +154,8 @@ function SidebarProvider({
   hasExternalTrigger?: boolean
   /** Enable a temporary pointer/focus reveal from the collapsed edge rail. */
   hoverReveal?: boolean
+  /** Enable the translucent desktop treatment. Compact sheets stay opaque. */
+  glass?: boolean
 }) {
   const isCompact = useIsCompact()
   const [openMobile, setOpenMobile] = React.useState(false)
@@ -334,9 +339,12 @@ function SidebarProvider({
             // the consumer's (this component paints nothing then), so the
             // consumer declares that half of the variable next to its own
             // background class.
-            "has-data-[variant=inset]:bg-sidebar has-data-[variant=inset]:[--sidebar-wrapper-fill:var(--sidebar)]",
+            glass
+              ? "has-data-[variant=inset]:bg-transparent has-data-[variant=inset]:[--sidebar-wrapper-fill:var(--app-shell)]"
+              : "has-data-[variant=inset]:bg-sidebar has-data-[variant=inset]:[--sidebar-wrapper-fill:var(--sidebar)]",
             className
           )}
+          data-sidebar-glass={glass ? "true" : undefined}
           {...props}
         >
           {children}

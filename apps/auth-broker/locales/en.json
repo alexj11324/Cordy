@@ -1,0 +1,19 @@
+{
+  "callback": {
+    "error": "We could not complete sign-in."
+  },
+  "web": {
+    "google_oauth": {
+      "starting": "Opening Google sign-in…",
+      "completing": "Completing Google sign-in…",
+      "invalid_binding": "This desktop sign-in request is missing or invalid.",
+      "failed": "Google sign-in could not be completed. Return to Patchbay and try again."
+    },
+    "desktop_handoff": {
+      "preparing": "Preparing Desktop sign-in...",
+      "opening_description": "If nothing happens, click the button below.",
+      "open_button": "Open Patchbay Desktop",
+      "prepare_failed": "Failed to prepare Desktop sign-in"
+    }
+  }
+}

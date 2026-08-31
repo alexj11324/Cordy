@@ -1,6 +1,5 @@
 //! GitHub App installation management and signed webhook ingress.
 
-use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use axum::body::Body;
@@ -13,7 +12,7 @@ use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use hmac::{Hmac, Mac};
 use patchbay_db::models::{GithubInstallation, GithubPullRequest};
-use patchbay_db::queries::{github, member};
+use patchbay_db::queries::{github, member, work_product as work_product_q};
 use patchbay_middleware::workspace::WorkspaceContext;
 use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
 use rand::rngs::OsRng;
@@ -693,8 +692,6 @@ struct PullRequestBody {
     number: i32,
     html_url: String,
     title: String,
-    #[serde(default, deserialize_with = "null_string")]
-    body: String,
     state: String,
     draft: bool,
     merged: bool,
@@ -728,13 +725,6 @@ fn timestamp(value: Option<&str>) -> Option<DateTime<Utc>> {
         .map(|value| value.to_utc())
 }
 
-fn null_string<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
-}
-
 async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) -> anyhow::Result<()> {
     let Ok(event) = serde_json::from_slice::<PullRequestEvent>(body) else {
         return Ok(());
@@ -759,8 +749,21 @@ async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) -> anyhow:
     } else {
         "open"
     };
-    let close_policy = close_intent_policy(state, &installations, &event).await;
     for installation in installations {
+        // Workspace teardown takes this same row lock before deleting its
+        // provider mirrors and Work Products. Keep the lock and all webhook
+        // writes in one transaction so a webhook that started before teardown
+        // cannot insert a product after the teardown snapshot has completed.
+        let mut transaction = state.pool.begin().await?;
+        if patchbay_db::queries::workspace::lock_workspace_for_delete(
+            &mut *transaction,
+            installation.workspace_id,
+        )
+        .await?
+        .is_none()
+        {
+            continue;
+        }
         let base_changed = event
             .changes
             .as_ref()
@@ -771,7 +774,7 @@ async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) -> anyhow:
             matches!(event.action.as_str(), "opened" | "synchronize" | "reopened")
                 || (event.action == "edited" && base_changed);
         let pr = github::upsert_git_hub_pull_request(
-            &state.pool,
+            &mut *transaction,
             installation.workspace_id,
             event.installation.id,
             &owner,
@@ -806,7 +809,48 @@ async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) -> anyhow:
         )
         .await?;
         if let Some(pr) = pr {
-            mirror_issue_links(state, &event, &pr, &close_policy).await;
+            let product = work_product_q::upsert_work_product(
+                &mut *transaction,
+                pr.workspace_id,
+                "pull_request",
+                "github",
+                &work_product_q::external_identity_for_github(&owner, &repo, pr.pr_number),
+                Some(&pr.html_url),
+                Some("github_pull_request"),
+                Some(pr.id),
+            )
+            .await?;
+            let issue_ids = work_product_q::list_issue_ids_for_work_product(
+                &mut *transaction,
+                pr.workspace_id,
+                product.id,
+            )
+            .await?;
+            transaction.commit().await?;
+            if matches!(pr.state.as_str(), "merged" | "closed") {
+                for issue_id in &issue_ids {
+                    let Ok(Some(issue)) = patchbay_db::queries::issue::get_issue_in_workspace(
+                        &state.pool,
+                        *issue_id,
+                        pr.workspace_id,
+                    )
+                    .await
+                    else {
+                        continue;
+                    };
+                    crate::vcs_webhook::maybe_complete_issue(state, issue).await;
+                }
+            }
+            publish_pr(
+                state,
+                &pr,
+                issue_ids
+                    .into_iter()
+                    .map(|issue_id| issue_id.to_string())
+                    .collect(),
+            );
+        } else {
+            transaction.commit().await?;
         }
     }
     state.github_snapshots.enqueue(
@@ -816,188 +860,6 @@ async fn handle_pull_request_event(state: &HandlerState, body: &[u8]) -> anyhow:
         event.pull_request.number,
     );
     Ok(())
-}
-
-#[derive(Default)]
-struct CloseIntentPolicy {
-    unrestricted: bool,
-    owners: HashMap<String, Uuid>,
-}
-
-impl CloseIntentPolicy {
-    fn permits(&self, identifier: &str, workspace_id: Uuid) -> bool {
-        self.unrestricted || self.owners.get(identifier) == Some(&workspace_id)
-    }
-}
-
-fn auto_link_enabled(settings: &serde_json::Value) -> Result<bool, ()> {
-    let Some(object) = settings.as_object() else {
-        return if settings.is_null() {
-            Ok(true)
-        } else {
-            Err(())
-        };
-    };
-    if matches!(
-        object.get("github_enabled"),
-        Some(serde_json::Value::Bool(false))
-    ) {
-        return Ok(false);
-    }
-    match object.get("github_auto_link_prs_enabled") {
-        None => Ok(true),
-        Some(serde_json::Value::Bool(value)) => Ok(*value),
-        Some(_) => Err(()),
-    }
-}
-
-async fn close_intent_policy(
-    state: &HandlerState,
-    installations: &[GithubInstallation],
-    event: &PullRequestEvent,
-) -> CloseIntentPolicy {
-    if installations.len() < 2 {
-        return CloseIntentPolicy {
-            unrestricted: true,
-            ..Default::default()
-        };
-    }
-    let closing = crate::vcs_webhook::extract_closing_identifiers([
-        event.pull_request.title.as_str(),
-        event.pull_request.body.as_str(),
-    ]);
-    if closing.is_empty() {
-        return CloseIntentPolicy::default();
-    }
-    let mut resolvers: HashMap<String, Vec<Uuid>> = HashMap::new();
-    for installation in installations {
-        let workspace = match patchbay_db::queries::workspace::get_workspace(
-            &state.pool,
-            installation.workspace_id,
-        )
-        .await
-        {
-            Ok(Some(workspace)) => workspace,
-            _ => return CloseIntentPolicy::default(),
-        };
-        match auto_link_enabled(&workspace.settings) {
-            Ok(false) => continue,
-            Ok(true) => {}
-            Err(()) => return CloseIntentPolicy::default(),
-        }
-        for identifier in &closing {
-            if crate::vcs_webhook::lookup_issue(
-                state,
-                installation.workspace_id,
-                &workspace.issue_prefix,
-                identifier,
-            )
-            .await
-            .is_some()
-            {
-                resolvers
-                    .entry(identifier.clone())
-                    .or_default()
-                    .push(installation.workspace_id);
-            }
-        }
-    }
-    CloseIntentPolicy {
-        unrestricted: false,
-        owners: resolvers
-            .into_iter()
-            .filter_map(|(identifier, workspaces)| {
-                (workspaces.len() == 1).then_some((identifier, workspaces[0]))
-            })
-            .collect(),
-    }
-}
-
-async fn mirror_issue_links(
-    state: &HandlerState,
-    event: &PullRequestEvent,
-    pull_request: &GithubPullRequest,
-    close_policy: &CloseIntentPolicy,
-) {
-    let workspace = match patchbay_db::queries::workspace::get_workspace(
-        &state.pool,
-        pull_request.workspace_id,
-    )
-    .await
-    {
-        Ok(Some(workspace)) => workspace,
-        _ => {
-            publish_pr(state, pull_request, Vec::new());
-            return;
-        }
-    };
-    if !auto_link_enabled(&workspace.settings).unwrap_or(true) {
-        publish_pr(state, pull_request, Vec::new());
-        return;
-    }
-    let identifiers = crate::vcs_webhook::extract_identifiers([
-        event.pull_request.title.as_str(),
-        event.pull_request.body.as_str(),
-        event.pull_request.head.branch.as_str(),
-    ]);
-    let closing: HashSet<_> = crate::vcs_webhook::extract_closing_identifiers([
-        event.pull_request.title.as_str(),
-        event.pull_request.body.as_str(),
-    ])
-    .into_iter()
-    .collect();
-    let qualifying: HashSet<_> = crate::vcs_webhook::extract_identifiers([
-        event.pull_request.title.as_str(),
-        event.pull_request.head.branch.as_str(),
-    ])
-    .into_iter()
-    .chain(closing.iter().cloned())
-    .collect();
-    let preserve =
-        event.action != "closed" && matches!(pull_request.state.as_str(), "merged" | "closed");
-    let mut linked_ids = Vec::new();
-    let mut reevaluate = Vec::new();
-    for identifier in identifiers {
-        let Some(issue) = crate::vcs_webhook::lookup_issue(
-            state,
-            pull_request.workspace_id,
-            &workspace.issue_prefix,
-            &identifier,
-        )
-        .await
-        else {
-            continue;
-        };
-        let close_intent = closing.contains(&identifier)
-            && close_policy.permits(&identifier, pull_request.workspace_id)
-            && !preserve;
-        match github::link_issue_to_pull_request(
-            &state.pool,
-            issue.id,
-            pull_request.id,
-            close_intent,
-            Some("system"),
-            None,
-            !qualifying.contains(&identifier),
-            preserve,
-            preserve,
-            true,
-        )
-        .await
-        {
-            Ok(_) => {
-                linked_ids.push(issue.id.to_string());
-                reevaluate.push(issue);
-            }
-            Err(error) => tracing::warn!(%error, "github: link failed"),
-        }
-    }
-    if matches!(pull_request.state.as_str(), "merged" | "closed") {
-        for issue in reevaluate {
-            crate::vcs_webhook::maybe_complete_issue(state, issue).await;
-        }
-    }
-    publish_pr(state, pull_request, linked_ids);
 }
 
 fn publish_pr(state: &HandlerState, pr: &GithubPullRequest, linked_issue_ids: Vec<String>) {
@@ -1174,21 +1036,20 @@ mod tests {
     }
 
     #[test]
-    fn pull_request_payload_accepts_null_body_and_deleted_author() {
+    fn pull_request_payload_accepts_deleted_author() {
         let event: PullRequestEvent = serde_json::from_value(json!({
             "action": "closed",
             "installation": {"id": 42},
             "repository": {"name": "patchbay", "owner": {"login": "patchbay-ai"}},
             "pull_request": {
                 "number": 1, "html_url": "https://example.test/pr/1", "title": "CORD-1",
-                "body": null, "state": "closed", "draft": false, "merged": false,
+                "state": "closed", "draft": false, "merged": false,
                 "merged_at": null, "closed_at": null, "created_at": null, "updated_at": null,
                 "mergeable_state": null, "additions": 0, "deletions": 0, "changed_files": 0,
                 "head": {"ref": "cord-1", "sha": "abc"}, "user": null
             }
         }))
         .unwrap();
-        assert!(event.pull_request.body.is_empty());
         assert!(event.pull_request.user.is_none());
     }
 

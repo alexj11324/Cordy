@@ -1,0 +1,19 @@
+{
+  "callback": {
+    "error": "ログインを完了できませんでした。"
+  },
+  "web": {
+    "google_oauth": {
+      "starting": "Google ログインを開いています…",
+      "completing": "Google ログインを完了しています…",
+      "invalid_binding": "このデスクトップログイン要求は無効か、必要な情報がありません。",
+      "failed": "Google ログインを完了できませんでした。Patchbay に戻って再試行してください。"
+    },
+    "desktop_handoff": {
+      "preparing": "デスクトップのログインを準備中...",
+      "opening_description": "何も起きない場合は、下のボタンをクリックしてください。",
+      "open_button": "Patchbay Desktopを開く",
+      "prepare_failed": "デスクトップのログインを準備できませんでした"
+    }
+  }
+}

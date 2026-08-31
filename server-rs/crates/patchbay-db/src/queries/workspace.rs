@@ -156,15 +156,22 @@ cleared_github_pr_check_runs AS (
     DELETE FROM github_pull_request_check_run
     WHERE pr_id IN (SELECT id FROM ws_github_prs)
 ),
-ws_vcs_prs AS (
-    SELECT id FROM vcs_pull_request WHERE workspace_id = $1
-),
 ws_vcs_connections AS (
     SELECT id FROM vcs_connection WHERE workspace_id = $1
 ),
-cleared_vcs_pr_links AS (
-    DELETE FROM issue_vcs_pull_request
-    WHERE pull_request_id IN (SELECT id FROM ws_vcs_prs)
+ws_work_products AS (
+    SELECT id FROM work_product WHERE workspace_id = $1
+),
+cleared_work_product_relations AS (
+    DELETE FROM work_product_relation
+    WHERE workspace_id = $1
+       OR work_product_id IN (SELECT id FROM ws_work_products)
+),
+cleared_work_products AS (
+    DELETE FROM work_product WHERE workspace_id = $1
+),
+cleared_task_execution_provenance AS (
+    DELETE FROM agent_task_execution_provenance WHERE workspace_id = $1
 ),
 cleared_vcs_commit_statuses AS (
     DELETE FROM vcs_commit_status

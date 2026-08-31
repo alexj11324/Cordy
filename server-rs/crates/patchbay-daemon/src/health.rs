@@ -118,14 +118,47 @@ pub struct RepoCheckoutRequest {
     pub retry_busy: bool,
 }
 
+/// One daemon-owned checkout that must be refreshed from the checkout path at
+/// task termination. The initial branch/workspace facts are only a durable
+/// execution hint; the terminal head is read from `path` before discovery is
+/// queued.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RepoCheckoutProvenance {
+    pub path: String,
+    pub repo_identity: String,
+    pub branch_name: String,
+}
+
 /// `activeRepoCheckoutTask`.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct ActiveRepoCheckoutTask {
     pub workspace_id: String,
     pub task_id: String,
     pub agent_id: String,
     pub agent_name: String,
     pub work_dir: String,
+    /// Server-issued `mdt_` credential. It is used only by the daemon when
+    /// reporting checkout provenance and is never copied into the agent env.
+    pub execution_daemon_token: String,
+    pub(crate) checkouts: std::sync::Arc<std::sync::Mutex<Vec<RepoCheckoutProvenance>>>,
+}
+
+impl std::fmt::Debug for ActiveRepoCheckoutTask {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ActiveRepoCheckoutTask")
+            .field("workspace_id", &self.workspace_id)
+            .field("task_id", &self.task_id)
+            .field("agent_id", &self.agent_id)
+            .field("agent_name", &self.agent_name)
+            .field("work_dir", &self.work_dir)
+            .field(
+                "has_execution_daemon_token",
+                &!self.execution_daemon_token.is_empty(),
+            )
+            .field("checkout_count", &self.checkouts.lock().unwrap().len())
+            .finish()
+    }
 }
 
 /// `REPO_CHECKOUT_LOCK_WAIT_TIMEOUT` etc. (health.go:179–184).
@@ -177,6 +210,45 @@ impl RepoCheckoutRegistry {
             return None;
         }
         self.tasks.lock().unwrap().get(token).cloned()
+    }
+
+    /// Records a checkout while its owning task credential is active. The
+    /// checkout path is retained in memory until terminal provenance has been
+    /// refreshed, so a task that checks out multiple repositories does not
+    /// collapse to whichever checkout happened to be last.
+    pub(crate) fn record_checkout(&self, task_id: &str, checkout: RepoCheckoutProvenance) -> bool {
+        let task = self
+            .tasks
+            .lock()
+            .unwrap()
+            .values()
+            .find(|task| task.task_id == task_id)
+            .cloned();
+        let Some(task) = task else {
+            return false;
+        };
+        let mut checkouts = task.checkouts.lock().unwrap();
+        if !checkouts.iter().any(|existing| {
+            existing.path == checkout.path
+                && existing.repo_identity == checkout.repo_identity
+                && existing.branch_name == checkout.branch_name
+        }) {
+            checkouts.push(checkout);
+        }
+        true
+    }
+
+    /// Returns the exact checkout paths owned by the active task. Callers must
+    /// invoke this before dropping the task guard, which revokes the registry
+    /// entry and makes late localhost checkout calls unauthorized.
+    pub(crate) fn checkouts_for_task(&self, task_id: &str) -> Vec<RepoCheckoutProvenance> {
+        self.tasks
+            .lock()
+            .unwrap()
+            .values()
+            .find(|task| task.task_id == task_id)
+            .map(|task| task.checkouts.lock().unwrap().clone())
+            .unwrap_or_default()
     }
 }
 
