@@ -41,6 +41,7 @@ tmp_dir="$(mktemp -d)"
 trap 'rm -f "$tmp_env"; rm -rf "$tmp_dir"' EXIT
 sed 's/^FRONTEND_PORT=.*/FRONTEND_PORT=3100/' .env.example >"$tmp_env"
 printf '\nBACKEND_PORT=9100\nSMTP_FROM_EMAIL=patchbay@example.com\n' >>"$tmp_env"
+printf 'PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN=%064d\n' 0 >>"$tmp_env"
 printf 'PATCHBAY_LLM_API_KEY=llm-key-from-env\nPATCHBAY_LLM_BASE_URL=http://gateway.example/v1\nPATCHBAY_LLM_DEFAULT_MODEL=model-from-env\nPATCHBAY_LLM_MAX_RETRIES=3\n' >>"$tmp_env"
 
 config="$(
@@ -55,6 +56,7 @@ require_config "$config" 'published: "9100"'
 require_config "$config" 'FRONTEND_ORIGIN: http://localhost:3100'
 require_config "$config" 'PATCHBAY_APP_URL: http://localhost:3100'
 require_config "$config" 'SMTP_FROM_EMAIL: patchbay@example.com'
+require_config "$config" 'PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN: "0000000000000000000000000000000000000000000000000000000000000000"'
 
 # The backend environment is an explicit allowlist, so a variable documented in
 # .env.example but missing here silently never reaches the container: the
