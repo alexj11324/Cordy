@@ -1385,8 +1385,8 @@ pub async fn get_linear_sync_conflict(
     Ok(sqlx::query_as::<_, LinearSyncConflict>(&query)
         .bind(workspace_id)
         .bind(conflict_id)
-    .fetch_optional(executor)
-    .await?)
+        .fetch_optional(executor)
+        .await?)
 }
 
 pub async fn get_linear_sync_conflict_for_update(
@@ -1667,8 +1667,8 @@ pub async fn get_project_binding(
     Ok(sqlx::query_as::<_, LinearProjectBinding>(&query)
         .bind(workspace_id)
         .bind(binding_id)
-    .fetch_optional(executor)
-    .await?)
+        .fetch_optional(executor)
+        .await?)
 }
 
 pub async fn get_project_binding_for_update(

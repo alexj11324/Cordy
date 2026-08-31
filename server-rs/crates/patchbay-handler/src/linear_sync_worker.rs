@@ -83,7 +83,14 @@ struct LinearAgentSessionEvent {
     action: String,
     prompt_context: Option<String>,
     prompt_body: Option<String>,
-    requester_user_id: Option<Uuid>,
+    requester_user_id: Option<String>,
+}
+
+#[derive(Debug)]
+struct LinearAgentSessionTerminalEvent {
+    session_id: String,
+    status: String,
+    body: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -177,8 +184,7 @@ fn parse_agent_session_event(payload: &Value) -> Result<LinearAgentSessionEvent,
         .or_else(|| first_string(Some(data), &["prompt", "promptBody", "body"]));
     let requester_user_id = first_string(session, &["creatorId"])
         .or_else(|| nested_string(session, &["creator", "id"]))
-        .or_else(|| first_string(Some(data), &["creatorId"]))
-        .and_then(|value| value.parse::<Uuid>().ok());
+        .or_else(|| first_string(Some(data), &["creatorId"]));
     Ok(LinearAgentSessionEvent {
         session_id,
         linear_issue_id,
@@ -186,6 +192,59 @@ fn parse_agent_session_event(payload: &Value) -> Result<LinearAgentSessionEvent,
         prompt_context,
         prompt_body,
         requester_user_id,
+    })
+}
+
+fn parse_agent_session_terminal_event(
+    payload: &Value,
+) -> Result<LinearAgentSessionTerminalEvent, SyncError> {
+    let data = event_data(payload);
+    let session = data
+        .get("agentSession")
+        .filter(Value::is_object)
+        .ok_or_else(|| {
+            SyncError::permanent(anyhow::anyhow!(
+                "Linear Agent Session terminal event has no session"
+            ))
+        })?;
+    let session_id = first_string(Some(session), &["id", "agentSessionId"]).ok_or_else(|| {
+        SyncError::permanent(anyhow::anyhow!(
+            "Linear Agent Session terminal event has no session id"
+        ))
+    })?;
+    let status = first_string(Some(data), &["status", "taskStatus"])
+        .map(|value| value.to_ascii_lowercase())
+        .ok_or_else(|| {
+            SyncError::permanent(anyhow::anyhow!(
+                "Linear Agent Session terminal event has no status"
+            ))
+        })?;
+    if !matches!(status.as_str(), "completed" | "failed" | "cancelled") {
+        return Err(SyncError::permanent(anyhow::anyhow!(
+            "unsupported Linear Agent Session terminal status: {status}"
+        )));
+    }
+    let result_body = data
+        .get("result")
+        .and_then(|result| {
+            result
+                .as_str()
+                .or_else(|| result.get("output").and_then(Value::as_str))
+                .or_else(|| result.get("body").and_then(Value::as_str))
+        })
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let error_body = first_string(Some(data), &["error", "failureReason", "message"]);
+    let body = match (status.as_str(), result_body, error_body) {
+        ("completed", Some(body), _) => body.to_string(),
+        ("completed", None, _) => "Cordy Agent completed the task.".to_string(),
+        (_, _, Some(error)) => format!("Cordy Agent {status}: {error}"),
+        (_, _, None) => format!("Cordy Agent {status} the task."),
+    };
+    Ok(LinearAgentSessionTerminalEvent {
+        session_id,
+        status,
+        body,
     })
 }
 
@@ -265,6 +324,77 @@ fn agent_label_decision(
         configured: true,
         agent_id: default_agent_id,
     })
+}
+
+/// Returns the complete remote label set for an outbound Issue mutation.
+/// Labels outside the configured Cordy Agent group are preserved verbatim;
+/// only the integration-owned group value is replaced. `Some(empty)` is
+/// intentional when the local executor is cleared, so a stale Agent label is
+/// removed instead of being left behind on Linear.
+fn agent_label_ids_for_issue(
+    binding: &LinearProjectBinding,
+    executor_type: Option<&str>,
+    executor_id: Option<Uuid>,
+    existing_labels: &[LinearRemoteLabel],
+) -> Result<Option<Vec<String>>, SyncError> {
+    let Some(mapping) = binding.agent_label_mapping.as_object() else {
+        return Ok(None);
+    };
+    let configured_group = mapping
+        .get("group_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let Some(_group_id) = configured_group else {
+        return Ok(None);
+    };
+    let label_mapping = mapping
+        .get("labels")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            SyncError::permanent(anyhow::anyhow!(
+                "Linear Agent label mapping has no labels object"
+            ))
+        })?;
+
+    let mut owned_label_ids = Vec::with_capacity(label_mapping.len());
+    let mut desired_label_id = None;
+    for (label_id, agent_value) in label_mapping {
+        let agent_id = agent_value
+            .as_str()
+            .ok_or_else(|| {
+                SyncError::permanent(anyhow::anyhow!(
+                    "Linear Agent label mapping target is not a UUID"
+                ))
+            })?
+            .parse::<Uuid>()
+            .map_err(|_| {
+                SyncError::permanent(anyhow::anyhow!(
+                    "Linear Agent label mapping target is not a UUID"
+                ))
+            })?;
+        owned_label_ids.push(label_id.as_str());
+        if executor_type == Some("agent") && executor_id == Some(agent_id) {
+            if desired_label_id.is_some() {
+                return Err(SyncError::permanent(anyhow::anyhow!(
+                    "Linear Agent label mapping contains duplicate Agent targets"
+                )));
+            }
+            desired_label_id = Some(label_id.as_str());
+        }
+    }
+
+    let mut label_ids = existing_labels
+        .iter()
+        .map(|label| label.id.clone())
+        .filter(|label_id| !owned_label_ids.iter().any(|owned| *owned == label_id))
+        .collect::<Vec<_>>();
+    if let Some(label_id) = desired_label_id {
+        if !label_ids.iter().any(|existing| existing == label_id) {
+            label_ids.push(label_id.to_string());
+        }
+    }
+    Ok(Some(label_ids))
 }
 
 /// A supervisor-owned Linear Inbox worker. `HandlerState` is cloned into the
@@ -858,6 +988,19 @@ impl LinearSyncWorker {
         } else {
             None
         };
+        let agent_label_ids = if self.state.linear_agent_bridge_enabled(row.workspace_id) {
+            agent_label_ids_for_issue(
+                &binding,
+                issue.executor_type.as_deref(),
+                issue.executor_id,
+                current_remote
+                    .as_ref()
+                    .map(|remote| remote.labels.nodes.as_slice())
+                    .unwrap_or(&[]),
+            )?
+        } else {
+            None
+        };
         let remote = if let Some(remote) = current_remote {
             manager
                 .update_issue(
@@ -871,6 +1014,7 @@ impl LinearSyncWorker {
                     due_date.as_deref(),
                     update_assignee,
                     update_delegate,
+                    agent_label_ids.as_deref(),
                 )
                 .await
                 .map_err(|error| classify_token_error(error, "update Linear Issue"))?
@@ -900,6 +1044,7 @@ impl LinearSyncWorker {
                         due_date.as_deref(),
                         linear_owner_id.as_deref(),
                         desired_delegate_id,
+                        agent_label_ids.as_deref(),
                     )
                     .await
                     .map_err(|error| classify_token_error(error, "create Linear Issue"))?
@@ -923,6 +1068,7 @@ impl LinearSyncWorker {
                     due_date.as_deref(),
                     linear_owner_id.as_deref(),
                     desired_delegate_id,
+                    agent_label_ids.as_deref(),
                 )
                 .await
                 .map_err(|error| classify_token_error(error, "create Linear Issue"))?
@@ -1074,6 +1220,13 @@ impl LinearSyncWorker {
                 .linear_agent_bridge_enabled(connection.workspace_id)
             {
                 return Ok(());
+            }
+            if row.event_type == "linear.agentSession.terminal"
+                || row.payload.get("linearAgentSessionTerminal").is_some()
+            {
+                return self
+                    .process_agent_session_terminal(row, &connection)
+                    .await;
             }
             return self
                 .process_agent_session_event(row, &connection)
@@ -1304,9 +1457,6 @@ impl LinearSyncWorker {
         let same_delivery_with_task = existing_session.as_ref().is_some_and(|session| {
             session.last_event_id == row.delivery_id && session.task_id.is_some()
         });
-        if same_delivery_with_task {
-            return Ok(());
-        }
 
         let mut task = if let Some(task_id) = existing_session
             .as_ref()
@@ -1351,7 +1501,7 @@ impl LinearSyncWorker {
         }
 
         let mut continuation_task_id = None;
-        if event.action == "prompted" {
+        if event.action == "prompted" && !same_delivery_with_task {
             if let Some(parent_task) = task.as_ref() {
                 let handoff = event
                     .prompt_body
@@ -1362,6 +1512,9 @@ impl LinearSyncWorker {
                     "linear-agent-session:{}:{}",
                     event.session_id, row.delivery_id
                 );
+                let requester_user_id = self
+                    .patchbay_requester_id(connection, event.requester_user_id.as_deref())
+                    .await?;
                 let receipt = self
                     .state
                     .tasks
@@ -1369,9 +1522,7 @@ impl LinearSyncWorker {
                         parent_task.id,
                         handoff,
                         &idempotency_key,
-                        event
-                            .requester_user_id
-                            .unwrap_or(connection.created_by_id),
+                        requester_user_id,
                     )
                     .await
                     .map_err(|error| {
@@ -1387,14 +1538,16 @@ impl LinearSyncWorker {
             agent_issue.executor_type = Some("agent".to_string());
             agent_issue.executor_id = Some(agent_id);
             let handoff = if event.action == "prompted" {
-                format!(
-                    "{session_marker}\n\n{}",
-                    event
-                        .prompt_body
-                        .as_deref()
-                        .or(event.prompt_context.as_deref())
-                        .unwrap_or("Linear Agent Session prompt")
-                )
+                match event
+                    .prompt_body
+                    .as_deref()
+                    .or(event.prompt_context.as_deref())
+                    .map(str::trim)
+                    .filter(|context| !context.is_empty())
+                {
+                    Some(context) => format!("{session_marker}\n\n{context}"),
+                    None => session_marker.clone(),
+                }
             } else {
                 session_marker.clone()
             };
@@ -1498,15 +1651,132 @@ impl LinearSyncWorker {
         Ok(())
     }
 
+    async fn process_agent_session_terminal(
+        &self,
+        row: &LinearSyncInbox,
+        connection: &LinearConnection,
+    ) -> Result<(), SyncError> {
+        let event = parse_agent_session_terminal_event(&row.payload)?;
+        let existing = linear_agent_q::get_linear_agent_session(
+            &self.state.pool,
+            connection.workspace_id,
+            connection.id,
+            &event.session_id,
+        )
+        .await
+        .map_err(SyncError::retry)?
+        .ok_or_else(|| {
+            SyncError::permanent(anyhow::anyhow!(
+                "Linear Agent Session terminal event has no local correlation"
+            ))
+        })?;
+        if existing.status == event.status && existing.last_event_id == row.delivery_id {
+            return Ok(());
+        }
+
+        let manager = LinearTokenManager::from_state(&self.state)
+            .map_err(|error| classify_token_error(error, "create Linear token manager"))?;
+        manager
+            .create_agent_activity(
+                connection.id,
+                &event.session_id,
+                json!({"type": "response", "body": event.body}),
+            )
+            .await
+            .map_err(|error| classify_token_error(error, "publish Linear Agent Session result"))?;
+
+        let updated = linear_agent_q::mark_linear_agent_session_terminal(
+            &self.state.pool,
+            connection.workspace_id,
+            connection.id,
+            &event.session_id,
+            &event.status,
+            &row.delivery_id,
+            extract_event_timestamp_ms(&row.payload),
+        )
+        .await
+        .map_err(SyncError::retry)?;
+        if !updated {
+            tracing::warn!(
+                connection_id = %connection.id,
+                session_id = %event.session_id,
+                "Linear Agent Session correlation disappeared after terminal result"
+            );
+        }
+        Ok(())
+    }
+
+    async fn patchbay_requester_id(
+        &self,
+        connection: &LinearConnection,
+        linear_user_id: Option<&str>,
+    ) -> Result<Uuid, SyncError> {
+        if let Some(linear_user_id) = linear_user_id.filter(|id| !id.trim().is_empty()) {
+            if let Some(binding) = linear_q::get_linear_member_binding_by_linear_user(
+                &self.state.pool,
+                connection.workspace_id,
+                connection.id,
+                linear_user_id,
+            )
+            .await
+            .map_err(SyncError::retry)?
+            {
+                return Ok(binding.patchbay_user_id);
+            }
+            tracing::warn!(
+                workspace_id = %connection.workspace_id,
+                connection_id = %connection.id,
+                linear_user_id,
+                "Linear Agent Session creator has no member mapping; falling back to installation creator"
+            );
+        }
+        Ok(connection.created_by_id)
+    }
+
+    async fn resume_waiting_agent_sessions(
+        &self,
+        connection: &LinearConnection,
+        issue: &patchbay_db::models::Issue,
+        agent_id: Uuid,
+        source_event_id: &str,
+    ) -> Result<(), SyncError> {
+        let sessions = linear_agent_q::list_waiting_linear_agent_sessions(
+            &self.state.pool,
+            connection.workspace_id,
+            issue.id,
+        )
+        .await
+        .map_err(SyncError::retry)?;
+        if sessions.is_empty() {
+            return Ok(());
+        }
+
+        let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
+        for session in sessions {
+            let delivery_id = format!(
+                "linear-agent-selection-retry:{}:{}:{}",
+                session.linear_session_id, agent_id, source_event_id
+            );
+            linear_agent_q::enqueue_linear_agent_session_retry(
+                &mut *transaction,
+                connection.id,
+                &delivery_id,
+                &session,
+                agent_id,
+            )
+            .await
+            .map_err(SyncError::retry)?;
+        }
+        transaction.commit().await.map_err(SyncError::retry)?;
+        self.notify.notify_waiters();
+        Ok(())
+    }
+
     async fn patchbay_issue_url(
         &self,
         issue: &patchbay_db::models::Issue,
     ) -> Result<Option<String>, SyncError> {
-        let base = if !self.state.public_config.daemon_app_url.trim().is_empty() {
-            self.state.public_config.daemon_app_url.trim()
-        } else {
-            self.state.public_config.public_url.trim()
-        };
+        let base = self.state.public_config.frontend_app_url.trim();
         if base.is_empty() {
             return Ok(None);
         }
@@ -2198,6 +2468,10 @@ impl LinearSyncWorker {
                 "Linear Issue Link disappeared after merge"
             )));
         }
+        if let Some(agent_id) = agent_decision.agent_id {
+            self.resume_waiting_agent_sessions(connection, &issue, agent_id, source_event_id)
+                .await?;
+        }
         Ok(())
     }
 
@@ -2836,11 +3110,11 @@ mod tests {
     use uuid::Uuid;
 
     use super::{
-        agent_label_decision, extract_event_timestamp_ms, extract_issue_id, extract_updated_from,
-        inbound_enabled, is_out_of_order, map_local_priority, map_local_status,
-        map_remote_priority, map_remote_status, merge_sync_snapshots,
-        merge_sync_snapshots_with_updated_from, parse_agent_session_event, parse_remote_timestamp,
-        retry_delay,
+        agent_label_decision, agent_label_ids_for_issue, extract_event_timestamp_ms,
+        extract_issue_id, extract_updated_from, inbound_enabled, is_out_of_order,
+        map_local_priority, map_local_status, map_remote_priority, map_remote_status,
+        merge_sync_snapshots, merge_sync_snapshots_with_updated_from, parse_agent_session_event,
+        parse_agent_session_terminal_event, parse_remote_timestamp, retry_delay,
     };
     use crate::linear::{LinearRemoteLabel, LinearRemoteState};
 
@@ -3057,6 +3331,39 @@ mod tests {
     }
 
     #[test]
+    fn outbound_agent_labels_preserve_unrelated_labels_and_clear_stale_value() {
+        let agent_id = Uuid::now_v7();
+        let mut binding = binding(json!({
+            "group_id": "agent-group",
+            "labels": {"agent-backend": agent_id.to_string()}
+        }));
+        let existing = vec![
+            LinearRemoteLabel {
+                id: "bug".to_string(),
+            },
+            LinearRemoteLabel {
+                id: "agent-backend".to_string(),
+            },
+        ];
+        assert_eq!(
+            agent_label_ids_for_issue(&binding, Some("agent"), Some(agent_id), &existing)
+                .unwrap(),
+            Some(vec!["bug".to_string(), "agent-backend".to_string()])
+        );
+        assert_eq!(
+            agent_label_ids_for_issue(&binding, None, None, &existing).unwrap(),
+            Some(vec!["bug".to_string()])
+        );
+
+        binding.agent_label_mapping = json!({});
+        assert_eq!(
+            agent_label_ids_for_issue(&binding, Some("agent"), Some(agent_id), &existing)
+                .unwrap(),
+            None
+        );
+    }
+
+    #[test]
     fn agent_session_event_parser_accepts_created_and_prompted_shapes() {
         let event = parse_agent_session_event(&json!({
             "action": "prompted",
@@ -3075,8 +3382,29 @@ mod tests {
         assert_eq!(event.prompt_body.as_deref(), Some("Please continue"));
         assert_eq!(
             event.requester_user_id,
-            Some(Uuid::parse_str("018f0d7f-3b4f-7b1a-8c4e-7baf8ecbda40").unwrap())
+            Some("018f0d7f-3b4f-7b1a-8c4e-7baf8ecbda40".to_string())
         );
+    }
+
+    #[test]
+    fn agent_session_terminal_parser_keeps_result_or_failure_context() {
+        let completed = parse_agent_session_terminal_event(&json!({
+            "status": "completed",
+            "agentSession": {"id": "session-1"},
+            "result": {"output": "Implemented the change"}
+        }))
+        .unwrap();
+        assert_eq!(completed.session_id, "session-1");
+        assert_eq!(completed.status, "completed");
+        assert_eq!(completed.body, "Implemented the change");
+
+        let failed = parse_agent_session_terminal_event(&json!({
+            "status": "failed",
+            "agentSession": {"id": "session-1"},
+            "error": "provider unavailable"
+        }))
+        .unwrap();
+        assert_eq!(failed.body, "Cordy Agent failed: provider unavailable");
     }
 
     #[test]

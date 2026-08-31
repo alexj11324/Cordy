@@ -3053,6 +3053,7 @@ impl LinearTokenManager {
         due_date: Option<&str>,
         assignee_id: Option<&str>,
         delegate_id: Option<&str>,
+        label_ids: Option<&[String]>,
     ) -> Result<LinearRemoteIssue, LinearTokenError> {
         let access_token = self.access_token(connection_id).await?;
         let mut input = serde_json::Map::new();
@@ -3076,6 +3077,9 @@ impl LinearTokenManager {
         if let Some(delegate_id) = delegate_id {
             input.insert("delegateId".to_string(), json!(delegate_id));
         }
+        if let Some(label_ids) = label_ids {
+            input.insert("labelIds".to_string(), json!(label_ids));
+        }
         self.mutate_issue(
             &access_token,
             "issueCreate",
@@ -3097,6 +3101,7 @@ impl LinearTokenManager {
         due_date: Option<&str>,
         assignee_id: Option<Option<&str>>,
         delegate_id: Option<Option<&str>>,
+        label_ids: Option<&[String]>,
     ) -> Result<LinearRemoteIssue, LinearTokenError> {
         let access_token = self.access_token(connection_id).await?;
         let mut input = serde_json::Map::new();
@@ -3118,6 +3123,9 @@ impl LinearTokenManager {
         }
         if let Some(delegate_id) = delegate_id {
             input.insert("delegateId".to_string(), json!(delegate_id));
+        }
+        if let Some(label_ids) = label_ids {
+            input.insert("labelIds".to_string(), json!(label_ids));
         }
         self.mutate_issue(
             &access_token,

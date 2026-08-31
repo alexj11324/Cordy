@@ -19,6 +19,10 @@ pub struct PublicConfigSettings {
     pub allow_signup: bool,
     pub daemon_server_url: String,
     pub daemon_app_url: String,
+    /// Internal-only frontend origin for server-generated links. This remains
+    /// populated for the official cloud deployment even when daemon URLs are
+    /// intentionally omitted from the unauthenticated public config.
+    pub(crate) frontend_app_url: String,
     pub official_cloud: bool,
 }
 
@@ -32,6 +36,7 @@ impl Default for PublicConfigSettings {
             allow_signup: true,
             daemon_server_url: String::new(),
             daemon_app_url: String::new(),
+            frontend_app_url: String::new(),
             official_cloud: false,
         }
     }
@@ -66,6 +71,7 @@ impl PublicConfigSettings {
             allow_signup: config.auth.allow_signup.as_deref().map(str::trim) != Some("false"),
             daemon_server_url,
             daemon_app_url,
+            frontend_app_url: app_url,
             official_cloud,
         }
     }
@@ -259,6 +265,7 @@ mod tests {
         assert!(settings.official_cloud);
         assert!(settings.daemon_server_url.is_empty());
         assert!(settings.daemon_app_url.is_empty());
+        assert_eq!(settings.frontend_app_url, "https://patchbay.aspectlylabs.com");
     }
 
     #[test]

@@ -67,6 +67,7 @@ use patchbay_db::queries::issue::{
     get_issue, get_issue_in_workspace, list_issues_in_workspace_by_ids,
 };
 use patchbay_db::queries::linear as linear_q;
+use patchbay_db::queries::linear_agent as linear_agent_q;
 use patchbay_db::queries::member::{
     get_member_by_user_and_workspace, lock_member_by_user_and_workspace,
 };
@@ -5091,6 +5092,23 @@ impl TaskService {
                         "record cancelled reviewer recovery: {error}"
                     ))
                 })?;
+            linear_agent_q::enqueue_linear_agent_terminal_event(
+                &mut *tx,
+                cancelled.id,
+                &format!("linear-agent-terminal:{}:cancelled", cancelled.id),
+                &serde_json::json!({
+                    "action": "terminal",
+                    "linearAgentSessionTerminal": true,
+                    "status": "cancelled",
+                    "error": opts.error_message,
+                    "failureReason": opts.failure_reason,
+                    "taskId": cancelled.id,
+                }),
+            )
+            .await
+            .map_err(|error| {
+                TaskServiceError::Internal(format!("enqueue Linear Agent cancellation: {error}"))
+            })?;
             cancelled_chat_message = self
                 .settle_queued_chat_input(&mut tx, &cancelled, &opts.queue_action)
                 .await?;
@@ -5143,6 +5161,23 @@ impl TaskService {
                         "record cancelled reviewer recovery: {error}"
                     ))
                 })?;
+            linear_agent_q::enqueue_linear_agent_terminal_event(
+                &mut *tx,
+                cancelled.id,
+                &format!("linear-agent-terminal:{}:cancelled", cancelled.id),
+                &serde_json::json!({
+                    "action": "terminal",
+                    "linearAgentSessionTerminal": true,
+                    "status": "cancelled",
+                    "error": opts.error_message,
+                    "failureReason": opts.failure_reason,
+                    "taskId": cancelled.id,
+                }),
+            )
+            .await
+            .map_err(|error| {
+                TaskServiceError::Internal(format!("enqueue Linear Agent cancellation: {error}"))
+            })?;
             tx.commit().await.map_err(TaskServiceError::Sql)?;
             cancelled
         };
