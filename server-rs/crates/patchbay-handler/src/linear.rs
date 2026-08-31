@@ -717,7 +717,7 @@ async fn oauth_callback(
         }
     };
     let oauth_state =
-        match linear_q::consume_oauth_state(&mut transaction, &sha256_hex(&state_token)).await {
+        match linear_q::consume_oauth_state(&mut *transaction, &sha256_hex(&state_token)).await {
             Ok(Some(value)) => value,
             Ok(None) => return linear_callback_redirect("invalid_state"),
             Err(error) => {
