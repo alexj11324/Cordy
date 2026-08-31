@@ -19,5 +19,6 @@
 # run:ios only — prebuild takes the same flags for every variant.
 set -euo pipefail
 
+node "$(dirname "$0")/disable-ios-source-build.mjs"
 pnpm exec expo prebuild -p ios --no-install
 exec pnpm exec expo run:ios "$@"
