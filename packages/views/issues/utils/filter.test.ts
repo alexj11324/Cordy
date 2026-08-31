@@ -87,7 +87,7 @@ describe("filterIssues", () => {
 
   it("filters by 'No executor' only", () => {
     const result = filterIssues(issues, { ...NO_FILTER, includeNoExecutor: true });
-    expect(result.map((i) => i.id)).toEqual(["3"]);
+    expect(result.map((i) => i.id)).toEqual(["1", "3", "4"]);
   });
 
   it("filters by executor + No executor combined", () => {

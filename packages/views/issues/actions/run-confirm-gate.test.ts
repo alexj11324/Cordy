@@ -81,12 +81,8 @@ describe("runConfirmIntent — assign", () => {
 
   it.each([
     ["Backlog", "backlog", undefined],
-    ["Todo", "todo", undefined],
-    ["Blocked", "blocked", undefined],
-    ["In Review", "in_review", undefined],
     ["Done", "done", undefined],
-    ["custom Todo", "rework", undefined],
-    ["category carried by the payload", "anything", "todo" as const],
+    ["category carried by the payload", "anything", "backlog" as const],
   ])("applies directly for %s because assigning there does not start execution", (_label, status, carried) => {
     expect(
       runConfirmIntent(
@@ -95,6 +91,22 @@ describe("runConfirmIntent — assign", () => {
         CATALOG,
       ),
     ).toBeNull();
+  });
+
+  it.each([
+    ["Todo", "todo", undefined],
+    ["Blocked", "blocked", undefined],
+    ["In Review", "in_review", undefined],
+    ["custom Todo", "rework", undefined],
+    ["category carried by the payload", "anything", "todo" as const],
+  ])("confirms assignment for %s because it runs an executor", (_label, status, carried) => {
+    expect(
+      runConfirmIntent(
+        issue({ status, status_category: carried }),
+        { executor_type: "agent", executor_id: "a-2" },
+        CATALOG,
+      ),
+    ).toEqual({ issueIds: ["issue-1"], mode: "assign", executorType: "agent", executorId: "a-2" });
   });
 
   it("confirms when the issue's own category is unresolvable", () => {
@@ -115,10 +127,9 @@ describe("runConfirmIntent — assign", () => {
 describe("runConfirmIntent — promote", () => {
   it.each([
     ["Backlog", "backlog", "in_progress"],
-    ["Todo", "todo", "in_progress"],
-    ["Blocked", "blocked", "in_progress"],
-    ["custom Todo origin", "rework", "in_progress"],
-    ["custom In Progress target", "todo", "doing"],
+    ["Backlog to Todo", "backlog", "todo"],
+    ["Backlog to Blocked", "backlog", "blocked"],
+    ["custom Backlog origin", "later", "in_progress"],
   ])("confirms the promotion (%s)", (_label, from, to) => {
     expect(runConfirmIntent(issue({ status: from }), { status: to }, CATALOG)).toEqual({
       issueIds: ["issue-1"],
@@ -137,8 +148,10 @@ describe("runConfirmIntent — promote", () => {
 
   it.each([
     ["no executor", { status: "todo", executor_type: null, executor_id: null }, "in_progress"],
-    ["Backlog to Todo", { status: "backlog" }, "todo"],
     ["Backlog to custom Todo", { status: "backlog" }, "rework"],
+    ["Todo to In Progress", { status: "todo" }, "in_progress"],
+    ["Blocked to In Progress", { status: "blocked" }, "in_progress"],
+    ["custom In Progress target", { status: "todo" }, "doing"],
     ["already In Progress", { status: "in_progress" }, "doing"],
     ["closing the issue", { status: "backlog" }, "done"],
     ["cancelling the issue", { status: "backlog" }, "cancelled"],

@@ -326,7 +326,9 @@ export function ManualCreatePanel({
   const { categoryOf: draftStatusCategory } = useIssueStatuses(wsId);
   const draftCategory = draftStatusCategory(status);
   const activeStatusRequiresExecutor =
-    draftCategory === "in_progress" || draftCategory === "in_review";
+    draftCategory === "in_progress" ||
+    draftCategory === "in_review" ||
+    draftCategory === "blocked";
   const reviewStatusRequiresReviewer = draftCategory === "in_review";
   const { data: workspaceProperties = [] } = useQuery(propertyListOptions(wsId));
   const { data: parentIssue } = useQuery({

@@ -79,6 +79,19 @@ export function resolveStatusCategory(
   return category && isIssueStatusCategory(category) ? category : null;
 }
 
+/** Categories whose admission path can start an executor run. Keep this in
+ * sync with the backend `issue_status::runs_executor` contract. */
+const RUNS_EXECUTOR_CATEGORIES: readonly IssueStatusCategory[] = [
+  "todo",
+  "in_progress",
+  "in_review",
+  "blocked",
+];
+
+function runsExecutor(category: IssueStatusCategory | null): boolean {
+  return category !== null && RUNS_EXECUTOR_CATEGORIES.includes(category);
+}
+
 /**
  * Which confirmation, if any, an issue write needs before it is applied.
  *
@@ -86,9 +99,11 @@ export function resolveStatusCategory(
  * directly. Pure so every entry point — issue detail, context menu, table row —
  * routes on one answer instead of re-deriving it (PB-6463).
  *
- * - **assign**: changing the executor while the issue is In Progress.
+ * - **assign**: changing the executor while the issue is in an executable
+ *   category (Todo, In Progress, In Review, or Blocked).
  * - **promote**: admitting an already-executable issue into In Progress.
- *   Backlog, Todo and Blocked never start an agent directly.
+ *   Any transition from a non-executable category into an executable category
+ *   can start an agent directly.
  * - **review**: entering the Review category. The dialog requires a reviewer
  *   different from the current owner and sends status + reviewer atomically.
  *   If a reviewer is already on the issue (or supplied in the same write),
@@ -164,8 +179,8 @@ export function runConfirmIntent(
       };
     }
     if (
-      (target === "in_progress" || target === null) &&
-      issueCategory !== "in_progress" &&
+      (target === null || runsExecutor(target)) &&
+      !runsExecutor(issueCategory) &&
       (nextExecutorType === "agent" || nextExecutorType === "team") &&
       nextExecutorId
     ) {
@@ -182,7 +197,7 @@ export function runConfirmIntent(
   if (
     (updates.executor_type === "agent" || updates.executor_type === "team") &&
     updates.executor_id &&
-    (issueCategory === "in_progress" || issueCategory === null)
+    (runsExecutor(issueCategory) || issueCategory === null)
   ) {
     return {
       issueIds: [issue.id],

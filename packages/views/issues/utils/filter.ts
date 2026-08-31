@@ -148,11 +148,9 @@ export function applyIssueFilters(
         }
         return f.type === issue.executor_type && f.id === issue.executor_id;
       });
-      // "No executor" is the unassigned bucket in the actor picker. A human
-      // owner still counts as assigned work, even though owners and executors
-      // are persisted in separate columns.
-      const matchesNoExecutor =
-        includeNoExecutor && !issue.executor_id && !issue.owner_id;
+      // "No executor" is the unassigned execution bucket. A human owner is
+      // independent from execution and must not exclude an issue here.
+      const matchesNoExecutor = includeNoExecutor && !issue.executor_id;
       if (!matchesSelected && !matchesNoExecutor) return false;
     }
 

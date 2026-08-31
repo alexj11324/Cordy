@@ -95,7 +95,14 @@ export function RolePickerBody({ kind, value, query, onChange }: Props) {
     const all = [...memberRows, ...agentRows, ...teamRows];
     if (q) return all;
     const current = all.find((row) => selected(value, row));
-    return [{ kind: "unassigned" }, ...(current ? [current] : []), ...all.filter((row) => !selected(value, row))];
+    // Reviewers may not be cleared after one has been chosen: the server
+    // requires a concrete reviewer for reassignment while an issue is in
+    // review. Keep the unassigned option for owners and for an empty reviewer
+    // value, matching the web picker contract.
+    const unassigned = kind !== "reviewer" || value === null
+      ? [{ kind: "unassigned" as const }]
+      : [];
+    return [...unassigned, ...(current ? [current] : []), ...all.filter((row) => !selected(value, row))];
   }, [agents, kind, members, query, teams, value]);
 
   return (

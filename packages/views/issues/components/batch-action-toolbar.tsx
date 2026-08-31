@@ -17,7 +17,7 @@ import {
 } from "@patchbay/ui/components/ui/alert-dialog";
 import type { Issue, UpdateIssueRequest } from "@patchbay/core/types";
 import { commonIssueFields } from "@patchbay/core/issues/batch";
-import { issueBehavesAs } from "@patchbay/core/issues";
+import { issueBehavesAs, issueBehavesAsAny } from "@patchbay/core/issues";
 import { useBatchUpdateIssues, useBatchDeleteIssues } from "@patchbay/core/issues/mutations";
 import { useModalStore } from "@patchbay/core/modals";
 import { useWorkspaceId } from "@patchbay/core/hooks";
@@ -117,9 +117,10 @@ export function BatchActionToolbar({
     }
   };
 
-  // Entering In Progress confirms the execution admission. Entering review
-  // first chooses one reviewer who differs from every current executor, then
-  // the modal submits the status + reviewer handoff for the full selection.
+  // Entering an executable category confirms execution admission. Entering
+  // review first chooses one reviewer who differs from every current executor,
+  // then the modal submits the status + reviewer handoff for the full
+  // selection.
   const handleBatchStatus = (updates: Partial<UpdateIssueRequest>) => {
     if (!updates.status) return;
     if (
@@ -154,8 +155,11 @@ export function BatchActionToolbar({
       return;
     }
     if (
-      categoryOf(updates.status) === "in_progress" &&
-      selectedIssues.some((issue) => !issueBehavesAs(issue, "in_progress"))
+      ["todo", "in_progress", "blocked"].includes(categoryOf(updates.status)) &&
+      selectedIssues.some(
+        (issue) =>
+          !issueBehavesAsAny(issue, ["todo", "in_progress", "in_review", "blocked"]),
+      )
     ) {
       const executor = common.executor;
       openModal("issue-run-confirm", {
@@ -173,10 +177,9 @@ export function BatchActionToolbar({
 
   const handleBatchExecutor = (updates: Partial<UpdateIssueRequest>) => {
     if ((updates.executor_type === "agent" || updates.executor_type === "team") && updates.executor_id) {
-      // Executor assignment starts work only for issues already In Progress.
-      // Todo and Blocked remain queued for coordinator admission.
+      // Executor assignment can start work from every executable category.
       const hasRunningIssue = selectedIssues.some((issue) =>
-        issueBehavesAs(issue, "in_progress"),
+        issueBehavesAsAny(issue, ["todo", "in_progress", "in_review", "blocked"]),
       );
       if (hasRunningIssue) {
         openModal("issue-run-confirm", {

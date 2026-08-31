@@ -1228,14 +1228,27 @@ pub async fn apply_dependency_plan(
     // the plan transaction is open, from the workspace's category policy so
     // every root is admitted with a concrete target (or remains explicitly
     // unassigned when an administrator has not configured one yet).
-    let default_execution_agent_id = category_policy_q::get_workspace_issue_category_policy(
-        &mut *tx,
-        workspace_id,
-        issue_status::IN_PROGRESS,
-    )
-    .await
-    .map_err(db_error)?
-    .and_then(|policy| policy.default_execution_agent_id);
+    let configured_default_execution_agent_id =
+        category_policy_q::get_workspace_issue_category_policy(
+            &mut *tx,
+            workspace_id,
+            issue_status::IN_PROGRESS,
+        )
+        .await
+        .map_err(db_error)?
+        .and_then(|policy| policy.default_execution_agent_id);
+    // Policies outlive their referenced agents. Resolve the configured default
+    // through the workspace-scoped agent row and only use it while the agent
+    // is active and has a runtime capable of executing work; stale policy
+    // references behave exactly like an unset default.
+    let default_execution_agent_id = match configured_default_execution_agent_id {
+        Some(agent_id) => agent_q::get_agent_in_workspace(&mut *tx, agent_id, workspace_id)
+            .await
+            .map_err(db_error)?
+            .filter(|agent| agent.archived_at.is_none() && agent.runtime_id.is_some())
+            .map(|_| agent_id),
+        None => None,
+    };
     if let Some(agent_id) = default_execution_agent_id {
         validate_persisted_executor(
             &mut *tx,

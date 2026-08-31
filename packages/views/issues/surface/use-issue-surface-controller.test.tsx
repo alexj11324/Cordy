@@ -1161,13 +1161,13 @@ describe("useIssueSurfaceController", () => {
     );
 
     await waitFor(() => {
-      expect(result.current.tableQuerySpec.filters.executors).toEqual([
+      expect(result.current.tableQuerySpec.filters.actors).toEqual([
         { type: "agent", id: "agent-1" },
         { type: "agent", id: "agent-2" },
-      ]);
-      expect(result.current.tableQuerySpec.filters.owners).toEqual([
         { type: "member", id: "member-1" },
       ]);
+      expect(result.current.tableQuerySpec.filters.executors).toBeUndefined();
+      expect(result.current.tableQuerySpec.filters.owners).toBeUndefined();
       expect(result.current.tableQuerySpec.filters.working_issue_ids).toEqual([
         "member-assigned-running-issue",
         "unassigned-running-issue",

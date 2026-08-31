@@ -919,11 +919,70 @@ fn push_table_filters(
             }
         }
     }
+    // The shared actor picker treats human owners and agent/team executors as
+    // one OR set. `owners` and `executors` below intentionally remain
+    // independent AND predicates for callers that need that narrower query;
+    // `actors` is the explicit cross-role union used by the table surface.
+    let actor_union = filters.get("actors");
+    if actor_union.is_some() {
+        let actors = actor_union
+            .and_then(Value::as_array)
+            .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "invalid filters.actors"))?;
+        let include_no_executor = filters
+            .get("include_no_executor")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if actors.is_empty() && !include_no_executor {
+            builder.push(" AND FALSE");
+        } else {
+            builder.push(" AND (");
+            let mut has_clause = false;
+            for actor in actors {
+                let actor_type = actor
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "invalid filters.actors"))?;
+                let id = parse_table_uuid(&actor["id"], "filters.actors")?;
+                if has_clause {
+                    builder.push(" OR ");
+                }
+                match actor_type {
+                    "member" => builder
+                        .push("(i.owner_type='member' AND i.owner_id=")
+                        .push_bind(id)
+                        .push(")"),
+                    "agent" | "team" => builder
+                        .push("(i.executor_type=")
+                        .push_bind(actor_type.to_string())
+                        .push(" AND i.executor_id=")
+                        .push_bind(id)
+                        .push(")"),
+                    _ => {
+                        return Err(error_response(
+                            StatusCode::BAD_REQUEST,
+                            "invalid filters.actors",
+                        ));
+                    }
+                }
+                has_clause = true;
+            }
+            if include_no_executor {
+                if has_clause {
+                    builder.push(" OR ");
+                }
+                builder.push("(i.executor_type IS NULL AND i.executor_id IS NULL)");
+            }
+            builder.push(")");
+        }
+    }
     for (field, type_col, id_col) in [
         ("owners", "owner_type", "owner_id"),
         ("executors", "executor_type", "executor_id"),
         ("creators", "creator_type", "creator_id"),
     ] {
+        if actor_union.is_some() && matches!(field, "owners" | "executors") {
+            continue;
+        }
         if let Some(actors) = filters.get(field).and_then(Value::as_array) {
             if actors.is_empty() && matches!(field, "owners" | "executors") {
                 builder.push(" AND FALSE");

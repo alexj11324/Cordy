@@ -4,8 +4,8 @@ import type { Issue, UpdateIssueRequest } from "@patchbay/core/types";
 import { BatchActionToolbar } from "./batch-action-toolbar";
 
 // Batch writes use the same category scheduling contract as single-issue
-// writes: In Progress starts execution, In Review starts review, and the
-// queue/terminal categories apply directly.
+// writes: Todo, In Progress, In Review, and Blocked can start execution;
+// Backlog and terminal categories apply directly.
 
 const selection = vi.hoisted(() => ({
   selectedIds: new Set<string>(),
@@ -110,7 +110,7 @@ beforeEach(() => {
 
 describe("BatchActionToolbar status routing (PB-4155)", () => {
   it("applies non-running, non-review status targets directly", () => {
-    for (const status of ["todo", "blocked", ...TERMINAL_STATUSES, "backlog"]) {
+    for (const status of [...TERMINAL_STATUSES, "backlog"]) {
       batchUpdate.mockClear();
       openModal.mockClear();
       // A backlog issue in the selection is the case that historically could
@@ -121,6 +121,31 @@ describe("BatchActionToolbar status routing (PB-4155)", () => {
       expect(batchUpdate).toHaveBeenCalledWith({ ids: ["a"], updates: { status } });
       unmount();
     }
+  });
+
+  it.each(["todo", "blocked"])("confirms admission into %s", (status) => {
+    render(
+      <BatchActionToolbar
+        issues={[
+          makeIssue({
+            status: "backlog",
+            executor_type: "agent",
+            executor_id: "agent-1",
+          }),
+        ]}
+      />,
+    );
+    fireEvent.click(screen.getByTestId(`status-${status}`));
+    expect(openModal).toHaveBeenCalledWith(
+      "issue-run-confirm",
+      expect.objectContaining({
+        issueIds: ["a"],
+        mode: "promote",
+        status,
+        executorType: "agent",
+        executorId: "agent-1",
+      }),
+    );
   });
 
   it("confirms admission into In Progress", () => {
@@ -180,14 +205,14 @@ describe("BatchActionToolbar status routing (PB-4155)", () => {
     expect(batchUpdate).not.toHaveBeenCalled();
   });
 
-  it("assigns an executor in Todo without starting a run", () => {
-    render(<BatchActionToolbar issues={[makeIssue({ status: "todo" })]} />);
+  it.each(["todo", "blocked", "in_review"])("confirms assigning an executor in %s", (status) => {
+    render(<BatchActionToolbar issues={[makeIssue({ status: status as Issue["status"] })]} />);
     fireEvent.click(screen.getByTestId("assign-agent"));
-    expect(openModal).not.toHaveBeenCalled();
-    expect(batchUpdate).toHaveBeenCalledWith({
-      ids: ["a"],
-      updates: { executor_type: "agent", executor_id: "agent-1" },
-    });
+    expect(openModal).toHaveBeenCalledWith(
+      "issue-run-confirm",
+      expect.objectContaining({ issueIds: ["a"], mode: "assign", executorType: "agent", executorId: "agent-1" }),
+    );
+    expect(batchUpdate).not.toHaveBeenCalled();
   });
 
   it("applies member assignment directly (never starts a run)", () => {

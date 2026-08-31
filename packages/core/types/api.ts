@@ -320,6 +320,8 @@ export type IssueTableScope =
 export interface IssueTableFilters {
   statuses?: IssueStatus[];
   priorities?: IssuePriority[];
+  /** One OR predicate spanning human owners and agent/team executors. */
+  actors?: IssueActorRef[];
   owners?: IssueOwnerRef[];
   include_no_owner?: boolean;
   executors?: IssueExecutorRef[];

@@ -510,13 +510,30 @@ export function useIssueSurfaceController({
         ? [{ type: filter.type, id: filter.id }]
         : [],
     );
+    // The picker presents owners and executors as one actor set (OR). The
+    // table API's `owners` and `executors` fields are independent predicates
+    // (AND), so use its explicit union field whenever a selection crosses the
+    // role boundary or combines an owner with the no-executor bucket.
+    const actorUnion = executorFilters.map((filter) => ({
+      type: filter.type,
+      id: filter.id,
+    }));
+    const useActorUnion =
+      ownerFilters.length > 0 &&
+      (executionFilters.length > 0 || includeNoExecutor);
     return {
       scope: queryScope,
       filters: {
         ...(statusFilters.length > 0 ? { statuses: statusFilters } : {}),
         ...(priorityFilters.length > 0 ? { priorities: priorityFilters } : {}),
-        ...(ownerFilters.length > 0 ? { owners: ownerFilters } : {}),
-        ...(executionFilters.length > 0 ? { executors: executionFilters } : {}),
+        ...(useActorUnion
+          ? { actors: actorUnion }
+          : ownerFilters.length > 0
+            ? { owners: ownerFilters }
+            : {}),
+        ...(!useActorUnion && executionFilters.length > 0
+          ? { executors: executionFilters }
+          : {}),
         ...(includeNoExecutor ? { include_no_executor: true } : {}),
         ...(creatorFilters.length > 0 ? { creators: creatorFilters } : {}),
         ...(viewProjectFilters.length > 0

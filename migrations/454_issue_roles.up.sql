@@ -16,7 +16,7 @@ WHERE assignee_type = 'member';
 UPDATE issue
 SET status = 'todo'
 WHERE assignee_type = 'member'
-  AND issue_effective_status(workspace_id, status) IN ('in_progress', 'in_review');
+  AND issue_effective_status(workspace_id, status) IN ('in_progress', 'in_review', 'blocked');
 
 UPDATE issue
 SET assignee_type = NULL,
