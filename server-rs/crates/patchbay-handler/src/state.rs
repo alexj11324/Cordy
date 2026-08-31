@@ -1073,6 +1073,30 @@ impl HandlerState {
                 .unwrap_or(false)
     }
 
+    /// Returns the rollout scope used by the Linear pull worker when it
+    /// claims durable Inbox rows. `None` means the explicit `*` allowlist is
+    /// active; `Some(empty)` deliberately claims nothing when the deployment
+    /// has an invalid or empty workspace allowlist. Filtering at claim time
+    /// prevents a worker from acknowledging another workspace's receipt just
+    /// because the global feature flag is enabled.
+    pub fn linear_pull_import_workspace_filter(&self) -> Option<Vec<uuid::Uuid>> {
+        let allowlist = std::env::var("PATCHBAY_LINEAR_PULL_IMPORT_WORKSPACES")
+            .unwrap_or_default();
+        if allowlist
+            .split(',')
+            .map(str::trim)
+            .any(|entry| entry == "*")
+        {
+            return None;
+        }
+        Some(
+            allowlist
+                .split(',')
+                .filter_map(|entry| uuid::Uuid::parse_str(entry.trim()).ok())
+                .collect(),
+        )
+    }
+
     /// Prepares the Linear pull/import worker without spawning it. Production
     /// owns the returned runtime and calls this only after final wiring.
     pub fn prepare_linear_sync_worker(

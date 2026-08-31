@@ -10,12 +10,12 @@ use std::time::Duration;
 
 use chrono::{DateTime, NaiveDate, Utc};
 use patchbay_db::models::{
-    LinearConnection, LinearIssueLink, LinearProjectBinding, LinearSyncInbox,
+    Issue, LinearConnection, LinearIssueLink, LinearProjectBinding, LinearSyncInbox,
 };
 use patchbay_db::queries::{issue as issue_q, linear as linear_q};
 use patchbay_service::issue_service::{
-    ExternalIssuePatch, ExternalSource, IssueCommand, IssueCreateError, IssueCreateOpts,
-    IssueCreateParams,
+    ExternalIssueError, ExternalIssuePatch, ExternalSource, IssueCommand, IssueCreateError,
+    IssueCreateOpts, IssueCreateParams,
 };
 use serde_json::{json, Value};
 use tokio::sync::Notify;
@@ -122,16 +122,73 @@ impl LinearSyncWorker {
         if !self.state.linear_pull_import_enabled_for_any_workspace() {
             return Ok(false);
         }
-        let _ = linear_q::dead_letter_exhausted_sync_inbox(&self.state.pool).await?;
-        let Some(row) = linear_q::claim_sync_inbox(&self.state.pool, worker_id, 1, LEASE_SECONDS)
-            .await?
-            .into_iter()
-            .next()
+        let workspace_filter = self.state.linear_pull_import_workspace_filter();
+        let _ = linear_q::dead_letter_exhausted_sync_inbox(
+            &self.state.pool,
+            workspace_filter.as_deref(),
+        )
+        .await?;
+        let Some(row) = linear_q::claim_sync_inbox(
+            &self.state.pool,
+            worker_id,
+            1,
+            LEASE_SECONDS,
+            workspace_filter.as_deref(),
+        )
+        .await?
+        .into_iter()
+        .next()
         else {
             return Ok(false);
         };
 
-        match self.process_row(&row).await {
+        // Initial imports fetch a complete remote project and can outlive the
+        // claim lease. Renew independently of the business operation; the
+        // completion/retry SQL still verifies the lease owner and expiry.
+        let renew_cancel = CancellationToken::new();
+        let renew_task = {
+            let pool = self.state.pool.clone();
+            let inbox_id = row.id;
+            let worker_id = worker_id.to_string();
+            let cancel = renew_cancel.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(20));
+                loop {
+                    tokio::select! {
+                        _ = cancel.cancelled() => return,
+                        _ = interval.tick() => {
+                            match linear_q::renew_claimed_sync_inbox(
+                                &pool,
+                                inbox_id,
+                                &worker_id,
+                                LEASE_SECONDS,
+                            ).await {
+                                Ok(true) => {}
+                                Ok(false) => {
+                                    tracing::warn!(
+                                        inbox_id = %inbox_id,
+                                        worker_id,
+                                        "Linear Inbox lease renewal lost ownership"
+                                    );
+                                    return;
+                                }
+                                Err(error) => tracing::warn!(
+                                    inbox_id = %inbox_id,
+                                    worker_id,
+                                    %error,
+                                    "Linear Inbox lease renewal failed"
+                                ),
+                            }
+                        }
+                    }
+                }
+            })
+        };
+        let result = self.process_row(&row).await;
+        renew_cancel.cancel();
+        let _ = renew_task.await;
+
+        match result {
             Ok(()) => {
                 let owned =
                     linear_q::complete_claimed_sync_inbox(&self.state.pool, row.id, worker_id)
@@ -331,14 +388,26 @@ impl LinearSyncWorker {
             )
             .await
             .map_err(SyncError::retry)?;
-            self.apply_remote_issue(
+            match self
+                .apply_remote_issue(
                 connection,
                 remote,
                 existing_link,
                 &format!("{source_prefix}:{issue_id}"),
                 None,
             )
-            .await?;
+            .await
+            {
+                Ok(()) => {}
+                Err(SyncError::Permanent(error)) => {
+                    // One malformed or unmappable Issue must not abort an
+                    // otherwise valid project import. The bad item is
+                    // recorded in the Inbox result and the remaining remote
+                    // snapshot is still imported.
+                    tracing::warn!(%error, issue_id, "skipping permanently invalid Linear import item");
+                }
+                Err(error) => return Err(error),
+            }
         }
         Ok(())
     }
@@ -361,23 +430,57 @@ impl LinearSyncWorker {
                     "Linear issue has no project and is outside project bindings"
                 ))
             })?;
-        let binding = if let Some(link) = existing_link.as_ref() {
-            linear_q::get_project_binding(
+        let (binding, needs_rebind) = if let Some(link) = existing_link.as_ref() {
+            let current_binding = linear_q::get_project_binding(
                 &self.state.pool,
                 connection.workspace_id,
                 link.binding_id,
             )
             .await
-            .map_err(SyncError::retry)?
+            .map_err(SyncError::retry)?;
+            if current_binding
+                .as_ref()
+                .is_some_and(|binding| binding.linear_project_id == linear_project_id)
+            {
+                (current_binding, false)
+            } else {
+                let destination = linear_q::get_binding_for_remote_project(
+                    &self.state.pool,
+                    connection.workspace_id,
+                    connection.id,
+                    linear_project_id,
+                )
+                .await
+                .map_err(SyncError::retry)?;
+                let destination_can_receive = destination
+                    .as_ref()
+                    .map(inbound_enabled)
+                    .unwrap_or(true);
+                if destination_can_receive {
+                    (destination, true)
+                } else {
+                    let _ = linear_q::mark_linear_issue_link_deleted(
+                        &self.state.pool,
+                        link.id,
+                        connection.workspace_id,
+                    )
+                    .await
+                    .map_err(SyncError::retry)?;
+                    return Ok(());
+                }
+            }
         } else {
-            linear_q::get_binding_for_remote_project(
+            (
+                linear_q::get_binding_for_remote_project(
                 &self.state.pool,
                 connection.workspace_id,
                 connection.id,
                 linear_project_id,
             )
             .await
-            .map_err(SyncError::retry)?
+            .map_err(SyncError::retry)?,
+                false,
+            )
         };
         let Some(binding) = binding else {
             // A connected organization can have many projects. Unbound Issues
@@ -388,16 +491,11 @@ impl LinearSyncWorker {
         if !inbound_enabled(&binding) {
             return Ok(());
         }
-        if binding.linear_project_id != linear_project_id {
-            return Err(SyncError::permanent(anyhow::anyhow!(
-                "Linear issue project does not match its binding"
-            )));
-        }
         let remote_uuid = remote
             .id
             .parse::<Uuid>()
             .map_err(|_| SyncError::permanent(anyhow::anyhow!("Linear issue id is not a UUID")))?;
-        let status = map_remote_status(&binding, remote.state.as_ref())?;
+        let mapped_status = map_remote_status(&binding, remote.state.as_ref())?;
         let priority = map_remote_priority(remote.priority)?;
         let due_date = remote
             .due_date
@@ -409,17 +507,51 @@ impl LinearSyncWorker {
             })
             .transpose()?;
         let remote_updated_at = parse_remote_timestamp(&remote.updated_at)?;
+        let event_timestamp_ms = event_timestamp_ms.or_else(|| {
+            Some(remote_updated_at.timestamp_millis())
+        });
+        if is_out_of_order(existing_link.as_ref(), event_timestamp_ms) {
+            return Ok(());
+        }
         let snapshot = serde_json::to_value(&remote).map_err(|error| {
             SyncError::permanent(anyhow::anyhow!("serialize Linear snapshot: {error}"))
         })?;
+        let linked_issue = if let Some(link) = existing_link.as_ref() {
+            issue_q::get_issue_in_workspace(
+                &self.state.pool,
+                link.patchbay_issue_id,
+                connection.workspace_id,
+            )
+            .await
+            .map_err(SyncError::retry)?
+        } else {
+            None
+        };
+        let mapped_category =
+            patchbay_service::issue_status::effective(&self.state.pool, connection.workspace_id, &mapped_status)
+                .await;
+        let import_status = if import_status_is_inadmissible(
+            &mapped_category,
+            linked_issue.as_ref(),
+        ) {
+            tracing::warn!(
+                issue_id = %remote.id,
+                mapped_status,
+                "parking imported Linear issue until its Cordy assignments are admissible"
+            );
+            patchbay_service::issue_status::BACKLOG.to_string()
+        } else {
+            mapped_status.clone()
+        };
+        let remote_patch = ExternalIssuePatch {
+            title: Some(remote.title.clone()),
+            description: Some(remote.description.clone()),
+            status: Some(import_status),
+            priority: Some(priority.clone()),
+            due_date: Some(due_date),
+            project_id: Some(Some(binding.patchbay_project_id)),
+        };
         let issue = if let Some(link) = existing_link.as_ref() {
-            let patch = ExternalIssuePatch {
-                title: Some(remote.title.clone()),
-                description: Some(remote.description.clone()),
-                status: Some(status),
-                priority: Some(priority),
-                due_date: Some(due_date),
-            };
             self.state
                 .issues
                 .apply_external_patch(
@@ -430,11 +562,11 @@ impl LinearSyncWorker {
                         source_event_id: source_event_id.to_string(),
                         expected_revision: None,
                         suppress_external_outbox: true,
-                        patch,
+                        patch: remote_patch.clone(),
                     },
                 )
                 .await
-                .map_err(|error| SyncError::retry(anyhow::anyhow!(error)))?
+                .map_err(classify_external_issue_error)?
         } else {
             let existing_issue = issue_q::get_issue_by_origin(
                 &self.state.pool,
@@ -445,7 +577,21 @@ impl LinearSyncWorker {
             .await
             .map_err(SyncError::retry)?;
             if let Some(issue) = existing_issue {
-                issue
+                self.state
+                    .issues
+                    .apply_external_patch(
+                        connection.workspace_id,
+                        issue.id,
+                        IssueCommand::ApplyExternalPatch {
+                            source: ExternalSource::Linear,
+                            source_event_id: source_event_id.to_string(),
+                            expected_revision: None,
+                            suppress_external_outbox: true,
+                            patch: remote_patch,
+                        },
+                    )
+                    .await
+                    .map_err(classify_external_issue_error)?
             } else {
                 if remote.title.trim().is_empty() || remote.identifier.trim().is_empty() {
                     return Err(SyncError::permanent(anyhow::anyhow!(
@@ -460,7 +606,10 @@ impl LinearSyncWorker {
                             workspace_id: connection.workspace_id,
                             title: remote.title.clone(),
                             description: remote.description.clone(),
-                            status,
+                            status: remote_patch
+                                .status
+                                .clone()
+                                .unwrap_or_else(|| patchbay_service::issue_status::BACKLOG.to_string()),
                             priority,
                             creator_type: "member".to_string(),
                             creator_id: connection.created_by_id,
@@ -515,7 +664,7 @@ impl LinearSyncWorker {
             }
         };
 
-        let link = if let Some(link) = existing_link {
+        let mut link = if let Some(link) = existing_link {
             link
         } else if let Some(link) = linear_q::find_linear_issue_link(
             &self.state.pool,
@@ -563,6 +712,22 @@ impl LinearSyncWorker {
                 })?
             }
         };
+        if needs_rebind && link.binding_id != binding.id {
+            let rebound = linear_q::rebind_linear_issue_link(
+                &self.state.pool,
+                link.id,
+                connection.workspace_id,
+                binding.id,
+            )
+            .await
+            .map_err(SyncError::retry)?;
+            if !rebound {
+                return Err(SyncError::retry(anyhow::anyhow!(
+                    "Linear Issue Link disappeared during project rebind"
+                )));
+            }
+            link.binding_id = binding.id;
+        }
         let last_event_at_ms = event_timestamp_ms.or(link.last_remote_event_at_ms);
         let last_event_id = event_timestamp_ms
             .map(|_| source_event_id)
@@ -580,6 +745,18 @@ impl LinearSyncWorker {
         .await
         .map_err(SyncError::retry)?;
         if !updated {
+            if let Some(current) = linear_q::find_linear_issue_link(
+                &self.state.pool,
+                connection.workspace_id,
+                connection.id,
+                &remote.id,
+            )
+            .await
+            .map_err(SyncError::retry)?
+            && is_out_of_order(Some(&current), event_timestamp_ms)
+            {
+                return Ok(());
+            }
             return Err(SyncError::retry(anyhow::anyhow!(
                 "Linear Issue Link disappeared during update"
             )));
@@ -636,7 +813,7 @@ impl LinearSyncWorker {
                 },
             )
             .await
-            .map_err(|error| SyncError::retry(anyhow::anyhow!(error)))?;
+            .map_err(classify_external_issue_error)?;
         let snapshot = json!({
             "linear_issue_id": linear_issue_id,
             "deleted": true,
@@ -658,6 +835,18 @@ impl LinearSyncWorker {
         .await
         .map_err(SyncError::retry)?;
         if !updated {
+            if let Some(current) = linear_q::find_linear_issue_link(
+                &self.state.pool,
+                connection.workspace_id,
+                connection.id,
+                linear_issue_id,
+            )
+            .await
+            .map_err(SyncError::retry)?
+            && is_out_of_order(Some(&current), event_timestamp_ms)
+            {
+                return Ok(());
+            }
             return Err(SyncError::retry(anyhow::anyhow!(
                 "Linear deletion link update lost its row"
             )));
@@ -676,6 +865,18 @@ fn retry_delay(attempts: i32) -> chrono::Duration {
 
 fn inbound_enabled(binding: &LinearProjectBinding) -> bool {
     binding.status == "active" && matches!(binding.sync_mode.as_str(), "import" | "two_way")
+}
+
+fn import_status_is_inadmissible(category: &str, issue: Option<&Issue>) -> bool {
+    let Some(issue) = issue else {
+        return patchbay_service::issue_status::requires_executor(category)
+            || patchbay_service::issue_status::requires_reviewer(category);
+    };
+    let has_executor = issue.executor_type.is_some() && issue.executor_id.is_some();
+    let has_reviewer = issue.reviewer_type.is_some() && issue.reviewer_id.is_some();
+    (patchbay_service::issue_status::requires_executor(category) && !has_executor)
+        || (patchbay_service::issue_status::requires_reviewer(category)
+            && (!has_reviewer || issue.reviewer_id == issue.executor_id))
 }
 
 fn extract_issue_id(payload: &Value) -> Option<String> {
@@ -781,6 +982,26 @@ fn classify_token_error(error: LinearTokenError, context: &str) -> SyncError {
             "{context}: Linear returned an invalid protocol response"
         )),
         other => SyncError::retry(anyhow::anyhow!("{context}: {other}")),
+    }
+}
+
+fn classify_external_issue_error(error: ExternalIssueError) -> SyncError {
+    let permanent = matches!(
+        &error,
+        ExternalIssueError::MissingSourceEvent
+            | ExternalIssueError::ExternalOutboxNotSuppressed
+            | ExternalIssueError::NotFound
+            | ExternalIssueError::InvalidStatus
+            | ExternalIssueError::InvalidPriority
+            | ExternalIssueError::ProjectNotFound
+            | ExternalIssueError::ActiveExecutorRequired
+            | ExternalIssueError::ReviewReviewerRequired
+    );
+    let message = error.to_string();
+    if permanent {
+        SyncError::permanent(anyhow::anyhow!(message))
+    } else {
+        SyncError::retry(anyhow::anyhow!(message))
     }
 }
 

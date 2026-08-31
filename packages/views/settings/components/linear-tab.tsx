@@ -320,10 +320,12 @@ function BindingWizard({
         : await api.createLinearBinding(workspaceId, body);
       const shouldQueueInitialImport =
         pullImportEnabled &&
-        draft.syncMode === "import" &&
+        (draft.syncMode === "import" ||
+          (draft.syncMode === "two_way" && draft.initialSourceOfTruth === "linear")) &&
         (!selectedBinding ||
           selectedBinding.status !== "active" ||
-          selectedBinding.sync_mode !== "import");
+          selectedBinding.sync_mode !== draft.syncMode ||
+          selectedBinding.initial_source_of_truth !== draft.initialSourceOfTruth);
       if (shouldQueueInitialImport && savedBinding.status === "active") {
         await api.enqueueLinearInitialImport(workspaceId, savedBinding.id);
       }

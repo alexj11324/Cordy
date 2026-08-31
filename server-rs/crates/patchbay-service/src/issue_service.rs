@@ -125,6 +125,17 @@ impl IssueService {
         if let Some(due_date) = patch.due_date {
             next.due_date = due_date;
         }
+        if let Some(project_id) = patch.project_id {
+            if let Some(project_id) = project_id {
+                if get_project_in_workspace(&mut *tx, project_id, workspace_id)
+                    .await?
+                    .is_none()
+                {
+                    return Err(ExternalIssueError::ProjectNotFound);
+                }
+            }
+            next.project_id = project_id;
+        }
         let next_category = issue_status::effective(&mut *tx, workspace_id, &next.status).await;
         validate_external_workflow(
             &next_category,
@@ -138,6 +149,7 @@ impl IssueService {
             && next.status == previous.status
             && next.priority == previous.priority
             && next.due_date == previous.due_date
+            && next.project_id == previous.project_id
         {
             tx.commit().await?;
             return Ok(previous);
@@ -150,6 +162,7 @@ impl IssueService {
                status = $5,
                priority = $6,
                due_date = $7,
+               project_id = $8,
                revision = revision + 1,
                last_activity_at = GREATEST(COALESCE(last_activity_at, updated_at), now()),
                updated_at = now()
@@ -163,6 +176,7 @@ impl IssueService {
         .bind(&next.status)
         .bind(&next.priority)
         .bind(next.due_date)
+        .bind(next.project_id)
         .fetch_one(&mut *tx)
         .await?;
         activity::create_activity(
@@ -176,6 +190,12 @@ impl IssueService {
                 "source": source.as_str(),
                 "source_event_id": source_event_id,
                 "suppress_external_outbox": true,
+                "prev_title": previous.title,
+                "prev_description": previous.description,
+                "prev_status": previous.status,
+                "prev_priority": previous.priority,
+                "prev_due_date": previous.due_date.map(|date| date.format("%Y-%m-%d").to_string()),
+                "prev_project_id": previous.project_id.map(|id| id.to_string()),
             }),
             new_v7(),
         )
@@ -203,14 +223,65 @@ impl IssueService {
                 "executor_changed": false,
                 "status_changed": previous.status != updated.status,
                 "priority_changed": previous.priority != updated.priority,
-                "project_changed": false,
+                "project_changed": previous.project_id != updated.project_id,
                 "title_changed": previous.title != updated.title,
                 "description_changed": previous.description != updated.description,
                 "due_date_changed": previous.due_date != updated.due_date,
+                "prev_title": previous.title,
+                "prev_description": previous.description,
+                "prev_status": previous.status,
+                "prev_priority": previous.priority,
+                "prev_due_date": previous.due_date.map(|date| date.format("%Y-%m-%d").to_string()),
+                "prev_project_id": previous.project_id.map(|id| id.to_string()),
             }),
             task_id: String::new(),
             chat_session_id: String::new(),
         });
+
+        // Applying an external status transition must retain the same run
+        // admission semantics as a first-party update. The external command
+        // suppresses only the Linear outbox; local task side effects remain
+        // domain-owned and are intentionally best-effort after commit.
+        if let Some(trigger) = self
+            .will_enqueue_run(
+                IssueTriggerInput {
+                    issue: updated.clone(),
+                    prev_status: previous.status.clone(),
+                    is_create: false,
+                    executor_changed: false,
+                    status_changed: previous.status != updated.status,
+                },
+                IssueTriggerProbe {
+                    can_access_agent: None,
+                    is_self_loop: None,
+                    suppress_active_self_assignment: None,
+                },
+            )
+            .await
+        {
+            let enqueue = if trigger.executor_type == "team" {
+                self.task_svc
+                    .enqueue_task_for_team_leader_with_handoff(
+                        &updated,
+                        trigger.agent_id,
+                        updated.executor_id.unwrap_or_default(),
+                        "",
+                        None,
+                    )
+                    .await
+            } else {
+                self.task_svc
+                    .enqueue_task_for_issue_with_handoff(&updated, "", None)
+                    .await
+            };
+            if let Err(error) = enqueue {
+                tracing::warn!(
+                    issue_id = %updated.id,
+                    %error,
+                    "failed to enqueue task after external issue update"
+                );
+            }
+        }
         Ok(updated)
     }
 }
@@ -358,6 +429,10 @@ pub struct ExternalIssuePatch {
     pub priority: Option<String>,
     /// `Some(None)` clears the due date; `None` leaves it untouched.
     pub due_date: Option<Option<chrono::NaiveDate>>,
+    /// `Some(None)` clears the Project; `None` leaves it untouched. A remote
+    /// binding normally supplies a concrete workspace-local Project, but the
+    /// tri-state keeps the domain command explicit for future providers.
+    pub project_id: Option<Option<Uuid>>,
 }
 
 #[derive(Debug, Clone)]
@@ -385,6 +460,8 @@ pub enum ExternalIssueError {
     InvalidStatus,
     #[error("invalid external issue priority")]
     InvalidPriority,
+    #[error("external issue project not found in workspace")]
+    ProjectNotFound,
     #[error("external issue status requires an executor")]
     ActiveExecutorRequired,
     #[error("external issue review status requires a reviewer different from the executor")]

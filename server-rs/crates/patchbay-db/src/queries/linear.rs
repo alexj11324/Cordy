@@ -463,6 +463,7 @@ pub async fn claim_sync_inbox(
     worker_id: &str,
     limit: i64,
     lease_seconds: i64,
+    workspace_ids: Option<&[Uuid]>,
 ) -> anyhow::Result<Vec<LinearSyncInbox>> {
     Ok(sqlx::query_as::<_, LinearSyncInbox>(
         r#"WITH picked AS (
@@ -473,6 +474,15 @@ pub async fn claim_sync_inbox(
                  AND available_at <= now()
                  AND attempts < max_attempts
                  AND (locked_until IS NULL OR locked_until < now())
+                 AND (
+                     $4::uuid[] IS NULL
+                     OR EXISTS (
+                         SELECT 1
+                         FROM linear_connection
+                         WHERE linear_connection.id = linear_sync_inbox.connection_id
+                           AND linear_connection.workspace_id = ANY($4::uuid[])
+                     )
+                 )
                ORDER BY available_at, received_at, id
                FOR UPDATE SKIP LOCKED
                LIMIT $1
@@ -492,8 +502,32 @@ pub async fn claim_sync_inbox(
     .bind(limit.clamp(1, 100))
     .bind(worker_id)
     .bind(lease_seconds.max(1))
+    .bind(workspace_ids.map(|ids| ids.to_vec()))
     .fetch_all(executor)
     .await?)
+}
+
+pub async fn renew_claimed_sync_inbox(
+    executor: impl Executor<'_, Database = Postgres>,
+    id: Uuid,
+    worker_id: &str,
+    lease_seconds: i64,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"UPDATE linear_sync_inbox
+           SET locked_until = now() + ($3 * interval '1 second')
+           WHERE id = $1
+             AND processed_at IS NULL
+             AND dead_lettered_at IS NULL
+             AND locked_by = $2
+             AND locked_until > now()"#,
+    )
+    .bind(id)
+    .bind(worker_id)
+    .bind(lease_seconds.max(1))
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() == 1)
 }
 
 /// Rows whose last worker died after claim are dead-lettered once their retry
@@ -501,6 +535,7 @@ pub async fn claim_sync_inbox(
 /// selected forever after its lease expires.
 pub async fn dead_letter_exhausted_sync_inbox(
     executor: impl Executor<'_, Database = Postgres>,
+    workspace_ids: Option<&[Uuid]>,
 ) -> anyhow::Result<u64> {
     let result = sqlx::query(
         r#"UPDATE linear_sync_inbox
@@ -511,8 +546,18 @@ pub async fn dead_letter_exhausted_sync_inbox(
            WHERE processed_at IS NULL
              AND dead_lettered_at IS NULL
              AND attempts >= max_attempts
-             AND (locked_until IS NULL OR locked_until < now())"#,
+             AND (locked_until IS NULL OR locked_until < now())
+             AND (
+                 $1::uuid[] IS NULL
+                 OR EXISTS (
+                     SELECT 1
+                     FROM linear_connection
+                     WHERE linear_connection.id = linear_sync_inbox.connection_id
+                       AND linear_connection.workspace_id = ANY($1::uuid[])
+                 )
+             )"#,
     )
+    .bind(workspace_ids.map(|ids| ids.to_vec()))
     .execute(executor)
     .await?;
     Ok(result.rows_affected())
@@ -751,7 +796,13 @@ pub async fn update_linear_issue_link(
                last_remote_event_id = $6,
                sync_status = $7,
                updated_at = now()
-           WHERE id = $1 AND workspace_id = $2"#,
+           WHERE id = $1
+             AND workspace_id = $2
+             AND (
+                 $5::bigint IS NULL
+                 OR last_remote_event_at_ms IS NULL
+                 OR $5::bigint > last_remote_event_at_ms
+             )"#,
     )
     .bind(link_id)
     .bind(workspace_id)
@@ -760,6 +811,25 @@ pub async fn update_linear_issue_link(
     .bind(last_remote_event_at_ms)
     .bind(last_remote_event_id)
     .bind(sync_status)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn rebind_linear_issue_link(
+    executor: impl Executor<'_, Database = Postgres>,
+    link_id: Uuid,
+    workspace_id: Uuid,
+    binding_id: Uuid,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"UPDATE linear_issue_link
+           SET binding_id = $3, updated_at = now()
+           WHERE id = $1 AND workspace_id = $2 AND sync_status <> 'deleted'"#,
+    )
+    .bind(link_id)
+    .bind(workspace_id)
+    .bind(binding_id)
     .execute(executor)
     .await?;
     Ok(result.rows_affected() == 1)
@@ -938,14 +1008,31 @@ pub async fn tombstone_project_binding(
     workspace_id: Uuid,
     binding_id: Uuid,
 ) -> anyhow::Result<bool> {
-    let result = sqlx::query(
-        r#"UPDATE linear_project_binding
-           SET status = 'tombstone', paused_at = COALESCE(paused_at, now()), updated_at = now()
-           WHERE workspace_id = $1 AND id = $2 AND status <> 'tombstone'"#,
+    let result = sqlx::query_scalar::<_, i64>(
+        r#"WITH target_binding AS (
+               SELECT id
+               FROM linear_project_binding
+               WHERE workspace_id = $1 AND id = $2
+           ), tombstoned_binding AS (
+               UPDATE linear_project_binding
+               SET status = 'tombstone',
+                   paused_at = COALESCE(paused_at, now()),
+                   updated_at = now()
+               WHERE id IN (SELECT id FROM target_binding) AND status <> 'tombstone'
+               RETURNING id
+           ), deleted_links AS (
+               UPDATE linear_issue_link
+               SET sync_status = 'deleted', updated_at = now()
+               WHERE workspace_id = $1
+                 AND binding_id IN (SELECT id FROM target_binding)
+                 AND sync_status <> 'deleted'
+               RETURNING id
+           )
+           SELECT COUNT(*)::bigint FROM target_binding"#,
     )
     .bind(workspace_id)
     .bind(binding_id)
-    .execute(executor)
+    .fetch_one(executor)
     .await?;
-    Ok(result.rows_affected() == 1)
+    Ok(result == 1)
 }
