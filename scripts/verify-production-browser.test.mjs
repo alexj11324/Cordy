@@ -3,11 +3,15 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  buildProductionSmokeDependencyPlan,
   buildGoogleOAuthProbeUrl,
   decodeClerkFrontendApi,
   isExpectedBrowserRequestCancellation,
+  PRODUCTION_SMOKE_DEPENDENT_ACCEPTANCE,
+  PRODUCTION_SMOKE_DEPENDENT_TASK_TITLE,
   requireBrowserReceipt,
   requireGoogleOAuthNavigation,
+  requireProductionSmokeGraph,
   requireProtectedNavigation,
 } from "./verify-production-browser-contract.mjs";
 
@@ -133,26 +137,58 @@ test("reads the settled page URL after Playwright waitForURL", () => {
   assert.doesNotMatch(browserVerifierSource, /downstream\.href/u);
 });
 
-test("accepts either a rendered dependency graph or its honest empty state", () => {
-  assert.match(
-    browserVerifierSource,
-    /landmarkLocator\.or\(page\.getByText\(emptyState, \{ exact: true \}\)\)/u,
-  );
-  assert.match(
-    browserVerifierSource,
-    /landmark: "Dependency graph canvas",\n\s+emptyState: "No active dependency graphs",/u,
-  );
-});
-
 test("ignores expected Chromium navigation cancellations only", () => {
-  assert.equal(
-    isExpectedBrowserRequestCancellation("net::ERR_ABORTED"),
-    true,
-  );
+  assert.equal(isExpectedBrowserRequestCancellation("net::ERR_ABORTED"), true);
   assert.equal(isExpectedBrowserRequestCancellation("net::ERR_FAILED"), false);
   assert.equal(isExpectedBrowserRequestCancellation(undefined), false);
   assert.match(
     browserVerifierSource,
     /if \(isExpectedBrowserRequestCancellation\(failure\?\.errorText\)\) return;/u,
+  );
+});
+
+test("builds the production three-task, two-edge dependency fixture", () => {
+  const parentIssueId = "11111111-1111-4111-8111-111111111111";
+  const plan = buildProductionSmokeDependencyPlan(parentIssueId);
+  assert.equal(plan.parent_issue_id, parentIssueId);
+  assert.equal(plan.tasks.length, 3);
+  assert.equal(plan.edges.length, 2);
+  assert.deepEqual(
+    plan.edges.map((edge) => [edge.from, edge.to]),
+    [
+      ["task-1", "task-3"],
+      ["task-2", "task-3"],
+    ],
+  );
+  const dependent = plan.tasks.find((task) => task.temp_id === "task-3");
+  assert.equal(dependent?.title, PRODUCTION_SMOKE_DEPENDENT_TASK_TITLE);
+  assert.deepEqual(dependent?.acceptance_criteria, [
+    PRODUCTION_SMOKE_DEPENDENT_ACCEPTANCE,
+  ]);
+  for (const edge of plan.edges) {
+    const source = plan.tasks.find((task) => task.temp_id === edge.from);
+    assert.ok(source?.outputs.includes(edge.consumed_output));
+  }
+});
+
+test("requires real graph nodes and edges and wires fixture acceptance", () => {
+  assert.doesNotThrow(() =>
+    requireProductionSmokeGraph({ nodeCount: 3, edgeCount: 2 }),
+  );
+  assert.throws(
+    () => requireProductionSmokeGraph({ nodeCount: 2, edgeCount: 2 }),
+    /expected at least 3/u,
+  );
+  assert.throws(
+    () => requireProductionSmokeGraph({ nodeCount: 3, edgeCount: 1 }),
+    /expected at least 2/u,
+  );
+  assert.match(
+    browserVerifierSource,
+    /await ensureSmokeDependencyGraph\(page, workspace\);/u,
+  );
+  assert.match(
+    browserVerifierSource,
+    /verifyContent: \(\) => verifyProductionSmokeTaskGraph\(page\)/u,
   );
 });

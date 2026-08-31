@@ -7,12 +7,17 @@ import { chromium, expect } from "@playwright/test";
 import { clerk, setupClerkTestingToken } from "@clerk/testing/playwright";
 
 import {
+  buildProductionSmokeDependencyPlan,
   buildGoogleOAuthProbeUrl,
   decodeClerkFrontendApi,
   isExpectedBrowserRequestCancellation,
+  PRODUCTION_SMOKE_DEPENDENT_ACCEPTANCE,
+  PRODUCTION_SMOKE_DEPENDENT_TASK_TITLE,
+  PRODUCTION_SMOKE_GRAPH_GOAL,
   requiredString,
   requireBrowserReceipt,
   requireGoogleOAuthNavigation,
+  requireProductionSmokeGraph,
   requireProtectedNavigation,
 } from "./verify-production-browser-contract.mjs";
 
@@ -109,7 +114,7 @@ function observeApplicationFailures(page) {
 async function verifyProtectedRoute(
   page,
   failures,
-  { path, heading, landmark, emptyState, expectedBuild },
+  { path, heading, landmark, expectedBuild, verifyContent },
 ) {
   const failureStart = failures.length;
   const response = await page.goto(`${BASE_URL}${path}`, {
@@ -131,12 +136,11 @@ async function verifyProtectedRoute(
     timeout: 30_000,
   });
   if (landmark) {
-    const landmarkLocator = page.getByLabel(landmark, { exact: true });
-    const surface = emptyState
-      ? landmarkLocator.or(page.getByText(emptyState, { exact: true }))
-      : landmarkLocator;
-    await expect(surface).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByLabel(landmark, { exact: true })).toBeVisible({
+      timeout: 30_000,
+    });
   }
+  if (verifyContent) await verifyContent();
   const routeFailures = failures.slice(failureStart);
   if (routeFailures.length > 0) {
     throw new Error(
@@ -241,6 +245,10 @@ export async function verifyProductionBrowser(sourceSha, receipt) {
     await clerk.loaded({ page });
     await waitForPatchbayExchange(page, () => ticketSignIn(page, signInTicket));
 
+    const workspace = await ensureSmokeWorkspace(page);
+    assert.equal(workspace.slug, SMOKE_WORKSPACE);
+    await ensureSmokeDependencyGraph(page, workspace);
+
     const failures = observeApplicationFailures(page);
     await verifyProtectedRoute(page, failures, {
       path: `/${SMOKE_WORKSPACE}/issues`,
@@ -251,8 +259,8 @@ export async function verifyProductionBrowser(sourceSha, receipt) {
       path: `/${SMOKE_WORKSPACE}/task-graph`,
       heading: "Task Graph",
       landmark: "Dependency graph canvas",
-      emptyState: "No active dependency graphs",
       expectedBuild,
+      verifyContent: () => verifyProductionSmokeTaskGraph(page),
     });
   } catch (error) {
     await page
@@ -352,9 +360,9 @@ async function createTestingToken(secretKey) {
   return requiredString(value?.token, "Clerk testing token");
 }
 
-async function ensureSmokeWorkspace(page) {
+async function authenticatedBrowserRequest(page, path, init = {}) {
   return page.evaluate(
-    async ({ workspaceSlug }) => {
+    async ({ requestPath, requestInit }) => {
       const csrfToken = document.cookie
         .split("; ")
         .find((entry) => entry.startsWith("patchbay_csrf="))
@@ -364,56 +372,141 @@ async function ensureSmokeWorkspace(page) {
       if (!csrfToken) {
         throw new Error("Patchbay session did not issue a readable CSRF token");
       }
-      const request = async (path, init) => {
-        const response = await fetch(path, {
-          ...init,
-          credentials: "include",
-          headers: {
-            "content-type": "application/json",
-            "x-csrf-token": csrfToken,
-            ...init?.headers,
-          },
-        });
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({}));
-          const detail =
-            typeof body.message === "string"
-              ? body.message
-              : typeof body.error === "string"
-                ? body.error
-                : "";
-          const message = detail ? `: ${detail}` : "";
-          throw new Error(`${path} returned HTTP ${response.status}${message}`);
-        }
-        return response.json();
-      };
-      const workspaces = await request("/api/workspaces");
-      let workspace = workspaces.find(
-        (candidate) => candidate.slug === workspaceSlug,
-      );
-      let created = false;
-      if (!workspace) {
-        workspace = await request("/api/workspaces", {
-          method: "POST",
-          body: JSON.stringify({
-            name: "Production Smoke",
-            slug: workspaceSlug,
-            issue_prefix: "SMOKE",
-          }),
-        });
-        created = true;
-      }
-      await request("/api/me/onboarding/complete", {
-        method: "POST",
-        body: JSON.stringify({
-          completion_path: "skip_existing",
-          workspace_id: workspace.id,
-        }),
+      const response = await fetch(requestPath, {
+        ...requestInit,
+        credentials: "include",
+        headers: {
+          "content-type": "application/json",
+          "x-csrf-token": csrfToken,
+          ...requestInit.headers,
+        },
       });
-      return { created, slug: workspace.slug };
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        const detail =
+          typeof body.message === "string"
+            ? body.message
+            : typeof body.error === "string"
+              ? body.error
+              : "";
+        const message = detail ? `: ${detail}` : "";
+        throw new Error(
+          `${requestPath} returned HTTP ${response.status}${message}`,
+        );
+      }
+      return response.json();
     },
-    { workspaceSlug: SMOKE_WORKSPACE },
+    { requestPath: path, requestInit: init },
   );
+}
+
+async function ensureSmokeWorkspace(page) {
+  const workspaces = await authenticatedBrowserRequest(page, "/api/workspaces");
+  if (!Array.isArray(workspaces)) {
+    throw new Error("workspace API returned an invalid response");
+  }
+  let workspace = workspaces.find(
+    (candidate) => candidate?.slug === SMOKE_WORKSPACE,
+  );
+  let created = false;
+  if (!workspace) {
+    workspace = await authenticatedBrowserRequest(page, "/api/workspaces", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Production Smoke",
+        slug: SMOKE_WORKSPACE,
+        issue_prefix: "SMOKE",
+      }),
+    });
+    created = true;
+  }
+  const id = requiredString(workspace?.id, "production smoke workspace id");
+  const slug = requiredString(
+    workspace?.slug,
+    "production smoke workspace slug",
+  );
+  await authenticatedBrowserRequest(page, "/api/me/onboarding/complete", {
+    method: "POST",
+    body: JSON.stringify({
+      completion_path: "skip_existing",
+      workspace_id: id,
+    }),
+  });
+  return { created, id, slug };
+}
+
+async function ensureSmokeDependencyGraph(page, workspace) {
+  const workspaceHeaders = { "x-workspace-slug": workspace.slug };
+  const pageOfGraphs = await authenticatedBrowserRequest(
+    page,
+    "/api/dependency-graphs?limit=100",
+    { headers: workspaceHeaders },
+  );
+  if (!Array.isArray(pageOfGraphs?.graphs)) {
+    throw new Error("dependency graph API returned an invalid list response");
+  }
+  const existing = pageOfGraphs.graphs.find(
+    (graph) => graph?.plan?.goal === PRODUCTION_SMOKE_GRAPH_GOAL,
+  );
+  if (existing) {
+    requireProductionSmokeGraph({
+      nodeCount: existing?.nodes?.length,
+      edgeCount: existing?.edges?.length,
+    });
+    return { created: false, graph: existing };
+  }
+
+  const parent = await authenticatedBrowserRequest(page, "/api/issues", {
+    method: "POST",
+    headers: workspaceHeaders,
+    body: JSON.stringify({
+      title: "Production smoke dependency graph",
+      description:
+        "Stable parent issue for automated production task graph acceptance.",
+      status: "todo",
+      priority: "none",
+    }),
+  });
+  const parentIssueId = requiredString(
+    parent?.id,
+    "production smoke graph parent issue id",
+  );
+  const graph = await authenticatedBrowserRequest(
+    page,
+    `/api/issues/${encodeURIComponent(parentIssueId)}/dependency-graph/apply`,
+    {
+      method: "POST",
+      headers: {
+        ...workspaceHeaders,
+        "idempotency-key": `production-smoke-${parentIssueId}`,
+      },
+      body: JSON.stringify(buildProductionSmokeDependencyPlan(parentIssueId)),
+    },
+  );
+  requireProductionSmokeGraph({
+    nodeCount: graph?.nodes?.length,
+    edgeCount: graph?.edges?.length,
+  });
+  return { created: true, graph };
+}
+
+async function verifyProductionSmokeTaskGraph(page) {
+  const nodes = page.locator("[data-graph-node]");
+  const edges = page.locator(
+    '[data-graph-edge][data-edge-state="blocked"], [data-graph-edge][data-edge-state="satisfied"]',
+  );
+  requireProductionSmokeGraph({
+    nodeCount: await nodes.count(),
+    edgeCount: await edges.count(),
+  });
+  const dependentNode = nodes.filter({
+    hasText: PRODUCTION_SMOKE_DEPENDENT_TASK_TITLE,
+  });
+  await expect(dependentNode.first()).toBeVisible({ timeout: 30_000 });
+  await dependentNode.first().click();
+  await expect(
+    page.getByText(PRODUCTION_SMOKE_DEPENDENT_ACCEPTANCE, { exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
 }
 
 async function provisionProductionSmokeFixture() {
@@ -456,9 +549,11 @@ async function provisionProductionSmokeFixture() {
     await waitForPatchbayExchange(page, () => ticketSignIn(page, signInTicket));
     const workspace = await ensureSmokeWorkspace(page);
     assert.equal(workspace.slug, SMOKE_WORKSPACE);
+    const graph = await ensureSmokeDependencyGraph(page, workspace);
     return {
       userState,
       workspaceState: workspace.created ? "created" : "existing",
+      graphState: graph.created ? "created" : "existing",
     };
   } finally {
     await browser.close();
@@ -470,7 +565,7 @@ async function main() {
   if (first === "--provision") {
     const result = await provisionProductionSmokeFixture();
     console.log(
-      `production browser fixture ready (user: ${result.userState}, workspace: ${result.workspaceState})`,
+      `production browser fixture ready (user: ${result.userState}, workspace: ${result.workspaceState}, graph: ${result.graphState})`,
     );
     return;
   }

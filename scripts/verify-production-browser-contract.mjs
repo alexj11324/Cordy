@@ -2,11 +2,85 @@ const SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const HANDOFF_VALUE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/u;
 const GOOGLE_OAUTH_ENTRY = "https://accounts.aspectlylabs.com/oauth/google";
 
+export const PRODUCTION_SMOKE_GRAPH_GOAL =
+  "Verify the production task dependency graph end to end";
+export const PRODUCTION_SMOKE_DEPENDENT_TASK_TITLE =
+  "Production smoke: combine prerequisites";
+export const PRODUCTION_SMOKE_DEPENDENT_ACCEPTANCE =
+  "Both prerequisite outputs are visible before the dependent task can run";
+
 export function requiredString(value, label) {
   if (typeof value !== "string" || value.trim() === "") {
     throw new Error(`${label} is required`);
   }
   return value.trim();
+}
+
+export function buildProductionSmokeDependencyPlan(parentIssueId) {
+  return {
+    goal: PRODUCTION_SMOKE_GRAPH_GOAL,
+    parent_issue_id: requiredString(parentIssueId, "parent issue id"),
+    tasks: [
+      {
+        temp_id: "task-1",
+        title: "Production smoke: first prerequisite",
+        description: "Provide the first independently verifiable graph input.",
+        acceptance_criteria: [
+          "The first prerequisite exposes its validated output",
+        ],
+        context: {},
+        outputs: ["First prerequisite output"],
+      },
+      {
+        temp_id: "task-2",
+        title: "Production smoke: second prerequisite",
+        description: "Provide the second independently verifiable graph input.",
+        acceptance_criteria: [
+          "The second prerequisite exposes its validated output",
+        ],
+        context: {},
+        outputs: ["Second prerequisite output"],
+      },
+      {
+        temp_id: "task-3",
+        title: PRODUCTION_SMOKE_DEPENDENT_TASK_TITLE,
+        description:
+          "Consume both prerequisite outputs through two explicit dependency edges.",
+        acceptance_criteria: [PRODUCTION_SMOKE_DEPENDENT_ACCEPTANCE],
+        context: {},
+        outputs: ["Combined production smoke result"],
+      },
+    ],
+    edges: [
+      {
+        from: "task-1",
+        to: "task-3",
+        type: "hard",
+        reason: "The dependent task requires the first validated input.",
+        consumed_output: "First prerequisite output",
+      },
+      {
+        from: "task-2",
+        to: "task-3",
+        type: "hard",
+        reason: "The dependent task requires the second validated input.",
+        consumed_output: "Second prerequisite output",
+      },
+    ],
+  };
+}
+
+export function requireProductionSmokeGraph({ nodeCount, edgeCount }) {
+  if (!Number.isInteger(nodeCount) || nodeCount < 3) {
+    throw new Error(
+      `production task graph rendered ${nodeCount} nodes, expected at least 3`,
+    );
+  }
+  if (!Number.isInteger(edgeCount) || edgeCount < 2) {
+    throw new Error(
+      `production task graph rendered ${edgeCount} edges, expected at least 2`,
+    );
+  }
 }
 
 export function isExpectedBrowserRequestCancellation(errorText) {
