@@ -775,18 +775,18 @@ pub async fn enqueue_issue_outbox(
     };
     let columns = outbox_columns();
     let query = format!(
-        "INSERT INTO linear_sync_outbox\
-         (id, workspace_id, binding_id, issue_id, event_key, event_type, payload)\
-         SELECT $1, $2, binding.id, $4, $5, $6, $7\
-         FROM linear_project_binding AS binding\
-         WHERE binding.workspace_id = $2\
-           AND binding.patchbay_project_id = $3\
-           AND binding.status = 'active'\
-           AND binding.sync_mode IN ('publish', 'two_way')\
-           AND binding.linear_team_id IS NOT NULL\
-         ORDER BY binding.updated_at DESC, binding.id DESC\
-         LIMIT 1\
-         ON CONFLICT (binding_id, event_key) DO NOTHING\
+        "INSERT INTO linear_sync_outbox \
+         (id, workspace_id, binding_id, issue_id, event_key, event_type, payload) \
+         SELECT $1, $2, binding.id, $4, $5, $6, $7 \
+         FROM linear_project_binding AS binding \
+         WHERE binding.workspace_id = $2 \
+           AND binding.patchbay_project_id = $3 \
+           AND binding.status = 'active' \
+           AND binding.sync_mode IN ('publish', 'two_way') \
+           AND binding.linear_team_id IS NOT NULL \
+         ORDER BY binding.updated_at DESC, binding.id DESC \
+         LIMIT 1 \
+         ON CONFLICT (binding_id, event_key) DO NOTHING \
          RETURNING {columns}"
     );
     Ok(sqlx::query_as::<_, LinearSyncOutbox>(&query)
@@ -812,30 +812,30 @@ pub async fn claim_sync_outbox(
 ) -> anyhow::Result<Vec<LinearSyncOutbox>> {
     let columns = outbox_columns();
     let query = format!(
-        "WITH picked AS (\
-             SELECT outbox.id FROM linear_sync_outbox AS outbox\
-             JOIN linear_project_binding AS binding ON binding.id = outbox.binding_id\
-             JOIN linear_connection AS connection ON connection.id = binding.connection_id\
-             WHERE outbox.processed_at IS NULL\
-               AND outbox.dead_lettered_at IS NULL\
-               AND outbox.available_at <= now()\
-               AND outbox.attempts < outbox.max_attempts\
-               AND (outbox.locked_until IS NULL OR outbox.locked_until < now())\
-               AND binding.status = 'active'\
-               AND binding.sync_mode IN ('publish', 'two_way')\
-               AND binding.linear_team_id IS NOT NULL\
-               AND connection.status = 'active'\
-             ORDER BY outbox.available_at, outbox.created_at, outbox.id\
-             FOR UPDATE SKIP LOCKED\
-             LIMIT $1\
-         )\
-         UPDATE linear_sync_outbox AS outbox\
-         SET locked_by = $2,\
-             locked_until = now() + ($3 * interval '1 second'),\
-             attempts = outbox.attempts + 1,\
-             updated_at = now()\
-         FROM picked\
-         WHERE outbox.id = picked.id\
+        "WITH picked AS ( \
+             SELECT outbox.id FROM linear_sync_outbox AS outbox \
+             JOIN linear_project_binding AS binding ON binding.id = outbox.binding_id \
+             JOIN linear_connection AS connection ON connection.id = binding.connection_id \
+             WHERE outbox.processed_at IS NULL \
+               AND outbox.dead_lettered_at IS NULL \
+               AND outbox.available_at <= now() \
+               AND outbox.attempts < outbox.max_attempts \
+               AND (outbox.locked_until IS NULL OR outbox.locked_until < now()) \
+               AND binding.status = 'active' \
+               AND binding.sync_mode IN ('publish', 'two_way') \
+               AND binding.linear_team_id IS NOT NULL \
+               AND connection.status = 'active' \
+             ORDER BY outbox.available_at, outbox.created_at, outbox.id \
+             FOR UPDATE SKIP LOCKED \
+             LIMIT $1 \
+         ) \
+         UPDATE linear_sync_outbox AS outbox \
+         SET locked_by = $2, \
+             locked_until = now() + ($3 * interval '1 second'), \
+             attempts = outbox.attempts + 1, \
+             updated_at = now() \
+         FROM picked \
+         WHERE outbox.id = picked.id \
          RETURNING {columns}"
     );
     Ok(sqlx::query_as::<_, LinearSyncOutbox>(&query)
@@ -1064,6 +1064,7 @@ pub async fn create_linear_issue_link(
     .await?)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn update_linear_issue_link(
     executor: impl Executor<'_, Database = Postgres>,
     link_id: Uuid,
