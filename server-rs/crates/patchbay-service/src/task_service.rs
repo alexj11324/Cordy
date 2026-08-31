@@ -4313,9 +4313,9 @@ impl TaskService {
         touch_chat_session(&mut *tx, session.id)
             .await
             .map_err(|e| TaskServiceError::Internal(format!("touch chat session: {e}")))?;
-        tx.commit()
-            .await
-            .map_err(|e| TaskServiceError::Internal(format!("commit patrick onboarding open: {e}")))?;
+        tx.commit().await.map_err(|e| {
+            TaskServiceError::Internal(format!("commit patrick onboarding open: {e}"))
+        })?;
 
         Ok(PatrickOnboardingOpenResult {
             kickoff: kickoff_row,

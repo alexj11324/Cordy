@@ -24,7 +24,8 @@ const PATRICK_NAME_PLACEHOLDER: &str = "{{AGENT_NAME}}";
 ///
 /// Single source of truth: the file is packaged with this crate and embedded
 /// in the service binary at compile time.
-const PATRICK_INSTRUCTIONS_MD: &str = include_str!("../assets/builtin_agents/patrick/INSTRUCTIONS.md");
+const PATRICK_INSTRUCTIONS_MD: &str =
+    include_str!("../assets/builtin_agents/patrick/INSTRUCTIONS.md");
 
 /// Introduces the workspace's own additions and states how they rank against
 /// the system half.
