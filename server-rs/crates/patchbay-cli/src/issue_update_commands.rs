@@ -6,9 +6,10 @@ use super::issue_safety::guard_issue_description_local_links;
 use super::{
     format_table, new_api_client, resolve_current_workspace_id, resolve_issue_executor_id,
     resolve_issue_executor_name, resolve_issue_owner_id, resolve_issue_owner_name,
-    resolve_issue_reviewer_id, resolve_issue_reviewer_name, resolve_issue_project_id,
-    resolve_issue_ref, resolve_issue_update_description, validate_issue_priority,
-    validate_issue_status, value_string, Cli, Environment, IssueUpdateArgs, OutputFormat, RunOutput,
+    resolve_issue_project_id, resolve_issue_ref, resolve_issue_reviewer_id,
+    resolve_issue_reviewer_name, resolve_issue_update_description, validate_issue_priority,
+    validate_issue_status, value_string, Cli, Environment, IssueUpdateArgs, OutputFormat,
+    RunOutput,
 };
 
 pub(super) async fn run_issue_update<R: Read>(

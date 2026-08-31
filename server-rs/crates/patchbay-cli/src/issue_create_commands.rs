@@ -6,11 +6,12 @@ use std::io::Read;
 use super::issue_safety::{active_duplicate_issue_message, guard_issue_description_local_links};
 use super::{
     append_unique_strings, collect_local_attachments, format_table, http_timeout, new_api_client,
-    quick_create_attachment_ids, resolve_current_workspace_id, resolve_issue_executor_id,
-    resolve_issue_executor_name, resolve_issue_owner_id, resolve_issue_owner_name,
-    resolve_issue_reviewer_id, resolve_issue_reviewer_name, resolve_issue_create_description,
-    resolve_issue_project_id, resolve_issue_ref, validate_issue_priority, validate_issue_status,
-    value_string, Cli, Environment, IssueCreateArgs, OutputFormat, RunOutput,
+    quick_create_attachment_ids, resolve_current_workspace_id, resolve_issue_create_description,
+    resolve_issue_executor_id, resolve_issue_executor_name, resolve_issue_owner_id,
+    resolve_issue_owner_name, resolve_issue_project_id, resolve_issue_ref,
+    resolve_issue_reviewer_id, resolve_issue_reviewer_name, validate_issue_priority,
+    validate_issue_status, value_string, Cli, Environment, IssueCreateArgs, OutputFormat,
+    RunOutput,
 };
 
 pub(super) async fn run_issue_create<R: Read>(

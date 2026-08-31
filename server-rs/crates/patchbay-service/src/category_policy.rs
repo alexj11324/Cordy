@@ -57,16 +57,21 @@ pub async fn upsert(
     category: &str,
     execution_agent_id: Option<Uuid>,
     reviewer_agent_id: Option<Uuid>,
-) -> anyhow::Result<WorkspaceIssueCategoryPolicy>
-{
+) -> anyhow::Result<WorkspaceIssueCategoryPolicy> {
     anyhow::ensure!(
         matches!(category, EXECUTION_CATEGORY | REVIEW_CATEGORY),
         "unsupported issue category policy"
     );
     if let (Some(execution), Some(reviewer)) = (execution_agent_id, reviewer_agent_id) {
-        anyhow::ensure!(execution != reviewer, "execution and review agents must differ");
+        anyhow::ensure!(
+            execution != reviewer,
+            "execution and review agents must differ"
+        );
     }
-    for agent_id in [execution_agent_id, reviewer_agent_id].into_iter().flatten() {
+    for agent_id in [execution_agent_id, reviewer_agent_id]
+        .into_iter()
+        .flatten()
+    {
         let found = agent::get_agent_in_workspace(&mut *executor, agent_id, workspace_id).await?;
         anyhow::ensure!(
             found.is_some_and(|agent| agent.archived_at.is_none() && agent.runtime_id.is_some()),

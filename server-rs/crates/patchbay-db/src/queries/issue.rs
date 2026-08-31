@@ -955,8 +955,8 @@ ORDER BY number ASC"#
             last_activity_at: row.try_get(27)?,
             reviewer_type: row.try_get("reviewer_type")?,
             reviewer_id: row.try_get("reviewer_id")?,
-        owner_type: row.try_get("owner_type")?,
-        owner_id: row.try_get("owner_id")?,
+            owner_type: row.try_get("owner_type")?,
+            owner_id: row.try_get("owner_id")?,
         });
     }
     Ok(out)
@@ -1010,8 +1010,8 @@ ORDER BY parent_issue_id, number ASC"#
             last_activity_at: row.try_get(27)?,
             reviewer_type: row.try_get("reviewer_type")?,
             reviewer_id: row.try_get("reviewer_id")?,
-        owner_type: row.try_get("owner_type")?,
-        owner_id: row.try_get("owner_id")?,
+            owner_type: row.try_get("owner_type")?,
+            owner_id: row.try_get("owner_id")?,
         });
     }
     Ok(out)
