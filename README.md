@@ -45,13 +45,13 @@ Patchbay is an open-source Harness for orchestrating multi-agents on long-horizo
                                Agents via ACP
 ```
 
-| Components | Current implementation |
-| --- | --- |
-| Web | Next.js App Router |
-| Desktop | Electron with shared web UI packages |
-| Mobile | Expo / React Native|
-| Backend | Rust, Axum, SQLx, and WebSocket |
-| Database | PostgreSQL 17 with pgvector |
+| Components    | Current implementation                         |
+| ------------- | ---------------------------------------------- |
+| Web           | Next.js App Router                             |
+| Desktop       | Electron with shared web UI packages           |
+| Mobile        | Expo / React Native                            |
+| Backend       | Rust, Axum, SQLx, and WebSocket                |
+| Database      | PostgreSQL 17 with pgvector                    |
 | Local runtime | Local daemon launching installed agent via ACP |
 
 ## Run from source
@@ -61,7 +61,8 @@ Patchbay is an open-source Harness for orchestrating multi-agents on long-horizo
 - Node.js 22+
 - pnpm 10.28.2
 - a stable Rust toolchain
-- Docker with Docker Compose for PostgreSQL
+- sccache (`brew install sccache` on macOS)
+- Docker with Docker Compose, or a native PostgreSQL 15+ installation
 
 ```bash
 git clone https://github.com/patchbay-ai/patchbay.git patchbay
@@ -69,16 +70,22 @@ cd patchbay
 make dev
 ```
 
-`make dev` creates the local environment when needed, installs dependencies,
-starts PostgreSQL, applies migrations, and launches the Rust backend plus the
-Desktop renderer in a browser through Vite.
+`make dev` (or `pnpm dev`) is the single complete Desktop development entry. It
+creates an isolated worktree environment, installs dependencies through the
+shared pnpm store, starts PostgreSQL, applies migrations, waits for the local
+Rust backend and database, prepares a source-matched dev runtime (CLI, backend,
+and migration runner), verifies local
+agent detection plus Telegram/Weixin encryption configuration, and only then
+opens Electron with renderer hot reload.
 
-For the actual Next.js web client, use `pnpm dev:web:next`. To run the same
-renderer inside Electron, use `pnpm dev:desktop`; both renderer paths share
-the Desktop source and TabBar. The default Desktop command does not compile
-Rust, so renderer and Electron edits stay on the Vite development loop. When
-changing `server-rs` and testing it through Desktop, use
-`pnpm dev:desktop:rust` to bundle a source-matched incremental development CLI.
+The dev runtime is cached per user by Rust source, Cargo manifests/lockfile,
+toolchain, target, architecture, profile, and build metadata. Repeated starts
+and new worktrees with the same Rust source reuse all three verified binaries
+without compiling Rust. A cache miss builds them together once in the
+incremental dev profile; install `sccache`
+to share compiler outputs while each worktree keeps an independent
+`server-rs/target`. Run `pnpm dev:doctor` to repeat the capability checks. For
+the separate Next.js web client, use `pnpm dev:web:next`.
 
 For an explicit build:
 
@@ -89,7 +96,8 @@ pnpm build
 
 `pnpm build` builds the frontend and Electron bundles without compiling Rust.
 Formal Desktop packaging still uses `pnpm --filter @patchbay/desktop package`,
-which always builds and embeds the release Rust CLI before creating installers.
+which builds and embeds a release Rust CLI (or consumes a checksum-verified
+exact-commit CI artifact) before creating installers.
 Run that full path only for installer, signing/notarization, updater,
 embedded-CLI, or release acceptance; it may take tens of minutes and is not a
 day-to-day edit-refresh command. See [Contributing](CONTRIBUTING.md#desktop-app-local-testing)

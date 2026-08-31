@@ -91,5 +91,25 @@ else
   echo "No .env.worktree found; skipping database cleanup."
 fi
 
+# Git must otherwise walk every directory entry while removing the worktree.
+# pnpm's global store may deduplicate file contents, but each worktree still has
+# its own high-cardinality node_modules link tree; Rust target and frontend
+# output trees are similarly disposable and worktree-local. Remove only these
+# explicit ignored build paths after the dirty-tree and database safety gates.
+for disposable_path in \
+  "$target/node_modules" \
+  "$target/server-rs/target" \
+  "$target/.patchbay-dev" \
+  "$target/.turbo" \
+  "$target/apps/desktop/out" \
+  "$target/apps/desktop/dist" \
+  "$target/apps/web/.next" \
+  "$target/apps/docs/.next"; do
+  if [ -e "$disposable_path" ]; then
+    echo "Removing disposable worktree output: ${disposable_path#"$target"/}"
+    rm -rf -- "$disposable_path"
+  fi
+done
+
 git -C "$repo_root" worktree remove "$target"
 echo "Removed worktree '$target'."

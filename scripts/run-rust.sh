@@ -37,5 +37,11 @@ elif ! command -v "$cargo_command" >/dev/null 2>&1; then
   exit 127
 fi
 
+# Target directories remain worktree-local. Compiler outputs are shared only
+# through sccache, which is content-addressed and safe across worktrees.
+if [[ -z "${RUSTC_WRAPPER:-}" && "${PATCHBAY_DISABLE_SCCACHE:-0}" != "1" ]] && command -v sccache >/dev/null 2>&1; then
+  export RUSTC_WRAPPER="$(command -v sccache)"
+fi
+
 cd "$RUST_DIR"
 exec "$cargo_command" "$@"

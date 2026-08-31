@@ -2,6 +2,8 @@
 set -euo pipefail
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+. "$root_dir/scripts/postgres-runtime.sh"
 env_input="${1:-.env}"
 
 if [[ "$env_input" = /* ]]; then
@@ -22,7 +24,10 @@ set +a
 
 POSTGRES_DB="${POSTGRES_DB:-}"
 POSTGRES_USER="${POSTGRES_USER:-patchbay}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
+POSTGRES_PORT="${POSTGRES_PORT:-5432}"
 DATABASE_URL="${DATABASE_URL:-}"
+export PGPASSWORD="$POSTGRES_PASSWORD"
 
 if [ -z "$POSTGRES_DB" ]; then
   echo "Refusing to drop a database: POSTGRES_DB is empty in $env_input." >&2
@@ -69,13 +74,31 @@ case "$answer" in
 esac
 
 cd "$root_dir"
-docker compose exec -T postgres \
-  dropdb \
-  --username "$POSTGRES_USER" \
-  --maintenance-db postgres \
-  --if-exists \
-  --force \
-  -- \
-  "$POSTGRES_DB"
+if postgres_docker_available; then
+  docker compose exec -T postgres \
+    dropdb \
+    --username "$POSTGRES_USER" \
+    --maintenance-db postgres \
+    --if-exists \
+    --force \
+    -- \
+    "$POSTGRES_DB"
+else
+  dropdb_command="$(find_postgres_tool dropdb || true)"
+  if [ -z "$dropdb_command" ]; then
+    echo "Cannot drop '$POSTGRES_DB': neither Docker Compose nor native dropdb is available." >&2
+    exit 1
+  fi
+  parse_postgres_endpoint "$DATABASE_URL" "$POSTGRES_PORT"
+  "$dropdb_command" \
+    -h "$POSTGRES_RUNTIME_HOST" \
+    -p "$POSTGRES_RUNTIME_PORT" \
+    --username "$POSTGRES_USER" \
+    --maintenance-db postgres \
+    --if-exists \
+    --force \
+    -- \
+    "$POSTGRES_DB"
+fi
 
 echo "Dropped database '$POSTGRES_DB'."

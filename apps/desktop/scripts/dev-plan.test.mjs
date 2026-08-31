@@ -21,13 +21,13 @@ const ciWorkflow = readFileSync(
 );
 
 describe("Desktop development build plan", () => {
-  it("starts Electron without compiling the Rust CLI by default", () => {
+  it("requires the capability doctor before Electron", () => {
     expect(
       planDevCommands([], { nodePath: "/usr/bin/node", scriptsDir }),
     ).toEqual([
       {
         command: "/usr/bin/node",
-        args: [join(scriptsDir, "clear-dev-cli.mjs")],
+        args: [join(scriptsDir, "dev-environment-doctor.mjs")],
       },
       {
         command: "/usr/bin/node",
@@ -37,16 +37,16 @@ describe("Desktop development build plan", () => {
     ]);
   });
 
-  it("uses an explicit incremental Rust development build when requested", () => {
+  it("passes Electron-specific arguments without changing the complete stack", () => {
     expect(
-      planDevCommands(["--source-cli", "--mode", "staging"], {
+      planDevCommands(["--inspect"], {
         nodePath: "/usr/bin/node",
         scriptsDir,
       }),
     ).toEqual([
       {
         command: "/usr/bin/node",
-        args: [join(scriptsDir, "bundle-cli.mjs"), "--profile", "dev"],
+        args: [join(scriptsDir, "dev-environment-doctor.mjs")],
       },
       {
         command: "/usr/bin/node",
@@ -54,30 +54,34 @@ describe("Desktop development build plan", () => {
       },
       {
         command: "electron-vite",
-        args: ["dev", "--mode", "staging"],
+        args: ["dev", "--inspect"],
       },
     ]);
   });
 
-  it("rejects the removed ambiguous bundle flag", () => {
-    expect(() =>
-      planDevCommands(["--bundle-cli"], {
-        nodePath: "/usr/bin/node",
-        scriptsDir,
-      }),
-    ).toThrow(/removed.*dev:desktop:rust/i);
-  });
+  it.each(["--bundle-cli", "--source-cli"])(
+    "rejects the removed Rust-free/source toggle %s",
+    (flag) => {
+      expect(() =>
+        planDevCommands([flag], {
+          nodePath: "/usr/bin/node",
+          scriptsDir,
+        }),
+      ).toThrow(/toggle was removed.*always runs the complete/i);
+    },
+  );
 
-  it("keeps ordinary builds Rust-free and provides the source-matched dev entry", () => {
+  it("exposes one complete development entry and no UI-only alternative", () => {
     expect(desktopPackage.scripts.build).toBe("electron-vite build");
     expect(desktopPackage.scripts["bundle-cli"]).toBeUndefined();
     expect(desktopPackage.scripts["bundle-cli:release"]).toBeUndefined();
-    expect(desktopPackage.scripts["dev:rust"]).toBe(
-      "node scripts/dev.mjs --source-cli",
-    );
-    expect(rootPackage.scripts["dev:desktop"]).toBe(
-      "turbo dev --filter=@patchbay/desktop",
-    );
+    expect(desktopPackage.scripts.dev).toBe("bash ../../scripts/dev.sh");
+    expect(desktopPackage.scripts["dev:rust"]).toBeUndefined();
+    expect(desktopPackage.scripts["dev:web"]).toBeUndefined();
+    expect(rootPackage.scripts["dev:desktop"]).toBe("bash scripts/dev.sh");
+    expect(rootPackage.scripts.dev).toBe("bash scripts/dev.sh");
+    expect(rootPackage.scripts["dev:desktop:rust"]).toBeUndefined();
+    expect(rootPackage.scripts["dev:desktop:web"]).toBeUndefined();
     expect(rootPackage.scripts.build).toBe(
       "turbo build --filter=!@patchbay/mobile",
     );

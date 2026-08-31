@@ -5,14 +5,14 @@ description: Set up a local Patchbay development environment, run tests, and sub
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay is a Rust backend and pnpm monorepo. The simplest way to start locally is `make dev`; it prepares the environment, database, and migrations for the current checkout, then starts Web and API.
+Patchbay is a Rust backend and pnpm monorepo. The simplest way to start locally is `make dev`; it prepares the environment, source-matched runtime, database, and migrations for the current checkout, then starts the complete Electron client and API.
 
 ## Requirements
 
 - Node.js 22
 - pnpm 10.28.2
-- Rust stable with Cargo
-- Docker Engine or Docker Desktop
+- Rust stable with Cargo (required on a dev runtime cache miss)
+- Docker Engine/Desktop, or native PostgreSQL 15+
 - Git and Make
 
 Treat the root `package.json`, `server-rs/Cargo.toml`, `server-rs/Cargo.lock`, and CI workflows as the source of truth for versions and dependencies.
@@ -62,7 +62,9 @@ make stop-worktree
 You may also run `make dev` directly. The script detects a worktree through its `.git` file and selects `.env.worktree`.
 
 <Callout type="info">
-Different worktrees share the PostgreSQL container, not the database. Do not start a new Compose project for every worktree. Check `POSTGRES_DB`, `PORT`, and `FRONTEND_PORT` in `.env.worktree` first.
+  Different worktrees share the PostgreSQL container, not the database. Do not
+  start a new Compose project for every worktree. Check `POSTGRES_DB`, `PORT`,
+  and `FRONTEND_PORT` in `.env.worktree` first.
 </Callout>
 
 ## Common commands
@@ -70,8 +72,8 @@ Different worktrees share the PostgreSQL container, not the database. Do not sta
 ### Full workflow
 
 ```bash
-make dev              # Prepare and start the current checkout
-make start            # Start API and Web with the existing environment
+make dev              # Complete Electron + dev CLI + backend + isolated DB
+make start            # Same complete stack using the existing environment
 make stop             # Stop processes for the current checkout
 make check            # Run the complete local verification workflow
 make build            # Build the server, CLI, and migrate binaries
@@ -81,31 +83,30 @@ make build            # Build the server, CLI, and migrate binaries
 
 ```bash
 pnpm install
-pnpm dev:web          # Desktop renderer in a browser through Vite
+pnpm dev              # Complete Desktop development with renderer hot reload
+pnpm dev:doctor       # CLI/backend/DB/agent/integration diagnostics
 pnpm dev:web:next     # Next.js web client
-pnpm dev:desktop      # Fast Electron/Vite loop; does not compile Rust
-pnpm dev:desktop:rust # Bundle current server-rs with the incremental dev profile
 pnpm build
 pnpm typecheck
 pnpm lint
 pnpm test
 ```
 
-Choose the narrowest Desktop path that matches the change:
+There is one complete Desktop development path:
 
-| Situation | Command | Work performed |
-| --- | --- | --- |
-| Browser-only renderer/UI iteration | `pnpm dev:desktop:web` | Vite only; no Rust |
-| Normal renderer, Electron main, or preload iteration | `pnpm dev:desktop` | Electron/Vite only; no Rust |
-| Frontend/Electron compile check | `pnpm --filter @patchbay/desktop build` | Production JS bundles; no Rust |
-| Exercise unpublished `server-rs` / CLI behavior through Desktop | `pnpm dev:desktop:rust` | Incremental Cargo development CLI, then Electron/Vite |
-| Validate an installer, signing/notarization, updater, embedded CLI, or release | `pnpm --filter @patchbay/desktop package` | Release Rust CLI and installer packaging; may take tens of minutes |
+| Situation                                                                      | Command                                   | Work performed                                                                            |
+| ------------------------------------------------------------------------------ | ----------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Normal local product development                                               | `pnpm dev` or `make dev`                  | Electron, source-matched dev CLI, backend, isolated DB, hot reload, and capability checks |
+| Repeat development diagnostics                                                 | `pnpm dev:doctor`                         | CLI/source/version, backend/DB, agent discovery, Telegram/Weixin configuration            |
+| Frontend/Electron compile check                                                | `pnpm --filter @patchbay/desktop build`   | Production JS bundles; no Rust                                                            |
+| Validate an installer, signing/notarization, updater, embedded CLI, or release | `pnpm --filter @patchbay/desktop package` | Release Rust CLI and installer packaging; may take tens of minutes                        |
 
-Never use the package path for ordinary UI, TypeScript, CSS, main/preload, or
-documentation changes. Full release compilation belongs to deliberate
-artifact acceptance and GitHub Actions, not the default edit-refresh loop.
-The normal Electron path clears any source CLI left by an earlier Rust
-development run so stale binaries cannot affect fast-path verification.
+The dev runtime cache holds the matching CLI, backend, and migration runner and
+is keyed by Rust source, Cargo metadata, toolchain, target, architecture,
+profile, and build variables. Cache hits do not compile Rust; misses build all
+three together with the incremental dev profile and optional shared sccache. Worktrees
+never share `node_modules` link trees, `server-rs/target`, databases, ports, env,
+or processes. Release/package is separate and never reads the dev cache.
 
 Root commands exclude Mobile by default. Mobile has separate scripts and CI; read `apps/mobile/AGENTS.md` before changing it.
 
@@ -155,13 +156,13 @@ Use an application transaction in the service layer when multiple writes must su
 
 ## Test locations
 
-| Change | Test location |
-| --- | --- |
-| Shared business logic, queries, stores | `packages/core/*.test.ts` |
-| Shared pages and components | `packages/views/*.test.tsx` |
-| Web or Desktop platform wiring | Corresponding `apps/*` directory |
-| End-to-end workflows | `e2e/*.spec.ts` |
-| Backend | `#[cfg(test)]` modules or `tests/*.rs` in the relevant `server-rs/crates/*` package |
+| Change                                 | Test location                                                                       |
+| -------------------------------------- | ----------------------------------------------------------------------------------- |
+| Shared business logic, queries, stores | `packages/core/*.test.ts`                                                           |
+| Shared pages and components            | `packages/views/*.test.tsx`                                                         |
+| Web or Desktop platform wiring         | Corresponding `apps/*` directory                                                    |
+| End-to-end workflows                   | `e2e/*.spec.ts`                                                                     |
+| Backend                                | `#[cfg(test)]` modules or `tests/*.rs` in the relevant `server-rs/crates/*` package |
 
 Run the check closest to the change first, then expand the scope. For a Docs-only change:
 

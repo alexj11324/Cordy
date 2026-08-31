@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-// Dev launcher for `pnpm dev:desktop`.
+// Internal Electron phase of the complete `pnpm dev` launcher.
 //
 // Derives per-worktree isolation env (renderer port + app name) so multiple
 // worktrees can run `pnpm dev:desktop` side-by-side, then brands the dev
-// Electron and starts electron-vite with the augmented env. Rust is opt-in via
-// the public `pnpm dev:desktop:rust` command: ordinary renderer/main-process
-// edits stay on Vite's fast feedback loop, while contributors changing
-// server-rs can explicitly bundle a source-matched incremental development CLI.
-// Returning to the default command clears that source artifact before launch.
+// Electron and starts electron-vite with the augmented env. The parent
+// scripts/dev.sh process has already prepared the isolated DB and healthy
+// backend. The parent has also staged the source-matched CLI/backend/migration
+// runtime set. This phase runs the capability doctor before opening a window;
+// there is no UI-only fallback.
 
 import { spawnSync } from "node:child_process";
 import { dirname } from "node:path";
@@ -34,7 +34,9 @@ function run(command, args, { shell = false, env = process.env } = {}) {
     shell,
   });
   if (result.error) {
-    console.error(`[dev:desktop] failed to run ${command}: ${result.error.message}`);
+    console.error(
+      `[dev:desktop] failed to run ${command}: ${result.error.message}`,
+    );
     process.exit(1);
   }
   if (result.status !== 0) process.exit(result.status ?? 1);

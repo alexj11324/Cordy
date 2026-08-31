@@ -1,4 +1,4 @@
-.PHONY: help makehelp dev web-dev web-next-dev api-dev server rust-server daemon cli patchbay rust-cli build-rust-cli build rust-build test rust-test migrate-up migrate-down rust-migrate-up rust-migrate-down seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
+.PHONY: help makehelp dev web-next-dev api-dev server rust-server daemon cli patchbay rust-cli build-rust-cli build rust-build test rust-test migrate-up migrate-down rust-migrate-up rust-migrate-down seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
 
 MAIN_ENV_FILE ?= .env
 WORKTREE_ENV_FILE ?= .env.worktree
@@ -162,19 +162,9 @@ setup: ## Prepare the current checkout from its env file: install deps, ensure D
 	@echo ""
 	@echo "✓ Setup complete! Run 'make start' to launch the app."
 
-start: ## Start backend and frontend for the current checkout and run migrations first
+start: ## Start the complete Electron development environment for this checkout
 	$(REQUIRE_ENV)
-	@echo "Using env file: $(ENV_FILE)"
-	@echo "Backend: http://localhost:$(PORT)"
-	@echo "Frontend: http://localhost:$(FRONTEND_PORT)"
-	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
-	@echo "Running migrations..."
-	$(RUST_MIGRATE_CMD) up
-	@echo "Starting backend and frontend..."
-	@trap 'kill 0' EXIT; \
-		($(RUST_SERVER_CMD)) & \
-		pnpm dev:web & \
-		wait
+	@ENV_FILE="$(ENV_FILE)" bash scripts/dev.sh
 
 stop: ## Stop backend and frontend processes for the current checkout
 	$(REQUIRE_ENV)
@@ -263,12 +253,8 @@ remove-worktree: ## Drop a linked worktree's database, then remove it (WORKTREE=
 # ---------- Individual commands ----------
 ##@ Individual commands
 
-dev: ## Bootstrap this checkout end-to-end: create env if needed, ensure DB, migrate, start services
+dev: ## Start complete Electron + source CLI + backend + isolated DB development
 	@bash scripts/dev.sh
-
-web-dev: ## Run the Desktop renderer in a browser through Vite (API-dependent screens need a separate backend)
-	@echo "Frontend: http://localhost:$(FRONTEND_PORT)"
-	@FRONTEND_PORT=$(FRONTEND_PORT) pnpm dev:web
 
 web-next-dev: ## Run only the Next.js web frontend (API-dependent screens need a separate backend)
 	@echo "Frontend: http://localhost:$(FRONTEND_PORT)"

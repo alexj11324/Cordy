@@ -230,9 +230,77 @@ jobs:
               "${release_channel[@]}"
           fi
 
+  build-macos-cli:
+    name: Build macOS CLI (${{ matrix.arch }})
+    needs: prepare
+    if: needs.prepare.outputs.should_publish == 'true'
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.package_matrix) }}
+    runs-on: ${{ matrix.runner }}
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
+    steps:
+      - name: Checkout prepared release commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit_sha }}
+          fetch-depth: 0
+
+      - name: Setup Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add ${{ matrix.rust_target }}
+
+      - name: Restore Cargo registry and git downloads
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: macos-release-cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.rust_target }}-${{ hashFiles('server-rs/Cargo.lock') }}
+          restore-keys: macos-release-cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.rust_target }}-
+
+      - name: Enable target-scoped compiler cache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Build release CLI once
+        working-directory: server-rs
+        env:
+          PATCHBAY_BUILD_VERSION: ${{ needs.prepare.outputs.tag_name }}
+          PATCHBAY_BUILD_COMMIT: ${{ needs.prepare.outputs.commit_sha }}
+        shell: bash
+        run: |
+          PATCHBAY_BUILD_DATE="$(git show -s --format=%cI "$PATCHBAY_BUILD_COMMIT")"
+          export PATCHBAY_BUILD_DATE
+          cargo build --locked --release --target "${{ matrix.rust_target }}" -p patchbay-cli
+          node ../apps/desktop/scripts/write-cli-artifact-manifest.mjs \
+            --binary "target/${{ matrix.rust_target }}/release/patchbay" \
+            --output "$RUNNER_TEMP/patchbay-cli-bin" \
+            --target "${{ matrix.rust_target }}" \
+            --platform darwin \
+            --arch "${{ matrix.arch }}" \
+            --version "${{ needs.prepare.outputs.tag_name }}"
+
+      - name: Upload exact-commit macOS CLI
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-cli-${{ matrix.arch }}
+          path: ${{ runner.temp }}/patchbay-cli-bin/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Report compiler cache effectiveness
+        if: always()
+        shell: bash
+        run: ${SCCACHE_PATH} --show-stats
+
   package-macos:
     name: Package macOS (${{ matrix.arch }})
-    needs: prepare
+    needs: [prepare, build-macos-cli]
     if: needs.prepare.outputs.should_publish == 'true'
     strategy:
       fail-fast: false
@@ -258,13 +326,6 @@ jobs:
             exit 1
           fi
 
-      - name: Setup Rust toolchain
-        shell: bash
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-          rustup target add ${{ matrix.rust_target }}
-
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
@@ -277,6 +338,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Download exact-commit macOS CLI
+        uses: actions/download-artifact@v4
+        with:
+          name: macos-cli-${{ matrix.arch }}
+          path: ${{ runner.temp }}/patchbay-cli-bin
+
       - name: Package signed and notarized macOS installers
         working-directory: apps/desktop
         env:
@@ -288,6 +355,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          PATCHBAY_PREBUILT_CLI_DIR: ${{ runner.temp }}/patchbay-cli-bin
         run: node scripts/package.mjs --mac --${{ matrix.arch }} --publish never
 
       - name: Verify Developer ID signature and notarization

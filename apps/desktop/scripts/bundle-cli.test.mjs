@@ -7,10 +7,12 @@ import {
   cargoBuildArguments,
   cargoProfileDirectory,
   cargoTargetDirectory,
+  devBuildVariables,
   enforceCliAvailability,
   normalizeRuntimeArch,
   normalizeRuntimePlatform,
   rustTargetFor,
+  rustBuildEnvironment,
 } from "./bundle-cli.mjs";
 
 describe("bundle-cli Rust target selection", () => {
@@ -50,7 +52,10 @@ describe("bundle-cli Rust target selection", () => {
       cargoTargetDirectory({ CARGO_TARGET_DIR: "../cargo-cache" }, serverRs),
     ).toBe(resolve(serverRs, "../cargo-cache"));
     expect(
-      cargoTargetDirectory({ CARGO_TARGET_DIR: "/var/cache/patchbay" }, serverRs),
+      cargoTargetDirectory(
+        { CARGO_TARGET_DIR: "/var/cache/patchbay" },
+        serverRs,
+      ),
     ).toBe(resolve("/var/cache/patchbay"));
   });
 
@@ -69,13 +74,17 @@ describe("bundle-cli Rust target selection", () => {
     expect(cargoProfileDirectory("dev")).toBe("debug");
   });
 
-  it("fails formal release packaging instead of shipping without a CLI", () => {
+  it("fails both complete development and formal release when no build input exists", () => {
     expect(() =>
       enforceCliAvailability("release", false, "cargo is unavailable"),
-    ).toThrow(/release CLI is required.*cargo is unavailable/i);
-    expect(enforceCliAvailability("dev", false, "cargo is unavailable")).toBe(
-      false,
-    );
+    ).toThrow(/release CLI build is required.*cargo is unavailable/i);
+    expect(() =>
+      enforceCliAvailability(
+        "dev",
+        false,
+        "cache miss and cargo is unavailable",
+      ),
+    ).toThrow(/dev CLI build is required.*cache miss/i);
     expect(enforceCliAvailability("release", true, "unused")).toBe(true);
   });
 
@@ -89,5 +98,25 @@ describe("bundle-cli Rust target selection", () => {
     expect(buildDateForProfile("release", commitDate, firstNow)).toBe(
       "2026-08-30T10:00:00Z",
     );
+  });
+
+  it("derives cross-worktree development metadata from Rust source only", () => {
+    expect(devBuildVariables("abcdef1234567890")).toEqual({
+      version: "dev-abcdef123456",
+      commit: "source-abcdef123456",
+      date: "source-matched-dev",
+    });
+  });
+
+  it("uses sccache when present without overriding an explicit compiler wrapper", () => {
+    expect(rustBuildEnvironment({}, true)).toEqual({
+      RUSTC_WRAPPER: "sccache",
+    });
+    expect(rustBuildEnvironment({ RUSTC_WRAPPER: "custom" }, true)).toEqual({
+      RUSTC_WRAPPER: "custom",
+    });
+    expect(
+      rustBuildEnvironment({ PATCHBAY_DISABLE_SCCACHE: "1" }, true),
+    ).toEqual({ PATCHBAY_DISABLE_SCCACHE: "1" });
   });
 });

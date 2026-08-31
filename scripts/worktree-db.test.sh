@@ -122,7 +122,7 @@ worktree="$tmp_dir/worktree"
 git init -q -b main "$repo"
 git -C "$repo" config user.name "Worktree DB Test"
 git -C "$repo" config user.email "worktree-db-test@example.com"
-printf '.env.worktree\n' >"$repo/.gitignore"
+printf '.env.worktree\nnode_modules/\nserver-rs/target/\n.patchbay-dev/\n' >"$repo/.gitignore"
 printf 'base\n' >"$repo/tracked.txt"
 mkdir -p "$repo/backend"
 printf 'nested\n' >"$repo/backend/tracked.txt"
@@ -161,6 +161,10 @@ if grep -Fq "Error" "$output"; then
   fail "remove-worktree printed an error after cancellation"
 fi
 
+mkdir -p "$worktree/node_modules/package" "$worktree/server-rs/target/debug" "$worktree/.patchbay-dev/bin"
+printf 'fixture\n' >"$worktree/node_modules/package/index.js"
+printf 'fixture\n' >"$worktree/server-rs/target/debug/binary"
+printf 'fixture\n' >"$worktree/.patchbay-dev/bin/patchbay-server"
 printf 'y\n' | (cd "$repo" && PATH="$stub_dir:$PATH" DOCKER_LOG="$docker_log" \
   bash "$root_dir/scripts/remove-worktree.sh" "$worktree") >"$output"
 if [ -e "$worktree" ]; then
@@ -168,6 +172,9 @@ if [ -e "$worktree" ]; then
 fi
 require_contains "$docker_log" \
   "compose exec -T postgres dropdb --username patchbay --maintenance-db postgres --if-exists --force -- patchbay_worktree_456"
+require_contains "$output" "Removing disposable worktree output: node_modules"
+require_contains "$output" "Removing disposable worktree output: server-rs/target"
+require_contains "$output" "Removing disposable worktree output: .patchbay-dev"
 
 dirty_worktree="$tmp_dir/dirty-worktree"
 git -C "$repo" worktree add -q -b dirty-feature "$dirty_worktree"
