@@ -577,6 +577,7 @@ pub async fn claim_sync_inbox(
     limit: i64,
     lease_seconds: i64,
     workspace_ids: Option<&[Uuid]>,
+    include_issue_events: bool,
 ) -> anyhow::Result<Vec<LinearSyncInbox>> {
     Ok(sqlx::query_as::<_, LinearSyncInbox>(
         r#"WITH picked AS (
@@ -588,12 +589,32 @@ pub async fn claim_sync_inbox(
                  AND attempts < max_attempts
                  AND (locked_until IS NULL OR locked_until < now())
                  AND (
-                     $4::uuid[] IS NULL
-                     OR EXISTS (
-                         SELECT 1
-                         FROM linear_connection
-                         WHERE linear_connection.id = linear_sync_inbox.connection_id
-                           AND linear_connection.workspace_id = ANY($4::uuid[])
+                     ($4::uuid[] IS NULL
+                      OR EXISTS (
+                          SELECT 1
+                          FROM linear_connection
+                          WHERE linear_connection.id = linear_sync_inbox.connection_id
+                            AND linear_connection.workspace_id = ANY($4::uuid[])
+                      ))
+                     AND (
+                         (
+                             $5
+                             AND replace(lower(event_type), '_', '') NOT LIKE '%agentsession%'
+                             AND NOT (payload ? 'agentSession')
+                             AND NOT (payload ? 'agentSessionEvent')
+                             AND NOT (payload->'data' ? 'agentSession')
+                             AND NOT (payload->'data' ? 'agentSessionEvent')
+                         )
+                         OR (
+                             NOT $5
+                             AND (
+                                 replace(lower(event_type), '_', '') LIKE '%agentsession%'
+                                 OR payload ? 'agentSession'
+                                 OR payload ? 'agentSessionEvent'
+                                 OR payload->'data' ? 'agentSession'
+                                 OR payload->'data' ? 'agentSessionEvent'
+                             )
+                         )
                      )
                  )
                ORDER BY available_at, received_at, id
@@ -616,6 +637,7 @@ pub async fn claim_sync_inbox(
     .bind(worker_id)
     .bind(lease_seconds.max(1))
     .bind(workspace_ids.map(|ids| ids.to_vec()))
+    .bind(include_issue_events)
     .fetch_all(executor)
     .await?)
 }

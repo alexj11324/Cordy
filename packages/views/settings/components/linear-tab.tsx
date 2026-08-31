@@ -5,6 +5,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { CheckCircle2, CircleAlert, GitMerge, Loader2, Settings2, Trash2 } from "lucide-react";
 import { ApiError, api } from "@patchbay/core/api";
+import { useFeatureEnabled } from "@patchbay/core/config";
+import { LINEAR_AGENT_BRIDGE_FLAG } from "@patchbay/core/feature-flags";
 import {
   linearBindingsOptions,
   linearCatalogOptions,
@@ -14,8 +16,9 @@ import {
   linearKeys,
 } from "@patchbay/core/linear";
 import { projectListOptions } from "@patchbay/core/projects";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { agentListOptions, memberListOptions } from "@patchbay/core/workspace/queries";
 import type {
+  Agent,
   LinearCatalogResponse,
   LinearDryRunResponse,
   LinearMemberBinding,
@@ -63,6 +66,7 @@ type BindingDraft = {
   syncMode: LinearSyncMode;
   initialSourceOfTruth: "linear" | "patchbay" | null;
   statusMapping: Record<string, unknown>;
+  agentLabelMapping: Record<string, unknown>;
 };
 
 const emptyDraft: BindingDraft = {
@@ -72,6 +76,7 @@ const emptyDraft: BindingDraft = {
   syncMode: "import",
   initialSourceOfTruth: "linear",
   statusMapping: {},
+  agentLabelMapping: {},
 };
 
 function selectClassName() {
@@ -280,6 +285,8 @@ function BindingWizard({
   bindings,
   catalog,
   connectionId,
+  agents,
+  agentBridgeEnabled,
   memberBindings,
   members,
   pullImportEnabled,
@@ -291,6 +298,8 @@ function BindingWizard({
   bindings: LinearProjectBinding[];
   catalog: LinearCatalogResponse;
   connectionId: string;
+  agents: Agent[];
+  agentBridgeEnabled: boolean;
   memberBindings: LinearMemberBinding[];
   members: MemberWithUser[];
   pullImportEnabled: boolean;
@@ -320,6 +329,21 @@ function BindingWizard({
   const selectedLinearProject = catalog.projects.find(
     (project) => project.id === draft.linearProjectId,
   );
+  const agentLabelGroups = catalog.labels.filter((label) => label.is_group);
+  const selectedAgentLabelGroupId =
+    typeof draft.agentLabelMapping.group_id === "string"
+      ? draft.agentLabelMapping.group_id
+      : "";
+  const selectedAgentLabelChildren = catalog.labels.filter(
+    (label) => !label.is_group && label.parent_id === selectedAgentLabelGroupId,
+  );
+  const activeAgents = agents.filter((agent) => !agent.archived_at);
+  const agentLabelAssignments =
+    typeof draft.agentLabelMapping.labels === "object" &&
+    draft.agentLabelMapping.labels !== null &&
+    !Array.isArray(draft.agentLabelMapping.labels)
+      ? (draft.agentLabelMapping.labels as Record<string, unknown>)
+      : {};
 
   const suggestedLinearProject = useMemo(() => {
     const title = selectedPatchbayProject?.title.trim().toLocaleLowerCase();
@@ -346,6 +370,7 @@ function BindingWizard({
         syncMode: existing.sync_mode,
         initialSourceOfTruth: existing.initial_source_of_truth === "patchbay" ? "patchbay" : "linear",
         statusMapping: existing.status_mapping,
+        agentLabelMapping: existing.agent_label_mapping,
       }));
       return;
     }
@@ -383,6 +408,7 @@ function BindingWizard({
       initial_source_of_truth:
         draft.syncMode === "not_synced" ? null : draft.initialSourceOfTruth,
       status_mapping: draft.statusMapping,
+      agent_label_mapping: draft.agentLabelMapping,
     };
     void api
       .dryRunLinearBinding(workspaceId, body)
@@ -405,6 +431,7 @@ function BindingWizard({
     draft.linearTeamId,
     draft.patchbayProjectId,
     draft.statusMapping,
+    draft.agentLabelMapping,
     draft.syncMode,
     step,
     workspaceId,
@@ -447,6 +474,7 @@ function BindingWizard({
       sync_mode: draft.syncMode,
       initial_source_of_truth: draft.syncMode === "not_synced" ? null : draft.initialSourceOfTruth,
       status_mapping: draft.statusMapping,
+      agent_label_mapping: draft.agentLabelMapping,
     };
     try {
       const connection = await api.getLinearConnection(workspaceId);
@@ -673,6 +701,118 @@ function BindingWizard({
               ))}
             </div>
           )}
+          {agentBridgeEnabled ? (
+            <div className="space-y-3 border-t pt-4">
+              <h4 className="font-medium">{t(($) => $.page.linear.agent_mapping_title)}</h4>
+              <p className="text-body text-muted-foreground">
+                {t(($) => $.page.linear.agent_mapping_description)}
+              </p>
+              <label className="space-y-1.5 text-body">
+                <span className="text-muted-foreground">
+                  {t(($) => $.page.linear.agent_label_group)}
+                </span>
+                <select
+                  className={selectClassName()}
+                  value={selectedAgentLabelGroupId}
+                  onChange={(event) =>
+                    setDraft((current) =>
+                      event.target.value
+                        ? {
+                            ...current,
+                            agentLabelMapping: {
+                              group_id: event.target.value,
+                              labels: {},
+                            },
+                          }
+                        : { ...current, agentLabelMapping: {} },
+                    )
+                  }
+                >
+                  <option value="">{t(($) => $.page.linear.select_agent_label_group)}</option>
+                  {agentLabelGroups.map((group) => (
+                    <option key={group.id} value={group.id}>
+                      {group.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {selectedAgentLabelGroupId && selectedAgentLabelChildren.length === 0 ? (
+                <p className="text-body text-muted-foreground">
+                  {t(($) => $.page.linear.no_agent_label_values)}
+                </p>
+              ) : null}
+              {selectedAgentLabelChildren.map((label) => (
+                <label
+                  className="grid items-center gap-2 text-body sm:grid-cols-[1fr_1fr]"
+                  key={label.id}
+                >
+                  <span>{label.name}</span>
+                  <select
+                    className={selectClassName()}
+                    value={String(agentLabelAssignments[label.id] ?? "")}
+                    onChange={(event) =>
+                      setDraft((current) => {
+                        const currentLabels =
+                          typeof current.agentLabelMapping.labels === "object" &&
+                          current.agentLabelMapping.labels !== null &&
+                          !Array.isArray(current.agentLabelMapping.labels)
+                            ? { ...(current.agentLabelMapping.labels as Record<string, unknown>) }
+                            : {};
+                        if (event.target.value) {
+                          currentLabels[label.id] = event.target.value;
+                        } else {
+                          delete currentLabels[label.id];
+                        }
+                        return {
+                          ...current,
+                          agentLabelMapping: {
+                            ...current.agentLabelMapping,
+                            labels: currentLabels,
+                          },
+                        };
+                      })
+                    }
+                  >
+                    <option value="">{t(($) => $.page.linear.agent_not_mapped)}</option>
+                    {activeAgents.map((agent) => (
+                      <option key={agent.id} value={agent.id}>
+                        {agent.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+              {selectedAgentLabelGroupId ? (
+                <label className="space-y-1.5 text-body">
+                  <span className="text-muted-foreground">
+                    {t(($) => $.page.linear.agent_default)}
+                  </span>
+                  <select
+                    className={selectClassName()}
+                    value={String(draft.agentLabelMapping.default_agent_id ?? "")}
+                    onChange={(event) =>
+                      setDraft((current) => {
+                        const mapping = { ...current.agentLabelMapping };
+                        if (event.target.value) {
+                          mapping.default_agent_id = event.target.value;
+                        } else {
+                          delete mapping.default_agent_id;
+                        }
+                        return { ...current, agentLabelMapping: mapping };
+                      })
+                    }
+                  >
+                    <option value="">{t(($) => $.page.linear.agent_no_default)}</option>
+                    {activeAgents.map((agent) => (
+                      <option key={agent.id} value={agent.id}>
+                        {agent.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+            </div>
+          ) : null}
           <div className="space-y-2 border-t pt-4">
             <h4 className="font-medium">{t(($) => $.page.linear.member_mapping_title)}</h4>
             <p className="text-body text-muted-foreground">
@@ -825,7 +965,10 @@ export function LinearIntegrationCard({
   const [wizardOpen, setWizardOpen] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
   const [conflictOpen, setConflictOpen] = useState(false);
+  const agentBridgeFlagEnabled = useFeatureEnabled(LINEAR_AGENT_BRIDGE_FLAG, false);
   const connectionQuery = useQuery(linearConnectionOptions(workspaceId));
+  const agentBridgeEnabled =
+    agentBridgeFlagEnabled && (connectionQuery.data?.agent_bridge_enabled ?? false);
   const bindingsQuery = useQuery(linearBindingsOptions(workspaceId));
   const membersQuery = useQuery(memberListOptions(workspaceId));
   const catalogQuery = useQuery(
@@ -834,6 +977,10 @@ export function LinearIntegrationCard({
   const projectsQuery = useQuery({
     ...projectListOptions(workspaceId),
     enabled: wizardOpen,
+  });
+  const agentsQuery = useQuery({
+    ...agentListOptions(workspaceId),
+    enabled: wizardOpen && agentBridgeEnabled,
   });
   const connection = connectionQuery.data?.connection;
   const isConnected = connection?.status === "active";
@@ -958,6 +1105,8 @@ export function LinearIntegrationCard({
             bindings={bindings}
             catalog={catalogQuery.data}
             connectionId={connection?.id ?? ""}
+            agents={agentsQuery.data ?? []}
+            agentBridgeEnabled={agentBridgeEnabled}
             memberBindings={memberBindingsQuery.data?.bindings ?? []}
             members={membersQuery.data ?? []}
             pullImportEnabled={connectionQuery.data?.pull_import_enabled ?? false}

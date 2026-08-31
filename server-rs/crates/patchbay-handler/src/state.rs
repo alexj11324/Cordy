@@ -1141,6 +1141,52 @@ impl HandlerState {
         )
     }
 
+    /// Returns whether the preview Linear Agent Session bridge may mutate this
+    /// workspace. It has its own allowlist so Agent Session events cannot
+    /// create or resume tasks merely because Project Sync was enabled.
+    pub fn linear_agent_bridge_enabled(&self, workspace_id: uuid::Uuid) -> bool {
+        if !self.linear_agent_bridge_enabled_for_any_workspace() {
+            return false;
+        }
+        let allowlist =
+            std::env::var("PATCHBAY_LINEAR_AGENT_BRIDGE_WORKSPACES").unwrap_or_default();
+        allowlist
+            .split(',')
+            .map(str::trim)
+            .any(|entry| entry == "*" || entry.eq_ignore_ascii_case(&workspace_id.to_string()))
+    }
+
+    /// Returns the rollout scope used when the worker claims Agent Session
+    /// events. Keeping this filter at claim time prevents a workspace outside
+    /// the Agent Bridge allowlist from having its durable event acknowledged.
+    pub fn linear_agent_bridge_workspace_filter(&self) -> Option<Vec<uuid::Uuid>> {
+        let allowlist =
+            std::env::var("PATCHBAY_LINEAR_AGENT_BRIDGE_WORKSPACES").unwrap_or_default();
+        if allowlist
+            .split(',')
+            .map(str::trim)
+            .any(|entry| entry == "*")
+        {
+            return None;
+        }
+        Some(
+            allowlist
+                .split(',')
+                .filter_map(|entry| uuid::Uuid::parse_str(entry.trim()).ok())
+                .collect(),
+        )
+    }
+
+    pub fn linear_agent_bridge_enabled_for_any_workspace(&self) -> bool {
+        self.linear_integration_enabled
+            && self.feature_flags.as_deref().is_some_and(|flags| {
+                flags.is_enabled(patchbay_service::feature_flags::LINEAR_AGENT_BRIDGE, false)
+            })
+            && std::env::var("PATCHBAY_LINEAR_AGENT_BRIDGE_WORKSPACES")
+                .map(|value| value.split(',').any(|entry| !entry.trim().is_empty()))
+                .unwrap_or(false)
+    }
+
     /// Prepares the Linear pull/import worker without spawning it. Production
     /// owns the returned runtime and calls this only after final wiring.
     pub fn prepare_linear_sync_worker(

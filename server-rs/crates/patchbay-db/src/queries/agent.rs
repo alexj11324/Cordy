@@ -4518,6 +4518,33 @@ ORDER BY created_at DESC"#
     Ok(out)
 }
 
+/// Finds a task previously dispatched for an external Agent Session. The
+/// marker is stored at the start of the handoff note so a worker can recover
+/// an already-created task even after it completed before the correlation row
+/// was committed.
+pub async fn find_task_id_by_issue_agent_session_marker(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    issue_id: Uuid,
+    agent_id: Uuid,
+    marker: &str,
+) -> anyhow::Result<Option<Uuid>> {
+    Ok(sqlx::query_scalar(
+        r#"SELECT id
+           FROM agent_task_queue
+           WHERE issue_id = $1
+             AND agent_id = $2
+             AND handoff_note IS NOT NULL
+             AND position($3 IN handoff_note) = 1
+           ORDER BY created_at DESC, id DESC
+           LIMIT 1"#,
+    )
+    .bind(issue_id)
+    .bind(agent_id)
+    .bind(marker)
+    .fetch_optional(executor)
+    .await?)
+}
+
 pub async fn list_agent_tasks(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     agent_id: Uuid,

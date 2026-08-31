@@ -14,11 +14,15 @@ use patchbay_db::models::{
     Issue, LinearConnection, LinearIssueLink, LinearProjectBinding, LinearSyncInbox,
     LinearSyncOutbox,
 };
-use patchbay_db::queries::{activity, issue as issue_q, linear as linear_q};
+use patchbay_db::queries::{
+    activity, agent as agent_q, issue as issue_q, linear as linear_q,
+    linear_agent as linear_agent_q, workspace as workspace_q,
+};
 use patchbay_service::issue_service::{
     ExternalIssueError, ExternalIssuePatch, ExternalSource, IssueCommand, IssueCreateError,
     IssueCreateOpts, IssueCreateParams,
 };
+use patchbay_service::task_service::pending_slot_taken_err;
 use serde_json::{json, Value};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
@@ -26,8 +30,8 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::linear::{
-    strip_patchbay_issue_marker, LinearRemoteIssue, LinearRemoteUser, LinearTokenError,
-    LinearTokenManager,
+    strip_patchbay_issue_marker, LinearRemoteIssue, LinearRemoteLabel, LinearRemoteUser,
+    LinearTokenError, LinearTokenManager,
 };
 use crate::state::HandlerState;
 
@@ -70,6 +74,197 @@ impl SyncError {
             Self::Retry(error) | Self::Permanent(error) => error.to_string(),
         }
     }
+}
+
+#[derive(Debug)]
+struct LinearAgentSessionEvent {
+    session_id: String,
+    linear_issue_id: String,
+    action: String,
+    prompt_context: Option<String>,
+    prompt_body: Option<String>,
+    requester_user_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct AgentLabelDecision {
+    configured: bool,
+    agent_id: Option<Uuid>,
+}
+
+fn is_agent_session_event(row: &LinearSyncInbox) -> bool {
+    row.event_type
+        .to_ascii_lowercase()
+        .replace('_', "")
+        .contains("agentsession")
+        || row.payload.get("agentSession").is_some()
+        || row.payload.get("agentSessionEvent").is_some()
+        || row
+            .payload
+            .get("data")
+            .is_some_and(|data| {
+                data.get("agentSession").is_some() || data.get("agentSessionEvent").is_some()
+            })
+}
+
+fn event_data(payload: &Value) -> &Value {
+    payload.get("data").unwrap_or(payload)
+}
+
+fn first_string(value: Option<&Value>, fields: &[&str]) -> Option<String> {
+    fields.iter().find_map(|field| {
+        value
+            .and_then(|value| value.get(*field))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    })
+}
+
+fn nested_string(value: Option<&Value>, path: &[&str]) -> Option<String> {
+    let mut current = value?;
+    for field in path {
+        current = current.get(*field)?;
+    }
+    current
+        .as_str()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn parse_agent_session_event(payload: &Value) -> Result<LinearAgentSessionEvent, SyncError> {
+    let data = event_data(payload);
+    let session = data
+        .get("agentSession")
+        .or_else(|| data.get("agentSessionEvent"))
+        .filter(Value::is_object);
+    let session_id = first_string(session, &["id", "agentSessionId"])
+        .or_else(|| first_string(Some(data), &["agentSessionId", "sessionId"]))
+        .ok_or_else(|| {
+            SyncError::permanent(anyhow::anyhow!(
+                "Linear Agent Session event has no session id"
+            ))
+        })?;
+    let linear_issue_id = nested_string(session, &["issue", "id"])
+        .or_else(|| first_string(session, &["issueId", "linearIssueId"]))
+        .or_else(|| nested_string(Some(data), &["issue", "id"]))
+        .or_else(|| first_string(Some(data), &["issueId", "linearIssueId"]))
+        .ok_or_else(|| {
+            SyncError::permanent(anyhow::anyhow!(
+                "Linear Agent Session event has no Issue id"
+            ))
+        })?;
+    let action = first_string(Some(data), &["action"])
+        .or_else(|| first_string(session, &["action"]))
+        .map(|value| value.to_ascii_lowercase())
+        .ok_or_else(|| {
+            SyncError::permanent(anyhow::anyhow!(
+                "Linear Agent Session event has no action"
+            ))
+        })?;
+    if !matches!(action.as_str(), "created" | "prompted") {
+        return Err(SyncError::permanent(anyhow::anyhow!(
+            "unsupported Linear Agent Session action: {action}"
+        )));
+    }
+    let prompt_context = first_string(session, &["promptContext", "context"])
+        .or_else(|| first_string(Some(data), &["promptContext", "context"]));
+    let prompt_body = nested_string(Some(data), &["agentActivity", "body"])
+        .or_else(|| nested_string(Some(data), &["agentActivity", "content", "body"]))
+        .or_else(|| nested_string(session, &["prompt", "body"]))
+        .or_else(|| first_string(Some(data), &["prompt", "promptBody", "body"]));
+    let requester_user_id = first_string(session, &["creatorId"])
+        .or_else(|| nested_string(session, &["creator", "id"]))
+        .or_else(|| first_string(Some(data), &["creatorId"]))
+        .and_then(|value| value.parse::<Uuid>().ok());
+    Ok(LinearAgentSessionEvent {
+        session_id,
+        linear_issue_id,
+        action,
+        prompt_context,
+        prompt_body,
+        requester_user_id,
+    })
+}
+
+fn agent_label_decision(
+    binding: &LinearProjectBinding,
+    labels: &[LinearRemoteLabel],
+) -> Result<AgentLabelDecision, SyncError> {
+    let Some(mapping) = binding.agent_label_mapping.as_object() else {
+        return Ok(AgentLabelDecision {
+            configured: false,
+            agent_id: None,
+        });
+    };
+    let Some(_group_id) = mapping
+        .get("group_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(AgentLabelDecision {
+            configured: false,
+            agent_id: None,
+        });
+    };
+    let label_mapping = mapping
+        .get("labels")
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            SyncError::permanent(anyhow::anyhow!(
+                "Linear Agent label mapping has no labels object"
+            ))
+        })?;
+    let mut mapped_agents = Vec::new();
+    for (label_id, agent_value) in label_mapping {
+        let agent_id = agent_value
+            .as_str()
+            .ok_or_else(|| {
+                SyncError::permanent(anyhow::anyhow!(
+                    "Linear Agent label mapping target is not a UUID"
+                ))
+            })?
+            .parse::<Uuid>()
+            .map_err(|_| {
+                SyncError::permanent(anyhow::anyhow!(
+                    "Linear Agent label mapping target is not a UUID"
+                ))
+            })?;
+        if labels.iter().any(|label| label.id == *label_id) {
+            mapped_agents.push((label_id.as_str(), agent_id));
+        }
+    }
+    if mapped_agents.len() > 1 {
+        return Err(SyncError::permanent(anyhow::anyhow!(
+            "Linear Agent Label Group has more than one selected value"
+        )));
+    }
+    if let Some((_, agent_id)) = mapped_agents.into_iter().next() {
+        return Ok(AgentLabelDecision {
+            configured: true,
+            agent_id: Some(agent_id),
+        });
+    }
+    let default_agent_id = mapping
+        .get("default_agent_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|value| {
+            value.parse::<Uuid>().map_err(|_| {
+                SyncError::permanent(anyhow::anyhow!(
+                    "Linear default Agent mapping target is not a UUID"
+                ))
+            })
+        })
+        .transpose()?;
+    Ok(AgentLabelDecision {
+        configured: true,
+        agent_id: default_agent_id,
+    })
 }
 
 /// A supervisor-owned Linear Inbox worker. `HandlerState` is cloned into the
@@ -139,7 +334,8 @@ impl LinearSyncWorker {
     pub async fn process_next(&self, worker_id: &str) -> anyhow::Result<bool> {
         let pull_enabled = self.state.linear_pull_import_enabled_for_any_workspace();
         let push_enabled = self.state.linear_push_enabled_for_any_workspace();
-        if !pull_enabled && !push_enabled {
+        let agent_bridge_enabled = self.state.linear_agent_bridge_enabled_for_any_workspace();
+        if !pull_enabled && !push_enabled && !agent_bridge_enabled {
             return Ok(false);
         }
         let mut processed = false;
@@ -157,6 +353,31 @@ impl LinearSyncWorker {
                 1,
                 LEASE_SECONDS,
                 workspace_filter.as_deref(),
+                true,
+            )
+            .await?
+            .into_iter()
+            .next()
+            {
+                self.finish_inbox_row(row, worker_id).await?;
+                processed = true;
+            }
+        }
+
+        if agent_bridge_enabled {
+            let workspace_filter = self.state.linear_agent_bridge_workspace_filter();
+            let _ = linear_q::dead_letter_exhausted_sync_inbox(
+                &self.state.pool,
+                workspace_filter.as_deref(),
+            )
+            .await?;
+            if let Some(row) = linear_q::claim_sync_inbox(
+                &self.state.pool,
+                worker_id,
+                1,
+                LEASE_SECONDS,
+                workspace_filter.as_deref(),
+                false,
             )
             .await?
             .into_iter()
@@ -615,6 +836,28 @@ impl LinearSyncWorker {
             }
         };
         let update_assignee = Some(linear_owner_id.as_deref());
+        let desired_delegate_id = if self.state.linear_agent_bridge_enabled(row.workspace_id)
+            && issue.executor_type.as_deref() == Some("agent")
+            && issue.executor_id.is_some()
+        {
+            Some(connection.actor_id.as_str())
+        } else {
+            None
+        };
+        let update_delegate = if desired_delegate_id.is_some() {
+            Some(desired_delegate_id)
+        } else if current_remote.as_ref().is_some_and(|remote| {
+            remote
+                .delegate
+                .as_ref()
+                .is_some_and(|delegate| delegate.id == connection.actor_id)
+        }) {
+            // Remove only Cordy's own delegate. A user may have selected a
+            // different Agent, which this integration must leave untouched.
+            Some(None)
+        } else {
+            None
+        };
         let remote = if let Some(remote) = current_remote {
             manager
                 .update_issue(
@@ -627,6 +870,7 @@ impl LinearSyncWorker {
                     state_id.as_deref(),
                     due_date.as_deref(),
                     update_assignee,
+                    update_delegate,
                 )
                 .await
                 .map_err(|error| classify_token_error(error, "update Linear Issue"))?
@@ -677,6 +921,7 @@ impl LinearSyncWorker {
                     state_id.as_deref(),
                     due_date.as_deref(),
                     linear_owner_id.as_deref(),
+                    desired_delegate_id,
                 )
                 .await
                 .map_err(|error| classify_token_error(error, "create Linear Issue"))?
@@ -773,6 +1018,39 @@ impl LinearSyncWorker {
             )));
         }
         transaction.commit().await.map_err(SyncError::retry)?;
+        if self.state.linear_agent_bridge_enabled(row.workspace_id) {
+            match self.patchbay_issue_url(&issue).await {
+                Ok(Some(url)) => {
+                    if let Err(error) = manager
+                        .create_or_update_attachment(
+                            connection.id,
+                            &remote.id,
+                            "Open in Patchbay",
+                            &format!("Agent · {}", issue.status),
+                            &url,
+                            json!({
+                                "patchbay_issue_id": issue.id.to_string(),
+                                "status": issue.status,
+                            }),
+                        )
+                        .await
+                    {
+                        tracing::warn!(
+                            %error,
+                            issue_id = %issue.id,
+                            linear_issue_id = %remote.id,
+                            "Linear Agent attachment update failed after Issue sync"
+                        );
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => tracing::warn!(
+                    %error,
+                    issue_id = %issue.id,
+                    "could not build Patchbay URL for Linear Agent attachment"
+                ),
+            }
+        }
         Ok(())
     }
 
@@ -788,6 +1066,17 @@ impl LinearSyncWorker {
             return Err(SyncError::permanent(anyhow::anyhow!(
                 "Linear connection is not active"
             )));
+        }
+        if is_agent_session_event(row) {
+            if !self
+                .state
+                .linear_agent_bridge_enabled(connection.workspace_id)
+            {
+                return Ok(());
+            }
+            return self
+                .process_agent_session_event(row, &connection)
+                .await;
         }
         if !self
             .state
@@ -866,6 +1155,374 @@ impl LinearSyncWorker {
             updated_from,
         )
         .await
+    }
+
+    async fn process_agent_session_event(
+        &self,
+        row: &LinearSyncInbox,
+        connection: &LinearConnection,
+    ) -> Result<(), SyncError> {
+        let event = parse_agent_session_event(&row.payload)?;
+        let event_timestamp_ms = extract_event_timestamp_ms(&row.payload);
+        let source_event_id = format!("linear-agent-delivery:{}", row.delivery_id);
+        let mut link = linear_q::find_linear_issue_link(
+            &self.state.pool,
+            connection.workspace_id,
+            connection.id,
+            &event.linear_issue_id,
+        )
+        .await
+        .map_err(SyncError::retry)?;
+
+        // A delegated Issue can arrive before the ordinary Issue webhook. Use
+        // the same full-snapshot bootstrap as Project Sync, then persist an
+        // explicit waiting state if the binding is not import-capable.
+        if link.is_none() {
+            let manager = LinearTokenManager::from_state(&self.state)
+                .map_err(|error| classify_token_error(error, "create Linear token manager"))?;
+            if let Some(remote) = manager
+                .fetch_issue(connection.id, &event.linear_issue_id)
+                .await
+                .map_err(|error| classify_token_error(error, "fetch Linear Agent Issue"))?
+            {
+                self.apply_remote_issue(
+                    connection,
+                    remote,
+                    None,
+                    &source_event_id,
+                    event_timestamp_ms,
+                    None,
+                )
+                .await?;
+                link = linear_q::find_linear_issue_link(
+                    &self.state.pool,
+                    connection.workspace_id,
+                    connection.id,
+                    &event.linear_issue_id,
+                )
+                .await
+                .map_err(SyncError::retry)?;
+            }
+        }
+
+        let Some(link) = link else {
+            linear_agent_q::upsert_linear_agent_session(
+                &self.state.pool,
+                Uuid::now_v7(),
+                connection.workspace_id,
+                connection.id,
+                &event.session_id,
+                &event.linear_issue_id,
+                None,
+                None,
+                None,
+                &event.action,
+                "awaiting_issue_link",
+                event.prompt_context.as_deref(),
+                &row.delivery_id,
+                event_timestamp_ms,
+            )
+            .await
+            .map_err(SyncError::retry)?;
+            return Ok(());
+        };
+
+        let issue = issue_q::get_issue_in_workspace(
+            &self.state.pool,
+            link.patchbay_issue_id,
+            connection.workspace_id,
+        )
+        .await
+        .map_err(SyncError::retry)?
+        .ok_or_else(|| SyncError::permanent(anyhow::anyhow!("Patchbay Issue not found")))?;
+        let Some(agent_id) = (issue.executor_type.as_deref() == Some("agent"))
+            .then_some(issue.executor_id)
+            .flatten()
+        else {
+            linear_agent_q::upsert_linear_agent_session(
+                &self.state.pool,
+                Uuid::now_v7(),
+                connection.workspace_id,
+                connection.id,
+                &event.session_id,
+                &event.linear_issue_id,
+                Some(issue.id),
+                None,
+                None,
+                &event.action,
+                "agent_selection_required",
+                event.prompt_context.as_deref(),
+                &row.delivery_id,
+                event_timestamp_ms,
+            )
+            .await
+            .map_err(SyncError::retry)?;
+            return Ok(());
+        };
+        let agent = agent_q::get_agent_in_workspace(
+            &self.state.pool,
+            agent_id,
+            connection.workspace_id,
+        )
+        .await
+        .map_err(SyncError::retry)?;
+        if agent
+            .as_ref()
+            .map(|agent| agent.archived_at.is_some())
+            .unwrap_or(true)
+        {
+            linear_agent_q::upsert_linear_agent_session(
+                &self.state.pool,
+                Uuid::now_v7(),
+                connection.workspace_id,
+                connection.id,
+                &event.session_id,
+                &event.linear_issue_id,
+                Some(issue.id),
+                Some(agent_id),
+                None,
+                &event.action,
+                "agent_selection_required",
+                event.prompt_context.as_deref(),
+                &row.delivery_id,
+                event_timestamp_ms,
+            )
+            .await
+            .map_err(SyncError::retry)?;
+            return Ok(());
+        }
+
+        let existing_session = linear_agent_q::get_linear_agent_session(
+            &self.state.pool,
+            connection.workspace_id,
+            connection.id,
+            &event.session_id,
+        )
+        .await
+        .map_err(SyncError::retry)?;
+        let same_delivery_with_task = existing_session.as_ref().is_some_and(|session| {
+            session.last_event_id == row.delivery_id && session.task_id.is_some()
+        });
+        if same_delivery_with_task {
+            return Ok(());
+        }
+
+        let mut task = if let Some(task_id) = existing_session
+            .as_ref()
+            .and_then(|session| session.task_id)
+        {
+            agent_q::get_agent_task_in_workspace(
+                &self.state.pool,
+                task_id,
+                connection.workspace_id,
+            )
+            .await
+            .map_err(SyncError::retry)?
+        } else {
+            None
+        };
+        let session_marker = format!("linear-agent-session:{}", event.session_id);
+        if task.is_none() {
+            if let Some(task_id) = agent_q::find_task_id_by_issue_agent_session_marker(
+                &self.state.pool,
+                issue.id,
+                agent_id,
+                &session_marker,
+            )
+            .await
+            .map_err(SyncError::retry)?
+            {
+                task = agent_q::get_agent_task_in_workspace(
+                    &self.state.pool,
+                    task_id,
+                    connection.workspace_id,
+                )
+                .await
+                .map_err(SyncError::retry)?;
+            }
+        }
+        if task.is_none() {
+            task = agent_q::list_active_tasks_by_issue(&self.state.pool, issue.id)
+                .await
+                .map_err(SyncError::retry)?
+                .into_iter()
+                .find(|candidate| candidate.agent_id == agent_id);
+        }
+
+        let mut continuation_task_id = None;
+        if event.action == "prompted" {
+            if let Some(parent_task) = task.as_ref() {
+                let handoff = event
+                    .prompt_body
+                    .as_deref()
+                    .or(event.prompt_context.as_deref())
+                    .unwrap_or("Linear Agent Session prompt");
+                let idempotency_key = format!(
+                    "linear-agent-session:{}:{}",
+                    event.session_id, row.delivery_id
+                );
+                let receipt = self
+                    .state
+                    .tasks
+                    .continue_agent_thread(
+                        parent_task.id,
+                        handoff,
+                        &idempotency_key,
+                        event
+                            .requester_user_id
+                            .unwrap_or(connection.created_by_id),
+                    )
+                    .await
+                    .map_err(|error| {
+                        SyncError::retry(anyhow::anyhow!(
+                            "continue Linear Agent Session task: {error}"
+                        ))
+                    })?;
+                continuation_task_id = Some(receipt.continuation_task_id);
+            }
+        }
+        if task.is_none() && continuation_task_id.is_none() {
+            let mut agent_issue = issue.clone();
+            agent_issue.executor_type = Some("agent".to_string());
+            agent_issue.executor_id = Some(agent_id);
+            let handoff = if event.action == "prompted" {
+                format!(
+                    "{session_marker}\n\n{}",
+                    event
+                        .prompt_body
+                        .as_deref()
+                        .or(event.prompt_context.as_deref())
+                        .unwrap_or("Linear Agent Session prompt")
+                )
+            } else {
+                session_marker.clone()
+            };
+            let enqueue_result = self
+                .state
+                .tasks
+                .enqueue_task_for_issue_with_handoff(&agent_issue, &handoff, None)
+                .await;
+            task = match enqueue_result {
+                Ok(task) => Some(task),
+                Err(error) if pending_slot_taken_err(&error) => {
+                    let recovered = if let Some(task_id) =
+                        agent_q::find_task_id_by_issue_agent_session_marker(
+                            &self.state.pool,
+                            issue.id,
+                            agent_id,
+                            &session_marker,
+                        )
+                        .await
+                        .map_err(SyncError::retry)?
+                    {
+                        agent_q::get_agent_task_in_workspace(
+                            &self.state.pool,
+                            task_id,
+                            connection.workspace_id,
+                        )
+                        .await
+                        .map_err(SyncError::retry)?
+                    } else {
+                        None
+                    };
+                    recovered.or(
+                        agent_q::list_active_tasks_by_issue(&self.state.pool, issue.id)
+                            .await
+                            .map_err(SyncError::retry)?
+                            .into_iter()
+                            .find(|candidate| candidate.agent_id == agent_id),
+                    )
+                }
+                Err(error) => {
+                    return Err(SyncError::retry(anyhow::anyhow!(
+                        "enqueue Linear Agent Session task: {error}"
+                    )))
+                }
+            };
+        }
+        let task_id = continuation_task_id
+            .or_else(|| task.as_ref().map(|task| task.id))
+            .ok_or_else(|| {
+                SyncError::retry(anyhow::anyhow!(
+                    "Linear Agent Session task was not visible after enqueue"
+                ))
+            })?;
+        let session_status = if event.action == "prompted" {
+            "prompted"
+        } else {
+            "queued"
+        };
+        linear_agent_q::upsert_linear_agent_session(
+            &self.state.pool,
+            Uuid::now_v7(),
+            connection.workspace_id,
+            connection.id,
+            &event.session_id,
+            &event.linear_issue_id,
+            Some(issue.id),
+            Some(agent_id),
+            Some(task_id),
+            &event.action,
+            session_status,
+            event.prompt_context.as_deref(),
+            &row.delivery_id,
+            event_timestamp_ms,
+        )
+        .await
+        .map_err(SyncError::retry)?;
+
+        let manager = LinearTokenManager::from_state(&self.state)
+            .map_err(|error| classify_token_error(error, "create Linear token manager"))?;
+        if let Some(url) = self.patchbay_issue_url(&issue).await? {
+            manager
+                .update_agent_session_external_url(connection.id, &event.session_id, &url)
+                .await
+                .map_err(|error| {
+                    classify_token_error(error, "update Linear Agent Session URL")
+                })?;
+        }
+        let activity = if event.action == "prompted" {
+            "Linear prompt accepted and queued for the selected Agent."
+        } else {
+            "Linear Agent Session accepted and queued for the selected Agent."
+        };
+        manager
+            .create_agent_activity(
+                connection.id,
+                &event.session_id,
+                json!({"type": "thought", "body": activity}),
+            )
+            .await
+            .map_err(|error| classify_token_error(error, "acknowledge Linear Agent Session"))?;
+        Ok(())
+    }
+
+    async fn patchbay_issue_url(
+        &self,
+        issue: &patchbay_db::models::Issue,
+    ) -> Result<Option<String>, SyncError> {
+        let base = if !self.state.public_config.daemon_app_url.trim().is_empty() {
+            self.state.public_config.daemon_app_url.trim()
+        } else {
+            self.state.public_config.public_url.trim()
+        };
+        if base.is_empty() {
+            return Ok(None);
+        }
+        let workspace = workspace_q::get_workspace(&self.state.pool, issue.workspace_id)
+            .await
+            .map_err(SyncError::retry)?
+            .ok_or_else(|| SyncError::permanent(anyhow::anyhow!("Patchbay Workspace not found")))?;
+        let identifier = if workspace.issue_prefix.trim().is_empty() {
+            issue.number.to_string()
+        } else {
+            format!("{}-{}", workspace.issue_prefix, issue.number)
+        };
+        Ok(Some(format!(
+            "{}/{}/issues/{identifier}",
+            base.trim_end_matches('/'),
+            workspace.slug.trim_matches('/')
+        )))
     }
 
     async fn process_initial_import(
@@ -1020,6 +1677,14 @@ impl LinearSyncWorker {
         if !inbound_enabled(&binding) {
             return Ok(());
         }
+        if binding.linear_project_id != linear_project_id {
+            return Err(SyncError::permanent(anyhow::anyhow!(
+                "Linear issue project does not match its binding"
+            )));
+        }
+        let agent_decision = self
+            .agent_label_decision_for_issue(connection, &binding, &remote)
+            .await?;
         let remote_uuid = remote
             .id
             .parse::<Uuid>()
@@ -1072,6 +1737,7 @@ impl LinearSyncWorker {
                     event_timestamp_ms,
                     remote_updated_at,
                     updated_from,
+                    agent_decision,
                 )
                 .await;
         }
@@ -1148,6 +1814,10 @@ impl LinearSyncWorker {
                             due_date,
                             owner_type: remote_owner_id.map(|_| "member".to_string()),
                             owner_id: remote_owner_id,
+                            executor_type: agent_decision
+                                .agent_id
+                                .map(|_| "agent".to_string()),
+                            executor_id: agent_decision.agent_id,
                             origin_type: Some("linear".to_string()),
                             origin_id: Some(remote_uuid),
                             allow_duplicate: true,
@@ -1325,6 +1995,44 @@ impl LinearSyncWorker {
             })
     }
 
+    async fn agent_label_decision_for_issue(
+        &self,
+        connection: &LinearConnection,
+        binding: &LinearProjectBinding,
+        remote: &LinearRemoteIssue,
+    ) -> Result<AgentLabelDecision, SyncError> {
+        if !self
+            .state
+            .linear_agent_bridge_enabled(connection.workspace_id)
+        {
+            return Ok(AgentLabelDecision {
+                configured: false,
+                agent_id: None,
+            });
+        }
+        let decision = agent_label_decision(binding, &remote.labels.nodes)?;
+        if let Some(agent_id) = decision.agent_id {
+            let agent = agent_q::get_agent_in_workspace(
+                &self.state.pool,
+                agent_id,
+                connection.workspace_id,
+            )
+            .await
+            .map_err(SyncError::retry)?
+            .ok_or_else(|| {
+                SyncError::permanent(anyhow::anyhow!(
+                    "Linear Agent label maps to an unknown Patchbay Agent"
+                ))
+            })?;
+            if agent.archived_at.is_some() {
+                return Err(SyncError::permanent(anyhow::anyhow!(
+                    "Linear Agent label maps to an archived Patchbay Agent"
+                )));
+            }
+        }
+        Ok(decision)
+    }
+
     async fn apply_existing_remote_issue(
         &self,
         connection: &LinearConnection,
@@ -1336,6 +2044,7 @@ impl LinearSyncWorker {
         event_timestamp_ms: Option<i64>,
         remote_updated_at: DateTime<Utc>,
         updated_from: Option<&Value>,
+        agent_decision: AgentLabelDecision,
     ) -> Result<(), SyncError> {
         if event_timestamp_ms.is_none()
             && link
@@ -1409,8 +2118,21 @@ impl LinearSyncWorker {
             return Ok(());
         }
 
-        if merge.remote_changed {
-            self.state
+        let executor_changed = agent_decision.configured
+            && (issue.executor_type.as_deref() != agent_decision.agent_id.map(|_| "agent")
+                || issue.executor_id != agent_decision.agent_id);
+        if merge.remote_changed || executor_changed {
+            let mut patch = if merge.remote_changed {
+                external_patch_from_snapshot(&merge.merged)?
+            } else {
+                ExternalIssuePatch::default()
+            };
+            if executor_changed {
+                patch.executor_type = Some(agent_decision.agent_id.map(|_| "agent".to_string()));
+                patch.executor_id = Some(agent_decision.agent_id);
+            }
+            let apply_result = self
+                .state
                 .issues
                 .apply_external_patch(
                     connection.workspace_id,
@@ -1420,11 +2142,40 @@ impl LinearSyncWorker {
                         source_event_id: source_event_id.to_string(),
                         expected_revision: Some(issue.revision),
                         suppress_external_outbox: true,
-                        patch: external_patch_from_snapshot(&merge.merged)?,
+                        patch,
                     },
                 )
-                .await
-                .map_err(|error| classify_external_error(error, "apply merged Linear Issue"))?;
+                .await;
+            match apply_result {
+                Ok(_) => {}
+                Err(ExternalIssueError::ActiveExecutorRequired) => {
+                    let updated = linear_q::update_linear_issue_link(
+                        &self.state.pool,
+                        link.id,
+                        connection.workspace_id,
+                        &merge.common,
+                        Some(remote_updated_at),
+                        last_event_at_ms,
+                        last_event_id,
+                        "agent_selection_required",
+                    )
+                    .await
+                    .map_err(SyncError::retry)?;
+                    if !updated {
+                        return Err(SyncError::retry(anyhow::anyhow!(
+                            "Linear Issue Link disappeared while recording Agent selection state"
+                        )));
+                    }
+                    tracing::warn!(
+                        issue_id = %issue.id,
+                        "Linear Agent label requires an executor compatible with the current Issue status"
+                    );
+                    return Ok(());
+                }
+                Err(error) => {
+                    return Err(classify_external_error(error, "apply merged Linear Issue"));
+                }
+            }
         }
 
         let updated = linear_q::update_linear_issue_link(
@@ -1810,6 +2561,8 @@ fn external_patch_from_snapshot(snapshot: &Value) -> Result<ExternalIssuePatch, 
         due_date,
         owner_type,
         owner_id,
+        executor_type: None,
+        executor_id: None,
     })
 }
 
@@ -1818,6 +2571,7 @@ fn classify_external_error(error: ExternalIssueError, context: &str) -> SyncErro
         error @ (ExternalIssueError::InvalidStatus
         | ExternalIssueError::InvalidPriority
         | ExternalIssueError::InvalidOwner
+        | ExternalIssueError::InvalidExecutor
         | ExternalIssueError::ActiveExecutorRequired
         | ExternalIssueError::ReviewReviewerRequired
         | ExternalIssueError::NotFound) => {
@@ -2079,12 +2833,13 @@ mod tests {
     use uuid::Uuid;
 
     use super::{
-        extract_event_timestamp_ms, extract_issue_id, extract_updated_from, inbound_enabled,
-        is_out_of_order, map_local_priority, map_local_status, map_remote_priority,
-        map_remote_status, merge_sync_snapshots, merge_sync_snapshots_with_updated_from,
-        parse_remote_timestamp, retry_delay,
+        agent_label_decision, extract_event_timestamp_ms, extract_issue_id, extract_updated_from,
+        inbound_enabled, is_out_of_order, map_local_priority, map_local_status,
+        map_remote_priority, map_remote_status, merge_sync_snapshots,
+        merge_sync_snapshots_with_updated_from, parse_agent_session_event, parse_remote_timestamp,
+        retry_delay,
     };
-    use crate::linear::LinearRemoteState;
+    use crate::linear::{LinearRemoteLabel, LinearRemoteState};
 
     fn binding(status_mapping: serde_json::Value) -> LinearProjectBinding {
         LinearProjectBinding {
@@ -2228,6 +2983,97 @@ mod tests {
     fn remote_timestamp_requires_rfc3339() {
         assert!(parse_remote_timestamp("2026-08-31T12:00:00Z").is_ok());
         assert!(parse_remote_timestamp("not-a-timestamp").is_err());
+    }
+
+    #[test]
+    fn agent_label_mapping_collects_all_labels_and_ignores_unrelated_order() {
+        let agent_id = Uuid::now_v7();
+        let mut binding = binding(json!({
+            "group_id": "agent-group",
+            "labels": {"agent-backend": agent_id.to_string()}
+        }));
+        let labels = vec![
+            LinearRemoteLabel {
+                id: "bug".to_string(),
+            },
+            LinearRemoteLabel {
+                id: "agent-backend".to_string(),
+            },
+        ];
+        assert_eq!(
+            agent_label_decision(&binding, &labels).unwrap(),
+            super::AgentLabelDecision {
+                configured: true,
+                agent_id: Some(agent_id),
+            }
+        );
+
+        binding.agent_label_mapping = json!({
+            "group_id": "agent-group",
+            "labels": {"agent-backend": agent_id.to_string()}
+        });
+        assert_eq!(
+            agent_label_decision(
+                &binding,
+                &[LinearRemoteLabel {
+                    id: "bug".to_string(),
+                }]
+            )
+            .unwrap(),
+            super::AgentLabelDecision {
+                configured: true,
+                agent_id: None,
+            }
+        );
+    }
+
+    #[test]
+    fn agent_label_mapping_rejects_multiple_selected_values() {
+        let first = Uuid::now_v7();
+        let second = Uuid::now_v7();
+        let binding = binding(json!({
+            "group_id": "agent-group",
+            "labels": {
+                "agent-backend": first.to_string(),
+                "agent-frontend": second.to_string()
+            }
+        }));
+        let error = agent_label_decision(
+            &binding,
+            &[
+                LinearRemoteLabel {
+                    id: "agent-backend".to_string(),
+                },
+                LinearRemoteLabel {
+                    id: "agent-frontend".to_string(),
+                },
+            ],
+        )
+        .unwrap_err();
+        assert!(error.message().contains("more than one selected"));
+    }
+
+    #[test]
+    fn agent_session_event_parser_accepts_created_and_prompted_shapes() {
+        let event = parse_agent_session_event(&json!({
+            "action": "prompted",
+            "agentSession": {
+                "id": "session-1",
+                "issue": {"id": "issue-1"},
+                "promptContext": "continue the implementation",
+                "creatorId": "018f0d7f-3b4f-7b1a-8c4e-7baf8ecbda40"
+            },
+            "agentActivity": {"content": {"body": "Please continue"}}
+        }))
+        .unwrap();
+        assert_eq!(event.session_id, "session-1");
+        assert_eq!(event.linear_issue_id, "issue-1");
+        assert_eq!(event.action, "prompted");
+        assert_eq!(event.prompt_body.as_deref(), Some("Please continue"));
+        assert_eq!(
+            event.requester_user_id,
+            Some(Uuid::parse_str("018f0d7f-3b4f-7b1a-8c4e-7baf8ecbda40").unwrap())
+        );
     }
 
     #[test]

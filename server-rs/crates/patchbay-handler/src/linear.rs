@@ -214,6 +214,7 @@ async fn get_connection(
             "connected": connection.status == "active",
             "pull_import_enabled": state.linear_pull_import_enabled(workspace_id),
             "push_enabled": state.linear_push_enabled(workspace_id),
+            "agent_bridge_enabled": state.linear_agent_bridge_enabled(workspace_id),
             "connection": connection_json(connection),
         }))
         .into_response(),
@@ -222,6 +223,7 @@ async fn get_connection(
             "connected": false,
             "pull_import_enabled": state.linear_pull_import_enabled(workspace_id),
             "push_enabled": state.linear_push_enabled(workspace_id),
+            "agent_bridge_enabled": state.linear_agent_bridge_enabled(workspace_id),
             "connection": Value::Null,
         }))
         .into_response(),
@@ -749,6 +751,7 @@ fn external_conflict_error_status(error: &ExternalIssueError) -> StatusCode {
         ExternalIssueError::InvalidStatus
         | ExternalIssueError::InvalidPriority
         | ExternalIssueError::InvalidOwner
+        | ExternalIssueError::InvalidExecutor
         | ExternalIssueError::ActiveExecutorRequired
         | ExternalIssueError::ReviewReviewerRequired
         | ExternalIssueError::Internal(_)
@@ -2016,6 +2019,7 @@ pub(crate) struct LinearRemoteIssue {
     pub updated_at: String,
     pub team: Option<LinearRemoteTeam>,
     pub assignee: Option<LinearRemoteUser>,
+    pub delegate: Option<LinearRemoteUser>,
     pub labels: LinearCatalogPage<LinearRemoteLabel>,
 }
 
@@ -2642,7 +2646,7 @@ impl LinearTokenManager {
             .post(&self.graphql_url)
             .bearer_auth(access_token)
             .json(&json!({
-                "query": "query LinearIssue($issueId: ID!) { issue(id: $issueId) { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } labels { nodes { id } } } }",
+                "query": "query LinearIssue($issueId: ID!) { issue(id: $issueId) { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } delegate { id } labels { nodes { id } } } }",
                 "variables": { "issueId": linear_issue_id },
             }))
             .send()
@@ -2685,7 +2689,7 @@ impl LinearTokenManager {
             .post(&self.graphql_url)
             .bearer_auth(access_token)
             .json(&json!({
-                "query": "query LinearProjectIssues($projectId: ID!, $after: String) { issues(first: 100, after: $after, filter: { project: { id: { eq: $projectId } } }) { nodes { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } labels { nodes { id } } } pageInfo { hasNextPage endCursor } } }",
+                "query": "query LinearProjectIssues($projectId: ID!, $after: String) { issues(first: 100, after: $after, filter: { project: { id: { eq: $projectId } } }) { nodes { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } delegate { id } labels { nodes { id } } } pageInfo { hasNextPage endCursor } } }",
                 "variables": {
                     "projectId": linear_project_id,
                     "after": after,
@@ -2812,6 +2816,159 @@ impl LinearTokenManager {
         Ok(issue)
     }
 
+    /// Executes a small Agent/Attachment mutation and validates the common
+    /// Linear mutation envelope. These APIs are developer-preview only, so
+    /// the bridge keeps them isolated from the Issue mutation contract.
+    async fn mutate_success(
+        &self,
+        access_token: &str,
+        operation: &str,
+        query: &str,
+        variables: Value,
+    ) -> Result<(), LinearTokenError> {
+        let response = self
+            .client
+            .post(&self.graphql_url)
+            .bearer_auth(access_token)
+            .json(&json!({ "query": query, "variables": variables }))
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, operation, "Linear Agent mutation request failed");
+                LinearTokenError::Provider
+            })?;
+        let status = response.status();
+        let payload = response
+            .json::<GraphQlResponse<Value>>()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, operation, "Linear Agent mutation response is invalid JSON");
+                LinearTokenError::InvalidResponse
+            })?;
+        if !status.is_success() {
+            if status.is_client_error() {
+                return Err(LinearTokenError::MutationRejected(format!(
+                    "Linear Agent mutation returned HTTP {status}"
+                )));
+            }
+            return Err(LinearTokenError::Provider);
+        }
+        if let Some(errors) = payload.errors.as_ref().filter(|errors| !errors.is_empty()) {
+            let message = errors
+                .iter()
+                .filter_map(|error| error.message.as_deref())
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(LinearTokenError::MutationRejected(if message.is_empty() {
+                "Linear Agent GraphQL mutation failed".to_string()
+            } else {
+                message
+            }));
+        }
+        let result = payload
+            .data
+            .as_ref()
+            .and_then(|data| data.get(operation))
+            .ok_or(LinearTokenError::InvalidResponse)?;
+        let success = result
+            .get("success")
+            .and_then(Value::as_bool)
+            .ok_or(LinearTokenError::InvalidResponse)?;
+        if !success {
+            let message = result
+                .get("userErrors")
+                .and_then(Value::as_array)
+                .map(|errors| {
+                    errors
+                        .iter()
+                        .filter_map(|error| error.get("message").and_then(Value::as_str))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                })
+                .filter(|message| !message.is_empty())
+                .unwrap_or_else(|| "Linear rejected the Agent mutation".to_string());
+            return Err(LinearTokenError::MutationRejected(message));
+        }
+        Ok(())
+    }
+
+    /// Adds or replaces the stable Patchbay URL shown from a Linear Agent
+    /// Session. Linear replaces the complete `externalUrls` array, so this
+    /// method owns the single integration URL and is idempotent.
+    pub(crate) async fn update_agent_session_external_url(
+        &self,
+        connection_id: Uuid,
+        session_id: &str,
+        url: &str,
+    ) -> Result<(), LinearTokenError> {
+        let access_token = self.access_token(connection_id).await?;
+        self.mutate_success(
+            &access_token,
+            "agentSessionUpdate",
+            "mutation AgentSessionUpdate($agentSessionId: String!, $input: AgentSessionUpdateInput!) { agentSessionUpdate(id: $agentSessionId, input: $input) { success } }",
+            json!({
+                "agentSessionId": session_id,
+                "input": {
+                    "externalUrls": [{ "label": "Open in Patchbay", "url": url }]
+                }
+            }),
+        )
+        .await
+    }
+
+    /// Emits a semantic activity so a newly delegated session is visibly
+    /// acknowledged in Linear before the local task is dispatched.
+    pub(crate) async fn create_agent_activity(
+        &self,
+        connection_id: Uuid,
+        session_id: &str,
+        content: Value,
+    ) -> Result<(), LinearTokenError> {
+        let access_token = self.access_token(connection_id).await?;
+        self.mutate_success(
+            &access_token,
+            "agentActivityCreate",
+            "mutation AgentActivityCreate($input: AgentActivityCreateInput!) { agentActivityCreate(input: $input) { success } }",
+            json!({
+                "input": {
+                    "agentSessionId": session_id,
+                    "content": content
+                }
+            }),
+        )
+        .await
+    }
+
+    /// Creates or updates the issue attachment with a stable URL. Linear
+    /// treats `(issueId, url)` as the idempotency key, so retries update the
+    /// existing card instead of adding another one.
+    pub(crate) async fn create_or_update_attachment(
+        &self,
+        connection_id: Uuid,
+        linear_issue_id: &str,
+        title: &str,
+        subtitle: &str,
+        url: &str,
+        metadata: Value,
+    ) -> Result<(), LinearTokenError> {
+        let access_token = self.access_token(connection_id).await?;
+        self.mutate_success(
+            &access_token,
+            "attachmentCreate",
+            "mutation LinearAttachmentCreate($input: AttachmentCreateInput!) { attachmentCreate(input: $input) { success attachment { id } } }",
+            json!({
+                "input": {
+                    "issueId": linear_issue_id,
+                    "title": title,
+                    "subtitle": subtitle,
+                    "url": url,
+                    "metadata": metadata
+                }
+            }),
+        )
+        .await
+    }
+
     pub(crate) async fn create_issue(
         &self,
         connection_id: Uuid,
@@ -2824,6 +2981,7 @@ impl LinearTokenManager {
         state_id: Option<&str>,
         due_date: Option<&str>,
         assignee_id: Option<&str>,
+        delegate_id: Option<&str>,
     ) -> Result<LinearRemoteIssue, LinearTokenError> {
         let access_token = self.access_token(connection_id).await?;
         let mut input = serde_json::Map::new();
@@ -2844,10 +3002,13 @@ impl LinearTokenManager {
         if let Some(assignee_id) = assignee_id {
             input.insert("assigneeId".to_string(), json!(assignee_id));
         }
+        if let Some(delegate_id) = delegate_id {
+            input.insert("delegateId".to_string(), json!(delegate_id));
+        }
         self.mutate_issue(
             &access_token,
             "issueCreate",
-            "mutation LinearIssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } labels { nodes { id } } } userErrors { message } } }",
+            "mutation LinearIssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } delegate { id } labels { nodes { id } } } userErrors { message } } }",
             json!({ "input": Value::Object(input) }),
         )
         .await
@@ -2864,6 +3025,7 @@ impl LinearTokenManager {
         state_id: Option<&str>,
         due_date: Option<&str>,
         assignee_id: Option<Option<&str>>,
+        delegate_id: Option<Option<&str>>,
     ) -> Result<LinearRemoteIssue, LinearTokenError> {
         let access_token = self.access_token(connection_id).await?;
         let mut input = serde_json::Map::new();
@@ -2883,10 +3045,13 @@ impl LinearTokenManager {
         if let Some(assignee_id) = assignee_id {
             input.insert("assigneeId".to_string(), json!(assignee_id));
         }
+        if let Some(delegate_id) = delegate_id {
+            input.insert("delegateId".to_string(), json!(delegate_id));
+        }
         self.mutate_issue(
             &access_token,
             "issueUpdate",
-            "mutation LinearIssueUpdate($issueId: ID!, $input: IssueUpdateInput!) { issueUpdate(id: $issueId, input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } labels { nodes { id } } } userErrors { message } } }",
+            "mutation LinearIssueUpdate($issueId: ID!, $input: IssueUpdateInput!) { issueUpdate(id: $issueId, input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } delegate { id } labels { nodes { id } } } userErrors { message } } }",
             json!({ "issueId": linear_issue_id, "input": Value::Object(input) }),
         )
         .await

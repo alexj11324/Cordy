@@ -167,6 +167,9 @@ pub const LINEAR_PULL_IMPORT: &str = "linear_pull_import";
 /// Gates outbound Issue publication. It stays separate from pull/import so a
 /// workspace can safely prove inbound behavior before enabling mutations.
 pub const LINEAR_PUSH: &str = "linear_push";
+/// Gates the native Linear Agent Session bridge. Agent APIs are a separate
+/// preview surface and must never turn on with ordinary Project Sync.
+pub const LINEAR_AGENT_BRIDGE: &str = "linear_agent_bridge";
 
 // No longer release flags — kept publishing as permanently enabled so older
 // desktop clients that still gate on these config decisions fail open:
@@ -182,6 +185,7 @@ const FRONTEND_PUBLIC_FLAGS: &[&str] = &[
     // at all; without it the tab would show a "New status" button that 403s.
     CUSTOM_ISSUE_STATUSES,
     LINEAR_INSTALLATION_FOUNDATION,
+    LINEAR_AGENT_BRIDGE,
 ];
 
 pub fn billing_workspace_subscriptions_enabled(flags: &dyn FlagSource) -> bool {
@@ -205,6 +209,10 @@ pub fn custom_issue_statuses_enabled(flags: &dyn FlagSource) -> bool {
 
 pub fn linear_installation_foundation_enabled(flags: &dyn FlagSource) -> bool {
     flags.is_enabled(LINEAR_INSTALLATION_FOUNDATION, false)
+}
+
+pub fn linear_agent_bridge_enabled(flags: &dyn FlagSource) -> bool {
+    flags.is_enabled(LINEAR_AGENT_BRIDGE, false)
 }
 
 /// Evaluates every flag the frontend may see, plus the three compat keys
@@ -253,6 +261,7 @@ mod tests {
         // Rollout gate fails closed mid-fleet.
         assert!(!custom_issue_statuses_enabled(&flags));
         assert!(!linear_installation_foundation_enabled(&flags));
+        assert!(!linear_agent_bridge_enabled(&flags));
     }
 
     #[test]
@@ -267,11 +276,12 @@ mod tests {
     fn frontend_map_includes_public_plus_forced_compat() {
         let flags = FakeFlags::new(&[PLUGINS_V1]);
         let map = evaluate_frontend_public_flags(&flags);
-        assert_eq!(map.len(), 8);
+        assert_eq!(map.len(), 9);
         assert!(map[PLUGINS_V1]);
         assert!(!map[BILLING_WORKSPACE_SUBSCRIPTIONS]);
         assert!(!map[CUSTOM_ISSUE_STATUSES]);
         assert!(!map[LINEAR_INSTALLATION_FOUNDATION]);
+        assert!(!map[LINEAR_AGENT_BRIDGE]);
         // Compat keys are permanently true regardless of source state.
         assert!(map[AGENT_BUILDER_COMPAT]);
         assert!(map[AGENT_SKILL_TOGGLES_COMPAT]);
