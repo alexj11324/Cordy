@@ -1,12 +1,12 @@
-//! Durable PostgreSQL-backed Autopilot webhook delivery worker.
+//! Durable PostgreSQL-backed Automation webhook delivery worker.
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
 use patchbay_db::models::WebhookDelivery;
-use patchbay_db::queries::{autopilot, webhook_delivery};
-use patchbay_service::autopilot::{AutopilotQuotaExceededError, AutopilotService};
+use patchbay_db::queries::{automation, webhook_delivery};
+use patchbay_service::automation::{AutomationQuotaExceededError, AutomationService};
 use serde_json::{json, Value};
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
@@ -22,7 +22,7 @@ pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 /// polling recovers rows after process restarts or missed local notifications.
 pub struct WebhookDeliveryWorker {
     pool: sqlx::PgPool,
-    autopilots: Arc<AutopilotService>,
+    automations: Arc<AutomationService>,
     notify: Arc<Notify>,
     rate_limit: crate::webhook_rate_limit::SlidingWindowGate,
     metrics: Option<Arc<patchbay_metrics::BusinessMetrics>>,
@@ -31,14 +31,14 @@ pub struct WebhookDeliveryWorker {
 impl WebhookDeliveryWorker {
     pub fn new(
         pool: sqlx::PgPool,
-        autopilots: Arc<AutopilotService>,
+        automations: Arc<AutomationService>,
         notify: Arc<Notify>,
         rate_limit: crate::webhook_rate_limit::SlidingWindowGate,
         metrics: Option<Arc<patchbay_metrics::BusinessMetrics>>,
     ) -> Arc<Self> {
         Arc::new(Self {
             pool,
-            autopilots,
+            automations,
             notify,
             rate_limit,
             metrics,
@@ -138,40 +138,41 @@ impl WebhookDeliveryWorker {
                 Some(available_at),
             )
             .await?;
-            tracing::warn!("autopilot webhook worker rate limited");
+            tracing::warn!("automation webhook worker rate limited");
             return Ok(true);
         }
 
-        let trigger = match autopilot::get_autopilot_trigger(&self.pool, delivery.trigger_id).await
+        let trigger =
+            match automation::get_automation_trigger(&self.pool, delivery.trigger_id).await {
+                Ok(Some(trigger)) => trigger,
+                Ok(None) => {
+                    self.retry_or_fail(&delivery, lease_token, "load trigger: no row")
+                        .await?;
+                    return Ok(true);
+                }
+                Err(error) => {
+                    self.retry_or_fail(&delivery, lease_token, &format!("load trigger: {error}"))
+                        .await?;
+                    return Ok(true);
+                }
+            };
+        let automation_row = match automation::get_automation(&self.pool, delivery.automation_id)
+            .await
         {
-            Ok(Some(trigger)) => trigger,
+            Ok(Some(automation)) => automation,
             Ok(None) => {
-                self.retry_or_fail(&delivery, lease_token, "load trigger: no row")
+                self.retry_or_fail(&delivery, lease_token, "load automation: no row")
                     .await?;
                 return Ok(true);
             }
             Err(error) => {
-                self.retry_or_fail(&delivery, lease_token, &format!("load trigger: {error}"))
+                self.retry_or_fail(&delivery, lease_token, &format!("load automation: {error}"))
                     .await?;
                 return Ok(true);
             }
         };
-        let autopilot_row = match autopilot::get_autopilot(&self.pool, delivery.autopilot_id).await
-        {
-            Ok(Some(autopilot)) => autopilot,
-            Ok(None) => {
-                self.retry_or_fail(&delivery, lease_token, "load autopilot: no row")
-                    .await?;
-                return Ok(true);
-            }
-            Err(error) => {
-                self.retry_or_fail(&delivery, lease_token, &format!("load autopilot: {error}"))
-                    .await?;
-                return Ok(true);
-            }
-        };
-        if trigger.autopilot_id != delivery.autopilot_id
-            || autopilot_row.workspace_id != delivery.workspace_id
+        if trigger.automation_id != delivery.automation_id
+            || automation_row.workspace_id != delivery.workspace_id
         {
             self.complete(
                 &delivery,
@@ -200,31 +201,32 @@ impl WebhookDeliveryWorker {
                 return Ok(true);
             }
         };
-        let admitted = match patchbay_db::queries::autopilot::get_autopilot_run_by_webhook_delivery(
-            &self.pool,
-            delivery.id,
-        )
-        .await
-        {
-            Ok(run) => run,
-            Err(error) => {
-                self.retry_or_fail(
-                    &delivery,
-                    lease_token,
-                    &format!("load admitted run: {error}"),
-                )
-                .await?;
-                return Ok(true);
-            }
-        };
+        let admitted =
+            match patchbay_db::queries::automation::get_automation_run_by_webhook_delivery(
+                &self.pool,
+                delivery.id,
+            )
+            .await
+            {
+                Ok(run) => run,
+                Err(error) => {
+                    self.retry_or_fail(
+                        &delivery,
+                        lease_token,
+                        &format!("load admitted run: {error}"),
+                    )
+                    .await?;
+                    return Ok(true);
+                }
+            };
         if admitted.is_none() {
             let ignored = if !trigger.enabled {
                 Some("trigger_disabled")
-            } else if autopilot_row.status == "archived" {
-                Some("autopilot_archived")
-            } else if autopilot_row.status != "active" {
-                Some("autopilot_paused")
-            } else if !crate::autopilot_webhook::event_allowed(
+            } else if automation_row.status == "archived" {
+                Some("automation_archived")
+            } else if automation_row.status != "active" {
+                Some("automation_paused")
+            } else if !crate::automation_webhook::event_allowed(
                 trigger.event_filters.as_ref(),
                 &envelope,
             ) {
@@ -240,9 +242,9 @@ impl WebhookDeliveryWorker {
         }
 
         match self
-            .autopilots
-            .dispatch_autopilot_for_webhook_delivery(
-                &autopilot_row,
+            .automations
+            .dispatch_automation_for_webhook_delivery(
+                &automation_row,
                 trigger.id,
                 &envelope,
                 delivery.id,
@@ -258,7 +260,7 @@ impl WebhookDeliveryWorker {
                     Some(
                         run.failure_reason
                             .as_deref()
-                            .unwrap_or("autopilot run failed"),
+                            .unwrap_or("automation run failed"),
                     ),
                     None,
                 )
@@ -266,7 +268,7 @@ impl WebhookDeliveryWorker {
             }
             Ok(run) => {
                 if let Err(error) =
-                    autopilot::touch_autopilot_trigger_fired_at(&self.pool, trigger.id).await
+                    automation::touch_automation_trigger_fired_at(&self.pool, trigger.id).await
                 {
                     tracing::warn!(
                         %error,
@@ -287,7 +289,7 @@ impl WebhookDeliveryWorker {
             }
             Err(error)
                 if error
-                    .downcast_ref::<AutopilotQuotaExceededError>()
+                    .downcast_ref::<AutomationQuotaExceededError>()
                     .is_some() =>
             {
                 self.complete(
@@ -295,7 +297,7 @@ impl WebhookDeliveryWorker {
                     lease_token,
                     "ignored",
                     None,
-                    Some("autopilot run quota exceeded"),
+                    Some("automation run quota exceeded"),
                     Some("quota_exceeded"),
                 )
                 .await?;

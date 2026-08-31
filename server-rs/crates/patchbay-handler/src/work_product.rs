@@ -675,7 +675,7 @@ pub(crate) async fn queue_task_discovery(
             state,
             task.id,
             workspace_id,
-            task.autopilot_run_id,
+            task.automation_run_id,
             &input,
             true,
         )
@@ -1516,14 +1516,14 @@ async fn discover_one_execution(
         }
     }
     let relation_key =
-        work_product_q::relation_key(task.issue_id, Some(task.id), task.autopilot_run_id);
+        work_product_q::relation_key(task.issue_id, Some(task.id), task.automation_run_id);
     let relation = match work_product_q::attach_work_product_relation(
         &mut *transaction,
         workspace_id,
         product.id,
         task.issue_id,
         Some(task.id),
-        task.autopilot_run_id,
+        task.automation_run_id,
         &relation_key,
         work_product_q::RELATION_SOURCE_EXECUTION_BRANCH_DISCOVERY,
         "agent",

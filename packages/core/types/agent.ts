@@ -221,7 +221,7 @@ export interface WorkspaceWorkingAgent {
   issue_ids: string[];
 }
 
-export type WorkspaceWorkingAgentType = "issue" | "autopilot" | "chat";
+export type WorkspaceWorkingAgentType = "issue" | "automation" | "chat";
 
 export type WorkspaceWorkingAgentMineRelation =
   | "assigned"
@@ -242,7 +242,7 @@ export interface AttributionUser {
   avatar_url?: string;
 }
 
-/** The kind-tagged handle to a run's direct cause (comment, autopilot run, ...). */
+/** The kind-tagged handle to a run's direct cause (comment, automation run, ...). */
 export interface TaskEvidence {
   kind: string;
   ref_id: string;
@@ -263,7 +263,7 @@ export interface TaskAttribution {
   precise: boolean;
   /** The accountable human ("on behalf of"). Absent when unattributed. */
   initiator?: AttributionUser;
-  /** The authorization human; absent for autopilot runs (rule_owner / owner_fallback). */
+  /** The authorization human; absent for automation runs (rule_owner / owner_fallback). */
   originator?: AttributionUser;
   /** The direct cause of the run, for a jump-to-evidence affordance. */
   evidence?: TaskEvidence;
@@ -273,12 +273,26 @@ export interface TaskAttribution {
   rerun_of_task_id?: string;
 }
 
+export type AgentTaskStatus =
+  | "queued"
+  | "deferred"
+  | "dispatched"
+  | "waiting_local_directory"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  // The server may add a lifecycle state before an installed client is
+  // upgraded. Preserve that state so clients can make a terminal decision
+  // instead of silently treating it as queued/active.
+  | (string & {});
+
 export interface AgentTask {
   id: string;
   agent_id: string;
   runtime_id: string;
   // Empty string ("") when the task has no linked issue — either chat- or
-  // autopilot-spawned. Check chat_session_id / autopilot_run_id to tell
+  // automation-spawned. Check chat_session_id / automation_run_id to tell
   // which source produced it.
   issue_id: string;
   // `waiting_local_directory` is the daemon-emitted hold state for the
@@ -286,14 +300,7 @@ export interface AgentTask {
   // because another task currently owns the same on-disk path lock.
   // Treated as an active (non-terminal) state alongside queued/dispatched/
   // running by every consumer that buckets tasks into "active vs done".
-  status:
-    | "queued"
-    | "dispatched"
-    | "waiting_local_directory"
-    | "running"
-    | "completed"
-    | "failed"
-    | "cancelled";
+  status: AgentTaskStatus;
   priority: number;
   dispatched_at: string | null;
   started_at: string | null;
@@ -313,8 +320,8 @@ export interface AgentTask {
   created_at: string;
   /** Non-empty when the task was spawned from a chat session. */
   chat_session_id?: string;
-  /** Non-empty when the task was spawned by an autopilot run. */
-  autopilot_run_id?: string;
+  /** Non-empty when the task was spawned by an automation run. */
+  automation_run_id?: string;
   /** Set when this task was created as an auto-retry of a parent task. */
   parent_task_id?: string;
   /** Main issue task that owns this isolated Side Chat branch. */
@@ -325,6 +332,12 @@ export interface AgentTask {
   attempt?: number;
   /** Set when an issue comment triggered this task (@mention or assignee comment). */
   trigger_comment_id?: string;
+  /**
+   * Complete user-authored turn for an Agent-thread continuation. The bounded
+   * trigger_summary remains a routing summary; this field lets history render
+   * the exact submitted turn after reopening the thread.
+   */
+  agent_thread_message?: string;
   /**
    * Earlier comment IDs folded into this run before it was claimed. This does
    * not include `trigger_comment_id`, which remains the run's newest trigger.
@@ -343,16 +356,16 @@ export interface AgentTask {
   /**
    * Canonical short description of what triggered this task — snapshot
    * taken at creation time. For comment-triggered tasks it's the
-   * comment text (truncated to ~200 chars); for autopilot it's the
-   * autopilot title; NULL for direct assignments and chat tasks.
-   * Persists even if the source comment / autopilot is later edited
+   * comment text (truncated to ~200 chars); for automation it's the
+   * automation title; NULL for direct assignments and chat tasks.
+   * Persists even if the source comment / automation is later edited
    * or deleted.
    */
   trigger_summary?: string;
   /**
    * Handoff instruction the assigner attached when starting this run (PB-3375).
-   * Present only on assignment-triggered runs that carried a note; the execution
-   * log shows it inline as the trigger reason. Absent (legacy / no note) falls
+   * Present only on assignment-triggered runs that carried a note; the Agent
+   * thread shows it inline as the trigger reason. Absent (legacy / no note) falls
    * back to the generic "initial run" label.
    */
   handoff_note?: string;
@@ -363,7 +376,7 @@ export interface AgentTask {
    */
   kind?:
     | "comment"
-    | "autopilot"
+    | "automation"
     | "chat"
     | "quick_create"
     | "direct"
@@ -422,7 +435,7 @@ export interface AgentTask {
   attribution?: TaskAttribution;
   /**
    * This run's own token consumption, one entry per (provider, model) it used.
-   * Present on the issue execution-log endpoint only; the daemon claim path
+   * Present on the issue Agent thread endpoint only; the daemon claim path
    * omits it.
    *
    * `undefined` (old backend, or a surface that doesn't hydrate it) and `[]`
@@ -626,8 +639,8 @@ export interface AgentSkillSummary {
   id: string;
   name: string;
   description: string;
-	/** Older servers omit this field; consumers must treat that as enabled. */
-	enabled?: boolean;
+  /** Older servers omit this field; consumers must treat that as enabled. */
+  enabled?: boolean;
 }
 
 export interface CreateAgentRequest {
@@ -834,8 +847,8 @@ export interface SkillSummary {
   created_by: string | null;
   created_at: string;
   updated_at: string;
-	/** Present only when returned from an agent-scoped assignment endpoint. */
-	enabled?: boolean;
+  /** Present only when returned from an agent-scoped assignment endpoint. */
+  enabled?: boolean;
 }
 
 export interface Skill extends SkillSummary {
@@ -1200,10 +1213,10 @@ export interface RuntimeLocalSkillSummary {
 }
 
 export interface RuntimeLocalMcpServerSummary {
-	name: string;
-	transport?: "stdio" | "http" | "sse" | "unknown";
-	source?: string;
-	enabled: boolean;
+  name: string;
+  transport?: "stdio" | "http" | "sse" | "unknown";
+  source?: string;
+  enabled: boolean;
 }
 
 export interface RuntimeLocalSkillListRequest {
@@ -1212,8 +1225,8 @@ export interface RuntimeLocalSkillListRequest {
   status: RuntimeLocalSkillStatus;
   skills?: RuntimeLocalSkillSummary[];
   supported: boolean;
-	mcp_servers?: RuntimeLocalMcpServerSummary[];
-	mcp_supported?: boolean;
+  mcp_servers?: RuntimeLocalMcpServerSummary[];
+  mcp_supported?: boolean;
   error?: string;
   created_at: string;
   updated_at: string;
@@ -1248,8 +1261,8 @@ export interface RuntimeLocalSkillImportRequest {
 export interface RuntimeLocalSkillsResult {
   skills: RuntimeLocalSkillSummary[];
   supported: boolean;
-	mcpServers: RuntimeLocalMcpServerSummary[];
-	mcpSupported: boolean;
+  mcpServers: RuntimeLocalMcpServerSummary[];
+  mcpSupported: boolean;
 }
 
 export interface RuntimeLocalSkillImportResult {

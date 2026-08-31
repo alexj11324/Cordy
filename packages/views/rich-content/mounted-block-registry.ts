@@ -23,7 +23,7 @@ const MAX_TRACKED_BLOCKS = 500;
 const mountedBlocks = new Set<string>();
 
 // DJB2 — the same cheap, synchronous hash the Mermaid layout cache uses. The
-// source text itself is unsuitable as a key: a transcript full of large
+// source text itself is unsuitable as a key: a Agent event history full of large
 // diagrams would keep every one of them alive in this Set.
 function hashSource(source: string): string {
   let hash = 5381;

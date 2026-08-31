@@ -14,7 +14,7 @@ import {
 } from "@patchbay/core/paths";
 import { issueDetailOptions } from "@patchbay/core/issues/queries";
 import { projectDetailOptions } from "@patchbay/core/projects/queries";
-import { autopilotDetailOptions } from "@patchbay/core/autopilots/queries";
+import { automationDetailOptions } from "@patchbay/core/automations/queries";
 import {
   skillDetailOptions,
   agentListOptions,
@@ -63,7 +63,7 @@ const NONE = "__tab_presentation_none__";
 const PENDING_RESOURCE_KEYS: ReadonlySet<TabLabelKey> = new Set<TabLabelKey>([
   "issue",
   "project",
-  "autopilot",
+  "automation",
   "agent",
   "member",
   "team",
@@ -117,10 +117,10 @@ function useTabEntityData(subject: TabSubject, wsId: string): TabEntityData {
     ...projectDetailOptions(wsId, subject.kind === "project" ? subject.id : NONE),
     enabled: false,
   }).data;
-  const autopilot = useQuery({
-    ...autopilotDetailOptions(
+  const automation = useQuery({
+    ...automationDetailOptions(
       wsId,
-      subject.kind === "autopilot" ? subject.id : NONE,
+      subject.kind === "automation" ? subject.id : NONE,
     ),
     enabled: false,
   }).data;
@@ -149,8 +149,8 @@ function useTabEntityData(subject: TabSubject, wsId: string): TabEntityData {
     case "project":
       if (project) data.project = { icon: project.icon, title: project.title };
       break;
-    case "autopilot":
-      if (autopilot) data.autopilot = { title: autopilot.autopilot.title };
+    case "automation":
+      if (automation) data.automation = { title: automation.automation.title };
       break;
     case "skill":
       if (skill) data.skill = { name: skill.name };

@@ -134,7 +134,7 @@ async fn runtime_rename_and_cascade_delete_match_go_contract() {
                     serde_json::json!({"expected_active_agent_ids":["agent-1","agent-2"]})
                 );
                 Json(serde_json::json!({
-                    "agents_unbound":2,"autopilots_paused":1
+                    "agents_unbound":2,"automations_paused":1
                 }))
             }),
         );
@@ -178,7 +178,7 @@ async fn runtime_rename_and_cascade_delete_match_go_contract() {
     assert!(deleted.stdout.is_empty());
     assert_eq!(
         deleted.stderr,
-        "Runtime runtime-1 deleted; unbound 2 agent(s) and paused 1 autopilot(s).\n"
+        "Runtime runtime-1 deleted; unbound 2 agent(s) and paused 1 automation(s).\n"
     );
     server.abort();
 }

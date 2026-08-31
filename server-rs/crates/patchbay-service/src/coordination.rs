@@ -2034,7 +2034,7 @@ WHERE id = $1
 /// Records completion of the ordered side effects for a coordinator-owned
 /// issue update. The coordinator waits for this durable acknowledgement before
 /// finalizing its outbox row, so a process restart cannot mistake bus enqueue
-/// for completed subscriber, notification, and Autopilot work.
+/// for completed subscriber, notification, and Automation work.
 pub async fn acknowledge_coordination_publication(
     pool: &sqlx::PgPool,
     event: &Event,

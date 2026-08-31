@@ -26,7 +26,7 @@ Any of the following can trigger a run:
 - Assigning an issue to an agent or a team.
 - Mentioning an agent in a comment.
 - Sending a message to an agent in chat.
-- An Autopilot firing on a schedule or from an external event.
+- An Automation firing on a schedule or from an external event.
 
 Different entry points provide different context, but execution works the same way: Patchbay creates a task, a runtime claims it, and the runtime invokes the AI coding tool the agent is configured with.
 
@@ -77,7 +77,7 @@ Transient faults — a runtime going briefly offline, a daemon restart, an execu
 
 Errors returned by the agent itself are usually not retried automatically. Expired credentials, exhausted quota, misconfiguration, or a model unable to complete the request all need the cause fixed first, followed by a manual retry.
 
-An Autopilot's **run only** mode does not retry automatically, to avoid overlapping with the next scheduled run. The **create issue** mode produces regular issue tasks, so infrastructure failures still retry under the rules above. Both modes show their final result in the Autopilot run history.
+An Automation's **run only** mode does not retry automatically, to avoid overlapping with the next scheduled run. The **create issue** mode produces regular issue tasks, so infrastructure failures still retry under the rules above. Both modes show their final result in the Automation run history.
 
 When an issue has no other active task and no new retry waiting to run, a failure moves an `in_progress` issue back to `todo`.
 
@@ -150,7 +150,7 @@ The numbers below reflect the server's default configuration, for quick cross-ch
 | `waiting_local_directory` | Waiting for the local directory lock to release | No timeout of its own; returns to the startup flow once the directory is released |
 | `running` | The AI coding tool is executing | No fixed duration cap; liveness follows the runtime heartbeat — one every 15 seconds; a runtime that loses its heartbeat is marked offline within about 3 minutes at the latest, and its tasks fail with it |
 
-Automatic retry covers only the transient faults below, and only applies to tasks attached to an issue or a chat (excluding the Autopilot **run only** mode):
+Automatic retry covers only the transient faults below, and only applies to tasks attached to an issue or a chat (excluding the Automation **run only** mode):
 
 | Auto-retryable failure reason | Attempt ceiling |
 | --- | --- |

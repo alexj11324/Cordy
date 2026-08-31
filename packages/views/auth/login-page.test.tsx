@@ -402,10 +402,14 @@ describe("LoginPage", () => {
     expect(container.querySelector('[data-slot="card"]')).not.toBeInTheDocument();
     expect(container.querySelector(".sm\\:w-\\[350px\\]")).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Create an account" }),
+      screen.getByRole("heading", {
+        name: "Create or sign in to your account",
+      }),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("Enter your email below to create your account"),
+      screen.getByText(
+        "Enter your email below to create an account or sign in",
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText("Email")).toHaveClass("sr-only");
     const fieldGroup = container.querySelector('[data-slot="field-group"]');

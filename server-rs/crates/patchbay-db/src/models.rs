@@ -238,7 +238,7 @@ pub struct AgentTaskQueue {
     pub accountable_user_id: Option<Uuid>,
     pub agent_id: Uuid,
     pub attempt: i32,
-    pub autopilot_run_id: Option<Uuid>,
+    pub automation_run_id: Option<Uuid>,
     pub branch_name: Option<String>,
     pub chat_finalize_deferred_at: Option<DateTime<Utc>>,
     pub chat_input_task_id: Option<Uuid>,
@@ -318,9 +318,9 @@ pub struct Attachment {
     pub workspace_id: Uuid,
 }
 
-/// Row of `autopilot`.
+/// Row of `automation`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct Autopilot {
+pub struct Automation {
     pub assignee_id: Uuid,
     pub assignee_type: String,
     pub created_at: DateTime<Utc>,
@@ -339,19 +339,19 @@ pub struct Autopilot {
     pub workspace_id: Uuid,
 }
 
-/// Row of `autopilot_collaborator`.
+/// Row of `automation_collaborator`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct AutopilotCollaborator {
-    pub autopilot_id: Uuid,
+pub struct AutomationCollaborator {
+    pub automation_id: Uuid,
     pub created_at: DateTime<Utc>,
     pub granted_by: Uuid,
     pub user_id: Uuid,
     pub user_type: String,
 }
 
-/// Row of `autopilot_quota_period`.
+/// Row of `automation_quota_period`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct AutopilotQuotaPeriod {
+pub struct AutomationQuotaPeriod {
     pub blocked_counts: serde_json::Value,
     pub created_at: DateTime<Utc>,
     pub period_end: DateTime<Utc>,
@@ -362,9 +362,9 @@ pub struct AutopilotQuotaPeriod {
     pub workspace_id: Uuid,
 }
 
-/// Row of `autopilot_quota_reservation`.
+/// Row of `automation_quota_reservation`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct AutopilotQuotaReservation {
+pub struct AutomationQuotaReservation {
     pub created_at: DateTime<Utc>,
     pub finalized_at: Option<DateTime<Utc>>,
     pub id: Uuid,
@@ -378,10 +378,10 @@ pub struct AutopilotQuotaReservation {
     pub workspace_id: Uuid,
 }
 
-/// Row of `autopilot_rule_version`.
+/// Row of `automation_rule_version`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct AutopilotRuleVersion {
-    pub autopilot_id: Uuid,
+pub struct AutomationRuleVersion {
+    pub automation_id: Uuid,
     pub config_summary: serde_json::Value,
     pub created_at: DateTime<Utc>,
     pub id: Uuid,
@@ -390,10 +390,10 @@ pub struct AutopilotRuleVersion {
     pub workspace_id: Uuid,
 }
 
-/// Row of `autopilot_run`.
+/// Row of `automation_run`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct AutopilotRun {
-    pub autopilot_id: Uuid,
+pub struct AutomationRun {
+    pub automation_id: Uuid,
     pub completed_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub failure_reason: Option<String>,
@@ -413,19 +413,19 @@ pub struct AutopilotRun {
     pub webhook_delivery_id: Option<Uuid>,
 }
 
-/// Row of `autopilot_subscriber`.
+/// Row of `automation_subscriber`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct AutopilotSubscriber {
-    pub autopilot_id: Uuid,
+pub struct AutomationSubscriber {
+    pub automation_id: Uuid,
     pub created_at: DateTime<Utc>,
     pub user_id: Uuid,
     pub user_type: String,
 }
 
-/// Row of `autopilot_trigger`.
+/// Row of `automation_trigger`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
-pub struct AutopilotTrigger {
-    pub autopilot_id: Uuid,
+pub struct AutomationTrigger {
+    pub automation_id: Uuid,
     pub created_at: DateTime<Utc>,
     pub cron_expression: Option<String>,
     pub enabled: bool,
@@ -1772,8 +1772,8 @@ pub struct VerificationCode {
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct WebhookDelivery {
     pub attempt_count: i32,
-    pub autopilot_id: Uuid,
-    pub autopilot_run_id: Option<Uuid>,
+    pub automation_id: Uuid,
+    pub automation_run_id: Option<Uuid>,
     pub available_at: DateTime<Utc>,
     pub content_type: Option<String>,
     pub created_at: DateTime<Utc>,

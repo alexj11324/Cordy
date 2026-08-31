@@ -10,7 +10,7 @@
 //! Scope:
 //!
 //!   - Only tasks whose chat_session has a lark_chat_session_binding produce
-//!     outbound. Tasks born from the web UI or autopilot pass through
+//!     outbound. Tasks born from the web UI or automation pass through
 //!     unchanged.
 //!   - Each chat:done yields one Lark text message; there is no streaming, no
 //!     throttling, no DB row to track card-state.
@@ -441,7 +441,7 @@ impl LarkPatcher {
             return Ok(());
         };
         let Some(chat_session_id) = chat_session_id else {
-            // Issue / autopilot tasks have no chat_session.
+            // Issue / automation tasks have no chat_session.
             return Ok(());
         };
 
@@ -540,7 +540,7 @@ impl LarkPatcher {
     ///   - Anything with markdown → schema-2.0 interactive card with a
     ///     `tag: "markdown"` body element so Lark's client renders the
     ///     formatting instead of leaving raw `**bold**` characters in the
-    ///     transcript.
+    ///     Agent event history.
     ///
     /// Empty content is silently dropped: we'd rather show nothing than "Done."
     async fn send_chat_reply(

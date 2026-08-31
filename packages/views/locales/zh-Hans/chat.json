@@ -59,8 +59,6 @@
     "failed_after": "{{elapsed}} 后失败",
     "finished_in": "{{elapsed}} 内结束",
     "no_response": "本轮已结束，Agent 没有返回文字回复。",
-    "reasoning_active": "正在思考…",
-    "reasoning_complete": "思考过程",
     "failure": {
       "agent_error": "智能体设备出错，没能完成回复。请重试。",
       "timeout": "智能体处理超时，未能完成。可以重试，或把需求拆得更小一些。",
@@ -80,6 +78,7 @@
       "fallback": "出了点问题，智能体未能完成回复。请重试。"
     },
     "tools_other": "{{count}} 个工具",
+    "tool_fallback": "工具",
     "tool_result_named": "{{tool}} 结果：",
     "tool_result_unnamed": "结果：",
     "process_steps_other": "{{count}} 步",

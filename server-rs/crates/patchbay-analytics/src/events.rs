@@ -21,9 +21,9 @@ pub const EVENT_RUNTIME_OFFLINE: &str = "runtime_offline";
 pub const EVENT_ISSUE_EXECUTED: &str = "issue_executed";
 pub const EVENT_ISSUE_CREATED: &str = "issue_created";
 pub const EVENT_CHAT_MESSAGE_SENT: &str = "chat_message_sent";
-pub const EVENT_AUTOPILOT_RUN_STARTED: &str = "autopilot_run_started";
-pub const EVENT_AUTOPILOT_RUN_COMPLETED: &str = "autopilot_run_completed";
-pub const EVENT_AUTOPILOT_RUN_FAILED: &str = "autopilot_run_failed";
+pub const EVENT_AUTOMATION_RUN_STARTED: &str = "automation_run_started";
+pub const EVENT_AUTOMATION_RUN_COMPLETED: &str = "automation_run_completed";
+pub const EVENT_AUTOMATION_RUN_FAILED: &str = "automation_run_failed";
 pub const EVENT_TEAM_INVITE_SENT: &str = "team_invite_sent";
 pub const EVENT_TEAM_INVITE_ACCEPTED: &str = "team_invite_accepted";
 pub const EVENT_ONBOARDING_STARTED: &str = "onboarding_started";
@@ -35,7 +35,7 @@ pub const EVENT_CLOUD_WAITLIST_JOINED: &str = "cloud_waitlist_joined";
 pub const EVENT_FEEDBACK_SUBMITTED: &str = "feedback_submitted";
 pub const EVENT_CONTACT_SALES_SUBMITTED: &str = "contact_sales_submitted";
 pub const EVENT_TEAM_CREATED: &str = "team_created";
-pub const EVENT_AUTOPILOT_CREATED: &str = "autopilot_created";
+pub const EVENT_AUTOMATION_CREATED: &str = "automation_created";
 
 pub const EVENT_SCHEMA_VERSION: i64 = 2;
 
@@ -63,15 +63,15 @@ static METRICS_ONLY_EVENTS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
         EVENT_FEEDBACK_SUBMITTED,
         EVENT_CONTACT_SALES_SUBMITTED,
         EVENT_TEAM_CREATED,
-        EVENT_AUTOPILOT_CREATED,
-        // High-volume runtime / autopilot execution-lifecycle telemetry.
+        EVENT_AUTOMATION_CREATED,
+        // High-volume runtime / automation execution-lifecycle telemetry.
         EVENT_RUNTIME_REGISTERED,
         EVENT_RUNTIME_READY,
         EVENT_RUNTIME_FAILED,
         EVENT_RUNTIME_OFFLINE,
-        EVENT_AUTOPILOT_RUN_STARTED,
-        EVENT_AUTOPILOT_RUN_COMPLETED,
-        EVENT_AUTOPILOT_RUN_FAILED,
+        EVENT_AUTOMATION_RUN_STARTED,
+        EVENT_AUTOMATION_RUN_COMPLETED,
+        EVENT_AUTOMATION_RUN_FAILED,
     ])
 });
 
@@ -86,7 +86,7 @@ pub fn is_metrics_only(name: &str) -> bool {
 pub const SOURCE_ONBOARDING: &str = "onboarding";
 pub const SOURCE_MANUAL: &str = "manual";
 pub const SOURCE_CHAT: &str = "chat";
-pub const SOURCE_AUTOPILOT: &str = "autopilot";
+pub const SOURCE_AUTOMATION: &str = "automation";
 pub const SOURCE_API: &str = "api";
 
 pub const ONBOARDING_PATH_FULL: &str = "full";
@@ -113,7 +113,7 @@ pub struct CoreProperties {
     pub task_id: String,
     pub issue_id: String,
     pub chat_session_id: String,
-    pub autopilot_run_id: String,
+    pub automation_run_id: String,
     pub source: String,
     pub runtime_mode: String,
     pub provider: String,
@@ -151,8 +151,8 @@ fn with_core_properties(mut props: Props, core: &CoreProperties) -> Props {
     if !core.chat_session_id.is_empty() {
         props.insert("chat_session_id".to_string(), s(&core.chat_session_id));
     }
-    if !core.autopilot_run_id.is_empty() {
-        props.insert("autopilot_run_id".to_string(), s(&core.autopilot_run_id));
+    if !core.automation_run_id.is_empty() {
+        props.insert("automation_run_id".to_string(), s(&core.automation_run_id));
     }
     if !core.source.is_empty() {
         props.insert("source".to_string(), s(&core.source));
@@ -446,7 +446,7 @@ pub fn issue_created(
     issue_id: &str,
     agent_id: &str,
     task_id: &str,
-    autopilot_run_id: &str,
+    automation_run_id: &str,
     source: &str,
     platform: &str,
 ) -> Event {
@@ -466,7 +466,7 @@ pub fn issue_created(
                 agent_id: agent_id.to_string(),
                 task_id: task_id.to_string(),
                 issue_id: issue_id.to_string(),
-                autopilot_run_id: autopilot_run_id.to_string(),
+                automation_run_id: automation_run_id.to_string(),
                 source: source.to_string(),
                 ..Default::default()
             },
@@ -512,12 +512,12 @@ pub fn chat_message_sent(
     }
 }
 
-/// Describes the autopilot's configured target. `agent_id` is always the agent
-/// that will actually execute the work (the team leader for team autopilots);
+/// Describes the automation's configured target. `agent_id` is always the agent
+/// that will actually execute the work (the team leader for team automations);
 /// `assignee_type`/`team_id` record the original configuration so reports can
-/// tell a solo-agent autopilot apart from a team one.
+/// tell a solo-agent automation apart from a team one.
 #[derive(Debug, Clone, Default)]
-pub struct AutopilotAssignee {
+pub struct AutomationAssignee {
     pub agent_id: String,
     /// "agent" or "team".
     pub assignee_type: String,
@@ -525,20 +525,20 @@ pub struct AutopilotAssignee {
     pub team_id: String,
 }
 
-pub fn autopilot_run_started(
+pub fn automation_run_started(
     actor_id: &str,
     workspace_id: &str,
-    autopilot_id: &str,
+    automation_id: &str,
     run_id: &str,
     cadence: &str,
-    assignee: &AutopilotAssignee,
+    assignee: &AutomationAssignee,
     trigger_source: &str,
 ) -> Event {
-    autopilot_run_event(
-        EVENT_AUTOPILOT_RUN_STARTED,
+    automation_run_event(
+        EVENT_AUTOMATION_RUN_STARTED,
         actor_id,
         workspace_id,
-        autopilot_id,
+        automation_id,
         run_id,
         cadence,
         assignee,
@@ -548,21 +548,21 @@ pub fn autopilot_run_started(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn autopilot_run_completed(
+pub fn automation_run_completed(
     actor_id: &str,
     workspace_id: &str,
-    autopilot_id: &str,
+    automation_id: &str,
     run_id: &str,
     cadence: &str,
-    assignee: &AutopilotAssignee,
+    assignee: &AutomationAssignee,
     trigger_source: &str,
     duration_ms: i64,
 ) -> Event {
-    autopilot_run_event(
-        EVENT_AUTOPILOT_RUN_COMPLETED,
+    automation_run_event(
+        EVENT_AUTOMATION_RUN_COMPLETED,
         actor_id,
         workspace_id,
-        autopilot_id,
+        automation_id,
         run_id,
         cadence,
         assignee,
@@ -575,24 +575,24 @@ pub fn autopilot_run_completed(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn autopilot_run_failed(
+pub fn automation_run_failed(
     actor_id: &str,
     workspace_id: &str,
-    autopilot_id: &str,
+    automation_id: &str,
     run_id: &str,
     cadence: &str,
-    assignee: &AutopilotAssignee,
+    assignee: &AutomationAssignee,
     trigger_source: &str,
     failure_reason: &str,
     error_type: &str,
     will_retry: bool,
     duration_ms: i64,
 ) -> Event {
-    autopilot_run_event(
-        EVENT_AUTOPILOT_RUN_FAILED,
+    automation_run_event(
+        EVENT_AUTOMATION_RUN_FAILED,
         actor_id,
         workspace_id,
-        autopilot_id,
+        automation_id,
         run_id,
         cadence,
         assignee,
@@ -952,23 +952,23 @@ pub fn team_created(actor_id: &str, workspace_id: &str, team_id: &str, member_co
     }
 }
 
-/// Fires when a workspace member creates a new autopilot. `trigger_kind` is
+/// Fires when a workspace member creates a new automation. `trigger_kind` is
 /// the initial trigger type — when both schedule and webhook triggers are
 /// seeded, schedule wins upstream.
-pub fn autopilot_created(
+pub fn automation_created(
     actor_id: &str,
     workspace_id: &str,
-    autopilot_id: &str,
+    automation_id: &str,
     cadence: &str,
     trigger_kind: &str,
 ) -> Event {
     Event {
-        name: EVENT_AUTOPILOT_CREATED.to_string(),
+        name: EVENT_AUTOMATION_CREATED.to_string(),
         distinct_id: actor_id.to_string(),
         workspace_id: workspace_id.to_string(),
         properties: Some(with_core_properties(
             Props::from_iter([
-                ("autopilot_id".to_string(), s(autopilot_id)),
+                ("automation_id".to_string(), s(automation_id)),
                 ("cadence".to_string(), s(cadence)),
                 ("trigger_kind".to_string(), s(trigger_kind)),
             ]),
@@ -984,14 +984,14 @@ pub fn autopilot_created(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn autopilot_run_event(
+fn automation_run_event(
     name: &str,
     actor_id: &str,
     workspace_id: &str,
-    autopilot_id: &str,
+    automation_id: &str,
     run_id: &str,
     cadence: &str,
-    assignee: &AutopilotAssignee,
+    assignee: &AutomationAssignee,
     trigger_source: &str,
     extra: Option<Props>,
 ) -> Event {
@@ -1007,12 +1007,12 @@ fn autopilot_run_event(
             user_id: non_agent_user_id(actor_id),
             workspace_id: workspace_id.to_string(),
             agent_id: assignee.agent_id.clone(),
-            autopilot_run_id: run_id.to_string(),
-            source: SOURCE_AUTOPILOT.to_string(),
+            automation_run_id: run_id.to_string(),
+            source: SOURCE_AUTOMATION.to_string(),
             ..Default::default()
         },
     );
-    props.insert("autopilot_id".to_string(), s(autopilot_id));
+    props.insert("automation_id".to_string(), s(automation_id));
     if !assignee.assignee_type.is_empty() {
         props.insert("assignee_type".to_string(), s(&assignee.assignee_type));
     }
@@ -1045,9 +1045,9 @@ mod tests {
             EVENT_ISSUE_EXECUTED,
             EVENT_ISSUE_CREATED,
             EVENT_CHAT_MESSAGE_SENT,
-            EVENT_AUTOPILOT_RUN_STARTED,
-            EVENT_AUTOPILOT_RUN_COMPLETED,
-            EVENT_AUTOPILOT_RUN_FAILED,
+            EVENT_AUTOMATION_RUN_STARTED,
+            EVENT_AUTOMATION_RUN_COMPLETED,
+            EVENT_AUTOMATION_RUN_FAILED,
             EVENT_TEAM_INVITE_SENT,
             EVENT_TEAM_INVITE_ACCEPTED,
             EVENT_ONBOARDING_STARTED,
@@ -1059,7 +1059,7 @@ mod tests {
             EVENT_FEEDBACK_SUBMITTED,
             EVENT_CONTACT_SALES_SUBMITTED,
             EVENT_TEAM_CREATED,
-            EVENT_AUTOPILOT_CREATED,
+            EVENT_AUTOMATION_CREATED,
         ] {
             assert!(is_metrics_only(name), "{name}");
         }
@@ -1179,24 +1179,25 @@ mod tests {
     }
 
     #[test]
-    fn autopilot_run_events_shape() {
-        let assignee = AutopilotAssignee {
+    fn automation_run_events_shape() {
+        let assignee = AutomationAssignee {
             agent_id: "ag".into(),
             assignee_type: "team".into(),
             team_id: "team".into(),
         };
-        let started = autopilot_run_started("u", "ws", "ap", "run", "daily", &assignee, "schedule");
+        let started =
+            automation_run_started("u", "ws", "ap", "run", "daily", &assignee, "schedule");
         let p = started.properties.as_ref().unwrap();
         assert_eq!(p["trigger_source"], json!("schedule"));
         assert_eq!(p["trigger_kind"], json!("schedule"));
         assert_eq!(p["cadence"], json!("daily"));
-        assert_eq!(p["autopilot_id"], json!("ap"));
+        assert_eq!(p["automation_id"], json!("ap"));
         assert_eq!(p["assignee_type"], json!("team"));
         assert_eq!(p["team_id"], json!("team"));
-        assert_eq!(p["source"], json!("autopilot"));
+        assert_eq!(p["source"], json!("automation"));
         assert!(!p.contains_key("duration_ms"));
 
-        let failed = autopilot_run_failed(
+        let failed = automation_run_failed(
             "u",
             "ws",
             "ap",

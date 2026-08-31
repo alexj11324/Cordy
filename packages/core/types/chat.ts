@@ -207,7 +207,7 @@ export interface StartMikaOnboardingResponse {
   /**
    * The opening message, already persisted and final. No agent runs to
    * produce it, so there is no task to await — a `started` response means the
-   * member's first message from Mika is in the transcript right now.
+   * member's first message from Mika is in the Agent event history right now.
    */
   message_id?: string;
   created_at?: string;
@@ -231,7 +231,7 @@ export interface CancelTaskResponse extends AgentTask {
 
 /**
  * One durable draft restore from GET /api/chat/sessions/{id}/draft-restores
- * (#5219): a deferred cancellation settled as empty-transcript after the
+ * (#5219): a deferred cancellation settled as empty-Agent event history after the
  * cancel HTTP response had returned, so the deleted prompt is held
  * server-side until the creator's client applies it to the composer and
  * consumes it (DELETE, idempotent). The chat:cancel_finalized event is only

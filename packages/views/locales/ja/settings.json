@@ -43,7 +43,7 @@
       "backlog": "保留。ここに移動してもエージェントは起動しません。",
       "todo": "待機中。ここに移動すると担当エージェントが起動します。",
       "in_progress": "作業中。",
-      "in_review": "納品済み、レビュー待ち。オートパイロットの実行を完了します。",
+      "in_review": "納品済み、レビュー待ち。自動化の実行を完了します。",
       "done": "完了。",
       "blocked": "外部依存でブロック中。",
       "cancelled": "見送り。"
@@ -94,7 +94,7 @@
     "prompt_hint": "そのまま送られます。タスクの内容は既に読めます。",
     "template_not_supported": "変数はまだサポートされていません。{{token}} を削除してください。エージェントはこのタスクを既に読めます。",
     "delete_title": "このクイックアクションを削除しますか？",
-    "delete_description": "すべてのタスクのサイドバーから消えます。過去の実行は実行ログに残ります。後で使う可能性があればアーカイブを選んでください。"
+    "delete_description": "すべてのタスクのサイドバーから消えます。過去の実行は Agent スレッドに残ります。後で使う可能性があればアーカイブを選んでください。"
   },
   "auto_save": {
     "saving": "保存中…",
@@ -219,7 +219,7 @@
         "label": "プロジェクトへ移動",
         "description": "プロジェクト一覧を開きます。"
       },
-      "goAutopilots": {
+      "goAutomations": {
         "label": "自動化へ移動",
         "description": "ワークスペースの自動化を開きます。"
       },
@@ -317,7 +317,7 @@
     "integrations_admin_only": "ワークスペース管理者のみ",
     "integrations_unavailable": "利用できません",
     "integrations_health_error": "接続状態を読み取れません",
-    "integrations_setup_required": "未設定",
+    "integrations_setup_required": "このデプロイでは未有効",
     "integrations_coming_soon": "近日対応",
     "integrations_disconnected": "未接続",
     "integrations_existing_agent": "既存のエージェント接続",
@@ -325,6 +325,8 @@
     "integrations_revoked": "接続が取り消されました",
     "integrations_route_note": "Hub の接続時にエージェントを先に選ぶ必要はありません。最初のメッセージの前に、Patchbay がこのメンバーに利用可能な最初のエージェントを使います。会話中の /agents でルートを変更できます。",
     "integrations_manage": "管理",
+    "integrations_configure": "設定",
+    "integrations_setup_title": "プラットフォーム設定",
     "integrations_reconnect": "再接続",
     "integrations_disconnect": "接続解除",
     "integrations_reconnect_title": "このプラットフォームに再接続しますか？",
@@ -747,8 +749,8 @@
     "toast_failed": "GitHub 設定を更新できませんでした"
   },
   "vcs": {
-    "section_title": "Git providers (self-hosted)",
-    "page_description": "セルフホストの Forgejo、Gitea、GitLab インスタンスを接続し、Pull request をタスクにミラーリングします。接続ごとにアクセストークンを使用し、エージェントはランタイム自身の Git 認証情報でブランチを push して PR を作成します。",
+    "section_title": "セルフホスト Git サービス（Forgejo / Gitea / GitLab）",
+    "page_description": "自分または組織が運用する Forgejo、Gitea、GitLab サーバー専用です。GitHub.com のみを使用する場合、このセクションの設定は不要です。接続すると Pull request がタスクに反映され、エージェントは引き続きランタイム自身の Git 認証情報でブランチを push して PR を作成します。",
     "connect_title": "Connect a provider instance",
     "connected_as": "Connected as {{login}}",
     "form_provider_label": "Provider",

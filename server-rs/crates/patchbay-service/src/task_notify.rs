@@ -536,7 +536,7 @@ pub fn issue_to_map_with_category(
 
 const MAX_QUICK_CREATE_FAILURE_DETAIL_RUNES: usize = 2000;
 
-const QUICK_CREATE_OVERSIZED_FAILURE_DETAIL: &str = "Quick create failed, but the agent's output was too large to show the reason safely. Check the task's execution log for details.";
+const QUICK_CREATE_OVERSIZED_FAILURE_DETAIL: &str = "Quick create failed, but the agent's output was too large to show the reason safely. Check the task's Agent thread events for details.";
 
 const INBOX_TYPE_QUICK_CREATE_FAILED: &str = "quick_create_failed";
 const INBOX_TYPE_QUICK_CREATE_UNCONFIRMED: &str = "quick_create_unconfirmed";

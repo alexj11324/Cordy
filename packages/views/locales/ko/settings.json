@@ -43,7 +43,7 @@
       "backlog": "보류. 여기로 옮겨도 에이전트가 시작되지 않습니다.",
       "todo": "대기 중. 여기로 옮기면 담당 에이전트가 시작됩니다.",
       "in_progress": "진행 중.",
-      "in_review": "전달 완료, 리뷰 대기. 오토파일럿 실행을 마무리합니다.",
+      "in_review": "전달 완료, 리뷰 대기. 자동화 실행을 마무리합니다.",
       "done": "완료.",
       "blocked": "외부 의존성으로 중단됨.",
       "cancelled": "진행하지 않기로 함."
@@ -94,7 +94,7 @@
     "prompt_hint": "작성한 그대로 전달됩니다. 에이전트는 태스크를 이미 읽을 수 있습니다.",
     "template_not_supported": "변수는 아직 지원되지 않습니다. {{token}}을(를) 제거하세요. 에이전트는 이미 이 태스크를 읽습니다.",
     "delete_title": "이 퀵 액션을 삭제할까요?",
-    "delete_description": "모든 태스크 사이드바에서 사라집니다. 과거 실행 기록은 실행 로그에 남습니다. 다시 쓸 수 있다면 보관을 선택하세요."
+    "delete_description": "모든 태스크 사이드바에서 사라집니다. 과거 작업도 Agent 스레드에서 다시 열 수 있습니다. 다시 쓸 수 있다면 보관을 선택하세요."
   },
   "auto_save": {
     "saving": "저장 중…",
@@ -219,7 +219,7 @@
         "label": "프로젝트로 이동",
         "description": "프로젝트 목록을 엽니다."
       },
-      "goAutopilots": {
+      "goAutomations": {
         "label": "자동화로 이동",
         "description": "워크스페이스 자동화를 엽니다."
       },
@@ -317,7 +317,7 @@
     "integrations_admin_only": "워크스페이스 관리자만 가능",
     "integrations_unavailable": "사용할 수 없음",
     "integrations_health_error": "연결 상태를 읽을 수 없음",
-    "integrations_setup_required": "구성되지 않음",
+    "integrations_setup_required": "이 배포에서 활성화되지 않음",
     "integrations_coming_soon": "곧 지원",
     "integrations_disconnected": "연결 안 됨",
     "integrations_existing_agent": "기존 에이전트 연결",
@@ -325,6 +325,8 @@
     "integrations_revoked": "연결이 취소됨",
     "integrations_route_note": "Hub를 연결할 때 에이전트를 먼저 선택하지 않아도 됩니다. 첫 메시지 전에 Patchbay가 이 멤버에게 사용 가능한 첫 번째 에이전트를 사용하며, 대화에서 /agents로 경로를 바꿀 수 있습니다.",
     "integrations_manage": "관리",
+    "integrations_configure": "설정",
+    "integrations_setup_title": "플랫폼 설정",
     "integrations_reconnect": "다시 연결",
     "integrations_disconnect": "연결 해제",
     "integrations_reconnect_title": "이 플랫폼을 다시 연결할까요?",
@@ -747,8 +749,8 @@
     "toast_failed": "GitHub 설정을 업데이트하지 못했습니다"
   },
   "vcs": {
-    "section_title": "Git providers (self-hosted)",
-    "page_description": "셀프 호스팅 Forgejo, Gitea, GitLab 인스턴스를 연결해 Pull request를 태스크에 미러링합니다. 연결마다 액세스 토큰을 사용하며, 에이전트는 런타임 자체의 Git 자격 증명으로 브랜치를 푸시하고 PR을 엽니다.",
+    "section_title": "셀프 호스팅 Git 서비스(Forgejo / Gitea / GitLab)",
+    "page_description": "본인 또는 조직이 운영하는 Forgejo, Gitea, GitLab 서버에만 사용합니다. GitHub.com만 사용한다면 이 섹션을 설정할 필요가 없습니다. 연결하면 Pull request가 태스크에 반영되며, 에이전트는 계속 런타임 자체의 Git 자격 증명으로 브랜치를 푸시하고 PR을 엽니다.",
     "connect_title": "Connect a provider instance",
     "connected_as": "Connected as {{login}}",
     "form_provider_label": "Provider",

@@ -78,8 +78,8 @@ pub(super) enum Command {
     Daemon(DaemonArgs),
     #[command(about = "Configure the Patchbay server and authenticate")]
     Setup(SetupArgs),
-    #[command(about = "Manage autopilots (scheduled/triggered agent automations)")]
-    Autopilot(AutopilotArgs),
+    #[command(about = "Manage automations (scheduled/triggered agent automations)")]
+    Automation(AutomationArgs),
     #[command(about = "Update patchbay to the latest version")]
     Update(UpdateArgs),
     // Cobra exposes this contract while hiding it from normal help output.

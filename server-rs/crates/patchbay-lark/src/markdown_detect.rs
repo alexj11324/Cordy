@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 /// agent's reply is markdown rather than prose. Each pattern is intentionally
 /// conservative — better to false-positive (route plain text through the
 /// markdown card, which still renders fine) than to false-negative (leave
-/// `**bold**` characters visible in the user's transcript).
+/// `**bold**` characters visible in the user's Agent event history).
 ///
 /// Patterns are compiled once; contains_markdown is on the chat-reply hot
 /// path.

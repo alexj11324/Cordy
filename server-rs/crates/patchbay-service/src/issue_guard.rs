@@ -79,16 +79,16 @@ fn lock_key(
     .join("|")
 }
 
-fn recent_autopilot_lock_key(
+fn recent_automation_lock_key(
     workspace_id: Uuid,
-    autopilot_id: Uuid,
+    automation_id: Uuid,
     project_id: Option<Uuid>,
     normalized_title: &str,
 ) -> String {
     [
-        "autopilot-recent-duplicate",
+        "automation-recent-duplicate",
         &workspace_id.to_string(),
-        &autopilot_id.to_string(),
+        &automation_id.to_string(),
         &project_id.map(|u| u.to_string()).unwrap_or_default(),
         normalized_title,
     ]
@@ -135,20 +135,20 @@ pub async fn lock_and_find_active_duplicate(
     Ok((duplicate, found))
 }
 
-/// Autopilot variant: blocks re-creating an issue with the same normalized
-/// title that this autopilot already created inside `window`. Empty titles,
-/// invalid autopilot ids and non-positive windows are no-ops.
+/// Automation variant: blocks re-creating an issue with the same normalized
+/// title that this automation already created inside `window`. Empty titles,
+/// invalid automation ids and non-positive windows are no-ops.
 // Concrete connection signature: the advisory xact lock only holds inside a
 // transaction, so a bare pool would silently degrade the guard.
-pub async fn lock_and_find_recent_autopilot_duplicate(
+pub async fn lock_and_find_recent_automation_duplicate(
     executor: &mut sqlx::PgConnection,
     workspace_id: Uuid,
-    autopilot_id: Option<Uuid>,
+    automation_id: Option<Uuid>,
     project_id: Option<Uuid>,
     title: &str,
     window: chrono::Duration,
 ) -> anyhow::Result<(Option<patchbay_db::models::Issue>, bool)> {
-    let Some(autopilot_id) = autopilot_id else {
+    let Some(automation_id) = automation_id else {
         return Ok((None, false));
     };
     let normalized_title = normalize_title(title);
@@ -157,15 +157,15 @@ pub async fn lock_and_find_recent_autopilot_duplicate(
     }
     patchbay_db::queries::issue::lock_issue_duplicate_key(
         &mut *executor,
-        &recent_autopilot_lock_key(workspace_id, autopilot_id, project_id, &normalized_title),
+        &recent_automation_lock_key(workspace_id, automation_id, project_id, &normalized_title),
     )
     .await?;
 
     let created_after = Utc::now() - window;
-    let duplicate = patchbay_db::queries::issue::find_recent_autopilot_duplicate_issue(
+    let duplicate = patchbay_db::queries::issue::find_recent_automation_duplicate_issue(
         &mut *executor,
         workspace_id,
-        autopilot_id,
+        automation_id,
         project_id,
         &normalized_title,
         Some(created_after),
@@ -232,8 +232,8 @@ mod tests {
         assert_eq!(k1.matches('|').count(), 4);
 
         let ap = Uuid::now_v7();
-        let rk = recent_autopilot_lock_key(ws, ap, Some(proj), "t");
-        assert!(rk.starts_with("autopilot-recent-duplicate|"));
+        let rk = recent_automation_lock_key(ws, ap, Some(proj), "t");
+        assert!(rk.starts_with("automation-recent-duplicate|"));
         assert_ne!(rk, k1);
     }
 }

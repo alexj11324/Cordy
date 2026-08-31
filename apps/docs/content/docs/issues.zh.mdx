@@ -1,6 +1,6 @@
 ---
 title: Issues
-description: Issue 保存一项工作的上下文、负责人、状态和执行记录。
+description: Issue 保存一项工作的上下文、负责人、状态和Agent 事件。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
@@ -16,9 +16,9 @@ Issue 是 Patchbay 中安排工作的基本单位：一项功能、一个 bug、
 | **负责人** | 工作区成员、智能体或团队。 |
 | **日期、标签和自定义属性** | 计划、分类和团队自己的字段。 |
 | **项目和父子关系** | 归入更大的工作范围，或拆成子 issue。 |
-| **动态和执行日志** | 评论、状态变化、执行任务和智能体返回的结果。 |
+| **动态和 Agent 对话** | 评论、状态变化、执行任务和智能体返回的结果。 |
 
-![Issue 详情：描述、讨论、右侧属性与执行日志](/images/docs/quickstart-run-result.webp)
+![Issue 详情：描述、讨论、右侧属性与 Agent 对话](/images/docs/quickstart-run-result.webp)
 
 ## 创建 issue
 
@@ -72,7 +72,7 @@ Issue 是 Patchbay 中安排工作的基本单位：一项功能、一个 bug、
 | `backlog` | 停着不动：分配给智能体不会启动执行。把 issue 移出这个分类才会启动，除非目标是 `done` 或 `cancelled`。 |
 | `todo` | 排队等待开始。和 `backlog` 不同，处于这个分类的 issue 一分配智能体就立即启动执行。 |
 | `in_progress` | 算作正在处理：执行失败且没有其他执行在进行时，issue 回到 `todo`。 |
-| `in_review` | 算作已交付、等待检查：会结束[自动化](/autopilots)的运行，之前的"执行失败"通知也会自动归档。 |
+| `in_review` | 算作已交付、等待检查：会结束[自动化](/automations)的运行，之前的"执行失败"通知也会自动归档。 |
 | `done` | 算作已完成：会结束子 issue 的一个阶段，并计入父 issue 的进度。 |
 | `blocked` | 卡在外部依赖上，不会自行恢复。 |
 | `cancelled` | 不再继续但保留记录；同样是子 issue 阶段的终态。 |

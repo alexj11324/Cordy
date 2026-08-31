@@ -478,7 +478,7 @@ static HISTORY_MESSAGE_LOCATOR_RE: LazyLock<Regex> = LazyLock::new(|| {
 const AUTH_METHOD_UNRESOLVED_PHRASE: &str = "could not resolve authentication method";
 
 /// Reports whether an agent error means the conversation history itself can
-/// no longer be sent to the provider: some message baked into the transcript
+/// no longer be sent to the provider: some message baked into the Agent event history
 /// carries empty content, so every resume replays the same rejection.
 ///
 /// Deliberately provider-agnostic and deliberately narrow: BOTH signals are
@@ -770,7 +770,7 @@ mod tests {
         assert!(unresumable_history(
             "messages[43].content: content must not be empty"
         ));
-        // Emptiness complaint without a locator → other field, not transcript.
+        // Emptiness complaint without a locator → other field, not Agent event history.
         assert!(!unresumable_history("commit message must not be empty"));
         // Locator without an emptiness complaint.
         assert!(!unresumable_history("messages[3]: invalid role value"));

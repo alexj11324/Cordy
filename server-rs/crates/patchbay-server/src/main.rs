@@ -41,8 +41,8 @@ struct ProductionApp {
     root_cancel: CancellationToken,
     realtime: realtime_runtime::RealtimeRuntime,
     channel_runtime: channel_runtime::ChannelRuntime,
-    failure_monitor: patchbay_service::autopilot_failure_monitor::FailureMonitorRuntime,
-    quota_reconciler: patchbay_service::autopilot_quota_reconciler::QuotaReconcilerRuntime,
+    failure_monitor: patchbay_service::automation_failure_monitor::FailureMonitorRuntime,
+    quota_reconciler: patchbay_service::automation_quota_reconciler::QuotaReconcilerRuntime,
     webhook_delivery: patchbay_handler::webhook_delivery_worker::WebhookDeliveryRuntime,
     coordinator: patchbay_service::coordination::CoordinatorRuntime,
     scheduler: patchbay_scheduler::ManagerRuntime,
@@ -53,8 +53,8 @@ struct ProductionApp {
     github_snapshots: Option<patchbay_ghsnapshot::ManagerRuntime>,
     ordered_event_side_effects:
         Option<patchbay_handler::ordered_event_side_effects::OrderedEventSideEffectsRuntime>,
-    autopilot_event_listeners:
-        Option<patchbay_handler::autopilot_listeners::AutopilotEventListenersRuntime>,
+    automation_event_listeners:
+        Option<patchbay_handler::automation_listeners::AutomationEventListenersRuntime>,
     task_side_effects: Option<patchbay_service::task_service::TaskSideEffectRuntime>,
     analytics: Arc<dyn patchbay_analytics::AnalyticsClient>,
 }
@@ -233,9 +233,9 @@ fn dedicated_sampler_pool(
         })
 }
 
-fn autopilot_entitlements(
+fn automation_entitlements(
     cfg: &patchbay_config::Config,
-) -> Option<Arc<dyn patchbay_service::autopilot::EntitlementProvider>> {
+) -> Option<Arc<dyn patchbay_service::automation::EntitlementProvider>> {
     let enabled = parse_go_bool(
         std::env::var("PATCHBAY_ENTITLEMENT_POLICY_ENABLED")
             .ok()
@@ -339,7 +339,7 @@ async fn build_production_router(
     vcs: VcsWebhookConfig,
 ) -> anyhow::Result<ProductionApp> {
     let feature_flags = Arc::new(patchbay_service::feature_flags::ConfiguredFlags::from_env()?);
-    let entitlements = autopilot_entitlements(cfg);
+    let entitlements = automation_entitlements(cfg);
     let attachment_download =
         patchbay_handler::state::AttachmentDownloadSettings::from_config(cfg).await?;
     attachment_download.validate_for_storage(attachment_storage.as_ref())?;
@@ -356,7 +356,7 @@ async fn build_production_router(
     )
     .with_observability(business_metrics, http_metrics)
     .with_invitation_admission(patchbay_handler::invitation::InvitationAdmission::from_env())
-    .with_autopilot_entitlements(entitlements)
+    .with_automation_entitlements(entitlements)
     .with_github_snapshots(github_client)
     .with_auth_settings(patchbay_handler::auth::AuthSettings::from_config(cfg))
     .with_clerk_auth_from_config(&cfg.auth)?
@@ -414,9 +414,9 @@ async fn build_production_router(
     // FIFO while a producer is publishing a final event during shutdown.
     let (state, ordered_event_side_effects) =
         state.start_ordered_event_side_effects(CancellationToken::new());
-    // Autopilot reconciliation is the final stage of the ordered consumer;
+    // Automation reconciliation is the final stage of the ordered consumer;
     // do not register a second production subscriber for the same events.
-    let autopilot_event_listeners = None;
+    let automation_event_listeners = None;
     // Event-hook delivery is a consumer lifecycle. It is stopped explicitly
     // after every event producer/listener has drained, rather than sharing the
     // producer root and racing their final publications.
@@ -466,22 +466,22 @@ async fn build_production_router(
     ))
     .start(root_cancel.child_token());
     let failure_metrics = state.business_metrics.clone().map(|metrics| {
-        metrics as Arc<dyn patchbay_service::autopilot_failure_monitor::FailureMonitorMetrics>
+        metrics as Arc<dyn patchbay_service::automation_failure_monitor::FailureMonitorMetrics>
     });
     let failure_monitor =
-        patchbay_service::autopilot_failure_monitor::AutopilotFailureMonitor::new(
+        patchbay_service::automation_failure_monitor::AutomationFailureMonitor::new(
             state.pool.clone(),
             state.bus.clone(),
             failure_metrics,
-            patchbay_service::autopilot_failure_monitor::FailureMonitorConfig::from_env(),
+            patchbay_service::automation_failure_monitor::FailureMonitorConfig::from_env(),
         )
         .start(root_cancel.child_token());
     let quota_metrics = state.business_metrics.clone().map(|metrics| {
-        metrics as Arc<dyn patchbay_service::autopilot_quota_reconciler::QuotaReconcilerMetrics>
+        metrics as Arc<dyn patchbay_service::automation_quota_reconciler::QuotaReconcilerMetrics>
     });
     let quota_reconciler =
-        patchbay_service::autopilot_quota_reconciler::AutopilotQuotaReconciler::new(
-            state.autopilots.clone(),
+        patchbay_service::automation_quota_reconciler::AutomationQuotaReconciler::new(
+            state.automations.clone(),
             quota_metrics,
         )
         .start(root_cancel.child_token());
@@ -496,7 +496,7 @@ async fn build_production_router(
     )
     .await?;
     let scheduler =
-        patchbay_scheduler::production_manager(state.pool.clone(), state.autopilots.clone())?;
+        patchbay_scheduler::production_manager(state.pool.clone(), state.automations.clone())?;
     let scheduler = scheduler.start(root_cancel.child_token())?;
     Ok(ProductionApp {
         router: patchbay_handler::build_router_from_state(state),
@@ -514,7 +514,7 @@ async fn build_production_router(
         plugin_events,
         github_snapshots,
         ordered_event_side_effects,
-        autopilot_event_listeners,
+        automation_event_listeners,
         task_side_effects,
         analytics,
     })
@@ -559,13 +559,13 @@ async fn shutdown_ordered_event_side_effects(
     }
 }
 
-async fn shutdown_autopilot_event_listeners(
-    runtime: Option<patchbay_handler::autopilot_listeners::AutopilotEventListenersRuntime>,
-) -> Option<patchbay_handler::autopilot_listeners::AutopilotEventShutdownOutcome> {
+async fn shutdown_automation_event_listeners(
+    runtime: Option<patchbay_handler::automation_listeners::AutomationEventListenersRuntime>,
+) -> Option<patchbay_handler::automation_listeners::AutomationEventShutdownOutcome> {
     match runtime {
         Some(runtime) => Some(
             runtime
-                .shutdown(patchbay_handler::autopilot_listeners::DEFAULT_SHUTDOWN_TIMEOUT)
+                .shutdown(patchbay_handler::automation_listeners::DEFAULT_SHUTDOWN_TIMEOUT)
                 .await,
         ),
         None => None,
@@ -735,7 +735,7 @@ async fn main() -> anyhow::Result<()> {
         plugin_events,
         github_snapshots,
         ordered_event_side_effects,
-        autopilot_event_listeners,
+        automation_event_listeners,
         task_side_effects,
         analytics,
     } = app;
@@ -784,9 +784,9 @@ async fn main() -> anyhow::Result<()> {
         github_snapshots_shutdown,
     ) = tokio::join!(
         failure_monitor
-            .shutdown(patchbay_service::autopilot_failure_monitor::DEFAULT_SHUTDOWN_TIMEOUT),
+            .shutdown(patchbay_service::automation_failure_monitor::DEFAULT_SHUTDOWN_TIMEOUT),
         quota_reconciler
-            .shutdown(patchbay_service::autopilot_quota_reconciler::DEFAULT_SHUTDOWN_TIMEOUT),
+            .shutdown(patchbay_service::automation_quota_reconciler::DEFAULT_SHUTDOWN_TIMEOUT),
         webhook_delivery
             .shutdown(patchbay_handler::webhook_delivery_worker::DEFAULT_SHUTDOWN_TIMEOUT),
         coordinator.shutdown(patchbay_service::coordination::DEFAULT_SHUTDOWN_TIMEOUT),
@@ -804,8 +804,8 @@ async fn main() -> anyhow::Result<()> {
         ),
         None => None,
     };
-    let autopilot_event_listeners_shutdown =
-        shutdown_autopilot_event_listeners(autopilot_event_listeners).await;
+    let automation_event_listeners_shutdown =
+        shutdown_automation_event_listeners(automation_event_listeners).await;
     // Subscriber/activity/notification work consumes events from every
     // producer and listener above. Stop accepting only after those producers
     // have joined, then drain already-admitted events in subscriber → activity
@@ -820,20 +820,22 @@ async fn main() -> anyhow::Result<()> {
     // so its owned worker can flush the final bounded queue before process exit.
     analytics.close().await;
     match failure_shutdown {
-        patchbay_service::autopilot_failure_monitor::ShutdownOutcome::TimedOut => {
-            tracing::warn!("autopilot failure monitor exceeded shutdown deadline and was aborted");
+        patchbay_service::automation_failure_monitor::ShutdownOutcome::TimedOut => {
+            tracing::warn!("automation failure monitor exceeded shutdown deadline and was aborted");
         }
-        patchbay_service::autopilot_failure_monitor::ShutdownOutcome::Panicked => {
-            tracing::error!("autopilot failure monitor task panicked during shutdown");
+        patchbay_service::automation_failure_monitor::ShutdownOutcome::Panicked => {
+            tracing::error!("automation failure monitor task panicked during shutdown");
         }
         _ => {}
     }
     match quota_shutdown {
-        patchbay_service::autopilot_failure_monitor::ShutdownOutcome::TimedOut => {
-            tracing::warn!("autopilot quota reconciler exceeded shutdown deadline and was aborted");
+        patchbay_service::automation_failure_monitor::ShutdownOutcome::TimedOut => {
+            tracing::warn!(
+                "automation quota reconciler exceeded shutdown deadline and was aborted"
+            );
         }
-        patchbay_service::autopilot_failure_monitor::ShutdownOutcome::Panicked => {
-            tracing::error!("autopilot quota reconciler task panicked during shutdown");
+        patchbay_service::automation_failure_monitor::ShutdownOutcome::Panicked => {
+            tracing::error!("automation quota reconciler task panicked during shutdown");
         }
         _ => {}
     }
@@ -919,14 +921,16 @@ async fn main() -> anyhow::Result<()> {
         )
         | None => {}
     }
-    match autopilot_event_listeners_shutdown {
-        Some(patchbay_handler::autopilot_listeners::AutopilotEventShutdownOutcome::TimedOut) => {
-            tracing::warn!("autopilot event listeners exceeded shutdown deadline and were aborted");
+    match automation_event_listeners_shutdown {
+        Some(patchbay_handler::automation_listeners::AutomationEventShutdownOutcome::TimedOut) => {
+            tracing::warn!(
+                "automation event listeners exceeded shutdown deadline and were aborted"
+            );
         }
-        Some(patchbay_handler::autopilot_listeners::AutopilotEventShutdownOutcome::Panicked) => {
-            tracing::error!("autopilot event listener task panicked during shutdown");
+        Some(patchbay_handler::automation_listeners::AutomationEventShutdownOutcome::Panicked) => {
+            tracing::error!("automation event listener task panicked during shutdown");
         }
-        Some(patchbay_handler::autopilot_listeners::AutopilotEventShutdownOutcome::Stopped)
+        Some(patchbay_handler::automation_listeners::AutomationEventShutdownOutcome::Stopped)
         | None => {}
     }
     match task_side_effects_shutdown {

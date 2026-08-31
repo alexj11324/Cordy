@@ -410,13 +410,13 @@ pub struct TaskContextForEnv {
     /// per-turn value and the brief is the prompt-cache prefix (PB-5377).
     pub chat_channel_delivers_files: bool,
 
-    /// Non-empty for autopilot run_only tasks.
-    pub autopilot_run_id: String,
-    pub autopilot_id: String,
-    pub autopilot_title: String,
-    pub autopilot_description: String,
-    pub autopilot_source: String,
-    pub autopilot_trigger_payload: String,
+    /// Non-empty for automation run_only tasks.
+    pub automation_run_id: String,
+    pub automation_id: String,
+    pub automation_title: String,
+    pub automation_description: String,
+    pub automation_source: String,
+    pub automation_trigger_payload: String,
     /// Non-empty for quick-create tasks.
     pub quick_create_prompt: String,
     /// Assignment handoff instruction; rendered into issue_context.md
@@ -513,7 +513,7 @@ pub struct Environment {
     /// the session database stayed task-local.
     pub hermes_session_store: String,
     /// Reports that the mounted store actually holds a session database — a
-    /// prior turn's transcript this task can resume.
+    /// prior turn's Agent event history this task can resume.
     pub hermes_session_history_present: bool,
     /// Per-task QwenPaw workspace directory (qwenpaw provider).
     pub qwenpaw_workspace: String,
@@ -1261,13 +1261,13 @@ pub(crate) fn hydrate_codex_skills(
 
 /// GCMetaKind identifies which kind of parent record a task workdir belongs
 /// to. The GC loop dispatches its decision tree on this value so chat /
-/// autopilot / quick-create tasks are no longer forced through the
+/// automation / quick-create tasks are no longer forced through the
 /// issue-centric path.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GCMetaKind {
     Issue,
     Chat,
-    AutopilotRun,
+    AutomationRun,
     QuickCreate,
     Other(String),
 }
@@ -1277,7 +1277,7 @@ impl GCMetaKind {
         match self {
             Self::Issue => "issue",
             Self::Chat => "chat",
-            Self::AutopilotRun => "autopilot_run",
+            Self::AutomationRun => "automation_run",
             Self::QuickCreate => "quick_create",
             Self::Other(kind) => kind,
         }
@@ -1295,7 +1295,7 @@ impl<'de> Deserialize<'de> for GCMetaKind {
         Ok(match String::deserialize(deserializer)?.as_str() {
             "issue" => Self::Issue,
             "chat" => Self::Chat,
-            "autopilot_run" => Self::AutopilotRun,
+            "automation_run" => Self::AutomationRun,
             "quick_create" => Self::QuickCreate,
             other => Self::Other(other.to_string()),
         })
@@ -1317,8 +1317,8 @@ pub struct GcMeta {
     pub issue_id: String,
     #[serde(rename = "chat_session_id", skip_serializing_if = "String::is_empty")]
     pub chat_session_id: String,
-    #[serde(rename = "autopilot_run_id", skip_serializing_if = "String::is_empty")]
-    pub autopilot_run_id: String,
+    #[serde(rename = "automation_run_id", skip_serializing_if = "String::is_empty")]
+    pub automation_run_id: String,
     #[serde(rename = "task_id", skip_serializing_if = "String::is_empty")]
     pub task_id: String,
     #[serde(rename = "workspace_id")]

@@ -21,7 +21,7 @@ pub const TRIGGER_SUMMARY_MAX_LEN: usize = 200;
 /// posted, even partially, to the issue thread.
 pub const MAX_SYNTHESIZED_FALLBACK_COMMENT_RUNES: usize = 8000;
 
-pub const OVERSIZED_FALLBACK_COMMENT_NOTICE: &str = "This task completed, but its output was too large to post safely. The raw output was not posted. Review the task in this issue's Execution log.";
+pub const OVERSIZED_FALLBACK_COMMENT_NOTICE: &str = "This task completed, but its output was too large to post safely. The raw output was not posted. Review the task in this issue's Agent thread.";
 
 pub const TASK_ANALYTICS_CONTEXT_CACHE_MAX: usize = 4096;
 
@@ -170,19 +170,19 @@ pub fn resume_unsafe_failure(failure_reason: &str, error_text: &str) -> bool {
     // Same defense-in-depth for the provider-agnostic empty-message shape:
     // a daemon too old to carry the poisoned-error branch reports
     // agent_error.unknown, and without this the manual-retry path would
-    // resume the transcript the provider just refused.
+    // resume the Agent event history the provider just refused.
     task_failure::unresumable_history(error_text)
 }
 
 /// Reports whether a failed task qualifies for an automatic retry attempt:
 /// an infrastructure-shaped failure_reason, remaining attempt budget, not an
-/// autopilot run, and linked to an issue or chat session. Shared by FailTask's
+/// automation run, and linked to an issue or chat session. Shared by FailTask's
 /// in-transaction retry and the orphan sweeper so both agree on which
 /// failures re-run.
 pub fn retry_eligible(failure_reason: &str, t: &AgentTaskQueue) -> bool {
     retryable(failure_reason)
         && t.attempt < retry_attempt_ceiling(failure_reason, t.max_attempts)
-        && t.autopilot_run_id.is_none()
+        && t.automation_run_id.is_none()
         && (t.issue_id.is_some() || t.chat_session_id.is_some())
 }
 

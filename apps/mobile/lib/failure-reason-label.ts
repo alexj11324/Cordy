@@ -13,7 +13,7 @@
  *
  * Divergence from web, deliberate: the web helper falls back to the raw wire
  * value, which is machine-y but searchable — right for an operator reading the
- * execution log. This one backs a chat bubble read by the person who just sent
+ * Agent thread events. This one backs a chat bubble read by the person who just sent
  * a message, so an unrecognised reason degrades to a plain "Failed" instead of
  * leaking an enum string at them.
  */

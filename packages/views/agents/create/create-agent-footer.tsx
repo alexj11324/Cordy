@@ -9,7 +9,7 @@ import { useT } from "../../i18n";
  * Where the flow ends. Both exits live here — commit the agent, or abandon the
  * attempt — because they are the two answers to one question, and reading them
  * side by side is what makes the destructive one legible. A discard control
- * parked elsewhere (say, a trash icon over the transcript) reads as "clear this
+ * parked elsewhere (say, a trash icon over the Agent event history) reads as "clear this
  * chat" rather than "throw away what I am building".
  *
  * `onDiscard` is optional: the manual route has nothing to abandon, its form is

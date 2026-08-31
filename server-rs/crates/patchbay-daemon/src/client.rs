@@ -734,7 +734,7 @@ pub struct TaskMessageData {
 
 impl Client {
     /// `AckTaskCancelled` (client.go:400): tells the server this daemon
-    /// observed the cancellation and finished flushing the transcript (#5219).
+    /// observed the cancellation and finished flushing the Agent event history (#5219).
     /// Retried like the complete/fail callbacks: when the ack carries a branch
     /// or an error it is a terminal delivery — the only pointer to the
     /// cancelled task's work.
@@ -881,9 +881,9 @@ pub struct ChatSessionGcStatus {
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
-/// `AutopilotRunGCStatus` (client.go:801).
+/// `AutomationRunGCStatus` (client.go:801).
 #[derive(Debug, Clone, Default, Deserialize)]
-pub struct AutopilotRunGcStatus {
+pub struct AutomationRunGcStatus {
     pub status: String,
     #[serde(rename = "completed_at")]
     pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -1173,15 +1173,15 @@ impl Client {
         .await
     }
 
-    /// `GetAutopilotRunGCCheck` (client.go:807).
-    pub(crate) async fn get_autopilot_run_gc_check(
+    /// `GetAutomationRunGCCheck` (client.go:807).
+    pub(crate) async fn get_automation_run_gc_check(
         &self,
         ctx: &crate::repocache::Ctx,
         run_id: &str,
-    ) -> anyhow::Result<AutopilotRunGcStatus> {
+    ) -> anyhow::Result<AutomationRunGcStatus> {
         self.get_json(
             ctx,
-            &format!("/api/daemon/autopilot-runs/{run_id}/gc-check"),
+            &format!("/api/daemon/automation-runs/{run_id}/gc-check"),
         )
         .await
     }

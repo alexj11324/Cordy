@@ -110,16 +110,22 @@ interface Props {
   expandTrigger?: string | null;
 
   /** When `isSending` is true AND `renderStop` is provided, the trailing
-   *  send button is replaced by whatever `renderStop` returns. Chat uses
-   *  this to show a Stop affordance while the agent is running. */
+   *  stop affordance is rendered. Chat may also keep the send affordance
+   *  visible when `allowSubmitWhileSending` is true so a provider lane can
+   *  accept the next queued turn. */
   isSending?: boolean;
   renderStop?: () => ReactNode;
+  allowSubmitWhileSending?: boolean;
 
   /** Hard-disable. Used when chat has no usable agent. The pill shows
    *  `disabledReason` instead of `pillLabel`, and the pill is
    *  non-interactive (cannot expand). */
   disabled?: boolean;
   disabledReason?: string;
+
+  /** Hide file/image controls when the owning endpoint cannot bind
+   *  attachments to its message contract. */
+  showAttachments?: boolean;
 
   /** When true the composer renders flush at the bottom of its parent
    *  WITHOUT the KeyboardStickyView keyboard-aware lift + safe-area
@@ -143,11 +149,7 @@ function serializeMentions(chips: MentionChip[]): string {
   return chips
     .map((m) => {
       const label =
-        m.type === "issue"
-          ? m.name
-          : m.type === "all"
-            ? "@all"
-            : `@${m.name}`;
+        m.type === "issue" ? m.name : m.type === "all" ? "@all" : `@${m.name}`;
       return `[${label}](mention://${m.type}/${m.id})`;
     })
     .join(" ");
@@ -167,8 +169,10 @@ export function MessageComposer({
   expandTrigger,
   isSending = false,
   renderStop,
+  allowSubmitWhileSending = false,
   disabled = false,
   disabledReason,
+  showAttachments = true,
   manageKeyboard = true,
 }: Props) {
   const { colorScheme } = useColorScheme();
@@ -212,11 +216,7 @@ export function MessageComposer({
   // Auto-expand + focus when an `expandTrigger` changes. Comment uses
   // this to react to the long-press → reply flow setting a reply target.
   const triggerSeen = useRef<string | null>(null);
-  if (
-    expandTrigger &&
-    triggerSeen.current !== expandTrigger &&
-    !disabled
-  ) {
+  if (expandTrigger && triggerSeen.current !== expandTrigger && !disabled) {
     triggerSeen.current = expandTrigger;
     setExpanded(true);
     requestAnimationFrame(() => inputRef.current?.focus());
@@ -225,7 +225,7 @@ export function MessageComposer({
   const hasInFlightUpload = attachments.some((a) => a.status === "uploading");
   const canSend =
     !disabled &&
-    !isSending &&
+    (!isSending || allowSubmitWhileSending) &&
     !submitting &&
     !hasInFlightUpload &&
     (text.trim().length > 0 || mentions.length > 0);
@@ -284,21 +284,11 @@ export function MessageComposer({
     } catch {
       setText(textSnap);
       setAttachments(attachmentsSnap);
-      mentionsSnap.forEach((m) =>
-        useMentionDraftStore.getState().toggle(m),
-      );
+      mentionsSnap.forEach((m) => useMentionDraftStore.getState().toggle(m));
     } finally {
       setSubmitting(false);
     }
-  }, [
-    canSend,
-    text,
-    mentions,
-    attachments,
-    setText,
-    clearMentions,
-    onSubmit,
-  ]);
+  }, [canSend, text, mentions, attachments, setText, clearMentions, onSubmit]);
 
   /** Streams a picked asset to /api/upload-file, updating the matching
    *  thumbnail's status as it goes. Pulled out so retry can call it
@@ -461,11 +451,7 @@ export function MessageComposer({
         accessibilityState={{ disabled }}
         className="flex-row items-center gap-2 h-11 px-4 rounded-full bg-secondary active:opacity-80"
       >
-        <Ionicons
-          name={pillIcon}
-          size={18}
-          color={theme.mutedForeground}
-        />
+        <Ionicons name={pillIcon} size={18} color={theme.mutedForeground} />
         <Text className="text-base text-muted-foreground">
           {disabled && disabledReason ? disabledReason : pillLabel}
         </Text>
@@ -520,7 +506,7 @@ export function MessageComposer({
         className="rounded-3xl border border-border bg-secondary"
         style={{ borderCurve: "continuous" }}
       >
-        {(mentions.length > 0 || attachments.length > 0) ? (
+        {mentions.length > 0 || attachments.length > 0 ? (
           <View className="px-2 pt-2 pb-1">
             <ComposerAttachmentRow
               mentions={mentions}
@@ -557,24 +543,27 @@ export function MessageComposer({
             accessibilityLabel="Mention someone or an issue"
             className="h-8 w-8"
           />
-          <IconButton
-            name="image-outline"
-            iconSize={20}
-            onPress={onImagePress}
-            accessibilityLabel="Upload image"
-            className="h-8 w-8"
-          />
-          <IconButton
-            name="attach-outline"
-            iconSize={20}
-            onPress={onFilePress}
-            accessibilityLabel="Upload file"
-            className="h-8 w-8"
-          />
+          {showAttachments ? (
+            <>
+              <IconButton
+                name="image-outline"
+                iconSize={20}
+                onPress={onImagePress}
+                accessibilityLabel="Upload image"
+                className="h-8 w-8"
+              />
+              <IconButton
+                name="attach-outline"
+                iconSize={20}
+                onPress={onFilePress}
+                accessibilityLabel="Upload file"
+                className="h-8 w-8"
+              />
+            </>
+          ) : null}
           <View className="flex-1" />
-          {isSending && renderStop ? (
-            renderStop()
-          ) : (
+          {isSending && renderStop ? renderStop() : null}
+          {!isSending || allowSubmitWhileSending ? (
             <IconButton
               name="arrow-up"
               iconSize={18}
@@ -587,7 +576,7 @@ export function MessageComposer({
               accessibilityLabel="Send"
               accessibilityState={{ disabled: !canSend }}
             />
-          )}
+          ) : null}
         </View>
       </View>
     </View>

@@ -19,6 +19,7 @@ import {
 import { NumberFlow } from "@patchbay/ui/components/ui/number-flow";
 import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import { useQueries, useQuery } from "@tanstack/react-query";
+import { isAgentTaskActive } from "@patchbay/core/agent-thread";
 import type { Agent, AgentTask, Issue } from "@patchbay/core/types";
 import {
   type AgentActivity,
@@ -32,10 +33,7 @@ import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useWorkspacePaths } from "@patchbay/core/paths";
 import { issueDetailOptions } from "@patchbay/core/issues/queries";
 import { AppLink } from "../../../navigation";
-import {
-  IssueAgentConversationOpener,
-  IssueAgentConversationTrigger,
-} from "../../../issues/components/issue-agent-conversation-dialog";
+import { TaskAgentThreadDialog } from "../../../agent-thread";
 import { AttributionBadge } from "../../../issues/components/attribution-badge";
 import { taskStatusConfig } from "../../config";
 import { cancelReasonLabel, failureReasonLabel } from "./task-failure";
@@ -72,7 +70,10 @@ interface ActivityTabProps {
  * the workspace 7d activity buckets for the trend), so opening this tab
  * adds no extra fetches once the page is hydrated.
  */
-export function ActivityTab({ agent, showPerformance = true }: ActivityTabProps) {
+export function ActivityTab({
+  agent,
+  showPerformance = true,
+}: ActivityTabProps) {
   const wsId = useWorkspaceId();
 
   const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
@@ -99,16 +100,12 @@ export function ActivityTab({ agent, showPerformance = true }: ActivityTabProps)
       dispatched: 1,
       waiting_local_directory: 2,
       queued: 3,
+      deferred: 4,
     };
     return snapshot
       .filter(
         (t) =>
-          t.agent_id === agent.id &&
-          isWorkflowTask(t) &&
-          (t.status === "running" ||
-            t.status === "queued" ||
-            t.status === "dispatched" ||
-            t.status === "waiting_local_directory"),
+          t.agent_id === agent.id && isWorkflowTask(t) && isAgentTaskActive(t),
       )
       .sort(
         (a, b) =>
@@ -123,12 +120,7 @@ export function ActivityTab({ agent, showPerformance = true }: ActivityTabProps)
   const recentTasksAll = useMemo(() => {
     return [...agentTasks]
       .filter(
-        (t) =>
-          isWorkflowTask(t) &&
-          !!t.completed_at &&
-          (t.status === "completed" ||
-            t.status === "failed" ||
-            t.status === "cancelled"),
+        (t) => isWorkflowTask(t) && !!t.completed_at && !isAgentTaskActive(t),
       )
       .sort(
         (a, b) =>
@@ -158,7 +150,9 @@ export function ActivityTab({ agent, showPerformance = true }: ActivityTabProps)
   const issueIds = useMemo(
     () =>
       Array.from(
-        new Set(displayedTasks.map((t) => t.issue_id).filter((id) => id !== "")),
+        new Set(
+          displayedTasks.map((t) => t.issue_id).filter((id) => id !== ""),
+        ),
       ),
     [displayedTasks],
   );
@@ -176,7 +170,7 @@ export function ActivityTab({ agent, showPerformance = true }: ActivityTabProps)
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      <NowSection tasks={activeTasks} issueMap={issueMap} agent={agent} />
+      <NowSection tasks={activeTasks} issueMap={issueMap} />
       {showPerformance && (
         <Last30dSection activity={activity} avgDurationMs={avgDurationMs} />
       )}
@@ -185,11 +179,8 @@ export function ActivityTab({ agent, showPerformance = true }: ActivityTabProps)
         totalCount={recentTasksAll.length}
         hasMore={hasMoreRecent}
         loading={isLoadingRecent}
-        onShowMore={() =>
-          setRecentDisplayLimit((n) => n + RECENT_PAGE)
-        }
+        onShowMore={() => setRecentDisplayLimit((n) => n + RECENT_PAGE)}
         issueMap={issueMap}
-        agent={agent}
       />
     </div>
   );
@@ -200,9 +191,7 @@ export function ActivityTab({ agent, showPerformance = true }: ActivityTabProps)
 export function AgentPerformanceSummary({ agent }: { agent: Agent }) {
   const { t } = useT("agents");
   const wsId = useWorkspaceId();
-  const { data: agentTasks = [] } = useQuery(
-    agentTasksOptions(wsId, agent.id),
-  );
+  const { data: agentTasks = [] } = useQuery(agentTasksOptions(wsId, agent.id));
   const { byAgent: activityMap } = useWorkspaceActivityMap(wsId);
   const activity = activityMap.get(agent.id);
   const summary = summarizeActivityWindow(activity, 30);
@@ -213,8 +202,7 @@ export function AgentPerformanceSummary({ agent }: { agent: Agent }) {
   const successPct =
     summary.totalRuns > 0
       ? Math.round(
-          ((summary.totalRuns - summary.totalFailed) / summary.totalRuns) *
-            100,
+          ((summary.totalRuns - summary.totalFailed) / summary.totalRuns) * 100,
         )
       : 100;
 
@@ -288,11 +276,9 @@ function Metric({
 function NowSection({
   tasks,
   issueMap,
-  agent,
 }: {
   tasks: AgentTask[];
   issueMap: Map<string, Issue>;
-  agent: Agent;
 }) {
   const { t } = useT("agents");
   return (
@@ -301,18 +287,15 @@ function NowSection({
       subtitle={
         tasks.length === 0
           ? t(($) => $.tab_body.activity.subtitle_no_active)
-          : t(($) => $.tab_body.activity.subtitle_active, { count: tasks.length })
+          : t(($) => $.tab_body.activity.subtitle_active, {
+              count: tasks.length,
+            })
       }
     >
       {tasks.length === 0 ? (
         <EmptyText>{t(($) => $.tab_body.activity.empty_now)}</EmptyText>
       ) : (
-        <TaskList
-          tasks={tasks}
-          issueMap={issueMap}
-          timeMode="active"
-          agent={agent}
-        />
+        <TaskList tasks={tasks} issueMap={issueMap} timeMode="active" />
       )}
     </Section>
   );
@@ -335,7 +318,10 @@ function Last30dSection({
       : 100;
 
   return (
-    <Section title={t(($) => $.tab_body.activity.section_last_30d)} subtitle={t(($) => $.tab_body.activity.subtitle_performance)}>
+    <Section
+      title={t(($) => $.tab_body.activity.section_last_30d)}
+      subtitle={t(($) => $.tab_body.activity.subtitle_performance)}
+    >
       {totalRuns === 0 ? (
         <EmptyText>{t(($) => $.tab_body.activity.empty_30d)}</EmptyText>
       ) : (
@@ -354,18 +340,26 @@ function Last30dSection({
               </span>
             </div>
             <div className="text-caption text-muted-foreground">
-              {t(($) => $.tab_body.activity.success_pct, { percent: successPct })}
+              {t(($) => $.tab_body.activity.success_pct, {
+                percent: successPct,
+              })}
               {avgDurationMs > 0 && (
                 <>
                   <Sep />
-                  <span>{t(($) => $.tab_body.activity.avg_duration, { value: formatDurationMs(avgDurationMs) })}</span>
+                  <span>
+                    {t(($) => $.tab_body.activity.avg_duration, {
+                      value: formatDurationMs(avgDurationMs),
+                    })}
+                  </span>
                 </>
               )}
               {totalFailed > 0 && (
                 <>
                   <Sep />
                   <span className="text-destructive">
-                    {t(($) => $.tab_body.activity.failed_count, { count: totalFailed })}
+                    {t(($) => $.tab_body.activity.failed_count, {
+                      count: totalFailed,
+                    })}
                   </span>
                 </>
               )}
@@ -394,7 +388,6 @@ function RecentWorkSection({
   loading,
   onShowMore,
   issueMap,
-  agent,
 }: {
   tasks: AgentTask[];
   totalCount: number;
@@ -402,7 +395,6 @@ function RecentWorkSection({
   loading: boolean;
   onShowMore: () => void;
   issueMap: Map<string, Issue>;
-  agent: Agent;
 }) {
   const { t } = useT("agents");
   // While the first fetch is in flight we have no counts to summarise, so
@@ -412,22 +404,25 @@ function RecentWorkSection({
     : tasks.length === 0
       ? t(($) => $.tab_body.activity.subtitle_no_recent)
       : totalCount > tasks.length
-        ? t(($) => $.tab_body.activity.subtitle_recent_progress, { shown: tasks.length, total: totalCount })
-        : t(($) => $.tab_body.activity.subtitle_recent_latest, { count: tasks.length });
+        ? t(($) => $.tab_body.activity.subtitle_recent_progress, {
+            shown: tasks.length,
+            total: totalCount,
+          })
+        : t(($) => $.tab_body.activity.subtitle_recent_latest, {
+            count: tasks.length,
+          });
   return (
-    <Section title={t(($) => $.tab_body.activity.section_recent)} subtitle={subtitle}>
+    <Section
+      title={t(($) => $.tab_body.activity.section_recent)}
+      subtitle={subtitle}
+    >
       {loading ? (
         <RecentWorkSkeleton />
       ) : tasks.length === 0 ? (
         <EmptyText>{t(($) => $.tab_body.activity.empty_recent)}</EmptyText>
       ) : (
         <>
-          <TaskList
-            tasks={tasks}
-            issueMap={issueMap}
-            timeMode="completed"
-            agent={agent}
-          />
+          <TaskList tasks={tasks} issueMap={issueMap} timeMode="completed" />
           {hasMore && (
             <button
               type="button"
@@ -462,7 +457,9 @@ function RecentWorkSkeleton() {
         <div key={i} className="flex items-center gap-3 px-3 py-3">
           <Skeleton className="h-4 w-4 shrink-0 rounded-full" />
           <div className="min-w-0 flex-1 space-y-2">
-            <Skeleton className={`h-3.5 ${titleWidths[i % titleWidths.length]}`} />
+            <Skeleton
+              className={`h-3.5 ${titleWidths[i % titleWidths.length]}`}
+            />
             <Skeleton className={`h-3 ${metaWidths[i % metaWidths.length]}`} />
           </div>
         </div>
@@ -475,12 +472,10 @@ function TaskList({
   tasks,
   issueMap,
   timeMode,
-  agent,
 }: {
   tasks: AgentTask[];
   issueMap: Map<string, Issue>;
   timeMode: "active" | "completed";
-  agent: Agent;
 }) {
   return (
     <div
@@ -496,7 +491,6 @@ function TaskList({
           task={task}
           issueMap={issueMap}
           timeMode={timeMode}
-          agent={agent}
         />
       ))}
     </div>
@@ -507,12 +501,10 @@ function TaskRow({
   task,
   issueMap,
   timeMode,
-  agent,
 }: {
   task: AgentTask;
   issueMap: Map<string, Issue>;
   timeMode: "active" | "completed";
-  agent: Agent;
 }) {
   const { t } = useT("agents");
   const timeAgo = useTimeAgo();
@@ -526,13 +518,9 @@ function TaskRow({
   const isRunning = task.status === "running";
   const chatSessionId = task.chat_session_id;
   const showChat = !hasIssue && Boolean(chatSessionId);
-  // Cancel only makes sense for the three active states. Terminal rows
-  // (completed / failed / cancelled) hide the button entirely.
-  const showCancel =
-    timeMode === "active" &&
-    (task.status === "queued" ||
-      task.status === "dispatched" ||
-      task.status === "running");
+  // Cancel only makes sense for active states. Terminal rows hide the button
+  // entirely, while a future server state remains fail-closed.
+  const showCancel = timeMode === "active" && isAgentTaskActive(task);
 
   const handleCancel = async () => {
     if (cancelling) return;
@@ -543,7 +531,11 @@ function TaskRow({
       // through useRealtimeSync's `task:` prefix path which already
       // invalidates snapshot + per-agent + per-issue task lists.
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : t(($) => $.tab_body.activity.cancel_failed_toast));
+      toast.error(
+        e instanceof Error
+          ? e.message
+          : t(($) => $.tab_body.activity.cancel_failed_toast),
+      );
       setCancelling(false);
     }
   };
@@ -559,8 +551,8 @@ function TaskRow({
         : t(($) => $.tab_body.activity.source_creating_issue)
       : task.chat_session_id
         ? t(($) => $.tab_body.activity.source_chat_session)
-        : task.autopilot_run_id
-          ? t(($) => $.tab_body.activity.source_autopilot_run)
+        : task.automation_run_id
+          ? t(($) => $.tab_body.activity.source_automation_run)
           : t(($) => $.tab_body.activity.source_untracked)
     : null;
 
@@ -568,15 +560,15 @@ function TaskRow({
     ? Hash
     : task.chat_session_id
       ? MessageSquare
-      : task.autopilot_run_id
+      : task.automation_run_id
         ? Workflow
         : CircleHelp;
   const sourceLabel = hasIssue
     ? t(($) => $.tab_body.activity.source_issue)
     : task.chat_session_id
       ? t(($) => $.tab_body.activity.source_chat)
-      : task.autopilot_run_id
-        ? t(($) => $.tab_body.activity.source_autopilot)
+      : task.automation_run_id
+        ? t(($) => $.tab_body.activity.source_automation)
         : t(($) => $.tab_body.activity.source_untracked);
 
   const timeText =
@@ -647,8 +639,11 @@ function TaskRow({
                   <span className="truncate text-body">
                     {issue?.title ??
                       (hasIssue
-                        ? t(($) => $.tab_body.activity.issue_short_fallback, { prefix: task.issue_id.slice(0, 8) })
-                        : (sourceFallback ?? t(($) => $.tab_body.activity.source_untracked)))}
+                        ? t(($) => $.tab_body.activity.issue_short_fallback, {
+                            prefix: task.issue_id.slice(0, 8),
+                          })
+                        : (sourceFallback ??
+                          t(($) => $.tab_body.activity.source_untracked)))}
                   </span>
                 }
               />
@@ -665,15 +660,16 @@ function TaskRow({
             <span className="truncate text-body">
               {issue?.title ??
                 (hasIssue
-                  ? t(($) => $.tab_body.activity.issue_short_fallback, { prefix: task.issue_id.slice(0, 8) })
-                  : (sourceFallback ?? t(($) => $.tab_body.activity.source_untracked)))}
+                  ? t(($) => $.tab_body.activity.issue_short_fallback, {
+                      prefix: task.issue_id.slice(0, 8),
+                    })
+                  : (sourceFallback ??
+                    t(($) => $.tab_body.activity.source_untracked)))}
             </span>
           )}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-caption text-muted-foreground">
-          <span className={cfg.color}>
-            {taskStatusLabel(task.status, t)}
-          </span>
+          <span className={cfg.color}>{taskStatusLabel(task.status, t)}</span>
           <Sep />
           <span>{timeText}</span>
           {durationText && (
@@ -687,7 +683,10 @@ function TaskRow({
               <Sep />
               {/* Hover reveals the actionable text ("upgrade the daemon on
                   that machine", "work preserved at …"), not just the bucket. */}
-              <span className="text-destructive" title={task.error ?? undefined}>
+              <span
+                className="text-destructive"
+                title={task.error ?? undefined}
+              >
                 {failureLabel}
               </span>
             </>
@@ -710,10 +709,8 @@ function TaskRow({
         </div>
       </div>
 
-      {/* Hover-only actions. The row is intentionally non-clickable so
-          neither destination is privileged — issue detail and the agent
-          conversation are equally valid follow-ups. focus-within keeps the
-          slot reachable for keyboard users. */}
+      {/* Secondary destinations stay beside the canonical Agent thread opener.
+          focus-within keeps the slot reachable for keyboard users. */}
       <div className="ml-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100">
         {hasIssue && (
           <Tooltip>
@@ -724,20 +721,34 @@ function TaskRow({
             >
               <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
             </TooltipTrigger>
-            <TooltipContent>{t(($) => $.tab_body.activity.open_issue_tooltip)}</TooltipContent>
+            <TooltipContent>
+              {t(($) => $.tab_body.activity.open_issue_tooltip)}
+            </TooltipContent>
           </Tooltip>
         )}
-        {hasIssue && (
-          <>
-            <IssueAgentConversationTrigger onClick={() => setConversationOpen(true)} />
-            {conversationOpen && (
-              <IssueAgentConversationOpener
-                issueId={task.issue_id}
-                agentId={agent.id}
-                onOpenChange={setConversationOpen}
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <button
+                type="button"
+                onClick={() => setConversationOpen(true)}
+                aria-label={t(($) => $.tab_body.activity.open_thread_aria)}
               />
-            )}
-          </>
+            }
+            className="flex items-center justify-center rounded p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
+          >
+            <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+          </TooltipTrigger>
+          <TooltipContent>
+            {t(($) => $.tab_body.activity.open_thread_tooltip)}
+          </TooltipContent>
+        </Tooltip>
+        {conversationOpen && (
+          <TaskAgentThreadDialog
+            taskId={task.id}
+            open
+            onOpenChange={setConversationOpen}
+          />
         )}
         {showChat && chatSessionId && (
           <Tooltip>
@@ -748,7 +759,9 @@ function TaskRow({
             >
               <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
             </TooltipTrigger>
-            <TooltipContent>{t(($) => $.tab_body.activity.open_chat_tooltip)}</TooltipContent>
+            <TooltipContent>
+              {t(($) => $.tab_body.activity.open_chat_tooltip)}
+            </TooltipContent>
           </Tooltip>
         )}
         {showCancel && (
@@ -767,7 +780,9 @@ function TaskRow({
               <X className="h-3.5 w-3.5" aria-hidden="true" />
             </TooltipTrigger>
             <TooltipContent>
-              {cancelling ? t(($) => $.tab_body.activity.cancelling_tooltip) : t(($) => $.tab_body.activity.cancel_task_tooltip)}
+              {cancelling
+                ? t(($) => $.tab_body.activity.cancelling_tooltip)
+                : t(($) => $.tab_body.activity.cancel_task_tooltip)}
             </TooltipContent>
           </Tooltip>
         )}
@@ -788,9 +803,7 @@ function Section({
   return (
     <section className="flex flex-col gap-3 border-b pb-6 last:border-b-0 last:pb-0">
       <div className="flex items-baseline gap-2">
-        <h2 className="text-body font-semibold text-foreground">
-          {title}
-        </h2>
+        <h2 className="text-body font-semibold text-foreground">{title}</h2>
         <span className="text-micro text-muted-foreground">{subtitle}</span>
       </div>
       {children}
@@ -799,7 +812,9 @@ function Section({
 }
 
 function EmptyText({ children }: { children: ReactNode }) {
-  return <p className="text-caption italic text-muted-foreground">{children}</p>;
+  return (
+    <p className="text-caption italic text-muted-foreground">{children}</p>
+  );
 }
 
 function Sep() {
@@ -816,6 +831,8 @@ function taskStatusLabel(status: AgentTask["status"], t: AgentsT): string {
   switch (status) {
     case "queued":
       return t(($) => $.tab_body.activity.status.queued);
+    case "deferred":
+      return t(($) => $.tab_body.activity.status.deferred);
     case "dispatched":
       return t(($) => $.tab_body.activity.status.dispatched);
     case "waiting_local_directory":
@@ -828,17 +845,31 @@ function taskStatusLabel(status: AgentTask["status"], t: AgentsT): string {
       return t(($) => $.tab_body.activity.status.failed);
     case "cancelled":
       return t(($) => $.tab_body.activity.status.cancelled);
+    default:
+      // Preserve a future server state instead of making it look queued or
+      // dropping the activity row entirely.
+      return status;
   }
 }
 
-function activeTaskTimeText(task: AgentTask, t: AgentsT, timeAgo: TimeAgoFn): string {
+function activeTaskTimeText(
+  task: AgentTask,
+  t: AgentsT,
+  timeAgo: TimeAgoFn,
+): string {
   if (task.status === "running" && task.started_at) {
-    return t(($) => $.tab_body.activity.started_prefix, { when: timeAgo(task.started_at) });
+    return t(($) => $.tab_body.activity.started_prefix, {
+      when: timeAgo(task.started_at),
+    });
   }
   if (task.status === "dispatched" && task.dispatched_at) {
-    return t(($) => $.tab_body.activity.dispatched_prefix, { when: timeAgo(task.dispatched_at) });
+    return t(($) => $.tab_body.activity.dispatched_prefix, {
+      when: timeAgo(task.dispatched_at),
+    });
   }
-  return t(($) => $.tab_body.activity.queued_prefix, { when: timeAgo(task.created_at) });
+  return t(($) => $.tab_body.activity.queued_prefix, {
+    when: timeAgo(task.created_at),
+  });
 }
 
 /**

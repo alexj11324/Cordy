@@ -1,4 +1,4 @@
-//! Shared sliding-window safety gates for Autopilot webhook ingress/dispatch.
+//! Shared sliding-window safety gates for Automation webhook ingress/dispatch.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;

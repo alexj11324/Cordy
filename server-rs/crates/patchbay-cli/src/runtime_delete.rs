@@ -68,11 +68,11 @@ pub(super) fn format_runtime_delete_result(
             "Runtime {id} deleted; unbound {} agent(s)",
             value_string(result, "agents_unbound")
         );
-        if result.get("autopilots_paused").is_some() {
+        if result.get("automations_paused").is_some() {
             let _ = write!(
                 message,
-                " and paused {} autopilot(s)",
-                value_string(result, "autopilots_paused")
+                " and paused {} automation(s)",
+                value_string(result, "automations_paused")
             );
         }
         message + ".\n"

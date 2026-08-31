@@ -788,11 +788,11 @@ pub(crate) trait GcHost: Send + Sync {
         chat_session_id: &str,
     ) -> impl Future<Output = anyhow::Result<IssueGCCheckStatus>> + Send;
 
-    /// `d.client.GetAutopilotRunGCCheck` (gc.go:669).
-    fn get_autopilot_run_gc_check(
+    /// `d.client.GetAutomationRunGCCheck` (gc.go:669).
+    fn get_automation_run_gc_check(
         &self,
         ctx: &Ctx,
-        autopilot_run_id: &str,
+        automation_run_id: &str,
     ) -> impl Future<Output = anyhow::Result<IssueGCCheckStatus>> + Send;
 
     /// `d.client.GetTaskGCCheck` (gc.go:724).
@@ -1275,7 +1275,7 @@ fn record_artifact_cleanup(
 }
 
 /// `shouldCleanTaskDir` (gc.go:331–350): decides whether a task directory
-/// should be removed. Dispatches on meta.Kind so chat / autopilot /
+/// should be removed. Dispatches on meta.Kind so chat / automation /
 /// quick-create tasks each follow the parent record that actually governs
 /// their lifecycle.
 async fn should_clean_task_dir<H: GcHost>(host: &H, ctx: &Ctx, task_dir: &Path) -> GcAction {
@@ -1365,8 +1365,8 @@ async fn should_clean_task_dir_for_kind<H: GcHost>(
     match meta.kind.as_ref() {
         Some(GCMetaKind::Issue) => gc_decision_issue(host, ctx, task_dir, meta).await,
         Some(GCMetaKind::Chat) => gc_decision_chat(host, ctx, task_dir, meta).await,
-        Some(GCMetaKind::AutopilotRun) => {
-            gc_decision_autopilot_run(host, ctx, task_dir, meta).await
+        Some(GCMetaKind::AutomationRun) => {
+            gc_decision_automation_run(host, ctx, task_dir, meta).await
         }
         Some(GCMetaKind::QuickCreate) => gc_decision_quick_create(host, ctx, task_dir, meta).await,
         // Unknown or absent kind: fall back to mtime-based
@@ -1624,39 +1624,39 @@ async fn gc_decision_chat<H: GcHost>(
     }
 }
 
-/// `gcDecisionAutopilotRun` (gc.go:664–704).
-async fn gc_decision_autopilot_run<H: GcHost>(
+/// `gcDecisionAutomationRun` (gc.go:664–704).
+async fn gc_decision_automation_run<H: GcHost>(
     host: &H,
     ctx: &Ctx,
     task_dir: &Path,
     meta: &GcMeta,
 ) -> GcAction {
-    if meta.autopilot_run_id.trim().is_empty() {
-        return orphan_by_mtime(host, task_dir, "empty autopilot run id");
+    if meta.automation_run_id.trim().is_empty() {
+        return orphan_by_mtime(host, task_dir, "empty automation run id");
     }
 
     let status = match host
-        .get_autopilot_run_gc_check(ctx, &meta.autopilot_run_id)
+        .get_automation_run_gc_check(ctx, &meta.automation_run_id)
         .await
     {
         Ok(status) => status,
         Err(err) => {
             if is_access_not_found(&err) {
-                return orphan_by_mtime(host, task_dir, "autopilot run not accessible");
+                return orphan_by_mtime(host, task_dir, "automation run not accessible");
             }
             return GcAction::Skip;
         }
     };
 
-    // Terminal states per the autopilot_run CHECK constraint: completed,
+    // Terminal states per the automation_run CHECK constraint: completed,
     // failed, skipped, issue_created. The moment the run reaches a terminal
     // state the directory is dead weight and we reclaim it immediately,
     // without waiting out GCTTL.
-    if is_autopilot_run_terminal(&status.status) {
+    if is_automation_run_terminal(&status.status) {
         tracing::info!(
             dir = %base_name(task_dir),
-            kind = "autopilot_run",
-            autopilot_run = %meta.autopilot_run_id,
+            kind = "automation_run",
+            automation_run = %meta.automation_run_id,
             status = %status.status,
             "gc: eligible for cleanup"
         );
@@ -1665,9 +1665,9 @@ async fn gc_decision_autopilot_run<H: GcHost>(
     GcAction::Skip
 }
 
-/// `isAutopilotRunTerminal` (gc.go:710–717): mirrors the run.status CHECK in
-/// migrations/042_autopilot.up.sql.
-fn is_autopilot_run_terminal(status: &str) -> bool {
+/// `isAutomationRunTerminal` (gc.go:710–717): mirrors the run.status CHECK in
+/// migrations/042_automation.up.sql.
+fn is_automation_run_terminal(status: &str) -> bool {
     matches!(status, "completed" | "failed" | "skipped" | "issue_created")
 }
 
@@ -2571,12 +2571,12 @@ mod tests {
             panic!("disabled GC must not query chat state")
         }
 
-        async fn get_autopilot_run_gc_check(
+        async fn get_automation_run_gc_check(
             &self,
             _ctx: &Ctx,
-            _autopilot_run_id: &str,
+            _automation_run_id: &str,
         ) -> anyhow::Result<IssueGCCheckStatus> {
-            panic!("disabled GC must not query autopilot state")
+            panic!("disabled GC must not query automation state")
         }
 
         async fn get_task_gc_check(

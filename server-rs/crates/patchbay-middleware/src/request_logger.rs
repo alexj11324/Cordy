@@ -18,7 +18,7 @@ use tracing::Instrument;
 
 /// Public webhook ingress path prefix. The path segment after this prefix IS
 /// a bearer credential, so the logger must redact it.
-pub const WEBHOOK_INGRESS_PATH_PREFIX: &str = "/api/webhooks/autopilots/";
+pub const WEBHOOK_INGRESS_PATH_PREFIX: &str = "/api/webhooks/automations/";
 
 /// Internal response header carrying the resolved webhook trigger ID to the
 /// request logger (which strips it before the response leaves the server).
@@ -37,7 +37,7 @@ const SOFT_NOT_FOUND_BODY_CAPTURE_LIMIT: usize = 256 * 1024;
 /// recognizable at Info, while genuine 4xx keep Warn.
 const SOFT_NOT_FOUND_MARKERS: [&str; 2] = ["runtime not found", "task not found"];
 
-/// Returns a logger-safe version of a request path. For the autopilot webhook
+/// Returns a logger-safe version of a request path. For the automation webhook
 /// ingress path the trailing token segment is replaced with "[redacted]";
 /// every other path passes through untouched.
 ///
@@ -267,18 +267,18 @@ mod tests {
     #[test]
     fn webhook_paths_redact_token_segment() {
         assert_eq!(
-            redact_webhook_path("/api/webhooks/autopilots/awt_secrettoken123"),
-            "/api/webhooks/autopilots/[redacted]"
+            redact_webhook_path("/api/webhooks/automations/awt_secrettoken123"),
+            "/api/webhooks/automations/[redacted]"
         );
         // Sub-path after the token is preserved defensively.
         assert_eq!(
-            redact_webhook_path("/api/webhooks/autopilots/awt_x/retry"),
-            "/api/webhooks/autopilots/[redacted]/retry"
+            redact_webhook_path("/api/webhooks/automations/awt_x/retry"),
+            "/api/webhooks/automations/[redacted]/retry"
         );
         // Prefix alone stays intact.
         assert_eq!(
-            redact_webhook_path("/api/webhooks/autopilots/"),
-            "/api/webhooks/autopilots/"
+            redact_webhook_path("/api/webhooks/automations/"),
+            "/api/webhooks/automations/"
         );
     }
 

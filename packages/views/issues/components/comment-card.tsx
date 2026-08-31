@@ -267,10 +267,10 @@ function TaskCommentRetryButton({
       // structured 403 is a permission block, not a transient failure.
       toast.error(
         dispatchReasonCode(e) === "invocation_not_allowed"
-          ? t(($) => $.execution_log.retry_blocked)
+          ? t(($) => $.agent_thread.retry_blocked)
           : e instanceof Error
             ? e.message
-            : t(($) => $.execution_log.retry_failed),
+            : t(($) => $.agent_thread.retry_failed),
       );
     } finally {
       setRetrying(false);
@@ -285,14 +285,14 @@ function TaskCommentRetryButton({
         variant="outline"
         onClick={handleRetry}
         disabled={retrying}
-        aria-label={t(($) => $.execution_log.retry_task_aria)}
+        aria-label={t(($) => $.agent_thread.retry_task_aria)}
       >
         {retrying ? (
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
         ) : (
           <RotateCcw className="h-3.5 w-3.5" />
         )}
-        {t(($) => $.execution_log.retry_task_tooltip)}
+        {t(($) => $.agent_thread.retry_task_tooltip)}
       </Button>
     </div>
   );

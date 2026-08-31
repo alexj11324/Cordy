@@ -68,7 +68,7 @@ impl Outbound {
         ctx: &tokio_util::sync::CancellationToken,
         e: &Event,
     ) -> anyhow::Result<()> {
-        // Issue / autopilot tasks carry no chat_session.
+        // Issue / automation tasks carry no chat_session.
         let Ok(session_id) = Uuid::parse_str(&e.chat_session_id) else {
             return Ok(());
         };

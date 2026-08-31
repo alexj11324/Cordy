@@ -59,8 +59,6 @@
     "failed_after": "{{elapsed}}後に失敗",
     "finished_in": "{{elapsed}}で完了",
     "no_response": "エージェントはテキストの返信なしでこのターンを終了しました。",
-    "reasoning_active": "思考中…",
-    "reasoning_complete": "思考過程",
     "failure": {
       "agent_error": "エージェントでエラーが発生し、返信を完了できませんでした。もう一度お試しください。",
       "timeout": "処理に時間がかかりすぎたため、完了前に停止しました。もう一度お試しいただくか、リクエストを分けてみてください。",
@@ -80,6 +78,7 @@
       "fallback": "問題が発生し、エージェントは返信を完了できませんでした。もう一度お試しください。"
     },
     "tools_other": "ツール {{count}}個",
+    "tool_fallback": "ツール",
     "tool_result_named": "{{tool}} の結果: ",
     "tool_result_unnamed": "結果: ",
     "process_steps_other": "ステップ {{count}}個",

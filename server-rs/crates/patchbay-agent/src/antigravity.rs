@@ -323,7 +323,7 @@ impl Backend for AntigravityBackend {
             }
             let mut output = stream.output;
             if status == "completed" && output.trim().is_empty() {
-                output = recover_transcript(&markers.app_data_dir, &session_id);
+                output = recover_provider_event_history(&markers.app_data_dir, &session_id);
                 if !output.is_empty() {
                     let _ = recovery_message_tx.try_send(message(MessageType::Text, &output, ""));
                 }
@@ -591,7 +591,7 @@ fn read_bounded_line<R: BufRead>(reader: &mut R, line: &mut Vec<u8>) -> io::Resu
     Ok(bytes)
 }
 
-fn recover_transcript(app_data: &str, conversation_id: &str) -> String {
+fn recover_provider_event_history(app_data: &str, conversation_id: &str) -> String {
     if conversation_id.is_empty() || app_data.is_empty() {
         return String::new();
     }
@@ -600,13 +600,16 @@ fn recover_transcript(app_data: &str, conversation_id: &str) -> String {
         .join(conversation_id)
         .join(".system_generated")
         .join("logs")
+        // Antigravity owns this fixed provider-protocol filename. It is not a
+        // Patchbay product model or UI surface; remove it only when the
+        // upstream protocol changes or the adapter is removed.
         .join("transcript.jsonl");
-    let Ok(transcript) = std::fs::read_to_string(path) else {
+    let Ok(event_history_path) = std::fs::read_to_string(path) else {
         return String::new();
     };
     let mut parts = Vec::new();
-    for line in transcript.lines() {
-        let Ok(record) = serde_json::from_str::<TranscriptRecord>(line) else {
+    for line in event_history_path.lines() {
+        let Ok(record) = serde_json::from_str::<ProviderEventRecord>(line) else {
             continue;
         };
         if record.record_type == "USER_INPUT" {
@@ -630,7 +633,7 @@ fn recover_transcript(app_data: &str, conversation_id: &str) -> String {
 }
 
 #[derive(Deserialize)]
-struct TranscriptRecord {
+struct ProviderEventRecord {
     #[serde(rename = "type")]
     record_type: String,
     #[serde(default)]
@@ -711,23 +714,23 @@ mod tests {
     }
 
     #[test]
-    fn transcript_recovery_returns_only_latest_turn() {
+    fn provider_event_recovery_returns_only_latest_turn() {
         let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
         let cid = "b8b263a4-4b2f-4339-acc9-78b248e2b606";
-        let transcript = directory
+        let event_history_path = directory
             .path()
             .join("brain")
             .join(cid)
             .join(".system_generated/logs/transcript.jsonl");
         std::fs::create_dir_all(
-            transcript
+            event_history_path
                 .parent()
-                .unwrap_or_else(|| panic!("transcript parent")),
+                .unwrap_or_else(|| panic!("event_history_path parent")),
         )
-        .unwrap_or_else(|error| panic!("create transcript: {error}"));
-        std::fs::write(&transcript, concat!("{\"type\":\"USER_INPUT\",\"content\":\"old\"}\n", "{\"type\":\"PLANNER_RESPONSE\",\"source\":\"MODEL\",\"status\":\"DONE\",\"content\":\"old answer\"}\n", "{\"type\":\"USER_INPUT\",\"content\":\"new\"}\n", "{\"type\":\"PLANNER_RESPONSE\",\"source\":\"MODEL\",\"status\":\"DONE\",\"content\":\"new narration\"}\n", "{\"type\":\"PLANNER_RESPONSE\",\"source\":\"MODEL\",\"status\":\"DONE\",\"content\":\"new answer\"}\n"))        .unwrap_or_else(|error| panic!("write transcript: {error}"));
+        .unwrap_or_else(|error| panic!("create event_history_path: {error}"));
+        std::fs::write(&event_history_path, concat!("{\"type\":\"USER_INPUT\",\"content\":\"old\"}\n", "{\"type\":\"PLANNER_RESPONSE\",\"source\":\"MODEL\",\"status\":\"DONE\",\"content\":\"old answer\"}\n", "{\"type\":\"USER_INPUT\",\"content\":\"new\"}\n", "{\"type\":\"PLANNER_RESPONSE\",\"source\":\"MODEL\",\"status\":\"DONE\",\"content\":\"new narration\"}\n", "{\"type\":\"PLANNER_RESPONSE\",\"source\":\"MODEL\",\"status\":\"DONE\",\"content\":\"new answer\"}\n"))        .unwrap_or_else(|error| panic!("write event_history_path: {error}"));
         assert_eq!(
-            recover_transcript(&directory.path().to_string_lossy(), cid),
+            recover_provider_event_history(&directory.path().to_string_lossy(), cid),
             "new narration\n\nnew answer"
         );
     }
@@ -801,25 +804,25 @@ exit 0
     async fn real_process_recovers_empty_stdout_into_message_and_result() {
         let directory = tempfile::tempdir().unwrap_or_else(|error| panic!("tempdir: {error}"));
         let cid = "5f75443f-b6f7-4d89-bf38-31b0adb01fbf";
-        let transcript = directory
+        let event_history_path = directory
             .path()
             .join("brain")
             .join(cid)
             .join(".system_generated/logs/transcript.jsonl");
         std::fs::create_dir_all(
-            transcript
+            event_history_path
                 .parent()
-                .unwrap_or_else(|| panic!("transcript parent")),
+                .unwrap_or_else(|| panic!("event_history_path parent")),
         )
-        .unwrap_or_else(|error| panic!("create transcript: {error}"));
+        .unwrap_or_else(|error| panic!("create event_history_path: {error}"));
         std::fs::write(
-            &transcript,
+            &event_history_path,
             concat!(
                 "{\"type\":\"USER_INPUT\",\"content\":\"prompt\"}\n",
                 "{\"type\":\"PLANNER_RESPONSE\",\"source\":\"MODEL\",\"status\":\"DONE\",\"content\":\"recovered answer\"}\n"
             ),
         )
-        .unwrap_or_else(|error| panic!("write transcript: {error}"));
+        .unwrap_or_else(|error| panic!("write event_history_path: {error}"));
         let executable = directory.path().join("agy");
         let script = format!(
             r#"#!/bin/sh

@@ -733,7 +733,7 @@ mod tests {
                 {"key": "backlog", "name": "Backlog", "description": "Parked. Assigning an issue here never starts an agent run.", "category": "backlog", "color": "#6b7280", "is_system": true, "position": 0.0, "archived_at": null},
                 {"key": "todo", "name": "Todo", "description": "Queued for work. Moving an issue here starts the assigned agent.", "category": "todo", "color": "#6b7280", "is_system": true, "position": 0.0, "archived_at": null},
                 {"key": "in_progress", "name": "In Progress", "description": "Actively being worked on.", "category": "in_progress", "color": "#f59e0b", "is_system": true, "position": 0.0, "archived_at": null},
-                {"key": "in_review", "name": "In Review", "description": "Work delivered, waiting on human review. Finalizes the autopilot run.", "category": "in_review", "color": "#22c55e", "is_system": true, "position": 0.0, "archived_at": null},
+                {"key": "in_review", "name": "In Review", "description": "Work delivered, waiting on human review. Finalizes the automation run.", "category": "in_review", "color": "#22c55e", "is_system": true, "position": 0.0, "archived_at": null},
                 {"key": "done", "name": "Done", "description": "Completed.", "category": "done", "color": "#3b82f6", "is_system": true, "position": 0.0, "archived_at": null},
                 {"key": "blocked", "name": "Blocked", "description": "Stalled on an external dependency.", "category": "blocked", "color": "#ef4444", "is_system": true, "position": 0.0, "archived_at": null},
                 {"key": "cancelled", "name": "Cancelled", "description": "Decided not to do.", "category": "cancelled", "color": "#6b7280", "is_system": true, "position": 0.0, "archived_at": null},

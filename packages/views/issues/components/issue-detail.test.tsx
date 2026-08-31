@@ -1231,7 +1231,7 @@ describe("IssueDetail (shared)", () => {
     expect(screen.getByText("Updated")).toBeInTheDocument();
   });
 
-  it("does not render the execution log or a sidebar agent conversation button", async () => {
+  it("does not render the Agent thread events or a sidebar agent conversation button", async () => {
     mockApiObj.listTasksByIssue.mockResolvedValue([
       {
         id: "task-past",
@@ -1256,7 +1256,7 @@ describe("IssueDetail (shared)", () => {
       expect(screen.getByText("Details")).toBeInTheDocument();
     });
 
-    expect(screen.queryByText("Execution log")).not.toBeInTheDocument();
+    expect(screen.queryByText("Agent thread")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: "Open Claude Agent conversation" }),
     ).not.toBeInTheDocument();
