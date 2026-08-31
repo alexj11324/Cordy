@@ -481,7 +481,7 @@ async fn messaging_usage(
         }
     };
     let usage = match patchbay_service::channel_quota::count_turns_in_window(
-        &mut *connection,
+        &mut connection,
         workspace_id,
         window,
     )
