@@ -66,7 +66,10 @@ jobs:
           args: -color
 
       - name: Test CI workflow contracts
-        run: node --test scripts/ci-workflow-contract.test.mjs
+        run: >-
+          node --test
+          scripts/ci-workflow-contract.test.mjs
+          scripts/cleanup-actions-caches.test.mjs
 
       - name: Test accounts origin proxy contract
         run: node --test deploy/cloudflare/accounts-origin-proxy/src/index.test.mjs
@@ -131,6 +134,7 @@ jobs:
               - 'scripts/dev.ps1.test.ps1'
               - 'scripts/dev-launcher.mjs'
               - 'scripts/dev-process.mjs'
+              - 'scripts/dev-*.mjs'
               - 'scripts/stop-dev.mjs'
               - 'scripts/local-env.sh'
               - 'scripts/makefile-build.test.sh'
@@ -173,6 +177,7 @@ jobs:
               - 'scripts/dev.ps1.test.ps1'
               - 'scripts/dev-launcher.mjs'
               - 'scripts/dev-process.mjs'
+              - 'scripts/dev-*.mjs'
               - 'scripts/stop-dev.mjs'
               - 'docker/entrypoint.sh'
               - 'docker-compose.selfhost.yml'

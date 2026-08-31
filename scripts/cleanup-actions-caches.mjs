@@ -5,6 +5,7 @@ import { pathToFileURL } from "node:url";
 
 const TURBO_PREFIX = "turbo-";
 const COMMIT_SUFFIX = /-[0-9a-f]{40,64}$/u;
+const GITHUB_API_TIMEOUT_MS = 30_000;
 
 export function selectCacheIdsForDeletion(caches, options) {
   const turboCaches = caches.filter((cache) => cache.key.startsWith(TURBO_PREFIX));
@@ -79,6 +80,7 @@ async function githubRequest(path, init = {}) {
   if (!token) throw new Error("GITHUB_TOKEN is required");
   const response = await fetch(`https://api.github.com${path}`, {
     ...init,
+    signal: init.signal ?? AbortSignal.timeout(GITHUB_API_TIMEOUT_MS),
     headers: {
       Accept: "application/vnd.github+json",
       Authorization: `Bearer ${token}`,

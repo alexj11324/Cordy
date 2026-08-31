@@ -3,6 +3,10 @@ import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
 const ci = await readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+const cacheCleanup = await readFile(
+  new URL("./cleanup-actions-caches.mjs", import.meta.url),
+  "utf8",
+);
 const workflowDirectory = new URL("../.github/workflows/", import.meta.url);
 
 function stepBlocks(source) {
@@ -76,6 +80,12 @@ test("Turbo cache lifecycle is bounded for active, closed, and main refs", async
   assert.match(closedPrWorkflow, /--keep 2/u);
   assert.match(closedPrWorkflow, /types: \[closed\]/u);
   assert.match(closedPrWorkflow, /mode=delete-ref/u);
+  assert.match(cacheCleanup, /AbortSignal\.timeout\(GITHUB_API_TIMEOUT_MS\)/u);
+});
+
+test("CI runs cache cleanup tests and classifies new development scripts", () => {
+  assert.match(ci, /scripts\/cleanup-actions-caches\.test\.mjs/u);
+  assert.equal([...ci.matchAll(/- 'scripts\/dev-\*\.mjs'/gu)].length, 2);
 });
 
 test("the obsolete fixed-commit Desktop artifact workflow is gone", async () => {
