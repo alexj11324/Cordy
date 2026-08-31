@@ -2142,6 +2142,9 @@ async fn table_groups(
     Json(json!({ "query_fingerprint": fingerprint, "total": total, "groups": groups, "next_cursor": next_cursor })).into_response()
 }
 
+const WORKING_AGENTS_FACET_QUERY: &str =
+    "SELECT atq.agent_id::text, count(DISTINCT i.id)::bigint FROM issue i JOIN agent_task_queue atq ON atq.issue_id=i.id AND atq.status='running' WHERE ";
+
 async fn table_facets(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
@@ -2256,9 +2259,7 @@ async fn table_facets(
                 }
             }
             "working_agents" => {
-                let mut query = QueryBuilder::<Postgres>::new(
-                    "SELECT atq.agent_id::text, count(DISTINCT i.id)::bigint FROM issue i JOIN agent_task_queue atq ON atq.issue_id=i.id AND atq.workspace_id=i.workspace_id AND atq.status='running' WHERE ",
-                );
+                let mut query = QueryBuilder::<Postgres>::new(WORKING_AGENTS_FACET_QUERY);
                 if let Err(response) = push_table_filters(
                     &mut query,
                     &facet_request,
@@ -8959,6 +8960,13 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(table_fingerprint(&left), table_fingerprint(&right));
+    }
+
+    #[test]
+    fn working_agents_facet_scopes_tasks_through_the_issue() {
+        assert!(WORKING_AGENTS_FACET_QUERY.contains("atq.issue_id=i.id"));
+        assert!(WORKING_AGENTS_FACET_QUERY.contains("atq.status='running'"));
+        assert!(!WORKING_AGENTS_FACET_QUERY.contains("atq.workspace_id"));
     }
 
     fn fixture_issue() -> Issue {
