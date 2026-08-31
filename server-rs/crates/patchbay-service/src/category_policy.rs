@@ -78,12 +78,12 @@ pub async fn upsert(
             "configured policy agent is unavailable"
         );
     }
-    Ok(policy_q::upsert_workspace_issue_category_policy(
+    policy_q::upsert_workspace_issue_category_policy(
         &mut *executor,
         workspace_id,
         category,
         execution_agent_id,
         reviewer_agent_id,
     )
-    .await?)
+    .await
 }
