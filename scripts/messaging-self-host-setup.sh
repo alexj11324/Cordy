@@ -126,7 +126,7 @@ WECOM_SECRET=
 WECOM_BOT_NAME=
 
 # Provider credentials belong in the deployment secret manager. Do not commit
-# them or put them in the Cordy app. Slack uses the tokens created from the
+# them or put them in the Patchbay app. Slack uses the tokens created from the
 # checked-in Socket Mode manifest; the other providers use their documented
 # server-side transport credentials.
 EOF

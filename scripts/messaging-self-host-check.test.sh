@@ -30,8 +30,8 @@ PATCHBAY_MESSAGING_INSTALLER_USER_ID=00000000-0000-0000-0000-000000000002 \
   bash "$guard" >"$output"
 grep -Fq 'messaging self-host check: OK' "$output"
 
-PATCHBAY_APP_URL=https://app.cordy.example \
-PATCHBAY_PUBLIC_URL=https://api.cordy.example \
+PATCHBAY_APP_URL=https://app.customer.example \
+PATCHBAY_PUBLIC_URL=https://api.customer.example \
 PATCHBAY_MESSAGING_MODE=server_configured \
   bash "$guard" >"$output"
 grep -Fq 'messaging self-host check: OK' "$output"

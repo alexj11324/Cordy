@@ -2,12 +2,17 @@
 set -euo pipefail
 
 pattern='(?<![A-Za-z0-9_])(?:MUL|Mul|mul|CORDY|Cordy|cordy|CODY|Cody|cody)(?![A-Za-z0-9_])|(?:MUL|mul|CORDY|cordy|CODY|cody)[-_:0-9]'
+# The GitHub repository is currently named Cordy even though Patchbay is the
+# product name. Repository URLs and GitHub owner/repo conditions are identity
+# data, not product branding; allow only that exact canonical repository
+# reference and continue rejecting every other use of the legacy codename.
+canonical_repo='github\.com/alexj11324/Cordy|alexj11324/Cordy|repo:[[:space:]]+Cordy'
 
 text_hits="$({
   LC_ALL=C git grep -n -P "$pattern" -- . \
     ':!migrations/**' \
     ':!scripts/check-legacy-brand-markers.sh' || true
-} | grep -v 'legacy-brand-compat' || true)"
+} | grep -v 'legacy-brand-compat' | grep -Ev "$canonical_repo" || true)"
 
 if [[ -n "$text_hits" ]]; then
   printf '%s\n' "$text_hits"

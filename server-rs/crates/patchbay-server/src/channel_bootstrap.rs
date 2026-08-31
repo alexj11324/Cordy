@@ -1,7 +1,7 @@
 //! Server-side bootstrap for self-hosted channel installations.
 //!
 //! Multica's self-hosted deployment keeps provider credentials in the server
-//! deployment rather than asking the browser to collect them.  Cordy follows
+//! deployment rather than asking the browser to collect them.  Patchbay follows
 //! the same boundary: when an operator explicitly enables bootstrap, this
 //! module reads credentials from the server secret environment, encrypts them
 //! with the provider secretbox, and materializes the installation rows before
