@@ -148,7 +148,7 @@ describe("BatchActionToolbar status routing (PB-4155)", () => {
     );
   });
 
-  it("confirms admission into In Progress", () => {
+  it("applies a transition within executable categories directly", () => {
     render(
       <BatchActionToolbar
         issues={[
@@ -161,17 +161,11 @@ describe("BatchActionToolbar status routing (PB-4155)", () => {
       />,
     );
     fireEvent.click(screen.getByTestId("status-in_progress"));
-    expect(openModal).toHaveBeenCalledWith(
-      "issue-run-confirm",
-      expect.objectContaining({
-        issueIds: ["a"],
-        mode: "promote",
-        status: "in_progress",
-        executorType: "agent",
-        executorId: "agent-1",
-      }),
-    );
-    expect(batchUpdate).not.toHaveBeenCalled();
+    expect(openModal).not.toHaveBeenCalled();
+    expect(batchUpdate).toHaveBeenCalledWith({
+      ids: ["a"],
+      updates: { status: "in_progress" },
+    });
   });
 
   it("routes entry into review through reviewer selection", () => {

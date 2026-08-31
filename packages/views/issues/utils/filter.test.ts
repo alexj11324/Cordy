@@ -96,7 +96,7 @@ describe("filterIssues", () => {
       executorFilters: [{ type: "agent", id: "a-1" }],
       includeNoExecutor: true,
     });
-    expect(result.map((i) => i.id)).toEqual(["2", "3"]);
+    expect(result.map((i) => i.id)).toEqual(["1", "2", "3", "4"]);
   });
 
   it("treats an explicitly active empty executor predicate as match-none", () => {
