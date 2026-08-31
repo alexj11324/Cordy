@@ -217,13 +217,14 @@ export async function createWorktreeEnvFile({
   envFile = join(repoRoot, ".env.worktree"),
   force = false,
   worktreeName,
+  allocateOffset = allocateWorktreeOffset,
 } = {}) {
   if (existsSync(envFile) && !force) {
     throw new Error(
       `Refusing to overwrite existing ${envFile}. Re-run with FORCE=1 if you want to regenerate it.`,
     );
   }
-  const offset = await allocateWorktreeOffset(repoRoot);
+  const offset = await allocateOffset(repoRoot);
   writeFileSync(
     envFile,
     worktreeEnvContents(repoRoot, offset, worktreeName),

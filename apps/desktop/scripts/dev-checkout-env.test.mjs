@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  createWorktreeEnvFile,
   ensureDevCheckoutEnv,
   loadDevCheckoutEnv,
   selectDevEnvFile,
@@ -99,6 +100,10 @@ describe("development checkout environment", () => {
       "gitdir: /tmp/repo/.git/worktrees/dev\n",
     );
     const env = {};
+    await createWorktreeEnvFile({
+      repoRoot: sandbox,
+      allocateOffset: async () => 607,
+    });
 
     const { envFile } = await ensureDevCheckoutEnv({
       repoRoot: sandbox,
