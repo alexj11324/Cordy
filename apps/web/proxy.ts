@@ -1,5 +1,9 @@
-import { NextResponse, type NextRequest } from "next/server";
-import { getAuth, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import {
+  NextResponse,
+  type NextFetchEvent,
+  type NextRequest,
+} from "next/server";
 import { LOCALE_COOKIE } from "@patchbay/core/i18n";
 import {
   PATCHBAY_LOCALE_HEADER,
@@ -62,11 +66,7 @@ function nextWithLocale(req: NextRequest): NextResponse {
   return NextResponse.next({ request: { headers } });
 }
 
-// Next.js 16 renamed `middleware` → `proxy`. API surface (NextRequest /
-// NextResponse / cookies / matcher) is identical; the only behavioral
-// change is the runtime — proxy is forced to nodejs and cannot opt into
-// edge.
-export async function proxy(req: NextRequest) {
+function runtimeRewrite(req: NextRequest): NextResponse | null {
   const { pathname } = req.nextUrl;
 
   const runtimeDestination = runtimeRewriteDestination(pathname, process.env);
@@ -76,8 +76,18 @@ export async function proxy(req: NextRequest) {
     return NextResponse.rewrite(url);
   }
 
+  return null;
+}
+
+// Next.js 16 renamed `middleware` → `proxy`. API surface (NextRequest /
+// NextResponse / cookies / matcher) is identical; the only behavioral
+// change is the runtime — proxy is forced to nodejs and cannot opt into
+// edge.
+const clerkProxy = clerkMiddleware(async (auth, req) => {
+  const { pathname } = req.nextUrl;
+
   if (!clerkPublicRoutes(req)) {
-    const { userId } = await getAuth(req);
+    const { userId } = await auth();
     if (!userId) {
       const loginUrl = req.nextUrl.clone();
       loginUrl.pathname = "/login";
@@ -143,6 +153,19 @@ export async function proxy(req: NextRequest) {
   // --- Default: forward locale header to RSC, no redirect/rewrite ---
   // Covers logged-out root path, /login, /:slug/*, and everything else.
   return nextWithLocale(req);
+});
+
+export function proxy(
+  req: NextRequest,
+  event?: NextFetchEvent,
+): ReturnType<typeof clerkProxy> {
+  const rewrite = runtimeRewrite(req);
+  if (rewrite) return rewrite;
+
+  return clerkProxy(
+    req,
+    event ?? ({ waitUntil: () => undefined } as unknown as NextFetchEvent),
+  );
 }
 
 export const config = {
