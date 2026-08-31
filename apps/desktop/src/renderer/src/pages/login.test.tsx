@@ -125,18 +125,24 @@ beforeEach(() => {
 });
 
 describe("DesktopLoginPage", () => {
-  it("keeps the authentication example hierarchy with Email first and Google second", () => {
+  it("keeps the authentication example hierarchy within the available window height", () => {
     render(<DesktopLoginPage />);
 
     const example = screen.getByTestId("authentication-example");
     expect(example).toHaveClass(
       "container",
+      "min-h-0",
+      "flex-1",
       "md:grid",
       "lg:max-w-none",
       "lg:grid-cols-2",
       "lg:px-0",
     );
+    expect(example).not.toHaveClass("shrink-0");
     expect(example).not.toHaveClass("overflow-hidden");
+    const formPanel = screen.getByTestId("authentication-form-panel");
+    expect(formPanel).toHaveClass("h-full", "min-h-0", "p-6", "lg:p-8");
+    expect(formPanel.className).not.toMatch(/h-\[\d+px\]/);
     expect(screen.getByTestId("authentication-brand-panel")).toHaveClass(
       "p-10",
       "text-primary",
