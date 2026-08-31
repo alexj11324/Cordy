@@ -14,7 +14,7 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine as _;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use hmac::{Hmac, Mac};
 use patchbay_db::models::LinearConnection;
 use patchbay_db::queries::linear as linear_q;
@@ -563,7 +563,7 @@ impl LinearTokenManager {
     /// row lock. The refresh response must contain the rotated refresh token;
     /// both encrypted values are replaced in one database transaction.
     pub async fn access_token(&self, connection_id: Uuid) -> Result<String, LinearTokenError> {
-        let mut transaction = self.pool.begin().await.map_err(storage_error)?;
+        let mut transaction = self.pool.begin().await.map_err(storage_sqlx_error)?;
         let Some(connection) =
             linear_q::get_connection_for_update(&mut *transaction, connection_id)
                 .await
@@ -576,7 +576,7 @@ impl LinearTokenManager {
         }
         let access_token = open_secret(&self.secret_box, &connection.access_token_encrypted)?;
         if connection.token_expires_at > Utc::now() + TOKEN_REFRESH_SKEW {
-            transaction.commit().await.map_err(storage_error)?;
+            transaction.commit().await.map_err(storage_sqlx_error)?;
             return Ok(access_token);
         }
         let refresh_token = open_secret(&self.secret_box, &connection.refresh_token_encrypted)?;
@@ -590,7 +590,7 @@ impl LinearTokenManager {
                 )
                 .await
                 .map_err(storage_error)?;
-                transaction.commit().await.map_err(storage_error)?;
+                transaction.commit().await.map_err(storage_sqlx_error)?;
                 return Err(LinearTokenError::InvalidGrant);
             }
             Err(error) => return Err(error),
@@ -619,7 +619,7 @@ impl LinearTokenManager {
         )
         .await
         .map_err(storage_error)?;
-        transaction.commit().await.map_err(storage_error)?;
+        transaction.commit().await.map_err(storage_sqlx_error)?;
         Ok(refreshed.access_token)
     }
 
@@ -662,6 +662,10 @@ impl LinearTokenManager {
 
 fn storage_error(error: anyhow::Error) -> LinearTokenError {
     LinearTokenError::Storage(error)
+}
+
+fn storage_sqlx_error(error: sqlx::Error) -> LinearTokenError {
+    LinearTokenError::Storage(error.into())
 }
 
 fn seal_secret(
