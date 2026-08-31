@@ -320,7 +320,11 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) -> anyhow
     }
     if flag(&event.payload, "owner_changed") {
         let mut details = Map::new();
-        insert_optional(&mut details, "from_type", event.payload.get("prev_owner_type"));
+        insert_optional(
+            &mut details,
+            "from_type",
+            event.payload.get("prev_owner_type"),
+        );
         insert_optional(&mut details, "from_id", event.payload.get("prev_owner_id"));
         insert_optional_str(&mut details, "to_type", fields.owner_type.as_deref());
         insert_optional_str(
