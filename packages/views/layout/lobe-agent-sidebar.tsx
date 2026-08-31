@@ -68,7 +68,7 @@ function LobeNavItem({ active = false, href, icon, label, onClick, trailing }: L
       data-href={href}
       onClick={onClick}
       className={cn(
-        "group/nav flex h-9 w-full items-center gap-2 rounded-lg px-1 text-left text-sm text-sidebar-text-secondary outline-none transition-colors",
+        "group/nav flex h-9 w-full items-center gap-2 rounded-lg px-1 text-left text-body text-sidebar-text-secondary outline-none transition-colors",
         "hover:bg-sidebar-item-hover hover:text-sidebar-text-primary focus-visible:ring-2 focus-visible:ring-sidebar-ring",
         "data-[active=true]:bg-sidebar-item-active data-[active=true]:font-medium data-[active=true]:text-sidebar-item-active-foreground",
         "group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0",
@@ -199,7 +199,7 @@ export function LobeAgentSidebar({
           <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-brand ring-2 ring-sidebar" />
         )}
       </span>
-      <span className="min-w-0 flex-1 truncate text-left text-sm font-medium group-data-[collapsible=icon]:hidden">
+      <span className="min-w-0 flex-1 truncate text-left text-body font-medium group-data-[collapsible=icon]:hidden">
         {workspace?.name ?? "Patchbay"}
       </span>
       <ChevronDown className="size-3.5 shrink-0 text-sidebar-icon-secondary group-data-[collapsible=icon]:hidden" />
@@ -307,7 +307,7 @@ export function LobeAgentSidebar({
                       <MessageSquare className="size-3.5" />
                     </span>
                   )}
-                  <span className="min-w-0 flex-1 truncate text-left text-sm font-medium group-data-[collapsible=icon]:hidden">
+                  <span className="min-w-0 flex-1 truncate text-left text-body font-medium group-data-[collapsible=icon]:hidden">
                     {activeAgent?.name ?? chatT(($) => $.window.no_agents)}
                   </span>
                   <ChevronDown className="size-3.5 shrink-0 text-sidebar-icon-secondary group-data-[collapsible=icon]:hidden" />
@@ -371,7 +371,7 @@ export function LobeAgentSidebar({
 
         <div className="mt-3 flex min-h-0 flex-1 flex-col group-data-[collapsible=icon]:hidden">
           <div className="flex h-8 shrink-0 items-center gap-1 px-1">
-            <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-sidebar-text-tertiary group-data-[collapsible=icon]:hidden">
+            <span className="min-w-0 flex-1 truncate text-micro font-medium text-sidebar-text-tertiary group-data-[collapsible=icon]:hidden">
               {chatT(($) => $.navigation.history)}
             </span>
             <span className="text-micro text-sidebar-text-tertiary group-data-[collapsible=icon]:hidden">
