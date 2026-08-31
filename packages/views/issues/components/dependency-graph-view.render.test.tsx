@@ -127,4 +127,14 @@ describe("DependencyGraphView runtime surface", () => {
     expect(screen.getByText("Both prerequisite outputs are present")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open PB-3" })).toHaveAttribute("href", "/acme/issues/PB-3");
   });
+
+  it("shows the dependent task gate as blocked until every prerequisite is satisfied", () => {
+    queryState.current.data = [graph];
+    renderWithI18n(<DependencyGraphView />);
+
+    fireEvent.click(screen.getByRole("button", { name: /PB-1 to PB-3.*Satisfied/i }));
+
+    expect(screen.getByText("Blocked — dependent task is still locked")).toBeInTheDocument();
+    expect(screen.getByText("Both prerequisites must be satisfied")).toBeInTheDocument();
+  });
 });

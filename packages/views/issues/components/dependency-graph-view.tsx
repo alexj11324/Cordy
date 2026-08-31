@@ -640,7 +640,10 @@ export function DependencyGraphView({ projectId }: { projectId?: string }) {
           </div>
         </div>
 
-        <aside className="w-full shrink-0 rounded-lg border border-surface-border bg-surface p-4 lg:w-80" aria-live="polite">
+        <aside
+          className="min-h-0 max-h-[40%] w-full shrink-0 overflow-y-auto rounded-lg border border-surface-border bg-surface p-4 lg:max-h-full lg:w-80"
+          aria-live="polite"
+        >
           {selectedEdgeData && selectedEdgeGraph ? (
             <DependencyGateInspector
               edge={selectedEdgeData}
@@ -728,7 +731,10 @@ function DependencyGateInspector({
 }) {
   const source = graph.nodes.find((node) => node.temp_id === edge.from);
   const target = graph.nodes.find((node) => node.temp_id === edge.to);
-  const gateLabel = edge.satisfied ? t(($) => $.graph.gate_open) : t(($) => $.graph.gate_blocked);
+  const gateOpen = target
+    ? target.readiness.gate_open
+    : edge.satisfied_prerequisites >= edge.total_prerequisites;
+  const gateLabel = gateOpen ? t(($) => $.graph.gate_open) : t(($) => $.graph.gate_blocked);
   return (
     <div className="space-y-3">
       <div>
@@ -752,7 +758,7 @@ function DependencyGateInspector({
       <InspectorRow label={t(($) => $.graph.reason)}>{edge.reason}</InspectorRow>
       <InspectorRow label={t(($) => $.graph.consumed_output)}>{edge.consumed_output}</InspectorRow>
       <InspectorRow label={t(($) => $.graph.gate_status)}>
-        <span className={cn(edge.satisfied ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400")}>
+        <span className={cn(gateOpen ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400")}>
           {gateLabel}
         </span>
       </InspectorRow>
@@ -785,8 +791,8 @@ function DependencyGateInspector({
           {edge.satisfied_prerequisites}/{edge.total_prerequisites}
         </span>
       </InspectorRow>
-      <div className={cn("rounded-md p-2 text-micro", edge.satisfied ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/10 text-amber-700 dark:text-amber-300")}>
-        {edge.satisfied ? t(($) => $.graph.satisfied) : edge.unlock_condition}
+      <div className={cn("rounded-md p-2 text-micro", gateOpen ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/10 text-amber-700 dark:text-amber-300")}>
+        {gateOpen ? t(($) => $.graph.satisfied) : edge.unlock_condition}
       </div>
     </div>
   );
