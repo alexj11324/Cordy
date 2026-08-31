@@ -26,6 +26,10 @@ const docsCompose = await readFile(
   new URL("../deploy/origin/production-docs.compose.yml", import.meta.url),
   "utf8",
 );
+const originNginx = await readFile(
+  new URL("../deploy/origin/nginx/aspectlylabs-origin.conf", import.meta.url),
+  "utf8",
+);
 const workflowDirectory = new URL("../.github/workflows/", import.meta.url);
 
 test("production follows successful main CI instead of a temporary deployment branch", () => {
@@ -94,6 +98,17 @@ test("all public Next services expose the immutable build fingerprint", () => {
 test("the production Docs healthcheck uses the runtime's Node executable", () => {
   assert.match(docsCompose, /test:\n\s+- CMD\n\s+- node\n/u);
   assert.doesNotMatch(docsCompose, /wget/u);
+});
+
+test("the public Patchbay origin routes Docs to its host service", () => {
+  assert.match(
+    originNginx,
+    /server_name origin\.aspectlylabs\.com patchbay\.aspectlylabs\.com;[\s\S]*?location = \/docs \{[\s\S]*?proxy_pass http:\/\/127\.0\.0\.1:4000;/u,
+  );
+  assert.match(
+    originNginx,
+    /server_name origin\.aspectlylabs\.com patchbay\.aspectlylabs\.com;[\s\S]*?location \^~ \/docs\/ \{[\s\S]*?proxy_pass http:\/\/127\.0\.0\.1:4000;/u,
+  );
 });
 
 test("agents isolate main and perform safe post-merge notification", () => {
