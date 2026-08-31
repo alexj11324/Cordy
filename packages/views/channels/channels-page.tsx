@@ -46,6 +46,15 @@ function channelHref(base: string, channelId: string): string {
   return `${base}?channel=${encodeURIComponent(channelId)}`;
 }
 
+export function shouldSyncChannelUrl(
+  pathname: string,
+  channelsPath: string,
+  urlChannelId: string | null,
+  activeChannelId: string,
+): boolean {
+  return pathname === channelsPath && urlChannelId !== activeChannelId;
+}
+
 function ParticipantStack({ members, agents }: { members: MemberWithUser[]; agents: Agent[] }) {
   const participants = [
     ...members.map((member) => ({ type: "member", id: member.user_id })),
@@ -200,7 +209,7 @@ function ChannelMessageRow({
 
 export function ChannelsPage() {
   const { t } = useT("chat");
-  const { searchParams, replace } = useNavigation();
+  const { pathname, searchParams, replace } = useNavigation();
   const workspacePaths = useWorkspacePaths();
   const channelsPath = workspacePaths.channels();
   const workspaceId = useWorkspaceId();
@@ -251,10 +260,10 @@ export function ChannelsPage() {
 
   useEffect(() => {
     if (!activeChannel) return;
-    if (urlChannelId !== activeChannel.id) {
+    if (shouldSyncChannelUrl(pathname, channelsPath, urlChannelId, activeChannel.id)) {
       replace(channelHref(channelsPath, activeChannel.id));
     }
-  }, [activeChannel, channelsPath, replace, urlChannelId]);
+  }, [activeChannel, channelsPath, pathname, replace, urlChannelId]);
 
   useEffect(() => {
     setDraft("");
