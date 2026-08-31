@@ -201,8 +201,12 @@ async function verifyGoogleOAuthStart(browser) {
         "Google OAuth handoff registration returned an invalid response",
       );
     }
-    const downstream = await downstreamNavigation;
-    requireGoogleOAuthNavigation(downstream.href);
+    // Playwright's waitForURL resolves to the navigation response (or null),
+    // not the URL object passed to its predicate. Read the settled page URL
+    // after the navigation so the OAuth assertion checks the actual browser
+    // location instead of dereferencing an undefined response property.
+    await downstreamNavigation;
+    requireGoogleOAuthNavigation(page.url());
   } catch (error) {
     await page
       .screenshot({ path: SCREENSHOT_PATH, fullPage: true })
