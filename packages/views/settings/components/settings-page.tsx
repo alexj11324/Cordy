@@ -221,10 +221,10 @@ export function SettingsPage({
     >
       <div
         className={cn(
-          "shrink-0 overflow-x-auto border-b p-2 md:w-80 md:overflow-y-auto md:border-b-0 md:border-r md:p-4",
+          "shrink-0 overflow-x-auto border-b p-2 md:overflow-y-auto md:border-b-0 md:border-r md:p-4",
           isStandalone
-            ? "border-sidebar-border bg-sidebar text-sidebar-text-primary"
-            : "border-surface-border",
+            ? "border-sidebar-border bg-sidebar text-sidebar-text-primary md:w-80"
+            : "border-surface-border md:w-56",
         )}
       >
         {navigationHeader ? (

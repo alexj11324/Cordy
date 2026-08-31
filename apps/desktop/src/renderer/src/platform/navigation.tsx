@@ -52,6 +52,9 @@ function tryRouteToOverlay(path: string): boolean {
   if (isStandaloneSettingsPath(path)) {
     const targetSlug = extractWorkspaceSlug(path);
     const tabs = useTabStore.getState();
+    if (!targetSlug || !tabs.validWorkspaceSlugs?.has(targetSlug)) {
+      return false;
+    }
     if (targetSlug && targetSlug !== tabs.activeWorkspaceSlug) {
       tabs.switchWorkspace(targetSlug);
     }

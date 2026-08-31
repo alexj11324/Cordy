@@ -1186,6 +1186,28 @@ describe("mergePersistedTabs (rehydration, PB-4370)", () => {
     expect(state.byWorkspace.acme.activeTabId).toBe("issues");
   });
 
+  it("removes legacy Settings entries from persisted history and realigns the index", () => {
+    const tab = rehydrate(
+      persistedTab("/acme/inbox", {
+        history: {
+          stack: [
+            "/acme/issues",
+            "/acme/settings?tab=tokens",
+            "/acme/inbox",
+            "/other/projects",
+            "/acme/agents",
+          ],
+          index: 2,
+        },
+      }),
+    );
+
+    expect(tab.history).toEqual({
+      stack: ["/acme/issues", "/acme/inbox", "/acme/agents"],
+      index: 1,
+    });
+  });
+
   // Payloads written before the generic view-state entries existed carry a
   // memento with only `scroll`; the session shape requires `view` too.
   it("normalizes a memento persisted without view-state entries", () => {

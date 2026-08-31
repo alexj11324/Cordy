@@ -136,10 +136,25 @@ describe("SettingsPage nav trigger", () => {
     );
 
     const settings = container.querySelector('[data-settings-variant="standalone"]');
+    const navigation = container.querySelector(
+      '[data-settings-variant="standalone"] > div',
+    );
     expect(settings).toHaveClass("bg-page-canvas");
+    expect(navigation).toHaveClass("md:w-80");
+    expect(navigation).not.toHaveClass("md:w-56");
     expect(screen.getByRole("tab", { name: "Profile" })).toHaveClass(
       "data-active:!bg-sidebar-item-active",
     );
+  });
+
+  it("preserves the embedded settings navigation width", () => {
+    const { container } = renderWithI18n(<SettingsPage />);
+    const navigation = container.querySelector(
+      '[data-settings-variant="embedded"] > div',
+    );
+
+    expect(navigation).toHaveClass("md:w-56");
+    expect(navigation).not.toHaveClass("md:w-80");
   });
 });
 

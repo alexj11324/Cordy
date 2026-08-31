@@ -149,6 +149,14 @@ interface TabStore {
   byWorkspace: Record<string, WorkspaceTabGroup>;
 
   /**
+   * Last authoritative workspace-slug set supplied by the workspace list.
+   * Null means the list has not settled for the current session yet. This is
+   * deliberately live-only state so deep links cannot create a Settings
+   * overlay for a deleted or unknown workspace.
+   */
+  validWorkspaceSlugs: Set<string> | null;
+
+  /**
    * Bumped by reloadActiveTab. The ActiveTabHost keys its subtree on
    * `${activeTabId}:${mountGeneration}` so a bump force-remounts the whole
    * page tree (RFC: reload is a remount, never router.revalidate()).
@@ -500,6 +508,7 @@ export const useTabStore = create<TabStore>()(
     (set, get) => ({
       activeWorkspaceSlug: null,
       byWorkspace: {},
+      validWorkspaceSlugs: null,
       mountGeneration: 0,
 
       switchWorkspace(slug, openPath) {
@@ -974,12 +983,24 @@ export const useTabStore = create<TabStore>()(
           }
         }
 
-        if (!changed) return;
-        set({ byWorkspace: nextByWorkspace, activeWorkspaceSlug: nextActive });
+        if (!changed) {
+          set({ validWorkspaceSlugs: new Set(validSlugs) });
+          return;
+        }
+        set({
+          byWorkspace: nextByWorkspace,
+          activeWorkspaceSlug: nextActive,
+          validWorkspaceSlugs: new Set(validSlugs),
+        });
       },
 
       reset() {
-        set({ activeWorkspaceSlug: null, byWorkspace: {}, mountGeneration: 0 });
+        set({
+          activeWorkspaceSlug: null,
+          byWorkspace: {},
+          validWorkspaceSlugs: null,
+          mountGeneration: 0,
+        });
       },
     }),
     {
@@ -1079,14 +1100,34 @@ export function mergePersistedTabs<T extends PersistedTabState>(
         );
         continue;
       }
-      const stack =
+      const rawStack =
         Array.isArray(pTab.history?.stack) && pTab.history.stack.length > 0
           ? pTab.history.stack
           : [clean];
-      const index = Math.min(
-        Math.max(pTab.history?.index ?? stack.length - 1, 0),
-        stack.length - 1,
+      const rawIndex = Math.min(
+        Math.max(pTab.history?.index ?? rawStack.length - 1, 0),
+        rawStack.length - 1,
       );
+      const sanitizeHistoryEntry = (entry: unknown): string | null => {
+        if (typeof entry !== "string") return null;
+        const sanitized = sanitizeTabPath(entry);
+        return sanitized && extractWorkspaceSlug(sanitized) === slug
+          ? sanitized
+          : null;
+      };
+      const past = rawStack
+        .slice(0, rawIndex)
+        .map(sanitizeHistoryEntry)
+        .filter((entry): entry is string => entry !== null);
+      const future = rawStack
+        .slice(rawIndex + 1)
+        .map(sanitizeHistoryEntry)
+        .filter((entry): entry is string => entry !== null);
+      // `url` is the persisted source of truth for the current entry. Rebuild
+      // the stack around it so removing legacy Settings entries preserves the
+      // relative past/future order and leaves the index pointing at `url`.
+      const stack = [...past, clean, ...future];
+      const index = past.length;
       tabs.push({
         id: pTab.id,
         url: clean,
@@ -1153,7 +1194,8 @@ function stepHistory(
   const current = group.tabs[index];
   const nextIndex = current.history.index + delta;
   if (nextIndex < 0 || nextIndex >= current.history.stack.length) return;
-  const url = current.history.stack[nextIndex];
+  const url = sanitizeTabPath(current.history.stack[nextIndex]);
+  if (!url || extractWorkspaceSlug(url) !== activeWorkspaceSlug) return;
   const next: TabSession = {
     ...current,
     url,

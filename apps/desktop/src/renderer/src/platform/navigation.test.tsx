@@ -41,6 +41,9 @@ beforeEach(() => {
   auth.logout.mockReset();
   useTabStore.getState().reset();
   useTabStore.getState().switchWorkspace("acme"); // default tab /acme/issues
+  useTabStore
+    .getState()
+    .validateWorkspaceSlugs(new Set(["acme", "butter"]));
   Object.defineProperty(window, "desktopAPI", {
     configurable: true,
     value: {
@@ -188,6 +191,16 @@ describe("push", () => {
       type: "settings",
       path: "/butter/settings",
     });
+  });
+
+  it("keeps an unknown workspace Settings deep link on the normal stale-workspace path", () => {
+    const getAdapter = renderProvider();
+
+    getAdapter().push("/deleted/settings");
+
+    expect(overlay.open).not.toHaveBeenCalled();
+    expect(useTabStore.getState().activeWorkspaceSlug).toBe("deleted");
+    expect(getActiveTab(useTabStore.getState())?.url).toBe("/deleted/issues");
   });
 });
 
