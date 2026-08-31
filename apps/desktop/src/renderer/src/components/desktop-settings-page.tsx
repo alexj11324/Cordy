@@ -41,6 +41,7 @@ export function DesktopSettingsPage({ onBack }: { onBack?: () => void }) {
           <button
             type="button"
             onClick={onBack}
+            data-settings-initial-focus
             className="mb-5 mt-12 inline-flex h-8 items-center gap-2 rounded-md px-2 text-body font-medium text-sidebar-text-secondary transition-colors hover:bg-sidebar-item-hover hover:text-sidebar-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             style={{ WebkitAppRegion: "no-drag" } as React.CSSProperties}
           >

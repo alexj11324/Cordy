@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { standaloneSettingsWorkspaceSlug } from "@/platform/standalone-settings";
 
 /**
  * Window-level destinations that are NOT pages inside a tab. This includes
@@ -23,10 +24,17 @@ interface WindowOverlayStore {
   overlay: WindowOverlay | null;
   open: (overlay: WindowOverlay) => void;
   close: () => void;
+  validateSettingsWorkspace: (validSlugs: Set<string>) => void;
 }
 
 export const useWindowOverlayStore = create<WindowOverlayStore>((set) => ({
   overlay: null,
   open: (overlay) => set({ overlay }),
   close: () => set({ overlay: null }),
+  validateSettingsWorkspace: (validSlugs) =>
+    set((state) => {
+      if (state.overlay?.type !== "settings") return state;
+      const slug = standaloneSettingsWorkspaceSlug(state.overlay.path);
+      return slug && validSlugs.has(slug) ? state : { overlay: null };
+    }),
 }));

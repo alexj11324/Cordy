@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { InvitePage } from "@patchbay/views/invite";
 import { InvitationsPage } from "@patchbay/views/invitations";
@@ -35,9 +36,30 @@ export function WindowOverlay() {
 
 function SettingsWindow() {
   const close = useWindowOverlayStore((s) => s.close);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const previousFocusRef = useRef(
+    document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null,
+  );
+
+  useLayoutEffect(() => {
+    containerRef.current
+      ?.querySelector<HTMLElement>("[data-settings-initial-focus]")
+      ?.focus();
+    const previousFocus = previousFocusRef.current;
+    return () => {
+      queueMicrotask(() => {
+        if (previousFocus?.isConnected) previousFocus.focus();
+      });
+    };
+  }, []);
 
   return (
-    <div className="fixed inset-0 z-50 flex min-h-0 bg-background">
+    <div
+      ref={containerRef}
+      className="fixed inset-0 z-50 flex min-h-0 bg-background"
+    >
       <div
         aria-hidden
         className="fixed inset-x-0 top-0 z-10 h-10"

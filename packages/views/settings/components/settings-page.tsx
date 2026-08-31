@@ -167,7 +167,6 @@ export function SettingsPage({
       ? SETTINGS_STANDALONE_TAB_TRIGGER_CLASS
       : SETTINGS_EMBEDDED_TAB_TRIGGER_CLASS,
   );
-
   const visibleWorkspaceTabKeys = React.useMemo(
     () =>
       WORKSPACE_TAB_KEYS.filter(
@@ -199,6 +198,17 @@ export function SettingsPage({
     : null;
   const activeTab =
     candidateTab && validTabs.has(candidateTab) ? candidateTab : DEFAULT_TAB;
+  const hasWideContent =
+    activeTab === "integrations" ||
+    activeTab === "labels" ||
+    activeTab === "issue-statuses" ||
+    activeTab === "properties" ||
+    activeTab === "quick-actions";
+  const contentWidthClass = hasWideContent
+    ? "max-w-5xl"
+    : isStandalone
+      ? "max-w-[57rem]"
+      : "max-w-3xl";
 
   // replace (not push) so settings tab switches don't pollute browser history.
   // Preserve any other query params the page may carry.
@@ -306,9 +316,14 @@ export function SettingsPage({
           isStandalone && "bg-page-canvas",
         )}
       >
-        <div className={`mx-auto w-full p-4 sm:p-6 md:px-8 ${isStandalone ? "md:pb-8 md:pt-20" : "md:py-7"} ${activeTab === "integrations" || activeTab === "labels" || activeTab === "issue-statuses" || activeTab === "properties" || activeTab === "quick-actions"
-              ? "max-w-5xl"
-              : "max-w-[57rem]"}`}>
+        <div
+          data-settings-content
+          className={cn(
+            "mx-auto w-full p-4 sm:p-6 md:px-8",
+            isStandalone ? "md:pb-8 md:pt-20" : "md:py-7",
+            contentWidthClass,
+          )}
+        >
           <TabsContent value="profile"><AccountTab /></TabsContent>
           <TabsContent value="preferences"><PreferencesTab /></TabsContent>
           <TabsContent value="shortcuts"><KeyboardShortcutsTab /></TabsContent>

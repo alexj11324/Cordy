@@ -39,6 +39,7 @@ import {
   DesktopNavigationProvider,
   routeContentLinkPath,
 } from "@/platform/navigation";
+import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 import { TabBar } from "./tab-bar";
 import { TabContent } from "./tab-content";
 import { WindowOverlay } from "./window-overlay";
@@ -269,6 +270,9 @@ export function DesktopShell() {
   const usesNativeVibrancy =
     window.desktopAPI.host === "electron" &&
     window.desktopAPI.appInfo.os === "macos";
+  const settingsOpen = useWindowOverlayStore(
+    (state) => state.overlay?.type === "settings",
+  );
 
   return (
     <DesktopNavigationProvider>
@@ -282,59 +286,66 @@ export function DesktopShell() {
           window-level overlay (new-workspace flow) triggered by
           IndexRedirect, not a route. */}
       <WorkspaceSlugProvider slug={slug}>
-        <DesktopInboxBridge />
         <div
-          className={cn(
-            "flex h-screen",
-            usesNativeVibrancy ? "bg-transparent" : "bg-app-shell",
-          )}
+          aria-hidden={settingsOpen ? true : undefined}
+          data-testid="desktop-application-underlay"
+          inert={settingsOpen ? true : undefined}
+          style={{ display: "contents" }}
         >
-          {/* Non-macOS keeps the opaque app-shell wrapper. On macOS, the shell
-              is transparent so Electron's native sidebar material can show
-              through; descendants that need an opaque fill still read the
-              app-shell token from --sidebar-wrapper-fill. */}
-          {/* hasExternalTrigger: WindowToolbar below parks a SidebarTrigger
-              beside the traffic lights, where it is always reachable. Page
-              headers inside the canvas must not add their own fallback one on
-              top of it — desktop windows sit below `xl`, exactly where that
-              fallback renders, so every page showed a second identical icon
-              50px under this one (PB-6218). */}
-          <SidebarProvider
-            hasExternalTrigger
-            hoverReveal
-            glass
-            data-native-vibrancy={usesNativeVibrancy ? "true" : undefined}
+          <DesktopInboxBridge />
+          <div
             className={cn(
-              "flex-1 [--sidebar-wrapper-fill:var(--app-shell)]",
+              "flex h-screen",
               usesNativeVibrancy ? "bg-transparent" : "bg-app-shell",
             )}
           >
-            {slug && <GlobalShortcuts />}
-            {slug && <WindowToolbar />}
-            {slug && (
-              <AppSidebar
-                topSlot={<SidebarTopSpacer />}
-                searchSlot={<SearchTrigger />}
-              />
-            )}
-            {/* Right side: header + content container */}
-            <div className="flex flex-1 min-w-0 flex-col">
-              <MainTopBar />
-              <MainCanvas>
-                {/* Same indicator, same anchor as web: DashboardLayout puts it
-                    at the top of SidebarInset, and MainCanvas is desktop's
-                    equivalent relative/overflow-hidden content box. Desktop
-                    used to have no navigation feedback at all — a click just
-                    froze until the destination committed (PB-6404). */}
-                <NavigationProgress />
-                <TabContent />
-                {slug && <FloatingChat />}
-              </MainCanvas>
-            </div>
-          </SidebarProvider>
+            {/* Non-macOS keeps the opaque app-shell wrapper. On macOS, the shell
+                is transparent so Electron's native sidebar material can show
+                through; descendants that need an opaque fill still read the
+                app-shell token from --sidebar-wrapper-fill. */}
+            {/* hasExternalTrigger: WindowToolbar below parks a SidebarTrigger
+                beside the traffic lights, where it is always reachable. Page
+                headers inside the canvas must not add their own fallback one on
+                top of it — desktop windows sit below `xl`, exactly where that
+                fallback renders, so every page showed a second identical icon
+                50px under this one (PB-6218). */}
+            <SidebarProvider
+              hasExternalTrigger
+              hoverReveal
+              glass
+              data-native-vibrancy={usesNativeVibrancy ? "true" : undefined}
+              className={cn(
+                "flex-1 [--sidebar-wrapper-fill:var(--app-shell)]",
+                usesNativeVibrancy ? "bg-transparent" : "bg-app-shell",
+              )}
+            >
+              {slug && <GlobalShortcuts />}
+              {slug && <WindowToolbar />}
+              {slug && (
+                <AppSidebar
+                  topSlot={<SidebarTopSpacer />}
+                  searchSlot={<SearchTrigger />}
+                />
+              )}
+              {/* Right side: header + content container */}
+              <div className="flex flex-1 min-w-0 flex-col">
+                <MainTopBar />
+                <MainCanvas>
+                  {/* Same indicator, same anchor as web: DashboardLayout puts it
+                      at the top of SidebarInset, and MainCanvas is desktop's
+                      equivalent relative/overflow-hidden content box. Desktop
+                      used to have no navigation feedback at all — a click just
+                      froze until the destination committed (PB-6404). */}
+                  <NavigationProgress />
+                  <TabContent />
+                  {slug && <FloatingChat />}
+                </MainCanvas>
+              </div>
+            </SidebarProvider>
+          </div>
+          {slug && <ModalRegistry />}
+          {slug && <SearchCommand />}
         </div>
-        {slug && <ModalRegistry />}
-        {slug && <SearchCommand />}
         <WindowOverlay />
       </WorkspaceSlugProvider>
     </DesktopNavigationProvider>

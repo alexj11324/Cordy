@@ -142,6 +142,9 @@ describe("SettingsPage nav trigger", () => {
     expect(settings).toHaveClass("bg-page-canvas");
     expect(navigation).toHaveClass("md:w-80");
     expect(navigation).not.toHaveClass("md:w-56");
+    expect(container.querySelector("[data-settings-content]")).toHaveClass(
+      "max-w-[57rem]",
+    );
     expect(screen.getByRole("tab", { name: "Profile" })).toHaveClass(
       "data-active:!bg-sidebar-item-active",
     );
@@ -155,6 +158,12 @@ describe("SettingsPage nav trigger", () => {
 
     expect(navigation).toHaveClass("md:w-56");
     expect(navigation).not.toHaveClass("md:w-80");
+    expect(container.querySelector("[data-settings-content]")).toHaveClass(
+      "max-w-3xl",
+    );
+    expect(
+      container.querySelector("[data-settings-content]"),
+    ).not.toHaveClass("max-w-[57rem]");
   });
 });
 
