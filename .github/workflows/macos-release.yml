@@ -82,7 +82,7 @@ jobs:
           done
 
       - name: Checkout release candidate
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.event.workflow_run.head_sha }}
           fetch-depth: 0
@@ -243,7 +243,7 @@ jobs:
       SCCACHE_GHA_ENABLED: "true"
     steps:
       - name: Checkout prepared release commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.commit_sha }}
           fetch-depth: 0
@@ -308,7 +308,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - name: Checkout prepared release commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.commit_sha }}
           fetch-depth: 0
@@ -431,7 +431,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout prepared release commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.prepare.outputs.commit_sha }}
           fetch-depth: 0

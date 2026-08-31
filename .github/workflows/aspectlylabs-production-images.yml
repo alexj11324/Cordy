@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout exact deployment source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           fetch-depth: 1
@@ -59,7 +59,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout exact deployment source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           fetch-depth: 1
@@ -110,7 +110,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout exact deployment source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           fetch-depth: 1
