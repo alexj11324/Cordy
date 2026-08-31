@@ -213,9 +213,11 @@ pub fn public_bind_url_from_config(
         // do not let a development FRONTEND_ORIGIN leak into a hosted bot.
         return "https://patchbay.aspectlylabs.com".into();
     }
-    is_public_https_url(&app_url)
-        .then_some(app_url)
-        .unwrap_or_default()
+    if is_public_https_url(&app_url) {
+        app_url
+    } else {
+        String::new()
+    }
 }
 
 /// Convenience wrapper for runtime components that only have the loaded

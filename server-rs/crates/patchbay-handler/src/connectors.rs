@@ -490,7 +490,7 @@ async fn messaging_usage(
         }
     };
     let used =
-        match patchbay_service::channel_quota::count_used_turns(&mut *connection, workspace_id)
+        match patchbay_service::channel_quota::count_used_turns(&mut connection, workspace_id)
             .await
         {
             Ok(value) => value,
@@ -504,7 +504,7 @@ async fn messaging_usage(
             }
         };
     let reserved =
-        match patchbay_service::channel_quota::count_reserved_turns(&mut *connection, workspace_id)
+        match patchbay_service::channel_quota::count_reserved_turns(&mut connection, workspace_id)
             .await
         {
             Ok(value) => value,
