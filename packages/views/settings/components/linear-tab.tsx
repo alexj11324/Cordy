@@ -68,7 +68,7 @@ const emptyDraft: BindingDraft = {
 };
 
 function selectClassName() {
-  return "h-9 w-full rounded-md border border-input bg-background px-3 text-sm";
+  return "h-9 w-full rounded-md border border-input bg-background px-3 text-body";
 }
 
 function connectionErrorIsConfiguration(error: unknown) {
@@ -281,7 +281,7 @@ function BindingWizard({
       {step === 1 ? (
         <div className="space-y-4 rounded-lg border p-4">
           <h4 className="font-medium">{t(($) => $.page.linear.connect_title)}</h4>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-body text-muted-foreground">
             {t(($) => $.page.linear.connected_identity)}
           </p>
         </div>
@@ -291,7 +291,7 @@ function BindingWizard({
         <div className="space-y-4 rounded-lg border p-4">
           <h4 className="font-medium">{t(($) => $.page.linear.match_title)}</h4>
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="space-y-1.5 text-sm">
+            <label className="space-y-1.5 text-body">
               <span className="text-muted-foreground">{t(($) => $.page.linear.patchbay_project)}</span>
               <select
                 className={selectClassName()}
@@ -313,7 +313,7 @@ function BindingWizard({
                 ))}
               </select>
             </label>
-            <label className="space-y-1.5 text-sm">
+            <label className="space-y-1.5 text-body">
               <span className="text-muted-foreground">{t(($) => $.page.linear.linear_project)}</span>
               <select
                 className={selectClassName()}
@@ -328,7 +328,7 @@ function BindingWizard({
                 ))}
               </select>
             </label>
-            <label className="space-y-1.5 text-sm sm:col-span-2">
+            <label className="space-y-1.5 text-body sm:col-span-2">
               <span className="text-muted-foreground">{t(($) => $.page.linear.linear_team)}</span>
               <select
                 className={selectClassName()}
@@ -370,7 +370,7 @@ function BindingWizard({
                 }
                 type="radio"
               />
-              <span className="space-y-0.5 text-sm">
+              <span className="space-y-0.5 text-body">
                 <span className="block font-medium"><SyncModeLabel mode={mode} /></span>
                 <span className="block text-muted-foreground">
                   {mode === "two_way"
@@ -385,7 +385,7 @@ function BindingWizard({
             </label>
           ))}
           {draft.syncMode === "two_way" ? (
-            <label className="space-y-1.5 text-sm">
+            <label className="space-y-1.5 text-body">
               <span className="text-muted-foreground">{t(($) => $.page.linear.initial_source)}</span>
               <select
                 className={selectClassName()}
@@ -405,13 +405,13 @@ function BindingWizard({
       {step === 4 ? (
         <div className="space-y-4 rounded-lg border p-4">
           <h4 className="font-medium">{t(($) => $.page.linear.mapping_title)}</h4>
-          <p className="text-sm text-muted-foreground">{t(($) => $.page.linear.mapping_description)}</p>
+          <p className="text-body text-muted-foreground">{t(($) => $.page.linear.mapping_description)}</p>
           {catalog.states.length === 0 ? (
-            <p className="text-sm text-muted-foreground">{t(($) => $.page.linear.no_states)}</p>
+            <p className="text-body text-muted-foreground">{t(($) => $.page.linear.no_states)}</p>
           ) : (
             <div className="space-y-2">
               {catalog.states.map((state) => (
-                <label className="grid items-center gap-2 text-sm sm:grid-cols-[1fr_1fr]" key={state.id}>
+                <label className="grid items-center gap-2 text-body sm:grid-cols-[1fr_1fr]" key={state.id}>
                   <span>{state.name}</span>
                   <select
                     className={selectClassName()}
@@ -448,28 +448,28 @@ function BindingWizard({
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-md bg-muted/50 p-3">
               <div className="text-micro text-muted-foreground">{t(($) => $.page.linear.preview_project)}</div>
-              <div className="mt-1 text-sm font-medium">{selectedPatchbayProject?.title ?? "—"}</div>
+              <div className="mt-1 text-body font-medium">{selectedPatchbayProject?.title ?? "—"}</div>
             </div>
             <div className="rounded-md bg-muted/50 p-3">
               <div className="text-micro text-muted-foreground">{t(($) => $.page.linear.preview_linear_project)}</div>
-              <div className="mt-1 text-sm font-medium">{selectedLinearProject?.name ?? "—"}</div>
+              <div className="mt-1 text-body font-medium">{selectedLinearProject?.name ?? "—"}</div>
             </div>
             <div className="rounded-md bg-muted/50 p-3">
               <div className="text-micro text-muted-foreground">{t(($) => $.page.linear.preview_mode)}</div>
-              <div className="mt-1 text-sm font-medium"><SyncModeLabel mode={draft.syncMode} /></div>
+              <div className="mt-1 text-body font-medium"><SyncModeLabel mode={draft.syncMode} /></div>
             </div>
           </div>
-          <p className="text-sm text-muted-foreground">{t(($) => $.page.linear.preview_no_mutations)}</p>
+          <p className="text-body text-muted-foreground">{t(($) => $.page.linear.preview_no_mutations)}</p>
         </div>
       ) : null}
 
       {step === 6 ? (
         <div className="space-y-4 rounded-lg border p-4">
           <h4 className="font-medium">{t(($) => $.page.linear.activate_title)}</h4>
-          <p className="text-sm text-muted-foreground">
+          <p className="text-body text-muted-foreground">
             {t(($) => $.page.linear.activate_description)}
           </p>
-          <dl className="grid gap-2 text-sm sm:grid-cols-2">
+          <dl className="grid gap-2 text-body sm:grid-cols-2">
             <div><dt className="text-muted-foreground">{t(($) => $.page.linear.linear_project)}</dt><dd>{selectedLinearProject?.name ?? "—"}</dd></div>
             <div><dt className="text-muted-foreground">{t(($) => $.page.linear.linear_team)}</dt><dd>{catalog.teams.find((team) => team.id === draft.linearTeamId)?.name ?? "—"}</dd></div>
             <div><dt className="text-muted-foreground">{t(($) => $.page.linear.mode_title)}</dt><dd><SyncModeLabel mode={draft.syncMode} /></dd></div>
