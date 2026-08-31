@@ -641,6 +641,22 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "474_linear_sync_inbox_pending_index",
         "idx_linear_sync_inbox_pending",
     ),
+    (
+        "463_linear_project_binding_id_index",
+        "uq_linear_project_binding_id",
+    ),
+    (
+        "464_linear_project_binding_remote_index",
+        "uq_linear_project_binding_remote",
+    ),
+    (
+        "465_linear_project_binding_local_index",
+        "uq_linear_project_binding_local",
+    ),
+    (
+        "466_linear_project_binding_status_index",
+        "idx_linear_project_binding_status",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
@@ -827,5 +843,21 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
     (
         "474_linear_sync_inbox_pending_index",
         "idx_linear_sync_inbox_pending",
+    ),
+    (
+        "463_linear_project_binding_id_index",
+        "uq_linear_project_binding_id",
+    ),
+    (
+        "464_linear_project_binding_remote_index",
+        "uq_linear_project_binding_remote",
+    ),
+    (
+        "465_linear_project_binding_local_index",
+        "uq_linear_project_binding_local",
+    ),
+    (
+        "466_linear_project_binding_status_index",
+        "idx_linear_project_binding_status",
     ),
 ];

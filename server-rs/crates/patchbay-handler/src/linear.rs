@@ -7,21 +7,21 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, Extension, Query, State};
+use axum::extract::{DefaultBodyLimit, Extension, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine as _;
 use chrono::{Duration, Utc};
 use hmac::{Hmac, Mac};
-use patchbay_db::models::LinearConnection;
+use patchbay_db::models::{LinearConnection, LinearProjectBinding};
 use patchbay_db::queries::linear as linear_q;
 use patchbay_middleware::workspace::WorkspaceContext;
 use rand::rngs::OsRng;
 use rand::RngCore;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
@@ -45,13 +45,21 @@ const LINEAR_HTTP_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::fr
 const LINEAR_HTTP_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 pub fn member_router() -> Router<HandlerState> {
-    Router::new().route("/api/workspaces/{id}/linear", get(get_connection))
+    Router::new()
+        .route("/api/workspaces/{id}/linear", get(get_connection))
+        .route("/api/workspaces/{id}/linear/catalog", get(get_catalog))
+        .route("/api/workspaces/{id}/linear/bindings", get(list_bindings))
 }
 
 pub fn admin_router() -> Router<HandlerState> {
     Router::new()
         .route("/api/workspaces/{id}/linear/connect", post(start_oauth))
         .route("/api/workspaces/{id}/linear", delete(disconnect))
+        .route("/api/workspaces/{id}/linear/bindings", post(create_binding))
+        .route(
+            "/api/workspaces/{id}/linear/bindings/{binding_id}",
+            patch(update_binding).delete(delete_binding),
+        )
 }
 
 pub fn public_router() -> Router<HandlerState> {
@@ -191,6 +199,436 @@ async fn get_connection(
             error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to load Linear connection",
+            )
+        }
+    }
+}
+
+fn linear_token_error_response(error: LinearTokenError) -> Response {
+    match error {
+        LinearTokenError::InvalidGrant => error_response(
+            StatusCode::CONFLICT,
+            "Linear authorization requires reauthorization",
+        ),
+        LinearTokenError::NotConfigured => error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Linear OAuth is not configured",
+        ),
+        LinearTokenError::Provider => {
+            error_response(StatusCode::BAD_GATEWAY, "Linear provider request failed")
+        }
+        LinearTokenError::InvalidResponse => error_response(
+            StatusCode::BAD_GATEWAY,
+            "Linear provider returned an invalid response",
+        ),
+        LinearTokenError::Storage(error) => {
+            tracing::warn!(%error, "Linear storage operation failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Linear integration storage failed",
+            )
+        }
+        LinearTokenError::Secret(error) => {
+            tracing::warn!(%error, "Linear secret storage operation failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Linear integration secret storage failed",
+            )
+        }
+    }
+}
+
+async fn get_catalog(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let connection = match linear_q::get_connection_for_workspace(&state.pool, workspace_id).await {
+        Ok(Some(connection)) => connection,
+        Ok(None) => return error_response(StatusCode::NOT_FOUND, "Linear is not connected"),
+        Err(error) => {
+            tracing::warn!(%error, "Linear catalog connection lookup failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear connection",
+            );
+        }
+    };
+    if connection.status == "reauthorization_required" {
+        return error_response(
+            StatusCode::CONFLICT,
+            "Linear authorization requires reauthorization",
+        );
+    }
+    if connection.status == "revoked" {
+        return error_response(StatusCode::NOT_FOUND, "Linear is not connected");
+    }
+    let manager = match LinearTokenManager::from_state(&state) {
+        Ok(manager) => manager,
+        Err(error) => return linear_token_error_response(error),
+    };
+    match manager.catalog(connection.id).await {
+        Ok(catalog) => Json(catalog).into_response(),
+        Err(error) => linear_token_error_response(error),
+    }
+}
+
+async fn list_bindings(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    match linear_q::list_project_bindings(&state.pool, workspace_id).await {
+        Ok(bindings) => Json(json!({ "bindings": bindings })).into_response(),
+        Err(error) => {
+            tracing::warn!(%error, "Linear project binding lookup failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear project bindings",
+            )
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct SaveLinearProjectBindingRequest {
+    connection_id: Uuid,
+    cordy_project_id: Uuid,
+    linear_project_id: String,
+    linear_team_id: Option<String>,
+    status: Option<String>,
+    sync_mode: String,
+    initial_source_of_truth: Option<String>,
+    #[serde(default = "empty_json_object")]
+    status_mapping: Value,
+    #[serde(default = "empty_json_object")]
+    agent_label_mapping: Value,
+}
+
+fn empty_json_object() -> Value {
+    json!({})
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearBindingPath {
+    id: Uuid,
+    binding_id: Uuid,
+}
+
+fn binding_status(status: Option<&str>) -> Result<&str, Response> {
+    let status = status.unwrap_or("draft");
+    if matches!(status, "draft" | "active" | "paused" | "tombstone") {
+        Ok(status)
+    } else {
+        Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid Linear binding status",
+        ))
+    }
+}
+
+fn binding_sync_mode(mode: &str) -> Result<&str, Response> {
+    if matches!(mode, "import" | "publish" | "two_way" | "not_synced") {
+        Ok(mode)
+    } else {
+        Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid Linear sync mode",
+        ))
+    }
+}
+
+fn binding_mapping(value: Value, message: &'static str) -> Result<Value, Response> {
+    if value.is_object() {
+        Ok(value)
+    } else {
+        Err(error_response(StatusCode::BAD_REQUEST, message))
+    }
+}
+
+fn validate_binding_request(
+    request: SaveLinearProjectBindingRequest,
+) -> Result<SaveLinearProjectBindingRequest, Response> {
+    let status = binding_status(request.status.as_deref())?;
+    let sync_mode = binding_sync_mode(&request.sync_mode)?;
+    if request.linear_project_id.trim().is_empty() {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "Linear project id is required",
+        ));
+    }
+    let linear_team_id = request
+        .linear_team_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if matches!(status, "active" | "paused") && linear_team_id.is_none() {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "Linear team id is required before activation",
+        ));
+    }
+    if status == "active" && sync_mode == "not_synced" {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "a not-synced binding cannot be active",
+        ));
+    }
+    if sync_mode == "import" && request.initial_source_of_truth.as_deref() != Some("linear") {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "import bindings require Linear as the initial source",
+        ));
+    }
+    if sync_mode == "publish" && request.initial_source_of_truth.as_deref() != Some("cordy") {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "publish bindings require Cordy as the initial source",
+        ));
+    }
+    if sync_mode == "two_way"
+        && !matches!(
+            request.initial_source_of_truth.as_deref(),
+            Some("linear") | Some("cordy")
+        )
+    {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "two-way bindings require an initial source",
+        ));
+    }
+    if !matches!(sync_mode, "two_way" | "import" | "publish")
+        && request.initial_source_of_truth.is_some()
+    {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "not-synced bindings cannot select an initial source",
+        ));
+    }
+    let status_mapping =
+        binding_mapping(request.status_mapping, "status mapping must be an object")?;
+    let agent_label_mapping = binding_mapping(
+        request.agent_label_mapping,
+        "agent label mapping must be an object",
+    )?;
+    Ok(SaveLinearProjectBindingRequest {
+        linear_team_id: linear_team_id.map(str::to_string),
+        status: Some(status.to_string()),
+        sync_mode: sync_mode.to_string(),
+        status_mapping,
+        agent_label_mapping,
+        ..request
+    })
+}
+
+async fn connection_for_binding(
+    state: &HandlerState,
+    workspace_id: Uuid,
+    connection_id: Uuid,
+) -> Result<LinearConnection, Response> {
+    match linear_q::get_connection_by_id(&state.pool, workspace_id, connection_id).await {
+        Ok(Some(connection)) if connection.status == "active" => Ok(connection),
+        Ok(Some(connection)) if connection.status == "reauthorization_required" => {
+            Err(error_response(
+                StatusCode::CONFLICT,
+                "Linear authorization requires reauthorization",
+            ))
+        }
+        Ok(Some(_)) => Err(error_response(
+            StatusCode::NOT_FOUND,
+            "Linear is not connected",
+        )),
+        Ok(None) => Err(error_response(
+            StatusCode::NOT_FOUND,
+            "Linear connection not found",
+        )),
+        Err(error) => {
+            tracing::warn!(%error, "Linear binding connection lookup failed");
+            Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear connection",
+            ))
+        }
+    }
+}
+
+async fn create_binding(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Json(request): Json<SaveLinearProjectBindingRequest>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let request = match validate_binding_request(request) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    if let Err(response) = connection_for_binding(&state, workspace_id, request.connection_id).await
+    {
+        return response;
+    }
+    match linear_q::project_belongs_to_workspace(
+        &state.pool,
+        workspace_id,
+        request.cordy_project_id,
+    )
+    .await
+    {
+        Ok(true) => {}
+        Ok(false) => return error_response(StatusCode::NOT_FOUND, "Cordy project not found"),
+        Err(error) => {
+            tracing::warn!(%error, "Cordy project lookup for Linear binding failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Cordy project",
+            );
+        }
+    }
+    let input = linear_q::LinearProjectBindingInput {
+        id: Uuid::now_v7(),
+        workspace_id,
+        connection_id: request.connection_id,
+        cordy_project_id: request.cordy_project_id,
+        linear_project_id: request.linear_project_id.trim(),
+        linear_team_id: request.linear_team_id.as_deref(),
+        status: request.status.as_deref().unwrap_or("draft"),
+        sync_mode: &request.sync_mode,
+        initial_source_of_truth: request.initial_source_of_truth.as_deref(),
+        status_mapping: &request.status_mapping,
+        agent_label_mapping: &request.agent_label_mapping,
+        created_by_id: context.member.user_id,
+    };
+    match linear_q::create_project_binding(&state.pool, &input).await {
+        Ok(binding) => (StatusCode::CREATED, Json(binding)).into_response(),
+        Err(error) => {
+            tracing::warn!(%error, "Linear project binding creation failed");
+            error_response(
+                StatusCode::CONFLICT,
+                "Linear project binding already exists",
+            )
+        }
+    }
+}
+
+async fn update_binding(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(path): Path<LinearBindingPath>,
+    Json(request): Json<SaveLinearProjectBindingRequest>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    if path.id != workspace_id {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "workspace id does not match context",
+        );
+    }
+    let request = match validate_binding_request(request) {
+        Ok(request) => request,
+        Err(response) => return response,
+    };
+    let Some(existing) =
+        (match linear_q::get_project_binding(&state.pool, workspace_id, path.binding_id).await {
+            Ok(binding) => binding,
+            Err(error) => {
+                tracing::warn!(%error, "Linear project binding lookup failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to load Linear project binding",
+                );
+            }
+        })
+    else {
+        return error_response(StatusCode::NOT_FOUND, "Linear project binding not found");
+    };
+    if request.connection_id != existing.connection_id
+        || request.cordy_project_id != existing.cordy_project_id
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "Linear binding connection and Cordy project are immutable",
+        );
+    }
+    if let Err(response) = connection_for_binding(&state, workspace_id, request.connection_id).await
+    {
+        return response;
+    }
+    let input = linear_q::LinearProjectBindingInput {
+        id: path.binding_id,
+        workspace_id,
+        connection_id: request.connection_id,
+        cordy_project_id: request.cordy_project_id,
+        linear_project_id: request.linear_project_id.trim(),
+        linear_team_id: request.linear_team_id.as_deref(),
+        status: request.status.as_deref().unwrap_or("draft"),
+        sync_mode: &request.sync_mode,
+        initial_source_of_truth: request.initial_source_of_truth.as_deref(),
+        status_mapping: &request.status_mapping,
+        agent_label_mapping: &request.agent_label_mapping,
+        created_by_id: existing.created_by_id,
+    };
+    match linear_q::update_project_binding(&state.pool, &input).await {
+        Ok(Some(binding)) => Json(binding).into_response(),
+        Ok(None) => error_response(StatusCode::NOT_FOUND, "Linear project binding not found"),
+        Err(error) => {
+            tracing::warn!(%error, "Linear project binding update failed");
+            error_response(
+                StatusCode::CONFLICT,
+                "Linear project binding already exists",
+            )
+        }
+    }
+}
+
+async fn delete_binding(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(path): Path<LinearBindingPath>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    if path.id != workspace_id {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "workspace id does not match context",
+        );
+    }
+    match linear_q::tombstone_project_binding(&state.pool, workspace_id, path.binding_id).await {
+        Ok(true) => StatusCode::NO_CONTENT.into_response(),
+        Ok(false) => error_response(StatusCode::NOT_FOUND, "Linear project binding not found"),
+        Err(error) => {
+            tracing::warn!(%error, "Linear project binding tombstone failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to remove Linear project binding",
             )
         }
     }
@@ -370,6 +808,104 @@ struct IdentityViewer {
 struct IdentityOrganization {
     id: String,
     name: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearCatalogPage<T> {
+    nodes: Vec<T>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearCatalogData {
+    teams: LinearCatalogPage<LinearCatalogTeam>,
+    projects: LinearCatalogPage<LinearCatalogProject>,
+    #[serde(rename = "workflowStates")]
+    workflow_states: LinearCatalogPage<LinearCatalogState>,
+    users: LinearCatalogPage<LinearCatalogUser>,
+    #[serde(rename = "issueLabels")]
+    issue_labels: LinearCatalogPage<LinearCatalogLabel>,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct LinearCatalogTeam {
+    id: String,
+    key: String,
+    name: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct LinearCatalogProject {
+    id: String,
+    name: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct LinearCatalogState {
+    id: String,
+    name: String,
+    #[serde(rename = "type")]
+    state_type: String,
+    color: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct LinearCatalogUser {
+    id: String,
+    name: String,
+    email: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearCatalogLabel {
+    id: String,
+    name: String,
+    color: String,
+    #[serde(rename = "isGroup")]
+    is_group: bool,
+    parent: Option<LinearCatalogLabelParent>,
+    team: Option<LinearCatalogLabelTeam>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearCatalogLabelParent {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearCatalogLabelTeam {
+    id: String,
+}
+
+#[derive(Debug, Serialize)]
+struct LinearCatalogLabelResponse {
+    id: String,
+    name: String,
+    color: String,
+    is_group: bool,
+    parent_id: Option<String>,
+    team_id: Option<String>,
+}
+
+impl From<LinearCatalogLabel> for LinearCatalogLabelResponse {
+    fn from(label: LinearCatalogLabel) -> Self {
+        Self {
+            id: label.id,
+            name: label.name,
+            color: label.color,
+            is_group: label.is_group,
+            parent_id: label.parent.map(|parent| parent.id),
+            team_id: label.team.map(|team| team.id),
+        }
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct LinearCatalogResponse {
+    teams: Vec<LinearCatalogTeam>,
+    projects: Vec<LinearCatalogProject>,
+    states: Vec<LinearCatalogState>,
+    users: Vec<LinearCatalogUser>,
+    labels: Vec<LinearCatalogLabelResponse>,
 }
 
 #[derive(Debug)]
@@ -587,6 +1123,95 @@ impl LinearTokenManager {
             actor_id: data.viewer.id,
             organization_id: organization.id,
             organization_name: organization.name,
+        })
+    }
+
+    async fn query_catalog(
+        &self,
+        access_token: &str,
+    ) -> Result<LinearCatalogData, LinearTokenError> {
+        let response = self
+            .client
+            .post(&self.graphql_url)
+            .bearer_auth(access_token)
+            .json(&json!({
+                "query": "query LinearCatalog { teams(first: 250) { nodes { id name key } } projects(first: 250) { nodes { id name } } workflowStates(first: 250) { nodes { id name type color } } users(first: 250) { nodes { id name email } } issueLabels(first: 250) { nodes { id name color isGroup parent { id } team { id } } } }"
+            }))
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear catalog request failed");
+                LinearTokenError::Provider
+            })?;
+        let status = response.status();
+        let payload = response
+            .json::<GraphQlResponse<LinearCatalogData>>()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear catalog response is invalid JSON");
+                LinearTokenError::InvalidResponse
+            })?;
+        if !status.is_success() {
+            tracing::warn!(%status, "Linear catalog request returned an error");
+            return Err(LinearTokenError::Provider);
+        }
+        if let Some(errors) = payload.errors.as_ref().filter(|errors| !errors.is_empty()) {
+            let message = errors
+                .first()
+                .and_then(|error| error.message.as_deref())
+                .unwrap_or("unknown GraphQL error");
+            tracing::warn!(message, "Linear catalog GraphQL request failed");
+            return Err(LinearTokenError::Provider);
+        }
+        payload.data.ok_or(LinearTokenError::InvalidResponse)
+    }
+
+    pub async fn catalog(
+        &self,
+        connection_id: Uuid,
+    ) -> Result<LinearCatalogResponse, LinearTokenError> {
+        let access_token = self.access_token(connection_id).await?;
+        let catalog = self.query_catalog(&access_token).await?;
+        if catalog.teams.nodes.iter().any(|team| {
+            team.id.trim().is_empty() || team.name.trim().is_empty() || team.key.trim().is_empty()
+        }) || catalog
+            .projects
+            .nodes
+            .iter()
+            .any(|project| project.id.trim().is_empty() || project.name.trim().is_empty())
+            || catalog.workflow_states.nodes.iter().any(|state| {
+                state.id.trim().is_empty()
+                    || state.name.trim().is_empty()
+                    || state.state_type.trim().is_empty()
+                    || state.color.trim().is_empty()
+            })
+            || catalog.users.nodes.iter().any(|user| {
+                user.id.trim().is_empty()
+                    || user.name.trim().is_empty()
+                    || user
+                        .email
+                        .as_deref()
+                        .map_or(false, |email| email.trim().is_empty())
+            })
+            || catalog.labels.nodes.iter().any(|label| {
+                label.id.trim().is_empty()
+                    || label.name.trim().is_empty()
+                    || label.color.trim().is_empty()
+            })
+        {
+            return Err(LinearTokenError::InvalidResponse);
+        }
+        Ok(LinearCatalogResponse {
+            teams: catalog.teams.nodes,
+            projects: catalog.projects.nodes,
+            states: catalog.workflow_states.nodes,
+            users: catalog.users.nodes,
+            labels: catalog
+                .issue_labels
+                .nodes
+                .into_iter()
+                .map(LinearCatalogLabelResponse::from)
+                .collect(),
         })
     }
 
@@ -1491,5 +2116,36 @@ mod tests {
             validate_webhook(Some(secret), &headers, body, timestamp + 60_001),
             Err(WebhookValidationError::ExpiredTimestamp)
         );
+    }
+    #[test]
+    fn webhook_timestamp_header_must_match_the_signed_body() {
+        let secret = "webhook-secret";
+        let timestamp = 1_700_000_000_000;
+        let body = br#"{"organizationId":"org-1","webhookId":"webhook-1","webhookTimestamp":1700000000000}"#;
+        let headers = signed_headers(secret, body, Some(timestamp + 1));
+        assert_eq!(
+            validate_webhook(Some(secret), &headers, body, timestamp),
+            Err(WebhookValidationError::TimestampMismatch)
+        );
+    }
+
+    #[test]
+    fn catalog_label_mapping_preserves_group_and_team_identity() {
+        let response = LinearCatalogLabelResponse::from(LinearCatalogLabel {
+            id: "agent-a".to_string(),
+            name: "Agent A".to_string(),
+            color: "#6E56CF".to_string(),
+            is_group: false,
+            parent: Some(LinearCatalogLabelParent {
+                id: "cordy-agent-group".to_string(),
+            }),
+            team: Some(LinearCatalogLabelTeam {
+                id: "team-1".to_string(),
+            }),
+        });
+
+        assert_eq!(response.parent_id.as_deref(), Some("cordy-agent-group"));
+        assert_eq!(response.team_id.as_deref(), Some("team-1"));
+        assert!(!response.is_group);
     }
 }

@@ -1,5 +1,6 @@
 import { DingTalkMark } from "./dingtalk-mark";
 import { LarkMark } from "./lark-mark";
+import { LinearMark } from "./linear-mark";
 import { SlackMark } from "./slack-mark";
 import { TelegramMark } from "./telegram-mark";
 import { WecomMark } from "./wecom-mark";
@@ -12,7 +13,8 @@ export type IntegrationChannel =
   | "dingtalk"
   | "wecom"
   | "telegram"
-  | "weixin";
+  | "weixin"
+  | "linear";
 
 // Every channel gets its own brand mark, never a generic lucide glyph: the icon
 // is what tells a reader which platform the section belongs to, and a stand-in
@@ -36,6 +38,7 @@ export function IntegrationChannelIcon({
     wecom: <WecomMark className={iconSize} />,
     telegram: <TelegramMark className={iconSize} />,
     weixin: <WeixinMark className={iconSize} />,
+    linear: <LinearMark className={iconSize} />,
   }[channel];
   const brandColor = {
     lark: "text-[#3370FF]",
@@ -45,6 +48,7 @@ export function IntegrationChannelIcon({
     wecom: "text-[#07C160]",
     telegram: "text-[#2AABEE]",
     weixin: "text-[#07C160]",
+    linear: "text-[#5E6AD2]",
   }[channel];
 
   return (

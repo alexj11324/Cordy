@@ -1784,6 +1784,28 @@ pub struct LinearConnection {
     pub workspace_id: Uuid,
 }
 
+/// Project-level Linear mapping. `linear_team_id` stays nullable for draft
+/// bindings; the handler requires it before an active binding can be saved.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct LinearProjectBinding {
+    pub activated_at: Option<DateTime<Utc>>,
+    pub agent_label_mapping: serde_json::Value,
+    pub connection_id: Uuid,
+    pub cordy_project_id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub created_by_id: Uuid,
+    pub id: Uuid,
+    pub initial_source_of_truth: Option<String>,
+    pub linear_project_id: String,
+    pub linear_team_id: Option<String>,
+    pub paused_at: Option<DateTime<Utc>>,
+    pub status: String,
+    pub status_mapping: serde_json::Value,
+    pub sync_mode: String,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
+}
+
 /// One-time PKCE state. The verifier is encrypted before it reaches the DB.
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct LinearOAuthState {
