@@ -44,7 +44,7 @@ export function TerminateTaskConfirmDialog({
       <AlertDialogContent
         // Stop clicks inside the dialog from bubbling to the row /
         // banner underneath (the dialog can render inside a clickable
-        // ancestor — e.g. an ExecutionLogSection row).
+        // ancestor — e.g. an AgentThreadRow row).
         onClick={(e) => e.stopPropagation()}
       >
         <AlertDialogHeader>

@@ -112,20 +112,20 @@ pub async fn delete_workspace_agents(
     Ok(r.rows_affected())
 }
 
-pub async fn delete_workspace_autopilot_children(
+pub async fn delete_workspace_automation_children(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
         r#"WITH
 deleted_triggers AS (
-    DELETE FROM autopilot_trigger
-    WHERE autopilot_id IN (
-        SELECT id FROM autopilot WHERE autopilot.workspace_id = $1
+    DELETE FROM automation_trigger
+    WHERE automation_id IN (
+        SELECT id FROM automation WHERE automation.workspace_id = $1
     )
 )
-DELETE FROM autopilot_rule_version
-WHERE autopilot_rule_version.workspace_id = $1"#,
+DELETE FROM automation_rule_version
+WHERE automation_rule_version.workspace_id = $1"#,
     )
     .bind(workspace_id)
     .execute(executor)
@@ -133,13 +133,13 @@ WHERE autopilot_rule_version.workspace_id = $1"#,
     Ok(r.rows_affected())
 }
 
-pub async fn delete_workspace_autopilot_quota_periods(
+pub async fn delete_workspace_automation_quota_periods(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
-        r#"DELETE FROM autopilot_quota_period
-WHERE autopilot_quota_period.workspace_id = $1"#,
+        r#"DELETE FROM automation_quota_period
+WHERE automation_quota_period.workspace_id = $1"#,
     )
     .bind(workspace_id)
     .execute(executor)
@@ -147,13 +147,13 @@ WHERE autopilot_quota_period.workspace_id = $1"#,
     Ok(r.rows_affected())
 }
 
-pub async fn delete_workspace_autopilot_quota_reservations(
+pub async fn delete_workspace_automation_quota_reservations(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
-        r#"DELETE FROM autopilot_quota_reservation
-WHERE autopilot_quota_reservation.workspace_id = $1"#,
+        r#"DELETE FROM automation_quota_reservation
+WHERE automation_quota_reservation.workspace_id = $1"#,
     )
     .bind(workspace_id)
     .execute(executor)
@@ -161,14 +161,14 @@ WHERE autopilot_quota_reservation.workspace_id = $1"#,
     Ok(r.rows_affected())
 }
 
-pub async fn delete_workspace_autopilot_runs(
+pub async fn delete_workspace_automation_runs(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
-        r#"DELETE FROM autopilot_run
-WHERE autopilot_id IN (
-    SELECT id FROM autopilot WHERE autopilot.workspace_id = $1
+        r#"DELETE FROM automation_run
+WHERE automation_id IN (
+    SELECT id FROM automation WHERE automation.workspace_id = $1
 )"#,
     )
     .bind(workspace_id)
@@ -177,11 +177,11 @@ WHERE autopilot_id IN (
     Ok(r.rows_affected())
 }
 
-pub async fn delete_workspace_autopilots(
+pub async fn delete_workspace_automations(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
 ) -> anyhow::Result<u64> {
-    let r = sqlx::query(r#"DELETE FROM autopilot WHERE autopilot.workspace_id = $1"#)
+    let r = sqlx::query(r#"DELETE FROM automation WHERE automation.workspace_id = $1"#)
         .bind(workspace_id)
         .execute(executor)
         .await?;
@@ -313,8 +313,8 @@ ws_teams AS MATERIALIZED (
 ws_sessions AS MATERIALIZED (
     SELECT id FROM chat_session WHERE workspace_id = $1
 ),
-ws_autopilots AS MATERIALIZED (
-    SELECT id FROM autopilot WHERE workspace_id = $1
+ws_automations AS MATERIALIZED (
+    SELECT id FROM automation WHERE workspace_id = $1
 ),
 ws_github_prs AS MATERIALIZED (
     SELECT id FROM github_pull_request WHERE workspace_id = $1
@@ -453,13 +453,13 @@ deleted_team_members AS (
 deleted_project_resources AS (
     DELETE FROM project_resource WHERE workspace_id = $1
 ),
-deleted_autopilot_collaborators AS (
-    DELETE FROM autopilot_collaborator
-    WHERE autopilot_id IN (SELECT id FROM ws_autopilots)
+deleted_automation_collaborators AS (
+    DELETE FROM automation_collaborator
+    WHERE automation_id IN (SELECT id FROM ws_automations)
 ),
-deleted_autopilot_subscribers AS (
-    DELETE FROM autopilot_subscriber
-    WHERE autopilot_id IN (SELECT id FROM ws_autopilots)
+deleted_automation_subscribers AS (
+    DELETE FROM automation_subscriber
+    WHERE automation_id IN (SELECT id FROM ws_automations)
 ),
 deleted_webhook_deliveries AS (
     DELETE FROM webhook_delivery WHERE workspace_id = $1
@@ -640,7 +640,7 @@ pub async fn detach_task_batch_references(
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
         r#"WITH detached_runs AS (
-    UPDATE autopilot_run
+    UPDATE automation_run
     SET task_id = NULL
     WHERE task_id = ANY($1::uuid[])
 )

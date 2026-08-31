@@ -10,13 +10,13 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use patchbay_db::models::{Agent, AgentTaskQueue, Autopilot, RuntimeProfile};
+use patchbay_db::models::{Agent, AgentTaskQueue, Automation, RuntimeProfile};
 use patchbay_db::queries::{
-    agent, agent_invocation_target, autopilot, channel, chat, chat_pinned_agent, issue_label,
+    agent, agent_invocation_target, automation, channel, chat, chat_pinned_agent, issue_label,
     runtime, runtime_profile,
 };
 use patchbay_middleware::workspace::WorkspaceContext;
-use patchbay_protocol::{EVENT_AGENT_STATUS, EVENT_AUTOPILOT_UPDATED, EVENT_DAEMON_REGISTER};
+use patchbay_protocol::{EVENT_AGENT_STATUS, EVENT_AUTOMATION_UPDATED, EVENT_DAEMON_REGISTER};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -410,7 +410,7 @@ RETURNING command_name, created_at, created_by, description, display_name,
 pub(crate) struct Teardown {
     pub(crate) unbound_agents: Vec<Agent>,
     pub(crate) cancelled_tasks: Vec<AgentTaskQueue>,
-    pub(crate) paused_autopilots: Vec<Autopilot>,
+    pub(crate) paused_automations: Vec<Automation>,
 }
 
 pub(crate) async fn teardown_runtime(
@@ -423,8 +423,8 @@ pub(crate) async fn teardown_runtime(
         .iter()
         .map(|agent| agent.id)
         .collect::<Vec<_>>();
-    let paused_autopilots =
-        autopilot::pause_autopilots_by_unbound_agents(&mut **transaction, agent_ids.clone())
+    let paused_automations =
+        automation::pause_automations_by_unbound_agents(&mut **transaction, agent_ids.clone())
             .await?;
     let cancelled_tasks = runtime::cancel_agent_tasks_by_runtime_or_agent(
         &mut **transaction,
@@ -466,7 +466,7 @@ pub(crate) async fn teardown_runtime(
     Ok(Teardown {
         unbound_agents,
         cancelled_tasks,
-        paused_autopilots,
+        paused_automations,
     })
 }
 
@@ -486,13 +486,13 @@ pub(crate) fn publish_teardown(
             ..Default::default()
         });
     }
-    for autopilot in &teardown.paused_autopilots {
+    for automation in &teardown.paused_automations {
         state.bus.publish(&patchbay_events::Event {
-            event_type: EVENT_AUTOPILOT_UPDATED.to_string(),
+            event_type: EVENT_AUTOMATION_UPDATED.to_string(),
             workspace_id: workspace_id.to_string(),
             actor_type: "member".into(),
             actor_id: user_id.to_string(),
-            payload: json!({ "autopilot": autopilot }),
+            payload: json!({ "automation": automation }),
             ..Default::default()
         });
     }

@@ -27,8 +27,13 @@ describe("deriveIssueSurfaceActivity", () => {
     const activity = deriveIssueSurfaceActivity([
       task({ id: "run-1", issue_id: "i-1", status: "running" }),
       task({ id: "queue-1", issue_id: "i-2", status: "queued" }),
+      task({ id: "deferred-1", issue_id: "i-2", status: "deferred" }),
       task({ id: "dispatch-1", issue_id: "i-2", status: "dispatched" }),
-      task({ id: "wait-1", issue_id: "i-3", status: "waiting_local_directory" }),
+      task({
+        id: "wait-1",
+        issue_id: "i-3",
+        status: "waiting_local_directory",
+      }),
       task({ id: "done-1", issue_id: "i-4", status: "completed" }),
       task({ id: "no-issue", issue_id: undefined, status: "running" }),
     ]);
@@ -42,6 +47,9 @@ describe("deriveIssueSurfaceActivity", () => {
       isWorking: false,
       isQueued: true,
     });
+    expect(
+      activity.activityByIssueId.get("i-2")?.queuedTasks.map((t) => t.id),
+    ).toEqual(["queue-1", "deferred-1", "dispatch-1"]);
     expect(activity.activityByIssueId.get("i-3")).toMatchObject({
       isWorking: false,
       isQueued: true,
@@ -55,6 +63,7 @@ describe("selectIssueTasks", () => {
     task({ id: "run-1", issue_id: "i-1", status: "running" }),
     task({ id: "run-2", issue_id: "i-1", status: "running" }),
     task({ id: "queue-1", issue_id: "i-1", status: "queued" }),
+    task({ id: "deferred-1", issue_id: "i-1", status: "deferred" }),
     task({ id: "other-run", issue_id: "i-2", status: "running" }),
     task({ id: "wait-1", issue_id: "i-3", status: "waiting_local_directory" }),
     task({ id: "dispatch-1", issue_id: "i-3", status: "dispatched" }),
@@ -65,10 +74,10 @@ describe("selectIssueTasks", () => {
   it("returns only the running/queued tasks for the requested issue", () => {
     const groups = selectIssueTasks(snapshot, "i-1");
     expect(groups.running.map((t) => t.id)).toEqual(["run-1", "run-2"]);
-    expect(groups.queued.map((t) => t.id)).toEqual(["queue-1"]);
+    expect(groups.queued.map((t) => t.id)).toEqual(["queue-1", "deferred-1"]);
   });
 
-  it("treats dispatched and waiting_local_directory as queued", () => {
+  it("treats deferred, dispatched, and waiting_local_directory as queued", () => {
     const groups = selectIssueTasks(snapshot, "i-3");
     expect(groups.running).toEqual([]);
     expect(groups.queued.map((t) => t.id)).toEqual(["wait-1", "dispatch-1"]);

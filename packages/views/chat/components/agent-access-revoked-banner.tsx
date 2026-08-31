@@ -10,7 +10,7 @@ import { useT } from "../../i18n";
 // longer be invoked by this user — the agent was flipped to personal, its
 // ownership moved, or the allow-list dropped them (PB-6380).
 //
-// The transcript stays readable, because reading is gated by the softer view
+// The Agent event history stays readable, because reading is gated by the softer view
 // predicate; only running is gated by the invoke predicate the server re-checks
 // on every send (PB-4525). Without this banner the input looked live and the
 // user learned about the change from a 403 after typing a message.

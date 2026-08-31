@@ -10,9 +10,9 @@ mod spec;
 mod contract_tests;
 
 pub use jobs::{
-    autopilot_schedule_dispatch_job, task_usage_hourly_job, AutopilotScheduleDispatcher,
-    AUTOPILOT_SCHEDULE_DISPATCH_JOB, AUTOPILOT_TRIGGER_SCOPE, DEFAULT_AUTOPILOT_SCHEDULE_TIMEZONE,
-    TASK_USAGE_ADVISORY_LOCK_ID, TASK_USAGE_HOURLY_JOB,
+    automation_schedule_dispatch_job, task_usage_hourly_job, AutomationScheduleDispatcher,
+    AUTOMATION_SCHEDULE_DISPATCH_JOB, AUTOMATION_TRIGGER_SCOPE,
+    DEFAULT_AUTOMATION_SCHEDULE_TIMEZONE, TASK_USAGE_ADVISORY_LOCK_ID, TASK_USAGE_HOURLY_JOB,
 };
 pub use manager::{
     DbClock, Manager, ManagerOptions, ManagerRuntime, ProcessOutcome, RunReport, SchedulerClock,
@@ -28,11 +28,11 @@ pub use spec::{
 /// the durable jobs would leave production partially scheduled.
 pub fn production_manager(
     pool: sqlx::PgPool,
-    dispatcher: std::sync::Arc<dyn AutopilotScheduleDispatcher>,
+    dispatcher: std::sync::Arc<dyn AutomationScheduleDispatcher>,
 ) -> anyhow::Result<std::sync::Arc<Manager>> {
     let manager = Manager::new(pool.clone(), ManagerOptions::default());
     manager.register(task_usage_hourly_job(pool.clone()))?;
-    manager.register(autopilot_schedule_dispatch_job(pool, dispatcher))?;
+    manager.register(automation_schedule_dispatch_job(pool, dispatcher))?;
     Ok(manager)
 }
 

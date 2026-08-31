@@ -59,7 +59,7 @@ pub enum ReasonCode {
     /// success: nothing new runs. (Named to avoid implying the NEW comment
     /// was already processed.)
     SelfTriggerSuppressed,
-    /// Policy-neutral refusal for an exhausted Cloud-provided autopilot
+    /// Policy-neutral refusal for an exhausted Cloud-provided automation
     /// interval.
     QuotaExceeded,
     /// An unexpected server error prevented a clean decision.

@@ -46,7 +46,7 @@ impl Outbound {
     }
 
     /// Subscribes to chat-done and task-failed. Task-failed keeps the DingTalk
-    /// conversation consistent with the web transcript — without it a failed
+    /// conversation consistent with the web Agent event history — without it a failed
     /// run leaves the user staring at the "👀 On it" ack forever.
     pub fn register(self: &Arc<Self>, bus: &patchbay_events::Bus, tasks: Arc<RuntimeTasks>) {
         let this = self.clone();
@@ -85,7 +85,7 @@ impl Outbound {
     async fn process_event(&self, e: &patchbay_events::Event) -> anyhow::Result<()> {
         let (task_id, session_id) = task_and_session_from_event(e);
         let Some(session_id) = session_id else {
-            // Issue / autopilot tasks carry no chat_session.
+            // Issue / automation tasks carry no chat_session.
             return Ok(());
         };
         let Some(task_id) = task_id else {
@@ -130,7 +130,7 @@ impl Outbound {
 /// Extracts the deliverable text from an EventChatDone payload or an
 /// EventTaskFailed payload. Empty means stay silent.
 ///
-/// For task-failed the text mirrors the web transcript's failure chat_message:
+/// For task-failed the text mirrors the web Agent event history's failure chat_message:
 /// the broadcast's `error` field carries the same redacted failure text and is
 /// omitted while an auto-retry is pending (the retry attempt reports its own
 /// outcome), so error-present means deliverable.

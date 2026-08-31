@@ -103,7 +103,7 @@ fn history_message_locator_re() -> &'static Regex {
 
 /// `UnresumableHistory` (resume.go:38): reports whether an agent error means
 /// the conversation history itself can no longer be sent to the provider — an
-/// empty message baked into the transcript replays the same rejection forever.
+/// empty message baked into the Agent event history replays the same rejection forever.
 /// Deliberately provider-agnostic: both signals are required, which keeps the
 /// predicate narrow.
 fn unresumable_history(err_text: &str) -> bool {

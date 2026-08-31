@@ -5,8 +5,11 @@
  * Invalidates the queries that back the presence dot:
  *   - runtimeListOptions      ← daemon:register, runtime sweeper transitions
  *   - agentListOptions        ← agent:status / created / archived / restored
- *   - agentTaskSnapshotOptions← task:queued / dispatch / completed / failed /
- *                               cancelled
+ *   - agentTaskSnapshotOptions← task:queued / dispatch / running /
+ *                               waiting_local_directory / completed /
+ *                               failed / cancelled
+ *   - agentThreadKeys          ← the same lifecycle transitions, so an open
+ *                               thread refreshes its current task envelope
  *
  * Deliberately NOT subscribed (cellular-data rule, apps/mobile/AGENTS.md):
  *   - daemon:heartbeat — every 15s × in-online runtime; web also skips it
@@ -20,6 +23,7 @@
  * doesn't drift while we're offline; runtime status and task counts do).
  */
 import { useQueryClient } from "@tanstack/react-query";
+import { agentThreadKeys } from "@/data/queries/agent-thread";
 import { useWSSubscriptions } from "@/lib/use-ws-subscriptions";
 
 export function usePresenceRealtime() {
@@ -30,6 +34,7 @@ export function usePresenceRealtime() {
       const runtimesKey = ["runtimes", wsId];
       const agentsKey = ["agents", wsId];
       const snapshotKey = ["agent-task-snapshot", wsId];
+      const agentThreadsKey = agentThreadKeys.all(wsId);
 
       const invalidateRuntimes = () =>
         queryClient.invalidateQueries({ queryKey: runtimesKey });
@@ -37,6 +42,8 @@ export function usePresenceRealtime() {
         queryClient.invalidateQueries({ queryKey: agentsKey });
       const invalidateSnapshot = () =>
         queryClient.invalidateQueries({ queryKey: snapshotKey });
+      const invalidateAgentThreads = () =>
+        queryClient.invalidateQueries({ queryKey: agentThreadsKey });
 
       return [
         // Daemon lifecycle — register events mean a runtime came online or
@@ -55,11 +62,34 @@ export function usePresenceRealtime() {
 
         // Task lifecycle — drives the workload dimension of presence and the
         // reserved-for-P1 peek sheet. progress / message intentionally absent.
-        ws.on("task:queued", invalidateSnapshot),
-        ws.on("task:dispatch", invalidateSnapshot),
-        ws.on("task:completed", invalidateSnapshot),
-        ws.on("task:failed", invalidateSnapshot),
-        ws.on("task:cancelled", invalidateSnapshot),
+        ws.on("task:queued", () => {
+          invalidateSnapshot();
+          invalidateAgentThreads();
+        }),
+        ws.on("task:dispatch", () => {
+          invalidateSnapshot();
+          invalidateAgentThreads();
+        }),
+        ws.on("task:running", () => {
+          invalidateSnapshot();
+          invalidateAgentThreads();
+        }),
+        ws.on("task:waiting_local_directory", () => {
+          invalidateSnapshot();
+          invalidateAgentThreads();
+        }),
+        ws.on("task:completed", () => {
+          invalidateSnapshot();
+          invalidateAgentThreads();
+        }),
+        ws.on("task:failed", () => {
+          invalidateSnapshot();
+          invalidateAgentThreads();
+        }),
+        ws.on("task:cancelled", () => {
+          invalidateSnapshot();
+          invalidateAgentThreads();
+        }),
 
         // We may have missed sweeper-driven runtime offline transitions
         // while disconnected — refetch runtimes + snapshot. Agents not
@@ -68,6 +98,7 @@ export function usePresenceRealtime() {
         ws.onReconnect(() => {
           invalidateRuntimes();
           invalidateSnapshot();
+          invalidateAgentThreads();
         }),
       ];
     },

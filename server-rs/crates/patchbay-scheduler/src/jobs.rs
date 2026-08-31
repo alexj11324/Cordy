@@ -8,11 +8,12 @@ use sqlx::PgPool;
 
 use crate::{static_scopes, CatchUpMode, HandlerResult, JobSpec, GLOBAL_SCOPE};
 
-mod autopilot;
+mod automation;
 
-pub use autopilot::{
-    autopilot_schedule_dispatch_job, AutopilotScheduleDispatcher, AUTOPILOT_SCHEDULE_DISPATCH_JOB,
-    AUTOPILOT_TRIGGER_SCOPE, DEFAULT_AUTOPILOT_SCHEDULE_TIMEZONE,
+pub use automation::{
+    automation_schedule_dispatch_job, AutomationScheduleDispatcher,
+    AUTOMATION_SCHEDULE_DISPATCH_JOB, AUTOMATION_TRIGGER_SCOPE,
+    DEFAULT_AUTOMATION_SCHEDULE_TIMEZONE,
 };
 
 /// Stable audit name. Renaming it would detach existing execution history.

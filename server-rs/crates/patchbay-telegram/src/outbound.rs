@@ -5,7 +5,7 @@
 //! Streaming: Telegram has no stream-update protocol, so the "stream
 //! frame" UX is simulated with the platform's canonical pattern — post one
 //! placeholder message on the first partial, then throttled
-//! editMessageText calls as the transcript grows, and a final edit/send on
+//! editMessageText calls as the Agent event history grows, and a final edit/send on
 //! the done event. Edits are throttled per chat; on a 429 the streamer
 //! backs off and the final content always lands via the done path.
 //!

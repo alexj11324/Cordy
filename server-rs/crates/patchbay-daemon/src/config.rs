@@ -172,7 +172,7 @@ pub const DEFAULT_GC_CODEX_SESSION_TTL: Duration = Duration::from_secs(14 * 24 *
 /// `DefaultGCHermesMemoryTTL`: 90 days — reclaiming these is visible amnesia
 /// and they are a few markdown files, so the TTL is long.
 pub const DEFAULT_GC_HERMES_MEMORY_TTL: Duration = Duration::from_secs(90 * 24 * 3600);
-/// `DefaultGCHermesSessionTTL`: 14 days — these hold transcripts; losing an
+/// `DefaultGCHermesSessionTTL`: 14 days — these hold Agent event histories; losing an
 /// idle one restarts the thread rather than the agent's notes.
 pub const DEFAULT_GC_HERMES_SESSION_TTL: Duration = Duration::from_secs(14 * 24 * 3600);
 /// `DefaultGCRepoTTL`: 30 days — evict a bare repo cache no task has checked

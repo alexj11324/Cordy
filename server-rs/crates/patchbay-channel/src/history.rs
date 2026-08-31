@@ -78,7 +78,7 @@ fn is_zero(v: &i64) -> bool {
 }
 
 /// One normalized page. Messages are ordered OLDEST-FIRST so the
-/// transcript reads top-to-bottom like the chat does.
+/// Agent event history reads top-to-bottom like the chat does.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HistoryPage {
     /// The platform the history came from ("slack"). Empty when the

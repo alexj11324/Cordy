@@ -41,7 +41,7 @@ function initialsOf(name: string): string {
  *    nothing meaningful to show for an unattributed run.
  *  - `variant="inline"`: the bare member name (borderless, avatar optional via
  *    `hideAvatar`) with the source in a tooltip — for a sentence-like identity
- *    row (transcript header) where the caller supplies the label. Same silence
+ *    row (Agent event history header) where the caller supplies the label. Same silence
  *    rule.
  *
  * Renders nothing when the task has no attribution at all (older backends) —
@@ -57,7 +57,7 @@ export function AttributionBadge({
   className?: string;
   variant?: "badge" | "avatar" | "inline";
   /** Inline variant only: render the name without the avatar, so it does not
-   *  compete with a nearby primary avatar (the transcript identity row). */
+   *  compete with a nearby primary avatar (the Agent event history identity row). */
   hideAvatar?: boolean;
 }) {
   const { t } = useT("issues");
@@ -68,28 +68,28 @@ export function AttributionBadge({
   let sourceLabel: string;
   switch (attribution.source) {
     case "direct_human":
-      sourceLabel = t(($) => $.execution_log.attribution.source_direct_human);
+      sourceLabel = t(($) => $.agent_thread.attribution.source_direct_human);
       break;
     case "delegation":
-      sourceLabel = t(($) => $.execution_log.attribution.source_delegation);
+      sourceLabel = t(($) => $.agent_thread.attribution.source_delegation);
       break;
     case "comment_source":
-      sourceLabel = t(($) => $.execution_log.attribution.source_comment_source);
+      sourceLabel = t(($) => $.agent_thread.attribution.source_comment_source);
       break;
     case "trigger_owner":
-      sourceLabel = t(($) => $.execution_log.attribution.source_trigger_owner);
+      sourceLabel = t(($) => $.agent_thread.attribution.source_trigger_owner);
       break;
     case "rule_owner":
-      sourceLabel = t(($) => $.execution_log.attribution.source_rule_owner);
+      sourceLabel = t(($) => $.agent_thread.attribution.source_rule_owner);
       break;
     case "owner_fallback":
-      sourceLabel = t(($) => $.execution_log.attribution.source_owner_fallback);
+      sourceLabel = t(($) => $.agent_thread.attribution.source_owner_fallback);
       break;
     case "backfill":
-      sourceLabel = t(($) => $.execution_log.attribution.source_backfill);
+      sourceLabel = t(($) => $.agent_thread.attribution.source_backfill);
       break;
     case "unattributed":
-      sourceLabel = t(($) => $.execution_log.attribution.source_unattributed);
+      sourceLabel = t(($) => $.agent_thread.attribution.source_unattributed);
       break;
     default:
       sourceLabel = attribution.source;
@@ -118,7 +118,7 @@ export function AttributionBadge({
   if (variant === "inline") {
     const initiatorInline = attribution.initiator;
     if (!initiatorInline) return null;
-    const name = initiatorInline.name || t(($) => $.execution_log.attribution.someone);
+    const name = initiatorInline.name || t(($) => $.agent_thread.attribution.someone);
     return (
       <Tooltip>
         <TooltipTrigger
@@ -152,7 +152,7 @@ export function AttributionBadge({
   // source in a hover tooltip. Nothing to show without an accountable member.
   if (variant === "avatar") {
     if (!initiator) return null;
-    const name = initiator.name || t(($) => $.execution_log.attribution.someone);
+    const name = initiator.name || t(($) => $.agent_thread.attribution.someone);
     return (
       <Tooltip>
         <TooltipTrigger
@@ -178,7 +178,7 @@ export function AttributionBadge({
         <TooltipContent>
           <div className="flex flex-col">
             <span>
-              {t(($) => $.execution_log.attribution.on_behalf_of, { name })}
+              {t(($) => $.agent_thread.attribution.on_behalf_of, { name })}
             </span>
             <span
               className={cn(
@@ -200,7 +200,7 @@ export function AttributionBadge({
   // variant above (PB-4765).
   if (!initiator) return null;
 
-  const name = initiator.name || t(($) => $.execution_log.attribution.someone);
+  const name = initiator.name || t(($) => $.agent_thread.attribution.someone);
   return (
     <Badge
       variant="outline"
@@ -219,7 +219,7 @@ export function AttributionBadge({
         className="shrink-0"
       />
       <span className="min-w-0 truncate">
-        {t(($) => $.execution_log.attribution.on_behalf_of, { name })}
+        {t(($) => $.agent_thread.attribution.on_behalf_of, { name })}
       </span>
     </Badge>
   );

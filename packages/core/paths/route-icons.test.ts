@@ -58,7 +58,7 @@ describe("pageForSegment", () => {
 describe("resolveRouteIconName", () => {
   it("resolves a page path to its page icon", () => {
     expect(resolveRouteIconName("/acme/projects")).toBe("FolderKanban");
-    expect(resolveRouteIconName("/acme/autopilots")).toBe("AlarmClockCheck");
+    expect(resolveRouteIconName("/acme/automations")).toBe("AlarmClockCheck");
     expect(resolveRouteIconName("/acme/chat")).toBe("MessageSquare");
     expect(resolveRouteIconName("/acme/channels")).toBe("Hash");
     expect(resolveRouteIconName("/acme/teams")).toBe("PeopleGroup");

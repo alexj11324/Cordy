@@ -24,8 +24,8 @@ export type TabSubject =
   | { kind: "issue"; id: string }
   /** A single project detail. */
   | { kind: "project"; id: string }
-  /** A single autopilot detail. */
-  | { kind: "autopilot"; id: string }
+  /** A single automation detail. */
+  | { kind: "automation"; id: string }
   /** An agent / member / team detail (has an avatar identity). */
   | { kind: "actor"; actorType: TabActorType; id: string }
   /** A single skill detail. */
@@ -82,8 +82,8 @@ export function parseTabSubject(url: string): TabSubject {
       return { kind: "page", page: "myIssues" };
     case "projects":
       return id ? { kind: "project", id } : { kind: "page", page: "projects" };
-    case "autopilots":
-      return id ? { kind: "autopilot", id } : { kind: "page", page: "autopilots" };
+    case "automations":
+      return id ? { kind: "automation", id } : { kind: "page", page: "automations" };
     case "agents":
       if (id === "new") return { kind: "flow", flow: "create-agent" };
       return id
@@ -145,8 +145,8 @@ export function tabSubjectKey(subject: TabSubject): string {
       return `issue:${subject.id}`;
     case "project":
       return `project:${subject.id}`;
-    case "autopilot":
-      return `autopilot:${subject.id}`;
+    case "automation":
+      return `automation:${subject.id}`;
     case "actor":
       return `actor:${subject.actorType}:${subject.id}`;
     case "skill":

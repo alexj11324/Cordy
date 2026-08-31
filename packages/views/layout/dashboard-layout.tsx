@@ -40,7 +40,12 @@ export function DashboardLayout({
         <AppSidebar searchSlot={searchSlot} />
         <SidebarInset className="relative overflow-hidden">
           <NavigationProgress />
-          {children}
+          <div
+            className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
+            data-testid="web-route-scroll-viewport"
+          >
+            {children}
+          </div>
           <ModalRegistry />
           <SourceBackfillModal />
           {extra}

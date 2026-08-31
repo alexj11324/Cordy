@@ -58,7 +58,7 @@ describe("ProjectPicker", () => {
     // Regression: the clear × used to be an absolutely-positioned sibling
     // overlaying the trigger, and only the picker's own default trigger
     // reserved right padding for it. Every caller passing `triggerRender`
-    // (create dialog pill, table cell, autopilot card) had the × painted on
+    // (create dialog pill, table cell, automation card) had the × painted on
     // top of the project name. Clearing belongs in the popover instead, which
     // is also where the other property pickers put it.
     renderPicker();

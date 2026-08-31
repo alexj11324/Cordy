@@ -521,7 +521,7 @@ LIMIT 1"#
     }))
 }
 
-pub async fn find_recent_autopilot_duplicate_issue(
+pub async fn find_recent_automation_duplicate_issue(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     workspace_id: Uuid,
     origin_id: Uuid,
@@ -533,7 +533,7 @@ pub async fn find_recent_autopilot_duplicate_issue(
         r#"SELECT i.id, i.workspace_id, i.title, i.description, i.status, i.priority, i.assignee_type, i.assignee_id, i.creator_type, i.creator_id, i.parent_issue_id, i.acceptance_criteria, i.context_refs, i.position, i.due_date, i.created_at, i.updated_at, i.number, i.project_id, i.origin_type, i.origin_id, i.first_executed_at, i.start_date, i.metadata, i.stage, i.properties, i.revision, i.last_activity_at, i.reviewer_type, i.reviewer_id FROM issue i
 WHERE i.workspace_id = $1
   AND issue_effective_status(i.workspace_id, i.status) NOT IN ('done', 'cancelled')
-  AND i.origin_type = 'autopilot'
+  AND i.origin_type = 'automation'
   AND i.origin_id = $2
   AND i.project_id IS NOT DISTINCT FROM $3::uuid
   AND lower(btrim(regexp_replace(
@@ -547,9 +547,9 @@ WHERE i.workspace_id = $1
   AND i.created_at >= $5::timestamptz
   AND EXISTS (
     SELECT 1
-    FROM autopilot_run r
+    FROM automation_run r
     WHERE r.issue_id = i.id
-      AND r.autopilot_id = i.origin_id
+      AND r.automation_id = i.origin_id
       AND r.status IN ('issue_created', 'running', 'completed')
   )
 ORDER BY i.created_at ASC

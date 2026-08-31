@@ -247,10 +247,10 @@ fn validate_working_params(
     user_id: Uuid,
 ) -> Result<(String, String, Option<Uuid>, Option<Uuid>), Response> {
     let work_type = params.work_type.trim().to_string();
-    if !matches!(work_type.as_str(), "" | "issue" | "autopilot" | "chat") {
+    if !matches!(work_type.as_str(), "" | "issue" | "automation" | "chat") {
         return Err(error_response(
             StatusCode::BAD_REQUEST,
-            "invalid type: must be issue, autopilot, or chat",
+            "invalid type: must be issue, automation, or chat",
         ));
     }
 

@@ -15,10 +15,10 @@ mod auth_command_schema;
 mod auth_command_tests;
 mod auth_commands;
 #[cfg(test)]
-mod autopilot_command_tests;
-mod autopilot_commands;
-mod autopilot_output;
-mod autopilot_resolver;
+mod automation_command_tests;
+mod automation_commands;
+mod automation_output;
+mod automation_resolver;
 #[cfg(test)]
 mod chat_command_tests;
 mod chat_commands;
@@ -183,18 +183,18 @@ pub(crate) use auth_command_schema::{AuthArgs, AuthCommand, LoginArgs};
 #[cfg(test)]
 use auth_commands::display_token_prefix;
 use auth_commands::{run_auth_logout, run_auth_status};
-pub(crate) use autopilot_commands::{
-    run_autopilot_create, run_autopilot_delete, run_autopilot_get, run_autopilot_list,
-    run_autopilot_runs, run_autopilot_trigger, run_autopilot_trigger_add,
-    run_autopilot_trigger_delete, run_autopilot_trigger_rotate_url, run_autopilot_trigger_update,
-    run_autopilot_update, AutopilotArgs, AutopilotCommand,
+pub(crate) use automation_commands::{
+    run_automation_create, run_automation_delete, run_automation_get, run_automation_list,
+    run_automation_runs, run_automation_trigger, run_automation_trigger_add,
+    run_automation_trigger_delete, run_automation_trigger_rotate_url,
+    run_automation_trigger_update, run_automation_update, AutomationArgs, AutomationCommand,
 };
-use autopilot_output::{
-    autopilot_webhook_url, format_autopilot_runs_table, format_autopilot_table,
+use automation_output::{
+    automation_webhook_url, format_automation_runs_table, format_automation_table,
 };
-use autopilot_resolver::{
-    load_autopilot_agent_names, resolve_autopilot_agent, resolve_autopilot_id,
-    resolve_autopilot_subscribers, resolve_autopilot_trigger_id,
+use automation_resolver::{
+    load_automation_agent_names, resolve_automation_agent, resolve_automation_id,
+    resolve_automation_subscribers, resolve_automation_trigger_id,
 };
 pub(crate) use chat_commands::{
     run_attachment_download, run_attachment_upload, run_chat_read, AttachmentArgs,

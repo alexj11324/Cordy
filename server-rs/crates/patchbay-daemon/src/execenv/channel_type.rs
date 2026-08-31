@@ -2,7 +2,7 @@
 //!
 //! Symbol map:
 //! - ChannelTypeSlack/Feishu/Wecom/Dingtalk → CHANNEL_TYPE_* consts
-//! - SurfacePersistsTranscript              → surface_persists_transcript
+//! - SurfacePersistsAgentEvents              → surface_persists_agent_events
 //! - ChatTypeP2P / ChatTypeGroup            → CHAT_TYPE_P2P / CHAT_TYPE_GROUP
 //! - ChatAudience (+Unknown/Direct/Group)   → ChatAudience enum
 //! - AudienceOf                             → audience_of
@@ -52,7 +52,7 @@ pub enum ChatAudience {
     Group,
 }
 
-/// SurfacePersistsTranscript reports whether a chat surface stores its
+/// SurfacePersistsAgentEvents reports whether a chat surface stores its
 /// conversation in Patchbay's chat_message table, readable back via `patchbay chat
 /// history` (handler/chat_history.go's non-Slack fallback). Web chat (empty
 /// discriminator), Feishu, WeCom and DingTalk all persist via the shared
@@ -60,7 +60,7 @@ pub enum ChatAudience {
 /// source of truth for "which surfaces are readable", shared by the
 /// continuity-notice router, the chat-prompt history copy, and the surface list —
 /// so a future non-persisting channel is never told "read it back".
-pub fn surface_persists_transcript(channel_type: &str) -> bool {
+pub fn surface_persists_agent_events(channel_type: &str) -> bool {
     matches!(
         channel_type,
         "" | CHANNEL_TYPE_FEISHU | CHANNEL_TYPE_WECOM | CHANNEL_TYPE_DINGTALK
@@ -171,11 +171,11 @@ mod tests {
     }
 
     #[test]
-    fn test_surface_persists_transcript() {
-        assert!(surface_persists_transcript(""));
-        assert!(surface_persists_transcript(CHANNEL_TYPE_FEISHU));
-        assert!(surface_persists_transcript(CHANNEL_TYPE_WECOM));
-        assert!(surface_persists_transcript(CHANNEL_TYPE_DINGTALK));
-        assert!(!surface_persists_transcript(CHANNEL_TYPE_SLACK));
+    fn test_surface_persists_agent_events() {
+        assert!(surface_persists_agent_events(""));
+        assert!(surface_persists_agent_events(CHANNEL_TYPE_FEISHU));
+        assert!(surface_persists_agent_events(CHANNEL_TYPE_WECOM));
+        assert!(surface_persists_agent_events(CHANNEL_TYPE_DINGTALK));
+        assert!(!surface_persists_agent_events(CHANNEL_TYPE_SLACK));
     }
 }

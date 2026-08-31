@@ -95,7 +95,7 @@ function escapeJsonStringControlCharacters(value: string): string {
 /**
  * Removes the structured block from a reply before a human reads it. The block
  * is machinery — it drives the configuration form — and the form is where its
- * effect is already visible, so the transcript keeps only the prose.
+ * effect is already visible, so the Agent event history keeps only the prose.
  *
  * Two patterns, not one. The closed form is what history holds. The unclosed
  * one is what streaming produces: the reply arrives token by token, so for the

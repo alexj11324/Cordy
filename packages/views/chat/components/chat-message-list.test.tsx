@@ -41,14 +41,6 @@ vi.mock("react-virtuoso", () => ({
   },
 }));
 
-// Canvas animation behavior belongs to thinking-orbs itself. Keep these DOM
-// tests focused on Patchbay's disclosure state and accessible label.
-vi.mock("thinking-orbs", () => ({
-  ThinkingOrb: ({ "aria-label": label }: { "aria-label"?: string }) => (
-    <span data-testid="thinking-orb" aria-label={label} />
-  ),
-}));
-
 import { ChatMessageList } from "./chat-message-list";
 
 const TEST_RESOURCES = { en: { chat: enChat } };
@@ -62,13 +54,16 @@ function taskMsg(
   return { task_id: TASK_ID, seq, type, ...extra } as TaskMessagePayload;
 }
 
-// A streaming timeline with reasoning around hidden tool diagnostics.
+// A streaming timeline with private provider reasoning and public tool events.
 const INITIAL_MESSAGES: TaskMessagePayload[] = [
   taskMsg(0, "text", { content: "Looking into it. " }),
   taskMsg(1, "thinking", { content: "Inspecting the repository." }),
   taskMsg(2, "tool_use", {
     tool: "Bash",
-    input: { command: "cargo test --workspace" },
+    input: {
+      command: "cargo test --workspace",
+      private_payload: "raw tool payload must not render",
+    },
   }),
   taskMsg(3, "tool_result", { tool: "Bash", output: "ok" }),
 ];
@@ -101,147 +96,37 @@ function pushTaskMessage(qc: QueryClient, msg: TaskMessagePayload) {
 
 describe("ChatMessageList live timeline (PB-3960 regression)", () => {
   // The live turn is a keyed Virtuoso row. Streaming must update that row in
-  // place instead of remounting its Markdown and reasoning subtrees.
-  it("does not remount the live timeline when a streamed message arrives", async () => {
+  // place instead of remounting its Markdown and public event subtrees.
+  it("keeps public event rows mounted when private reasoning arrives", async () => {
     const qc = new QueryClient();
     renderList(qc);
 
-    const trigger = await screen.findByText("Thinking…");
-    const triggerBefore = trigger.closest("button");
+    const toolRow = await screen.findByTestId("agent-thread-event-tool_use");
 
     pushTaskMessage(
       qc,
-      taskMsg(4, "thinking", { content: "Still checking." }),
+      taskMsg(4, "thinking", { content: "private reasoning must not render" }),
     );
 
-    // The reasoning disclosure re-renders in place: same DOM node, new prose.
-    await screen.findByText(/Still checking\./);
-    expect(screen.getByText("Thinking…").closest("button")).toBe(triggerBefore);
-    expect(document.contains(trigger)).toBe(true);
+    expect(screen.queryByText("private reasoning must not render")).not.toBeInTheDocument();
+    expect(screen.getByTestId("agent-thread-event-tool_use")).toBe(toolRow);
+    expect(document.querySelector('[data-agent-thread-event="thinking"]')).toBeNull();
   });
 
-  it("keeps reasoning closed by the user across streamed messages", async () => {
+  it("renders structured tool events without reasoning or expanded payloads", async () => {
     const qc = new QueryClient();
     renderList(qc);
 
-    // Streaming defaults reasoning open; the user can close it.
-    const trigger = await screen.findByText("Thinking…");
-    expect(screen.getByText("Inspecting the repository.")).toBeInTheDocument();
-    act(() => {
-      trigger.click();
-    });
-    expect(
-      screen.queryByText("Inspecting the repository."),
-    ).not.toBeInTheDocument();
-
-    pushTaskMessage(
-      qc,
-      taskMsg(4, "thinking", { content: "Still checking." }),
+    expect(await screen.findByTestId("agent-thread-event-tool_use")).toBeInTheDocument();
+    expect(await screen.findByTestId("agent-thread-event-tool_result")).toBeInTheDocument();
+    expect(screen.getByText("Bash")).toBeInTheDocument();
+    expect(screen.getByText(/cargo test --workspace/)).toBeInTheDocument();
+    expect(screen.getByTestId("agent-thread-event-tool_result")).toHaveTextContent(
+      "Bash result: ok",
     );
-
-    expect(await screen.findByText("Thinking…")).toBeInTheDocument();
-    expect(screen.queryByText(/Still checking\./)).not.toBeInTheDocument();
-  });
-
-  it("shows reasoning inline and omits tool call details", async () => {
-    const qc = new QueryClient();
-    renderList(qc);
-
-    expect(
-      await screen.findByText("Inspecting the repository."),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("Bash")).not.toBeInTheDocument();
-    expect(screen.queryByText(/go test/)).not.toBeInTheDocument();
-    expect(screen.queryByText("ok")).not.toBeInTheDocument();
-  });
-
-  it("renders growing reasoning as plain text until the turn settles", async () => {
-    const qc = new QueryClient();
-    qc.setQueryData(chatKeys.taskMessages(TASK_ID), [
-      taskMsg(0, "thinking", { content: "**Inspecting** the repository." }),
-    ]);
-
-    const view = render(
-      <I18nProvider locale="en" resources={TEST_RESOURCES}>
-        <QueryClientProvider client={qc}>
-          <ChatMessageList
-            messages={[]}
-            pendingTask={{ task_id: TASK_ID, status: "running" }}
-            availability="online"
-          />
-        </QueryClientProvider>
-      </I18nProvider>,
-    );
-
-    expect(
-      await screen.findByText("**Inspecting** the repository."),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("Inspecting")).not.toBeInTheDocument();
-
-    view.rerender(
-      <I18nProvider locale="en" resources={TEST_RESOURCES}>
-        <QueryClientProvider client={qc}>
-          <ChatMessageList
-            messages={[
-              {
-                id: "assistant-markdown",
-                chat_session_id: "session-1",
-                role: "assistant",
-                content: "Finished.",
-                task_id: TASK_ID,
-                created_at: "2026-08-28T12:00:00Z",
-              },
-            ]}
-            pendingTask={null}
-            availability="online"
-          />
-        </QueryClientProvider>
-      </I18nProvider>,
-    );
-
-    fireEvent.click(await screen.findByText("Thought process"));
-    expect(await screen.findByText("Inspecting")).toHaveProperty(
-      "tagName",
-      "STRONG",
-    );
-  });
-
-  it("collapses reasoning when the live turn becomes a persisted reply", async () => {
-    const qc = new QueryClient();
-    const view = renderList(qc);
-
-    expect(
-      await screen.findByText("Inspecting the repository."),
-    ).toBeInTheDocument();
-
-    view.rerender(
-      <I18nProvider locale="en" resources={TEST_RESOURCES}>
-        <QueryClientProvider client={qc}>
-          <ChatMessageList
-            messages={[
-              {
-                id: "assistant-settled",
-                chat_session_id: "session-1",
-                role: "assistant",
-                content: "Finished.",
-                task_id: TASK_ID,
-                created_at: "2026-08-28T12:00:00Z",
-              },
-            ]}
-            pendingTask={null}
-            availability="online"
-          />
-        </QueryClientProvider>
-      </I18nProvider>,
-    );
-
-    const trigger = await screen.findByText("Thought process");
-    expect(
-      screen.queryByText("Inspecting the repository."),
-    ).not.toBeInTheDocument();
-
-    fireEvent.click(trigger);
-    expect(screen.getByText("Inspecting the repository.")).toBeInTheDocument();
+    expect(screen.queryByText("raw tool payload must not render")).not.toBeInTheDocument();
+    expect(screen.queryByText("Inspecting the repository.")).not.toBeInTheDocument();
+    expect(document.querySelector('[data-agent-thread-event="thinking"]')).toBeNull();
   });
 
   it("applies an embedded surface content transform to streamed text", async () => {
@@ -331,7 +216,10 @@ describe("ChatMessageList live timeline (PB-3960 regression)", () => {
     expect(
       await screen.findByText("Persisted fallback reply."),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Bash")).not.toBeInTheDocument();
+    expect(screen.getByTestId("agent-thread-event-tool_use")).toBeInTheDocument();
+    expect(screen.getByTestId("agent-thread-event-tool_result")).toBeInTheDocument();
+    expect(screen.getByText(/pwd/)).toBeInTheDocument();
+    expect(screen.getByText(/\/workspace/)).toBeInTheDocument();
   });
 });
 

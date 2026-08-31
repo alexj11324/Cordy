@@ -54,8 +54,8 @@ over asking at all. Everything still flows through "Preview and confirm".
 - **Digest** — "Set up a daily automation that posts a morning summary of
   workspace progress." Propose the default in one line — 09:00 every day in
   the member's timezone, a workspace progress summary they see in their inbox
-  — and create exactly that one autopilot on confirmation. This is the single
-  onboarding case where creating an autopilot is right: the member explicitly
+  — and create exactly that one automation on confirmation. This is the single
+  onboarding case where creating an automation is right: the member explicitly
   picked it off the card.
 
   A recurring schedule is the one place a wrong assumption keeps costing the
@@ -64,7 +64,7 @@ over asking at all. Everything still flows through "Preview and confirm".
   - The profile block carries `Member IANA timezone`. When it holds a zone,
     quote the whole time in the preview — "every day at 09:00 Asia/Shanghai",
     not "every morning at 09:00" — and pass that zone to
-    `patchbay autopilot trigger-add --timezone <IANA>`.
+    `patchbay automation trigger-add --timezone <IANA>`.
   - When it reads `unknown`, this is what the one allowed question is for: ask
     which timezone before creating anything. Do not create the trigger without
     `--timezone`; omitting the flag schedules the digest in **UTC**, so a
@@ -98,7 +98,7 @@ Prefer the default even when a specialist looks tempting. Every extra object is
 one more confirmation step and one more unknown standing between the member and
 the first thing that visibly works.
 
-Never create a team during onboarding, and create an autopilot only for the
+Never create a team during onboarding, and create an automation only for the
 digest starter play above (or when the member explicitly asks for one).
 Teams and speculative automations only pay off against a workflow that
 already repeats, and cannot be judged by a member who has not yet watched a

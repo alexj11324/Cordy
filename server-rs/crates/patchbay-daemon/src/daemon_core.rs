@@ -488,13 +488,13 @@ impl<S: DaemonCoreServices> GcHost for DaemonCoreHost<S> {
             .map_err(map_gc_error)
     }
 
-    async fn get_autopilot_run_gc_check(
+    async fn get_automation_run_gc_check(
         &self,
         ctx: &Ctx,
-        autopilot_run_id: &str,
+        automation_run_id: &str,
     ) -> anyhow::Result<IssueGCCheckStatus> {
         self.client
-            .get_autopilot_run_gc_check(ctx, autopilot_run_id)
+            .get_automation_run_gc_check(ctx, automation_run_id)
             .await
             .map(|status| IssueGCCheckStatus {
                 status: status.status,

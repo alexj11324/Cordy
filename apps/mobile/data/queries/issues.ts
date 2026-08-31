@@ -54,7 +54,7 @@ export const issueTimelineOptions = (wsId: string | null, id: string) =>
   });
 
 /**
- * Currently-running tasks for an issue. WS events (task:queued/dispatch/
+ * Active and deferred tasks for an issue. WS events (task:queued/dispatch/
  * progress/completed/failed/cancelled) patch this cache directly via
  * `issue-ws-updaters.ts`, so refetches are rare in practice. The fetch is
  * still wired so the initial open + reconnect-invalidate path works.

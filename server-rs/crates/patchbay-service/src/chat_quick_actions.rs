@@ -384,7 +384,7 @@ pub fn sanitize_chat_quick_actions(
 /// outermost bracket span. The bracket scan runs last because leading prose
 /// may itself contain brackets ("here's [my] take: [...]"), which would
 /// misalign the slice if it were tried first. Anything unparseable degrades
-/// to no suggestions; this output never reaches the transcript.
+/// to no suggestions; this output never reaches the Agent event history.
 pub fn parse_chat_quick_actions_output(
     raw: &str,
 ) -> Vec<patchbay_protocol::messages::ChatQuickAction> {

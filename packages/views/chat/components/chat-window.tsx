@@ -245,7 +245,7 @@ export function ChatWindow() {
   // A session outlives the permission that created it: the agent can be flipped
   // to personal, change owner, or drop this member from its allow-list, and the
   // server then refuses every send with `invocation_not_allowed` while still
-  // serving the transcript (PB-4525). Judge the SESSION's agent, not just the
+  // serving the Agent event history (PB-4525). Judge the SESSION's agent, not just the
   // picker list, so the composer goes read-only up front rather than after the
   // user types (PB-6380). Mirrors use-chat-controller.ts.
   const isAgentAccessRevoked =

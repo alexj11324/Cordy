@@ -17,7 +17,7 @@ use tokio::sync::Mutex;
 use url::Url;
 use uuid::Uuid;
 
-use crate::autopilot::{EntitlementAction, EntitlementGateDecision, EntitlementProvider};
+use crate::automation::{EntitlementAction, EntitlementGateDecision, EntitlementProvider};
 
 const MAX_RESPONSE_BODY: usize = 64 * 1024;
 const MAX_POLICY_TTL_SECONDS: i64 = 5 * 60;
@@ -386,7 +386,7 @@ impl HttpEntitlementProvider {
     ) -> EntitlementGateDecision {
         if let Some(metrics) = self.metrics.as_deref() {
             metrics.record_entitlement_decision(
-                "autopilot_runs",
+                "automation_runs",
                 decision.gate_action.as_str(),
                 reason,
             );
@@ -452,7 +452,7 @@ impl HttpEntitlementProvider {
 
 #[async_trait]
 impl EntitlementProvider for HttpEntitlementProvider {
-    async fn gate_autopilot_runs(&self, workspace_id: Uuid) -> EntitlementGateDecision {
+    async fn gate_automation_runs(&self, workspace_id: Uuid) -> EntitlementGateDecision {
         if self.emergency_disabled.load(Ordering::Acquire) {
             return self.record_decision(Self::off(), "emergency_disabled");
         }
@@ -553,7 +553,7 @@ fn normalize_policy(wire: WirePolicy) -> Result<FetchedPolicy, ()> {
     }
     let issue_window = wire.gates.get("issue_window").ok_or(())?;
     normalize_gate(issue_window, false)?;
-    let gate = wire.gates.get("autopilot_runs").ok_or(())?;
+    let gate = wire.gates.get("automation_runs").ok_or(())?;
     let (action, limit, period_start, period_end, reset_at) = normalize_gate(gate, true)?;
     Ok(FetchedPolicy {
         decision: EntitlementGateDecision {
@@ -649,7 +649,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_inert_or_partial_autopilot_gate() {
+    fn rejects_inert_or_partial_automation_gate() {
         let base = json!({
             "schema_version": 1,
             "policy_revision": 1,
@@ -658,7 +658,7 @@ mod tests {
             "valid_for_seconds": 60,
             "gates": {
                 "issue_window": {"action":"off"},
-                "autopilot_runs": {"action":"enforce","limit":1,"period_start":"2029-01-01T00:00:00Z"}
+                "automation_runs": {"action":"enforce","limit":1,"period_start":"2029-01-01T00:00:00Z"}
             }
         });
         assert!(normalize_policy(serde_json::from_value(base).unwrap()).is_err());

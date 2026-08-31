@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use futures_util::FutureExt;
 use patchbay_events::{Bus, Event};
-use patchbay_service::autopilot::AutopilotService;
+use patchbay_service::automation::AutomationService;
 use serde_json::Value;
 use sqlx::PgPool;
 use tokio::sync::mpsc;
@@ -46,12 +46,12 @@ pub struct OrderedEventSideEffects {
 }
 
 impl OrderedEventSideEffects {
-    pub fn new(pool: PgPool, bus: Arc<Bus>, autopilots: Arc<AutopilotService>) -> Arc<Self> {
+    pub fn new(pool: PgPool, bus: Arc<Bus>, automations: Arc<AutomationService>) -> Arc<Self> {
         let processor_bus = bus.clone();
         let processor: EventProcessor = Arc::new(move |event| {
             let pool = pool.clone();
             let bus = processor_bus.clone();
-            let autopilots = autopilots.clone();
+            let automations = automations.clone();
             Box::pin(async move {
                 let coordinator_publication = Self::is_coordination_publication(&event);
                 if let Err(error) =
@@ -72,9 +72,9 @@ impl OrderedEventSideEffects {
                     }
                 }
                 if let Err(error) =
-                    crate::autopilot_listeners::handle_event(&autopilots, &event).await
+                    crate::automation_listeners::handle_event(&automations, &event).await
                 {
-                    tracing::error!(%error, "ordered Autopilot side effects failed");
+                    tracing::error!(%error, "ordered Automation side effects failed");
                     if coordinator_publication {
                         return;
                     }

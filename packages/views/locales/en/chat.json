@@ -61,8 +61,6 @@
     "failed_after": "Failed after {{elapsed}}",
     "finished_in": "Finished in {{elapsed}}",
     "no_response": "The agent finished this turn without a text reply.",
-    "reasoning_active": "Thinking…",
-    "reasoning_complete": "Thought process",
     "failure": {
       "agent_error": "The agent ran into an error and couldn't finish replying. Please try again.",
       "timeout": "The agent took too long and stopped before finishing. Try again, or break your request into smaller steps.",
@@ -83,6 +81,7 @@
     },
     "tools_one": "{{count}} tool",
     "tools_other": "{{count}} tools",
+    "tool_fallback": "Tool",
     "tool_result_named": "{{tool}} result: ",
     "tool_result_unnamed": "result: ",
     "process_steps_one": "{{count}} step",

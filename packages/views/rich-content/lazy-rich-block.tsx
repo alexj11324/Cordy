@@ -25,7 +25,7 @@
  *    scrolled far away. Unmounting would re-run Mermaid and rebuild the iframe
  *    on every pass, and would discard the viewer's pan/zoom state — trading a
  *    one-time cost for a repeated one. Memory is bounded by "blocks the user
- *    actually scrolled past", not by the whole transcript.
+ *    actually scrolled past", not by the whole Agent event history.
  */
 
 import {
@@ -54,7 +54,7 @@ const useIsomorphicLayoutEffect =
  * How far outside the viewport a block starts mounting. Sized to cover
  * Virtuoso's own overscan (`increaseViewportBy` is 400px top / 600px bottom in
  * the chat list) so a block is ready by the time it is scrolled into view,
- * without eagerly building the whole transcript.
+ * without eagerly building the whole Agent event history.
  */
 const NEAR_VIEWPORT_ROOT_MARGIN = "800px 0px";
 
