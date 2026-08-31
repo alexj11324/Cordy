@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use serde_json::json;
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use patchbay_analytics as analytics;
@@ -63,6 +63,25 @@ impl IssueService {
         issue_id: Uuid,
         command: IssueCommand,
     ) -> Result<Issue, ExternalIssueError> {
+        let mut tx = self.pool.begin().await?;
+        let applied = self
+            .apply_external_patch_in_transaction(&mut *tx, workspace_id, issue_id, command)
+            .await?;
+        tx.commit().await?;
+        self.publish_external_issue_apply(&applied).await;
+        Ok(applied.updated.unwrap_or(applied.previous))
+    }
+
+    /// Applies the external Issue command without committing. Callers that
+    /// also need to update provider-sync state can use the same transaction,
+    /// then call [`Self::publish_external_issue_apply`] after commit.
+    pub async fn apply_external_patch_in_transaction(
+        &self,
+        executor: &mut PgConnection,
+        workspace_id: Uuid,
+        issue_id: Uuid,
+        command: IssueCommand,
+    ) -> Result<ExternalIssueApply, ExternalIssueError> {
         let IssueCommand::ApplyExternalPatch {
             source,
             source_event_id,
@@ -77,13 +96,12 @@ impl IssueService {
             return Err(ExternalIssueError::ExternalOutboxNotSuppressed);
         }
 
-        let mut tx = self.pool.begin().await?;
         let Some(previous) = sqlx::query_as::<_, Issue>(
             "SELECT * FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
         )
         .bind(issue_id)
         .bind(workspace_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut *executor)
         .await?
         else {
             return Err(ExternalIssueError::NotFound);
@@ -110,7 +128,7 @@ impl IssueService {
             next.description = description;
         }
         if let Some(status) = patch.status {
-            next.status = issue_status::resolve(&mut *tx, workspace_id, &status)
+            next.status = issue_status::resolve(&mut *executor, workspace_id, &status)
                 .await
                 .map_err(|_| ExternalIssueError::InvalidStatus)?
                 .key;
@@ -129,7 +147,7 @@ impl IssueService {
         }
         if let Some(project_id) = patch.project_id {
             if let Some(project_id) = project_id {
-                if get_project_in_workspace(&mut *tx, project_id, workspace_id)
+                if get_project_in_workspace(&mut *executor, project_id, workspace_id)
                     .await?
                     .is_none()
                 {
@@ -147,7 +165,7 @@ impl IssueService {
         match (next.owner_type.as_deref(), next.owner_id) {
             (None, None) => {}
             (Some("member"), Some(owner_id)) => {
-                if member_q::get_member_by_user_and_workspace(&mut *tx, owner_id, workspace_id)
+                if member_q::get_member_by_user_and_workspace(&mut *executor, owner_id, workspace_id)
                     .await
                     .map_err(|error| {
                         ExternalIssueError::Internal(format!("validate external owner: {error}"))
@@ -159,7 +177,7 @@ impl IssueService {
             }
             _ => return Err(ExternalIssueError::InvalidOwner),
         }
-        let next_category = issue_status::effective(&mut *tx, workspace_id, &next.status).await;
+        let next_category = issue_status::effective(&mut *executor, workspace_id, &next.status).await;
         validate_external_workflow(
             &next_category,
             next.executor_type.as_deref(),
@@ -176,8 +194,12 @@ impl IssueService {
             && next.owner_type == previous.owner_type
             && next.owner_id == previous.owner_id
         {
-            tx.commit().await?;
-            return Ok(previous);
+            return Ok(ExternalIssueApply {
+                source,
+                source_event_id,
+                previous,
+                updated: None,
+            });
         }
 
         let updated = sqlx::query_as::<_, Issue>(
@@ -206,10 +228,10 @@ impl IssueService {
         .bind(next.project_id)
         .bind(&next.owner_type)
         .bind(next.owner_id)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut *executor)
         .await?;
         activity::create_activity(
-            &mut *tx,
+            &mut *executor,
             workspace_id,
             issue_id,
             Some("system"),
@@ -232,8 +254,25 @@ impl IssueService {
         )
         .await
         .map_err(|error| ExternalIssueError::Internal(format!("create activity: {error}")))?;
-        tx.commit().await?;
+        Ok(ExternalIssueApply {
+            source,
+            source_event_id,
+            previous,
+            updated: Some(updated),
+        })
+    }
 
+    /// Publishes the non-transactional effects of a committed external Issue
+    /// write. The database mutation remains durable even when these effects
+    /// are unavailable, and the normal domain run-admission logic is retained.
+    pub async fn publish_external_issue_apply(&self, applied: &ExternalIssueApply) {
+        let Some(updated) = applied.updated.as_ref() else {
+            return;
+        };
+        let previous = &applied.previous;
+        let workspace_id = updated.workspace_id;
+        let source = applied.source;
+        let source_event_id = &applied.source_event_id;
         let prefix = get_workspace(&self.pool, workspace_id)
             .await
             .ok()
@@ -314,7 +353,6 @@ impl IssueService {
                 );
             }
         }
-        Ok(updated)
     }
 }
 
@@ -469,6 +507,17 @@ pub struct ExternalIssuePatch {
     /// validated as one member-scoped pair before the update commits.
     pub owner_type: Option<Option<String>>,
     pub owner_id: Option<Option<Uuid>>,
+}
+
+/// Result of applying an external Issue command inside a caller-owned
+/// transaction. `updated` is `None` when the patch was a no-op; the previous
+/// snapshot is retained for post-commit event and side-effect decisions.
+#[derive(Debug)]
+pub struct ExternalIssueApply {
+    pub source: ExternalSource,
+    pub source_event_id: String,
+    pub previous: Issue,
+    pub updated: Option<Issue>,
 }
 
 #[derive(Debug, Clone)]
