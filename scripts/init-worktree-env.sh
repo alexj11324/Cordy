@@ -30,6 +30,7 @@ POSTGRES_PASSWORD=patchbay
 POSTGRES_PORT=${postgres_port}
 DATABASE_URL=postgres://patchbay:patchbay@localhost:${postgres_port}/${postgres_db}?sslmode=disable
 
+APP_ENV=development
 PORT=${backend_port}
 JWT_SECRET=change-me-in-production
 PATCHBAY_DEV_VERIFICATION_CODE=888888

@@ -153,6 +153,7 @@ require_env "$local_env" 'PLAYWRIGHT_BASE_URL=http://localhost:3100'
 worktree_env="$tmp_dir/.env.worktree"
 WORKTREE_NAME=selfhost-config-test bash scripts/init-worktree-env.sh "$worktree_env" >/dev/null
 worktree_backend_port="$(sed -n 's/^PORT=//p' "$worktree_env")"
+require_env "$(cat "$worktree_env")" 'APP_ENV=development'
 require_env "$(cat "$worktree_env")" "PATCHBAY_PUBLIC_URL=http://localhost:${worktree_backend_port}"
 
 resolve_local_public_url() {
