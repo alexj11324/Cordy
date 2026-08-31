@@ -461,7 +461,7 @@ jobs:
 
       - name: Compute backend image labels
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository_owner }}/patchbay-backend
           labels: |
@@ -540,7 +540,7 @@ jobs:
 
       - name: Compute backend image tags
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository_owner }}/patchbay-backend
           flavor: |
@@ -613,7 +613,7 @@ jobs:
 
       - name: Compute web image labels
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository_owner }}/patchbay-web
           labels: |
@@ -694,7 +694,7 @@ jobs:
 
       - name: Compute web image tags
         id: meta
-        uses: docker/metadata-action@v5
+        uses: docker/metadata-action@v6
         with:
           images: ghcr.io/${{ github.repository_owner }}/patchbay-web
           flavor: |
