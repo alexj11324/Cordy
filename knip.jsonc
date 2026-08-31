@@ -27,11 +27,16 @@
       // Referenced only by the `@type {import('postcss-load-config').Config}`
       // JSDoc annotation in postcss.config.mjs. Declaring it would add a
       // runtime dependency to satisfy a type comment.
-      "ignoreDependencies": ["postcss-load-config"]
+      "ignoreDependencies": [
+        "@types/react-dom",
+        "postcss-load-config",
+        "react-dom"
+      ]
     },
 
     "apps/auth-broker": {
-      "entry": ["eslint.config.mjs"]
+      "entry": ["eslint.config.mjs"],
+      "ignoreDependencies": ["@types/react-dom", "react-dom"]
     },
 
     "apps/desktop": {
@@ -44,10 +49,12 @@
       ],
       // Consumed by `extends` in tsconfig.node.json / tsconfig.web.json.
       // knip follows `extends` from the default tsconfig.json only.
-      "ignoreDependencies": ["@patchbay/tsconfig"]
+      "ignoreDependencies": ["@patchbay/tsconfig", "electron-builder", "vite"]
     },
 
-    "apps/docs": {},
+    "apps/docs": {
+      "ignoreDependencies": ["@types/react-dom", "react-dom"]
+    },
 
     // The three shared packages export raw .ts/.tsx compiled by their
     // consumers (CLAUDE.md "Project Shape"), so `entry` names only the config
@@ -69,15 +76,18 @@
     // manifest, so the two stay in step without overlapping.
     "packages/ui": {
       "entry": ["eslint.config.mjs"],
-      "project": ["**/*.{ts,tsx}"]
+      "project": ["**/*.{ts,tsx}"],
+      "ignoreDependencies": ["antd"]
     },
     "packages/views": {
       "entry": ["eslint.config.mjs"],
-      "project": ["**/*.{ts,tsx}"]
+      "project": ["**/*.{ts,tsx}"],
+      "ignoreDependencies": ["@lobehub/fluent-emoji", "@lobehub/icons", "antd"]
     },
     "packages/core": {
       "entry": ["eslint.config.mjs"],
-      "project": ["**/*.{ts,tsx}"]
+      "project": ["**/*.{ts,tsx}"],
+      "ignoreDependencies": ["react-dom"]
     },
 
     "packages/plugin-sdk": {
