@@ -1,5 +1,5 @@
 -- Explicit human-owner mapping for the Linear publish boundary. Provider
--- user IDs are opaque strings and are never inferred from Cordy UUIDs.
+-- user IDs are opaque strings and are never inferred from Patchbay UUIDs.
 CREATE TABLE linear_member_binding (
     id UUID NOT NULL,
     workspace_id UUID NOT NULL,
