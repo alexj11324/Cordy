@@ -1,11 +1,15 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useCanonicalIssue } from "@patchbay/core/issues/canonical-id";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useWorkspacePaths } from "@patchbay/core/paths";
 import { useNavigation } from "../../navigation";
-import { IssueDetail, IssueDetailSkeleton, IssueNotFound } from "./issue-detail";
+import {
+  IssueDetail,
+  IssueDetailSkeleton,
+  IssueNotFound,
+} from "./issue-detail";
 
 interface IssueDetailRouteProps {
   /**
@@ -15,6 +19,8 @@ interface IssueDetailRouteProps {
    */
   routeId: string;
   onDelete?: () => void;
+  /** Host-owned leading chrome, such as a dedicated window drag target. */
+  leadingAction?: ReactNode;
 }
 
 /**
@@ -24,7 +30,10 @@ interface IssueDetailRouteProps {
  * A replace, not a push: the UUID URL is the same page, and a history entry
  * for it would make Back bounce the user between two spellings of one issue.
  */
-export function useCanonicalIssueUrl(routeId: string, identifier: string | undefined) {
+export function useCanonicalIssueUrl(
+  routeId: string,
+  identifier: string | undefined,
+) {
   const paths = useWorkspacePaths();
   const navigation = useNavigation();
   const canonicalHref = identifier ? paths.issueDetail(identifier) : null;
@@ -52,19 +61,34 @@ export function useCanonicalIssueUrl(routeId: string, identifier: string | undef
  *    the route and only the route — the inbox renders `IssueDetail` in a side
  *    panel, where replacing the URL would navigate the user out of the inbox.
  */
-export function IssueDetailRoute({ routeId, onDelete }: IssueDetailRouteProps) {
+export function IssueDetailRoute({
+  routeId,
+  onDelete,
+  leadingAction,
+}: IssueDetailRouteProps) {
   const wsId = useWorkspaceId();
-  const { canonicalId, issue, isResolving, notFound } = useCanonicalIssue(wsId, routeId);
+  const { canonicalId, issue, isResolving, notFound } = useCanonicalIssue(
+    wsId,
+    routeId,
+  );
 
   useCanonicalIssueUrl(routeId, issue?.identifier);
 
-  if (isResolving) return <IssueDetailSkeleton />;
+  if (isResolving) return <IssueDetailSkeleton leading={leadingAction} />;
 
   // Render not-found here rather than handing the unresolved segment down.
   // `IssueDetail` would mount a second observer on the query that just failed,
   // refetch it, and restart this component's resolve/remount cycle — an
   // unbounded request loop that never settles. See `CanonicalIssue.notFound`.
-  if (notFound || !canonicalId) return <IssueNotFound showBackLink={!onDelete} />;
+  if (notFound || !canonicalId) {
+    return <IssueNotFound showBackLink={!onDelete} leading={leadingAction} />;
+  }
 
-  return <IssueDetail issueId={canonicalId} onDelete={onDelete} />;
+  return (
+    <IssueDetail
+      issueId={canonicalId}
+      onDelete={onDelete}
+      leadingAction={leadingAction}
+    />
+  );
 }

@@ -81,7 +81,7 @@ function IssueWindowRoute() {
     <WorkspaceSlugProvider slug={workspaceSlug}>
       <IssueWindowNavigationProvider>
         <WorkspacePresencePrefetch />
-        <IssueWindowFrame>
+        <IssueWindowFrame integratedTitlebar>
           <IssueDetailPage onDelete={() => window.desktopAPI.closeWindow()} />
         </IssueWindowFrame>
         <ModalRegistry />
@@ -90,13 +90,19 @@ function IssueWindowRoute() {
   );
 }
 
-function IssueWindowFrame({ children }: { children: React.ReactNode }) {
+function IssueWindowFrame({
+  children,
+  integratedTitlebar = false,
+}: {
+  children: React.ReactNode;
+  integratedTitlebar?: boolean;
+}) {
   return (
     <div
       data-dedicated-issue-window="true"
       className="flex h-screen min-h-0 flex-col bg-page-canvas text-foreground"
     >
-      <DragStrip />
+      {integratedTitlebar ? null : <DragStrip />}
       <div className="flex min-h-0 flex-1 overflow-hidden">{children}</div>
     </div>
   );
@@ -115,7 +121,10 @@ function IssueWindowUnavailable() {
             This workspace is no longer available in your account.
           </p>
         </div>
-        <Button variant="outline" onClick={() => window.desktopAPI.closeWindow()}>
+        <Button
+          variant="outline"
+          onClick={() => window.desktopAPI.closeWindow()}
+        >
           Close window
         </Button>
       </div>
@@ -125,7 +134,8 @@ function IssueWindowUnavailable() {
 
 function IssueWindowRouteError() {
   const error = useRouteError();
-  const message = error instanceof Error ? error.message : "Unknown route error";
+  const message =
+    error instanceof Error ? error.message : "Unknown route error";
 
   return (
     <IssueWindowFrame>
@@ -147,7 +157,10 @@ function IssueWindowRouteError() {
             <RotateCw className="size-4" aria-hidden="true" />
             Reload
           </Button>
-          <Button variant="outline" onClick={() => window.desktopAPI.closeWindow()}>
+          <Button
+            variant="outline"
+            onClick={() => window.desktopAPI.closeWindow()}
+          >
             <X className="size-4" aria-hidden="true" />
             Close window
           </Button>

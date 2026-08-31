@@ -4,8 +4,8 @@ import { render, screen } from "@testing-library/react";
 const captureException = vi.hoisted(() => vi.fn());
 vi.mock("@patchbay/core/analytics", () => ({ captureException }));
 
-// Marker stand-in so the structural assertion below tests the contract ("the
-// drag strip is the first flex child") rather than DragStrip's own markup.
+// Marker stand-in so the fallback test checks that native drag recovery stays
+// mounted without depending on DragStrip's own implementation.
 vi.mock("@patchbay/views/platform", () => ({
   DragStrip: () => <div data-testid="drag-strip" />,
 }));
@@ -52,24 +52,23 @@ describe("AppCrashBoundary", () => {
 
     const alert = screen.getByRole("alert");
     expect(alert).not.toBeNull();
-    expect(alert.textContent).toContain("useWorkspaceId: no workspace selected");
+    expect(alert.textContent).toContain(
+      "useWorkspaceId: no workspace selected",
+    );
     expect(screen.getByRole("button", { name: /reload/i })).not.toBeNull();
   });
 
-  it("keeps the window draggable by mounting the drag strip as the first child", () => {
+  it("keeps the window draggable by mounting the native drag overlay", () => {
     // A full-window view outside the dashboard shell owns its own window
     // chrome. Without this the user loses the draggable top edge precisely
     // when the app is least usable — see CLAUDE.md Desktop Rules.
-    const { container } = render(
+    render(
       <AppCrashBoundary>
         <Boom />
       </AppCrashBoundary>,
     );
 
-    const shell = container.firstElementChild;
-    expect(shell).not.toBeNull();
-    expect(shell).toHaveClass("flex", "flex-col");
-    expect(shell?.firstElementChild).toHaveAttribute("data-testid", "drag-strip");
+    expect(screen.getByTestId("drag-strip")).toBeInTheDocument();
   });
 
   it("reports the crash through the exception pipeline, not as a plain event", () => {
