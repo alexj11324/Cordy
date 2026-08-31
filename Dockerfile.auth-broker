@@ -1,5 +1,6 @@
-# The auth broker has its own image and release lifecycle. Clerk and origin
-# configuration are intentionally injected at runtime, never as build args.
+# The auth broker keeps its own image and runtime authority boundary. Clerk and
+# origin configuration are intentionally injected at runtime, never as build
+# args.
 FROM node:22-alpine AS deps
 
 WORKDIR /app
@@ -29,6 +30,8 @@ COPY contracts/ contracts/
 COPY packages/eslint-config/ packages/eslint-config/
 
 RUN pnpm install --filter @patchbay/auth-broker... --frozen-lockfile --offline
+ARG NEXT_PUBLIC_APP_VERSION=dev
+ENV NEXT_PUBLIC_APP_VERSION=$NEXT_PUBLIC_APP_VERSION
 ENV STANDALONE=true
 RUN pnpm --filter @patchbay/auth-broker build
 

@@ -93,8 +93,10 @@ prevents a secret-removal outage.
 
 ## Stage without public traffic
 
-1. Run **Auth Broker Release (manual)** for the reviewed commit and build a
-   versioned image tag. Publishing the image does not deploy it.
+1. Merge the reviewed commit and wait for **Aspectlylabs production** to build
+   the complete commit-addressed image set. Record the Auth Broker digest from
+   that deployment manifest. The workflow deploys the broker on the staged
+   same-host port, but it does not change Cloudflare traffic.
 2. Resolve the published digest. For the OCI origin, render and validate
    `deploy/origin/auth-broker.compose.yml`; for Kubernetes, render the
    independent chart with `enabled=true` and that digest.

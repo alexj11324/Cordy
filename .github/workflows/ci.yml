@@ -68,10 +68,16 @@ jobs:
       - name: Test CI workflow contracts
         run: >-
           node --test
+          scripts/assemble-production-manifest.test.mjs
           scripts/ci-workflow-contract.test.mjs
           scripts/cleanup-actions-caches.test.mjs
           scripts/github-actions-pinning-contract.test.mjs
           scripts/dev-clerk-auth.test.mjs
+          scripts/production-deployment-contract.test.mjs
+          scripts/verify-production-deployment.test.mjs
+
+      - name: Test restricted production deployment gateway
+        run: python3 -m unittest deploy/origin/production_deploy_test.py
 
       - name: Test accounts origin proxy contract
         run: node --test deploy/cloudflare/accounts-origin-proxy/src/index.test.mjs
@@ -103,12 +109,12 @@ jobs:
               - 'turbo.json'
               - 'knip.jsonc'
               - 'Dockerfile.web'
+              - 'Dockerfile.docs'
               - 'Dockerfile.auth-broker'
               - 'contracts/auth-broker/**'
               - '.dockerignore'
               - '.github/workflows/ci.yml'
-              - '.github/workflows/container-images.yml'
-              - '.github/workflows/auth-broker-release.yml'
+              - '.github/workflows/aspectlylabs-production-images.yml'
               - '.github/workflows/release.yml'
               - 'scripts/generate-reserved-slugs.mjs'
               - 'scripts/classify-auth-change.mjs'
