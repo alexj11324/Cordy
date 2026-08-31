@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@patchbay/ui/components/ui/select";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+import { SettingsSwitch as Switch } from "@patchbay/ui/components/common/lobe-settings";
 import { useTheme } from "@patchbay/ui/components/common/theme-provider";
 import {
   DEFAULT_LOCALE,

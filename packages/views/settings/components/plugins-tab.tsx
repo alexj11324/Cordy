@@ -18,7 +18,7 @@ import type { PluginConfigField, PluginInstallation, PluginPreview } from "@patc
 import { Alert, AlertDescription, AlertTitle } from "@patchbay/ui/components/ui/alert";
 import { Badge } from "@patchbay/ui/components/ui/badge";
 import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
+import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
 import {
   Select,
   SelectContent,
@@ -28,7 +28,7 @@ import {
 } from "@patchbay/ui/components/ui/select";
 import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+import { SettingsSwitch as Switch } from "@patchbay/ui/components/common/lobe-settings";
 import { mcpHooks, PluginHookActivity, PluginMCPApproval } from "../../plugins";
 import { useT } from "../../i18n";
 import { SettingsCard, SettingsSection, SettingsTab } from "./settings-layout";

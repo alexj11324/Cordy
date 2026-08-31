@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { AlertCircle, Check, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@patchbay/ui/components/ui/card";
 import { cn } from "@patchbay/ui/lib/utils";
+import { SettingsText } from "@patchbay/ui/components/common/lobe-settings";
 
 export type SettingsSaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -17,11 +18,16 @@ export function SettingsTab({
   return (
     <div className="space-y-8">
       <header>
-        <h2 className="text-title-lg font-medium">{title}</h2>
+        <SettingsText as="h2" className="text-title-lg font-medium">
+          {title}
+        </SettingsText>
         {description ? (
-          <p className="mt-1 max-w-2xl text-body leading-5 text-muted-foreground">
+          <SettingsText
+            as="p"
+            className="mt-1 max-w-2xl text-body leading-5 text-muted-foreground"
+          >
             {description}
-          </p>
+          </SettingsText>
         ) : null}
       </header>
       {children}
@@ -47,11 +53,18 @@ export function SettingsSection({
       {title || description || action ? (
         <div className="flex min-w-0 items-end justify-between gap-4 px-0.5">
           <div className="min-w-0">
-            {title ? <h3 className="text-body font-medium">{title}</h3> : null}
+            {title ? (
+              <SettingsText as="h3" className="text-body font-medium">
+                {title}
+              </SettingsText>
+            ) : null}
             {description ? (
-              <p className="mt-0.5 text-caption leading-5 text-muted-foreground">
+              <SettingsText
+                as="p"
+                className="mt-0.5 text-caption leading-5 text-muted-foreground"
+              >
                 {description}
-              </p>
+              </SettingsText>
             ) : null}
           </div>
           {action ? <div className="shrink-0">{action}</div> : null}
@@ -125,11 +138,16 @@ export function SettingsRow({
       )}
     >
       <div className="min-w-0 flex-1">
-        <div className="text-body font-medium">{label}</div>
+        <SettingsText as="div" className="text-body font-medium">
+          {label}
+        </SettingsText>
         {description ? (
-          <div className="mt-0.5 text-caption leading-5 text-muted-foreground">
+          <SettingsText
+            as="div"
+            className="mt-0.5 text-caption leading-5 text-muted-foreground"
+          >
             {description}
-          </div>
+          </SettingsText>
         ) : null}
       </div>
       <div

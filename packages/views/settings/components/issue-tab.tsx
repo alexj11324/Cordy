@@ -1,6 +1,6 @@
 "use client";
 
-import { Switch } from "@patchbay/ui/components/ui/switch";
+import { SettingsSwitch as Switch } from "@patchbay/ui/components/common/lobe-settings";
 import {
   MANUAL_CREATE_FIELDS,
   QUICK_CREATE_FIELDS,

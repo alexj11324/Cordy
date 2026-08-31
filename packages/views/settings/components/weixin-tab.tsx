@@ -13,7 +13,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@patchbay/ui/components/ui/dialog";
-import { Input } from "@patchbay/ui/components/ui/input";
+import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useAuthStore } from "@patchbay/core/auth";
 import { memberListOptions } from "@patchbay/core/workspace/queries";

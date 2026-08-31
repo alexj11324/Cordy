@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Copy, GitBranch, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Card, CardContent } from "@patchbay/ui/components/ui/card";
-import { Input } from "@patchbay/ui/components/ui/input";
+import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
 import { Label } from "@patchbay/ui/components/ui/label";
 import {
   Select,

@@ -32,7 +32,7 @@ import type {
 import { findQuickActionTemplateToken } from "@patchbay/core/types";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Input } from "@patchbay/ui/components/ui/input";
+import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
 import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import { Label as FieldLabel } from "@patchbay/ui/components/ui/label";
 import {

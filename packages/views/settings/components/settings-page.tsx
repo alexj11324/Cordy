@@ -54,6 +54,9 @@ import { BillingTab } from "./billing-tab";
 import { CollapsedNavTrigger } from "../../layout/page-header";
 import { useT } from "../../i18n";
 import { cn } from "@patchbay/ui/lib/utils";
+import { SettingsText } from "@patchbay/ui/components/common/lobe-settings";
+import { LobeSettingsProvider } from "@patchbay/ui/components/common/lobe-settings-provider";
+import { LobeSettingsTabs } from "@patchbay/ui/components/common/lobe-settings-tabs";
 
 const ACCOUNT_TAB_KEYS = ["profile", "preferences", "shortcuts", "issue", "chat", "notifications", "tokens"] as const;
 const ACCOUNT_TAB_ICONS = {
@@ -218,6 +221,107 @@ export function SettingsPage({
     navigation.replace(`${navigation.pathname}?${params.toString()}`);
   };
 
+  const tabContents: Record<string, React.ReactNode> = {
+    profile: <AccountTab />,
+    preferences: <PreferencesTab />,
+    shortcuts: <KeyboardShortcutsTab />,
+    issue: <IssueTab />,
+    chat: <ChatTab />,
+    notifications: <NotificationsTab />,
+    tokens: <TokensTab />,
+    workspace: <WorkspaceTab />,
+    repositories: <RepositoriesTab />,
+    github: <GitHubTab />,
+    integrations: <IntegrationsTab />,
+    labs: <LabsTab />,
+    members: <MembersTab />,
+    billing: billingEnabled ? <BillingTab /> : null,
+    labels: <LabelsTab />,
+    "issue-statuses": <IssueStatusesTab />,
+    properties: <PropertiesTab />,
+    "quick-actions": <QuickActionsTab />,
+    mcp: <McpTab />,
+    plugins: pluginsEnabled ? <PluginsTab /> : null,
+  };
+
+  const accountTabItems = [
+    ...ACCOUNT_TAB_KEYS.map((key) => {
+      const Icon = ACCOUNT_TAB_ICONS[key];
+      return {
+        value: key,
+        label: t(($) => $.page.tabs[key]),
+        icon: <Icon className="h-4 w-4" />,
+        content: tabContents[key],
+      };
+    }),
+    ...(extraAccountTabs?.map((tab) => ({
+      value: tab.value,
+      label: tab.label,
+      icon: <tab.icon className="h-4 w-4" />,
+      content: tab.content,
+    })) ?? []),
+  ];
+  const workspaceTabItems = visibleWorkspaceTabKeys.map((key) => {
+    const Icon = WORKSPACE_TAB_ICONS[key];
+    const value = WORKSPACE_TAB_VALUES[key];
+    return {
+      value,
+      label: t(($) => $.page.tabs[key]),
+      icon: <Icon className="h-4 w-4" />,
+      content: tabContents[value],
+    };
+  });
+  const lobeTabGroups = [
+    {
+      label: t(($) => $.page.my_account),
+      tabs: accountTabItems,
+    },
+    {
+      label: workspaceName ?? t(($) => $.page.workspace_fallback),
+      tabs: workspaceTabItems,
+    },
+  ];
+
+  const standaloneHeader = (
+    <>
+      {navigationHeader ? <div>{navigationHeader}</div> : null}
+      <div className="flex items-center md:mb-4">
+        {navigationHeader ? null : <CollapsedNavTrigger />}
+        <SettingsText
+          as="h1"
+          className={cn(
+            "sr-only font-semibold md:not-sr-only md:px-2",
+            isStandalone ? "text-title" : "text-body",
+          )}
+        >
+          {t(($) => $.page.title)}
+        </SettingsText>
+      </div>
+    </>
+  );
+
+  if (isStandalone) {
+    return (
+      <LobeSettingsProvider>
+        <LobeSettingsTabs
+          value={activeTab}
+          onValueChange={handleTabChange}
+          orientation={isMobile ? "horizontal" : "vertical"}
+          groups={lobeTabGroups}
+          header={standaloneHeader}
+          dataSettingsVariant="standalone"
+          className="flex min-h-0 flex-1 flex-col gap-0 overflow-y-auto bg-page-canvas text-foreground md:flex-row md:overflow-hidden"
+          listClassName="flex w-max min-w-full flex-row items-center gap-1 overflow-x-auto border-b !border-sidebar-border !bg-sidebar p-2 !shadow-none md:w-80 md:min-w-0 md:flex-col md:items-stretch md:overflow-y-auto md:border-b-0 md:border-r md:p-4"
+          contentClassName={cn(
+            "mx-auto w-full p-4 sm:p-6 md:px-8",
+            "md:pb-8 md:pt-20",
+            contentWidthClass,
+          )}
+        />
+      </LobeSettingsProvider>
+    );
+  }
+
   return (
     <Tabs
       value={activeTab}
@@ -324,28 +428,13 @@ export function SettingsPage({
             contentWidthClass,
           )}
         >
-          <TabsContent value="profile"><AccountTab /></TabsContent>
-          <TabsContent value="preferences"><PreferencesTab /></TabsContent>
-          <TabsContent value="shortcuts"><KeyboardShortcutsTab /></TabsContent>
-          <TabsContent value="issue"><IssueTab /></TabsContent>
-          <TabsContent value="chat"><ChatTab /></TabsContent>
-          <TabsContent value="notifications"><NotificationsTab /></TabsContent>
-          <TabsContent value="tokens"><TokensTab /></TabsContent>
-          <TabsContent value="workspace"><WorkspaceTab /></TabsContent>
-          <TabsContent value="repositories"><RepositoriesTab /></TabsContent>
-          <TabsContent value="github"><GitHubTab /></TabsContent>
-          <TabsContent value="integrations"><IntegrationsTab /></TabsContent>
-          <TabsContent value="labs"><LabsTab /></TabsContent>
-          <TabsContent value="members"><MembersTab /></TabsContent>
-          {billingEnabled ? (
-            <TabsContent value="billing"><BillingTab /></TabsContent>
-          ) : null}
-          <TabsContent value="labels"><LabelsTab /></TabsContent>
-          <TabsContent value="issue-statuses"><IssueStatusesTab /></TabsContent>
-          <TabsContent value="properties"><PropertiesTab /></TabsContent>
-          <TabsContent value="quick-actions"><QuickActionsTab /></TabsContent>
-          <TabsContent value="mcp"><McpTab /></TabsContent>
-          {pluginsEnabled ? <TabsContent value="plugins"><PluginsTab /></TabsContent> : null}
+          {Object.entries(tabContents).map(([value, content]) =>
+            content ? (
+              <TabsContent key={value} value={value}>
+                {content}
+              </TabsContent>
+            ) : null,
+          )}
           {extraAccountTabs?.map((tab) => (
             <TabsContent key={tab.value} value={tab.value}>{tab.content}</TabsContent>
           ))}

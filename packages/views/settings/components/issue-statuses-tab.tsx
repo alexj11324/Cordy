@@ -39,10 +39,10 @@ import {
 import { ALL_STATUSES } from "@patchbay/core/issues/config";
 import type { IssueStatusCategory, IssueStatusEntry } from "@patchbay/core/types";
 import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
+import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
 import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import { Label as FieldLabel } from "@patchbay/ui/components/ui/label";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+import { SettingsSwitch as Switch } from "@patchbay/ui/components/common/lobe-settings";
 import {
   Dialog,
   DialogContent,

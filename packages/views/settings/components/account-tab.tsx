@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Input } from "@patchbay/ui/components/ui/input";
+import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
 import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import { toast } from "sonner";
 import { useAuthStore } from "@patchbay/core/auth";

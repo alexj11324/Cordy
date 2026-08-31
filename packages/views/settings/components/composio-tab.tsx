@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { AlertTriangle, Check, Loader2, Plug, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Card, CardContent } from "@patchbay/ui/components/ui/card";
-import { Input } from "@patchbay/ui/components/ui/input";
+import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
 import {
   AlertDialog,
   AlertDialogAction,
