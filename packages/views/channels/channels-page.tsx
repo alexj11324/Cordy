@@ -30,7 +30,7 @@ import type { Channel, ChannelMessage, ChannelQuotedMessage, MemberWithUser, Age
 import { ContentEditor, ReadonlyContent, type ContentEditorRef } from "../editor";
 import { ActorAvatar } from "../common/actor-avatar";
 import { PageHeader } from "../layout/page-header";
-import { useNavigation } from "../navigation";
+import { useIsNavigating, useNavigation } from "../navigation";
 import { useT, useTimeAgo } from "../i18n";
 
 const EMPTY_CHANNELS: Channel[] = [];
@@ -51,8 +51,11 @@ export function shouldSyncChannelUrl(
   channelsPath: string,
   urlChannelId: string | null,
   activeChannelId: string,
+  isNavigating: boolean,
 ): boolean {
-  return pathname === channelsPath && urlChannelId !== activeChannelId;
+  return (
+    !isNavigating && pathname === channelsPath && urlChannelId !== activeChannelId
+  );
 }
 
 function ParticipantStack({ members, agents }: { members: MemberWithUser[]; agents: Agent[] }) {
@@ -210,6 +213,7 @@ function ChannelMessageRow({
 export function ChannelsPage() {
   const { t } = useT("chat");
   const { pathname, searchParams, replace } = useNavigation();
+  const isNavigating = useIsNavigating();
   const workspacePaths = useWorkspacePaths();
   const channelsPath = workspacePaths.channels();
   const workspaceId = useWorkspaceId();
@@ -260,10 +264,18 @@ export function ChannelsPage() {
 
   useEffect(() => {
     if (!activeChannel) return;
-    if (shouldSyncChannelUrl(pathname, channelsPath, urlChannelId, activeChannel.id)) {
+    if (
+      shouldSyncChannelUrl(
+        pathname,
+        channelsPath,
+        urlChannelId,
+        activeChannel.id,
+        isNavigating,
+      )
+    ) {
       replace(channelHref(channelsPath, activeChannel.id));
     }
-  }, [activeChannel, channelsPath, pathname, replace, urlChannelId]);
+  }, [activeChannel, channelsPath, isNavigating, pathname, replace, urlChannelId]);
 
   useEffect(() => {
     setDraft("");
