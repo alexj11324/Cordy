@@ -188,6 +188,24 @@ describe("chat store — selected project", () => {
   });
 });
 
+describe("chat store — cross-surface navigation signals", () => {
+  it("increments intent and topics signals without persisting them", () => {
+    const storage = memStorage();
+    const store = createChatStore({ storage });
+
+    expect(store.getState().agentIntentRevision).toBe(0);
+    expect(store.getState().topicsViewRequest).toBe(0);
+
+    store.getState().supersedeAgentIntent();
+    store.getState().requestTopicsView();
+
+    expect(store.getState().agentIntentRevision).toBe(1);
+    expect(store.getState().topicsViewRequest).toBe(1);
+    expect(storage.getItem("patchbay:chat:agentIntentRevision")).toBeNull();
+    expect(storage.getItem("patchbay:chat:topicsViewRequest")).toBeNull();
+  });
+});
+
 describe("chat store — draft attachments", () => {
   let store: ReturnType<typeof createChatStore>;
 

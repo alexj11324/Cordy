@@ -4,6 +4,19 @@
     "select_prompt": "选择一个对话，或点 + 新建",
     "agent_link_no_access": "你没有权限与该智能体聊天。"
   },
+  "navigation": {
+    "new_topic": "开启新话题",
+    "search": "搜索",
+    "topics": "话题",
+    "profile": "助理档案",
+    "tasks": "任务",
+    "history": "历史对话",
+    "history_search": "搜索话题...",
+    "switch_agent": "切换智能体",
+    "switch_workspace": "切换工作区",
+    "topic_actions": "话题操作",
+    "topic_count": "{{count}} 个话题"
+  },
   "fab": {
     "running": "Patchbay 正在工作...",
     "unread_other": "{{count}} 条未读对话",
