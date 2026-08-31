@@ -190,6 +190,7 @@ describe("complete Desktop development doctor", () => {
 
     expect(report.ok).toBe(true);
     expect(report.checks.map(({ id, ok }) => [id, ok])).toEqual([
+      ["cache", true],
       ["cli", true],
       ["backend", true],
       ["accounts", true],
