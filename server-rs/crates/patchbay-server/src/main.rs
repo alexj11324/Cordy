@@ -158,14 +158,6 @@ impl LinearInstallationConfig {
             secret_box,
         }
     }
-
-    #[cfg(test)]
-    fn disabled() -> Self {
-        Self {
-            enabled: false,
-            secret_box: None,
-        }
-    }
 }
 
 fn github_snapshot_client(
