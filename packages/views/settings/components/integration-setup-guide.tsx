@@ -5,6 +5,7 @@ import { Button } from "@patchbay/ui/components/ui/button";
 import { openExternal } from "../../platform";
 import { useT } from "../../i18n";
 import type { IntegrationChannel } from "./integration-channel-icon";
+import { slackDocsUrl } from "./slack-docs-url";
 
 const providerConsoleUrls: Partial<Record<IntegrationChannel, string>> = {
   slack: "https://api.slack.com/apps",
@@ -14,7 +15,7 @@ const providerConsoleUrls: Partial<Record<IntegrationChannel, string>> = {
 };
 
 export function IntegrationSetupGuide({ channel }: { channel: IntegrationChannel }) {
-  const { t } = useT("settings");
+  const { t, i18n } = useT("settings");
   const copy = {
     lark: {
       requirement: t(($) => $.lark.setup_requirement),
@@ -72,6 +73,8 @@ export function IntegrationSetupGuide({ channel }: { channel: IntegrationChannel
     },
   }[channel];
   const consoleUrl = providerConsoleUrls[channel];
+  const instructionsUrl =
+    channel === "slack" ? slackDocsUrl(i18n.language) : undefined;
 
   return (
     <section
@@ -96,17 +99,30 @@ export function IntegrationSetupGuide({ channel }: { channel: IntegrationChannel
           ))}
         </ol>
       </div>
-      {consoleUrl ? (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => openExternal(consoleUrl)}
-        >
-          <ExternalLink className="size-3.5" />
-          {copy.open}
-        </Button>
-      ) : null}
+      <div className="flex flex-wrap gap-2">
+        {instructionsUrl ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => openExternal(instructionsUrl)}
+          >
+            <ExternalLink className="size-3.5" />
+            {t(($) => $.slack.setup_manifest_open)}
+          </Button>
+        ) : null}
+        {consoleUrl ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => openExternal(consoleUrl)}
+          >
+            <ExternalLink className="size-3.5" />
+            {copy.open}
+          </Button>
+        ) : null}
+      </div>
     </section>
   );
 }
