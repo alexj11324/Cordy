@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ReactNode } from "react";
+import { StrictMode, type ReactNode } from "react";
 
 const {
   clerkLoaded,
@@ -58,6 +58,8 @@ vi.mock("@patchbay/views/i18n", () => ({
             starting: "Opening Google sign-in…",
             invalid_binding: "Invalid desktop binding",
             failed: "Google sign-in failed",
+            timeout: "Google sign-in timed out",
+            retry: "Try again",
           },
         },
       }),
@@ -163,6 +165,33 @@ describe("GoogleOAuthPage", () => {
     clerkLoaded.current = true;
     view.rerender(<GoogleOAuthPage />);
     await waitFor(() => expect(sso).toHaveBeenCalledOnce());
+  });
+
+  it("shows a timeout instead of an infinite spinner when Clerk never loads", async () => {
+    vi.useFakeTimers();
+    try {
+      const codeChallenge = "a".repeat(43);
+      const state = "b".repeat(43);
+      search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
+      clerkLoaded.current = false;
+
+      render(
+        <StrictMode>
+          <GoogleOAuthPage />
+        </StrictMode>,
+      );
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(10_000);
+      });
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        "Google sign-in timed out",
+      );
+      expect(sso).not.toHaveBeenCalled();
+      expect(registerDesktopGoogleAttempt).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("waits until sso is actually available instead of failing closed", async () => {

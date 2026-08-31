@@ -33,4 +33,15 @@ describe("cross-platform complete development entrypoint", () => {
       ],
     });
   });
+
+  it("forwards hosted mode to the platform launcher", () => {
+    expect(
+      planCompleteDevLauncher("darwin", ["--hosted"], {
+        repoRoot: "/repo",
+      }),
+    ).toEqual({
+      command: "bash",
+      args: [join("/repo", "scripts", "dev.sh"), "--hosted"],
+    });
+  });
 });

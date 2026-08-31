@@ -40,10 +40,40 @@ set +a
 # shellcheck disable=SC1091
 . scripts/local-env.sh
 
-# Complete dev owns a real Next.js listener for every browser-facing URL. Do
-# not inherit a stale/custom FRONTEND_ORIGIN that this launcher does not serve.
-export FRONTEND_ORIGIN="http://localhost:${FRONTEND_PORT:-3000}"
-export PATCHBAY_APP_URL="$FRONTEND_ORIGIN"
+dev_mode="${PATCHBAY_DEV_MODE:-local}"
+for arg in "$@"; do
+  if [ "$arg" = "--hosted" ]; then
+    dev_mode="hosted"
+  fi
+done
+case "$dev_mode" in
+  local|hosted) ;;
+  *)
+    echo "✗ Unsupported development runtime mode: $dev_mode" >&2
+    exit 1
+    ;;
+esac
+export PATCHBAY_DEV_MODE="$dev_mode"
+
+if [ "$dev_mode" = "hosted" ]; then
+  # This is the explicit production-service development profile. Keep the
+  # tuple immutable so a stale local VITE_* variable cannot create a mixed
+  # OAuth/API flow.
+  export PATCHBAY_DEV_API_URL="https://api.aspectlylabs.com"
+  export PATCHBAY_DEV_WS_URL="wss://api.aspectlylabs.com/ws"
+  export PATCHBAY_DEV_APP_URL="https://patchbay.aspectlylabs.com"
+  export PATCHBAY_DEV_ACCOUNTS_URL="https://accounts.aspectlylabs.com"
+else
+  # Complete local dev owns a real Next.js listener for every browser-facing
+  # URL. Do not inherit a stale/custom FRONTEND_ORIGIN that this launcher does
+  # not serve, and never generate 127.0.0.1 as the browser OAuth origin.
+  export FRONTEND_ORIGIN="http://localhost:${FRONTEND_PORT:-3000}"
+  export PATCHBAY_DEV_API_URL="http://127.0.0.1:${PORT:-8080}"
+  export PATCHBAY_DEV_WS_URL="ws://127.0.0.1:${PORT:-8080}/ws"
+  export PATCHBAY_DEV_APP_URL="$FRONTEND_ORIGIN"
+  export PATCHBAY_DEV_ACCOUNTS_URL="$FRONTEND_ORIGIN"
+fi
+export PATCHBAY_APP_URL="$PATCHBAY_DEV_APP_URL"
 
 # Preserve the upload location used by the established run-rust.sh launcher.
 # The backend itself runs from server-rs, so a relative value would otherwise
@@ -76,6 +106,28 @@ if [ "$(node -p 'process.platform')" = "win32" ]; then
 fi
 dev_backend="$REPO_ROOT/.patchbay-dev/bin/patchbay-server${runtime_suffix}"
 dev_migrate="$REPO_ROOT/.patchbay-dev/bin/patchbay-migrate${runtime_suffix}"
+
+export VITE_API_URL="$PATCHBAY_DEV_API_URL"
+export VITE_WS_URL="$PATCHBAY_DEV_WS_URL"
+export VITE_APP_URL="$PATCHBAY_DEV_APP_URL"
+export VITE_ACCOUNTS_URL="$PATCHBAY_DEV_ACCOUNTS_URL"
+export NEXT_PUBLIC_API_URL="$VITE_API_URL"
+export NEXT_PUBLIC_WS_URL="$VITE_WS_URL"
+
+if [ "$dev_mode" = "hosted" ]; then
+  export PATCHBAY_PUBLIC_URL="$PATCHBAY_DEV_API_URL"
+  export PATCHBAY_SERVER_URL="$PATCHBAY_DEV_WS_URL"
+  export PATCHBAY_REQUIRE_SOURCE_CLI=1
+  export PATCHBAY_DEV_ENV_FILE="$ENV_FILE"
+  echo ""
+  echo "✓ Hosted Desktop development environment"
+  echo "  OAuth:   $PATCHBAY_DEV_ACCOUNTS_URL"
+  echo "  API:     $PATCHBAY_DEV_API_URL"
+  echo "  Renderer: local Electron/Vite hot reload"
+  echo ""
+  node apps/desktop/scripts/dev.mjs "$@"
+  exit $?
+fi
 
 # ---------- Database ----------
 bash scripts/ensure-postgres.sh "$ENV_FILE"
@@ -133,13 +185,6 @@ if ! kill -0 "$backend_pid" >/dev/null 2>&1; then
   echo "✗ Spawned backend exited during readiness verification." >&2
   exit 1
 fi
-
-export VITE_API_URL="http://127.0.0.1:${PORT:-8080}"
-export VITE_WS_URL="ws://127.0.0.1:${PORT:-8080}/ws"
-export VITE_APP_URL="$FRONTEND_ORIGIN"
-export VITE_ACCOUNTS_URL="$FRONTEND_ORIGIN"
-export NEXT_PUBLIC_API_URL="$VITE_API_URL"
-export NEXT_PUBLIC_WS_URL="$VITE_WS_URL"
 
 frontend_ready_url="$FRONTEND_ORIGIN/"
 if curl --fail --silent --show-error "$frontend_ready_url" >/dev/null 2>&1; then

@@ -7,9 +7,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  accountsUrlFromEnv,
   backendUrlFromEnv,
   inspectDevEnvironment,
   integrationKeyStatus,
+  loadDoctorEnvironment,
 } from "./dev-environment-doctor.mjs";
 import { rustSourceFingerprint } from "./dev-cli-cache.mjs";
 import { INTEGRATION_SECRET_KEYS } from "../../../scripts/ensure-dev-integration-secrets.mjs";
@@ -81,6 +83,99 @@ describe("complete Desktop development doctor", () => {
   it("uses the worktree backend endpoint provided by the complete launcher", () => {
     expect(backendUrlFromEnv({ VITE_API_URL: "http://127.0.0.1:18123/" })).toBe(
       "http://127.0.0.1:18123",
+    );
+  });
+
+  it("resolves the hosted accounts broker separately from the API", () => {
+    expect(
+      accountsUrlFromEnv({
+        VITE_ACCOUNTS_URL: "https://accounts.aspectlylabs.com/",
+      }),
+    ).toBe("https://accounts.aspectlylabs.com");
+  });
+
+  it("preserves a launcher's hosted profile when the checkout env is reloaded", async () => {
+    const repoRoot = await fixtureRepo();
+    const envFile = join(repoRoot, ".env");
+    await writeFile(
+      envFile,
+      "PORT=18123\nVITE_API_URL=http://127.0.0.1:18123\nVITE_ACCOUNTS_URL=http://localhost:13123\n",
+    );
+
+    const env = loadDoctorEnvironment({
+      repoRoot,
+      processEnv: {
+        PATCHBAY_DEV_MODE: "hosted",
+        PATCHBAY_APP_URL: "https://patchbay.aspectlylabs.com",
+        VITE_API_URL: "https://api.aspectlylabs.com",
+        VITE_WS_URL: "wss://api.aspectlylabs.com/ws",
+        VITE_APP_URL: "https://patchbay.aspectlylabs.com",
+        VITE_ACCOUNTS_URL: "https://accounts.aspectlylabs.com",
+      },
+    });
+
+    expect(env).toMatchObject({
+      PATCHBAY_DEV_MODE: "hosted",
+      PATCHBAY_APP_URL: "https://patchbay.aspectlylabs.com",
+      VITE_API_URL: "https://api.aspectlylabs.com",
+      VITE_WS_URL: "wss://api.aspectlylabs.com/ws",
+      VITE_APP_URL: "https://patchbay.aspectlylabs.com",
+      VITE_ACCOUNTS_URL: "https://accounts.aspectlylabs.com",
+    });
+  });
+
+  it("checks the hosted accounts broker before opening Electron", async () => {
+    const repoRoot = await fixtureRepo();
+    const execImpl = vi.fn(async (_binary, args) =>
+      args[0] === "version"
+        ? { stdout: JSON.stringify({ version: "dev-fixture" }) }
+        : {
+            stdout: JSON.stringify({
+              probe_result: "success",
+              runtime_count: 0,
+              provider_summary: {},
+            }),
+          },
+    );
+    const fetchImpl = vi.fn(async (url) => ({
+      ok: true,
+      status: 200,
+      json: async () =>
+        url.includes("accounts")
+          ? { status: "ready" }
+          : { status: "ready" },
+    }));
+
+    const report = await inspectDevEnvironment({
+      repoRoot,
+      env: {
+        PATCHBAY_DEV_MODE: "hosted",
+        VITE_API_URL: "https://api.aspectlylabs.com",
+        VITE_ACCOUNTS_URL: "https://accounts.aspectlylabs.com",
+        ...Object.fromEntries(
+          INTEGRATION_SECRET_KEYS.map((key, index) => [
+            key,
+            secretKey(index + 1),
+          ]),
+        ),
+      },
+      platform: "darwin",
+      arch: "arm64",
+      execImpl,
+      fetchImpl,
+    });
+
+    expect(report.ok).toBe(true);
+    expect(report.checks.map(({ id, ok }) => [id, ok])).toEqual([
+      ["cli", true],
+      ["backend", true],
+      ["accounts", true],
+      ["agents", true],
+      ["integrations", true],
+    ]);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://accounts.aspectlylabs.com/readyz",
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
   });
 

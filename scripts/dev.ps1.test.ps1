@@ -23,6 +23,9 @@ foreach ($required in @(
         "apps/web",
         "VITE_APP_URL",
         "VITE_ACCOUNTS_URL",
+        "PATCHBAY_DEV_MODE",
+        "https://accounts.aspectlylabs.com",
+        'if ($DevMode -eq "hosted")',
         "PATCHBAY_REQUIRE_SOURCE_CLI",
         "apps/desktop/scripts/dev.mjs @ElectronArgs")) {
     if ($source -notmatch [regex]::Escape($required)) {

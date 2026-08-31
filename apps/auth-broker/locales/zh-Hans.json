@@ -7,7 +7,9 @@
       "starting": "正在打开 Google 登录…",
       "completing": "正在完成 Google 登录…",
       "invalid_binding": "此桌面登录请求缺少必要信息或已失效。",
-      "failed": "无法完成 Google 登录。请返回 Patchbay 后重试。"
+      "failed": "无法完成 Google 登录。请返回 Patchbay 后重试。",
+      "timeout": "登录服务响应超时。请检查当前选择的环境后重试。",
+      "retry": "重试"
     },
     "desktop_handoff": {
       "preparing": "正在准备桌面登录...",

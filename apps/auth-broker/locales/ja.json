@@ -7,7 +7,9 @@
       "starting": "Google ログインを開いています…",
       "completing": "Google ログインを完了しています…",
       "invalid_binding": "このデスクトップログイン要求は無効か、必要な情報がありません。",
-      "failed": "Google ログインを完了できませんでした。Patchbay に戻って再試行してください。"
+      "failed": "Google ログインを完了できませんでした。Patchbay に戻って再試行してください。",
+      "timeout": "ログインサービスからの応答がありません。環境を確認してもう一度お試しください。",
+      "retry": "再試行"
     },
     "desktop_handoff": {
       "preparing": "デスクトップのログインを準備中...",

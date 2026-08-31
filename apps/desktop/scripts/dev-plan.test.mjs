@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { parseDevRuntimeArgs } from "../../../scripts/dev-runtime-profile.mjs";
 import { planDevCommands } from "./dev-plan.mjs";
 
 const scriptsDir = dirname(fileURLToPath(import.meta.url));
@@ -56,6 +57,26 @@ describe("Desktop development build plan", () => {
         command: "electron-vite",
         args: ["dev", "--inspect"],
       },
+    ]);
+  });
+
+  it("never forwards the hosted launcher flag to electron-vite", () => {
+    const { electronArgs } = parseDevRuntimeArgs(["--hosted", "--inspect"]);
+    expect(
+      planDevCommands(electronArgs, {
+        nodePath: "/usr/bin/node",
+        scriptsDir,
+      }),
+    ).toEqual([
+      {
+        command: "/usr/bin/node",
+        args: [join(scriptsDir, "dev-environment-doctor.mjs")],
+      },
+      {
+        command: "/usr/bin/node",
+        args: [join(scriptsDir, "brand-dev-electron.mjs")],
+      },
+      { command: "electron-vite", args: ["dev", "--inspect"] },
     ]);
   });
 

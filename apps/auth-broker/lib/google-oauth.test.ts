@@ -5,9 +5,30 @@ import {
   hasClerkOAuthReturn,
   readGoogleSso,
   startGoogleOAuth,
+  withGoogleOAuthStartTimeout,
+  GoogleOAuthStartTimeoutError,
 } from "./google-oauth";
 
 describe("Clerk Core 3 Google OAuth adapter", () => {
+  it("fails a stuck pre-redirect operation without delaying immediate SSO", async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = new Promise<never>(() => undefined);
+      const result = withGoogleOAuthStartTimeout(pending, 25);
+      const rejection = expect(result).rejects.toBeInstanceOf(
+        GoogleOAuthStartTimeoutError,
+      );
+      await vi.advanceTimersByTimeAsync(25);
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    await expect(
+      withGoogleOAuthStartTimeout(Promise.resolve("started"), 10_000),
+    ).resolves.toBe("started");
+  });
+
   it("starts SSO with absolute broker-owned URLs and account selection", async () => {
     const sso = vi.fn().mockResolvedValue({ error: null });
 

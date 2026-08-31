@@ -6,6 +6,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ensureDevCheckoutEnv } from "../apps/desktop/scripts/dev-checkout-env.mjs";
 import {
+  applyDevRuntimeProfile,
+  assertDevRuntimeOverridesCompatible,
+  parseDevRuntimeArgs,
+  resolveDevRuntimeProfile,
+} from "./dev-runtime-profile.mjs";
+import {
   acquireDevLifecycleLock,
   clearDevProcessState,
   devProcessLauncherIsRunning,
@@ -51,11 +57,18 @@ export async function runCompleteDev({
   argv = process.argv.slice(2),
 } = {}) {
   const releaseLifecycleLock = await acquireDevLifecycleLock(repoRoot);
+  const inheritedEnv = { ...env };
   let child;
   let completion;
   let state;
   try {
     await ensureDevCheckoutEnv({ repoRoot, env });
+    const { mode } = parseDevRuntimeArgs(argv);
+    assertDevRuntimeOverridesCompatible(mode, inheritedEnv);
+    applyDevRuntimeProfile(
+      env,
+      resolveDevRuntimeProfile(mode, env),
+    );
     const existing = await readDevProcessState(repoRoot);
     if (existing) {
       const identity = inspectDevProcessIdentity(existing, { platform });
