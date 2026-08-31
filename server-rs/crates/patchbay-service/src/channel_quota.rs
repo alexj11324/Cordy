@@ -4,7 +4,9 @@
 //! their task in the same transaction. This module deliberately uses that
 //! server-owned record as the usage ledger instead of a client counter: the
 //! workspace row lock serialises concurrent admissions, and a failed enqueue
-//! rolls the reservation back with the surrounding transaction.
+//! rolls the reservation back with the surrounding transaction. Once a task
+//! row commits, its turn remains usage even if the run later fails or is
+//! cancelled; only the pre-commit reservation is released by rollback.
 
 use std::env;
 
@@ -108,9 +110,11 @@ pub async fn has_channel_ingested_message(
     .await
 }
 
-/// Returns completed hosted channel turns in the current UTC month. The caller
-/// should use the same workspace lock as [`admit_turn`] when making a blocking
-/// decision; read-only usage endpoints may call this without a lock.
+/// Returns accepted, terminal hosted channel turns in the current UTC month.
+/// A task is usage as soon as its durable row commits, regardless of whether
+/// the provider later succeeds, fails, or is cancelled. The caller should use
+/// the same workspace lock as [`admit_turn`] when making a blocking decision;
+/// read-only usage endpoints may call this without a lock.
 pub async fn count_used_turns(
     executor: &mut PgConnection,
     workspace_id: Uuid,
@@ -121,7 +125,7 @@ FROM agent_task_queue AS task
 JOIN agent ON agent.id = task.agent_id
 WHERE task.chat_session_id IS NOT NULL
   AND agent.workspace_id = $1
-  AND task.status = 'completed'
+  AND task.status NOT IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
   AND task.created_at >= date_trunc('month', now() AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'
   AND EXISTS (
       SELECT 1
@@ -140,7 +144,8 @@ WHERE task.chat_session_id IS NOT NULL
 /// rows are the durable equivalent of Automation's `reserved_count`: they are
 /// included in admission while the task is queued, deferred, or executing and
 /// disappear from the reservation count when the task reaches a terminal
-/// state. A failed/cancelled task therefore releases its slot naturally.
+/// state. At that point the task is included in [`count_used_turns`] instead;
+/// a failed/cancelled task does not refund an already accepted turn.
 pub async fn count_reserved_turns(
     executor: &mut PgConnection,
     workspace_id: Uuid,
