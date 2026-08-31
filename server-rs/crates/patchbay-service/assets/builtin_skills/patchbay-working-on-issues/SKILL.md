@@ -243,7 +243,6 @@ already underway and the write only records ownership or progress, pass
 does not suppress a later status update:
 
 ```bash
-patchbay issue assign <issue-id> --to-id <agent-id> --no-start
 patchbay issue update <issue-id> --executor-id <agent-id> --no-start
 patchbay issue status <issue-id> in_progress --no-start
 ```

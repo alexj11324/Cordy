@@ -76,7 +76,7 @@ fn build_active_sibling_runs_block(
     b.push_str(&format!(
         " (`patchbay issue comment list {current_issue_id} --roots-only --summary --compact --output json`)"
     ));
-    b.push_str(" and inspect relevant siblings with the `run-messages` commands below — coordinate with existing work instead of opening a second PR. For writes that only record ownership or status of work already underway, use `--no-start` on `patchbay issue assign`/`update`/`status`.\n\n");
+    b.push_str(" and inspect relevant siblings with the `run-messages` commands below — coordinate with existing work instead of opening a second PR. For writes that only record executor, owner, or status changes for work already underway, use `--no-start` on `patchbay issue update`/`status`.\n\n");
     for run in runs {
         let issue_label = if run.issue_identifier.is_empty() {
             &run.issue_id

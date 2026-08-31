@@ -15,7 +15,9 @@ export type IssueSubscriberReason =
   | "mentioned"
   | "manual"
   | "automation"
-  | "delegated";
+  | "delegated"
+  | "executor"
+  | "owner";
 
 export interface IssueSubscriber {
   issue_id: string;

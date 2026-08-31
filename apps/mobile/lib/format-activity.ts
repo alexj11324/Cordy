@@ -80,6 +80,14 @@ export function formatActivity(
       if (toName) return `assigned to ${toName}`;
       return "changed executor";
     }
+    case "owner_changed": {
+      if (details.from_id && !details.to_id) return "removed owner";
+      const toName =
+        details.to_id && details.to_type
+          ? resolveActorName(details.to_type, details.to_id)
+          : null;
+      return toName ? `assigned to ${toName}` : "changed owner";
+    }
     case "start_date_changed": {
       if (!details.to) return "removed start date";
       return `set start date to ${shortDate(details.to)}`;

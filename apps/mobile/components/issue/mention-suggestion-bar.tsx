@@ -122,7 +122,7 @@ export function MentionSuggestionBar({
   );
 
   const myFilter = useMemo(
-    () => (userId ? { executor_id: userId } : { executor_id: "" }),
+    () => (userId ? { owner_id: userId } : { owner_id: "" }),
     [userId],
   );
   const { data: myIssuesAll = [] } = useQuery({

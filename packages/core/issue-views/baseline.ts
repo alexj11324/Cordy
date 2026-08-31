@@ -58,11 +58,12 @@ export function baselineFromQuery(query: Record<string, unknown>): IssueViewBase
   const priorityFilters = stringArray(query.priorityFilters).filter(
     (p): p is IssuePriority => (PRIORITY_DISPLAY_ORDER as readonly string[]).includes(p),
   );
-  const executorFilters = actorArray(query.executorFilters);
+  const executorFilters = actorArray(query.executorFilters ?? query.assigneeFilters);
   const creatorFilters = actorArray(query.creatorFilters);
   const projectFilters = stringArray(query.projectFilters);
   const labelFilters = stringArray(query.labelFilters);
-  const includeNoExecutor = query.includeNoExecutor === true;
+  const includeNoExecutor =
+    query.includeNoExecutor === true || query.includeNoAssignee === true;
   const includeNoProject = query.includeNoProject === true;
 
   const propertyFilters: Record<string, string[]> = {};

@@ -89,7 +89,7 @@ export default function MyIssues() {
   );
 
   const filter = useMemo(
-    () => (userId ? buildMyIssuesFilter(scope, userId) : { executor_id: "" }),
+    () => (userId ? buildMyIssuesFilter(scope, userId) : { owner_id: "" }),
     [scope, userId],
   );
 

@@ -1,7 +1,7 @@
 /**
  * "My Issues" list, server-filtered by scope. Mirrors the three scopes web
  * exposes in `packages/views/my-issues/components/my-issues-page.tsx:48-65`:
- *   - assigned: issues where executor_id = me
+ *   - assigned: issues where owner_id = me
  *   - created:  issues where creator_id  = me
  *   - agents:   issues where the executor is an *indirect* extension of me —
  *               an owned agent, OR a team I'm a human member of, lead, or
@@ -28,7 +28,7 @@ export function buildMyIssuesFilter(
 ): MyIssuesFilter {
   switch (scope) {
     case "assigned":
-      return { executor_id: userId };
+      return { owner_id: userId };
     case "created":
       return { creator_id: userId };
     case "agents":

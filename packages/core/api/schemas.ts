@@ -1180,8 +1180,11 @@ export const IssueSchema = z.object({
   owner_id: z.string().nullable(),
   executor_type: z.string().nullable(),
   executor_id: z.string().nullable(),
-  reviewer_type: z.string().nullable(),
-  reviewer_id: z.string().nullable(),
+  // Older/self-hosted backends omit unset reviewer keys entirely; treat that
+  // wire shape the same as explicit null so one unreviewed issue cannot make
+  // a whole list response fail schema validation.
+  reviewer_type: z.string().nullable().optional().default(null),
+  reviewer_id: z.string().nullable().optional().default(null),
   creator_type: z.string(),
   creator_id: z.string(),
   parent_issue_id: z.string().nullable(),

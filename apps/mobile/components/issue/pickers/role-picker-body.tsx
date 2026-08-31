@@ -48,13 +48,15 @@ type Row =
 
 function selected(value: RoleValue, row: Row): boolean {
   if (row.kind === "unassigned") return value === null;
-  const id =
-    row.kind === "member"
-      ? row.member.user_id
-      : row.kind === "agent"
-        ? row.agent.id
-        : row.team.id;
+  const id = rowId(row);
   return value?.type === row.kind && value.id === id;
+}
+
+/** Issue role payloads use the canonical actor id. A member query row's `id`
+ * is the workspace-membership id, so it must be projected to `user_id`. */
+function rowId(row: Exclude<Row, { kind: "unassigned" }>): string {
+  if (row.kind === "member") return row.member.user_id;
+  return row.kind === "agent" ? row.agent.id : row.team.id;
 }
 
 export function RolePickerBody({ kind, value, query, onChange }: Props) {
@@ -70,7 +72,7 @@ export function RolePickerBody({ kind, value, query, onChange }: Props) {
     const q = query.trim().toLowerCase();
     const matches = (name: string) => !q || name.toLowerCase().includes(q);
     const memberRows: Row[] =
-      kind === "owner"
+      (kind === "owner" || kind === "reviewer")
         ? members
             .filter((member) => matches(member.name))
             .sort((a, b) => a.name.localeCompare(b.name))
@@ -106,7 +108,7 @@ export function RolePickerBody({ kind, value, query, onChange }: Props) {
       contentInsetAdjustmentBehavior="automatic"
       keyExtractor={(row) => {
         if (row.kind === "unassigned") return "unassigned";
-        return `${row.kind}:${row[row.kind].id}`;
+        return `${row.kind}:${rowId(row)}`;
       }}
       renderItem={({ item }) => {
         const needsRuntime =
@@ -117,7 +119,7 @@ export function RolePickerBody({ kind, value, query, onChange }: Props) {
           <Pressable
             disabled={disabled}
             onPress={() => {
-              onChange(item.kind === "unassigned" ? null : { type: item.kind, id: item[item.kind].id });
+              onChange(item.kind === "unassigned" ? null : { type: item.kind, id: rowId(item) });
             }}
             className={cn("flex-row items-center gap-3 px-4 py-3 active:bg-secondary", disabled && "opacity-50")}
           >
@@ -126,7 +128,7 @@ export function RolePickerBody({ kind, value, query, onChange }: Props) {
                 <Text className="text-sm text-muted-foreground">∅</Text>
               </View>
             ) : (
-              <ActorAvatar type={item.kind} id={item[item.kind].id} size={AVATAR_SIZE} />
+              <ActorAvatar type={item.kind} id={rowId(item)} size={AVATAR_SIZE} />
             )}
             <Text className="flex-1 text-base text-foreground">
               {item.kind === "unassigned" ? "Unassigned" : item[item.kind].name}

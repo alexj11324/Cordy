@@ -30,6 +30,7 @@ import { DescriptionField } from "@/components/issue/description-field";
 import { MOBILE_PLACEHOLDER_COLOR } from "@/components/ui/input-tokens";
 import { useCreateIssue } from "@/data/mutations/issues";
 import { useNewIssueDraftStore } from "@/data/stores/new-issue-draft-store";
+import { useAuthStore } from "@/data/auth-store";
 import { useMentionInput } from "@/lib/use-mention-input";
 
 export default function NewIssueModal() {
@@ -43,18 +44,21 @@ export default function NewIssueModal() {
   const status = useNewIssueDraftStore((s) => s.status);
   const priority = useNewIssueDraftStore((s) => s.priority);
   const owner = useNewIssueDraftStore((s) => s.owner);
+  const setOwner = useNewIssueDraftStore((s) => s.setOwner);
   const executor = useNewIssueDraftStore((s) => s.executor);
   const reviewer = useNewIssueDraftStore((s) => s.reviewer);
   const dueDate = useNewIssueDraftStore((s) => s.dueDate);
   const project = useNewIssueDraftStore((s) => s.project);
   const resetDraft = useNewIssueDraftStore((s) => s.reset);
+  const userId = useAuthStore((s) => s.user?.id ?? null);
 
   useEffect(() => {
     resetDraft();
+    if (userId) setOwner({ type: "member", id: userId });
     return () => {
       resetDraft();
     };
-  }, [resetDraft]);
+  }, [resetDraft, setOwner, userId]);
 
   const createIssue = useCreateIssue();
   const isSubmitting = createIssue.isPending;
