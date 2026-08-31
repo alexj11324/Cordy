@@ -467,6 +467,8 @@
       "conflict_status_dismissed": "기각됨",
       "save_conflict": "이 프로젝트 또는 Linear 프로젝트는 이미 바인딩되었습니다",
       "save_failed": "Linear 프로젝트 바인딩을 저장할 수 없습니다",
+      "import_queue_failed": "바인딩은 저장되었지만 초기 가져오기를 대기열에 추가하지 못했습니다. 다시 시도하세요.",
+      "retry_import": "초기 가져오기 재시도",
       "loading_catalog": "Linear 카탈로그 로드 중",
       "loading_catalog_description": "팀, 프로젝트, 워크플로 상태, 사용자 및 라벨을 가져오는 중입니다.",
       "catalog_failed": "Linear 카탈로그를 불러올 수 없습니다. 다시 연결한 후 시도하세요."

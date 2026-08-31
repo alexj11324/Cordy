@@ -1860,7 +1860,7 @@ struct LinearCatalogPage<T> {
     page_info: LinearCatalogPageInfo,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct LinearCatalogPageInfo {
     #[serde(rename = "hasNextPage")]
     has_next_page: bool,

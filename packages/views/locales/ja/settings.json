@@ -467,6 +467,8 @@
       "conflict_status_dismissed": "却下済み",
       "save_conflict": "このプロジェクトまたは Linear プロジェクトは既に対応付けられています",
       "save_failed": "Linear プロジェクトバインディングを保存できませんでした",
+      "import_queue_failed": "バインディングは保存されましたが、初回インポートをキューに追加できませんでした。再試行してください。",
+      "retry_import": "初回インポートを再試行",
       "loading_catalog": "Linear カタログを読み込み中",
       "loading_catalog_description": "チーム、プロジェクト、ワークフロー状態、ユーザー、ラベルを取得しています。",
       "catalog_failed": "Linear カタログを読み込めませんでした。再接続してもう一度お試しください。"

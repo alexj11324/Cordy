@@ -467,6 +467,8 @@
       "conflict_status_dismissed": "Dismissed",
       "save_conflict": "This project or Linear project is already bound",
       "save_failed": "Could not save the Linear project binding",
+      "import_queue_failed": "Binding saved, but the initial import could not be queued. Try again.",
+      "retry_import": "Retry initial import",
       "loading_catalog": "Loading Linear catalog",
       "loading_catalog_description": "Teams, projects, workflow states, users, and labels are being fetched.",
       "catalog_failed": "Could not load the Linear catalog. Reconnect and try again."
