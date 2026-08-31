@@ -976,7 +976,7 @@ impl Router {
                     workspace_id: inst.workspace_id,
                     title: cmd.title.clone(),
                     description: cmd.description.clone(),
-                    assignee_agent_id: inst.agent_id,
+                    executor_agent_id: inst.agent_id,
                     creator_user_id: identity.user_id,
                     origin_type: set.origin_type.clone(),
                     origin_session_id: session_id,

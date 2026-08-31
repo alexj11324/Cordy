@@ -39,7 +39,8 @@ const mockSetManual = vi.hoisted(() => vi.fn());
 const mockSetAgent = vi.hoisted(() => vi.fn());
 const mockSetActiveMode = vi.hoisted(() => vi.fn());
 const mockClearDraft = vi.hoisted(() => vi.fn());
-const mockSetLastAssignee = vi.hoisted(() => vi.fn());
+const mockSetLastOwner = vi.hoisted(() => vi.fn());
+const mockSetLastExecutor = vi.hoisted(() => vi.fn());
 const mockSetKeepOpen = vi.hoisted(() => vi.fn());
 const mockToastCustom = vi.hoisted(() => vi.fn());
 const mockToastDismiss = vi.hoisted(() => vi.fn());
@@ -48,6 +49,16 @@ const mockToastError = vi.hoisted(() => vi.fn());
 // `api.uploadFile(file, ctx, signal)` (PB-5181 L2). Tests drive uploads by
 // mocking that call; it resolves a plain server Attachment row.
 const mockApiUploadFile = vi.hoisted(() => vi.fn());
+
+vi.mock("@patchbay/core/auth", () => ({
+  useAuthStore: Object.assign(
+    (selector?: (state: { user: { id: string } }) => unknown) => {
+      const state = { user: { id: "user-1" } };
+      return selector ? selector(state) : state;
+    },
+    { getState: () => ({ user: { id: "user-1" } }) },
+  ),
+}));
 
 type DraftAttachment = {
   id: string;
@@ -90,8 +101,11 @@ const emptyIssueDraft = () => ({
     description: "",
     status: "todo" as "backlog" | "todo" | "in_progress" | "in_review" | "blocked" | "done" | "cancelled",
     startDate: null as string | null,
-    assigneeType: undefined as "agent" | "team" | "member" | undefined,
-    assigneeId: undefined as string | undefined,
+    ownerId: undefined as string | undefined,
+    executorType: undefined as "agent" | "team" | undefined,
+    executorId: undefined as string | undefined,
+    reviewerType: undefined as "member" | "agent" | "team" | undefined,
+    reviewerId: undefined as string | undefined,
     labelIds: [] as string[],
     propertyValues: {} as Record<string, string | number | boolean | string[]>,
   },
@@ -105,14 +119,16 @@ const emptyIssueDraft = () => ({
 
 const mockDraftStore = {
   draft: emptyIssueDraft(),
-  lastAssigneeType: undefined as "agent" | "team" | "member" | undefined,
-  lastAssigneeId: undefined as string | undefined,
+  lastOwnerId: undefined as string | undefined,
+  lastExecutorType: undefined as "agent" | "team" | undefined,
+  lastExecutorId: undefined as string | undefined,
   setShared: mockSetShared,
   setManual: mockSetManual,
   setAgent: mockSetAgent,
   setActiveMode: mockSetActiveMode,
   clearDraft: mockClearDraft,
-  setLastAssignee: mockSetLastAssignee,
+  setLastOwner: mockSetLastOwner,
+  setLastExecutor: mockSetLastExecutor,
   hasDraft: () => false,
 };
 
@@ -124,7 +140,9 @@ const mockQuickCreateStore = {
 type ManualCreateField =
   | "status"
   | "priority"
-  | "assignee"
+  | "owner"
+  | "executor"
+  | "reviewer"
   | "labels"
   | "project"
   | "due_date"
@@ -133,7 +151,7 @@ type ManualCreateField =
 const DEFAULT_MANUAL_FIELDS: ManualCreateField[] = [
   "status",
   "priority",
-  "assignee",
+  "executor",
   "labels",
   "project",
 ];
@@ -196,7 +214,7 @@ vi.mock("@patchbay/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "Agent" }),
 }));
 
-// CreateRunHint now renders an ActorAvatar for agent/team assignees. This
+// CreateRunHint now renders an ActorAvatar for agent/team executors. This
 // suite is about the create form, not the avatar (whose own workspace/presence/
 // navigation hook tree is exercised elsewhere), so stub it inert.
 vi.mock("../common/actor-avatar", () => ({
@@ -398,7 +416,9 @@ vi.mock("../issues/components", () => ({
   StatusPicker: () => <div data-testid="status-picker" />,
   PriorityPicker: () => <div data-testid="priority-picker" />,
   StagePicker: () => <div data-testid="stage-picker" />,
-  AssigneePicker: () => <div data-testid="assignee-picker" />,
+  OwnerPicker: () => <div data-testid="owner-picker" />,
+  ExecutorPicker: () => <div data-testid="executor-picker" />,
+  ReviewerPicker: () => <div data-testid="reviewer-picker" />,
   // Surface open/onOpenChange so tests can assert progressive-disclosure
   // behavior (mounted only when the user has opted in or has a value).
   StartDatePicker: ({ open, onOpenChange }: { open?: boolean; onOpenChange?: (v: boolean) => void }) => (
@@ -586,7 +606,7 @@ describe("CreateIssueModal", () => {
     mockSetKeepOpen.mockImplementation((v: boolean) => {
       mockQuickCreateStore.keepOpen = v;
     });
-    // Reset the unified draft mock so per-test seeding (assignee, project, …)
+    // Reset the unified draft mock so per-test seeding (executor, project, …)
     // doesn't leak into the next test in the suite.
     mockDraftStore.draft = emptyIssueDraft();
     mockSetShared.mockImplementation((patch: Partial<typeof mockDraftStore.draft.shared>) => {
@@ -600,8 +620,8 @@ describe("CreateIssueModal", () => {
     });
     mockClearDraft.mockImplementation(() => {
       const next = emptyIssueDraft();
-      next.manual.assigneeType = mockDraftStore.lastAssigneeType;
-      next.manual.assigneeId = mockDraftStore.lastAssigneeId;
+      next.manual.executorType = mockDraftStore.lastExecutorType;
+      next.manual.executorId = mockDraftStore.lastExecutorId;
       mockDraftStore.draft = next;
     });
     mockApiUploadFile.mockResolvedValue({
@@ -674,17 +694,24 @@ describe("CreateIssueModal", () => {
         description: undefined,
         status: "todo",
         priority: "none",
-        assignee_type: undefined,
-        assignee_id: undefined,
+        owner_type: "member",
+        owner_id: "user-1",
+        executor_type: undefined,
+        executor_id: undefined,
+        reviewer_type: undefined,
+        reviewer_id: undefined,
         start_date: undefined,
         due_date: undefined,
         attachment_ids: undefined,
         parent_issue_id: undefined,
+        label_ids: undefined,
+        stage: undefined,
         project_id: undefined,
       });
     });
 
-    expect(mockSetLastAssignee).toHaveBeenCalledWith(undefined, undefined);
+    expect(mockSetLastOwner).toHaveBeenCalledWith("user-1");
+    expect(mockSetLastExecutor).toHaveBeenCalledWith(undefined, undefined);
     expect(mockClearDraft).toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
     expect(mockToastCustom).toHaveBeenCalledTimes(1);
@@ -704,7 +731,7 @@ describe("CreateIssueModal", () => {
     expect(mockToastDismiss).toHaveBeenCalledWith("toast-1");
   });
 
-  it("blocks active issue creation until an assignee is selected", async () => {
+  it("blocks active issue creation until an executor is selected", async () => {
     mockDraftStore.draft.manual.status = "in_progress";
     const user = userEvent.setup();
 
@@ -712,13 +739,13 @@ describe("CreateIssueModal", () => {
     await user.type(screen.getByPlaceholderText("Issue title"), "Owned active work");
 
     expect(
-      screen.getByText("Choose an owner for an issue with work underway."),
+      screen.getByText("Choose an executor for an issue with work underway."),
     ).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Create Issue" }));
 
     expect(mockCreateIssue).not.toHaveBeenCalled();
     expect(mockToastError).toHaveBeenCalledWith(
-      "Choose an owner for an issue with work underway.",
+      "Choose an executor for an issue with work underway.",
     );
   });
 
@@ -804,12 +831,18 @@ describe("CreateIssueModal", () => {
         description: "Description to clear",
         status: "todo",
         priority: "none",
-        assignee_type: undefined,
-        assignee_id: undefined,
+        owner_type: "member",
+        owner_id: "user-1",
+        executor_type: undefined,
+        executor_id: undefined,
+        reviewer_type: undefined,
+        reviewer_id: undefined,
         start_date: undefined,
         due_date: undefined,
         attachment_ids: undefined,
         parent_issue_id: undefined,
+        label_ids: undefined,
+        stage: undefined,
         project_id: undefined,
       });
     });
@@ -821,8 +854,11 @@ describe("CreateIssueModal", () => {
       title: "",
       description: "",
       status: "todo",
-      assigneeType: undefined,
-      assigneeId: undefined,
+      ownerId: "user-1",
+      executorType: undefined,
+      executorId: undefined,
+      reviewerType: undefined,
+      reviewerId: undefined,
       startDate: null,
       labelIds: [],
       propertyValues: {},
@@ -1021,8 +1057,8 @@ describe("CreateIssueModal", () => {
   // this the agent panel silently falls back to the persisted actor / first
   // visible agent and the user loses the team they just chose in manual.
   it("seeds the agent actor from the picked team when switching to agent mode", async () => {
-    mockDraftStore.draft.manual.assigneeType = "team";
-    mockDraftStore.draft.manual.assigneeId = "team-1";
+    mockDraftStore.draft.manual.executorType = "team";
+    mockDraftStore.draft.manual.executorId = "team-1";
     const user = userEvent.setup();
     const onSwitchMode = vi.fn();
 
@@ -1274,7 +1310,7 @@ describe("CreateIssueModal", () => {
 
   it("hides toolbar fields turned off in Settings → Issue and re-reveals them from the overflow", async () => {
     const user = userEvent.setup();
-    mockCreateSettingsStore.manualCreateFields = ["status", "priority", "assignee", "project"];
+    mockCreateSettingsStore.manualCreateFields = ["status", "priority", "executor", "project"];
 
     renderModal(<CreateIssueModal onClose={vi.fn()} />);
 
@@ -1291,7 +1327,7 @@ describe("CreateIssueModal", () => {
   });
 
   it("keeps a hidden field on the toolbar while it holds a value", () => {
-    mockCreateSettingsStore.manualCreateFields = ["status", "priority", "assignee", "project"];
+    mockCreateSettingsStore.manualCreateFields = ["status", "priority", "executor", "project"];
     mockDraftStore.draft.manual.labelIds = ["label-1"];
 
     renderModal(<CreateIssueModal onClose={vi.fn()} />);

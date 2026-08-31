@@ -2,16 +2,16 @@ export type AutomationStatus = "active" | "paused" | "archived";
 
 export type AutomationExecutionMode = "create_issue" | "run_only";
 
-// `assignee_type` selects which polymorphic actor backs the automation:
-// "agent" → assignee_id references agent(id); "team" → assignee_id references
+// `executor_type` selects which polymorphic actor backs the automation:
+// "agent" → executor_id references agent(id); "team" → executor_id references
 // team(id) and dispatch resolves to team.leader_id at run time (PB-2429,
 // Path A). Older servers omit this field — callers should default to "agent".
-export type AutomationAssigneeType = "agent" | "team";
+export type AutomationExecutorType = "agent" | "team";
 
 export type AutomationTriggerKind = "schedule" | "webhook" | "api";
 
 // `skipped` is emitted by the backend pre-flight admission check
-// (assignee runtime offline at dispatch time, PB-1899). The frontend MUST
+// (executor runtime offline at dispatch time, PB-1899). The frontend MUST
 // handle it explicitly — falling through to a generic case used to show
 // the run as still-pending which masked the no-op.
 export type AutomationRunStatus =
@@ -29,8 +29,8 @@ export interface Automation {
   title: string;
   description: string | null;
   project_id?: string | null;
-  assignee_type: AutomationAssigneeType;
-  assignee_id: string;
+  executor_type: AutomationExecutorType;
+  executor_id: string;
   status: AutomationStatus;
   // Additive machine-readable explanation for a system pause. Null for manual
   // pauses and older servers.
@@ -157,8 +157,8 @@ export interface CreateAutomationRequest {
   project_id?: string | null;
   // Optional on the wire — when omitted the server defaults to "agent" so
   // older clients keep working.
-  assignee_type?: AutomationAssigneeType;
-  assignee_id: string;
+  executor_type?: AutomationExecutorType;
+  executor_id: string;
   execution_mode: AutomationExecutionMode;
   issue_title_template?: string;
   subscribers?: AutomationSubscriberInput[];
@@ -168,10 +168,10 @@ export interface UpdateAutomationRequest {
   title?: string;
   description?: string | null;
   project_id?: string | null;
-  // Send `assignee_type` together with `assignee_id` whenever you change the
-  // assignee — the server requires both for a type swap.
-  assignee_type?: AutomationAssigneeType;
-  assignee_id?: string;
+  // Send `executor_type` together with `executor_id` whenever you change the
+  // executor — the server requires both for a type swap.
+  executor_type?: AutomationExecutorType;
+  executor_id?: string;
   status?: AutomationStatus;
   execution_mode?: AutomationExecutionMode;
   issue_title_template?: string | null;

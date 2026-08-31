@@ -1,6 +1,6 @@
 /**
  * Pure picker body for issue labels — multi-select with toggle-on-tap.
- * Mirrors the assignee picker shape (native nav header + UISearchController
+ * Mirrors the executor picker shape (native nav header + UISearchController
  * registered in `_layout.tsx`; `query` flows in as a prop via
  * `useNativeSearchBar`) with two key differences:
  *

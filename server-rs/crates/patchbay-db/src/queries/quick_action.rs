@@ -29,8 +29,8 @@ pub async fn create_quick_action(
     workspace_id: Uuid,
     name: &str,
     description: &str,
-    assignee_type: &str,
-    assignee_id: Uuid,
+    executor_type: &str,
+    executor_id: Uuid,
     prompt: &str,
     visibility: &str,
     created_by_type: &str,
@@ -38,7 +38,7 @@ pub async fn create_quick_action(
 ) -> anyhow::Result<Option<QuickAction>> {
     let row = sqlx::query(
         r#"INSERT INTO quick_action (
-    workspace_id, name, description, assignee_type, assignee_id, prompt,
+    workspace_id, name, description, executor_type, executor_id, prompt,
     visibility, created_by_type, created_by_id
 ) VALUES (
     $1::uuid,
@@ -51,13 +51,13 @@ pub async fn create_quick_action(
     $8::text,
     $9::uuid
 )
-RETURNING id, workspace_id, name, description, assignee_type, assignee_id, prompt, visibility, status, last_used_at, use_count, created_by_type, created_by_id, created_at, updated_at"#
+RETURNING id, workspace_id, name, description, executor_type, executor_id, prompt, visibility, status, last_used_at, use_count, created_by_type, created_by_id, created_at, updated_at"#
     )
         .bind(workspace_id)
         .bind(name)
         .bind(description)
-        .bind(assignee_type)
-        .bind(assignee_id)
+        .bind(executor_type)
+        .bind(executor_id)
         .bind(prompt)
         .bind(visibility)
         .bind(created_by_type)
@@ -70,8 +70,8 @@ RETURNING id, workspace_id, name, description, assignee_type, assignee_id, promp
         workspace_id: row.try_get(1)?,
         name: row.try_get(2)?,
         description: row.try_get(3)?,
-        assignee_type: row.try_get(4)?,
-        assignee_id: row.try_get(5)?,
+        executor_type: row.try_get(4)?,
+        executor_id: row.try_get(5)?,
         prompt: row.try_get(6)?,
         visibility: row.try_get(7)?,
         status: row.try_get(8)?,
@@ -119,7 +119,7 @@ pub async fn get_quick_action(
     workspace_id: Uuid,
 ) -> anyhow::Result<Option<QuickAction>> {
     let row = sqlx::query(
-        r#"SELECT id, workspace_id, name, description, assignee_type, assignee_id, prompt, visibility, status, last_used_at, use_count, created_by_type, created_by_id, created_at, updated_at FROM quick_action
+        r#"SELECT id, workspace_id, name, description, executor_type, executor_id, prompt, visibility, status, last_used_at, use_count, created_by_type, created_by_id, created_at, updated_at FROM quick_action
 WHERE id = $1 AND workspace_id = $2"#
     )
         .bind(id)
@@ -132,8 +132,8 @@ WHERE id = $1 AND workspace_id = $2"#
         workspace_id: row.try_get(1)?,
         name: row.try_get(2)?,
         description: row.try_get(3)?,
-        assignee_type: row.try_get(4)?,
-        assignee_id: row.try_get(5)?,
+        executor_type: row.try_get(4)?,
+        executor_id: row.try_get(5)?,
         prompt: row.try_get(6)?,
         visibility: row.try_get(7)?,
         status: row.try_get(8)?,
@@ -153,7 +153,7 @@ pub async fn list_quick_actions(
     viewer_id: Uuid,
 ) -> anyhow::Result<Vec<QuickAction>> {
     let rows = sqlx::query(
-        r#"SELECT id, workspace_id, name, description, assignee_type, assignee_id, prompt, visibility, status, last_used_at, use_count, created_by_type, created_by_id, created_at, updated_at FROM quick_action
+        r#"SELECT id, workspace_id, name, description, executor_type, executor_id, prompt, visibility, status, last_used_at, use_count, created_by_type, created_by_id, created_at, updated_at FROM quick_action
 WHERE workspace_id = $1::uuid
   AND ($2::bool OR status = 'active')
   AND (visibility = 'public' OR created_by_id = $3::uuid)
@@ -171,8 +171,8 @@ ORDER BY use_count DESC, LOWER(name) ASC"#
             workspace_id: row.try_get(1)?,
             name: row.try_get(2)?,
             description: row.try_get(3)?,
-            assignee_type: row.try_get(4)?,
-            assignee_id: row.try_get(5)?,
+            executor_type: row.try_get(4)?,
+            executor_id: row.try_get(5)?,
             prompt: row.try_get(6)?,
             visibility: row.try_get(7)?,
             status: row.try_get(8)?,
@@ -210,8 +210,8 @@ pub async fn update_quick_action(
     workspace_id: Uuid,
     name: Option<&str>,
     description: Option<&str>,
-    assignee_type: Option<&str>,
-    assignee_id: Uuid,
+    executor_type: Option<&str>,
+    executor_id: Uuid,
     prompt: Option<&str>,
     visibility: Option<&str>,
     status: Option<&str>,
@@ -220,21 +220,21 @@ pub async fn update_quick_action(
         r#"UPDATE quick_action SET
     name = COALESCE($3, name),
     description = COALESCE($4, description),
-    assignee_type = COALESCE($5, assignee_type),
-    assignee_id = COALESCE($6, assignee_id),
+    executor_type = COALESCE($5, executor_type),
+    executor_id = COALESCE($6, executor_id),
     prompt = COALESCE($7, prompt),
     visibility = COALESCE($8, visibility),
     status = COALESCE($9, status),
     updated_at = now()
 WHERE id = $1 AND workspace_id = $2
-RETURNING id, workspace_id, name, description, assignee_type, assignee_id, prompt, visibility, status, last_used_at, use_count, created_by_type, created_by_id, created_at, updated_at"#
+RETURNING id, workspace_id, name, description, executor_type, executor_id, prompt, visibility, status, last_used_at, use_count, created_by_type, created_by_id, created_at, updated_at"#
     )
         .bind(id)
         .bind(workspace_id)
         .bind(name)
         .bind(description)
-        .bind(assignee_type)
-        .bind(assignee_id)
+        .bind(executor_type)
+        .bind(executor_id)
         .bind(prompt)
         .bind(visibility)
         .bind(status)
@@ -246,8 +246,8 @@ RETURNING id, workspace_id, name, description, assignee_type, assignee_id, promp
         workspace_id: row.try_get(1)?,
         name: row.try_get(2)?,
         description: row.try_get(3)?,
-        assignee_type: row.try_get(4)?,
-        assignee_id: row.try_get(5)?,
+        executor_type: row.try_get(4)?,
+        executor_id: row.try_get(5)?,
         prompt: row.try_get(6)?,
         visibility: row.try_get(7)?,
         status: row.try_get(8)?,

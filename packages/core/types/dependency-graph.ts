@@ -1,4 +1,4 @@
-import type { Issue, IssueAssigneeType } from "./issue";
+import type { Issue, IssueExecutorType, IssueReviewerType } from "./issue";
 
 export type DependencyGraphReadinessState =
   | "todo"
@@ -8,8 +8,8 @@ export type DependencyGraphReadinessState =
   | "done"
   | "cancelled";
 
-export type DependencyGraphAssignee = {
-  type: IssueAssigneeType;
+export type DependencyGraphExecutor = {
+  type: IssueExecutorType;
   id: string;
 };
 
@@ -55,9 +55,15 @@ export type DependencyGraphNode = {
   acceptance_criteria: string[];
   context: Record<string, unknown>;
   outputs: string[];
-  assignee_type: IssueAssigneeType | null;
-  assignee_id: string | null;
-  candidate_assignees: DependencyGraphAssignee[];
+  owner_type: "member" | null;
+  owner_id: string | null;
+  executor_type: IssueExecutorType | null;
+  executor_id: string | null;
+  candidate_executors: DependencyGraphExecutor[];
+  reviewer_type: IssueReviewerType | null;
+  reviewer_id: string | null;
+  runtime_id: string | null;
+  model_id: string | null;
   wave: number;
   status: string;
   readiness: DependencyGraphNodeReadiness;

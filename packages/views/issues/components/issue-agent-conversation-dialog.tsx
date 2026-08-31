@@ -39,6 +39,7 @@ const LIVE_FOLLOW_UP_STATUSES = new Set<AgentTask["status"]>([
   "dispatched",
   "running",
   "waiting_local_directory",
+  "waiting_capacity",
   "queued",
   "deferred",
 ]);

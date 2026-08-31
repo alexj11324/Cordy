@@ -156,8 +156,8 @@ members are skipped from the briefing roster.
 Issues can be assigned to teams with:
 
 ```text
-assignee_type = "team"
-assignee_id = <team-id>
+executor_type = "team"
+executor_id = <team-id>
 ```
 
 Current behavior:
@@ -166,8 +166,8 @@ Current behavior:
 - it does not enqueue every team member;
 - assignment while status is `backlog` does not immediately start work;
 - moving a team-assigned issue out of `backlog` can trigger the leader;
-- changing assignee cancels existing tasks for the issue before enqueueing the
-  new assignee path;
+- changing executor cancels existing tasks for the issue before enqueueing the
+  new executor path;
 - parent issue status is agent-managed (same model as direct agent assignment):
   the leader's first assignment turn should move the parent to `in_progress`
   and keep it there while members work; the leader moves the parent to
@@ -175,8 +175,8 @@ Current behavior:
   and must atomically hand it from the team to a different reviewer.
   Completing a leader `task` (including the first dispatch) does not itself
   change issue status;
-- that status authority is granted only when the issue's `assignee_type` /
-  `assignee_id` point at THIS team. The leader briefing is injected on every
+- that status authority is granted only when the issue's `executor_type` /
+  `executor_id` point at THIS team. The leader briefing is injected on every
   leader path, including an `@team` mention on an issue owned by a plain agent
   — on those paths the protocol instead carries an explicit "do not change this
   issue's status".
@@ -202,15 +202,15 @@ team member.
 
 ## Automation behavior
 
-Automations can be assigned to teams. For `assignee_type = "team"`:
+Automations can be assigned to teams. For `executor_type = "team"`:
 
 - executable agent resolves from `team.leader_id`;
 - admission/readiness checks run against the leader;
 - archived teams fail closed / skip dispatch;
 - run attribution records team id where applicable.
 
-For `create_issue` automations, the created issue keeps `assignee_type = "team"`
-and `assignee_id = <team-id>`, while the actual executing agent is the resolved
+For `create_issue` automations, the created issue keeps `executor_type = "team"`
+and `executor_id = <team-id>`, while the actual executing agent is the resolved
 leader. For `run_only` automations, no issue is created; the task is created
 directly for the resolved leader agent.
 

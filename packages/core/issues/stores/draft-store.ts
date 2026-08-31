@@ -3,7 +3,8 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import type {
   IssueStatus,
   IssuePriority,
-  IssueAssigneeType,
+  IssueExecutorType,
+  IssueReviewerType,
   IssuePropertyValues,
 } from "../../types";
 import type { CreateMode } from "./create-mode-store";
@@ -19,7 +20,7 @@ import { normalizeStoredUploads, type DraftUpload } from "../../drafts/draft-upl
 //   shared  — belongs to the issue no matter how it is filed: project,
 //             priority, due date, attachments.
 //   manual  — the manual form's own state: title, description, status, start
-//             date, assignee, labels, custom properties.
+//             date, executor, labels, custom properties.
 //   agent   — the agent form's own state: the free-text prompt and the picked
 //             actor (agent or team).
 //   activeMode — which form the draft is currently being edited in.
@@ -49,8 +50,11 @@ export interface IssueCreateManual {
   description: string;
   status: IssueStatus;
   startDate: string | null;
-  assigneeType?: IssueAssigneeType;
-  assigneeId?: string;
+  ownerId?: string;
+  executorType?: IssueExecutorType;
+  executorId?: string;
+  reviewerType?: IssueReviewerType;
+  reviewerId?: string;
   /** Label IDs chosen in the create dialog. Attached to the issue right after
    *  it is created (the create endpoint takes no labels), so they are kept as
    *  a plain id list rather than full Label objects. */
@@ -83,8 +87,11 @@ const emptyManual = (): IssueCreateManual => ({
   description: "",
   status: "todo",
   startDate: null,
-  assigneeType: undefined,
-  assigneeId: undefined,
+  ownerId: undefined,
+  executorType: undefined,
+  executorId: undefined,
+  reviewerType: undefined,
+  reviewerId: undefined,
   labelIds: [],
   propertyValues: {},
 });
@@ -97,17 +104,19 @@ const emptyAgent = (): IssueCreateAgent => ({
 
 interface IssueDraftStore {
   draft: IssueCreateDraft;
-  // Last assignee picked at submit time. Persisted across drafts so the
+  lastOwnerId?: string;
+  // Last executor picked at submit time. Persisted across drafts so the
   // create-issue modal can prefill the picker with the user's most recent
-  // choice instead of always opening with no assignee.
-  lastAssigneeType?: IssueAssigneeType;
-  lastAssigneeId?: string;
+  // choice instead of always opening with no executor.
+  lastExecutorType?: IssueExecutorType;
+  lastExecutorId?: string;
   setShared: (patch: Partial<IssueCreateShared>) => void;
   setManual: (patch: Partial<IssueCreateManual>) => void;
   setAgent: (patch: Partial<IssueCreateAgent>) => void;
   setActiveMode: (mode: CreateMode) => void;
   clearDraft: () => void;
-  setLastAssignee: (type?: IssueAssigneeType, id?: string) => void;
+  setLastOwner: (id?: string) => void;
+  setLastExecutor: (type?: IssueExecutorType, id?: string) => void;
   hasDraft: () => boolean;
 }
 
@@ -144,8 +153,10 @@ function migrateDraft(raw: unknown): IssueCreateDraft {
         description: (d.description as string) ?? "",
         status: (d.status as IssueStatus) ?? "todo",
         startDate: (d.startDate as string | null) ?? null,
-        assigneeType: d.assigneeType as IssueAssigneeType | undefined,
-        assigneeId: d.assigneeId as string | undefined,
+        executorType: d.executorType as IssueExecutorType | undefined,
+        executorId: d.executorId as string | undefined,
+        reviewerType: d.reviewerType as IssueReviewerType | undefined,
+        reviewerId: d.reviewerId as string | undefined,
         labelIds: Array.isArray(d.labelIds) ? (d.labelIds as string[]) : [],
         propertyValues:
           d.propertyValues && typeof d.propertyValues === "object"
@@ -176,8 +187,9 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
   persist(
     (set, get) => ({
       draft: migrateDraft(undefined),
-      lastAssigneeType: undefined,
-      lastAssigneeId: undefined,
+      lastOwnerId: undefined,
+      lastExecutorType: undefined,
+      lastExecutorId: undefined,
       setShared: (patch) =>
         set((s) => ({ draft: { ...s.draft, shared: { ...s.draft.shared, ...patch } } })),
       setManual: (patch) =>
@@ -192,15 +204,17 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
             shared: emptyShared(),
             manual: {
               ...emptyManual(),
-              assigneeType: s.lastAssigneeType,
-              assigneeId: s.lastAssigneeId,
+              ownerId: s.lastOwnerId,
+              executorType: s.lastExecutorType,
+              executorId: s.lastExecutorId,
             },
             agent: emptyAgent(),
             activeMode: s.draft.activeMode,
           },
         })),
-      setLastAssignee: (type, id) =>
-        set({ lastAssigneeType: type, lastAssigneeId: id }),
+      setLastExecutor: (type, id) =>
+        set({ lastExecutorType: type, lastExecutorId: id }),
+      setLastOwner: (id) => set({ lastOwnerId: id }),
       hasDraft: () => {
         const { manual, agent, shared } = get().draft;
         return !!(
@@ -237,13 +251,14 @@ registerDraftCleanup({
   storageKey: "patchbay_issue_draft",
   workspaceScoped: true,
   // Full reset, NOT clearDraft(): clearDraft deliberately keeps the
-  // last-assignee preference and re-seeds it into the fresh draft's manual
+  // last-executor preference and re-seeds it into the fresh draft's manual
   // slot — correct between drafts of one user, but on logout it would hand
-  // the previous user's last-picked assignee to the next login on this tab.
+  // the previous user's last-picked executor to the next login on this tab.
   resetInMemory: () =>
     useIssueDraftStore.setState({
       draft: migrateDraft(undefined),
-      lastAssigneeType: undefined,
-      lastAssigneeId: undefined,
+      lastOwnerId: undefined,
+      lastExecutorType: undefined,
+      lastExecutorId: undefined,
     }),
 });

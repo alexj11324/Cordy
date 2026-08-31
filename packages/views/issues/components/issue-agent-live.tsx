@@ -26,6 +26,7 @@ const LIVE_STATUS_RANK: Partial<Record<AgentTask["status"], number>> = {
   running: 0,
   dispatched: 1,
   waiting_local_directory: 2,
+  waiting_capacity: 2,
   queued: 3,
   deferred: 4,
 };
@@ -113,6 +114,8 @@ function IssueAgentWorkingCard({
       ? t(($) => $.agent_live.working)
       : task.status === "waiting_local_directory"
         ? t(($) => $.agent_thread.status_waiting_local_directory)
+        : task.status === "waiting_capacity"
+          ? t(($) => $.agent_thread.status_waiting_capacity)
         : t(($) => $.agent_activity.status_queued);
   const happenedAt = task.started_at ?? task.created_at;
 

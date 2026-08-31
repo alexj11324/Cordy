@@ -140,7 +140,7 @@ const PROPERTY_ICONS: &[&str] = &[
 const RESERVED_NAMES: &[&str] = &[
     "status",
     "priority",
-    "assignee",
+    "executor",
     "project",
     "parent",
     "stage",

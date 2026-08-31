@@ -23,7 +23,7 @@ import {
   type HandoffActor,
   type HandoffHop,
 } from "../handoff-chain";
-import { AssigneePicker } from "./pickers/assignee-picker";
+import { ExecutorPicker } from "./pickers/executor-picker";
 
 function HandoffAvatarStack({
   actors,
@@ -136,7 +136,7 @@ function HandoffHistoryPopover({
   );
 }
 
-export function AssigneeHandoffRow({
+export function ExecutorHandoffRow({
   issue,
   timeline,
   onUpdate,
@@ -148,31 +148,31 @@ export function AssigneeHandoffRow({
   const { getActorName } = useActorName();
   const { actors, hops } = useMemo(() => {
     const recorded = reviewHandoffHops(timeline);
-    const assignee = issueActor(issue.assignee_type, issue.assignee_id);
+    const executor = issueActor(issue.executor_type, issue.executor_id);
     const reviewer = issueActor(issue.reviewer_type, issue.reviewer_id);
     return {
-      actors: handoffStackActors(recorded, assignee, reviewer),
-      hops: handoffHopsForDisplay(recorded, assignee, reviewer),
+      actors: handoffStackActors(recorded, executor, reviewer),
+      hops: handoffHopsForDisplay(recorded, executor, reviewer),
     };
   }, [
     timeline,
-    issue.assignee_type,
-    issue.assignee_id,
+    issue.executor_type,
+    issue.executor_id,
     issue.reviewer_type,
     issue.reviewer_id,
   ]);
 
   const stacked = actors.length > 1 && hops.length > 0;
   const picker = (
-    <AssigneePicker
-      assigneeType={issue.assignee_type}
-      assigneeId={issue.assignee_id}
+    <ExecutorPicker
+      executorType={issue.executor_type}
+      executorId={issue.executor_id}
       onUpdate={onUpdate}
       align="start"
       trigger={
-        stacked && issue.assignee_type && issue.assignee_id ? (
+        stacked && issue.executor_type && issue.executor_id ? (
           <span className="truncate">
-            {getActorName(issue.assignee_type, issue.assignee_id)}
+            {getActorName(issue.executor_type, issue.executor_id)}
           </span>
         ) : undefined
       }

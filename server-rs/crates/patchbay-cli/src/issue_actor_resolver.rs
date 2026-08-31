@@ -15,7 +15,7 @@ struct IssueActor {
 }
 
 #[derive(Debug)]
-pub(super) struct ResolvedIssueAssignee {
+pub(super) struct ResolvedIssueExecutor {
     pub(super) actor_type: String,
     pub(super) id: String,
     pub(super) name: String,
@@ -101,11 +101,34 @@ pub(super) async fn retry_actor_get<T: DeserializeOwned>(
     unreachable!("actor resolver retry loop always returns")
 }
 
-pub(super) async fn resolve_issue_assignee_id(
+pub(super) async fn resolve_issue_executor_id(
     client: &ApiClient,
     workspace_id: &str,
     raw: &str,
-) -> Result<ResolvedIssueAssignee> {
+) -> Result<ResolvedIssueExecutor> {
+    resolve_actor_id(client, workspace_id, raw, true).await
+}
+
+/// Resolve a human owner.  The issue API deliberately keeps owners separate
+/// from execution targets, so callers should use this wrapper instead of
+/// sending a member through `executor_type`.
+pub(super) async fn resolve_issue_owner_id(
+    client: &ApiClient,
+    workspace_id: &str,
+    raw: &str,
+) -> Result<ResolvedIssueExecutor> {
+    let actor = resolve_actor_id(client, workspace_id, raw, false).await?;
+    if actor.actor_type != "member" {
+        bail!("owner must be a workspace member")
+    }
+    Ok(actor)
+}
+
+pub(super) async fn resolve_issue_reviewer_id(
+    client: &ApiClient,
+    workspace_id: &str,
+    raw: &str,
+) -> Result<ResolvedIssueExecutor> {
     resolve_actor_id(client, workspace_id, raw, true).await
 }
 
@@ -113,7 +136,7 @@ pub(super) async fn resolve_subscriber_id(
     client: &ApiClient,
     workspace_id: &str,
     raw: &str,
-) -> Result<ResolvedIssueAssignee> {
+) -> Result<ResolvedIssueExecutor> {
     resolve_actor_id(client, workspace_id, raw, false).await
 }
 
@@ -122,7 +145,7 @@ async fn resolve_actor_id(
     workspace_id: &str,
     raw: &str,
     allow_teams: bool,
-) -> Result<ResolvedIssueAssignee> {
+) -> Result<ResolvedIssueExecutor> {
     let input = raw.trim();
     if !is_canonical_uuid(input) {
         bail!("expected a canonical UUID, got {raw:?}");
@@ -143,7 +166,7 @@ async fn resolve_actor_id(
             bail!("failed to resolve user: {errors}");
         }
         bail!(
-            "failed to resolve assignee: {}; {}; {}",
+            "failed to resolve executor: {}; {}; {}",
             actors[0].as_ref().unwrap_err(),
             actors[1].as_ref().unwrap_err(),
             actors[2].as_ref().unwrap_err()
@@ -157,7 +180,7 @@ async fn resolve_actor_id(
             (allow_teams || actor.actor_type != "team") && actor.id.eq_ignore_ascii_case(input)
         })
     {
-        return Ok(ResolvedIssueAssignee {
+        return Ok(ResolvedIssueExecutor {
             actor_type: actor.actor_type.into(),
             id: actor.id.clone(),
             name: actor.name.clone(),
@@ -169,11 +192,31 @@ async fn resolve_actor_id(
     bail!("no member or agent found with ID {input:?}")
 }
 
-pub(super) async fn resolve_issue_assignee_name(
+pub(super) async fn resolve_issue_executor_name(
     client: &ApiClient,
     workspace_id: &str,
     raw: &str,
-) -> Result<ResolvedIssueAssignee> {
+) -> Result<ResolvedIssueExecutor> {
+    resolve_actor_name(client, workspace_id, raw, true).await
+}
+
+pub(super) async fn resolve_issue_owner_name(
+    client: &ApiClient,
+    workspace_id: &str,
+    raw: &str,
+) -> Result<ResolvedIssueExecutor> {
+    let actor = resolve_actor_name(client, workspace_id, raw, false).await?;
+    if actor.actor_type != "member" {
+        bail!("owner must be a workspace member")
+    }
+    Ok(actor)
+}
+
+pub(super) async fn resolve_issue_reviewer_name(
+    client: &ApiClient,
+    workspace_id: &str,
+    raw: &str,
+) -> Result<ResolvedIssueExecutor> {
     resolve_actor_name(client, workspace_id, raw, true).await
 }
 
@@ -181,7 +224,7 @@ pub(super) async fn resolve_subscriber_name(
     client: &ApiClient,
     workspace_id: &str,
     raw: &str,
-) -> Result<ResolvedIssueAssignee> {
+) -> Result<ResolvedIssueExecutor> {
     resolve_actor_name(client, workspace_id, raw, false).await
 }
 
@@ -190,8 +233,8 @@ async fn resolve_actor_name(
     workspace_id: &str,
     raw: &str,
     allow_teams: bool,
-) -> Result<ResolvedIssueAssignee> {
-    let input = normalize_assignee_input(raw);
+) -> Result<ResolvedIssueExecutor> {
+    let input = normalize_executor_input(raw);
     if input.is_empty() {
         if allow_teams {
             bail!("no member, agent, or team found matching {raw:?}");
@@ -213,7 +256,7 @@ async fn resolve_actor_name(
         if !allow_teams {
             bail!("failed to resolve user: {errors}");
         }
-        bail!("failed to resolve assignee: {errors}");
+        bail!("failed to resolve executor: {errors}");
     }
     let actors = actors
         .iter()
@@ -243,7 +286,7 @@ async fn resolve_actor_name(
         match bucket.as_slice() {
             [] => {}
             [actor] => {
-                return Ok(ResolvedIssueAssignee {
+                return Ok(ResolvedIssueExecutor {
                     actor_type: actor.actor_type.into(),
                     id: actor.id.clone(),
                     name: actor.name.clone(),
@@ -262,7 +305,7 @@ async fn resolve_actor_name(
                     })
                     .collect::<Vec<_>>()
                     .join("\n");
-                bail!("ambiguous assignee {input:?}; matches:\n{matches}");
+                bail!("ambiguous executor {input:?}; matches:\n{matches}");
             }
         }
     }
@@ -272,7 +315,7 @@ async fn resolve_actor_name(
     bail!("no member or agent found matching {input:?}")
 }
 
-pub(super) fn normalize_assignee_input(raw: &str) -> String {
+pub(super) fn normalize_executor_input(raw: &str) -> String {
     let input = raw.trim();
     if let Some(marker) = input.find("](mention://") {
         if input.starts_with('[') && input.ends_with(')') {

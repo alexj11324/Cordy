@@ -3,7 +3,7 @@
 //! Implements `computeCommentAgentTriggers`, `isNoteComment`, and
 //! `retriggerCancelledTaskSurvivors`
 //! without the full coalesce/defer enqueue machine. The P1 contract is: wake
-//! the right agents (mentions, assignee, thread parent, conversation, `/note`
+//! the right agents (mentions, executor, thread parent, conversation, `/note`
 //! opt-out) and restore surviving coalesced comments after cancel.
 
 use std::collections::{HashMap, HashSet};
@@ -22,7 +22,7 @@ const NOTE_COMMENT_PREFIX: &str = "/note";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum CommentTriggerSource {
-    IssueAssignee,
+    IssueExecutor,
     MentionAgent,
     MentionTeamLeader,
     ThreadParent,
@@ -32,7 +32,7 @@ pub(crate) enum CommentTriggerSource {
 impl CommentTriggerSource {
     pub(crate) fn as_str(self) -> &'static str {
         match self {
-            Self::IssueAssignee => "issue_assignee",
+            Self::IssueExecutor => "issue_executor",
             Self::MentionAgent => "mention_agent",
             Self::MentionTeamLeader => "mention_team_leader",
             Self::ThreadParent => "thread_parent",
@@ -42,7 +42,7 @@ impl CommentTriggerSource {
 
     pub(crate) fn reason(self) -> &'static str {
         match self {
-            Self::IssueAssignee => "Current issue assignment will trigger this agent.",
+            Self::IssueExecutor => "Current issue assignment will trigger this agent.",
             Self::MentionAgent => "This agent was mentioned in the comment.",
             Self::MentionTeamLeader => "A mentioned team will trigger its leader.",
             Self::ThreadParent => "This reply will trigger the parent comment's author.",
@@ -206,7 +206,7 @@ pub(crate) async fn compute_comment_agent_triggers(
         return CommentTriggerPlan::default();
     }
     if input.actor_type != "member" {
-        if input.issue.assignee_type.as_deref() == Some("team") {
+        if input.issue.executor_type.as_deref() == Some("team") {
             if let Some(trigger) = route_assigned_team_leader(&input).await {
                 return CommentTriggerPlan {
                     triggers: vec![trigger],
@@ -236,7 +236,7 @@ pub(crate) async fn compute_comment_agent_triggers(
             return CommentTriggerPlan::default();
         }
     }
-    if let Some(trigger) = route_assignee_fallback(&input).await {
+    if let Some(trigger) = route_executor_fallback(&input).await {
         return CommentTriggerPlan {
             triggers: vec![trigger],
             blocked: Vec::new(),
@@ -475,10 +475,10 @@ async fn route_conversation_agent(
     })
 }
 
-async fn route_assignee_fallback(input: &CommentTriggerInput<'_>) -> Option<CommentTrigger> {
+async fn route_executor_fallback(input: &CommentTriggerInput<'_>) -> Option<CommentTrigger> {
     match (
-        input.issue.assignee_type.as_deref(),
-        input.issue.assignee_id,
+        input.issue.executor_type.as_deref(),
+        input.issue.executor_id,
     ) {
         (Some("agent"), Some(agent_id)) => {
             let agent =
@@ -489,7 +489,7 @@ async fn route_assignee_fallback(input: &CommentTriggerInput<'_>) -> Option<Comm
             Some(CommentTrigger {
                 agent,
                 team_id: None,
-                source: CommentTriggerSource::IssueAssignee,
+                source: CommentTriggerSource::IssueExecutor,
             })
         }
         (Some("team"), Some(_)) => route_assigned_team_leader(input).await,
@@ -498,7 +498,7 @@ async fn route_assignee_fallback(input: &CommentTriggerInput<'_>) -> Option<Comm
 }
 
 async fn route_assigned_team_leader(input: &CommentTriggerInput<'_>) -> Option<CommentTrigger> {
-    let team_id = input.issue.assignee_id?;
+    let team_id = input.issue.executor_id?;
     let team = team::get_team_in_workspace(&input.state.pool, team_id, input.issue.workspace_id)
         .await
         .ok()
@@ -513,7 +513,7 @@ async fn route_assigned_team_leader(input: &CommentTriggerInput<'_>) -> Option<C
     Some(CommentTrigger {
         agent,
         team_id: Some(team.id),
-        source: CommentTriggerSource::IssueAssignee,
+        source: CommentTriggerSource::IssueExecutor,
     })
 }
 
@@ -607,7 +607,7 @@ async fn enqueue_one(
                 )
                 .await
         }
-        (CommentTriggerSource::IssueAssignee, Some(team_id)) => {
+        (CommentTriggerSource::IssueExecutor, Some(team_id)) => {
             state
                 .tasks
                 .enqueue_task_for_team_leader(
@@ -848,8 +848,8 @@ mod tests {
     #[test]
     fn trigger_source_wire_names_match_go() {
         assert_eq!(
-            CommentTriggerSource::IssueAssignee.as_str(),
-            "issue_assignee"
+            CommentTriggerSource::IssueExecutor.as_str(),
+            "issue_executor"
         );
         assert_eq!(CommentTriggerSource::MentionAgent.as_str(), "mention_agent");
         assert_eq!(

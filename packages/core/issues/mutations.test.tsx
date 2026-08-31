@@ -45,8 +45,12 @@ function makeIssue(idx: number, overrides: Partial<Issue> = {}): Issue {
     description: null,
     status: "todo",
     priority: "none",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -99,7 +103,7 @@ function createWrapper(qc: QueryClient) {
 describe("useUpdateIssue — optimistic move keeps every bucketed board in sync", () => {
   const sort: IssueSortParam = { sort_by: "position", sort_direction: undefined };
   const myScope = "assigned";
-  const myFilter = { assignee_id: "user-1" };
+  const myFilter = { executor_id: "user-1" };
   const projectScope = "project:p1";
   const projectFilter = { project_id: "p1" };
   const wsKey = issueKeys.listSorted(WS_ID, sort);
@@ -450,7 +454,7 @@ describe("useUpdateIssue — optimistic move keeps every bucketed board in sync"
     });
 
     // Optimistic: gone from the old project's list immediately; the
-    // workspace board and the assignee-filtered list keep the card.
+    // workspace board and the executor-filtered list keep the card.
     expect(bucketIds(projectKey, "todo")).toEqual([]);
     expect(bucketIds(wsKey, "todo")).toEqual(["issue-1"]);
     expect(bucketIds(myKey, "todo")).toEqual(["issue-1"]);
@@ -575,7 +579,7 @@ describe("useUpdateIssue — detaching a sub-issue prunes the old parent's child
 describe("useBatchUpdateIssues — optimistic patch covers filtered boards too", () => {
   const sort: IssueSortParam = { sort_by: "position", sort_direction: undefined };
   const myScope = "assigned";
-  const myFilter = { assignee_id: "user-1" };
+  const myFilter = { executor_id: "user-1" };
   const wsKey = issueKeys.listSorted(WS_ID, sort);
   const myKey = issueKeys.myListSorted(WS_ID, myScope, myFilter, sort);
 
@@ -746,7 +750,7 @@ describe("useBatchUpdateIssues — optimistic patch covers filtered boards too",
     });
 
     expect(bucketIds(projectKey, "todo")).toEqual([]);
-    // The assignee-filtered list is untouched by a project move.
+    // The executor-filtered list is untouched by a project move.
     expect(bucketIds(myKey, "todo")).toEqual(["issue-1"]);
     const invalidatedKeys = invalidateSpy.mock.calls.map((c) => c[0]?.queryKey);
     expect(invalidatedKeys).not.toContainEqual(issueKeys.myAll(WS_ID));

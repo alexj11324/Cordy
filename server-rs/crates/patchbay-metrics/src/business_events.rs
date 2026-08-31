@@ -795,12 +795,12 @@ mod tests {
             "ready_duration_ms>0 observed as seconds"
         );
 
-        let assignee = patchbay_analytics::AutomationAssignee {
+        let executor = patchbay_analytics::AutomationExecutor {
             agent_id: "ag".into(),
             ..Default::default()
         };
         let done = patchbay_analytics::automation_run_completed(
-            "u", "ws", "ap", "run", "daily", &assignee, "schedule", 100,
+            "u", "ws", "ap", "run", "daily", &executor, "schedule", 100,
         );
         m.inc_for_event(&done);
         assert_eq!(

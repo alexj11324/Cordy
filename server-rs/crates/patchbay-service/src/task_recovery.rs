@@ -664,7 +664,7 @@ impl TaskService {
                 .await;
             let head_sha = self.resolve_issue_review_sha(target.issue.id).await;
             let owner_generation: i64 = sqlx::query_scalar(
-                "SELECT assignee_generation FROM issue WHERE id = $1 AND workspace_id = $2",
+                "SELECT executor_generation FROM issue WHERE id = $1 AND workspace_id = $2",
             )
             .bind(target.issue.id)
             .bind(target.issue.workspace_id)
@@ -1210,20 +1210,20 @@ mod tests {
             pool: &PgPool,
             workspace_id: Uuid,
             creator_id: Uuid,
-            assignee_id: Uuid,
+            executor_id: Uuid,
             number: i32,
             parent_issue_id: Option<Uuid>,
         ) -> anyhow::Result<Uuid> {
             let id = new_v7();
             sqlx::query(
-                "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, parent_issue_id, number, position) \
+                "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, executor_type, executor_id, parent_issue_id, number, position) \
                  VALUES ($1, $2, $3, 'in_progress', 'medium', 'member', $4, 'agent', $5, $6, $7, 0)",
             )
             .bind(id)
             .bind(workspace_id)
             .bind(format!("Delegated recovery issue {number}"))
             .bind(creator_id)
-            .bind(assignee_id)
+            .bind(executor_id)
             .bind(parent_issue_id)
             .bind(number)
             .execute(pool)
@@ -1356,7 +1356,7 @@ mod tests {
 
         async fn automation_run(&self) -> anyhow::Result<Uuid> {
             let automation_id: Uuid = sqlx::query_scalar(
-                "INSERT INTO automation (workspace_id, title, assignee_type, assignee_id, execution_mode, created_by_type, created_by_id) \
+                "INSERT INTO automation (workspace_id, title, executor_type, executor_id, execution_mode, created_by_type, created_by_id) \
                  VALUES ($1, 'delegated recovery contract', 'agent', $2, 'create_issue', 'member', $3) RETURNING id",
             )
             .bind(self.workspace_id)
@@ -1617,7 +1617,7 @@ mod tests {
                 merged.coalesced_comment_ids
             );
             let pending_coordinators: i64 = sqlx::query_scalar(
-                "SELECT count(*) FROM agent_task_queue WHERE issue_id = $1 AND agent_id = $2 AND status IN ('queued', 'dispatched')",
+                "SELECT count(*) FROM agent_task_queue WHERE issue_id = $1 AND agent_id = $2 AND status IN ('queued', 'dispatched', 'waiting_capacity')",
             )
             .bind(rows.source_issue_id)
             .bind(rows.coordinator_id)

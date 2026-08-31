@@ -1,6 +1,6 @@
 /**
  * Pure picker body for project lead — single-select over members + agents
- * with an Unassigned row. Mirrors the assignee picker pattern: header +
+ * with an Unassigned row. Mirrors the executor picker pattern: header +
  * search bar are owned by the iOS native nav header registered in
  * `app/(app)/[workspace]/_layout.tsx`; the route wires `query` in via
  * `useNativeSearchBar` and passes it through. Body is a pure FlatList.

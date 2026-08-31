@@ -111,23 +111,23 @@ vi.mock("@patchbay/core/properties", async (importOriginal) => {
   };
 });
 
-// Board default grouping is "status"; swimlane switches to "assignee" per test.
+// Board default grouping is "status"; swimlane switches to "executor" per test.
 const mockViewState: Record<string, unknown> = {
   grouping: "status",
   sortBy: "position",
   sortDirection: "asc",
-  cardProperties: { priority: true, assignee: true, dueDate: true, project: true, childProgress: true, labels: true },
-  swimlaneGrouping: "assignee",
-  swimlaneOrders: { parent: [], project: [], assignee: [] },
-  collapsedSwimlanes: { parent: [], project: [], assignee: [] },
+  cardProperties: { priority: true, executor: true, dueDate: true, project: true, childProgress: true, labels: true },
+  swimlaneGrouping: "executor",
+  swimlaneOrders: { parent: [], project: [], executor: [] },
+  collapsedSwimlanes: { parent: [], project: [], executor: [] },
   setSwimlaneGrouping: vi.fn(),
   setSwimlaneOrder: vi.fn(),
   toggleSwimlaneCollapsed: vi.fn(),
   hideStatus: vi.fn(),
   showStatus: vi.fn(),
   priorityFilters: [],
-  assigneeFilters: [],
-  includeNoAssignee: false,
+  executorFilters: [],
+  includeNoExecutor: false,
   creatorFilters: [],
   projectFilters: [],
   includeNoProject: false,
@@ -218,8 +218,12 @@ function makeIssue(overrides: Partial<Issue> & { id: string }): Issue {
     description: null,
     status: "todo",
     priority: "none",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -256,7 +260,7 @@ describe("Issues cold-load render loop (PB-4985)", () => {
     lastOnDragOver = undefined;
     lastOnDragEnd = undefined;
     mockViewState.grouping = "status";
-    mockViewState.swimlaneGrouping = "assignee";
+    mockViewState.swimlaneGrouping = "executor";
     setApiInstance({
       listMembers: pending,
       listAgents: pending,
@@ -294,12 +298,12 @@ describe("Issues cold-load render loop (PB-4985)", () => {
     expect(screen.getByText("Board Card 0")).toBeInTheDocument();
   });
 
-  it("Swimlane grouped by assignee paints during cold load (real Virtuoso mounts, no update-depth loop)", async () => {
-    mockViewState.swimlaneGrouping = "assignee";
+  it("Swimlane grouped by executor paints during cold load (real Virtuoso mounts, no update-depth loop)", async () => {
+    mockViewState.swimlaneGrouping = "executor";
     const issues = [
-      makeIssue({ id: "s1", title: "Swim Card 1", assignee_type: "member", assignee_id: "user-1", status: "todo" }),
-      makeIssue({ id: "s2", title: "Swim Card 2", assignee_type: "agent", assignee_id: "agent-1", status: "in_progress" }),
-      makeIssue({ id: "s3", title: "Swim Card 3", assignee_type: null, assignee_id: null, status: "todo" }),
+      makeIssue({ id: "s1", title: "Swim Card 1", owner_type: "member", owner_id: "user-1", status: "todo" }),
+      makeIssue({ id: "s2", title: "Swim Card 2", executor_type: "agent", executor_id: "agent-1", status: "in_progress" }),
+      makeIssue({ id: "s3", title: "Swim Card 3", executor_type: null, executor_id: null, status: "todo" }),
     ];
 
     renderWithProviders(

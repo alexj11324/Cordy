@@ -20,8 +20,12 @@ function issue(revision: number, title: string): Issue {
     description: null,
     status: "todo",
     priority: "none",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "member-1",
     parent_issue_id: "parent-1",
@@ -264,9 +268,9 @@ describe("auxiliary revision — sibling caches under a shared key prefix", () =
       issueKeys.tableFacets("ws-1", { query, facets: [{ kind: "status" }] }),
       { query_fingerprint: "sha256:facets", total: 1, facets: [] },
     );
-    // The assignee-grouped caches share the `my` prefix with the bucketed
+    // The executor-grouped caches share the `my` prefix with the bucketed
     // ones but carry no `byStatus`.
-    qc.setQueryData(issueKeys.myAssigneeGroups("ws-1", "assigned", {}), {
+    qc.setQueryData(issueKeys.myExecutorGroups("ws-1", "assigned", {}), {
       groups: [],
     });
   }
@@ -296,7 +300,7 @@ describe("auxiliary revision — sibling caches under a shared key prefix", () =
     ).toBe(false);
     expect(
       qc.getQueryState(
-        issueKeys.myAssigneeGroups("ws-1", "assigned", {}),
+        issueKeys.myExecutorGroups("ws-1", "assigned", {}),
       )?.isInvalidated,
     ).toBe(false);
   });

@@ -10,7 +10,7 @@
       "mode": "模式",
       "status": "状态",
       "last_run": "上次运行",
-      "assignee": "执行者",
+      "executor": "执行者",
       "trigger": "触发器",
       "next_run": "下次运行",
       "created": "创建时间"
@@ -283,9 +283,9 @@
     "toast_update_partial_with_reason": "自动化已更新，但时间表保存失败：{{reason}}",
     "toast_update_failed": "更新自动化失败",
     "section_agent": "智能体",
-    "section_assignee": "执行方",
+    "section_executor": "执行方",
     "select_agent": "选择智能体",
-    "select_assignee": "选择智能体或团队",
+    "select_executor": "选择智能体或团队",
     "section_project": "关联项目",
     "no_project": "不关联项目",
     "section_output_mode": "输出模式",
@@ -318,7 +318,7 @@
     "schedule_empty": "还没有时间表——这个自动化只在手动触发时运行。",
     "schedule_add": "添加时间表",
     "error_title_required": "请填写自动化名称。",
-    "error_assignee_required": "请选择运行该自动化的智能体或团队。",
+    "error_executor_required": "请选择运行该自动化的智能体或团队。",
     "output_modes": {
       "create_issue": {
         "label": "创建任务",
@@ -419,7 +419,7 @@
   "agent_picker": {
     "filter_placeholder": "筛选智能体或团队...",
     "select_agent": "选择智能体",
-    "select_assignee": "选择智能体或团队",
+    "select_executor": "选择智能体或团队",
     "agents_group": "智能体",
     "teams_group": "团队",
     "agent_runtime_required": "请先为该智能体绑定设备",
@@ -433,7 +433,7 @@
     "filter_label": "筛选",
     "filter_active_count_other": "{{count}} 项筛选",
     "clear_filters": "清除筛选",
-    "section_assignee": "执行者",
+    "section_executor": "执行者",
     "section_mode": "模式",
     "section_trigger": "触发器",
     "section_creator": "创建者",

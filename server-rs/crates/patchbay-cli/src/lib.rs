@@ -247,9 +247,10 @@ pub(crate) use issue_activity_schema::{
 };
 use issue_actor_output::{format_issue_list_table, load_issue_actor_names, IssueActorNames};
 use issue_actor_resolver::{
-    normalize_assignee_input, resolve_issue_assignee_id, resolve_issue_assignee_name,
-    resolve_issue_project_id, resolve_project_reference, resolve_subscriber_id,
-    resolve_subscriber_name, retry_actor_get, ResolvedIssueAssignee,
+    normalize_executor_input, resolve_issue_executor_id, resolve_issue_executor_name,
+    resolve_issue_owner_id, resolve_issue_owner_name, resolve_issue_project_id,
+    resolve_issue_reviewer_id, resolve_issue_reviewer_name, resolve_project_reference,
+    resolve_subscriber_id, resolve_subscriber_name, retry_actor_get, ResolvedIssueExecutor,
 };
 use issue_assign_commands::run_issue_assign;
 use issue_children_commands::run_issue_children;
@@ -844,7 +845,7 @@ mod tests {
             "custom_status",
             "--priority",
             "urgent",
-            "--assignee-id",
+            "--executor-id",
             "11111111-1111-1111-1111-111111111111",
             "--project",
             "abcd",
@@ -915,8 +916,8 @@ mod tests {
             "title": "Migrate CLI",
             "status": "in_progress",
             "priority": "high",
-            "assignee_type": "agent",
-            "assignee_id": "22222222-2222-2222-2222-222222222222",
+            "executor_type": "agent",
+            "executor_id": "22222222-2222-2222-2222-222222222222",
             "start_date": "2026-08-23T10:11:12Z",
             "due_date": "2026-08-30T00:00:00Z"
         })];
@@ -1008,7 +1009,7 @@ mod tests {
             "custom_status",
             "--priority",
             "high",
-            "--assignee",
+            "--owner",
             "Ada",
             "--project",
             "abcd",
@@ -1047,7 +1048,7 @@ mod tests {
         assert_eq!(query["priority"], "high");
         assert_eq!(query["limit"], "2");
         assert_eq!(query["offset"], "1");
-        assert_eq!(query["assignee_id"], "11111111-1111-1111-1111-111111111111");
+        assert_eq!(query["owner_id"], "11111111-1111-1111-1111-111111111111");
         assert_eq!(query["project_id"], "abcd0000-0000-0000-0000-000000000000");
         assert_eq!(query["metadata"], r#"{"ready":true}"#);
         assert_eq!(query["sort"], "created_at");
@@ -1056,7 +1057,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn issue_list_rejects_invalid_sort_direction_and_conflicting_assignee_flags() {
+    async fn issue_list_rejects_invalid_sort_direction_and_conflicting_executor_flags() {
         let client = ApiClient::new(
             "http://127.0.0.1:1".into(),
             "workspace-1".into(),
@@ -1105,9 +1106,9 @@ mod tests {
                     "patchbay",
                     "issue",
                     "list",
-                    "--assignee",
+                    "--executor",
                     "Ada",
-                    "--assignee-id",
+                    "--executor-id",
                     "11111111-1111-1111-1111-111111111111",
                 ],
                 "mutually exclusive",
@@ -1241,8 +1242,8 @@ mod tests {
             "title": "Migrate get",
             "status": "in_progress",
             "priority": "high",
-            "assignee_type": "member",
-            "assignee_id": "22222222-2222-2222-2222-222222222222",
+            "owner_type": "member",
+            "owner_id": "22222222-2222-2222-2222-222222222222",
             "start_date": "2026-08-24T10:00:00Z",
             "due_date": "2026-08-31T10:00:00Z",
             "description": "Preserve the complete description"
@@ -1655,8 +1656,8 @@ mod tests {
             "title": "First barrier",
             "status": "in_progress",
             "priority": "high",
-            "assignee_type": "agent",
-            "assignee_id": "agent-1"
+            "executor_type": "agent",
+            "executor_id": "agent-1"
         })];
         let actors = IssueActorNames(HashMap::from([(
             "agent:agent-1".into(),
@@ -1687,7 +1688,7 @@ mod tests {
             "custom_status",
             "--priority",
             "high",
-            "--assignee-id",
+            "--executor-id",
             "11111111-1111-1111-1111-111111111111",
             "--parent",
             "CORD-1",
@@ -1906,7 +1907,7 @@ mod tests {
             "2",
             "--project",
             "abcd",
-            "--assignee",
+            "--owner",
             "Ada",
             "--start-date",
             "2026-08-24",
@@ -1936,8 +1937,8 @@ mod tests {
         assert_eq!(body["parent_issue_id"], "parent-uuid");
         assert_eq!(body["stage"], 2);
         assert_eq!(body["project_id"], "abcd0000-0000-0000-0000-000000000000");
-        assert_eq!(body["assignee_type"], "member");
-        assert_eq!(body["assignee_id"], "11111111-1111-1111-1111-111111111111");
+        assert_eq!(body["owner_type"], "member");
+        assert_eq!(body["owner_id"], "11111111-1111-1111-1111-111111111111");
         assert_eq!(body["start_date"], "2026-08-24");
         assert_eq!(body["due_date"], "2026-08-31");
         assert_eq!(body["allow_duplicate"], Value::Bool(true));
@@ -2073,7 +2074,7 @@ mod tests {
             "in_review",
             "--priority",
             "urgent",
-            "--assignee-id",
+            "--executor-id",
             "11111111-1111-1111-1111-111111111111",
             "--project",
             "",
@@ -2178,7 +2179,7 @@ mod tests {
             "in_review",
             "--priority",
             "urgent",
-            "--assignee",
+            "--owner",
             "Ada",
             "--project",
             "abcd",
@@ -2211,8 +2212,8 @@ mod tests {
         assert_eq!(body["description"], "one\ntwo");
         assert_eq!(body["status"], "in_review");
         assert_eq!(body["priority"], "urgent");
-        assert_eq!(body["assignee_type"], "member");
-        assert_eq!(body["assignee_id"], "member-uuid");
+        assert_eq!(body["owner_type"], "member");
+        assert_eq!(body["owner_id"], "member-uuid");
         assert_eq!(body["project_id"], "abcd0000-0000-0000-0000-000000000000");
         assert_eq!(body["start_date"], "");
         assert_eq!(body["due_date"], "2026-08-31");
@@ -2379,9 +2380,9 @@ mod tests {
             .expect("assign");
         assert!(output.stderr.contains("assigned to agent:CodeBot"));
         let assign_body = bodies.lock().expect("bodies")[0].clone();
-        assert_eq!(assign_body["assignee_type"], "agent");
+        assert_eq!(assign_body["executor_type"], "agent");
         assert_eq!(
-            assign_body["assignee_id"],
+            assign_body["executor_id"],
             "11111111-1111-1111-1111-111111111111"
         );
         assert_eq!(assign_body["suppress_run"], true);
@@ -2402,8 +2403,8 @@ mod tests {
         assert!(output.stdout.is_empty());
         assert_eq!(output.stderr, "Issue CORD-18 unassigned.\n");
         let unassign_body = bodies.lock().expect("bodies")[1].clone();
-        assert_eq!(unassign_body["assignee_type"], Value::Null);
-        assert_eq!(unassign_body["assignee_id"], Value::Null);
+        assert_eq!(unassign_body["executor_type"], Value::Null);
+        assert_eq!(unassign_body["executor_id"], Value::Null);
         task.abort();
     }
 
