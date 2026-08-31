@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   defaultDevCliCacheDir,
   devCliCacheKey,
+  DEV_RUNTIME_CACHE_LOCK_FILE,
   findCachedDevCli,
   fingerprintRustFiles,
   inspectDevRuntimeCache,
@@ -180,6 +181,45 @@ describe("development CLI artifact cache", () => {
     );
     expect(manifest.sourceFingerprint).toBe("source-a");
     expect(manifest.toolchainIdentity).toBe("rustc 1");
+  });
+
+  it("waits for an active cache operation before staging an artifact", async () => {
+    const root = await createSandbox();
+    const cacheRoot = join(root, "cache");
+    const sourceBinary = join(root, "patchbay-built");
+    const destinationBinary = join(root, "worktree", "patchbay");
+    await writeFile(sourceBinary, "fixture CLI");
+    await storeDevCli({
+      cacheRoot,
+      sourceBinary,
+      binaryName: "patchbay",
+      sourceFingerprint: "source-a",
+      rustTarget: "aarch64-apple-darwin",
+      profile: "dev",
+      toolchainIdentity: "rustc 1",
+      buildVariables: {},
+    });
+
+    const lockPath = join(cacheRoot, DEV_RUNTIME_CACHE_LOCK_FILE);
+    await writeFile(lockPath, "test-lock\n", { flag: "wx" });
+    let finished = false;
+    const staging = stageCachedDevCli({
+      cacheRoot,
+      sourceFingerprint: "source-a",
+      rustTarget: "aarch64-apple-darwin",
+      profile: "dev",
+      toolchainIdentity: "rustc 1",
+      buildVariables: {},
+      destinationBinary,
+    }).finally(() => {
+      finished = true;
+    });
+
+    await new Promise((resolveWait) => setTimeout(resolveWait, 75));
+    expect(finished).toBe(false);
+    await rm(lockPath, { force: true });
+    await expect(staging).resolves.not.toBeNull();
+    expect(await readFile(destinationBinary, "utf8")).toBe("fixture CLI");
   });
 
   it("rejects a corrupted artifact and a mismatched toolchain", async () => {

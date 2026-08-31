@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import {
   createReadStream,
@@ -33,6 +33,9 @@ export const DEV_CLI_CACHE_SCHEMA_VERSION = 1;
 export const DEV_RUNTIME_CACHE_MAX_BYTES = 5 * 1024 * 1024 * 1024;
 export const DEV_RUNTIME_CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 export const DEV_RUNTIME_CACHE_MIN_FINGERPRINTS = 10;
+export const DEV_RUNTIME_CACHE_LOCK_FILE = ".cache-operation.lock";
+const DEV_RUNTIME_CACHE_LOCK_WAIT_MS = 60_000;
+const DEV_RUNTIME_CACHE_LOCK_STALE_MS = 5 * 60 * 1000;
 const COMPLETE_RUNTIME_PROFILES = new Set([
   "dev",
   "dev-server",
@@ -284,6 +287,58 @@ function cacheProfileDir(cacheRoot, rustTarget, profile) {
   );
 }
 
+function waitForCacheLock() {
+  return new Promise((resolveWait) => setTimeout(resolveWait, 50));
+}
+
+async function acquireRuntimeCacheLock(cacheRoot) {
+  await mkdir(cacheRoot, { recursive: true });
+  const lockPath = join(cacheRoot, DEV_RUNTIME_CACHE_LOCK_FILE);
+  const token = `${randomUUID()}\n`;
+  const deadline = Date.now() + DEV_RUNTIME_CACHE_LOCK_WAIT_MS;
+
+  while (true) {
+    try {
+      await writeFile(lockPath, token, {
+        encoding: "utf8",
+        flag: "wx",
+        mode: 0o600,
+      });
+      return { lockPath, token };
+    } catch (error) {
+      if (error?.code !== "EEXIST") throw error;
+      try {
+        const lockStat = await stat(lockPath);
+        if (Date.now() - lockStat.mtimeMs > DEV_RUNTIME_CACHE_LOCK_STALE_MS) {
+          await rm(lockPath, { force: true });
+          continue;
+        }
+      } catch (statError) {
+        if (statError?.code !== "ENOENT") throw statError;
+        continue;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `timed out waiting for the development runtime cache lock: ${lockPath}`,
+        );
+      }
+      await waitForCacheLock();
+    }
+  }
+}
+
+async function withRuntimeCacheLock(cacheRoot, operation) {
+  const lock = await acquireRuntimeCacheLock(cacheRoot);
+  try {
+    return await operation();
+  } finally {
+    const current = await readFile(lock.lockPath, "utf8").catch(() => null);
+    if (current === lock.token) {
+      await rm(lock.lockPath, { force: true });
+    }
+  }
+}
+
 async function readValidEntry(entryDir, expected) {
   try {
     const manifest = JSON.parse(
@@ -354,7 +409,7 @@ export async function findCachedDevCli({
   return matches[0] ?? null;
 }
 
-export async function stageCachedDevCli(options) {
+async function stageCachedDevCliUnlocked(options) {
   const cached = await findCachedDevCli(options);
   if (!cached) return null;
 
@@ -374,7 +429,13 @@ export async function stageCachedDevCli(options) {
   return cached;
 }
 
-export async function storeDevCli({
+export async function stageCachedDevCli(options) {
+  return withRuntimeCacheLock(options.cacheRoot, () =>
+    stageCachedDevCliUnlocked(options),
+  );
+}
+
+async function storeDevCliUnlocked({
   cacheRoot,
   sourceBinary,
   binaryName = basename(sourceBinary),
@@ -439,6 +500,12 @@ export async function storeDevCli({
     await rename(temporaryDir, entryDir);
   }
   return readValidEntry(entryDir, identity);
+}
+
+export async function storeDevCli(options) {
+  return withRuntimeCacheLock(options.cacheRoot, () =>
+    storeDevCliUnlocked(options),
+  );
 }
 
 export async function pruneDevCliCache({
@@ -608,7 +675,7 @@ export async function inspectDevRuntimeCache({ cacheRoot }) {
   };
 }
 
-export async function pruneDevRuntimeCache({
+async function pruneDevRuntimeCacheUnlocked({
   cacheRoot,
   maxBytes = DEV_RUNTIME_CACHE_MAX_BYTES,
   maxAgeMs = DEV_RUNTIME_CACHE_MAX_AGE_MS,
@@ -664,4 +731,10 @@ export async function pruneDevRuntimeCache({
     protectedFingerprintCount: protectedGroups.length,
     dryRun,
   };
+}
+
+export async function pruneDevRuntimeCache(options = {}) {
+  return withRuntimeCacheLock(options.cacheRoot, () =>
+    pruneDevRuntimeCacheUnlocked(options),
+  );
 }

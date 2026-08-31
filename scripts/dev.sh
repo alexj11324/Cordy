@@ -49,15 +49,6 @@ echo "==> Using $ENV_FILE"
 # `pnpm dev` into a shared hosted run.
 launcher_dev_mode="${PATCHBAY_DEV_MODE:-}"
 
-set -a
-# shellcheck disable=SC1090
-. "$ENV_FILE"
-set +a
-
-# Keep explicitly injected Clerk credentials available only long enough for
-# the scoped auth wrappers to validate them. The parent process remains
-# sanitized, while the values are restored in each short-lived child shell
-# without putting secrets in a command-line argument list.
 clerk_env_args=()
 for clerk_key in \
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY \
@@ -71,6 +62,15 @@ for clerk_key in \
   fi
 done
 
+set -a
+# shellcheck disable=SC1090
+. "$ENV_FILE"
+set +a
+
+# Keep explicitly injected Clerk credentials available only long enough for
+# the scoped auth wrappers to validate them. The parent process remains
+# sanitized, while the values are restored in each short-lived child shell
+# without putting secrets in a command-line argument list.
 run_with_injected_clerk_env() {
   local clerk_entry
   for clerk_entry in "${clerk_env_args[@]}"; do

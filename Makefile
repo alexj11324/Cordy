@@ -188,7 +188,7 @@ remove-worktree: ## Drop a linked worktree's database, then remove it (WORKTREE=
 ##@ Individual commands
 
 dev: ## Start complete Electron + source CLI + backend + isolated DB development
-	@pnpm dev
+	@ENV_FILE="" pnpm dev
 
 web-next-dev: ## Run only the Next.js web frontend (API-dependent screens need a separate backend)
 	@echo "Frontend: http://localhost:$(FRONTEND_PORT)"
