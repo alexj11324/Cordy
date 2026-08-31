@@ -29,7 +29,8 @@ use patchbay_db::queries::issue_reaction::AddIssueReactionRow;
 use patchbay_db::queries::{
     activity, agent, agent_invocation_target, attachment, automation, comment as comment_q,
     dependency_graph as dependency_graph_q, issue as issue_q, issue_label, issue_property,
-    issue_reaction, member, quick_action, runtime, subscriber, task_usage, team, user, workspace,
+    issue_reaction, linear as linear_q, member, quick_action, runtime, subscriber, task_usage,
+    team, user, workspace,
 };
 use patchbay_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
 use patchbay_service::issue_service::{
@@ -6428,6 +6429,26 @@ RETURNING *"#,
             error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to update issue",
+            )
+        })?;
+    }
+    if did_change && updated.origin_type.as_deref() != Some("linear") {
+        let event_key = format!("issue:{}:revision:{}", updated.id, updated.revision);
+        linear_q::enqueue_issue_outbox(
+            &mut *tx,
+            updated.workspace_id,
+            updated.project_id,
+            updated.id,
+            &event_key,
+            "issue_updated",
+            &patchbay_service::issue_service::linear_issue_sync_payload(&updated),
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, issue_id = %updated.id, "failed to enqueue Linear Issue update");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to persist Linear synchronization event",
             )
         })?;
     }

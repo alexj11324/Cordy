@@ -1,9 +1,10 @@
-//! Durable Linear pull/import worker.
+//! Durable Linear pull/import/publish worker.
 //!
 //! Linear Webhooks are change notifications, not issue snapshots. This worker
 //! claims the durable Inbox with a PostgreSQL lease, fetches the complete
 //! remote Issue, and applies only the inbound Project Binding direction.
-//! Outbound mutations intentionally do not exist in this phase.
+//! Outbound mutations are emitted only from the durable Outbox and are gated
+//! independently from inbound import.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -11,6 +12,7 @@ use std::time::Duration;
 use chrono::{DateTime, NaiveDate, Utc};
 use patchbay_db::models::{
     Issue, LinearConnection, LinearIssueLink, LinearProjectBinding, LinearSyncInbox,
+    LinearSyncOutbox,
 };
 use patchbay_db::queries::{issue as issue_q, linear as linear_q};
 use patchbay_service::issue_service::{
@@ -23,7 +25,9 @@ use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::linear::{LinearRemoteIssue, LinearTokenError, LinearTokenManager};
+use crate::linear::{
+    strip_cordy_issue_marker, LinearRemoteIssue, LinearTokenError, LinearTokenManager,
+};
 use crate::state::HandlerState;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(5);
@@ -115,36 +119,57 @@ impl LinearSyncWorker {
         }
     }
 
-    /// Processes at most one Inbox row. This public seam is used by focused
-    /// worker tests and by production's supervisor; PostgreSQL remains the
-    /// source of truth for claim ownership.
+    /// Processes at most one row from each enabled queue. This public seam is
+    /// used by focused worker tests and by production's supervisor; PostgreSQL
+    /// remains the source of truth for claim ownership.
     pub async fn process_next(&self, worker_id: &str) -> anyhow::Result<bool> {
-        if !self.state.linear_pull_import_enabled_for_any_workspace() {
+        let pull_enabled = self.state.linear_pull_import_enabled_for_any_workspace();
+        let push_enabled = self.state.linear_push_enabled_for_any_workspace();
+        if !pull_enabled && !push_enabled {
             return Ok(false);
         }
-        let workspace_filter = self.state.linear_pull_import_workspace_filter();
-        let _ = linear_q::dead_letter_exhausted_sync_inbox(
-            &self.state.pool,
-            workspace_filter.as_deref(),
-        )
-        .await?;
-        let Some(row) = linear_q::claim_sync_inbox(
-            &self.state.pool,
-            worker_id,
-            1,
-            LEASE_SECONDS,
-            workspace_filter.as_deref(),
-        )
-        .await?
-        .into_iter()
-        .next()
-        else {
-            return Ok(false);
-        };
+        let mut processed = false;
 
-        // Initial imports fetch a complete remote project and can outlive the
-        // claim lease. Renew independently of the business operation; the
-        // completion/retry SQL still verifies the lease owner and expiry.
+        if pull_enabled {
+            let workspace_filter = self.state.linear_pull_import_workspace_filter();
+            let _ = linear_q::dead_letter_exhausted_sync_inbox(
+                &self.state.pool,
+                workspace_filter.as_deref(),
+            )
+            .await?;
+            if let Some(row) = linear_q::claim_sync_inbox(
+                &self.state.pool,
+                worker_id,
+                1,
+                LEASE_SECONDS,
+                workspace_filter.as_deref(),
+            )
+            .await?
+            .into_iter()
+            .next()
+            {
+                self.finish_inbox_row(row, worker_id).await?;
+                processed = true;
+            }
+        }
+
+        if push_enabled {
+            let _ = linear_q::dead_letter_exhausted_sync_outbox(&self.state.pool).await?;
+            if let Some(row) =
+                linear_q::claim_sync_outbox(&self.state.pool, worker_id, 1, LEASE_SECONDS)
+                    .await?
+                    .into_iter()
+                    .next()
+            {
+                self.finish_outbox_row(row, worker_id).await?;
+                processed = true;
+            }
+        }
+
+        Ok(processed)
+    }
+
+    async fn finish_inbox_row(&self, row: LinearSyncInbox, worker_id: &str) -> anyhow::Result<()> {
         let renew_cancel = CancellationToken::new();
         let renew_task = {
             let pool = self.state.pool.clone();
@@ -247,7 +272,336 @@ impl LinearSyncWorker {
                 );
             }
         }
-        Ok(true)
+        Ok(())
+    }
+
+    async fn finish_outbox_row(
+        &self,
+        row: LinearSyncOutbox,
+        worker_id: &str,
+    ) -> anyhow::Result<()> {
+        match self.process_outbox_row(&row, worker_id).await {
+            Ok(()) => {
+                // Successful rows are completed inside the same transaction
+                // that writes the Issue Link. The worker method only logs a
+                // lost lease here if a future implementation returns before
+                // that atomic completion.
+            }
+            Err(error) => {
+                let message = error.message();
+                let permanent = matches!(error, SyncError::Permanent(_));
+                let exhausted = row.attempts >= row.max_attempts;
+                if permanent || exhausted {
+                    let owned = linear_q::dead_letter_claimed_sync_outbox(
+                        &self.state.pool,
+                        row.id,
+                        worker_id,
+                        &message,
+                    )
+                    .await?;
+                    if !owned {
+                        tracing::warn!(
+                            outbox_id = %row.id,
+                            worker_id,
+                            "Linear Outbox dead-letter lost its lease"
+                        );
+                    }
+                } else {
+                    let available_at = Utc::now() + retry_delay(row.attempts);
+                    let owned = linear_q::retry_claimed_sync_outbox(
+                        &self.state.pool,
+                        row.id,
+                        worker_id,
+                        available_at,
+                        &message,
+                    )
+                    .await?;
+                    if !owned {
+                        tracing::warn!(
+                            outbox_id = %row.id,
+                            worker_id,
+                            "Linear Outbox retry lost its lease"
+                        );
+                    }
+                }
+                tracing::warn!(
+                    outbox_id = %row.id,
+                    attempts = row.attempts,
+                    permanent,
+                    error = %message,
+                    "Linear Outbox item failed"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    async fn process_outbox_row(
+        &self,
+        row: &LinearSyncOutbox,
+        worker_id: &str,
+    ) -> Result<(), SyncError> {
+        if !self.state.linear_push_enabled(row.workspace_id) {
+            return Err(SyncError::retry(anyhow::anyhow!(
+                "Linear push is not enabled for this workspace"
+            )));
+        }
+        if !matches!(row.event_type.as_str(), "issue_created" | "issue_updated") {
+            return Err(SyncError::permanent(anyhow::anyhow!(
+                "unsupported Linear Outbox event type"
+            )));
+        }
+
+        let binding =
+            linear_q::get_project_binding(&self.state.pool, row.workspace_id, row.binding_id)
+                .await
+                .map_err(SyncError::retry)?
+                .ok_or_else(|| SyncError::permanent(anyhow::anyhow!("Linear binding not found")))?;
+        if binding.status != "active"
+            || !matches!(binding.sync_mode.as_str(), "publish" | "two_way")
+            || binding.linear_team_id.is_none()
+        {
+            return Err(SyncError::retry(anyhow::anyhow!(
+                "Linear binding is not currently publishable"
+            )));
+        }
+
+        let connection =
+            linear_q::get_connection_by_id_unscoped(&self.state.pool, binding.connection_id)
+                .await
+                .map_err(SyncError::retry)?
+                .ok_or_else(|| {
+                    SyncError::permanent(anyhow::anyhow!("Linear connection not found"))
+                })?;
+        if connection.workspace_id != row.workspace_id {
+            return Err(SyncError::permanent(anyhow::anyhow!(
+                "Linear Outbox workspace does not match its binding"
+            )));
+        }
+        if connection.status != "active" {
+            return Err(if connection.status == "reauthorization_required" {
+                SyncError::retry(anyhow::anyhow!(
+                    "Linear connection requires reauthorization"
+                ))
+            } else {
+                SyncError::permanent(anyhow::anyhow!("Linear connection is not active"))
+            });
+        }
+
+        let issue =
+            issue_q::get_issue_in_workspace(&self.state.pool, row.issue_id, row.workspace_id)
+                .await
+                .map_err(SyncError::retry)?
+                .ok_or_else(|| SyncError::permanent(anyhow::anyhow!("Cordy Issue not found")))?;
+        if issue.origin_type.as_deref() == Some("linear") {
+            return Err(SyncError::permanent(anyhow::anyhow!(
+                "Linear-origin Issue cannot be published back to Linear"
+            )));
+        }
+
+        let existing_link = linear_q::get_linear_issue_link_by_patchbay_issue(
+            &self.state.pool,
+            row.workspace_id,
+            issue.id,
+        )
+        .await
+        .map_err(SyncError::retry)?;
+        if let Some(link) = existing_link.as_ref() {
+            if link.binding_id != binding.id {
+                return Err(SyncError::permanent(anyhow::anyhow!(
+                    "Cordy Issue is already linked to another Linear binding"
+                )));
+            }
+            if link.sync_status == "conflict" {
+                return Err(SyncError::permanent(anyhow::anyhow!(
+                    "Linear Issue Link is awaiting conflict resolution"
+                )));
+            }
+        }
+
+        let manager = LinearTokenManager::from_state(&self.state)
+            .map_err(|error| classify_token_error(error, "create Linear token manager"))?;
+        let current_remote = if let Some(link) = existing_link.as_ref() {
+            let remote = manager
+                .fetch_issue(connection.id, &link.linear_issue_id)
+                .await
+                .map_err(|error| classify_token_error(error, "fetch Linear Issue before push"))?
+                .ok_or_else(|| {
+                    SyncError::permanent(anyhow::anyhow!(
+                        "remote Linear Issue no longer exists; relink is required"
+                    ))
+                })?;
+            let remote_updated_at = parse_remote_timestamp(&remote.updated_at)?;
+            if link
+                .remote_updated_at
+                .is_some_and(|last| remote_updated_at > last)
+            {
+                let marked = linear_q::mark_linear_issue_link_conflict(
+                    &self.state.pool,
+                    link.id,
+                    row.workspace_id,
+                )
+                .await
+                .map_err(SyncError::retry)?;
+                if !marked {
+                    return Err(SyncError::retry(anyhow::anyhow!(
+                        "failed to mark Linear Issue Link as conflicted"
+                    )));
+                }
+                return Err(SyncError::permanent(anyhow::anyhow!(
+                    "remote Linear Issue changed before push"
+                )));
+            }
+            Some(remote)
+        } else {
+            None
+        };
+
+        let priority = map_local_priority(&issue.priority)?;
+        let state_id = map_local_status(&binding, &issue.status);
+        let due_date = issue
+            .due_date
+            .map(|date| date.format("%Y-%m-%d").to_string());
+        // Human-owner mapping is resolved by the member-binding catalog in the
+        // next mapping slice. Omitting assigneeId is deliberate: it never
+        // overwrites a Linear human owner with a Cordy UUID.
+        let assignee_id = None;
+        let remote = if let Some(remote) = current_remote {
+            manager
+                .update_issue(
+                    connection.id,
+                    &remote.id,
+                    issue.id,
+                    &issue.title,
+                    issue.description.as_deref(),
+                    priority,
+                    state_id.as_deref(),
+                    due_date.as_deref(),
+                    assignee_id,
+                )
+                .await
+                .map_err(|error| classify_token_error(error, "update Linear Issue"))?
+        } else if let Some(remote) = manager
+            .find_issue_by_marker(connection.id, &binding.linear_project_id, issue.id)
+            .await
+            .map_err(|error| classify_token_error(error, "reconcile Linear Issue create"))?
+        {
+            remote
+        } else {
+            let team_id = binding.linear_team_id.as_deref().ok_or_else(|| {
+                SyncError::permanent(anyhow::anyhow!(
+                    "Linear binding has no team for Issue creation"
+                ))
+            })?;
+            manager
+                .create_issue(
+                    connection.id,
+                    team_id,
+                    &binding.linear_project_id,
+                    issue.id,
+                    &issue.title,
+                    issue.description.as_deref(),
+                    priority,
+                    state_id.as_deref(),
+                    due_date.as_deref(),
+                    assignee_id,
+                )
+                .await
+                .map_err(|error| classify_token_error(error, "create Linear Issue"))?
+        };
+        if remote.identifier.trim().is_empty() || remote.id.trim().is_empty() {
+            return Err(SyncError::permanent(anyhow::anyhow!(
+                "Linear mutation returned incomplete Issue identity"
+            )));
+        }
+        if remote
+            .project
+            .as_ref()
+            .is_some_and(|project| project.id != binding.linear_project_id)
+        {
+            return Err(SyncError::permanent(anyhow::anyhow!(
+                "Linear mutation returned an Issue from another Project"
+            )));
+        }
+        let remote_updated_at = parse_remote_timestamp(&remote.updated_at)?;
+        let snapshot = serde_json::to_value(&remote).map_err(|error| {
+            SyncError::permanent(anyhow::anyhow!(
+                "serialize Linear post-mutation snapshot: {error}"
+            ))
+        })?;
+
+        // The provider mutation is followed by one local transaction. If the
+        // commit fails, the Outbox row remains pending and the next attempt
+        // searches the stable marker before issuing another mutation.
+        let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
+        let link = if let Some(link) = existing_link {
+            link
+        } else {
+            let created = linear_q::create_linear_issue_link(
+                &mut *transaction,
+                &linear_q::LinearIssueLinkInput {
+                    id: Uuid::now_v7(),
+                    workspace_id: row.workspace_id,
+                    binding_id: binding.id,
+                    patchbay_issue_id: issue.id,
+                    linear_issue_id: &remote.id,
+                    linear_identifier: &remote.identifier,
+                    last_common_snapshot: &snapshot,
+                    remote_updated_at: Some(remote_updated_at),
+                    last_remote_event_at_ms: None,
+                    last_remote_event_id: None,
+                },
+            )
+            .await
+            .map_err(SyncError::retry)?;
+            if let Some(created) = created {
+                created
+            } else {
+                linear_q::get_linear_issue_link_by_patchbay_issue(
+                    &mut *transaction,
+                    row.workspace_id,
+                    issue.id,
+                )
+                .await
+                .map_err(SyncError::retry)?
+                .filter(|link| link.binding_id == binding.id)
+                .ok_or_else(|| {
+                    SyncError::retry(anyhow::anyhow!(
+                        "Linear Issue Link insert raced without a visible binding"
+                    ))
+                })?
+            }
+        };
+        let last_event_at_ms = link.last_remote_event_at_ms;
+        let last_event_id = link.last_remote_event_id.as_deref();
+        let updated = linear_q::update_linear_issue_link(
+            &mut *transaction,
+            link.id,
+            row.workspace_id,
+            &snapshot,
+            Some(remote_updated_at),
+            last_event_at_ms,
+            last_event_id,
+            "active",
+        )
+        .await
+        .map_err(SyncError::retry)?;
+        if !updated {
+            return Err(SyncError::retry(anyhow::anyhow!(
+                "Linear Issue Link disappeared during push"
+            )));
+        }
+        let completed =
+            linear_q::complete_claimed_sync_outbox(&mut *transaction, row.id, worker_id)
+                .await
+                .map_err(SyncError::retry)?;
+        if !completed {
+            return Err(SyncError::retry(anyhow::anyhow!(
+                "Linear Outbox completion lost its lease"
+            )));
+        }
+        transaction.commit().await.map_err(SyncError::retry)?;
+        Ok(())
     }
 
     async fn process_row(&self, row: &LinearSyncInbox) -> Result<(), SyncError> {
@@ -546,7 +900,7 @@ impl LinearSyncWorker {
         };
         let remote_patch = ExternalIssuePatch {
             title: Some(remote.title.clone()),
-            description: Some(remote.description.clone()),
+            description: Some(strip_cordy_issue_marker(remote.description.as_deref())),
             status: Some(import_status),
             priority: Some(priority.clone()),
             due_date: Some(due_date),
@@ -606,7 +960,7 @@ impl LinearSyncWorker {
                         IssueCreateParams {
                             workspace_id: connection.workspace_id,
                             title: remote.title.clone(),
-                            description: remote.description.clone(),
+                            description: strip_cordy_issue_marker(remote.description.as_deref()),
                             status: remote_patch
                                 .status
                                 .clone()
@@ -931,6 +1285,27 @@ fn map_remote_priority(priority: i64) -> Result<String, SyncError> {
     Ok(mapped.to_string())
 }
 
+fn map_local_priority(priority: &str) -> Result<i64, SyncError> {
+    match priority {
+        "none" => Ok(0),
+        "urgent" => Ok(1),
+        "high" => Ok(2),
+        "medium" => Ok(3),
+        "low" => Ok(4),
+        other => Err(SyncError::permanent(anyhow::anyhow!(
+            "Cordy Issue priority is unsupported: {other}"
+        ))),
+    }
+}
+
+fn map_local_status(binding: &LinearProjectBinding, status: &str) -> Option<String> {
+    binding.status_mapping.as_object().and_then(|mapping| {
+        mapping.iter().find_map(|(linear_state_id, cordy_status)| {
+            (cordy_status.as_str() == Some(status)).then(|| linear_state_id.clone())
+        })
+    })
+}
+
 fn map_remote_status(
     binding: &LinearProjectBinding,
     state: Option<&crate::linear::LinearRemoteState>,
@@ -980,6 +1355,9 @@ fn classify_token_error(error: LinearTokenError, context: &str) -> SyncError {
         LinearTokenError::InvalidResponse => SyncError::permanent(anyhow::anyhow!(
             "{context}: Linear returned an invalid protocol response"
         )),
+        LinearTokenError::MutationRejected(message) => {
+            SyncError::permanent(anyhow::anyhow!("{context}: {message}"))
+        }
         other => SyncError::retry(anyhow::anyhow!("{context}: {other}")),
     }
 }
@@ -1054,7 +1432,8 @@ mod tests {
 
     use super::{
         extract_event_timestamp_ms, extract_issue_id, inbound_enabled, is_out_of_order,
-        map_remote_priority, map_remote_status, parse_remote_timestamp, retry_delay,
+        map_local_priority, map_local_status, map_remote_priority, map_remote_status,
+        parse_remote_timestamp, retry_delay,
     };
     use crate::linear::LinearRemoteState;
 
@@ -1157,6 +1536,24 @@ mod tests {
             map_remote_status(&mapped_binding, Some(&started)).unwrap(),
             "todo"
         );
+    }
+
+    #[test]
+    fn local_priority_and_status_mapping_are_explicit() {
+        assert_eq!(map_local_priority("none").unwrap(), 0);
+        assert_eq!(map_local_priority("urgent").unwrap(), 1);
+        assert_eq!(map_local_priority("low").unwrap(), 4);
+        assert!(map_local_priority("provider_added_priority").is_err());
+
+        let binding = binding(json!({
+            "linear-started": "in_progress",
+            "linear-done": "done"
+        }));
+        assert_eq!(
+            map_local_status(&binding, "in_progress").as_deref(),
+            Some("linear-started")
+        );
+        assert_eq!(map_local_status(&binding, "todo"), None);
     }
 
     #[test]

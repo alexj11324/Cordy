@@ -1336,6 +1336,55 @@ pub(crate) struct LinearRemoteLabel {
     pub id: String,
 }
 
+const CORDY_ISSUE_MARKER_PREFIX: &str = "<!-- cordy:issue:";
+
+/// Stable, hidden marker used to reconcile a successful Linear create when
+/// the local transaction crashes before the link is committed. It is not a
+/// title search and is never exposed as a user-facing field.
+pub(crate) fn cordy_issue_marker(issue_id: Uuid) -> String {
+    format!("{CORDY_ISSUE_MARKER_PREFIX}{issue_id} -->")
+}
+
+pub(crate) fn description_with_cordy_marker(description: Option<&str>, issue_id: Uuid) -> String {
+    let marker = cordy_issue_marker(issue_id);
+    let human = description.unwrap_or_default().trim();
+    if human.is_empty() {
+        marker
+    } else {
+        format!("{human}\n\n{marker}")
+    }
+}
+
+/// Removes Cordy's reconciliation marker before a remote description enters
+/// the local human-authored field.
+pub(crate) fn strip_cordy_issue_marker(description: Option<&str>) -> Option<String> {
+    let description = description?;
+    let Some(start) = description.find(CORDY_ISSUE_MARKER_PREFIX) else {
+        return Some(description.to_string());
+    };
+    let end = description[start..].find("-->")? + start + 3;
+    let mut human = String::new();
+    let before = description[..start].trim();
+    let after = description[end..].trim();
+    if !before.is_empty() {
+        human.push_str(before);
+    }
+    if !after.is_empty() {
+        if !human.is_empty() {
+            human.push_str("\n\n");
+        }
+        human.push_str(after);
+    }
+    Some(human).filter(|value| !value.is_empty())
+}
+
+pub(crate) fn cordy_issue_id_from_description(description: Option<&str>) -> Option<Uuid> {
+    let description = description?;
+    let start = description.find(CORDY_ISSUE_MARKER_PREFIX)? + CORDY_ISSUE_MARKER_PREFIX.len();
+    let end = description[start..].find("-->")? + start;
+    Uuid::parse_str(description[start..end].trim()).ok()
+}
+
 #[derive(Debug, Deserialize)]
 struct LinearRemoteIssueData {
     issue: Option<LinearRemoteIssue>,
@@ -1426,6 +1475,8 @@ pub enum LinearTokenError {
     InvalidResponse,
     #[error("Linear provider request failed")]
     Provider,
+    #[error("Linear mutation was rejected: {0}")]
+    MutationRejected(String),
     #[error("Linear integration is not configured")]
     NotConfigured,
     #[error("Linear storage operation failed: {0}")]
@@ -1953,6 +2004,183 @@ impl LinearTokenManager {
             .data
             .ok_or(LinearTokenError::InvalidResponse)?
             .issues)
+    }
+
+    async fn mutate_issue(
+        &self,
+        access_token: &str,
+        operation: &str,
+        query: &str,
+        variables: Value,
+    ) -> Result<LinearRemoteIssue, LinearTokenError> {
+        let response = self
+            .client
+            .post(&self.graphql_url)
+            .bearer_auth(access_token)
+            .json(&json!({ "query": query, "variables": variables }))
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear issue mutation request failed");
+                LinearTokenError::Provider
+            })?;
+        let status = response.status();
+        let payload = response
+            .json::<GraphQlResponse<Value>>()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear issue mutation response is invalid JSON");
+                LinearTokenError::InvalidResponse
+            })?;
+        if !status.is_success() {
+            if status.is_client_error() {
+                return Err(LinearTokenError::MutationRejected(format!(
+                    "Linear issue mutation returned HTTP {status}"
+                )));
+            }
+            return Err(LinearTokenError::Provider);
+        }
+        if let Some(errors) = payload.errors.as_ref().filter(|errors| !errors.is_empty()) {
+            let message = errors
+                .iter()
+                .filter_map(|error| error.message.as_deref())
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(LinearTokenError::MutationRejected(if message.is_empty() {
+                "GraphQL mutation failed".to_string()
+            } else {
+                message
+            }));
+        }
+        let result = payload
+            .data
+            .as_ref()
+            .and_then(|data| data.get(operation))
+            .ok_or(LinearTokenError::InvalidResponse)?;
+        let success = result
+            .get("success")
+            .and_then(Value::as_bool)
+            .ok_or(LinearTokenError::InvalidResponse)?;
+        if !success {
+            let message = result
+                .get("userErrors")
+                .and_then(Value::as_array)
+                .map(|errors| {
+                    errors
+                        .iter()
+                        .filter_map(|error| error.get("message").and_then(Value::as_str))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                })
+                .filter(|message| !message.is_empty())
+                .unwrap_or_else(|| "Linear rejected the issue mutation".to_string());
+            return Err(LinearTokenError::MutationRejected(message));
+        }
+        let issue_value = result
+            .get("issue")
+            .cloned()
+            .ok_or(LinearTokenError::InvalidResponse)?;
+        let issue = serde_json::from_value::<LinearRemoteIssue>(issue_value)
+            .map_err(|_| LinearTokenError::InvalidResponse)?;
+        if issue.id.trim().is_empty()
+            || issue.identifier.trim().is_empty()
+            || issue.updated_at.trim().is_empty()
+        {
+            return Err(LinearTokenError::InvalidResponse);
+        }
+        Ok(issue)
+    }
+
+    pub(crate) async fn create_issue(
+        &self,
+        connection_id: Uuid,
+        team_id: &str,
+        project_id: &str,
+        issue_id: Uuid,
+        title: &str,
+        description: Option<&str>,
+        priority: i64,
+        state_id: Option<&str>,
+        due_date: Option<&str>,
+        assignee_id: Option<&str>,
+    ) -> Result<LinearRemoteIssue, LinearTokenError> {
+        let access_token = self.access_token(connection_id).await?;
+        let mut input = serde_json::Map::new();
+        input.insert("teamId".to_string(), json!(team_id));
+        input.insert("projectId".to_string(), json!(project_id));
+        input.insert("title".to_string(), json!(title));
+        input.insert(
+            "description".to_string(),
+            json!(description_with_cordy_marker(description, issue_id)),
+        );
+        input.insert("priority".to_string(), json!(priority));
+        if let Some(state_id) = state_id {
+            input.insert("stateId".to_string(), json!(state_id));
+        }
+        if let Some(due_date) = due_date {
+            input.insert("dueDate".to_string(), json!(due_date));
+        }
+        if let Some(assignee_id) = assignee_id {
+            input.insert("assigneeId".to_string(), json!(assignee_id));
+        }
+        self.mutate_issue(
+            &access_token,
+            "issueCreate",
+            "mutation LinearIssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } labels { nodes { id } } } userErrors { message } } }",
+            json!({ "input": Value::Object(input) }),
+        )
+        .await
+    }
+
+    pub(crate) async fn update_issue(
+        &self,
+        connection_id: Uuid,
+        linear_issue_id: &str,
+        cordy_issue_id: Uuid,
+        title: &str,
+        description: Option<&str>,
+        priority: i64,
+        state_id: Option<&str>,
+        due_date: Option<&str>,
+        assignee_id: Option<&str>,
+    ) -> Result<LinearRemoteIssue, LinearTokenError> {
+        let access_token = self.access_token(connection_id).await?;
+        let mut input = serde_json::Map::new();
+        input.insert("title".to_string(), json!(title));
+        input.insert(
+            "description".to_string(),
+            json!(description_with_cordy_marker(description, cordy_issue_id)),
+        );
+        input.insert("priority".to_string(), json!(priority));
+        input.insert("dueDate".to_string(), json!(due_date));
+        if let Some(state_id) = state_id {
+            input.insert("stateId".to_string(), json!(state_id));
+        }
+        if let Some(assignee_id) = assignee_id {
+            input.insert("assigneeId".to_string(), json!(assignee_id));
+        }
+        self.mutate_issue(
+            &access_token,
+            "issueUpdate",
+            "mutation LinearIssueUpdate($issueId: ID!, $input: IssueUpdateInput!) { issueUpdate(id: $issueId, input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } labels { nodes { id } } } userErrors { message } } }",
+            json!({ "issueId": linear_issue_id, "input": Value::Object(input) }),
+        )
+        .await
+    }
+
+    /// Lists the bound project and searches the hidden marker used by a
+    /// previous create attempt. This is bounded by the same import cap as the
+    /// initial importer and is the only crash-reconciliation lookup.
+    pub(crate) async fn find_issue_by_marker(
+        &self,
+        connection_id: Uuid,
+        project_id: &str,
+        cordy_issue_id: Uuid,
+    ) -> Result<Option<LinearRemoteIssue>, LinearTokenError> {
+        let issues = self.list_project_issues(connection_id, project_id).await?;
+        Ok(issues.into_iter().find(|issue| {
+            cordy_issue_id_from_description(issue.description.as_deref()) == Some(cordy_issue_id)
+        }))
     }
 
     async fn dry_run_counts(
@@ -2916,6 +3144,31 @@ mod tests {
         assert_eq!(
             query.get("code_challenge").map(String::as_str),
             Some(expected_challenge.as_str())
+        );
+    }
+
+    #[test]
+    fn cordy_issue_marker_round_trips_without_polluting_human_description() {
+        let issue_id = Uuid::now_v7();
+        let description = description_with_cordy_marker(Some("Human text"), issue_id);
+        assert_eq!(
+            cordy_issue_id_from_description(Some(&description)),
+            Some(issue_id)
+        );
+        assert_eq!(
+            strip_cordy_issue_marker(Some(&description)).as_deref(),
+            Some("Human text")
+        );
+
+        let marker_only = description_with_cordy_marker(None, issue_id);
+        assert_eq!(
+            cordy_issue_id_from_description(Some(&marker_only)),
+            Some(issue_id)
+        );
+        assert_eq!(strip_cordy_issue_marker(Some(&marker_only)), None);
+        assert_eq!(
+            strip_cordy_issue_marker(Some("Unmanaged text")),
+            Some("Unmanaged text".to_string())
         );
     }
 

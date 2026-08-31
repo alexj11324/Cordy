@@ -1858,6 +1858,30 @@ pub struct LinearIssueLink {
     pub workspace_id: Uuid,
 }
 
+/// Durable outbound Linear mutation. Provider calls happen only after a
+/// worker claims this row; the lease fields make retries safe across process
+/// crashes and multiple server instances.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct LinearSyncOutbox {
+    pub attempts: i32,
+    pub available_at: DateTime<Utc>,
+    pub binding_id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub dead_lettered_at: Option<DateTime<Utc>>,
+    pub event_key: String,
+    pub event_type: String,
+    pub id: Uuid,
+    pub issue_id: Uuid,
+    pub last_error: Option<String>,
+    pub locked_by: Option<String>,
+    pub locked_until: Option<DateTime<Utc>>,
+    pub max_attempts: i32,
+    pub payload: serde_json::Value,
+    pub processed_at: Option<DateTime<Utc>>,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
+}
+
 /// Server-persisted execution provenance used by the post-run branch
 /// discovery path. One task may have multiple rows, one per exact repository
 /// checkout/workspace key. The task id is the ownership boundary: callers can

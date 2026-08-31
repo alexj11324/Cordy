@@ -24,6 +24,7 @@ use patchbay_db::queries::attachment::{link_attachments_to_issue, list_attachmen
 use patchbay_db::queries::issue::{create_issue, create_issue_with_origin, get_issue_in_workspace};
 use patchbay_db::queries::issue_label::{attach_label_to_issue_on_create, get_label};
 use patchbay_db::queries::issue_status::lock_issue_status_catalog_shared;
+use patchbay_db::queries::linear as linear_q;
 use patchbay_db::queries::project::get_project_in_workspace;
 use patchbay_db::queries::team::get_team_in_workspace;
 use patchbay_db::queries::workspace::{get_workspace, increment_issue_counter};
@@ -712,6 +713,25 @@ RETURNING id"#,
             }
         }
 
+        // The outbound event is part of the same transaction as the
+        // canonical Issue row. Provider I/O belongs to the Linear worker;
+        // inbound Linear-created Issues are explicitly excluded so their
+        // origin cannot echo back into Linear.
+        if p.origin_type.as_deref() != Some("linear") {
+            let event_key = format!("issue:{}:created", issue.id);
+            linear_q::enqueue_issue_outbox(
+                &mut *tx,
+                p.workspace_id,
+                issue.project_id,
+                issue.id,
+                &event_key,
+                "issue_created",
+                &linear_issue_sync_payload(&issue),
+            )
+            .await
+            .map_err(|error| ic_err("enqueue Linear Issue create", error))?;
+        }
+
         tx.commit().await.map_err(IssueCreateError::Sql)?;
 
         let attachments = self.link_attachments(&issue, &p.attachment_ids).await;
@@ -780,6 +800,23 @@ RETURNING id"#,
 
 fn ic_err_msg(msg: impl std::fmt::Display) -> IssueCreateError {
     IssueCreateError::Internal(msg.to_string())
+}
+
+/// Payload kept with the event for audit/debugging. The worker reloads the
+/// Issue row before mutation so retries always publish the latest committed
+/// state, while this snapshot records what caused the event to be emitted.
+pub fn linear_issue_sync_payload(issue: &Issue) -> serde_json::Value {
+    json!({
+        "issue_id": issue.id,
+        "revision": issue.revision,
+        "title": issue.title,
+        "description": issue.description,
+        "priority": issue.priority,
+        "status": issue.status,
+        "due_date": issue.due_date.map(|date| date.format("%Y-%m-%d").to_string()),
+        "owner_type": issue.owner_type,
+        "owner_id": issue.owner_id,
+    })
 }
 
 fn ic_err_parent(e: impl std::fmt::Display) -> IssueCreateError {
