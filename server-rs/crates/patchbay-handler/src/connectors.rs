@@ -505,22 +505,20 @@ async fn messaging_usage(
             );
         }
     };
-    let reserved = match patchbay_service::channel_quota::count_reserved_turns(
-        &mut connection,
-        workspace_id,
-    )
-    .await
-    {
-        Ok(value) => value,
-        Err(error) => {
-            tracing::warn!(%error, %workspace_id, "count reserved messaging usage failed");
-            return error_code_response(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "quota_unavailable",
-                "hosted messaging usage is temporarily unavailable",
-            );
-        }
-    };
+    let reserved =
+        match patchbay_service::channel_quota::count_reserved_turns(&mut connection, workspace_id)
+            .await
+        {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::warn!(%error, %workspace_id, "count reserved messaging usage failed");
+                return error_code_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "quota_unavailable",
+                    "hosted messaging usage is temporarily unavailable",
+                );
+            }
+        };
     let (period_start, period_end) = utc_month_bounds(Utc::now());
     Json(MessagingQuotaUsageResponse {
         mode: mode.into(),
