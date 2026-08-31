@@ -344,3 +344,155 @@ pub async fn list_inbox(
     .fetch_all(executor)
     .await?)
 }
+
+pub async fn project_belongs_to_workspace(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    project_id: Uuid,
+) -> anyhow::Result<bool> {
+    Ok(sqlx::query_scalar(
+        r#"SELECT EXISTS(
+               SELECT 1 FROM project WHERE workspace_id = $1 AND id = $2
+           )"#,
+    )
+    .bind(workspace_id)
+    .bind(project_id)
+    .fetch_one(executor)
+    .await?)
+}
+
+pub struct LinearProjectBindingInput<'a> {
+    pub id: Uuid,
+    pub workspace_id: Uuid,
+    pub connection_id: Uuid,
+    pub cordy_project_id: Uuid,
+    pub linear_project_id: &'a str,
+    pub linear_team_id: Option<&'a str>,
+    pub status: &'a str,
+    pub sync_mode: &'a str,
+    pub initial_source_of_truth: Option<&'a str>,
+    pub status_mapping: &'a Value,
+    pub agent_label_mapping: &'a Value,
+    pub created_by_id: Uuid,
+}
+
+fn binding_columns() -> &'static str {
+    "id, workspace_id, connection_id, cordy_project_id, linear_project_id,\
+     linear_team_id, status, sync_mode, initial_source_of_truth, status_mapping,\
+     agent_label_mapping, activated_at, paused_at, created_by_id, created_at,\
+     updated_at"
+}
+
+pub async fn create_project_binding(
+    executor: impl Executor<'_, Database = Postgres>,
+    input: &LinearProjectBindingInput<'_>,
+) -> anyhow::Result<LinearProjectBinding> {
+    let query = format!(
+        "INSERT INTO linear_project_binding\
+         (id, workspace_id, connection_id, cordy_project_id, linear_project_id,\
+          linear_team_id, status, sync_mode, initial_source_of_truth,\
+          status_mapping, agent_label_mapping, activated_at, paused_at, created_by_id)\
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,\
+                 CASE WHEN $7 = 'active' THEN now() ELSE NULL END,\
+                 CASE WHEN $7 = 'paused' THEN now() ELSE NULL END, $12)\
+         RETURNING {columns}",
+        columns = binding_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearProjectBinding>(&query)
+        .bind(input.id)
+        .bind(input.workspace_id)
+        .bind(input.connection_id)
+        .bind(input.cordy_project_id)
+        .bind(input.linear_project_id)
+        .bind(input.linear_team_id)
+        .bind(input.status)
+        .bind(input.sync_mode)
+        .bind(input.initial_source_of_truth)
+        .bind(input.status_mapping)
+        .bind(input.agent_label_mapping)
+        .bind(input.created_by_id)
+        .fetch_one(executor)
+        .await?)
+}
+
+pub async fn list_project_bindings(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+) -> anyhow::Result<Vec<LinearProjectBinding>> {
+    let query = format!(
+        "SELECT {columns} FROM linear_project_binding\
+         WHERE workspace_id = $1 AND status <> 'tombstone'\
+         ORDER BY created_at, id",
+        columns = binding_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearProjectBinding>(&query)
+        .bind(workspace_id)
+        .fetch_all(executor)
+        .await?)
+}
+
+pub async fn get_project_binding(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    binding_id: Uuid,
+) -> anyhow::Result<Option<LinearProjectBinding>> {
+    let query = format!(
+        "SELECT {columns} FROM linear_project_binding\
+         WHERE workspace_id = $1 AND id = $2 AND status <> 'tombstone'",
+        columns = binding_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearProjectBinding>(&query)
+        .bind(workspace_id)
+        .bind(binding_id)
+        .fetch_optional(executor)
+        .await?)
+}
+
+pub async fn update_project_binding(
+    executor: impl Executor<'_, Database = Postgres>,
+    input: &LinearProjectBindingInput<'_>,
+) -> anyhow::Result<Option<LinearProjectBinding>> {
+    let query = format!(
+        "UPDATE linear_project_binding\
+         SET linear_project_id = $3, linear_team_id = $4, status = $5,\
+             sync_mode = $6, initial_source_of_truth = $7, status_mapping = $8,\
+             agent_label_mapping = $9,\
+             activated_at = CASE WHEN $5 = 'active'\
+                                 THEN COALESCE(activated_at, now()) ELSE activated_at END,\
+             paused_at = CASE WHEN $5 = 'paused' THEN COALESCE(paused_at, now())\
+                              WHEN $5 = 'active' THEN NULL ELSE paused_at END,\
+             updated_at = now()\
+         WHERE workspace_id = $1 AND id = $2 AND status <> 'tombstone'\
+         RETURNING {columns}",
+        columns = binding_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearProjectBinding>(&query)
+        .bind(input.workspace_id)
+        .bind(input.id)
+        .bind(input.linear_project_id)
+        .bind(input.linear_team_id)
+        .bind(input.status)
+        .bind(input.sync_mode)
+        .bind(input.initial_source_of_truth)
+        .bind(input.status_mapping)
+        .bind(input.agent_label_mapping)
+        .fetch_optional(executor)
+        .await?)
+}
+
+pub async fn tombstone_project_binding(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    binding_id: Uuid,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"UPDATE linear_project_binding
+           SET status = 'tombstone', paused_at = COALESCE(paused_at, now()), updated_at = now()
+           WHERE workspace_id = $1 AND id = $2 AND status <> 'tombstone'"#,
+    )
+    .bind(workspace_id)
+    .bind(binding_id)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}

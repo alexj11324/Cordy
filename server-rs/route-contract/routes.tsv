@@ -42,6 +42,7 @@ DELETE	/api/workspaces/{}/github/installations/{}
 DELETE	/api/workspaces/{}/invitations/{}
 DELETE	/api/workspaces/{}/lark/installations/{}
 DELETE	/api/workspaces/{}/linear
+DELETE	/api/workspaces/{}/linear/bindings/{}
 DELETE	/api/workspaces/{}/mcp-servers/{}
 DELETE	/api/workspaces/{}/members/{}
 DELETE	/api/workspaces/{}/plugins/{}
@@ -214,6 +215,8 @@ GET	/api/workspaces/{}/invitations
 GET	/api/workspaces/{}/lark/install/{}/status
 GET	/api/workspaces/{}/lark/installations
 GET	/api/workspaces/{}/linear
+GET	/api/workspaces/{}/linear/bindings
+GET	/api/workspaces/{}/linear/catalog
 GET	/api/workspaces/{}/mcp-servers
 GET	/api/workspaces/{}/members
 GET	/api/workspaces/{}/plugins
@@ -254,6 +257,7 @@ PATCH	/api/teams/{}/members/role
 PATCH	/api/v1/plugin/issues/{}
 PATCH	/api/workspaces/{}
 PATCH	/api/workspaces/{}/dingtalk/group-routes/{}
+PATCH	/api/workspaces/{}/linear/bindings/{}
 PATCH	/api/workspaces/{}/members/{}
 PATCH	/api/workspaces/{}/runtime-profiles/{}
 POST	/api/agent-builder/sessions
@@ -410,6 +414,7 @@ POST	/api/weixin/binding/redeem
 POST	/api/workspaces
 POST	/api/workspaces/{}/dingtalk/install/byo
 POST	/api/workspaces/{}/lark/install/begin
+POST	/api/workspaces/{}/linear/bindings
 POST	/api/workspaces/{}/linear/connect
 POST	/api/workspaces/{}/leave
 POST	/api/workspaces/{}/mcp-servers

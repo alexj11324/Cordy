@@ -290,6 +290,24 @@ export type {
   GitHubConnectResponse,
 } from "./github";
 export type {
+  LinearBindingStatus,
+  LinearCatalogLabel,
+  LinearCatalogProject,
+  LinearCatalogResponse,
+  LinearCatalogState,
+  LinearCatalogTeam,
+  LinearCatalogUser,
+  LinearConnectResponse,
+  LinearConnection,
+  LinearConnectionResponse,
+  LinearConnectionStatus,
+  LinearInitialSource,
+  LinearProjectBinding,
+  LinearSyncMode,
+  ListLinearBindingsResponse,
+  SaveLinearProjectBindingRequest,
+} from "./linear";
+export type {
   AttachIssuePullRequestRequest,
   AttachIssuePullRequestResponse,
   AttachWorkProductRequest,
