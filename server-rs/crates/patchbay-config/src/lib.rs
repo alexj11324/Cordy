@@ -110,6 +110,9 @@ pub struct AuthConfig {
     pub clerk_jwt_key: Option<String>,
     pub clerk_issuer: Option<String>,
     pub clerk_authorized_parties: Option<String>,
+    /// `PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN` authorizes the independent broker
+    /// to bypass only the shared peer-IP limiter on desktop Google exchange.
+    pub desktop_broker_auth_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
@@ -305,6 +308,10 @@ impl Config {
             &mut self.auth.clerk_authorized_parties,
             "CLERK_AUTHORIZED_PARTIES",
         );
+        env_str(
+            &mut self.auth.desktop_broker_auth_token,
+            "PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN",
+        );
 
         // urls
         env_str(&mut self.urls.public_url, "PATCHBAY_PUBLIC_URL");
@@ -415,6 +422,17 @@ impl Config {
         if self.database.url.is_none() {
             anyhow::bail!("DATABASE_URL is required");
         }
+        if let Some(secret) = self.auth.desktop_broker_auth_token.as_deref() {
+            if secret.len() != 64
+                || !secret
+                    .bytes()
+                    .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+            {
+                anyhow::bail!(
+                    "PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN must be 64 lowercase hexadecimal characters"
+                );
+            }
+        }
         Ok(())
     }
 
@@ -449,6 +467,7 @@ mod tests {
             "CLERK_JWT_KEY",
             "CLERK_ISSUER",
             "CLERK_AUTHORIZED_PARTIES",
+            "PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN",
             "PATCHBAY_LLM_MAX_RETRIES",
         ] {
             std::env::remove_var(var);
@@ -538,5 +557,18 @@ mod tests {
     fn validate_requires_database_url() {
         let cfg = Config::default();
         assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn validate_rejects_malformed_desktop_broker_auth_token() {
+        let mut cfg = Config::default();
+        cfg.database.url = Some("postgres://invalid/invalid".into());
+        cfg.auth.desktop_broker_auth_token = Some("A".repeat(64));
+        assert_eq!(
+            cfg.validate().unwrap_err().to_string(),
+            "PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN must be 64 lowercase hexadecimal characters"
+        );
+        cfg.auth.desktop_broker_auth_token = Some("a".repeat(64));
+        assert!(cfg.validate().is_ok());
     }
 }

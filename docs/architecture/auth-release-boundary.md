@@ -85,6 +85,14 @@ contract. The Clerk publishable key and origins are runtime configuration;
 they are not compiled into the image. No Clerk secret key is present in the
 broker.
 
+The accounts Worker applies separate coarse budgets to the canonical attempt
+and completion POST routes using only its inbound `CF-Connecting-IP`; it never
+forwards that IP as an authorization input. The broker constructs a fresh Rust
+request and authenticates only its service identity with a separate runtime
+secret. Rust accepts that credential only on attempt/completion, removes it
+before the handler, and skips only the old shared peer-IP limiter. Direct Rust
+requests and redemption retain the original limiter.
+
 ## Release boundary
 
 `Dockerfile.auth-broker`, the disabled-by-default

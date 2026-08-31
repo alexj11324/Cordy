@@ -5,6 +5,7 @@ const valid = {
   PATCHBAY_API_ORIGIN: "https://api.aspectlylabs.com",
   PATCHBAY_AUTH_BROKER_ORIGIN: "https://accounts.aspectlylabs.com",
   CLERK_PUBLISHABLE_KEY: "pk_test_placeholder",
+  PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN: "a".repeat(64),
 };
 
 describe("auth broker runtime configuration", () => {
@@ -17,6 +18,7 @@ describe("auth broker runtime configuration", () => {
         apiOrigin: "https://api.aspectlylabs.com",
         brokerOrigin: "https://accounts.aspectlylabs.com",
         clerkPublishableKey: "pk_test_placeholder",
+        rustBrokerAuthToken: "a".repeat(64),
       },
     });
   });
@@ -26,6 +28,12 @@ describe("auth broker runtime configuration", () => {
       ok: false,
       error: "CLERK_PUBLISHABLE_KEY is required",
     });
+    expect(
+      readAuthBrokerRuntimeConfig({
+        ...valid,
+        PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN: "short",
+      }),
+    ).toMatchObject({ ok: false });
   });
 
   it("rejects insecure or path-bearing production origins", () => {

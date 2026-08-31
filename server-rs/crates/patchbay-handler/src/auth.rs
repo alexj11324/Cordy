@@ -18,7 +18,7 @@ use crate::state::HandlerState;
 
 const SIGNUP_SOURCE_MAX_LEN: usize = 512;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AuthSettings {
     allow_signup: bool,
     allowed_emails: Vec<String>,
@@ -27,6 +27,7 @@ pub struct AuthSettings {
     dev_verification_code: String,
     pub(crate) cookie_domain: String,
     pub(crate) frontend_origin: String,
+    desktop_broker_auth_token: String,
 }
 
 impl AuthSettings {
@@ -39,6 +40,7 @@ impl AuthSettings {
             dev_verification_code: env_trimmed("PATCHBAY_DEV_VERIFICATION_CODE"),
             cookie_domain: env_trimmed("COOKIE_DOMAIN"),
             frontend_origin: env_trimmed("FRONTEND_ORIGIN"),
+            desktop_broker_auth_token: env_trimmed("PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN"),
         }
     }
 
@@ -51,6 +53,9 @@ impl AuthSettings {
             dev_verification_code: option_trimmed(config.auth.dev_verification_code.as_deref()),
             cookie_domain: option_trimmed(config.auth.cookie_domain.as_deref()),
             frontend_origin: option_trimmed(config.urls.frontend_origin.as_deref()),
+            desktop_broker_auth_token: option_trimmed(
+                config.auth.desktop_broker_auth_token.as_deref(),
+            ),
         }
     }
 
@@ -79,6 +84,10 @@ impl AuthSettings {
             patchbay_auth::cookie::cookie_domain(Some(&self.cookie_domain)),
             patchbay_auth::cookie::is_secure_cookie(Some(&self.frontend_origin)),
         )
+    }
+
+    pub(crate) fn desktop_broker_auth_token(&self) -> &str {
+        &self.desktop_broker_auth_token
     }
 }
 
@@ -116,10 +125,10 @@ struct VerifyCodeRequest {
     code: String,
 }
 
-struct LoginProfile {
-    name: String,
-    picture: String,
-    auth_method: &'static str,
+pub(crate) struct LoginProfile {
+    pub(crate) name: String,
+    pub(crate) picture: String,
+    pub(crate) auth_method: &'static str,
 }
 
 #[derive(Debug, Serialize)]
@@ -376,80 +385,10 @@ async fn complete_login(
     email: &str,
     profile: Option<LoginProfile>,
 ) -> Response {
-    if patchbay_auth::disabled_users::is_temporarily_disabled_user_email(email) {
-        return error_response(StatusCode::FORBIDDEN, "account disabled");
-    }
-    let (mut current, is_new) = match user::get_user_by_email(&state.pool, email).await {
-        Ok(Some(user)) => {
-            if patchbay_auth::disabled_users::is_temporarily_disabled_user(
-                &user.id.to_string(),
-                &user.email,
-            ) {
-                return error_response(StatusCode::FORBIDDEN, "account disabled");
-            }
-            (user, false)
-        }
-        Ok(None) => {
-            if !state.auth_settings.signup_allowed(email, true) {
-                return error_response(
-                    StatusCode::FORBIDDEN,
-                    "user registration is disabled on this self-hosted instance",
-                );
-            }
-            let name = email.split_once('@').map(|(name, _)| name).unwrap_or(email);
-            match user::create_user(&state.pool, name, email, None).await {
-                Ok(Some(user)) => (user, true),
-                Ok(None) | Err(_) => {
-                    return error_response(
-                        StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to create user",
-                    );
-                }
-            }
-        }
-        Err(_) => {
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to create user");
-        }
+    let current = match resolve_or_create_login_user(state, headers, email, profile).await {
+        Ok(current) => current,
+        Err(response) => return response,
     };
-
-    if is_new {
-        let mut event = patchbay_analytics::signup(
-            &current.id.to_string(),
-            &current.email,
-            &signup_source(headers),
-        );
-        if let Some(profile) = profile.as_ref() {
-            event
-                .properties
-                .get_or_insert_default()
-                .insert("auth_method".into(), serde_json::json!(profile.auth_method));
-        }
-        patchbay_metrics::business_events::record_event(
-            Some(state.analytics.as_ref()),
-            state.business_metrics.as_deref(),
-            &event,
-        );
-    }
-    if let Some(profile) = profile {
-        let email_prefix = email.split_once('@').map(|(name, _)| name).unwrap_or(email);
-        let new_name = if !profile.name.is_empty() && current.name == email_prefix {
-            profile.name.as_str()
-        } else {
-            current.name.as_str()
-        };
-        let avatar = if !profile.picture.is_empty() && current.avatar_url.is_none() {
-            Some(profile.picture.as_str())
-        } else {
-            None
-        };
-        if new_name != current.name || avatar.is_some() {
-            if let Ok(Some(updated)) =
-                user::update_user(&state.pool, current.id, new_name, avatar, None, None, None).await
-            {
-                current = updated;
-            }
-        }
-    }
     let token = match patchbay_auth::jwt::issue_user_jwt(
         &current.id.to_string(),
         &current.email,
@@ -501,6 +440,92 @@ async fn complete_login(
         }
     }
     response
+}
+
+pub(crate) async fn resolve_or_create_login_user(
+    state: &HandlerState,
+    headers: &HeaderMap,
+    email: &str,
+    profile: Option<LoginProfile>,
+) -> Result<User, Response> {
+    if patchbay_auth::disabled_users::is_temporarily_disabled_user_email(email) {
+        return Err(error_response(StatusCode::FORBIDDEN, "account disabled"));
+    }
+    let (mut current, is_new) = match user::get_user_by_email(&state.pool, email).await {
+        Ok(Some(user)) => {
+            if patchbay_auth::disabled_users::is_temporarily_disabled_user(
+                &user.id.to_string(),
+                &user.email,
+            ) {
+                return Err(error_response(StatusCode::FORBIDDEN, "account disabled"));
+            }
+            (user, false)
+        }
+        Ok(None) => {
+            if !state.auth_settings.signup_allowed(email, true) {
+                return Err(error_response(
+                    StatusCode::FORBIDDEN,
+                    "user registration is disabled on this self-hosted instance",
+                ));
+            }
+            let name = email.split_once('@').map(|(name, _)| name).unwrap_or(email);
+            match user::create_user(&state.pool, name, email, None).await {
+                Ok(Some(user)) => (user, true),
+                Ok(None) | Err(_) => {
+                    return Err(error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to create user",
+                    ));
+                }
+            }
+        }
+        Err(_) => {
+            return Err(error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to create user",
+            ));
+        }
+    };
+
+    if is_new {
+        let mut event = patchbay_analytics::signup(
+            &current.id.to_string(),
+            &current.email,
+            &signup_source(headers),
+        );
+        if let Some(profile) = profile.as_ref() {
+            event
+                .properties
+                .get_or_insert_default()
+                .insert("auth_method".into(), serde_json::json!(profile.auth_method));
+        }
+        patchbay_metrics::business_events::record_event(
+            Some(state.analytics.as_ref()),
+            state.business_metrics.as_deref(),
+            &event,
+        );
+    }
+    if let Some(profile) = profile {
+        let email_prefix = email.split_once('@').map(|(name, _)| name).unwrap_or(email);
+        let new_name = if !profile.name.is_empty() && current.name == email_prefix {
+            profile.name.as_str()
+        } else {
+            current.name.as_str()
+        };
+        let avatar = if !profile.picture.is_empty() && current.avatar_url.is_none() {
+            Some(profile.picture.as_str())
+        } else {
+            None
+        };
+        if new_name != current.name || avatar.is_some() {
+            if let Ok(Some(updated)) =
+                user::update_user(&state.pool, current.id, new_name, avatar, None, None, None).await
+            {
+                current = updated;
+            }
+        }
+    }
+    Ok(current)
 }
 
 fn bearer_token(headers: &HeaderMap) -> Option<&str> {
