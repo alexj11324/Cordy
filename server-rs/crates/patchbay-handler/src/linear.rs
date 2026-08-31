@@ -14,7 +14,7 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine as _;
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use hmac::{Hmac, Mac};
 use patchbay_db::models::LinearConnection;
 use patchbay_db::queries::linear as linear_q;
@@ -660,8 +660,11 @@ impl LinearTokenManager {
     }
 }
 
-fn storage_error(error: anyhow::Error) -> LinearTokenError {
-    LinearTokenError::Storage(error)
+fn storage_error<E>(error: E) -> LinearTokenError
+where
+    E: Into<anyhow::Error>,
+{
+    LinearTokenError::Storage(error.into())
 }
 
 fn seal_secret(
