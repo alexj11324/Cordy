@@ -105,7 +105,30 @@ impl Outbound {
         let context_token = String::from_utf8(plaintext)?;
         Client::new(&credentials.base_url, &credentials.bot_token)?
             .send_text(&target.user_id, &context_token, text)
-            .await
+            .await?;
+        // This path is reached only after an inbound WeChat message was
+        // resolved to a chat session. A successful provider send therefore
+        // proves the first real inbound -> outbound round trip for this
+        // installation. Keep the marker server-owned and credential-free.
+        match patchbay_db::queries::channel::mark_channel_installation_round_trip(
+            &self.pool,
+            installation.id,
+            crate::TYPE_WEIXIN,
+        )
+        .await
+        {
+            Ok(true) => {}
+            Ok(false) => tracing::warn!(
+                installation_id = %installation.id,
+                "weixin round-trip succeeded but installation verification marker was not updated"
+            ),
+            Err(error) => tracing::warn!(
+                installation_id = %installation.id,
+                %error,
+                "weixin round-trip succeeded but installation verification marker failed"
+            ),
+        }
+        Ok(())
     }
 }
 

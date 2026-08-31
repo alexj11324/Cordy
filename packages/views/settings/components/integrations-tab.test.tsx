@@ -287,6 +287,24 @@ describe("Settings IntegrationsTab", () => {
     ).toBeGreaterThan(0);
   });
 
+  it("does not show non-admins a green Telegram status before a message round trip", () => {
+    authUserRef.current = { id: "member-user" };
+    membersRef.current = [{ user_id: "member-user", role: "member" }];
+    channelInstallationsRef.current.telegram = {
+      configured: true,
+      install_supported: true,
+      installations: [{ id: "telegram-hub", agent_id: null, status: "active" }],
+    };
+
+    renderTab();
+
+    const card = screen.getByTestId("integration-channel-card-telegram");
+    expect(
+      within(card).getAllByText("Authorized · test message required"),
+    ).toHaveLength(2);
+    expect(within(card).queryByText("Connected")).toBeNull();
+  });
+
   it.each([
     ["lark", "Connect Lark"],
     ["slack", "Connect Slack"],

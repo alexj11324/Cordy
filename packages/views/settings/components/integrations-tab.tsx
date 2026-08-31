@@ -93,6 +93,7 @@ type HubActionProps = {
   isGuest: boolean;
   query: IntegrationQuery;
   installationId?: string;
+  requiresRoundTrip?: boolean;
   reconnectSupported?: boolean;
   onDisconnect: () => void;
   onManage: () => void;
@@ -207,10 +208,12 @@ function HubAction({
   onManage,
   onReconnect,
   query,
+  requiresRoundTrip = false,
   reconnectSupported = true,
 }: HubActionProps) {
   const { t } = useT("settings");
   const hubConnected = hasActiveHub(query.data);
+  const hubVerified = hasVerifiedHub(query.data);
   const installationConnected = hasActiveInstallation(query.data);
 
   // A guest may own its temporary workspace, but external platform
@@ -226,11 +229,13 @@ function HubAction({
   }
 
   if (!canManage) {
+    const hubStatus =
+      requiresRoundTrip && hubConnected && !hubVerified
+        ? t(($) => $.page.integrations_pending_verification)
+        : t(($) => $.page.integrations_connected);
     return (
       <span className="text-caption text-muted-foreground">
-        {hubConnected
-          ? t(($) => $.page.integrations_connected)
-          : t(($) => $.page.integrations_admin_only)}
+        {hubConnected ? hubStatus : t(($) => $.page.integrations_admin_only)}
       </span>
     );
   }
@@ -551,6 +556,9 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
                     isGuest={isGuest}
                     query={query}
                     installationId={hub?.id}
+                    requiresRoundTrip={
+                      channel === "telegram" || channel === "weixin"
+                    }
                     reconnectSupported={channel !== "lark" || larkHubRegion !== "lark"}
                     onManage={() => {
                       setManagedChannel(channel);

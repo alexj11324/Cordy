@@ -50,10 +50,31 @@ impl OutboundReplier {
             .ok_or_else(|| anyhow::anyhow!("weixin installation row unavailable"))?;
         let credentials = decode_credentials(&row.config, self.decrypt.as_deref())?;
         let client = Client::new(&credentials.base_url, &credentials.bot_token)?;
-        tokio::select! {
-            _ = ctx.cancelled() => Ok(()),
+        let result = tokio::select! {
+            _ = ctx.cancelled() => return Ok(()),
             result = client.send_text(&message.source.sender_id, &raw.context_token, text) => result,
+        };
+        if result.is_ok() {
+            match patchbay_db::queries::channel::mark_channel_installation_round_trip(
+                &self.pool,
+                installation.id,
+                crate::TYPE_WEIXIN,
+            )
+            .await
+            {
+                Ok(true) => {}
+                Ok(false) => tracing::warn!(
+                    installation_id = %installation.id,
+                    "weixin round-trip succeeded but installation verification marker was not updated"
+                ),
+                Err(error) => tracing::warn!(
+                    installation_id = %installation.id,
+                    %error,
+                    "weixin round-trip succeeded but installation verification marker failed"
+                ),
+            }
         }
+        result
     }
 
     async fn binding_prompt(

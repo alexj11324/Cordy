@@ -474,6 +474,7 @@ fn configure_telegram(
         patchbay_telegram::replier::OutboundReplierConfig {
             binding: Some(binding),
             decrypt: Some(decrypt.clone()),
+            pool: state.pool.clone(),
             app_url: app_url(cfg),
             binding_path: String::new(),
             api_base: String::new(),

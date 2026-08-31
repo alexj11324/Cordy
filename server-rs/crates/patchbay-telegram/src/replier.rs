@@ -87,6 +87,7 @@ impl BindingMinter for DbBindingMinter {
 pub struct OutboundReplierConfig {
     pub binding: Option<Arc<dyn BindingMinter>>,
     pub decrypt: Option<Arc<DecrypterFn>>,
+    pub pool: sqlx::PgPool,
     pub app_url: String,
     pub binding_path: String,
     pub api_base: String,
@@ -95,6 +96,7 @@ pub struct OutboundReplierConfig {
 pub struct OutboundReplier {
     binding: Option<Arc<dyn BindingMinter>>,
     decrypt: Option<Arc<DecrypterFn>>,
+    pool: sqlx::PgPool,
     app_url: String,
     binding_path: String,
     api_base: String,
@@ -113,6 +115,7 @@ impl OutboundReplier {
         Self {
             binding: cfg.binding,
             decrypt: cfg.decrypt,
+            pool: cfg.pool,
             app_url: cfg.app_url.trim_end_matches('/').to_string(),
             binding_path,
             api_base: cfg.api_base,
@@ -219,10 +222,31 @@ impl OutboundReplier {
             }),
             ..Default::default()
         };
-        tokio::select! {
-            _ = ctx.cancelled() => Ok(()),
+        let result = tokio::select! {
+            _ = ctx.cancelled() => return Ok(()),
             result = api.send_message(&params) => result.map(|_| ()),
+        };
+        if result.is_ok() {
+            match patchbay_db::queries::channel::mark_channel_installation_round_trip(
+                &self.pool,
+                inst.id,
+                crate::TYPE_TELEGRAM,
+            )
+            .await
+            {
+                Ok(true) => {}
+                Ok(false) => tracing::warn!(
+                    installation_id = %inst.id,
+                    "telegram round-trip succeeded but installation verification marker was not updated"
+                ),
+                Err(error) => tracing::warn!(
+                    installation_id = %inst.id,
+                    %error,
+                    "telegram round-trip succeeded but installation verification marker failed"
+                ),
+            }
         }
+        result
     }
 }
 

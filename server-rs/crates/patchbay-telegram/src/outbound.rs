@@ -650,6 +650,7 @@ pub fn task_failure_retry_pending(payload: &serde_json::Value) -> bool {
 const OUTBOUND_DELIVERY_CAPACITY: usize = 64;
 
 struct RuntimeTarget {
+    installation_id: Uuid,
     stream_key: String,
     bot_key: String,
     api: BotApi,
@@ -926,6 +927,7 @@ impl Outbound {
                         match result {
                             Ok(()) => {
                                 self.record_edit(target, now);
+                                self.mark_round_trip(target.installation_id).await;
                                 match terminal_placeholder_edited(reply, now) {
                                     TerminalStep::Done => return Ok(()),
                                     TerminalStep::RetryAt(at) => {
@@ -955,6 +957,7 @@ impl Outbound {
                         match result {
                             Ok(_) => {
                                 self.record_edit(target, now);
+                                self.mark_round_trip(target.installation_id).await;
                                 match terminal_chunk_sent(reply, now) {
                                     TerminalStep::Done => return Ok(()),
                                     TerminalStep::RetryAt(at) => {
@@ -1129,6 +1132,7 @@ impl Outbound {
             return Ok(None);
         }
         Ok(Some(RuntimeTarget {
+            installation_id: installation.id,
             stream_key: task_id.to_string(),
             bot_key: installation.id.to_string(),
             api: BotApi::new(&self.api_base, &credentials.bot_token),
@@ -1151,6 +1155,27 @@ impl Outbound {
                 .with_schedule(&target.bot_key, target.chat_id, |schedule| {
                     schedule.backoff_till = Some(now + wait);
                 });
+        }
+    }
+
+    async fn mark_round_trip(&self, installation_id: Uuid) {
+        match patchbay_db::queries::channel::mark_channel_installation_round_trip(
+            &self.pool,
+            installation_id,
+            crate::TYPE_TELEGRAM,
+        )
+        .await
+        {
+            Ok(true) => {}
+            Ok(false) => tracing::warn!(
+                installation_id = %installation_id,
+                "telegram round-trip succeeded but installation verification marker was not updated"
+            ),
+            Err(error) => tracing::warn!(
+                installation_id = %installation_id,
+                %error,
+                "telegram round-trip succeeded but installation verification marker failed"
+            ),
         }
     }
 

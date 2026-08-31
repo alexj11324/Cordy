@@ -276,10 +276,19 @@ fn installation_response(provider: Provider, row: ChannelInstallation) -> Value 
     });
     if verification {
         let active = row.status == "active";
+        let round_trip_passed = round_trip_passed(&row.config);
         value["credential_status"] = json!(if active { "verified" } else { "not_verified" });
-        value["runtime_status"] = json!("unknown");
-        value["round_trip_status"] = json!(if active { "not_run" } else { "not_applicable" });
-        value["required_action"] = json!(if active {
+        value["runtime_status"] = json!(if round_trip_passed { "healthy" } else { "unknown" });
+        value["round_trip_status"] = json!(if round_trip_passed {
+            "passed"
+        } else if active {
+            "not_run"
+        } else {
+            "not_applicable"
+        });
+        value["required_action"] = json!(if round_trip_passed {
+            "none"
+        } else if active {
             "send_test_message"
         } else {
             "reconnect"
@@ -292,6 +301,15 @@ fn installation_response(provider: Provider, row: ChannelInstallation) -> Value 
         target.extend(fields.clone());
     }
     value
+}
+
+fn round_trip_passed(config: &Value) -> bool {
+    config
+        .get("verification")
+        .and_then(Value::as_object)
+        .and_then(|verification| verification.get("round_trip_status"))
+        .and_then(Value::as_str)
+        == Some("passed")
 }
 
 async fn list(state: HandlerState, context: WorkspaceContext, provider: Provider) -> Response {
@@ -2555,6 +2573,36 @@ mod tests {
         assert_eq!(value["runtime_status"], "unknown");
         assert_eq!(value["round_trip_status"], "not_run");
         assert_eq!(value["required_action"], "send_test_message");
+    }
+
+    #[test]
+    fn provider_installation_response_reports_a_recorded_round_trip() {
+        let now = Utc::now();
+        let row = ChannelInstallation {
+            agent_id: None,
+            channel_type: Provider::Weixin.channel_type().into(),
+            config: json!({
+                "verification": {
+                    "round_trip_status": "passed",
+                    "verified_at": now,
+                }
+            }),
+            created_at: now,
+            id: Uuid::new_v4(),
+            installed_at: now,
+            installer_user_id: Uuid::new_v4(),
+            status: "active".into(),
+            updated_at: now,
+            workspace_id: Uuid::new_v4(),
+            ws_lease_expires_at: None,
+            ws_lease_token: None,
+        };
+
+        let value = installation_response(Provider::Weixin, row);
+        assert_eq!(value["credential_status"], "verified");
+        assert_eq!(value["runtime_status"], "healthy");
+        assert_eq!(value["round_trip_status"], "passed");
+        assert_eq!(value["required_action"], "none");
     }
 
     #[test]

@@ -373,8 +373,10 @@ provider connection or test message.
 
 An installation row with `status: active` means that provider authorization was
 accepted; it is not a message-delivery guarantee. The Desktop status remains
-“Authorized · test message required” until the server records a real provider
-message round trip (`round_trip_status: passed`). A standalone terminal CLI
+“Authorized · test message required” until a real inbound provider message gets
+a successful outbound response. The Telegram and Weixin adapters then record a
+server-owned verification marker (`round_trip_status: passed`) atomically; a
+failed send or a missing marker keeps the UI pending. A standalone terminal CLI
 login is only needed for CLI commands that call a protected server directly;
 Electron's complete dev flow signs in through the browser and owns its daemon
 session separately. Do not copy a CLI token into the repository or an `.env`
