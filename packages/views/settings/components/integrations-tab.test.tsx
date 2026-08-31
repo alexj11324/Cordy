@@ -40,6 +40,8 @@ const channelInstallationsRef = vi.hoisted(() => ({
           agent_id: string | null;
           status: string;
           region?: string;
+          runtime?: { state: string; observedAt: string | null; errorCode: string | null };
+          setup?: { experimental?: boolean };
         }[];
       }
     >
@@ -146,6 +148,11 @@ describe("Settings IntegrationsTab", () => {
     // Reset the self-host-only VCS gate to its default (hidden) so tests stay
     // isolated; individual tests opt in below.
     configStore.getState().setAuthConfig({ allowSignup: true, vcsIntegrationAvailable: false });
+    configStore.getState().setMessagingConfig({
+      mode: "managed",
+      setupWritable: true,
+      platforms: [],
+    });
   });
 
   it("hides Composio and disables the toolkits query when the feature flag is off", () => {
@@ -193,7 +200,12 @@ describe("Settings IntegrationsTab", () => {
     channelInstallationsRef.current.dingtalk = {
       configured: true,
       install_supported: true,
-      installations: [{ id: "hub-1", agent_id: null, status: "active" }],
+      installations: [{
+        id: "hub-1",
+        agent_id: null,
+        status: "active",
+        runtime: { state: "healthy", observedAt: null, errorCode: null },
+      }],
     };
 
     renderTab();
@@ -285,7 +297,13 @@ describe("Settings IntegrationsTab", () => {
     channelInstallationsRef.current.lark = {
       configured: true,
       install_supported: true,
-      installations: [{ id: "lark-hub", agent_id: null, status: "active", region: "lark" }],
+      installations: [{
+        id: "lark-hub",
+        agent_id: null,
+        status: "active",
+        region: "lark",
+        runtime: { state: "healthy", observedAt: null, errorCode: null },
+      }],
     };
 
     renderTab();
@@ -293,6 +311,27 @@ describe("Settings IntegrationsTab", () => {
     expect(screen.getByRole("button", { name: "Manage" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Reconnect" })).toBeNull();
+  });
+
+  it("labels an active installation experimental until its provider path is verified", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    channelInstallationsRef.current.dingtalk = {
+      configured: true,
+      install_supported: true,
+      installations: [{
+        id: "experimental-hub",
+        agent_id: null,
+        status: "active",
+        runtime: { state: "healthy", observedAt: null, errorCode: null },
+        setup: { experimental: true },
+      }],
+    };
+
+    renderTab();
+
+    expect(screen.getByText("Experimental")).toBeInTheDocument();
+    expect(screen.queryByText("Connected")).toBeNull();
   });
 
   it("explains that Agent selection happens in the connected chat", () => {
@@ -334,7 +373,12 @@ describe("Settings IntegrationsTab", () => {
     channelInstallationsRef.current.dingtalk = {
       configured: true,
       install_supported: true,
-      installations: [{ id: "legacy-1", agent_id: "legacy-agent", status: "active" }],
+      installations: [{
+        id: "legacy-1",
+        agent_id: "legacy-agent",
+        status: "active",
+        runtime: { state: "healthy", observedAt: null, errorCode: null },
+      }],
     };
 
     renderTab();

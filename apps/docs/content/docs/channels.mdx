@@ -79,7 +79,13 @@ After disconnecting, the Bot stops receiving new messages. Existing Patchbay con
 
 ## Self-hosting
 
-A self-hosted deployment must configure a 32-byte encryption key for each platform before Patchbay opens its connection entry point:
+A self-hosted deployment is server-managed. The app does not show credential
+forms or manifest/QR setup controls; it only reports the providers and runtime
+health advertised by `/api/config`. Follow the [self-hosted messaging
+deployment contract](/self-host-messaging) for the manifest, HTTPS origin, and
+transport-specific secrets.
+
+The server must configure a 32-byte encryption key for each enabled platform:
 
 ```dotenv
 PATCHBAY_LARK_SECRET_KEY=<base64-encoded 32-byte key>
@@ -90,7 +96,11 @@ PATCHBAY_TELEGRAM_SECRET_KEY=<base64-encoded 32-byte key>
 PATCHBAY_WEIXIN_SECRET_KEY=<base64-encoded 32-byte key>
 ```
 
-These keys encrypt stored Bot credentials and WeChat context tokens. See [Environment variables](/environment-variables) for how to generate and store them. Patchbay Cloud already has this configured.
+These keys encrypt stored Bot credentials and WeChat context tokens. See
+[Environment variables](/environment-variables) for how to generate and store
+them. Patchbay Cloud already has this configured. A pure localhost deployment
+keeps local ACP available but disables cross-device IM binding; no localhost
+URL is ever sent to a chat user.
 
 For multi-replica WeCom deployments, configure Redis so the cross-replica outbound relay can route replies to the process that owns the bot WebSocket. A single replica can use the direct local path.
 

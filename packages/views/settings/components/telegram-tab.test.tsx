@@ -28,6 +28,12 @@ const mockToastError = vi.hoisted(() => vi.fn());
 const telegramQueryErrorRef = vi.hoisted(() => ({ current: false }));
 const telegramQueryLoadingRef = vi.hoisted(() => ({ current: false }));
 
+const healthyRuntime = {
+  state: "healthy",
+  observedAt: null,
+  errorCode: null,
+} as const;
+
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
     if (opts.enabled === false) return { data: undefined, isLoading: false };
@@ -123,7 +129,12 @@ describe("TelegramAgentBindButton", () => {
   beforeEach(resetFixtures);
 
   it("opens the connect dialog and submits the pasted bot token", async () => {
-    mockRegister.mockResolvedValue({ id: "i1", agent_id: "agent-1", status: "active" });
+    mockRegister.mockResolvedValue({
+      id: "i1",
+      agent_id: "agent-1",
+      status: "active",
+      runtime: healthyRuntime,
+    });
     renderUI(<TelegramAgentBindButton agentId="agent-1" agentName="Bot" />);
     await userEvent.click(screen.getByTestId("telegram-agent-connect"));
     const tokenInput = await screen.findByTestId("telegram-bot-token");
@@ -160,7 +171,7 @@ describe("TelegramAgentBindButton", () => {
   it("shows the connected badge (not the CTA) when the agent already has an active install", () => {
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot" },
+        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
       ],
       configured: true,
       install_supported: true,
@@ -174,7 +185,7 @@ describe("TelegramAgentBindButton", () => {
   it("opens the connected bot in Telegram", async () => {
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot" },
+        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
       ],
       configured: true,
       install_supported: true,
@@ -190,7 +201,7 @@ describe("TelegramAgentBindButton", () => {
     mockDeleteInstallation.mockResolvedValue(undefined);
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot" },
+        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
       ],
       configured: true,
       install_supported: true,
@@ -212,7 +223,7 @@ describe("TelegramAgentBindButton", () => {
     mockDeleteInstallation.mockRejectedValue(new Error("network failed"));
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot" },
+        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
       ],
       configured: true,
       install_supported: true,
@@ -265,7 +276,7 @@ describe("TelegramTab", () => {
   it("lists a connected installation with its agent name and a disconnect control", () => {
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-7", status: "active", bot_username: "my_bot" },
+        { id: "i1", agent_id: "agent-7", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
       ],
       configured: true,
       install_supported: true,
@@ -280,7 +291,7 @@ describe("TelegramTab", () => {
     mockDeleteInstallation.mockResolvedValue(undefined);
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-7", status: "active", bot_username: "my_bot" },
+        { id: "i1", agent_id: "agent-7", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
       ],
       configured: true,
       install_supported: true,
@@ -300,7 +311,7 @@ describe("TelegramTab", () => {
     mockDeleteInstallation.mockRejectedValue(new Error("network failed"));
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-7", status: "active", bot_username: "my_bot" },
+        { id: "i1", agent_id: "agent-7", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
       ],
       configured: true,
       install_supported: true,

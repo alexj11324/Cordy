@@ -25,6 +25,12 @@ const mockDeleteInstallation = vi.hoisted(() => vi.fn());
 const mockOpenExternal = vi.hoisted(() => vi.fn());
 const mockInvalidate = vi.hoisted(() => vi.fn());
 
+const healthyRuntime = {
+  state: "healthy",
+  observedAt: null,
+  errorCode: null,
+} as const;
+
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
     if (opts.enabled === false) return { data: undefined, isLoading: false };
@@ -112,7 +118,12 @@ describe("SlackAgentBindButton", () => {
   beforeEach(resetFixtures);
 
   it("opens the BYO dialog and submits the pasted bot + app tokens", async () => {
-    mockRegisterBYO.mockResolvedValue({ id: "i1", agent_id: "agent-1", status: "active" });
+    mockRegisterBYO.mockResolvedValue({
+      id: "i1",
+      agent_id: "agent-1",
+      status: "active",
+      runtime: healthyRuntime,
+    });
     renderUI(<SlackAgentBindButton agentId="agent-1" agentName="Bot" />);
     await userEvent.click(screen.getByTestId("slack-agent-connect"));
     const botInput = await screen.findByTestId("slack-byo-bot-token");
@@ -131,7 +142,7 @@ describe("SlackAgentBindButton", () => {
 
   it("shows the connected badge (not the CTA) when the agent already has an active install", () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-1", status: "active", team_id: "T1" }],
+      installations: [{ id: "i1", agent_id: "agent-1", status: "active", team_id: "T1", runtime: healthyRuntime }],
       configured: true,
       install_supported: true,
     };
@@ -170,7 +181,7 @@ describe("SlackTab", () => {
 
   it("lists a connected installation with its agent name and a disconnect control", () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-7", status: "active", team_id: "T1" }],
+      installations: [{ id: "i1", agent_id: "agent-7", status: "active", team_id: "T1", runtime: healthyRuntime }],
       configured: true,
       install_supported: true,
     };

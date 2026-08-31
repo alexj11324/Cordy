@@ -18,9 +18,23 @@ import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useAuthStore } from "@patchbay/core/auth";
 import { memberListOptions } from "@patchbay/core/workspace/queries";
 import { api } from "@patchbay/core/api";
+import { isMessagingInstallationHealthy } from "@patchbay/core/types";
 import { weixinInstallationsOptions, weixinKeys } from "@patchbay/core/weixin";
 import { WeixinMark } from "./weixin-mark";
 import { useT } from "../../i18n";
+
+function qrImageSource(value: string): string | null {
+  const trimmed = value.trim();
+  if (/^data:image\//i.test(trimmed) || /^https:\/\//i.test(trimmed)) {
+    return trimmed;
+  }
+  // Some iLink deployments return raw base64 PNG content. Keep the fallback
+  // explicit so an opaque polling token can never be mistaken for an image.
+  if (/^[A-Za-z0-9+/]+=*$/.test(trimmed) && trimmed.length > 128) {
+    return `data:image/png;base64,${trimmed}`;
+  }
+  return null;
+}
 
 export function WeixinTab({ installationId }: { installationId?: string } = {}) {
   const { t } = useT("settings");
@@ -143,7 +157,7 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
         if (!cancelled) {
           setSession({
             id: value.session_id,
-            qr: value.qr_code_url,
+            qr: value.qr_code_content ?? value.qr_code_url,
             interval: value.poll_interval_seconds,
           });
         }
@@ -209,12 +223,14 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
     };
   }, [open, qc, session, status, t, verifyCode, wsId]);
 
-  if (!data?.install_supported) return null;
   if (existing) {
+    const healthy = isMessagingInstallationHealthy(existing);
     return (
       <div className="flex items-center gap-2">
-        <span className="text-caption text-emerald-600">
-          {t(($) => $.weixin.connected)}
+        <span className={healthy ? "text-caption text-emerald-600" : "text-caption text-amber-600"}>
+          {healthy
+            ? t(($) => $.weixin.connected)
+            : t(($) => $.page.integrations_status)}
         </span>
         <Button
           variant="outline"
@@ -240,6 +256,7 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
       </div>
     );
   }
+  if (!data?.install_supported) return null;
   const statusLabels: Record<string, string> = {
     pending: t(($) => $.weixin.status_pending),
     scanned: t(($) => $.weixin.status_scanned),
@@ -271,7 +288,15 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
           </DialogHeader>
           <div className="flex flex-col items-center gap-4 py-4">
             {session ? (
-              <QRCode value={session.qr} size={192} />
+              qrImageSource(session.qr) ? (
+                <img
+                  src={qrImageSource(session.qr) ?? undefined}
+                  alt={t(($) => $.weixin.scan_title)}
+                  className="size-48 rounded-md bg-white p-2"
+                />
+              ) : (
+                <QRCode value={session.qr} size={192} />
+              )
             ) : (
               <p className="text-caption text-muted-foreground">
                 {t(($) => $.weixin.starting)}

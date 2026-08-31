@@ -33,7 +33,10 @@ import { memberListOptions } from "@patchbay/core/workspace/queries";
 import { useActorName } from "@patchbay/core/workspace/hooks";
 import { slackInstallationsOptions, slackKeys } from "@patchbay/core/slack";
 import { api } from "@patchbay/core/api";
-import type { SlackInstallation } from "@patchbay/core/types";
+import {
+  isMessagingInstallationHealthy,
+  type SlackInstallation,
+} from "@patchbay/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { openExternal } from "../../platform";
 import { useT } from "../../i18n";
@@ -196,6 +199,7 @@ function InstallationRow({
   const { t } = useT("settings");
   const { getAgentName } = useActorName();
   const isActive = installation.status === "active";
+  const isHealthy = isMessagingInstallationHealthy(installation);
   const agentName = installation.agent_id
     ? getAgentName(installation.agent_id)
     : t(($) => $.page.integrations_workspace_hub);
@@ -218,11 +222,15 @@ function InstallationRow({
         <div className="space-y-1">
           <p className="text-body font-medium">
             {agentName}
-            {!isActive && (
+            {!isActive ? (
               <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
                 {t(($) => $.slack.revoked_badge)}
               </span>
-            )}
+            ) : !isHealthy ? (
+              <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
+                {t(($) => $.page.integrations_status)}
+              </span>
+            ) : null}
           </p>
           <p className="text-micro text-muted-foreground">
             {t(($) => $.slack.installed_at_label, {
@@ -303,13 +311,19 @@ export function SlackAgentBindButton({
       inst.status === "active",
   );
   if (existing) {
+    const healthy = isMessagingInstallationHealthy(existing);
     return onShowConnectedDetails ? (
       <SlackAgentBotStatusRow
         onClick={onShowConnectedDetails}
+        healthy={healthy}
         className={className}
       />
     ) : (
-      <SlackAgentBotConnectedBadge installation={existing} className={className} />
+      <SlackAgentBotConnectedBadge
+        installation={existing}
+        healthy={healthy}
+        className={className}
+      />
     );
   }
 
@@ -463,9 +477,11 @@ export function SlackAgentBindButton({
 // Integrations tab where Manage / Disconnect live.
 function SlackAgentBotStatusRow({
   onClick,
+  healthy,
   className,
 }: {
   onClick: () => void;
+  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -479,8 +495,17 @@ function SlackAgentBotStatusRow({
       )}
       data-testid="slack-agent-bot-status"
     >
-      <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-      <span className="truncate">{t(($) => $.slack.agent_bot_connected_label)}</span>
+      <span
+        className={cn(
+          "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+          healthy ? "bg-emerald-500" : "bg-amber-500",
+        )}
+      />
+      <span className="truncate">
+        {healthy
+          ? t(($) => $.slack.agent_bot_connected_label)
+          : t(($) => $.page.integrations_status)}
+      </span>
       <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0" />
     </button>
   );
@@ -492,9 +517,11 @@ function SlackAgentBotStatusRow({
 // installed workspace. Only owners/admins ever reach this component.
 function SlackAgentBotConnectedBadge({
   installation,
+  healthy,
   className,
 }: {
   installation: SlackInstallation;
+  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -528,8 +555,17 @@ function SlackAgentBotConnectedBadge({
     >
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
-          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-          <span className="truncate">{t(($) => $.slack.agent_bot_connected_label)}</span>
+          <span
+            className={cn(
+              "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+              healthy ? "bg-emerald-500" : "bg-amber-500",
+            )}
+          />
+          <span className="truncate">
+            {healthy
+              ? t(($) => $.slack.agent_bot_connected_label)
+              : t(($) => $.page.integrations_status)}
+          </span>
         </span>
         <Button
           variant="destructive"

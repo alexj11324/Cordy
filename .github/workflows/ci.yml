@@ -124,6 +124,8 @@ jobs:
               - 'scripts/check-ui-wildcard-exports.mjs'
               - 'scripts/check-ui-wildcard-exports.test.sh'
               - 'scripts/selfhost-config.test.sh'
+              - 'scripts/messaging-self-host-check.sh'
+              - 'scripts/messaging-self-host-check.test.sh'
               - 'scripts/drop-database.sh'
               - 'scripts/ensure-dev-integration-secrets.mjs'
               - 'scripts/postgres-runtime.sh'
@@ -151,10 +153,12 @@ jobs:
               - 'docker-compose.selfhost.yml'
               - 'docker-compose.selfhost.build.yml'
               - 'docker-compose.labs.yml'
+              - 'deploy/messaging/**'
             rust:
               - 'server-rs/**'
               - 'rust-toolchain.toml'
               - 'migrations/**'
+              - 'deploy/messaging/**'
               - 'deploy/helm/**'
               - 'Dockerfile'
               - 'Makefile'
@@ -338,6 +342,10 @@ jobs:
       - name: Test self-host env derivation
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         run: bash scripts/selfhost-config.test.sh
+
+      - name: Test self-host messaging deployment contract
+        if: ${{ needs.changes.outputs.frontend == 'true' }}
+        run: bash scripts/messaging-self-host-check.test.sh
 
       - name: Test worktree database cleanup
         if: ${{ needs.changes.outputs.frontend == 'true' }}

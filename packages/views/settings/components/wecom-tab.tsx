@@ -34,7 +34,10 @@ import { useActorName } from "@patchbay/core/workspace/hooks";
 import { wecomInstallationsOptions, wecomKeys } from "@patchbay/core/wecom";
 import { errorCode } from "@patchbay/core/api";
 import { api } from "@patchbay/core/api";
-import type { WecomInstallation } from "@patchbay/core/types";
+import {
+  isMessagingInstallationHealthy,
+  type WecomInstallation,
+} from "@patchbay/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 
@@ -192,6 +195,7 @@ function InstallationRow({
   const { t } = useT("settings");
   const { getAgentName } = useActorName();
   const isActive = installation.status === "active";
+  const isHealthy = isMessagingInstallationHealthy(installation);
   const agentName = installation.agent_id
     ? getAgentName(installation.agent_id)
     : t(($) => $.page.integrations_workspace_hub);
@@ -214,11 +218,15 @@ function InstallationRow({
         <div className="space-y-1">
           <p className="text-body font-medium">
             {agentName}
-            {!isActive && (
+            {!isActive ? (
               <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
                 {t(($) => $.wecom.revoked_badge)}
               </span>
-            )}
+            ) : !isHealthy ? (
+              <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
+                {t(($) => $.page.integrations_status)}
+              </span>
+            ) : null}
           </p>
           <p className="text-micro text-muted-foreground">
             {t(($) => $.wecom.bot_id_label, { botId: installation.bot_id })}
@@ -288,13 +296,19 @@ export function WecomAgentBindButton({
       inst.status === "active",
   );
   if (existing) {
+    const healthy = isMessagingInstallationHealthy(existing);
     return onShowConnectedDetails ? (
       <WecomAgentBotStatusRow
         onClick={onShowConnectedDetails}
+        healthy={healthy}
         className={className}
       />
     ) : (
-      <WecomAgentBotConnectedBadge installation={existing} className={className} />
+      <WecomAgentBotConnectedBadge
+        installation={existing}
+        healthy={healthy}
+        className={className}
+      />
     );
   }
 
@@ -480,9 +494,11 @@ export function WecomAgentBindButton({
 
 function WecomAgentBotStatusRow({
   onClick,
+  healthy,
   className,
 }: {
   onClick: () => void;
+  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -496,8 +512,17 @@ function WecomAgentBotStatusRow({
       )}
       data-testid="wecom-agent-bot-status"
     >
-      <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-      <span className="truncate">{t(($) => $.wecom.agent_bot_connected_label)}</span>
+      <span
+        className={cn(
+          "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+          healthy ? "bg-emerald-500" : "bg-amber-500",
+        )}
+      />
+      <span className="truncate">
+        {healthy
+          ? t(($) => $.wecom.agent_bot_connected_label)
+          : t(($) => $.page.integrations_status)}
+      </span>
       <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0" />
     </button>
   );
@@ -505,9 +530,11 @@ function WecomAgentBotStatusRow({
 
 function WecomAgentBotConnectedBadge({
   installation,
+  healthy,
   className,
 }: {
   installation: WecomInstallation;
+  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -541,11 +568,18 @@ function WecomAgentBotConnectedBadge({
     >
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
-          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+          <span
+            className={cn(
+              "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+              healthy ? "bg-emerald-500" : "bg-amber-500",
+            )}
+          />
           <span className="truncate">
-            {t(($) => $.wecom.agent_bot_connected_label_with_id, {
-              botId: installation.bot_id,
-            })}
+            {healthy
+              ? t(($) => $.wecom.agent_bot_connected_label_with_id, {
+                  botId: installation.bot_id,
+                })
+              : t(($) => $.page.integrations_status)}
           </span>
         </span>
         <Button
