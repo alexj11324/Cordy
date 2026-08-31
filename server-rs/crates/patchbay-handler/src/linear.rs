@@ -2013,7 +2013,7 @@ impl LinearTokenManager {
         })
     }
 
-    pub async fn catalog(
+    pub(crate) async fn catalog(
         &self,
         connection_id: Uuid,
     ) -> Result<LinearCatalogResponse, LinearTokenError> {
@@ -2038,7 +2038,7 @@ impl LinearTokenManager {
                     || user
                         .email
                         .as_deref()
-                        .map_or(false, |email| email.trim().is_empty())
+                        .is_some_and(|email| email.trim().is_empty())
             })
             || catalog.issue_labels.nodes.iter().any(|label| {
                 label.id.trim().is_empty()
