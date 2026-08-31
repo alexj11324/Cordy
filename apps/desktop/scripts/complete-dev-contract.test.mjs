@@ -9,6 +9,11 @@ const platformLauncher = readFileSync(
   resolve(repoRoot, "scripts", "dev-launcher.mjs"),
   "utf8",
 );
+const stopLauncher = readFileSync(
+  resolve(repoRoot, "scripts", "stop-dev.mjs"),
+  "utf8",
+);
+const makefile = readFileSync(resolve(repoRoot, "Makefile"), "utf8");
 const runtimePreparer = readFileSync(
   resolve(import.meta.dirname, "prepare-dev-runtime.mjs"),
   "utf8",
@@ -53,10 +58,24 @@ describe("complete development launcher contract", () => {
     expect(platformLauncher).toContain('"dev.ps1"');
   });
 
-  it("returns a complete runtime cache hit before resolving Cargo", () => {
-    const completeCacheHit = runtimePreparer.indexOf("cached.every(Boolean)");
+  it("tracks and stops the complete Electron process tree per checkout", () => {
+    expect(platformLauncher).toContain("writeDevProcessState(repoRoot, state)");
+    expect(platformLauncher).toContain('detached: platform !== "win32"');
+    expect(stopLauncher).toContain("signalDevProcessTree(state");
+    expect(makefile).toContain("@node scripts/stop-dev.mjs");
+    expect(makefile).not.toContain("lsof -ti:$(PORT)");
+  });
+
+  it("derives the cache toolchain from the same Cargo used for a miss", () => {
     const resolveCargo = runtimePreparer.indexOf("resolveCargoCommand(env");
+    const identifyToolchain = runtimePreparer.indexOf(
+      "rustToolchainIdentity(env, cargoCommand",
+    );
+    const completeCacheHit = runtimePreparer.indexOf("cached.every(Boolean)");
+    const requireCargo = runtimePreparer.indexOf("if (!cargoCommand)");
+    expect(resolveCargo).toBeGreaterThan(-1);
+    expect(identifyToolchain).toBeGreaterThan(resolveCargo);
     expect(completeCacheHit).toBeGreaterThan(-1);
-    expect(resolveCargo).toBeGreaterThan(completeCacheHit);
+    expect(requireCargo).toBeGreaterThan(completeCacheHit);
   });
 });

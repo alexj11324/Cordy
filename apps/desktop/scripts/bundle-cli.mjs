@@ -276,10 +276,13 @@ async function main() {
   const destDir = join(repoRoot, "apps", "desktop", "resources", "bin");
   const destBinary = join(destDir, binName);
 
+  const cargoCommand = resolveCargoCommand(process.env);
   let devCache;
   if (profile === "dev") {
     const sourceFingerprint = rustSourceFingerprint(repoRoot);
-    const toolchainIdentity = rustToolchainIdentity(process.env);
+    const toolchainIdentity = rustToolchainIdentity(process.env, cargoCommand, {
+      cwd: serverRsDir,
+    });
     const buildVariables = devBuildVariables(sourceFingerprint);
     const cacheRoot = defaultDevCliCacheDir();
     const cached = await stageCachedDevCli({
@@ -305,7 +308,6 @@ async function main() {
     };
   }
 
-  const cargoCommand = resolveCargoCommand(process.env);
   enforceCliAvailability(
     profile,
     Boolean(cargoCommand),

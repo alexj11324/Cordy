@@ -9,6 +9,7 @@ import {
   devCliCacheKey,
   findCachedDevCli,
   fingerprintRustFiles,
+  rustToolchainIdentity,
   stageCachedDevCli,
   storeDevCli,
 } from "./dev-cli-cache.mjs";
@@ -71,6 +72,42 @@ describe("development CLI artifact cache", () => {
     ]) {
       expect(devCliCacheKey({ ...base, ...changed })).not.toBe(key);
     }
+  });
+
+  it("keys the cache with the compiler resolved beside the selected Cargo", () => {
+    const calls = [];
+    const identity = rustToolchainIdentity(
+      { PATH: "/usr/bin" },
+      "/home/dev/.cargo/bin/cargo",
+      {
+        platform: "linux",
+        execFile(command, args, options) {
+          calls.push({ command, args, path: options.env.PATH });
+          return command.endsWith("cargo")
+            ? "cargo 1.91.0\nhost: x86_64-unknown-linux-gnu\n"
+            : "rustc 1.91.0\nhost: x86_64-unknown-linux-gnu\n";
+        },
+      },
+    );
+
+    expect(calls).toEqual([
+      {
+        command: "/home/dev/.cargo/bin/cargo",
+        args: ["-vV"],
+        path: "/home/dev/.cargo/bin:/usr/bin",
+      },
+      {
+        command: "rustc",
+        args: ["-vV"],
+        path: "/home/dev/.cargo/bin:/usr/bin",
+      },
+    ]);
+    expect(identity).toContain("cargo 1.91.0");
+    expect(identity).toContain("rustc 1.91.0");
+  });
+
+  it("does not invent a compiler identity when Cargo is unavailable", () => {
+    expect(rustToolchainIdentity({ PATH: "/usr/bin" }, null)).toBeNull();
   });
 
   it("stores, checksum-validates and stages an exact source artifact", async () => {

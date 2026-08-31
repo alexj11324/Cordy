@@ -137,7 +137,11 @@ export async function prepareDevRuntime({
   const rustTarget = devRustTargetFor(platform, arch);
   const cargoTargetDir = cargoTargetDirectory(env, serverRsDir);
   const sourceFingerprint = rustSourceFingerprint(repoRoot);
-  const toolchainIdentity = rustToolchainIdentity(env);
+  const cargoCommand = resolveCargoCommand(env, platform);
+  const toolchainIdentity = rustToolchainIdentity(env, cargoCommand, {
+    platform,
+    cwd: serverRsDir,
+  });
   const buildVariables = devBuildVariables(sourceFingerprint);
   const cacheRoot = defaultDevCliCacheDir({ env, platform });
   const components = devRuntimeComponents({
@@ -167,7 +171,6 @@ export async function prepareDevRuntime({
     return { cacheHit: true, components, sourceFingerprint };
   }
 
-  const cargoCommand = resolveCargoCommand(env, platform);
   if (!cargoCommand) {
     throw new Error(
       "[dev-runtime] cache miss requires Rust/Cargo; install Rust or set CARGO to its executable path",

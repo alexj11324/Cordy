@@ -90,6 +90,8 @@ the separate Next.js web client, use `pnpm dev:web:next`.
 `PATCHBAY_POSTGRES_RUNTIME=auto` uses Docker only for its published
 `localhost:5432` endpoint; set it to `native` or `docker` when that endpoint is
 intentionally ambiguous.
+`make stop` terminates the tracked Electron, renderer, backend, and launcher
+process tree for only the current checkout; it does not stop shared PostgreSQL.
 
 For an explicit build:
 

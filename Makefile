@@ -166,17 +166,8 @@ start: ## Start the complete Electron development environment for this checkout
 	$(REQUIRE_ENV)
 	@ENV_FILE="$(ENV_FILE)" node scripts/dev-launcher.mjs
 
-stop: ## Stop backend and frontend processes for the current checkout
-	$(REQUIRE_ENV)
-	@echo "Stopping services..."
-	@-lsof -ti:$(PORT) | xargs kill -9 2>/dev/null
-	@-lsof -ti:$(FRONTEND_PORT) | xargs kill -9 2>/dev/null
-	@case "$(DATABASE_URL)" in \
-		""|*@localhost:*|*@localhost/*|*@127.0.0.1:*|*@127.0.0.1/*|*@\[::1\]:*|*@\[::1\]/*) \
-			echo "✓ App processes stopped. Shared PostgreSQL is still running on localhost:$(POSTGRES_PORT)." ;; \
-		*) \
-			echo "✓ App processes stopped. Remote PostgreSQL was not affected." ;; \
-	esac
+stop: ## Stop the tracked complete Electron stack for the current checkout
+	@node scripts/stop-dev.mjs
 
 check: ## Run typecheck, TS tests, Rust tests, a Rust build, and Playwright E2E
 	$(REQUIRE_ENV)

@@ -20,7 +20,14 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import {
+  basename,
+  delimiter,
+  dirname,
+  isAbsolute,
+  join,
+  resolve,
+} from "node:path";
 
 export const DEV_CLI_CACHE_SCHEMA_VERSION = 1;
 
@@ -113,22 +120,45 @@ export function rustSourceFingerprint(repoRoot) {
   return fingerprintRustFiles(repoRoot, listRustFingerprintFiles(repoRoot));
 }
 
-export function rustToolchainIdentity(env = process.env) {
-  const executable = process.platform === "win32" ? "rustc.exe" : "rustc";
-  const candidates = [
-    env.RUSTC,
-    executable,
-    join(homedir(), ".cargo", "bin", executable),
-  ].filter(Boolean);
+export function rustToolchainIdentity(
+  env = process.env,
+  cargoCommand,
+  { platform = process.platform, execFile = execFileSync, cwd } = {},
+) {
+  if (!cargoCommand) return null;
+
+  const executable = platform === "win32" ? "rustc.exe" : "rustc";
+  const toolchainEnv = { ...env };
+  if (isAbsolute(cargoCommand)) {
+    toolchainEnv.PATH = [dirname(cargoCommand), toolchainEnv.PATH]
+      .filter(Boolean)
+      .join(delimiter);
+  }
+
+  let cargoIdentity;
+  try {
+    cargoIdentity = execFile(cargoCommand, ["-vV"], {
+      encoding: "utf8",
+      cwd,
+      env: toolchainEnv,
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    return null;
+  }
+
+  const candidates = [env.RUSTC, executable].filter(Boolean);
   for (const candidate of [...new Set(candidates)]) {
     try {
-      return execFileSync(candidate, ["-vV"], {
+      const rustcIdentity = execFile(candidate, ["-vV"], {
         encoding: "utf8",
-        env,
+        cwd,
+        env: toolchainEnv,
         stdio: ["ignore", "pipe", "ignore"],
       }).trim();
+      return `cargo:\n${cargoIdentity}\nrustc:\n${rustcIdentity}`;
     } catch {
-      // Try the next deterministic rustc location.
+      // Try the next compiler Cargo could resolve in the same environment.
     }
   }
   return null;
