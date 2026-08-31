@@ -39,6 +39,9 @@ jobs:
   backend-build:
     if: ${{ inputs.image == 'all' || inputs.image == 'backend' }}
     needs: resolve-source
+    concurrency:
+      group: manual-container-backend-build-${{ needs.resolve-source.outputs.sha }}-${{ matrix.platform }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
@@ -125,9 +128,17 @@ jobs:
           retention-days: 1
 
   backend-merge:
-    if: ${{ inputs.image == 'all' || inputs.image == 'backend' }}
-    needs: [resolve-source, backend-build]
+    if: >-
+      ${{
+        always() &&
+        needs.backend-build.result == 'success' &&
+        (inputs.image == 'backend' || needs.web-build.result == 'success')
+      }}
+    needs: [resolve-source, backend-build, web-build]
     runs-on: ubuntu-latest
+    concurrency:
+      group: manual-container-backend-publish-${{ needs.resolve-source.outputs.sha }}
+      cancel-in-progress: true
     steps:
       - name: Download backend digests
         uses: actions/download-artifact@v4
@@ -172,6 +183,9 @@ jobs:
   web-build:
     if: ${{ inputs.image == 'all' || inputs.image == 'web' }}
     needs: resolve-source
+    concurrency:
+      group: manual-container-web-build-${{ needs.resolve-source.outputs.sha }}-${{ matrix.platform }}
+      cancel-in-progress: true
     strategy:
       fail-fast: false
       matrix:
@@ -242,9 +256,17 @@ jobs:
           retention-days: 1
 
   web-merge:
-    if: ${{ inputs.image == 'all' || inputs.image == 'web' }}
-    needs: [resolve-source, web-build]
+    if: >-
+      ${{
+        always() &&
+        needs.web-build.result == 'success' &&
+        (inputs.image == 'web' || needs.backend-build.result == 'success')
+      }}
+    needs: [resolve-source, backend-build, web-build]
     runs-on: ubuntu-latest
+    concurrency:
+      group: manual-container-web-publish-${{ needs.resolve-source.outputs.sha }}
+      cancel-in-progress: true
     steps:
       - name: Download web digests
         uses: actions/download-artifact@v4
