@@ -78,13 +78,21 @@ function ActiveTabHost({ tabId }: { tabId: string }) {
     return () => registerActiveHostElement(null);
   }, []);
 
-  // `display: contents` keeps the wrapper transparent to the surrounding
-  // flex layout.
+  // Keep the Coordinator host transparent to the surrounding flex layout,
+  // then give every route a real viewport. Ordinary long pages inherit this
+  // scroll owner; full-height views can still use their own nested flex and
+  // scroll regions without moving desktop chrome or overlays.
   return (
     <div ref={hostRef} style={{ display: "contents" }}>
-      <ScrollRestorationProvider adapter={scrollAdapter}>
-        <RouterProvider router={router} />
-      </ScrollRestorationProvider>
+      <div
+        className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain"
+        data-tab-scroll-root="route"
+        data-testid="desktop-route-scroll-viewport"
+      >
+        <ScrollRestorationProvider adapter={scrollAdapter}>
+          <RouterProvider router={router} />
+        </ScrollRestorationProvider>
+      </div>
     </div>
   );
 }
