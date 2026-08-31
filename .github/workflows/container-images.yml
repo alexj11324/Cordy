@@ -417,7 +417,7 @@ jobs:
                   first(
                     .[] |
                     select((.metadata.container.tags // []) | index($tag)) |
-                    .[$field]
+                    if $field == "__json" then @json else .[$field] end
                   ) // empty
                 ' <<<"$response"
               )"
@@ -458,7 +458,7 @@ jobs:
             local package="$2"
             local final_ref="$3"
             local previous_digest="$4"
-            local endpoint version_id
+            local endpoint version_json version_id other_tag_count
             if [ -n "$previous_digest" ]; then
               docker buildx imagetools create \
                 --tag "$final_ref" \
@@ -466,14 +466,27 @@ jobs:
               return
             fi
 
-            if ! version_id="$(find_tag_version_field "$package" "$final_tag" id)"; then
+            if ! version_json="$(find_tag_version_field "$package" "$final_tag" __json)"; then
               echo "::error::Failed to inspect $package during rollback" >&2
               return 1
             fi
-            if [ -n "$version_id" ]; then
-              endpoint="$(package_versions_endpoint "$package")"
-              gh api -X DELETE "$endpoint/$version_id"
+            if [ -z "$version_json" ]; then
+              return
             fi
+
+            other_tag_count="$(
+              jq --arg final_tag "$final_tag" '
+                [.metadata.container.tags[]? | select(. != $final_tag)] | length
+              ' <<<"$version_json"
+            )"
+            if [ "$other_tag_count" -ne 0 ]; then
+              echo "::error::$package version has aliases; refusing destructive rollback" >&2
+              return 1
+            fi
+
+            version_id="$(jq -r .id <<<"$version_json")"
+            endpoint="$(package_versions_endpoint "$package")"
+            gh api -X DELETE "$endpoint/$version_id"
           }
 
           previous_backend="$(find_tag_version_field patchbay-backend "$final_tag" name)"
