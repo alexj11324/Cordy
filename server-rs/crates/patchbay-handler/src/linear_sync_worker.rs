@@ -745,16 +745,15 @@ impl LinearSyncWorker {
         .await
         .map_err(SyncError::retry)?;
         if !updated {
-            if let Some(current) = linear_q::find_linear_issue_link(
+            let current = linear_q::find_linear_issue_link(
                 &self.state.pool,
                 connection.workspace_id,
                 connection.id,
                 &remote.id,
             )
             .await
-            .map_err(SyncError::retry)?
-            && is_out_of_order(Some(&current), event_timestamp_ms)
-            {
+            .map_err(SyncError::retry)?;
+            if is_out_of_order(current.as_ref(), event_timestamp_ms) {
                 return Ok(());
             }
             return Err(SyncError::retry(anyhow::anyhow!(
@@ -835,16 +834,15 @@ impl LinearSyncWorker {
         .await
         .map_err(SyncError::retry)?;
         if !updated {
-            if let Some(current) = linear_q::find_linear_issue_link(
+            let current = linear_q::find_linear_issue_link(
                 &self.state.pool,
                 connection.workspace_id,
                 connection.id,
                 linear_issue_id,
             )
             .await
-            .map_err(SyncError::retry)?
-            && is_out_of_order(Some(&current), event_timestamp_ms)
-            {
+            .map_err(SyncError::retry)?;
+            if is_out_of_order(current.as_ref(), event_timestamp_ms) {
                 return Ok(());
             }
             return Err(SyncError::retry(anyhow::anyhow!(
