@@ -18,6 +18,14 @@ export interface TelegramInstallation {
   installed_at: string;
   created_at: string;
   updated_at: string;
+  /** Credential acceptance is distinct from a live message round trip. */
+  credential_status?: string;
+  /** Runtime liveness is reported separately from the persisted row status. */
+  runtime_status?: string;
+  /** `passed` is the only value that proves a provider message round trip. */
+  round_trip_status?: string;
+  /** Server-provided next action, e.g. `send_test_message`. */
+  required_action?: string;
 }
 
 export interface ListTelegramInstallationsResponse {

@@ -371,6 +371,15 @@ those external credentials the UI must stop at the explicit provider step; a
 configured encryption key is capability readiness, not proof of a successful
 provider connection or test message.
 
+An installation row with `status: active` means that provider authorization was
+accepted; it is not a message-delivery guarantee. The Desktop status remains
+“Authorized · test message required” until the server records a real provider
+message round trip (`round_trip_status: passed`). A standalone terminal CLI
+login is only needed for CLI commands that call a protected server directly;
+Electron's complete dev flow signs in through the browser and owns its daemon
+session separately. Do not copy a CLI token into the repository or an `.env`
+file.
+
 #### Running multiple checkouts side-by-side
 
 `pnpm dev` auto-isolates every source-development checkout so several

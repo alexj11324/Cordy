@@ -62,6 +62,9 @@ type InstallationSummary = {
   id: string;
   agent_id: string | null;
   status: string;
+  /** The backend only marks a provider as verified after a real message
+   * round-trip. Older responses omit this field and therefore remain pending. */
+  round_trip_status?: string;
 };
 
 type InstallationListing = {
@@ -109,7 +112,24 @@ function hasActiveInstallation(listing: InstallationListing | undefined) {
   return listing?.installations.some((installation) => installation.status === "active") ?? false;
 }
 
-function ConnectionStatus({ query }: { query: IntegrationQuery }) {
+function hasVerifiedHub(listing: InstallationListing | undefined) {
+  return (
+    listing?.installations.some(
+      (installation) =>
+        installation.agent_id === null &&
+        installation.status === "active" &&
+        installation.round_trip_status === "passed",
+    ) ?? false
+  );
+}
+
+function ConnectionStatus({
+  query,
+  requiresRoundTrip,
+}: {
+  query: IntegrationQuery;
+  requiresRoundTrip: boolean;
+}) {
   const { t } = useT("settings");
   if (query.isLoading) {
     return (
@@ -134,11 +154,26 @@ function ConnectionStatus({ query }: { query: IntegrationQuery }) {
       </div>
     );
   }
-  if (hasActiveHub(query.data)) {
+  if (!requiresRoundTrip && hasActiveHub(query.data)) {
     return (
       <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
         <CheckCircle2 />
         {t(($) => $.page.integrations_connected)}
+      </Badge>
+    );
+  }
+  if (requiresRoundTrip && hasVerifiedHub(query.data)) {
+    return (
+      <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+        <CheckCircle2 />
+        {t(($) => $.page.integrations_connected)}
+      </Badge>
+    );
+  }
+  if (requiresRoundTrip && hasActiveHub(query.data)) {
+    return (
+      <Badge variant="outline">
+        {t(($) => $.page.integrations_pending_verification)}
       </Badge>
     );
   }
@@ -502,7 +537,14 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
                 title={title}
                 description={description}
                 iconClassName={iconClassName}
-                status={<ConnectionStatus query={query} />}
+                status={
+                  <ConnectionStatus
+                    query={query}
+                    requiresRoundTrip={
+                      channel === "telegram" || channel === "weixin"
+                    }
+                  />
+                }
                 action={
                   <HubAction
                     canManage={canManage}

@@ -40,6 +40,7 @@ const channelInstallationsRef = vi.hoisted(() => ({
           agent_id: string | null;
           status: string;
           region?: string;
+          round_trip_status?: string;
         }[];
       }
     >
@@ -243,6 +244,47 @@ describe("Settings IntegrationsTab", () => {
     expect(screen.getByRole("heading", { name: "Manage" })).toBeInTheDocument();
     expect(screen.getByTestId("telegram-tab")).toBeInTheDocument();
     expect(screen.queryByTestId("integration-setup-guide-telegram")).toBeNull();
+  });
+
+  it("does not call a Telegram Hub connected before a message round trip", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    channelInstallationsRef.current.telegram = {
+      configured: true,
+      install_supported: true,
+      installations: [{ id: "telegram-hub", agent_id: null, status: "active" }],
+    };
+
+    renderTab();
+
+    const card = screen.getByTestId("integration-channel-card-telegram");
+    expect(
+      within(card).getByText("Authorized · test message required"),
+    ).toBeInTheDocument();
+    expect(within(card).queryByText("Connected")).toBeNull();
+  });
+
+  it("shows a Telegram Hub as connected only after a message round trip", () => {
+    channelInstallationsRef.current.telegram = {
+      configured: true,
+      install_supported: true,
+      installations: [
+        {
+          id: "telegram-hub",
+          agent_id: null,
+          status: "active",
+          round_trip_status: "passed",
+        },
+      ],
+    };
+
+    renderTab();
+
+    expect(
+      within(
+        screen.getByTestId("integration-channel-card-telegram"),
+      ).getAllByText("Connected").length,
+    ).toBeGreaterThan(0);
   });
 
   it.each([

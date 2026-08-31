@@ -313,6 +313,7 @@
     "integrations_channels_description": "プラットフォームは一度接続するだけです。チャット内で /agents を使って、この会話を担当するエージェントを選びます。",
     "integrations_loading": "接続を確認中…",
     "integrations_connected": "接続済み",
+    "integrations_pending_verification": "承認済み · テストメッセージが必要",
     "integrations_login_required": "ログインして接続",
     "integrations_workspace_hub": "ワークスペース Hub",
     "integrations_admin_only": "ワークスペース管理者のみ",

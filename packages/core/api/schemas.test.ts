@@ -13,6 +13,8 @@ import {
   EMPTY_TELEGRAM_INSTALLATION,
   EMPTY_LIST_TELEGRAM_INSTALLATIONS_RESPONSE,
   EMPTY_REDEEM_TELEGRAM_BINDING_TOKEN_RESPONSE,
+  WeixinInstallationSchema,
+  EMPTY_WEIXIN_INSTALLATION,
   AgentTaskListSchema,
   AutomationQuotaUsageSchema,
   AutomationRunSchema,
@@ -1571,6 +1573,8 @@ describe("Telegram installation schemas", () => {
     expect(parsed.status).toBe("revoked");
     expect(parsed.bot_id).toBe("");
     expect(parsed.bot_username).toBe("");
+    expect(parsed.round_trip_status).toBe("not_run");
+    expect(parsed.credential_status).toBe("unknown");
 
     const list = ListTelegramInstallationsResponseSchema.parse({});
     expect(list).toEqual({ installations: [], configured: false });
@@ -1605,6 +1609,41 @@ describe("Telegram installation schemas", () => {
         { endpoint: "POST /api/telegram/binding/redeem" },
       ),
     ).toEqual(EMPTY_REDEEM_TELEGRAM_BINDING_TOKEN_RESPONSE);
+  });
+
+  it("never upgrades an active installation to verified without a round trip", () => {
+    const parsed = TelegramInstallationSchema.parse({
+      id: "i1",
+      status: "active",
+      credential_status: "verified",
+      runtime_status: "unknown",
+      round_trip_status: "not_run",
+    });
+    expect(parsed.status).toBe("active");
+    expect(parsed.round_trip_status).toBe("not_run");
+    expect(parsed.round_trip_status).not.toBe("passed");
+  });
+});
+
+describe("WeChat installation verification schema", () => {
+  it("defaults older active rows to an unverified message state", () => {
+    const parsed = WeixinInstallationSchema.parse({
+      id: "i1",
+      status: "active",
+    });
+    expect(parsed.status).toBe("active");
+    expect(parsed.credential_status).toBe("unknown");
+    expect(parsed.runtime_status).toBe("unknown");
+    expect(parsed.round_trip_status).toBe("not_run");
+    expect(parsed.round_trip_status).not.toBe("passed");
+  });
+
+  it("keeps malformed installation fallback inert", () => {
+    expect(
+      parseWithFallback(42, WeixinInstallationSchema, EMPTY_WEIXIN_INSTALLATION, {
+        endpoint: "GET /api/workspaces/:id/weixin/installations",
+      }),
+    ).toEqual(EMPTY_WEIXIN_INSTALLATION);
   });
 });
 

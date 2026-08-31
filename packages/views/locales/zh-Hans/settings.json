@@ -313,6 +313,7 @@
     "integrations_channels_description": "平台只需连接一次；进入 IM 后使用 /agents 选择当前会话使用的智能体。",
     "integrations_loading": "正在检查连接…",
     "integrations_connected": "已连接",
+    "integrations_pending_verification": "已授权 · 需要测试消息",
     "integrations_login_required": "登录后连接",
     "integrations_workspace_hub": "工作区 Hub",
     "integrations_admin_only": "仅工作区管理员可操作",

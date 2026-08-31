@@ -202,7 +202,7 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
         setStatus(result.status);
         if (result.status === "success") {
           await qc.invalidateQueries({ queryKey: weixinKeys.installations(wsId) });
-          toast.success(t(($) => $.weixin.connected));
+          toast.success(t(($) => $.page.integrations_pending_verification));
           setOpen(false);
           return;
         }
@@ -237,10 +237,19 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
 
   if (!data?.install_supported) return null;
   if (existing) {
+    const verified = existing.round_trip_status === "passed";
     return (
       <div className="flex items-center gap-2">
-        <span className="text-caption text-emerald-600">
-          {t(($) => $.weixin.connected)}
+        <span
+          className={
+            verified
+              ? "text-caption text-emerald-600"
+              : "text-caption text-amber-600"
+          }
+        >
+          {verified
+            ? t(($) => $.weixin.connected)
+            : t(($) => $.page.integrations_pending_verification)}
         </span>
         <Button
           variant="outline"

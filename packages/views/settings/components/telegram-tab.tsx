@@ -304,6 +304,7 @@ export function TelegramAgentBindButton({
     return onShowConnectedDetails ? (
       <TelegramAgentBotStatusRow
         onClick={onShowConnectedDetails}
+        installation={existing}
         className={className}
       />
     ) : (
@@ -331,7 +332,7 @@ export function TelegramAgentBindButton({
       // The telegram_installation realtime event also refreshes this list, but
       // invalidate explicitly so the connected badge appears immediately.
       await qc.invalidateQueries({ queryKey: telegramKeys.installations(wsId) });
-      toast.success(t(($) => $.telegram.connect_success_toast));
+      toast.success(t(($) => $.page.integrations_pending_verification));
       setDialogOpen(false);
       setBotToken("");
     } catch (e) {
@@ -435,12 +436,15 @@ export function TelegramAgentBindButton({
 // agent inspector renders; it deep-links into the Integrations tab.
 function TelegramAgentBotStatusRow({
   onClick,
+  installation,
   className,
 }: {
   onClick: () => void;
+  installation: TelegramInstallation;
   className?: string;
 }) {
   const { t } = useT("settings");
+  const verified = installation.round_trip_status === "passed";
   return (
     <button
       type="button"
@@ -451,8 +455,17 @@ function TelegramAgentBotStatusRow({
       )}
       data-testid="telegram-agent-bot-status"
     >
-      <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-      <span className="truncate">{t(($) => $.telegram.agent_bot_connected_label)}</span>
+      <span
+        className={cn(
+          "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+          verified ? "bg-emerald-500" : "bg-amber-500",
+        )}
+      />
+      <span className="truncate">
+        {verified
+          ? t(($) => $.telegram.agent_bot_connected_label)
+          : t(($) => $.page.integrations_pending_verification)}
+      </span>
       <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0" />
     </button>
   );
@@ -473,6 +486,7 @@ function TelegramAgentBotConnectedBadge({
 
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const verified = installation.round_trip_status === "passed";
 
   async function handleDisconnect() {
     if (disconnecting) return;
@@ -498,9 +512,16 @@ function TelegramAgentBotConnectedBadge({
     >
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
-          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+          <span
+            className={cn(
+              "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
+              verified ? "bg-emerald-500" : "bg-amber-500",
+            )}
+          />
           <span className="truncate">
-            {t(($) => $.telegram.agent_bot_connected_label)}
+            {verified
+              ? t(($) => $.telegram.agent_bot_connected_label)
+              : t(($) => $.page.integrations_pending_verification)}
             {installation.bot_username ? ` · @${installation.bot_username}` : ""}
           </span>
         </span>
