@@ -303,7 +303,7 @@ async fn list_bindings(
 #[derive(Debug, Deserialize)]
 struct SaveLinearProjectBindingRequest {
     connection_id: Uuid,
-    cordy_project_id: Uuid,
+    patchbay_project_id: Uuid,
     linear_project_id: String,
     linear_team_id: Option<String>,
     status: Option<String>,
@@ -390,16 +390,16 @@ fn validate_binding_request(
             "import bindings require Linear as the initial source",
         ));
     }
-    if sync_mode == "publish" && request.initial_source_of_truth.as_deref() != Some("cordy") {
+    if sync_mode == "publish" && request.initial_source_of_truth.as_deref() != Some("patchbay") {
         return Err(error_response(
             StatusCode::BAD_REQUEST,
-            "publish bindings require Cordy as the initial source",
+            "publish bindings require Patchbay as the initial source",
         ));
     }
     if sync_mode == "two_way"
         && !matches!(
             request.initial_source_of_truth.as_deref(),
-            Some("linear") | Some("cordy")
+            Some("linear") | Some("patchbay")
         )
     {
         return Err(error_response(
@@ -485,17 +485,17 @@ async fn create_binding(
     match linear_q::project_belongs_to_workspace(
         &state.pool,
         workspace_id,
-        request.cordy_project_id,
+        request.patchbay_project_id,
     )
     .await
     {
         Ok(true) => {}
-        Ok(false) => return error_response(StatusCode::NOT_FOUND, "Cordy project not found"),
+        Ok(false) => return error_response(StatusCode::NOT_FOUND, "Patchbay project not found"),
         Err(error) => {
-            tracing::warn!(%error, "Cordy project lookup for Linear binding failed");
+            tracing::warn!(%error, "Patchbay project lookup for Linear binding failed");
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to load Cordy project",
+                "failed to load Patchbay project",
             );
         }
     }
@@ -503,7 +503,7 @@ async fn create_binding(
         id: Uuid::now_v7(),
         workspace_id,
         connection_id: request.connection_id,
-        cordy_project_id: request.cordy_project_id,
+        patchbay_project_id: request.patchbay_project_id,
         linear_project_id: request.linear_project_id.trim(),
         linear_team_id: request.linear_team_id.as_deref(),
         status: request.status.as_deref().unwrap_or("draft"),
@@ -563,11 +563,11 @@ async fn update_binding(
         return error_response(StatusCode::NOT_FOUND, "Linear project binding not found");
     };
     if request.connection_id != existing.connection_id
-        || request.cordy_project_id != existing.cordy_project_id
+        || request.patchbay_project_id != existing.patchbay_project_id
     {
         return error_response(
             StatusCode::BAD_REQUEST,
-            "Linear binding connection and Cordy project are immutable",
+            "Linear binding connection and Patchbay project are immutable",
         );
     }
     if let Err(response) = connection_for_binding(&state, workspace_id, request.connection_id).await
@@ -578,7 +578,7 @@ async fn update_binding(
         id: path.binding_id,
         workspace_id,
         connection_id: request.connection_id,
-        cordy_project_id: request.cordy_project_id,
+        patchbay_project_id: request.patchbay_project_id,
         linear_project_id: request.linear_project_id.trim(),
         linear_team_id: request.linear_team_id.as_deref(),
         status: request.status.as_deref().unwrap_or("draft"),
@@ -1955,14 +1955,14 @@ mod tests {
             color: "#6E56CF".to_string(),
             is_group: false,
             parent: Some(LinearCatalogLabelParent {
-                id: "cordy-agent-group".to_string(),
+                id: "patchbay-agent-group".to_string(),
             }),
             team: Some(LinearCatalogLabelTeam {
                 id: "team-1".to_string(),
             }),
         });
 
-        assert_eq!(response.parent_id.as_deref(), Some("cordy-agent-group"));
+        assert_eq!(response.parent_id.as_deref(), Some("patchbay-agent-group"));
         assert_eq!(response.team_id.as_deref(), Some("team-1"));
         assert!(!response.is_group);
     }

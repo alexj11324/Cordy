@@ -89,13 +89,13 @@ export type LinearSyncMode =
   | "not_synced"
   | (string & {});
 
-export type LinearInitialSource = "linear" | "cordy" | (string & {});
+export type LinearInitialSource = "linear" | "patchbay" | (string & {});
 
 export type LinearProjectBinding = {
   id: string;
   workspace_id: string;
   connection_id: string;
-  cordy_project_id: string;
+  patchbay_project_id: string;
   linear_project_id: string;
   linear_team_id: string | null;
   status: LinearBindingStatus;
@@ -116,7 +116,7 @@ export type ListLinearBindingsResponse = {
 
 export type SaveLinearProjectBindingRequest = {
   connection_id: string;
-  cordy_project_id: string;
+  patchbay_project_id: string;
   linear_project_id: string;
   linear_team_id?: string | null;
   status?: LinearBindingStatus;

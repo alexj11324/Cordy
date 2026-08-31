@@ -50,16 +50,16 @@ type LinearIntegrationCardProps = {
 type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
 
 type BindingDraft = {
-  cordyProjectId: string;
+  patchbayProjectId: string;
   linearProjectId: string;
   linearTeamId: string;
   syncMode: LinearSyncMode;
-  initialSourceOfTruth: "linear" | "cordy" | null;
+  initialSourceOfTruth: "linear" | "patchbay" | null;
   statusMapping: Record<string, unknown>;
 };
 
 const emptyDraft: BindingDraft = {
-  cordyProjectId: "",
+  patchbayProjectId: "",
   linearProjectId: "",
   linearTeamId: "",
   syncMode: "import",
@@ -164,29 +164,29 @@ function BindingWizard({
   const qc = useQueryClient();
 
   const selectedBinding = bindings.find(
-    (binding) => binding.cordy_project_id === draft.cordyProjectId,
+    (binding) => binding.patchbay_project_id === draft.patchbayProjectId,
   );
-  const selectedCordyProject = projects.find((project) => project.id === draft.cordyProjectId);
+  const selectedPatchbayProject = projects.find((project) => project.id === draft.patchbayProjectId);
   const selectedLinearProject = catalog.projects.find(
     (project) => project.id === draft.linearProjectId,
   );
 
   const suggestedLinearProject = useMemo(() => {
-    const title = selectedCordyProject?.title.trim().toLocaleLowerCase();
+    const title = selectedPatchbayProject?.title.trim().toLocaleLowerCase();
     if (!title) return undefined;
     return catalog.projects.find((project) => project.name.trim().toLocaleLowerCase() === title);
-  }, [catalog.projects, selectedCordyProject?.title]);
+  }, [catalog.projects, selectedPatchbayProject?.title]);
 
   useEffect(() => {
-    if (!draft.cordyProjectId && projects[0]) {
-      setDraft((current) => ({ ...current, cordyProjectId: projects[0]?.id ?? "" }));
+    if (!draft.patchbayProjectId && projects[0]) {
+      setDraft((current) => ({ ...current, patchbayProjectId: projects[0]?.id ?? "" }));
     }
-  }, [draft.cordyProjectId, projects]);
+  }, [draft.patchbayProjectId, projects]);
 
   useEffect(() => {
-    if (!draft.cordyProjectId) return;
+    if (!draft.patchbayProjectId) return;
     const existing = bindings.find(
-      (binding) => binding.cordy_project_id === draft.cordyProjectId,
+      (binding) => binding.patchbay_project_id === draft.patchbayProjectId,
     );
     if (existing) {
       setDraft((current) => ({
@@ -194,7 +194,7 @@ function BindingWizard({
         linearProjectId: existing.linear_project_id,
         linearTeamId: existing.linear_team_id ?? "",
         syncMode: existing.sync_mode,
-        initialSourceOfTruth: existing.initial_source_of_truth === "cordy" ? "cordy" : "linear",
+        initialSourceOfTruth: existing.initial_source_of_truth === "patchbay" ? "patchbay" : "linear",
         statusMapping: existing.status_mapping,
       }));
       return;
@@ -205,14 +205,14 @@ function BindingWizard({
         linearProjectId: suggestedLinearProject.id,
       }));
     }
-  }, [bindings, draft.cordyProjectId, draft.linearProjectId, suggestedLinearProject]);
+  }, [bindings, draft.patchbayProjectId, draft.linearProjectId, suggestedLinearProject]);
 
   function setDraftValue<T extends keyof BindingDraft>(key: T, value: BindingDraft[T]) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
   function goNext() {
-    if (step === 2 && (!draft.cordyProjectId || !draft.linearProjectId)) {
+    if (step === 2 && (!draft.patchbayProjectId || !draft.linearProjectId)) {
       toast.error(t(($) => $.page.linear.match_required));
       return;
     }
@@ -228,7 +228,7 @@ function BindingWizard({
   }
 
   async function saveBinding() {
-    if (!draft.cordyProjectId || !draft.linearProjectId) {
+    if (!draft.patchbayProjectId || !draft.linearProjectId) {
       toast.error(t(($) => $.page.linear.match_required));
       setStep(2);
       return;
@@ -236,7 +236,7 @@ function BindingWizard({
     setSaving(true);
     const body: SaveLinearProjectBindingRequest = {
       connection_id: "",
-      cordy_project_id: draft.cordyProjectId,
+      patchbay_project_id: draft.patchbayProjectId,
       linear_project_id: draft.linearProjectId,
       linear_team_id: draft.linearTeamId || null,
       status: draft.syncMode === "not_synced" ? "draft" : "active",
@@ -292,14 +292,14 @@ function BindingWizard({
           <h4 className="font-medium">{t(($) => $.page.linear.match_title)}</h4>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="space-y-1.5 text-sm">
-              <span className="text-muted-foreground">{t(($) => $.page.linear.cordy_project)}</span>
+              <span className="text-muted-foreground">{t(($) => $.page.linear.patchbay_project)}</span>
               <select
                 className={selectClassName()}
-                value={draft.cordyProjectId}
+                value={draft.patchbayProjectId}
                 onChange={(event) =>
                   setDraft((current) => ({
                     ...current,
-                    cordyProjectId: event.target.value,
+                    patchbayProjectId: event.target.value,
                     linearProjectId: "",
                     linearTeamId: "",
                   }))
@@ -365,7 +365,7 @@ function BindingWizard({
                     ...current,
                     syncMode: mode,
                     initialSourceOfTruth:
-                      mode === "import" ? "linear" : mode === "publish" ? "cordy" : mode === "not_synced" ? null : current.initialSourceOfTruth ?? "linear",
+                      mode === "import" ? "linear" : mode === "publish" ? "patchbay" : mode === "not_synced" ? null : current.initialSourceOfTruth ?? "linear",
                   }))
                 }
                 type="radio"
@@ -391,11 +391,11 @@ function BindingWizard({
                 className={selectClassName()}
                 value={draft.initialSourceOfTruth ?? "linear"}
                 onChange={(event) =>
-                  setDraftValue("initialSourceOfTruth", event.target.value as "linear" | "cordy")
+                  setDraftValue("initialSourceOfTruth", event.target.value as "linear" | "patchbay")
                 }
               >
                 <option value="linear">{t(($) => $.page.linear.source_linear)}</option>
-                <option value="cordy">{t(($) => $.page.linear.source_cordy)}</option>
+                <option value="patchbay">{t(($) => $.page.linear.source_patchbay)}</option>
               </select>
             </label>
           ) : null}
@@ -448,7 +448,7 @@ function BindingWizard({
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-md bg-muted/50 p-3">
               <div className="text-micro text-muted-foreground">{t(($) => $.page.linear.preview_project)}</div>
-              <div className="mt-1 text-sm font-medium">{selectedCordyProject?.title ?? "—"}</div>
+              <div className="mt-1 text-sm font-medium">{selectedPatchbayProject?.title ?? "—"}</div>
             </div>
             <div className="rounded-md bg-muted/50 p-3">
               <div className="text-micro text-muted-foreground">{t(($) => $.page.linear.preview_linear_project)}</div>

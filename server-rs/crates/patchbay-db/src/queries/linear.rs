@@ -365,7 +365,7 @@ pub struct LinearProjectBindingInput<'a> {
     pub id: Uuid,
     pub workspace_id: Uuid,
     pub connection_id: Uuid,
-    pub cordy_project_id: Uuid,
+    pub patchbay_project_id: Uuid,
     pub linear_project_id: &'a str,
     pub linear_team_id: Option<&'a str>,
     pub status: &'a str,
@@ -377,7 +377,7 @@ pub struct LinearProjectBindingInput<'a> {
 }
 
 fn binding_columns() -> &'static str {
-    "id, workspace_id, connection_id, cordy_project_id, linear_project_id,\
+    "id, workspace_id, connection_id, patchbay_project_id, linear_project_id,\
      linear_team_id, status, sync_mode, initial_source_of_truth, status_mapping,\
      agent_label_mapping, activated_at, paused_at, created_by_id, created_at,\
      updated_at"
@@ -389,7 +389,7 @@ pub async fn create_project_binding(
 ) -> anyhow::Result<LinearProjectBinding> {
     let query = format!(
         "INSERT INTO linear_project_binding\
-         (id, workspace_id, connection_id, cordy_project_id, linear_project_id,\
+         (id, workspace_id, connection_id, patchbay_project_id, linear_project_id,\
           linear_team_id, status, sync_mode, initial_source_of_truth,\
           status_mapping, agent_label_mapping, activated_at, paused_at, created_by_id)\
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,\
@@ -402,7 +402,7 @@ pub async fn create_project_binding(
         .bind(input.id)
         .bind(input.workspace_id)
         .bind(input.connection_id)
-        .bind(input.cordy_project_id)
+        .bind(input.patchbay_project_id)
         .bind(input.linear_project_id)
         .bind(input.linear_team_id)
         .bind(input.status)
