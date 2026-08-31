@@ -271,10 +271,15 @@ impl RuntimeTaskSweeper {
 
         match linear::cleanup_oauth_states(&self.pool, LINEAR_OAUTH_STATE_BATCH).await {
             Ok(deleted) if deleted > 0 => {
-                tracing::debug!(deleted, "runtime sweeper: reclaimed Linear OAuth state rows");
+                tracing::debug!(
+                    deleted,
+                    "runtime sweeper: reclaimed Linear OAuth state rows"
+                );
             }
             Ok(_) => {}
-            Err(error) => tracing::warn!(%error, "runtime sweeper: reclaim Linear OAuth states failed"),
+            Err(error) => {
+                tracing::warn!(%error, "runtime sweeper: reclaim Linear OAuth states failed")
+            }
         }
 
         let reconnect_before = cutoff(now, self.reconnect_grace);
