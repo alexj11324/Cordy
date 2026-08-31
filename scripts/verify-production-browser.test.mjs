@@ -133,6 +133,17 @@ test("reads the settled page URL after Playwright waitForURL", () => {
   assert.doesNotMatch(browserVerifierSource, /downstream\.href/u);
 });
 
+test("accepts either a rendered dependency graph or its honest empty state", () => {
+  assert.match(
+    browserVerifierSource,
+    /landmarkLocator\.or\(page\.getByText\(emptyState, \{ exact: true \}\)\)/u,
+  );
+  assert.match(
+    browserVerifierSource,
+    /landmark: "Dependency graph canvas",\n\s+emptyState: "No active dependency graphs",/u,
+  );
+});
+
 test("ignores expected Chromium navigation cancellations only", () => {
   assert.equal(
     isExpectedBrowserRequestCancellation("net::ERR_ABORTED"),

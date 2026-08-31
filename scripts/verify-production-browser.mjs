@@ -109,7 +109,7 @@ function observeApplicationFailures(page) {
 async function verifyProtectedRoute(
   page,
   failures,
-  { path, heading, landmark, expectedBuild },
+  { path, heading, landmark, emptyState, expectedBuild },
 ) {
   const failureStart = failures.length;
   const response = await page.goto(`${BASE_URL}${path}`, {
@@ -131,9 +131,11 @@ async function verifyProtectedRoute(
     timeout: 30_000,
   });
   if (landmark) {
-    await expect(page.getByLabel(landmark, { exact: true })).toBeVisible({
-      timeout: 30_000,
-    });
+    const landmarkLocator = page.getByLabel(landmark, { exact: true });
+    const surface = emptyState
+      ? landmarkLocator.or(page.getByText(emptyState, { exact: true }))
+      : landmarkLocator;
+    await expect(surface).toBeVisible({ timeout: 30_000 });
   }
   const routeFailures = failures.slice(failureStart);
   if (routeFailures.length > 0) {
@@ -249,6 +251,7 @@ export async function verifyProductionBrowser(sourceSha, receipt) {
       path: `/${SMOKE_WORKSPACE}/task-graph`,
       heading: "Task Graph",
       landmark: "Dependency graph canvas",
+      emptyState: "No active dependency graphs",
       expectedBuild,
     });
   } catch (error) {
