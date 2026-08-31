@@ -2971,18 +2971,6 @@ mod tests {
     }
 
     #[test]
-    fn webhook_timestamp_header_must_match_the_signed_body() {
-        let secret = "webhook-secret";
-        let timestamp = 1_700_000_000_000;
-        let body = br#"{"organizationId":"org-1","webhookId":"webhook-1","webhookTimestamp":1700000000000}"#;
-        let headers = signed_headers(secret, body, Some(timestamp + 1));
-        assert_eq!(
-            validate_webhook(Some(secret), &headers, body, timestamp),
-            Err(WebhookValidationError::TimestampMismatch)
-        );
-    }
-
-    #[test]
     fn webhook_without_timestamp_is_rejected_even_with_a_valid_signature() {
         let secret = "webhook-secret";
         let body = br#"{"organizationId":"org-1","webhookId":"webhook-1"}"#;
@@ -3014,6 +3002,7 @@ mod tests {
             Err(WebhookValidationError::ExpiredTimestamp)
         );
     }
+
     #[test]
     fn webhook_timestamp_header_must_match_the_signed_body() {
         let secret = "webhook-secret";
