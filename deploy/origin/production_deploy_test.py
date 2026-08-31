@@ -1,4 +1,5 @@
 import importlib.util
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -122,6 +123,20 @@ class ProductionDeployContractTests(unittest.TestCase):
         self.assertEqual(production_deploy.clerk_users({"data": [user]}), [user])
         with self.assertRaisesRegex(production_deploy.DeploymentError, "invalid user-list"):
             production_deploy.clerk_users({"data": "invalid"})
+
+    def test_clerk_api_request_identifies_the_deployment_client(self):
+        with mock.patch.object(
+            production_deploy, "urlopen", return_value=io.BytesIO(b"{}")
+        ) as urlopen:
+            self.assertEqual(
+                production_deploy.clerk_api_request("sk_live_fixture", "users"),
+                {},
+            )
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(
+            request.get_header("User-agent"), "PatchbayProductionDeploy/1"
+        )
 
     def test_browser_credentials_are_short_lived_and_bound_to_the_smoke_user(self):
         with tempfile.TemporaryDirectory() as directory:
