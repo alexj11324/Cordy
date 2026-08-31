@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev-launcher.mjs",
+    "dev:hosted": "node scripts/dev-launcher.mjs --hosted",
     "dev:web:next": "turbo dev --filter=@patchbay/web",
     "dev:docs": "turbo dev --filter=@patchbay/docs",
     "dev:desktop": "node scripts/dev-launcher.mjs",

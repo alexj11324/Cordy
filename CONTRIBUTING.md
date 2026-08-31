@@ -509,6 +509,20 @@ Run the complete Electron development environment with one command:
 pnpm dev
 ```
 
+For Desktop UI development against the hosted Google login and API, use the
+explicit hosted profile:
+
+```bash
+pnpm dev:hosted
+```
+
+The hosted profile keeps the Electron/Vite renderer local for hot reload, but
+opens OAuth at `https://accounts.aspectlylabs.com` and sends API/WebSocket
+traffic to `https://api.aspectlylabs.com`. It does not start a local database,
+Rust server, or Next.js login origin. This profile is intentionally opt-in
+because it can read and change shared hosted data. The launcher rejects
+conflicting inherited `VITE_*` values before starting.
+
 The command does not open Electron until it has:
 
 1. Created or loaded the checkout-specific env, database, ports, and Electron
@@ -536,6 +550,7 @@ Use `pnpm dev:doctor` to repeat the same diagnostics while the stack is running.
 | Situation                                                                      | Command                                   | Expected work                                                                          |
 | ------------------------------------------------------------------------------ | ----------------------------------------- | -------------------------------------------------------------------------------------- |
 | Normal local product development                                               | `pnpm dev` or `make dev`                  | Complete Electron + dev CLI + backend + Web origin + isolated DB, with Vite hot reload |
+| Desktop development against hosted OAuth/API                                  | `pnpm dev:hosted`                         | Local Electron/Vite hot reload with the production accounts/API tuple; no local API    |
 | Re-run capability diagnostics                                                  | `pnpm dev:doctor`                         | CLI/version/source, backend/DB, agent detection, Telegram/Weixin configuration         |
 | Compile-check frontend/Electron output                                         | `pnpm --filter @patchbay/desktop build`   | Electron/Vite production bundles; no Rust                                              |
 | Validate an installer, signing/notarization, updater, embedded CLI, or release | `pnpm --filter @patchbay/desktop package` | Release Rust CLI and installer packaging; may take tens of minutes                     |

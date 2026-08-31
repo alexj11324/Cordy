@@ -4,10 +4,35 @@ import {
   consumeGoogleOAuthNonce,
   googleOAuthAttemptIsReady,
   googleOAuthCallbackHref,
+  GoogleOAuthStartTimeoutError,
   hasClerkOAuthReturn,
   startGoogleOAuth,
   toSameOriginUrl,
+  withGoogleOAuthStartTimeout,
 } from "./google-oauth";
+
+describe("withGoogleOAuthStartTimeout", () => {
+  it("rejects a stuck pre-redirect operation without adding a success delay", async () => {
+    vi.useFakeTimers();
+    try {
+      const operation = new Promise<never>(() => undefined);
+      const result = withGoogleOAuthStartTimeout(operation, 25);
+      const rejection = expect(result).rejects.toBeInstanceOf(
+        GoogleOAuthStartTimeoutError,
+      );
+      await vi.advanceTimersByTimeAsync(25);
+      await rejection;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not delay a provider operation that completes immediately", async () => {
+    await expect(
+      withGoogleOAuthStartTimeout(Promise.resolve("started"), 10_000),
+    ).resolves.toBe("started");
+  });
+});
 
 describe("hasClerkOAuthReturn", () => {
   it("detects Clerk ticket parameters on the current URL", () => {

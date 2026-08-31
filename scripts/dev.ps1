@@ -34,6 +34,42 @@ if ($LASTEXITCODE -ne 0) { throw "Development runtime preparation failed with ex
 $DevBackend = Join-Path $RepoRoot ".patchbay-dev/bin/patchbay-server.exe"
 $DevMigrate = Join-Path $RepoRoot ".patchbay-dev/bin/patchbay-migrate.exe"
 
+$DevMode = if ($env:PATCHBAY_DEV_MODE) { $env:PATCHBAY_DEV_MODE } else { "local" }
+if ($ElectronArgs -contains "--hosted") { $DevMode = "hosted" }
+if ($DevMode -notin @("local", "hosted")) {
+    throw "Unsupported development runtime mode: $DevMode"
+}
+$env:PATCHBAY_DEV_MODE = $DevMode
+
+if ($DevMode -eq "hosted") {
+    # Keep the hosted OAuth/API tuple immutable. This mode deliberately skips
+    # the local database, Rust server, and Next login origin.
+    $env:PATCHBAY_DEV_API_URL = "https://api.aspectlylabs.com"
+    $env:PATCHBAY_DEV_WS_URL = "wss://api.aspectlylabs.com/ws"
+    $env:PATCHBAY_DEV_APP_URL = "https://patchbay.aspectlylabs.com"
+    $env:PATCHBAY_DEV_ACCOUNTS_URL = "https://accounts.aspectlylabs.com"
+    $env:PATCHBAY_PUBLIC_URL = $env:PATCHBAY_DEV_API_URL
+    $env:PATCHBAY_SERVER_URL = $env:PATCHBAY_DEV_WS_URL
+    $env:PATCHBAY_APP_URL = $env:PATCHBAY_DEV_APP_URL
+    $env:VITE_API_URL = $env:PATCHBAY_DEV_API_URL
+    $env:VITE_WS_URL = $env:PATCHBAY_DEV_WS_URL
+    $env:VITE_APP_URL = $env:PATCHBAY_DEV_APP_URL
+    $env:VITE_ACCOUNTS_URL = $env:PATCHBAY_DEV_ACCOUNTS_URL
+    $env:NEXT_PUBLIC_API_URL = $env:VITE_API_URL
+    $env:NEXT_PUBLIC_WS_URL = $env:VITE_WS_URL
+    $env:PATCHBAY_REQUIRE_SOURCE_CLI = "1"
+    $env:PATCHBAY_DEV_ENV_FILE = $env:ENV_FILE
+    Write-Host ""
+    Write-Host "✓ Hosted Desktop development environment"
+    Write-Host "  OAuth:    $($env:PATCHBAY_DEV_ACCOUNTS_URL)"
+    Write-Host "  API:      $($env:PATCHBAY_DEV_API_URL)"
+    Write-Host "  Renderer: local Electron/Vite hot reload"
+    Write-Host ""
+    & node apps/desktop/scripts/dev.mjs @ElectronArgs
+    if ($LASTEXITCODE -ne 0) { throw "Electron development process exited with code $LASTEXITCODE" }
+    exit 0
+}
+
 function Get-PostgresCommand {
     param([string]$Name)
     foreach ($candidate in @("$Name.exe", $Name)) {
@@ -174,10 +210,14 @@ try {
         Start-Sleep -Seconds 1
     }
 
-    $env:VITE_API_URL = "http://127.0.0.1:$BackendPort"
-    $env:VITE_WS_URL = "ws://127.0.0.1:$BackendPort/ws"
-    $env:VITE_APP_URL = $FrontendOrigin
-    $env:VITE_ACCOUNTS_URL = $FrontendOrigin
+    $env:PATCHBAY_DEV_API_URL = "http://127.0.0.1:$BackendPort"
+    $env:PATCHBAY_DEV_WS_URL = "ws://127.0.0.1:$BackendPort/ws"
+    $env:PATCHBAY_DEV_APP_URL = $FrontendOrigin
+    $env:PATCHBAY_DEV_ACCOUNTS_URL = $FrontendOrigin
+    $env:VITE_API_URL = $env:PATCHBAY_DEV_API_URL
+    $env:VITE_WS_URL = $env:PATCHBAY_DEV_WS_URL
+    $env:VITE_APP_URL = $env:PATCHBAY_DEV_APP_URL
+    $env:VITE_ACCOUNTS_URL = $env:PATCHBAY_DEV_ACCOUNTS_URL
     $env:NEXT_PUBLIC_API_URL = $env:VITE_API_URL
     $env:NEXT_PUBLIC_WS_URL = $env:VITE_WS_URL
 
