@@ -1729,7 +1729,7 @@ pub struct WorkProductRelation {
     pub workspace_id: Uuid,
 }
 
-/// OAuth installation row for one Cordy workspace. Token columns contain
+/// OAuth installation row for one Patchbay workspace. Token columns contain
 /// secretbox ciphertext and are intentionally not serializable.
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct LinearConnection {
