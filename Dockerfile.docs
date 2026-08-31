@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 
-FROM node:22-alpine AS deps
+# Keep the production build libc-compatible with pnpm's pinned runtime.
+FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json turbo.json .npmrc ./
@@ -15,7 +16,7 @@ RUN corepack enable && \
     corepack prepare "$PNPM_VERSION" --activate
 RUN pnpm install --frozen-lockfile
 
-FROM node:22-alpine AS builder
+FROM node:22-bookworm-slim AS builder
 WORKDIR /app
 
 COPY package.json ./
@@ -34,7 +35,7 @@ RUN pnpm install --frozen-lockfile --offline
 ENV STANDALONE=true
 RUN pnpm --filter @patchbay/docs build
 
-FROM node:22-alpine AS runner
+FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
