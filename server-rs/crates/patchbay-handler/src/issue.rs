@@ -938,10 +938,9 @@ fn push_table_filters(
             builder.push(" AND (");
             let mut has_clause = false;
             for actor in actors {
-                let actor_type = actor
-                    .get("type")
-                    .and_then(Value::as_str)
-                    .ok_or_else(|| error_response(StatusCode::BAD_REQUEST, "invalid filters.actors"))?;
+                let actor_type = actor.get("type").and_then(Value::as_str).ok_or_else(|| {
+                    error_response(StatusCode::BAD_REQUEST, "invalid filters.actors")
+                })?;
                 let id = parse_table_uuid(&actor["id"], "filters.actors")?;
                 if has_clause {
                     builder.push(" OR ");
