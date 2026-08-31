@@ -5,6 +5,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ensureDevCheckoutEnv } from "../apps/desktop/scripts/dev-checkout-env.mjs";
+import { bootstrapDevClerkAuth } from "./dev-clerk-auth.mjs";
 import {
   applyDevRuntimeProfile,
   assertDevRuntimeOverridesCompatible,
@@ -69,6 +70,7 @@ export async function runCompleteDev({
       env,
       resolveDevRuntimeProfile(mode, env),
     );
+    if (mode !== "hosted") await bootstrapDevClerkAuth({ env });
     const existing = await readDevProcessState(repoRoot);
     if (existing) {
       const identity = inspectDevProcessIdentity(existing, { platform });

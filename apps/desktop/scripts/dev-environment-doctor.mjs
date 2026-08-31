@@ -17,6 +17,7 @@ import {
   applyDevRuntimeProfile,
   resolveDevRuntimeProfile,
 } from "../../../scripts/dev-runtime-profile.mjs";
+import { bootstrapDevClerkAuth } from "../../../scripts/dev-clerk-auth.mjs";
 
 const execFile = promisify(execFileCallback);
 const here = dirname(fileURLToPath(import.meta.url));
@@ -353,6 +354,12 @@ async function main() {
   const env = loadDoctorEnvironment({
     mode: process.argv.includes("--hosted") ? "hosted" : undefined,
   });
+  if (env.PATCHBAY_DEV_MODE !== "hosted") {
+    const auth = await bootstrapDevClerkAuth({ env });
+    console.log(
+      `✓ Clerk development authentication ready for ${auth.authorizedParties} (${auth.source})`,
+    );
+  }
   const report = await inspectDevEnvironment({ env });
   printDevEnvironmentReport(report);
   if (!report.ok && !warnOnly) process.exitCode = 1;

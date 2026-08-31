@@ -12,6 +12,15 @@ import { parseEnv } from "node:util";
 import { ensureSecretsFile } from "../../../scripts/ensure-dev-integration-secrets.mjs";
 import { offsetForPath } from "./worktree-dev-env.mjs";
 
+const PROCESS_ONLY_CLERK_KEYS = [
+  "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+  "CLERK_PUBLISHABLE_KEY",
+  "CLERK_SECRET_KEY",
+  "CLERK_JWT_KEY",
+  "CLERK_ISSUER",
+  "CLERK_AUTHORIZED_PARTIES",
+];
+
 function isLinkedWorktree(repoRoot) {
   try {
     return statSync(join(repoRoot, ".git")).isFile();
@@ -87,6 +96,10 @@ export function loadDevCheckoutEnv({
     parseEnv(readFileSync(envFile, "utf8")),
     explicit,
   );
+  // Clerk development credentials are process-only. Ignore even legacy
+  // checkout-file values so the secure bootstrap can never persist or reload
+  // them from .env/.env.worktree.
+  for (const key of PROCESS_ONLY_CLERK_KEYS) delete parsed[key];
   Object.assign(env, explicit, parsed, {
     ENV_FILE: envFile,
     PATCHBAY_DEV_ENV_FILE: envFile,
