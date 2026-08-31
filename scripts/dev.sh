@@ -49,41 +49,25 @@ echo "==> Using $ENV_FILE"
 # `pnpm dev` into a shared hosted run.
 launcher_dev_mode="${PATCHBAY_DEV_MODE:-}"
 
+# Capture only credentials explicitly passed to the Node launcher. Checkout
+# files are sourced afterwards and can therefore never enter this snapshot.
+# shellcheck disable=SC1091
+. scripts/dev-env.sh
+capture_process_only_clerk_env
+
 set -a
 # shellcheck disable=SC1090
 . "$ENV_FILE"
 set +a
 
-# Keep explicitly injected Clerk credentials available only long enough for
-# the scoped auth wrappers to validate them. The parent process remains
-# sanitized, while the values are restored in each short-lived child shell
-# without putting secrets in a command-line argument list.
-clerk_env_args=()
-for clerk_key in \
-  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY \
-  CLERK_PUBLISHABLE_KEY \
-  CLERK_SECRET_KEY \
-  CLERK_JWT_KEY \
-  CLERK_ISSUER \
-  CLERK_AUTHORIZED_PARTIES; do
-  if [[ -v "$clerk_key" ]]; then
-    clerk_env_args+=("$clerk_key=${!clerk_key}")
-  fi
-done
-
 run_with_injected_clerk_env() {
-  local clerk_entry
-  for clerk_entry in "${clerk_env_args[@]}"; do
-    export "$clerk_entry"
-  done
+  restore_process_only_clerk_env
   exec "$@"
 }
 
 # Prevent legacy checkout-file or inherited Clerk values from entering install,
 # Rust preparation, migrations, Electron, or probes. Narrow wrappers load auth
 # later for backend and Web only.
-# shellcheck disable=SC1091
-. scripts/dev-env.sh
 clear_process_only_clerk_env
 
 # shellcheck disable=SC1091
