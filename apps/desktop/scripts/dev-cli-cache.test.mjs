@@ -9,6 +9,8 @@ import {
   devCliCacheKey,
   findCachedDevCli,
   fingerprintRustFiles,
+  inspectDevRuntimeCache,
+  pruneDevRuntimeCache,
   rustBuildEnvironmentFingerprint,
   rustToolchainIdentity,
   stageCachedDevCli,
@@ -226,5 +228,39 @@ describe("development CLI artifact cache", () => {
       toolchainIdentity: null,
     });
     expect(cached?.manifest.toolchainIdentity).toBe("rustc 1");
+  });
+
+  it("keeps at least ten complete runtime fingerprints while pruning older entries", async () => {
+    const root = await createSandbox();
+    const cacheRoot = join(root, "cache");
+    const sourceBinary = join(root, "runtime");
+    await writeFile(sourceBinary, "fixture runtime");
+    for (let index = 0; index < 11; index += 1) {
+      for (const profile of ["dev", "dev-server", "dev-migrate"]) {
+        await storeDevCli({
+          cacheRoot,
+          sourceBinary,
+          binaryName: `runtime-${profile}`,
+          sourceFingerprint: `source-${index}`,
+          rustTarget: "aarch64-apple-darwin",
+          profile,
+          toolchainIdentity: "rustc fixture",
+          buildVariables: { index },
+        });
+      }
+    }
+
+    const result = await pruneDevRuntimeCache({
+      cacheRoot,
+      maxBytes: 0,
+      maxAgeMs: 0,
+      minFingerprints: 10,
+      nowMs: Date.now() + 1_000,
+    });
+    const after = await inspectDevRuntimeCache({ cacheRoot });
+
+    expect(result.protectedFingerprintCount).toBe(10);
+    expect(after.completeFingerprintCount).toBe(10);
+    expect(after.entryCount).toBe(30);
   });
 });

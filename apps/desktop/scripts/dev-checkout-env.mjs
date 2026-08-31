@@ -6,11 +6,17 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { createServer } from "node:net";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { parseEnv } from "node:util";
 
 import { ensureSecretsFile } from "../../../scripts/ensure-dev-integration-secrets.mjs";
-import { offsetForPath } from "./worktree-dev-env.mjs";
+import {
+  appSuffixForOffset,
+  offsetForPath,
+  rendererPortForOffset,
+} from "./worktree-dev-env.mjs";
 
 const PROCESS_ONLY_CLERK_KEYS = [
   "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
@@ -108,14 +114,76 @@ export function loadDevCheckoutEnv({
   return { env, envFile };
 }
 
-function worktreeEnvContents(repoRoot) {
-  const worktreeName = basename(repoRoot);
+function reservedWorktreePorts(repoRoot) {
+  const reserved = new Set();
+  let output = "";
+  try {
+    output = execFileSync("git", ["worktree", "list", "--porcelain"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return reserved;
+  }
+  for (const line of output.split("\n")) {
+    if (!line.startsWith("worktree ")) continue;
+    const checkout = line.slice("worktree ".length);
+    for (const name of [".env.worktree", ".env"]) {
+      const candidate = join(checkout, name);
+      if (!existsSync(candidate)) continue;
+      try {
+        const values = parseEnv(readFileSync(candidate, "utf8"));
+        for (const key of ["PORT", "FRONTEND_PORT", "DESKTOP_RENDERER_PORT"]) {
+          if (/^[0-9]+$/.test(values[key] || "")) reserved.add(Number(values[key]));
+        }
+      } catch {
+        // A malformed sibling environment should not prevent this checkout
+        // from selecting ports that are demonstrably free.
+      }
+      break;
+    }
+  }
+  return reserved;
+}
+
+async function portIsAvailable(port) {
+  return new Promise((resolvePort) => {
+    const server = createServer();
+    server.unref();
+    server.once("error", () => resolvePort(false));
+    server.listen({ host: "127.0.0.1", port, exclusive: true }, () => {
+      server.close(() => resolvePort(true));
+    });
+  });
+}
+
+export async function allocateWorktreeOffset(repoRoot) {
+  const reserved = reservedWorktreePorts(repoRoot);
+  const initial = offsetForPath(repoRoot);
+  for (let attempt = 0; attempt < 1000; attempt += 1) {
+    const offset = (initial + attempt) % 1000;
+    const ports = [
+      18080 + offset,
+      13000 + offset,
+      rendererPortForOffset(offset),
+    ];
+    if (ports.some((port) => reserved.has(port))) continue;
+    if ((await Promise.all(ports.map(portIsAvailable))).every(Boolean)) {
+      return offset;
+    }
+  }
+  throw new Error(
+    "could not allocate isolated backend, frontend, and Electron renderer ports; stop stale development processes or remove obsolete worktree env files",
+  );
+}
+
+function worktreeEnvContents(repoRoot, offset, worktreeName = basename(repoRoot)) {
   const slug =
     worktreeName
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "_")
       .replace(/^_+|_+$/g, "") || "patchbay";
-  const offset = offsetForPath(repoRoot);
   const postgresDb = `patchbay_${slug}_${offset}`;
   const backendPort = 18080 + offset;
   const frontendPort = 13000 + offset;
@@ -137,7 +205,29 @@ FRONTEND_PORT=${frontendPort}
 FRONTEND_ORIGIN=${frontendOrigin}
 NEXT_PUBLIC_API_URL=http://localhost:${backendPort}
 NEXT_PUBLIC_WS_URL=ws://localhost:${backendPort}/ws
+DESKTOP_RENDERER_PORT=${rendererPortForOffset(offset)}
+DESKTOP_APP_SUFFIX=${appSuffixForOffset(repoRoot, offset)}
 `;
+}
+
+export async function createWorktreeEnvFile({
+  repoRoot,
+  envFile = join(repoRoot, ".env.worktree"),
+  force = false,
+  worktreeName,
+} = {}) {
+  if (existsSync(envFile) && !force) {
+    throw new Error(
+      `Refusing to overwrite existing ${envFile}. Re-run with FORCE=1 if you want to regenerate it.`,
+    );
+  }
+  const offset = await allocateWorktreeOffset(repoRoot);
+  writeFileSync(
+    envFile,
+    worktreeEnvContents(repoRoot, offset, worktreeName),
+    { mode: 0o600 },
+  );
+  return { envFile, offset };
 }
 
 export async function ensureDevCheckoutEnv({
@@ -148,7 +238,7 @@ export async function ensureDevCheckoutEnv({
   const envFile = selectDevEnvFile({ repoRoot, env });
   if (!existsSync(envFile)) {
     if (isLinkedWorktree(repoRoot)) {
-      writeFileSync(envFile, worktreeEnvContents(repoRoot), { mode: 0o600 });
+      await createWorktreeEnvFile({ repoRoot, envFile });
       log.log(`[dev] generated isolated worktree environment ${envFile}`);
     } else {
       copyFileSync(join(repoRoot, ".env.example"), envFile);

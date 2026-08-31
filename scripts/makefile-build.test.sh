@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Static contract checks for the Rust-only Makefile entrypoints. This script
+# Static contract checks for source-matched development runtime entrypoints. This script
 # intentionally uses dry runs and never invokes a compiler or test runner.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -14,30 +14,30 @@ fail() {
 
 for target in cli patchbay; do
   output="$(make -n "$target" PATCHBAY_ARGS=version)"
-  grep -Fq -- "./scripts/run-rust.sh run --locked -p patchbay-cli -- version" <<<"$output" ||
-    fail "$target: expected the Rust CLI entrypoint, got:\n$output"
+  grep -Fq -- "node scripts/dev-runtime-command.mjs cli version" <<<"$output" ||
+    fail "$target: expected the source-matched CLI entrypoint, got:\n$output"
 done
 
 quoted_output="$(make -n cli 'PATCHBAY_ARGS=issue create --title "hello world"')"
-grep -Fq -- './scripts/run-rust.sh run --locked -p patchbay-cli -- issue create --title "hello world"' <<<"$quoted_output" ||
+grep -Fq -- 'node scripts/dev-runtime-command.mjs cli issue create --title "hello world"' <<<"$quoted_output" ||
   fail "cli: embedded argument quoting was not preserved:\n$quoted_output"
 
 for target in server rust-server; do
   output="$(make -n "$target")"
-  grep -Fq -- "./scripts/run-rust.sh run --locked -p patchbay-server" <<<"$output" ||
-    fail "$target: expected the Rust server entrypoint, got:\n$output"
+  grep -Fq -- "node scripts/dev-runtime-command.mjs backend" <<<"$output" ||
+    fail "$target: expected the source-matched backend entrypoint, got:\n$output"
 done
 
 for target in migrate-up rust-migrate-up migrate-down rust-migrate-down; do
   output="$(make -n "$target")"
   case "$target" in
     migrate-up|rust-migrate-up)
-      grep -Fq -- "./scripts/run-rust.sh run --locked -p patchbay-migrate -- up" <<<"$output" ||
-        fail "$target: expected the Rust up migration runner, got:\n$output"
+      grep -Fq -- "node scripts/dev-runtime-command.mjs migrations up" <<<"$output" ||
+        fail "$target: expected the source-matched up migration runner, got:\n$output"
       ;;
     migrate-down|rust-migrate-down)
-      grep -Fq -- "./scripts/run-rust.sh run --locked -p patchbay-migrate -- down" <<<"$output" ||
-        fail "$target: expected the Rust down migration runner, got:\n$output"
+      grep -Fq -- "node scripts/dev-runtime-command.mjs migrations down" <<<"$output" ||
+        fail "$target: expected the source-matched down migration runner, got:\n$output"
       ;;
   esac
 done
@@ -52,4 +52,10 @@ for target in build rust-build; do
   done
 done
 
-echo "✓ Makefile entrypoints and artifacts are Rust-only"
+for removed in setup start setup-main start-main setup-worktree start-worktree check-main check-worktree; do
+  if make -n "$removed" >/dev/null 2>&1; then
+    fail "$removed: legacy development target still exists"
+  fi
+done
+
+echo "✓ Makefile development entrypoints use source-matched runtime artifacts"

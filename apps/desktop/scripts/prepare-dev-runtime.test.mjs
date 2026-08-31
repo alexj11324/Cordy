@@ -21,8 +21,11 @@ describe("complete development runtime artifacts", () => {
       "migrations",
     ]);
     expect(components[0].destinationBinary).toBe(
-      join("/repo", "apps", "desktop", "resources", "bin", "patchbay"),
+      join("/repo", ".patchbay-dev", "bin", "patchbay"),
     );
+    expect(components[0].additionalDestinations).toEqual([
+      join("/repo", "apps", "desktop", "resources", "bin", "patchbay"),
+    ]);
     expect(components[1].destinationBinary).toBe(
       join("/repo", ".patchbay-dev", "bin", "patchbay-server"),
     );

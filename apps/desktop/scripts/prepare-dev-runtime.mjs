@@ -16,7 +16,7 @@ import {
 } from "./bundle-cli.mjs";
 import {
   defaultDevCliCacheDir,
-  pruneDevCliCache,
+  pruneDevRuntimeCache,
   rustBuildEnvironmentFingerprint,
   rustSourceFingerprint,
   rustToolchainIdentity,
@@ -51,14 +51,17 @@ export function devRuntimeComponents({
       profile: "dev",
       binaryName: binaryNameForPlatform(platform),
       sourceBinary: join(builtDir, binaryNameForPlatform(platform)),
-      destinationBinary: join(
+      destinationBinary: join(stagedDir, binaryNameForPlatform(platform)),
+      additionalDestinations: [
+        join(
         repoRoot,
         "apps",
         "desktop",
         "resources",
         "bin",
         binaryNameForPlatform(platform),
-      ),
+        ),
+      ],
     },
     {
       id: "backend",
@@ -86,6 +89,20 @@ export function devRuntimeComponents({
       ),
     },
   ];
+}
+
+async function stageAdditionalDestinations(component, platform) {
+  for (const destination of component.additionalDestinations || []) {
+    await mkdir(dirname(destination), { recursive: true });
+    await rm(destination, { force: true });
+    await rm(`${destination}.dev-manifest.json`, { force: true });
+    await copyFile(component.destinationBinary, destination);
+    await copyFile(
+      `${component.destinationBinary}.dev-manifest.json`,
+      `${destination}.dev-manifest.json`,
+    );
+    if (platform !== "win32") await chmod(destination, 0o755);
+  }
 }
 
 export function devRuntimeBuildArguments(rustTarget, components) {
@@ -174,6 +191,10 @@ export async function prepareDevRuntime({
     ),
   );
   if (cached.every(Boolean)) {
+    for (const component of components) {
+      await stageAdditionalDestinations(component, platform);
+    }
+    await pruneDevRuntimeCache({ cacheRoot });
     console.log(
       `[dev-runtime] source-matched cache hit ${sourceFingerprint.slice(0, 12)} (${components.map(({ id }) => id).join(", ")})`,
     );
@@ -213,7 +234,7 @@ export async function prepareDevRuntime({
     await copyFile(component.sourceBinary, component.destinationBinary);
     if (platform !== "win32") await chmod(component.destinationBinary, 0o755);
     await signMacBinary(component.destinationBinary, platform);
-    const stored = await storeDevCli({
+    await storeDevCli({
       cacheRoot,
       sourceBinary: component.destinationBinary,
       binaryName: component.binaryName,
@@ -233,14 +254,10 @@ export async function prepareDevRuntime({
       buildVariables,
       destinationBinary: component.destinationBinary,
     });
-    await pruneDevCliCache({
-      cacheRoot,
-      rustTarget,
-      profile: component.profile,
-      keep: 5,
-      preserveEntryDir: stored?.entryDir,
-    });
+    await stageAdditionalDestinations(component, platform);
   }
+
+  await pruneDevRuntimeCache({ cacheRoot });
 
   return { cacheHit: false, components, sourceFingerprint };
 }

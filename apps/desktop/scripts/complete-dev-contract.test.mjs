@@ -31,7 +31,9 @@ describe("complete development launcher contract", () => {
     const prepareRuntime = launcher.indexOf("prepare-dev-runtime.mjs");
     const ensureDatabase = launcher.indexOf("ensure-postgres.sh");
     const migrate = launcher.indexOf('"$dev_migrate" up');
-    const backend = launcher.indexOf('"$dev_backend") &');
+    const backend = launcher.indexOf(
+      'dev-auth-command.mjs backend "$dev_backend"',
+    );
     const readiness = launcher.indexOf("until curl", backend);
     const electron = launcher.lastIndexOf("node apps/desktop/scripts/dev.mjs");
 
@@ -95,14 +97,16 @@ describe("complete development launcher contract", () => {
     );
     expect(launcher).toContain('export VITE_APP_URL="$PATCHBAY_DEV_APP_URL"');
     expect(launcher).toContain("export VITE_ACCOUNTS_URL=");
-    expect(launcher).toContain("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY");
+    expect(launcher).toContain("dev-auth-command.mjs web");
   });
 
   it("rejects an already occupied backend port and keeps a native Windows path", () => {
     const occupiedCheck = launcher.indexOf(
-      "is already serving another Patchbay",
+      "Backend port ${PORT:-8080} is already occupied",
     );
-    const spawn = launcher.indexOf('"$dev_backend") &');
+    const spawn = launcher.indexOf(
+      'dev-auth-command.mjs backend "$dev_backend"',
+    );
     expect(occupiedCheck).toBeGreaterThan(-1);
     expect(spawn).toBeGreaterThan(occupiedCheck);
     expect(launcher).toContain('kill -0 "$backend_pid"');
@@ -130,4 +134,5 @@ describe("complete development launcher contract", () => {
     expect(completeCacheHit).toBeGreaterThan(-1);
     expect(requireCargo).toBeGreaterThan(completeCacheHit);
   });
+
 });

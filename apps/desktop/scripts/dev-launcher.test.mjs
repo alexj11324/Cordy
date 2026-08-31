@@ -6,15 +6,13 @@ import { describe, expect, it } from "vitest";
 import { planCompleteDevLauncher } from "../../../scripts/dev-launcher.mjs";
 
 describe("cross-platform complete development entrypoint", () => {
-  it("bootstraps secure Clerk auth before spawning dependency or Rust work", () => {
+  it("does not expose Clerk secrets to the dependency and Rust launcher", () => {
     const source = readFileSync(
       join(import.meta.dirname, "../../../scripts/dev-launcher.mjs"),
       "utf8",
     );
-    const auth = source.indexOf("bootstrapDevClerkAuth({ env })");
-    const spawn = source.indexOf("child = spawn(");
-    expect(auth).toBeGreaterThan(-1);
-    expect(spawn).toBeGreaterThan(auth);
+    expect(source).not.toContain("bootstrapDevClerkAuth");
+    expect(source).not.toContain("CLERK_SECRET_KEY");
   });
 
   it("uses the POSIX implementation and forwards Electron arguments", () => {

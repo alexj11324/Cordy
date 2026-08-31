@@ -1,4 +1,4 @@
-.PHONY: help makehelp dev web-next-dev api-dev server rust-server daemon cli patchbay rust-cli build-rust-cli build rust-build test rust-test migrate-up migrate-down rust-migrate-up rust-migrate-down seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
+.PHONY: help makehelp dev web-next-dev api-dev server rust-server daemon cli patchbay rust-cli build-rust-cli build rust-build test rust-test migrate-up migrate-down rust-migrate-up rust-migrate-down seed clean stop check worktree-env remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
 
 MAIN_ENV_FILE ?= .env
 WORKTREE_ENV_FILE ?= .env.worktree
@@ -42,8 +42,7 @@ endef
 # The Rust workspace is the source/runtime entrypoint. The wrapper keeps
 # Cargo's workspace working directory during local development.
 RUST_RUNNER := ./scripts/run-rust.sh
-RUST_SERVER_CMD = PATCHBAY_BUILD_VERSION="$(VERSION)" PATCHBAY_BUILD_COMMIT="$(COMMIT)" PATCHBAY_BUILD_DATE="$(RUST_BUILD_DATE)" PATCHBAY_GIT_COMMIT="$(COMMIT)" PATCHBAY_SHUTDOWN_HOLD_DURATION="$(PATCHBAY_SHUTDOWN_HOLD_DURATION)" $(RUST_RUNNER) run --locked -p patchbay-server
-RUST_MIGRATE_CMD = $(RUST_RUNNER) run --locked -p patchbay-migrate --
+DEV_RUNTIME_CMD := node scripts/dev-runtime-command.mjs
 
 # Self-hosting requires the Docker Compose CLI plugin (`docker compose`).
 # The self-host compose files use compose-spec syntax (top-level `name:`, no
@@ -148,24 +147,6 @@ selfhost-stop: ## Stop the self-hosted Docker Compose stack
 	$(COMPOSE) -f docker-compose.selfhost.yml down
 	@echo "✓ All services stopped."
 
-# ---------- One-click commands ----------
-##@ One-click
-
-setup: ## Prepare the current checkout from its env file: install deps, ensure DB, run migrations
-	$(REQUIRE_ENV)
-	@echo "==> Using env file: $(ENV_FILE)"
-	@echo "==> Installing dependencies..."
-	pnpm install
-	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
-	@echo "==> Running migrations..."
-	$(RUST_MIGRATE_CMD) up
-	@echo ""
-	@echo "✓ Setup complete! Run 'make start' to launch the app."
-
-start: ## Start the complete Electron development environment for this checkout
-	$(REQUIRE_ENV)
-	@ENV_FILE="$(ENV_FILE)" node scripts/dev-launcher.mjs
-
 stop: ## Stop the tracked complete Electron stack for the current checkout
 	@node scripts/stop-dev.mjs
 
@@ -193,42 +174,12 @@ db-reset: ## Drop and recreate the current env's database, then re-run all migra
 	$(REQUIRE_ENV)
 	@bash scripts/reset-database.sh "$(ENV_FILE)"
 	@echo "==> Running migrations..."
-	$(RUST_MIGRATE_CMD) up
+	@ENV_FILE="$(ENV_FILE)" $(DEV_RUNTIME_CMD) migrations up
 	@echo ""
-	@echo "✓ Database '$(POSTGRES_DB)' reset. Run 'make start' to launch the app."
+	@echo "✓ Database '$(POSTGRES_DB)' reset. Run 'pnpm dev' to launch the app."
 
 worktree-env: ## Generate .env.worktree with a unique DB name and app ports for this worktree
 	@bash scripts/init-worktree-env.sh .env.worktree
-
-setup-main: ## Prepare the main checkout using .env
-	@$(MAKE) setup ENV_FILE=$(MAIN_ENV_FILE)
-
-start-main: ## Start the main checkout using .env
-	@$(MAKE) start ENV_FILE=$(MAIN_ENV_FILE)
-
-stop-main: ## Stop the main checkout processes defined by .env
-	@$(MAKE) stop ENV_FILE=$(MAIN_ENV_FILE)
-
-check-main: ## Run the full verification pipeline for the main checkout
-	@ENV_FILE=$(MAIN_ENV_FILE) bash scripts/check.sh
-
-setup-worktree: ## Ensure .env.worktree exists, then prepare this worktree
-	@if [ ! -f "$(WORKTREE_ENV_FILE)" ]; then \
-		echo "==> Generating $(WORKTREE_ENV_FILE) with unique ports..."; \
-		bash scripts/init-worktree-env.sh $(WORKTREE_ENV_FILE); \
-	else \
-		echo "==> Using existing $(WORKTREE_ENV_FILE)"; \
-	fi
-	@$(MAKE) setup ENV_FILE=$(WORKTREE_ENV_FILE)
-
-start-worktree: ## Start this worktree using .env.worktree
-	@$(MAKE) start ENV_FILE=$(WORKTREE_ENV_FILE)
-
-stop-worktree: ## Stop this worktree's backend and frontend processes
-	@$(MAKE) stop ENV_FILE=$(WORKTREE_ENV_FILE)
-
-check-worktree: ## Run the full verification pipeline for this worktree
-	@ENV_FILE=$(WORKTREE_ENV_FILE) bash scripts/check.sh
 
 remove-worktree: ## Drop a linked worktree's database, then remove it (WORKTREE=path)
 	@bash scripts/remove-worktree.sh "$(WORKTREE)"
@@ -237,7 +188,7 @@ remove-worktree: ## Drop a linked worktree's database, then remove it (WORKTREE=
 ##@ Individual commands
 
 dev: ## Start complete Electron + source CLI + backend + isolated DB development
-	@ENV_FILE="" node scripts/dev-launcher.mjs
+	@pnpm dev
 
 web-next-dev: ## Run only the Next.js web frontend (API-dependent screens need a separate backend)
 	@echo "Frontend: http://localhost:$(FRONTEND_PORT)"
@@ -246,15 +197,18 @@ web-next-dev: ## Run only the Next.js web frontend (API-dependent screens need a
 api-dev: ## Run only the API/WebSocket backend (PostgreSQL must already be running)
 	$(REQUIRE_ENV)
 	@echo "Backend: http://localhost:$(PORT)"
-	$(RUST_SERVER_CMD)
+	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
+	@ENV_FILE="$(ENV_FILE)" $(DEV_RUNTIME_CMD) backend
 
 daemon: PATCHBAY_ARGS := daemon restart --profile local
-daemon: rust-cli ## Restart the local agent daemon using the CLI's stored auth/session
+daemon: ## Restart the local agent daemon using the source-matched CLI
+	$(REQUIRE_ENV)
+	@ENV_FILE="$(ENV_FILE)" $(DEV_RUNTIME_CMD) cli $(PATCHBAY_ARGS)
 
 server: ## Run only the Rust server for the current checkout
 	$(REQUIRE_ENV)
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
-	$(RUST_SERVER_CMD)
+	@ENV_FILE="$(ENV_FILE)" $(DEV_RUNTIME_CMD) backend
 
 rust-server: server ## Run the migrated Rust server entrypoint
 
@@ -263,7 +217,8 @@ cli: rust-cli ## Run the Rust patchbay CLI with ARGS or PATCHBAY_ARGS from sourc
 patchbay: rust-cli ## Run the Rust patchbay CLI entrypoint
 
 rust-cli: ## Run the migrated Rust CLI slice with ARGS or PATCHBAY_ARGS
-	PATCHBAY_BUILD_VERSION="$(VERSION)" PATCHBAY_BUILD_COMMIT="$(COMMIT)" PATCHBAY_BUILD_DATE="$(RUST_BUILD_DATE)" $(RUST_RUNNER) run --locked -p patchbay-cli -- $(PATCHBAY_ARGS)
+	$(REQUIRE_ENV)
+	@ENV_FILE="$(ENV_FILE)" $(DEV_RUNTIME_CMD) cli $(PATCHBAY_ARGS)
 
 build-rust-cli: ## Build the migrated Rust CLI slice in release mode
 	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)" PATCHBAY_BUILD_VERSION="$(VERSION)" PATCHBAY_BUILD_COMMIT="$(COMMIT)" PATCHBAY_BUILD_DATE="$(DATE)" $(RUST_RUNNER) build --release --locked -p patchbay-cli
@@ -293,8 +248,8 @@ test: rust-test ## Run Rust tests after ensuring the target DB exists and migrat
 rust-test: ## Run Rust workspace tests after ensuring the target DB exists and migrations are applied
 	$(REQUIRE_ENV)
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
-	$(RUST_MIGRATE_CMD) up
-	$(RUST_RUNNER) test --workspace --all-targets --locked
+	@ENV_FILE="$(ENV_FILE)" $(DEV_RUNTIME_CMD) migrations up
+	@bash scripts/run-dev-rust.sh test --workspace --all-targets --locked
 
 # Database
 ##@ Database
@@ -304,14 +259,14 @@ migrate-up: rust-migrate-up ## Create the target DB if needed, then apply databa
 rust-migrate-up: ## Apply database migrations with the Rust runner
 	$(REQUIRE_ENV)
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
-	$(RUST_MIGRATE_CMD) up
+	@ENV_FILE="$(ENV_FILE)" $(DEV_RUNTIME_CMD) migrations up
 
 migrate-down: rust-migrate-down ## Create the target DB if needed, then roll back database migrations
 
 rust-migrate-down: ## Roll back database migrations with the Rust runner
 	$(REQUIRE_ENV)
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
-	$(RUST_MIGRATE_CMD) down
+	@ENV_FILE="$(ENV_FILE)" $(DEV_RUNTIME_CMD) migrations down
 
 # Cleanup
 ##@ Cleanup
