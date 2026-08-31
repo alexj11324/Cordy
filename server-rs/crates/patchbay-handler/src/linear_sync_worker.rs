@@ -390,13 +390,13 @@ impl LinearSyncWorker {
             .map_err(SyncError::retry)?;
             match self
                 .apply_remote_issue(
-                connection,
-                remote,
-                existing_link,
-                &format!("{source_prefix}:{issue_id}"),
-                None,
-            )
-            .await
+                    connection,
+                    remote,
+                    existing_link,
+                    &format!("{source_prefix}:{issue_id}"),
+                    None,
+                )
+                .await
             {
                 Ok(()) => {}
                 Err(SyncError::Permanent(error)) => {
@@ -452,10 +452,8 @@ impl LinearSyncWorker {
                 )
                 .await
                 .map_err(SyncError::retry)?;
-                let destination_can_receive = destination
-                    .as_ref()
-                    .map(inbound_enabled)
-                    .unwrap_or(true);
+                let destination_can_receive =
+                    destination.as_ref().map(inbound_enabled).unwrap_or(true);
                 if destination_can_receive {
                     (destination, true)
                 } else {
@@ -472,13 +470,13 @@ impl LinearSyncWorker {
         } else {
             (
                 linear_q::get_binding_for_remote_project(
-                &self.state.pool,
-                connection.workspace_id,
-                connection.id,
-                linear_project_id,
-            )
-            .await
-            .map_err(SyncError::retry)?,
+                    &self.state.pool,
+                    connection.workspace_id,
+                    connection.id,
+                    linear_project_id,
+                )
+                .await
+                .map_err(SyncError::retry)?,
                 false,
             )
         };
@@ -527,9 +525,12 @@ impl LinearSyncWorker {
         } else {
             None
         };
-        let mapped_category =
-            patchbay_service::issue_status::effective(&self.state.pool, connection.workspace_id, &mapped_status)
-                .await;
+        let mapped_category = patchbay_service::issue_status::effective(
+            &self.state.pool,
+            connection.workspace_id,
+            &mapped_status,
+        )
+        .await;
         let import_status = if import_status_is_inadmissible(
             &mapped_category,
             linked_issue.as_ref(),
