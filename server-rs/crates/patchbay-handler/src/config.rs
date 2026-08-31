@@ -305,7 +305,14 @@ fn is_public_https_url(raw: &str) -> bool {
     {
         return false;
     }
-    let host = url.host_str().unwrap_or_default().trim_end_matches('.');
+    // `url::Url::host_str` keeps the brackets around an IPv6 literal.  Strip
+    // them before parsing so link-local/private IPv6 origins cannot bypass
+    // the public-origin guard and end up in a cross-device binding link.
+    let host = url
+        .host_str()
+        .unwrap_or_default()
+        .trim_end_matches('.')
+        .trim_matches(['[', ']']);
     if host.eq_ignore_ascii_case("localhost") || host.ends_with(".local") {
         return false;
     }
