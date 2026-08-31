@@ -129,6 +129,7 @@ describe("runConfirmIntent — promote", () => {
     ["Backlog", "backlog", "in_progress"],
     ["Backlog to Todo", "backlog", "todo"],
     ["Backlog to Blocked", "backlog", "blocked"],
+    ["Backlog to custom Todo", "backlog", "rework"],
     ["custom Backlog origin", "later", "in_progress"],
   ])("confirms the promotion (%s)", (_label, from, to) => {
     expect(runConfirmIntent(issue({ status: from }), { status: to }, CATALOG)).toEqual({
@@ -148,7 +149,6 @@ describe("runConfirmIntent — promote", () => {
 
   it.each([
     ["no executor", { status: "todo", executor_type: null, executor_id: null }, "in_progress"],
-    ["Backlog to custom Todo", { status: "backlog" }, "rework"],
     ["Todo to In Progress", { status: "todo" }, "in_progress"],
     ["Blocked to In Progress", { status: "blocked" }, "in_progress"],
     ["custom In Progress target", { status: "todo" }, "doing"],
