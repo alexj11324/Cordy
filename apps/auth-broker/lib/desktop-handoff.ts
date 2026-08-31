@@ -1,7 +1,7 @@
-import { DESKTOP_CALLBACK_URL } from "./contract";
-
 const HANDOFF_VALUE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/;
 const DESKTOP_CODE_PATTERN = /^pbd_[A-Za-z0-9_-]{43,252}$/;
+const DESKTOP_CALLBACK_PROTOCOL_PATTERN =
+  /^(?:patchbay|patchbay-canary(?:-[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?)?)$/;
 
 export type DesktopHandoffBinding = {
   codeChallenge: string;
@@ -43,14 +43,28 @@ export function isDesktopHandoffInput(
   );
 }
 
-export function buildDesktopCallbackUrl(code: string, state: string): string {
-  if (!DESKTOP_CODE_PATTERN.test(code) || !HANDOFF_VALUE_PATTERN.test(state)) {
+export function buildDesktopCallbackUrl(
+  code: string,
+  state: string,
+  callbackProtocol: string,
+): string {
+  if (
+    !DESKTOP_CODE_PATTERN.test(code) ||
+    !HANDOFF_VALUE_PATTERN.test(state) ||
+    !isDesktopCallbackProtocol(callbackProtocol)
+  ) {
     throw new Error("invalid desktop callback");
   }
-  const url = new URL(DESKTOP_CALLBACK_URL);
+  const url = new URL(`${callbackProtocol}://auth/callback`);
   url.searchParams.set("code", code);
   url.searchParams.set("state", state);
   return url.href;
+}
+
+export function isDesktopCallbackProtocol(value: unknown): value is string {
+  return (
+    typeof value === "string" && DESKTOP_CALLBACK_PROTOCOL_PATTERN.test(value)
+  );
 }
 
 export function isDesktopCode(value: unknown): value is string {

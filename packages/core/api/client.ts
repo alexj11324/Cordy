@@ -818,6 +818,22 @@ export class ApiClient {
     });
   }
 
+  /** Bind the callback destination to the authenticated desktop session. */
+  async initiateDesktopGoogleAttempt(
+    state: string,
+    codeChallenge: string,
+    callbackProtocol: string,
+  ): Promise<{ registered: boolean }> {
+    return this.fetch("/api/desktop-google/initiate", {
+      method: "POST",
+      body: JSON.stringify({
+        state,
+        code_challenge: codeChallenge,
+        callback_protocol: callbackProtocol,
+      }),
+    });
+  }
+
   /**
    * Complete the registered attempt with the current Clerk token. The browser
    * route owns Google provider selection; Rust independently proves that the
@@ -828,7 +844,7 @@ export class ApiClient {
     sessionToken: string,
     state: string,
     codeChallenge: string,
-  ): Promise<{ code: string }> {
+  ): Promise<{ callback_protocol: string; code: string }> {
     return this.fetch("/api/desktop-google/complete", {
       method: "POST",
       headers: { Authorization: `Bearer ${sessionToken}` },

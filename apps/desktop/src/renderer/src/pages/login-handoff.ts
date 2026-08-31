@@ -91,10 +91,18 @@ function randomBase64Url(byteLength: number): string {
 /**
  * Start a browser-based desktop login without putting a bearer in the custom
  * protocol URL. The verifier remains in app-local storage so a recreated
- * BrowserWindow can redeem the one-time code returned by the web login.
+ * BrowserWindow can redeem the one-time code returned by the web login. The
+ * selected callback protocol identifies the exact packaged or Canary app that
+ * owns that verifier.
  */
 export async function createDesktopGoogleLoginUrl(
   accountsUrl: string,
+  callbackProtocol: string,
+  initiate: (
+    state: string,
+    codeChallenge: string,
+    callbackProtocol: string,
+  ) => Promise<{ registered: boolean }>,
 ): Promise<string> {
   const verifier = randomBase64Url(32);
   const digest = await crypto.subtle.digest(
@@ -108,6 +116,11 @@ export async function createDesktopGoogleLoginUrl(
     verifier,
     expiresAt: Date.now() + PENDING_HANDOFF_TTL_MS,
   };
+
+  const { registered } = await initiate(state, codeChallenge, callbackProtocol);
+  if (!registered) {
+    throw new Error("Desktop Google OAuth initiation was rejected");
+  }
 
   const pendingHandoffs = readPendingHandoffs().filter(
     (entry) => entry.state !== state,

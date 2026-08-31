@@ -5,10 +5,10 @@ import {
 } from "./desktop-handoff";
 
 describe("buildDesktopHandoffQuery", () => {
-  it("preserves both PKCE binding parameters", () => {
+  it("preserves only the PKCE binding parameters", () => {
     const query = buildDesktopHandoffQuery(
       new URLSearchParams(
-        "platform=desktop&code_challenge=challenge-value&state=opaque-state",
+        "platform=desktop&code_challenge=challenge-value&state=opaque-state&callback_protocol=patchbay-canary-attacker",
       ),
     );
 
@@ -39,6 +39,7 @@ describe("buildDesktopHandoffQuery", () => {
           platform: "desktop",
           code_challenge: codeChallenge,
           state,
+          callback_protocol: "patchbay-canary-attacker",
           token: "must-not-be-forwarded",
         }),
       ),
@@ -46,6 +47,36 @@ describe("buildDesktopHandoffQuery", () => {
       codeChallenge,
       state,
       query: `platform=desktop&code_challenge=${codeChallenge}&state=${state}`,
+    });
+  });
+
+  it("accepts existing packaged clients without a browser callback parameter", () => {
+    const codeChallenge = "a".repeat(43);
+    const state = "b".repeat(43);
+
+    expect(
+      readDesktopHandoffBinding(
+        new URLSearchParams({
+          platform: "desktop",
+          code_challenge: codeChallenge,
+          state,
+        }),
+      ),
+    ).toMatchObject({ codeChallenge, state });
+  });
+
+  it("ignores a browser-supplied callback protocol", () => {
+    expect(
+      readDesktopHandoffBinding(
+        new URLSearchParams({
+          platform: "desktop",
+          code_challenge: "a".repeat(43),
+          state: "b".repeat(43),
+          callback_protocol: "evil-app",
+        }),
+      ),
+    ).toMatchObject({
+      query: `platform=desktop&code_challenge=${"a".repeat(43)}&state=${"b".repeat(43)}`,
     });
   });
 

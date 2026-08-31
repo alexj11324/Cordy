@@ -39,9 +39,11 @@ function request(
 
 describe("Rust desktop Google proxy", () => {
   it("forwards only the validated attempt binding and contract version", async () => {
-    const fetcher = vi.fn().mockResolvedValue(
-      Response.json({ registered: true, ignored: "not-returned" }),
-    );
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(
+        Response.json({ registered: true, ignored: "not-returned" }),
+      );
 
     const response = await proxyRustDesktopGoogleRequest(
       request("/v1/desktop/google/attempt", {
@@ -56,7 +58,9 @@ describe("Rust desktop Google proxy", () => {
     await expect(response.json()).resolves.toEqual({ registered: true });
     expect(response.headers.get(AUTH_CONTRACT_HEADER)).toBe("1");
     const [url, init] = fetcher.mock.calls[0] as [URL, RequestInit];
-    expect(url.href).toBe("https://api.aspectlylabs.com/api/desktop-google/attempt");
+    expect(url.href).toBe(
+      "https://api.aspectlylabs.com/api/desktop-google/attempt",
+    );
     expect(init.method).toBe("POST");
     expect(JSON.parse(String(init.body))).toEqual(binding);
     const headers = new Headers(init.headers);
@@ -70,6 +74,7 @@ describe("Rust desktop Google proxy", () => {
   it("uses a Clerk bearer only on complete and returns only the one-time grant", async () => {
     const fetcher = vi.fn().mockResolvedValue(
       Response.json({
+        callback_protocol: "patchbay-canary-login-fix-123",
         code,
         token: "must-not-cross-the-broker-boundary",
         user: { id: "must-not-cross-the-broker-boundary" },
@@ -85,7 +90,10 @@ describe("Rust desktop Google proxy", () => {
       fetcher,
     );
 
-    await expect(response.json()).resolves.toEqual({ code });
+    await expect(response.json()).resolves.toEqual({
+      callback_protocol: "patchbay-canary-login-fix-123",
+      code,
+    });
     const [, init] = fetcher.mock.calls[0] as [URL, RequestInit];
     expect(new Headers(init.headers).get("authorization")).toBe(
       "Bearer clerk-session-token",
@@ -96,7 +104,9 @@ describe("Rust desktop Google proxy", () => {
   it("rejects cross-origin, malformed, and unauthenticated completion requests", async () => {
     const fetcher = vi.fn();
     const crossOrigin = await proxyRustDesktopGoogleRequest(
-      request("/v1/desktop/google/attempt", { origin: "https://attacker.example" }),
+      request("/v1/desktop/google/attempt", {
+        origin: "https://attacker.example",
+      }),
       "attempt",
       config,
       fetcher,
@@ -136,9 +146,11 @@ describe("Rust desktop Google proxy", () => {
       }),
       "complete",
       config,
-      vi.fn().mockResolvedValue(
-        Response.json({ error: "provider-internal-detail" }, { status: 409 }),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          Response.json({ error: "provider-internal-detail" }, { status: 409 }),
+        ),
     );
     await expect(rejected.json()).resolves.toEqual({
       error: "authorization_rejected",
@@ -160,9 +172,11 @@ describe("Rust desktop Google proxy", () => {
       request("/v1/desktop/google/attempt"),
       "attempt",
       config,
-      vi.fn().mockResolvedValue(
-        new Response("x", { headers: { "content-length": "5000" } }),
-      ),
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response("x", { headers: { "content-length": "5000" } }),
+        ),
     );
 
     expect(response.status).toBe(502);

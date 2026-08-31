@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Internal Electron phase of the complete `pnpm dev` launcher.
 //
-// Derives per-worktree isolation env (renderer port + app name) so multiple
+// Derives per-worktree isolation env (renderer port, app name, callback scheme) so multiple
 // worktrees can run `pnpm dev:desktop` side-by-side, then brands the dev
 // Electron and starts electron-vite with the augmented env. The parent
 // scripts/dev.sh process has already prepared the isolated DB and healthy
@@ -10,12 +10,15 @@
 // there is no UI-only fallback.
 
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { envWithLocalBins } from "./package.mjs";
 import { planDevCommands } from "./dev-plan.mjs";
 import {
+  applyMacOSDevElectronEnv,
   applyWorktreeDevEnv,
   repoRootFromScriptDir,
 } from "./worktree-dev-env.mjs";
@@ -25,6 +28,12 @@ const here = dirname(fileURLToPath(import.meta.url));
 applyWorktreeDevEnv(process.env, {
   root: repoRootFromScriptDir(here),
   log: true,
+});
+const require = createRequire(import.meta.url);
+const electronVersion = require("electron/package.json").version;
+applyMacOSDevElectronEnv(process.env, {
+  home: homedir(),
+  electronVersion,
 });
 
 function run(command, args, { shell = false, env = process.env } = {}) {
@@ -51,8 +60,16 @@ for (const step of planDevCommands(process.argv.slice(2), {
   scriptsDir: here,
 })) {
   const isElectronVite = step.command === "electron-vite";
+  const stepEnv =
+    isElectronVite && process.env.PATCHBAY_DEV_ELECTRON_DIST_PATH
+      ? {
+          ...process.env,
+          ELECTRON_OVERRIDE_DIST_PATH:
+            process.env.PATCHBAY_DEV_ELECTRON_DIST_PATH,
+        }
+      : process.env;
   run(step.command, step.args, {
     shell: isElectronVite && isWin,
-    env: isElectronVite ? envWithLocalBins(process.env) : process.env,
+    env: isElectronVite ? envWithLocalBins(stepEnv) : stepEnv,
   });
 }

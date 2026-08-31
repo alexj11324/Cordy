@@ -8,7 +8,9 @@ export type DesktopHandoffBinding = {
 };
 
 /** Preserve only the canonical PKCE binding through the provider callback. */
-export function buildDesktopHandoffQuery(searchParams: URLSearchParams): string {
+export function buildDesktopHandoffQuery(
+  searchParams: URLSearchParams,
+): string {
   const params = new URLSearchParams({ platform: "desktop" });
   for (const key of DESKTOP_HANDOFF_PARAMS) {
     const value = searchParams.get(key);
@@ -26,9 +28,8 @@ export function readDesktopHandoffBinding(
   searchParams: URLSearchParams,
 ): DesktopHandoffBinding | null {
   if (searchParams.get("platform") !== "desktop") return null;
-  // The desktop handoff has one return transport: the patchbay:// custom
-  // protocol. Reject the retired HTTP app-origin transport instead of
-  // allowing an old link to select a second callback protocol.
+  // The callback protocol is registered by the authenticated desktop directly
+  // with Rust. Browser parameters are never a source of callback authority.
   if (searchParams.has("app_origin")) return null;
   const codeChallenge = searchParams.get("code_challenge") ?? "";
   const state = searchParams.get("state") ?? "";

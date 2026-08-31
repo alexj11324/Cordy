@@ -64,10 +64,11 @@ export function cksum(buf) {
   // POSIX appends the byte length, least-significant byte first.
   let len = buf.length;
   while (len > 0) {
-    crc = (((crc << 8) >>> 0) ^ TABLE[((crc >>> 24) ^ (len & 0xff)) & 0xff]) >>> 0;
+    crc =
+      (((crc << 8) >>> 0) ^ TABLE[((crc >>> 24) ^ (len & 0xff)) & 0xff]) >>> 0;
     len = Math.floor(len / 256);
   }
-  return (~crc) >>> 0;
+  return ~crc >>> 0;
 }
 
 export function offsetForPath(path) {
@@ -94,6 +95,62 @@ export function appSuffixForPath(path) {
   return `${slug}-${offsetForPath(path)}`;
 }
 
+const AUTH_CALLBACK_PROTOCOL_PREFIX = "patchbay-canary";
+const AUTH_CALLBACK_SUFFIX_MAX_LENGTH = 48;
+
+export function authCallbackProtocolForSuffix(suffix) {
+  const normalized = String(suffix ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  if (!normalized) return AUTH_CALLBACK_PROTOCOL_PREFIX;
+  if (normalized.length <= AUTH_CALLBACK_SUFFIX_MAX_LENGTH) {
+    return `${AUTH_CALLBACK_PROTOCOL_PREFIX}-${normalized}`;
+  }
+
+  const offset = normalized.match(/-\d+$/)?.[0] ?? "";
+  const availablePrefixLength = AUTH_CALLBACK_SUFFIX_MAX_LENGTH - offset.length;
+  const bounded = `${normalized.slice(0, availablePrefixLength).replace(/-+$/g, "")}${offset}`;
+  return `${AUTH_CALLBACK_PROTOCOL_PREFIX}-${bounded}`;
+}
+
+export function devElectronDistPath({
+  home,
+  authCallbackProtocol,
+  electronVersion,
+  arch,
+}) {
+  if (!home || !authCallbackProtocol || !electronVersion || !arch) {
+    throw new Error("Incomplete development Electron path inputs");
+  }
+  return join(
+    home,
+    "Applications",
+    "Patchbay Development",
+    authCallbackProtocol,
+    `${electronVersion}-${arch}`,
+  );
+}
+
+export function applyMacOSDevElectronEnv(
+  env,
+  {
+    home,
+    electronVersion,
+    arch = process.arch,
+    platform = process.platform,
+  } = {},
+) {
+  if (platform !== "darwin") return env;
+  env.PATCHBAY_DEV_ELECTRON_DIST_PATH = devElectronDistPath({
+    home,
+    authCallbackProtocol: env.DESKTOP_AUTH_CALLBACK_PROTOCOL,
+    electronVersion,
+    arch,
+  });
+  return env;
+}
+
 // A linked git worktree has a `.git` FILE (a "gitdir:" pointer); the primary
 // checkout has a `.git` DIRECTORY. We only auto-isolate linked worktrees, so
 // the primary checkout keeps the unchanged 5173 / "Patchbay Canary" defaults.
@@ -110,21 +167,29 @@ export function repoRootFromScriptDir(scriptDir) {
   return join(scriptDir, "..", "..", "..");
 }
 
-// Populate DESKTOP_RENDERER_PORT / DESKTOP_APP_SUFFIX on `env` for a worktree
-// checkout, without overriding values the caller set explicitly. Returns `env`.
+// Populate the renderer port, app suffix, and isolated auth callback protocol
+// without overriding values the caller set explicitly. Returns `env`.
 export function applyWorktreeDevEnv(env, { root, log = false } = {}) {
   const hasPort = Boolean(env.DESKTOP_RENDERER_PORT);
   const hasSuffix = Boolean(env.DESKTOP_APP_SUFFIX);
-  if (hasPort && hasSuffix) return env; // explicit overrides win outright
-  if (!isLinkedWorktree(root)) return env; // primary checkout → keep defaults
+  const hasAuthCallbackProtocol = Boolean(env.DESKTOP_AUTH_CALLBACK_PROTOCOL);
+  const linkedWorktree = isLinkedWorktree(root);
 
-  if (!hasPort) env.DESKTOP_RENDERER_PORT = String(rendererPortForPath(root));
-  if (!hasSuffix) env.DESKTOP_APP_SUFFIX = appSuffixForPath(root);
+  if (linkedWorktree) {
+    if (!hasPort) env.DESKTOP_RENDERER_PORT = String(rendererPortForPath(root));
+    if (!hasSuffix) env.DESKTOP_APP_SUFFIX = appSuffixForPath(root);
+  }
+  if (!hasAuthCallbackProtocol) {
+    env.DESKTOP_AUTH_CALLBACK_PROTOCOL = authCallbackProtocolForSuffix(
+      env.DESKTOP_APP_SUFFIX,
+    );
+  }
 
-  if (log) {
+  if (log && linkedWorktree) {
     console.log(
       `[dev:desktop] worktree isolation → renderer port ${env.DESKTOP_RENDERER_PORT}, ` +
-        `app "Patchbay Canary ${env.DESKTOP_APP_SUFFIX}"`,
+        `app "Patchbay Canary ${env.DESKTOP_APP_SUFFIX}", ` +
+        `callback ${env.DESKTOP_AUTH_CALLBACK_PROTOCOL}://`,
     );
   }
   return env;

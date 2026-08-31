@@ -5,7 +5,11 @@ import {
   RUST_COMPLETE_PATH,
   authContractResponseHeaders,
 } from "./contract";
-import { isDesktopCode, isDesktopHandoffInput } from "./desktop-handoff";
+import {
+  isDesktopCallbackProtocol,
+  isDesktopCode,
+  isDesktopHandoffInput,
+} from "./desktop-handoff";
 
 const MAX_REQUEST_BYTES = 4096;
 const MAX_SESSION_TOKEN_BYTES = 8192;
@@ -100,7 +104,8 @@ export async function proxyRustDesktopGoogleRequest(
   }
 
   if (!upstream.ok) {
-    const status = upstream.status >= 400 && upstream.status < 500 ? upstream.status : 502;
+    const status =
+      upstream.status >= 400 && upstream.status < 500 ? upstream.status : 502;
     return jsonError(status, "authorization_rejected");
   }
   const upstreamLengthHeader = upstream.headers.get("content-length");
@@ -137,9 +142,16 @@ export async function proxyRustDesktopGoogleRequest(
       { headers: authContractResponseHeaders() },
     );
   }
-  if (operation === "complete" && isDesktopCode(record.code)) {
+  if (
+    operation === "complete" &&
+    isDesktopCode(record.code) &&
+    isDesktopCallbackProtocol(record.callback_protocol)
+  ) {
     return Response.json(
-      { code: record.code },
+      {
+        callback_protocol: record.callback_protocol,
+        code: record.code,
+      },
       { headers: authContractResponseHeaders() },
     );
   }
