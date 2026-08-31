@@ -213,6 +213,7 @@ GET	/api/workspaces/{}/invitations
 GET	/api/workspaces/{}/lark/install/{}/status
 GET	/api/workspaces/{}/lark/installations
 GET	/api/workspaces/{}/mcp-servers
+GET	/api/workspaces/{}/messaging/usage
 GET	/api/workspaces/{}/members
 GET	/api/workspaces/{}/plugins
 GET	/api/workspaces/{}/plugins/{}/invocations

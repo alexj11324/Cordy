@@ -434,3 +434,11 @@ export type {
   WeixinInstallStatusResponse,
   RedeemWeixinBindingTokenResponse,
 } from "./weixin";
+export {
+  isMessagingInstallationHealthy,
+  type MessagingInstallationRuntime,
+  type MessagingInstallationSetup,
+  type MessagingInstallationSetupMode,
+  type MessagingQuotaUsage,
+  type MessagingRuntimeState,
+} from "./messaging";

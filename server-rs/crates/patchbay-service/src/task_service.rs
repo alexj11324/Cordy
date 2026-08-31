@@ -78,6 +78,8 @@ use crate::attribution::{
     rule_owner, trigger_owner, CommentFacts, DirectFacts, EvidenceKind,
     Result_ as AttributionResult,
 };
+use crate::automation::{EntitlementAction, EntitlementProvider};
+use crate::channel_quota::{self, ChannelQuotaMode};
 use crate::feature_flags::{composio_mcp_apps_enabled, FlagSource};
 use crate::issue_status;
 use crate::task_helpers::{compute_chat_elapsed_ms, priority_to_int, truncate_for_summary};
@@ -317,6 +319,8 @@ pub enum TaskServiceError {
     ChatAgentNoRuntime,
     #[error("chat task: session archived")]
     ChatSessionArchived,
+    #[error("chat task: hosted IM monthly quota exceeded ({used}/{limit})")]
+    ChannelQuotaExceeded { used: i64, limit: i64 },
     #[error("chat session already has a user message")]
     ChatSessionAlreadyStarted,
     #[error("chat quick actions: no assistant turn to regenerate")]
@@ -566,6 +570,19 @@ pub struct TaskMessageBusReceipt {
 // here because the TaskService field is wired through this module's namespace.
 pub use crate::chat_quick_actions::ChatQuickActionsLlm;
 
+/// Server-authoritative hosted IM quota state used by the usage endpoint.
+///
+/// `Unavailable` is intentionally distinct from `Unlimited`: an entitlement
+/// provider that cannot return a trusted policy must not be rendered as a paid
+/// plan (or as the default Free cap) by the client.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostedChannelQuota {
+    Disabled,
+    Unavailable,
+    Unlimited,
+    Limited(i64),
+}
+
 /// The task domain service. Field usage mirrors Go's TaskService; the dead
 /// Hub field from Go is omitted (task.go only ever publishes through Bus).
 pub struct TaskService {
@@ -588,6 +605,14 @@ pub struct TaskService {
     pub(crate) quick_actions_in_flight: Mutex<HashMap<Uuid, ()>>,
     pub(crate) quick_actions_running: AtomicI64,
     side_effect_tasks: Arc<TaskSideEffectTasks>,
+
+    /// Hosted IM quota policy. Self-hosted deployments remain disabled and
+    /// never touch quota accounting tables (or reject channel turns).
+    channel_quota: std::sync::RwLock<ChannelQuotaMode>,
+    /// Optional Cloud entitlement source for the hosted IM gate. It is kept
+    /// separate from the automation service because channel admission happens
+    /// in this service's transaction before the durable task is written.
+    im_entitlements: std::sync::RwLock<Option<Arc<dyn EntitlementProvider>>>,
 
     /// LRU-ish analytics context cache keyed by task identity columns.
     analytics_context: Mutex<AnalyticsContextCache>,
@@ -633,7 +658,83 @@ impl TaskService {
             quick_actions_in_flight: Mutex::new(HashMap::new()),
             quick_actions_running: AtomicI64::new(0),
             side_effect_tasks: Arc::new(TaskSideEffectTasks::new()),
+            channel_quota: std::sync::RwLock::new(ChannelQuotaMode::Disabled),
+            im_entitlements: std::sync::RwLock::new(None),
             analytics_context: Mutex::new(AnalyticsContextCache::default()),
+        }
+    }
+
+    pub fn set_channel_quota_mode(&self, mode: ChannelQuotaMode) {
+        match self.channel_quota.write() {
+            Ok(mut current) => *current = mode,
+            Err(poisoned) => *poisoned.into_inner() = mode,
+        }
+    }
+
+    fn channel_quota_mode(&self) -> ChannelQuotaMode {
+        match self.channel_quota.read() {
+            Ok(current) => *current,
+            Err(poisoned) => *poisoned.into_inner(),
+        }
+    }
+
+    pub fn set_im_entitlements(&self, entitlements: Option<Arc<dyn EntitlementProvider>>) {
+        match self.im_entitlements.write() {
+            Ok(mut current) => *current = entitlements,
+            Err(poisoned) => *poisoned.into_inner() = entitlements,
+        }
+    }
+
+    fn im_entitlements(&self) -> Option<Arc<dyn EntitlementProvider>> {
+        match self.im_entitlements.read() {
+            Ok(current) => current.clone(),
+            Err(poisoned) => poisoned.into_inner().clone(),
+        }
+    }
+
+    /// Resolves the server-authoritative hosted IM limit before opening the
+    /// enqueue transaction.  The transaction still reserves the slot under a
+    /// workspace row lock; this method only selects the policy to enforce.
+    async fn hosted_channel_limit(&self, workspace_id: Uuid) -> Option<i64> {
+        if !matches!(self.channel_quota_mode(), ChannelQuotaMode::Limited(_)) {
+            return None;
+        }
+        if let Some(provider) = self.im_entitlements() {
+            let decision = provider.gate_im_agent_turns(workspace_id).await;
+            return (decision.gate_action == EntitlementAction::Enforce)
+                .then_some(decision.gate_limit)
+                .flatten()
+                .filter(|limit| *limit >= 0);
+        }
+        self.channel_quota_mode().limit()
+    }
+
+    /// Resolves the displayable hosted IM policy for the usage endpoint.
+    ///
+    /// Unlike [`Self::hosted_channel_limit`], this preserves an unavailable
+    /// Cloud decision so the API can tell the UI not to invent a Free or Pro
+    /// entitlement. `Observe` is a known policy state and is therefore safe to
+    /// report; it simply does not block admission while Cloud is observing.
+    pub async fn hosted_channel_quota(&self, workspace_id: Uuid) -> HostedChannelQuota {
+        match self.channel_quota_mode() {
+            ChannelQuotaMode::Disabled => HostedChannelQuota::Disabled,
+            ChannelQuotaMode::Unlimited => HostedChannelQuota::Unlimited,
+            ChannelQuotaMode::Limited(fallback) => {
+                let Some(provider) = self.im_entitlements() else {
+                    return HostedChannelQuota::Limited(fallback);
+                };
+                let decision = provider.gate_im_agent_turns(workspace_id).await;
+                match decision.gate_action {
+                    EntitlementAction::Off => HostedChannelQuota::Unavailable,
+                    EntitlementAction::Observe | EntitlementAction::Enforce => {
+                        match decision.gate_limit {
+                            Some(limit) if limit >= 0 => HostedChannelQuota::Limited(limit),
+                            Some(_) => HostedChannelQuota::Unavailable,
+                            None => HostedChannelQuota::Unlimited,
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -3995,6 +4096,7 @@ impl TaskService {
             None => RuntimeMcpOverlayData::default(),
         };
 
+        let hosted_channel_limit = self.hosted_channel_limit(agent.workspace_id).await;
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
 
         // Refuse to enqueue onto an archived session — the one enqueue path
@@ -4012,6 +4114,39 @@ impl TaskService {
         if current_session.status != "active" {
             return Err(TaskServiceError::ChatSessionArchived);
         }
+
+        // Check message provenance only after locking the session. An inbound
+        // channel append can commit between transaction start and this point;
+        // checking before the session lock would let that message bypass the
+        // atomic hosted-turn reservation. The workspace-scoped lock + count is
+        // the reservation; any later failure rolls it back with this tx.
+        if let Some(limit) = hosted_channel_limit {
+            let channel_turn =
+                channel_quota::has_channel_ingested_message(&mut *tx, chat_session.id)
+                    .await
+                    .map_err(|error| {
+                        TaskServiceError::Internal(format!(
+                            "check hosted IM message provenance: {error}"
+                        ))
+                    })?;
+            if channel_turn {
+                match channel_quota::admit_turn(&mut *tx, agent.workspace_id, limit).await {
+                    Ok(()) => {}
+                    Err(channel_quota::ChannelQuotaAdmissionError::Exceeded(error)) => {
+                        return Err(TaskServiceError::ChannelQuotaExceeded {
+                            used: error.used,
+                            limit: error.limit,
+                        });
+                    }
+                    Err(error) => {
+                        return Err(TaskServiceError::Internal(format!(
+                            "admit hosted IM turn: {error}"
+                        )));
+                    }
+                }
+            }
+        }
+
         // Lock the binding only after the chat_session lock; the append path
         // touches them in the same order, avoiding an ABBA edge.
         let pending_fresh =

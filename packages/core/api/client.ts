@@ -212,6 +212,7 @@ import type {
   BeginWeixinInstallResponse,
   WeixinInstallStatusResponse,
   RedeemWeixinBindingTokenResponse,
+  MessagingQuotaUsage,
   Team,
   TeamMember,
   TeamMemberStatusListResponse,
@@ -379,6 +380,8 @@ import {
   BeginWeixinInstallResponseSchema,
   WeixinInstallStatusResponseSchema,
   RedeemWeixinBindingTokenResponseSchema,
+  MessagingQuotaUsageSchema,
+  EMPTY_MESSAGING_QUOTA_USAGE,
   EMPTY_LIST_WEIXIN_INSTALLATIONS_RESPONSE,
   EMPTY_BEGIN_WEIXIN_INSTALL_RESPONSE,
   EMPTY_WEIXIN_INSTALL_STATUS_RESPONSE,
@@ -4466,6 +4469,19 @@ export class ApiClient {
   }
 
   // Lark integration
+  /** Returns the server-authoritative hosted IM usage for this workspace. */
+  async getMessagingQuotaUsage(workspaceId: string): Promise<MessagingQuotaUsage> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/messaging/usage`,
+    );
+    return parseWithFallback(
+      raw,
+      MessagingQuotaUsageSchema,
+      EMPTY_MESSAGING_QUOTA_USAGE,
+      { endpoint: "GET /api/workspaces/:id/messaging/usage" },
+    );
+  }
+
   async listLarkInstallations(workspaceId: string): Promise<ListLarkInstallationsResponse> {
     return this.fetch(`/api/workspaces/${workspaceId}/lark/installations`);
   }

@@ -793,6 +793,11 @@ impl HandlerState {
     }
 
     pub fn with_public_config(mut self, settings: crate::config::PublicConfigSettings) -> Self {
+        self.tasks.set_channel_quota_mode(
+            patchbay_service::channel_quota::ChannelQuotaMode::for_messaging_mode(
+                &settings.messaging.mode,
+            ),
+        );
         self.public_config = settings;
         self
     }
@@ -991,6 +996,7 @@ impl HandlerState {
         mut self,
         entitlements: Option<Arc<dyn EntitlementProvider>>,
     ) -> Self {
+        self.tasks.set_im_entitlements(entitlements.clone());
         let mut service =
             AutomationService::new(self.pool.clone(), self.bus.clone(), self.tasks.clone());
         service.entitlements = entitlements;

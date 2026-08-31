@@ -24,6 +24,30 @@ impl PostgresChannelStore {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
+
+    /// Mirrors a lease owned by the external Redis backend into the durable
+    /// installation row for the public health endpoint.
+    pub async fn mirror_lease(
+        &self,
+        id: Uuid,
+        token: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> anyhow::Result<()> {
+        patchbay_db::queries::channel::mirror_channel_ws_lease(
+            &self.pool,
+            id,
+            token,
+            expires_at,
+        )
+        .await
+        .map(|_| ())
+    }
+
+    pub async fn clear_mirrored_lease(&self, id: Uuid, token: &str) -> anyhow::Result<()> {
+        patchbay_db::queries::channel::clear_mirrored_channel_ws_lease(&self.pool, id, token)
+            .await
+            .map(|_| ())
+    }
 }
 
 fn row_fingerprint(channel_type: &str, config: &serde_json::Value) -> String {

@@ -169,6 +169,12 @@ pub struct LlmConfig {
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct IntegrationsConfig {
+    /// `PATCHBAY_MESSAGING_MODE` controls who owns IM installation writes.
+    /// `managed` is used by the official hosted gateway, `server_configured`
+    /// by self-hosted deployments whose operator supplied the credentials,
+    /// and `disabled` turns the channel surface off.  The handler still
+    /// derives a safe default when this value is absent for older deployments.
+    pub messaging_mode: Option<String>,
     /// Composio: `COMPOSIO_API_KEY` / `_CALLBACK_BASE_URL` / `_STATE_SECRET`.
     pub composio_api_key: Option<String>,
     pub composio_callback_base_url: Option<String>,
@@ -363,6 +369,10 @@ impl Config {
         env_u32(&mut self.llm.max_retries, "PATCHBAY_LLM_MAX_RETRIES")?;
 
         // integrations
+        env_str(
+            &mut self.integrations.messaging_mode,
+            "PATCHBAY_MESSAGING_MODE",
+        );
         env_str(&mut self.integrations.composio_api_key, "COMPOSIO_API_KEY");
         env_str(
             &mut self.integrations.composio_callback_base_url,

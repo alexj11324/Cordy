@@ -693,12 +693,10 @@ fn configure_wecom(
     let mut outbound = patchbay_wecom::outbound_media::Outbound::new(state.pool.clone())
         .with_senders(senders.clone())
         .with_runtime_tasks(outbound_tasks.clone())
-        .with_app_url(
-            std::env::var("WECOM_APP_URL")
-                .ok()
-                .filter(|value| !value.trim().is_empty())
-                .unwrap_or_else(|| app_url(cfg)),
-        );
+        // Media links are user-visible IM content too. Keep them on the same
+        // validated public origin as binding links; a legacy WECOM_APP_URL
+        // override could otherwise reintroduce localhost or a LAN address.
+        .with_app_url(app_url(cfg));
     if let Some(storage) = storage {
         outbound = outbound.with_attachments(storage.clone());
     }
@@ -987,15 +985,7 @@ fn channel_secret_box(
 }
 
 fn app_url(cfg: &patchbay_config::Config) -> String {
-    cfg.urls
-        .app_url
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-        .or(cfg.urls.frontend_origin.as_deref())
-        .unwrap_or_default()
-        .trim()
-        .trim_end_matches('/')
-        .to_string()
+    patchbay_handler::config::public_bind_url(cfg)
 }
 
 fn supervisor_config_from_env() -> SupervisorConfig {
@@ -1027,7 +1017,10 @@ fn supervisor_config_from_env() -> SupervisorConfig {
 
 enum RuntimeLeaseStore {
     Postgres(Arc<PostgresChannelStore>),
-    Redis(Box<patchbay_channel_engine::redis_lease_store::RedisLeaseStore>),
+    Redis {
+        store: Box<patchbay_channel_engine::redis_lease_store::RedisLeaseStore>,
+        postgres: Arc<PostgresChannelStore>,
+    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -1092,7 +1085,10 @@ impl RuntimeLeaseStore {
                 tokio::time::timeout(Duration::from_secs(5), store.ready())
                     .await
                     .map_err(|_| anyhow::anyhow!("Redis lease readiness timed out"))??;
-                Ok(Self::Redis(Box::new(store)))
+                Ok(Self::Redis {
+                    store: Box::new(store),
+                    postgres,
+                })
             }
         }
     }
@@ -1103,28 +1099,57 @@ impl LeaseStore for RuntimeLeaseStore {
     async fn list_held(&self, ids: &[Uuid]) -> Result<HashSet<String>, LeaseError> {
         match self {
             Self::Postgres(store) => store.list_held(ids).await,
-            Self::Redis(store) => store.list_held(ids).await,
+            Self::Redis { store, .. } => store.list_held(ids).await,
         }
     }
 
     async fn try_acquire(&self, arg: AcquireLeaseParams) -> Result<(), LeaseError> {
         match self {
             Self::Postgres(store) => store.try_acquire(arg).await,
-            Self::Redis(store) => store.try_acquire(arg).await,
+            Self::Redis { store, postgres } => {
+                let result = store.try_acquire(arg.clone()).await;
+                if result.is_ok() {
+                    // Redis remains the fencing authority; mirror only the
+                    // latest successful owner so /api health is observable.
+                    postgres
+                        .mirror_lease(arg.id, &arg.token, arg.expires_at)
+                        .await
+                        .map_err(LeaseError::Backend)?;
+                }
+                result
+            }
         }
     }
 
     async fn renew(&self, arg: AcquireLeaseParams) -> Result<(), LeaseError> {
         match self {
             Self::Postgres(store) => store.renew(arg).await,
-            Self::Redis(store) => store.renew(arg).await,
+            Self::Redis { store, postgres } => {
+                let result = store.renew(arg.clone()).await;
+                if result.is_ok() {
+                    postgres
+                        .mirror_lease(arg.id, &arg.token, arg.expires_at)
+                        .await
+                        .map_err(LeaseError::Backend)?;
+                }
+                result
+            }
         }
     }
 
     async fn release(&self, arg: ReleaseLeaseParams) -> Result<(), LeaseError> {
         match self {
             Self::Postgres(store) => store.release(arg).await,
-            Self::Redis(store) => store.release(arg).await,
+            Self::Redis { store, postgres } => {
+                let result = store.release(arg.clone()).await;
+                if result.is_ok() {
+                    postgres
+                        .clear_mirrored_lease(arg.id, &arg.token)
+                        .await
+                        .map_err(LeaseError::Backend)?;
+                }
+                result
+            }
         }
     }
 }
@@ -1361,7 +1386,20 @@ impl TaskEnqueuer for ChannelServices {
             .enqueue_chat_task(&session, Some(initiator_user_id), force_fresh_session)
             .await
             .map(|task| task.id)
-            .map_err(anyhow::Error::from)
+            .map_err(|error| match error {
+                patchbay_service::task_service::TaskServiceError::ChatAgentNoRuntime
+                | patchbay_service::task_service::TaskServiceError::AgentNoRuntime => {
+                    anyhow::Error::new(patchbay_channel_engine::router::FlushError::AgentNoRuntime)
+                }
+                patchbay_service::task_service::TaskServiceError::ChatAgentArchived
+                | patchbay_service::task_service::TaskServiceError::AgentArchived => {
+                    anyhow::Error::new(patchbay_channel_engine::router::FlushError::AgentArchived)
+                }
+                patchbay_service::task_service::TaskServiceError::ChannelQuotaExceeded {
+                    ..
+                } => anyhow::Error::new(patchbay_channel_engine::router::FlushError::QuotaExceeded),
+                other => anyhow::Error::new(other),
+            })
     }
 
     async fn promote_channel_chat_tasks_if_media_ready(

@@ -34,6 +34,8 @@ pub const AGENT_OFFLINE_TEXT: &str =
     "⚠️ The agent is offline, so this message won't be processed automatically.";
 pub const AGENT_ARCHIVED_TEXT: &str =
     "⚠️ This agent has been archived and can't respond. Please contact your workspace admin.";
+pub const QUOTA_EXCEEDED_TEXT: &str =
+    "⚠️ This workspace has reached its hosted messaging limit for the month. Existing runs will finish; upgrade to continue starting new runs.";
 pub const FRESH_PENDING_TEXT: &str =
     "✅ Fresh start ready. Your next chat message will run without previous context.";
 pub const ISSUE_USAGE_TEXT: &str =
@@ -197,6 +199,10 @@ impl ReplierSeam for OutboundReplier {
             self.post(inst, msg, AGENT_ARCHIVED_TEXT)
                 .await
                 .map_err(|e| ("dingtalk replier: archived notice failed", e))
+        } else if outcome == Outcome::quota_exceeded() {
+            self.post(inst, msg, QUOTA_EXCEEDED_TEXT)
+                .await
+                .map_err(|e| ("dingtalk replier: quota notice failed", e))
         } else if outcome == Outcome::fresh_pending() {
             self.post(inst, msg, FRESH_PENDING_TEXT)
                 .await
