@@ -286,7 +286,7 @@ describe("SettingsPage nav trigger", () => {
       } else {
         navigationState.search = new URL(
           destination,
-          "https://cordy.local",
+          "https://example.invalid",
         ).searchParams.toString();
       }
       view.rerender(renderSettings());
