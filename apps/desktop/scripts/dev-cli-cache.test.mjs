@@ -263,4 +263,41 @@ describe("development CLI artifact cache", () => {
     expect(after.completeFingerprintCount).toBe(10);
     expect(after.entryCount).toBe(30);
   });
+
+  it("does not protect toolchain variants as one runtime fingerprint", async () => {
+    const root = await createSandbox();
+    const cacheRoot = join(root, "cache");
+    const sourceBinary = join(root, "runtime");
+    await writeFile(sourceBinary, "fixture runtime");
+    for (const toolchainIdentity of ["rustc one", "rustc two"]) {
+      for (const profile of ["dev", "dev-server", "dev-migrate"]) {
+        await storeDevCli({
+          cacheRoot,
+          sourceBinary,
+          binaryName: `runtime-${profile}`,
+          sourceFingerprint: "same-source",
+          rustTarget: "aarch64-apple-darwin",
+          profile,
+          toolchainIdentity,
+          buildVariables: {},
+        });
+      }
+    }
+
+    const before = await inspectDevRuntimeCache({ cacheRoot });
+    expect(before.completeFingerprintCount).toBe(2);
+
+    const result = await pruneDevRuntimeCache({
+      cacheRoot,
+      maxBytes: 0,
+      maxAgeMs: 0,
+      minFingerprints: 1,
+      nowMs: Date.now() + 1_000,
+    });
+    const after = await inspectDevRuntimeCache({ cacheRoot });
+
+    expect(result.protectedFingerprintCount).toBe(1);
+    expect(after.entryCount).toBe(3);
+    expect(after.completeFingerprintCount).toBe(1);
+  });
 });

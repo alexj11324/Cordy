@@ -27,7 +27,7 @@ function spawnRecorder() {
 }
 
 describe("scoped authenticated development commands", () => {
-  it("gives Web only its public key and ready marker", async () => {
+  it("gives Web public and server-only Clerk fields without inherited values", async () => {
     const { calls, spawnImpl } = spawnRecorder();
     await runAuthenticatedDevCommand({
       scope: "web",
@@ -40,17 +40,13 @@ describe("scoped authenticated development commands", () => {
     expect(calls[0].options.env).toEqual({
       UNRELATED: "kept",
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_fixture",
+      CLERK_PUBLISHABLE_KEY: "pk_test_fixture",
+      CLERK_SECRET_KEY: "sk_test_fixture",
+      CLERK_JWT_KEY: "jwt-fixture",
+      CLERK_ISSUER: "https://issuer.example",
+      CLERK_AUTHORIZED_PARTIES: "http://localhost:3000",
       PATCHBAY_DEV_AUTH_READY: "1",
     });
-    for (const key of [
-      "CLERK_PUBLISHABLE_KEY",
-      "CLERK_SECRET_KEY",
-      "CLERK_JWT_KEY",
-      "CLERK_ISSUER",
-      "CLERK_AUTHORIZED_PARTIES",
-    ]) {
-      expect(calls[0].options.env[key]).toBeUndefined();
-    }
   });
 
   it("gives backend the verification fields without retaining inherited values", async () => {

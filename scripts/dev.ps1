@@ -11,15 +11,34 @@ $ErrorActionPreference = "Stop"
 $RepoRoot = Split-Path (Split-Path $PSCommandPath -Parent) -Parent
 Set-Location $RepoRoot
 
-foreach ($key in @(
-        "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
-        "CLERK_PUBLISHABLE_KEY",
-        "CLERK_SECRET_KEY",
-        "CLERK_JWT_KEY",
-        "CLERK_ISSUER",
-        "CLERK_AUTHORIZED_PARTIES",
-        "PATCHBAY_DEV_AUTH_READY")) {
+$ClerkEnvironmentKeys = @(
+    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+    "CLERK_PUBLISHABLE_KEY",
+    "CLERK_SECRET_KEY",
+    "CLERK_JWT_KEY",
+    "CLERK_ISSUER",
+    "CLERK_AUTHORIZED_PARTIES",
+    "PATCHBAY_DEV_AUTH_READY"
+)
+$InjectedClerkEnvironment = @{}
+foreach ($key in $ClerkEnvironmentKeys) {
+    $value = [Environment]::GetEnvironmentVariable($key, "Process")
+    if ($null -ne $value) {
+        $InjectedClerkEnvironment[$key] = $value
+    }
     Remove-Item "Env:$key" -ErrorAction SilentlyContinue
+}
+
+function Enable-InjectedClerkEnvironment {
+    foreach ($entry in $InjectedClerkEnvironment.GetEnumerator()) {
+        Set-Item -Path "Env:$($entry.Key)" -Value $entry.Value
+    }
+}
+
+function Disable-InjectedClerkEnvironment {
+    foreach ($key in $ClerkEnvironmentKeys) {
+        Remove-Item "Env:$key" -ErrorAction SilentlyContinue
+    }
 }
 
 foreach ($command in @("node", "pnpm")) {
@@ -258,7 +277,12 @@ try {
         (ConvertTo-WindowsCommandLineArgument "backend"),
         (ConvertTo-WindowsCommandLineArgument $DevBackend)
     )
-    $BackendProcess = Start-Process -FilePath "node" -ArgumentList $BackendArguments -WorkingDirectory (Join-Path $RepoRoot "server-rs") -PassThru -RedirectStandardOutput $BackendStdoutLog -RedirectStandardError $BackendStderrLog
+    Enable-InjectedClerkEnvironment
+    try {
+        $BackendProcess = Start-Process -FilePath "node" -ArgumentList $BackendArguments -WorkingDirectory (Join-Path $RepoRoot "server-rs") -PassThru -RedirectStandardOutput $BackendStdoutLog -RedirectStandardError $BackendStderrLog
+    } finally {
+        Disable-InjectedClerkEnvironment
+    }
     $BackendTimeoutSeconds = Get-PositiveTimeoutSeconds "PATCHBAY_DEV_BACKEND_TIMEOUT_SECONDS"
     $Deadline = [DateTime]::UtcNow.AddSeconds($BackendTimeoutSeconds)
     while ($true) {
@@ -301,13 +325,18 @@ try {
     }
 
     Write-Host "==> Starting the browser/share/login origin at $FrontendOrigin..."
-    $WebProcess = Start-Process `
-        -FilePath "node" `
-        -ArgumentList @("../../scripts/dev-auth-command.mjs", "web", "node", "node_modules/next/dist/bin/next", "dev", "--webpack", "--port", $FrontendPort) `
-        -WorkingDirectory (Join-Path $RepoRoot "apps/web") `
-        -RedirectStandardOutput $FrontendStdoutLog `
-        -RedirectStandardError $FrontendStderrLog `
-        -PassThru
+    Enable-InjectedClerkEnvironment
+    try {
+        $WebProcess = Start-Process `
+            -FilePath "node" `
+            -ArgumentList @("../../scripts/dev-auth-command.mjs", "web", "node", "node_modules/next/dist/bin/next", "dev", "--webpack", "--port", $FrontendPort) `
+            -WorkingDirectory (Join-Path $RepoRoot "apps/web") `
+            -RedirectStandardOutput $FrontendStdoutLog `
+            -RedirectStandardError $FrontendStderrLog `
+            -PassThru
+    } finally {
+        Disable-InjectedClerkEnvironment
+    }
     $FrontendTimeoutSeconds = Get-PositiveTimeoutSeconds "PATCHBAY_DEV_FRONTEND_TIMEOUT_SECONDS"
     $FrontendDeadline = [DateTime]::UtcNow.AddSeconds($FrontendTimeoutSeconds)
     while ($true) {

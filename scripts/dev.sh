@@ -54,6 +54,31 @@ set -a
 . "$ENV_FILE"
 set +a
 
+# Keep explicitly injected Clerk credentials available only long enough for
+# the scoped auth wrappers to validate them. The parent process remains
+# sanitized, while the values are restored in each short-lived child shell
+# without putting secrets in a command-line argument list.
+clerk_env_args=()
+for clerk_key in \
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY \
+  CLERK_PUBLISHABLE_KEY \
+  CLERK_SECRET_KEY \
+  CLERK_JWT_KEY \
+  CLERK_ISSUER \
+  CLERK_AUTHORIZED_PARTIES; do
+  if [[ -v "$clerk_key" ]]; then
+    clerk_env_args+=("$clerk_key=${!clerk_key}")
+  fi
+done
+
+run_with_injected_clerk_env() {
+  local clerk_entry
+  for clerk_entry in "${clerk_env_args[@]}"; do
+    export "$clerk_entry"
+  done
+  exec "$@"
+}
+
 # Prevent legacy checkout-file or inherited Clerk values from entering install,
 # Rust preparation, migrations, Electron, or probes. Narrow wrappers load auth
 # later for backend and Web only.
@@ -206,7 +231,7 @@ if port_is_listening "${PORT:-8080}"; then
   exit 1
 fi
 
-(cd server-rs && exec node ../scripts/dev-auth-command.mjs backend "$dev_backend") > >(tee "$backend_log") 2>&1 &
+(cd server-rs && run_with_injected_clerk_env node ../scripts/dev-auth-command.mjs backend "$dev_backend") > >(tee "$backend_log") 2>&1 &
 backend_pid=$!
 
 backend_timeout="${PATCHBAY_DEV_BACKEND_TIMEOUT_SECONDS:-120}"
@@ -249,7 +274,7 @@ fi
 echo "==> Starting the browser/share/login origin at $FRONTEND_ORIGIN..."
 (
   cd apps/web
-  exec node ../../scripts/dev-auth-command.mjs web node node_modules/next/dist/bin/next dev --webpack --port "${FRONTEND_PORT:-3000}"
+  run_with_injected_clerk_env node ../../scripts/dev-auth-command.mjs web node node_modules/next/dist/bin/next dev --webpack --port "${FRONTEND_PORT:-3000}"
 ) > >(tee "$frontend_log") 2>&1 &
 web_pid=$!
 

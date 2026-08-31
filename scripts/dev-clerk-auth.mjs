@@ -12,6 +12,15 @@ export const DEFAULT_DEV_CLERK_SECRET = "patchbay-dev-clerk-auth";
 const REMEDIATION =
   "Authenticate gcloud for Secret Manager access, or provide the complete Clerk development variables in the process environment.";
 
+const DEV_CLERK_ENVIRONMENT_KEYS = [
+  "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+  "CLERK_PUBLISHABLE_KEY",
+  "CLERK_SECRET_KEY",
+  "CLERK_JWT_KEY",
+  "CLERK_ISSUER",
+  "CLERK_AUTHORIZED_PARTIES",
+];
+
 function authError(message) {
   return new Error(`${message} ${REMEDIATION}`);
 }
@@ -139,6 +148,13 @@ export function hasCompleteDevClerkInput(env) {
   );
 }
 
+function hasAnyDevClerkInput(env) {
+  return DEV_CLERK_ENVIRONMENT_KEYS.some((key) => {
+    const value = env[key];
+    return value !== undefined && value !== null && String(value).trim() !== "";
+  });
+}
+
 export async function bootstrapDevClerkAuth({
   env = process.env,
   fetchImpl = fetch,
@@ -148,17 +164,23 @@ export async function bootstrapDevClerkAuth({
     env.PATCHBAY_DEV_CLERK_GSM_PROJECT || DEFAULT_DEV_CLERK_PROJECT;
   const secret =
     env.PATCHBAY_DEV_CLERK_GSM_SECRET || DEFAULT_DEV_CLERK_SECRET;
+  const useEnvironment = hasCompleteDevClerkInput(env);
+  if (hasAnyDevClerkInput(env) && !useEnvironment) {
+    throw authError(
+      "Clerk development variables must be provided as a complete set; partial values cannot be combined with Secret Manager credentials.",
+    );
+  }
   let payload = {};
-  if (!hasCompleteDevClerkInput(env)) {
+  if (!useEnvironment) {
     payload = parseSecretPayload(await secretProvider({ project, secret }));
   }
 
+  const credentials = useEnvironment ? env : payload;
+
   const publishableKey =
-    env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
-    env.CLERK_PUBLISHABLE_KEY ||
-    payload.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
-    payload.CLERK_PUBLISHABLE_KEY;
-  const secretKey = env.CLERK_SECRET_KEY || payload.CLERK_SECRET_KEY;
+    credentials.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
+    credentials.CLERK_PUBLISHABLE_KEY;
+  const secretKey = credentials.CLERK_SECRET_KEY;
   if (!/^pk_test_/.test(publishableKey || "")) {
     throw authError("Development auth requires a Clerk test publishable key.");
   }
@@ -167,7 +189,7 @@ export async function bootstrapDevClerkAuth({
   }
 
   const derivedIssuer = issuerFromPublishableKey(publishableKey);
-  const configuredIssuer = env.CLERK_ISSUER || payload.CLERK_ISSUER;
+  const configuredIssuer = credentials.CLERK_ISSUER;
   const issuer = configuredIssuer
     ? normalizeOrigin(configuredIssuer, "CLERK_ISSUER")
     : derivedIssuer;
@@ -181,7 +203,7 @@ export async function bootstrapDevClerkAuth({
     env.FRONTEND_ORIGIN || `http://localhost:${env.FRONTEND_PORT || 3000}`,
     "FRONTEND_ORIGIN",
   );
-  let jwtKey = env.CLERK_JWT_KEY || payload.CLERK_JWT_KEY;
+  let jwtKey = credentials.CLERK_JWT_KEY;
   if (!jwtKey) jwtKey = await jwtKeyFromJwks(issuer, fetchImpl);
   if (!isPemPublicKey(jwtKey)) {
     throw authError("CLERK_JWT_KEY is missing or is not a valid public key.");
@@ -199,7 +221,7 @@ export async function bootstrapDevClerkAuth({
   return {
     issuer,
     authorizedParties: frontendOrigin,
-    source: Object.keys(payload).length > 0 ? "gsm" : "environment",
+    source: useEnvironment ? "environment" : "gsm",
     authEnv,
   };
 }
@@ -209,6 +231,11 @@ export function scopedDevClerkEnvironment(authEnv, scope) {
     return {
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
         authEnv.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+      CLERK_PUBLISHABLE_KEY: authEnv.CLERK_PUBLISHABLE_KEY,
+      CLERK_SECRET_KEY: authEnv.CLERK_SECRET_KEY,
+      CLERK_ISSUER: authEnv.CLERK_ISSUER,
+      CLERK_AUTHORIZED_PARTIES: authEnv.CLERK_AUTHORIZED_PARTIES,
+      CLERK_JWT_KEY: authEnv.CLERK_JWT_KEY,
       PATCHBAY_DEV_AUTH_READY: "1",
     };
   }
