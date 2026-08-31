@@ -66,6 +66,7 @@ function expandParsedValues(values, inherited = {}) {
 }
 
 export function applyLocalDevEnv(env, { repoRoot } = {}) {
+  env.APP_ENV ||= "development";
   env.POSTGRES_DB ||= "patchbay";
   env.POSTGRES_USER ||= "patchbay";
   env.POSTGRES_PORT ||= "5432";
@@ -194,6 +195,7 @@ POSTGRES_PASSWORD=patchbay
 POSTGRES_PORT=5432
 DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/${postgresDb}?sslmode=disable
 
+APP_ENV=development
 PORT=${backendPort}
 JWT_SECRET=change-me-in-production
 PATCHBAY_DEV_VERIFICATION_CODE=888888
