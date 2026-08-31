@@ -59,18 +59,18 @@ export function StepWelcome({
   };
 
   return (
-    <div className="dark animate-onboarding-enter flex h-full min-h-[640px] flex-col bg-black font-[system-ui,-apple-system,BlinkMacSystemFont,'Segoe_UI',sans-serif]">
+    <div className="dark animate-onboarding-enter flex h-full min-h-[640px] flex-col bg-background text-foreground font-[system-ui,-apple-system,BlinkMacSystemFont,'Segoe_UI',sans-serif]">
       <DragStrip reserveTrailingControls />
       <div className="flex flex-1 flex-col justify-center px-6 pb-12 sm:px-10 md:px-20">
         <div className="mx-auto flex w-full max-w-[540px] flex-col items-center gap-8 text-center">
           <div className="flex items-center justify-center gap-3">
             <PatchbayIcon className="size-8 text-foreground" noSpin />
-            <span className="text-display font-medium tracking-tight sm:text-4xl">
+            <span className="text-display font-medium tracking-tight text-foreground sm:text-4xl">
               {t(($) => $.welcome.wordmark)}
             </span>
           </div>
 
-          <h1 className="text-balance text-5xl font-medium leading-[1.04] tracking-tight sm:text-6xl">
+          <h1 className="text-balance text-5xl font-medium leading-[1.04] tracking-tight text-foreground sm:text-6xl">
             {t(($) => $.welcome.headline)}
           </h1>
 
