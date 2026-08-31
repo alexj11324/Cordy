@@ -1230,6 +1230,43 @@ pub async fn update_linear_issue_link(
     Ok(result.rows_affected() == 1)
 }
 
+/// Updates link state after the caller has already established ordering and
+/// holds the link row lock. Conflict resolution uses this variant because a
+/// user decision must not be rejected merely because it carries the same
+/// remote event metadata that is already stored on the link.
+#[allow(clippy::too_many_arguments)]
+pub async fn set_linear_issue_link_state(
+    executor: impl Executor<'_, Database = Postgres>,
+    link_id: Uuid,
+    workspace_id: Uuid,
+    last_common_snapshot: &Value,
+    remote_updated_at: Option<DateTime<Utc>>,
+    last_remote_event_at_ms: Option<i64>,
+    last_remote_event_id: Option<&str>,
+    sync_status: &str,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"UPDATE linear_issue_link
+           SET last_common_snapshot = $3,
+               remote_updated_at = $4,
+               last_remote_event_at_ms = $5,
+               last_remote_event_id = $6,
+               sync_status = $7,
+               updated_at = now()
+           WHERE id = $1 AND workspace_id = $2"#,
+    )
+    .bind(link_id)
+    .bind(workspace_id)
+    .bind(last_common_snapshot)
+    .bind(remote_updated_at)
+    .bind(last_remote_event_at_ms)
+    .bind(last_remote_event_id)
+    .bind(sync_status)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
 pub async fn rebind_linear_issue_link(
     executor: impl Executor<'_, Database = Postgres>,
     link_id: Uuid,
@@ -1261,6 +1298,26 @@ pub async fn get_linear_issue_link(
                   last_remote_event_id, sync_status, created_at, updated_at
            FROM linear_issue_link
            WHERE id = $1 AND workspace_id = $2"#,
+    )
+    .bind(link_id)
+    .bind(workspace_id)
+    .fetch_optional(executor)
+    .await?)
+}
+
+pub async fn get_linear_issue_link_for_update(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    link_id: Uuid,
+) -> anyhow::Result<Option<LinearIssueLink>> {
+    Ok(sqlx::query_as::<_, LinearIssueLink>(
+        r#"SELECT id, workspace_id, binding_id, patchbay_issue_id,
+                  linear_issue_id, linear_identifier, last_common_snapshot,
+                  remote_updated_at, last_remote_event_at_ms,
+                  last_remote_event_id, sync_status, created_at, updated_at
+           FROM linear_issue_link
+           WHERE id = $1 AND workspace_id = $2
+           FOR UPDATE"#,
     )
     .bind(link_id)
     .bind(workspace_id)
@@ -1306,6 +1363,24 @@ pub async fn get_linear_sync_conflict(
     Ok(sqlx::query_as::<_, LinearSyncConflict>(&query)
         .bind(workspace_id)
         .bind(conflict_id)
+    .fetch_optional(executor)
+    .await?)
+}
+
+pub async fn get_linear_sync_conflict_for_update(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    conflict_id: Uuid,
+) -> anyhow::Result<Option<LinearSyncConflict>> {
+    let query = format!(
+        "SELECT {columns} FROM linear_sync_conflict\
+         WHERE workspace_id = $1 AND id = $2\
+         FOR UPDATE",
+        columns = conflict_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearSyncConflict>(&query)
+        .bind(workspace_id)
+        .bind(conflict_id)
         .fetch_optional(executor)
         .await?)
 }
@@ -1335,7 +1410,16 @@ pub async fn create_linear_sync_conflict(
           field, base_value, local_value, remote_value, source_event_id,\
           source_event_at_ms)\
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)\
-         ON CONFLICT (link_id, field) WHERE status = 'open' DO NOTHING\
+         ON CONFLICT (link_id, field) WHERE status = 'open' DO UPDATE SET\
+             base_value = EXCLUDED.base_value,\
+             local_value = EXCLUDED.local_value,\
+             remote_value = EXCLUDED.remote_value,\
+             source_event_id = EXCLUDED.source_event_id,\
+             source_event_at_ms = EXCLUDED.source_event_at_ms,\
+             updated_at = now()\
+         WHERE EXCLUDED.source_event_at_ms IS NOT NULL\
+           AND (linear_sync_conflict.source_event_at_ms IS NULL\
+                OR EXCLUDED.source_event_at_ms > linear_sync_conflict.source_event_at_ms)\
          RETURNING {columns}",
         columns = conflict_columns(),
     );
@@ -1556,6 +1640,24 @@ pub async fn get_project_binding(
     let query = format!(
         "SELECT {columns} FROM linear_project_binding\
          WHERE workspace_id = $1 AND id = $2 AND status <> 'tombstone'",
+        columns = binding_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearProjectBinding>(&query)
+        .bind(workspace_id)
+        .bind(binding_id)
+    .fetch_optional(executor)
+    .await?)
+}
+
+pub async fn get_project_binding_for_update(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    binding_id: Uuid,
+) -> anyhow::Result<Option<LinearProjectBinding>> {
+    let query = format!(
+        "SELECT {columns} FROM linear_project_binding\
+         WHERE workspace_id = $1 AND id = $2 AND status <> 'tombstone'\
+         FOR UPDATE",
         columns = binding_columns(),
     );
     Ok(sqlx::query_as::<_, LinearProjectBinding>(&query)
