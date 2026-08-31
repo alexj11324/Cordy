@@ -1099,14 +1099,14 @@ struct IdentityOrganization {
     name: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct LinearCatalogPage<T> {
     nodes: Vec<T>,
     #[serde(rename = "pageInfo")]
     page_info: LinearCatalogPageInfo,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct LinearCatalogPageInfo {
     #[serde(rename = "hasNextPage")]
     has_next_page: bool,
