@@ -176,6 +176,7 @@ function HubAction({
 }: HubActionProps) {
   const { t } = useT("settings");
   const hubConnected = hasActiveHub(query.data);
+  const installationConnected = hasActiveInstallation(query.data);
 
   // A guest may own its temporary workspace, but external platform
   // authorization is still a formal-account-only operation. Keep this gate
@@ -211,6 +212,14 @@ function HubAction({
       <span className="text-caption text-muted-foreground">
         {t(($) => $.page.integrations_unavailable)}
       </span>
+    );
+  }
+  if (installationConnected && !hubConnected) {
+    return (
+      <Button variant="outline" size="sm" onClick={onManage}>
+        <Settings2 />
+        {t(($) => $.page.integrations_manage)}
+      </Button>
     );
   }
   if (!query.data.configured) {
@@ -374,7 +383,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
   const listings = { lark, slack, dingtalk, wecom, telegram, weixin };
   const managedListing = managedChannel ? listings[managedChannel].data : undefined;
   const managedChannelNeedsSetup = Boolean(
-    managedChannel && !hasActiveHub(managedListing),
+    managedChannel && !hasActiveInstallation(managedListing),
   );
 
   async function removeInstallation(channel: IntegrationChannel, installationId: string) {
@@ -436,7 +445,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
 
   function renderManagedContent(channel: IntegrationChannel) {
     const listing = listings[channel].data;
-    if (hasActiveHub(listing)) return renderManagedTab(channel);
+    if (hasActiveInstallation(listing)) return renderManagedTab(channel);
 
     return (
       <div className="space-y-5">

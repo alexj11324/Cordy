@@ -226,6 +226,25 @@ describe("Settings IntegrationsTab", () => {
     expect(screen.queryByText("PATCHBAY_DINGTALK_SECRET_KEY")).toBeNull();
   });
 
+  it("keeps an active Agent-scoped installation manageable without a Hub", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    channelInstallationsRef.current.telegram = {
+      configured: true,
+      install_supported: false,
+      installations: [{ id: "agent-install", agent_id: "agent-1", status: "active" }],
+    };
+
+    renderTab();
+
+    const card = screen.getByTestId("integration-channel-card-telegram");
+    fireEvent.click(within(card).getByRole("button", { name: "Manage" }));
+
+    expect(screen.getByRole("heading", { name: "Manage" })).toBeInTheDocument();
+    expect(screen.getByTestId("telegram-tab")).toBeInTheDocument();
+    expect(screen.queryByTestId("integration-setup-guide-telegram")).toBeNull();
+  });
+
   it.each([
     ["lark", "Connect Lark"],
     ["slack", "Connect Slack"],

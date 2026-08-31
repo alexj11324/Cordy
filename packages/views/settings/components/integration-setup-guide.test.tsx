@@ -25,4 +25,15 @@ describe("IntegrationSetupGuide", () => {
     expect(guide).toHaveTextContent("Complete these steps");
     expect(guide.querySelectorAll("ol > li")).toHaveLength(3);
   });
+
+  it("links the Slack manifest instructions before the app dashboard", () => {
+    render(
+      <I18nProvider locale="en" resources={{ en: { common: enCommon, settings: enSettings } }}>
+        <IntegrationSetupGuide channel="slack" />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByRole("button", { name: "View Patchbay manifest" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open Slack app dashboard" })).toBeInTheDocument();
+  });
 });
