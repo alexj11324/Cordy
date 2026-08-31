@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use base64::Engine as _;
@@ -20,11 +20,20 @@ const DELIVERY_TIMEOUT: Duration = Duration::from_secs(30);
 pub struct Outbound {
     pool: sqlx::PgPool,
     decrypt: Option<Arc<DecrypterFn>>,
+    bus: Weak<patchbay_events::Bus>,
 }
 
 impl Outbound {
-    pub fn new(pool: sqlx::PgPool, decrypt: Option<Arc<DecrypterFn>>) -> Self {
-        Self { pool, decrypt }
+    pub fn new(
+        pool: sqlx::PgPool,
+        decrypt: Option<Arc<DecrypterFn>>,
+        bus: Arc<patchbay_events::Bus>,
+    ) -> Self {
+        Self {
+            pool,
+            decrypt,
+            bus: Arc::downgrade(&bus),
+        }
     }
 
     pub fn register(self: &Arc<Self>, bus: &patchbay_events::Bus, tasks: Arc<RuntimeTasks>) {
@@ -94,6 +103,7 @@ impl Outbound {
                 .await?
                 .filter(|row| row.status == "active")
                 .ok_or_else(|| anyhow::anyhow!("weixin installation is inactive or missing"))?;
+        let installed_at = installation.installed_at.clone();
         let credentials = decode_credentials(&installation.config, self.decrypt.as_deref())?;
         let target: WeixinBindingConfig = serde_json::from_value(binding.config)?;
         let ciphertext =
@@ -110,24 +120,13 @@ impl Outbound {
         // resolved to a chat session. A successful provider send therefore
         // proves the first real inbound -> outbound round trip for this
         // installation. Keep the marker server-owned and credential-free.
-        match patchbay_db::queries::channel::mark_channel_installation_round_trip(
+        crate::verification::record_round_trip(
             &self.pool,
+            &self.bus,
             installation.id,
-            crate::TYPE_WEIXIN,
+            installed_at,
         )
-        .await
-        {
-            Ok(true) => {}
-            Ok(false) => tracing::warn!(
-                installation_id = %installation.id,
-                "weixin round-trip succeeded but installation verification marker was not updated"
-            ),
-            Err(error) => tracing::warn!(
-                installation_id = %installation.id,
-                %error,
-                "weixin round-trip succeeded but installation verification marker failed"
-            ),
-        }
+        .await;
         Ok(())
     }
 }

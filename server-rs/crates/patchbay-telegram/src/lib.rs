@@ -13,6 +13,7 @@ pub mod outbound;
 pub mod replier;
 pub mod resolvers;
 pub mod sender;
+mod verification;
 
 pub use api::{
     ApiError, BotApi, ConflictError, DocumentRef, EditMessageTextParams, MessageEntity, PhotoSize,

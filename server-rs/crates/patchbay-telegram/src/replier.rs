@@ -87,6 +87,7 @@ impl BindingMinter for DbBindingMinter {
 pub struct OutboundReplierConfig {
     pub binding: Option<Arc<dyn BindingMinter>>,
     pub decrypt: Option<Arc<DecrypterFn>>,
+    pub bus: Arc<patchbay_events::Bus>,
     pub pool: sqlx::PgPool,
     pub app_url: String,
     pub binding_path: String,
@@ -96,6 +97,7 @@ pub struct OutboundReplierConfig {
 pub struct OutboundReplier {
     binding: Option<Arc<dyn BindingMinter>>,
     decrypt: Option<Arc<DecrypterFn>>,
+    bus: std::sync::Weak<patchbay_events::Bus>,
     pool: sqlx::PgPool,
     app_url: String,
     binding_path: String,
@@ -104,6 +106,7 @@ pub struct OutboundReplier {
 
 impl OutboundReplier {
     pub fn new(cfg: OutboundReplierConfig) -> Self {
+        let bus = Arc::downgrade(&cfg.bus);
         let mut binding_path = if cfg.binding_path.is_empty() {
             "/telegram/bind".to_string()
         } else {
@@ -115,6 +118,7 @@ impl OutboundReplier {
         Self {
             binding: cfg.binding,
             decrypt: cfg.decrypt,
+            bus,
             pool: cfg.pool,
             app_url: cfg.app_url.trim_end_matches('/').to_string(),
             binding_path,
@@ -204,6 +208,11 @@ impl OutboundReplier {
         msg: &InboundMessage,
         text: &str,
     ) -> anyhow::Result<()> {
+        let installation = inst
+            .platform
+            .downcast_ref::<patchbay_db::models::ChannelInstallation>()
+            .ok_or_else(|| anyhow::anyhow!("telegram: installation platform row unavailable"))?;
+        let installed_at = installation.installed_at.clone();
         let api = installation_api(inst, self.decrypt.as_deref(), &self.api_base)?;
         let chat_id = msg
             .source
@@ -227,24 +236,13 @@ impl OutboundReplier {
             result = api.send_message(&params) => result.map(|_| ()),
         };
         if result.is_ok() {
-            match patchbay_db::queries::channel::mark_channel_installation_round_trip(
+            crate::verification::record_round_trip(
                 &self.pool,
+                &self.bus,
                 inst.id,
-                crate::TYPE_TELEGRAM,
+                installed_at,
             )
-            .await
-            {
-                Ok(true) => {}
-                Ok(false) => tracing::warn!(
-                    installation_id = %inst.id,
-                    "telegram round-trip succeeded but installation verification marker was not updated"
-                ),
-                Err(error) => tracing::warn!(
-                    installation_id = %inst.id,
-                    %error,
-                    "telegram round-trip succeeded but installation verification marker failed"
-                ),
-            }
+            .await;
         }
         result
     }

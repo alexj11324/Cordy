@@ -276,9 +276,12 @@ fn installation_response(provider: Provider, row: ChannelInstallation) -> Value 
     });
     if verification {
         let active = row.status == "active";
-        let round_trip_passed = round_trip_passed(&row.config);
+        let round_trip_passed = active && round_trip_passed(&row.config);
         value["credential_status"] = json!(if active { "verified" } else { "not_verified" });
-        value["runtime_status"] = json!(if round_trip_passed { "healthy" } else { "unknown" });
+        // A successful provider round trip is a historical verification fact;
+        // it is not a live daemon heartbeat or provider probe. Keep runtime
+        // health fail-closed until a current runtime signal is available.
+        value["runtime_status"] = json!("unknown");
         value["round_trip_status"] = json!(if round_trip_passed {
             "passed"
         } else if active {
@@ -2600,9 +2603,38 @@ mod tests {
 
         let value = installation_response(Provider::Weixin, row);
         assert_eq!(value["credential_status"], "verified");
-        assert_eq!(value["runtime_status"], "healthy");
+        assert_eq!(value["runtime_status"], "unknown");
         assert_eq!(value["round_trip_status"], "passed");
         assert_eq!(value["required_action"], "none");
+    }
+
+    #[test]
+    fn revoked_installation_never_reports_a_healthy_round_trip() {
+        let now = Utc::now();
+        let row = ChannelInstallation {
+            agent_id: None,
+            channel_type: Provider::Telegram.channel_type().into(),
+            config: json!({
+                "verification": {
+                    "round_trip_status": "passed",
+                    "verified_at": now,
+                }
+            }),
+            created_at: now,
+            id: Uuid::new_v4(),
+            installed_at: now,
+            installer_user_id: Uuid::new_v4(),
+            status: "revoked".into(),
+            updated_at: now,
+            workspace_id: Uuid::new_v4(),
+            ws_lease_expires_at: None,
+            ws_lease_token: None,
+        };
+
+        let value = installation_response(Provider::Telegram, row);
+        assert_eq!(value["runtime_status"], "unknown");
+        assert_eq!(value["round_trip_status"], "not_applicable");
+        assert_eq!(value["required_action"], "reconnect");
     }
 
     #[test]

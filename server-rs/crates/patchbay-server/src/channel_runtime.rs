@@ -474,6 +474,7 @@ fn configure_telegram(
         patchbay_telegram::replier::OutboundReplierConfig {
             binding: Some(binding),
             decrypt: Some(decrypt.clone()),
+            bus: state.bus.clone(),
             pool: state.pool.clone(),
             app_url: app_url(cfg),
             binding_path: String::new(),
@@ -515,6 +516,7 @@ fn configure_telegram(
 
     Arc::new(patchbay_telegram::outbound::Outbound::new(
         state.pool.clone(),
+        state.bus.clone(),
         Some(decrypt.clone()),
         String::new(),
         cancel.clone(),
@@ -558,6 +560,7 @@ fn configure_weixin(
     let replier = Arc::new(patchbay_weixin::replier::OutboundReplier::new(
         state.pool.clone(),
         Some(decrypt.clone()),
+        state.bus.clone(),
         app_url(cfg),
     ));
     router.register(
@@ -567,6 +570,7 @@ fn configure_weixin(
     Arc::new(patchbay_weixin::outbound::Outbound::new(
         state.pool.clone(),
         Some(decrypt.clone()),
+        state.bus.clone(),
     ))
     .register(&state.bus, outbound_tasks.clone());
     patchbay_weixin::channel::register(

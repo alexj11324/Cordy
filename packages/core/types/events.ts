@@ -91,6 +91,8 @@ export type WSEventType =
   | "invitation:revoked"
   | "github_installation:created"
   | "github_installation:deleted"
+  | "telegram_installation:verified"
+  | "weixin_installation:verified"
   | "pull_request:linked"
   | "pull_request:updated"
   | "pull_request:unlinked";
@@ -627,6 +629,8 @@ export interface WSEventPayloadMap {
   "dependency_graph:updated": unknown;
   "github_installation:created": unknown;
   "github_installation:deleted": unknown;
+  "telegram_installation:verified": unknown;
+  "weixin_installation:verified": unknown;
   "pull_request:linked": unknown;
   "pull_request:updated": unknown;
   "pull_request:unlinked": unknown;
