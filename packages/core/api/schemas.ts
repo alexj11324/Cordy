@@ -320,12 +320,14 @@ const LinearConnectionSchema = z.object({
 export const LinearConnectionResponseSchema = z.object({
   configured: z.boolean().default(false),
   connected: z.boolean().default(false),
+  pull_import_enabled: z.boolean().default(false),
   connection: LinearConnectionSchema.nullable().default(null),
 }).loose();
 
 export const EMPTY_LINEAR_CONNECTION_RESPONSE: LinearConnectionResponse = {
   configured: false,
   connected: false,
+  pull_import_enabled: false,
   connection: null,
 };
 

@@ -150,6 +150,7 @@ function BindingWizard({
   bindings,
   catalog,
   connectionId,
+  pullImportEnabled,
   onClose,
   onSaved,
   projects,
@@ -158,6 +159,7 @@ function BindingWizard({
   bindings: LinearProjectBinding[];
   catalog: LinearCatalogResponse;
   connectionId: string;
+  pullImportEnabled: boolean;
   onClose: () => void;
   onSaved: () => void;
   projects: readonly { id: string; title: string }[];
@@ -316,7 +318,13 @@ function BindingWizard({
       const savedBinding = selectedBinding
         ? await api.updateLinearBinding(workspaceId, selectedBinding.id, body)
         : await api.createLinearBinding(workspaceId, body);
-      if (draft.syncMode === "import" && savedBinding.status === "active") {
+      const shouldQueueInitialImport =
+        pullImportEnabled &&
+        draft.syncMode === "import" &&
+        (!selectedBinding ||
+          selectedBinding.status !== "active" ||
+          selectedBinding.sync_mode !== "import");
+      if (shouldQueueInitialImport && savedBinding.status === "active") {
         await api.enqueueLinearInitialImport(workspaceId, savedBinding.id);
       }
       await qc.invalidateQueries({ queryKey: linearKeys.bindings(workspaceId) });
@@ -731,6 +739,7 @@ export function LinearIntegrationCard({
             bindings={bindings}
             catalog={catalogQuery.data}
             connectionId={connection?.id ?? ""}
+            pullImportEnabled={connectionQuery.data?.pull_import_enabled ?? false}
             onClose={() => setWizardOpen(false)}
             onSaved={() => void qc.invalidateQueries({ queryKey: linearKeys.connection(workspaceId) })}
             projects={projectsQuery.data ?? []}

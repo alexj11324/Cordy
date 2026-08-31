@@ -190,12 +190,14 @@ async fn get_connection(
         Ok(Some(connection)) => Json(json!({
             "configured": true,
             "connected": connection.status == "active",
+            "pull_import_enabled": state.linear_pull_import_enabled(workspace_id),
             "connection": connection_json(connection),
         }))
         .into_response(),
         Ok(None) => Json(json!({
             "configured": true,
             "connected": false,
+            "pull_import_enabled": state.linear_pull_import_enabled(workspace_id),
             "connection": Value::Null,
         }))
         .into_response(),

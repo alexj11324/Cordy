@@ -26,6 +26,7 @@ export type LinearConnection = {
 export type LinearConnectionResponse = {
   configured: boolean;
   connected: boolean;
+  pull_import_enabled: boolean;
   connection: LinearConnection | null;
 };
 

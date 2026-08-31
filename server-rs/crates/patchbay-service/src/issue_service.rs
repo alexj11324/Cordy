@@ -125,6 +125,14 @@ impl IssueService {
         if let Some(due_date) = patch.due_date {
             next.due_date = due_date;
         }
+        let next_category = issue_status::effective(&mut *tx, workspace_id, &next.status).await;
+        validate_external_workflow(
+            &next_category,
+            next.executor_type.as_deref(),
+            next.executor_id,
+            next.reviewer_type.as_deref(),
+            next.reviewer_id,
+        )?;
         if next.title == previous.title
             && next.description == previous.description
             && next.status == previous.status
@@ -377,10 +385,32 @@ pub enum ExternalIssueError {
     InvalidStatus,
     #[error("invalid external issue priority")]
     InvalidPriority,
+    #[error("external issue status requires an executor")]
+    ActiveExecutorRequired,
+    #[error("external issue review status requires a reviewer different from the executor")]
+    ReviewReviewerRequired,
     #[error("failed to persist external issue patch: {0}")]
     Sql(#[from] sqlx::Error),
     #[error("external issue domain operation failed: {0}")]
     Internal(String),
+}
+
+fn validate_external_workflow(
+    category: &str,
+    executor_type: Option<&str>,
+    executor_id: Option<Uuid>,
+    reviewer_type: Option<&str>,
+    reviewer_id: Option<Uuid>,
+) -> Result<(), ExternalIssueError> {
+    let executor = executor_type.zip(executor_id);
+    let reviewer = reviewer_type.zip(reviewer_id);
+    if issue_status::requires_executor(category) && executor.is_none() {
+        return Err(ExternalIssueError::ActiveExecutorRequired);
+    }
+    if issue_status::requires_reviewer(category) && (reviewer.is_none() || reviewer == executor) {
+        return Err(ExternalIssueError::ReviewReviewerRequired);
+    }
+    Ok(())
 }
 
 fn ic_err(context: &'static str, e: impl std::fmt::Display) -> IssueCreateError {
@@ -1399,6 +1429,38 @@ mod tests {
             creator_id,
             ..IssueCreateParams::default()
         }
+    }
+
+    #[test]
+    fn external_patches_keep_executor_and_reviewer_admission_rules() {
+        let executor = Uuid::now_v7();
+        let reviewer = Uuid::now_v7();
+        assert!(matches!(
+            validate_external_workflow("in_progress", None, None, None, None),
+            Err(ExternalIssueError::ActiveExecutorRequired)
+        ));
+        assert!(matches!(
+            validate_external_workflow("in_review", Some("agent"), Some(executor), None, None,),
+            Err(ExternalIssueError::ReviewReviewerRequired)
+        ));
+        assert!(matches!(
+            validate_external_workflow(
+                "in_review",
+                Some("agent"),
+                Some(executor),
+                Some("agent"),
+                Some(executor),
+            ),
+            Err(ExternalIssueError::ReviewReviewerRequired)
+        ));
+        assert!(validate_external_workflow(
+            "in_review",
+            Some("agent"),
+            Some(executor),
+            Some("agent"),
+            Some(reviewer),
+        )
+        .is_ok());
     }
 
     async fn create(
