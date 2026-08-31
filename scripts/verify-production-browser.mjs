@@ -18,6 +18,18 @@ const BASE_URL = "https://patchbay.aspectlylabs.com";
 const SMOKE_EMAIL = "production-smoke@aspectlylabs.com";
 const SMOKE_WORKSPACE = "production-smoke";
 const SCREENSHOT_PATH = "/tmp/production-browser-failure.png";
+const FIRST_PARTY_HOSTS = new Set([
+  "api.aspectlylabs.com",
+  "patchbay.aspectlylabs.com",
+]);
+
+function isFirstPartyUrl(rawUrl) {
+  try {
+    return FIRST_PARTY_HOSTS.has(new URL(rawUrl).hostname);
+  } catch {
+    return false;
+  }
+}
 
 async function ticketSignIn(page, ticket) {
   const result = await page.evaluate(async (signInTicket) => {
@@ -38,9 +50,14 @@ async function ticketSignIn(page, ticket) {
 
 async function waitForPatchbayExchange(page, action) {
   const exchange = page.waitForResponse(
-    (response) =>
-      response.url() === `${BASE_URL}/auth/clerk` &&
-      response.request().method() === "POST",
+    (response) => {
+      const url = new URL(response.url());
+      return (
+        FIRST_PARTY_HOSTS.has(url.hostname) &&
+        url.pathname === "/auth/clerk" &&
+        response.request().method() === "POST"
+      );
+    },
     { timeout: 30_000 },
   );
   await action();
@@ -59,32 +76,25 @@ async function waitForPatchbayExchange(page, action) {
 
 function observeApplicationFailures(page) {
   const failures = [];
-  const firstParty = (rawUrl) => {
-    try {
-      return new URL(rawUrl).hostname.endsWith("aspectlylabs.com");
-    } catch {
-      return false;
-    }
-  };
   page.on("pageerror", (error) =>
     failures.push(`page error: ${error.message}`),
   );
   page.on("requestfailed", (request) => {
-    if (firstParty(request.url())) {
+    if (isFirstPartyUrl(request.url())) {
       failures.push(
         `request failed: ${request.method()} ${request.url()} (${request.failure()?.errorText ?? "unknown"})`,
       );
     }
   });
   page.on("response", (response) => {
-    if (firstParty(response.url()) && response.status() >= 400) {
+    if (isFirstPartyUrl(response.url()) && response.status() >= 400) {
       failures.push(`HTTP ${response.status()}: ${response.url()}`);
     }
   });
   page.on("console", (message) => {
     if (message.type() !== "error") return;
     const source = message.location().url;
-    if (!source || firstParty(source))
+    if (!source || isFirstPartyUrl(source))
       failures.push(`console error: ${message.text()}`);
   });
   return failures;
@@ -128,7 +138,11 @@ async function verifyProtectedRoute(
 }
 
 async function openBrowser() {
-  const browser = await chromium.launch({ headless: true });
+  const channel = process.env.PLAYWRIGHT_CHANNEL?.trim();
+  const browser = await chromium.launch({
+    headless: true,
+    ...(channel ? { channel } : {}),
+  });
   const context = await browser.newContext({ locale: "en-US" });
   await context.addCookies([
     {
@@ -247,7 +261,9 @@ async function smokeUserId(secretKey) {
     ),
   );
   if (exact.length !== 1 || typeof exact[0]?.id !== "string") {
-    throw new Error("the dedicated production browser-acceptance Clerk user is missing or ambiguous");
+    throw new Error(
+      "the dedicated production browser-acceptance Clerk user is missing or ambiguous",
+    );
   }
   return exact[0].id;
 }
@@ -272,14 +288,36 @@ async function createTestingToken(secretKey) {
 async function ensureSmokeWorkspace(page) {
   return page.evaluate(
     async ({ workspaceSlug }) => {
+      const csrfToken = document.cookie
+        .split("; ")
+        .find((entry) => entry.startsWith("patchbay_csrf="))
+        ?.split("=")
+        .slice(1)
+        .join("=");
+      if (!csrfToken) {
+        throw new Error("Patchbay session did not issue a readable CSRF token");
+      }
       const request = async (path, init) => {
         const response = await fetch(path, {
           ...init,
           credentials: "include",
-          headers: { "content-type": "application/json", ...init?.headers },
+          headers: {
+            "content-type": "application/json",
+            "x-csrf-token": csrfToken,
+            ...init?.headers,
+          },
         });
-        if (!response.ok)
-          throw new Error(`${path} returned HTTP ${response.status}`);
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          const detail =
+            typeof body.message === "string"
+              ? body.message
+              : typeof body.error === "string"
+                ? body.error
+                : "";
+          const message = detail ? `: ${detail}` : "";
+          throw new Error(`${path} returned HTTP ${response.status}${message}`);
+        }
         return response.json();
       };
       const workspaces = await request("/api/workspaces");
