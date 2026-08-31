@@ -9,6 +9,7 @@ import { clerk, setupClerkTestingToken } from "@clerk/testing/playwright";
 import {
   buildGoogleOAuthProbeUrl,
   decodeClerkFrontendApi,
+  isExpectedBrowserRequestCancellation,
   requiredString,
   requireBrowserReceipt,
   requireGoogleOAuthNavigation,
@@ -83,9 +84,11 @@ function observeApplicationFailures(page) {
     failures.push(`page error: ${error.message}`),
   );
   page.on("requestfailed", (request) => {
+    const failure = request.failure();
+    if (isExpectedBrowserRequestCancellation(failure?.errorText)) return;
     if (isFirstPartyUrl(request.url())) {
       failures.push(
-        `request failed: ${request.method()} ${request.url()} (${request.failure()?.errorText ?? "unknown"})`,
+        `request failed: ${request.method()} ${request.url()} (${failure?.errorText ?? "unknown"})`,
       );
     }
   });
