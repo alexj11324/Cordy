@@ -15,6 +15,7 @@ use patchbay_db::dbid::new_v7;
 use patchbay_db::models::{
     Agent, AgentInvocationTarget, AgentTaskQueue, ChatMessage, ChatSession, Comment, Issue,
 };
+use patchbay_db::queries::activity;
 use patchbay_db::queries::agent::{
     append_task_message_bus_instruction, cancel_agent_task, cancel_agent_task_by_user,
     cancel_agent_task_with_reason, cancel_agent_tasks_by_agent, cancel_agent_tasks_by_issue,
@@ -28,18 +29,16 @@ use patchbay_db::queries::agent::{
     list_agent_thread_tasks, list_queued_claim_candidates_by_runtime,
     list_queued_claim_candidates_by_runtimes, lock_task_for_message_bus,
     mark_agent_task_waiting_capacity, mark_agent_task_waiting_local_directory,
-    mark_chat_finalize_deferred, merge_agent_task_context,
-    promote_deferred_channel_issue_task, promote_due_deferred_tasks_for_runtime,
-    promote_due_deferred_tasks_for_runtimes, reclaim_stale_dispatched_task_for_runtime,
-    reclaim_stale_dispatched_tasks_for_runtimes, refresh_agent_status_from_tasks,
-    requeue_agent_task_after_claim_failure, resume_agent_task_waiting_capacity,
-    set_deferred_channel_issue_task_runtime_overlay,
+    mark_chat_finalize_deferred, merge_agent_task_context, promote_deferred_channel_issue_task,
+    promote_due_deferred_tasks_for_runtime, promote_due_deferred_tasks_for_runtimes,
+    reclaim_stale_dispatched_task_for_runtime, reclaim_stale_dispatched_tasks_for_runtimes,
+    refresh_agent_status_from_tasks, requeue_agent_task_after_claim_failure,
+    resume_agent_task_waiting_capacity, set_deferred_channel_issue_task_runtime_overlay,
     set_task_delivered_comment_i_ds, start_agent_task,
 };
 use patchbay_db::queries::agent_invocation_target::list_agent_invocation_targets;
 use patchbay_db::queries::attachment::detach_attachments_from_user_chat_message_by_task;
 use patchbay_db::queries::attachment::link_attachments_to_chat_message;
-use patchbay_db::queries::activity;
 use patchbay_db::queries::automation::{
     get_active_automation_rule_version, get_automation, get_automation_run,
     get_automation_run_by_issue, get_automation_trigger, is_automation_collaborator,
@@ -410,10 +409,7 @@ where
 /// admitted the issue into the In Progress category.  Keeping this guard in
 /// the shared enqueue path prevents legacy callers from accidentally running
 /// a Todo/Blocked graph node even if they bypass the coordinator.
-async fn require_execution_status(
-    pool: &PgPool,
-    issue: &Issue,
-) -> Result<(), TaskServiceError> {
+async fn require_execution_status(pool: &PgPool, issue: &Issue) -> Result<(), TaskServiceError> {
     let category = issue_status::effective(pool, issue.workspace_id, &issue.status).await;
     if issue_status::runs_executor(&category) {
         Ok(())
@@ -6362,7 +6358,9 @@ impl TaskService {
         )
         .await
         .map_err(downcast_sqlx)
-        .map_err(|error| TaskServiceError::Internal(format!("mark task waiting_capacity: {error}")))?;
+        .map_err(|error| {
+            TaskServiceError::Internal(format!("mark task waiting_capacity: {error}"))
+        })?;
         if !changed {
             return Err(TaskServiceError::Internal(
                 "mark task waiting_capacity: no queued or dispatched row".into(),
@@ -6371,13 +6369,19 @@ impl TaskService {
         let task = get_agent_task(&self.pool, task_id)
             .await
             .map_err(downcast_sqlx)
-            .map_err(|error| TaskServiceError::Internal(format!("load waiting_capacity task: {error}")))?
-            .ok_or_else(|| TaskServiceError::Internal("waiting_capacity task disappeared".into()))?;
+            .map_err(|error| {
+                TaskServiceError::Internal(format!("load waiting_capacity task: {error}"))
+            })?
+            .ok_or_else(|| {
+                TaskServiceError::Internal("waiting_capacity task disappeared".into())
+            })?;
         self.reconcile_agent_status(task.agent_id).await;
+        let mut event_extra = serde_json::Map::new();
+        event_extra.insert("reason".into(), serde_json::json!(reason));
         self.broadcast_task_event(
             patchbay_protocol::EVENT_TASK_WAITING_CAPACITY,
             &task,
-            serde_json::json!({"reason": reason}),
+            event_extra,
         )
         .await;
         Ok(task)
@@ -6393,7 +6397,9 @@ impl TaskService {
         let changed = resume_agent_task_waiting_capacity(&self.pool, task_id)
             .await
             .map_err(downcast_sqlx)
-            .map_err(|error| TaskServiceError::Internal(format!("resume waiting_capacity task: {error}")))?;
+            .map_err(|error| {
+                TaskServiceError::Internal(format!("resume waiting_capacity task: {error}"))
+            })?;
         if !changed {
             return Err(TaskServiceError::Internal(
                 "resume waiting_capacity task: no waiting row".into(),
@@ -6405,12 +6411,10 @@ impl TaskService {
             .map_err(|error| TaskServiceError::Internal(format!("load resumed task: {error}")))?
             .ok_or_else(|| TaskServiceError::Internal("resumed task disappeared".into()))?;
         self.reconcile_agent_status(task.agent_id).await;
-        self.broadcast_task_event(
-            patchbay_protocol::EVENT_TASK_AVAILABLE,
-            &task,
-            serde_json::json!({"reason": "capacity_available"}),
-        )
-        .await;
+        let mut event_extra = serde_json::Map::new();
+        event_extra.insert("reason".into(), serde_json::json!("capacity_available"));
+        self.broadcast_task_event(patchbay_protocol::EVENT_TASK_AVAILABLE, &task, event_extra)
+            .await;
         self.notify_runtime_may_have_work(task.runtime_id, Some(&task.id.to_string()))
             .await;
         Ok(task)

@@ -22,9 +22,15 @@ pub(super) struct IssueListArgs {
         help = "Filter by execution target UUID — agent or team (mutually exclusive with --executor)"
     )]
     pub(super) executor_id: Option<String>,
-    #[arg(long, help = "Filter by human owner name (workspace member; fuzzy match)")]
+    #[arg(
+        long,
+        help = "Filter by human owner name (workspace member; fuzzy match)"
+    )]
     pub(super) owner: Option<String>,
-    #[arg(long, help = "Filter by human owner UUID (mutually exclusive with --owner)")]
+    #[arg(
+        long,
+        help = "Filter by human owner UUID (mutually exclusive with --owner)"
+    )]
     pub(super) owner_id: Option<String>,
     #[arg(long, help = "Filter by project ID")]
     pub(super) project: Option<String>,

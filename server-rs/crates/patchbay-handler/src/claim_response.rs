@@ -253,35 +253,35 @@ pub(crate) async fn build_claimed_task_response(
         .as_object_mut()
         .expect("task_to_map returns an object");
 
-    let execution_target = match agent_q::get_agent_task_execution_target(&state.pool, task.id).await
-    {
-        Ok(Some(target)) => target,
-        Ok(None) => {
-            return Err(fail_claimed_task_before_launch(
-                state,
-                task,
-                "Task execution target is missing.",
-                patchbay_task_failure::Reason::INVALID_TASK_IDENTITY,
-                "error_missing_execution_target",
-                StatusCode::CONFLICT,
-                "task execution target is missing",
-            )
-            .await);
-        }
-        Err(error) => {
-            tracing::error!(
-                %error,
-                task_id = %task.id,
-                "daemon claim: load immutable execution target failed; requeueing claim"
-            );
-            let _ = state.tasks.requeue_task_after_claim_failure(task).await;
-            return Err(ClaimBuildFailure::new(
-                "error_load_execution_target",
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to load task execution target",
-            ));
-        }
-    };
+    let execution_target =
+        match agent_q::get_agent_task_execution_target(&state.pool, task.id).await {
+            Ok(Some(target)) => target,
+            Ok(None) => {
+                return Err(fail_claimed_task_before_launch(
+                    state,
+                    task,
+                    "Task execution target is missing.",
+                    patchbay_task_failure::Reason::INVALID_TASK_IDENTITY,
+                    "error_missing_execution_target",
+                    StatusCode::CONFLICT,
+                    "task execution target is missing",
+                )
+                .await);
+            }
+            Err(error) => {
+                tracing::error!(
+                    %error,
+                    task_id = %task.id,
+                    "daemon claim: load immutable execution target failed; requeueing claim"
+                );
+                let _ = state.tasks.requeue_task_after_claim_failure(task).await;
+                return Err(ClaimBuildFailure::new(
+                    "error_load_execution_target",
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to load task execution target",
+                ));
+            }
+        };
     if execution_target.runtime_id != Some(runtime.id) {
         return Err(fail_claimed_task_before_launch(
             state,

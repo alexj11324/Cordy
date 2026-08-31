@@ -66,9 +66,11 @@ pub async fn delete_workspace_issue_category_policies<'e, E>(
 where
     E: Executor<'e, Database = sqlx::Postgres>,
 {
-    Ok(sqlx::query("DELETE FROM workspace_issue_category_policy WHERE workspace_id = $1")
-        .bind(workspace_id)
-        .execute(executor)
-        .await?
-        .rows_affected())
+    Ok(
+        sqlx::query("DELETE FROM workspace_issue_category_policy WHERE workspace_id = $1")
+            .bind(workspace_id)
+            .execute(executor)
+            .await?
+            .rows_affected(),
+    )
 }
