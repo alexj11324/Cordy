@@ -11,13 +11,20 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { binaryNameForPlatform, devRustTargetFor } from "./bundle-cli.mjs";
 import { loadDevCheckoutEnv } from "./dev-checkout-env.mjs";
-import { rustSourceFingerprint } from "./dev-cli-cache.mjs";
+import {
+  defaultDevCliCacheDir,
+  inspectDevRuntimeCache,
+  rustSourceFingerprint,
+} from "./dev-cli-cache.mjs";
 import { INTEGRATION_SECRET_KEYS } from "../../../scripts/ensure-dev-integration-secrets.mjs";
 import {
   applyDevRuntimeProfile,
   resolveDevRuntimeProfile,
 } from "../../../scripts/dev-runtime-profile.mjs";
-import { bootstrapDevClerkAuth } from "../../../scripts/dev-clerk-auth.mjs";
+import {
+  bootstrapDevClerkAuth,
+  withoutDevClerkEnvironment,
+} from "../../../scripts/dev-clerk-auth.mjs";
 
 const execFile = promisify(execFileCallback);
 const here = dirname(fileURLToPath(import.meta.url));
@@ -90,6 +97,14 @@ export function loadDoctorEnvironment({
     );
   }
   return env;
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KiB`;
+  if (bytes < 1024 * 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
+  }
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GiB`;
 }
 
 async function probeCliVersion(binaryPath, execImpl) {
@@ -180,6 +195,7 @@ export async function inspectDevEnvironment({
   arch = process.arch,
   fetchImpl = fetch,
   execImpl = execFile,
+  cacheRoot = defaultDevCliCacheDir({ env, platform }),
 } = {}) {
   const binaryName = binaryNameForPlatform(platform);
   const binaryPath = join(
@@ -197,6 +213,23 @@ export async function inspectDevEnvironment({
   const hosted = env.PATCHBAY_DEV_MODE === "hosted";
   const accountsUrl = accountsUrlFromEnv(env);
   const checks = [];
+
+  const cache = await inspectDevRuntimeCache({ cacheRoot });
+  const currentCached = cache.completeFingerprints.some(
+    (entry) =>
+      entry.rustTarget === rustTarget &&
+      entry.sourceFingerprint === sourceFingerprint,
+  );
+  checks.push({
+    id: "cache",
+    ok: true,
+    message: currentCached
+      ? `dev runtime cache has current source; ${cache.completeFingerprintCount} complete fingerprints, ${formatBytes(cache.totalBytes)}`
+      : `dev runtime cache does not contain the current source; ${cache.completeFingerprintCount} complete fingerprints, ${formatBytes(cache.totalBytes)}`,
+    ...(!currentCached && {
+      fix: "Run `pnpm dev`; a cache miss performs one worktree-local incremental Rust build. Use `pnpm dev:cache:prune` to remove stale entries.",
+    }),
+  });
 
   let manifest;
   let cliProbeRoot;
@@ -354,13 +387,18 @@ async function main() {
   const env = loadDoctorEnvironment({
     mode: process.argv.includes("--hosted") ? "hosted" : undefined,
   });
+  let inspectionEnv = env;
   if (env.PATCHBAY_DEV_MODE !== "hosted") {
     const auth = await bootstrapDevClerkAuth({ env });
     console.log(
       `✓ Clerk development authentication ready for ${auth.authorizedParties} (${auth.source})`,
     );
+    inspectionEnv = withoutDevClerkEnvironment({
+      ...env,
+      ...auth.authEnv,
+    });
   }
-  const report = await inspectDevEnvironment({ env });
+  const report = await inspectDevEnvironment({ env: inspectionEnv });
   printDevEnvironmentReport(report);
   if (!report.ok && !warnOnly) process.exitCode = 1;
 }

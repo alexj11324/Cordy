@@ -60,9 +60,13 @@ function isPemPublicKey(value) {
   }
 }
 
-async function defaultSecretProvider({ project, secret }) {
+export async function defaultSecretProvider({
+  project,
+  secret,
+  execImpl = execFile,
+}) {
   try {
-    const { stdout } = await execFile(
+    const { stdout } = await execImpl(
       "gcloud",
       [
         "secrets",
@@ -72,7 +76,7 @@ async function defaultSecretProvider({ project, secret }) {
         `--project=${project}`,
         `--secret=${secret}`,
       ],
-      { encoding: "utf8", maxBuffer: 1024 * 1024 },
+      { encoding: "utf8", maxBuffer: 1024 * 1024, timeout: 10_000 },
     );
     return stdout;
   } catch {
@@ -155,8 +159,11 @@ export async function bootstrapDevClerkAuth({
     payload.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
     payload.CLERK_PUBLISHABLE_KEY;
   const secretKey = env.CLERK_SECRET_KEY || payload.CLERK_SECRET_KEY;
-  if (!/^sk_(?:test|live)_/.test(secretKey || "")) {
-    throw authError("CLERK_SECRET_KEY is missing or invalid.");
+  if (!/^pk_test_/.test(publishableKey || "")) {
+    throw authError("Development auth requires a Clerk test publishable key.");
+  }
+  if (!/^sk_test_/.test(secretKey || "")) {
+    throw authError("Development auth requires a Clerk test secret key.");
   }
 
   const derivedIssuer = issuerFromPublishableKey(publishableKey);
@@ -180,7 +187,7 @@ export async function bootstrapDevClerkAuth({
     throw authError("CLERK_JWT_KEY is missing or is not a valid public key.");
   }
 
-  Object.assign(env, {
+  const authEnv = {
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: publishableKey,
     CLERK_PUBLISHABLE_KEY: publishableKey,
     CLERK_SECRET_KEY: secretKey,
@@ -188,10 +195,40 @@ export async function bootstrapDevClerkAuth({
     CLERK_AUTHORIZED_PARTIES: frontendOrigin,
     CLERK_JWT_KEY: jwtKey,
     PATCHBAY_DEV_AUTH_READY: "1",
-  });
+  };
   return {
     issuer,
     authorizedParties: frontendOrigin,
     source: Object.keys(payload).length > 0 ? "gsm" : "environment",
+    authEnv,
   };
+}
+
+export function scopedDevClerkEnvironment(authEnv, scope) {
+  const common = {
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:
+      authEnv.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+    CLERK_PUBLISHABLE_KEY: authEnv.CLERK_PUBLISHABLE_KEY,
+    CLERK_SECRET_KEY: authEnv.CLERK_SECRET_KEY,
+    PATCHBAY_DEV_AUTH_READY: "1",
+  };
+  if (scope === "web") return common;
+  if (scope === "backend") return { ...common, ...authEnv };
+  throw new Error(`Unknown Clerk development auth scope: ${scope}`);
+}
+
+export function withoutDevClerkEnvironment(env) {
+  const sanitized = { ...env };
+  for (const key of [
+    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+    "CLERK_PUBLISHABLE_KEY",
+    "CLERK_SECRET_KEY",
+    "CLERK_JWT_KEY",
+    "CLERK_ISSUER",
+    "CLERK_AUTHORIZED_PARTIES",
+    "PATCHBAY_DEV_AUTH_READY",
+  ]) {
+    delete sanitized[key];
+  }
+  return sanitized;
 }

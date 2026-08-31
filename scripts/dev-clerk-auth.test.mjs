@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   bootstrapDevClerkAuth,
+  defaultSecretProvider,
   issuerFromPublishableKey,
 } from "./dev-clerk-auth.mjs";
 
@@ -13,6 +14,20 @@ const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const jwtKey = publicKey.export({ type: "spki", format: "pem" }).toString();
 
 describe("secure Clerk development bootstrap", () => {
+  it("bounds Google Secret Manager access without exposing command output", async () => {
+    const execImpl = vi.fn(async (_command, _args, options) => {
+      expect(options.timeout).toBe(10_000);
+      throw new Error("provider stderr with secret material");
+    });
+    await expect(
+      defaultSecretProvider({
+        project: "general-secrets-store",
+        secret: "patchbay-dev-clerk-auth",
+        execImpl,
+      }),
+    ).rejects.not.toThrow(/provider stderr|secret material/);
+  });
+
   it("derives the issuer and loads the complete process-only environment from GSM JSON", async () => {
     const secretProvider = vi.fn(async () =>
       JSON.stringify({
@@ -30,12 +45,12 @@ describe("secure Clerk development bootstrap", () => {
       secret: "patchbay-dev-clerk-auth",
     });
     expect(issuerFromPublishableKey(publishableKey)).toBe(issuer);
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       issuer,
       authorizedParties: "http://localhost:13777",
       source: "gsm",
     });
-    expect(env).toMatchObject({
+    expect(result.authEnv).toMatchObject({
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: publishableKey,
       CLERK_PUBLISHABLE_KEY: publishableKey,
       CLERK_SECRET_KEY: "sk_test_fixture",
@@ -44,6 +59,7 @@ describe("secure Clerk development bootstrap", () => {
       CLERK_AUTHORIZED_PARTIES: "http://localhost:13777",
       PATCHBAY_DEV_AUTH_READY: "1",
     });
+    expect(env.CLERK_SECRET_KEY).toBeUndefined();
   });
 
   it("uses a complete injected environment without contacting GSM", async () => {
@@ -70,7 +86,7 @@ describe("secure Clerk development bootstrap", () => {
     }));
     const env = { FRONTEND_ORIGIN: "http://localhost:3000" };
 
-    await bootstrapDevClerkAuth({
+    const result = await bootstrapDevClerkAuth({
       env,
       fetchImpl,
       secretProvider: async () => ({
@@ -78,12 +94,11 @@ describe("secure Clerk development bootstrap", () => {
         CLERK_SECRET_KEY: "sk_test_fixture",
       }),
     });
-
     expect(fetchImpl).toHaveBeenCalledWith(
       `${issuer}/.well-known/jwks.json`,
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
-    expect(env.CLERK_JWT_KEY).toContain("BEGIN PUBLIC KEY");
+    expect(result.authEnv.CLERK_JWT_KEY).toContain("BEGIN PUBLIC KEY");
   });
 
   it("fails with remediation without exposing secret payload values", async () => {
@@ -123,5 +138,19 @@ describe("secure Clerk development bootstrap", () => {
         }),
       }),
     ).rejects.toThrow(/does not match.*Authenticate gcloud/i);
+  });
+
+  it("rejects live Clerk credentials in development", async () => {
+    const livePublishable = `pk_live_${Buffer.from("example.clerk.accounts.dev$").toString("base64")}`;
+    await expect(
+      bootstrapDevClerkAuth({
+        env: { FRONTEND_ORIGIN: "http://localhost:3000" },
+        secretProvider: async () => ({
+          CLERK_PUBLISHABLE_KEY: livePublishable,
+          CLERK_SECRET_KEY: "sk_live_fixture",
+          CLERK_JWT_KEY: jwtKey,
+        }),
+      }),
+    ).rejects.toThrow(/test.*key/i);
   });
 });

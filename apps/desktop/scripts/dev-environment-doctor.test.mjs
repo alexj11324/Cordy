@@ -237,10 +237,12 @@ describe("complete Desktop development doctor", () => {
       arch: "arm64",
       execImpl,
       fetchImpl,
+      cacheRoot: join(repoRoot, "cache"),
     });
 
     expect(report.ok).toBe(true);
     expect(report.checks.map(({ id, ok }) => [id, ok])).toEqual([
+      ["cache", true],
       ["cli", true],
       ["backend", true],
       ["agents", true],
@@ -280,6 +282,7 @@ describe("complete Desktop development doctor", () => {
       platform: "darwin",
       arch: "arm64",
       execImpl,
+      cacheRoot: join(repoRoot, "cache"),
       fetchImpl: async () => ({
         ok: true,
         status: 200,
@@ -317,6 +320,7 @@ describe("complete Desktop development doctor", () => {
       platform: "darwin",
       arch: "arm64",
       execImpl,
+      cacheRoot: join(repoRoot, "cache"),
       fetchImpl: async () => ({ ok: false, status: 503 }),
     });
 

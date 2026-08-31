@@ -95,16 +95,17 @@ pnpm test || { EXIT_CODE=1; exit 1; }
 # --------------------------------------------------------------------------
 echo ""
 echo "==> [3/6] Rust migrations..."
-./scripts/run-rust.sh run --locked -p patchbay-migrate -- up || { EXIT_CODE=1; exit 1; }
+node apps/desktop/scripts/prepare-dev-runtime.mjs || { EXIT_CODE=1; exit 1; }
+./.patchbay-dev/bin/patchbay-migrate up || { EXIT_CODE=1; exit 1; }
 echo "==> Rust workspace tests..."
-./scripts/run-rust.sh test --workspace --all-targets --locked || { EXIT_CODE=1; exit 1; }
+./scripts/run-dev-rust.sh test --workspace --all-targets --locked || { EXIT_CODE=1; exit 1; }
 
 # --------------------------------------------------------------------------
 # Step 4: Build the Rust server before the readiness deadline
 # --------------------------------------------------------------------------
 echo ""
 echo "==> [4/6] Building Rust server..."
-./scripts/run-rust.sh build --locked -p patchbay-server || { EXIT_CODE=1; exit 1; }
+./scripts/run-dev-rust.sh build --locked -p patchbay-server || { EXIT_CODE=1; exit 1; }
 
 # --------------------------------------------------------------------------
 # Step 5: Start services for E2E (only if not already running)
@@ -112,14 +113,14 @@ echo "==> [4/6] Building Rust server..."
 echo ""
 echo "==> [5/6] Starting services for E2E..."
 
-if curl -sf "http://localhost:${PORT}/health" > /dev/null 2>&1; then
+if curl -sf "http://localhost:${PORT}/healthz" > /dev/null 2>&1; then
   echo "    Backend already running on :$PORT"
 else
   echo "    Starting backend (Rust)..."
-  ./scripts/run-rust.sh run --locked -p patchbay-server > /tmp/patchbay-check-backend.log 2>&1 &
+  ./.patchbay-dev/bin/patchbay-server > /tmp/patchbay-check-backend.log 2>&1 &
   BACKEND_PID=$!
   STARTED_BACKEND=true
-  wait_for_port "$PORT" "Backend" 90 "/health"
+  wait_for_port "$PORT" "Backend" "${PATCHBAY_DEV_BACKEND_TIMEOUT_SECONDS:-120}" "/healthz"
 fi
 
 if curl -sf "http://localhost:${FRONTEND_PORT}" > /dev/null 2>&1; then
@@ -129,7 +130,7 @@ else
   pnpm dev:web:next > /tmp/patchbay-check-frontend.log 2>&1 &
   FRONTEND_PID=$!
   STARTED_FRONTEND=true
-  wait_for_port "$FRONTEND_PORT" "Frontend" 120 "/"
+  wait_for_port "$FRONTEND_PORT" "Frontend" "${PATCHBAY_DEV_FRONTEND_TIMEOUT_SECONDS:-120}" "/"
 fi
 
 # --------------------------------------------------------------------------

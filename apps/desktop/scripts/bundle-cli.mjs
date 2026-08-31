@@ -19,7 +19,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   defaultDevCliCacheDir,
-  pruneDevCliCache,
+  pruneDevRuntimeCache,
   rustBuildEnvironmentFingerprint,
   rustSourceFingerprint,
   rustToolchainIdentity,
@@ -416,7 +416,7 @@ async function main() {
   }
 
   if (devCache) {
-    const cached = await storeDevCli({
+    await storeDevCli({
       ...devCache,
       sourceBinary: destBinary,
       binaryName: binName,
@@ -432,13 +432,7 @@ async function main() {
       profile,
       destinationBinary: destBinary,
     });
-    await pruneDevCliCache({
-      cacheRoot: devCache.cacheRoot,
-      rustTarget,
-      profile,
-      keep: 5,
-      preserveEntryDir: cached?.entryDir,
-    });
+    await pruneDevRuntimeCache({ cacheRoot: devCache.cacheRoot });
     console.log(
       `[bundle-cli] cached source CLI ${devCache.sourceFingerprint.slice(0, 12)} in ${devCache.cacheRoot}`,
     );

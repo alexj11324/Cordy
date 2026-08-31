@@ -48,20 +48,19 @@ API: http://localhost:8080
 ```bash
 git worktree add ../patchbay-feature -b feat/my-change main
 cd ../patchbay-feature
-make setup-worktree
-make start-worktree
+pnpm dev
 ```
 
-`make setup-worktree` 会生成 `.env.worktree`，数据库名和端口根据路径确定。再次启动：
+`pnpm dev` 会在需要时生成 `.env.worktree`、分配可用隔离端口、准备源码匹配 runtime 并启动完整开发栈。再次启动仍使用同一命令：
 
 ```bash
-make start-worktree
+pnpm dev
 ```
 
 停止当前 worktree 的 Desktop/Electron、Web 与 API：
 
 ```bash
-make stop-worktree
+make stop
 ```
 
 也可以直接运行 `make dev`，脚本会通过 `.git` 文件识别 worktree 并选择 `.env.worktree`。
@@ -78,7 +77,6 @@ make stop-worktree
 
 ```bash
 make dev              # 完整 Electron + dev CLI + 后端 + Web 服务 + 隔离数据库
-make start            # 使用已有环境启动同一套完整开发栈
 make stop             # 停止当前 checkout 记录的 Electron/后端/Web 进程树
 make check            # 完整本地验证流程
 make build            # 构建 server、CLI 和 migrate 二进制
@@ -201,7 +199,7 @@ make check
 ```bash
 make stop
 make db-reset
-make start
+pnpm dev
 ```
 
 `make db-reset` 会删除并重建当前 `POSTGRES_DB`，且会拒绝连接远程数据库。操作前检查 `.env` 或 `.env.worktree`，确认目标数据库正确。

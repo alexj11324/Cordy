@@ -5,7 +5,11 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ensureDevCheckoutEnv } from "../apps/desktop/scripts/dev-checkout-env.mjs";
-import { bootstrapDevClerkAuth } from "./dev-clerk-auth.mjs";
+import {
+  bootstrapDevClerkAuth,
+  scopedDevClerkEnvironment,
+  withoutDevClerkEnvironment,
+} from "./dev-clerk-auth.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const defaultRepoRoot = resolve(here, "..");
@@ -16,12 +20,20 @@ export async function runStandaloneWeb({
   argv = process.argv.slice(2),
 } = {}) {
   await ensureDevCheckoutEnv({ repoRoot, env });
-  await bootstrapDevClerkAuth({ env });
+  const auth = await bootstrapDevClerkAuth({ env });
+  const baseEnv = withoutDevClerkEnvironment(env);
   const port = env.FRONTEND_PORT || "3000";
   const child = spawn(
     process.execPath,
     ["node_modules/next/dist/bin/next", "dev", "--webpack", "--port", port, ...argv],
-    { cwd: join(repoRoot, "apps", "web"), env, stdio: "inherit" },
+    {
+      cwd: join(repoRoot, "apps", "web"),
+      env: {
+        ...baseEnv,
+        ...scopedDevClerkEnvironment(auth.authEnv, "web"),
+      },
+      stdio: "inherit",
+    },
   );
   return new Promise((resolveRun, rejectRun) => {
     child.once("error", rejectRun);
