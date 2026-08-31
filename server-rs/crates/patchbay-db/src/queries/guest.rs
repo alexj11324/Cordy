@@ -67,3 +67,23 @@ pub async fn revoke_active_by_token_hash(
     .await?;
     Ok(result.rows_affected())
 }
+
+/// Marks the bootstrap guest session as claimed by the formal account created
+/// by a completed desktop OAuth handoff. The token stops authenticating as soon
+/// as it is claimed, while the row remains available for audit.
+pub async fn claim_active_by_token_hash(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    token_hash: &str,
+    claimed_by: Uuid,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"UPDATE guest_session
+           SET status = 'claimed', claimed_at = now(), claimed_by = $2
+           WHERE token_hash = $1 AND status = 'active'"#,
+    )
+    .bind(token_hash)
+    .bind(claimed_by)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
+}

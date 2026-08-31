@@ -300,6 +300,7 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
     };
     let composio_state = composio::ComposioState::from_handler(&state);
     let authenticated = workspace::authenticated_router()
+        .merge(desktop_handoff::authenticated_initiate_router())
         .merge(
             workspace::member_router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::from_url(state.pool.clone(), "id"),
@@ -745,6 +746,28 @@ mod tests {
     async fn authenticated_workspace_collection_rejects_anonymous_requests() {
         let response = build_router(None, None)
             .oneshot(Request::get("/api/workspaces").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    #[tokio::test]
+    async fn desktop_callback_initiation_rejects_anonymous_requests() {
+        let response = build_router(None, None)
+            .oneshot(
+                Request::post("/api/desktop-google/initiate")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "callback_protocol": "patchbay-canary-login-fix-123",
+                            "code_challenge": "c".repeat(43),
+                            "state": "s".repeat(43),
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
