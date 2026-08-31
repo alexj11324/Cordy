@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SidebarProvider, useSidebar } from "@patchbay/ui/components/ui/sidebar";
@@ -27,9 +27,11 @@ vi.mock("./integrations-tab", stub("IntegrationsTab"));
 vi.mock("./labs-tab", stub("LabsTab"));
 vi.mock("./notifications-tab", stub("NotificationsTab"));
 vi.mock("./labels-tab", stub("LabelsTab"));
+vi.mock("./issue-statuses-tab", stub("IssueStatusesTab"));
 vi.mock("./properties-tab", stub("PropertiesTab"));
 vi.mock("./quick-actions-tab", stub("QuickActionsTab"));
 vi.mock("./keyboard-shortcuts-tab", stub("KeyboardShortcutsTab"));
+vi.mock("./mcp-tab", stub("McpTab"));
 vi.mock("./plugins-tab", stub("PluginsTab"));
 vi.mock("./billing-tab", stub("BillingTab"));
 
@@ -155,6 +157,98 @@ describe("SettingsPage nav trigger", () => {
       "data-active:!bg-sidebar-item-active",
     );
   });
+
+  it("keeps every existing settings destination visible in the standalone nav", async () => {
+    renderWithI18n(
+      <SettingsPage
+        variant="standalone"
+        extraAccountTabs={[
+          { value: "daemon", label: "Daemon", icon: () => null, content: null },
+          { value: "updates", label: "Updates", icon: () => null, content: null },
+        ]}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByRole("tab").map((tab) => tab.textContent?.trim()),
+      ).toEqual([
+        "Profile",
+        "Preferences",
+        "Shortcuts",
+        "Issue",
+        "Chat",
+        "Notifications",
+        "API Tokens",
+        "Daemon",
+        "Updates",
+        "General",
+        "Repositories",
+        "GitHub",
+        "Integrations",
+        "Labs",
+        "Members",
+        "Labels",
+        "Issue Statuses",
+        "Properties",
+        "Quick Actions",
+        "MCP",
+      ]);
+    });
+  });
+
+  it("keeps every standalone destination wired to its existing panel", async () => {
+    const panels = [
+      ["profile", "AccountTab"],
+      ["preferences", "PreferencesTab"],
+      ["shortcuts", "KeyboardShortcutsTab"],
+      ["issue", "IssueTab"],
+      ["chat", "ChatTab"],
+      ["notifications", "NotificationsTab"],
+      ["tokens", "TokensTab"],
+      ["daemon", "DaemonPanel"],
+      ["updates", "UpdatesPanel"],
+      ["workspace", "WorkspaceTab"],
+      ["repositories", "RepositoriesTab"],
+      ["github", "GitHubTab"],
+      ["integrations", "IntegrationsTab"],
+      ["labs", "LabsTab"],
+      ["members", "MembersTab"],
+      ["labels", "LabelsTab"],
+      ["issue-statuses", "IssueStatusesTab"],
+      ["properties", "PropertiesTab"],
+      ["quick-actions", "QuickActionsTab"],
+      ["mcp", "McpTab"],
+    ] as const;
+
+    for (const [value, panel] of panels) {
+      cleanup();
+      navigationState.search = `tab=${value}`;
+      renderWithI18n(
+        <SettingsPage
+          variant="standalone"
+          extraAccountTabs={[
+            {
+              value: "daemon",
+              label: "Daemon",
+              icon: () => null,
+              content: <div>DaemonPanel</div>,
+            },
+            {
+              value: "updates",
+              label: "Updates",
+              icon: () => null,
+              content: <div>UpdatesPanel</div>,
+            },
+          ]}
+        />,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText(panel)).toBeInTheDocument();
+      });
+    }
+  }, 30_000);
 
   it("preserves the embedded settings navigation width", () => {
     const { container } = renderWithI18n(<SettingsPage />);
