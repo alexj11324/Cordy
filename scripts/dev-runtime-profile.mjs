@@ -98,6 +98,28 @@ export function applyDevRuntimeProfile(env, profile) {
   return env;
 }
 
+/**
+ * Keep hosted and local development sessions in different Electron userData
+ * directories. Local keeps its existing default/worktree identity so an
+ * existing local session is preserved; hosted gets a profile marker appended
+ * to the identity used by Electron's single-instance lock and localStorage.
+ */
+export function applyDevRuntimeAppIdentity(env) {
+  if (env.PATCHBAY_DEV_MODE !== HOSTED_MODE) return env;
+
+  const existing =
+    typeof env.DESKTOP_APP_SUFFIX === "string"
+      ? env.DESKTOP_APP_SUFFIX.trim()
+      : "";
+  if (existing === HOSTED_MODE || existing.endsWith(`-${HOSTED_MODE}`)) {
+    return env;
+  }
+  env.DESKTOP_APP_SUFFIX = existing
+    ? `${existing}-${HOSTED_MODE}`
+    : HOSTED_MODE;
+  return env;
+}
+
 function nonEmpty(value, fallback) {
   return typeof value === "string" && value.trim() !== "" ? value : fallback;
 }

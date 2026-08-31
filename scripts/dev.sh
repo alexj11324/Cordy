@@ -32,6 +32,12 @@ fi
 
 echo "==> Using $ENV_FILE"
 
+# The Node launcher has already selected the mode from its command-line
+# profile. Preserve that decision while sourcing a checkout env file; otherwise
+# a stale PATCHBAY_DEV_MODE=hosted in the file could silently turn plain
+# `pnpm dev` into a shared hosted run.
+launcher_dev_mode="${PATCHBAY_DEV_MODE:-}"
+
 set -a
 # shellcheck disable=SC1090
 . "$ENV_FILE"
@@ -40,7 +46,7 @@ set +a
 # shellcheck disable=SC1091
 . scripts/local-env.sh
 
-dev_mode="${PATCHBAY_DEV_MODE:-local}"
+dev_mode="${launcher_dev_mode:-${PATCHBAY_DEV_MODE:-local}}"
 for arg in "$@"; do
   if [ "$arg" = "--hosted" ]; then
     dev_mode="hosted"

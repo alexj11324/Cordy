@@ -124,6 +124,29 @@ describe("complete Desktop development doctor", () => {
     });
   });
 
+  it("can explicitly inspect the hosted profile from a standalone doctor", async () => {
+    const repoRoot = await fixtureRepo();
+    const envFile = join(repoRoot, ".env");
+    await writeFile(
+      envFile,
+      "PORT=18123\nVITE_API_URL=http://127.0.0.1:18123\nVITE_ACCOUNTS_URL=http://localhost:13123\n",
+    );
+
+    const env = loadDoctorEnvironment({
+      repoRoot,
+      mode: "hosted",
+      processEnv: {},
+    });
+
+    expect(env).toMatchObject({
+      PATCHBAY_DEV_MODE: "hosted",
+      VITE_API_URL: "https://api.aspectlylabs.com",
+      VITE_WS_URL: "wss://api.aspectlylabs.com/ws",
+      VITE_APP_URL: "https://patchbay.aspectlylabs.com",
+      VITE_ACCOUNTS_URL: "https://accounts.aspectlylabs.com",
+    });
+  });
+
   it("checks the hosted accounts broker before opening Electron", async () => {
     const repoRoot = await fixtureRepo();
     const execImpl = vi.fn(async (_binary, args) =>

@@ -97,6 +97,34 @@ Desktop은 기본적으로 Patchbay Cloud에 연결됩니다. 자체 호스팅 �
 - `appUrl`: 도메인이 `api.`로 시작하고 세 구간 이상이면 `api.` 접두사를 제거합니다(`api.example.com` → `example.com`). 그렇지 않으면 `apiUrl`과 동일하게 유지합니다.
 - `accountsUrl`: 인증 브로커가 별도 origin에 배포되지 않았다면 `appUrl`을 재사용합니다.
 
+### Desktop 로컬 개발 및 hosted 로그인
+
+일반적인 로컬 개발에는 다음 명령을 사용합니다.
+
+```bash
+pnpm dev
+```
+
+체크아웃별로 격리된 로컬 API, 데이터베이스, `http://localhost:<port>` 로그인
+origin을 사용합니다. 로컬 Electron/Vite를 실행하면서 hosted Google 로그인과
+API를 테스트하려면 명시적인 hosted 프로필을 사용하세요.
+
+```bash
+pnpm dev:hosted
+```
+
+이 프로필은 다음 hosted 구성을 사용합니다.
+
+- Google/Clerk 로그인 브로커: `https://accounts.aspectlylabs.com`
+- API 및 WebSocket: `https://api.aspectlylabs.com`
+- 공개 앱 URL: `https://patchbay.aspectlylabs.com`
+
+Electron 렌더러는 로컬에서 hot reload되지만 OAuth 흐름은 localhost를 거치지
+않습니다. hosted 프로필은 공유 hosted 데이터를 읽고 변경할 수 있으므로 명시적으로
+선택해야 하며, 로컬 서비스로 조용히 대체되지 않고 Electron 세션 저장소도 로컬
+프로필과 분리됩니다. 별도 터미널에서 hosted API와 로그인 브로커를 다시 확인하려면
+`pnpm dev:doctor --hosted`를 실행하세요.
+
 보통 `apiUrl`만 작성하면 됩니다. 추론 결과가 맞지 않을 때 명시적으로 덮어쓰면 됩니다. 일반적인 경우는 네 가지입니다.
 
 - Web과 API가 서로 다른 도메인을 사용

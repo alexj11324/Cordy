@@ -69,6 +69,14 @@ describe("complete development launcher contract", () => {
       "node scripts/dev-launcher.mjs --hosted",
     );
     expect(runtimeProfile).toContain('const HOSTED_MODE = "hosted"');
+    expect(runtimeProfile).toContain("applyDevRuntimeAppIdentity");
+  });
+
+  it("preserves the launcher-selected mode across the POSIX env-file load", () => {
+    expect(launcher).toContain('launcher_dev_mode="${PATCHBAY_DEV_MODE:-}"');
+    expect(launcher).toContain(
+      'dev_mode="${launcher_dev_mode:-${PATCHBAY_DEV_MODE:-local}}"',
+    );
   });
 
   it("starts the live web origin used for browser, share, and login links", () => {

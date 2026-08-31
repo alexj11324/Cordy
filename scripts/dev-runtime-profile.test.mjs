@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applyDevRuntimeAppIdentity,
   applyDevRuntimeProfile,
   assertDevRuntimeOverridesCompatible,
   parseDevRuntimeArgs,
@@ -52,6 +53,29 @@ describe("development runtime profiles", () => {
       NEXT_PUBLIC_API_URL: "https://api.aspectlylabs.com",
       NEXT_PUBLIC_WS_URL: "wss://api.aspectlylabs.com/ws",
     });
+  });
+
+  it("isolates hosted Electron storage without moving the local profile", () => {
+    const localEnv = { PATCHBAY_DEV_MODE: "local" };
+    const hostedEnv = { PATCHBAY_DEV_MODE: "hosted" };
+    const worktreeHostedEnv = {
+      PATCHBAY_DEV_MODE: "hosted",
+      DESKTOP_APP_SUFFIX: "oauth-followup-123",
+    };
+
+    applyDevRuntimeAppIdentity(localEnv);
+    applyDevRuntimeAppIdentity(hostedEnv);
+    applyDevRuntimeAppIdentity(worktreeHostedEnv);
+
+    expect(localEnv.DESKTOP_APP_SUFFIX).toBeUndefined();
+    expect(hostedEnv.DESKTOP_APP_SUFFIX).toBe("hosted");
+    expect(worktreeHostedEnv.DESKTOP_APP_SUFFIX).toBe(
+      "oauth-followup-123-hosted",
+    );
+    applyDevRuntimeAppIdentity(worktreeHostedEnv);
+    expect(worktreeHostedEnv.DESKTOP_APP_SUFFIX).toBe(
+      "oauth-followup-123-hosted",
+    );
   });
 
   it("removes the launcher-only mode flag before Electron", () => {

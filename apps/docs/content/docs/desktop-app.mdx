@@ -97,6 +97,35 @@ This is **not** the CLI's `~/.patchbay/config.json`, and the key names differ: t
 - `appUrl`: strips the `api.` prefix when the host starts with `api.` and has at least three labels (`api.example.com` → `example.com`); otherwise it stays the same as `apiUrl`.
 - `accountsUrl`: reuses `appUrl` unless authentication is deployed on a separate origin.
 
+### Desktop local development and hosted login
+
+For normal local development, use:
+
+```bash
+pnpm dev
+```
+
+This uses the checkout's isolated local API, database, and
+`http://localhost:<port>` login origin. To run local Electron/Vite while
+testing the hosted Google login and API, use the explicit hosted profile:
+
+```bash
+pnpm dev:hosted
+```
+
+That profile uses the complete hosted tuple:
+
+- `https://accounts.aspectlylabs.com` for the Google/Clerk login broker;
+- `https://api.aspectlylabs.com` for the API and WebSocket;
+- `https://patchbay.aspectlylabs.com` for the public app URL.
+
+The Electron renderer still hot-reloads locally, but the OAuth flow never
+passes through localhost. Hosted mode can read and change shared hosted data,
+so it is opt-in, does not silently fall back to local services, and keeps its
+Electron session storage separate from the local profile. Use
+`pnpm dev:doctor --hosted` to recheck the hosted API and accounts broker from a
+separate terminal.
+
 Usually `apiUrl` alone is enough. Override explicitly only when the derivation doesn't match your deployment; the four common cases:
 
 - the web app and the API are on different domains;

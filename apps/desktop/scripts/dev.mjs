@@ -15,7 +15,10 @@ import { fileURLToPath } from "node:url";
 
 import { envWithLocalBins } from "./package.mjs";
 import { planDevCommands } from "./dev-plan.mjs";
-import { parseDevRuntimeArgs } from "../../../scripts/dev-runtime-profile.mjs";
+import {
+  applyDevRuntimeAppIdentity,
+  parseDevRuntimeArgs,
+} from "../../../scripts/dev-runtime-profile.mjs";
 import {
   applyWorktreeDevEnv,
   repoRootFromScriptDir,
@@ -28,6 +31,7 @@ applyWorktreeDevEnv(process.env, {
   root: repoRootFromScriptDir(here),
   log: true,
 });
+applyDevRuntimeAppIdentity(process.env);
 
 function run(command, args, { shell = false, env = process.env } = {}) {
   const result = spawnSync(command, args, {
