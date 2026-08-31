@@ -80,6 +80,14 @@ describe("Desktop development build plan", () => {
     ]);
   });
 
+  it("applies the hosted storage identity after worktree isolation", () => {
+    expect(devLauncher).toContain("applyWorktreeDevEnv(process.env");
+    expect(devLauncher).toContain("applyDevRuntimeAppIdentity(process.env)");
+    expect(devLauncher.lastIndexOf("applyDevRuntimeAppIdentity")).toBeGreaterThan(
+      devLauncher.indexOf("applyWorktreeDevEnv(process.env"),
+    );
+  });
+
   it.each(["--bundle-cli", "--source-cli"])(
     "rejects the removed Rust-free/source toggle %s",
     (flag) => {

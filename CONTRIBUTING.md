@@ -545,13 +545,15 @@ The command does not open Electron until it has:
 
 There is deliberately no UI-only or released/PATH-CLI development fallback. A
 missing capability fails before the window opens and prints an executable fix.
-Use `pnpm dev:doctor` to repeat the same diagnostics while the stack is running.
+Use `pnpm dev:doctor` to repeat the local diagnostics while the stack is running,
+or `pnpm dev:doctor --hosted` from a separate terminal to probe the hosted API
+and accounts broker explicitly.
 
 | Situation                                                                      | Command                                   | Expected work                                                                          |
 | ------------------------------------------------------------------------------ | ----------------------------------------- | -------------------------------------------------------------------------------------- |
 | Normal local product development                                               | `pnpm dev` or `make dev`                  | Complete Electron + dev CLI + backend + Web origin + isolated DB, with Vite hot reload |
 | Desktop development against hosted OAuth/API                                  | `pnpm dev:hosted`                         | Local Electron/Vite hot reload with the production accounts/API tuple; no local API    |
-| Re-run capability diagnostics                                                  | `pnpm dev:doctor`                         | CLI/version/source, backend/DB, agent detection, Telegram/Weixin configuration         |
+| Re-run capability diagnostics                                                  | `pnpm dev:doctor [--hosted]`              | CLI/version/source, selected API/accounts endpoints, agent detection, Telegram/Weixin configuration |
 | Compile-check frontend/Electron output                                         | `pnpm --filter @patchbay/desktop build`   | Electron/Vite production bundles; no Rust                                              |
 | Validate an installer, signing/notarization, updater, embedded CLI, or release | `pnpm --filter @patchbay/desktop package` | Release Rust CLI and installer packaging; may take tens of minutes                     |
 

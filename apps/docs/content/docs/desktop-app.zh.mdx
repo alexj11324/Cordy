@@ -120,7 +120,9 @@ pnpm dev:hosted
 
 Electron 的热更新渲染器仍然可以使用本地端口，但 OAuth 链路不会再经过
 localhost。由于 hosted 模式连接共享数据，它不会作为默认开发模式，也不会
-在本地服务不可用时静默回退到另一个环境。
+在本地服务不可用时静默回退到另一个环境；它的 Electron 会话存储也与本地
+profile 分开。若要在另一个终端重新检查 hosted API 和 accounts broker，运行
+`pnpm dev:doctor --hosted`。
 
 通常只写 `apiUrl` 即可。推导不符合预期时再显式覆盖，常见情况有四类：
 

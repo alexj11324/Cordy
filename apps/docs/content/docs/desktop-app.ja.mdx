@@ -97,6 +97,36 @@ Desktop はデフォルトで Patchbay Cloud に接続します。セルフホ�
 - `appUrl`: ホスト名が `api.` で始まりラベルが 3 つ以上ある場合は `api.` プレフィックスを取り除きます（`api.example.com` → `example.com`）。それ以外は `apiUrl` と同じままです。
 - `accountsUrl`: 認証ブローカーが別オリジンにない限り `appUrl` を再利用します。
 
+### Desktop のローカル開発と hosted ログイン
+
+通常のローカル開発では次を実行します:
+
+```bash
+pnpm dev
+```
+
+チェックアウトごとに分離されたローカル API、データベース、
+`http://localhost:<port>` のログインオリジンが使われます。ローカルの
+Electron/Vite を動かしながら hosted の Google ログインと API を検証する
+場合は、明示的な hosted プロファイルを使います:
+
+```bash
+pnpm dev:hosted
+```
+
+このプロファイルは次の hosted 構成を使います:
+
+- Google/Clerk ログインブローカー: `https://accounts.aspectlylabs.com`
+- API と WebSocket: `https://api.aspectlylabs.com`
+- 公開アプリ URL: `https://patchbay.aspectlylabs.com`
+
+Electron のレンダラーはローカルでホットリロードされますが、OAuth フローが
+localhost を経由することはありません。hosted プロファイルは共有 hosted
+データを読み書きできるため明示的な opt-in であり、ローカルサービスへ
+サイレントにフォールバックせず、Electron のセッションストレージもローカル
+プロファイルから分離されます。別のターミナルから hosted API とログイン
+ブローカーを再確認するには `pnpm dev:doctor --hosted` を実行します。
+
 通常は `apiUrl` だけで十分です。導出結果がデプロイと合わない場合にのみ明示的に上書きします。よくあるのは次の 4 つのケースです:
 
 - Web アプリと API が異なるドメインにある。

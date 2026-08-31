@@ -75,10 +75,11 @@ export function accountsUrlFromEnv(env) {
 export function loadDoctorEnvironment({
   repoRoot = defaultRepoRoot,
   processEnv = process.env,
+  mode,
 } = {}) {
   const launcherEnv = { ...processEnv };
   const env = { ...processEnv };
-  const launcherMode = processEnv.PATCHBAY_DEV_MODE;
+  const launcherMode = mode ?? processEnv.PATCHBAY_DEV_MODE;
   loadDevCheckoutEnv({ repoRoot, env });
   if (launcherMode) {
     Object.assign(env, launcherEnv);
@@ -349,7 +350,9 @@ export function printDevEnvironmentReport(report, log = console) {
 
 async function main() {
   const warnOnly = process.argv.includes("--warn-only");
-  const env = loadDoctorEnvironment();
+  const env = loadDoctorEnvironment({
+    mode: process.argv.includes("--hosted") ? "hosted" : undefined,
+  });
   const report = await inspectDevEnvironment({ env });
   printDevEnvironmentReport(report);
   if (!report.ok && !warnOnly) process.exitCode = 1;
