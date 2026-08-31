@@ -134,7 +134,7 @@ pub async fn list_waiting_linear_agent_sessions(
 }
 
 /// Replays a waiting native Agent Session after the Issue has acquired a
-/// valid Cordy executor. The replay is itself an Inbox row so selecting an
+/// valid Patchbay executor. The replay is itself an Inbox row so selecting an
 /// Agent and dispatching the session remain durable across worker crashes.
 pub async fn enqueue_linear_agent_session_retry(
     executor: &mut PgConnection,

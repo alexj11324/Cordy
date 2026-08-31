@@ -237,9 +237,9 @@ fn parse_agent_session_terminal_event(
     let error_body = first_string(Some(data), &["error", "failureReason", "message"]);
     let body = match (status.as_str(), result_body, error_body) {
         ("completed", Some(body), _) => body.to_string(),
-        ("completed", None, _) => "Cordy Agent completed the task.".to_string(),
-        (_, _, Some(error)) => format!("Cordy Agent {status}: {error}"),
-        (_, _, None) => format!("Cordy Agent {status} the task."),
+        ("completed", None, _) => "Patchbay Agent completed the task.".to_string(),
+        (_, _, Some(error)) => format!("Patchbay Agent {status}: {error}"),
+        (_, _, None) => format!("Patchbay Agent {status} the task."),
     };
     Ok(LinearAgentSessionTerminalEvent {
         session_id,
@@ -327,7 +327,7 @@ fn agent_label_decision(
 }
 
 /// Returns the complete remote label set for an outbound Issue mutation.
-/// Labels outside the configured Cordy Agent group are preserved verbatim;
+/// Labels outside the configured Patchbay Agent group are preserved verbatim;
 /// only the integration-owned group value is replaced. `Some(empty)` is
 /// intentional when the local executor is cleared, so a stale Agent label is
 /// removed instead of being left behind on Linear.
@@ -3404,7 +3404,7 @@ mod tests {
             "error": "provider unavailable"
         }))
         .unwrap();
-        assert_eq!(failed.body, "Cordy Agent failed: provider unavailable");
+        assert_eq!(failed.body, "Patchbay Agent failed: provider unavailable");
     }
 
     #[test]
