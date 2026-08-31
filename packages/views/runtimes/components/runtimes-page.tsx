@@ -13,8 +13,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useAuthStore } from "@patchbay/core/auth";
 import { useWorkspaceId } from "@patchbay/core/hooks";
-import { memberNeedsMikaSetup, useBootstrapMika } from "@patchbay/core/onboarding";
-import { MIKA_PLACEHOLDER_EMOJI } from "../../onboarding/components/mika-intro";
+import { memberNeedsPatrickSetup, useBootstrapPatrick } from "@patchbay/core/onboarding";
+import { PATRICK_PLACEHOLDER_EMOJI } from "../../onboarding/components/patrick-intro";
 import { useRequiredWorkspaceSlug, useWorkspacePaths } from "@patchbay/core/paths";
 import { agentTaskSnapshotOptions } from "@patchbay/core/agents";
 import { chatSessionsOptions } from "@patchbay/core/chat/queries";
@@ -33,9 +33,9 @@ import {
   DialogTitle,
 } from "@patchbay/ui/components/ui/dialog";
 import {
-  MikaRuntimeChoice,
-  type MikaRuntimeSelection,
-} from "./mika-runtime-choice";
+  PatrickRuntimeChoice,
+  type PatrickRuntimeSelection,
+} from "./patrick-runtime-choice";
 import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import {
   CollectionPageHeader,
@@ -45,7 +45,7 @@ import {
 import { PageHeader } from "../../layout/page-header";
 import { AppLink, useNavigation } from "../../navigation";
 import {
-  getMikaOnboarding,
+  getPatrickOnboarding,
   pickContentLang,
 } from "../../onboarding/templates";
 import { ConnectRemoteDialog } from "./connect-remote-dialog";
@@ -104,9 +104,9 @@ export function RuntimesPage({
     agentListOptions(wsId),
   );
   const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
-  // The Mika entrypoint is per member, not per workspace: the agent alone does
+  // The Patrick entrypoint is per member, not per workspace: the agent alone does
   // not say whether *this* member's conversation was ever opened and kicked
-  // off. See memberNeedsMikaSetup.
+  // off. See memberNeedsPatrickSetup.
   const { data: chatSessions = [], isLoading: chatSessionsLoading } = useQuery(
     chatSessionsOptions(wsId),
   );
@@ -181,9 +181,9 @@ export function RuntimesPage({
           <div className="mx-auto flex w-full max-w-[1440px] flex-col p-4 sm:p-6">
             {!agentsLoading &&
               !chatSessionsLoading &&
-              memberNeedsMikaSetup(agents, chatSessions) &&
+              memberNeedsPatrickSetup(agents, chatSessions) &&
               runtimes.length > 0 && (
-              <MikaSetupCard
+              <PatrickSetupCard
                 workspaceId={wsId}
                 runtimes={runtimes}
                 runtimesLoading={runtimesLoading}
@@ -218,10 +218,10 @@ export function RuntimesPage({
 }
 
 /**
- * Entry point for creating Mika once a runtime exists.
+ * Entry point for creating Patrick once a runtime exists.
  *
  * The action opens a picker rather than provisioning straight away. It used to
- * take `runtimes.find(online) ?? runtimes[0]` and create Mika on it silently —
+ * take `runtimes.find(online) ?? runtimes[0]` and create Patrick on it silently —
  * but one machine commonly exposes every agent CLI it has installed (nine, on
  * the box this was reported from), so "the first online one" is arbitrary and
  * could well be a CLI the member never intended to run their Chief of Staff
@@ -229,7 +229,7 @@ export function RuntimesPage({
  * decision reached from a different entry point, so it asks the same way and
  * reuses the same two controls.
  */
-function MikaSetupCard({
+function PatrickSetupCard({
   workspaceId,
   runtimes,
   runtimesLoading,
@@ -244,7 +244,7 @@ function MikaSetupCard({
   const navigation = useNavigation();
   const paths = useWorkspacePaths();
   const wsSlug = useRequiredWorkspaceSlug();
-  const bootstrapMika = useBootstrapMika(workspaceId);
+  const bootstrapPatrick = useBootstrapPatrick(workspaceId);
 
   const [open, setOpen] = useState(false);
   // Seeded with the old heuristic so the dialog opens on a sensible default;
@@ -253,29 +253,29 @@ function MikaSetupCard({
     runtimes.find((runtime) => runtime.status === "online")?.id ??
     runtimes[0]?.id ??
     "";
-  const [choice, setChoice] = useState<MikaRuntimeSelection | null>(null);
+  const [choice, setChoice] = useState<PatrickRuntimeSelection | null>(null);
 
-  const value: MikaRuntimeSelection = choice ?? {
+  const value: PatrickRuntimeSelection = choice ?? {
     runtimeId: defaultRuntimeId,
     model: "",
   };
   const runtimeId = value.runtimeId;
 
   const handleStart = async () => {
-    if (!runtimeId || bootstrapMika.isPending) return;
+    if (!runtimeId || bootstrapPatrick.isPending) return;
     const lang = pickContentLang(i18n.language);
     try {
-      const result = await bootstrapMika.mutateAsync({
+      const result = await bootstrapPatrick.mutateAsync({
         workspaceSlug: wsSlug,
         runtimeId,
         model: value.model || undefined,
-        ...getMikaOnboarding(lang),
+        ...getPatrickOnboarding(lang),
       });
       setOpen(false);
       navigation.push(paths.chatSession(result.chatSession.id));
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : t(($) => $.mika_setup.failed),
+        error instanceof Error ? error.message : t(($) => $.patrick_setup.failed),
       );
     }
   };
@@ -285,58 +285,58 @@ function MikaSetupCard({
       <div className="mb-6 flex flex-col gap-4 rounded-xl border bg-card p-5 sm:flex-row sm:items-center">
         <span
           role="img"
-          aria-label={t(($) => $.mika_setup.title)}
+          aria-label={t(($) => $.patrick_setup.title)}
           className="flex size-10 shrink-0 select-none items-center justify-center rounded-full bg-muted text-title-lg leading-none"
         >
-          {MIKA_PLACEHOLDER_EMOJI}
+          {PATRICK_PLACEHOLDER_EMOJI}
         </span>
         <div className="min-w-0 flex-1">
           <h2 className="text-body font-semibold">
-            {t(($) => $.mika_setup.title)}
+            {t(($) => $.patrick_setup.title)}
           </h2>
           <p className="mt-1 text-body leading-relaxed text-muted-foreground">
-            {t(($) => $.mika_setup.description)}
+            {t(($) => $.patrick_setup.description)}
           </p>
         </div>
         <Button className="shrink-0" onClick={() => setOpen(true)}>
-          {t(($) => $.mika_setup.action)}
+          {t(($) => $.patrick_setup.action)}
         </Button>
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="sm:max-w-[480px]">
           <DialogHeader>
-            <DialogTitle>{t(($) => $.mika_setup.dialog_title)}</DialogTitle>
+            <DialogTitle>{t(($) => $.patrick_setup.dialog_title)}</DialogTitle>
             <DialogDescription>
-              {t(($) => $.mika_setup.dialog_description)}
+              {t(($) => $.patrick_setup.dialog_description)}
             </DialogDescription>
           </DialogHeader>
 
-          <MikaRuntimeChoice
+          <PatrickRuntimeChoice
             runtimes={runtimes}
             runtimesLoading={runtimesLoading}
             currentUserId={currentUserId}
             value={value}
             onChange={setChoice}
-            disabled={bootstrapMika.isPending}
+            disabled={bootstrapPatrick.isPending}
           />
 
           <DialogFooter>
             <Button
               variant="ghost"
               onClick={() => setOpen(false)}
-              disabled={bootstrapMika.isPending}
+              disabled={bootstrapPatrick.isPending}
             >
-              {t(($) => $.mika_setup.cancel)}
+              {t(($) => $.patrick_setup.cancel)}
             </Button>
             <Button
               onClick={handleStart}
-              disabled={!runtimeId || bootstrapMika.isPending}
+              disabled={!runtimeId || bootstrapPatrick.isPending}
             >
-              {bootstrapMika.isPending && (
+              {bootstrapPatrick.isPending && (
                 <Loader2 aria-hidden className="size-4 animate-spin" />
               )}
-              {t(($) => $.mika_setup.action)}
+              {t(($) => $.patrick_setup.action)}
             </Button>
           </DialogFooter>
         </DialogContent>

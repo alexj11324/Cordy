@@ -19,19 +19,19 @@ export {
 } from "./needs-backfill";
 export { agentCompletedIssueCountOptions } from "./queries";
 export {
-  bootstrapMika,
-  useBootstrapMika,
-  type BootstrapMikaInput,
-  type BootstrapMikaResult,
-  type MikaOnboardingLanguage,
-} from "./use-bootstrap-mika";
+  bootstrapPatrick,
+  useBootstrapPatrick,
+  type BootstrapPatrickInput,
+  type BootstrapPatrickResult,
+  type PatrickOnboardingLanguage,
+} from "./use-bootstrap-patrick";
 export {
   useWelcomeStore,
   type WelcomeSignal,
 } from "./welcome-store";
 export {
-  MIKA_SYSTEM_KEY,
-  isMikaAgent,
-  memberNeedsMikaSetup,
-  workspaceNeedsMika,
-} from "./mika";
+  PATRICK_SYSTEM_KEY,
+  isPatrickAgent,
+  memberNeedsPatrickSetup,
+  workspaceNeedsPatrick,
+} from "./patrick";

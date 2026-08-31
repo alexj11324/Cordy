@@ -14,12 +14,12 @@ import {
   runtimeDisplayLabel,
 } from "@patchbay/core/runtimes";
 import type { AgentRuntime } from "@patchbay/core/types";
-import { MikaIntro } from "../components/mika-intro";
+import { PatrickIntro } from "../components/patrick-intro";
 import {
   StepFooter,
 } from "../components/step-shell";
 import { useRuntimePicker } from "../components/use-runtime-picker";
-import { MikaRuntimeChoice } from "../../runtimes/components/mika-runtime-choice";
+import { PatrickRuntimeChoice } from "../../runtimes/components/patrick-runtime-choice";
 import { useT } from "../../i18n";
 
 /**
@@ -199,7 +199,7 @@ function FancyView({
       setSubmitting(false);
     }
   };
-  // Starting with Mika only makes sense when a runtime is selected.
+  // Starting with Patrick only makes sense when a runtime is selected.
   const canContinue = phase === "found" && selected !== null;
   const handleContinue = async () => {
     if (!canContinue || submitting) return;
@@ -232,7 +232,7 @@ function FancyView({
         key={phase}
         className="animate-onboarding-enter flex flex-col gap-8 pt-2 sm:pt-6"
       >
-        <MikaIntro />
+        <PatrickIntro />
 
         {phase === "scanning" && <ScanningView />}
         {phase === "found" && (
@@ -384,7 +384,7 @@ function FoundView({
       </div>
 
       <div className="mt-6 flex flex-col gap-4">
-        <MikaRuntimeChoice
+        <PatrickRuntimeChoice
           runtimes={runtimes}
           currentUserId={currentUserId}
           value={{ runtimeId: selectedId ?? "", model }}

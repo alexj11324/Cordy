@@ -146,13 +146,13 @@ describe("WelcomeAfterOnboarding", () => {
 
     expect(mockCreateIssue).toHaveBeenCalledTimes(1);
     expect(mockCreateIssue.mock.calls[0]![0]).toMatchObject({
-      title: "Connect a device to start with Mika",
+      title: "Connect a device to start with Patrick",
       status: "in_progress",
       assignee_type: "member",
       assignee_id: "user-1",
     });
     expect(mockCreateIssue.mock.calls[0]![0].description).toContain(
-      "Start with Mika",
+      "Start with Patrick",
     );
 
     fireEvent.click(screen.getByRole("button", { name: /got it/i }));

@@ -19,7 +19,7 @@ import type {
   ChatPendingTask,
   PrioritizeQueuedChatTaskResponse,
   SendChatMessageResponse,
-  StartMikaOnboardingResponse,
+  StartPatrickOnboardingResponse,
   Comment,
   CreateBillingCheckoutSessionResponse,
   CreateBillingPortalSessionResponse,
@@ -1944,7 +1944,7 @@ export const SendChatMessageResponseSchema: z.ZodType<SendChatMessageResponse> =
 // `started` is the only field the flow branches on, and a malformed response
 // must not be read as "the opening landed" — parseWithFallback's fallback says
 // it did not, which leaves the flow's own retry as the recovery path.
-export const StartMikaOnboardingResponseSchema: z.ZodType<StartMikaOnboardingResponse> = z.object({
+export const StartPatrickOnboardingResponseSchema: z.ZodType<StartPatrickOnboardingResponse> = z.object({
   started: z.boolean(),
   message_id: z.string().nullish().transform((id) => id ?? undefined),
   created_at: z.string().nullish().transform((at) => at ?? undefined),

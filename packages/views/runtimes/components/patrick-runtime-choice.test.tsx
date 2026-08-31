@@ -7,7 +7,7 @@ import type { AgentRuntime } from "@patchbay/core/types";
 import enAgents from "../../locales/en/agents.json";
 import enCommon from "../../locales/en/common.json";
 import enRuntimes from "../../locales/en/runtimes.json";
-import { MikaRuntimeChoice } from "./mika-runtime-choice";
+import { PatrickRuntimeChoice } from "./patrick-runtime-choice";
 
 vi.mock("@patchbay/core/api", () => ({ api: { listRuntimeModels: vi.fn() } }));
 
@@ -20,11 +20,11 @@ const runtimes = [
   { id: "rt-2", name: "Server", provider: "codex", status: "offline" },
 ] as AgentRuntime[];
 
-function renderChoice(props: Partial<Parameters<typeof MikaRuntimeChoice>[0]>) {
+function renderChoice(props: Partial<Parameters<typeof PatrickRuntimeChoice>[0]>) {
   return render(
     <QueryClientProvider client={new QueryClient()}>
       <I18nProvider locale="en" resources={RESOURCES}>
-        <MikaRuntimeChoice
+        <PatrickRuntimeChoice
           runtimes={runtimes}
           value={{ runtimeId: "rt-1", model: "" }}
           onChange={() => {}}
@@ -36,7 +36,7 @@ function renderChoice(props: Partial<Parameters<typeof MikaRuntimeChoice>[0]>) {
   );
 }
 
-describe("MikaRuntimeChoice list layout", () => {
+describe("PatrickRuntimeChoice list layout", () => {
   it("selects a runtime and clears the model chosen for the previous one", async () => {
     const onChange = vi.fn();
     renderChoice({ value: { runtimeId: "rt-1", model: "opus" }, onChange });
@@ -50,7 +50,7 @@ describe("MikaRuntimeChoice list layout", () => {
 
   // The dropdown layout honoured `disabled`; the list layout dropped it, so a
   // member could switch machines while the connect request was in flight and
-  // end up with Mika on a runtime they no longer had selected.
+  // end up with Patrick on a runtime they no longer had selected.
   it("stops the choice changing while a submit is in flight", async () => {
     const onChange = vi.fn();
     renderChoice({ disabled: true, onChange });

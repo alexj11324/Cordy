@@ -98,7 +98,7 @@ function WindowOverlayInner() {
     <div className="fixed inset-0 z-50 flex flex-col overflow-auto bg-background">
       {/* Creating a workspace is the onboarding flow entered at the
           workspace step: a second workspace still needs its own runtime and
-          its own Mika, so running one flow keeps the two from drifting. */}
+          its own Patrick, so running one flow keeps the two from drifting. */}
       {overlay.type === "new-workspace" && (
         <OnboardingFlow
           mode="new_workspace"

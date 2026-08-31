@@ -13,8 +13,8 @@ export interface ChatPinnedAgent {
  * - "message"     — an ordinary user/assistant message.
  * - "no_response" — a completed direct-chat turn that produced no text reply.
  * - "onboarding_kickoff" — a product-authored opening input that is sent to
- *   Mika but never rendered as a member message.
- * - "onboarding_opening" — Mika's reply to the kickoff; chat renders the
+ *   Patrick but never rendered as a member message.
+ * - "onboarding_opening" — Patrick's reply to the kickoff; chat renders the
  *   onboarding starter cards under it instead of quick-action chips.
  */
 export type ChatMessageKind =
@@ -201,13 +201,13 @@ export interface SendChatMessageResponse {
   attachment_ids?: string[];
 }
 
-export interface StartMikaOnboardingResponse {
+export interface StartPatrickOnboardingResponse {
   /** True only for the request that wrote the opening. */
   started: boolean;
   /**
    * The opening message, already persisted and final. No agent runs to
    * produce it, so there is no task to await — a `started` response means the
-   * member's first message from Mika is in the Agent event history right now.
+   * member's first message from Patrick is in the Agent event history right now.
    */
   message_id?: string;
   created_at?: string;

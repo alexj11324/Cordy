@@ -595,6 +595,10 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "450_agent_task_execution_provenance_discovery_queue_index",
         "agent_task_execution_provenance_discovery_queue_idx",
     ),
+    (
+        "453_patrick_workspace_unique_index",
+        "uq_agent_workspace_patrick",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
@@ -730,5 +734,9 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
     (
         "450_agent_task_execution_provenance_discovery_queue_index",
         "agent_task_execution_provenance_discovery_queue_idx",
+    ),
+    (
+        "453_patrick_workspace_unique_index",
+        "uq_agent_workspace_patrick",
     ),
 ];
