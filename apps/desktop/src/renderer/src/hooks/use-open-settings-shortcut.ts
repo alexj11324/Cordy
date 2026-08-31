@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useModalStore } from "@patchbay/core/modals";
 import { paths } from "@patchbay/core/paths";
 import { useTabStore } from "@/stores/tab-store";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
@@ -20,6 +21,9 @@ export function openSettingsPage(): void {
   const store = useTabStore.getState();
   const slug = store.activeWorkspaceSlug;
   if (!slug) return;
+  // ModalRegistry portals live under document.body, outside the inert desktop
+  // underlay. Close an active dialog before Settings takes over the window.
+  useModalStore.getState().close();
   overlays.open({ type: "settings", path: paths.workspace(slug).settings() });
 }
 

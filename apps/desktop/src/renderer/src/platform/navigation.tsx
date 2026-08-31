@@ -5,6 +5,7 @@ import {
   type NavigationAdapter,
 } from "@patchbay/views/navigation";
 import { useAuthStore } from "@patchbay/core/auth";
+import { useModalStore } from "@patchbay/core/modals";
 import { isReservedSlug } from "@patchbay/core/paths";
 import {
   useTabStore,
@@ -58,6 +59,11 @@ function tryRouteToOverlay(path: string): boolean {
     if (targetSlug && targetSlug !== tabs.activeWorkspaceSlug) {
       tabs.switchWorkspace(targetSlug);
     }
+    // ModalRegistry dialogs render through a portal attached to document.body,
+    // outside the desktop underlay that Settings makes inert. Dismiss any
+    // active dialog before taking over the window so it cannot remain above or
+    // trap focus behind the standalone page.
+    useModalStore.getState().close();
     overlay.open({ type: "settings", path });
     return true;
   }

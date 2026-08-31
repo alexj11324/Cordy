@@ -32,12 +32,14 @@ vi.mock("@patchbay/core/auth", () => ({
 
 import { DesktopNavigationProvider, routeContentLinkPath } from "./navigation";
 import { useNavigation } from "@patchbay/views/navigation";
+import { useModalStore } from "@patchbay/core/modals";
 import { useTabStore, getActiveTab } from "@/stores/tab-store";
 
 beforeEach(() => {
   overlay.open.mockReset();
   overlay.close.mockReset();
   overlay.overlay = null;
+  useModalStore.getState().close();
   auth.logout.mockReset();
   useTabStore.getState().reset();
   useTabStore.getState().switchWorkspace("acme"); // default tab /acme/issues
@@ -178,6 +180,19 @@ describe("push", () => {
       path: "/acme/settings?tab=tokens",
     });
     expect(acmeGroup()).toBe(before);
+  });
+
+  it("closes a portaled modal before opening Settings", () => {
+    const getAdapter = renderProvider();
+    useModalStore.getState().open("create-issue");
+
+    getAdapter().push("/acme/settings");
+
+    expect(useModalStore.getState().modal).toBeNull();
+    expect(overlay.open).toHaveBeenCalledWith({
+      type: "settings",
+      path: "/acme/settings",
+    });
   });
 
   it("switches workspace before opening that workspace's Settings page", () => {

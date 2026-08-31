@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "@testing-library/react";
+import { useModalStore } from "@patchbay/core/modals";
 import { useTabStore } from "@/stores/tab-store";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 import {
@@ -64,6 +65,7 @@ describe("openSettingsPage", () => {
   beforeEach(() => {
     seedTabs();
     useWindowOverlayStore.setState({ overlay: null });
+    useModalStore.getState().close();
   });
 
   it("opens Settings for the active workspace without changing tabs", () => {
@@ -83,6 +85,18 @@ describe("openSettingsPage", () => {
 
     expect(useWindowOverlayStore.getState().overlay).toBe(first);
     expect(tabUrls()).toEqual(["/acme/issues"]);
+  });
+
+  it("closes a portaled modal before opening Settings", () => {
+    useModalStore.getState().open("create-issue");
+
+    openSettingsPage();
+
+    expect(useModalStore.getState().modal).toBeNull();
+    expect(useWindowOverlayStore.getState().overlay).toEqual({
+      type: "settings",
+      path: "/acme/settings",
+    });
   });
 
   it("does nothing while a pre-workspace overlay covers the window", () => {
@@ -105,6 +119,7 @@ describe("useOpenSettingsShortcut", () => {
   beforeEach(() => {
     seedTabs();
     useWindowOverlayStore.setState({ overlay: null });
+    useModalStore.getState().close();
   });
 
   it("opens Settings when main delivers the chord", () => {
