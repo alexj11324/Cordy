@@ -240,7 +240,7 @@ fn require_setup_writable(state: &HandlerState) -> Result<(), Response> {
 
 fn provider_capability(
     state: &HandlerState,
-    _provider: Provider,
+    provider: Provider,
 ) -> Option<&crate::config::MessagingPlatformCapability> {
     state
         .public_config
@@ -2043,7 +2043,7 @@ async fn install_context(
     context: &WorkspaceContext,
     headers: &HeaderMap,
     query: &AgentQuery,
-    provider: Provider,
+    _provider: Provider,
 ) -> Result<(Uuid, Uuid, Uuid), Response> {
     require_setup_writable(state)?;
     require_formal_user(headers)?;
