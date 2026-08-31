@@ -4,9 +4,7 @@
 //! verification remain in `patchbay-handler`, so database code cannot
 //! accidentally accept an unverified provider payload.
 
-use crate::models::{
-    LinearConnection, LinearOAuthState, LinearProjectBinding, LinearSyncInbox,
-};
+use crate::models::{LinearConnection, LinearOAuthState, LinearProjectBinding, LinearSyncInbox};
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use sqlx::{Executor, Postgres};
