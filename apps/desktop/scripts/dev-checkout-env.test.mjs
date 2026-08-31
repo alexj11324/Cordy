@@ -54,6 +54,21 @@ describe("development checkout environment", () => {
     expect(env.LOCAL_UPLOAD_DIR).toBe(join(sandbox, "server/data/uploads"));
   });
 
+  it("keeps Clerk credentials process-only and ignores checkout-file values", async () => {
+    sandbox = await mkdtemp(join(tmpdir(), "patchbay-dev-env-"));
+    await mkdir(join(sandbox, ".git"));
+    await writeFile(
+      join(sandbox, ".env"),
+      "CLERK_SECRET_KEY=must-not-load\nCLERK_JWT_KEY=must-not-load\nPORT=8080\n",
+    );
+    const env = { CLERK_SECRET_KEY: "process-only" };
+
+    loadDevCheckoutEnv({ repoRoot: sandbox, env });
+
+    expect(env.CLERK_SECRET_KEY).toBe("process-only");
+    expect(env.CLERK_JWT_KEY).toBeUndefined();
+  });
+
   it("resolves file references against inherited variables", async () => {
     sandbox = await mkdtemp(join(tmpdir(), "patchbay-dev-env-"));
     await mkdir(join(sandbox, ".git"));

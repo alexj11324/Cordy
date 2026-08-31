@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -5,6 +6,17 @@ import { describe, expect, it } from "vitest";
 import { planCompleteDevLauncher } from "../../../scripts/dev-launcher.mjs";
 
 describe("cross-platform complete development entrypoint", () => {
+  it("bootstraps secure Clerk auth before spawning dependency or Rust work", () => {
+    const source = readFileSync(
+      join(import.meta.dirname, "../../../scripts/dev-launcher.mjs"),
+      "utf8",
+    );
+    const auth = source.indexOf("bootstrapDevClerkAuth({ env })");
+    const spawn = source.indexOf("child = spawn(");
+    expect(auth).toBeGreaterThan(-1);
+    expect(spawn).toBeGreaterThan(auth);
+  });
+
   it("uses the POSIX implementation and forwards Electron arguments", () => {
     expect(
       planCompleteDevLauncher("darwin", ["--inspect"], {
