@@ -1155,7 +1155,7 @@ impl From<LinearCatalogLabel> for LinearCatalogLabelResponse {
 }
 
 #[derive(Debug, Serialize)]
-struct LinearCatalogResponse {
+pub(crate) struct LinearCatalogResponse {
     teams: Vec<LinearCatalogTeam>,
     projects: Vec<LinearCatalogProject>,
     states: Vec<LinearCatalogState>,
