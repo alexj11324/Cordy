@@ -94,10 +94,7 @@ describe("secure Clerk development bootstrap", () => {
           env: {
             FRONTEND_ORIGIN: "http://localhost:3000",
             NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: publishableKey,
-            CLERK_PUBLISHABLE_KEY: publishableKey.replace(
-              "example.clerk.accounts.dev",
-              "other.clerk.accounts.dev",
-            ),
+            CLERK_PUBLISHABLE_KEY: `pk_test_${Buffer.from("other.clerk.accounts.dev$").toString("base64")}`,
             CLERK_SECRET_KEY: "sk_test_fixture",
             CLERK_JWT_KEY: jwtKey,
           },
@@ -105,7 +102,7 @@ describe("secure Clerk development bootstrap", () => {
             throw new Error("Secret Manager should not be contacted");
           },
         }),
-      /publishable-key.*must match/iu,
+      /publishable[_-]key.*must match/iu,
     );
   });
 
