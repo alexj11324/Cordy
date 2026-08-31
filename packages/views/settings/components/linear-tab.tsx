@@ -360,6 +360,8 @@ function BindingWizard({
       memberBindings.map((binding) => [binding.patchbay_user_id, binding.linear_user_id]),
     ),
   );
+  const [importRetryBindingId, setImportRetryBindingId] = useState<string | null>(null);
+  const [retryingImport, setRetryingImport] = useState(false);
   const qc = useQueryClient();
 
   const selectedBinding = bindings.find(
@@ -534,7 +536,14 @@ function BindingWizard({
           selectedBinding.sync_mode !== draft.syncMode ||
           selectedBinding.initial_source_of_truth !== draft.initialSourceOfTruth);
       if (shouldQueueInitialImport && savedBinding.status === "active") {
-        await api.enqueueLinearInitialImport(workspaceId, savedBinding.id);
+        try {
+          await api.enqueueLinearInitialImport(workspaceId, savedBinding.id);
+        } catch {
+          setImportRetryBindingId(savedBinding.id);
+          await qc.invalidateQueries({ queryKey: linearKeys.bindings(workspaceId) });
+          toast.error(t(($) => $.page.linear.import_queue_failed));
+          return;
+        }
       }
       await Promise.all(
         members.map(async (member) => {
@@ -553,6 +562,7 @@ function BindingWizard({
           }
         }),
       );
+      setImportRetryBindingId(null);
       await qc.invalidateQueries({ queryKey: linearKeys.bindings(workspaceId) });
       await qc.invalidateQueries({ queryKey: linearKeys.memberBindings(workspaceId) });
       toast.success(t(($) => $.page.linear.saved));
@@ -566,6 +576,23 @@ function BindingWizard({
       );
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function retryInitialImport() {
+    if (!importRetryBindingId) return;
+    setRetryingImport(true);
+    try {
+      await api.enqueueLinearInitialImport(workspaceId, importRetryBindingId);
+      setImportRetryBindingId(null);
+      await qc.invalidateQueries({ queryKey: linearKeys.bindings(workspaceId) });
+      toast.success(t(($) => $.page.linear.saved));
+      onSaved();
+      onClose();
+    } catch {
+      toast.error(t(($) => $.page.linear.import_queue_failed));
+    } finally {
+      setRetryingImport(false);
     }
   }
 
@@ -973,12 +1000,23 @@ function BindingWizard({
         <Button disabled={step === 1 || saving} onClick={goBack} variant="ghost">
           {t(($) => $.page.linear.back)}
         </Button>
+        {importRetryBindingId ? (
+          <Button
+            disabled={retryingImport}
+            onClick={() => void retryInitialImport()}
+            variant="outline"
+          >
+            {retryingImport ? <Loader2 className="animate-spin" /> : null}
+            {t(($) => $.page.linear.retry_import)}
+          </Button>
+        ) : null}
         {step < 6 ? (
           <Button onClick={goNext}>{t(($) => $.page.linear.next)}</Button>
         ) : (
           <Button
             disabled={
               saving ||
+              importRetryBindingId !== null ||
               dryRunLoading ||
               !dryRun ||
               dryRunError ||

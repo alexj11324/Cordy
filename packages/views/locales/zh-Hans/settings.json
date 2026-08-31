@@ -475,6 +475,8 @@
       "conflict_status_dismissed": "已忽略",
       "save_conflict": "该项目或 Linear 项目已经绑定",
       "save_failed": "无法保存 Linear 项目绑定",
+      "import_queue_failed": "绑定已保存，但首次导入未能入队，请重试。",
+      "retry_import": "重试首次导入",
       "loading_catalog": "正在加载 Linear 目录",
       "loading_catalog_description": "正在获取 Team、项目、工作流状态、用户和标签。",
       "catalog_failed": "无法加载 Linear 目录，请重新连接后重试。"
