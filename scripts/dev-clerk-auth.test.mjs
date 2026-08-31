@@ -87,6 +87,25 @@ describe("secure Clerk development bootstrap", () => {
     assert.equal(secretProviderCalled, false);
   });
 
+  it("rejects partial injected credentials before contacting GSM", async () => {
+    let secretProviderCalled = false;
+    await assert.rejects(
+      () =>
+        bootstrapDevClerkAuth({
+          env: {
+            FRONTEND_ORIGIN: "http://localhost:3000",
+            CLERK_SECRET_KEY: "sk_test_stale",
+          },
+          secretProvider: async () => {
+            secretProviderCalled = true;
+            return {};
+          },
+        }),
+      /complete set.*partial values/iu,
+    );
+    assert.equal(secretProviderCalled, false);
+  });
+
   it("derives a PEM verification key from Clerk JWKS metadata", async () => {
     const jwk = publicKey.export({ format: "jwk" });
     const fetchCalls = [];

@@ -490,6 +490,20 @@ async function directorySize(path) {
   return total;
 }
 
+function runtimeIdentityKey({
+  sourceFingerprint,
+  rustTarget,
+  toolchainIdentity,
+  buildVariables,
+}) {
+  return JSON.stringify({
+    sourceFingerprint,
+    rustTarget,
+    toolchainIdentity: toolchainIdentity || "unavailable",
+    buildVariables: buildVariables || {},
+  });
+}
+
 async function listRuntimeCacheEntries(cacheRoot) {
   const schemaRoot = join(
     cacheRoot,
@@ -521,11 +535,21 @@ async function listRuntimeCacheEntries(cacheRoot) {
           );
           const binaryPath = join(entryDir, manifest.binaryName);
           await stat(binaryPath);
+          const toolchainIdentity = manifest.toolchainIdentity || "unavailable";
+          const buildVariables = manifest.buildVariables || {};
           entries.push({
             entryDir,
             profile: profile.name,
             rustTarget: target.name,
             sourceFingerprint: manifest.sourceFingerprint,
+            toolchainIdentity,
+            buildVariables,
+            identityKey: runtimeIdentityKey({
+              sourceFingerprint: manifest.sourceFingerprint,
+              rustTarget: target.name,
+              toolchainIdentity,
+              buildVariables,
+            }),
             mtimeMs: entryStat.mtimeMs,
             sizeBytes: await directorySize(entryDir),
           });
@@ -535,6 +559,9 @@ async function listRuntimeCacheEntries(cacheRoot) {
             profile: profile.name,
             rustTarget: target.name,
             sourceFingerprint: null,
+            toolchainIdentity: null,
+            buildVariables: null,
+            identityKey: null,
             mtimeMs: 0,
             sizeBytes: await directorySize(entryDir).catch(() => 0),
             invalid: true,
@@ -550,11 +577,14 @@ export async function inspectDevRuntimeCache({ cacheRoot }) {
   const entries = await listRuntimeCacheEntries(cacheRoot);
   const fingerprints = new Map();
   for (const entry of entries) {
-    if (!entry.sourceFingerprint) continue;
-    const key = `${entry.rustTarget}:${entry.sourceFingerprint}`;
+    if (!entry.identityKey) continue;
+    const key = entry.identityKey;
     const group = fingerprints.get(key) || {
+      identityKey: key,
       sourceFingerprint: entry.sourceFingerprint,
       rustTarget: entry.rustTarget,
+      toolchainIdentity: entry.toolchainIdentity,
+      buildVariables: entry.buildVariables,
       profiles: new Set(),
       newestMtimeMs: 0,
       sizeBytes: 0,
@@ -593,10 +623,7 @@ export async function pruneDevRuntimeCache({
   const protectedEntries = new Set();
   for (const group of protectedGroups) {
     for (const entry of report.entries) {
-      if (
-        entry.rustTarget === group.rustTarget &&
-        entry.sourceFingerprint === group.sourceFingerprint
-      ) {
+      if (entry.identityKey === group.identityKey) {
         protectedEntries.add(entry.entryDir);
       }
     }
