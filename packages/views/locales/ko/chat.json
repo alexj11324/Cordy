@@ -4,6 +4,19 @@
     "select_prompt": "대화를 선택하거나 +로 새로 시작하세요",
     "agent_link_no_access": "이 에이전트와 채팅할 권한이 없습니다."
   },
+  "navigation": {
+    "new_topic": "새 주제",
+    "search": "검색",
+    "topics": "주제",
+    "profile": "에이전트 프로필",
+    "tasks": "작업",
+    "history": "채팅 기록",
+    "history_search": "주제 검색...",
+    "switch_agent": "에이전트 전환",
+    "switch_workspace": "워크스페이스 전환",
+    "topic_actions": "주제 작업",
+    "topic_count": "주제 {{count}}개"
+  },
   "fab": {
     "running": "Patchbay가 작업 중입니다...",
     "unread_other": "읽지 않은 채팅 {{count}}개",

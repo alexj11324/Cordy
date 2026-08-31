@@ -64,20 +64,27 @@ import {
   useActiveIssueViewStore,
 } from "@patchbay/core/issue-views/active-view-store";
 import { useCurrentWorkspace, useWorkspacePaths, paths } from "@patchbay/core/paths";
-import { workspaceListOptions, myInvitationListOptions, workspaceKeys } from "@patchbay/core/workspace/queries";
+import {
+  agentListOptions,
+  memberListOptions,
+  workspaceListOptions,
+  myInvitationListOptions,
+  workspaceKeys,
+} from "@patchbay/core/workspace/queries";
 import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { inboxKeys, deduplicateInboxItems, inboxUnreadSummaryOptions, hasOtherWorkspaceUnread, unreadWorkspaceIds } from "@patchbay/core/inbox/queries";
 import { chatSessionsOptions } from "@patchbay/core/chat/queries";
 import { countUnreadChatMessages } from "@patchbay/core/chat/unread";
 import { useChatStore } from "@patchbay/core/chat";
+import { useSetChatSessionArchived } from "@patchbay/core/chat/mutations";
 import { api, ApiError } from "@patchbay/core/api";
 import { useConfigStore } from "@patchbay/core/config";
 import { pinListOptions } from "@patchbay/core/pins/queries";
 import { useDeletePin, useReorderPins } from "@patchbay/core/pins/mutations";
 import { issueDetailOptions } from "@patchbay/core/issues/queries";
 import { projectDetailOptions } from "@patchbay/core/projects/queries";
-import type { PinnedItem } from "@patchbay/core/types";
+import type { Agent, ChatSession, PinnedItem } from "@patchbay/core/types";
 import { useLogout } from "../auth";
 import { ProjectIcon } from "../projects/components/project-icon";
 import { routeIconForPath } from "./route-icon-components";
@@ -87,6 +94,9 @@ import {
 } from "@patchbay/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 import { useAppForeground } from "../common/use-app-foreground";
+import { canAssignAgent } from "../issues/components/pickers/assignee-picker";
+import { LobeAgentSidebar } from "./lobe-agent-sidebar";
+import { useSearchStore } from "../search/search-store";
 
 // Top-level nav items stay active when the user is on a child route
 // (e.g. "Projects" stays lit on /:slug/projects/:id). Pinned items keep
@@ -106,6 +116,8 @@ const EMPTY_WORKSPACES: Awaited<ReturnType<typeof api.listWorkspaces>> = [];
 const EMPTY_INVITATIONS: Awaited<ReturnType<typeof api.listMyInvitations>> = [];
 const EMPTY_INBOX: Awaited<ReturnType<typeof api.listInbox>> = [];
 const EMPTY_INBOX_SUMMARY: Awaited<ReturnType<typeof api.getInboxUnreadSummary>> = [];
+const EMPTY_AGENTS: Agent[] = [];
+const EMPTY_MEMBERS: Awaited<ReturnType<typeof api.listMembers>> = [];
 
 // Nav items reference WorkspacePaths method names so they can be resolved
 // against the current workspace slug at render time (see AppSidebar body).
@@ -487,6 +499,8 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   const floatingChatOpen = useChatStore((s) => s.isOpen);
   const appForeground = useAppForeground();
   const chatHref = p.chat();
+  const isChatRoute = isNavActive(pathname, chatHref);
+  const selectedChatAgentId = useChatStore((s) => s.selectedAgentId);
   const viewedChatSessionId =
     appForeground && (floatingChatOpen || isNavActive(pathname, chatHref))
       ? activeChatSessionId
@@ -495,6 +509,33 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
     () => countUnreadChatMessages(chatSessions, viewedChatSessionId),
     [chatSessions, viewedChatSessionId],
   );
+  // The Agent chat sidebar owns the agent picker, so fetch the same full agent
+  // and member lists used by ChatPage only while that surface is active. The
+  // member role is part of the permission decision; filtering by ownership
+  // alone would show agents a workspace member cannot invoke.
+  const { data: chatAgents = EMPTY_AGENTS } = useQuery({
+    ...agentListOptions(wsId ?? ""),
+    enabled: isChatRoute && !!wsId,
+  });
+  const { data: chatMembers = EMPTY_MEMBERS } = useQuery({
+    ...memberListOptions(wsId ?? ""),
+    enabled: isChatRoute && !!wsId,
+  });
+  const chatMemberRole = chatMembers.find((member) => member.user_id === userId)?.role;
+  const availableChatAgents = React.useMemo(
+    () => chatAgents.filter((agent) => !agent.archived_at && canAssignAgent(agent, userId, chatMemberRole)),
+    [chatAgents, chatMemberRole, userId],
+  );
+  const activeChatSession = React.useMemo(
+    () => chatSessions.find((session) => session.id === activeChatSessionId) ?? null,
+    [activeChatSessionId, chatSessions],
+  );
+  const activeChatAgent = React.useMemo(() => {
+    if (activeChatSession) {
+      return chatAgents.find((agent) => agent.id === activeChatSession.agent_id) ?? null;
+    }
+    return availableChatAgents.find((agent) => agent.id === selectedChatAgentId) ?? availableChatAgents[0] ?? null;
+  }, [activeChatSession, availableChatAgents, chatAgents, selectedChatAgentId]);
   // Cross-workspace unread summary backs the workspace-switcher dot. One
   // shared cache entry across workspaces; gated on an active workspace since
   // the endpoint resolves through the workspace-member middleware.
@@ -600,6 +641,88 @@ export function AppSidebar({ topSlot, searchSlot, headerClassName, headerStyle }
   });
 
   const createIssueShortcut = useShortcut("createIssue");
+  const archiveChatSession = useSetChatSessionArchived();
+
+  const startChatFromSidebar = useCallback(
+    (agent: Agent | null) => {
+      setOpenMobile(false);
+      push(agent ? p.chatWithAgent(agent.id) : p.chat());
+    },
+    [p, push, setOpenMobile],
+  );
+  const selectChatSessionFromSidebar = useCallback((session: ChatSession) => {
+    setOpenMobile(false);
+    const chatStore = useChatStore.getState();
+    chatStore.setSelectedAgentId(session.agent_id);
+    chatStore.setActiveSession(session.id);
+  }, [setOpenMobile]);
+  const openChatTopics = useCallback(() => {
+    setOpenMobile(false);
+    useChatStore.getState().setActiveSession(null);
+  }, [setOpenMobile]);
+  const openChatProfile = useCallback(() => {
+    setOpenMobile(false);
+    push(activeChatAgent ? p.agentDetail(activeChatAgent.id) : p.agents());
+  }, [activeChatAgent, p, push, setOpenMobile]);
+  const openChatTasks = useCallback(() => {
+    setOpenMobile(false);
+    push(p.issues());
+  }, [p, push, setOpenMobile]);
+
+  if (isChatRoute) {
+    return (
+      <LobeAgentSidebar
+        activeAgent={activeChatAgent}
+        activeSessionId={activeChatSessionId}
+        agents={chatAgents}
+        availableAgents={availableChatAgents}
+        chatHref={chatHref}
+        chatUnreadCount={chatUnreadCount}
+        headerClassName={headerClassName}
+        headerStyle={headerStyle}
+        acceptingInvitation={acceptInvitationMut.isPending}
+        decliningInvitation={declineInvitationMut.isPending}
+        myInvitations={myInvitations}
+        onAcceptInvitation={(id) => acceptInvitationMut.mutate(id)}
+        onArchive={(session) => {
+          if (session.id === activeChatSessionId) {
+            useChatStore.getState().setActiveSession(null);
+          }
+          archiveChatSession.mutate({ sessionId: session.id, archived: true });
+        }}
+        onDeclineInvitation={(id) => declineInvitationMut.mutate(id)}
+        onOpenProfile={openChatProfile}
+        onOpenSearch={() => {
+          setOpenMobile(false);
+          useSearchStore.getState().setOpen(true);
+        }}
+        onOpenTasks={openChatTasks}
+        onOpenTopics={openChatTopics}
+        onSelectSession={selectChatSessionFromSidebar}
+        onStartChat={startChatFromSidebar}
+        onSwitchWorkspace={(nextWorkspace) => {
+          setOpenMobile(false);
+          push(paths.workspace(nextWorkspace.slug).issues());
+        }}
+        onCreateWorkspace={() => {
+          setOpenMobile(false);
+          push(paths.newWorkspace());
+        }}
+        otherWorkspaceUnread={otherWorkspaceUnread}
+        sidebarState={sidebarState}
+        setHoverRevealSuspended={setHoverRevealSuspended}
+        sessions={chatSessions}
+        topSlot={topSlot}
+        unreadWorkspaceIds={unreadWsIds}
+        user={user}
+        userId={userId}
+        workspace={workspace}
+        workspaces={workspaces}
+        workspaceCreationDisabled={workspaceCreationDisabled}
+        onLogout={logout}
+      />
+    );
+  }
 
   return (
       <Sidebar variant="inset">

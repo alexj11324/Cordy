@@ -12,3 +12,9 @@ attribution for non-interface use. See the LICENSE file for the full text.
 
 This NOTICE file is provided for attribution purposes only and does not
 modify the Patchbay License.
+
+Third-party UI component
+------------------------
+This product includes @lobehub/ui 5.36.2, distributed under the MIT License.
+The corresponding copyright and permission notice is preserved in
+licenses/lobehub-ui-MIT.txt.

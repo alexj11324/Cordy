@@ -110,6 +110,9 @@ vi.mock("../common/use-app-foreground", () => ({
 vi.mock("./help-launcher", () => ({
   HelpLauncher: () => <button type="button">Help</button>,
 }));
+vi.mock("../chat/components/chat-thread-list", () => ({
+  ChatThreadList: () => null,
+}));
 vi.mock("../auth", () => ({ useLogout: () => vi.fn() }));
 vi.mock("../issues/components/status-icon", () => ({ StatusIcon: () => <span /> }));
 vi.mock("../navigation", () => ({
@@ -131,6 +134,9 @@ vi.mock("@patchbay/core/chat", () => ({
       selector(chatStore.current),
     { getState: () => chatStore.current },
   ),
+}));
+vi.mock("@patchbay/core/chat/mutations", () => ({
+  useSetChatSessionArchived: () => ({ mutate: vi.fn() }),
 }));
 vi.mock("@patchbay/core/paths", async (importOriginal) => ({
   // Spread the real module so pure helpers (resolveRouteIconName, used by the
@@ -190,6 +196,8 @@ vi.mock("@patchbay/core/pins/mutations", () => ({ useDeletePin: () => ({ mutate:
 vi.mock("@patchbay/core/pins/queries", () => ({ pinListOptions: () => ({ queryKey: ["pins"] }) }));
 vi.mock("@patchbay/core/projects/queries", () => ({ projectDetailOptions: () => ({ queryKey: ["project"] }) }));
 vi.mock("@patchbay/core/workspace/queries", () => ({
+  agentListOptions: () => ({ queryKey: ["agents"] }),
+  memberListOptions: () => ({ queryKey: ["members"] }),
   myInvitationListOptions: () => ({ queryKey: ["invitations"] }),
   workspaceKeys: { myInvitations: () => ["invitations"] },
   workspaceListOptions: () => ({ queryKey: ["workspaces"] }),
