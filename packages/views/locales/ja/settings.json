@@ -354,6 +354,8 @@
       "projects_synced": "{{count}} 件のプロジェクトを同期中",
       "last_sync": "最終同期 {{time}}",
       "last_sync_never": "未同期",
+      "last_webhook_received": "Webhook 最終受信 {{time}}",
+      "last_webhook_never": "Webhook 未受信",
       "not_configured": "未設定",
       "unavailable": "利用できません",
       "disconnected": "未接続",

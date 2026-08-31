@@ -354,6 +354,8 @@
       "projects_synced": "프로젝트 {{count}}개 동기화됨",
       "last_sync": "최근 동기화 {{time}}",
       "last_sync_never": "동기화 기록 없음",
+      "last_webhook_received": "최근 Webhook 수신 {{time}}",
+      "last_webhook_never": "Webhook 수신 기록 없음",
       "not_configured": "구성되지 않음",
       "unavailable": "사용할 수 없음",
       "disconnected": "연결되지 않음",

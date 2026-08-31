@@ -354,6 +354,8 @@
       "projects_synced": "已同步 {{count}} 个项目",
       "last_sync": "最近同步 {{time}}",
       "last_sync_never": "尚未同步",
+      "last_webhook_received": "最近收到 Webhook {{time}}",
+      "last_webhook_never": "尚未收到 Webhook",
       "not_configured": "未配置",
       "unavailable": "不可用",
       "disconnected": "未连接",

@@ -278,8 +278,9 @@ function BindingWizard({
       toast.error(t(($) => $.page.linear.match_required));
       return;
     }
-    if (step === 2 && draft.syncMode !== "not_synced" && !draft.linearTeamId) {
+    if (step === 3 && draft.syncMode !== "not_synced" && !draft.linearTeamId) {
       toast.error(t(($) => $.page.linear.team_required));
+      setStep(2);
       return;
     }
     setStep((current) => (current < 6 ? (current + 1) as WizardStep : current));
@@ -364,6 +365,9 @@ function BindingWizard({
                     patchbayProjectId: event.target.value,
                     linearProjectId: "",
                     linearTeamId: "",
+                    syncMode: "import",
+                    initialSourceOfTruth: "linear",
+                    statusMapping: {},
                   }))
                 }
               >
@@ -587,7 +591,16 @@ function BindingWizard({
         {step < 6 ? (
           <Button onClick={goNext}>{t(($) => $.page.linear.next)}</Button>
         ) : (
-          <Button disabled={saving || dryRunLoading || !dryRun || dryRunError} onClick={() => void saveBinding()}>
+          <Button
+            disabled={
+              saving ||
+              dryRunLoading ||
+              !dryRun ||
+              dryRunError ||
+              dryRun.remote_issue_count_truncated
+            }
+            onClick={() => void saveBinding()}
+          >
             {saving ? <Loader2 className="animate-spin" /> : null}
             {t(($) => $.page.linear.activate)}
           </Button>
@@ -623,6 +636,9 @@ export function LinearIntegrationCard({
   );
   const configured = connectionQuery.data?.configured ?? false;
   const bindings = bindingsQuery.data?.bindings ?? [];
+  const activeBindingCount = bindings.filter(
+    (binding) => binding.status === "active" && binding.sync_mode !== "not_synced",
+  ).length;
   const lastSync = formatLastSync(connection?.last_success_at);
 
   async function connect() {
@@ -697,11 +713,11 @@ export function LinearIntegrationCard({
             {status}
             {isConnected ? (
               <span className="text-micro text-muted-foreground">
-                {connection?.organization_name} · {t(($) => $.page.linear.projects_synced, { count: bindings.length })}
+                {connection?.organization_name} · {t(($) => $.page.linear.projects_synced, { count: activeBindingCount })}
                 {" · "}
                 {lastSync
-                  ? t(($) => $.page.linear.last_sync, { time: lastSync })
-                  : t(($) => $.page.linear.last_sync_never)}
+                  ? t(($) => $.page.linear.last_webhook_received, { time: lastSync })
+                  : t(($) => $.page.linear.last_webhook_never)}
               </span>
             ) : null}
           </div>

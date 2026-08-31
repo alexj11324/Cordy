@@ -80,7 +80,13 @@ pub async fn delete_project(
     id: Uuid,
     workspace_id: Uuid,
 ) -> anyhow::Result<u64> {
-    let r = sqlx::query(r#"DELETE FROM project WHERE id = $1 AND workspace_id = $2"#)
+    let r = sqlx::query(
+        r#"WITH deleted_linear_bindings AS (
+               DELETE FROM linear_project_binding
+               WHERE patchbay_project_id = $1 AND workspace_id = $2
+           )
+           DELETE FROM project WHERE id = $1 AND workspace_id = $2"#,
+    )
         .bind(id)
         .bind(workspace_id)
         .execute(executor)

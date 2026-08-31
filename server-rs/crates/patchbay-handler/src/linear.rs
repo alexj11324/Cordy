@@ -298,8 +298,11 @@ async fn dry_run_binding(
         Ok(request) => request,
         Err(response) => return response,
     };
-    if let Err(response) = connection_for_binding(&state, workspace_id, request.connection_id).await
-    {
+    let connection = match connection_for_binding(&state, workspace_id, request.connection_id).await {
+        Ok(connection) => connection,
+        Err(response) => return response,
+    };
+    if let Err(response) = validate_remote_binding(&state, &connection, &request).await {
         return response;
     }
     match linear_q::project_belongs_to_workspace(
@@ -577,6 +580,55 @@ async fn connection_for_binding(
     }
 }
 
+async fn validate_remote_binding(
+    state: &HandlerState,
+    connection: &LinearConnection,
+    request: &SaveLinearProjectBindingRequest,
+) -> Result<(), Response> {
+    if request.status.as_deref() != Some("active") {
+        return Ok(());
+    }
+    let Some(linear_team_id) = request.linear_team_id.as_deref() else {
+        return Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "Linear team id is required before activation",
+        ));
+    };
+    let manager = LinearTokenManager::from_state(state).map_err(linear_token_error_response)?;
+    match manager
+        .remote_binding_is_valid(
+            connection.id,
+            &connection.organization_id,
+            request.linear_project_id.trim(),
+            linear_team_id,
+        )
+        .await
+    {
+        Ok(true) => Ok(()),
+        Ok(false) => Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "Linear project and team do not belong to the connected organization",
+        )),
+        Err(error) => Err(linear_token_error_response(error)),
+    }
+}
+
+fn is_linear_binding_unique_conflict(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<sqlx::Error>()
+        .is_some_and(|error| {
+            matches!(
+                error,
+                sqlx::Error::Database(database)
+                    if database.code().as_deref() == Some("23505")
+                        && matches!(
+                            database.constraint(),
+                            Some("uq_linear_project_binding_remote" | "uq_linear_project_binding_local")
+                        )
+            )
+        })
+}
+
 async fn create_binding(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
@@ -593,8 +645,11 @@ async fn create_binding(
         Ok(request) => request,
         Err(response) => return response,
     };
-    if let Err(response) = connection_for_binding(&state, workspace_id, request.connection_id).await
-    {
+    let connection = match connection_for_binding(&state, workspace_id, request.connection_id).await {
+        Ok(connection) => connection,
+        Err(response) => return response,
+    };
+    if let Err(response) = validate_remote_binding(&state, &connection, &request).await {
         return response;
     }
     match linear_q::project_belongs_to_workspace(
@@ -632,10 +687,14 @@ async fn create_binding(
         Ok(binding) => (StatusCode::CREATED, Json(binding)).into_response(),
         Err(error) => {
             tracing::warn!(%error, "Linear project binding creation failed");
-            error_response(
-                StatusCode::CONFLICT,
-                "Linear project binding already exists",
-            )
+            if is_linear_binding_unique_conflict(&error) {
+                error_response(StatusCode::CONFLICT, "Linear project binding already exists")
+            } else {
+                error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to create Linear project binding",
+                )
+            }
         }
     }
 }
@@ -685,8 +744,11 @@ async fn update_binding(
             "Linear binding connection and Patchbay project are immutable",
         );
     }
-    if let Err(response) = connection_for_binding(&state, workspace_id, request.connection_id).await
-    {
+    let connection = match connection_for_binding(&state, workspace_id, request.connection_id).await {
+        Ok(connection) => connection,
+        Err(response) => return response,
+    };
+    if let Err(response) = validate_remote_binding(&state, &connection, &request).await {
         return response;
     }
     let input = linear_q::LinearProjectBindingInput {
@@ -708,10 +770,14 @@ async fn update_binding(
         Ok(None) => error_response(StatusCode::NOT_FOUND, "Linear project binding not found"),
         Err(error) => {
             tracing::warn!(%error, "Linear project binding update failed");
-            error_response(
-                StatusCode::CONFLICT,
-                "Linear project binding already exists",
-            )
+            if is_linear_binding_unique_conflict(&error) {
+                error_response(StatusCode::CONFLICT, "Linear project binding already exists")
+            } else {
+                error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to update Linear project binding",
+                )
+            }
         }
     }
 }
@@ -926,6 +992,16 @@ struct IdentityOrganization {
 #[derive(Debug, Deserialize)]
 struct LinearCatalogPage<T> {
     nodes: Vec<T>,
+    #[serde(rename = "pageInfo")]
+    page_info: LinearCatalogPageInfo,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearCatalogPageInfo {
+    #[serde(rename = "hasNextPage")]
+    has_next_page: bool,
+    #[serde(rename = "endCursor")]
+    end_cursor: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -937,6 +1013,65 @@ struct LinearCatalogData {
     users: LinearCatalogPage<LinearCatalogUser>,
     #[serde(rename = "issueLabels")]
     issue_labels: LinearCatalogPage<LinearCatalogLabel>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearCatalogPageResponse {
+    teams: Option<LinearCatalogPage<LinearCatalogTeam>>,
+    projects: Option<LinearCatalogPage<LinearCatalogProject>>,
+    #[serde(rename = "workflowStates")]
+    workflow_states: Option<LinearCatalogPage<LinearCatalogState>>,
+    users: Option<LinearCatalogPage<LinearCatalogUser>>,
+    #[serde(rename = "issueLabels")]
+    issue_labels: Option<LinearCatalogPage<LinearCatalogLabel>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearBindingValidationData {
+    project: Option<LinearBindingValidationProject>,
+    team: Option<LinearBindingValidationTeam>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearBindingValidationProject {
+    id: String,
+    teams: LinearBindingValidationTeamPage,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearBindingValidationTeamPage {
+    nodes: Vec<LinearBindingValidationTeamId>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearBindingValidationTeamId {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearBindingValidationTeam {
+    id: String,
+    organization: LinearBindingValidationOrganization,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearBindingValidationOrganization {
+    id: String,
+}
+
+#[derive(Debug, Default)]
+struct CatalogCursor {
+    after: Option<String>,
+    done: bool,
+}
+
+#[derive(Debug, Default)]
+struct CatalogCursors {
+    teams: CatalogCursor,
+    projects: CatalogCursor,
+    workflow_states: CatalogCursor,
+    users: CatalogCursor,
+    issue_labels: CatalogCursor,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -1078,6 +1213,40 @@ struct LinearIdentity {
     actor_id: String,
     organization_id: String,
     organization_name: String,
+}
+
+fn advance_catalog_page<T>(
+    cursor: CatalogCursor,
+    page: Option<LinearCatalogPage<T>>,
+) -> Result<(Vec<T>, CatalogCursor), LinearTokenError> {
+    if cursor.done {
+        return Ok((Vec::new(), cursor));
+    }
+    let Some(page) = page else {
+        return Err(LinearTokenError::InvalidResponse);
+    };
+    if !page.page_info.has_next_page {
+        return Ok((
+            page.nodes,
+            CatalogCursor {
+                after: None,
+                done: true,
+            },
+        ));
+    }
+    let Some(next) = page.page_info.end_cursor else {
+        return Err(LinearTokenError::InvalidResponse);
+    };
+    if cursor.after.as_deref() == Some(next.as_str()) {
+        return Err(LinearTokenError::InvalidResponse);
+    }
+    Ok((
+        page.nodes,
+        CatalogCursor {
+            after: Some(next),
+            done: false,
+        },
+    ))
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1291,16 +1460,29 @@ impl LinearTokenManager {
         })
     }
 
-    async fn query_catalog(
+    async fn query_catalog_page(
         &self,
         access_token: &str,
-    ) -> Result<LinearCatalogData, LinearTokenError> {
+        cursors: &CatalogCursors,
+    ) -> Result<LinearCatalogPageResponse, LinearTokenError> {
         let response = self
             .client
             .post(&self.graphql_url)
             .bearer_auth(access_token)
             .json(&json!({
-                "query": "query LinearCatalog { teams(first: 250) { nodes { id name key } } projects(first: 250) { nodes { id name } } workflowStates(first: 250) { nodes { id name type color } } users(first: 250) { nodes { id name email } } issueLabels(first: 250) { nodes { id name color isGroup parent { id } team { id } } } }"
+                "query": "query LinearCatalog($teamsAfter: String, $teamsDone: Boolean!, $projectsAfter: String, $projectsDone: Boolean!, $statesAfter: String, $statesDone: Boolean!, $usersAfter: String, $usersDone: Boolean!, $labelsAfter: String, $labelsDone: Boolean!) { teams(first: 250, after: $teamsAfter) @skip(if: $teamsDone) { nodes { id name key } pageInfo { hasNextPage endCursor } } projects(first: 250, after: $projectsAfter) @skip(if: $projectsDone) { nodes { id name } pageInfo { hasNextPage endCursor } } workflowStates(first: 250, after: $statesAfter) @skip(if: $statesDone) { nodes { id name type color } pageInfo { hasNextPage endCursor } } users(first: 250, after: $usersAfter) @skip(if: $usersDone) { nodes { id name email } pageInfo { hasNextPage endCursor } } issueLabels(first: 250, after: $labelsAfter) @skip(if: $labelsDone) { nodes { id name color isGroup parent { id } team { id } } pageInfo { hasNextPage endCursor } } }",
+                "variables": {
+                    "teamsAfter": cursors.teams.after,
+                    "teamsDone": cursors.teams.done,
+                    "projectsAfter": cursors.projects.after,
+                    "projectsDone": cursors.projects.done,
+                    "statesAfter": cursors.workflow_states.after,
+                    "statesDone": cursors.workflow_states.done,
+                    "usersAfter": cursors.users.after,
+                    "usersDone": cursors.users.done,
+                    "labelsAfter": cursors.issue_labels.after,
+                    "labelsDone": cursors.issue_labels.done,
+                },
             }))
             .send()
             .await
@@ -1310,7 +1492,7 @@ impl LinearTokenManager {
             })?;
         let status = response.status();
         let payload = response
-            .json::<GraphQlResponse<LinearCatalogData>>()
+            .json::<GraphQlResponse<LinearCatalogPageResponse>>()
             .await
             .map_err(|error| {
                 tracing::warn!(%error, "Linear catalog response is invalid JSON");
@@ -1329,6 +1511,144 @@ impl LinearTokenManager {
             return Err(LinearTokenError::Provider);
         }
         payload.data.ok_or(LinearTokenError::InvalidResponse)
+    }
+
+    async fn query_catalog(
+        &self,
+        access_token: &str,
+    ) -> Result<LinearCatalogData, LinearTokenError> {
+        let mut cursors = CatalogCursors::default();
+        let mut data = LinearCatalogData {
+            teams: LinearCatalogPage {
+                nodes: Vec::new(),
+                page_info: LinearCatalogPageInfo {
+                    has_next_page: false,
+                    end_cursor: None,
+                },
+            },
+            projects: LinearCatalogPage {
+                nodes: Vec::new(),
+                page_info: LinearCatalogPageInfo {
+                    has_next_page: false,
+                    end_cursor: None,
+                },
+            },
+            workflow_states: LinearCatalogPage {
+                nodes: Vec::new(),
+                page_info: LinearCatalogPageInfo {
+                    has_next_page: false,
+                    end_cursor: None,
+                },
+            },
+            users: LinearCatalogPage {
+                nodes: Vec::new(),
+                page_info: LinearCatalogPageInfo {
+                    has_next_page: false,
+                    end_cursor: None,
+                },
+            },
+            issue_labels: LinearCatalogPage {
+                nodes: Vec::new(),
+                page_info: LinearCatalogPageInfo {
+                    has_next_page: false,
+                    end_cursor: None,
+                },
+            },
+        };
+
+        loop {
+            let page = self.query_catalog_page(access_token, &cursors).await?;
+            let (teams, teams_cursor) = advance_catalog_page(cursors.teams, page.teams)?;
+            let (projects, projects_cursor) =
+                advance_catalog_page(cursors.projects, page.projects)?;
+            let (workflow_states, workflow_states_cursor) =
+                advance_catalog_page(cursors.workflow_states, page.workflow_states)?;
+            let (users, users_cursor) = advance_catalog_page(cursors.users, page.users)?;
+            let (issue_labels, issue_labels_cursor) =
+                advance_catalog_page(cursors.issue_labels, page.issue_labels)?;
+
+            data.teams.nodes.extend(teams);
+            data.projects.nodes.extend(projects);
+            data.workflow_states.nodes.extend(workflow_states);
+            data.users.nodes.extend(users);
+            data.issue_labels.nodes.extend(issue_labels);
+            cursors = CatalogCursors {
+                teams: teams_cursor,
+                projects: projects_cursor,
+                workflow_states: workflow_states_cursor,
+                users: users_cursor,
+                issue_labels: issue_labels_cursor,
+            };
+            if cursors.teams.done
+                && cursors.projects.done
+                && cursors.workflow_states.done
+                && cursors.users.done
+                && cursors.issue_labels.done
+            {
+                break;
+            }
+        }
+        Ok(data)
+    }
+
+    async fn remote_binding_is_valid(
+        &self,
+        connection_id: Uuid,
+        organization_id: &str,
+        linear_project_id: &str,
+        linear_team_id: &str,
+    ) -> Result<bool, LinearTokenError> {
+        let access_token = self.access_token(connection_id).await?;
+        let response = self
+            .client
+            .post(&self.graphql_url)
+            .bearer_auth(access_token)
+            .json(&json!({
+                "query": "query LinearBindingValidation($projectId: ID!, $teamId: ID!) { project(id: $projectId) { id teams(first: 1, filter: { id: { eq: $teamId } }) { nodes { id } } } team(id: $teamId) { id organization { id } } }",
+                "variables": {
+                    "projectId": linear_project_id,
+                    "teamId": linear_team_id,
+                },
+            }))
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear binding validation request failed");
+                LinearTokenError::Provider
+            })?;
+        let status = response.status();
+        let payload = response
+            .json::<GraphQlResponse<LinearBindingValidationData>>()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear binding validation response is invalid JSON");
+                LinearTokenError::InvalidResponse
+            })?;
+        if !status.is_success() {
+            tracing::warn!(%status, "Linear binding validation request returned an error");
+            return Err(LinearTokenError::Provider);
+        }
+        if let Some(errors) = payload.errors.as_ref().filter(|errors| !errors.is_empty()) {
+            let message = errors
+                .first()
+                .and_then(|error| error.message.as_deref())
+                .unwrap_or("unknown GraphQL error");
+            tracing::warn!(message, "Linear binding validation GraphQL request failed");
+            return Err(LinearTokenError::Provider);
+        }
+        let Some(data) = payload.data else {
+            return Err(LinearTokenError::InvalidResponse);
+        };
+        Ok(data.project.is_some_and(|project| {
+            project.id == linear_project_id
+                && project
+                    .teams
+                    .nodes
+                    .iter()
+                    .any(|team| team.id == linear_team_id)
+        }) && data.team.is_some_and(|team| {
+            team.id == linear_team_id && team.organization.id == organization_id
+        }))
     }
 
     async fn query_issue_preview_page(

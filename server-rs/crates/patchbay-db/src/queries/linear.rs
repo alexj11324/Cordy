@@ -117,7 +117,20 @@ pub async fn upsert_connection(
     connection: &LinearConnectionInput<'_>,
 ) -> anyhow::Result<LinearConnection> {
     Ok(sqlx::query_as::<_, LinearConnection>(
-        r#"INSERT INTO linear_connection
+        r#"WITH changed_bindings AS (
+               UPDATE linear_project_binding
+               SET status = 'tombstone',
+                   paused_at = COALESCE(paused_at, now()),
+                   updated_at = now()
+               WHERE workspace_id = $2
+                 AND status <> 'tombstone'
+                 AND EXISTS (
+                     SELECT 1
+                     FROM linear_connection
+                     WHERE workspace_id = $2 AND organization_id <> $3
+                 )
+           )
+           INSERT INTO linear_connection
            (id, workspace_id, organization_id, organization_name, actor_id,
             access_token_encrypted, refresh_token_encrypted, token_expires_at,
             scopes, created_by_id)

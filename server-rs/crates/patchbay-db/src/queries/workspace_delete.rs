@@ -261,6 +261,11 @@ pub async fn delete_workspace_linear_data(
     executor: &mut sqlx::PgConnection,
     workspace_id: Uuid,
 ) -> anyhow::Result<()> {
+    sqlx::query(r#"DELETE FROM linear_project_binding WHERE workspace_id = $1"#)
+        .bind(workspace_id)
+        .execute(&mut *executor)
+        .await?;
+
     sqlx::query(
         r#"DELETE FROM linear_sync_inbox
            WHERE connection_id IN (

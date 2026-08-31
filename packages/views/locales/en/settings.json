@@ -354,6 +354,8 @@
       "projects_synced": "{{count}} projects synced",
       "last_sync": "Last sync {{time}}",
       "last_sync_never": "Never synced",
+      "last_webhook_received": "Last webhook received {{time}}",
+      "last_webhook_never": "No webhook received",
       "not_configured": "Not configured",
       "unavailable": "Unavailable",
       "disconnected": "Disconnected",
