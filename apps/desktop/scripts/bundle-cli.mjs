@@ -20,6 +20,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   defaultDevCliCacheDir,
   pruneDevCliCache,
+  rustBuildEnvironmentFingerprint,
   rustSourceFingerprint,
   rustToolchainIdentity,
   stageCachedDevCli,
@@ -177,13 +178,17 @@ export function buildDateForProfile(profile, commitDate, now = new Date()) {
   return now.toISOString().replace(/\.\d+Z$/, "Z");
 }
 
-export function devBuildVariables(sourceFingerprint) {
+export function devBuildVariables(sourceFingerprint, environmentFingerprint) {
   const shortFingerprint = sourceFingerprint.slice(0, 12);
-  return {
+  const variables = {
     version: `dev-${shortFingerprint}`,
     commit: `source-${shortFingerprint}`,
     date: "source-matched-dev",
   };
+  if (environmentFingerprint) {
+    variables.environmentFingerprint = environmentFingerprint;
+  }
+  return variables;
 }
 
 // Hand git arguments straight to the binary (no shell). A match pattern like
@@ -283,7 +288,10 @@ async function main() {
     const toolchainIdentity = rustToolchainIdentity(process.env, cargoCommand, {
       cwd: serverRsDir,
     });
-    const buildVariables = devBuildVariables(sourceFingerprint);
+    const buildVariables = devBuildVariables(
+      sourceFingerprint,
+      rustBuildEnvironmentFingerprint(process.env, rustTarget, profile),
+    );
     const cacheRoot = defaultDevCliCacheDir();
     const cached = await stageCachedDevCli({
       cacheRoot,

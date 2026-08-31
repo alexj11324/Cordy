@@ -17,6 +17,7 @@ import {
 import {
   defaultDevCliCacheDir,
   pruneDevCliCache,
+  rustBuildEnvironmentFingerprint,
   rustSourceFingerprint,
   rustToolchainIdentity,
   stageCachedDevCli,
@@ -142,7 +143,10 @@ export async function prepareDevRuntime({
     platform,
     cwd: serverRsDir,
   });
-  const buildVariables = devBuildVariables(sourceFingerprint);
+  const buildVariables = devBuildVariables(
+    sourceFingerprint,
+    rustBuildEnvironmentFingerprint(env, rustTarget, "dev"),
+  );
   const cacheRoot = defaultDevCliCacheDir({ env, platform });
   const components = devRuntimeComponents({
     repoRoot,

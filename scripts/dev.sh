@@ -40,6 +40,15 @@ set +a
 # shellcheck disable=SC1091
 . scripts/local-env.sh
 
+# Preserve the upload location used by the established run-rust.sh launcher.
+# The backend itself runs from server-rs, so a relative value would otherwise
+# move existing attachments beneath that directory.
+upload_dir="${LOCAL_UPLOAD_DIR:-./data/uploads}"
+case "$upload_dir" in
+  /*|[A-Za-z]:[\\/]*) ;;
+  *) export LOCAL_UPLOAD_DIR="$REPO_ROOT/server/$upload_dir" ;;
+esac
+
 # Keep the shared compiler cache valuable and bounded. Worktree target
 # directories remain independent and are never redirected into this cache.
 export SCCACHE_CACHE_SIZE="${SCCACHE_CACHE_SIZE:-10G}"

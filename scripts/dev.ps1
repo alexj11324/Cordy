@@ -56,6 +56,7 @@ $DatabaseHost = $DatabaseUri.Host
 $DatabasePort = if ($DatabaseUri.Port -gt 0) { $DatabaseUri.Port } else { [int]$env:POSTGRES_PORT }
 $DatabaseName = if ($env:POSTGRES_DB) { $env:POSTGRES_DB } else { $DatabaseUri.AbsolutePath.TrimStart("/") }
 $PostgresUser = if ($env:POSTGRES_USER) { $env:POSTGRES_USER } else { "patchbay" }
+$env:PGPASSWORD = if ($env:POSTGRES_PASSWORD) { $env:POSTGRES_PASSWORD } else { "" }
 $RuntimeMode = if ($env:PATCHBAY_POSTGRES_RUNTIME) { $env:PATCHBAY_POSTGRES_RUNTIME } else { "auto" }
 $IsLocal = $DatabaseHost -in @("localhost", "127.0.0.1", "::1")
 $ComposeEndpoint = $IsLocal -and $DatabasePort -eq 5432

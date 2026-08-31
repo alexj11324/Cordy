@@ -119,6 +119,48 @@ describe("complete Desktop development doctor", () => {
     expect(execImpl.mock.calls[1][2].env.PATCHBAY_TASK_CONFIG_ROOT).toContain(
       "patchbay-dev-doctor-",
     );
+    expect(execImpl.mock.calls[0][0]).toBe(execImpl.mock.calls[1][0]);
+    expect(execImpl.mock.calls[0][0]).not.toBe(report.binaryPath);
+  });
+
+  it("does not execute a CLI whose checksum no longer matches the manifest", async () => {
+    const repoRoot = await fixtureRepo();
+    const binaryPath = join(
+      repoRoot,
+      "apps",
+      "desktop",
+      "resources",
+      "bin",
+      "patchbay",
+    );
+    await writeFile(binaryPath, "tampered after manifest creation");
+    const execImpl = vi.fn();
+
+    const report = await inspectDevEnvironment({
+      repoRoot,
+      env: {
+        VITE_API_URL: "http://127.0.0.1:18123",
+        PATCHBAY_TELEGRAM_SECRET_KEY: secretKey(1),
+        PATCHBAY_WEIXIN_SECRET_KEY: secretKey(2),
+      },
+      platform: "darwin",
+      arch: "arm64",
+      execImpl,
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ status: "ready" }),
+      }),
+    });
+
+    expect(report.ok).toBe(false);
+    expect(report.checks.find(({ id }) => id === "cli")?.message).toContain(
+      "checksum",
+    );
+    expect(report.checks.find(({ id }) => id === "agents")?.message).toContain(
+      "CLI verification failed",
+    );
+    expect(execImpl).not.toHaveBeenCalled();
   });
 
   it("fails explicitly when backend readiness and integration config are missing", async () => {

@@ -51,6 +51,28 @@ describe("development checkout environment", () => {
 
     expect(env.PORT).toBe("8080");
     expect(env.FRONTEND_ORIGIN).toBe("http://localhost:3000");
+    expect(env.LOCAL_UPLOAD_DIR).toBe(join(sandbox, "server/data/uploads"));
+  });
+
+  it("resolves file references against inherited variables", async () => {
+    sandbox = await mkdtemp(join(tmpdir(), "patchbay-dev-env-"));
+    await mkdir(join(sandbox, ".git"));
+    await writeFile(
+      join(sandbox, ".env"),
+      "PORT=${DEV_PORT}\nDATABASE_URL=postgres://${DEV_DATABASE_AUTH}@localhost:${DEV_DATABASE_PORT}/patchbay\n",
+    );
+    const env = {
+      DEV_PORT: "19090",
+      DEV_DATABASE_AUTH: "patchbay:runtime-password",
+      DEV_DATABASE_PORT: "5544",
+    };
+
+    loadDevCheckoutEnv({ repoRoot: sandbox, env });
+
+    expect(env.PORT).toBe("19090");
+    expect(env.DATABASE_URL).toBe(
+      "postgres://patchbay:runtime-password@localhost:5544/patchbay",
+    );
   });
 
   it("generates an isolated worktree env and local integration keys", async () => {

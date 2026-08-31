@@ -35,6 +35,90 @@ function hashText(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
+const RUST_BUILD_ENV_KEYS = new Set([
+  "AR",
+  "CC",
+  "CFLAGS",
+  "CPPFLAGS",
+  "CXX",
+  "CXXFLAGS",
+  "CARGO_BUILD_RUSTC",
+  "CARGO_BUILD_RUSTC_WRAPPER",
+  "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
+  "CARGO_BUILD_RUSTDOC",
+  "CARGO_BUILD_RUSTDOCFLAGS",
+  "CARGO_BUILD_RUSTFLAGS",
+  "HOST_AR",
+  "HOST_CC",
+  "HOST_CFLAGS",
+  "HOST_CXX",
+  "HOST_CXXFLAGS",
+  "LDFLAGS",
+  "MACOSX_DEPLOYMENT_TARGET",
+  "RUSTC",
+  "RUSTC_BOOTSTRAP",
+  "RUSTC_WRAPPER",
+  "RUSTC_WORKSPACE_WRAPPER",
+  "RUSTDOCFLAGS",
+  "RUSTFLAGS",
+  "CARGO_ENCODED_RUSTFLAGS",
+  "SDKROOT",
+  "TARGET_AR",
+  "TARGET_CC",
+  "TARGET_CFLAGS",
+  "TARGET_CXX",
+  "TARGET_CXXFLAGS",
+]);
+
+const TARGET_TOOL_PREFIXES = [
+  "AR",
+  "CC",
+  "CFLAGS",
+  "CPPFLAGS",
+  "CXX",
+  "CXXFLAGS",
+  "LDFLAGS",
+];
+
+export function rustBuildEnvironmentFingerprint(
+  env = process.env,
+  rustTarget = "",
+  profile = "dev",
+) {
+  const normalizedTarget = rustTarget.toUpperCase().replace(/[^A-Z0-9]/g, "_");
+  const lowercaseTarget = normalizedTarget.toLowerCase();
+  const profilePrefix = `CARGO_PROFILE_${profile.toUpperCase()}_`;
+  const targetSpecificKeys = new Set([
+    `CARGO_TARGET_${normalizedTarget}_LINKER`,
+    `CARGO_TARGET_${normalizedTarget}_RUSTFLAGS`,
+    `CARGO_TARGET_${normalizedTarget}_RUSTDOCFLAGS`,
+  ]);
+
+  for (const prefix of TARGET_TOOL_PREFIXES) {
+    targetSpecificKeys.add(`${prefix}_${rustTarget}`);
+    targetSpecificKeys.add(`${prefix}_${normalizedTarget}`);
+    targetSpecificKeys.add(`${prefix}_${lowercaseTarget}`);
+    targetSpecificKeys.add(`${normalizedTarget}_${prefix}`);
+    targetSpecificKeys.add(`${lowercaseTarget}_${prefix}`);
+  }
+
+  const entries = Object.entries(env)
+    .filter(
+      ([key, value]) =>
+        value !== undefined &&
+        value !== null &&
+        (RUST_BUILD_ENV_KEYS.has(key) ||
+          targetSpecificKeys.has(key) ||
+          key.startsWith(profilePrefix)),
+    )
+    .map(([key, value]) => [key, String(value)])
+    .sort(([left], [right]) => left.localeCompare(right));
+
+  // Only the digest is persisted in manifests so compiler paths and flags do
+  // not leak into a shared cache while still invalidating incompatible builds.
+  return hashText(JSON.stringify(entries));
+}
+
 async function hashFile(filePath) {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(filePath)) hash.update(chunk);

@@ -9,6 +9,7 @@ import {
   devCliCacheKey,
   findCachedDevCli,
   fingerprintRustFiles,
+  rustBuildEnvironmentFingerprint,
   rustToolchainIdentity,
   stageCachedDevCli,
   storeDevCli,
@@ -71,6 +72,41 @@ describe("development CLI artifact cache", () => {
       { buildVariables: { version: "dev-b" } },
     ]) {
       expect(devCliCacheKey({ ...base, ...changed })).not.toBe(key);
+    }
+  });
+
+  it("fingerprints build-affecting Rust environment without including unrelated variables", () => {
+    const target = "aarch64-apple-darwin";
+    const baseEnv = {
+      HOME: "/Users/dev",
+      RUSTFLAGS: "-C target-cpu=apple-m1",
+    };
+    const base = rustBuildEnvironmentFingerprint(baseEnv, target);
+
+    expect(
+      rustBuildEnvironmentFingerprint(
+        { ...baseEnv, HOME: "/different" },
+        target,
+      ),
+    ).toBe(base);
+    for (const changedEnv of [
+      { RUSTFLAGS: "-C target-cpu=apple-m2" },
+      { CARGO_ENCODED_RUSTFLAGS: "-C\u001ftarget-feature=+aes" },
+      { CC: "/opt/llvm/bin/clang" },
+      { CC_aarch64_apple_darwin: "/opt/homebrew/bin/clang" },
+      { CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER: "zig cc" },
+      { CARGO_PROFILE_DEV_LTO: "thin" },
+      { CARGO_BUILD_RUSTFLAGS: "-C target-feature=+aes" },
+      { CARGO_BUILD_RUSTDOCFLAGS: "--cfg docsrs" },
+      { CARGO_BUILD_RUSTC: "/opt/rust/bin/rustc" },
+      { CARGO_BUILD_RUSTC_WRAPPER: "/opt/bin/rustc-wrapper" },
+      {
+        CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER: "/opt/bin/rustc-workspace-wrapper",
+      },
+    ]) {
+      expect(
+        rustBuildEnvironmentFingerprint({ ...baseEnv, ...changedEnv }, target),
+      ).not.toBe(base);
     }
   });
 

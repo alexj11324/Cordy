@@ -28,7 +28,7 @@ export function selectDevEnvFile({ repoRoot, env = process.env }) {
   return join(repoRoot, isLinkedWorktree(repoRoot) ? ".env.worktree" : ".env");
 }
 
-function expandParsedValues(values) {
+function expandParsedValues(values, inherited = {}) {
   let expanded = { ...values };
   for (let pass = 0; pass < 5; pass += 1) {
     let changed = false;
@@ -36,7 +36,10 @@ function expandParsedValues(values) {
       Object.entries(expanded).map(([key, value]) => {
         const next = value.replace(
           /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g,
-          (_, name) => (Object.hasOwn(expanded, name) ? expanded[name] : ""),
+          (_, name) =>
+            Object.hasOwn(expanded, name)
+              ? expanded[name]
+              : (inherited[name] ?? ""),
         );
         if (next !== value) changed = true;
         return [key, next];
@@ -47,7 +50,7 @@ function expandParsedValues(values) {
   return expanded;
 }
 
-export function applyLocalDevEnv(env) {
+export function applyLocalDevEnv(env, { repoRoot } = {}) {
   env.POSTGRES_DB ||= "patchbay";
   env.POSTGRES_USER ||= "patchbay";
   env.POSTGRES_PORT ||= "5432";
@@ -61,6 +64,10 @@ export function applyLocalDevEnv(env) {
   env.PATCHBAY_APP_URL ||= env.FRONTEND_ORIGIN;
   env.PATCHBAY_SERVER_URL ||= `ws://localhost:${env.PORT}/ws`;
   env.LOCAL_UPLOAD_BASE_URL ||= `http://localhost:${env.PORT}`;
+  const localUploadDir = env.LOCAL_UPLOAD_DIR || "./data/uploads";
+  env.LOCAL_UPLOAD_DIR = isAbsolute(localUploadDir)
+    ? localUploadDir
+    : resolve(repoRoot, "server", localUploadDir);
   env.PLAYWRIGHT_BASE_URL ||= env.FRONTEND_ORIGIN;
   return env;
 }
@@ -76,12 +83,15 @@ export function loadDevCheckoutEnv({
     );
   }
   const explicit = { ...env };
-  const parsed = expandParsedValues(parseEnv(readFileSync(envFile, "utf8")));
+  const parsed = expandParsedValues(
+    parseEnv(readFileSync(envFile, "utf8")),
+    explicit,
+  );
   Object.assign(env, explicit, parsed, {
     ENV_FILE: envFile,
     PATCHBAY_DEV_ENV_FILE: envFile,
   });
-  applyLocalDevEnv(env);
+  applyLocalDevEnv(env, { repoRoot });
   return { env, envFile };
 }
 

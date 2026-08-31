@@ -3,8 +3,7 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -143,6 +142,9 @@ export async function inspectDevEnvironment({
   const checks = [];
 
   let manifest;
+  let cliProbeRoot;
+  let verifiedBinaryPath;
+  let cliVerified = false;
   try {
     manifest = JSON.parse(await readFile(manifestPath, "utf8"));
     if (
@@ -154,15 +156,19 @@ export async function inspectDevEnvironment({
         "manifest does not match current Rust source/target/profile",
       );
     }
-    const version = await probeCliVersion(binaryPath, execImpl);
-    if (
-      (await sha256File(binaryPath)) !== manifest.sha256 ||
-      version !== manifest.buildVariables?.version
-    ) {
-      throw new Error(
-        "binary checksum/version does not match its source manifest",
-      );
+    cliProbeRoot = await mkdtemp(join(tmpdir(), "patchbay-dev-cli-probe-"));
+    const copiedBinaryPath = join(cliProbeRoot, binaryName);
+    await copyFile(binaryPath, copiedBinaryPath);
+    if (platform !== "win32") await chmod(copiedBinaryPath, 0o755);
+    if ((await sha256File(copiedBinaryPath)) !== manifest.sha256) {
+      throw new Error("binary checksum does not match its source manifest");
     }
+    const version = await probeCliVersion(copiedBinaryPath, execImpl);
+    if (version !== manifest.buildVariables?.version) {
+      throw new Error("binary version does not match its source manifest");
+    }
+    verifiedBinaryPath = copiedBinaryPath;
+    cliVerified = true;
     checks.push({
       id: "cli",
       ok: true,
@@ -193,24 +199,42 @@ export async function inspectDevEnvironment({
     });
   }
 
-  try {
-    const report = await probeRuntimeDetection(binaryPath, env, execImpl);
-    const providers = Object.keys(report.provider_summary || {});
-    checks.push({
-      id: "agents",
-      ok: true,
-      message:
-        providers.length > 0
-          ? `agent detection available: ${providers.join(", ")}`
-          : "agent detection available; no supported local agent CLI was found",
-    });
-  } catch (error) {
+  if (!cliVerified || !verifiedBinaryPath) {
     checks.push({
       id: "agents",
       ok: false,
-      message: `agent detection probe failed: ${error.message}`,
+      message:
+        "agent detection unavailable because source-matched CLI verification failed",
       fix: "Rebuild the source-matched CLI with `pnpm dev`, then rerun `pnpm dev:doctor`.",
     });
+  } else {
+    try {
+      const report = await probeRuntimeDetection(
+        verifiedBinaryPath,
+        env,
+        execImpl,
+      );
+      const providers = Object.keys(report.provider_summary || {});
+      checks.push({
+        id: "agents",
+        ok: true,
+        message:
+          providers.length > 0
+            ? `agent detection available: ${providers.join(", ")}`
+            : "agent detection available; no supported local agent CLI was found",
+      });
+    } catch (error) {
+      checks.push({
+        id: "agents",
+        ok: false,
+        message: `agent detection probe failed: ${error.message}`,
+        fix: "Rebuild the source-matched CLI with `pnpm dev`, then rerun `pnpm dev:doctor`.",
+      });
+    }
+  }
+
+  if (cliProbeRoot) {
+    await rm(cliProbeRoot, { recursive: true, force: true });
   }
 
   const keyStatus = integrationKeyStatus(env);

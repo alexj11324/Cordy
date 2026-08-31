@@ -16,6 +16,7 @@ $source = Get-Content -Raw -Path $DevScript
 foreach ($required in @(
         "prepare-dev-runtime.mjs",
         "PATCHBAY_POSTGRES_RUNTIME",
+        "PGPASSWORD",
         "patchbay-migrate.exe",
         "patchbay-server.exe",
         "Backend port",

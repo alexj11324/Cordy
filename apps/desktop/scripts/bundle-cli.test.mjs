@@ -124,6 +124,12 @@ describe("bundle-cli Rust target selection", () => {
       commit: "source-abcdef123456",
       date: "source-matched-dev",
     });
+    expect(devBuildVariables("abcdef1234567890", "env-fingerprint")).toEqual({
+      version: "dev-abcdef123456",
+      commit: "source-abcdef123456",
+      date: "source-matched-dev",
+      environmentFingerprint: "env-fingerprint",
+    });
   });
 
   it("uses sccache when present without overriding an explicit compiler wrapper", () => {
