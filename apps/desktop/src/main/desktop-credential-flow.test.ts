@@ -29,6 +29,9 @@ function dependencies(events: string[], overrides: Partial<{
       events.push("stop");
       return overrides.stop ?? { success: true };
     },
+    prepareCredentialChange: async () => {
+      events.push("prepare");
+    },
     resolveToken: async () => {
       events.push("mint");
       if (overrides.mintError) throw overrides.mintError;
@@ -52,7 +55,14 @@ describe("commitDesktopCredentials", () => {
       ...dependencies(events),
     });
 
-    expect(events).toEqual(["inspect", "stop", "mint", "write:pby-new", "restart"]);
+    expect(events).toEqual([
+      "inspect",
+      "stop",
+      "prepare",
+      "mint",
+      "write:pby-new",
+      "restart",
+    ]);
     expect(result).toEqual({
       credentialsChanged: true,
       daemonRestarted: true,
@@ -67,7 +77,7 @@ describe("commitDesktopCredentials", () => {
         ...dependencies(events, { mintError: new Error("mint unavailable") }),
       }),
     ).rejects.toThrow("mint unavailable");
-    expect(events).toEqual(["inspect", "stop", "mint"]);
+    expect(events).toEqual(["inspect", "stop", "prepare", "mint"]);
   });
 
   it("does not mint or write when the old daemon cannot be stopped", async () => {
@@ -106,7 +116,14 @@ describe("commitDesktopCredentials", () => {
         }),
       }),
     ).rejects.toThrow("restart failed");
-    expect(events).toEqual(["inspect", "stop", "mint", "write:pby-new", "restart"]);
+    expect(events).toEqual([
+      "inspect",
+      "stop",
+      "prepare",
+      "mint",
+      "write:pby-new",
+      "restart",
+    ]);
   });
 
   it("reuses an owner-matched cached PAT without a lifecycle stop/start", async () => {

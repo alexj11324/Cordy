@@ -50,6 +50,24 @@ export interface AuthState {
 
 export function createAuthStore(options: AuthStoreOptions) {
   const { api, storage, onLogin, onLogout, cookieAuth } = options;
+  // A logout can involve asynchronous platform cleanup (for Desktop this
+  // stops the local daemon and clears its profile). Track auth transitions so
+  // an overlapping login cannot be cleared by the older logout completion.
+  let transitionGeneration = 0;
+
+  const beginTransition = () => {
+    transitionGeneration += 1;
+    return transitionGeneration;
+  };
+
+  const transitionWasSuperseded = (generation: number) =>
+    generation !== transitionGeneration;
+
+  const supersededTransitionError = () => {
+    const error = new Error("authentication transition superseded");
+    error.name = "AbortError";
+    return error;
+  };
 
   return create<AuthState>((set, get) => ({
     user: null,
@@ -70,7 +88,11 @@ export function createAuthStore(options: AuthStoreOptions) {
     },
 
     verifyCode: async (email: string, code: string) => {
+      const generation = beginTransition();
       const { token, user } = await api.verifyCode(email, code);
+      if (transitionWasSuperseded(generation)) {
+        throw supersededTransitionError();
+      }
       if (!cookieAuth) {
         // Token mode: persist for Electron / legacy.
         storage.setItem("patchbay_token", token);
@@ -83,8 +105,9 @@ export function createAuthStore(options: AuthStoreOptions) {
     },
 
     loginWithClerk: async (sessionToken: string, signal?: AbortSignal) => {
+      const generation = beginTransition();
       const { token, user } = await api.clerkLogin(sessionToken, signal);
-      if (signal?.aborted) {
+      if (signal?.aborted || transitionWasSuperseded(generation)) {
         const error = new Error("Clerk session exchange aborted");
         error.name = "AbortError";
         throw error;
@@ -105,7 +128,11 @@ export function createAuthStore(options: AuthStoreOptions) {
     },
 
     createGuestSession: async () => {
+      const generation = beginTransition();
       const { token, user } = await api.createGuestSession();
+      if (transitionWasSuperseded(generation)) {
+        throw supersededTransitionError();
+      }
       if (user.is_guest !== true) {
         throw new Error("server did not return a guest session");
       }
@@ -119,9 +146,17 @@ export function createAuthStore(options: AuthStoreOptions) {
       return user;
     },
     loginWithToken: async (token: string) => {
+      const generation = beginTransition();
       storage.setItem("patchbay_token", token);
       api.setToken(token);
       const user = await api.getMe();
+      if (transitionWasSuperseded(generation)) {
+        if (storage.getItem("patchbay_token") === token) {
+          storage.removeItem("patchbay_token");
+          api.setToken(null);
+        }
+        throw supersededTransitionError();
+      }
       onLogin?.();
       identifyAnalytics(user.id, { email: user.email, name: user.name });
       set({ user, isLoading: false, status: "authenticated" });
@@ -129,11 +164,22 @@ export function createAuthStore(options: AuthStoreOptions) {
     },
 
     logout: async (logoutOptions?: AuthLogoutOptions) => {
+      const generation = beginTransition();
       const serverLogout =
         cookieAuth || get().user?.is_guest === true
           ? api.logout().catch(() => {})
           : Promise.resolve();
       const platformLogout = onLogout?.(serverLogout, logoutOptions);
+
+      // Desktop's platform cleanup is a security boundary, not a best-effort
+      // side effect. Wait for it before publishing an unauthenticated state;
+      // if it fails, the caller remains signed in and can retry. A newer login
+      // wins the transition and must not be cleared by this older logout.
+      if (platformLogout) {
+        await Promise.all([serverLogout, platformLogout]);
+        if (transitionWasSuperseded(generation)) return;
+      }
+
       // Keep the promise so callers that are about to start a new Clerk
       // exchange or navigate away can serialize behind both server-side
       // session revocation and platform auth cleanup (for example Clerk).
@@ -142,7 +188,7 @@ export function createAuthStore(options: AuthStoreOptions) {
       setCurrentWorkspace(null, null);
       resetAnalytics();
       set({ user: null, isLoading: false, status: "unauthenticated" });
-      await Promise.all([serverLogout, platformLogout]);
+      if (!platformLogout) await serverLogout;
     },
 
     setUser: (user: User) => {

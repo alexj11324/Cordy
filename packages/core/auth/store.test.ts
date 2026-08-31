@@ -151,6 +151,37 @@ describe("authStore", () => {
     expect(settled).toBe(true);
   });
 
+  it("does not let an older platform logout clear a newer login", async () => {
+    let finishPlatformLogout: (() => void) | undefined;
+    const platformLogout = new Promise<void>((resolve) => {
+      finishPlatformLogout = resolve;
+    });
+    const storage = makeStorage({ patchbay_token: "token-a" });
+    const api = {
+      getMe: vi.fn().mockResolvedValue({ ...fakeUser, id: "user-b" }),
+      setToken: vi.fn(),
+    } as unknown as ApiClient;
+    const store = createAuthStore({
+      api,
+      storage,
+      onLogout: vi.fn(() => platformLogout),
+    });
+    store.setState({
+      user: { ...fakeUser, id: "user-a" },
+      status: "authenticated",
+      isLoading: false,
+    });
+
+    const logout = store.getState().logout();
+    await store.getState().loginWithToken("token-b");
+    finishPlatformLogout?.();
+    await logout;
+
+    expect(store.getState().user?.id).toBe("user-b");
+    expect(storage.snapshot().patchbay_token).toBe("token-b");
+    expect(api.setToken).toHaveBeenLastCalledWith("token-b");
+  });
+
   it("exchanges a Clerk session for the UUID-backed cookie session", async () => {
     const storage = makeStorage();
     const onLogin = vi.fn();

@@ -90,7 +90,12 @@ export function DaemonPanel({
     setExpandedGroups(new Set());
     idCounterRef.current = 0;
 
-    window.daemonAPI.startLogStream();
+    const unsubReset = window.daemonAPI.onLogReset(() => {
+      setLogs([]);
+      setExpandedFields(new Set());
+      setExpandedGroups(new Set());
+      idCounterRef.current = 0;
+    });
     const unsub = window.daemonAPI.onLogLine((line) => {
       setLogs((prev) => {
         const id = ++idCounterRef.current;
@@ -102,8 +107,10 @@ export function DaemonPanel({
         return next;
       });
     });
+    window.daemonAPI.startLogStream();
     return () => {
       unsub();
+      unsubReset();
       window.daemonAPI.stopLogStream();
     };
   }, [open]);

@@ -325,6 +325,11 @@ const daemonAPI = {
     ipcRenderer.on("daemon:log-line", handler);
     return () => ipcRenderer.removeListener("daemon:log-line", handler);
   },
+  onLogReset: (callback: () => void) => {
+    const handler = () => callback();
+    ipcRenderer.on("daemon:log-reset", handler);
+    return () => ipcRenderer.removeListener("daemon:log-reset", handler);
+  },
   openLogFile: (): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke("daemon:open-log-file"),
 };

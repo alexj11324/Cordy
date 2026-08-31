@@ -7,6 +7,11 @@ const sourcePath = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "daemon-manager.ts",
 );
+const rustConfigPath = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../../..",
+  "server-rs/crates/patchbay-cli/src/config.rs",
+);
 
 describe("daemon manager mutation contracts", () => {
   it("retires the legacy profile with the unlocked cleanup path inside target switching", () => {
@@ -35,6 +40,7 @@ describe("daemon manager mutation contracts", () => {
     const sync = source.slice(syncStart, syncEnd);
     expect(sync).toContain("return commitDesktopCredentials({");
     expect(sync).toContain("stopDaemon: stopDaemonUnlocked");
+    expect(sync).toContain("prepareCredentialChange:");
     expect(sync).toContain("restartDaemon: restartDaemonUnlocked");
     expect(sync).not.toContain("void restartDaemon();");
 
@@ -85,10 +91,67 @@ describe("daemon manager mutation contracts", () => {
     expect(setupStart).toBeGreaterThan(logStart);
     const logRuntime = source.slice(logStart, setupStart);
     expect(logRuntime).toContain("if (credentialSyncError) return;");
+    expect(logRuntime).toContain("credentialSyncGeneration");
     expect(logRuntime).toContain("stopLogTail();");
     expect(source).toContain('ipcMain.on("daemon:start-log-stream", () => {');
     expect(source).toContain('if (credentialSyncError) return;');
-    expect(source).toContain('ipcMain.handle("daemon:open-log-file", async () => {');
+    expect(source).toContain('ipcMain.handle("daemon:open-log-file", () =>');
     expect(source).toContain("credentials unavailable:");
+    expect(source).toContain('webContents.send("daemon:log-reset")');
+
+    const mintStart = source.indexOf("async function mintPat");
+    const mintEnd = source.indexOf("/**\n * Ensure the active profile", mintStart);
+    expect(mintStart).toBeGreaterThan(-1);
+    expect(mintEnd).toBeGreaterThan(mintStart);
+    expect(source.slice(mintStart, mintEnd)).not.toContain("res.text");
+    expect(source.slice(mintStart, mintEnd)).toContain("HTTP ${res.status}");
+
+    const clearStart = source.indexOf("async function clearToken");
+    const clearEnd = source.indexOf("async function clearProfileCredentials", clearStart);
+    expect(clearStart).toBeGreaterThan(-1);
+    expect(clearEnd).toBeGreaterThan(clearStart);
+    const clear = source.slice(clearStart, clearEnd);
+    expect(clear).toContain("stopDaemonUnlocked");
+    expect(clear.indexOf("stopDaemonUnlocked")).toBeLessThan(
+      clear.indexOf("clearProfileCredentialsUnlocked"),
+    );
+
+    expect(source).toContain("const DESKTOP_BLOCKED_ENV_KEYS = [");
+    expect(source).toContain('"PATCHBAY_DEBUG"');
+    expect(source).toContain('"PATCHBAY_TASK_CONFIG_ROOT"');
+    expect(source).toContain("for (const key of DESKTOP_BLOCKED_ENV_KEYS)");
+    expect(source).toContain("env: desktopSpawnEnv()");
+  });
+
+  it("keeps the Desktop child env blocklist in lockstep with the Rust capture set", () => {
+    const source = readFileSync(sourcePath, "utf8");
+    const rustSource = readFileSync(rustConfigPath, "utf8");
+    const desktopBlock = source.match(
+      /const DESKTOP_BLOCKED_ENV_KEYS = \[(.*?)\] as const/s,
+    )?.[1];
+    const rustBlock = rustSource.match(
+      /const CAPTURED_ENV_KEYS: &[\s\S]*?= &\[(.*?)\];/s,
+    )?.[1];
+    expect(desktopBlock).toBeDefined();
+    expect(rustBlock).toBeDefined();
+
+    const quotedKeys = (block) =>
+      [...block.matchAll(/"([A-Z0-9_]+)"/g)].map((match) => match[1]);
+    const taskRoot = rustSource.match(
+      /pub const TASK_CONFIG_ROOT_ENV: &str = "([A-Z0-9_]+)";/,
+    )?.[1];
+    const rustKeys = [
+      ...quotedKeys(rustBlock),
+      ...(rustBlock.includes("TASK_CONFIG_ROOT_ENV") && taskRoot
+        ? [taskRoot]
+        : []),
+    ];
+    expect(new Set(quotedKeys(desktopBlock))).toEqual(new Set(rustKeys));
+
+    const probeStart = source.indexOf("async function probeCliBinary");
+    const probeEnd = source.indexOf("/**\n * Returns a usable", probeStart);
+    expect(source.slice(probeStart, probeEnd)).toContain(
+      "env: desktopSpawnEnv()",
+    );
   });
 });

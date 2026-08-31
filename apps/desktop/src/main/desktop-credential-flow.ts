@@ -36,6 +36,7 @@ export async function commitDesktopCredentials({
   inspectDaemon,
   stopDaemon,
   writeCredentials,
+  prepareCredentialChange,
   restartDaemon,
 }: {
   previousToken: string | null;
@@ -49,6 +50,7 @@ export async function commitDesktopCredentials({
   inspectDaemon: () => Promise<CredentialDaemonInspection>;
   stopDaemon: () => Promise<CredentialDaemonResult>;
   writeCredentials: (token: string) => Promise<void>;
+  prepareCredentialChange?: () => Promise<void>;
   restartDaemon: () => Promise<CredentialDaemonResult>;
 }): Promise<DesktopCredentialFlowResult> {
   const incomingTokenMatchesCached = incomingToken.startsWith("pby_")
@@ -78,6 +80,14 @@ export async function commitDesktopCredentials({
         );
       }
     }
+  }
+
+  // A Desktop profile's daemon log is shared by sessions for that target. Once
+  // the previous owner has been stopped, clear that history before persisting
+  // the next owner's credentials so a successful account switch cannot expose
+  // the previous account's task paths or provider details.
+  if (previousUserId !== userId) {
+    await prepareCredentialChange?.();
   }
 
   const finalToken = incomingToken.startsWith("pby_")

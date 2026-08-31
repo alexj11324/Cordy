@@ -193,6 +193,7 @@ export function installWebDesktopBridge(): boolean {
     startLogStream: () => undefined,
     stopLogStream: () => undefined,
     onLogLine: (_callback: (line: string) => void) => noopUnsubscribe(),
+    onLogReset: (_callback: () => void) => noopUnsubscribe(),
     openLogFile: async () => ({
       success: false,
       error: BROWSER_RENDERER_ERROR,

@@ -1,6 +1,6 @@
 import { app, ipcMain, BrowserWindow, shell } from "electron";
 import { execFile } from "child_process";
-import { readFile, writeFile, mkdir, open, stat } from "fs/promises";
+import { readFile, writeFile, mkdir, open, stat, lstat } from "fs/promises";
 import { existsSync, watchFile, unwatchFile, type StatsListener } from "fs";
 import { join } from "path";
 import { homedir, hostname } from "os";
@@ -89,6 +89,7 @@ let profileHardeningPromise: Promise<void> | null = null;
 // credentials have been persisted and the daemon has loaded them. A blocked
 // gate is also the renderer-facing signal for stop/mint/restart failures.
 let credentialSyncError: string | null = null;
+let credentialSyncGeneration = 0;
 
 // Auth-probe state for the current start attempt. When a start fails to reach
 // "running", we probe the daemon's token once (after AUTH_PROBE_GRACE_MS) to
@@ -114,11 +115,13 @@ function serializeProfileMutation<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 function blockCredentialSync(reason: string): void {
+  credentialSyncGeneration += 1;
   credentialSyncError = reason;
   // A watcher may already be streaming the previous account's log. Stop it
   // synchronously when the gate closes; sendLines also rechecks the gate for
   // an in-flight read that races this call.
   stopLogTail();
+  getMainWindow()?.webContents.send("daemon:log-reset");
 }
 
 function ensureDesktopProfilePermissions(): Promise<void> {
@@ -456,7 +459,7 @@ async function probeCliBinary(
       execFile(
         bin,
         ["version", "--output", "json"],
-        { timeout: 5_000 },
+        { timeout: 5_000, env: desktopSpawnEnv() },
         (err, out) => {
           if (err) reject(err);
           else resolve(out);
@@ -670,12 +673,13 @@ async function mintPat(jwt: string, serverUrl: string): Promise<string> {
       body: JSON.stringify({ name: "Patchbay Desktop" }),
     });
     if (!res.ok) {
-      const body = await res.text().catch(() => "");
       // Attach the status so callers can tell a genuine auth rejection (401 —
       // the session token is dead) apart from a transient failure (5xx, etc.)
-      // without string-matching the message.
+      // without string-matching the message. Never copy the response body into
+      // an Error: proxies and failed API handlers may include bearer material
+      // or internal diagnostics there, and the Error can reach renderer logs.
       throw Object.assign(
-        new Error(`mint PAT failed: ${res.status} ${res.statusText} ${body}`),
+        new Error(`mint PAT failed (HTTP ${res.status})`),
         { status: res.status },
       );
     }
@@ -811,6 +815,10 @@ async function syncTokenUnlockedCore(
         token,
         user_id: userId,
       }),
+    prepareCredentialChange:
+      previousUserId !== userId
+        ? () => truncateProfileLog(active.name)
+        : undefined,
     restartDaemon: restartDaemonUnlocked,
   });
 }
@@ -839,6 +847,19 @@ async function clearToken(): Promise<void> {
     if (!active) return;
     blockCredentialSync("synchronizing credentials");
     try {
+      // Keep stop and credential removal in this one queue operation. If they
+      // were separate IPC calls, a new login could enqueue a credential write
+      // between them and the old logout would then clear the new user's token.
+      // Do not treat an unavailable /health response as proof that no process
+      // is running: a booting or temporarily wedged daemon may still hold the
+      // old PAT in memory. The lifecycle owner performs its own live foreign
+      // check and local stop/no-daemon handling, so call it unconditionally.
+      const stopped = await stopDaemonUnlocked();
+      if (!stopped.success || stopped.blocked) {
+        throw new Error(
+          stopped.error ?? "failed to stop daemon before clearing credentials",
+        );
+      }
       await clearProfileCredentialsUnlocked(active.name);
       blockCredentialSync("credentials are not synchronized");
     } catch (error) {
@@ -1026,13 +1047,56 @@ async function probeLocalRuntimes(): Promise<LocalRuntimeProbe> {
   });
 }
 
+// Task-scoped variables describe the agent process that launched Electron, not
+// the Desktop-owned daemon. Passing them through makes the Rust CLI refuse
+// lifecycle commands (or override the selected profile/server) and can leave
+// the previous account's daemon running during logout. Keep provider path and
+// non-task configuration variables available, but strip the complete task
+// capture set used by the CLI before spawning any Desktop child.
+const DESKTOP_BLOCKED_ENV_KEYS = [
+  "PATCHBAY_DEBUG",
+  "PATCHBAY_AGENT_ID",
+  "PATCHBAY_AGENT_NAME",
+  "PATCHBAY_TASK_ID",
+  "PATCHBAY_TOKEN",
+  "PATCHBAY_DAEMON_PORT",
+  "PATCHBAY_WORKSPACE_ID",
+  "PATCHBAY_SERVER_URL",
+  "PATCHBAY_APP_URL",
+  "FRONTEND_ORIGIN",
+  "PATCHBAY_HTTP_TIMEOUT",
+  "PATCHBAY_REPO_CHECKOUT_MODE",
+  "PATCHBAY_DAEMON_ID",
+  "PATCHBAY_DAEMON_DEVICE_NAME",
+  "PATCHBAY_AGENT_RUNTIME_NAME",
+  "PATCHBAY_WORKSPACES_ROOT",
+  "PATCHBAY_TASK_WORKSPACES_ROOT",
+  "PATCHBAY_DAEMON_MAX_CONCURRENT_TASKS",
+  "PATCHBAY_DAEMON_POLL_INTERVAL",
+  "PATCHBAY_DAEMON_HEARTBEAT_INTERVAL",
+  "PATCHBAY_AGENT_TIMEOUT",
+  "PATCHBAY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT",
+  "PATCHBAY_CODEX_HANDSHAKE_TIMEOUT",
+  "PATCHBAY_DAEMON_AUTO_UPDATE",
+  "PATCHBAY_DAEMON_AUTO_UPDATE_INTERVAL",
+  "PATCHBAY_DAEMON_AUTO_RELOAD",
+  "SSH_CONNECTION",
+  "SSH_CLIENT",
+  "SSH_TTY",
+  "PATCHBAY_QUICK_CREATE_TASK_ID",
+  "PATCHBAY_QUICK_CREATE_ATTACHMENT_IDS",
+  "PATCHBAY_TASK_CONFIG_ROOT",
+] as const;
+
 // Env passed to every CLI child so the daemon process knows it was spawned
 // by the Desktop app. The server uses this to mark runtimes as managed and
 // hide CLI self-update UI. Computed lazily so it picks up the PATH fix
 // applied by fix-path in main/index.ts — as a top-level const it would
 // snapshot process.env at import time, before that block runs.
 function desktopSpawnEnv(): NodeJS.ProcessEnv {
-  return { ...process.env, PATCHBAY_LAUNCHED_BY: "desktop" };
+  const env = { ...process.env };
+  for (const key of DESKTOP_BLOCKED_ENV_KEYS) delete env[key];
+  return { ...env, PATCHBAY_LAUNCHED_BY: "desktop" };
 }
 
 async function applyDesktopProfileRequest(
@@ -1178,15 +1242,20 @@ async function stopDaemonUnlocked(): Promise<DaemonOperationResult> {
   const args = ["daemon", "stop", ...profileArgs(active.name)];
 
   return new Promise((resolve) => {
-    execFile(bin, args, { timeout: 15_000 }, (err) => {
-      if (err) {
-        resolve({ success: false, error: err.message });
-      } else {
-        resolve({ success: true });
-      }
-      currentState = "stopped";
-      sendStatus({ state: "stopped" });
-    });
+    execFile(
+      bin,
+      args,
+      { timeout: 15_000, env: desktopSpawnEnv() },
+      (err) => {
+        if (err) {
+          resolve({ success: false, error: err.message });
+        } else {
+          resolve({ success: true });
+        }
+        currentState = "stopped";
+        sendStatus({ state: "stopped" });
+      },
+    );
   });
 }
 
@@ -1284,6 +1353,30 @@ const LOG_TAIL_INITIAL_WINDOW_BYTES = 32 * 1024;
 const LOG_TAIL_INITIAL_LINES = 200;
 const LOG_TAIL_POLL_MS = 500;
 
+async function truncateProfileLog(profile: string): Promise<void> {
+  const logPath = profileLogPath(profile);
+  let info;
+  try {
+    info = await lstat(logPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+    throw new Error("failed to inspect daemon log before credential switch");
+  }
+  if (!info.isFile()) {
+    throw new Error("daemon log is not a regular file");
+  }
+  try {
+    const handle = await open(logPath, "r+");
+    try {
+      await handle.truncate(0);
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    throw new Error("failed to clear daemon log before credential switch");
+  }
+}
+
 async function readLogRange(
   path: string,
   startAt: number,
@@ -1299,10 +1392,19 @@ async function readLogRange(
   }
 }
 
-function sendLines(win: BrowserWindow, text: string): void {
+function sendLines(
+  win: BrowserWindow,
+  text: string,
+  generation = credentialSyncGeneration,
+): void {
   const lines = text.split("\n").filter((line) => line.length > 0);
   for (const line of lines) {
-    if (credentialSyncError) return;
+    if (
+      credentialSyncError ||
+      generation !== credentialSyncGeneration
+    ) {
+      return;
+    }
     win.webContents.send("daemon:log-line", line);
   }
 }
@@ -1314,9 +1416,10 @@ function sendLines(win: BrowserWindow, text: string): void {
 function startLogTail(win: BrowserWindow, retryCount = 0): void {
   stopLogTail();
   if (credentialSyncError) return;
+  const generation = credentialSyncGeneration;
 
   void ensureActiveProfile().then(async (active) => {
-    if (credentialSyncError) return;
+    if (credentialSyncError || generation !== credentialSyncGeneration) return;
     // Before the renderer reports its apiUrl there is no Desktop-owned profile
     // yet, and therefore no log file of ours to tail. Retry rather than reach
     // for the default profile's log.
@@ -1330,7 +1433,7 @@ function startLogTail(win: BrowserWindow, retryCount = 0): void {
 
     let position = 0;
     try {
-      if (credentialSyncError) return;
+      if (credentialSyncError || generation !== credentialSyncGeneration) return;
       const initialStats = await stat(logPath);
       const windowBytes = Math.min(
         initialStats.size,
@@ -1338,14 +1441,16 @@ function startLogTail(win: BrowserWindow, retryCount = 0): void {
       );
       const startAt = initialStats.size - windowBytes;
       if (windowBytes > 0) {
-        if (credentialSyncError) return;
+        if (credentialSyncError || generation !== credentialSyncGeneration) return;
         const text = await readLogRange(logPath, startAt, windowBytes);
         const lines = text
           .split("\n")
           .filter((line) => line.length > 0)
           .slice(-LOG_TAIL_INITIAL_LINES);
         for (const line of lines) {
-          if (credentialSyncError) return;
+          if (credentialSyncError || generation !== credentialSyncGeneration) {
+            return;
+          }
           win.webContents.send("daemon:log-line", line);
         }
       }
@@ -1356,8 +1461,11 @@ function startLogTail(win: BrowserWindow, retryCount = 0): void {
     }
 
     const listener: StatsListener = (curr) => {
-      if (credentialSyncError) {
-        stopLogTail();
+      if (
+        credentialSyncError ||
+        generation !== credentialSyncGeneration
+      ) {
+        if (logTailWatcher?.listener === listener) stopLogTail();
         return;
       }
       const target = getMainWindow();
@@ -1369,15 +1477,18 @@ function startLogTail(win: BrowserWindow, retryCount = 0): void {
       const length = curr.size - from;
       position = curr.size;
       readLogRange(logPath, from, length)
-        .then((text) => sendLines(target, text))
+        .then((text) => sendLines(target, text, generation))
         .catch((err) => {
           console.warn("[daemon] log tail read failed:", err);
         });
     };
 
-    if (credentialSyncError) return;
+    if (credentialSyncError || generation !== credentialSyncGeneration) return;
     watchFile(logPath, { interval: LOG_TAIL_POLL_MS }, listener);
-    if (credentialSyncError) {
+    if (
+      credentialSyncError ||
+      generation !== credentialSyncGeneration
+    ) {
       unwatchFile(logPath, listener);
       return;
     }
@@ -1484,22 +1595,40 @@ export function setupDaemonManager(
   // Reveal the daemon's log file in the user's default editor / Console
   // app. Acts as the escape hatch when the in-app log viewer isn't enough
   // (full history, complex search, copy-to-clipboard at scale).
-  ipcMain.handle("daemon:open-log-file", async () => {
-    if (credentialSyncError) {
-      return {
-        success: false,
-        error: `credentials unavailable: ${credentialSyncError}`,
-      };
-    }
-    const active = await ensureActiveProfile();
-    const logPath = active ? profileLogPath(active.name) : null;
-    if (!logPath || !existsSync(logPath)) {
-      return { success: false, error: "Log file not found yet" };
-    }
-    // shell.openPath returns "" on success, error string on failure.
-    const error = await shell.openPath(logPath);
-    return error === "" ? { success: true } : { success: false, error };
-  });
+  ipcMain.handle("daemon:open-log-file", () =>
+    serializeProfileMutation(async () => {
+      if (credentialSyncError) {
+        return {
+          success: false,
+          error: `credentials unavailable: ${credentialSyncError}`,
+        };
+      }
+      const generation = credentialSyncGeneration;
+      const active = await ensureActiveProfile();
+      if (
+        credentialSyncError ||
+        generation !== credentialSyncGeneration
+      ) {
+        return {
+          success: false,
+          error: "credentials unavailable: synchronization changed",
+        };
+      }
+      const logPath = active ? profileLogPath(active.name) : null;
+      if (!logPath || !existsSync(logPath)) {
+        return { success: false, error: "Log file not found yet" };
+      }
+      if (credentialSyncError || generation !== credentialSyncGeneration) {
+        return {
+          success: false,
+          error: "credentials unavailable: synchronization changed",
+        };
+      }
+      // shell.openPath returns "" on success, error string on failure.
+      const error = await shell.openPath(logPath);
+      return error === "" ? { success: true } : { success: false, error };
+    }),
+  );
 
   // First-run CLI install kicks off here. Status bar shows "Setting up…"
   // until the managed binary is on disk (instant on subsequent launches).

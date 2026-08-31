@@ -165,6 +165,7 @@ interface DaemonAPI {
   startLogStream: () => void;
   stopLogStream: () => void;
   onLogLine: (callback: (line: string) => void) => () => void;
+  onLogReset: (callback: () => void) => () => void;
   openLogFile: () => Promise<{ success: boolean; error?: string }>;
 }
 
