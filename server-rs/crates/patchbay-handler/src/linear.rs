@@ -298,7 +298,8 @@ async fn dry_run_binding(
         Ok(request) => request,
         Err(response) => return response,
     };
-    let connection = match connection_for_binding(&state, workspace_id, request.connection_id).await {
+    let connection = match connection_for_binding(&state, workspace_id, request.connection_id).await
+    {
         Ok(connection) => connection,
         Err(response) => return response,
     };
@@ -614,19 +615,17 @@ async fn validate_remote_binding(
 }
 
 fn is_linear_binding_unique_conflict(error: &anyhow::Error) -> bool {
-    error
-        .downcast_ref::<sqlx::Error>()
-        .is_some_and(|error| {
-            matches!(
-                error,
-                sqlx::Error::Database(database)
-                    if database.code().as_deref() == Some("23505")
-                        && matches!(
-                            database.constraint(),
-                            Some("uq_linear_project_binding_remote" | "uq_linear_project_binding_local")
-                        )
-            )
-        })
+    error.downcast_ref::<sqlx::Error>().is_some_and(|error| {
+        matches!(
+            error,
+            sqlx::Error::Database(database)
+                if database.code().as_deref() == Some("23505")
+                    && matches!(
+                        database.constraint(),
+                        Some("uq_linear_project_binding_remote" | "uq_linear_project_binding_local")
+                    )
+        )
+    })
 }
 
 async fn create_binding(
@@ -645,7 +644,8 @@ async fn create_binding(
         Ok(request) => request,
         Err(response) => return response,
     };
-    let connection = match connection_for_binding(&state, workspace_id, request.connection_id).await {
+    let connection = match connection_for_binding(&state, workspace_id, request.connection_id).await
+    {
         Ok(connection) => connection,
         Err(response) => return response,
     };
@@ -688,7 +688,10 @@ async fn create_binding(
         Err(error) => {
             tracing::warn!(%error, "Linear project binding creation failed");
             if is_linear_binding_unique_conflict(&error) {
-                error_response(StatusCode::CONFLICT, "Linear project binding already exists")
+                error_response(
+                    StatusCode::CONFLICT,
+                    "Linear project binding already exists",
+                )
             } else {
                 error_response(
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -744,7 +747,8 @@ async fn update_binding(
             "Linear binding connection and Patchbay project are immutable",
         );
     }
-    let connection = match connection_for_binding(&state, workspace_id, request.connection_id).await {
+    let connection = match connection_for_binding(&state, workspace_id, request.connection_id).await
+    {
         Ok(connection) => connection,
         Err(response) => return response,
     };
@@ -771,7 +775,10 @@ async fn update_binding(
         Err(error) => {
             tracing::warn!(%error, "Linear project binding update failed");
             if is_linear_binding_unique_conflict(&error) {
-                error_response(StatusCode::CONFLICT, "Linear project binding already exists")
+                error_response(
+                    StatusCode::CONFLICT,
+                    "Linear project binding already exists",
+                )
             } else {
                 error_response(
                     StatusCode::INTERNAL_SERVER_ERROR,

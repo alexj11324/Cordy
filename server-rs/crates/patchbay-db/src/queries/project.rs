@@ -87,10 +87,10 @@ pub async fn delete_project(
            )
            DELETE FROM project WHERE id = $1 AND workspace_id = $2"#,
     )
-        .bind(id)
-        .bind(workspace_id)
-        .execute(executor)
-        .await?;
+    .bind(id)
+    .bind(workspace_id)
+    .execute(executor)
+    .await?;
     Ok(r.rows_affected())
 }
 
