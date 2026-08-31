@@ -716,8 +716,8 @@ export function LinearIntegrationCard({
                 {connection?.organization_name} · {t(($) => $.page.linear.projects_synced, { count: activeBindingCount })}
                 {" · "}
                 {lastSync
-                  ? t(($) => $.page.linear.last_webhook_received, { time: lastSync })
-                  : t(($) => $.page.linear.last_webhook_never)}
+                  ? t(($) => $.page.linear.last_sync, { time: lastSync })
+                  : t(($) => $.page.linear.last_sync_never)}
               </span>
             ) : null}
           </div>
