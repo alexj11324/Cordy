@@ -778,15 +778,19 @@ pub async fn create_linear_issue_link(
     .await?)
 }
 
+pub struct LinearIssueLinkUpdate<'a> {
+    pub link_id: Uuid,
+    pub workspace_id: Uuid,
+    pub last_common_snapshot: &'a Value,
+    pub remote_updated_at: Option<DateTime<Utc>>,
+    pub last_remote_event_at_ms: Option<i64>,
+    pub last_remote_event_id: Option<&'a str>,
+    pub sync_status: &'a str,
+}
+
 pub async fn update_linear_issue_link(
     executor: impl Executor<'_, Database = Postgres>,
-    link_id: Uuid,
-    workspace_id: Uuid,
-    last_common_snapshot: &Value,
-    remote_updated_at: Option<DateTime<Utc>>,
-    last_remote_event_at_ms: Option<i64>,
-    last_remote_event_id: Option<&str>,
-    sync_status: &str,
+    input: &LinearIssueLinkUpdate<'_>,
 ) -> anyhow::Result<bool> {
     let result = sqlx::query(
         r#"UPDATE linear_issue_link
@@ -804,13 +808,13 @@ pub async fn update_linear_issue_link(
                  OR $5::bigint > last_remote_event_at_ms
              )"#,
     )
-    .bind(link_id)
-    .bind(workspace_id)
-    .bind(last_common_snapshot)
-    .bind(remote_updated_at)
-    .bind(last_remote_event_at_ms)
-    .bind(last_remote_event_id)
-    .bind(sync_status)
+    .bind(input.link_id)
+    .bind(input.workspace_id)
+    .bind(input.last_common_snapshot)
+    .bind(input.remote_updated_at)
+    .bind(input.last_remote_event_at_ms)
+    .bind(input.last_remote_event_id)
+    .bind(input.sync_status)
     .execute(executor)
     .await?;
     Ok(result.rows_affected() == 1)

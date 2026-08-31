@@ -730,13 +730,15 @@ impl LinearSyncWorker {
             .or(link.last_remote_event_id.as_deref());
         let updated = linear_q::update_linear_issue_link(
             &self.state.pool,
-            link.id,
-            connection.workspace_id,
-            &snapshot,
-            Some(remote_updated_at),
-            last_event_at_ms,
-            last_event_id,
-            "active",
+            &linear_q::LinearIssueLinkUpdate {
+                link_id: link.id,
+                workspace_id: connection.workspace_id,
+                last_common_snapshot: &snapshot,
+                remote_updated_at: Some(remote_updated_at),
+                last_remote_event_at_ms: last_event_at_ms,
+                last_remote_event_id: last_event_id,
+                sync_status: "active",
+            },
         )
         .await
         .map_err(SyncError::retry)?;
@@ -819,13 +821,15 @@ impl LinearSyncWorker {
             .or(link.last_remote_event_id.as_deref());
         let updated = linear_q::update_linear_issue_link(
             &self.state.pool,
-            link.id,
-            connection.workspace_id,
-            &snapshot,
-            link.remote_updated_at,
-            event_at,
-            event_id,
-            "deleted",
+            &linear_q::LinearIssueLinkUpdate {
+                link_id: link.id,
+                workspace_id: connection.workspace_id,
+                last_common_snapshot: &snapshot,
+                remote_updated_at: link.remote_updated_at,
+                last_remote_event_at_ms: event_at,
+                last_remote_event_id: event_id,
+                sync_status: "deleted",
+            },
         )
         .await
         .map_err(SyncError::retry)?;
