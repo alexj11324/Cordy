@@ -38,19 +38,57 @@ describe("daemon manager mutation contracts", () => {
     expect(sync).toContain("restartDaemon: restartDaemonUnlocked");
     expect(sync).not.toContain("void restartDaemon();");
 
+    const reauthStart = source.indexOf("async function reauthenticateUnlocked");
+    const reauthEnd = source.indexOf("async function withGuard", reauthStart);
+    expect(reauthStart).toBeGreaterThan(-1);
+    expect(reauthEnd).toBeGreaterThan(reauthStart);
+    const reauth = source.slice(reauthStart, reauthEnd);
+    expect(reauth).toContain("forceRefresh: true");
+    expect(reauth).not.toContain("clearProfileCredentialsUnlocked");
+
     const lifecycleStart = source.indexOf("async function startDaemonUnlocked");
     const lifecycleEnd = source.indexOf("async function pollOnce", lifecycleStart);
     expect(lifecycleStart).toBeGreaterThan(-1);
     expect(lifecycleEnd).toBeGreaterThan(lifecycleStart);
     const lifecycle = source.slice(lifecycleStart, lifecycleEnd);
     expect(lifecycle).toContain(
-      "return serializeProfileMutation(() => startDaemonUnlocked())",
+      "return serializeProfileMutation(async () => {",
     );
     expect(lifecycle).toContain(
       "return serializeProfileMutation(() => stopDaemonUnlocked())",
     );
-    expect(lifecycle).toContain(
-      "return serializeProfileMutation(() => restartDaemonUnlocked())",
+    expect(lifecycle).toContain("return restartDaemonUnlocked();");
+    expect(lifecycle).toContain("credentials unavailable:");
+
+    const targetStart = source.indexOf(
+      'ipcMain.handle("daemon:set-target-api-url"',
     );
+    const target = source.slice(targetStart);
+    expect(target).toContain(
+      'blockCredentialSync("credentials are not synchronized")',
+    );
+
+    const probeStart = source.indexOf("async function probeLocalRuntimes");
+    const probeEnd = source.indexOf(
+      "// Env passed to every CLI child",
+      probeStart,
+    );
+    expect(probeStart).toBeGreaterThan(-1);
+    expect(probeEnd).toBeGreaterThan(probeStart);
+    expect(source.slice(probeStart, probeEnd)).toContain(
+      'if (credentialSyncError) return { probeResult: "error" };',
+    );
+
+    const logStart = source.indexOf("function sendLines");
+    const setupStart = source.indexOf("export function setupDaemonManager");
+    expect(logStart).toBeGreaterThan(-1);
+    expect(setupStart).toBeGreaterThan(logStart);
+    const logRuntime = source.slice(logStart, setupStart);
+    expect(logRuntime).toContain("if (credentialSyncError) return;");
+    expect(logRuntime).toContain("stopLogTail();");
+    expect(source).toContain('ipcMain.on("daemon:start-log-stream", () => {');
+    expect(source).toContain('if (credentialSyncError) return;');
+    expect(source).toContain('ipcMain.handle("daemon:open-log-file", async () => {');
+    expect(source).toContain("credentials unavailable:");
   });
 });

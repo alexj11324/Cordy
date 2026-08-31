@@ -70,6 +70,19 @@ describe("commitDesktopCredentials", () => {
     expect(events).toEqual(["inspect", "stop", "mint"]);
   });
 
+  it("does not mint or write when the old daemon cannot be stopped", async () => {
+    const events: string[] = [];
+    await expect(
+      commitDesktopCredentials({
+        ...baseInput,
+        ...dependencies(events, {
+          stop: { success: false, error: "stop failed" },
+        }),
+      }),
+    ).rejects.toThrow("stop failed");
+    expect(events).toEqual(["inspect", "stop"]);
+  });
+
   it("refuses an externally managed daemon before changing credentials", async () => {
     const events: string[] = [];
     await expect(

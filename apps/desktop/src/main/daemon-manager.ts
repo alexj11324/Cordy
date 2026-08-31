@@ -85,6 +85,10 @@ let activeProfile: ActiveProfile | null = null;
 let pendingLegacyProfileStop: LegacyDesktopProfile | null = null;
 let legacyProfileStopInFlight = false;
 let profileHardeningPromise: Promise<void> | null = null;
+// Runtime data must not cross an account/target transition until the new
+// credentials have been persisted and the daemon has loaded them. A blocked
+// gate is also the renderer-facing signal for stop/mint/restart failures.
+let credentialSyncError: string | null = null;
 
 // Auth-probe state for the current start attempt. When a start fails to reach
 // "running", we probe the daemon's token once (after AUTH_PROBE_GRACE_MS) to
@@ -107,6 +111,14 @@ function serializeProfileMutation<T>(operation: () => Promise<T>): Promise<T> {
     () => undefined,
   );
   return next;
+}
+
+function blockCredentialSync(reason: string): void {
+  credentialSyncError = reason;
+  // A watcher may already be streaming the previous account's log. Stop it
+  // synchronously when the gate closes; sendLines also rechecks the gate for
+  // an in-flight read that races this call.
+  stopLogTail();
 }
 
 function ensureDesktopProfilePermissions(): Promise<void> {
@@ -309,6 +321,10 @@ async function fetchHealth(): Promise<DaemonStatus> {
   // "stopped", which would overwrite the correct setup state in the UI.
   if (currentState === "installing_cli" || currentState === "cli_not_found") {
     return { state: currentState };
+  }
+
+  if (credentialSyncError) {
+    return { state: "auth_expired" };
   }
 
   const active = await ensureActiveProfile();
@@ -692,12 +708,35 @@ async function syncToken(
   tokenFromRenderer: string,
   userId: string,
 ): Promise<void> {
-  await serializeProfileMutation(() => syncTokenUnlocked(tokenFromRenderer, userId));
+  await serializeProfileMutation(() =>
+    syncTokenUnlocked(tokenFromRenderer, userId),
+  );
 }
 
 async function syncTokenUnlocked(
   tokenFromRenderer: string,
   userId: string,
+  options: { forceRefresh?: boolean } = {},
+): Promise<DesktopCredentialFlowResult> {
+  blockCredentialSync("synchronizing credentials");
+  try {
+    const result = await syncTokenUnlockedCore(
+      tokenFromRenderer,
+      userId,
+      options,
+    );
+    credentialSyncError = null;
+    return result;
+  } catch (error) {
+    blockCredentialSync(errorMessage(error));
+    throw error;
+  }
+}
+
+async function syncTokenUnlockedCore(
+  tokenFromRenderer: string,
+  userId: string,
+  { forceRefresh = false }: { forceRefresh?: boolean } = {},
 ): Promise<DesktopCredentialFlowResult> {
   const serverUrl = targetApiBaseUrl;
   if (!serverUrl) {
@@ -725,6 +764,7 @@ async function syncTokenUnlocked(
   const previousServerUrl =
     typeof config.server_url === "string" ? config.server_url : null;
   const sameUserWithCachedPat =
+    !forceRefresh &&
     !userChanged &&
     previousUserId === userId &&
     previousServerUrl === serverUrl &&
@@ -797,7 +837,14 @@ async function clearToken(): Promise<void> {
     // Nothing of ours to clear yet, and the default CLI profile is not ours to
     // strip a token from.
     if (!active) return;
-    await clearProfileCredentialsUnlocked(active.name);
+    blockCredentialSync("synchronizing credentials");
+    try {
+      await clearProfileCredentialsUnlocked(active.name);
+      blockCredentialSync("credentials are not synchronized");
+    } catch (error) {
+      blockCredentialSync(errorMessage(error));
+      throw error;
+    }
   });
 }
 
@@ -822,9 +869,10 @@ function errorMessage(err: unknown): string {
 }
 
 /**
- * Recover the local daemon from the "auth_expired" state. Drops the stale
- * cached PAT, mints a fresh one from the current session token, and restarts
- * the daemon so it loads the new credential.
+ * Recover the local daemon from the "auth_expired" state. Mints a fresh PAT
+ * from the current session token and restarts the daemon so it loads the new
+ * credential. The old config stays intact until the daemon has been stopped;
+ * this keeps a failed stop or externally managed daemon fail-closed.
  *
  * Failures are classified rather than collapsed: a 401 from the mint means the
  * session token itself is dead (`session_invalid` → the renderer drives a full
@@ -843,11 +891,15 @@ async function reauthenticateUnlocked(
   token: string,
   userId: string,
 ): Promise<ReauthResult> {
+  blockCredentialSync("synchronizing credentials");
   try {
-    const active = await ensureActiveProfile();
-    if (active) await clearProfileCredentialsUnlocked(active.name);
-    // syncToken mints a fresh PAT because clearToken just removed any cache.
-    const sync = await syncTokenUnlocked(token, userId);
+    // Force a fresh PAT, but keep the old config intact until the credential
+    // flow has inspected and stopped the daemon. Clearing first would leave a
+    // previously authenticated daemon running with no corresponding disk
+    // credentials when stop fails or the daemon is externally managed.
+    const sync = await syncTokenUnlocked(token, userId, {
+      forceRefresh: true,
+    });
     if (!sync.daemonRestarted) {
       const start = await startDaemonUnlocked();
       if (!start.success || start.blocked) {
@@ -857,6 +909,10 @@ async function reauthenticateUnlocked(
       }
     }
   } catch (err) {
+    // A sync can complete its write before the follow-up start fails. Keep
+    // the runtime gate closed in that case as well; the next re-auth retry is
+    // the explicit recovery path.
+    blockCredentialSync(errorMessage(err));
     if (isAuthStatusError(err)) return { ok: false, reason: "session_invalid" };
     return { ok: false, reason: "transient", message: errorMessage(err) };
   }
@@ -901,6 +957,7 @@ function successfulRuntimeProbe(
 }
 
 async function probeLocalRuntimes(): Promise<LocalRuntimeProbe> {
+  if (credentialSyncError) return { probeResult: "error" };
   const health = await fetchHealth();
   if (health.state === "running") {
     return successfulRuntimeProbe(health.agents ?? [], true);
@@ -1155,7 +1212,15 @@ async function restartDaemonUnlocked(): Promise<DaemonOperationResult> {
 // account-switch stop → mint → atomic-write → start sequence. Internal callers
 // already holding the queue use the *_unlocked variants above.
 async function startDaemon(): Promise<DaemonOperationResult> {
-  return serializeProfileMutation(() => startDaemonUnlocked());
+  return serializeProfileMutation(async () => {
+    if (credentialSyncError) {
+      return {
+        success: false,
+        error: `credentials unavailable: ${credentialSyncError}`,
+      };
+    }
+    return startDaemonUnlocked();
+  });
 }
 
 async function stopDaemon(): Promise<DaemonOperationResult> {
@@ -1163,7 +1228,15 @@ async function stopDaemon(): Promise<DaemonOperationResult> {
 }
 
 async function restartDaemon(): Promise<DaemonOperationResult> {
-  return serializeProfileMutation(() => restartDaemonUnlocked());
+  return serializeProfileMutation(async () => {
+    if (credentialSyncError) {
+      return {
+        success: false,
+        error: `credentials unavailable: ${credentialSyncError}`,
+      };
+    }
+    return restartDaemonUnlocked();
+  });
 }
 
 async function pollOnce(): Promise<void> {
@@ -1229,6 +1302,7 @@ async function readLogRange(
 function sendLines(win: BrowserWindow, text: string): void {
   const lines = text.split("\n").filter((line) => line.length > 0);
   for (const line of lines) {
+    if (credentialSyncError) return;
     win.webContents.send("daemon:log-line", line);
   }
 }
@@ -1239,8 +1313,10 @@ function sendLines(win: BrowserWindow, text: string): void {
 // would silently fail on Windows.
 function startLogTail(win: BrowserWindow, retryCount = 0): void {
   stopLogTail();
+  if (credentialSyncError) return;
 
   void ensureActiveProfile().then(async (active) => {
+    if (credentialSyncError) return;
     // Before the renderer reports its apiUrl there is no Desktop-owned profile
     // yet, and therefore no log file of ours to tail. Retry rather than reach
     // for the default profile's log.
@@ -1254,6 +1330,7 @@ function startLogTail(win: BrowserWindow, retryCount = 0): void {
 
     let position = 0;
     try {
+      if (credentialSyncError) return;
       const initialStats = await stat(logPath);
       const windowBytes = Math.min(
         initialStats.size,
@@ -1261,12 +1338,14 @@ function startLogTail(win: BrowserWindow, retryCount = 0): void {
       );
       const startAt = initialStats.size - windowBytes;
       if (windowBytes > 0) {
+        if (credentialSyncError) return;
         const text = await readLogRange(logPath, startAt, windowBytes);
         const lines = text
           .split("\n")
           .filter((line) => line.length > 0)
           .slice(-LOG_TAIL_INITIAL_LINES);
         for (const line of lines) {
+          if (credentialSyncError) return;
           win.webContents.send("daemon:log-line", line);
         }
       }
@@ -1277,6 +1356,10 @@ function startLogTail(win: BrowserWindow, retryCount = 0): void {
     }
 
     const listener: StatsListener = (curr) => {
+      if (credentialSyncError) {
+        stopLogTail();
+        return;
+      }
       const target = getMainWindow();
       if (!target) return;
       // File rotated/truncated — restart from the new beginning.
@@ -1292,7 +1375,12 @@ function startLogTail(win: BrowserWindow, retryCount = 0): void {
         });
     };
 
+    if (credentialSyncError) return;
     watchFile(logPath, { interval: LOG_TAIL_POLL_MS }, listener);
+    if (credentialSyncError) {
+      unwatchFile(logPath, listener);
+      return;
+    }
     logTailWatcher = { path: logPath, listener };
   });
 }
@@ -1317,6 +1405,7 @@ export function setupDaemonManager(
     return serializeProfileMutation(async () => {
       if (targetApiBaseUrl !== normalized) {
         console.log(`[daemon] target API URL set to ${normalized ?? "(none)"}`);
+        blockCredentialSync("credentials are not synchronized");
         targetApiBaseUrl = normalized;
         invalidateActiveProfile();
         pendingLegacyProfileStop = normalized
@@ -1383,6 +1472,7 @@ export function setupDaemonManager(
   });
 
   ipcMain.on("daemon:start-log-stream", () => {
+    if (credentialSyncError) return;
     const win = getMainWindow();
     if (win) startLogTail(win);
   });
@@ -1395,6 +1485,12 @@ export function setupDaemonManager(
   // app. Acts as the escape hatch when the in-app log viewer isn't enough
   // (full history, complex search, copy-to-clipboard at scale).
   ipcMain.handle("daemon:open-log-file", async () => {
+    if (credentialSyncError) {
+      return {
+        success: false,
+        error: `credentials unavailable: ${credentialSyncError}`,
+      };
+    }
     const active = await ensureActiveProfile();
     const logPath = active ? profileLogPath(active.name) : null;
     if (!logPath || !existsSync(logPath)) {
