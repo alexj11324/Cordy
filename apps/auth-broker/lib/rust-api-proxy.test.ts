@@ -101,6 +101,22 @@ describe("Rust desktop Google proxy", () => {
     expect(response.headers.get("set-cookie")).toBeNull();
   });
 
+  it("accepts the legacy code-only completion response during rollout", async () => {
+    const response = await proxyRustDesktopGoogleRequest(
+      request("/v1/desktop/google/complete", {
+        authorization: "Bearer clerk-session-token",
+      }),
+      "complete",
+      config,
+      vi.fn().mockResolvedValue(Response.json({ code })),
+    );
+
+    await expect(response.json()).resolves.toEqual({
+      callback_protocol: "patchbay",
+      code,
+    });
+  });
+
   it("rejects cross-origin, malformed, and unauthenticated completion requests", async () => {
     const fetcher = vi.fn();
     const crossOrigin = await proxyRustDesktopGoogleRequest(

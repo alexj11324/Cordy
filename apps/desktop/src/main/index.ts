@@ -13,6 +13,8 @@ import {
   LEGACY_PROTOCOL,
   PROTOCOL,
   findDesktopProtocolUrl,
+  readDesktopAppSuffix,
+  readDesktopCallbackProtocol,
   registerDesktopProtocolClients,
 } from "./protocol-registration";
 import { installContextMenu } from "./context-menu";
@@ -76,8 +78,14 @@ import {
 // be called again on macOS (app "activate" after all windows are closed).
 const downloadDialogSessions = new WeakSet<Electron.Session>();
 const authCallbackProtocol = process.defaultApp
-  ? (process.env.DESKTOP_AUTH_CALLBACK_PROTOCOL ?? "patchbay-canary")
+  ? (process.env.DESKTOP_AUTH_CALLBACK_PROTOCOL ??
+    readDesktopCallbackProtocol(process.argv) ??
+    "patchbay-canary")
   : PROTOCOL;
+if (process.defaultApp && !process.env.DESKTOP_APP_SUFFIX) {
+  const recoveredSuffix = readDesktopAppSuffix(process.argv);
+  if (recoveredSuffix) process.env.DESKTOP_APP_SUFFIX = recoveredSuffix;
+}
 
 function installDownloadSaveDialogHandler(window: BrowserWindow): void {
   const { session } = window.webContents;
@@ -621,6 +629,7 @@ registerDesktopProtocolClients(app, {
   platform: process.platform,
   execPath: process.execPath,
   authCallbackProtocol,
+  desktopAppSuffix: process.env.DESKTOP_APP_SUFFIX,
 });
 
 // --- Single instance lock ------------------------------------------------

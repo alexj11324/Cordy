@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import {
   LEGACY_PROTOCOL,
   findDesktopProtocolUrl,
+  readDesktopAppSuffix,
+  readDesktopCallbackProtocol,
   registerDesktopProtocolClients,
 } from "./protocol-registration";
 
@@ -26,6 +28,28 @@ describe("registerDesktopProtocolClients", () => {
     ).toBe("patchbay-canary-login-fix-123://auth/callback?code=one-time");
   });
 
+  it("recovers the registered callback protocol after a cold start", () => {
+    expect(
+      readDesktopCallbackProtocol([
+        "/worktrees/patchbay/node_modules/electron/electron",
+        "--desktop-auth-callback-protocol=patchbay-canary-login-fix-123",
+        "patchbay-canary-login-fix-123://auth/callback?code=one-time",
+      ]),
+    ).toBe("patchbay-canary-login-fix-123");
+    expect(
+      readDesktopCallbackProtocol([
+        "--desktop-auth-callback-protocol=evil-app",
+      ]),
+    ).toBeUndefined();
+  });
+
+  it("recovers only a safe app suffix after a cold start", () => {
+    expect(
+      readDesktopAppSuffix(["--desktop-app-suffix=login-fix-123"]),
+    ).toBe("login-fix-123");
+    expect(readDesktopAppSuffix(["--desktop-app-suffix=../shared"])).toBeUndefined();
+  });
+
   it("does not accept a different Canary worktree protocol", () => {
     expect(
       findDesktopProtocolUrl(
@@ -43,13 +67,18 @@ describe("registerDesktopProtocolClients", () => {
       platform: "darwin",
       execPath: "/worktrees/patchbay/node_modules/electron/Electron",
       authCallbackProtocol: "patchbay-canary-login-fix-123",
+      desktopAppSuffix: "login-fix-123",
     });
 
     expect(app.setAsDefaultProtocolClient.mock.calls).toEqual([
       [
         "patchbay-canary-login-fix-123",
         "/worktrees/patchbay/node_modules/electron/Electron",
-        ["/worktrees/patchbay/apps/desktop"],
+        [
+          "/worktrees/patchbay/apps/desktop",
+          "--desktop-auth-callback-protocol=patchbay-canary-login-fix-123",
+          "--desktop-app-suffix=login-fix-123",
+        ],
       ],
     ]);
   });
@@ -84,7 +113,10 @@ describe("registerDesktopProtocolClients", () => {
       [
         "patchbay-canary-linux-456",
         "/worktrees/patchbay/node_modules/electron/electron",
-        ["/worktrees/patchbay/apps/desktop"],
+        [
+          "/worktrees/patchbay/apps/desktop",
+          "--desktop-auth-callback-protocol=patchbay-canary-linux-456",
+        ],
       ],
     ]);
   });

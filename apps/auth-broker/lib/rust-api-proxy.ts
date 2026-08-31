@@ -142,14 +142,21 @@ export async function proxyRustDesktopGoogleRequest(
       { headers: authContractResponseHeaders() },
     );
   }
-  if (
-    operation === "complete" &&
-    isDesktopCode(record.code) &&
-    isDesktopCallbackProtocol(record.callback_protocol)
-  ) {
+  if (operation === "complete" && isDesktopCode(record.code)) {
+    // During a bounded rolling deploy the previous Rust API returns only the
+    // one-time code. Its historical contract always targeted the packaged
+    // `patchbay` scheme, so supply that value only when the field is absent;
+    // explicit malformed protocols still fail closed.
+    const callbackProtocol =
+      record.callback_protocol === undefined
+        ? "patchbay"
+        : record.callback_protocol;
+    if (!isDesktopCallbackProtocol(callbackProtocol)) {
+      return jsonError(502, "invalid_rust_api_response");
+    }
     return Response.json(
       {
-        callback_protocol: record.callback_protocol,
+        callback_protocol: callbackProtocol,
         code: record.code,
       },
       { headers: authContractResponseHeaders() },
