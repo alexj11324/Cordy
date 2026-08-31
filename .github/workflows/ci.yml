@@ -71,6 +71,7 @@ jobs:
           scripts/ci-workflow-contract.test.mjs
           scripts/cleanup-actions-caches.test.mjs
           scripts/github-actions-pinning-contract.test.mjs
+          scripts/dev-clerk-auth.test.mjs
 
       - name: Test accounts origin proxy contract
         run: node --test deploy/cloudflare/accounts-origin-proxy/src/index.test.mjs
