@@ -155,6 +155,7 @@ jobs:
               - 'scripts/auth-broker-helm.test.sh'
               - 'scripts/helm-config.test.sh'
               - 'scripts/macos-release-contract.test.sh'
+              - 'scripts/verify-release-tag.sh'
               - 'scripts/verify-release-tag.test.sh'
               - '.github/workflows/ci.yml'
               - '.github/workflows/release.yml'

@@ -37,6 +37,7 @@ test("Rust and Mobile validation are automatic path-classified merge gates", () 
   assert.match(ci, /^  frontend:\n/mu);
   assert.match(ci, /^  installer:\n/mu);
   assert.doesNotMatch(ci, /Rust validation was not manually requested/u);
+  assert.match(ci, /- 'scripts\/verify-release-tag\.sh'/u);
 });
 
 test("Rust uses one workspace test invocation and PR compiler caches are read-only", () => {
@@ -80,6 +81,9 @@ test("Turbo cache lifecycle is bounded for active, closed, and main refs", async
   assert.match(closedPrWorkflow, /--keep 2/u);
   assert.match(closedPrWorkflow, /types: \[closed\]/u);
   assert.match(closedPrWorkflow, /mode=delete-ref/u);
+  assert.match(closedPrWorkflow, /pull-requests: read/u);
+  assert.match(closedPrWorkflow, /gh api "repos\/\$GITHUB_REPOSITORY\/pulls\/\$RUN_PR_NUMBER"/u);
+  assert.match(closedPrWorkflow, /if \[ "\$pr_state" = "closed" \]/u);
   assert.match(cacheCleanup, /AbortSignal\.timeout\(GITHUB_API_TIMEOUT_MS\)/u);
 });
 
