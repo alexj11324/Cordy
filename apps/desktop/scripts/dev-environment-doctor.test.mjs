@@ -12,6 +12,7 @@ import {
   inspectDevEnvironment,
   integrationKeyStatus,
   loadDoctorEnvironment,
+  shouldBootstrapDevClerkAuth,
 } from "./dev-environment-doctor.mjs";
 import { rustSourceFingerprint } from "./dev-cli-cache.mjs";
 import { INTEGRATION_SECRET_KEYS } from "../../../scripts/ensure-dev-integration-secrets.mjs";
@@ -92,6 +93,21 @@ describe("complete Desktop development doctor", () => {
         VITE_ACCOUNTS_URL: "https://accounts.aspectlylabs.com/",
       }),
     ).toBe("https://accounts.aspectlylabs.com");
+  });
+
+  it("reuses the authenticated launcher's readiness marker", () => {
+    expect(
+      shouldBootstrapDevClerkAuth({ PATCHBAY_DEV_MODE: "local" }),
+    ).toBe(true);
+    expect(
+      shouldBootstrapDevClerkAuth({
+        PATCHBAY_DEV_MODE: "local",
+        PATCHBAY_DEV_AUTH_READY: "1",
+      }),
+    ).toBe(false);
+    expect(shouldBootstrapDevClerkAuth({ PATCHBAY_DEV_MODE: "hosted" })).toBe(
+      false,
+    );
   });
 
   it("preserves a launcher's hosted profile when the checkout env is reloaded", async () => {
@@ -190,6 +206,7 @@ describe("complete Desktop development doctor", () => {
 
     expect(report.ok).toBe(true);
     expect(report.checks.map(({ id, ok }) => [id, ok])).toEqual([
+      ["cache", true],
       ["cli", true],
       ["backend", true],
       ["accounts", true],
@@ -237,10 +254,12 @@ describe("complete Desktop development doctor", () => {
       arch: "arm64",
       execImpl,
       fetchImpl,
+      cacheRoot: join(repoRoot, "cache"),
     });
 
     expect(report.ok).toBe(true);
     expect(report.checks.map(({ id, ok }) => [id, ok])).toEqual([
+      ["cache", true],
       ["cli", true],
       ["backend", true],
       ["agents", true],
@@ -280,6 +299,7 @@ describe("complete Desktop development doctor", () => {
       platform: "darwin",
       arch: "arm64",
       execImpl,
+      cacheRoot: join(repoRoot, "cache"),
       fetchImpl: async () => ({
         ok: true,
         status: 200,
@@ -317,6 +337,7 @@ describe("complete Desktop development doctor", () => {
       platform: "darwin",
       arch: "arm64",
       execImpl,
+      cacheRoot: join(repoRoot, "cache"),
       fetchImpl: async () => ({ ok: false, status: 503 }),
     });
 

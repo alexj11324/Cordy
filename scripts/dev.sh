@@ -21,6 +21,18 @@ if [ ${#missing[@]} -gt 0 ]; then
   echo "  PostgreSQL may run through Docker Compose or a native local installation."
   exit 1
 fi
+node_major="$(node -p 'process.versions.node.split(".")[0]')"
+pnpm_version="$(pnpm --version)"
+if [ "$node_major" != "22" ]; then
+  echo "✗ Patchbay development requires Node.js 22 (found $(node --version))." >&2
+  echo "  Run through pnpm's pinned dev runtime or activate the version in .nvmrc." >&2
+  exit 1
+fi
+if [ "$pnpm_version" != "10.28.2" ]; then
+  echo "✗ Patchbay development requires pnpm 10.28.2 (found $pnpm_version)." >&2
+  echo "  Run: corepack prepare pnpm@10.28.2 --activate" >&2
+  exit 1
+fi
 
 # ---------- Environment file ----------
 # The public Node launcher selects/creates this file, loads it into the child
@@ -29,7 +41,6 @@ if [ -z "${ENV_FILE:-}" ] || [ ! -f "$ENV_FILE" ]; then
   echo "✗ Complete development environment was not prepared. Run 'pnpm dev'."
   exit 1
 fi
-
 echo "==> Using $ENV_FILE"
 
 # The Node launcher has already selected the mode from its command-line
@@ -38,10 +49,42 @@ echo "==> Using $ENV_FILE"
 # `pnpm dev` into a shared hosted run.
 launcher_dev_mode="${PATCHBAY_DEV_MODE:-}"
 
+clerk_env_args=()
+for clerk_key in \
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY \
+  CLERK_PUBLISHABLE_KEY \
+  CLERK_SECRET_KEY \
+  CLERK_JWT_KEY \
+  CLERK_ISSUER \
+  CLERK_AUTHORIZED_PARTIES; do
+  if [[ -v "$clerk_key" ]]; then
+    clerk_env_args+=("$clerk_key=${!clerk_key}")
+  fi
+done
+
 set -a
 # shellcheck disable=SC1090
 . "$ENV_FILE"
 set +a
+
+# Keep explicitly injected Clerk credentials available only long enough for
+# the scoped auth wrappers to validate them. The parent process remains
+# sanitized, while the values are restored in each short-lived child shell
+# without putting secrets in a command-line argument list.
+run_with_injected_clerk_env() {
+  local clerk_entry
+  for clerk_entry in "${clerk_env_args[@]}"; do
+    export "$clerk_entry"
+  done
+  exec "$@"
+}
+
+# Prevent legacy checkout-file or inherited Clerk values from entering install,
+# Rust preparation, migrations, Electron, or probes. Narrow wrappers load auth
+# later for backend and Web only.
+# shellcheck disable=SC1091
+. scripts/dev-env.sh
+clear_process_only_clerk_env
 
 # shellcheck disable=SC1091
 . scripts/local-env.sh
@@ -94,11 +137,10 @@ esac
 # directories remain independent and are never redirected into this cache.
 export SCCACHE_CACHE_SIZE="${SCCACHE_CACHE_SIZE:-10G}"
 
-# ---------- Install dependencies ----------
-if [ ! -d node_modules ]; then
-  echo "==> Installing dependencies..."
-  pnpm install
-fi
+# pnpm verifies whether the worktree's isolated links match the lockfile. Its
+# optimistic repeat-install path makes an already-current checkout a fast no-op.
+echo "==> Verifying dependencies..."
+pnpm install
 
 # ---------- Source-matched development runtime ----------
 # Cache hits stage the CLI, backend and migration runner without Cargo. A
@@ -151,6 +193,11 @@ echo ""
 
 backend_pid=""
 web_pid=""
+backend_log="$REPO_ROOT/.patchbay-dev/logs/backend.log"
+frontend_log="$REPO_ROOT/.patchbay-dev/logs/frontend.log"
+mkdir -p "$(dirname "$backend_log")"
+: >"$backend_log"
+: >"$frontend_log"
 cleanup() {
   if [ -n "$web_pid" ] && kill -0 "$web_pid" >/dev/null 2>&1; then
     kill "$web_pid" >/dev/null 2>&1 || true
@@ -163,25 +210,48 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+port_is_listening() {
+  node -e 'const net=require("node:net"); const socket=net.connect(Number(process.argv[1]), "127.0.0.1"); socket.once("connect",()=>{socket.destroy();process.exit(0)}); socket.once("error",()=>process.exit(1)); socket.setTimeout(500,()=>{socket.destroy();process.exit(1)});' "$1"
+}
+
+describe_port_owner() {
+  local port=$1
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null || true
+  else
+    echo "  Inspect the listener on port $port and stop it, or regenerate this checkout's environment."
+  fi
+}
+
 backend_ready_url="http://127.0.0.1:${PORT:-8080}/healthz"
-if curl --fail --silent --show-error "$backend_ready_url" >/dev/null 2>&1; then
-  echo "✗ Backend port ${PORT:-8080} is already serving another Patchbay instance." >&2
-  echo "  Stop it or use this checkout's isolated PORT before running pnpm dev." >&2
+if port_is_listening "${PORT:-8080}"; then
+  echo "✗ Backend port ${PORT:-8080} is already occupied." >&2
+  describe_port_owner "${PORT:-8080}" >&2
+  echo "  Stop that process or run FORCE=1 make worktree-env to allocate a new isolated port." >&2
   exit 1
 fi
 
-(cd server-rs && "$dev_backend") &
+(cd server-rs && run_with_injected_clerk_env node ../scripts/dev-auth-command.mjs backend "$dev_backend") > >(tee "$backend_log") 2>&1 &
 backend_pid=$!
 
-deadline=$((SECONDS + 1800))
+backend_timeout="${PATCHBAY_DEV_BACKEND_TIMEOUT_SECONDS:-120}"
+if [[ ! "$backend_timeout" =~ ^[1-9][0-9]*$ ]]; then
+  echo "✗ PATCHBAY_DEV_BACKEND_TIMEOUT_SECONDS must be a positive number of seconds." >&2
+  exit 1
+fi
+deadline=$((SECONDS + backend_timeout))
 until curl --fail --silent --show-error "$backend_ready_url" >/dev/null 2>&1; do
   if ! kill -0 "$backend_pid" >/dev/null 2>&1; then
     wait "$backend_pid" || true
-    echo "✗ Backend exited before its database readiness check passed."
+    echo "✗ Backend exited before its database readiness check passed." >&2
+    echo "  Last backend log lines ($backend_log):" >&2
+    tail -n 80 "$backend_log" >&2 || true
     exit 1
   fi
   if [ "$SECONDS" -ge "$deadline" ]; then
-    echo "✗ Backend did not become ready within 30 minutes: $backend_ready_url"
+    echo "✗ Backend did not become ready within ${backend_timeout}s: $backend_ready_url" >&2
+    echo "  Last backend log lines ($backend_log):" >&2
+    tail -n 80 "$backend_log" >&2 || true
     exit 1
   fi
   sleep 1
@@ -189,46 +259,51 @@ done
 if ! kill -0 "$backend_pid" >/dev/null 2>&1; then
   wait "$backend_pid" || true
   echo "✗ Spawned backend exited during readiness verification." >&2
+  tail -n 80 "$backend_log" >&2 || true
   exit 1
 fi
+# The authenticated backend wrapper has already validated the complete Clerk
+# configuration. Carry only this non-secret readiness fact to the Desktop
+# doctor so it does not bootstrap Secret Manager a second time.
+export PATCHBAY_DEV_AUTH_READY=1
 
 frontend_ready_url="$FRONTEND_ORIGIN/"
-if curl --fail --silent --show-error "$frontend_ready_url" >/dev/null 2>&1; then
-  echo "✗ Frontend port ${FRONTEND_PORT:-3000} is already serving another Patchbay instance." >&2
-  echo "  Stop it or use this checkout's isolated FRONTEND_PORT before running pnpm dev." >&2
+if port_is_listening "${FRONTEND_PORT:-3000}"; then
+  echo "✗ Frontend port ${FRONTEND_PORT:-3000} is already occupied." >&2
+  describe_port_owner "${FRONTEND_PORT:-3000}" >&2
+  echo "  Stop that process or run FORCE=1 make worktree-env to allocate a new isolated port." >&2
   exit 1
 fi
 
 echo "==> Starting the browser/share/login origin at $FRONTEND_ORIGIN..."
 (
   cd apps/web
-  exec node node_modules/next/dist/bin/next dev --webpack --port "${FRONTEND_PORT:-3000}"
-) &
+  run_with_injected_clerk_env node ../../scripts/dev-auth-command.mjs web node node_modules/next/dist/bin/next dev --webpack --port "${FRONTEND_PORT:-3000}"
+) > >(tee "$frontend_log") 2>&1 &
 web_pid=$!
 
-frontend_deadline=$((SECONDS + 120))
+frontend_timeout="${PATCHBAY_DEV_FRONTEND_TIMEOUT_SECONDS:-120}"
+if [[ ! "$frontend_timeout" =~ ^[1-9][0-9]*$ ]]; then
+  echo "✗ PATCHBAY_DEV_FRONTEND_TIMEOUT_SECONDS must be a positive number of seconds." >&2
+  exit 1
+fi
+frontend_deadline=$((SECONDS + frontend_timeout))
 until curl --fail --silent --show-error "$frontend_ready_url" >/dev/null 2>&1; do
   if ! kill -0 "$web_pid" >/dev/null 2>&1; then
     wait "$web_pid" || true
     echo "✗ Frontend exited before its browser-link health check passed." >&2
+    echo "  Last frontend log lines ($frontend_log):" >&2
+    tail -n 80 "$frontend_log" >&2 || true
     exit 1
   fi
   if [ "$SECONDS" -ge "$frontend_deadline" ]; then
-    echo "✗ Frontend did not become reachable within 2 minutes: $frontend_ready_url" >&2
+    echo "✗ Frontend did not become reachable within ${frontend_timeout}s: $frontend_ready_url" >&2
+    echo "  Last frontend log lines ($frontend_log):" >&2
+    tail -n 80 "$frontend_log" >&2 || true
     exit 1
   fi
   sleep 1
 done
-
-missing_google_keys=()
-for key in NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY CLERK_SECRET_KEY CLERK_JWT_KEY CLERK_ISSUER CLERK_AUTHORIZED_PARTIES; do
-  if [ -z "${!key:-}" ]; then
-    missing_google_keys+=("$key")
-  fi
-done
-if [ ${#missing_google_keys[@]} -gt 0 ]; then
-  echo "! Google sign-in is unavailable; add these values to $ENV_FILE: ${missing_google_keys[*]}"
-fi
 
 export PATCHBAY_REQUIRE_SOURCE_CLI=1
 export PATCHBAY_DEV_ENV_FILE="$ENV_FILE"

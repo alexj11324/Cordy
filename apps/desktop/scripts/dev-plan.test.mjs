@@ -113,6 +113,13 @@ describe("Desktop development build plan", () => {
       "node scripts/dev-launcher.mjs",
     );
     expect(rootPackage.scripts.dev).toBe("node scripts/dev-launcher.mjs");
+    expect(rootPackage.engines.node).toBe(">=22 <23");
+    expect(rootPackage.packageManager).toBe("pnpm@10.28.2");
+    expect(rootPackage.devEngines.runtime).toMatchObject({
+      name: "node",
+      version: "^22.0.0",
+      onFail: "download",
+    });
     expect(rootPackage.scripts["dev:desktop:rust"]).toBeUndefined();
     expect(rootPackage.scripts["dev:desktop:web"]).toBeUndefined();
     expect(rootPackage.scripts.build).toBe(

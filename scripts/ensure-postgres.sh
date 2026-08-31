@@ -31,6 +31,26 @@ DATABASE_URL="${DATABASE_URL:-}"
 
 export PGPASSWORD="$POSTGRES_PASSWORD"
 
+db_timeout_seconds="${PATCHBAY_DEV_DB_TIMEOUT_SECONDS:-120}"
+if [[ ! "$db_timeout_seconds" =~ ^[1-9][0-9]*$ ]]; then
+  echo "PATCHBAY_DEV_DB_TIMEOUT_SECONDS must be a positive number of seconds." >&2
+  exit 1
+fi
+
+wait_until_ready() {
+  local description=$1 remediation=$2
+  shift 2
+  local deadline=$((SECONDS + db_timeout_seconds))
+  until "$@" >/dev/null 2>&1; do
+    if [ "$SECONDS" -ge "$deadline" ]; then
+      echo "✗ PostgreSQL did not become ready at $description within ${db_timeout_seconds}s." >&2
+      echo "  $remediation" >&2
+      return 1
+    fi
+    sleep 1
+  done
+}
+
 db_host=""
 db_port="${POSTGRES_PORT:-5432}"
 db_name="$POSTGRES_DB"
@@ -89,9 +109,13 @@ if is_local; then
     docker compose up -d postgres
 
     echo "==> Waiting for PostgreSQL to be ready..."
-    until docker compose exec -T postgres pg_isready -U "$POSTGRES_USER" -d postgres > /dev/null 2>&1; do
-      sleep 1
-    done
+    if ! wait_until_ready \
+      "localhost:5432" \
+      "Run 'docker compose ps postgres' and 'docker compose logs postgres'." \
+      docker compose exec -T postgres pg_isready -U "$POSTGRES_USER" -d postgres; then
+      docker compose ps postgres >&2 || true
+      exit 1
+    fi
 
     echo "==> Ensuring database '$POSTGRES_DB' exists..."
     db_exists="$(docker compose exec -T postgres \
@@ -121,9 +145,10 @@ if is_local; then
     fi
     parse_postgres_endpoint "$DATABASE_URL" "$db_port"
     echo "==> Using native PostgreSQL at ${POSTGRES_RUNTIME_HOST}:${POSTGRES_RUNTIME_PORT}..."
-    until postgres_clean_libpq_routing "$ready_command" -h "$POSTGRES_RUNTIME_HOST" -p "$POSTGRES_RUNTIME_PORT" -U "$POSTGRES_USER" -d postgres >/dev/null 2>&1; do
-      sleep 1
-    done
+    wait_until_ready \
+      "${POSTGRES_RUNTIME_HOST}:${POSTGRES_RUNTIME_PORT}" \
+      "Verify the native PostgreSQL service and DATABASE_URL." \
+      postgres_clean_libpq_routing "$ready_command" -h "$POSTGRES_RUNTIME_HOST" -p "$POSTGRES_RUNTIME_PORT" -U "$POSTGRES_USER" -d postgres
     db_exists="$(postgres_clean_libpq_routing "$psql_command" -X -h "$POSTGRES_RUNTIME_HOST" -p "$POSTGRES_RUNTIME_PORT" -U "$POSTGRES_USER" -d postgres -Atqc "SELECT 1 FROM pg_database WHERE datname = '$POSTGRES_DB'")"
     if [ "$db_exists" != "1" ]; then
       if ! postgres_clean_libpq_routing "$createdb_command" -h "$POSTGRES_RUNTIME_HOST" -p "$POSTGRES_RUNTIME_PORT" -U "$POSTGRES_USER" --owner "$POSTGRES_USER" "$POSTGRES_DB" 2>/dev/null; then
@@ -141,9 +166,10 @@ else
   echo "==> Remote database detected (host: $db_host). Skipping Docker."
   if command -v pg_isready > /dev/null 2>&1; then
     echo "==> Waiting for PostgreSQL at $db_host:$db_port to be ready..."
-    until pg_isready -d "$DATABASE_URL" > /dev/null 2>&1; do
-      sleep 1
-    done
+    wait_until_ready \
+      "$db_host:$db_port" \
+      "Verify DATABASE_URL, network access, and the remote PostgreSQL service." \
+      pg_isready -d "$DATABASE_URL"
     echo "✓ PostgreSQL ready (remote: $db_host:$db_port). Database: $db_name"
   else
     echo "==> pg_isready not found. Skipping remote connectivity preflight."

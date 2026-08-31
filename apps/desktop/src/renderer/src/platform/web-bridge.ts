@@ -76,7 +76,7 @@ export function installWebDesktopBridge(): boolean {
   if (existingWindow.desktopAPI) return false;
 
   const runtimeConfig = runtimeConfigFromDevEnv({
-    // `make start-worktree` exports the Next.js convention, while direct
+    // Complete `pnpm dev` exports the Next.js convention, while direct
     // Desktop development uses Vite's convention. Accept both so a linked
     // worktree never falls back to the primary checkout's port.
     apiUrl: viteEnv.VITE_API_URL || viteEnv.NEXT_PUBLIC_API_URL,

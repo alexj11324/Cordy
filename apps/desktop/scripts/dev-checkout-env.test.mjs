@@ -35,6 +35,7 @@ describe("development checkout environment", () => {
     expect(result.envFile).toBe(join(sandbox, ".env.worktree"));
     expect(env.PORT).toBe("18123");
     expect(env.PATCHBAY_TELEGRAM_SECRET_KEY).toBe("from-file");
+    expect(env.APP_ENV).toBe("development");
     expect(env.PATCHBAY_PUBLIC_URL).toBe("http://localhost:18123");
   });
 
@@ -49,9 +50,25 @@ describe("development checkout environment", () => {
 
     loadDevCheckoutEnv({ repoRoot: sandbox, env });
 
+    expect(env.APP_ENV).toBe("development");
     expect(env.PORT).toBe("8080");
     expect(env.FRONTEND_ORIGIN).toBe("http://localhost:3000");
     expect(env.LOCAL_UPLOAD_DIR).toBe(join(sandbox, "server/data/uploads"));
+  });
+
+  it("keeps Clerk credentials process-only and ignores checkout-file values", async () => {
+    sandbox = await mkdtemp(join(tmpdir(), "patchbay-dev-env-"));
+    await mkdir(join(sandbox, ".git"));
+    await writeFile(
+      join(sandbox, ".env"),
+      "CLERK_SECRET_KEY=must-not-load\nCLERK_JWT_KEY=must-not-load\nPORT=8080\n",
+    );
+    const env = { CLERK_SECRET_KEY: "process-only" };
+
+    loadDevCheckoutEnv({ repoRoot: sandbox, env });
+
+    expect(env.CLERK_SECRET_KEY).toBe("process-only");
+    expect(env.CLERK_JWT_KEY).toBeUndefined();
   });
 
   it("resolves file references against inherited variables", async () => {
@@ -94,6 +111,7 @@ describe("development checkout environment", () => {
       join(sandbox, ".env.worktree"),
     );
     expect(contents).toContain("POSTGRES_DB=patchbay_patchbay_feature_");
+    expect(contents).toContain("APP_ENV=development");
     for (const key of [
       "PATCHBAY_LARK_SECRET_KEY",
       "PATCHBAY_SLACK_SECRET_KEY",
