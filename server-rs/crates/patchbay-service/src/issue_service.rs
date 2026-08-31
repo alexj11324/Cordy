@@ -569,17 +569,6 @@ pub struct ExternalIssueApply {
     pub updated: Option<Issue>,
 }
 
-/// Result of applying an external Issue command inside a caller-owned
-/// transaction. `updated` is `None` when the patch was a no-op; the previous
-/// snapshot is retained for post-commit event and side-effect decisions.
-#[derive(Debug)]
-pub struct ExternalIssueApply {
-    pub source: ExternalSource,
-    pub source_event_id: String,
-    pub previous: Issue,
-    pub updated: Option<Issue>,
-}
-
 #[derive(Debug, Clone)]
 pub enum IssueCommand {
     ApplyExternalPatch {
