@@ -26,6 +26,10 @@ import {
   FieldSeparator,
 } from "@patchbay/ui/components/ui/field";
 import { useAuthStore } from "@patchbay/core/auth";
+import {
+  PRODUCTION_DESKTOP_CALLBACK_PROTOCOL,
+  isDesktopCallbackProtocol,
+} from "@patchbay/core/auth/desktop-callback-protocol";
 import { workspaceKeys } from "@patchbay/core/workspace/queries";
 import { api } from "@patchbay/core/api";
 import type { User } from "@patchbay/core/types";
@@ -83,8 +87,15 @@ export function redirectToCliCallback(url: string, token: string, state: string)
  * custom protocol lets the OS show its normal "Open Patchbay?" confirmation
  * before Electron receives the one-time code through its deep-link handler.
  */
-export function redirectToDesktopApp(code: string, state: string) {
-  const callback = new URL("patchbay://auth/callback");
+export function redirectToDesktopApp(
+  code: string,
+  state: string,
+  callbackProtocol = PRODUCTION_DESKTOP_CALLBACK_PROTOCOL,
+) {
+  if (!isDesktopCallbackProtocol(callbackProtocol)) {
+    throw new Error("Invalid desktop callback protocol");
+  }
+  const callback = new URL(`${callbackProtocol}://auth/callback`);
   callback.searchParams.set("code", code);
   callback.searchParams.set("state", state);
   window.location.href = callback.href;

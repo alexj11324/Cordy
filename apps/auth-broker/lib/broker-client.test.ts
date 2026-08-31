@@ -14,7 +14,9 @@ describe("same-origin auth broker client", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("registers the versioned PKCE binding without a bearer", async () => {
-    const fetcher = vi.fn().mockResolvedValue(Response.json({ registered: true }));
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(Response.json({ registered: true }));
     vi.stubGlobal("fetch", fetcher);
 
     await registerDesktopGoogleAttempt(binding);
@@ -30,12 +32,20 @@ describe("same-origin auth broker client", () => {
 
   it("uses the Clerk bearer only for completion and accepts only a one-time grant", async () => {
     const code = `pbd_${"g".repeat(43)}`;
-    const fetcher = vi.fn().mockResolvedValue(Response.json({ code }));
+    const fetcher = vi.fn().mockResolvedValue(
+      Response.json({
+        callback_protocol: "patchbay-canary-login-fix-123",
+        code,
+      }),
+    );
     vi.stubGlobal("fetch", fetcher);
 
     await expect(
       completeDesktopGoogleAttempt("clerk-session", binding),
-    ).resolves.toBe(code);
+    ).resolves.toEqual({
+      callbackProtocol: "patchbay-canary-login-fix-123",
+      code,
+    });
 
     const [path, init] = fetcher.mock.calls[0] as [string, RequestInit];
     expect(path).toBe("/v1/desktop/google/complete");

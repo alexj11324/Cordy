@@ -51,7 +51,8 @@ vi.mock("@patchbay/core/api", async (importOriginal) => {
 });
 
 vi.mock("@patchbay/views/auth", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@patchbay/views/auth")>();
+  const original =
+    await importOriginal<typeof import("@patchbay/views/auth")>();
   return { ...original, redirectToCliCallback, redirectToDesktopApp };
 });
 
@@ -97,7 +98,11 @@ describe("LoginPage", () => {
     signInProps.current = {};
     search.current = "";
     authStoreState.current = { status: "unauthenticated" };
-    authState.current = { isLoaded: true, isSignedIn: false, getToken: vi.fn() };
+    authState.current = {
+      isLoaded: true,
+      isSignedIn: false,
+      getToken: vi.fn(),
+    };
     exchangeReady.current = true;
     issueCliToken.mockReset();
     completeDesktopGoogleAttempt.mockReset();
@@ -154,8 +159,7 @@ describe("LoginPage", () => {
   });
 
   it("rejects an external post-login redirect", () => {
-    search.current =
-      "redirect_url=https%3A%2F%2Fevil.example%2Ftakeover";
+    search.current = "redirect_url=https%3A%2F%2Fevil.example%2Ftakeover";
 
     render(<LoginPage />);
 
@@ -164,7 +168,8 @@ describe("LoginPage", () => {
   });
 
   it("preserves the desktop handoff through Clerk sign-in", () => {
-    search.current = "platform=desktop&code_challenge=challenge-value&state=opaque-state";
+    search.current =
+      "platform=desktop&code_challenge=challenge-value&state=opaque-state";
 
     render(<LoginPage />);
 
@@ -258,14 +263,18 @@ describe("LoginPage", () => {
   });
 
   it("automatically hands a signed-in desktop session to the Patchbay app", async () => {
-    search.current = "platform=desktop&code_challenge=challenge-value&state=opaque-state";
+    search.current =
+      "platform=desktop&code_challenge=challenge-value&state=opaque-state&callback_protocol=patchbay-canary-attacker";
     authState.current = {
       isLoaded: true,
       isSignedIn: true,
       getToken: vi.fn().mockResolvedValue("clerk-session-token"),
     };
     authStoreState.current = { status: "authenticated" };
-    completeDesktopGoogleAttempt.mockResolvedValue({ code: "desktop-handoff-code" });
+    completeDesktopGoogleAttempt.mockResolvedValue({
+      callback_protocol: "patchbay-canary-login-fix-123",
+      code: "desktop-handoff-code",
+    });
 
     render(<LoginPage />);
 
@@ -280,11 +289,13 @@ describe("LoginPage", () => {
     expect(redirectToDesktopApp).toHaveBeenCalledWith(
       "desktop-handoff-code",
       "opaque-state",
+      "patchbay-canary-login-fix-123",
     );
   });
 
   it("waits for the current Clerk identity to finish the Rust session exchange", async () => {
-    search.current = "platform=desktop&code_challenge=challenge-value&state=opaque-state";
+    search.current =
+      "platform=desktop&code_challenge=challenge-value&state=opaque-state";
     authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
     authStoreState.current = { status: "authenticated" };
     exchangeReady.current = false;

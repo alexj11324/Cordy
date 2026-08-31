@@ -90,6 +90,31 @@ describe("authStore", () => {
     expect(api.setToken).not.toHaveBeenCalled();
   });
 
+  it("starts a handoff guest without publishing or persisting the bootstrap identity", async () => {
+    const storage = makeStorage();
+    const guestUser = { ...fakeUser, id: "guest-handoff", is_guest: true };
+    const api = {
+      createGuestSession: vi.fn().mockResolvedValue({
+        token: "pbg_handoff-token",
+        user: guestUser,
+      }),
+      setToken: vi.fn(),
+    } as unknown as ApiClient;
+    const store = createAuthStore({ api, storage });
+
+    await expect(
+      store.getState().createGuestSessionForHandoff(),
+    ).resolves.toEqual(guestUser);
+
+    expect(storage.snapshot()).toEqual({});
+    expect(api.setToken).toHaveBeenCalledWith("pbg_handoff-token");
+    expect(store.getState()).toMatchObject({
+      user: null,
+      isLoading: true,
+      status: "authenticating",
+    });
+  });
+
   it("retains a handed-off token when user hydration fails transiently", async () => {
     const storage = makeStorage();
     const api = {

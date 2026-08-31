@@ -44,10 +44,16 @@ describe("ApiClient edit guards", () => {
 
   it("binds desktop Google completion to the explicit Clerk token", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ code: "pbd_code" }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
+      new Response(
+        JSON.stringify({
+          callback_protocol: "patchbay-canary-login-fix-123",
+          code: "pbd_code",
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
     );
     vi.stubGlobal("fetch", fetchMock);
     const client = new ApiClient("https://api.example.test");
@@ -61,7 +67,10 @@ describe("ApiClient edit guards", () => {
         state,
         codeChallenge,
       ),
-    ).resolves.toEqual({ code: "pbd_code" });
+    ).resolves.toEqual({
+      callback_protocol: "patchbay-canary-login-fix-123",
+      code: "pbd_code",
+    });
 
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.example.test/api/desktop-google/complete",
@@ -74,6 +83,40 @@ describe("ApiClient edit guards", () => {
         body: JSON.stringify({
           state,
           code_challenge: codeChallenge,
+        }),
+      }),
+    );
+  });
+
+  it("registers the callback protocol from an authenticated desktop initiation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      Response.json({ registered: true }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ApiClient("https://api.example.test");
+    client.setToken("patchbay-guest-token");
+    const state = "s".repeat(43);
+    const codeChallenge = "c".repeat(43);
+
+    await expect(
+      client.initiateDesktopGoogleAttempt(
+        state,
+        codeChallenge,
+        "patchbay-canary-login-fix-123",
+      ),
+    ).resolves.toEqual({ registered: true });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example.test/api/desktop-google/initiate",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          Authorization: "Bearer patchbay-guest-token",
+        }),
+        body: JSON.stringify({
+          state,
+          code_challenge: codeChallenge,
+          callback_protocol: "patchbay-canary-login-fix-123",
         }),
       }),
     );

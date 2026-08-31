@@ -74,9 +74,13 @@ impl AuthSettings {
     }
 
     fn is_dev_code(&self, code: &str) -> bool {
-        !self.app_env.eq_ignore_ascii_case("production")
+        !self.is_production()
             && is_six_digit_code(&self.dev_verification_code)
             && constant_time_eq(code.as_bytes(), self.dev_verification_code.as_bytes())
+    }
+
+    pub(crate) fn is_production(&self) -> bool {
+        self.app_env.eq_ignore_ascii_case("production")
     }
 
     pub(crate) fn cookie_attributes(&self) -> (Option<String>, bool) {
