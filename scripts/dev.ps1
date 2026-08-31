@@ -128,6 +128,13 @@ function Test-DockerPostgresAvailable {
     return $LASTEXITCODE -eq 0
 }
 
+function Stop-TrackedProcessTree {
+    param([object]$Process)
+    if (-not $Process -or $Process.HasExited) { return }
+    & taskkill.exe /PID $Process.Id /T /F *> $null
+    $Process.WaitForExit()
+}
+
 $DatabaseUri = [Uri]$env:DATABASE_URL
 $DatabaseHost = $DatabaseUri.Host
 $DatabasePort = if ($DatabaseUri.Port -gt 0) { $DatabaseUri.Port } else { [int]$env:POSTGRES_PORT }
@@ -312,12 +319,6 @@ try {
     & node apps/desktop/scripts/dev.mjs @ElectronArgs
     if ($LASTEXITCODE -ne 0) { throw "Electron development process exited with code $LASTEXITCODE" }
 } finally {
-    if ($WebProcess -and -not $WebProcess.HasExited) {
-        & taskkill.exe /PID $WebProcess.Id /T /F *> $null
-        $WebProcess.WaitForExit()
-    }
-    if ($BackendProcess -and -not $BackendProcess.HasExited) {
-        Stop-Process -Id $BackendProcess.Id -ErrorAction SilentlyContinue
-        $BackendProcess.WaitForExit()
-    }
+    Stop-TrackedProcessTree $WebProcess
+    Stop-TrackedProcessTree $BackendProcess
 }

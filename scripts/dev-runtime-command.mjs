@@ -25,23 +25,32 @@ export async function runDevRuntimeCommand({
   env = process.env,
   platform = process.platform,
   arch = process.arch,
+  loadCheckoutEnv = loadDevCheckoutEnv,
+  prepareRuntime = prepareDevRuntime,
+  bootstrapAuth = bootstrapDevClerkAuth,
+  listComponents = devRuntimeComponents,
+  spawnImpl = spawn,
 } = {}) {
-  loadDevCheckoutEnv({ repoRoot, env });
-  await prepareDevRuntime({ repoRoot, env, platform, arch });
+  loadCheckoutEnv({ repoRoot, env });
+  const authInput = { ...env };
+  const runtimeEnv = withoutDevClerkEnvironment(env);
+  await prepareRuntime({ repoRoot, env: runtimeEnv, platform, arch });
   const auth =
-    componentId === "backend" ? await bootstrapDevClerkAuth({ env }) : null;
-  const component = devRuntimeComponents({ repoRoot, platform, arch }).find(
+    componentId === "backend"
+      ? await bootstrapAuth({ env: authInput })
+      : null;
+  const component = listComponents({ repoRoot, platform, arch }).find(
     ({ id }) => id === componentId,
   );
   if (!component) throw new Error(`Unknown development runtime: ${componentId}`);
-  const child = spawn(component.destinationBinary, args, {
+  const child = spawnImpl(component.destinationBinary, args, {
     cwd: resolve(repoRoot, "server-rs"),
     env: auth
       ? {
-          ...withoutDevClerkEnvironment(env),
+          ...runtimeEnv,
           ...scopedDevClerkEnvironment(auth.authEnv, "backend"),
         }
-      : withoutDevClerkEnvironment(env),
+      : runtimeEnv,
     stdio: "inherit",
   });
   return new Promise((resolveRun, rejectRun) => {
