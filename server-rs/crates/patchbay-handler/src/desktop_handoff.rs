@@ -693,8 +693,7 @@ async fn initiate_google_attempt(
     if !valid_pkce_value(&request.code_challenge)
         || !valid_pkce_value(&request.state)
         || !valid_callback_protocol(&request.callback_protocol)
-        || (request.callback_protocol != "patchbay"
-            && !state.auth_settings.is_local_development())
+        || (request.callback_protocol != "patchbay" && !state.auth_settings.is_local_development())
     {
         return error_response(
             StatusCode::BAD_REQUEST,
