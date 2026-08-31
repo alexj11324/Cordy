@@ -852,7 +852,7 @@ impl LinearSyncWorker {
                 .as_ref()
                 .is_some_and(|delegate| delegate.id == connection.actor_id)
         }) {
-            // Remove only Cordy's own delegate. A user may have selected a
+            // Remove only Patchbay's own delegate. A user may have selected a
             // different Agent, which this integration must leave untouched.
             Some(None)
         } else {
