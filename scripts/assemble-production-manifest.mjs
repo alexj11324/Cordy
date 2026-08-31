@@ -18,7 +18,7 @@ export async function assembleProductionManifest({
   sourceSha,
   outputPath,
   repositoryOwner,
-  repository = `${repositoryOwner}/Cordy`,
+  repository = `${repositoryOwner}/Cordy`, // legacy-brand-compat: live repository identity
   runId = process.env.GITHUB_RUN_ID ?? "local",
 }) {
   if (!SHA_PATTERN.test(sourceSha)) {

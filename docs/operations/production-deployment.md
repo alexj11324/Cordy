@@ -84,7 +84,7 @@ automated deployment, every normal deployment and rollback must pass the full
 version and business-route checks.
 
 The server gateway accepts a maximum 64 KiB JSON request. A deployment request
-must name `alexj11324/Cordy`, the exact current 40-character `main` SHA, and
+must name `alexj11324/Cordy`, the exact current 40-character `main` SHA, and <!-- legacy-brand-compat -->
 exactly four allow-listed `ghcr.io/alexj11324/patchbay-*` sha256 references.
 Caller-provided commands, paths, Compose options, tags such as `latest`, and
 arbitrary registries are rejected.
@@ -95,9 +95,9 @@ The gateway serializes operations with a host lock. It fetches `main` into a
 bare cache, creates a detached release worktree, pulls all four digests before
 mutation, and then updates the existing Compose projects and ports:
 
-- `cordy632`: Backend on `127.0.0.1:8210`, Web on `127.0.0.1:3110`, retaining
+- `cordy632`: Backend on `127.0.0.1:8210`, Web on `127.0.0.1:3110`, retaining <!-- legacy-brand-compat -->
   the existing PostgreSQL and uploads volumes.
-- `cordy`: Docs on `127.0.0.1:4000`.
+- `cordy`: Docs on `127.0.0.1:4000`. <!-- legacy-brand-compat -->
 - `patchbay-auth-broker`: Broker on `127.0.0.1:43100`.
 
 Backend is made ready before Web, so migrations finish before new Web traffic.
@@ -111,6 +111,17 @@ Database migrations must remain backward-compatible with the immediately prior
 application image. Automatic image rollback cannot reverse a destructive
 schema migration safely; such a migration requires a separately reviewed
 expand/migrate/contract sequence.
+
+## Legacy infrastructure identities
+
+Two narrowly scoped legacy identities remain: the current GitHub repository
+identity used by the gateway allow-list, and the existing production Compose
+project/container names used to reattach the live database and upload volumes.
+The platform owner owns both residuals. The repository literals are deleted
+only after an approved GitHub repository rename; the Compose/container literals
+are deleted only after a separately reviewed, backed-up volume migration. The
+legacy-marker CI check and the gateway bootstrap/deployment contracts verify
+that no unlisted product-facing legacy spelling is introduced.
 
 ## Main checkout and active tasks after merge
 

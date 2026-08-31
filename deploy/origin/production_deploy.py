@@ -24,8 +24,8 @@ from urllib.request import Request, urlopen
 
 
 SCHEMA_VERSION = 1
-REPOSITORY = "alexj11324/Cordy"
-REPOSITORY_URL = "https://github.com/alexj11324/Cordy.git"
+REPOSITORY = "alexj11324/Cordy"  # legacy-brand-compat: current GitHub repository identity
+REPOSITORY_URL = "https://github.com/alexj11324/Cordy.git"  # legacy-brand-compat
 DEFAULT_ROOT = Path("/var/lib/patchbay-production")
 DEFAULT_STATIC_DIRECTORY = Path("/usr/local/share/patchbay-production")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -38,9 +38,9 @@ EXPECTED_IMAGE_REPOSITORIES = {
     "auth-broker": "ghcr.io/alexj11324/patchbay-auth-broker",
 }
 BOOTSTRAP_CONTAINERS = {
-    "backend": "cordy632-backend-1",
-    "web": "cordy632-frontend-1",
-    "docs": "cordy-docs-1",
+    "backend": "cordy632-backend-1",  # legacy-brand-compat: existing production project
+    "web": "cordy632-frontend-1",  # legacy-brand-compat: existing production project
+    "docs": "cordy-docs-1",  # legacy-brand-compat: existing production project
     "auth-broker": "patchbay-auth-broker-broker-1",
 }
 
@@ -315,7 +315,7 @@ class ProductionDeployment:
 
         backend_env = self.container_environment(BOOTSTRAP_CONTAINERS["backend"])
         web_env = self.container_environment(BOOTSTRAP_CONTAINERS["web"])
-        postgres_env = self.container_environment("cordy632-postgres-1")
+        postgres_env = self.container_environment("cordy632-postgres-1")  # legacy-brand-compat
         product_env = select_environment(
             compose_variables(product_compose),
             [backend_env, web_env, postgres_env],
@@ -436,7 +436,7 @@ class ProductionDeployment:
 
         product_files = [
             "--project-name",
-            "cordy632",
+            "cordy632",  # legacy-brand-compat: preserves the production volumes
             "--project-directory",
             str(release),
             "-f",
@@ -462,7 +462,7 @@ class ProductionDeployment:
         self.compose(
             [
                 "--project-name",
-                "cordy",
+                "cordy",  # legacy-brand-compat: preserves the production Compose project
                 "-f",
                 str(self.static_directory / "production-docs.compose.yml"),
                 "up",

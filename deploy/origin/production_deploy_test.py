@@ -23,7 +23,7 @@ class ProductionDeployContractTests(unittest.TestCase):
         return {
             "schema_version": 1,
             "action": "deploy",
-            "repository": "alexj11324/Cordy",
+            "repository": "alexj11324/Cordy",  # legacy-brand-compat: live repository identity
             "source_sha": source_sha,
             "workflow_run_id": "123",
             "images": images,
