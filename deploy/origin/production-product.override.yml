@@ -1,0 +1,6 @@
+services:
+  backend:
+    image: ${PATCHBAY_BACKEND_IMAGE_REF:?PATCHBAY_BACKEND_IMAGE_REF must be an immutable digest}
+
+  frontend:
+    image: ${PATCHBAY_WEB_IMAGE_REF:?PATCHBAY_WEB_IMAGE_REF must be an immutable digest}

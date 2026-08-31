@@ -39,7 +39,9 @@ const allowedDevOrigins = process.env.CORS_ALLOWED_ORIGINS
   : undefined;
 
 const nextConfig: NextConfig = {
-  ...(process.env.STANDALONE === "true" ? { output: "standalone" as const } : {}),
+  ...(process.env.STANDALONE === "true"
+    ? { output: "standalone" as const }
+    : {}),
   transpilePackages: ["@patchbay/core", "@patchbay/ui", "@patchbay/views"],
   ...(allowedDevOrigins && allowedDevOrigins.length > 0
     ? { allowedDevOrigins }
@@ -47,6 +49,19 @@ const nextConfig: NextConfig = {
   images: {
     formats: ["image/avif", "image/webp"],
     qualities: [75, 80, 85],
+  },
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "X-Patchbay-Build",
+            value: process.env.NEXT_PUBLIC_APP_VERSION || "dev",
+          },
+        ],
+      },
+    ];
   },
   async rewrites() {
     return {

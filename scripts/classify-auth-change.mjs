@@ -8,7 +8,7 @@ const AUTH_BROKER_RELEASE_PATTERNS = [
   /^deploy\/helm\/patchbay-auth-broker\//,
   /^\.dockerignore$/,
   /^Dockerfile\.auth-broker$/,
-  /^\.github\/workflows\/auth-broker-release\.yml$/,
+  /^\.github\/workflows\/aspectlylabs-production-images\.yml$/,
 ];
 
 const FULL_GOOGLE_OAUTH_E2E_PATTERNS = [
@@ -32,7 +32,9 @@ const FULL_GOOGLE_OAUTH_E2E_PATTERNS = [
 ];
 
 export function classifyAuthChange(paths) {
-  const normalized = [...new Set(paths.map((path) => path.trim()).filter(Boolean))];
+  const normalized = [
+    ...new Set(paths.map((path) => path.trim()).filter(Boolean)),
+  ];
   return {
     authBrokerRelease: normalized.some((path) =>
       AUTH_BROKER_RELEASE_PATTERNS.some((pattern) => pattern.test(path)),
@@ -55,14 +57,17 @@ function run() {
   const base = process.argv[2];
   const head = process.argv[3] ?? "HEAD";
   if (!base) {
-    throw new Error("usage: node scripts/classify-auth-change.mjs <base> [head]");
+    throw new Error(
+      "usage: node scripts/classify-auth-change.mjs <base> [head]",
+    );
   }
   const result = classifyAuthChange(changedPaths(base, head));
   const output = [
     `auth_broker_release=${String(result.authBrokerRelease)}`,
     `full_google_oauth_e2e=${String(result.fullGoogleOAuthE2E)}`,
   ].join("\n");
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `${output}\n`);
+  if (process.env.GITHUB_OUTPUT)
+    appendFileSync(process.env.GITHUB_OUTPUT, `${output}\n`);
   process.stdout.write(`${output}\n`);
 }
 

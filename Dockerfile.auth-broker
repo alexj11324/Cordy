@@ -30,6 +30,8 @@ COPY contracts/ contracts/
 COPY packages/eslint-config/ packages/eslint-config/
 
 RUN pnpm install --filter @patchbay/auth-broker... --frozen-lockfile --offline
+ARG NEXT_PUBLIC_APP_VERSION=dev
+ENV NEXT_PUBLIC_APP_VERSION=$NEXT_PUBLIC_APP_VERSION
 ENV STANDALONE=true
 RUN pnpm --filter @patchbay/auth-broker build
 
