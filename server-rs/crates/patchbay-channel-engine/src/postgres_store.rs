@@ -33,14 +33,9 @@ impl PostgresChannelStore {
         token: &str,
         expires_at: chrono::DateTime<chrono::Utc>,
     ) -> anyhow::Result<()> {
-        patchbay_db::queries::channel::mirror_channel_ws_lease(
-            &self.pool,
-            id,
-            token,
-            expires_at,
-        )
-        .await
-        .map(|_| ())
+        patchbay_db::queries::channel::mirror_channel_ws_lease(&self.pool, id, token, expires_at)
+            .await
+            .map(|_| ())
     }
 
     pub async fn clear_mirrored_lease(&self, id: Uuid, token: &str) -> anyhow::Result<()> {

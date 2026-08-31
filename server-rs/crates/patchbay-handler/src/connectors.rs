@@ -503,12 +503,10 @@ async fn messaging_usage(
                 );
             }
         };
-    let reserved = match patchbay_service::channel_quota::count_reserved_turns(
-        &mut *connection,
-        workspace_id,
-    )
-    .await
-    {
+    let reserved =
+        match patchbay_service::channel_quota::count_reserved_turns(&mut *connection, workspace_id)
+            .await
+        {
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, %workspace_id, "count reserved messaging usage failed");
