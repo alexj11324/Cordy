@@ -22,7 +22,7 @@ import { useBatchUpdateIssues, useBatchDeleteIssues } from "@patchbay/core/issue
 import { useModalStore } from "@patchbay/core/modals";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
-import { StatusPicker, PriorityPicker, ExecutorPicker } from "./pickers";
+import { StatusPicker, PriorityPicker, ExecutorPicker, OwnerPicker } from "./pickers";
 import { useT } from "../../i18n";
 import { cn } from "@patchbay/ui/lib/utils";
 import {
@@ -80,6 +80,7 @@ export function BatchActionToolbar({
 
   const [statusOpen, setStatusOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
+  const [ownerOpen, setOwnerOpen] = useState(false);
   const [executorOpen, setExecutorOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const surfaceActions = useIssueSurfaceActionsOptional();
@@ -94,6 +95,7 @@ export function BatchActionToolbar({
     if (count > 0) return;
     setStatusOpen(false);
     setPriorityOpen(false);
+    setOwnerOpen(false);
     setExecutorOpen(false);
     setDeleteOpen(false);
   }, [count]);
@@ -281,6 +283,19 @@ export function BatchActionToolbar({
           onOpenChange={setPriorityOpen}
           triggerRender={<Button variant="ghost" size="sm" disabled={loading} />}
           trigger={t(($) => $.batch.priority)}
+          align="center"
+        />
+
+        {/* Owner */}
+        <OwnerPicker
+          ownerType={common.owner?.type ?? null}
+          ownerId={common.owner?.id ?? null}
+          mixed={common.owner === null}
+          onUpdate={handleBatchUpdate}
+          open={ownerOpen}
+          onOpenChange={setOwnerOpen}
+          triggerRender={<Button variant="ghost" size="sm" disabled={loading} />}
+          trigger={t(($) => $.batch.owner)}
           align="center"
         />
 
