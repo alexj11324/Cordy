@@ -433,6 +433,56 @@ jobs:
             done
           }
 
+          find_digest_version_json() {
+            local package="$1"
+            local digest="$2"
+            local endpoint page response match count
+            endpoint="$(package_versions_endpoint "$package")"
+            page=1
+            while :; do
+              if ! response="$(gh api "$endpoint?per_page=100&page=$page")"; then
+                echo "::error::Failed to inspect $package package versions" >&2
+                return 1
+              fi
+              match="$(
+                jq -r --arg digest "$digest" '
+                  first(.[] | select(.name == $digest) | @json) // empty
+                ' <<<"$response"
+              )"
+              if [ -n "$match" ]; then
+                printf '%s' "$match"
+                return 0
+              fi
+              count="$(jq 'length' <<<"$response")"
+              if [ "$count" -lt 100 ]; then
+                return 0
+              fi
+              page=$((page + 1))
+            done
+          }
+
+          manifest_digest() {
+            local manifest_file="$1"
+            printf '%s' "$(cat "$manifest_file")" | sha256sum | awk '{print "sha256:" $1}'
+          }
+
+          require_safe_new_tag() {
+            local package="$1"
+            local desired_digest="$2"
+            local previous_digest="$3"
+            local existing_version
+            if [ -n "$previous_digest" ]; then
+              return
+            fi
+            if ! existing_version="$(find_digest_version_json "$package" "$desired_digest")"; then
+              return 1
+            fi
+            if [ -n "$existing_version" ]; then
+              echo "::error::$package digest $desired_digest already exists while $final_tag is absent; refusing a promotion that cannot be rolled back safely" >&2
+              return 1
+            fi
+          }
+
           publish_manifest() {
             local repository="$1"
             local digest_dir="$2"
@@ -491,6 +541,15 @@ jobs:
 
           previous_backend="$(find_tag_version_field patchbay-backend "$final_tag" name)"
           previous_web="$(find_tag_version_field patchbay-web "$final_tag" name)"
+          desired_backend="$(manifest_digest /tmp/backend-manifest.json)"
+          desired_web="$(manifest_digest /tmp/web-manifest.json)"
+
+          # If a desired manifest already exists under another tag (or untagged),
+          # adding this SHA tag would alias a pre-existing package version. GHCR
+          # cannot remove only that alias, so reject both images before either
+          # final tag is mutated.
+          require_safe_new_tag patchbay-backend "$desired_backend" "$previous_backend"
+          require_safe_new_tag patchbay-web "$desired_web" "$previous_web"
           promotion_failed=0
 
           if ! publish_manifest \
