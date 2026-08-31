@@ -243,7 +243,7 @@ async fn start_oauth(
         Err(response) => return response,
     };
     match linear_q::get_connection_for_workspace(&state.pool, workspace_id).await {
-        Ok(Some(connection)) if connection.status != "revoked" => {
+        Ok(Some(connection)) if connection.status == "active" => {
             return error_response(
                 StatusCode::CONFLICT,
                 "Linear is already connected; disconnect before reconnecting",
@@ -772,7 +772,7 @@ async fn oauth_callback(
     // while this callback was in flight. The locked check immediately before
     // the upsert below closes the remaining race with a concurrent callback.
     match linear_q::get_connection_for_workspace(&state.pool, oauth_state.workspace_id).await {
-        Ok(Some(connection)) if connection.status != "revoked" => {
+        Ok(Some(connection)) if connection.status == "active" => {
             return linear_callback_redirect(&state, "already_connected");
         }
         Ok(_) => {}
@@ -1007,6 +1007,8 @@ enum WebhookValidationError {
     MissingOrganization,
     MissingWebhook,
     MissingTimestamp,
+    InvalidTimestampHeader,
+    TimestampMismatch,
     ExpiredTimestamp,
 }
 
@@ -1041,18 +1043,28 @@ fn validate_webhook(
     let webhook_timestamp = envelope
         .webhook_timestamp
         .ok_or(WebhookValidationError::MissingTimestamp)?;
+    if let Some(header_timestamp) = header_value(headers, "linear-timestamp") {
+        let header_timestamp = header_timestamp
+            .parse::<i64>()
+            .map_err(|_| WebhookValidationError::InvalidTimestampHeader)?;
+        if header_timestamp != webhook_timestamp {
+            return Err(WebhookValidationError::TimestampMismatch);
+        }
+    }
     if !timestamp_is_fresh(webhook_timestamp, now_ms) {
         return Err(WebhookValidationError::ExpiredTimestamp);
     }
-    // Linear signs the complete body, including its event id and timestamp.
-    // Prefer that documented id for retry idempotency; the authenticated body
-    // hash is a deterministic fallback for payloads without an id. A delivery
-    // header is accepted as a legacy compatibility hint but is never required.
-    let delivery_id = envelope
-        .event_id
-        .as_deref()
-        .and_then(|value| configured_value(Some(value)))
-        .or_else(|| header_value(headers, "linear-delivery"))
+    // Linear's delivery header is the retry identity. The body id is retained
+    // as a compatibility fallback for fixtures/providers that omit the
+    // header; never let an entity id collapse distinct deliveries when the
+    // provider supplies the documented delivery key.
+    let delivery_id = header_value(headers, "linear-delivery")
+        .or_else(|| {
+            envelope
+                .event_id
+                .as_deref()
+                .and_then(|value| configured_value(Some(value)))
+        })
         .unwrap_or_else(|| sha256_hex_bytes(body));
     let event_type = header_value(headers, "linear-event")
         .or_else(|| configured_value(envelope.event_type.as_deref()))
@@ -1092,6 +1104,14 @@ fn webhook_validation_response(error: WebhookValidationError) -> Response {
         WebhookValidationError::MissingTimestamp => (
             StatusCode::BAD_REQUEST,
             "Linear Webhook webhookTimestamp is required",
+        ),
+        WebhookValidationError::InvalidTimestampHeader => (
+            StatusCode::BAD_REQUEST,
+            "Linear Webhook timestamp header is invalid",
+        ),
+        WebhookValidationError::TimestampMismatch => (
+            StatusCode::BAD_REQUEST,
+            "Linear Webhook timestamp header does not match webhookTimestamp",
         ),
         WebhookValidationError::ExpiredTimestamp => (
             StatusCode::BAD_REQUEST,
@@ -1286,7 +1306,7 @@ mod tests {
     use super::*;
     use axum::http::HeaderValue;
 
-    fn signed_headers(secret: &str, body: &[u8]) -> HeaderMap {
+    fn signed_headers(secret: &str, body: &[u8], timestamp: Option<i64>) -> HeaderMap {
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
         mac.update(body);
         let mut headers = HeaderMap::new();
@@ -1294,6 +1314,12 @@ mod tests {
             "linear-signature",
             HeaderValue::from_str(&hex::encode(mac.finalize().into_bytes())).unwrap(),
         );
+        if let Some(timestamp) = timestamp {
+            headers.insert(
+                "linear-timestamp",
+                HeaderValue::from_str(&timestamp.to_string()).unwrap(),
+            );
+        }
         headers
     }
 
@@ -1403,7 +1429,7 @@ mod tests {
         let secret = "webhook-secret";
         let timestamp = 1_700_000_000_000;
         let body = br#"{"id":"event-1","organizationId":"org-1","webhookId":"webhook-1","webhookTimestamp":1700000000000,"type":"Issue"}"#;
-        let headers = signed_headers(secret, body);
+        let headers = signed_headers(secret, body, None);
         let webhook = validate_webhook(Some(secret), &headers, body, timestamp + 1).unwrap();
         assert_eq!(webhook.organization_id, "org-1");
         assert_eq!(webhook.webhook_id, "webhook-1");
@@ -1412,10 +1438,33 @@ mod tests {
     }
 
     #[test]
+    fn webhook_delivery_header_is_the_idempotency_key_when_present() {
+        let secret = "webhook-secret";
+        let timestamp = 1_700_000_000_000;
+        let body = br#"{"id":"issue-1","organizationId":"org-1","webhookId":"webhook-1","webhookTimestamp":1700000000000}"#;
+        let mut headers = signed_headers(secret, body, None);
+        headers.insert("linear-delivery", HeaderValue::from_static("delivery-1"));
+        let webhook = validate_webhook(Some(secret), &headers, body, timestamp).unwrap();
+        assert_eq!(webhook.delivery_id, "delivery-1");
+    }
+
+    #[test]
+    fn webhook_timestamp_header_must_match_the_signed_body() {
+        let secret = "webhook-secret";
+        let timestamp = 1_700_000_000_000;
+        let body = br#"{"organizationId":"org-1","webhookId":"webhook-1","webhookTimestamp":1700000000000}"#;
+        let headers = signed_headers(secret, body, Some(timestamp + 1));
+        assert_eq!(
+            validate_webhook(Some(secret), &headers, body, timestamp),
+            Err(WebhookValidationError::TimestampMismatch)
+        );
+    }
+
+    #[test]
     fn webhook_without_timestamp_is_rejected_even_with_a_valid_signature() {
         let secret = "webhook-secret";
         let body = br#"{"organizationId":"org-1","webhookId":"webhook-1"}"#;
-        let headers = signed_headers(secret, body);
+        let headers = signed_headers(secret, body, None);
         assert_eq!(
             validate_webhook(Some(secret), &headers, body, 1_700_000_000_000),
             Err(WebhookValidationError::MissingTimestamp)
@@ -1427,7 +1476,7 @@ mod tests {
         let secret = "webhook-secret";
         let timestamp = 1_700_000_000_000;
         let body = br#"{"organizationId":"org-1","webhookId":"webhook-1","webhookTimestamp":1700000000000}"#;
-        let headers = signed_headers(secret, body);
+        let headers = signed_headers(secret, body, None);
         let webhook = validate_webhook(Some(secret), &headers, body, timestamp).unwrap();
         assert_eq!(webhook.delivery_id, sha256_hex_bytes(body));
     }
@@ -1437,7 +1486,7 @@ mod tests {
         let secret = "webhook-secret";
         let timestamp = 1_700_000_000_000;
         let body = br#"{"organizationId":"org-1","webhookId":"webhook-1","webhookTimestamp":1700000000000}"#;
-        let headers = signed_headers(secret, body);
+        let headers = signed_headers(secret, body, None);
         assert_eq!(
             validate_webhook(Some(secret), &headers, body, timestamp + 60_001),
             Err(WebhookValidationError::ExpiredTimestamp)
