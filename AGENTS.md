@@ -73,10 +73,10 @@ separate approved deployment decision and must satisfy the invariant above.
 These are developer commands, not the default agent verification path:
 
 ```bash
-make dev              # Auto-setup + start everything
-make web-dev          # Vite-hosted shared Desktop renderer + local preview API
+make dev              # Complete Electron + dev CLI + backend + isolated DB
 make web-next-dev     # Next.js web frontend
 make api-dev          # Rust API only (set VITE_API_URL when using it with Vite)
+pnpm dev:doctor       # Re-run complete Desktop capability diagnostics
 pnpm typecheck        # TypeScript check
 pnpm test             # TS unit tests (Vitest)
 make test             # Developer helper for Rust tests; GitHub Actions is authoritative
@@ -85,31 +85,35 @@ make check            # Product-wide local helper; not an agent/default migratio
 
 ### Desktop development and build paths (hard rules)
 
-| Situation | Command | Rust work |
-| --- | --- | --- |
-| Renderer-only UI iteration in a browser | `pnpm dev:desktop:web` | None |
-| Normal Electron renderer, main, or preload development | `pnpm dev:desktop` | None |
-| Ordinary frontend/Electron build verification | `pnpm --filter @patchbay/desktop build` or `pnpm build` | None |
-| A `server-rs` / CLI change must be exercised through Desktop | `pnpm dev:desktop:rust` (developer-only under the local-Cargo rule below) | Incremental development profile |
-| Installer, signing, notarization, updater, bundled-CLI, or release acceptance | `pnpm --filter @patchbay/desktop package` or the release workflow | Full release CLI plus packaging; may take tens of minutes |
+| Situation                                                                     | Command                                                           | Rust work                                                                                                         |
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| Normal local product development                                              | `pnpm dev` or `make dev`                                          | Source-matched CLI/backend/migration cache hit; one incremental development build only on a Rust fingerprint miss |
+| Ordinary frontend/Electron build verification                                 | `pnpm --filter @patchbay/desktop build` or `pnpm build`           | None                                                                                                              |
+| Installer, signing, notarization, updater, bundled-CLI, or release acceptance | `pnpm --filter @patchbay/desktop package` or the release workflow | Full release CLI plus packaging; may take tens of minutes                                                         |
 
-- The first three Rust-free paths are the default for day-to-day development
-  and agent verification. Do not package the app merely to validate a UI,
-  TypeScript, CSS, Electron main/preload, documentation, or shared-package
-  change. The normal Electron path clears any ignored source CLI left by an
-  earlier Rust development run before it starts.
-- Use the source-matched Rust path only when the task changed `server-rs` or
-  explicitly depends on unpublished CLI behavior. Under the repository rule
-  prohibiting local Cargo for agents, agents verify this contract with focused
-  script tests and GitHub Actions; human developers may run the command.
+- The standard development entry is intentionally complete: it prepares the
+  isolated worktree database and ports, starts the local backend, stages a
+  source-matched dev CLI/backend/migration set, verifies runtime discovery and integration encryption
+  configuration, then opens Electron with hot reload. There is no renderer-only
+  or released/PATH-CLI fallback development mode.
+- Dev runtime artifacts are shared through a content-addressed per-user cache keyed
+  by Rust source, manifests/lockfile, toolchain, target, architecture, profile,
+  and build metadata. Each worktree keeps its own `server-rs/target` and
+  `node_modules` links. Cargo downloads, pnpm's global store, sccache objects,
+  and exact-match dev runtime artifacts may be shared; databases, ports, processes,
+  target directories, and node_modules trees may not.
+- Under the repository rule prohibiting local Cargo for agents, agents verify
+  the complete launcher with focused script tests and GitHub Actions; human
+  developers run `pnpm dev` for real local runtime acceptance.
 - Use the full package/release path only when the requested acceptance actually
   concerns a distributable artifact or one of its production boundaries. The
   long release build belongs in GitHub Actions or a deliberate release check,
   never in the default edit-refresh loop.
-- Never add `bundle-cli.mjs`, Cargo, or a release CLI build back to the default
-  `dev`, `dev:staging`, or `build` scripts, or to the frontend-build setup in
-  CI. `bundle-cli.mjs` requires an explicit `dev` or `release` profile, and the
-  formal package wrapper must pass `release` explicitly.
+- Never add a release CLI build to `dev` or ordinary `build`. `bundle-cli.mjs`
+  requires an explicit `dev` or `release` profile. Development may use only the
+  dev artifact cache/incremental profile; the formal package wrapper must pass
+  `release` explicitly or consume a checksum-verified exact-commit release CLI
+  artifact from the same workflow.
 
 ### Coding Conventions
 

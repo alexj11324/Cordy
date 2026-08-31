@@ -47,13 +47,13 @@ Patchbay 不内置模型或编码智能体。它负责协调由你单独安装�
                               已安装的编码智能体 CLI
 ```
 
-| 层级 | 当前实现 |
-| --- | --- |
-| Web | Next.js App Router |
-| 桌面端 | Electron，复用 Web UI 包 |
-| 移动端 | Expo / React Native iOS 客户端 |
-| 后端 | Rust、Axum、SQLx 和 WebSocket |
-| 数据库 | PostgreSQL 17 + pgvector |
+| 层级       | 当前实现                                        |
+| ---------- | ----------------------------------------------- |
+| Web        | Next.js App Router                              |
+| 桌面端     | Electron，复用 Web UI 包                        |
+| 移动端     | Expo / React Native iOS 客户端                  |
+| 后端       | Rust、Axum、SQLx 和 WebSocket                   |
+| 数据库     | PostgreSQL 17 + pgvector                        |
 | 本地运行时 | Rust CLI 和守护进程，负责启动已安装的智能体 CLI |
 
 Rust server、CLI、迁移 runner 和 backfill 二进制是生产入口。
@@ -65,19 +65,32 @@ Rust server、CLI、迁移 runner 和 backfill 二进制是生产入口。
 - Node.js 22+
 - pnpm 10.28.2
 - stable Rust toolchain
-- Docker 与 Docker Compose，用于 PostgreSQL
+- sccache（macOS 可运行 `brew install sccache`）
+- Docker 与 Docker Compose，或本机 PostgreSQL 15+
 
 ```bash
 git clone https://github.com/patchbay-ai/patchbay.git patchbay
 cd patchbay
-make dev
+pnpm dev
 ```
 
-`make dev` 会按需创建本地环境、安装依赖、启动 PostgreSQL、执行迁移，并启动 Rust 后端和 Web 客户端。
+`pnpm dev`（POSIX 环境也可使用便捷别名 `make dev`）是 macOS、Linux 和 Windows
+唯一的完整 Desktop 开发入口。它会创建隔离的
+worktree 环境，通过共享 pnpm store 安装依赖，启动 PostgreSQL、执行迁移，等待
+本地 Rust 后端和数据库就绪，准备与当前源码匹配的 dev runtime（CLI、后端、
+迁移 runner），验证本机智能体检测
+以及 Telegram/微信加密配置，全部通过后才打开带热更新的 Electron。
 
-日常 Desktop/Electron 开发使用 `pnpm dev:desktop`，它只启动 Electron/Vite，
-不会编译 Rust。只有修改了 `server-rs`、并且必须通过 Desktop 验证尚未发布的
-CLI 行为时，才使用 `pnpm dev:desktop:rust` 的增量开发构建。
+dev runtime 会按 Rust 源码、Cargo manifests/Cargo.lock、toolchain、target、架构、
+profile 和构建变量存入用户级缓存。重复启动以及 Rust 源码相同的新 worktree 会
+直接复用校验过的 CLI、后端和迁移 runner，不再编译 Rust；未命中时才一次性执行
+增量 dev 构建。安装 `sccache`
+可以跨 worktree 共享编译对象，但每个 worktree 的 `server-rs/target` 仍保持隔离。
+可用 `pnpm dev:doctor` 重新运行能力诊断；独立的 Next.js Web 客户端使用
+`pnpm dev:web:next`。
+`PATCHBAY_POSTGRES_RUNTIME=auto` 只会在 Compose 固定发布的
+`localhost:5432` 上选择 Docker；如果该地址存在歧义，请显式设为 `native` 或
+`docker`。
 
 需要显式构建时运行：
 
@@ -89,6 +102,7 @@ pnpm build
 `pnpm build` 只构建前端和 Electron bundle，不编译 Rust。只有验证安装包、
 签名/公证、自动更新、内置 CLI 或正式发布时，才运行
 `pnpm --filter @patchbay/desktop package`。该全量路径会构建 release Rust CLI
+（或使用 CI 中经过 checksum 校验、精确对应 commit 的 artifact）
 和安装包，可能耗时几十分钟，不应该用于日常修改后的刷新验证。完整选择表见
 [贡献指南](CONTRIBUTING.md#desktop-app-local-testing)。
 

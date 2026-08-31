@@ -1,19 +1,7 @@
 import { app, ipcMain, BrowserWindow, shell } from "electron";
 import { execFile } from "child_process";
-import {
-  readFile,
-  writeFile,
-  mkdir,
-  rm,
-  open,
-  stat,
-} from "fs/promises";
-import {
-  existsSync,
-  watchFile,
-  unwatchFile,
-  type StatsListener,
-} from "fs";
+import { readFile, writeFile, mkdir, rm, open, stat } from "fs/promises";
+import { existsSync, watchFile, unwatchFile, type StatsListener } from "fs";
 import { join } from "path";
 import { homedir, hostname } from "os";
 import type {
@@ -23,6 +11,7 @@ import type {
 } from "../shared/daemon-types";
 import { daemonStatusAlive } from "../shared/daemon-types";
 import { ensureManagedCli, managedCliPath } from "./cli-bootstrap";
+import { requiresSourceMatchedCli } from "./cli-resolution-policy";
 import { decideVersionAction } from "./version-decision";
 import {
   deriveProfileName,
@@ -166,9 +155,7 @@ interface HealthPayload {
   workspaces?: unknown[];
 }
 
-async function fetchHealthAtPort(
-  port: number,
-): Promise<HealthPayload | null> {
+async function fetchHealthAtPort(port: number): Promise<HealthPayload | null> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 2_000);
@@ -302,10 +289,7 @@ async function retirePendingLegacyProfile(): Promise<void> {
     }
     if ((health.active_task_count ?? 0) > 0) return;
     if (
-      isDaemonExternallyManaged(
-        health.os,
-        normalizeHostOS(process.platform),
-      )
+      isDaemonExternallyManaged(health.os, normalizeHostOS(process.platform))
     ) {
       return;
     }
@@ -415,9 +399,7 @@ async function fetchHealth(): Promise<DaemonStatus> {
     daemonId: data.daemon_id,
     deviceName: data.device_name,
     agents: data.agents ?? [],
-    workspaceCount: Array.isArray(data.workspaces)
-      ? data.workspaces.length
-      : 0,
+    workspaceCount: Array.isArray(data.workspaces) ? data.workspaces.length : 0,
     profile: active.name,
     serverUrl: data.server_url,
     externallyManaged,
@@ -425,7 +407,8 @@ async function fetchHealth(): Promise<DaemonStatus> {
 }
 
 function findCliOnPath(): string | null {
-  const candidates = process.platform === "win32" ? ["patchbay.exe"] : ["patchbay"];
+  const candidates =
+    process.platform === "win32" ? ["patchbay.exe"] : ["patchbay"];
   const paths = (process.env["PATH"] ?? "").split(
     process.platform === "win32" ? ";" : ":",
   );
@@ -445,9 +428,8 @@ function findCliOnPath(): string | null {
  * Returns the path to the CLI binary bundled inside the Desktop app.
  *
  * - Dev (`electron-vite dev`): `app.getAppPath()` → `apps/desktop`, resolving
- *   to `apps/desktop/resources/bin/patchbay`. The fast `pnpm dev:desktop` path
- *   never builds Rust. `pnpm dev:desktop:rust` explicitly populates this path
- *   with an incremental source-matched development CLI when Rust changed.
+ *   to `apps/desktop/resources/bin/patchbay`. The complete `pnpm dev` path
+ *   requires this source-matched development CLI and never falls back.
  * - Packaged: `app.getAppPath()` → `<Patchbay.app>/Contents/Resources/app.asar`.
  *   electron-builder's `asarUnpack: resources/**` extracts the binary to
  *   `app.asar.unpacked/`, so we swap the path segment to execute it.
@@ -499,9 +481,9 @@ async function probeCliBinary(
  *   5. `patchbay` on PATH (dev convenience / user-installed via brew).
  * Returns `null` only when all of the above fail.
  *
- * Bundled is preferred when present. Ordinary TypeScript/UI development may
- * use a managed/released/PATH CLI; changes that require unpublished Rust
- * behavior must use the explicit source-matched Desktop development command.
+ * Bundled is preferred when present. Complete local development sets
+ * PATCHBAY_REQUIRE_SOURCE_CLI=1, making a missing/invalid bundle terminal
+ * instead of silently substituting a managed release or ambient PATH binary.
  *
  * This function is idempotent and safe to call concurrently — in-flight
  * installs are de-duplicated via `cliResolvePromise`.
@@ -520,6 +502,15 @@ async function resolveCliBinary(): Promise<string | null> {
         cachedCliBinaryVersion = version;
         return bundled;
       }
+    }
+
+    if (requiresSourceMatchedCli()) {
+      console.error(
+        `[daemon] complete development requires a valid source-matched CLI at ${bundled}; refusing managed/download/PATH fallback`,
+      );
+      cachedCliBinary = null;
+      cachedCliBinaryVersion = null;
+      return null;
     }
 
     const managed = managedCliPath();
@@ -546,7 +537,10 @@ async function resolveCliBinary(): Promise<string | null> {
         `[daemon] managed CLI at ${installed} failed validation after install`,
       );
     } catch (err) {
-      console.warn("[daemon] CLI auto-install failed, falling back to PATH:", err);
+      console.warn(
+        "[daemon] CLI auto-install failed, falling back to PATH:",
+        err,
+      );
     }
 
     const onPath = findCliOnPath();
@@ -613,7 +607,9 @@ async function ensureRunningDaemonVersionMatches(): Promise<
   // Don't try to version-match a daemon we can't restart (e.g. WSL2). Treat it
   // as up-to-date — restartDaemon would no-op anyway, and skipping here avoids
   // a misleading "restarting daemon" log on every auto-start. #3916.
-  if (isDaemonExternallyManaged(running?.os, normalizeHostOS(process.platform))) {
+  if (
+    isDaemonExternallyManaged(running?.os, normalizeHostOS(process.platform))
+  ) {
     pendingVersionRestart = false;
     return "ok";
   }
@@ -842,7 +838,9 @@ async function reauthenticate(
   return { ok: true };
 }
 
-async function withGuard<T>(fn: () => Promise<T>): Promise<T | { success: false; error: string }> {
+async function withGuard<T>(
+  fn: () => Promise<T>,
+): Promise<T | { success: false; error: string }> {
   if (operationInProgress) {
     return { success: false, error: "Another daemon operation is in progress" };
   }
@@ -1228,9 +1226,8 @@ export function setupDaemonManager(
   // app-managed daemon is reporting a device name (e.g. the daemon runs
   // out-of-band in WSL2). See desktop-runtimes-page.tsx.
   ipcMain.handle("daemon:get-host-name", () => hostname());
-  ipcMain.handle(
-    "daemon:sync-token",
-    (_event, token: string, userId: string) => syncToken(token, userId),
+  ipcMain.handle("daemon:sync-token", (_event, token: string, userId: string) =>
+    syncToken(token, userId),
   );
   ipcMain.handle("daemon:clear-token", () => clearToken());
   ipcMain.handle(
@@ -1250,13 +1247,11 @@ export function setupDaemonManager(
     await bootstrapCli();
   });
   ipcMain.handle("daemon:get-prefs", () => loadPrefs());
-  ipcMain.handle(
-    "daemon:set-prefs",
-    (_event, prefs: Partial<DaemonPrefs>) =>
-      loadPrefs().then((cur) => {
-        const merged = { ...cur, ...prefs };
-        return savePrefs(merged).then(() => merged);
-      }),
+  ipcMain.handle("daemon:set-prefs", (_event, prefs: Partial<DaemonPrefs>) =>
+    loadPrefs().then((cur) => {
+      const merged = { ...cur, ...prefs };
+      return savePrefs(merged).then(() => merged);
+    }),
   );
   ipcMain.handle("daemon:auto-start", async () => {
     const prefs = await loadPrefs();

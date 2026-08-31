@@ -113,10 +113,21 @@ for staged_contract in \
   'name: github-release-rust-cli' \
   'name: desktop-release-${{ matrix.target }}-${{ matrix.arch }}' \
   'pattern: desktop-release-*' \
-  'needs: [self-hosted-prepare, verify, docker-backend-merge, docker-web-merge, desktop, helm-chart, publish-release]' \
   'needs: [verify, release, desktop, helm-chart]'; do
   if ! grep -Fq -- "$staged_contract" "$release_workflow"; then
     echo "release workflow is missing staged publication contract: $staged_contract" >&2
+    exit 1
+  fi
+done
+
+promote_needs="$(awk '
+  /^  promote-self-hosted-latest:/ { capture = 1 }
+  capture && /^    if:/ { exit }
+  capture { print }
+' "$release_workflow")"
+for dependency in self-hosted-prepare verify docker-backend-merge docker-web-merge desktop helm-chart publish-release; do
+  if ! grep -Fq -- "$dependency" <<<"$promote_needs"; then
+    echo "release workflow latest promotion is missing dependency: $dependency" >&2
     exit 1
   fi
 done

@@ -18,11 +18,8 @@
   "main": "./out/main/index.js",
   "scripts": {
     "brand-dev-electron": "node scripts/brand-dev-electron.mjs",
-    "dev": "node scripts/dev.mjs",
-    "dev:rust": "node scripts/dev.mjs --source-cli",
-    "dev:web": "vite --config vite.web.config.mjs",
-    "dev:staging": "node scripts/dev.mjs --mode staging",
-    "dev:staging:rust": "node scripts/dev.mjs --source-cli --mode staging",
+    "dev": "node ../../scripts/dev-launcher.mjs",
+    "dev:doctor": "node scripts/dev-environment-doctor.mjs",
     "build": "electron-vite build",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",

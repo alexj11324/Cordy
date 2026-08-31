@@ -7,10 +7,14 @@ import {
   cargoBuildArguments,
   cargoProfileDirectory,
   cargoTargetDirectory,
+  cargoTargetDirectoryForProfile,
+  devRustTargetFor,
+  devBuildVariables,
   enforceCliAvailability,
   normalizeRuntimeArch,
   normalizeRuntimePlatform,
   rustTargetFor,
+  rustBuildEnvironment,
 } from "./bundle-cli.mjs";
 
 describe("bundle-cli Rust target selection", () => {
@@ -33,6 +37,20 @@ describe("bundle-cli Rust target selection", () => {
     expect(binaryNameForPlatform("darwin")).toBe("patchbay");
   });
 
+  it.each([
+    ["darwin", "x64", "x86_64-apple-darwin"],
+    ["darwin", "arm64", "aarch64-apple-darwin"],
+    ["linux", "x64", "x86_64-unknown-linux-gnu"],
+    ["linux", "arm64", "aarch64-unknown-linux-gnu"],
+    ["win32", "x64", "x86_64-pc-windows-msvc"],
+    ["win32", "arm64", "aarch64-pc-windows-msvc"],
+  ])(
+    "maps development %s/%s to the native host target %s",
+    (platform, arch, target) => {
+      expect(devRustTargetFor(platform, arch)).toBe(target);
+    },
+  );
+
   it("rejects unsupported target combinations", () => {
     expect(() => normalizeRuntimePlatform("freebsd")).toThrow(
       /unsupported target platform/,
@@ -41,6 +59,9 @@ describe("bundle-cli Rust target selection", () => {
       /unsupported target architecture/,
     );
     expect(() => rustTargetFor("linux", "ia32")).toThrow(/no Rust target/);
+    expect(() => devRustTargetFor("linux", "ia32")).toThrow(
+      /no native Rust target/,
+    );
   });
 
   it("uses Cargo's default, relative, and absolute target directory semantics", () => {
@@ -50,8 +71,25 @@ describe("bundle-cli Rust target selection", () => {
       cargoTargetDirectory({ CARGO_TARGET_DIR: "../cargo-cache" }, serverRs),
     ).toBe(resolve(serverRs, "../cargo-cache"));
     expect(
-      cargoTargetDirectory({ CARGO_TARGET_DIR: "/var/cache/patchbay" }, serverRs),
+      cargoTargetDirectory(
+        { CARGO_TARGET_DIR: "/var/cache/patchbay" },
+        serverRs,
+      ),
     ).toBe(resolve("/var/cache/patchbay"));
+    expect(
+      cargoTargetDirectoryForProfile(
+        "dev",
+        { CARGO_TARGET_DIR: "/shared/target" },
+        serverRs,
+      ),
+    ).toBe(join(serverRs, "target"));
+    expect(
+      cargoTargetDirectoryForProfile(
+        "release",
+        { CARGO_TARGET_DIR: "/shared/target" },
+        serverRs,
+      ),
+    ).toBe(resolve("/shared/target"));
   });
 
   it("requires an explicit profile and makes development incremental", () => {
@@ -69,13 +107,17 @@ describe("bundle-cli Rust target selection", () => {
     expect(cargoProfileDirectory("dev")).toBe("debug");
   });
 
-  it("fails formal release packaging instead of shipping without a CLI", () => {
+  it("fails both complete development and formal release when no build input exists", () => {
     expect(() =>
       enforceCliAvailability("release", false, "cargo is unavailable"),
-    ).toThrow(/release CLI is required.*cargo is unavailable/i);
-    expect(enforceCliAvailability("dev", false, "cargo is unavailable")).toBe(
-      false,
-    );
+    ).toThrow(/release CLI build is required.*cargo is unavailable/i);
+    expect(() =>
+      enforceCliAvailability(
+        "dev",
+        false,
+        "cache miss and cargo is unavailable",
+      ),
+    ).toThrow(/dev CLI build is required.*cache miss/i);
     expect(enforceCliAvailability("release", true, "unused")).toBe(true);
   });
 
@@ -89,5 +131,31 @@ describe("bundle-cli Rust target selection", () => {
     expect(buildDateForProfile("release", commitDate, firstNow)).toBe(
       "2026-08-30T10:00:00Z",
     );
+  });
+
+  it("derives cross-worktree development metadata from Rust source only", () => {
+    expect(devBuildVariables("abcdef1234567890")).toEqual({
+      version: "dev-abcdef123456",
+      commit: "source-abcdef123456",
+      date: "source-matched-dev",
+    });
+    expect(devBuildVariables("abcdef1234567890", "env-fingerprint")).toEqual({
+      version: "dev-abcdef123456",
+      commit: "source-abcdef123456",
+      date: "source-matched-dev",
+      environmentFingerprint: "env-fingerprint",
+    });
+  });
+
+  it("uses sccache when present without overriding an explicit compiler wrapper", () => {
+    expect(rustBuildEnvironment({}, true)).toEqual({
+      RUSTC_WRAPPER: "sccache",
+    });
+    expect(rustBuildEnvironment({ RUSTC_WRAPPER: "custom" }, true)).toEqual({
+      RUSTC_WRAPPER: "custom",
+    });
+    expect(
+      rustBuildEnvironment({ PATCHBAY_DISABLE_SCCACHE: "1" }, true),
+    ).toEqual({ PATCHBAY_DISABLE_SCCACHE: "1" });
   });
 });

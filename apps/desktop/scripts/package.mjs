@@ -26,9 +26,18 @@
 // real `git describe` invocation against a throwaway repo.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { rmSync } from "node:fs";
-import { delimiter, dirname, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import {
+  chmodSync,
+  copyFileSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+} from "node:fs";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+
+import { rustTargetFor } from "./bundle-cli.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopRoot = resolve(here, "..");
@@ -161,9 +170,7 @@ export function envWithLocalBins(env = process.env, root = desktopRoot) {
   ]);
   const mergedPath = uniqueOrdered([
     ...localBins,
-    ...String(existingPath)
-      .split(delimiter)
-      .filter(Boolean),
+    ...String(existingPath).split(delimiter).filter(Boolean),
   ]).join(delimiter);
   return { ...env, [pathKey]: mergedPath };
 }
@@ -252,9 +259,16 @@ export function parsePackageArgs(argv) {
   };
 }
 
-export function resolveBuildMatrix(parsed, platform = process.platform, arch = process.arch) {
+export function resolveBuildMatrix(
+  parsed,
+  platform = process.platform,
+  arch = process.arch,
+) {
   if (parsed.allPlatforms) {
-    if (parsed.requestedPlatforms.length > 0 || parsed.requestedArchs.length > 0) {
+    if (
+      parsed.requestedPlatforms.length > 0 ||
+      parsed.requestedArchs.length > 0
+    ) {
       throw new Error(
         "[package] --all-platforms cannot be combined with explicit platform or arch flags",
       );
@@ -365,6 +379,55 @@ export function bundleCliArgsForTarget(target) {
   ];
 }
 
+function sha256File(path) {
+  return createHash("sha256").update(readFileSync(path)).digest("hex");
+}
+
+export function installPrebuiltCliForTarget(
+  target,
+  artifactDir,
+  {
+    desktopDirectory = desktopRoot,
+    expectedCommit = git(["rev-parse", "HEAD"], desktopRoot),
+  } = {},
+) {
+  const manifestPath = join(artifactDir, "manifest.json");
+  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+  const expectedPlatform = PLATFORM_CONFIG[target.platform].runtimePlatform;
+  const expectedRustTarget = rustTargetFor(expectedPlatform, target.arch);
+  const expectedBinaryName =
+    expectedPlatform === "win32" ? "patchbay.exe" : "patchbay";
+  if (
+    manifest.schemaVersion !== 1 ||
+    manifest.commit !== expectedCommit ||
+    manifest.rustTarget !== expectedRustTarget ||
+    manifest.runtimePlatform !== expectedPlatform ||
+    manifest.runtimeArch !== target.arch ||
+    manifest.binaryName !== expectedBinaryName
+  ) {
+    throw new Error(
+      `[package] prebuilt CLI manifest does not match commit/target ${expectedCommit} ${expectedPlatform}/${target.arch}`,
+    );
+  }
+
+  const sourceBinary = join(artifactDir, manifest.binaryName);
+  if (sha256File(sourceBinary) !== manifest.sha256) {
+    throw new Error("[package] prebuilt CLI checksum mismatch");
+  }
+
+  const destinationDir = join(desktopDirectory, "resources", "bin");
+  const destinationBinary = join(destinationDir, expectedBinaryName);
+  rmSync(destinationDir, { recursive: true, force: true });
+  mkdirSync(destinationDir, { recursive: true });
+  copyFileSync(sourceBinary, destinationBinary);
+  copyFileSync(manifestPath, join(destinationDir, "release-cli-manifest.json"));
+  if (expectedPlatform !== "win32") chmodSync(destinationBinary, 0o755);
+  console.log(
+    `[package] staged exact-commit CLI artifact ${basename(artifactDir)} → ${destinationBinary}`,
+  );
+  return destinationBinary;
+}
+
 function main() {
   const passthrough = stripLeadingSeparator(process.argv.slice(2));
   const parsed = parsePackageArgs(passthrough);
@@ -438,15 +501,16 @@ function main() {
   // Step 3: for each requested target, build the matching CLI into
   // resources/bin/ and package that target in isolation.
   for (const target of buildMatrix) {
-    console.log(`[package] bundling CLI → ${formatTarget(target)}`);
-    execFileSync(
-      "node",
-      bundleCliArgsForTarget(target),
-      {
+    const prebuiltCliDir = process.env.PATCHBAY_PREBUILT_CLI_DIR;
+    if (prebuiltCliDir) {
+      installPrebuiltCliForTarget(target, resolve(prebuiltCliDir));
+    } else {
+      console.log(`[package] bundling CLI → ${formatTarget(target)}`);
+      execFileSync("node", bundleCliArgsForTarget(target), {
         stdio: "inherit",
         cwd: desktopRoot,
-      },
-    );
+      });
+    }
 
     const builderArgs = builderArgsForTarget(target, parsed, version, {
       disableMacNotarize,

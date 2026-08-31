@@ -85,6 +85,7 @@ jobs:
               - 'apps/docs/**'
               - 'packages/**'
               - 'package.json'
+              - 'Makefile'
               - '.npmrc'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
@@ -106,7 +107,12 @@ jobs:
               - 'scripts/check-ui-wildcard-exports.test.sh'
               - 'scripts/selfhost-config.test.sh'
               - 'scripts/drop-database.sh'
+              - 'scripts/ensure-dev-integration-secrets.mjs'
+              - 'scripts/postgres-runtime.sh'
+              - 'scripts/postgres-runtime.test.sh'
               - 'scripts/remove-worktree.sh'
+              - 'scripts/reset-database.sh'
+              - 'scripts/run-rust.sh'
               - 'scripts/worktree-db.test.sh'
               - 'scripts/selfhost-wait.sh'
               # selfhost-config.test.sh asserts on the installers' side of
@@ -115,17 +121,27 @@ jobs:
               - 'scripts/install.ps1'
               - 'scripts/check.sh'
               - 'scripts/dev.sh'
+              - 'scripts/dev.ps1'
+              - 'scripts/dev.ps1.test.ps1'
+              - 'scripts/dev-launcher.mjs'
+              - 'scripts/dev-process.mjs'
+              - 'scripts/stop-dev.mjs'
               - 'scripts/local-env.sh'
+              - 'scripts/makefile-build.test.sh'
               - '.env.example'
               - 'docker-compose.selfhost.yml'
               - 'docker-compose.selfhost.build.yml'
               - 'docker-compose.labs.yml'
-              - 'Makefile'
             installer:
               - 'scripts/install.sh'
               - 'scripts/install.ps1'
               - 'scripts/install.test.sh'
               - 'scripts/install.ps1.test.ps1'
+              - 'scripts/dev.ps1'
+              - 'scripts/dev.ps1.test.ps1'
+              - 'scripts/dev-launcher.mjs'
+              - 'scripts/dev-process.mjs'
+              - 'scripts/stop-dev.mjs'
               - 'docker/entrypoint.sh'
               - 'docker-compose.selfhost.yml'
               - '.env.example'
@@ -250,7 +266,7 @@ jobs:
       # tasks hit on the first push) and writes its own (so re-pushes hit too).
       - name: Restore turbo cache
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: actions/cache@v6
+        uses: actions/cache@v5
         with:
           path: .turbo/cache
           key: turbo-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.runtime.outputs.node }}-${{ github.sha }}
@@ -264,6 +280,14 @@ jobs:
       - name: Test worktree database cleanup
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         run: bash scripts/worktree-db.test.sh
+
+      - name: Test native PostgreSQL development runtime
+        if: ${{ needs.changes.outputs.frontend == 'true' }}
+        run: bash scripts/postgres-runtime.test.sh
+
+      - name: Test Makefile development entrypoint contract
+        if: ${{ needs.changes.outputs.frontend == 'true' }}
+        run: bash scripts/makefile-build.test.sh
 
       - name: Test authentication release classification
         if: ${{ needs.changes.outputs.frontend == 'true' }}
@@ -374,7 +398,7 @@ jobs:
       # which is the single most expensive task in the graph.
       - name: Restore turbo cache
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: actions/cache@v6
+        uses: actions/cache@v5
         with:
           path: .turbo/cache
           key: turbo-test-${{ runner.os }}-${{ runner.arch }}-${{ steps.runtime.outputs.node }}-${{ github.sha }}
@@ -436,7 +460,7 @@ jobs:
       # turbo.json's hash-only `^cache-inputs` edge.
       - name: Restore turbo cache
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: actions/cache@v6
+        uses: actions/cache@v5
         with:
           path: .turbo/cache
           key: turbo-views-test-${{ matrix.index }}-of-${{ matrix.total }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.runtime.outputs.node }}-${{ github.sha }}
@@ -498,6 +522,9 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.rust == 'true' }}
     runs-on: ubuntu-latest
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -508,10 +535,17 @@ jobs:
       - name: Use stable Rust
         run: rustup default stable
 
-      - name: Restore Cargo cache
-        uses: Swatinem/rust-cache@v2
+      - name: Restore Cargo registry and git downloads
+        uses: actions/cache@v5
         with:
-          workspaces: server-rs -> target
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('server-rs/Cargo.lock') }}
+          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Enable bounded shared compiler cache
+        uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: Check formatting
         working-directory: server-rs
@@ -528,6 +562,11 @@ jobs:
       - name: Build workspace binaries
         working-directory: server-rs
         run: cargo build --workspace --locked
+
+      - name: Report compiler cache effectiveness
+        if: always()
+        shell: bash
+        run: ${SCCACHE_PATH} --show-stats
 
   rust-tests:
     needs: changes
@@ -554,6 +593,8 @@ jobs:
     env:
       DATABASE_URL: postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable
       SQLX_OFFLINE: "false"
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -564,10 +605,17 @@ jobs:
       - name: Use stable Rust
         run: rustup default stable
 
-      - name: Restore Cargo cache
-        uses: Swatinem/rust-cache@v2
+      - name: Restore Cargo registry and git downloads
+        uses: actions/cache@v5
         with:
-          workspaces: server-rs -> target
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('server-rs/Cargo.lock') }}
+          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Enable bounded shared compiler cache
+        uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: Apply database migrations with the Rust runner
         working-directory: server-rs
@@ -601,6 +649,11 @@ jobs:
             echo "::endgroup::"
           done
 
+      - name: Report compiler cache effectiveness
+        if: always()
+        shell: bash
+        run: ${SCCACHE_PATH} --show-stats
+
   rust-audit:
     needs: changes
     if: ${{ needs.changes.outputs.rust == 'true' }}
@@ -625,7 +678,15 @@ jobs:
   # Preserve the required check name while the Rust checks stay split by
   # concern so a failure points at the actual production boundary.
   backend:
-    needs: [changes, rust-deployment-contracts, rust-quality, rust-tests, rust-platform, rust-audit]
+    needs:
+      [
+        changes,
+        rust-deployment-contracts,
+        rust-quality,
+        rust-tests,
+        rust-platform,
+        rust-audit,
+      ]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -668,6 +729,9 @@ jobs:
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -678,14 +742,26 @@ jobs:
       - name: Use stable Rust
         run: rustup default stable
 
-      - name: Restore Cargo cache
-        uses: Swatinem/rust-cache@v2
+      - name: Restore Cargo registry and git downloads
+        uses: actions/cache@v5
         with:
-          workspaces: server-rs -> target
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('server-rs/Cargo.lock') }}
+          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Enable bounded shared compiler cache
+        uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: Test native daemon behavior
         working-directory: server-rs
         run: cargo test -p patchbay-daemon --all-targets --locked
+
+      - name: Report compiler cache effectiveness
+        if: always()
+        shell: bash
+        run: ${SCCACHE_PATH} --show-stats
 
   image-budget:
     # A bitmap added or grown past 300KB fails until the PR description says
@@ -733,4 +809,6 @@ jobs:
       - name: Test PowerShell installer
         if: runner.os == 'Windows'
         shell: pwsh
-        run: ./scripts/install.ps1.test.ps1
+        run: |
+          ./scripts/install.ps1.test.ps1
+          ./scripts/dev.ps1.test.ps1

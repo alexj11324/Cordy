@@ -4,45 +4,26 @@ export function planDevCommands(
   argv,
   { nodePath = process.execPath, scriptsDir },
 ) {
-  const electronViteArgs = [];
-  let bundleCli = false;
-
   for (const token of argv) {
-    if (token === "--bundle-cli") {
+    if (token === "--bundle-cli" || token === "--source-cli") {
       throw new Error(
-        "[dev:desktop] --bundle-cli was removed; use pnpm dev:desktop:rust for source-matched Rust development",
+        "[dev:desktop] the Rust-free/source toggle was removed; `pnpm dev` always runs the complete source-matched environment",
       );
     }
-    if (token === "--source-cli") {
-      bundleCli = true;
-    } else {
-      electronViteArgs.push(token);
-    }
   }
 
-  const commands = [];
-  if (bundleCli) {
-    commands.push({
+  return [
+    {
       command: nodePath,
-      args: [join(scriptsDir, "bundle-cli.mjs"), "--profile", "dev"],
-    });
-  } else {
-    commands.push({
-      command: nodePath,
-      args: [join(scriptsDir, "clear-dev-cli.mjs")],
-    });
-  }
-
-  commands.push(
+      args: [join(scriptsDir, "dev-environment-doctor.mjs")],
+    },
     {
       command: nodePath,
       args: [join(scriptsDir, "brand-dev-electron.mjs")],
     },
     {
       command: "electron-vite",
-      args: ["dev", ...electronViteArgs],
+      args: ["dev", ...argv],
     },
-  );
-
-  return commands;
+  ];
 }

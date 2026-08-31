@@ -5,15 +5,19 @@ description: Patchbay のローカル開発環境を構築し、テストを実�
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay は Rust バックエンドと pnpm monorepo で構成されています。ローカルで起動する最も簡単な方法は `make dev` です。現在の checkout 用に環境、データベース、migration を準備し、Web と API を起動します。
+Patchbay は Rust バックエンドと pnpm monorepo で構成されています。ローカルで起動する最も簡単な方法は `pnpm dev` です。現在の checkout 用に環境、ソース一致 runtime、データベース、migration を準備し、完全な Electron、API、ブラウザのログイン/共有 origin を起動します。
 
 ## 必要な環境
 
 - Node.js 22
 - pnpm 10.28.2
-- Rust stable と Cargo
-- Docker Engine または Docker Desktop
-- Git と Make
+- Rust stable と Cargo（dev runtime cache miss 時に必要）
+- Docker Engine/Desktop、または native PostgreSQL 15+
+- Git（Make は POSIX 向けの任意の短縮手段）
+
+`pnpm dev` はクロスプラットフォームです。`PATCHBAY_POSTGRES_RUNTIME=auto`
+は Compose が公開する `localhost:5432` の場合だけ Docker を選びます。この
+endpoint が曖昧な場合は `native` または `docker` を明示してください。
 
 バージョンと依存関係については、ルートの `package.json`、`server-rs/Cargo.toml`、`server-rs/Cargo.lock`、CI workflow を信頼できる情報源としてください。
 
@@ -22,15 +26,16 @@ Patchbay は Rust バックエンドと pnpm monorepo で構成されていま�
 ```bash
 git clone https://github.com/patchbay-ai/patchbay.git
 cd patchbay
-make dev
+pnpm dev
 ```
 
-メイン checkout は `.env` を使用します。ファイルがなければ `make dev` が `.env.example` から作成し、共有 PostgreSQL を起動して依存関係をインストールし、migration を実行して API と Web を起動します。
+メイン checkout は `.env` を使用します。ファイルがなければ `pnpm dev` が `.env.example` から作成し、共有 PostgreSQL を起動して依存関係をインストールし、migration を実行して API、ブラウザのログイン/共有 origin、Electron を起動します。
 
 デフォルトのアドレス:
 
 ```text
-Web: http://localhost:3000
+Desktop: renderer hot reload 付きの Electron ウィンドウ
+ブラウザ/共有/ログイン origin: http://localhost:3000
 API: http://localhost:8080
 ```
 
@@ -53,7 +58,7 @@ make start-worktree
 make start-worktree
 ```
 
-現在の worktree の Web と API を停止するには:
+現在の worktree の Desktop/Electron、Web、API を停止するには:
 
 ```bash
 make stop-worktree
@@ -62,7 +67,10 @@ make stop-worktree
 `make dev` を直接実行することもできます。スクリプトが `.git` ファイルから worktree を判定し、`.env.worktree` を選択します。
 
 <Callout type="info">
-worktree 間で共有するのは PostgreSQL コンテナであり、データベースではありません。worktree ごとに新しい Compose project を起動しないでください。まず `.env.worktree` の `POSTGRES_DB`、`PORT`、`FRONTEND_PORT` を確認してください。
+  worktree 間で共有するのは PostgreSQL
+  コンテナであり、データベースではありません。worktree ごとに新しい Compose
+  project を起動しないでください。まず `.env.worktree` の
+  `POSTGRES_DB`、`PORT`、`FRONTEND_PORT` を確認してください。
 </Callout>
 
 ## よく使うコマンド
@@ -70,9 +78,9 @@ worktree 間で共有するのは PostgreSQL コンテナであり、データ�
 ### 全体フロー
 
 ```bash
-make dev              # 現在の checkout を準備して起動
-make start            # 既存の環境で API と Web を起動
-make stop             # 現在の checkout のプロセスを停止
+make dev              # 完全な Electron + dev CLI + backend + Web origin + 分離 DB
+make start            # 既存環境で同じ完全な開発スタックを起動
+make stop             # 現在の checkout が追跡する Electron/backend/Web プロセスツリーを停止
 make check            # ローカルの完全な検証フローを実行
 make build            # server、CLI、migrate バイナリをビルド
 ```
@@ -81,31 +89,30 @@ make build            # server、CLI、migrate バイナリをビルド
 
 ```bash
 pnpm install
-pnpm dev:web          # Vite 経由でブラウザ上の Desktop renderer を起動
+pnpm dev              # hot reload を含む完全な Desktop 開発
+pnpm dev:doctor       # CLI/backend/DB/agent/integration 診断
 pnpm dev:web:next     # Next.js Web クライアント
-pnpm dev:desktop      # Rust をコンパイルしない高速 Electron/Vite 開発
-pnpm dev:desktop:rust # 現在の server-rs を増分開発 profile でバンドル
 pnpm build
 pnpm typecheck
 pnpm lint
 pnpm test
 ```
 
-変更内容に合う最小範囲の Desktop パスを選択してください：
+Desktop の開発パスは完全モードの 1 つだけです：
 
-| 状況 | コマンド | 実行内容 |
-| --- | --- | --- |
-| ブラウザだけで renderer/UI を反復 | `pnpm dev:desktop:web` | Vite のみ、Rust なし |
-| 通常の renderer、Electron main、preload 開発 | `pnpm dev:desktop` | Electron/Vite のみ、Rust なし |
-| フロントエンド/Electron のビルド確認 | `pnpm --filter @patchbay/desktop build` | production JS bundle、Rust なし |
-| 未公開の `server-rs` / CLI 動作を Desktop から検証 | `pnpm dev:desktop:rust` | 増分 Cargo 開発ビルド後に Electron/Vite |
-| installer、署名/公証、updater、内蔵 CLI、release を検証 | `pnpm --filter @patchbay/desktop package` | release Rust CLI と installer。数十分かかる場合あり |
+| 状況                                                    | コマンド                                  | 実行内容                                                                             |
+| ------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------ |
+| 通常のローカル製品開発                                  | `pnpm dev` または `make dev`              | Electron、ソース一致 dev CLI、backend、Web origin、分離 DB、hot reload、能力チェック |
+| 開発診断の再実行                                        | `pnpm dev:doctor`                         | CLI/ソース/バージョン、backend/DB、agent 検出、Telegram/Weixin 設定                  |
+| フロントエンド/Electron のビルド確認                    | `pnpm --filter @patchbay/desktop build`   | production JS bundle、Rust なし                                                      |
+| installer、署名/公証、updater、内蔵 CLI、release を検証 | `pnpm --filter @patchbay/desktop package` | release Rust CLI と installer。数十分かかる場合あり                                  |
 
-通常の UI、TypeScript、CSS、main/preload、ドキュメント変更で package
-パスを使用しないでください。完全な release コンパイルは明示的な成果物検証と
-GitHub Actions のためのもので、通常の編集・更新ループには含めません。
-通常の Electron パスは、以前の Rust 開発で残った source CLI を起動前に削除し、
-古いバイナリが高速パスの検証に影響しないようにします。
+dev runtime cache には一致する CLI、backend、migration runner が含まれ、Rust
+source、Cargo metadata、toolchain、target、architecture、profile、build 変数で
+分離されます。hit 時は Rust を compile せず、miss 時だけ 3 つをまとめて
+incremental dev profile と任意の共有 sccache で build します。worktree 間で
+`node_modules` link tree、`server-rs/target`、DB、port、env、process は共有しません。
+release/package は独立しており dev cache を読みません。
 
 ルートコマンドはデフォルトで Mobile を除外します。Mobile には独自のスクリプトと CI があるため、変更前に `apps/mobile/AGENTS.md` を読んでください。
 
@@ -155,13 +162,13 @@ Migration は `migrations/` にあり、本番 query module は `server-rs/crate
 
 ## テストの配置
 
-| 変更 | テストの配置 |
-| --- | --- |
-| 共有ビジネスロジック、query、store | `packages/core/*.test.ts` |
-| 共有ページとコンポーネント | `packages/views/*.test.tsx` |
-| Web または Desktop のプラットフォーム wiring | 対応する `apps/*` ディレクトリ |
-| エンドツーエンドフロー | `e2e/*.spec.ts` |
-| バックエンド | 対応する `server-rs/crates/*` package の `#[cfg(test)]` module または `tests/*.rs` |
+| 変更                                         | テストの配置                                                                       |
+| -------------------------------------------- | ---------------------------------------------------------------------------------- |
+| 共有ビジネスロジック、query、store           | `packages/core/*.test.ts`                                                          |
+| 共有ページとコンポーネント                   | `packages/views/*.test.tsx`                                                        |
+| Web または Desktop のプラットフォーム wiring | 対応する `apps/*` ディレクトリ                                                     |
+| エンドツーエンドフロー                       | `e2e/*.spec.ts`                                                                    |
+| バックエンド                                 | 対応する `server-rs/crates/*` package の `#[cfg(test)]` module または `tests/*.rs` |
 
 まず変更に最も近いチェックを実行し、その後に範囲を広げます。Docs だけの変更例:
 

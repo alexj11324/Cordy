@@ -78,6 +78,8 @@ jobs:
     env:
       DATABASE_URL: postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable
       SQLX_OFFLINE: "false"
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     outputs:
       tag_name: ${{ steps.release_meta.outputs.tag_name }}
       commit_sha: ${{ steps.release_meta.outputs.commit_sha }}
@@ -125,10 +127,17 @@ jobs:
       - name: Use stable Rust
         run: rustup default stable
 
-      - name: Restore Cargo cache
-        uses: Swatinem/rust-cache@v2
+      - name: Restore Cargo registry and git downloads
+        uses: actions/cache@v5
         with:
-          workspaces: server-rs -> target
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: release-cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('server-rs/Cargo.lock') }}
+          restore-keys: release-cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Enable bounded shared compiler cache
+        uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: Apply database migrations with the Rust runner
         working-directory: server-rs
@@ -138,7 +147,7 @@ jobs:
         working-directory: server-rs
         run: cargo test --workspace --all-targets --locked
 
-      - name: Build production Rust binaries
+      - name: Build production Rust server binaries
         working-directory: server-rs
         env:
           PATCHBAY_BUILD_VERSION: ${{ steps.release_meta.outputs.tag_name }}
@@ -146,7 +155,7 @@ jobs:
         run: |
           PATCHBAY_BUILD_DATE="$(git show -s --format=%cI "$PATCHBAY_BUILD_COMMIT")"
           export PATCHBAY_BUILD_DATE
-          cargo build --release --locked -p patchbay-server -p patchbay-cli -p patchbay-migrate --bins
+          cargo build --release --locked -p patchbay-server -p patchbay-migrate --bins
 
       - name: Scan Rust dependencies
         # Fail closed unless an administrator scopes the documented emergency
@@ -166,6 +175,11 @@ jobs:
         env:
           TAG_NAME: ${{ steps.release_meta.outputs.tag_name }}
         run: echo "::warning::RustSec audit was explicitly skipped for ${TAG_NAME}; see .github/RELEASING.md"
+
+      - name: Report compiler cache effectiveness
+        if: always()
+        shell: bash
+        run: ${SCCACHE_PATH} --show-stats
 
   self-hosted-prepare:
     needs: verify
@@ -237,27 +251,42 @@ jobs:
             target: x86_64-unknown-linux-musl
             os: linux
             arch: amd64
+            runtime_platform: linux
+            runtime_arch: x64
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
             os: linux
             arch: arm64
+            runtime_platform: linux
+            runtime_arch: arm64
           - runner: macos-15-intel
             target: x86_64-apple-darwin
             os: darwin
             arch: amd64
+            runtime_platform: darwin
+            runtime_arch: x64
           - runner: macos-14
             target: aarch64-apple-darwin
             os: darwin
             arch: arm64
+            runtime_platform: darwin
+            runtime_arch: arm64
           - runner: windows-latest
             target: x86_64-pc-windows-msvc
             os: windows
             arch: amd64
+            runtime_platform: win32
+            runtime_arch: x64
           - runner: windows-11-arm
             target: aarch64-pc-windows-msvc
             os: windows
             arch: arm64
+            runtime_platform: win32
+            runtime_arch: arm64
     runs-on: ${{ matrix.runner }}
+    env:
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -282,10 +311,17 @@ jobs:
             echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
           fi
 
-      - name: Restore Cargo cache
-        uses: Swatinem/rust-cache@v2
+      - name: Restore Cargo registry and git downloads
+        uses: actions/cache@v5
         with:
-          workspaces: server-rs -> target
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: release-cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-${{ hashFiles('server-rs/Cargo.lock') }}
+          restore-keys: release-cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ matrix.target }}-
+
+      - name: Enable target-scoped compiler cache
+        uses: mozilla-actions/sccache-action@v0.0.11
 
       - name: Build Rust CLI
         working-directory: server-rs
@@ -297,6 +333,32 @@ jobs:
           PATCHBAY_BUILD_DATE="$(git show -s --format=%cI "$PATCHBAY_BUILD_COMMIT")"
           export PATCHBAY_BUILD_DATE
           cargo build --locked --release --target ${{ matrix.target }} -p patchbay-cli
+
+      - name: Stage exact-commit CLI binary
+        working-directory: server-rs
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.verify.outputs.tag_name }}
+        run: |
+          binary="target/${{ matrix.target }}/release/patchbay"
+          if [ "${{ matrix.runtime_platform }}" = "win32" ]; then
+            binary="${binary}.exe"
+          fi
+          node ../apps/desktop/scripts/write-cli-artifact-manifest.mjs \
+            --binary "$binary" \
+            --output "$RUNNER_TEMP/patchbay-cli-bin" \
+            --target "${{ matrix.target }}" \
+            --platform "${{ matrix.runtime_platform }}" \
+            --arch "${{ matrix.runtime_arch }}" \
+            --version "$RELEASE_TAG"
+
+      - name: Upload exact-commit CLI binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-cli-bin-${{ matrix.os }}-${{ matrix.arch }}
+          path: ${{ runner.temp }}/patchbay-cli-bin/*
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Package Unix archives
         if: runner.os != 'Windows'
@@ -346,6 +408,11 @@ jobs:
           path: ${{ runner.temp }}/patchbay-cli/*
           if-no-files-found: error
           retention-days: 1
+
+      - name: Report compiler cache effectiveness
+        if: always()
+        shell: bash
+        run: ${SCCACHE_PATH} --show-stats
 
   release:
     needs: [macos-release-preflight, verify, rust-cli-build]
@@ -737,7 +804,16 @@ jobs:
         run: helm show chart "$OCI_REGISTRY/patchbay" --version "$CHART_VERSION"
 
   promote-self-hosted-latest:
-    needs: [self-hosted-prepare, verify, docker-backend-merge, docker-web-merge, desktop, helm-chart, publish-release]
+    needs:
+      [
+        self-hosted-prepare,
+        verify,
+        docker-backend-merge,
+        docker-web-merge,
+        desktop,
+        helm-chart,
+        publish-release,
+      ]
     if: >-
       inputs.promote_latest &&
       needs.self-hosted-prepare.outputs.is_stable == 'true' &&
@@ -799,23 +875,27 @@ jobs:
           - os: ubuntu-latest
             target: linux
             arch: x64
+            cli_artifact: desktop-cli-bin-linux-amd64
           - os: ubuntu-24.04-arm
             target: linux
             arch: arm64
+            cli_artifact: desktop-cli-bin-linux-arm64
           - os: macos-15-intel
             target: mac
             arch: x64
+            cli_artifact: desktop-cli-bin-darwin-amd64
           - os: macos-14
             target: mac
             arch: arm64
+            cli_artifact: desktop-cli-bin-darwin-arm64
           - os: windows-latest
             target: win
             arch: x64
-            msvc_arch: amd64
+            cli_artifact: desktop-cli-bin-windows-amd64
           - os: windows-latest
             target: win
             arch: arm64
-            msvc_arch: amd64_arm64
+            cli_artifact: desktop-cli-bin-windows-arm64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
@@ -827,42 +907,6 @@ jobs:
       - name: Install rpmbuild (Linux)
         if: matrix.target == 'linux'
         run: sudo apt-get update && sudo apt-get install -y rpm
-
-      - name: Install musl toolchain (Linux)
-        if: matrix.target == 'linux'
-        run: sudo apt-get install -y musl-tools
-
-      - name: Setup MSVC linker (Windows)
-        if: matrix.target == 'win'
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          # Keep the linker and SDK library search paths aligned with the
-          # Rust target built by this job. amd64_arm64 is the x64-hosted
-          # ARM64 cross compiler required by aarch64-pc-windows-msvc.
-          arch: ${{ matrix.msvc_arch }}
-
-      - name: Setup Rust toolchain
-        shell: bash
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-          if [[ "${{ matrix.target }}" == "linux" && "${{ matrix.arch }}" == "arm64" ]]; then
-            rustup target add aarch64-unknown-linux-musl
-            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
-            echo "CC_AARCH64_UNKNOWN_LINUX_MUSL=musl-gcc" >> "$GITHUB_ENV"
-          elif [[ "${{ matrix.target }}" == "linux" ]]; then
-            rustup target add x86_64-unknown-linux-musl
-            echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
-            echo "CC_X86_64_UNKNOWN_LINUX_MUSL=musl-gcc" >> "$GITHUB_ENV"
-          elif [[ "${{ matrix.target }}" == "mac" && "${{ matrix.arch }}" == "arm64" ]]; then
-            rustup target add aarch64-apple-darwin
-          elif [[ "${{ matrix.target }}" == "mac" ]]; then
-            rustup target add x86_64-apple-darwin
-          elif [[ "${{ matrix.arch }}" == "arm64" ]]; then
-            rustup target add aarch64-pc-windows-msvc
-          else
-            rustup target add x86_64-pc-windows-msvc
-          fi
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -876,6 +920,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Download exact-commit CLI binary
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.cli_artifact }}
+          path: ${{ runner.temp }}/patchbay-cli-bin
+
       - name: Package Desktop installers (${{ matrix.target }})
         if: matrix.target != 'mac'
         working-directory: apps/desktop
@@ -885,6 +935,7 @@ jobs:
           # trust boundary. Set CSC_LINK in repo secrets to enable
           # Windows signing later.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          PATCHBAY_PREBUILT_CLI_DIR: ${{ runner.temp }}/patchbay-cli-bin
         run: node scripts/package.mjs --${{ matrix.target }} --${{ matrix.arch }} --publish never
 
       - name: Package Desktop installers (macOS)
@@ -899,6 +950,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          PATCHBAY_PREBUILT_CLI_DIR: ${{ runner.temp }}/patchbay-cli-bin
         run: node scripts/package.mjs --mac --${{ matrix.arch }} --publish never
 
       - name: Verify Developer ID signature and notarization (macOS)

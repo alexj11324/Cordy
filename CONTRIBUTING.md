@@ -29,22 +29,29 @@ See the [LICENSE](LICENSE) file for the full terms.
 
 ## Development Model
 
-Local development uses one shared PostgreSQL container and one database per checkout.
+Local development uses one shared PostgreSQL service and one database per checkout.
 
 - the main checkout usually uses `.env` and `POSTGRES_DB=patchbay`
 - each Git worktree uses its own `.env.worktree`
 - every checkout connects to the same PostgreSQL host: `localhost:5432`
-- isolation happens at the database level, not by starting a separate Docker Compose project
+- isolation happens at the database level, not by starting a separate PostgreSQL service
 - backend and frontend ports are still unique per worktree
 
-This keeps Docker simple while still isolating schema and data.
+The service may be Docker Compose or a native local PostgreSQL installation;
+schema and data remain isolated either way.
+`PATCHBAY_POSTGRES_RUNTIME=auto` selects Docker only for the Compose-published
+`localhost:5432` endpoint and uses the configured native endpoint otherwise.
+Set it to `native` or `docker` when localhost:5432 is intentionally ambiguous.
 
 ## Prerequisites
 
 - Node.js `22`
 - `pnpm` `10.28.2`
-- stable Rust toolchain with Cargo
-- Docker
+- stable Rust toolchain with Cargo (required on a dev runtime cache miss)
+- Docker, or native PostgreSQL 15+
+
+`pnpm dev` is the cross-platform entrypoint. `make dev` is a POSIX convenience
+alias and is not required on Windows.
 
 ## Important Rules
 
@@ -122,12 +129,12 @@ This single command:
 
 - auto-detects whether you're in a main checkout or a worktree
 - creates the appropriate env file (`.env` or `.env.worktree`) if it doesn't exist
-- checks that prerequisites (Node.js, pnpm, Rust, Docker) are installed
+- checks the always-required prerequisites; Rust is required only on a runtime cache miss
 - installs JavaScript dependencies
-- ensures the shared PostgreSQL container is running
+- uses the shared Docker or native PostgreSQL service
 - creates the application database if it does not exist
 - runs all migrations
-- starts both backend and frontend
+- starts the backend, browser login/share origin, and complete Electron client with renderer hot reload
 
 ### Explicit Setup (advanced)
 
@@ -496,55 +503,80 @@ rm -rf "$HOME/.patchbay/profiles/$PROFILE"
 
 ### Desktop App Local Testing
 
-To test the Electron desktop app against a local backend:
+Run the complete Electron development environment with one command:
 
 ```bash
-# After backend is running (make dev)
-pnpm dev:desktop
-
-# Only when testing server-rs changes through Desktop
-pnpm dev:desktop:rust
+pnpm dev
 ```
 
-The default command automatically:
+The command does not open Electron until it has:
 
-1. Resolves an available bundled, managed, downloadable, or PATH `patchbay`
-   CLI without compiling Rust
-2. Creates an isolated profile named `desktop-localhost-<PORT>`
-3. Starts and manages its own daemon instance
-4. Connects to the local backend
+1. Created or loaded the checkout-specific env, database, ports, and Electron
+   `userData` identity
+2. Installed dependencies using the global content-addressable pnpm store and
+   this worktree's own `node_modules` link tree
+3. Staged checksum-valid dev CLI, backend, and migration binaries whose Rust
+   source, Cargo manifests/lockfile, toolchain, target, architecture, profile,
+   and build metadata match
+4. Applied migrations and reached the local backend's DB-backed `/healthz`
+   readiness endpoint
+5. Started the checkout's Next.js Web origin and pointed Desktop browser,
+   share, and Google login links at that reachable service. Without the full
+   Clerk configuration the launcher lists the missing values instead of
+   silently emitting a dead login link
+6. Exercised local agent discovery through `patchbay daemon probe-runtimes`
+   (the renderer never guesses the host PATH)
+7. Verified Telegram and Weixin credential-encryption keys without logging
+   their values
 
-Choose the narrowest path that matches what changed:
+There is deliberately no UI-only or released/PATH-CLI development fallback. A
+missing capability fails before the window opens and prints an executable fix.
+Use `pnpm dev:doctor` to repeat the same diagnostics while the stack is running.
 
-| Situation | Command | Expected work |
-| --- | --- | --- |
-| Browser-only renderer/UI iteration | `pnpm dev:desktop:web` | Vite only; no Rust |
-| Normal renderer, Electron main, or preload iteration | `pnpm dev:desktop` | Electron/Vite only; no Rust |
-| Compile-check frontend/Electron output | `pnpm --filter @patchbay/desktop build` | Electron/Vite production bundles; no Rust |
-| Test unpublished `server-rs` / CLI behavior through Desktop | `pnpm dev:desktop:rust` | Incremental Cargo development CLI, then Electron/Vite |
-| Validate an installer, signing/notarization, updater, embedded CLI, or release | `pnpm --filter @patchbay/desktop package` | Release Rust CLI and installer packaging; may take tens of minutes |
+| Situation                                                                      | Command                                   | Expected work                                                                          |
+| ------------------------------------------------------------------------------ | ----------------------------------------- | -------------------------------------------------------------------------------------- |
+| Normal local product development                                               | `pnpm dev` or `make dev`                  | Complete Electron + dev CLI + backend + Web origin + isolated DB, with Vite hot reload |
+| Re-run capability diagnostics                                                  | `pnpm dev:doctor`                         | CLI/version/source, backend/DB, agent detection, Telegram/Weixin configuration         |
+| Compile-check frontend/Electron output                                         | `pnpm --filter @patchbay/desktop build`   | Electron/Vite production bundles; no Rust                                              |
+| Validate an installer, signing/notarization, updater, embedded CLI, or release | `pnpm --filter @patchbay/desktop package` | Release Rust CLI and installer packaging; may take tens of minutes                     |
 
-Do not use the package path for routine UI, TypeScript, CSS, main/preload, or
-documentation changes. The full release build is intentionally reserved for a
-distributable artifact or its production boundaries, plus GitHub Actions. The
-normal Electron path clears a source CLI left by an earlier Rust development
-run so a stale binary cannot affect fast-path verification.
+The dev runtime cache is per user and content-addressed. Unchanged Rust source
+reuses the CLI, backend, and migration runner without compiling, including in
+another worktree; a miss builds all three together in the incremental dev
+profile. Install `sccache` to share compiler outputs. Do not point multiple
+worktrees at one `server-rs/target`: target directories, `node_modules` link
+trees, databases, ports, env files, and processes stay isolated. Only pnpm's
+store, Cargo registry/git downloads, sccache, and the verified dev runtime cache
+are shared.
+
+Do not use the package path for routine development. Release/package never
+reads the dev cache: it performs the formal release build or consumes a
+checksum-verified exact-commit CLI artifact produced by the release workflow.
+
+CI follows the same boundary. It caches pnpm's store, Cargo registry/git
+downloads, bounded sccache compiler objects, and Turbo outputs; it never uploads
+an entire `server-rs/target`. Release CLIs/installers are exact-commit workflow
+artifacts, not reusable caches. Cache keys remain OS/architecture/target aware,
+and Rust jobs print sccache statistics so restore/upload time and hit rate can
+be compared with cold compilation. Keep the repository within GitHub's default
+cache budget unless measured savings justify a paid increase; shrinking or
+removing a cache is correct when transfer time approaches rebuild time. See
+[GitHub dependency caching](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)
+and [repository Actions settings](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository).
 
 Login in the Desktop UI with `dev@localhost` and the generated code from the
 backend logs. If you set `PATCHBAY_DEV_VERIFICATION_CODE=888888` before starting
 the backend, you can use `888888` instead.
 
-If the backend runs on a non-default port (worktree), create
-`apps/desktop/.env.development.local`:
-
-```bash
-VITE_API_URL=http://localhost:<backend-port>
-VITE_WS_URL=ws://localhost:<backend-port>/ws
-```
+Telegram still requires a real BotFather token entered through the integration
+flow, and personal Weixin still requires a real iLink QR authorization. Without
+those external credentials the UI must stop at the explicit provider step; a
+configured encryption key is capability readiness, not proof of a successful
+provider connection or test message.
 
 #### Running multiple worktrees side-by-side
 
-`pnpm dev:desktop` auto-isolates a worktree so several worktrees can run their
+`pnpm dev` auto-isolates a worktree so several worktrees can run their
 own desktop dev instance at once — no extra setup. From a linked worktree it
 derives, from the worktree path (same `cksum % 1000` offset as the backend /
 frontend ports in `.env.worktree`):
@@ -558,24 +590,23 @@ frontend ports in `.env.worktree`):
   distinguishable in Cmd+Tab. The offset keeps it unique across worktrees that
   share a folder name at different paths.
 
-The primary checkout is left untouched (`5173`, `Patchbay Canary`). Set either
-env var explicitly to override the derived value. Which backend each instance
-talks to is still controlled only by `apps/desktop/.env*` above — point each
-worktree's desktop at its own backend to also isolate the daemon profile.
+The primary checkout is left untouched (`5173`, `Patchbay Canary`). The complete
+launcher exports each worktree's backend and WebSocket endpoints to Electron,
+so no hand-written `apps/desktop/.env.development.local` is required.
 
 ### Isolation Guarantee
 
 Nothing in this flow touches the system-installed `patchbay` or the default
 `~/.patchbay/config.json`:
 
-| Resource | System / Production | Local Dev (per-worktree) |
-|---|---|---|
-| Config | `~/.patchbay/config.json` | `~/.patchbay/profiles/dev-<slug>-<hash>/config.json` |
-| Daemon PID | `~/.patchbay/daemon.pid` | `~/.patchbay/profiles/dev-<slug>-<hash>/daemon.pid` |
-| Health port | `19514` | `19514 + 1 + (name_hash % 1000)` |
-| Workspaces dir | `~/patchbay_workspaces/` | `~/patchbay_workspaces_dev-<slug>-<hash>/` |
-| Database | remote / production | local Docker: `patchbay_<slug>_<hash>` |
-| Desktop profile | `desktop-api.aspectlylabs.com` | `desktop-localhost-<port>` |
+| Resource        | System / Production            | Local Dev (per-worktree)                             |
+| --------------- | ------------------------------ | ---------------------------------------------------- |
+| Config          | `~/.patchbay/config.json`      | `~/.patchbay/profiles/dev-<slug>-<hash>/config.json` |
+| Daemon PID      | `~/.patchbay/daemon.pid`       | `~/.patchbay/profiles/dev-<slug>-<hash>/daemon.pid`  |
+| Health port     | `19514`                        | `19514 + 1 + (name_hash % 1000)`                     |
+| Workspaces dir  | `~/patchbay_workspaces/`       | `~/patchbay_workspaces_dev-<slug>-<hash>/`           |
+| Database        | remote / production            | local Docker: `patchbay_<slug>_<hash>`               |
+| Desktop profile | `desktop-api.aspectlylabs.com` | `desktop-localhost-<port>`                           |
 
 Multiple worktrees can run simultaneously without conflict.
 
@@ -653,7 +684,7 @@ That is expected.
 - `make stop-main`
 - `make stop-worktree`
 
-only stop backend/frontend processes.
+only stop the tracked Electron/backend/Web process tree.
 
 To stop the shared PostgreSQL container:
 
@@ -673,7 +704,7 @@ If you want a fresh database for the current checkout only (drops the
 database named in `POSTGRES_DB`, recreates it, and runs all migrations):
 
 ```bash
-make stop        # stop backend/frontend first
+make stop        # stop the tracked development process tree first
 make db-reset
 make start
 ```
@@ -689,7 +720,7 @@ make db-drop ENV_FILE=.env.worktree
 ```
 
 The command prints the selected database and environment file, then requires a
-`y/N` confirmation. It only operates on the local Docker PostgreSQL service,
+`y/N` confirmation. It only operates on the local Docker or native PostgreSQL service,
 protects PostgreSQL system databases, and refuses to drop the default main
 database `patchbay` unless `ALLOW_MAIN_DB_DROP=1` is explicitly supplied.
 Declining the confirmation is a successful no-op; when called by
