@@ -15,7 +15,7 @@ const authEnv = {
 };
 
 describe("standalone Web development launcher", () => {
-  it("uses the Next 16 Turbopack default and exposes only public auth", async () => {
+  it("uses the Next 16 Turbopack default with scoped Next server auth", async () => {
     const calls = [];
     const ensureCalls = [];
     const ensureEnv = async (options) => {
@@ -59,6 +59,11 @@ describe("standalone Web development launcher", () => {
       FRONTEND_PORT: "4317",
       UNRELATED: "kept",
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_fixture",
+      CLERK_PUBLISHABLE_KEY: "pk_test_fixture",
+      CLERK_SECRET_KEY: "sk_test_fixture",
+      CLERK_JWT_KEY: "jwt-fixture",
+      CLERK_ISSUER: "https://issuer.example",
+      CLERK_AUTHORIZED_PARTIES: "http://localhost:4317",
       PATCHBAY_DEV_AUTH_READY: "1",
     });
   });
