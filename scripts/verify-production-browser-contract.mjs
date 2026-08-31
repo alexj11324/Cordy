@@ -72,6 +72,13 @@ export function requireProtectedNavigation({
   }
 }
 
+export function isActionableBrowserRequestFailure(errorText) {
+  // Chromium reports requests canceled by a page navigation as ERR_ABORTED.
+  // Those requests did not fail at the network boundary; HTTP errors and all
+  // other transport failures remain actionable in the verifier.
+  return errorText !== "net::ERR_ABORTED";
+}
+
 export function buildGoogleOAuthProbeUrl({ codeChallenge, state }) {
   if (
     !HANDOFF_VALUE_PATTERN.test(codeChallenge) ||

@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   buildGoogleOAuthProbeUrl,
   decodeClerkFrontendApi,
+  isActionableBrowserRequestFailure,
   requireBrowserReceipt,
   requireGoogleOAuthNavigation,
   requireProtectedNavigation,
@@ -78,6 +79,16 @@ test("protected acceptance requires the exact route and deployed Web build", () 
       }),
     /sha-old/u,
   );
+});
+
+test("ignores only browser-canceled requests during route navigation", () => {
+  assert.equal(isActionableBrowserRequestFailure("net::ERR_ABORTED"), false);
+  assert.equal(isActionableBrowserRequestFailure("net::ERR_FAILED"), true);
+  assert.equal(
+    isActionableBrowserRequestFailure("net::ERR_NAME_NOT_RESOLVED"),
+    true,
+  );
+  assert.equal(isActionableBrowserRequestFailure(undefined), true);
 });
 
 test("decodes the Clerk Frontend API host without exposing another secret", () => {
