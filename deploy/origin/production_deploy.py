@@ -47,6 +47,7 @@ BOOTSTRAP_CONTAINERS = {
     "auth-broker": "patchbay-auth-broker-broker-1",
 }
 PRODUCTION_SMOKE_USER_EMAIL = "production-smoke@aspectlylabs.com"
+CLERK_API_USER_AGENT = "Patchbay-Production-Deploy/1.0"
 
 
 class DeploymentError(RuntimeError):
@@ -210,6 +211,7 @@ def clerk_api_request(
     headers = {
         "Authorization": f"Bearer {secret_key}",
         "Accept": "application/json",
+        "User-Agent": CLERK_API_USER_AGENT,
     }
     if data is not None:
         headers["Content-Type"] = "application/json"

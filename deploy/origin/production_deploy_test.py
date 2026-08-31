@@ -123,6 +123,22 @@ class ProductionDeployContractTests(unittest.TestCase):
         with self.assertRaisesRegex(production_deploy.DeploymentError, "invalid user-list"):
             production_deploy.clerk_users({"data": "invalid"})
 
+    def test_clerk_requests_identify_the_deployment_gateway(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value.read.return_value = b"{}"
+        with mock.patch.object(
+            production_deploy, "urlopen", return_value=response
+        ) as urlopen:
+            production_deploy.clerk_api_request(
+                "sk_live_fixture", "users?limit=1"
+            )
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(
+            request.get_header("User-agent"),
+            production_deploy.CLERK_API_USER_AGENT,
+        )
+
     def test_browser_credentials_are_short_lived_and_bound_to_the_smoke_user(self):
         with tempfile.TemporaryDirectory() as directory:
             deployment = production_deploy.ProductionDeployment(Path(directory))
