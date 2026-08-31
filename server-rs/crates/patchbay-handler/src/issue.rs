@@ -946,16 +946,20 @@ fn push_table_filters(
                     builder.push(" OR ");
                 }
                 match actor_type {
-                    "member" => builder
-                        .push("(i.owner_type='member' AND i.owner_id=")
-                        .push_bind(id)
-                        .push(")"),
-                    "agent" | "team" => builder
-                        .push("(i.executor_type=")
-                        .push_bind(actor_type.to_string())
-                        .push(" AND i.executor_id=")
-                        .push_bind(id)
-                        .push(")"),
+                    "member" => {
+                        builder
+                            .push("(i.owner_type='member' AND i.owner_id=")
+                            .push_bind(id)
+                            .push(")");
+                    }
+                    "agent" | "team" => {
+                        builder
+                            .push("(i.executor_type=")
+                            .push_bind(actor_type.to_string())
+                            .push(" AND i.executor_id=")
+                            .push_bind(id)
+                            .push(")");
+                    }
                     _ => {
                         return Err(error_response(
                             StatusCode::BAD_REQUEST,
