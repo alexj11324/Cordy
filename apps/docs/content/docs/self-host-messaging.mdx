@@ -1,11 +1,11 @@
 ---
 title: Self-hosted messaging
-description: Configure Cordy IM transports from the server deployment without exposing credentials or localhost links in the app.
+description: Configure Patchbay IM transports from the server deployment without exposing credentials or localhost links in the app.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Self-hosted IM is server-managed. The Cordy app only displays the platforms
+Self-hosted IM is server-managed. The Patchbay app only displays the platforms
 that the server enabled and their observed runtime state; it does not provide
 credential fields, manifest upload, QR configuration, or an install button.
 
@@ -16,7 +16,7 @@ credential fields, manifest upload, QR configuration, or an install button.
    and private IPs are rejected for account binding.
 2. Set `PATCHBAY_MESSAGING_MODE=server_configured`.
 3. Keep each provider credential in the server secret manager. Never paste it
-   into the Cordy app or commit it to `deploy/messaging/manifest.yaml`.
+   into the Patchbay app or commit it to `deploy/messaging/manifest.yaml`.
 4. Render the manifest and run the deployment probe:
 
 ```bash
@@ -38,12 +38,12 @@ consume the same stream concurrently.
 <Callout type="warning">
 Pure localhost self-hosting can still be used for the web app and local ACP,
 but cross-device IM binding is disabled until a public HTTPS origin is
-configured. Cordy will never send a localhost URL in an IM message or QR code.
+configured. Patchbay will never send a localhost URL in an IM message or QR code.
 </Callout>
 
 ## Message storage and execution
 
-Cordy follows the Multica-style split: the server stores the workspace-scoped
+Patchbay follows the Multica-style split: the server stores the workspace-scoped
 IM session, the durable `chat_message` transcript, deduplication record, and
 task linkage in PostgreSQL. A browser or phone only caches that server state.
 The local computer stores provider-native agent sessions, worktrees, and
@@ -64,4 +64,4 @@ not require rebinding an IM identity.
 - A provider is shown as healthy only after its supervisor lease/transport
   heartbeat is current. A database row with desired status `active` alone is
   not a healthy connection.
-- Self-hosted transports do not consume Cordy Cloud hosted IM quotas.
+- Self-hosted transports do not consume Patchbay Cloud hosted IM quotas.

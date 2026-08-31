@@ -4,10 +4,10 @@ set -euo pipefail
 # Deployment-time guard for the server-managed IM surface. This script never
 # prints credential values and never calls the app API. It validates the one
 # property the app cannot safely infer: that cross-device binding has a public
-# HTTPS origin. Run it from the repository root or set CORDY_ROOT explicitly.
+# HTTPS origin. Run it from the repository root or set PATCHBAY_ROOT explicitly.
 
-ROOT_DIR="${CORDY_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-MANIFEST="${CORDY_MESSAGING_MANIFEST:-${ROOT_DIR}/deploy/messaging/manifest.yaml}"
+ROOT_DIR="${PATCHBAY_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+MANIFEST="${PATCHBAY_MESSAGING_MANIFEST:-${ROOT_DIR}/deploy/messaging/manifest.yaml}"
 
 fail() {
   echo "messaging self-host check: $*" >&2

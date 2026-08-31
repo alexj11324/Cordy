@@ -511,7 +511,7 @@ mod tests {
             "https://127.0.0.1:3000",
             "https://0.0.0.0:3000",
             "https://192.168.1.10",
-            "https://cordy.local",
+            "https://patchbay.local",
             "https://user:password@app.example",
             "https://app.example/path?token=secret",
         ] {

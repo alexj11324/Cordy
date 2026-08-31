@@ -1,4 +1,4 @@
-# Cordy self-hosted messaging manifest (operator-owned)
+# Patchbay self-hosted messaging manifest (operator-owned)
 #
 # The app never reads or edits this file. Render it into the server
 # deployment, keep credentials in the deployment secret store, and run
