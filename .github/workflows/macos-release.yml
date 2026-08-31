@@ -34,7 +34,7 @@ concurrency:
 jobs:
   prepare:
     if: >-
-      github.repository == 'patchbay-ai/patchbay' &&
+      github.repository == 'alexj11324/Cordy' &&
       (
         github.event_name == 'workflow_dispatch' ||
         (
