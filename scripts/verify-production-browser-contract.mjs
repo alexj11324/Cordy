@@ -4,6 +4,12 @@ const GOOGLE_OAUTH_ENTRY = "https://accounts.aspectlylabs.com/oauth/google";
 
 export const PRODUCTION_SMOKE_GRAPH_GOAL =
   "Verify the production task dependency graph end to end";
+export const PRODUCTION_SMOKE_PARENT_TITLE =
+  "Production smoke dependency graph";
+export const PRODUCTION_SMOKE_FIRST_TASK_TITLE =
+  "Production smoke: first prerequisite";
+export const PRODUCTION_SMOKE_SECOND_TASK_TITLE =
+  "Production smoke: second prerequisite";
 export const PRODUCTION_SMOKE_DEPENDENT_TASK_TITLE =
   "Production smoke: combine prerequisites";
 export const PRODUCTION_SMOKE_DEPENDENT_ACCEPTANCE =
@@ -23,7 +29,7 @@ export function buildProductionSmokeDependencyPlan(parentIssueId) {
     tasks: [
       {
         temp_id: "task-1",
-        title: "Production smoke: first prerequisite",
+        title: PRODUCTION_SMOKE_FIRST_TASK_TITLE,
         description: "Provide the first independently verifiable graph input.",
         acceptance_criteria: [
           "The first prerequisite exposes its validated output",
@@ -33,7 +39,7 @@ export function buildProductionSmokeDependencyPlan(parentIssueId) {
       },
       {
         temp_id: "task-2",
-        title: "Production smoke: second prerequisite",
+        title: PRODUCTION_SMOKE_SECOND_TASK_TITLE,
         description: "Provide the second independently verifiable graph input.",
         acceptance_criteria: [
           "The second prerequisite exposes its validated output",
@@ -81,6 +87,140 @@ export function requireProductionSmokeGraph({ nodeCount, edgeCount }) {
       `production task graph rendered ${edgeCount} edges, expected at least 2`,
     );
   }
+}
+
+export async function findProductionSmokeGraph(fetchPage) {
+  if (typeof fetchPage !== "function") {
+    throw new Error("dependency graph page loader is required");
+  }
+  let cursor = null;
+  const visitedCursors = new Set();
+  while (true) {
+    const page = await fetchPage(cursor);
+    if (!Array.isArray(page?.graphs)) {
+      throw new Error("dependency graph API returned an invalid list response");
+    }
+    const existing = page.graphs.find(
+      (graph) => graph?.plan?.goal === PRODUCTION_SMOKE_GRAPH_GOAL,
+    );
+    if (existing) return existing;
+
+    if (page.next_cursor === null || page.next_cursor === undefined) {
+      return null;
+    }
+    const nextCursor = requiredString(
+      page.next_cursor,
+      "dependency graph next cursor",
+    );
+    if (visitedCursors.has(nextCursor)) {
+      throw new Error("dependency graph API returned a repeated cursor");
+    }
+    visitedCursors.add(nextCursor);
+    cursor = nextCursor;
+  }
+}
+
+export function findProductionSmokeParentIssue(response) {
+  if (!Array.isArray(response?.issues)) {
+    throw new Error("issue API returned an invalid list response");
+  }
+  return (
+    response.issues.find(
+      (issue) =>
+        issue?.title === PRODUCTION_SMOKE_PARENT_TITLE &&
+        issue?.parent_issue_id == null,
+    ) ?? null
+  );
+}
+
+export function requireNoDefaultExecutionAgent(response) {
+  if (!Array.isArray(response?.policies)) {
+    throw new Error("issue category policy API returned an invalid response");
+  }
+  const executionPolicy = response.policies.find(
+    (policy) => policy?.category === "in_progress",
+  );
+  if (executionPolicy?.default_execution_agent_id != null) {
+    throw new Error(
+      "production smoke workspace has a default execution agent; refusing to apply a graph fixture that could start real agent work",
+    );
+  }
+}
+
+export function requireProductionSmokeGraphContract(graph) {
+  if (graph?.plan?.goal !== PRODUCTION_SMOKE_GRAPH_GOAL) {
+    throw new Error("production smoke dependency graph has the wrong goal");
+  }
+  if (!Array.isArray(graph?.nodes) || graph.nodes.length !== 3) {
+    throw new Error("production smoke dependency graph must contain 3 nodes");
+  }
+  if (!Array.isArray(graph?.edges) || graph.edges.length !== 2) {
+    throw new Error("production smoke dependency graph must contain 2 edges");
+  }
+
+  const nodesByTempId = new Map(
+    graph.nodes.map((node) => [node?.temp_id, node]),
+  );
+  const expectedTasks = [
+    ["task-1", PRODUCTION_SMOKE_FIRST_TASK_TITLE],
+    ["task-2", PRODUCTION_SMOKE_SECOND_TASK_TITLE],
+    ["task-3", PRODUCTION_SMOKE_DEPENDENT_TASK_TITLE],
+  ];
+  for (const [tempId, title] of expectedTasks) {
+    const node = nodesByTempId.get(tempId);
+    if (node?.title !== title) {
+      throw new Error(`production smoke dependency graph is missing ${tempId}`);
+    }
+    if (node.executor_type != null || node.executor_id != null) {
+      throw new Error(
+        `production smoke dependency graph task ${tempId} is assigned to an executor`,
+      );
+    }
+  }
+
+  const expectedPairs = [
+    ["task-1", "task-3"],
+    ["task-2", "task-3"],
+  ];
+  const actualPairs = new Set(
+    graph.edges.map((edge) => `${edge?.from}->${edge?.to}`),
+  );
+  for (const [from, to] of expectedPairs) {
+    if (!actualPairs.has(`${from}->${to}`)) {
+      throw new Error(
+        `production smoke dependency graph is missing edge ${from}->${to}`,
+      );
+    }
+  }
+
+  const dependent = nodesByTempId.get("task-3");
+  if (
+    !Array.isArray(dependent.acceptance_criteria) ||
+    !dependent.acceptance_criteria.includes(
+      PRODUCTION_SMOKE_DEPENDENT_ACCEPTANCE,
+    )
+  ) {
+    throw new Error(
+      "production smoke dependent task is missing its acceptance criterion",
+    );
+  }
+
+  const identifiers = new Map(
+    expectedTasks.map(([tempId]) => [
+      tempId,
+      requiredString(
+        nodesByTempId.get(tempId)?.issue?.identifier,
+        `${tempId} issue identifier`,
+      ),
+    ]),
+  );
+  return {
+    dependentIdentifier: identifiers.get("task-3"),
+    edges: expectedPairs.map(([from, to]) => ({
+      fromIdentifier: identifiers.get(from),
+      toIdentifier: identifiers.get(to),
+    })),
+  };
 }
 
 export function isExpectedBrowserRequestCancellation(errorText) {

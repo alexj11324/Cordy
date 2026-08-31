@@ -10,14 +10,18 @@ import {
   buildProductionSmokeDependencyPlan,
   buildGoogleOAuthProbeUrl,
   decodeClerkFrontendApi,
+  findProductionSmokeGraph,
+  findProductionSmokeParentIssue,
   isExpectedBrowserRequestCancellation,
   PRODUCTION_SMOKE_DEPENDENT_ACCEPTANCE,
   PRODUCTION_SMOKE_DEPENDENT_TASK_TITLE,
-  PRODUCTION_SMOKE_GRAPH_GOAL,
+  PRODUCTION_SMOKE_PARENT_TITLE,
   requiredString,
   requireBrowserReceipt,
   requireGoogleOAuthNavigation,
+  requireNoDefaultExecutionAgent,
   requireProductionSmokeGraph,
+  requireProductionSmokeGraphContract,
   requireProtectedNavigation,
 } from "./verify-production-browser-contract.mjs";
 
@@ -247,7 +251,7 @@ export async function verifyProductionBrowser(sourceSha, receipt) {
 
     const workspace = await ensureSmokeWorkspace(page);
     assert.equal(workspace.slug, SMOKE_WORKSPACE);
-    await ensureSmokeDependencyGraph(page, workspace);
+    const smokeGraph = await ensureSmokeDependencyGraph(page, workspace);
 
     const failures = observeApplicationFailures(page);
     await verifyProtectedRoute(page, failures, {
@@ -260,7 +264,8 @@ export async function verifyProductionBrowser(sourceSha, receipt) {
       heading: "Task Graph",
       landmark: "Dependency graph canvas",
       expectedBuild,
-      verifyContent: () => verifyProductionSmokeTaskGraph(page),
+      verifyContent: () =>
+        verifyProductionSmokeTaskGraph(page, smokeGraph.graph),
     });
   } catch (error) {
     await page
@@ -360,7 +365,7 @@ async function createTestingToken(secretKey) {
   return requiredString(value?.token, "Clerk testing token");
 }
 
-async function authenticatedBrowserRequest(page, path, init = {}) {
+async function authenticatedBrowserResponse(page, path, init = {}) {
   return page.evaluate(
     async ({ requestPath, requestInit }) => {
       const csrfToken = document.cookie
@@ -381,23 +386,33 @@ async function authenticatedBrowserRequest(page, path, init = {}) {
           ...requestInit.headers,
         },
       });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({}));
-        const detail =
-          typeof body.message === "string"
-            ? body.message
-            : typeof body.error === "string"
-              ? body.error
-              : "";
-        const message = detail ? `: ${detail}` : "";
-        throw new Error(
-          `${requestPath} returned HTTP ${response.status}${message}`,
-        );
-      }
-      return response.json();
+      return {
+        ok: response.ok,
+        status: response.status,
+        body: await response.json().catch(() => ({})),
+      };
     },
     { requestPath: path, requestInit: init },
   );
+}
+
+function requireAuthenticatedBrowserResponse(path, response) {
+  if (response?.ok === true) return response.body;
+  const detail =
+    typeof response?.body?.message === "string"
+      ? response.body.message
+      : typeof response?.body?.error === "string"
+        ? response.body.error
+        : "";
+  const message = detail ? `: ${detail}` : "";
+  throw new Error(
+    `${path} returned HTTP ${response?.status ?? "unknown"}${message}`,
+  );
+}
+
+async function authenticatedBrowserRequest(page, path, init = {}) {
+  const response = await authenticatedBrowserResponse(page, path, init);
+  return requireAuthenticatedBrowserResponse(path, response);
 }
 
 async function ensureSmokeWorkspace(page) {
@@ -437,36 +452,28 @@ async function ensureSmokeWorkspace(page) {
 
 async function ensureSmokeDependencyGraph(page, workspace) {
   const workspaceHeaders = { "x-workspace-slug": workspace.slug };
-  const pageOfGraphs = await authenticatedBrowserRequest(
-    page,
-    "/api/dependency-graphs?limit=100",
-    { headers: workspaceHeaders },
-  );
-  if (!Array.isArray(pageOfGraphs?.graphs)) {
-    throw new Error("dependency graph API returned an invalid list response");
-  }
-  const existing = pageOfGraphs.graphs.find(
-    (graph) => graph?.plan?.goal === PRODUCTION_SMOKE_GRAPH_GOAL,
-  );
+  const existing = await findProductionSmokeGraph(async (cursor) => {
+    const query = new URLSearchParams({ limit: "64" });
+    if (cursor) query.set("cursor", cursor);
+    return authenticatedBrowserRequest(
+      page,
+      `/api/dependency-graphs?${query}`,
+      { headers: workspaceHeaders },
+    );
+  });
   if (existing) {
-    requireProductionSmokeGraph({
-      nodeCount: existing?.nodes?.length,
-      edgeCount: existing?.edges?.length,
-    });
+    requireProductionSmokeGraphContract(existing);
     return { created: false, graph: existing };
   }
 
-  const parent = await authenticatedBrowserRequest(page, "/api/issues", {
-    method: "POST",
-    headers: workspaceHeaders,
-    body: JSON.stringify({
-      title: "Production smoke dependency graph",
-      description:
-        "Stable parent issue for automated production task graph acceptance.",
-      status: "todo",
-      priority: "none",
-    }),
-  });
+  const policies = await authenticatedBrowserRequest(
+    page,
+    "/api/issue-category-policies",
+    { headers: workspaceHeaders },
+  );
+  requireNoDefaultExecutionAgent(policies);
+
+  const parent = await ensureSmokeGraphParentIssue(page, workspaceHeaders);
   const parentIssueId = requiredString(
     parent?.id,
     "production smoke graph parent issue id",
@@ -483,14 +490,55 @@ async function ensureSmokeDependencyGraph(page, workspace) {
       body: JSON.stringify(buildProductionSmokeDependencyPlan(parentIssueId)),
     },
   );
-  requireProductionSmokeGraph({
-    nodeCount: graph?.nodes?.length,
-    edgeCount: graph?.edges?.length,
-  });
+  requireProductionSmokeGraphContract(graph);
   return { created: true, graph };
 }
 
-async function verifyProductionSmokeTaskGraph(page) {
+async function findSmokeGraphParentIssue(page, workspaceHeaders) {
+  const query = new URLSearchParams({
+    q: PRODUCTION_SMOKE_PARENT_TITLE,
+    top_level_only: "true",
+    open_only: "true",
+    limit: "100",
+  });
+  const response = await authenticatedBrowserRequest(
+    page,
+    `/api/issues?${query}`,
+    { headers: workspaceHeaders },
+  );
+  return findProductionSmokeParentIssue(response);
+}
+
+async function ensureSmokeGraphParentIssue(page, workspaceHeaders) {
+  const existing = await findSmokeGraphParentIssue(page, workspaceHeaders);
+  if (existing) return existing;
+
+  const path = "/api/issues";
+  const response = await authenticatedBrowserResponse(page, path, {
+    method: "POST",
+    headers: workspaceHeaders,
+    body: JSON.stringify({
+      title: PRODUCTION_SMOKE_PARENT_TITLE,
+      description:
+        "Stable parent issue for automated production task graph acceptance.",
+      status: "todo",
+      priority: "none",
+    }),
+  });
+  if (response.ok) return response.body;
+  if (response.status === 409) {
+    const racedParent = await findSmokeGraphParentIssue(page, workspaceHeaders);
+    if (racedParent) return racedParent;
+  }
+  return requireAuthenticatedBrowserResponse(path, response);
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+async function verifyProductionSmokeTaskGraph(page, graph) {
+  const contract = requireProductionSmokeGraphContract(graph);
   const nodes = page.locator("[data-graph-node]");
   const edges = page.locator(
     '[data-graph-edge][data-edge-state="blocked"], [data-graph-edge][data-edge-state="satisfied"]',
@@ -499,10 +547,28 @@ async function verifyProductionSmokeTaskGraph(page) {
     nodeCount: await nodes.count(),
     edgeCount: await edges.count(),
   });
+  for (const edge of contract.edges) {
+    const accessibleName = new RegExp(
+      `^Dependency from ${escapeRegExp(edge.fromIdentifier)} to ${escapeRegExp(edge.toIdentifier)} — (Blocked|Satisfied)$`,
+      "u",
+    );
+    const renderedEdge = page.getByRole("button", { name: accessibleName });
+    await expect(renderedEdge).toHaveCount(1, { timeout: 30_000 });
+    await expect(renderedEdge).toHaveAttribute(
+      "data-edge-state",
+      /^(?:blocked|satisfied)$/u,
+      { timeout: 30_000 },
+    );
+  }
   const dependentNode = nodes.filter({
     hasText: PRODUCTION_SMOKE_DEPENDENT_TASK_TITLE,
   });
+  await expect(dependentNode).toHaveCount(1, { timeout: 30_000 });
   await expect(dependentNode.first()).toBeVisible({ timeout: 30_000 });
+  await expect(dependentNode.first()).toHaveAttribute(
+    "href",
+    `/${SMOKE_WORKSPACE}/issues/${encodeURIComponent(contract.dependentIdentifier)}`,
+  );
   await dependentNode.first().click();
   await expect(
     page.getByText(PRODUCTION_SMOKE_DEPENDENT_ACCEPTANCE, { exact: true }),

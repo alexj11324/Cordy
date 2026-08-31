@@ -6,12 +6,20 @@ import {
   buildProductionSmokeDependencyPlan,
   buildGoogleOAuthProbeUrl,
   decodeClerkFrontendApi,
+  findProductionSmokeGraph,
+  findProductionSmokeParentIssue,
   isExpectedBrowserRequestCancellation,
   PRODUCTION_SMOKE_DEPENDENT_ACCEPTANCE,
   PRODUCTION_SMOKE_DEPENDENT_TASK_TITLE,
+  PRODUCTION_SMOKE_FIRST_TASK_TITLE,
+  PRODUCTION_SMOKE_GRAPH_GOAL,
+  PRODUCTION_SMOKE_PARENT_TITLE,
+  PRODUCTION_SMOKE_SECOND_TASK_TITLE,
   requireBrowserReceipt,
   requireGoogleOAuthNavigation,
+  requireNoDefaultExecutionAgent,
   requireProductionSmokeGraph,
+  requireProductionSmokeGraphContract,
   requireProtectedNavigation,
 } from "./verify-production-browser-contract.mjs";
 
@@ -21,6 +29,42 @@ const browserVerifierSource = await readFile(
   new URL("./verify-production-browser.mjs", import.meta.url),
   "utf8",
 );
+
+function productionSmokeGraph() {
+  return {
+    plan: { goal: PRODUCTION_SMOKE_GRAPH_GOAL },
+    nodes: [
+      {
+        temp_id: "task-1",
+        title: PRODUCTION_SMOKE_FIRST_TASK_TITLE,
+        executor_type: null,
+        executor_id: null,
+        acceptance_criteria: ["first criterion"],
+        issue: { identifier: "SMOKE-2" },
+      },
+      {
+        temp_id: "task-2",
+        title: PRODUCTION_SMOKE_SECOND_TASK_TITLE,
+        executor_type: null,
+        executor_id: null,
+        acceptance_criteria: ["second criterion"],
+        issue: { identifier: "SMOKE-3" },
+      },
+      {
+        temp_id: "task-3",
+        title: PRODUCTION_SMOKE_DEPENDENT_TASK_TITLE,
+        executor_type: null,
+        executor_id: null,
+        acceptance_criteria: [PRODUCTION_SMOKE_DEPENDENT_ACCEPTANCE],
+        issue: { identifier: "SMOKE-4" },
+      },
+    ],
+    edges: [
+      { from: "task-1", to: "task-3" },
+      { from: "task-2", to: "task-3" },
+    ],
+  };
+}
 
 test("extracts short-lived browser credentials only from the matching receipt", () => {
   assert.deepEqual(
@@ -171,6 +215,92 @@ test("builds the production three-task, two-edge dependency fixture", () => {
   }
 });
 
+test("finds an existing smoke graph across every cursor page", async () => {
+  const expected = productionSmokeGraph();
+  const cursors = [];
+  const found = await findProductionSmokeGraph(async (cursor) => {
+    cursors.push(cursor);
+    if (cursor === null) return { graphs: [], next_cursor: "second-page" };
+    return { graphs: [expected], next_cursor: null };
+  });
+  assert.equal(found, expected);
+  assert.deepEqual(cursors, [null, "second-page"]);
+
+  await assert.rejects(
+    () =>
+      findProductionSmokeGraph(async () => ({
+        graphs: [],
+        next_cursor: "repeated",
+      })),
+    /repeated cursor/u,
+  );
+});
+
+test("reuses only the stable top-level smoke parent", () => {
+  const parent = {
+    id: "parent",
+    title: PRODUCTION_SMOKE_PARENT_TITLE,
+    parent_issue_id: null,
+  };
+  assert.equal(
+    findProductionSmokeParentIssue({
+      issues: [
+        { ...parent, id: "child", parent_issue_id: "other" },
+        { ...parent, title: "Different title" },
+        parent,
+      ],
+    }),
+    parent,
+  );
+  assert.equal(findProductionSmokeParentIssue({ issues: [] }), null);
+});
+
+test("refuses to apply a smoke graph when a default executor can run it", () => {
+  assert.doesNotThrow(() =>
+    requireNoDefaultExecutionAgent({
+      policies: [{ category: "in_progress", default_execution_agent_id: null }],
+    }),
+  );
+  assert.throws(
+    () =>
+      requireNoDefaultExecutionAgent({
+        policies: [
+          {
+            category: "in_progress",
+            default_execution_agent_id: "11111111-1111-4111-8111-111111111111",
+          },
+        ],
+      }),
+    /refusing to apply/u,
+  );
+});
+
+test("requires the exact safe fixture topology and identifiers", () => {
+  const graph = productionSmokeGraph();
+  assert.deepEqual(requireProductionSmokeGraphContract(graph), {
+    dependentIdentifier: "SMOKE-4",
+    edges: [
+      { fromIdentifier: "SMOKE-2", toIdentifier: "SMOKE-4" },
+      { fromIdentifier: "SMOKE-3", toIdentifier: "SMOKE-4" },
+    ],
+  });
+
+  const reversed = structuredClone(graph);
+  reversed.edges[0] = { from: "task-3", to: "task-1" };
+  assert.throws(
+    () => requireProductionSmokeGraphContract(reversed),
+    /missing edge task-1->task-3/u,
+  );
+
+  const assigned = structuredClone(graph);
+  assigned.nodes[0].executor_type = "agent";
+  assigned.nodes[0].executor_id = "11111111-1111-4111-8111-111111111111";
+  assert.throws(
+    () => requireProductionSmokeGraphContract(assigned),
+    /assigned to an executor/u,
+  );
+});
+
 test("requires real graph nodes and edges and wires fixture acceptance", () => {
   assert.doesNotThrow(() =>
     requireProductionSmokeGraph({ nodeCount: 3, edgeCount: 2 }),
@@ -189,6 +319,13 @@ test("requires real graph nodes and edges and wires fixture acceptance", () => {
   );
   assert.match(
     browserVerifierSource,
-    /verifyContent: \(\) => verifyProductionSmokeTaskGraph\(page\)/u,
+    /verifyProductionSmokeTaskGraph\(page, smokeGraph\.graph\)/u,
+  );
+  assert.match(browserVerifierSource, /findProductionSmokeGraph/u);
+  assert.match(browserVerifierSource, /\/api\/issue-category-policies/u);
+  assert.match(browserVerifierSource, /response\.status === 409/u);
+  assert.match(
+    browserVerifierSource,
+    /Dependency from .* to .* — \(Blocked\|Satisfied\)/u,
   );
 });
