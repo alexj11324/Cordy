@@ -5,7 +5,11 @@ import { chmod, readFile, rename, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const REQUIRED_KEYS = [
+export const INTEGRATION_SECRET_KEYS = [
+  "PATCHBAY_LARK_SECRET_KEY",
+  "PATCHBAY_SLACK_SECRET_KEY",
+  "PATCHBAY_DINGTALK_SECRET_KEY",
+  "PATCHBAY_WECOM_SECRET_KEY",
   "PATCHBAY_TELEGRAM_SECRET_KEY",
   "PATCHBAY_WEIXIN_SECRET_KEY",
 ];
@@ -28,7 +32,7 @@ export function ensureLocalIntegrationSecrets(
   let next = contents.endsWith("\n") ? contents : `${contents}\n`;
   const generated = [];
 
-  for (const key of REQUIRED_KEYS) {
+  for (const key of INTEGRATION_SECRET_KEYS) {
     const pattern = new RegExp(`^${key}=(.*)$`, "m");
     const match = next.match(pattern);
     if (isValidKey(match?.[1])) continue;

@@ -12,6 +12,7 @@ import {
   integrationKeyStatus,
 } from "./dev-environment-doctor.mjs";
 import { rustSourceFingerprint } from "./dev-cli-cache.mjs";
+import { INTEGRATION_SECRET_KEYS } from "../../../scripts/ensure-dev-integration-secrets.mjs";
 
 let sandbox;
 
@@ -59,15 +60,22 @@ async function fixtureRepo() {
 
 describe("complete Desktop development doctor", () => {
   it("never treats an empty or malformed integration key as configured", () => {
+    const env = Object.fromEntries(
+      INTEGRATION_SECRET_KEYS.map((key, index) => [key, secretKey(index + 1)]),
+    );
+    env.PATCHBAY_TELEGRAM_SECRET_KEY = "";
+    env.PATCHBAY_WEIXIN_SECRET_KEY = "not-base64";
     expect(
-      integrationKeyStatus({
-        PATCHBAY_TELEGRAM_SECRET_KEY: "",
-        PATCHBAY_WEIXIN_SECRET_KEY: "not-base64",
-      }),
-    ).toEqual({
-      PATCHBAY_TELEGRAM_SECRET_KEY: false,
-      PATCHBAY_WEIXIN_SECRET_KEY: false,
-    });
+      integrationKeyStatus(env),
+    ).toEqual(
+      Object.fromEntries(
+        INTEGRATION_SECRET_KEYS.map((key) => [
+          key,
+          key !== "PATCHBAY_TELEGRAM_SECRET_KEY" &&
+            key !== "PATCHBAY_WEIXIN_SECRET_KEY",
+        ]),
+      ),
+    );
   });
 
   it("uses the worktree backend endpoint provided by the complete launcher", () => {
@@ -96,8 +104,12 @@ describe("complete Desktop development doctor", () => {
     }));
     const env = {
       VITE_API_URL: "http://127.0.0.1:18123",
-      PATCHBAY_TELEGRAM_SECRET_KEY: secretKey(1),
-      PATCHBAY_WEIXIN_SECRET_KEY: secretKey(2),
+      ...Object.fromEntries(
+        INTEGRATION_SECRET_KEYS.map((key, index) => [
+          key,
+          secretKey(index + 1),
+        ]),
+      ),
     };
 
     const report = await inspectDevEnvironment({
@@ -140,8 +152,12 @@ describe("complete Desktop development doctor", () => {
       repoRoot,
       env: {
         VITE_API_URL: "http://127.0.0.1:18123",
-        PATCHBAY_TELEGRAM_SECRET_KEY: secretKey(1),
-        PATCHBAY_WEIXIN_SECRET_KEY: secretKey(2),
+        ...Object.fromEntries(
+          INTEGRATION_SECRET_KEYS.map((key, index) => [
+            key,
+            secretKey(index + 1),
+          ]),
+        ),
       },
       platform: "darwin",
       arch: "arm64",
