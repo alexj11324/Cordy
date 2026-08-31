@@ -1135,13 +1135,15 @@ impl LinearSyncWorker {
         let last_event_id = link.last_remote_event_id.as_deref();
         let updated = linear_q::update_linear_issue_link(
             &mut *transaction,
-            link.id,
-            row.workspace_id,
-            &snapshot,
-            Some(remote_updated_at),
-            last_event_at_ms,
-            last_event_id,
-            "active",
+            &linear_q::LinearIssueLinkUpdate {
+                link_id: link.id,
+                workspace_id: row.workspace_id,
+                last_common_snapshot: &snapshot,
+                remote_updated_at: Some(remote_updated_at),
+                last_remote_event_at_ms: last_event_at_ms,
+                last_remote_event_id: last_event_id,
+                sync_status: "active",
+            },
         )
         .await
         .map_err(SyncError::retry)?;
@@ -2172,13 +2174,15 @@ impl LinearSyncWorker {
             .or(link.last_remote_event_id.as_deref());
         let updated = linear_q::update_linear_issue_link(
             &self.state.pool,
-            link.id,
-            connection.workspace_id,
-            &snapshot,
-            Some(remote_updated_at),
-            last_event_at_ms,
-            last_event_id,
-            "active",
+            &linear_q::LinearIssueLinkUpdate {
+                link_id: link.id,
+                workspace_id: connection.workspace_id,
+                last_common_snapshot: &snapshot,
+                remote_updated_at: Some(remote_updated_at),
+                last_remote_event_at_ms: last_event_at_ms,
+                last_remote_event_id: last_event_id,
+                sync_status: "active",
+            },
         )
         .await
         .map_err(SyncError::retry)?;
@@ -2515,13 +2519,15 @@ impl LinearSyncWorker {
             .or(link.last_remote_event_id.as_deref());
         let updated = linear_q::update_linear_issue_link(
             &self.state.pool,
-            link.id,
-            connection.workspace_id,
-            &snapshot,
-            link.remote_updated_at,
-            event_at,
-            event_id,
-            "deleted",
+            &linear_q::LinearIssueLinkUpdate {
+                link_id: link.id,
+                workspace_id: connection.workspace_id,
+                last_common_snapshot: &snapshot,
+                remote_updated_at: link.remote_updated_at,
+                last_remote_event_at_ms: event_at,
+                last_remote_event_id: event_id,
+                sync_status: "deleted",
+            },
         )
         .await
         .map_err(SyncError::retry)?;
@@ -2805,16 +2811,18 @@ fn external_patch_from_snapshot(snapshot: &Value) -> Result<ExternalIssuePatch, 
             )))
         }
     };
-    let owner_type = owner_id.map(|value| value.map(|_| "member".to_string()));
+    let owner_type = owner_id
+        .as_ref()
+        .map(|value| value.as_ref().map(|_| "member".to_string()));
     Ok(ExternalIssuePatch {
         title: Some(required_snapshot_string(snapshot, "title")?),
         description,
         status: Some(required_snapshot_string(snapshot, "status")?),
         priority: Some(required_snapshot_string(snapshot, "priority")?),
         due_date,
+        project_id: None,
         owner_type,
         owner_id,
-        project_id: None,
         executor_type: None,
         executor_id: None,
     })
