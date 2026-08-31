@@ -37,6 +37,10 @@ pub fn router() -> Router<HandlerState> {
     Router::new()
         .route("/api/agents", get(list_agents).post(create_agent))
         .route("/api/agents/patrick", post(create_patrick))
+        // Temporary version-skew adapter for clients shipped before the Patrick
+        // rename. Owner: API team. Remove when all supported clients use the
+        // canonical route and migration 452 is present in every deployment.
+        .route("/api/agents/mika", post(create_legacy_mika))
         .route("/api/agents/{id}", get(get_agent).put(update_agent))
         .route("/api/agents/{id}/archive", post(archive_agent))
         .route("/api/agents/{id}/restore", post(restore_agent))
@@ -1546,7 +1550,7 @@ async fn create_patrick(
     let description = match request.language.as_str() {
         "en" => "Your workspace Chief of Staff. Patrick turns goals into issues, coordinates agents, and helps build reusable workflows.",
         "zh" => "你的工作区 Chief of Staff。Patrick 会把目标转化为任务、协调智能体，并帮你建立可复用的工作流。",
-        "ko" => "워크스페이스의 Chief of Staff입니다. Patrick가 목표를 태스크로 구체화하고 에이전트를 조율하며 재사용 가능한 워크플로 구성을 돕습니다.",
+        "ko" => "워크스페이스의 Chief of Staff입니다. Patrick이 목표를 태스크로 구체화하고 에이전트를 조율하며 재사용 가능한 워크플로 구성을 돕습니다.",
         "ja" => "ワークスペースの Chief of Staff。Patrick は目標をタスクに落とし込み、エージェントを調整し、再利用できるワークフローづくりを支援します。",
         _ => return error_response(StatusCode::BAD_REQUEST, "language must be en, zh, ko, or ja"),
     };
@@ -1729,6 +1733,22 @@ async fn create_patrick(
         Json(response),
     )
         .into_response()
+}
+
+/// Compatibility adapter for an older frontend bundle during a non-atomic
+/// frontend/backend rollout. It deliberately delegates to the canonical
+/// Patrick handler, so it cannot create a second system identity.
+async fn create_legacy_mika(
+    state: State<HandlerState>,
+    context: Extension<WorkspaceContext>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    tracing::warn!(
+        route = "/api/agents/mika",
+        "legacy Patrick bootstrap route used"
+    );
+    create_patrick(state, context, headers, body).await
 }
 
 async fn archive_agent(

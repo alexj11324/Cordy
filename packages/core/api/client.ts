@@ -1484,11 +1484,20 @@ export class ApiClient {
     },
     workspaceSlug?: string,
   ): Promise<PatrickBootstrapResponse> {
-    return this.fetch("/api/agents/patrick", {
+    const init = {
       method: "POST",
       headers: workspaceHeader(workspaceSlug),
       body: JSON.stringify(data),
-    });
+    } satisfies RequestInit;
+    try {
+      return await this.fetch("/api/agents/patrick", init);
+    } catch (error) {
+      // Keep old and new independently deployed bundles compatible during the
+      // rename. The backend adapter is temporary and only a missing canonical
+      // route may fall back; auth, validation, and server errors must surface.
+      if (!(error instanceof ApiError) || error.status !== 404) throw error;
+      return this.fetch("/api/agents/mika", init);
+    }
   }
 
   async createAgentBuilderSession(data: {

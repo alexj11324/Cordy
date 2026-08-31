@@ -579,11 +579,11 @@ export function createKoDict(allowSignup: boolean): LandingDict {
         {
           version: "0.4.20",
           date: "2026-08-06",
-          title: "DingTalk 봇, Patrick와 함께하는 첫 시작, 실행별 토큰 비용",
+          title: "DingTalk 봇, Patrick과 함께하는 첫 시작, 실행별 토큰 비용",
           changes: [],
           features: [
             "에이전트를 DingTalk에 둘 수 있어요. DM이나 그룹에서 @로 부르면 됩니다.",
-            "가입을 마치면 Patrick가 기다리고, 첫 태스크를 시작할 카드도 함께 나옵니다.",
+            "가입을 마치면 Patrick이 기다리고, 첫 태스크를 시작할 카드도 함께 나옵니다.",
             "Agent 스레드에 각 실행의 비용과 태스크 전체 합계가 표시됩니다.",
             "댓글 알림을 껐어도 @로 이름을 부른 알림은 그대로 옵니다.",
             "휴대폰 채팅이 전체 화면으로 열리고, 입력창이 키보드 위에 놓입니다.",
@@ -1944,7 +1944,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
           title: "더 똑똑한 환영 흐름과 실시간 작업 신호",
           changes: [],
           features: [
-            "신규 사용자는 Patrick와 대화하며 실제 첫 태스크를 완료하고 필요할 때만 specialist를 추가하는 온보딩 흐름을 경험합니다.",
+            "신규 사용자는 Patrick과 대화하며 실제 첫 태스크를 완료하고 필요할 때만 specialist를 추가하는 온보딩 흐름을 경험합니다.",
             "태스크 목록에서 어떤 에이전트가 작업 중인지 표시되며, 세부 정보 보기와 \"작업 중\" 필터도 함께 제공됩니다.",
             "하위 태스크가 완료되면 상위 태스크에도 플랫폼 업데이트가 남고, 알맞은 담당자에게도 알림이 갑니다.",
           ],

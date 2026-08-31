@@ -1993,6 +1993,35 @@ describe("ApiClient explicit workspace targeting", () => {
     expect(slugHeaderOf(fetchMock)).toBe("proxima-centauri");
   });
 
+  it("falls back to the legacy bootstrap route only when Patrick is unavailable", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "not found" }), {
+          status: 404,
+          statusText: "Not Found",
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: "agent-1" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new ApiClient("https://api.example.test").createPatrickAgent({
+      runtime_id: "runtime-1",
+      language: "en",
+    });
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "https://api.example.test/api/agents/patrick",
+      "https://api.example.test/api/agents/mika",
+    ]);
+  });
+
   it("sends the given slug when listing another workspace's runtimes", async () => {
     const fetchMock = stubOk([]);
     await new ApiClient("https://api.example.test").listRuntimes(

@@ -24,7 +24,7 @@
 export const INSTALL_RUNTIME_ISSUE_TITLE = {
   en: "Connect a device to start with Patrick",
   zh: "连接设备，和 Patrick 开始",
-  ko: "기기를 연결하고 Patrick와 시작하기",
+  ko: "기기를 연결하고 Patrick과 시작하기",
   ja: "デバイスを接続して Patrick と始める",
 } as const;
 
@@ -147,11 +147,11 @@ agent가 작업을 실행하려면 먼저 기기가 필요합니다. 기기를 �
    데스크톱 앱에서는 아무 로컬 기기를 열고 Restart를 누르세요. 앱을 종료하고 다시 여는
    것만으로는 충분하지 않습니다 — daemon은 백그라운드에서 계속 실행됩니다.
 6. 「기기」로 돌아가 새로고침합니다. Codex가 online으로 보여야 합니다.
-7. 「기기」를 엽니다. **Patrick와 시작**을 눌러 Patrick를 만들고 안내되는 첫 채팅을 시작합니다.
+7. 「기기」를 엽니다. **Patrick과 시작**을 눌러 Patrick을 만들고 안내되는 첫 채팅을 시작합니다.
 
 Codex 참고 문서: https://developers.openai.com/codex/cli
 
-Patrick가 실제 목표 하나를 태스크로 만들고 적합한 에이전트와 실행을 시작하며, 워크플로에 필요할 때 재사용 가능한 specialist를 제안합니다.`;
+Patrick이 실제 목표 하나를 태스크로 만들고 적합한 에이전트와 실행을 시작하며, 워크플로에 필요할 때 재사용 가능한 specialist를 제안합니다.`;
 
 const ja = `Patchbay へようこそ。
 

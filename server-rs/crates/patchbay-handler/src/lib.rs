@@ -1108,6 +1108,9 @@ mod tests {
             Request::post("/api/agents")
                 .body(Body::from(r#"{"name":"Reviewer"}"#))
                 .unwrap(),
+            Request::post("/api/agents/mika")
+                .body(Body::from(r#"{"language":"en"}"#))
+                .unwrap(),
             Request::post("/api/agents/patrick")
                 .body(Body::from(r#"{"language":"en"}"#))
                 .unwrap(),
