@@ -30,6 +30,8 @@ describe("daemon manager mutation contracts", () => {
     expect(handler).toContain(
       "await ensureRunningDaemonVersionMatchesUnlocked();",
     );
+    expect(handler).toContain('versionAction === "restart_failed"');
+    expect(handler).toContain('versionAction === "deferred"');
     expect(handler).toContain("if (!result.success)");
     expect(handler).toContain("source-matched Patchbay CLI is unavailable");
     expect(handler).toContain("daemon did not become ready");
@@ -59,6 +61,7 @@ describe("daemon manager mutation contracts", () => {
     expect(unlockedEnd).toBeGreaterThan(unlockedStart);
     const unlocked = source.slice(unlockedStart, unlockedEnd);
     expect(unlocked).toContain("await restartDaemonUnlocked();");
+    expect(unlocked).toContain('return "restart_failed";');
     expect(unlocked).not.toContain("await restartDaemon();");
   });
 

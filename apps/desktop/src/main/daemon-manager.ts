@@ -607,7 +607,7 @@ async function getCliBinaryVersion(): Promise<string | null> {
  * the restart as soon as the daemon drains.
  */
 async function ensureRunningDaemonVersionMatches(): Promise<
-  "restarted" | "deferred" | "ok" | "not_running"
+  "restarted" | "restart_failed" | "deferred" | "ok" | "not_running"
 > {
   return serializeProfileMutation(() =>
     ensureRunningDaemonVersionMatchesUnlocked(),
@@ -615,7 +615,7 @@ async function ensureRunningDaemonVersionMatches(): Promise<
 }
 
 async function ensureRunningDaemonVersionMatchesUnlocked(): Promise<
-  "restarted" | "deferred" | "ok" | "not_running"
+  "restarted" | "restart_failed" | "deferred" | "ok" | "not_running"
 > {
   const active = await ensureActiveProfile();
   if (!active) return "not_running";
@@ -651,13 +651,22 @@ async function ensureRunningDaemonVersionMatchesUnlocked(): Promise<
       pendingVersionRestart = true;
       return "deferred";
     }
-    case "restart":
+    case "restart": {
       console.log(
         `[daemon] CLI version mismatch (bundled=${bundled} running=${running?.cli_version}) — restarting daemon`,
       );
+      const restart = await restartDaemonUnlocked();
+      if (!restart.success || restart.blocked) {
+        pendingVersionRestart = true;
+        console.error(
+          "[daemon] failed to restart daemon after CLI version mismatch",
+          restart.error ?? "unknown restart error",
+        );
+        return "restart_failed";
+      }
       pendingVersionRestart = false;
-      await restartDaemonUnlocked();
       return "restarted";
+    }
   }
 }
 
@@ -1584,6 +1593,7 @@ export function setupDaemonManager(
         const profile = active?.name;
         const prefs = await loadPrefs();
         const current = await fetchHealth();
+        const reusedStartingDaemon = current.state === "starting";
 
         // An explicitly disabled auto-start is still a real capability failure
         // for the complete login gate. Reuse an already-running daemon, but do
@@ -1618,7 +1628,27 @@ export function setupDaemonManager(
           if (current.state === "running") {
             // Daemon is up but may be running an older CLI than the one we just
             // bundled. Restart it so the new binary actually takes effect.
-            await ensureRunningDaemonVersionMatchesUnlocked();
+            const versionAction =
+              await ensureRunningDaemonVersionMatchesUnlocked();
+            if (
+              versionAction === "restart_failed" ||
+              versionAction === "deferred"
+            ) {
+              const state = (await fetchHealth()).state;
+              return {
+                success: false,
+                state,
+                reason:
+                  versionAction === "restart_failed"
+                    ? "start_failed"
+                    : "not_ready",
+                profile,
+                error:
+                  versionAction === "restart_failed"
+                    ? "the running daemon uses a different CLI version and could not be restarted; inspect the daemon log and retry"
+                    : "the running daemon uses a different CLI version but is busy; wait for active tasks to finish and retry",
+              };
+            }
           } else {
             const result = await startDaemonUnlocked();
             if (!result.success) {
@@ -1645,6 +1675,31 @@ export function setupDaemonManager(
         }
 
         const ready = await fetchHealth();
+        if (reusedStartingDaemon && ready.state === "running") {
+          const versionAction =
+            await ensureRunningDaemonVersionMatchesUnlocked();
+          if (
+            versionAction === "restart_failed" ||
+            versionAction === "deferred"
+          ) {
+            const state = (await fetchHealth()).state;
+            return {
+              success: false,
+              state,
+              reason:
+                state === "auth_expired"
+                  ? "auth_expired"
+                  : versionAction === "restart_failed"
+                    ? "start_failed"
+                    : "not_ready",
+              profile,
+              error:
+                versionAction === "restart_failed"
+                  ? "the running daemon uses a different CLI version and could not be restarted; inspect the daemon log and retry"
+                  : "the running daemon uses a different CLI version but is busy; wait for active tasks to finish and retry",
+            };
+          }
+        }
         if (ready.state === "running" || ready.state === "starting") {
           return { success: true, state: ready.state, profile };
         }
