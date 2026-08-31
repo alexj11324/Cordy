@@ -158,6 +158,9 @@ pub const PLUGINS_V1: &str = "plugins_v1";
 /// workspace has custom statuses, turning this off does NOT make existing
 /// ones safe for an older binary.
 pub const CUSTOM_ISSUE_STATUSES: &str = "custom_issue_statuses";
+/// Gates Linear installation foundation routes. It intentionally defaults to
+/// false until the OAuth/Webhook canary has been completed.
+pub const LINEAR_INSTALLATION_FOUNDATION: &str = "linear_installation_foundation";
 
 // No longer release flags — kept publishing as permanently enabled so older
 // desktop clients that still gate on these config decisions fail open:
@@ -172,6 +175,7 @@ const FRONTEND_PUBLIC_FLAGS: &[&str] = &[
     // The settings UI needs this to decide whether to offer status creation
     // at all; without it the tab would show a "New status" button that 403s.
     CUSTOM_ISSUE_STATUSES,
+    LINEAR_INSTALLATION_FOUNDATION,
 ];
 
 pub fn billing_workspace_subscriptions_enabled(flags: &dyn FlagSource) -> bool {
@@ -191,6 +195,10 @@ pub fn plugins_v1_enabled(flags: &dyn FlagSource) -> bool {
 /// cannot interpret.
 pub fn custom_issue_statuses_enabled(flags: &dyn FlagSource) -> bool {
     flags.is_enabled(CUSTOM_ISSUE_STATUSES, false)
+}
+
+pub fn linear_installation_foundation_enabled(flags: &dyn FlagSource) -> bool {
+    flags.is_enabled(LINEAR_INSTALLATION_FOUNDATION, false)
 }
 
 /// Evaluates every flag the frontend may see, plus the three compat keys
@@ -238,6 +246,7 @@ mod tests {
         assert!(!plugins_v1_enabled(&flags));
         // Rollout gate fails closed mid-fleet.
         assert!(!custom_issue_statuses_enabled(&flags));
+        assert!(!linear_installation_foundation_enabled(&flags));
     }
 
     #[test]

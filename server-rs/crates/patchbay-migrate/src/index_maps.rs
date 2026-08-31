@@ -595,6 +595,36 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "450_agent_task_execution_provenance_discovery_queue_index",
         "agent_task_execution_provenance_discovery_queue_idx",
     ),
+    ("453_linear_connection_id_index", "uq_linear_connection_id"),
+    (
+        "454_linear_connection_workspace_index",
+        "uq_linear_connection_workspace",
+    ),
+    (
+        "455_linear_connection_identity_index",
+        "uq_linear_connection_identity",
+    ),
+    (
+        "456_linear_oauth_state_id_index",
+        "uq_linear_oauth_state_id",
+    ),
+    (
+        "457_linear_oauth_state_hash_index",
+        "uq_linear_oauth_state_hash",
+    ),
+    (
+        "458_linear_oauth_state_expiry_index",
+        "idx_linear_oauth_state_expiry",
+    ),
+    ("459_linear_sync_inbox_id_index", "uq_linear_sync_inbox_id"),
+    (
+        "460_linear_sync_inbox_delivery_index",
+        "uq_linear_sync_inbox_delivery",
+    ),
+    (
+        "461_linear_sync_inbox_pending_index",
+        "idx_linear_sync_inbox_pending",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
@@ -730,5 +760,35 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
     (
         "450_agent_task_execution_provenance_discovery_queue_index",
         "agent_task_execution_provenance_discovery_queue_idx",
+    ),
+    ("453_linear_connection_id_index", "uq_linear_connection_id"),
+    (
+        "454_linear_connection_workspace_index",
+        "uq_linear_connection_workspace",
+    ),
+    (
+        "455_linear_connection_identity_index",
+        "uq_linear_connection_identity",
+    ),
+    (
+        "456_linear_oauth_state_id_index",
+        "uq_linear_oauth_state_id",
+    ),
+    (
+        "457_linear_oauth_state_hash_index",
+        "uq_linear_oauth_state_hash",
+    ),
+    (
+        "458_linear_oauth_state_expiry_index",
+        "idx_linear_oauth_state_expiry",
+    ),
+    ("459_linear_sync_inbox_id_index", "uq_linear_sync_inbox_id"),
+    (
+        "460_linear_sync_inbox_delivery_index",
+        "uq_linear_sync_inbox_delivery",
+    ),
+    (
+        "461_linear_sync_inbox_pending_index",
+        "idx_linear_sync_inbox_pending",
     ),
 ];
