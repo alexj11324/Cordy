@@ -34,7 +34,7 @@ pub const CHAT_MESSAGE_KIND_MESSAGE: &str = "message";
 /// A direct-chat turn the agent completed without any text reply — a visible,
 /// deliberate terminal outcome rather than a silently-dropped turn (PB-4351).
 pub const CHAT_MESSAGE_KIND_NO_RESPONSE: &str = "no_response";
-/// The server-authored, hidden first turn used to start Mika's onboarding
+/// The server-authored, hidden first turn used to start Patrick's onboarding
 /// conversation. User-facing APIs filter it out.
 pub const CHAT_MESSAGE_KIND_ONBOARDING_KICKOFF: &str = "onboarding_kickoff";
 /// The assistant reply produced by the onboarding kickoff; chat renders the

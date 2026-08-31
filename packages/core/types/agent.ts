@@ -471,11 +471,11 @@ export interface TaskUsage {
 }
 
 /**
- * Response of the Mika bootstrap endpoint: the workspace's Mika plus the
+ * Response of the Patrick bootstrap endpoint: the workspace's Patrick plus the
  * caller's conversation with it, resolved together server-side so two clients
  * cannot each open their own onboarding session.
  */
-export interface MikaBootstrapResponse extends Agent {
+export interface PatrickBootstrapResponse extends Agent {
   /** Absent only when the server could not resolve the session; retry the
    *  same call rather than creating one client-side. */
   onboarding_session?: ChatSession;
@@ -499,7 +499,7 @@ export interface Agent {
   /** What this agent's owner wrote. For a system agent this holds only the
    *  workspace's own notes — the product half is `system_instructions`. */
   instructions: string;
-  /** Set for product-defined agents (e.g. "mika"). Absent for user- and
+  /** Set for product-defined agents (e.g. "patrick"). Absent for user- and
    *  template-created agents. Identity for "maintained by Patchbay" checks —
    *  never the display name, which owners may change. */
   system_key?: string;
