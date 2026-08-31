@@ -550,7 +550,10 @@ mod tests {
         std::env::set_var("PATCHBAY_LINEAR_CLIENT_ID", "client-id");
         std::env::set_var("PATCHBAY_LINEAR_INTEGRATION_ENABLED", "true");
         let cfg = Config::load(None).unwrap();
-        assert_eq!(cfg.integrations.linear_client_id.as_deref(), Some("client-id"));
+        assert_eq!(
+            cfg.integrations.linear_client_id.as_deref(),
+            Some("client-id")
+        );
         assert_eq!(
             cfg.integrations.linear_integration_enabled.as_deref(),
             Some("true")

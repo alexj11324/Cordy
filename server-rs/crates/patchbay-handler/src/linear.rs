@@ -82,9 +82,8 @@ fn linear_redirect_uri(state: &HandlerState) -> Option<String> {
         .as_deref()
         .and_then(|value| configured_value(Some(value)))
         .or_else(|| {
-            configured_value(Some(&state.public_config.public_url)).map(|base| {
-                format!("{}/api/linear/oauth/callback", base.trim_end_matches('/'))
-            })
+            configured_value(Some(&state.public_config.public_url))
+                .map(|base| format!("{}/api/linear/oauth/callback", base.trim_end_matches('/')))
         })
 }
 
@@ -153,8 +152,12 @@ fn connection_json(connection: LinearConnection) -> Value {
 }
 
 fn integration_disabled(state: &HandlerState) -> Option<Response> {
-    (!state.linear_integration_enabled)
-        .then(|| error_response(StatusCode::NOT_FOUND, "Linear integration is not configured"))
+    (!state.linear_integration_enabled).then(|| {
+        error_response(
+            StatusCode::NOT_FOUND,
+            "Linear integration is not configured",
+        )
+    })
 }
 
 async fn get_connection(
@@ -204,7 +207,10 @@ async fn start_oauth(
         .as_deref()
         .and_then(|value| configured_value(Some(value)))
     else {
-        return error_response(StatusCode::SERVICE_UNAVAILABLE, "Linear OAuth is not configured");
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Linear OAuth is not configured",
+        );
     };
     if state
         .integrations
@@ -213,7 +219,10 @@ async fn start_oauth(
         .and_then(|value| configured_value(Some(value)))
         .is_none()
     {
-        return error_response(StatusCode::SERVICE_UNAVAILABLE, "Linear OAuth is not configured");
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Linear OAuth is not configured",
+        );
     }
     let Some(redirect_uri) = linear_redirect_uri(&state) else {
         return error_response(
@@ -470,13 +479,10 @@ impl LinearTokenManager {
                 LinearTokenError::Provider
             })?;
         let status = response.status();
-        let payload = response
-            .json::<Value>()
-            .await
-            .map_err(|error| {
-                tracing::warn!(%error, "Linear token endpoint returned invalid JSON");
-                LinearTokenError::InvalidResponse
-            })?;
+        let payload = response.json::<Value>().await.map_err(|error| {
+            tracing::warn!(%error, "Linear token endpoint returned invalid JSON");
+            LinearTokenError::InvalidResponse
+        })?;
         if !status.is_success() {
             if payload.get("error").and_then(Value::as_str) == Some("invalid_grant") {
                 return Err(LinearTokenError::InvalidGrant);
@@ -489,10 +495,7 @@ impl LinearTokenManager {
             LinearTokenError::InvalidResponse
         })?;
         if token.access_token.trim().is_empty()
-            || token
-                .refresh_token
-                .as_deref()
-                .map_or(true, str::is_empty)
+            || token.refresh_token.as_deref().map_or(true, str::is_empty)
             || token.expires_in.map_or(true, |value| value <= 0)
         {
             return Err(LinearTokenError::InvalidResponse);
@@ -561,9 +564,10 @@ impl LinearTokenManager {
     /// both encrypted values are replaced in one database transaction.
     pub async fn access_token(&self, connection_id: Uuid) -> Result<String, LinearTokenError> {
         let mut transaction = self.pool.begin().await.map_err(storage_error)?;
-        let Some(connection) = linear_q::get_connection_for_update(&mut *transaction, connection_id)
-            .await
-            .map_err(storage_error)?
+        let Some(connection) =
+            linear_q::get_connection_for_update(&mut *transaction, connection_id)
+                .await
+                .map_err(storage_error)?
         else {
             return Err(LinearTokenError::InvalidResponse);
         };
@@ -595,7 +599,9 @@ impl LinearTokenManager {
             .refresh_token
             .as_deref()
             .ok_or(LinearTokenError::InvalidResponse)?;
-        let expires_in = refreshed.expires_in.ok_or(LinearTokenError::InvalidResponse)?;
+        let expires_in = refreshed
+            .expires_in
+            .ok_or(LinearTokenError::InvalidResponse)?;
         let access_encrypted = seal_secret(&self.secret_box, &refreshed.access_token)?;
         let refresh_encrypted = seal_secret(&self.secret_box, rotated_refresh)?;
         let scopes = refreshed
@@ -672,13 +678,14 @@ fn open_secret(
     secret_box: &patchbay_util::secretbox::SecretBox,
     ciphertext: &str,
 ) -> Result<String, LinearTokenError> {
-    let decoded = STANDARD.decode(ciphertext).map_err(|error| {
-        LinearTokenError::Secret(anyhow::Error::from(error))
-    })?;
-    let plaintext = secret_box.open(&decoded).map_err(|error| {
-        LinearTokenError::Secret(anyhow::Error::from(error))
-    })?;
-    String::from_utf8(plaintext).map_err(|error| LinearTokenError::Secret(anyhow::Error::from(error)))
+    let decoded = STANDARD
+        .decode(ciphertext)
+        .map_err(|error| LinearTokenError::Secret(anyhow::Error::from(error)))?;
+    let plaintext = secret_box
+        .open(&decoded)
+        .map_err(|error| LinearTokenError::Secret(anyhow::Error::from(error)))?;
+    String::from_utf8(plaintext)
+        .map_err(|error| LinearTokenError::Secret(anyhow::Error::from(error)))
 }
 
 fn seal(state: &HandlerState, plaintext: &str) -> anyhow::Result<String> {
@@ -706,19 +713,15 @@ async fn oauth_callback(
             return linear_callback_redirect("error");
         }
     };
-    let oauth_state = match linear_q::consume_oauth_state(
-        &mut *transaction,
-        &sha256_hex(&state_token),
-    )
-    .await
-    {
-        Ok(Some(value)) => value,
-        Ok(None) => return linear_callback_redirect("invalid_state"),
-        Err(error) => {
-            tracing::warn!(%error, "Linear OAuth state lookup failed");
-            return linear_callback_redirect("error");
-        }
-    };
+    let oauth_state =
+        match linear_q::consume_oauth_state(&mut *transaction, &sha256_hex(&state_token)).await {
+            Ok(Some(value)) => value,
+            Ok(None) => return linear_callback_redirect("invalid_state"),
+            Err(error) => {
+                tracing::warn!(%error, "Linear OAuth state lookup failed");
+                return linear_callback_redirect("error");
+            }
+        };
     if let Err(error) = transaction.commit().await {
         tracing::warn!(%error, "Linear OAuth state commit failed");
         return linear_callback_redirect("error");
@@ -848,7 +851,10 @@ async fn disconnect(
         Ok(manager) => manager,
         Err(error) => {
             tracing::warn!(%error, "Linear disconnect configuration is incomplete");
-            return error_response(StatusCode::SERVICE_UNAVAILABLE, "Linear OAuth is not configured");
+            return error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Linear OAuth is not configured",
+            );
         }
     };
     match manager.revoke_connection(workspace_id, &connection).await {
@@ -857,10 +863,9 @@ async fn disconnect(
             StatusCode::CONFLICT,
             "Linear authorization requires reauthorization before disconnect",
         ),
-        Err(LinearTokenError::Provider) => error_response(
-            StatusCode::BAD_GATEWAY,
-            "Linear revoke request failed",
-        ),
+        Err(LinearTokenError::Provider) => {
+            error_response(StatusCode::BAD_GATEWAY, "Linear revoke request failed")
+        }
         Err(error) => {
             tracing::warn!(%error, "Linear disconnect failed");
             error_response(
@@ -997,10 +1002,9 @@ fn webhook_validation_response(error: WebhookValidationError) -> Response {
         WebhookValidationError::InvalidHeaderTimestamp => {
             (StatusCode::BAD_REQUEST, "invalid Linear timestamp")
         }
-        WebhookValidationError::TimestampMismatch => (
-            StatusCode::BAD_REQUEST,
-            "Linear timestamps do not match",
-        ),
+        WebhookValidationError::TimestampMismatch => {
+            (StatusCode::BAD_REQUEST, "Linear timestamps do not match")
+        }
         WebhookValidationError::MissingDelivery => {
             (StatusCode::BAD_REQUEST, "missing Linear delivery id")
         }
@@ -1104,13 +1108,18 @@ async fn linear_webhook(
             "Linear Webhook persistence unavailable",
         );
     }
-    (StatusCode::OK, Json(json!({ "accepted": true, "duplicate": !inserted }))).into_response()
+    (
+        StatusCode::OK,
+        Json(json!({ "accepted": true, "duplicate": !inserted })),
+    )
+        .into_response()
 }
 
 fn header_value(headers: &HeaderMap, name: &str) -> Option<String> {
-    headers.get(name).and_then(|value| value.to_str().ok()).and_then(|value| {
-        configured_value(Some(value))
-    })
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| configured_value(Some(value)))
 }
 
 fn verify_signature(secret: &str, signature: &str, body: &[u8]) -> bool {
@@ -1237,8 +1246,14 @@ mod tests {
 
     #[test]
     fn webhook_freshness_uses_milliseconds_and_requires_the_sixty_second_window() {
-        assert!(timestamp_is_fresh(1_700_000_000_000, 1_700_000_000_000 + 60_000));
-        assert!(!timestamp_is_fresh(1_700_000_000_000, 1_700_000_000_000 + 60_001));
+        assert!(timestamp_is_fresh(
+            1_700_000_000_000,
+            1_700_000_000_000 + 60_000
+        ));
+        assert!(!timestamp_is_fresh(
+            1_700_000_000_000,
+            1_700_000_000_000 + 60_001
+        ));
     }
 
     #[test]
@@ -1249,7 +1264,11 @@ mod tests {
         mac.update(body);
         let signature = hex::encode(mac.finalize().into_bytes());
         assert!(verify_signature(secret, &signature, body));
-        assert!(!verify_signature(secret, &signature, br#"{"organizationId":"other"}"#));
+        assert!(!verify_signature(
+            secret,
+            &signature,
+            br#"{"organizationId":"other"}"#
+        ));
     }
 
     #[test]
