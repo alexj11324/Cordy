@@ -21,7 +21,7 @@ on:
         required: false
         type: string
       run_rust:
-        description: Run the Rust validation suite
+        description: Run the Rust validation suite for a manual validation
         required: false
         default: false
         type: boolean
@@ -31,9 +31,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Decides whether the frontend and installer validation jobs have anything
-  # to do. Rust is deliberately excluded from automatic path classification:
-  # it runs only when a maintainer explicitly selects run_rust in a manual run.
+  # Classify every product surface once so the stable aggregate checks below
+  # can distinguish an intentional path skip from a missing or failed worker.
   # The frontend jobs validate the web/desktop apps, the shared packages,
   # the install graph, and the selfhost / reserved-slugs scripts it runs;
   # a pure backend-only or docs-only PR touches none of those and gains
@@ -47,6 +46,7 @@ jobs:
     outputs:
       frontend: ${{ steps.decide.outputs.frontend }}
       rust: ${{ steps.decide.outputs.rust }}
+      mobile: ${{ steps.decide.outputs.mobile }}
       installer: ${{ steps.decide.outputs.installer }}
       images: ${{ steps.filter.outputs.images }}
       auth_broker_release: ${{ steps.auth-impact.outputs.auth_broker_release }}
@@ -64,6 +64,9 @@ jobs:
         uses: docker://rhysd/actionlint:1.7.7
         with:
           args: -color
+
+      - name: Test CI workflow contracts
+        run: node --test scripts/ci-workflow-contract.test.mjs
 
       - name: Test accounts origin proxy contract
         run: node --test deploy/cloudflare/accounts-origin-proxy/src/index.test.mjs
@@ -135,6 +138,32 @@ jobs:
               - 'docker-compose.selfhost.yml'
               - 'docker-compose.selfhost.build.yml'
               - 'docker-compose.labs.yml'
+            rust:
+              - 'server-rs/**'
+              - 'migrations/**'
+              - 'deploy/helm/**'
+              - 'Dockerfile'
+              - 'Makefile'
+              - 'docker/entrypoint.sh'
+              - 'scripts/run-rust.sh'
+              - 'scripts/check.sh'
+              - 'scripts/makefile-build.test.sh'
+              - 'scripts/auth-broker-helm.test.sh'
+              - 'scripts/helm-config.test.sh'
+              - 'scripts/macos-release-contract.test.sh'
+              - 'scripts/verify-release-tag.test.sh'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/release.yml'
+              - '.github/workflows/macos-release.yml'
+            mobile:
+              - 'apps/mobile/**'
+              - 'packages/core/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'turbo.json'
+              - '.npmrc'
+              - '.github/workflows/ci.yml'
             installer:
               - 'scripts/install.sh'
               - 'scripts/install.ps1'
@@ -190,26 +219,32 @@ jobs:
 
       - name: Decide
         id: decide
-        # Frontend and installer workers run automatically for relevant PRs
-        # and for pushes. Rust workers are independent of paths and can be
-        # enabled only by explicitly selecting run_rust in workflow_dispatch.
-        # The stable frontend/backend aggregate checks distinguish intentional
-        # path/manual skips from a failed classifier or missing worker.
+        # Pull requests and pushes classify Rust and Mobile automatically.
+        # A manual run remains an explicit full-Rust authorization path used by
+        # release verification, while version tags always receive Rust checks.
         env:
           EVENT_NAME: ${{ github.event_name }}
           FRONTEND_CHANGED: ${{ steps.filter.outputs.frontend }}
+          RUST_CHANGED: ${{ steps.filter.outputs.rust }}
+          MOBILE_CHANGED: ${{ steps.filter.outputs.mobile }}
           INSTALLER_CHANGED: ${{ steps.filter.outputs.installer }}
           RUN_RUST: ${{ github.event_name == 'workflow_dispatch' && inputs.run_rust == true }}
+          REF_TYPE: ${{ github.ref_type }}
         run: |
           if [ "$EVENT_NAME" != "pull_request" ] || [ "$FRONTEND_CHANGED" = "true" ]; then
             echo "frontend=true" >> "$GITHUB_OUTPUT"
           else
             echo "frontend=false" >> "$GITHUB_OUTPUT"
           fi
-          if [ "$RUN_RUST" = "true" ]; then
+          if [ "$RUN_RUST" = "true" ] || [ "$RUST_CHANGED" = "true" ] || [ "$REF_TYPE" = "tag" ]; then
             echo "rust=true" >> "$GITHUB_OUTPUT"
           else
             echo "rust=false" >> "$GITHUB_OUTPUT"
+          fi
+          if [ "$MOBILE_CHANGED" = "true" ]; then
+            echo "mobile=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "mobile=false" >> "$GITHUB_OUTPUT"
           fi
           if [ "$EVENT_NAME" != "pull_request" ] || [ "$INSTALLER_CHANGED" = "true" ]; then
             echo "installer=true" >> "$GITHUB_OUTPUT"
@@ -268,6 +303,7 @@ jobs:
       # GitHub scopes caches by branch: a PR reads main's entries (so unchanged
       # tasks hit on the first push) and writes its own (so re-pushes hit too).
       - name: Restore turbo cache
+        id: turbo-cache
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         uses: actions/cache@v5
         with:
@@ -365,6 +401,18 @@ jobs:
         continue-on-error: true
         run: pnpm knip
 
+      - name: Report Turbo cache
+        if: ${{ always() && needs.changes.outputs.frontend == 'true' }}
+        env:
+          CACHE_HIT: ${{ steps.turbo-cache.outputs.cache-hit }}
+        run: |
+          bytes="$(du -sk .turbo/cache 2>/dev/null | awk '{print $1 * 1024}' || echo 0)"
+          {
+            echo "### Turbo cache: frontend-build"
+            echo "- Exact-key hit: \`${CACHE_HIT:-false}\`"
+            echo "- Local cache bytes: \`${bytes:-0}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   frontend-test:
     needs: changes
     runs-on: ubuntu-latest
@@ -400,6 +448,7 @@ jobs:
       # logs rather than artifacts -- yet a hit still skips the whole suite,
       # which is the single most expensive task in the graph.
       - name: Restore turbo cache
+        id: turbo-cache
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         uses: actions/cache@v5
         with:
@@ -415,6 +464,18 @@ jobs:
         # `test` reaches dependency sources through the hash-only
         # `^cache-inputs` edge (see turbo.json), so no `tsc` runs here.
         run: pnpm exec turbo test --filter='!@patchbay/docs' --filter='!@patchbay/mobile' --filter='!@patchbay/views'
+
+      - name: Report Turbo cache
+        if: ${{ always() && needs.changes.outputs.frontend == 'true' }}
+        env:
+          CACHE_HIT: ${{ steps.turbo-cache.outputs.cache-hit }}
+        run: |
+          bytes="$(du -sk .turbo/cache 2>/dev/null | awk '{print $1 * 1024}' || echo 0)"
+          {
+            echo "### Turbo cache: frontend-test"
+            echo "- Exact-key hit: \`${CACHE_HIT:-false}\`"
+            echo "- Local cache bytes: \`${bytes:-0}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # Split views across two runners. GitHub reports the matrix job's combined
   # result, so the aggregate gate can continue depending on this one job ID.
@@ -462,6 +523,7 @@ jobs:
       # argument in the task hash, while dependency sources still flow through
       # turbo.json's hash-only `^cache-inputs` edge.
       - name: Restore turbo cache
+        id: turbo-cache
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         uses: actions/cache@v5
         with:
@@ -474,6 +536,18 @@ jobs:
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         run: pnpm exec turbo test --filter='@patchbay/views' -- --shard=${{ matrix.index }}/${{ matrix.total }}
 
+      - name: Report Turbo cache
+        if: ${{ always() && needs.changes.outputs.frontend == 'true' }}
+        env:
+          CACHE_HIT: ${{ steps.turbo-cache.outputs.cache-hit }}
+        run: |
+          bytes="$(du -sk .turbo/cache 2>/dev/null | awk '{print $1 * 1024}' || echo 0)"
+          {
+            echo "### Turbo cache: views ${{ matrix.index }}/${{ matrix.total }}"
+            echo "- Exact-key hit: \`${CACHE_HIT:-false}\`"
+            echo "- Local cache bytes: \`${bytes:-0}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # Aggregate gate. `frontend` is the status-check name the repository's
   # branch rules refer to, so it has to survive the split above: this job
   # keeps reporting under that name and simply fails when any worker fails.
@@ -481,7 +555,7 @@ jobs:
   # staying pending) on PRs the path filter excluded — all workers succeed
   # trivially in that case because every step is gated off.
   frontend:
-    needs: [frontend-build, frontend-test, frontend-views-test]
+    needs: [changes, frontend-build, frontend-test, frontend-views-test]
     # `!cancelled()` rather than `always()`: a run superseded by a newer push
     # is cancelled by the concurrency group above, and there is no reason to
     # spend a runner reporting a verdict nobody will read.
@@ -493,12 +567,74 @@ jobs:
           BUILD_RESULT: ${{ needs.frontend-build.result }}
           TEST_RESULT: ${{ needs.frontend-test.result }}
           VIEWS_TEST_RESULT: ${{ needs.frontend-views-test.result }}
+          SHOULD_RUN: ${{ needs.changes.outputs.frontend }}
+          CHANGES_RESULT: ${{ needs.changes.result }}
         run: |
+          echo "changes:       $CHANGES_RESULT"
+          echo "should run:    $SHOULD_RUN"
           echo "frontend-build: $BUILD_RESULT"
           echo "frontend-test:  $TEST_RESULT"
           echo "frontend-views-test: $VIEWS_TEST_RESULT"
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "::error::change classification failed"
+            exit 1
+          fi
+          if [ "$SHOULD_RUN" != "true" ]; then
+            echo "Frontend validation intentionally skipped: no relevant paths changed."
+            exit 0
+          fi
           if [ "$BUILD_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ] || [ "$VIEWS_TEST_RESULT" != "success" ]; then
             echo "::error::frontend validation failed"
+            exit 1
+          fi
+
+  mobile-quality:
+    needs: changes
+    if: ${{ needs.changes.outputs.mobile == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check, lint, and test Mobile
+        run: pnpm exec turbo typecheck lint test --filter=@patchbay/mobile
+
+  mobile:
+    needs: [changes, mobile-quality]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Mobile job result
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          SHOULD_RUN: ${{ needs.changes.outputs.mobile }}
+          MOBILE_RESULT: ${{ needs.mobile-quality.result }}
+        run: |
+          echo "changes:       $CHANGES_RESULT"
+          echo "should run:    $SHOULD_RUN"
+          echo "mobile-quality: $MOBILE_RESULT"
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "::error::change classification failed"
+            exit 1
+          fi
+          if [ "$SHOULD_RUN" != "true" ]; then
+            echo "Mobile validation intentionally skipped: no relevant paths changed."
+            exit 0
+          fi
+          if [ "$MOBILE_RESULT" != "success" ]; then
+            echo "::error::mobile validation failed"
             exit 1
           fi
 
@@ -528,6 +664,7 @@ jobs:
     env:
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'pull_request' && 'READ_ONLY' || 'READ_WRITE' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -569,7 +706,15 @@ jobs:
       - name: Report compiler cache effectiveness
         if: always()
         shell: bash
-        run: ${SCCACHE_PATH} --show-stats
+        run: |
+          stats="$(${SCCACHE_PATH} --show-stats 2>&1)"
+          printf '%s\n' "$stats"
+          {
+            echo "### sccache: rust-quality"
+            echo '```text'
+            printf '%s\n' "$stats"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   rust-tests:
     needs: changes
@@ -598,6 +743,7 @@ jobs:
       SQLX_OFFLINE: "false"
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'pull_request' && 'READ_ONLY' || 'READ_WRITE' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -624,38 +770,22 @@ jobs:
         working-directory: server-rs
         run: cargo run --locked -p patchbay-migrate --bin patchbay-migrate -- up
 
-      - name: Run workspace tests by package
+      - name: Run Rust workspace tests
         working-directory: server-rs
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          mapfile -t workspace_packages < <(
-            cargo metadata --locked --no-deps --format-version 1 \
-              | jq -r '
-                . as $metadata
-                | $metadata.packages[]
-                | select(.id as $id | $metadata.workspace_members | index($id))
-                | .name
-              '
-          )
-
-          if ((${#workspace_packages[@]} == 0)); then
-            echo "::error::cargo metadata returned no workspace packages"
-            exit 1
-          fi
-
-          for package in "${workspace_packages[@]}"; do
-            echo "::group::cargo test -p ${package}"
-            echo "Running workspace package: ${package}"
-            cargo test --locked -p "${package}" --all-targets
-            echo "::endgroup::"
-          done
+        run: cargo test --workspace --all-targets --locked
 
       - name: Report compiler cache effectiveness
         if: always()
         shell: bash
-        run: ${SCCACHE_PATH} --show-stats
+        run: |
+          stats="$(${SCCACHE_PATH} --show-stats 2>&1)"
+          printf '%s\n' "$stats"
+          {
+            echo "### sccache: rust-tests"
+            echo '```text'
+            printf '%s\n' "$stats"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   rust-audit:
     needs: changes
@@ -715,7 +845,7 @@ jobs:
             exit 1
           fi
           if [ "$RUN_RUST" != "true" ]; then
-            echo "Rust validation was not manually requested."
+            echo "Rust validation intentionally skipped: no relevant paths changed."
             exit 0
           fi
           if [ "$DEPLOYMENT_RESULT" != "success" ] || [ "$QUALITY_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ] || [ "$PLATFORM_RESULT" != "success" ] || [ "$AUDIT_RESULT" != "success" ]; then
@@ -735,6 +865,7 @@ jobs:
     env:
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'pull_request' && 'READ_ONLY' || 'READ_WRITE' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -764,7 +895,15 @@ jobs:
       - name: Report compiler cache effectiveness
         if: always()
         shell: bash
-        run: ${SCCACHE_PATH} --show-stats
+        run: |
+          stats="$(${SCCACHE_PATH} --show-stats 2>&1)"
+          printf '%s\n' "$stats"
+          {
+            echo "### sccache: rust-platform (${{ matrix.os }})"
+            echo '```text'
+            printf '%s\n' "$stats"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   image-budget:
     # A bitmap added or grown past 300KB fails until the PR description says
@@ -786,7 +925,7 @@ jobs:
           PR_BODY: ${{ inputs.pr_body || github.event.pull_request.body }}
         run: node scripts/check-image-budget.mjs --base "origin/${{ inputs.base_ref || github.base_ref || 'main' }}"
 
-  installer:
+  installer-check:
     # Stub-driven shell tests for scripts/install.sh and scripts/install.ps1.
     # Kept off the heavy backend job so installer regressions surface
     # independently, and exercised on macOS too because the installer targets
@@ -815,3 +954,30 @@ jobs:
         run: |
           ./scripts/install.ps1.test.ps1
           ./scripts/dev.ps1.test.ps1
+
+  installer:
+    needs: [changes, installer-check]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check installer job result
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          SHOULD_RUN: ${{ needs.changes.outputs.installer }}
+          INSTALLER_RESULT: ${{ needs.installer-check.result }}
+        run: |
+          echo "changes:        $CHANGES_RESULT"
+          echo "should run:     $SHOULD_RUN"
+          echo "installer-check: $INSTALLER_RESULT"
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "::error::change classification failed"
+            exit 1
+          fi
+          if [ "$SHOULD_RUN" != "true" ]; then
+            echo "Installer validation intentionally skipped: no relevant paths changed."
+            exit 0
+          fi
+          if [ "$INSTALLER_RESULT" != "success" ]; then
+            echo "::error::installer validation failed"
+            exit 1
+          fi

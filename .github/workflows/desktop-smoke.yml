@@ -92,3 +92,4 @@ jobs:
           name: desktop-${{ matrix.target }}-${{ matrix.arch }}
           path: apps/desktop/dist
           if-no-files-found: error
+          retention-days: 1

@@ -423,6 +423,7 @@ jobs:
             apps/desktop/dist/patchbay-desktop-${{ needs.prepare.outputs.version }}-mac-${{ matrix.arch }}.zip.blockmap
             apps/desktop/dist/${{ matrix.metadata }}
           if-no-files-found: error
+          retention-days: 1
 
   publish:
     needs: [prepare, package-macos]

@@ -147,16 +147,6 @@ jobs:
         working-directory: server-rs
         run: cargo test --workspace --all-targets --locked
 
-      - name: Build production Rust server binaries
-        working-directory: server-rs
-        env:
-          PATCHBAY_BUILD_VERSION: ${{ steps.release_meta.outputs.tag_name }}
-          PATCHBAY_BUILD_COMMIT: ${{ steps.release_meta.outputs.commit_sha }}
-        run: |
-          PATCHBAY_BUILD_DATE="$(git show -s --format=%cI "$PATCHBAY_BUILD_COMMIT")"
-          export PATCHBAY_BUILD_DATE
-          cargo build --release --locked -p patchbay-server -p patchbay-migrate --bins
-
       - name: Scan Rust dependencies
         # Fail closed unless an administrator scopes the documented emergency
         # override to this exact tag. See .github/RELEASING.md.

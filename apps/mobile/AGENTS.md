@@ -153,8 +153,7 @@ Never copy the visual shape of an existing hand-written `components/ui/` compone
 
 ## Build & release
 
-- **Main CI** (`.github/workflows/ci.yml`) excludes mobile via `--filter='!@patchbay/mobile'`. Mobile failures do NOT block web/desktop PRs.
-- **Mobile verify** (`.github/workflows/mobile-verify.yml`): manually dispatched by a maintainer for an upstream branch — runs typecheck/lint/test only, no IPA build. Mobile changes are not validated automatically; a fork commit must first be pushed to a maintainer-controlled upstream branch.
+- **Main CI** (`.github/workflows/ci.yml`) keeps Mobile out of the web/desktop Turbo workers, then automatically runs Mobile typecheck, lint, and tests when `apps/mobile/**`, `packages/core/**`, or shared dependency/tooling inputs change. The stable `mobile` aggregate is the merge gate; unrelated changes report an explicit intentional skip.
 - **Mobile release** (`.github/workflows/mobile-release.yml`): triggered by `mobile-v*.*.*` tag → `eas build` + `eas submit`.
 - **OTA** — EAS Update for JS-only fixes that don't change the runtime version. Manual / on-demand push to preview/production channels.
 
