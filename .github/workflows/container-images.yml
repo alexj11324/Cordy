@@ -128,13 +128,8 @@ jobs:
           retention-days: 1
 
   backend-merge:
-    if: >-
-      ${{
-        always() &&
-        needs.backend-build.result == 'success' &&
-        (inputs.image == 'backend' || needs.web-build.result == 'success')
-      }}
-    needs: [resolve-source, backend-build, web-build]
+    if: ${{ inputs.image == 'backend' }}
+    needs: [resolve-source, backend-build]
     runs-on: ubuntu-latest
     concurrency:
       group: manual-container-backend-publish-${{ needs.resolve-source.outputs.sha }}
@@ -256,13 +251,8 @@ jobs:
           retention-days: 1
 
   web-merge:
-    if: >-
-      ${{
-        always() &&
-        needs.web-build.result == 'success' &&
-        (inputs.image == 'web' || needs.backend-build.result == 'success')
-      }}
-    needs: [resolve-source, backend-build, web-build]
+    if: ${{ inputs.image == 'web' }}
+    needs: [resolve-source, web-build]
     runs-on: ubuntu-latest
     concurrency:
       group: manual-container-web-publish-${{ needs.resolve-source.outputs.sha }}
@@ -305,5 +295,208 @@ jobs:
 
       - name: Inspect web manifest
         run: |
+          docker buildx imagetools inspect \
+            ghcr.io/${{ github.repository_owner }}/patchbay-web:sha-${{ needs.resolve-source.outputs.sha }}
+
+  publish-all:
+    if: >-
+      ${{
+        always() &&
+        inputs.image == 'all' &&
+        needs.backend-build.result == 'success' &&
+        needs.web-build.result == 'success'
+      }}
+    needs: [resolve-source, backend-build, web-build]
+    runs-on: ubuntu-latest
+    concurrency:
+      group: manual-container-pair-publish-${{ needs.resolve-source.outputs.sha }}
+      cancel-in-progress: true
+    steps:
+      - name: Download backend digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests/backend
+          pattern: manual-digests-backend-*
+          merge-multiple: true
+
+      - name: Download web digests
+        uses: actions/download-artifact@v4
+        with:
+          path: /tmp/digests/web
+          pattern: manual-digests-web-*
+          merge-multiple: true
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Stage and verify paired manifests
+        env:
+          SOURCE_SHA: ${{ needs.resolve-source.outputs.sha }}
+        run: |
+          set -Eeuo pipefail
+          shopt -s nullglob
+
+          stage_manifest() {
+            local repository="$1"
+            local digest_dir="$2"
+            local staging_tag="$3"
+            local label="$4"
+            local digest_files=("$digest_dir"/*)
+            if [ "${#digest_files[@]}" -ne 2 ]; then
+              echo "::error::Expected two $label image digests, found ${#digest_files[@]}"
+              return 1
+            fi
+
+            local digest_args=()
+            local digest_file digest
+            for digest_file in "${digest_files[@]}"; do
+              digest="${digest_file##*/}"
+              digest_args+=("$repository@sha256:$digest")
+            done
+
+            docker buildx imagetools create \
+              --tag "$staging_tag" \
+              "${digest_args[@]}"
+            docker buildx imagetools inspect "$staging_tag"
+          }
+
+          backend_repository="ghcr.io/${{ github.repository_owner }}/patchbay-backend"
+          web_repository="ghcr.io/${{ github.repository_owner }}/patchbay-web"
+          stage_manifest \
+            "$backend_repository" \
+            /tmp/digests/backend \
+            "$backend_repository:staging-sha-$SOURCE_SHA-run-${{ github.run_id }}" \
+            backend
+          stage_manifest \
+            "$web_repository" \
+            /tmp/digests/web \
+            "$web_repository:staging-sha-$SOURCE_SHA-run-${{ github.run_id }}" \
+            web
+
+      - name: Promote paired commit tags
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.resolve-source.outputs.sha }}
+        run: |
+          set -Eeuo pipefail
+
+          owner="${{ github.repository_owner }}"
+          final_tag="sha-$SOURCE_SHA"
+          backend_repository="ghcr.io/$owner/patchbay-backend"
+          web_repository="ghcr.io/$owner/patchbay-web"
+          backend_final="$backend_repository:$final_tag"
+          web_final="$web_repository:$final_tag"
+          backend_staging="$backend_repository:staging-sha-$SOURCE_SHA-run-${{ github.run_id }}"
+          web_staging="$web_repository:staging-sha-$SOURCE_SHA-run-${{ github.run_id }}"
+
+          manifest_digest() {
+            local manifest
+            if ! manifest="$(docker buildx imagetools inspect "$1" 2>/dev/null)"; then
+              return 0
+            fi
+            awk '$1 == "Digest:" { print $2; exit }' <<<"$manifest"
+          }
+
+          package_versions_endpoint() {
+            local package="$1"
+            local owner_type
+            owner_type="$(gh api "/users/$owner" --jq .type)"
+            if [ "$owner_type" = "Organization" ]; then
+              printf '/orgs/%s/packages/container/%s/versions' "$owner" "$package"
+            else
+              printf '/users/%s/packages/container/%s/versions' "$owner" "$package"
+            fi
+          }
+
+          delete_tag_version() {
+            local package="$1"
+            local tag="$2"
+            local endpoint version_id
+            endpoint="$(package_versions_endpoint "$package")"
+            version_id="$(
+              gh api "$endpoint?per_page=100" |
+                jq -r --arg tag "$tag" '
+                  first(
+                    .[] |
+                    select((.metadata.container.tags // []) | index($tag)) |
+                    .id
+                  ) // empty
+                '
+            )"
+            if [ -z "$version_id" ]; then
+              echo "::error::Could not find $package package version for tag $tag"
+              return 1
+            fi
+            gh api -X DELETE "$endpoint/$version_id"
+          }
+
+          restore_or_remove() {
+            local repository="$1"
+            local package="$2"
+            local final_ref="$3"
+            local previous_digest="$4"
+            if [ -n "$previous_digest" ]; then
+              docker buildx imagetools create \
+                --tag "$final_ref" \
+                "$repository@$previous_digest"
+              return
+            fi
+
+            if [ -n "$(manifest_digest "$final_ref")" ]; then
+              delete_tag_version "$package" "$final_tag"
+            fi
+          }
+
+          previous_backend="$(manifest_digest "$backend_final")"
+          previous_web="$(manifest_digest "$web_final")"
+          promotion_failed=0
+
+          if ! docker buildx imagetools create \
+            --tag "$backend_final" \
+            "$backend_staging"; then
+            promotion_failed=1
+          fi
+          if [ "$promotion_failed" -eq 0 ] &&
+            ! docker buildx imagetools create \
+              --tag "$web_final" \
+              "$web_staging"; then
+            promotion_failed=1
+          fi
+
+          if [ "$promotion_failed" -ne 0 ]; then
+            rollback_failed=0
+            if ! restore_or_remove \
+              "$backend_repository" \
+              patchbay-backend \
+              "$backend_final" \
+              "$previous_backend"; then
+              rollback_failed=1
+            fi
+            if ! restore_or_remove \
+              "$web_repository" \
+              patchbay-web \
+              "$web_final" \
+              "$previous_web"; then
+              rollback_failed=1
+            fi
+            if [ "$rollback_failed" -ne 0 ]; then
+              echo "::error::Paired image promotion and rollback both failed"
+            else
+              echo "::error::Paired image promotion failed and prior tags were restored"
+            fi
+            exit 1
+          fi
+
+      - name: Inspect paired commit manifests
+        run: |
+          docker buildx imagetools inspect \
+            ghcr.io/${{ github.repository_owner }}/patchbay-backend:sha-${{ needs.resolve-source.outputs.sha }}
           docker buildx imagetools inspect \
             ghcr.io/${{ github.repository_owner }}/patchbay-web:sha-${{ needs.resolve-source.outputs.sha }}
