@@ -344,9 +344,6 @@ importers:
       lucide-react:
         specifier: 'catalog:'
         version: 1.0.1(react@19.2.3)
-      mermaid:
-        specifier: ^11.14.0
-        version: 11.14.0
       next:
         specifier: ^15.5.16
         version: 15.5.18(@opentelemetry/api@1.9.1)(@playwright/test@1.58.2)(babel-plugin-macros@3.1.0)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -866,9 +863,6 @@ importers:
       tailwind-merge:
         specifier: 'catalog:'
         version: 3.5.0
-      unicode-animations:
-        specifier: 'catalog:'
-        version: 1.0.3
     devDependencies:
       '@patchbay/eslint-config':
         specifier: workspace:*
@@ -1108,9 +1102,6 @@ importers:
       '@testing-library/user-event':
         specifier: 'catalog:'
         version: 14.6.1(@testing-library/dom@10.4.1)
-      '@types/hast':
-        specifier: ^3.0.4
-        version: 3.0.4
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4

@@ -3,9 +3,8 @@
 
   // Guards the invariant in CLAUDE.md "Package Boundaries": every workspace
   // declares the external packages it actually imports, and nothing else.
-  // `.npmrc` sets `shamefully-hoist=true`, so an undeclared import still
-  // resolves at runtime and an obsolete declaration still installs — neither
-  // failure is visible without a tool that reads the import graph.
+  // pnpm uses its isolated linker, so undeclared imports fail at runtime.
+  // Knip additionally blocks obsolete declarations and unreachable files.
   //
   // Scoped to `files`, `dependencies`, and `unlisted` on purpose. `exports` is
   // the noisy one here: packages/ui and packages/views are consumed through
@@ -31,10 +30,18 @@
       "ignoreDependencies": ["postcss-load-config"]
     },
 
+    "apps/auth-broker": {
+      "entry": ["eslint.config.mjs"]
+    },
+
     "apps/desktop": {
       // window-state.node-test.mjs is run by hand (`node --test`, see its
       // header) rather than by a package script, so nothing imports it.
-      "entry": ["eslint.config.mjs", "src/main/*.node-test.mjs"],
+      "entry": [
+        "eslint.config.mjs",
+        "scripts/dev.mjs",
+        "src/main/*.node-test.mjs"
+      ],
       // Consumed by `extends` in tsconfig.node.json / tsconfig.web.json.
       // knip follows `extends` from the default tsconfig.json only.
       "ignoreDependencies": ["@patchbay/tsconfig"]
@@ -71,6 +78,10 @@
     "packages/core": {
       "entry": ["eslint.config.mjs"],
       "project": ["**/*.{ts,tsx}"]
+    },
+
+    "packages/plugin-sdk": {
+      "entry": ["eslint.config.mjs"]
     },
 
     "packages/eslint-config": {},
