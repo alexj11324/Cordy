@@ -726,9 +726,10 @@ impl IssueService {
         });
     }
 
-    /// Assignment-time enqueue decision. Only In Progress executes; Backlog,
-    /// Todo and Blocked are queues, while In Review dispatches its independent
-    /// reviewer through coordination.
+    /// Assignment-time enqueue decision. Backlog parks work; the existing
+    /// product contract admits Todo, In Progress, In Review, and Blocked to
+    /// executor runs, while In Review dispatches its independent reviewer
+    /// through coordination.
     async fn maybe_enqueue_on_assign(
         &self,
         issue: &Issue,
@@ -978,9 +979,9 @@ impl IssueService {
     /// batch-update write paths and the preview endpoint (PB-3375 replaced
     /// four drifting per-site copies).
     ///
-    /// Intentionally distinct from the comment trigger: issue writes execute
-    /// only in the In Progress category while comments fire in any status;
-    /// they share only leaf readiness checks. The decision must equal the real enqueue conditions
+    /// Intentionally distinct from the comment trigger: issue writes leave
+    /// Backlog for an executor run while comments fire in any status; they
+    /// share only leaf readiness checks. The decision must equal the real enqueue conditions
     /// — the status source mirrors the pending-task unique index so preview
     /// never promises a run the write coalesces away, while the assign source
     /// skips that check (creates target fresh issues; reassignment no longer

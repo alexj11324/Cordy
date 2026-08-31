@@ -405,10 +405,10 @@ where
     })
 }
 
-/// Task rows for issue execution are claimable only after the coordinator has
-/// admitted the issue into the In Progress category.  Keeping this guard in
-/// the shared enqueue path prevents legacy callers from accidentally running
-/// a Todo/Blocked graph node even if they bypass the coordinator.
+/// Task rows for issue execution are claimable only for a status category that
+/// admits executor work. Keeping this guard in the shared enqueue path prevents
+/// legacy callers from accidentally running a parked/completed graph node even
+/// if they bypass the coordinator.
 async fn require_execution_status(pool: &PgPool, issue: &Issue) -> Result<(), TaskServiceError> {
     let category = issue_status::effective(pool, issue.workspace_id, &issue.status).await;
     if issue_status::runs_executor(&category) {
