@@ -165,6 +165,7 @@ vi.mock("@patchbay/core/paths", async (importOriginal) => ({
     channels: () => "/acme/channels",
     myIssues: () => "/acme/my-issues",
     issues: () => "/acme/issues",
+    taskGraph: () => "/acme/task-graph",
     projects: () => "/acme/projects",
     automations: () => "/acme/automations",
     agents: () => "/acme/agents",
@@ -310,6 +311,26 @@ describe("mobile sheet dismissal", () => {
     rerender(<AppSidebar />);
 
     expect(sidebarState.setOpenMobile).not.toHaveBeenCalled();
+  });
+});
+
+describe("workspace nav — task graph", () => {
+  beforeEach(() => {
+    navigation.current = { pathname: "/acme/issues" };
+  });
+
+  it("renders Task Graph beside Issues and marks it active on its route", () => {
+    const { container, rerender } = render(<AppSidebar />);
+    const taskGraphNav = () => container.querySelector('button[data-href="/acme/task-graph"]');
+
+    expect(taskGraphNav()).not.toBeNull();
+    expect(taskGraphNav()).not.toHaveAttribute("data-active");
+
+    navigation.current = { pathname: "/acme/task-graph" };
+    rerender(<AppSidebar />);
+
+    expect(taskGraphNav()).toHaveAttribute("data-active", "true");
+    expect(container.querySelector('button[data-href="/acme/issues"]')).not.toHaveAttribute("data-active");
   });
 });
 

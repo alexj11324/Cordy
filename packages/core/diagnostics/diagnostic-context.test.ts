@@ -56,6 +56,10 @@ describe("bucketDiagnosticPath", () => {
     expect(bucketDiagnosticPath("/acme/integrations")).toBe("/:slug/integrations");
   });
 
+  it("recognizes the workspace task graph page", () => {
+    expect(bucketDiagnosticPath("/acme/task-graph")).toBe("/:slug/task-graph");
+  });
+
   // The previous implementation guessed from the shape of a segment, so any id
   // that was not a UUID, an issue key or digits travelled to telemetry intact.
   it("templates ids that look nothing like ids", () => {
