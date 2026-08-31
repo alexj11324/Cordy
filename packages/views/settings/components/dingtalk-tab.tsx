@@ -96,7 +96,13 @@ export function DingTalkTab({ installationId }: { installationId?: string } = {}
   );
   const configured = data?.configured === true;
   const groupRoutingSupported = data?.group_routing_supported === true;
-  const hasActiveInstallation = installations.some(isMessagingInstallationHealthy);
+  // Group-route management is still useful when transport health needs
+  // attention (for example while a self-hosted worker is restarting). Keep
+  // the durable installation visible; the installation row is responsible for
+  // showing the observed healthy/degraded state.
+  const hasActiveInstallation = installations.some(
+    (installation) => installation.status === "active",
+  );
   const {
     data: groupRouteData,
     isLoading: routesLoading,

@@ -619,7 +619,7 @@ fn normalize_policy(wire: WirePolicy) -> Result<FetchedPolicy, ()> {
         .get("im_agent_turns")
         .map(|gate| {
             let (action, limit, period_start, period_end, reset_at) = normalize_gate(gate, true)?;
-            Ok(EntitlementGateDecision {
+            Ok::<EntitlementGateDecision, ()>(EntitlementGateDecision {
                 gate_action: action,
                 gate_limit: limit,
                 gate_period_start: period_start,

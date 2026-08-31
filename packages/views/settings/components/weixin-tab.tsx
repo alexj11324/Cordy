@@ -290,12 +290,16 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
             {session ? (
               qrImageSource(session.qr) ? (
                 <img
+                  data-testid="weixin-qr-code"
+                  data-value={session.qr}
                   src={qrImageSource(session.qr) ?? undefined}
                   alt={t(($) => $.weixin.scan_title)}
                   className="size-48 rounded-md bg-white p-2"
                 />
               ) : (
-                <QRCode value={session.qr} size={192} />
+                <span data-testid="weixin-qr-code" data-value={session.qr}>
+                  <QRCode value={session.qr} size={192} />
+                </span>
               )
             ) : (
               <p className="text-caption text-muted-foreground">
