@@ -22,6 +22,10 @@ const authConfig = await readFile(
   new URL("../apps/auth-broker/next.config.ts", import.meta.url),
   "utf8",
 );
+const docsCompose = await readFile(
+  new URL("../deploy/origin/production-docs.compose.yml", import.meta.url),
+  "utf8",
+);
 const workflowDirectory = new URL("../.github/workflows/", import.meta.url);
 
 test("production follows successful main CI instead of a temporary deployment branch", () => {
@@ -82,6 +86,11 @@ test("all public Next services expose the immutable build fingerprint", () => {
     assert.match(source, /X-Patchbay-Build/u);
     assert.match(source, /NEXT_PUBLIC_APP_VERSION/u);
   }
+});
+
+test("the production Docs healthcheck uses the runtime's Node executable", () => {
+  assert.match(docsCompose, /test:\n\s+- CMD\n\s+- node\n/u);
+  assert.doesNotMatch(docsCompose, /wget/u);
 });
 
 test("agents isolate main and perform safe post-merge notification", () => {

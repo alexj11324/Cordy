@@ -651,6 +651,12 @@ class ProductionDeployment:
             self.apply(request)
             browser_auth = self.issue_browser_acceptance_credentials()
         except Exception as deploy_error:
+            if unchanged:
+                log(
+                    "deployment verification failed for an unchanged revision; "
+                    "skipping rollback because this run made no state transition"
+                )
+                raise
             log(f"deployment failed; restoring {current['source_sha']}")
             try:
                 self.apply(current)

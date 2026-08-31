@@ -193,6 +193,25 @@ class ProductionDeployContractTests(unittest.TestCase):
             self.assertFalse(receipt["unchanged"])
             deployment.prune_releases.assert_called_once_with()
 
+    def test_unchanged_deploy_does_not_rollback_after_verification_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            deployment = production_deploy.ProductionDeployment(Path(directory))
+            deployment.initialize_directories()
+            current = self.manifest()
+            deployment.atomic_json(deployment.current_path, current)
+            deployment.fetch_main = mock.Mock(return_value=current["source_sha"])
+            deployment.apply = mock.Mock()
+            deployment.issue_browser_acceptance_credentials = mock.Mock(
+                side_effect=production_deploy.DeploymentError("temporary verifier failure")
+            )
+
+            with self.assertRaisesRegex(
+                production_deploy.DeploymentError, "temporary verifier failure"
+            ):
+                deployment.deploy(current)
+
+            deployment.apply.assert_called_once_with(current)
+
     def test_release_pruning_retains_only_current_and_rollback_worktrees(self):
         with tempfile.TemporaryDirectory() as directory:
             deployment = production_deploy.ProductionDeployment(Path(directory))

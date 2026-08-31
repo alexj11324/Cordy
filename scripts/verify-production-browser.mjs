@@ -7,14 +7,17 @@ import { chromium, expect } from "@playwright/test";
 import { clerk, setupClerkTestingToken } from "@clerk/testing/playwright";
 
 import {
+  buildGoogleOAuthProbeUrl,
   decodeClerkFrontendApi,
   requiredString,
   requireBrowserReceipt,
+  requireGoogleOAuthNavigation,
   requireProtectedNavigation,
 } from "./verify-production-browser-contract.mjs";
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const BASE_URL = "https://patchbay.aspectlylabs.com";
+const ACCOUNTS_BASE_URL = "https://accounts.aspectlylabs.com";
 const SMOKE_EMAIL = "production-smoke@aspectlylabs.com";
 const SMOKE_WORKSPACE = "production-smoke";
 const SCREENSHOT_PATH = "/tmp/production-browser-failure.png";
@@ -157,6 +160,53 @@ async function openBrowser() {
   return { browser, context, page: await context.newPage() };
 }
 
+async function verifyGoogleOAuthStart(browser) {
+  const context = await browser.newContext({ locale: "en-US" });
+  const page = await context.newPage();
+  const codeChallenge = randomBytes(32).toString("base64url");
+  const state = randomBytes(32).toString("base64url");
+  const entryUrl = buildGoogleOAuthProbeUrl({ codeChallenge, state });
+  const attemptResponse = page.waitForResponse(
+    (response) => {
+      const url = new URL(response.url());
+      return (
+        url.origin === ACCOUNTS_BASE_URL &&
+        url.pathname === "/v1/desktop/google/attempt" &&
+        response.request().method() === "POST"
+      );
+    },
+    { timeout: 30_000 },
+  );
+  const downstreamNavigation = page.waitForURL(
+    (url) => {
+      const parsed = new URL(url);
+      return !(
+        parsed.origin === ACCOUNTS_BASE_URL &&
+        parsed.pathname === "/oauth/google"
+      );
+    },
+    { timeout: 30_000 },
+  );
+
+  try {
+    await setupClerkTestingToken({ context });
+    await page.goto(entryUrl, {
+      waitUntil: "domcontentloaded",
+      timeout: 30_000,
+    });
+    const response = await attemptResponse;
+    if (response.status() !== 200) {
+      throw new Error(
+        `Google OAuth handoff registration returned HTTP ${response.status()}`,
+      );
+    }
+    const downstream = await downstreamNavigation;
+    requireGoogleOAuthNavigation(downstream.href);
+  } finally {
+    await context.close();
+  }
+}
+
 export async function verifyProductionBrowser(sourceSha, receipt) {
   const { signInTicket, testingToken } = requireBrowserReceipt(
     receipt,
@@ -170,6 +220,7 @@ export async function verifyProductionBrowser(sourceSha, receipt) {
 
   const { browser, context, page } = await openBrowser();
   try {
+    await verifyGoogleOAuthStart(browser);
     await setupClerkTestingToken({ context });
     await page.goto(`${BASE_URL}/login`, { waitUntil: "domcontentloaded" });
     await clerk.loaded({ page });
@@ -415,7 +466,7 @@ async function main() {
   const receipt = JSON.parse(await readFile(second, "utf8"));
   await verifyProductionBrowser(first, receipt);
   console.log(
-    "authenticated production Issues and Task Graph browser acceptance passed",
+    "production Google OAuth start, Issues, and Task Graph browser acceptance passed",
   );
 }
 

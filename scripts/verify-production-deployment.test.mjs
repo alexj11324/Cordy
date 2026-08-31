@@ -59,6 +59,5 @@ test("verifies backend, Web, Docs, and Auth Broker from one source SHA", async (
     "https://patchbay.aspectlylabs.com/login",
     "https://patchbay.aspectlylabs.com/docs",
     "https://accounts.aspectlylabs.com/readyz",
-    "https://accounts.aspectlylabs.com/oauth/google",
   ]);
 });

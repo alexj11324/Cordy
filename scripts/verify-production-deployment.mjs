@@ -62,13 +62,13 @@ export async function verifyProductionOnce(sourceSha, fetchImpl = fetch) {
     requireHealthyResponse(response, { url, expectedBuild, exactStatus: 200 });
   }
 
-  for (const [url, exactStatus] of [
-    ["https://accounts.aspectlylabs.com/readyz", 200],
-    ["https://accounts.aspectlylabs.com/oauth/google", undefined],
-  ]) {
-    const response = await request(fetchImpl, url);
-    requireHealthyResponse(response, { url, expectedBuild, exactStatus });
-  }
+  const brokerReadyUrl = "https://accounts.aspectlylabs.com/readyz";
+  const brokerReadyResponse = await request(fetchImpl, brokerReadyUrl);
+  requireHealthyResponse(brokerReadyResponse, {
+    url: brokerReadyUrl,
+    expectedBuild,
+    exactStatus: 200,
+  });
 }
 
 export async function verifyProductionDeployment(

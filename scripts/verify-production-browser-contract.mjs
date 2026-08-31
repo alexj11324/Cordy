@@ -1,4 +1,6 @@
 const SHA_PATTERN = /^[0-9a-f]{40}$/u;
+const GOOGLE_OAUTH_ENTRY =
+  "https://accounts.aspectlylabs.com/oauth/google";
 
 export function requiredString(value, label) {
   if (typeof value !== "string" || value.trim() === "") {
@@ -68,4 +70,28 @@ export function requireProtectedNavigation({
       `${url} reported build ${actualBuild ?? "<missing>"}, expected ${expectedBuild}`,
     );
   }
+}
+
+export function buildGoogleOAuthProbeUrl({ codeChallenge, state }) {
+  const url = new URL(GOOGLE_OAUTH_ENTRY);
+  url.search = new URLSearchParams({
+    platform: "desktop",
+    code_challenge: codeChallenge,
+    state,
+  }).toString();
+  return url.href;
+}
+
+export function requireGoogleOAuthNavigation(url) {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "https:") {
+    throw new Error(`Google OAuth left the broker over ${parsed.protocol}`);
+  }
+  if (
+    parsed.hostname === "accounts.aspectlylabs.com" &&
+    parsed.pathname === "/oauth/google"
+  ) {
+    throw new Error("Google OAuth did not leave the broker entry page");
+  }
+  return parsed;
 }

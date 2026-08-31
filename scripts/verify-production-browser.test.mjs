@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildGoogleOAuthProbeUrl,
   decodeClerkFrontendApi,
   requireBrowserReceipt,
+  requireGoogleOAuthNavigation,
   requireProtectedNavigation,
 } from "./verify-production-browser-contract.mjs";
 
@@ -80,4 +82,27 @@ test("decodes the Clerk Frontend API host without exposing another secret", () =
     "clerk.example.test",
   );
   assert.throws(() => decodeClerkFrontendApi("invalid"), /invalid format/u);
+});
+
+test("builds a valid desktop OAuth handoff and requires downstream navigation", () => {
+  const url = new URL(
+    buildGoogleOAuthProbeUrl({
+      codeChallenge: "a".repeat(43),
+      state: "b".repeat(43),
+    }),
+  );
+  assert.equal(url.origin, "https://accounts.aspectlylabs.com");
+  assert.equal(url.pathname, "/oauth/google");
+  assert.equal(url.searchParams.get("platform"), "desktop");
+  assert.equal(url.searchParams.get("code_challenge"), "a".repeat(43));
+  assert.equal(url.searchParams.get("state"), "b".repeat(43));
+  assert.throws(
+    () => requireGoogleOAuthNavigation(url.href),
+    /did not leave the broker/u,
+  );
+  assert.equal(
+    requireGoogleOAuthNavigation("https://accounts.google.com/o/oauth2/auth")
+      .hostname,
+    "accounts.google.com",
+  );
 });
