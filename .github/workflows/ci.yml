@@ -66,12 +66,15 @@ jobs:
           args: -color
 
       - name: Test CI workflow contracts
-        run: >-
-          node --test
-          scripts/ci-workflow-contract.test.mjs
-          scripts/cleanup-actions-caches.test.mjs
-          scripts/github-actions-pinning-contract.test.mjs
-          scripts/dev-clerk-auth.test.mjs
+        run: |
+          node --test \
+          scripts/ci-workflow-contract.test.mjs \
+          scripts/cleanup-actions-caches.test.mjs \
+          scripts/github-actions-pinning-contract.test.mjs \
+          scripts/dev-clerk-auth.test.mjs \
+          scripts/dev-auth-command.test.mjs \
+          scripts/dev-runtime-command.test.mjs
+          bash scripts/dev-env.test.sh
 
       - name: Test accounts origin proxy contract
         run: node --test deploy/cloudflare/accounts-origin-proxy/src/index.test.mjs

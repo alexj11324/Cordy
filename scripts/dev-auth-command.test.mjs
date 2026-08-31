@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
-
-import { describe, expect, it, vi } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 
 import { runAuthenticatedDevCommand } from "./dev-auth-command.mjs";
 
@@ -19,7 +19,7 @@ function spawnRecorder() {
   const spawnImpl = (command, args, options) => {
     calls.push({ command, args, options });
     const child = new EventEmitter();
-    child.kill = vi.fn();
+    child.kill = () => {};
     queueMicrotask(() => child.emit("close", 0, null));
     return child;
   };
@@ -37,7 +37,7 @@ describe("scoped authenticated development commands", () => {
       spawnImpl,
     });
 
-    expect(calls[0].options.env).toEqual({
+    assert.deepEqual(calls[0].options.env, {
       UNRELATED: "kept",
       NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_fixture",
       CLERK_PUBLISHABLE_KEY: "pk_test_fixture",
@@ -59,7 +59,7 @@ describe("scoped authenticated development commands", () => {
       spawnImpl,
     });
 
-    expect(calls[0].options.env.CLERK_SECRET_KEY).toBe("sk_test_fixture");
-    expect(calls[0].options.env.CLERK_JWT_KEY).toBe("jwt-fixture");
+    assert.equal(calls[0].options.env.CLERK_SECRET_KEY, "sk_test_fixture");
+    assert.equal(calls[0].options.env.CLERK_JWT_KEY, "jwt-fixture");
   });
 });

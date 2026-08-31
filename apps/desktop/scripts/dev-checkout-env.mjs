@@ -66,7 +66,7 @@ function expandParsedValues(values, inherited = {}) {
 }
 
 export function applyLocalDevEnv(env, { repoRoot } = {}) {
-  env.APP_ENV ||= "development";
+  env.APP_ENV = "development";
   env.POSTGRES_DB ||= "patchbay";
   env.POSTGRES_USER ||= "patchbay";
   env.POSTGRES_PORT ||= "5432";

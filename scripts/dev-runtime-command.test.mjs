@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
-
-import { describe, expect, it, vi } from "vitest";
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
 
 import { runDevRuntimeCommand } from "./dev-runtime-command.mjs";
 
@@ -22,10 +22,18 @@ function completedChild() {
 
 describe("development runtime command boundaries", () => {
   it("removes Clerk fields before runtime preparation and restores scoped auth only for the backend", async () => {
-    const env = { ...clerkEnv, FRONTEND_ORIGIN: "http://localhost:13000", KEEP: "yes" };
+    const env = {
+      ...clerkEnv,
+      FRONTEND_ORIGIN: "http://localhost:13000",
+      KEEP: "yes",
+    };
     let preparedEnv;
     let authInput;
-    const spawnImpl = vi.fn(() => completedChild());
+    const spawnCalls = [];
+    const spawnImpl = (...args) => {
+      spawnCalls.push(args);
+      return completedChild();
+    };
 
     await runDevRuntimeCommand({
       componentId: "backend",
@@ -45,21 +53,29 @@ describe("development runtime command boundaries", () => {
       spawnImpl,
     });
 
-    expect(authInput).toMatchObject(clerkEnv);
-    expect(preparedEnv).toEqual({
+    assert.deepEqual(authInput, env);
+    assert.deepEqual(preparedEnv, {
       FRONTEND_ORIGIN: "http://localhost:13000",
       KEEP: "yes",
     });
-    expect(spawnImpl.mock.calls[0][2].env).toMatchObject({
-      KEEP: "yes",
-      CLERK_SECRET_KEY: "sk_test_inherited",
-      CLERK_JWT_KEY: "inherited-jwt",
-    });
+    assert.equal(spawnCalls[0][2].env.KEEP, "yes");
+    assert.equal(
+      spawnCalls[0][2].env.CLERK_SECRET_KEY,
+      "sk_test_inherited",
+    );
+    assert.equal(spawnCalls[0][2].env.CLERK_JWT_KEY, "inherited-jwt");
   });
 
   it("never adds Clerk fields to non-backend runtime commands", async () => {
-    const spawnImpl = vi.fn(() => completedChild());
-    const bootstrapAuth = vi.fn();
+    const spawnCalls = [];
+    const spawnImpl = (...args) => {
+      spawnCalls.push(args);
+      return completedChild();
+    };
+    let bootstrapCalls = 0;
+    const bootstrapAuth = () => {
+      bootstrapCalls += 1;
+    };
 
     await runDevRuntimeCommand({
       componentId: "migrations",
@@ -74,7 +90,7 @@ describe("development runtime command boundaries", () => {
       spawnImpl,
     });
 
-    expect(bootstrapAuth).not.toHaveBeenCalled();
-    expect(spawnImpl.mock.calls[0][2].env).toEqual({ KEEP: "yes" });
+    assert.equal(bootstrapCalls, 0);
+    assert.deepEqual(spawnCalls[0][2].env, { KEEP: "yes" });
   });
 });

@@ -92,12 +92,15 @@ test("CI runs cache cleanup tests and classifies new development scripts", () =>
   assert.equal([...ci.matchAll(/- 'scripts\/dev-\*\.mjs'/gu)].length, 2);
 });
 
-test("secure development auth bootstrap runs outside path-filtered jobs", () => {
+test("complete development auth contracts run outside path-filtered jobs", () => {
   const contractStep = stepBlocks(ci).find((block) =>
     block.includes("scripts/ci-workflow-contract.test.mjs"),
   );
   assert.ok(contractStep, "CI workflow contract step is missing");
   assert.match(contractStep, /scripts\/dev-clerk-auth\.test\.mjs/u);
+  assert.match(contractStep, /scripts\/dev-auth-command\.test\.mjs/u);
+  assert.match(contractStep, /scripts\/dev-runtime-command\.test\.mjs/u);
+  assert.match(contractStep, /bash scripts\/dev-env\.test\.sh/u);
   assert.doesNotMatch(contractStep, /^\s+if:/mu);
 });
 

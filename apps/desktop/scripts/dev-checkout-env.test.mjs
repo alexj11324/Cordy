@@ -47,7 +47,7 @@ describe("development checkout environment", () => {
       join(sandbox, ".env"),
       "FRONTEND_PORT=3000\nFRONTEND_ORIGIN=http://localhost:${FRONTEND_PORT}\nPORT=8080\n",
     );
-    const env = { PORT: "19090" };
+    const env = { APP_ENV: "production", PORT: "19090" };
 
     loadDevCheckoutEnv({ repoRoot: sandbox, env });
 
