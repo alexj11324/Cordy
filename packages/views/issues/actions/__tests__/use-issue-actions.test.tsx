@@ -171,7 +171,7 @@ describe("useIssueActions", () => {
     );
   });
 
-  it("assigning an agent routes through the run-confirm modal instead of mutating directly", () => {
+  it("assigning an agent to a queued issue applies directly without starting a run", () => {
     const { result } = renderHook(() => useIssueActions(mockIssue), { wrapper });
 
     act(() => {
@@ -181,13 +181,11 @@ describe("useIssueActions", () => {
       });
     });
 
-    expect(mockOpenModal).toHaveBeenCalledWith("issue-run-confirm", {
-      issueIds: ["issue-1"],
-      mode: "assign",
-      executorType: "agent",
-      executorId: "agent-1",
-    });
-    expect(mockUpdateMutate).not.toHaveBeenCalled();
+    expect(mockUpdateMutate).toHaveBeenCalledWith(
+      { id: "issue-1", executor_type: "agent", executor_id: "agent-1" },
+      expect.any(Object),
+    );
+    expect(mockOpenModal).not.toHaveBeenCalled();
   });
 
   it("assigning an agent to a backlog issue applies directly — backlog never starts a run", () => {
@@ -211,7 +209,7 @@ describe("useIssueActions", () => {
   // Which writes need confirming is decided by runConfirmIntent, whose matrix
   // (parked / unresolvable categories, every promotion target) is canonical in
   // ../run-confirm-gate.test.ts. These two only prove the hook routes on it.
-  it("promoting an agent-owned parked issue routes through the run-confirm modal", () => {
+  it("moving an agent-owned parked issue to Todo applies without starting a run", () => {
     const parked = {
       ...mockIssue,
       status: "backlog",
@@ -224,14 +222,11 @@ describe("useIssueActions", () => {
       result.current.updateField({ status: "rework" });
     });
 
-    expect(mockOpenModal).toHaveBeenCalledWith("issue-run-confirm", {
-      issueIds: ["issue-1"],
-      mode: "promote",
-      status: "rework",
-      executorType: "agent",
-      executorId: "agent-1",
-    });
-    expect(mockUpdateMutate).not.toHaveBeenCalled();
+    expect(mockUpdateMutate).toHaveBeenCalledWith(
+      { id: "issue-1", status: "rework" },
+      expect.any(Object),
+    );
+    expect(mockOpenModal).not.toHaveBeenCalled();
   });
 
   it("a status change that starts no run applies directly", () => {

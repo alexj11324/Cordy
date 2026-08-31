@@ -100,8 +100,8 @@ beforeEach(() => {
 describe("BatchActionToolbar picker wiring", () => {
   it("reflects the shared status / priority / executor of the selected issues", () => {
     const issues = [
-      makeIssue({ id: "a", status: "in_progress", priority: "high", owner_type: "member", owner_id: "u-1" }),
-      makeIssue({ id: "b", status: "in_progress", priority: "high", owner_type: "member", owner_id: "u-1" }),
+      makeIssue({ id: "a", status: "in_progress", priority: "high", executor_type: "agent", executor_id: "agent-1" }),
+      makeIssue({ id: "b", status: "in_progress", priority: "high", executor_type: "agent", executor_id: "agent-1" }),
     ];
     selection.selectedIds = new Set(["a", "b"]);
 
@@ -110,8 +110,8 @@ describe("BatchActionToolbar picker wiring", () => {
     expect(screen.getByTestId("status-picker")).toHaveAttribute("data-status", "in_progress");
     expect(screen.getByTestId("priority-picker")).toHaveAttribute("data-priority", "high");
     const executor = screen.getByTestId("executor-picker");
-    expect(executor).toHaveAttribute("data-executor-type", "member");
-    expect(executor).toHaveAttribute("data-executor-id", "u-1");
+    expect(executor).toHaveAttribute("data-executor-type", "agent");
+    expect(executor).toHaveAttribute("data-executor-id", "agent-1");
     expect(executor).toHaveAttribute("data-mixed", "false");
   });
 

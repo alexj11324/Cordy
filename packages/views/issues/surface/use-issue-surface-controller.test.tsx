@@ -1164,6 +1164,8 @@ describe("useIssueSurfaceController", () => {
       expect(result.current.tableQuerySpec.filters.executors).toEqual([
         { type: "agent", id: "agent-1" },
         { type: "agent", id: "agent-2" },
+      ]);
+      expect(result.current.tableQuerySpec.filters.owners).toEqual([
         { type: "member", id: "member-1" },
       ]);
       expect(result.current.tableQuerySpec.filters.working_issue_ids).toEqual([

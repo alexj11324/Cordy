@@ -156,15 +156,24 @@ function matchesMember(member: MemberWithUser, query: string) {
 function IssueExecutorAvatar({
   executorType,
   executorId,
+  ownerType,
+  ownerId,
 }: {
   executorType?: string | null;
   executorId?: string | null;
+  ownerType?: string | null;
+  ownerId?: string | null;
 }) {
-  if (!executorType || !executorId) return null;
+  // Search has one compact actor slot. Prefer the runnable executor when one
+  // exists, then fall back to the human owner so Linear/Patchbay assignees are
+  // still visible on owner-only issues.
+  const actorType = executorType ?? ownerType;
+  const actorId = executorId ?? ownerId;
+  if (!actorType || !actorId) return null;
   return (
     <ActorAvatar
-      actorType={executorType}
-      actorId={executorId}
+      actorType={actorType}
+      actorId={actorId}
       size="sm"
       profileLink={false}
       className="shrink-0"
@@ -250,6 +259,8 @@ function IssueResultRow({
         <IssueExecutorAvatar
           executorType={issue.executor_type}
           executorId={issue.executor_id}
+          ownerType={issue.owner_type}
+          ownerId={issue.owner_id}
         />
       </div>
       {issue.matched_description_snippet && (

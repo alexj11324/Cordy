@@ -231,14 +231,13 @@ describe("IssueActionsDropdown", () => {
     fireEvent.click(screen.getByTestId("trigger"));
     fireEvent.click(await screen.findByText("Executor"));
 
-    // The shared picker exposes a search input and renders the workspace
-    // member under a "Members" group — both come from `ExecutorPicker`, not
-    // the legacy submenu (which had neither).
+    // The shared executor picker exposes a search input. Human members are
+    // owners now, so they intentionally do not appear in the executor list.
     expect(
       await screen.findByPlaceholderText("Assign to..."),
     ).toBeInTheDocument();
-    expect(await screen.findByText("Members")).toBeInTheDocument();
-    expect(await screen.findByText("Test User")).toBeInTheDocument();
+    expect(screen.queryByText("Members")).not.toBeInTheDocument();
+    expect(screen.queryByText("Test User")).not.toBeInTheDocument();
   });
 
   it("shows 'Remove parent issue' in the Relations submenu only when the issue has a parent", async () => {

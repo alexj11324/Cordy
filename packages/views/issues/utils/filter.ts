@@ -138,18 +138,22 @@ export function applyIssueFilters(
       return false;
 
     if (hasExecutorFilter) {
-      if (!issue.executor_id) {
-        // Unassigned issue — show only if "No executor" is checked
-        if (!includeNoExecutor) return false;
-      } else if (executorFilters.length > 0) {
-        // Assigned issue — show only if executor is in the filter list
-        if (!executorFilters.some(
-          (f) => f.type === issue.executor_type && f.id === issue.executor_id,
-        )) return false;
-      } else {
-        // Only "No executor" is checked, no specific executors → hide assigned issues
-        return false;
-      }
+      // The filter picker is shared by all issue actors. Members are the
+      // human owner role, while agents and teams are the execution role;
+      // compare each filter against the corresponding role instead of
+      // treating a member filter as an executor id.
+      const matchesSelected = executorFilters.some((f) => {
+        if (f.type === "member") {
+          return f.type === issue.owner_type && f.id === issue.owner_id;
+        }
+        return f.type === issue.executor_type && f.id === issue.executor_id;
+      });
+      // "No executor" is the unassigned bucket in the actor picker. A human
+      // owner still counts as assigned work, even though owners and executors
+      // are persisted in separate columns.
+      const matchesNoExecutor =
+        includeNoExecutor && !issue.executor_id && !issue.owner_id;
+      if (!matchesSelected && !matchesNoExecutor) return false;
     }
 
     if (

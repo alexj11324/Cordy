@@ -127,6 +127,9 @@ const mockListIssueTableRows = vi.hoisted(() =>
       ...(request.query.scope.executor_types
         ? { executor_types: request.query.scope.executor_types }
         : {}),
+      ...(request.query.scope.owner_types
+        ? { owner_types: request.query.scope.owner_types }
+        : {}),
     });
     return {
       query_fingerprint: "test",
@@ -169,6 +172,9 @@ const mockListIssueTableFacets = vi.hoisted(() =>
               offset: 0,
               ...(request.query.scope.executor_types
                 ? { executor_types: request.query.scope.executor_types }
+                : {}),
+              ...(request.query.scope.owner_types
+                ? { owner_types: request.query.scope.owner_types }
                 : {}),
             }),
           })),
@@ -751,12 +757,11 @@ describe("IssuesPage (shared)", () => {
 
     renderWithQuery(<IssuesPage />);
 
-    // "Test User" renders both as the executor group header and on the
-    // executor chip of each card grouped under that header, so a unique
-    // match is not guaranteed.
-    await screen.findAllByText("Test User");
-    expect(screen.getAllByText("Agent One").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("Team One").length).toBeGreaterThanOrEqual(1);
+    // Human members are owners, not executor lanes. The executor grouping
+    // therefore contains only runnable agents/teams plus the unassigned lane.
+    expect(screen.queryByText("Test User")).not.toBeInTheDocument();
+    expect(await screen.findByText("Agent One")).toBeInTheDocument();
+    expect((await screen.findAllByText("Team One")).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("No executor")).toBeInTheDocument();
   });
 
@@ -825,7 +830,10 @@ describe("IssuesPage (shared)", () => {
           i.status === params?.status &&
           (!params?.executor_types ||
             (i.executor_type !== null &&
-              params.executor_types.includes(i.executor_type))),
+              params.executor_types.includes(i.executor_type))) &&
+          (!params?.owner_types ||
+            (i.owner_type !== null &&
+              params.owner_types.includes(i.owner_type))),
       );
       return Promise.resolve({ issues: matches, total: matches.length });
     });

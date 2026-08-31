@@ -240,7 +240,7 @@ function Harness({
 describe("TableView cell editors under data refresh", () => {
   // The table's inline pickers are single-issue writes like the issue detail's,
   // so they route on the same run-confirm gate: promoting an agent-owned issue
-  // out of backlog starts a run and must confirm first (PB-6463). The gate's
+  // into In Progress starts a run and must confirm first (PB-6463). The gate's
   // own matrix lives in ../actions/run-confirm-gate.test.ts; this only proves
   // the table asks it instead of writing straight through.
   it("confirms a status change that would start an agent run instead of applying it", async () => {
@@ -266,13 +266,13 @@ describe("TableView cell editors under data refresh", () => {
     await screen.findByText("PB-c");
     const row = screen.getByText("PB-c").closest("tr")!;
     await user.click(within(row).getByRole("button", { name: /Backlog/ }));
-    await user.click(screen.getByRole("button", { name: /^Todo$/ }));
+    await user.click(screen.getByRole("button", { name: /^In Progress$/ }));
 
     const { modal, data } = useModalStore.getState();
     expect(modal).toBe("issue-run-confirm");
     expect(data).toMatchObject({
       mode: "promote",
-      status: "todo",
+      status: "in_progress",
       executorType: "agent",
       executorId: "agent-1",
     });

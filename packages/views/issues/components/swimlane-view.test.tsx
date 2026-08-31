@@ -1485,7 +1485,7 @@ describe("SwimLaneView", () => {
     expect(screen.getByText("Issue Z")).toBeInTheDocument();
   });
 
-  it("emits executor_type + executor_id when a card is dropped into an actor lane", () => {
+  it("emits executor_type + executor_id when a card is dropped into an agent lane", () => {
     mockViewState.swimlaneGrouping = "executor";
     const mockOnMoveIssue = vi.fn();
 
@@ -1493,7 +1493,7 @@ describe("SwimLaneView", () => {
       <SwimLaneView issues={executorIssues} onMoveIssue={mockOnMoveIssue} />,
     );
 
-    const target = "swim:executor:member:user-1:in_review";
+    const target = "swim:executor:agent:agent-1:in_review";
     act(() => {
       lastOnDragOver({ active: { id: "issue-z" }, over: { id: target } });
     });
@@ -1504,7 +1504,7 @@ describe("SwimLaneView", () => {
     expect(mockOnMoveIssue).toHaveBeenCalledWith(
       "issue-z",
       expect.objectContaining({
-        owner_type: "member", owner_id: "user-1",
+        executor_type: "agent", executor_id: "agent-1",
         status: "in_review",
       }),
       expect.objectContaining({ onSettled: expect.any(Function) }),

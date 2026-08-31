@@ -96,6 +96,26 @@ vi.mock("../issues/components/pickers/executor-picker", () => ({
       </button>
     </div>
   ),
+  ReviewerPicker: ({
+    onUpdate,
+  }: {
+    onUpdate: (value: Record<string, string>) => void;
+  }) => (
+    <div>
+      <button
+        type="button"
+        onClick={() => onUpdate({ reviewer_type: "agent", reviewer_id: "agent-1" })}
+      >
+        Choose current
+      </button>
+      <button
+        type="button"
+        onClick={() => onUpdate({ reviewer_type: "agent", reviewer_id: "agent-2" })}
+      >
+        Choose Jessie
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock("../i18n", () => ({

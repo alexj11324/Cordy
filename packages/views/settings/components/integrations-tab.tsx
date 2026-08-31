@@ -532,7 +532,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
           <CardContent className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
-                <h3 className="text-body font-semibold">Linear</h3>
+                <h3 className="text-body font-semibold">{t(($) => $.page.linear.section_title)}</h3>
                 {linear.isLoading ? (
                   <Badge variant="secondary">
                     <Loader2 className="animate-spin" />

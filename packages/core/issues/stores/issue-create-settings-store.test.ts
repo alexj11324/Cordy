@@ -18,6 +18,7 @@ describe("issue create settings store", () => {
     expect(useIssueCreateSettingsStore.getState().manualCreateFields).toEqual([
       "status",
       "priority",
+      "owner",
       "executor",
       "labels",
       "project",
@@ -52,6 +53,7 @@ describe("issue create settings store", () => {
     expect(useIssueCreateSettingsStore.getState().manualCreateFields).toEqual([
       "status",
       "priority",
+      "owner",
       "executor",
       "project",
       "due_date",
