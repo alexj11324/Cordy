@@ -1516,17 +1516,20 @@ pub(crate) struct LinearRemoteLabel {
     pub id: String,
 }
 
-const CORDY_ISSUE_MARKER_PREFIX: &str = "<!-- cordy:issue:";
+const PATCHBAY_ISSUE_MARKER_PREFIX: &str = "<!-- patchbay:issue:";
 
 /// Stable, hidden marker used to reconcile a successful Linear create when
 /// the local transaction crashes before the link is committed. It is not a
 /// title search and is never exposed as a user-facing field.
-pub(crate) fn cordy_issue_marker(issue_id: Uuid) -> String {
-    format!("{CORDY_ISSUE_MARKER_PREFIX}{issue_id} -->")
+pub(crate) fn patchbay_issue_marker(issue_id: Uuid) -> String {
+    format!("{PATCHBAY_ISSUE_MARKER_PREFIX}{issue_id} -->")
 }
 
-pub(crate) fn description_with_cordy_marker(description: Option<&str>, issue_id: Uuid) -> String {
-    let marker = cordy_issue_marker(issue_id);
+pub(crate) fn description_with_patchbay_marker(
+    description: Option<&str>,
+    issue_id: Uuid,
+) -> String {
+    let marker = patchbay_issue_marker(issue_id);
     let human = description.unwrap_or_default().trim();
     if human.is_empty() {
         marker
@@ -1535,11 +1538,11 @@ pub(crate) fn description_with_cordy_marker(description: Option<&str>, issue_id:
     }
 }
 
-/// Removes Cordy's reconciliation marker before a remote description enters
+/// Removes Patchbay's reconciliation marker before a remote description enters
 /// the local human-authored field.
-pub(crate) fn strip_cordy_issue_marker(description: Option<&str>) -> Option<String> {
+pub(crate) fn strip_patchbay_issue_marker(description: Option<&str>) -> Option<String> {
     let description = description?;
-    let Some(start) = description.find(CORDY_ISSUE_MARKER_PREFIX) else {
+    let Some(start) = description.find(PATCHBAY_ISSUE_MARKER_PREFIX) else {
         return Some(description.to_string());
     };
     let end = description[start..].find("-->")? + start + 3;
@@ -1558,9 +1561,10 @@ pub(crate) fn strip_cordy_issue_marker(description: Option<&str>) -> Option<Stri
     Some(human).filter(|value| !value.is_empty())
 }
 
-pub(crate) fn cordy_issue_id_from_description(description: Option<&str>) -> Option<Uuid> {
+pub(crate) fn patchbay_issue_id_from_description(description: Option<&str>) -> Option<Uuid> {
     let description = description?;
-    let start = description.find(CORDY_ISSUE_MARKER_PREFIX)? + CORDY_ISSUE_MARKER_PREFIX.len();
+    let start =
+        description.find(PATCHBAY_ISSUE_MARKER_PREFIX)? + PATCHBAY_ISSUE_MARKER_PREFIX.len();
     let end = description[start..].find("-->")? + start;
     Uuid::parse_str(description[start..end].trim()).ok()
 }
@@ -2291,7 +2295,7 @@ impl LinearTokenManager {
         input.insert("title".to_string(), json!(title));
         input.insert(
             "description".to_string(),
-            json!(description_with_cordy_marker(description, issue_id)),
+            json!(description_with_patchbay_marker(description, issue_id)),
         );
         input.insert("priority".to_string(), json!(priority));
         if let Some(state_id) = state_id {
@@ -2316,7 +2320,7 @@ impl LinearTokenManager {
         &self,
         connection_id: Uuid,
         linear_issue_id: &str,
-        cordy_issue_id: Uuid,
+        patchbay_issue_id: Uuid,
         title: &str,
         description: Option<&str>,
         priority: i64,
@@ -2329,7 +2333,10 @@ impl LinearTokenManager {
         input.insert("title".to_string(), json!(title));
         input.insert(
             "description".to_string(),
-            json!(description_with_cordy_marker(description, cordy_issue_id)),
+            json!(description_with_patchbay_marker(
+                description,
+                patchbay_issue_id
+            )),
         );
         input.insert("priority".to_string(), json!(priority));
         input.insert("dueDate".to_string(), json!(due_date));
@@ -2355,11 +2362,12 @@ impl LinearTokenManager {
         &self,
         connection_id: Uuid,
         project_id: &str,
-        cordy_issue_id: Uuid,
+        patchbay_issue_id: Uuid,
     ) -> Result<Option<LinearRemoteIssue>, LinearTokenError> {
         let issues = self.list_project_issues(connection_id, project_id).await?;
         Ok(issues.into_iter().find(|issue| {
-            cordy_issue_id_from_description(issue.description.as_deref()) == Some(cordy_issue_id)
+            patchbay_issue_id_from_description(issue.description.as_deref())
+                == Some(patchbay_issue_id)
         }))
     }
 
@@ -3328,26 +3336,26 @@ mod tests {
     }
 
     #[test]
-    fn cordy_issue_marker_round_trips_without_polluting_human_description() {
+    fn patchbay_issue_marker_round_trips_without_polluting_human_description() {
         let issue_id = Uuid::now_v7();
-        let description = description_with_cordy_marker(Some("Human text"), issue_id);
+        let description = description_with_patchbay_marker(Some("Human text"), issue_id);
         assert_eq!(
-            cordy_issue_id_from_description(Some(&description)),
+            patchbay_issue_id_from_description(Some(&description)),
             Some(issue_id)
         );
         assert_eq!(
-            strip_cordy_issue_marker(Some(&description)).as_deref(),
+            strip_patchbay_issue_marker(Some(&description)).as_deref(),
             Some("Human text")
         );
 
-        let marker_only = description_with_cordy_marker(None, issue_id);
+        let marker_only = description_with_patchbay_marker(None, issue_id);
         assert_eq!(
-            cordy_issue_id_from_description(Some(&marker_only)),
+            patchbay_issue_id_from_description(Some(&marker_only)),
             Some(issue_id)
         );
-        assert_eq!(strip_cordy_issue_marker(Some(&marker_only)), None);
+        assert_eq!(strip_patchbay_issue_marker(Some(&marker_only)), None);
         assert_eq!(
-            strip_cordy_issue_marker(Some("Unmanaged text")),
+            strip_patchbay_issue_marker(Some("Unmanaged text")),
             Some("Unmanaged text".to_string())
         );
     }

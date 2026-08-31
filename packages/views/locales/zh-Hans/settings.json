@@ -407,7 +407,7 @@
       "mapping_title": "映射 Linear 工作流状态",
       "mapping_description": "映射按不可变 Linear 状态 ID 保存。未映射状态在选择策略前保持不变。",
       "member_mapping_title": "映射人类负责人",
-      "member_mapping_description": "发布人类负责人变更前，将 Cordy 成员映射到 Linear 用户。Executor 仍由 Cordy 负责。",
+      "member_mapping_description": "发布人类负责人变更前，将 Patchbay 成员映射到 Linear 用户。Executor 仍由 Patchbay 负责。",
       "member_not_mapped": "不映射",
       "no_members": "没有可用的 Workspace 成员。",
       "no_states": "Linear 没有返回工作流状态。",

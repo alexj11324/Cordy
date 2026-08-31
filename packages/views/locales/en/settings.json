@@ -407,7 +407,7 @@
       "mapping_title": "Map Linear workflow states",
       "mapping_description": "Mappings are stored by immutable Linear state ID. Unmapped states are left unchanged until a policy is chosen.",
       "member_mapping_title": "Map human owners",
-      "member_mapping_description": "Map Cordy members to Linear users before publishing human-owner changes. Executor remains Cordy-owned.",
+      "member_mapping_description": "Map Patchbay members to Linear users before publishing human-owner changes. Executor remains Patchbay-owned.",
       "member_not_mapped": "Not mapped",
       "no_members": "No workspace members are available.",
       "no_states": "No Linear workflow states were returned.",

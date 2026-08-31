@@ -1882,7 +1882,7 @@ pub struct LinearSyncOutbox {
     pub workspace_id: Uuid,
 }
 
-/// Explicit mapping between a Cordy human owner and a Linear user. The two
+/// Explicit mapping between a Patchbay human owner and a Linear user. The two
 /// providers use different identity domains, so this row is required before
 /// publishing an owner change.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]

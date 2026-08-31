@@ -26,7 +26,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::linear::{
-    strip_cordy_issue_marker, LinearRemoteIssue, LinearTokenError, LinearTokenManager,
+    strip_patchbay_issue_marker, LinearRemoteIssue, LinearTokenError, LinearTokenManager,
 };
 use crate::state::HandlerState;
 
@@ -392,7 +392,7 @@ impl LinearSyncWorker {
             issue_q::get_issue_in_workspace(&self.state.pool, row.issue_id, row.workspace_id)
                 .await
                 .map_err(SyncError::retry)?
-                .ok_or_else(|| SyncError::permanent(anyhow::anyhow!("Cordy Issue not found")))?;
+                .ok_or_else(|| SyncError::permanent(anyhow::anyhow!("Patchbay Issue not found")))?;
         if issue.origin_type.as_deref() == Some("linear") {
             return Err(SyncError::permanent(anyhow::anyhow!(
                 "Linear-origin Issue cannot be published back to Linear"
@@ -409,7 +409,7 @@ impl LinearSyncWorker {
         if let Some(link) = existing_link.as_ref() {
             if link.binding_id != binding.id {
                 return Err(SyncError::permanent(anyhow::anyhow!(
-                    "Cordy Issue is already linked to another Linear binding"
+                    "Patchbay Issue is already linked to another Linear binding"
                 )));
             }
             if link.sync_status == "conflict" {
@@ -475,14 +475,14 @@ impl LinearSyncWorker {
                 .map_err(SyncError::retry)?
                 .ok_or_else(|| {
                     SyncError::permanent(anyhow::anyhow!(
-                        "Cordy human owner has no Linear member mapping"
+                        "Patchbay human owner has no Linear member mapping"
                     ))
                 })?
                 .linear_user_id,
             ),
             _ => {
                 return Err(SyncError::permanent(anyhow::anyhow!(
-                    "Cordy Issue owner is not a supported human member"
+                    "Patchbay Issue owner is not a supported human member"
                 )))
             }
         };
@@ -921,7 +921,7 @@ impl LinearSyncWorker {
         };
         let remote_patch = ExternalIssuePatch {
             title: Some(remote.title.clone()),
-            description: Some(strip_cordy_issue_marker(remote.description.as_deref())),
+            description: Some(strip_patchbay_issue_marker(remote.description.as_deref())),
             status: Some(import_status),
             priority: Some(priority.clone()),
             due_date: Some(due_date),
@@ -981,7 +981,7 @@ impl LinearSyncWorker {
                         IssueCreateParams {
                             workspace_id: connection.workspace_id,
                             title: remote.title.clone(),
-                            description: strip_cordy_issue_marker(remote.description.as_deref()),
+                            description: strip_patchbay_issue_marker(remote.description.as_deref()),
                             status: remote_patch
                                 .status
                                 .clone()
@@ -1314,16 +1314,18 @@ fn map_local_priority(priority: &str) -> Result<i64, SyncError> {
         "medium" => Ok(3),
         "low" => Ok(4),
         other => Err(SyncError::permanent(anyhow::anyhow!(
-            "Cordy Issue priority is unsupported: {other}"
+            "Patchbay Issue priority is unsupported: {other}"
         ))),
     }
 }
 
 fn map_local_status(binding: &LinearProjectBinding, status: &str) -> Option<String> {
     binding.status_mapping.as_object().and_then(|mapping| {
-        mapping.iter().find_map(|(linear_state_id, cordy_status)| {
-            (cordy_status.as_str() == Some(status)).then(|| linear_state_id.clone())
-        })
+        mapping
+            .iter()
+            .find_map(|(linear_state_id, patchbay_status)| {
+                (patchbay_status.as_str() == Some(status)).then(|| linear_state_id.clone())
+            })
     })
 }
 
