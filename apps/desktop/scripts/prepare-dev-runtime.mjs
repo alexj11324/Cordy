@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import {
   binaryNameForPlatform,
-  cargoTargetDirectory,
+  cargoTargetDirectoryForProfile,
   devRustTargetFor,
   devBuildVariables,
   resolveCargoCommand,
@@ -35,7 +35,8 @@ export function devRuntimeComponents({
   repoRoot = defaultRepoRoot,
   platform = process.platform,
   arch = process.arch,
-  cargoTargetDir = cargoTargetDirectory(
+  cargoTargetDir = cargoTargetDirectoryForProfile(
+    "dev",
     process.env,
     join(repoRoot, "server-rs"),
   ),
@@ -136,7 +137,11 @@ export async function prepareDevRuntime({
 } = {}) {
   const serverRsDir = join(repoRoot, "server-rs");
   const rustTarget = devRustTargetFor(platform, arch);
-  const cargoTargetDir = cargoTargetDirectory(env, serverRsDir);
+  const cargoTargetDir = cargoTargetDirectoryForProfile(
+    "dev",
+    env,
+    serverRsDir,
+  );
   const sourceFingerprint = rustSourceFingerprint(repoRoot);
   const cargoCommand = resolveCargoCommand(env, platform);
   const toolchainIdentity = rustToolchainIdentity(env, cargoCommand, {

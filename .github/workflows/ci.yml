@@ -83,6 +83,7 @@ jobs:
               - 'apps/docs/**'
               - 'packages/**'
               - 'package.json'
+              - 'Makefile'
               - '.npmrc'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
@@ -108,6 +109,7 @@ jobs:
               - 'scripts/postgres-runtime.sh'
               - 'scripts/postgres-runtime.test.sh'
               - 'scripts/remove-worktree.sh'
+              - 'scripts/reset-database.sh'
               - 'scripts/run-rust.sh'
               - 'scripts/worktree-db.test.sh'
               - 'scripts/selfhost-wait.sh'
@@ -123,11 +125,11 @@ jobs:
               - 'scripts/dev-process.mjs'
               - 'scripts/stop-dev.mjs'
               - 'scripts/local-env.sh'
+              - 'scripts/makefile-build.test.sh'
               - '.env.example'
               - 'docker-compose.selfhost.yml'
               - 'docker-compose.selfhost.build.yml'
               - 'docker-compose.labs.yml'
-              - 'Makefile'
             installer:
               - 'scripts/install.sh'
               - 'scripts/install.ps1'
@@ -280,6 +282,10 @@ jobs:
       - name: Test native PostgreSQL development runtime
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         run: bash scripts/postgres-runtime.test.sh
+
+      - name: Test Makefile development entrypoint contract
+        if: ${{ needs.changes.outputs.frontend == 'true' }}
+        run: bash scripts/makefile-build.test.sh
 
       - name: Test authentication release classification
         if: ${{ needs.changes.outputs.frontend == 'true' }}

@@ -6,6 +6,12 @@ script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$script_dir/postgres-runtime.sh"
 
 ENV_FILE="${1:-.env}"
+LOCAL_ONLY_MODE="${2:-}"
+
+if [ -n "$LOCAL_ONLY_MODE" ] && [ "$LOCAL_ONLY_MODE" != "--local-only" ]; then
+  echo "Unknown option: $LOCAL_ONLY_MODE" >&2
+  exit 1
+fi
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "Missing env file: $ENV_FILE"
@@ -67,8 +73,13 @@ if [ -n "$DATABASE_URL" ]; then
 fi
 
 is_local() {
-  [ -z "$DATABASE_URL" ] || [ "$db_host" = "localhost" ] || [ "$db_host" = "127.0.0.1" ] || [ "$db_host" = "::1" ]
+  [ -z "$DATABASE_URL" ] || postgres_host_is_local "$db_host"
 }
+
+if [ "$LOCAL_ONLY_MODE" = "--local-only" ] && ! is_local; then
+  echo "Refusing local PostgreSQL setup: DATABASE_URL points at a remote host." >&2
+  exit 1
+fi
 
 if is_local; then
   postgres_provider="$(postgres_runtime_provider "$DATABASE_URL" "$db_port")"
@@ -110,17 +121,17 @@ if is_local; then
     fi
     parse_postgres_endpoint "$DATABASE_URL" "$db_port"
     echo "==> Using native PostgreSQL at ${POSTGRES_RUNTIME_HOST}:${POSTGRES_RUNTIME_PORT}..."
-    until "$ready_command" -h "$POSTGRES_RUNTIME_HOST" -p "$POSTGRES_RUNTIME_PORT" -U "$POSTGRES_USER" -d postgres >/dev/null 2>&1; do
+    until postgres_clean_libpq_routing "$ready_command" -h "$POSTGRES_RUNTIME_HOST" -p "$POSTGRES_RUNTIME_PORT" -U "$POSTGRES_USER" -d postgres >/dev/null 2>&1; do
       sleep 1
     done
-    db_exists="$("$psql_command" -h "$POSTGRES_RUNTIME_HOST" -p "$POSTGRES_RUNTIME_PORT" -U "$POSTGRES_USER" -d postgres -Atqc "SELECT 1 FROM pg_database WHERE datname = '$POSTGRES_DB'")"
+    db_exists="$(postgres_clean_libpq_routing "$psql_command" -X -h "$POSTGRES_RUNTIME_HOST" -p "$POSTGRES_RUNTIME_PORT" -U "$POSTGRES_USER" -d postgres -Atqc "SELECT 1 FROM pg_database WHERE datname = '$POSTGRES_DB'")"
     if [ "$db_exists" != "1" ]; then
-      if ! "$createdb_command" -h "$POSTGRES_RUNTIME_HOST" -p "$POSTGRES_RUNTIME_PORT" -U "$POSTGRES_USER" --owner "$POSTGRES_USER" "$POSTGRES_DB" 2>/dev/null; then
+      if ! postgres_clean_libpq_routing "$createdb_command" -h "$POSTGRES_RUNTIME_HOST" -p "$POSTGRES_RUNTIME_PORT" -U "$POSTGRES_USER" --owner "$POSTGRES_USER" "$POSTGRES_DB" 2>/dev/null; then
         # Homebrew PostgreSQL commonly makes the macOS account the local
         # cluster administrator while the application role owns databases but
         # cannot create them. The socket fallback stays local and creates only
         # the already-validated checkout database, owned by POSTGRES_USER.
-        env -u PGPASSWORD "$createdb_command" -p "$POSTGRES_RUNTIME_PORT" --owner "$POSTGRES_USER" "$POSTGRES_DB"
+        postgres_clean_libpq_routing env -u PGPASSWORD "$createdb_command" -p "$POSTGRES_RUNTIME_PORT" --owner "$POSTGRES_USER" "$POSTGRES_DB"
       fi
     fi
     echo "✓ PostgreSQL ready (local native). Database: $POSTGRES_DB"

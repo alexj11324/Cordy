@@ -28,6 +28,25 @@ describe("complete development runtime artifacts", () => {
     );
   });
 
+  it("keeps development Cargo outputs inside each worktree", () => {
+    const components = devRuntimeComponents({
+      repoRoot: "/repo/worktree-a",
+      platform: "linux",
+      arch: "x64",
+    });
+
+    expect(components[0].sourceBinary).toBe(
+      join(
+        "/repo/worktree-a",
+        "server-rs",
+        "target",
+        "x86_64-unknown-linux-gnu",
+        "debug",
+        "patchbay",
+      ),
+    );
+  });
+
   it("builds all runtime packages in one incremental Cargo invocation", () => {
     const components = devRuntimeComponents({
       repoRoot: "/repo",

@@ -5,7 +5,7 @@ description: 配置 Patchbay 本地开发环境，运行测试，并按仓库约
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay 是 Rust backend 与 pnpm monorepo。最简单的本地启动方式是 `pnpm dev`；它会为当前 checkout 准备环境、源码匹配 runtime、数据库和 migration，再启动完整 Electron 与 API。
+Patchbay 是 Rust backend 与 pnpm monorepo。最简单的本地启动方式是 `pnpm dev`；它会为当前 checkout 准备环境、源码匹配 runtime、数据库和 migration，再启动完整 Electron、API 与浏览器登录/分享服务。
 
 ## 环境要求
 
@@ -29,12 +29,13 @@ cd patchbay
 pnpm dev
 ```
 
-主 checkout 会使用 `.env`。文件不存在时，`pnpm dev` 会从 `.env.example` 创建；然后启动共享 PostgreSQL、安装依赖、执行 migration，并运行 API 与 Electron。
+主 checkout 会使用 `.env`。文件不存在时，`pnpm dev` 会从 `.env.example` 创建；然后启动共享 PostgreSQL、安装依赖、执行 migration，并运行 API、浏览器登录/分享服务与 Electron。
 
 默认地址：
 
 ```text
 Desktop：带 renderer 热更新的 Electron 窗口
+浏览器/分享/登录地址：http://localhost:3000
 API: http://localhost:8080
 ```
 
@@ -57,7 +58,7 @@ make start-worktree
 make start-worktree
 ```
 
-停止当前 worktree 的 Desktop/Electron 与 API：
+停止当前 worktree 的 Desktop/Electron、Web 与 API：
 
 ```bash
 make stop-worktree
@@ -76,9 +77,9 @@ make stop-worktree
 ### 整体流程
 
 ```bash
-make dev              # 完整 Electron + dev CLI + 后端 + 隔离数据库
+make dev              # 完整 Electron + dev CLI + 后端 + Web 服务 + 隔离数据库
 make start            # 使用已有环境启动同一套完整开发栈
-make stop             # 停止当前 checkout 记录的 Electron/后端进程树
+make stop             # 停止当前 checkout 记录的 Electron/后端/Web 进程树
 make check            # 完整本地验证流程
 make build            # 构建 server、CLI 和 migrate 二进制
 ```
@@ -98,12 +99,12 @@ pnpm test
 
 Desktop 只保留一条完整开发路径：
 
-| 场景                                                 | 命令                                      | 实际工作                                                       |
-| ---------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------- |
-| 日常本地产品开发                                     | `pnpm dev` 或 `make dev`                  | Electron、源码匹配 dev CLI、后端、隔离数据库、热更新和能力检查 |
-| 重新运行开发诊断                                     | `pnpm dev:doctor`                         | CLI/源码/版本、后端/数据库、智能体检测、Telegram/微信配置      |
-| 检查前端/Electron 是否能构建                         | `pnpm --filter @patchbay/desktop build`   | 生成生产 JS bundle，不编译 Rust                                |
-| 验证安装包、签名/公证、自动更新、内置 CLI 或正式发布 | `pnpm --filter @patchbay/desktop package` | release Rust CLI 和安装包，可能耗时几十分钟                    |
+| 场景                                                 | 命令                                      | 实际工作                                                                 |
+| ---------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------ |
+| 日常本地产品开发                                     | `pnpm dev` 或 `make dev`                  | Electron、源码匹配 dev CLI、后端、Web 服务、隔离数据库、热更新和能力检查 |
+| 重新运行开发诊断                                     | `pnpm dev:doctor`                         | CLI/源码/版本、后端/数据库、智能体检测、Telegram/微信配置                |
+| 检查前端/Electron 是否能构建                         | `pnpm --filter @patchbay/desktop build`   | 生成生产 JS bundle，不编译 Rust                                          |
+| 验证安装包、签名/公证、自动更新、内置 CLI 或正式发布 | `pnpm --filter @patchbay/desktop package` | release Rust CLI 和安装包，可能耗时几十分钟                              |
 
 dev runtime 缓存包含匹配的 CLI、后端和迁移 runner，并按 Rust 源码、Cargo 元数据、
 toolchain、target、架构、profile 和构建变量分键。命中时不编译 Rust；未命中时

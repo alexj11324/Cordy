@@ -43,6 +43,11 @@ function Get-PostgresCommand {
     return $null
 }
 
+function Get-MissingEnvironmentKeys {
+    param([string[]]$Names)
+    @($Names | Where-Object { -not [Environment]::GetEnvironmentVariable($_) })
+}
+
 function Test-DockerPostgresAvailable {
     if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { return $false }
     & docker compose version *> $null
@@ -138,7 +143,13 @@ if ($PortOccupied) {
     throw "Backend port $BackendPort is already serving another Patchbay instance. Stop it or use this checkout's isolated PORT."
 }
 
+$FrontendPort = if ($env:FRONTEND_PORT) { $env:FRONTEND_PORT } else { "3000" }
+$FrontendOrigin = "http://localhost:$FrontendPort"
+$env:FRONTEND_ORIGIN = $FrontendOrigin
+$env:PATCHBAY_APP_URL = $FrontendOrigin
+
 $BackendProcess = $null
+$WebProcess = $null
 try {
     $BackendProcess = Start-Process -FilePath $DevBackend -WorkingDirectory (Join-Path $RepoRoot "server-rs") -NoNewWindow -PassThru
     $Deadline = [DateTime]::UtcNow.AddMinutes(30)
@@ -165,11 +176,66 @@ try {
 
     $env:VITE_API_URL = "http://127.0.0.1:$BackendPort"
     $env:VITE_WS_URL = "ws://127.0.0.1:$BackendPort/ws"
+    $env:VITE_APP_URL = $FrontendOrigin
+    $env:VITE_ACCOUNTS_URL = $FrontendOrigin
+    $env:NEXT_PUBLIC_API_URL = $env:VITE_API_URL
+    $env:NEXT_PUBLIC_WS_URL = $env:VITE_WS_URL
+
+    $FrontendReadyUrl = "$FrontendOrigin/"
+    $FrontendOccupied = $false
+    try {
+        $existingFrontend = Invoke-WebRequest -Uri $FrontendReadyUrl -TimeoutSec 1 -UseBasicParsing
+        if ($existingFrontend.StatusCode -ge 200 -and $existingFrontend.StatusCode -lt 400) { $FrontendOccupied = $true }
+    } catch { }
+    if ($FrontendOccupied) {
+        throw "Frontend port $FrontendPort is already serving another Patchbay instance. Stop it or use this checkout's isolated FRONTEND_PORT."
+    }
+
+    Write-Host "==> Starting the browser/share/login origin at $FrontendOrigin..."
+    $WebProcess = Start-Process `
+        -FilePath "node" `
+        -ArgumentList @("node_modules/next/dist/bin/next", "dev", "--webpack", "--port", $FrontendPort) `
+        -WorkingDirectory (Join-Path $RepoRoot "apps/web") `
+        -NoNewWindow `
+        -PassThru
+    $FrontendDeadline = [DateTime]::UtcNow.AddMinutes(2)
+    while ($true) {
+        $WebProcess.Refresh()
+        if ($WebProcess.HasExited) {
+            throw "Frontend exited before its browser-link health check passed (exit $($WebProcess.ExitCode))."
+        }
+        $FrontendReady = $false
+        try {
+            $frontendHealth = Invoke-WebRequest -Uri $FrontendReadyUrl -TimeoutSec 2 -UseBasicParsing
+            if ($frontendHealth.StatusCode -ge 200 -and $frontendHealth.StatusCode -lt 400) { $FrontendReady = $true }
+        } catch { }
+        if ($FrontendReady) { break }
+        if ([DateTime]::UtcNow -ge $FrontendDeadline) {
+            throw "Frontend did not become reachable within 2 minutes: $FrontendReadyUrl"
+        }
+        Start-Sleep -Seconds 1
+    }
+
+    $MissingGoogleKeys = @(Get-MissingEnvironmentKeys -Names @(
+            "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+            "CLERK_SECRET_KEY",
+            "CLERK_JWT_KEY",
+            "CLERK_ISSUER",
+            "CLERK_AUTHORIZED_PARTIES"
+        ))
+    if ($MissingGoogleKeys.Count -gt 0) {
+        Write-Host "! Google sign-in is unavailable; add these values to $($env:ENV_FILE): $($MissingGoogleKeys -join ', ')"
+    }
+
     $env:PATCHBAY_REQUIRE_SOURCE_CLI = "1"
     $env:PATCHBAY_DEV_ENV_FILE = $env:ENV_FILE
     & node apps/desktop/scripts/dev.mjs @ElectronArgs
     if ($LASTEXITCODE -ne 0) { throw "Electron development process exited with code $LASTEXITCODE" }
 } finally {
+    if ($WebProcess -and -not $WebProcess.HasExited) {
+        & taskkill.exe /PID $WebProcess.Id /T /F *> $null
+        $WebProcess.WaitForExit()
+    }
     if ($BackendProcess -and -not $BackendProcess.HasExited) {
         Stop-Process -Id $BackendProcess.Id -ErrorAction SilentlyContinue
         $BackendProcess.WaitForExit()

@@ -134,7 +134,7 @@ This single command:
 - uses the shared Docker or native PostgreSQL service
 - creates the application database if it does not exist
 - runs all migrations
-- starts the backend and complete Electron client with renderer hot reload
+- starts the backend, browser login/share origin, and complete Electron client with renderer hot reload
 
 ### Explicit Setup (advanced)
 
@@ -515,26 +515,30 @@ The command does not open Electron until it has:
    `userData` identity
 2. Installed dependencies using the global content-addressable pnpm store and
    this worktree's own `node_modules` link tree
-3. Applied migrations and reached the local backend's DB-backed `/healthz`
-   readiness endpoint
-4. Staged checksum-valid dev CLI, backend, and migration binaries whose Rust
+3. Staged checksum-valid dev CLI, backend, and migration binaries whose Rust
    source, Cargo manifests/lockfile, toolchain, target, architecture, profile,
    and build metadata match
-5. Exercised local agent discovery through `patchbay daemon probe-runtimes`
+4. Applied migrations and reached the local backend's DB-backed `/healthz`
+   readiness endpoint
+5. Started the checkout's Next.js Web origin and pointed Desktop browser,
+   share, and Google login links at that reachable service. Without the full
+   Clerk configuration the launcher lists the missing values instead of
+   silently emitting a dead login link
+6. Exercised local agent discovery through `patchbay daemon probe-runtimes`
    (the renderer never guesses the host PATH)
-6. Verified Telegram and Weixin credential-encryption keys without logging
+7. Verified Telegram and Weixin credential-encryption keys without logging
    their values
 
 There is deliberately no UI-only or released/PATH-CLI development fallback. A
 missing capability fails before the window opens and prints an executable fix.
 Use `pnpm dev:doctor` to repeat the same diagnostics while the stack is running.
 
-| Situation                                                                      | Command                                   | Expected work                                                                  |
-| ------------------------------------------------------------------------------ | ----------------------------------------- | ------------------------------------------------------------------------------ |
-| Normal local product development                                               | `pnpm dev` or `make dev`                  | Complete Electron + dev CLI + backend + isolated DB, with Vite hot reload      |
-| Re-run capability diagnostics                                                  | `pnpm dev:doctor`                         | CLI/version/source, backend/DB, agent detection, Telegram/Weixin configuration |
-| Compile-check frontend/Electron output                                         | `pnpm --filter @patchbay/desktop build`   | Electron/Vite production bundles; no Rust                                      |
-| Validate an installer, signing/notarization, updater, embedded CLI, or release | `pnpm --filter @patchbay/desktop package` | Release Rust CLI and installer packaging; may take tens of minutes             |
+| Situation                                                                      | Command                                   | Expected work                                                                          |
+| ------------------------------------------------------------------------------ | ----------------------------------------- | -------------------------------------------------------------------------------------- |
+| Normal local product development                                               | `pnpm dev` or `make dev`                  | Complete Electron + dev CLI + backend + Web origin + isolated DB, with Vite hot reload |
+| Re-run capability diagnostics                                                  | `pnpm dev:doctor`                         | CLI/version/source, backend/DB, agent detection, Telegram/Weixin configuration         |
+| Compile-check frontend/Electron output                                         | `pnpm --filter @patchbay/desktop build`   | Electron/Vite production bundles; no Rust                                              |
+| Validate an installer, signing/notarization, updater, embedded CLI, or release | `pnpm --filter @patchbay/desktop package` | Release Rust CLI and installer packaging; may take tens of minutes                     |
 
 The dev runtime cache is per user and content-addressed. Unchanged Rust source
 reuses the CLI, backend, and migration runner without compiling, including in
@@ -680,7 +684,7 @@ That is expected.
 - `make stop-main`
 - `make stop-worktree`
 
-only stop backend/frontend processes.
+only stop the tracked Electron/backend/Web process tree.
 
 To stop the shared PostgreSQL container:
 
@@ -700,7 +704,7 @@ If you want a fresh database for the current checkout only (drops the
 database named in `POSTGRES_DB`, recreates it, and runs all migrations):
 
 ```bash
-make stop        # stop backend/frontend first
+make stop        # stop the tracked development process tree first
 make db-reset
 make start
 ```

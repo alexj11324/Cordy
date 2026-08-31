@@ -7,6 +7,7 @@ import {
   cargoBuildArguments,
   cargoProfileDirectory,
   cargoTargetDirectory,
+  cargoTargetDirectoryForProfile,
   devRustTargetFor,
   devBuildVariables,
   enforceCliAvailability,
@@ -75,6 +76,20 @@ describe("bundle-cli Rust target selection", () => {
         serverRs,
       ),
     ).toBe(resolve("/var/cache/patchbay"));
+    expect(
+      cargoTargetDirectoryForProfile(
+        "dev",
+        { CARGO_TARGET_DIR: "/shared/target" },
+        serverRs,
+      ),
+    ).toBe(join(serverRs, "target"));
+    expect(
+      cargoTargetDirectoryForProfile(
+        "release",
+        { CARGO_TARGET_DIR: "/shared/target" },
+        serverRs,
+      ),
+    ).toBe(resolve("/shared/target"));
   });
 
   it("requires an explicit profile and makes development incremental", () => {

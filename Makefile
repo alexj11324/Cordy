@@ -187,19 +187,11 @@ db-drop: ## Permanently drop the current env's local database after confirmation
 
 # Drop + recreate the current env's database, then run all migrations.
 # Use for a clean slate in local dev. Only affects the DB named in
-# ENV_FILE (POSTGRES_DB); the shared postgres container and other
+# ENV_FILE (POSTGRES_DB); the selected local PostgreSQL runtime and other
 # worktree DBs are untouched. Refuses to run against a remote host.
 db-reset: ## Drop and recreate the current env's database, then re-run all migrations
 	$(REQUIRE_ENV)
-	@case "$(DATABASE_URL)" in \
-		""|*@localhost:*|*@localhost/*|*@127.0.0.1:*|*@127.0.0.1/*|*@\[::1\]:*|*@\[::1\]/*) ;; \
-		*) echo "Refusing to reset: DATABASE_URL points at a remote host."; exit 1 ;; \
-	esac
-	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
-	@echo "==> Dropping and recreating database '$(POSTGRES_DB)'..."
-	@$(COMPOSE) exec -T postgres psql -U $(POSTGRES_USER) -d postgres -v ON_ERROR_STOP=1 \
-		-c "DROP DATABASE IF EXISTS \"$(POSTGRES_DB)\" WITH (FORCE);" \
-		-c "CREATE DATABASE \"$(POSTGRES_DB)\";"
+	@bash scripts/reset-database.sh "$(ENV_FILE)"
 	@echo "==> Running migrations..."
 	$(RUST_MIGRATE_CMD) up
 	@echo ""

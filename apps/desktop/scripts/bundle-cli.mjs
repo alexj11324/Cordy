@@ -136,6 +136,19 @@ export function cargoTargetDirectory(env = process.env, cwd = serverRsDir) {
   return configured ? resolve(cwd, configured) : join(cwd, "target");
 }
 
+export function cargoTargetDirectoryForProfile(
+  profile,
+  env = process.env,
+  cwd = serverRsDir,
+) {
+  // Development outputs belong to one checkout. Sharing target/ across
+  // worktrees causes Cargo locks, stale incremental state and unsafe cleanup;
+  // cross-worktree reuse happens only through sccache and the artifact cache.
+  return profile === "dev"
+    ? join(cwd, "target")
+    : cargoTargetDirectory(env, cwd);
+}
+
 export function buildProfileFromArgs(argv) {
   const flagIndex = argv.indexOf("--profile");
   if (flagIndex === -1) {
@@ -271,7 +284,11 @@ async function main() {
   // Cargo resolves a relative CARGO_TARGET_DIR from its working directory.
   // Normalize it once and give the same absolute directory to both the build
   // and copy phases so a stale server-rs/target binary can never win.
-  const cargoTargetDir = cargoTargetDirectory(process.env, serverRsDir);
+  const cargoTargetDir = cargoTargetDirectoryForProfile(
+    profile,
+    process.env,
+    serverRsDir,
+  );
   const srcBinary = join(
     cargoTargetDir,
     rustTarget,

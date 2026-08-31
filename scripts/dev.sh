@@ -40,6 +40,11 @@ set +a
 # shellcheck disable=SC1091
 . scripts/local-env.sh
 
+# Complete dev owns a real Next.js listener for every browser-facing URL. Do
+# not inherit a stale/custom FRONTEND_ORIGIN that this launcher does not serve.
+export FRONTEND_ORIGIN="http://localhost:${FRONTEND_PORT:-3000}"
+export PATCHBAY_APP_URL="$FRONTEND_ORIGIN"
+
 # Preserve the upload location used by the established run-rust.sh launcher.
 # The backend itself runs from server-rs, so a relative value would otherwise
 # move existing attachments beneath that directory.
@@ -87,7 +92,12 @@ echo "  Dev CLI: source fingerprint cache, then incremental Cargo on miss"
 echo ""
 
 backend_pid=""
+web_pid=""
 cleanup() {
+  if [ -n "$web_pid" ] && kill -0 "$web_pid" >/dev/null 2>&1; then
+    kill "$web_pid" >/dev/null 2>&1 || true
+    wait "$web_pid" 2>/dev/null || true
+  fi
   if [ -n "$backend_pid" ] && kill -0 "$backend_pid" >/dev/null 2>&1; then
     kill "$backend_pid" >/dev/null 2>&1 || true
     wait "$backend_pid" 2>/dev/null || true
@@ -126,6 +136,49 @@ fi
 
 export VITE_API_URL="http://127.0.0.1:${PORT:-8080}"
 export VITE_WS_URL="ws://127.0.0.1:${PORT:-8080}/ws"
+export VITE_APP_URL="$FRONTEND_ORIGIN"
+export VITE_ACCOUNTS_URL="$FRONTEND_ORIGIN"
+export NEXT_PUBLIC_API_URL="$VITE_API_URL"
+export NEXT_PUBLIC_WS_URL="$VITE_WS_URL"
+
+frontend_ready_url="$FRONTEND_ORIGIN/"
+if curl --fail --silent --show-error "$frontend_ready_url" >/dev/null 2>&1; then
+  echo "✗ Frontend port ${FRONTEND_PORT:-3000} is already serving another Patchbay instance." >&2
+  echo "  Stop it or use this checkout's isolated FRONTEND_PORT before running pnpm dev." >&2
+  exit 1
+fi
+
+echo "==> Starting the browser/share/login origin at $FRONTEND_ORIGIN..."
+(
+  cd apps/web
+  exec node node_modules/next/dist/bin/next dev --webpack --port "${FRONTEND_PORT:-3000}"
+) &
+web_pid=$!
+
+frontend_deadline=$((SECONDS + 120))
+until curl --fail --silent --show-error "$frontend_ready_url" >/dev/null 2>&1; do
+  if ! kill -0 "$web_pid" >/dev/null 2>&1; then
+    wait "$web_pid" || true
+    echo "✗ Frontend exited before its browser-link health check passed." >&2
+    exit 1
+  fi
+  if [ "$SECONDS" -ge "$frontend_deadline" ]; then
+    echo "✗ Frontend did not become reachable within 2 minutes: $frontend_ready_url" >&2
+    exit 1
+  fi
+  sleep 1
+done
+
+missing_google_keys=()
+for key in NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY CLERK_SECRET_KEY CLERK_JWT_KEY CLERK_ISSUER CLERK_AUTHORIZED_PARTIES; do
+  if [ -z "${!key:-}" ]; then
+    missing_google_keys+=("$key")
+  fi
+done
+if [ ${#missing_google_keys[@]} -gt 0 ]; then
+  echo "! Google sign-in is unavailable; add these values to $ENV_FILE: ${missing_google_keys[*]}"
+fi
+
 export PATCHBAY_REQUIRE_SOURCE_CLI=1
 export PATCHBAY_DEV_ENV_FILE="$ENV_FILE"
 

@@ -6,9 +6,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { ensureDevCheckoutEnv } from "../apps/desktop/scripts/dev-checkout-env.mjs";
 import {
+  acquireDevLifecycleLock,
   clearDevProcessState,
   devProcessLauncherIsRunning,
   devProcessTreeIsRunning,
+  inspectDevProcessIdentity,
+  readProcessStartToken,
   readDevProcessState,
   signalDevProcessTree,
   writeDevProcessState,
@@ -47,54 +50,91 @@ export async function runCompleteDev({
   platform = process.platform,
   argv = process.argv.slice(2),
 } = {}) {
-  await ensureDevCheckoutEnv({ repoRoot, env });
-  const existing = await readDevProcessState(repoRoot);
-  if (existing) {
-    const treeRunning = devProcessTreeIsRunning(existing, { platform });
-    if (treeRunning && devProcessLauncherIsRunning(existing)) {
-      throw new Error(
-        `complete development is already running for this checkout (PID ${existing.pid}); run make stop first`,
-      );
-    }
-    if (treeRunning) {
-      throw new Error(
-        `tracked development process group ${existing.pid} is still running without its launcher; inspect it before removing ${repoRoot}/.patchbay-dev/dev-process.json`,
-      );
-    }
-    await clearDevProcessState(repoRoot, existing.pid);
-  }
-
-  const step = planCompleteDevLauncher(platform, argv, { repoRoot });
-  const child = spawn(step.command, step.args, {
-    cwd: repoRoot,
-    env,
-    stdio: "inherit",
-    detached: platform !== "win32",
-  });
-  await new Promise((resolveSpawn, rejectSpawn) => {
-    child.once("spawn", resolveSpawn);
-    child.once("error", rejectSpawn);
-  });
-  const completion = new Promise((resolveCompletion) => {
-    child.once("close", (code, signal) => resolveCompletion({ code, signal }));
-  });
-
-  const state = {
-    pid: child.pid,
-    parentPid: process.pid,
-    platform,
-    startedAt: new Date().toISOString(),
-  };
+  const releaseLifecycleLock = await acquireDevLifecycleLock(repoRoot);
+  let child;
+  let completion;
+  let state;
   try {
-    await writeDevProcessState(repoRoot, state);
-  } catch (error) {
-    signalDevProcessTree(state, { platform, force: true });
-    if (error?.code === "EEXIST") {
-      throw new Error(
-        "another complete development launch claimed this checkout; run make stop before retrying",
-      );
+    await ensureDevCheckoutEnv({ repoRoot, env });
+    const existing = await readDevProcessState(repoRoot);
+    if (existing) {
+      const identity = inspectDevProcessIdentity(existing, { platform });
+      if (identity.childRunning === false) {
+        if (
+          platform === "win32" ||
+          devProcessTreeIsRunning(existing, { platform })
+        ) {
+          throw new Error(
+            `refusing to replace complete development process state: recorded leader PID ${existing.pid} exited but the full process tree cannot be confirmed stopped; inspect ${repoRoot}/.patchbay-dev/dev-process.json`,
+          );
+        }
+        await clearDevProcessState(repoRoot, existing.pid);
+      } else if (!identity.matches) {
+        throw new Error(
+          `refusing to replace complete development process state: ${identity.reason}; inspect ${repoRoot}/.patchbay-dev/dev-process.json`,
+        );
+      } else if (
+        devProcessTreeIsRunning(existing, { platform }) &&
+        devProcessLauncherIsRunning(existing)
+      ) {
+        throw new Error(
+          `complete development is already running for this checkout (PID ${existing.pid}); run make stop first`,
+        );
+      } else {
+        throw new Error(
+          `tracked development process group ${existing.pid} has an inconsistent process tree; inspect it before removing ${repoRoot}/.patchbay-dev/dev-process.json`,
+        );
+      }
     }
-    throw error;
+
+    const step = planCompleteDevLauncher(platform, argv, { repoRoot });
+    child = spawn(step.command, step.args, {
+      cwd: repoRoot,
+      env,
+      stdio: "inherit",
+      detached: platform !== "win32",
+    });
+    await new Promise((resolveSpawn, rejectSpawn) => {
+      child.once("spawn", resolveSpawn);
+      child.once("error", rejectSpawn);
+    });
+    completion = new Promise((resolveCompletion) => {
+      child.once("close", (code, signal) =>
+        resolveCompletion({ code, signal }),
+      );
+    });
+
+    state = {
+      pid: child.pid,
+      parentPid: process.pid,
+      platform,
+      startedAt: new Date().toISOString(),
+    };
+    try {
+      state.processStartToken = readProcessStartToken(child.pid, { platform });
+      state.parentStartToken = readProcessStartToken(process.pid, { platform });
+      if (!state.processStartToken || !state.parentStartToken) {
+        throw new Error(
+          "could not capture complete development process identity",
+        );
+      }
+    } catch (error) {
+      signalDevProcessTree(state, { platform, force: true });
+      throw error;
+    }
+    try {
+      await writeDevProcessState(repoRoot, state);
+    } catch (error) {
+      signalDevProcessTree(state, { platform, force: true });
+      if (error?.code === "EEXIST") {
+        throw new Error(
+          "another complete development launch claimed this checkout; run make stop before retrying",
+        );
+      }
+      throw error;
+    }
+  } finally {
+    await releaseLifecycleLock();
   }
 
   const forwardSignal = () => {

@@ -5,7 +5,7 @@ description: Patchbay のローカル開発環境を構築し、テストを実�
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay は Rust バックエンドと pnpm monorepo で構成されています。ローカルで起動する最も簡単な方法は `pnpm dev` です。現在の checkout 用に環境、ソース一致 runtime、データベース、migration を準備し、完全な Electron と API を起動します。
+Patchbay は Rust バックエンドと pnpm monorepo で構成されています。ローカルで起動する最も簡単な方法は `pnpm dev` です。現在の checkout 用に環境、ソース一致 runtime、データベース、migration を準備し、完全な Electron、API、ブラウザのログイン/共有 origin を起動します。
 
 ## 必要な環境
 
@@ -29,12 +29,13 @@ cd patchbay
 pnpm dev
 ```
 
-メイン checkout は `.env` を使用します。ファイルがなければ `pnpm dev` が `.env.example` から作成し、共有 PostgreSQL を起動して依存関係をインストールし、migration を実行して API と Electron を起動します。
+メイン checkout は `.env` を使用します。ファイルがなければ `pnpm dev` が `.env.example` から作成し、共有 PostgreSQL を起動して依存関係をインストールし、migration を実行して API、ブラウザのログイン/共有 origin、Electron を起動します。
 
 デフォルトのアドレス:
 
 ```text
 Desktop: renderer hot reload 付きの Electron ウィンドウ
+ブラウザ/共有/ログイン origin: http://localhost:3000
 API: http://localhost:8080
 ```
 
@@ -57,7 +58,7 @@ make start-worktree
 make start-worktree
 ```
 
-現在の worktree の Desktop/Electron と API を停止するには:
+現在の worktree の Desktop/Electron、Web、API を停止するには:
 
 ```bash
 make stop-worktree
@@ -77,9 +78,9 @@ make stop-worktree
 ### 全体フロー
 
 ```bash
-make dev              # 完全な Electron + dev CLI + backend + 分離 DB
+make dev              # 完全な Electron + dev CLI + backend + Web origin + 分離 DB
 make start            # 既存環境で同じ完全な開発スタックを起動
-make stop             # 現在の checkout が追跡する Electron/backend プロセスツリーを停止
+make stop             # 現在の checkout が追跡する Electron/backend/Web プロセスツリーを停止
 make check            # ローカルの完全な検証フローを実行
 make build            # server、CLI、migrate バイナリをビルド
 ```
@@ -99,12 +100,12 @@ pnpm test
 
 Desktop の開発パスは完全モードの 1 つだけです：
 
-| 状況                                                    | コマンド                                  | 実行内容                                                                 |
-| ------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------ |
-| 通常のローカル製品開発                                  | `pnpm dev` または `make dev`              | Electron、ソース一致 dev CLI、backend、分離 DB、hot reload、能力チェック |
-| 開発診断の再実行                                        | `pnpm dev:doctor`                         | CLI/ソース/バージョン、backend/DB、agent 検出、Telegram/Weixin 設定      |
-| フロントエンド/Electron のビルド確認                    | `pnpm --filter @patchbay/desktop build`   | production JS bundle、Rust なし                                          |
-| installer、署名/公証、updater、内蔵 CLI、release を検証 | `pnpm --filter @patchbay/desktop package` | release Rust CLI と installer。数十分かかる場合あり                      |
+| 状況                                                    | コマンド                                  | 実行内容                                                                             |
+| ------------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------ |
+| 通常のローカル製品開発                                  | `pnpm dev` または `make dev`              | Electron、ソース一致 dev CLI、backend、Web origin、分離 DB、hot reload、能力チェック |
+| 開発診断の再実行                                        | `pnpm dev:doctor`                         | CLI/ソース/バージョン、backend/DB、agent 検出、Telegram/Weixin 設定                  |
+| フロントエンド/Electron のビルド確認                    | `pnpm --filter @patchbay/desktop build`   | production JS bundle、Rust なし                                                      |
+| installer、署名/公証、updater、内蔵 CLI、release を検証 | `pnpm --filter @patchbay/desktop package` | release Rust CLI と installer。数十分かかる場合あり                                  |
 
 dev runtime cache には一致する CLI、backend、migration runner が含まれ、Rust
 source、Cargo metadata、toolchain、target、architecture、profile、build 変数で

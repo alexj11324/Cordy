@@ -34,13 +34,11 @@ if [ -z "$POSTGRES_DB" ]; then
   exit 1
 fi
 
-case "$DATABASE_URL" in
-  "" | *@localhost:* | *@localhost/* | *@127.0.0.1:* | *@127.0.0.1/* | *@\[::1\]:* | *@\[::1\]/*) ;;
-  *)
-    echo "Refusing to drop database '$POSTGRES_DB': DATABASE_URL points at a remote host." >&2
-    exit 1
-    ;;
-esac
+parse_postgres_endpoint "$DATABASE_URL" "$POSTGRES_PORT"
+if ! postgres_host_is_local "$POSTGRES_RUNTIME_HOST"; then
+  echo "Refusing to drop database '$POSTGRES_DB': DATABASE_URL points at a remote host." >&2
+  exit 1
+fi
 
 case "$POSTGRES_DB" in
   postgres | template0 | template1)
@@ -91,7 +89,7 @@ else
     exit 1
   fi
   parse_postgres_endpoint "$DATABASE_URL" "$POSTGRES_PORT"
-  "$dropdb_command" \
+  postgres_clean_libpq_routing "$dropdb_command" \
     -h "$POSTGRES_RUNTIME_HOST" \
     -p "$POSTGRES_RUNTIME_PORT" \
     --username "$POSTGRES_USER" \

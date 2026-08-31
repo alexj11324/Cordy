@@ -161,10 +161,44 @@ if grep -Fq "Error" "$output"; then
   fail "remove-worktree printed an error after cancellation"
 fi
 
+worktree_git_dir="$(git -C "$worktree" rev-parse --absolute-git-dir)"
+mkdir "$worktree_git_dir/patchbay-dev-lifecycle.lock"
+: >"$docker_log"
+if printf 'y\n' | (cd "$repo" && PATH="$stub_dir:$PATH" DOCKER_LOG="$docker_log" \
+  bash "$root_dir/scripts/remove-worktree.sh" "$worktree") >"$output" 2>&1; then
+  fail "remove-worktree must refuse a concurrent development lifecycle"
+fi
+require_contains "$output" "development lifecycle is busy"
+if [ ! -d "$worktree" ]; then
+  fail "remove-worktree removed a worktree during a concurrent lifecycle"
+fi
+if [ -s "$docker_log" ]; then
+  fail "remove-worktree dropped the database before acquiring its lifecycle lock"
+fi
+rmdir "$worktree_git_dir/patchbay-dev-lifecycle.lock"
+
 mkdir -p "$worktree/node_modules/package" "$worktree/server-rs/target/debug" "$worktree/.patchbay-dev/bin"
 printf 'fixture\n' >"$worktree/node_modules/package/index.js"
 printf 'fixture\n' >"$worktree/server-rs/target/debug/binary"
 printf 'fixture\n' >"$worktree/.patchbay-dev/bin/patchbay-server"
+
+# A malformed or unverifiable process manifest must block database cleanup and
+# deletion instead of letting output cleanup erase the evidence.
+printf 'not-json\n' >"$worktree/.patchbay-dev/dev-process.json"
+: >"$docker_log"
+if printf 'y\n' | (cd "$repo" && PATH="$stub_dir:$PATH" DOCKER_LOG="$docker_log" \
+  bash "$root_dir/scripts/remove-worktree.sh" "$worktree") >"$output" 2>&1; then
+  fail "remove-worktree must refuse an unverifiable tracked development process"
+fi
+require_contains "$output" "invalid complete development process state"
+if [ ! -d "$worktree" ]; then
+  fail "remove-worktree removed a worktree with unverifiable process state"
+fi
+if [ -s "$docker_log" ]; then
+  fail "remove-worktree dropped the database before verifying process ownership"
+fi
+rm "$worktree/.patchbay-dev/dev-process.json"
+
 printf 'y\n' | (cd "$repo" && PATH="$stub_dir:$PATH" DOCKER_LOG="$docker_log" \
   bash "$root_dir/scripts/remove-worktree.sh" "$worktree") >"$output"
 if [ -e "$worktree" ]; then

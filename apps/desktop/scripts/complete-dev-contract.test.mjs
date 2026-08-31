@@ -46,6 +46,25 @@ describe("complete development launcher contract", () => {
     expect(launcher).toContain('dev.mjs "$@"');
   });
 
+  it("starts the live web origin used for browser, share, and login links", () => {
+    const backendReadiness = launcher.indexOf("until curl");
+    const web = launcher.indexOf("cd apps/web");
+    const webReadiness = launcher.indexOf(
+      'until curl --fail --silent --show-error "$frontend_ready_url"',
+    );
+    const electron = launcher.indexOf("node apps/desktop/scripts/dev.mjs");
+
+    expect(web).toBeGreaterThan(backendReadiness);
+    expect(webReadiness).toBeGreaterThan(web);
+    expect(electron).toBeGreaterThan(webReadiness);
+    expect(launcher).toContain(
+      'export FRONTEND_ORIGIN="http://localhost:${FRONTEND_PORT:-3000}"',
+    );
+    expect(launcher).toContain('export VITE_APP_URL="$FRONTEND_ORIGIN"');
+    expect(launcher).toContain("export VITE_ACCOUNTS_URL=");
+    expect(launcher).toContain("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY");
+  });
+
   it("rejects an already occupied backend port and keeps a native Windows path", () => {
     const occupiedCheck = launcher.indexOf(
       "is already serving another Patchbay",
