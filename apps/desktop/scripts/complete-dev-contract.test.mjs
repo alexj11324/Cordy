@@ -145,6 +145,12 @@ describe("complete development launcher contract", () => {
     expect(makefile).not.toContain("lsof -ti:$(PORT)");
   });
 
+  it("keeps Make development targets isolated unless an env file is explicit", () => {
+    expect(makefile).toContain("ENV_FILE ?= $(WORKTREE_ENV_FILE)");
+    expect(makefile).not.toContain("MAIN_ENV_FILE");
+    expect(makefile).toContain("pass ENV_FILE=.env explicitly");
+  });
+
   it("derives the cache toolchain from the same Cargo used for a miss", () => {
     const resolveCargo = runtimePreparer.indexOf("resolveCargoCommand(env");
     const identifyToolchain = runtimePreparer.indexOf(

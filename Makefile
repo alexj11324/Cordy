@@ -1,8 +1,11 @@
 .PHONY: help makehelp dev web-next-dev api-dev server rust-server daemon cli patchbay rust-cli build-rust-cli build rust-build test rust-test migrate-up migrate-down rust-migrate-up rust-migrate-down seed clean stop check worktree-env remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
 
-MAIN_ENV_FILE ?= .env
 WORKTREE_ENV_FILE ?= .env.worktree
-ENV_FILE ?= $(if $(wildcard $(MAIN_ENV_FILE)),$(MAIN_ENV_FILE),$(if $(wildcard $(WORKTREE_ENV_FILE)),$(WORKTREE_ENV_FILE),$(MAIN_ENV_FILE)))
+# Source-development Make targets must use the generated isolated checkout
+# environment by default. An explicit `ENV_FILE=.env` remains available for
+# self-host or other non-development operations, but a present root `.env`
+# must never silently collapse separate checkouts onto one database/port set.
+ENV_FILE ?= $(WORKTREE_ENV_FILE)
 
 ifneq ($(wildcard $(ENV_FILE)),)
 include $(ENV_FILE)
@@ -34,7 +37,7 @@ COMPOSE := docker compose
 define REQUIRE_ENV
 	@if [ ! -f "$(ENV_FILE)" ]; then \
 		echo "Missing env file: $(ENV_FILE)"; \
-		echo "Create .env from .env.example, or run 'make worktree-env' and use .env.worktree."; \
+		echo "Run 'make worktree-env' to create the isolated source-development environment, or pass ENV_FILE=.env explicitly for non-development use."; \
 		exit 1; \
 	fi
 endef
@@ -74,7 +77,7 @@ endef
 ##@ Help
 
 help: ## Show available make targets and common local workflows
-	@awk 'BEGIN {FS = ":.*## "; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nQuick start:\n  \033[36mmake dev\033[0m          Bootstrap the current checkout and start everything\n  \033[36mmake check\033[0m        Run the full local verification pipeline\n\nCheckout modes:\n  Main checkout uses \033[36m.env\033[0m\n  Worktrees use \033[36m.env.worktree\033[0m (generate with \033[36mmake worktree-env\033[0m)\n\n"} \
+	@awk 'BEGIN {FS = ":.*## "; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nQuick start:\n  \033[36mmake dev\033[0m          Bootstrap the current checkout and start everything\n  \033[36mmake check\033[0m        Run the full local verification pipeline\n\nCheckout modes:\n  Every source-development checkout uses \033[36m.env.worktree\033[0m (generate with \033[36mmake worktree-env\033[0m)\n  \033[36m.env\033[0m is selected only when passed explicitly for non-development use\n\n"} \
 		/^##@/ {printf "\n\033[1m%s\033[0m\n", substr($$0, 5); next} \
 		/^[a-zA-Z0-9_.-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
