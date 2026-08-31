@@ -1063,7 +1063,7 @@ impl LinearSyncWorker {
                     linear_issue_id: &remote.id,
                     linear_identifier: &remote.identifier,
                     last_common_snapshot: &snapshot,
-                    remote_updated_at,
+                    remote_updated_at: Some(remote_updated_at),
                     last_remote_event_at_ms: event_timestamp_ms,
                     last_remote_event_id: Some(source_event_id),
                 },
@@ -1113,7 +1113,7 @@ impl LinearSyncWorker {
             link.id,
             connection.workspace_id,
             &snapshot,
-            remote_updated_at,
+            Some(remote_updated_at),
             last_event_at_ms,
             last_event_id,
             "active",
@@ -1262,7 +1262,7 @@ fn extract_issue_id(payload: &Value) -> Option<String> {
     ]
     .into_iter()
     .flatten()
-    .and_then(Value::as_str)
+    .find_map(Value::as_str)
     .map(str::trim)
     .filter(|id| !id.is_empty())
     .map(str::to_string)

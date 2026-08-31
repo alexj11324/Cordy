@@ -1279,7 +1279,7 @@ struct IdentityOrganization {
     name: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 struct LinearCatalogPage<T> {
     nodes: Vec<T>,
     #[serde(rename = "pageInfo")]
