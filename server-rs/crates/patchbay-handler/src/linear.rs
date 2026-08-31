@@ -174,7 +174,7 @@ async fn get_connection(
     match linear_q::get_connection_for_workspace(&state.pool, workspace_id).await {
         Ok(Some(connection)) => Json(json!({
             "configured": true,
-            "connected": connection.status != "revoked",
+            "connected": connection.status == "active",
             "connection": connection_json(connection),
         }))
         .into_response(),
@@ -320,7 +320,7 @@ struct LinearTokenResponse {
     access_token: String,
     refresh_token: Option<String>,
     expires_in: Option<i64>,
-    scope: Option<String>,
+    scope: Option<LinearScopeResponse>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -362,6 +362,8 @@ struct LinearIdentity {
 pub enum LinearTokenError {
     #[error("Linear authorization requires reauthorization")]
     InvalidGrant,
+    #[error("Linear authorization requires reauthorization")]
+    ReauthorizationRequired,
     #[error("Linear provider returned an invalid response")]
     InvalidResponse,
     #[error("Linear provider request failed")]
@@ -571,8 +573,10 @@ impl LinearTokenManager {
         else {
             return Err(LinearTokenError::InvalidResponse);
         };
-        if connection.status == "revoked" {
-            return Err(LinearTokenError::InvalidResponse);
+        match connection.status.as_str() {
+            "active" => {}
+            "reauthorization_required" => return Err(LinearTokenError::ReauthorizationRequired),
+            _ => return Err(LinearTokenError::InvalidResponse),
         }
         let access_token = open_secret(&self.secret_box, &connection.access_token_encrypted)?;
         if connection.token_expires_at > Utc::now() + TOKEN_REFRESH_SKEW {
@@ -606,8 +610,7 @@ impl LinearTokenManager {
         let refresh_encrypted = seal_secret(&self.secret_box, rotated_refresh)?;
         let scopes = refreshed
             .scope
-            .as_deref()
-            .map(parse_scopes)
+            .map(LinearScopeResponse::into_json)
             .unwrap_or_else(|| connection.scopes.clone());
         linear_q::update_tokens(
             &mut *transaction,
@@ -628,8 +631,10 @@ impl LinearTokenManager {
         workspace_id: Uuid,
         connection: &LinearConnection,
     ) -> Result<(), LinearTokenError> {
-        if connection.status == "revoked" {
-            return Ok(());
+        match connection.status.as_str() {
+            "revoked" => return Ok(()),
+            "reauthorization_required" => return Err(LinearTokenError::ReauthorizationRequired),
+            _ => {}
         }
         let access_token = self.access_token(connection.id).await?;
         let response = self
@@ -790,8 +795,7 @@ async fn oauth_callback(
     };
     let scopes = token
         .scope
-        .as_deref()
-        .map(parse_scopes)
+        .map(LinearScopeResponse::into_json)
         .unwrap_or_else(|| json!([]));
     if let Err(error) = linear_q::upsert_connection(
         &state.pool,
@@ -862,10 +866,12 @@ async fn disconnect(
     };
     match manager.revoke_connection(workspace_id, &connection).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
-        Err(LinearTokenError::InvalidGrant) => error_response(
-            StatusCode::CONFLICT,
-            "Linear authorization requires reauthorization before disconnect",
-        ),
+        Err(LinearTokenError::InvalidGrant | LinearTokenError::ReauthorizationRequired) => {
+            error_response(
+                StatusCode::CONFLICT,
+                "Linear authorization requires reauthorization before disconnect",
+            )
+        }
         Err(LinearTokenError::Provider) => {
             error_response(StatusCode::BAD_GATEWAY, "Linear revoke request failed")
         }
@@ -909,6 +915,7 @@ enum WebhookValidationError {
     MissingOrganization,
     MissingWebhook,
     MissingTimestamp,
+    MissingHeaderTimestamp,
     ExpiredTimestamp,
     InvalidHeaderTimestamp,
     TimestampMismatch,
@@ -949,13 +956,13 @@ fn validate_webhook(
     if !timestamp_is_fresh(webhook_timestamp, now_ms) {
         return Err(WebhookValidationError::ExpiredTimestamp);
     }
-    if let Some(header_timestamp) = header_value(headers, "linear-timestamp") {
-        let header_timestamp = header_timestamp
-            .parse::<i64>()
-            .map_err(|_| WebhookValidationError::InvalidHeaderTimestamp)?;
-        if header_timestamp != webhook_timestamp {
-            return Err(WebhookValidationError::TimestampMismatch);
-        }
+    let header_timestamp = header_value(headers, "linear-timestamp")
+        .ok_or(WebhookValidationError::MissingHeaderTimestamp)?;
+    let header_timestamp = header_timestamp
+        .parse::<i64>()
+        .map_err(|_| WebhookValidationError::InvalidHeaderTimestamp)?;
+    if header_timestamp != webhook_timestamp {
+        return Err(WebhookValidationError::TimestampMismatch);
     }
     let delivery_id =
         header_value(headers, "linear-delivery").ok_or(WebhookValidationError::MissingDelivery)?;
@@ -998,6 +1005,9 @@ fn webhook_validation_response(error: WebhookValidationError) -> Response {
             StatusCode::BAD_REQUEST,
             "Linear Webhook webhookTimestamp is required",
         ),
+        WebhookValidationError::MissingHeaderTimestamp => {
+            (StatusCode::BAD_REQUEST, "missing Linear timestamp")
+        }
         WebhookValidationError::ExpiredTimestamp => (
             StatusCode::BAD_REQUEST,
             "Linear Webhook timestamp is expired",
@@ -1157,6 +1167,29 @@ fn sha256_hex(value: &str) -> String {
     hex::encode(Sha256::digest(value.as_bytes()))
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum LinearScopeResponse {
+    Text(String),
+    List(Vec<String>),
+}
+
+impl LinearScopeResponse {
+    fn into_json(self) -> Value {
+        match self {
+            Self::Text(value) => parse_scopes(&value),
+            Self::List(values) => Value::Array(
+                values
+                    .into_iter()
+                    .map(|value| value.trim().to_string())
+                    .filter(|value| !value.is_empty())
+                    .map(Value::String)
+                    .collect(),
+            ),
+        }
+    }
+}
+
 fn parse_scopes(scope: &str) -> Value {
     Value::Array(
         scope
@@ -1202,6 +1235,20 @@ mod tests {
         .expect("documented token response should deserialize");
         assert_eq!(token.access_token, "access");
         assert_eq!(token.refresh_token.as_deref(), Some("refresh"));
+        let token_with_array_scope: LinearTokenResponse = serde_json::from_value(json!({
+            "access_token": "access",
+            "refresh_token": "refresh",
+            "expires_in": 86399,
+            "scope": ["read", "write"]
+        }))
+        .expect("array scope response should deserialize");
+        assert_eq!(
+            token_with_array_scope
+                .scope
+                .expect("scope should be present")
+                .into_json(),
+            json!(["read", "write"])
+        );
     }
 
     #[test]
@@ -1210,6 +1257,10 @@ mod tests {
         assert_eq!(
             parse_scopes("read,write,issues:create,app:assignable"),
             json!(["read", "write", "issues:create", "app:assignable"])
+        );
+        assert_eq!(
+            LinearScopeResponse::List(vec!["read".into(), " write ".into()]).into_json(),
+            json!(["read", "write"])
         );
     }
 
@@ -1295,6 +1346,18 @@ mod tests {
         assert_eq!(
             validate_webhook(Some(secret), &headers, body, 1_700_000_000_000),
             Err(WebhookValidationError::MissingTimestamp)
+        );
+    }
+
+    #[test]
+    fn webhook_without_header_timestamp_is_rejected_even_with_a_valid_body_timestamp() {
+        let secret = "webhook-secret";
+        let timestamp = 1_700_000_000_000;
+        let body = br#"{"organizationId":"org-1","webhookId":"webhook-1","webhookTimestamp":1700000000000}"#;
+        let headers = signed_headers(secret, body, None);
+        assert_eq!(
+            validate_webhook(Some(secret), &headers, body, timestamp),
+            Err(WebhookValidationError::MissingHeaderTimestamp)
         );
     }
 

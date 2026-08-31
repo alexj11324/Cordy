@@ -611,34 +611,34 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "462_issue_category_policy_workspace_category_index",
         "uq_workspace_issue_category_policy_workspace_category",
     ),
-    ("453_linear_connection_id_index", "uq_linear_connection_id"),
+    ("466_linear_connection_id_index", "uq_linear_connection_id"),
     (
-        "454_linear_connection_workspace_index",
+        "467_linear_connection_workspace_index",
         "uq_linear_connection_workspace",
     ),
     (
-        "455_linear_connection_identity_index",
+        "468_linear_connection_identity_index",
         "uq_linear_connection_identity",
     ),
     (
-        "456_linear_oauth_state_id_index",
+        "469_linear_oauth_state_id_index",
         "uq_linear_oauth_state_id",
     ),
     (
-        "457_linear_oauth_state_hash_index",
+        "470_linear_oauth_state_hash_index",
         "uq_linear_oauth_state_hash",
     ),
     (
-        "458_linear_oauth_state_expiry_index",
+        "471_linear_oauth_state_expiry_index",
         "idx_linear_oauth_state_expiry",
     ),
-    ("459_linear_sync_inbox_id_index", "uq_linear_sync_inbox_id"),
+    ("472_linear_sync_inbox_id_index", "uq_linear_sync_inbox_id"),
     (
-        "460_linear_sync_inbox_delivery_index",
+        "473_linear_sync_inbox_delivery_index",
         "uq_linear_sync_inbox_delivery",
     ),
     (
-        "461_linear_sync_inbox_pending_index",
+        "474_linear_sync_inbox_pending_index",
         "idx_linear_sync_inbox_pending",
     ),
 ];
@@ -798,34 +798,34 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
         "462_issue_category_policy_workspace_category_index",
         "uq_workspace_issue_category_policy_workspace_category",
     ),
-    ("453_linear_connection_id_index", "uq_linear_connection_id"),
+    ("466_linear_connection_id_index", "uq_linear_connection_id"),
     (
-        "454_linear_connection_workspace_index",
+        "467_linear_connection_workspace_index",
         "uq_linear_connection_workspace",
     ),
     (
-        "455_linear_connection_identity_index",
+        "468_linear_connection_identity_index",
         "uq_linear_connection_identity",
     ),
     (
-        "456_linear_oauth_state_id_index",
+        "469_linear_oauth_state_id_index",
         "uq_linear_oauth_state_id",
     ),
     (
-        "457_linear_oauth_state_hash_index",
+        "470_linear_oauth_state_hash_index",
         "uq_linear_oauth_state_hash",
     ),
     (
-        "458_linear_oauth_state_expiry_index",
+        "471_linear_oauth_state_expiry_index",
         "idx_linear_oauth_state_expiry",
     ),
-    ("459_linear_sync_inbox_id_index", "uq_linear_sync_inbox_id"),
+    ("472_linear_sync_inbox_id_index", "uq_linear_sync_inbox_id"),
     (
-        "460_linear_sync_inbox_delivery_index",
+        "473_linear_sync_inbox_delivery_index",
         "uq_linear_sync_inbox_delivery",
     ),
     (
-        "461_linear_sync_inbox_pending_index",
+        "474_linear_sync_inbox_pending_index",
         "idx_linear_sync_inbox_pending",
     ),
 ];
