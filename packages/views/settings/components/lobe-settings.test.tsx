@@ -30,7 +30,7 @@ describe("Lobe settings adapters", () => {
         />
         <SettingsInput
           aria-label="Display name"
-          value="Cordy"
+          value="Example"
           onChange={onInputChange}
         />
       </LobeSettingsProvider>,
@@ -51,8 +51,8 @@ describe("Lobe settings adapters", () => {
     expect(onCheckedChange).toHaveBeenCalledWith(true);
 
     const input = screen.getByRole("textbox", { name: "Display name" });
-    expect(input).toHaveValue("Cordy");
-    fireEvent.change(input, { target: { value: "Cordy Prime" } });
+    expect(input).toHaveValue("Example");
+    fireEvent.change(input, { target: { value: "Example Prime" } });
     expect(onInputChange).toHaveBeenCalled();
   });
 });
