@@ -34,7 +34,7 @@ concurrency:
 jobs:
   prepare:
     if: >-
-      github.repository == 'alexj11324/Cordy' &&
+      github.event.repository.id == 1341050282 &&
       (
         github.event_name == 'workflow_dispatch' ||
         (
