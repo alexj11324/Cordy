@@ -899,6 +899,7 @@ impl LinearSyncWorker {
                         state_id.as_deref(),
                         due_date.as_deref(),
                         linear_owner_id.as_deref(),
+                        desired_delegate_id,
                     )
                     .await
                     .map_err(|error| classify_token_error(error, "create Linear Issue"))?
