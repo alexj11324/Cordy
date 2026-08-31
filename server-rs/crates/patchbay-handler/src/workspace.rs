@@ -576,7 +576,9 @@ async fn create_workspace(
                 );
             }
         }
-    } else if state.public_config.messaging.mode == "managed" {
+    } else if state.public_config.official_cloud
+        || std::env::var_os("PATCHBAY_HOSTED_WORKSPACE_LIMIT").is_some()
+    {
         let user_row = match user::get_user_for_update(&mut *transaction, user_id).await {
             Ok(Some(value)) => value,
             Ok(None) => return error_response(StatusCode::UNAUTHORIZED, "user not found"),

@@ -261,7 +261,10 @@ fn messaging_capabilities(
     let enabled = mode != "disabled";
     MessagingCapabilities {
         mode: mode.into(),
-        setup_writable: mode == "managed",
+        // Server-configured deployments still need the normal setup API until
+        // their provider environment variables are materialised into encrypted
+        // channel_installation rows by a dedicated provisioning path.
+        setup_writable: mode != "disabled",
         platforms: messaging_platforms(enabled),
     }
 }
@@ -311,7 +314,12 @@ fn is_public_https_url(raw: &str) -> bool {
             IpAddr::V4(ip) => {
                 !(ip.is_unspecified() || ip.is_loopback() || ip.is_private() || ip.is_link_local())
             }
-            IpAddr::V6(ip) => !(ip.is_loopback() || ip.is_unspecified() || ip.is_unique_local()),
+            IpAddr::V6(ip) => !(
+                ip.is_loopback()
+                    || ip.is_unspecified()
+                    || ip.is_unique_local()
+                    || ip.is_unicast_link_local()
+            ),
         };
     }
     true
@@ -320,12 +328,12 @@ fn is_public_https_url(raw: &str) -> bool {
 fn resolve_frontend_app_url_from_config(config: &patchbay_config::Config) -> String {
     let app_url = normalize_public_url(config.urls.app_url.as_deref().unwrap_or_default());
     if app_url.is_empty() {
-        let public_url =
-            normalize_public_url(config.urls.public_url.as_deref().unwrap_or_default());
-        if public_url.is_empty() {
-            normalize_public_url(config.urls.frontend_origin.as_deref().unwrap_or_default())
+        let frontend_origin =
+            normalize_public_url(config.urls.frontend_origin.as_deref().unwrap_or_default());
+        if !frontend_origin.is_empty() {
+            frontend_origin
         } else {
-            public_url
+            normalize_public_url(config.urls.public_url.as_deref().unwrap_or_default())
         }
     } else {
         app_url
@@ -541,7 +549,7 @@ mod tests {
         config.urls.app_url = Some("https://app.example".into());
         let capabilities = messaging_capabilities(&config, false, true);
         assert_eq!(capabilities.mode, "server_configured");
-        assert!(!capabilities.setup_writable);
+        assert!(capabilities.setup_writable);
 
         config.integrations.messaging_mode = Some("disabled".into());
         let capabilities = messaging_capabilities(&config, false, true);
@@ -563,5 +571,20 @@ mod tests {
             .platforms
             .iter()
             .all(|platform| !platform.enabled));
+    }
+
+    #[test]
+    fn frontend_origin_wins_over_api_fallback() {
+        let mut config = patchbay_config::Config::default();
+        config.urls.frontend_origin = Some("https://app.example/".into());
+        config.urls.public_url = Some("https://api.example/".into());
+        assert_eq!(resolve_frontend_app_url_from_config(&config), "https://app.example");
+    }
+
+    #[test]
+    fn ipv6_link_local_binding_origins_are_rejected() {
+        let mut config = patchbay_config::Config::default();
+        config.urls.app_url = Some("https://[fe80::1]".into());
+        assert!(public_bind_url_from_config(&config, false).is_empty());
     }
 }

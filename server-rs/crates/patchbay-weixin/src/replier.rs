@@ -16,8 +16,6 @@ use crate::inbound::WeixinRawEvent;
 
 const AGENT_OFFLINE: &str = "⚠️ The agent is offline. Your message was saved and will continue when its runtime reconnects.";
 const AGENT_ARCHIVED: &str = "⚠️ This agent has been archived. Please contact a workspace admin.";
-const QUOTA_EXCEEDED: &str =
-    "⚠️ This workspace has reached its hosted messaging limit for the month. Existing runs will finish; upgrade to continue starting new runs.";
 const FRESH_PENDING: &str =
     "✅ Fresh start ready. Your next message will run without prior context.";
 const ISSUE_USAGE: &str =
@@ -122,7 +120,13 @@ impl ReplierSeam for OutboundReplier {
         } else if *outcome == Outcome::agent_archived() {
             self.post(ctx, installation, message, AGENT_ARCHIVED).await
         } else if *outcome == Outcome::quota_exceeded() {
-            self.post(ctx, installation, message, QUOTA_EXCEEDED).await
+            self.post(
+                ctx,
+                installation,
+                message,
+                patchbay_channel::quota_exceeded_notice_for_message(message),
+            )
+            .await
         } else if *outcome == Outcome::fresh_pending() {
             self.post(ctx, installation, message, FRESH_PENDING).await
         } else if *outcome == Outcome::issue_usage() {

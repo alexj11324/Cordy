@@ -118,6 +118,17 @@ impl InstallationService {
         ctx: &CancellationToken,
         p: &InstallationParams,
     ) -> anyhow::Result<crate::types::Installation> {
+        self.upsert_with_limit(ctx, p, None).await
+    }
+
+    /// Upserts an installation while optionally enforcing the hosted
+    /// workspace cap in the same transaction as the write.
+    pub async fn upsert_with_limit(
+        &self,
+        ctx: &CancellationToken,
+        p: &InstallationParams,
+        installation_limit: Option<i64>,
+    ) -> anyhow::Result<crate::types::Installation> {
         validate_installation_params(p)?;
 
         let mut tx = self
@@ -125,6 +136,20 @@ impl InstallationService {
             .begin()
             .await
             .map_err(|e| anyhow::anyhow!("wecom: begin install tx: {e}"))?;
+
+        if let Some(limit) = installation_limit {
+            let allowed = patchbay_db::queries::channel::channel_installation_limit_allows(
+                &mut *tx,
+                p.workspace_id,
+                crate::CHANNEL_TYPE_WECOM,
+                (!p.agent_id.is_nil()).then_some(p.agent_id),
+                limit,
+            )
+            .await?;
+            if !allowed {
+                anyhow::bail!("hosted messaging installation limit reached");
+            }
+        }
 
         // The serialization boundary. Held until commit/rollback, so every
         // step below sees one consistent answer for who owns this bot.

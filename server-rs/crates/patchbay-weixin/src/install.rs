@@ -35,6 +35,16 @@ pub async fn finalize(
     pool: &PgPool,
     params: &InstallParams,
 ) -> anyhow::Result<ChannelInstallation> {
+    finalize_with_limit(pool, params, None).await
+}
+
+/// Finalizes an installation while optionally enforcing the hosted workspace
+/// cap in the same transaction as the upsert.
+pub async fn finalize_with_limit(
+    pool: &PgPool,
+    params: &InstallParams,
+    installation_limit: Option<i64>,
+) -> anyhow::Result<ChannelInstallation> {
     if params.bot_id.is_empty()
         || params
             .config
@@ -45,6 +55,19 @@ pub async fn finalize(
         anyhow::bail!("weixin: bot id does not match installation routing key");
     }
     let mut tx = pool.begin().await?;
+    if let Some(limit) = installation_limit {
+        let allowed = patchbay_db::queries::channel::channel_installation_limit_allows(
+            &mut *tx,
+            params.workspace_id,
+            crate::TYPE_WEIXIN,
+            (!params.agent_id.is_nil()).then_some(params.agent_id),
+            limit,
+        )
+        .await?;
+        if !allowed {
+            anyhow::bail!("hosted messaging installation limit reached");
+        }
+    }
     if params.agent_id.is_nil() {
         lock_channel_installation_hub_slot(&mut *tx, crate::TYPE_WEIXIN, params.workspace_id)
             .await?;

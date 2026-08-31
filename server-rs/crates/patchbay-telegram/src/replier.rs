@@ -21,8 +21,6 @@ use crate::config::{decode_credentials, DecrypterFn};
 const AGENT_OFFLINE_TEXT: &str =
     "⚠️ 智能体当前离线，消息已记录。下次 daemon 上线后会自动继续处理。";
 const AGENT_ARCHIVED_TEXT: &str = "⚠️ 该智能体已归档，无法回复。请联系工作区管理员。";
-const QUOTA_EXCEEDED_TEXT: &str =
-    "⚠️ 本月托管消息额度已用尽。现有任务会继续完成；升级套餐后即可继续发送新的消息。";
 const BINDING_GROUP_HINT: &str = "请先私聊我发送一条消息，再完成 Patchbay 账号绑定。";
 const FRESH_PENDING_TEXT: &str = "✅ 已准备开始新对话。你的下一条聊天消息将不带之前的上下文运行。";
 const ISSUE_USAGE_TEXT: &str = "请填写任务标题，格式如下：\n\n/issue <标题>\n[描述]（可选）";
@@ -142,7 +140,13 @@ impl OutboundReplier {
                 self.post(ctx, inst, msg, AGENT_ARCHIVED_TEXT).await
             }
             Some(outcome) if *outcome == Outcome::quota_exceeded() => {
-                self.post(ctx, inst, msg, QUOTA_EXCEEDED_TEXT).await
+            self.post(
+                ctx,
+                inst,
+                msg,
+                patchbay_channel::quota_exceeded_notice_for_message(msg),
+            )
+            .await
             }
             Some(outcome) if *outcome == Outcome::fresh_pending() => {
                 self.post(ctx, inst, msg, FRESH_PENDING_TEXT).await

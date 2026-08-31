@@ -454,6 +454,10 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
     staleTime: 30_000,
   });
   const quotaResetAt = formatQuotaResetAt(messagingQuota.data?.reset_at);
+  const quotaConsumed =
+    messagingQuota.data?.used !== null && messagingQuota.data?.used !== undefined
+      ? messagingQuota.data.used + (messagingQuota.data.reserved ?? 0)
+      : null;
 
   const listings = { lark, slack, dingtalk, wecom, telegram, weixin };
   const managedListing = managedChannel ? listings[managedChannel].data : undefined;
@@ -567,10 +571,10 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
                 <span>{t(($) => $.page.integrations_quota_unlimited)}</span>
               ) : messagingQuota.data.mode === "managed" &&
                 messagingQuota.data.limit !== null &&
-                messagingQuota.data.used !== null ? (
+                quotaConsumed !== null ? (
                 <span>
                   {t(($) => $.page.integrations_quota_used, {
-                    used: messagingQuota.data.used,
+                    used: quotaConsumed,
                     limit: messagingQuota.data.limit,
                   })}
                   {quotaResetAt

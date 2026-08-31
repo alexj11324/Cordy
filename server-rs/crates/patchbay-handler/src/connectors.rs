@@ -12,7 +12,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use base64::Engine as _;
-use chrono::{DateTime, Datelike, TimeZone, Utc};
+use chrono::{DateTime, Utc};
 use patchbay_db::models::ChannelInstallation;
 use patchbay_db::queries::{agent, channel, dingtalk};
 use patchbay_lark::client::ApiClient as _;
@@ -240,7 +240,7 @@ fn require_setup_writable(state: &HandlerState) -> Result<(), Response> {
 
 fn provider_capability(
     state: &HandlerState,
-    provider: Provider,
+    _provider: Provider,
 ) -> Option<&crate::config::MessagingPlatformCapability> {
     state
         .public_config
@@ -429,23 +429,6 @@ struct MessagingQuotaUsageResponse {
     reset_at: Option<String>,
 }
 
-fn utc_month_bounds(now: DateTime<Utc>) -> (DateTime<Utc>, DateTime<Utc>) {
-    let start = Utc
-        .with_ymd_and_hms(now.year(), now.month(), 1, 0, 0, 0)
-        .single()
-        .expect("the first day of a UTC month is always valid");
-    let (next_year, next_month) = if now.month() == 12 {
-        (now.year() + 1, 1)
-    } else {
-        (now.year(), now.month() + 1)
-    };
-    let end = Utc
-        .with_ymd_and_hms(next_year, next_month, 1, 0, 0, 0)
-        .single()
-        .expect("the first day of the next UTC month is always valid");
-    (start, end)
-}
-
 async fn messaging_usage(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
@@ -478,6 +461,14 @@ async fn messaging_usage(
         .into_response();
     }
 
+    let window = match quota {
+        patchbay_service::task_service::HostedChannelQuota::Limited(window) => window,
+        patchbay_service::task_service::HostedChannelQuota::Unlimited => {
+            patchbay_service::channel_quota::ChannelQuotaWindow::current_month(0, Utc::now())
+        }
+        patchbay_service::task_service::HostedChannelQuota::Disabled
+        | patchbay_service::task_service::HostedChannelQuota::Unavailable => unreachable!(),
+    };
     let mut connection = match state.pool.acquire().await {
         Ok(value) => value,
         Err(error) => {
@@ -489,9 +480,10 @@ async fn messaging_usage(
             );
         }
     };
-    let used = match patchbay_service::channel_quota::count_used_turns(
-        &mut connection,
+    let usage = match patchbay_service::channel_quota::count_turns_in_window(
+        &mut *connection,
         workspace_id,
+        window,
     )
     .await
     {
@@ -505,34 +497,21 @@ async fn messaging_usage(
             );
         }
     };
-    let reserved =
-        match patchbay_service::channel_quota::count_reserved_turns(&mut connection, workspace_id)
-            .await
-        {
-            Ok(value) => value,
-            Err(error) => {
-                tracing::warn!(%error, %workspace_id, "count reserved messaging usage failed");
-                return error_code_response(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "quota_unavailable",
-                    "hosted messaging usage is temporarily unavailable",
-                );
-            }
-        };
-    let (period_start, period_end) = utc_month_bounds(Utc::now());
     Json(MessagingQuotaUsageResponse {
         mode: mode.into(),
-        used: Some(used),
-        reserved: Some(reserved),
+        used: Some(usage.used),
+        reserved: Some(usage.reserved),
         limit: match quota {
-            patchbay_service::task_service::HostedChannelQuota::Limited(limit) => Some(limit),
+            patchbay_service::task_service::HostedChannelQuota::Limited(window) => {
+                Some(window.limit)
+            }
             patchbay_service::task_service::HostedChannelQuota::Disabled
             | patchbay_service::task_service::HostedChannelQuota::Unavailable
             | patchbay_service::task_service::HostedChannelQuota::Unlimited => None,
         },
-        period_start: Some(crate::timefmt::rfc3339(period_start)),
-        period_end: Some(crate::timefmt::rfc3339(period_end)),
-        reset_at: Some(crate::timefmt::rfc3339(period_end)),
+        period_start: Some(crate::timefmt::rfc3339(window.period_start)),
+        period_end: Some(crate::timefmt::rfc3339(window.period_end)),
+        reset_at: Some(crate::timefmt::rfc3339(window.reset_at)),
     })
     .into_response()
 }
@@ -966,7 +945,7 @@ async fn weixin_install_status(
         "base_url": base_url,
         "bot_token_encrypted": base64::engine::general_purpose::STANDARD.encode(sealed),
     });
-    let row = match patchbay_weixin::install::finalize(
+    let row = match patchbay_weixin::install::finalize_with_limit(
         &state.pool,
         &patchbay_weixin::install::InstallParams {
             workspace_id,
@@ -976,12 +955,16 @@ async fn weixin_install_status(
             ilink_user_id: status.ilink_user_id.clone(),
             config,
         },
+        hosted_installation_limit(&state),
     )
     .await
     {
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "failed to persist WeChat installation");
+            if let Some(response) = hosted_installation_limit_response(&error) {
+                return response;
+            }
             if error
                 .downcast_ref::<patchbay_weixin::install::InstallError>()
                 .is_some()
@@ -1219,6 +1202,7 @@ struct LarkRegistrationRuntime {
     http_base_url: String,
     cancel: CancellationToken,
     sessions: LarkSessionStore,
+    installation_limit: Option<i64>,
 }
 
 fn can_manage_lark_agent(role: &str, owner_id: Option<Uuid>, actor: Uuid) -> bool {
@@ -1372,6 +1356,7 @@ async fn begin_lark_install(
             .unwrap_or_default(),
         cancel: state.channel_cancel.clone(),
         sessions: sessions.clone(),
+        installation_limit: hosted_installation_limit(&state),
     };
     if !state.channel_tasks.spawn(run_lark_registration(
         runtime,
@@ -1582,6 +1567,45 @@ async fn run_lark_registration(
                 )
                 .await;
             return;
+        }
+        if let Some(limit) = runtime.installation_limit {
+            let allowed = match channel::channel_installation_limit_allows(
+                &mut *tx,
+                workspace_id,
+                Provider::Lark.channel_type(),
+                (!agent_id.is_nil()).then_some(agent_id),
+                limit,
+            )
+            .await
+            {
+                Ok(value) => value,
+                Err(error) => {
+                    let _ = tx.rollback().await;
+                    runtime
+                        .sessions
+                        .finish(
+                            &session_id,
+                            None,
+                            Some("installation_limit_unavailable"),
+                            Some(&error.to_string()),
+                        )
+                        .await;
+                    return;
+                }
+            };
+            if !allowed {
+                let _ = tx.rollback().await;
+                runtime
+                    .sessions
+                    .finish(
+                        &session_id,
+                        None,
+                        Some("installation_limit_reached"),
+                        Some("this workspace has reached its hosted messaging installation limit"),
+                    )
+                    .await;
+                return;
+            }
         }
         let app_id = result.client_id.clone();
         if let Err(error) = patchbay_lark::channel_store::reclaim_dead_installation_with(
@@ -2037,7 +2061,6 @@ async fn install_context(
                 "only workspace admins can connect a platform without selecting an Agent",
             ));
         }
-        enforce_managed_installation_limit(state, workspace_id, provider, None).await?;
         return Ok((workspace_id, Uuid::nil(), actor));
     };
     let agent_id = Uuid::parse_str(raw)
@@ -2051,7 +2074,6 @@ async fn install_context(
             "agent not found in this workspace",
         ));
     }
-    enforce_managed_installation_limit(state, workspace_id, provider, Some(agent_id)).await?;
     Ok((workspace_id, agent_id, actor))
 }
 
@@ -2072,54 +2094,23 @@ fn managed_installation_limit() -> Option<i64> {
     }
 }
 
-async fn enforce_managed_installation_limit(
-    state: &HandlerState,
-    workspace_id: Uuid,
-    provider: Provider,
-    agent_id: Option<Uuid>,
-) -> Result<(), Response> {
-    if state.public_config.messaging.mode != "managed" {
-        return Ok(());
-    }
-    let Some(limit) = managed_installation_limit() else {
-        return Ok(());
-    };
-    let row = sqlx::query_as::<_, (i64, bool)>(
-        r#"SELECT count(*)::bigint,
-                  EXISTS (
-                      SELECT 1
-                      FROM channel_installation AS same
-                      WHERE same.workspace_id = $1
-                        AND same.status = 'active'
-                        AND same.channel_type = $2
-                        AND same.agent_id IS NOT DISTINCT FROM $3
-                  )
-FROM channel_installation
-WHERE workspace_id = $1
-  AND status = 'active'"#,
-    )
-    .bind(workspace_id)
-    .bind(provider.channel_type())
-    .bind(agent_id)
-    .fetch_one(&state.pool)
-    .await
-    .map_err(|error| {
-        tracing::error!(%error, %workspace_id, provider = provider.label(), "check hosted messaging installation limit failed");
-        error_code_response(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "installation_limit_unavailable",
-            "hosted messaging installation limits are temporarily unavailable",
-        )
-    })?;
-    let (active_count, same_slot) = row;
-    if active_count >= limit && !same_slot {
-        return Err(error_code_response(
-            StatusCode::FORBIDDEN,
-            "im_installation_limit_reached",
-            "this workspace has reached its hosted messaging installation limit",
-        ));
-    }
-    Ok(())
+fn hosted_installation_limit(state: &HandlerState) -> Option<i64> {
+    (state.public_config.messaging.mode == "managed")
+        .then(managed_installation_limit)
+        .flatten()
+}
+
+fn hosted_installation_limit_response(error: &anyhow::Error) -> Option<Response> {
+    error
+        .to_string()
+        .contains("hosted messaging installation limit reached")
+        .then(|| {
+            error_code_response(
+                StatusCode::FORBIDDEN,
+                "im_installation_limit_reached",
+                "this workspace has reached its hosted messaging installation limit",
+            )
+        })
 }
 
 fn decode_body<T: for<'de> Deserialize<'de>>(bytes: &[u8]) -> Result<T, Response> {
@@ -2224,13 +2215,13 @@ async fn install_dingtalk(
         "",
     );
     match service
-        .register_byo(patchbay_dingtalk::byo_install::RegisterByoParams {
+        .register_byo_with_limit(patchbay_dingtalk::byo_install::RegisterByoParams {
             workspace_id,
             agent_id,
             initiator_id: actor,
             app_key: input.client_id,
             app_secret: input.client_secret,
-        })
+        }, hosted_installation_limit(&state))
         .await
     {
         Ok(row) => {
@@ -2243,6 +2234,9 @@ async fn install_dingtalk(
             .into_response()
         }
         Err(error) => {
+            if let Some(response) = hosted_installation_limit_response(&error) {
+                return response;
+            }
             tracing::warn!(error = %error, "DingTalk installation rejected");
             let (status, message) = dingtalk_install_error(&error);
             error_response(status, &message)
@@ -2286,7 +2280,7 @@ async fn install_wecom(
     let service = patchbay_wecom::installation::InstallationService::new(state.pool.clone(), box_);
     let cancel = CancellationToken::new();
     match service
-        .upsert(
+        .upsert_with_limit(
             &cancel,
             &patchbay_wecom::installation::InstallationParams {
                 workspace_id,
@@ -2296,6 +2290,7 @@ async fn install_wecom(
                 secret: input.secret.trim().into(),
                 bot_display_name: input.bot_name.trim().into(),
             },
+            hosted_installation_limit(&state),
         )
         .await
     {
@@ -2325,6 +2320,9 @@ async fn install_wecom(
             .into_response()
         }
         Err(error) => {
+            if let Some(response) = hosted_installation_limit_response(&error) {
+                return response;
+            }
             let failure = classify_wecom_install_error(&error);
             match failure.log {
                 WecomInstallLog::None => {}
@@ -2521,7 +2519,7 @@ async fn install_telegram(
         }
     };
     match patchbay_telegram::install::InstallService::new(state.pool.clone())
-        .persist_install(&persist)
+        .persist_install_with_limit(&persist, hosted_installation_limit(&state))
         .await
     {
         Ok(row) => {
@@ -2534,6 +2532,9 @@ async fn install_telegram(
             .into_response()
         }
         Err(error) => {
+            if let Some(response) = hosted_installation_limit_response(&error) {
+                return response;
+            }
             let failure = classify_telegram_install_persist_error(&error);
             if failure.status == StatusCode::INTERNAL_SERVER_ERROR {
                 tracing::error!(%error, %workspace_id, %agent_id, "Telegram installation persist failed");
@@ -2778,7 +2779,7 @@ async fn install_slack(
         }
     };
     match patchbay_slack::install::InstallService::new(state.pool.clone())
-        .persist_install(&persist)
+        .persist_install_with_limit(&persist, hosted_installation_limit(&state))
         .await
     {
         Ok(row) => {
@@ -2791,6 +2792,9 @@ async fn install_slack(
             .into_response()
         }
         Err(error) => {
+            if let Some(response) = hosted_installation_limit_response(&error) {
+                return response;
+            }
             let failure = classify_slack_install_persist_error(&error);
             if failure.status == StatusCode::INTERNAL_SERVER_ERROR {
                 tracing::error!(%error, %workspace_id, %agent_id, "Slack installation persist failed");

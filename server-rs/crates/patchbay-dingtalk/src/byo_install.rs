@@ -115,6 +115,16 @@ impl ByoInstallService {
         &self,
         p: RegisterByoParams,
     ) -> Result<ChannelInstallation, anyhow::Error> {
+        self.register_byo_with_limit(p, None).await
+    }
+
+    /// Registers a BYO robot and, when requested by the hosted handler,
+    /// enforces the installation cap inside the persistence transaction.
+    pub async fn register_byo_with_limit(
+        &self,
+        p: RegisterByoParams,
+        installation_limit: Option<i64>,
+    ) -> Result<ChannelInstallation, anyhow::Error> {
         let app_key = p.app_key.trim();
         let app_secret = p.app_secret.trim();
         if app_key.is_empty() {
@@ -160,13 +170,13 @@ impl ByoInstallService {
         // AppKey so the robot can move to this agent, and refuses a LIVE owner
         // with an accurate conflict sentinel.
         self.install
-            .persist_install(&InstallPersist {
+            .persist_install_with_limit(&InstallPersist {
                 ws_id: p.workspace_id,
                 agent_id: p.agent_id,
                 installer_id: p.initiator_id,
                 app_id_key: app_key.to_string(),
                 config_json,
-            })
+            }, installation_limit)
             .await
     }
 }

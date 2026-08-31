@@ -29,8 +29,6 @@ use crate::resolvers::{install_team_id, ORIGIN_SLACK_CHAT};
 const AGENT_OFFLINE_TEXT: &str = "⚠️ The agent is offline right now. Your message was received and will be handled once it's back online.";
 const AGENT_ARCHIVED_TEXT: &str =
     "⚠️ This agent has been archived and can't respond. Please contact your workspace admin.";
-const QUOTA_EXCEEDED_TEXT: &str =
-    "⚠️ This workspace has reached its hosted messaging limit for the month. Existing runs will finish; upgrade to continue starting new runs.";
 const FRESH_PENDING_TEXT: &str =
     "✅ Fresh start ready. Your next chat message will run without previous context.";
 const ISSUE_USAGE_TEXT: &str =
@@ -201,7 +199,12 @@ impl patchbay_channel_engine::resolvers::OutboundReplier for OutboundReplier {
                 .await
                 .map_err(|e| ("archived notice", e)),
             o if *o == Outcome::quota_exceeded() => self
-                .post(ctx, inst, msg, QUOTA_EXCEEDED_TEXT)
+                .post(
+                    ctx,
+                    inst,
+                    msg,
+                    patchbay_channel::quota_exceeded_notice_for_message(msg),
+                )
                 .await
                 .map_err(|e| ("quota notice", e)),
             o if *o == Outcome::fresh_pending() => self

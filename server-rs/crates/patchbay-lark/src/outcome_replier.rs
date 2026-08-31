@@ -202,7 +202,12 @@ impl OutcomeReplier for LarkOutcomeReplier {
                     .await
             }
             "quota_exceeded" => {
-                self.send_chat_notice(_ctx.clone(), inst, msg, QUOTA_EXCEEDED_COPY)
+                self.send_chat_notice(
+                    _ctx.clone(),
+                    inst,
+                    msg,
+                    patchbay_channel::quota_exceeded_notice_for_text(&msg.body),
+                )
                     .await
             }
             "fresh_pending" => {
@@ -458,8 +463,6 @@ pub const AGENT_OFFLINE_COPY: &str =
     "Agent 当前离线，消息已记录。下次 daemon 上线后会自动继续处理。";
 pub const AGENT_ARCHIVED_COPY: &str =
     "这个 Agent 已被归档，无法继续处理消息。请联系工作区管理员恢复或重新绑定。";
-pub const QUOTA_EXCEEDED_COPY: &str =
-    "本月托管消息额度已用尽。现有任务会继续完成；升级套餐后即可继续发送新的消息。";
 pub const FRESH_PENDING_COPY: &str =
     "✅ 已准备开始新对话。你的下一条聊天消息将不带之前的上下文运行。";
 pub const ISSUE_USAGE_COPY: &str =

@@ -6,7 +6,7 @@
 
 use crate::models::*;
 use chrono::{DateTime, Utc};
-use sqlx::Row;
+use sqlx::{PgConnection, Row};
 use uuid::Uuid;
 
 pub async fn acquire_channel_ws_lease(
@@ -1948,6 +1948,48 @@ WHERE id = $1"#,
     .execute(executor)
     .await?;
     Ok(r.rows_affected())
+}
+
+/// Checks a hosted installation cap while holding the workspace row lock.
+/// Callers must invoke this at the start of the same transaction that performs
+/// the installation upsert; the lock then serializes the count and write so
+/// concurrent OAuth/QR completions cannot both consume the final slot.
+pub async fn channel_installation_limit_allows(
+    executor: &mut PgConnection,
+    workspace_id: Uuid,
+    channel_type: &str,
+    agent_id: Option<Uuid>,
+    limit: i64,
+) -> anyhow::Result<bool> {
+    let workspace_exists = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM workspace WHERE id = $1 FOR UPDATE",
+    )
+    .bind(workspace_id)
+    .fetch_optional(&mut *executor)
+    .await?;
+    if workspace_exists.is_none() {
+        return Ok(false);
+    }
+    let (active_count, same_slot) = sqlx::query_as::<_, (i64, bool)>(
+        r#"SELECT count(*)::bigint,
+                  EXISTS (
+                      SELECT 1
+                      FROM channel_installation AS same
+                      WHERE same.workspace_id = $1
+                        AND same.status = 'active'
+                        AND same.channel_type = $2
+                        AND same.agent_id IS NOT DISTINCT FROM $3
+                  )
+FROM channel_installation
+WHERE workspace_id = $1
+  AND status = 'active'"#,
+    )
+    .bind(workspace_id)
+    .bind(channel_type)
+    .bind(agent_id)
+    .fetch_one(&mut *executor)
+    .await?;
+    Ok(active_count < limit || same_slot)
 }
 
 pub async fn upsert_channel_installation(

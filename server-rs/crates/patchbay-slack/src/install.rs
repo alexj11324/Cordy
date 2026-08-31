@@ -123,11 +123,34 @@ impl InstallService {
     /// identity state: Slack channel/user ids are scoped to the old app/team
     /// and must never be sent through the new credentials.
     pub async fn persist_install(&self, p: &InstallPersist) -> anyhow::Result<ChannelInstallation> {
+        self.persist_install_with_limit(p, None).await
+    }
+
+    /// Persists an installation while optionally enforcing the hosted
+    /// workspace cap in the same transaction as the upsert.
+    pub async fn persist_install_with_limit(
+        &self,
+        p: &InstallPersist,
+        installation_limit: Option<i64>,
+    ) -> anyhow::Result<ChannelInstallation> {
         let mut tx = self
             .pool
             .begin()
             .await
             .map_err(|e| anyhow::anyhow!("begin install tx: {e:#}"))?;
+        if let Some(limit) = installation_limit {
+            let allowed = patchbay_db::queries::channel::channel_installation_limit_allows(
+                &mut *tx,
+                p.ws_id,
+                TYPE_SLACK,
+                (!p.agent_id.is_nil()).then_some(p.agent_id),
+                limit,
+            )
+            .await?;
+            if !allowed {
+                anyhow::bail!("hosted messaging installation limit reached");
+            }
+        }
         if p.agent_id.is_nil() {
             lock_channel_installation_hub_slot(&mut *tx, TYPE_SLACK, p.ws_id).await?;
         } else {

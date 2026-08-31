@@ -79,7 +79,7 @@ use crate::attribution::{
     Result_ as AttributionResult,
 };
 use crate::automation::{EntitlementAction, EntitlementProvider};
-use crate::channel_quota::{self, ChannelQuotaMode};
+use crate::channel_quota::{self, ChannelQuotaMode, ChannelQuotaWindow};
 use crate::feature_flags::{composio_mcp_apps_enabled, FlagSource};
 use crate::issue_status;
 use crate::task_helpers::{compute_chat_elapsed_ms, priority_to_int, truncate_for_summary};
@@ -580,7 +580,7 @@ pub enum HostedChannelQuota {
     Disabled,
     Unavailable,
     Unlimited,
-    Limited(i64),
+    Limited(ChannelQuotaWindow),
 }
 
 /// The task domain service. Field usage mirrors Go's TaskService; the dead
@@ -695,18 +695,25 @@ impl TaskService {
     /// Resolves the server-authoritative hosted IM limit before opening the
     /// enqueue transaction.  The transaction still reserves the slot under a
     /// workspace row lock; this method only selects the policy to enforce.
-    async fn hosted_channel_limit(&self, workspace_id: Uuid) -> Option<i64> {
-        if !matches!(self.channel_quota_mode(), ChannelQuotaMode::Limited(_)) {
+    async fn hosted_channel_limit(&self, workspace_id: Uuid) -> Option<ChannelQuotaWindow> {
+        let ChannelQuotaMode::Limited(fallback) = self.channel_quota_mode() else {
             return None;
-        }
+        };
         if let Some(provider) = self.im_entitlements() {
             let decision = provider.gate_im_agent_turns(workspace_id).await;
-            return (decision.gate_action == EntitlementAction::Enforce)
-                .then_some(decision.gate_limit)
-                .flatten()
-                .filter(|limit| *limit >= 0);
+            if decision.gate_action != EntitlementAction::Enforce {
+                return None;
+            }
+            return decision.gate_limit.and_then(|limit| {
+                ChannelQuotaWindow::from_entitlement(
+                    limit,
+                    decision.gate_period_start,
+                    decision.gate_period_end,
+                    decision.gate_reset_at,
+                )
+            });
         }
-        self.channel_quota_mode().limit()
+        Some(ChannelQuotaWindow::current_month(fallback, chrono::Utc::now()))
     }
 
     /// Resolves the displayable hosted IM policy for the usage endpoint.
@@ -720,6 +727,7 @@ impl TaskService {
             ChannelQuotaMode::Disabled => HostedChannelQuota::Disabled,
             ChannelQuotaMode::Unlimited => HostedChannelQuota::Unlimited,
             ChannelQuotaMode::Limited(fallback) => {
+                let fallback = ChannelQuotaWindow::current_month(fallback, chrono::Utc::now());
                 let Some(provider) = self.im_entitlements() else {
                     return HostedChannelQuota::Limited(fallback);
                 };
@@ -728,8 +736,14 @@ impl TaskService {
                     EntitlementAction::Off => HostedChannelQuota::Unavailable,
                     EntitlementAction::Observe | EntitlementAction::Enforce => {
                         match decision.gate_limit {
-                            Some(limit) if limit >= 0 => HostedChannelQuota::Limited(limit),
-                            Some(_) => HostedChannelQuota::Unavailable,
+                            Some(limit) => ChannelQuotaWindow::from_entitlement(
+                                limit,
+                                decision.gate_period_start,
+                                decision.gate_period_end,
+                                decision.gate_reset_at,
+                            )
+                            .map(HostedChannelQuota::Limited)
+                            .unwrap_or(HostedChannelQuota::Unavailable),
                             None => HostedChannelQuota::Unlimited,
                         }
                     }
@@ -4096,7 +4110,7 @@ impl TaskService {
             None => RuntimeMcpOverlayData::default(),
         };
 
-        let hosted_channel_limit = self.hosted_channel_limit(agent.workspace_id).await;
+        let hosted_channel_window = self.hosted_channel_limit(agent.workspace_id).await;
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
 
         // Refuse to enqueue onto an archived session — the one enqueue path
@@ -4120,7 +4134,7 @@ impl TaskService {
         // checking before the session lock would let that message bypass the
         // atomic hosted-turn reservation. The workspace-scoped lock + count is
         // the reservation; any later failure rolls it back with this tx.
-        if let Some(limit) = hosted_channel_limit {
+        if let Some(window) = hosted_channel_window {
             let channel_turn =
                 channel_quota::has_channel_ingested_message(&mut tx, chat_session.id)
                     .await
@@ -4130,7 +4144,7 @@ impl TaskService {
                         ))
                     })?;
             if channel_turn {
-                match channel_quota::admit_turn(&mut tx, agent.workspace_id, limit).await {
+                match channel_quota::admit_turn(&mut tx, agent.workspace_id, window).await {
                     Ok(()) => {}
                     Err(channel_quota::ChannelQuotaAdmissionError::Exceeded(error)) => {
                         return Err(TaskServiceError::ChannelQuotaExceeded {
