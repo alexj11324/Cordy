@@ -8638,6 +8638,14 @@ pub(crate) struct IssueResponse {
     owner_id: Option<String>,
     executor_type: Option<String>,
     executor_id: Option<String>,
+    /// Additive compatibility projection for clients that still decode the
+    /// pre-role-split response. The canonical model remains owner/executor;
+    /// these fields are emitted only at this HTTP boundary and are never read
+    /// back into domain state.
+    #[serde(rename = "assignee_type")]
+    assignee_type: Option<String>,
+    #[serde(rename = "assignee_id")]
+    assignee_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reviewer_type: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -8666,6 +8674,13 @@ pub(crate) struct IssueResponse {
 
 impl IssueResponse {
     pub(crate) fn from_issue(issue: &Issue, prefix: &str) -> Self {
+        let (assignee_type, assignee_id) = match (issue.owner_type.as_deref(), issue.owner_id) {
+            (Some("member"), Some(id)) => (Some("member".to_string()), Some(id.to_string())),
+            _ => (
+                issue.executor_type.clone(),
+                issue.executor_id.map(|id| id.to_string()),
+            ),
+        };
         Self {
             id: issue.id.to_string(),
             workspace_id: issue.workspace_id.to_string(),
@@ -8681,6 +8696,8 @@ impl IssueResponse {
             owner_id: issue.owner_id.map(|id| id.to_string()),
             executor_type: issue.executor_type.clone(),
             executor_id: issue.executor_id.map(|id| id.to_string()),
+            assignee_type,
+            assignee_id,
             reviewer_type: issue.reviewer_type.clone(),
             reviewer_id: issue.reviewer_id.map(|id| id.to_string()),
             creator_type: issue.creator_type.clone(),

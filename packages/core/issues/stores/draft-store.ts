@@ -128,6 +128,51 @@ function isLegacyFlatDraft(d: Record<string, unknown>): boolean {
   );
 }
 
+type LegacyAssigneeType = "member" | "agent" | "team";
+
+function legacyAssignee(rawType: unknown, rawId: unknown):
+  | { ownerId: string }
+  | { executorType: Exclude<LegacyAssigneeType, "member">; executorId: string }
+  | undefined {
+  if (
+    (rawType !== "member" && rawType !== "agent" && rawType !== "team") ||
+    typeof rawId !== "string" ||
+    rawId.length === 0
+  ) {
+    return undefined;
+  }
+  return rawType === "member"
+    ? { ownerId: rawId }
+    : { executorType: rawType, executorId: rawId };
+}
+
+function migrateManualRole(
+  manual: IssueCreateManual,
+  raw: Record<string, unknown>,
+): IssueCreateManual {
+  const legacyManual = manual as IssueCreateManual & {
+    assigneeType?: unknown;
+    assigneeId?: unknown;
+  };
+  const legacy = legacyAssignee(
+    raw.assigneeType ?? legacyManual.assigneeType,
+    raw.assigneeId ?? legacyManual.assigneeId,
+  );
+  if (!legacy) return manual;
+
+  const next = { ...manual };
+  if ("ownerId" in legacy) {
+    if (next.ownerId === undefined) next.ownerId = legacy.ownerId;
+  } else if (next.executorType === undefined && next.executorId === undefined) {
+    next.executorType = legacy.executorType;
+    next.executorId = legacy.executorId;
+  }
+  // Do not retain the removed fields in the canonical draft snapshot.
+  delete (next as IssueCreateManual & { assigneeType?: unknown }).assigneeType;
+  delete (next as IssueCreateManual & { assigneeId?: unknown }).assigneeId;
+  return next;
+}
+
 // Drafts persisted by older builds either predate a later-added sub-field or
 // use the pre-PB-5181 flat shape. Backfill defaults so every read site can
 // rely on the declared IssueCreateDraft shape instead of re-defending, and lift
@@ -137,6 +182,21 @@ function migrateDraft(raw: unknown): IssueCreateDraft {
   const d = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
 
   if (isLegacyFlatDraft(d)) {
+    const manual = migrateManualRole(
+      {
+        ...emptyManual(),
+        title: (d.title as string) ?? "",
+        description: (d.description as string) ?? "",
+        status: (d.status as IssueStatus) ?? "todo",
+        startDate: (d.startDate as string | null) ?? null,
+        labelIds: Array.isArray(d.labelIds) ? (d.labelIds as string[]) : [],
+        propertyValues:
+          d.propertyValues && typeof d.propertyValues === "object"
+            ? (d.propertyValues as IssuePropertyValues)
+            : {},
+      },
+      d,
+    );
     return {
       shared: {
         ...emptyShared(),
@@ -147,28 +207,26 @@ function migrateDraft(raw: unknown): IssueCreateDraft {
         // as `uploaded` placeholders (and drops stale `uploading` ones).
         attachments: normalizeStoredUploads(d.attachments),
       },
-      manual: {
-        ...emptyManual(),
-        title: (d.title as string) ?? "",
-        description: (d.description as string) ?? "",
-        status: (d.status as IssueStatus) ?? "todo",
-        startDate: (d.startDate as string | null) ?? null,
-        executorType: d.executorType as IssueExecutorType | undefined,
-        executorId: d.executorId as string | undefined,
-        reviewerType: d.reviewerType as IssueReviewerType | undefined,
-        reviewerId: d.reviewerId as string | undefined,
-        labelIds: Array.isArray(d.labelIds) ? (d.labelIds as string[]) : [],
-        propertyValues:
-          d.propertyValues && typeof d.propertyValues === "object"
-            ? (d.propertyValues as IssuePropertyValues)
-            : {},
-      },
+      manual: migrateManualRole(
+        {
+          ...manual,
+          reviewerType: d.reviewerType as IssueReviewerType | undefined,
+          reviewerId: d.reviewerId as string | undefined,
+          executorType: d.executorType as IssueExecutorType | undefined,
+          executorId: d.executorId as string | undefined,
+        },
+        d,
+      ),
       agent: emptyAgent(),
       activeMode: "manual",
     };
   }
 
   const sharedRaw = (d.shared as Partial<IssueCreateShared> & { attachments?: unknown }) ?? {};
+  const manualRaw = (d.manual as Partial<IssueCreateManual> & {
+    assigneeType?: unknown;
+    assigneeId?: unknown;
+  }) ?? {};
   return {
     shared: {
       ...emptyShared(),
@@ -177,7 +235,7 @@ function migrateDraft(raw: unknown): IssueCreateDraft {
       // drops `uploading` placeholders (bytes are gone).
       attachments: normalizeStoredUploads(sharedRaw.attachments),
     },
-    manual: { ...emptyManual(), ...((d.manual as Partial<IssueCreateManual>) ?? {}) },
+    manual: migrateManualRole({ ...emptyManual(), ...manualRaw }, manualRaw),
     agent: { ...emptyAgent(), ...((d.agent as Partial<IssueCreateAgent>) ?? {}) },
     activeMode: d.activeMode === "agent" ? "agent" : "manual",
   };
@@ -234,10 +292,30 @@ export const useIssueDraftStore = create<IssueDraftStore>()(
       merge: (persistedState, currentState) => {
         const persisted = (persistedState ?? {}) as Partial<IssueDraftStore> & {
           draft?: unknown;
+          lastAssigneeType?: unknown;
+          lastAssigneeId?: unknown;
         };
+        const {
+          lastAssigneeType: _legacyLastAssigneeType,
+          lastAssigneeId: _legacyLastAssigneeId,
+          ...persistedCanonical
+        } = persisted;
+        const legacyLast = legacyAssignee(
+          _legacyLastAssigneeType,
+          _legacyLastAssigneeId,
+        );
         return {
           ...currentState,
-          ...persisted,
+          ...persistedCanonical,
+          ...(legacyLast && "ownerId" in legacyLast && persisted.lastOwnerId === undefined
+            ? { lastOwnerId: legacyLast.ownerId }
+            : {}),
+          ...(legacyLast && "executorType" in legacyLast && persisted.lastExecutorType === undefined
+            ? {
+                lastExecutorType: legacyLast.executorType,
+                lastExecutorId: legacyLast.executorId,
+              }
+            : {}),
           draft: migrateDraft(persisted.draft),
         };
       },

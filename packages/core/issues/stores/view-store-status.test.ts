@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, beforeEach } from "vitest";
 import { createStore, type StoreApi } from "zustand/vanilla";
-import { viewStoreSlice, type IssueViewState } from "./view-store";
+import { mergeViewStatePersisted, viewStoreSlice, type IssueViewState } from "./view-store";
 import { baselineFromQuery } from "../../issue-views/baseline";
 
 /**
@@ -72,5 +72,35 @@ describe("saved view baseline", () => {
     const baseline = baselineFromQuery({ statusFilters: ["", "qa"] });
 
     expect([...baseline.status]).toEqual(["qa"]);
+  });
+});
+
+describe("legacy view-state migration", () => {
+  it("translates assignee fields before merging persisted state", () => {
+    const current = createStore<IssueViewState>()((set) => viewStoreSlice(set)).getState();
+    const merged = mergeViewStatePersisted(
+      {
+        grouping: "assignee",
+        swimlaneGrouping: "assignee",
+        tableGrouping: "assignee",
+        assigneeFilters: [{ type: "member", id: "user-1" }],
+        includeNoAssignee: true,
+        cardProperties: { assignee: false },
+        tableColumns: [{ key: "title" }, { key: "assignee" }],
+        swimlaneOrders: { assignee: ["member:user-1"] },
+        collapsedSwimlanes: { assignee: ["none"] },
+      },
+      current,
+    );
+
+    expect(merged.grouping).toBe("executor");
+    expect(merged.swimlaneGrouping).toBe("executor");
+    expect(merged.tableGrouping).toBe("executor");
+    expect(merged.executorFilters).toEqual([{ type: "member", id: "user-1" }]);
+    expect(merged.includeNoExecutor).toBe(true);
+    expect(merged.cardProperties.executor).toBe(false);
+    expect(merged.tableColumns.map((column) => column.key)).toEqual(["title", "executor"]);
+    expect(merged.swimlaneOrders.executor).toEqual(["member:user-1"]);
+    expect(merged.collapsedSwimlanes.executor).toEqual(["none"]);
   });
 });

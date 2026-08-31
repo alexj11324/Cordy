@@ -272,6 +272,43 @@ describe("issue draft store — legacy rehydrate", () => {
     expect(draft.activeMode).toBe("agent");
   });
 
+  it("migrates legacy assignee fields into owner/executor roles", async () => {
+    localStorage.setItem(
+      "patchbay_issue_draft:roles",
+      JSON.stringify({
+        state: {
+          draft: {
+            shared: {},
+            manual: {
+              title: "human-owned",
+              assigneeType: "member",
+              assigneeId: "user-1",
+            },
+            agent: {},
+            activeMode: "manual",
+          },
+          lastAssigneeType: "agent",
+          lastAssigneeId: "agent-1",
+        },
+        version: 0,
+      }),
+    );
+
+    setCurrentWorkspace("roles", "ws_roles");
+    await flush();
+    await flush();
+
+    const state = useIssueDraftStore.getState();
+    expect(state.draft.manual.ownerId).toBe("user-1");
+    expect(state.draft.manual.executorType).toBeUndefined();
+    expect(state.draft.manual.executorId).toBeUndefined();
+    expect(state.lastOwnerId).toBeUndefined();
+    expect(state.lastExecutorType).toBe("agent");
+    expect(state.lastExecutorId).toBe("agent-1");
+    expect((state.draft.manual as unknown as Record<string, unknown>).assigneeType).toBeUndefined();
+    expect((state.draft.manual as unknown as Record<string, unknown>).assigneeId).toBeUndefined();
+  });
+
   it("normalizes pre-L2 shared attachments and drops stale uploading placeholders", async () => {
     localStorage.setItem(
       "patchbay_issue_draft:gamma",

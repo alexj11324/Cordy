@@ -589,16 +589,77 @@ export function mergeViewStatePersisted<T extends IssueViewState>(
   persisted: unknown,
   current: T,
 ): T {
-  const p = (persisted ?? {}) as Partial<T>;
+  const isRecord = (v: unknown): v is Record<string, unknown> =>
+    v !== null && typeof v === "object" && !Array.isArray(v);
+  const raw = isRecord(persisted) ? persisted : {};
+  const p = { ...raw } as Record<string, unknown>;
+
+  // The persist key predates the owner/executor split. Normalize the complete
+  // old shape before it is spread over defaults so stale enum values cannot
+  // reach query planning or overwrite the canonical fields. Member actor
+  // filters remain in `executorFilters` intentionally: the surface query
+  // projects member actors to owner filters and agent/team actors to executor
+  // filters in one place.
+  const actorArray = (value: unknown): ActorFilterValue[] =>
+    Array.isArray(value)
+      ? value.filter(
+          (actor): actor is ActorFilterValue =>
+            isRecord(actor) &&
+            (actor.type === "member" || actor.type === "agent" || actor.type === "team") &&
+            typeof actor.id === "string",
+        )
+      : [];
+  const legacyActors = actorArray(raw.assigneeFilters);
+  if (raw.executorFilters === undefined && legacyActors.length > 0) {
+    p.executorFilters = legacyActors;
+  }
+  if (raw.includeNoExecutor === undefined && raw.includeNoAssignee === true) {
+    p.includeNoExecutor = true;
+  }
+  delete p.assigneeFilters;
+  delete p.includeNoAssignee;
+
+  for (const key of ["grouping", "swimlaneGrouping", "tableGrouping"] as const) {
+    if (p[key] === "assignee") p[key] = "executor";
+  }
+
+  const migrateGroupingMap = (value: unknown): Record<string, unknown> | undefined => {
+    if (!isRecord(value)) return undefined;
+    const next = { ...value };
+    if (next.executor === undefined && next.assignee !== undefined) {
+      next.executor = next.assignee;
+    }
+    delete next.assignee;
+    return next;
+  };
+  const swimlaneOrders = migrateGroupingMap(raw.swimlaneOrders);
+  if (swimlaneOrders) p.swimlaneOrders = swimlaneOrders;
+  const collapsedSwimlanes = migrateGroupingMap(raw.collapsedSwimlanes);
+  if (collapsedSwimlanes) p.collapsedSwimlanes = collapsedSwimlanes;
+
+  if (isRecord(raw.cardProperties)) {
+    const cardProperties = { ...raw.cardProperties };
+    if (cardProperties.executor === undefined && typeof cardProperties.assignee === "boolean") {
+      cardProperties.executor = cardProperties.assignee;
+    }
+    delete cardProperties.assignee;
+    p.cardProperties = cardProperties;
+  }
+  if (Array.isArray(raw.tableColumns)) {
+    p.tableColumns = raw.tableColumns.map((column) => {
+      if (!isRecord(column)) return column;
+      return { ...column, key: column.key === "assignee" ? "executor" : column.key };
+    });
+  }
+
+  const normalized = p as Partial<T>;
   // `collapsedSwimlanes` changed shape from `string[]` to
   // `Record<SwimlaneGrouping, string[]>`. A snapshot saved in the old
   // shape would otherwise overwrite the default record with an array
   // and crash on first read — fall back to the default when the
   // persisted value isn't a plain object.
-  const isRecord = (v: unknown): v is Record<string, unknown> =>
-    v !== null && typeof v === "object" && !Array.isArray(v);
-  const persistedTableColumns = Array.isArray(p.tableColumns)
-    ? p.tableColumns.filter(
+  const persistedTableColumns = Array.isArray(normalized.tableColumns)
+    ? normalized.tableColumns.filter(
         (column): column is TableColumnConfig =>
           !!column &&
           typeof column === "object" &&
@@ -613,26 +674,26 @@ export function mergeViewStatePersisted<T extends IssueViewState>(
   );
   return {
     ...current,
-    ...p,
+    ...normalized,
     cardProperties: {
       ...current.cardProperties,
-      ...(p.cardProperties ?? {}),
+      ...(normalized.cardProperties ?? {}),
     },
-    swimlaneOrders: isRecord(p.swimlaneOrders)
-      ? { ...current.swimlaneOrders, ...p.swimlaneOrders }
+    swimlaneOrders: isRecord(normalized.swimlaneOrders)
+      ? { ...current.swimlaneOrders, ...normalized.swimlaneOrders }
       : current.swimlaneOrders,
-    collapsedSwimlanes: isRecord(p.collapsedSwimlanes)
-      ? { ...current.collapsedSwimlanes, ...p.collapsedSwimlanes }
+    collapsedSwimlanes: isRecord(normalized.collapsedSwimlanes)
+      ? { ...current.collapsedSwimlanes, ...normalized.collapsedSwimlanes }
       : current.collapsedSwimlanes,
     tableColumns: [
       persistedTitle ?? current.tableColumns[0] ?? { key: "title" },
       ...dedupedTableColumns,
     ],
-    tableCollapsedGroups: Array.isArray(p.tableCollapsedGroups)
-      ? p.tableCollapsedGroups
+    tableCollapsedGroups: Array.isArray(normalized.tableCollapsedGroups)
+      ? normalized.tableCollapsedGroups
       : current.tableCollapsedGroups,
-    tableCollapsedParents: Array.isArray(p.tableCollapsedParents)
-      ? p.tableCollapsedParents
+    tableCollapsedParents: Array.isArray(normalized.tableCollapsedParents)
+      ? normalized.tableCollapsedParents
       : current.tableCollapsedParents,
   };
 }

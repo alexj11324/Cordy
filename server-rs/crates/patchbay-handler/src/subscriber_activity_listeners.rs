@@ -18,6 +18,8 @@ struct IssueFields {
     workspace_id: Uuid,
     creator_type: String,
     creator_id: Uuid,
+    owner_type: Option<String>,
+    owner_id: Option<Uuid>,
     executor_type: Option<String>,
     executor_id: Option<Uuid>,
     reviewer_type: Option<String>,
@@ -69,6 +71,22 @@ async fn handle_issue_created(pool: &PgPool, bus: &Bus, event: &Event) -> anyhow
         "creator",
     )
     .await?;
+    if let (Some(user_type), Some(user_id)) = (fields.owner_type.as_deref(), fields.owner_id) {
+        if is_assignment_recipient(user_type)
+            && !(user_type == fields.creator_type && user_id == fields.creator_id)
+        {
+            add_subscriber(
+                pool,
+                bus,
+                fields.workspace_id,
+                fields.id,
+                user_type,
+                user_id,
+                "owner",
+            )
+            .await?;
+        }
+    }
     if let (Some(user_type), Some(user_id)) = (fields.executor_type.as_deref(), fields.executor_id)
     {
         if is_assignment_recipient(user_type)
@@ -123,6 +141,22 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) -> anyhow
         return Ok(());
     };
 
+    if flag(&event.payload, "owner_changed") {
+        if let (Some(user_type), Some(user_id)) = (fields.owner_type.as_deref(), fields.owner_id) {
+            if is_assignment_recipient(user_type) {
+                add_subscriber(
+                    pool,
+                    bus,
+                    fields.workspace_id,
+                    fields.id,
+                    user_type,
+                    user_id,
+                    "owner",
+                )
+                .await?;
+            }
+        }
+    }
     if flag(&event.payload, "executor_changed") {
         if let (Some(user_type), Some(user_id)) =
             (fields.executor_type.as_deref(), fields.executor_id)
@@ -280,6 +314,26 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) -> anyhow
             event,
             &fields,
             "executor_changed",
+            Value::Object(details),
+        )
+        .await?;
+    }
+    if flag(&event.payload, "owner_changed") {
+        let mut details = Map::new();
+        insert_optional(&mut details, "from_type", event.payload.get("prev_owner_type"));
+        insert_optional(&mut details, "from_id", event.payload.get("prev_owner_id"));
+        insert_optional_str(&mut details, "to_type", fields.owner_type.as_deref());
+        insert_optional_str(
+            &mut details,
+            "to_id",
+            fields.owner_id.as_ref().map(Uuid::to_string).as_deref(),
+        );
+        create_activity(
+            pool,
+            bus,
+            event,
+            &fields,
+            "owner_changed",
             Value::Object(details),
         )
         .await?;
@@ -575,6 +629,8 @@ fn scoped_issue(event: &Event) -> Option<IssueFields> {
         workspace_id,
         creator_type: string(issue, "creator_type"),
         creator_id: uuid(issue, "creator_id")?,
+        owner_type: optional_string(issue, "owner_type"),
+        owner_id: uuid(issue, "owner_id"),
         executor_type: optional_string(issue, "executor_type"),
         executor_id: uuid(issue, "executor_id"),
         reviewer_type: optional_string(issue, "reviewer_type"),

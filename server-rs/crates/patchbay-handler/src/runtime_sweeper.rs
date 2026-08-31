@@ -594,6 +594,11 @@ mod tests {
             workspace_id,
         )
         .await?;
+        patchbay_db::queries::workspace_issue_category_policy::delete_workspace_issue_category_policies(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_automation_children(
             &mut *tx,
             workspace_id,

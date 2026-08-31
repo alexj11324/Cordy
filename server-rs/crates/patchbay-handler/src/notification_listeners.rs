@@ -19,6 +19,8 @@ struct IssueFields {
     description: Option<String>,
     status: String,
     priority: String,
+    owner_type: Option<String>,
+    owner_id: Option<Uuid>,
     executor_type: Option<String>,
     executor_id: Option<Uuid>,
     reviewer_type: Option<String>,
@@ -81,6 +83,30 @@ fn handle_issue_created(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
             return Ok(());
         }
         let mut skip = HashSet::from_iter(event_actor(&event));
+        if let (Some(recipient_type), Some(recipient_id)) =
+            (fields.owner_type.as_deref(), fields.owner_id)
+        {
+            if is_assignment_recipient(recipient_type) {
+                skip.insert(recipient_id);
+                notify_direct(
+                    &pool,
+                    &bus,
+                    &event,
+                    InboxSpec {
+                        recipient_type,
+                        recipient_id,
+                        issue_id: fields.id,
+                        issue_status: &fields.status,
+                        notif_type: "issue_assigned",
+                        severity: "action_required",
+                        title: &fields.title,
+                        body: None,
+                        details: &json!({}),
+                    },
+                )
+                .await?;
+            }
+        }
         if let (Some(recipient_type), Some(recipient_id)) =
             (fields.executor_type.as_deref(), fields.executor_id)
         {
@@ -207,6 +233,83 @@ fn handle_issue_updated(pool: PgPool, bus: Arc<Bus>, event: Event) -> ListenerFu
                 &fields,
                 &exclude,
                 "executor_changed",
+                "info",
+                "",
+                &details,
+            )
+            .await?;
+        }
+        if flag(&event.payload, "owner_changed") {
+            let mut details = Map::new();
+            insert_string(
+                &mut details,
+                "prev_owner_type",
+                event.payload.get("prev_owner_type"),
+            );
+            insert_string(
+                &mut details,
+                "prev_owner_id",
+                event.payload.get("prev_owner_id"),
+            );
+            insert_str(&mut details, "new_owner_type", fields.owner_type.as_deref());
+            let new_id = fields.owner_id.map(|id| id.to_string());
+            insert_str(&mut details, "new_owner_id", new_id.as_deref());
+            let details = Value::Object(details);
+
+            if let (Some(recipient_type), Some(recipient_id)) =
+                (fields.owner_type.as_deref(), fields.owner_id)
+            {
+                if is_assignment_recipient(recipient_type) {
+                    notify_direct(
+                        &pool,
+                        &bus,
+                        &event,
+                        InboxSpec {
+                            recipient_type,
+                            recipient_id,
+                            issue_id: fields.id,
+                            issue_status: &fields.status,
+                            notif_type: "issue_assigned",
+                            severity: "action_required",
+                            title: &fields.title,
+                            body: None,
+                            details: &details,
+                        },
+                    )
+                    .await?;
+                }
+            }
+            let previous_type = optional_string(&event.payload, "prev_owner_type");
+            let previous_id = uuid(&event.payload, "prev_owner_id");
+            if previous_type.as_deref() == Some("member") {
+                if let Some(recipient_id) = previous_id {
+                    notify_direct(
+                        &pool,
+                        &bus,
+                        &event,
+                        InboxSpec {
+                            recipient_type: "member",
+                            recipient_id,
+                            issue_id: fields.id,
+                            issue_status: &fields.status,
+                            notif_type: "unassigned",
+                            severity: "info",
+                            title: &fields.title,
+                            body: None,
+                            details: &details,
+                        },
+                    )
+                    .await?;
+                }
+            }
+            let exclude = previous_id.into_iter().chain(fields.owner_id).collect();
+            notify_subscribers(
+                &pool,
+                &bus,
+                &event,
+                &fields,
+                &exclude,
+                "owner_changed",
                 "info",
                 "",
                 &details,
@@ -868,6 +971,8 @@ fn handler_issue(event: &Event, created: bool) -> Option<IssueFields> {
         description: optional_string(value, "description"),
         status: string(value, "status"),
         priority: string(value, "priority"),
+        owner_type: optional_string(value, "owner_type"),
+        owner_id: uuid(value, "owner_id"),
         executor_type: optional_string(value, "executor_type"),
         executor_id: uuid(value, "executor_id"),
         reviewer_type: optional_string(value, "reviewer_type"),
@@ -892,6 +997,8 @@ fn fields_from_issue(issue: Issue) -> IssueFields {
         description: issue.description,
         status: issue.status,
         priority: issue.priority,
+        owner_type: issue.owner_type,
+        owner_id: issue.owner_id,
         executor_type: issue.executor_type,
         executor_id: issue.executor_id,
         reviewer_type: issue.reviewer_type,

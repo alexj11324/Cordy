@@ -294,22 +294,9 @@ pub(crate) async fn build_claimed_task_response(
         )
         .await);
     }
-    if execution_target
-        .model_id
-        .as_deref()
-        .is_none_or(|model| model.trim().is_empty())
-    {
-        return Err(fail_claimed_task_before_launch(
-            state,
-            task,
-            "Task execution target has no concrete model.",
-            patchbay_task_failure::Reason::INVALID_TASK_IDENTITY,
-            "error_missing_execution_model",
-            StatusCode::CONFLICT,
-            "task execution target model is missing",
-        )
-        .await);
-    }
+    // A blank model is an intentional runtime-default selection. Older agents
+    // and existing queue rows rely on the provider adapter resolving that
+    // default at launch time, so it is not an invalid task identity.
     obj.insert(
         "execution_target".into(),
         json!({
