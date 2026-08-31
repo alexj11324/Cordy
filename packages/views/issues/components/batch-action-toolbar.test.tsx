@@ -59,6 +59,7 @@ vi.mock("./pickers", () => ({
       data-mixed={String(Boolean(mixed))}
     />
   ),
+  OwnerPicker: () => <div data-testid="owner-picker" />,
 }));
 
 function makeIssue(overrides: Partial<Issue> = {}): Issue {

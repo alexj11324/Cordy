@@ -66,6 +66,7 @@ vi.mock("./pickers", () => ({
       />
     </div>
   ),
+  OwnerPicker: () => <div data-testid="owner-picker" />,
 }));
 
 function makeIssue(overrides: Partial<Issue> = {}): Issue {
