@@ -466,7 +466,10 @@ jobs:
               return
             fi
 
-            version_id="$(find_tag_version_field "$package" "$final_tag" id)"
+            if ! version_id="$(find_tag_version_field "$package" "$final_tag" id)"; then
+              echo "::error::Failed to inspect $package during rollback" >&2
+              return 1
+            fi
             if [ -n "$version_id" ]; then
               endpoint="$(package_versions_endpoint "$package")"
               gh api -X DELETE "$endpoint/$version_id"
