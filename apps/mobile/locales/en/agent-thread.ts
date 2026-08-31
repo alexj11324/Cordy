@@ -19,6 +19,9 @@ const agentThread = {
   quick_create: "Quick create",
   task: "Task",
   agent: "Agent",
+  role_picker_unassigned: "Unassigned",
+  role_picker_needs_runtime: "Needs runtime",
+  role_picker_no_matches: "No matches.",
   continue_prompt: "Continue this Agent thread",
   permission_denied:
     "You no longer have permission to continue this Agent thread.",

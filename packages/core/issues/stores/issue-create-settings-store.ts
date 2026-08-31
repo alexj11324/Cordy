@@ -26,6 +26,7 @@ export const MANUAL_CREATE_FIELDS: ManualCreateField[] = [
   "priority",
   "owner",
   "executor",
+  "reviewer",
   "labels",
   "project",
   "due_date",

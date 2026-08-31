@@ -978,6 +978,77 @@ RETURNING id"#,
     Ok(row.is_some())
 }
 
+/// Returns the concrete ACP/model target selected by the active planner for an
+/// issue.  A graph node may intentionally omit both fields, in which case the
+/// normal execution-agent default applies.  The service treats a half-filled
+/// pair as invalid rather than silently mixing a planner model with a runtime
+/// default.
+#[derive(Debug, Clone, sqlx::FromRow)]
+pub struct DependencyGraphExecutionTarget {
+    pub runtime_id: Option<Uuid>,
+    pub model_id: Option<String>,
+}
+
+pub async fn get_execution_target_for_issue<'e, E>(
+    executor: E,
+    workspace_id: Uuid,
+    issue_id: Uuid,
+) -> anyhow::Result<Option<DependencyGraphExecutionTarget>>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    Ok(sqlx::query_as::<_, DependencyGraphExecutionTarget>(
+        r#"SELECT node.runtime_id, node.model_id
+FROM dependency_graph_node node
+JOIN dependency_graph_plan plan
+  ON plan.id = node.plan_id
+ AND plan.workspace_id = node.workspace_id
+ AND plan.status = 'active'
+WHERE node.workspace_id = $1
+  AND node.issue_id = $2
+ORDER BY plan.updated_at DESC, plan.id ASC, node.id ASC
+LIMIT 1"#,
+    )
+    .bind(workspace_id)
+    .bind(issue_id)
+    .fetch_optional(executor)
+    .await?)
+}
+
+/// Reopens an issue when admission succeeded but task creation failed before
+/// a queue row was committed. The pending-task guard makes this safe when a
+/// create actually won a race and the caller only observed a later error.
+pub async fn release_admitted_issue_for_execution<'e, E>(
+    executor: E,
+    workspace_id: Uuid,
+    issue_id: Uuid,
+) -> anyhow::Result<bool>
+where
+    E: Executor<'e, Database = sqlx::Postgres>,
+{
+    let row = sqlx::query(
+        r#"UPDATE issue
+SET status = 'todo',
+    revision = revision + 1,
+    last_activity_at = GREATEST(COALESCE(last_activity_at, updated_at), now()),
+    updated_at = now()
+WHERE id = $1
+  AND workspace_id = $2
+  AND issue_effective_status(workspace_id, status) = 'in_progress'
+  AND NOT EXISTS (
+      SELECT 1 FROM agent_task_queue pending
+      WHERE pending.issue_id = issue.id
+        AND pending.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
+  )
+RETURNING id"#,
+    )
+    .bind(issue_id)
+    .bind(workspace_id)
+    .fetch_optional(executor)
+    .await?;
+    Ok(row.is_some())
+}
+
 /// Persists a fail-closed attention marker when a prerequisite fails or is
 /// cancelled. It is intentionally separate from plan cancellation: operators
 /// can inspect/replan the active graph without losing its audit history.

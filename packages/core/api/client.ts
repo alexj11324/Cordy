@@ -4368,10 +4368,14 @@ export class ApiClient {
     workspaceId: string,
     body: LinearProjectBindingRequest,
   ): Promise<LinearProjectBinding> {
-    return this.fetch(`/api/workspaces/${workspaceId}/linear/project-bindings`, {
+    const response = await this.fetch<{ binding: LinearProjectBinding }>(
+      `/api/workspaces/${workspaceId}/linear/project-bindings`,
+      {
       method: "POST",
       body: JSON.stringify(body),
-    });
+      },
+    );
+    return response.binding;
   }
 
   async tombstoneLinearProjectBinding(

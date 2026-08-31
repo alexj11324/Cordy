@@ -3436,7 +3436,7 @@ async fn move_issue(
     fields.remove("before_id");
     fields.remove("after_id");
     fields.insert("position".into(), json!(position));
-    match apply_issue_update(&state, &context, &headers, current, &fields, true).await {
+    match apply_issue_update(&state, &context, &headers, current, &fields, true, None).await {
         Ok(issue) => issue_response(&state, issue).await,
         Err(response) => response,
     }
@@ -5530,7 +5530,7 @@ fn review_return_actions(leaving_review: bool, suppress_run: bool) -> ReviewRetu
 }
 
 fn issue_workflow_violation(
-    previous_category: &str,
+    _previous_category: &str,
     next_category: &str,
     previous_executor: Option<(&str, Uuid)>,
     next_executor: Option<(&str, Uuid)>,
@@ -5540,8 +5540,7 @@ fn issue_workflow_violation(
     if patchbay_service::issue_status::requires_executor(next_category) && next_executor.is_none() {
         return Some(IssueWorkflowViolation::ActiveExecutorRequired);
     }
-    if previous_category != patchbay_service::issue_status::IN_REVIEW
-        && next_category == patchbay_service::issue_status::IN_REVIEW
+    if next_category == patchbay_service::issue_status::IN_REVIEW
         && (next_reviewer.is_none() || next_reviewer == next_executor)
     {
         return Some(IssueWorkflowViolation::ReviewHandoffRequired);
@@ -5683,7 +5682,7 @@ async fn update_issue(
         Ok(fields) => fields,
         Err(response) => return response,
     };
-    match apply_issue_update(&state, &context, &headers, previous, &fields, true).await {
+    match apply_issue_update(&state, &context, &headers, previous, &fields, true, None).await {
         Ok(issue) => issue_response(&state, issue).await,
         Err(response) => response,
     }
@@ -5950,6 +5949,16 @@ async fn patrick_mutate_issue(
             );
         }
     }
+    let audit_details = json!({
+        "change_reason": request.change_reason.trim(),
+        "correlation_id": request.correlation_id,
+        "task_id": execution.task_id,
+        "run_id": execution.run_id,
+        "expected_revision": request.expected_revision,
+        "fields": request.changes.keys().collect::<Vec<_>>(),
+        "linear_remote_updated_at": request.linear_remote_updated_at,
+        "linear_remote_snapshot": request.linear_remote_snapshot,
+    });
     let mut fields = request.changes.clone();
     fields.insert(
         "expected_revision".to_string(),
@@ -5967,6 +5976,11 @@ async fn patrick_mutate_issue(
         issue.clone(),
         &fields,
         true,
+        Some(PatrickAuditContext {
+            activity_id: request.correlation_id,
+            actor_id: execution.agent_id,
+            details: audit_details.clone(),
+        }),
     )
     .await
     {
@@ -5974,65 +5988,55 @@ async fn patrick_mutate_issue(
         Err(response) => return response,
     };
 
-    let audit_details = json!({
-        "change_reason": request.change_reason.trim(),
-        "correlation_id": request.correlation_id,
-        "task_id": execution.task_id,
-        "run_id": execution.run_id,
-        "expected_revision": request.expected_revision,
-        "fields": request.changes.keys().collect::<Vec<_>>(),
-        "linear_remote_updated_at": request.linear_remote_updated_at,
-        "linear_remote_snapshot": request.linear_remote_snapshot,
-    });
-    match activity::create_activity(
-        &state.pool,
-        updated.workspace_id,
-        updated.id,
-        Some("agent"),
-        Some(execution.agent_id),
-        "patrick_issue_mutated",
-        &audit_details,
-        request.correlation_id,
-    )
-    .await
-    {
-        Ok(Some(entry)) => {
-            state.bus.publish(&patchbay_events::Event {
-                event_type: patchbay_protocol::EVENT_ACTIVITY_CREATED.into(),
-                workspace_id: updated.workspace_id.to_string(),
-                actor_type: "agent".into(),
-                actor_id: execution.agent_id.to_string(),
-                payload: json!({
-                    "issue_id": updated.id,
-                    "entry": {
-                        "type": "activity",
-                        "id": entry.id,
-                        "actor_type": "agent",
-                        "actor_id": execution.agent_id,
-                        "action": entry.action,
-                        "details": audit_details,
-                        "created_at": crate::timefmt::rfc3339(entry.created_at),
-                    }
-                }),
-                task_id: execution.task_id.to_string(),
-                chat_session_id: String::new(),
-            });
-        }
-        Ok(None) => {}
-        Err(error) => {
-            tracing::warn!(%error, issue_id = %updated.id, "failed to write Patrick mutation audit");
+    let entry = match activity::get_activity(&state.pool, request.correlation_id).await {
+        Ok(Some(entry)) => entry,
+        Ok(None) => {
+            tracing::error!(issue_id = %updated.id, correlation_id = %request.correlation_id, "Patrick mutation committed without an audit");
             return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to record Patrick mutation audit",
             );
         }
-    }
+        Err(error) => {
+            tracing::warn!(%error, issue_id = %updated.id, "failed to load Patrick mutation audit");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to record Patrick mutation audit",
+            );
+        }
+    };
+    state.bus.publish(&patchbay_events::Event {
+        event_type: patchbay_protocol::EVENT_ACTIVITY_CREATED.into(),
+        workspace_id: updated.workspace_id.to_string(),
+        actor_type: "agent".into(),
+        actor_id: execution.agent_id.to_string(),
+        payload: json!({
+            "issue_id": updated.id,
+            "entry": {
+                "type": "activity",
+                "id": entry.id,
+                "actor_type": "agent",
+                "actor_id": execution.agent_id,
+                "action": entry.action,
+                "details": audit_details,
+                "created_at": crate::timefmt::rfc3339(entry.created_at),
+            }
+        }),
+        task_id: execution.task_id.to_string(),
+        chat_session_id: String::new(),
+    });
     Json(json!({
         "issue": issue_response_projection(&state, &updated).await,
         "correlation_id": request.correlation_id,
         "revision": updated.revision,
     }))
     .into_response()
+}
+
+struct PatrickAuditContext {
+    activity_id: Uuid,
+    actor_id: Uuid,
+    details: Value,
 }
 
 async fn apply_issue_update(
@@ -6042,6 +6046,7 @@ async fn apply_issue_update(
     previous: Issue,
     fields: &serde_json::Map<String, Value>,
     notify_parent: bool,
+    patrick_audit: Option<PatrickAuditContext>,
 ) -> Result<Issue, Response> {
     let expected_revision = match update_field::<i64>(fields, "expected_revision")? {
         UpdateField::Value(value) if value > 0 => Some(value),
@@ -6498,6 +6503,30 @@ async fn apply_issue_update(
     let previous = locked;
     let did_change = issue_mutable_fields_differ(&previous, &next);
     if !did_change && attachment_ids.is_empty() {
+        if let Some(audit) = patrick_audit.as_ref() {
+            activity::create_activity(
+                &mut *tx,
+                previous.workspace_id,
+                previous.id,
+                Some("agent"),
+                Some(audit.actor_id),
+                "patrick_issue_mutated",
+                &audit.details,
+                audit.activity_id,
+            )
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, issue_id = %previous.id, "failed to write Patrick mutation audit");
+                error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to record Patrick mutation audit",
+                )
+            })?;
+            tx.commit().await.map_err(|error| {
+                tracing::warn!(%error, issue_id = %previous.id, "failed to commit Patrick mutation audit");
+                error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
+            })?;
+        }
         return Ok(previous);
     }
     let did_activity = issue_activity_fields_differ(&previous, &next);
@@ -6652,6 +6681,26 @@ RETURNING *"#,
                 "failed to enqueue Linear synchronization",
             )
         })?;
+    if let Some(audit) = patrick_audit.as_ref() {
+        activity::create_activity(
+            &mut *tx,
+            updated.workspace_id,
+            updated.id,
+            Some("agent"),
+            Some(audit.actor_id),
+            "patrick_issue_mutated",
+            &audit.details,
+            audit.activity_id,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, issue_id = %updated.id, "failed to write Patrick mutation audit");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to record Patrick mutation audit",
+            )
+        })?;
+    }
     tx.commit().await.map_err(|error| {
         tracing::warn!(%error, issue_id = %previous.id, "failed to commit issue update");
         error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to update issue")
@@ -7480,7 +7529,7 @@ async fn batch_update_issues(
     for previous in pending {
         let previous_snapshot = previous.clone();
         if let Ok(issue) =
-            apply_issue_update(&state, &context, &headers, previous, updates, false).await
+            apply_issue_update(&state, &context, &headers, previous, updates, false, None).await
         {
             if previous_snapshot.status != issue.status {
                 if let Some(parent_id) = issue.parent_issue_id {

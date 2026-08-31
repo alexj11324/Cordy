@@ -104,6 +104,15 @@ pub const PREPARE_LEASE_DURATION: Duration = Duration::from_secs(45);
 const TASK_ANALYTICS_CONTEXT_CACHE_MAX: usize = 4096;
 const MAX_AGENT_THREAD_TASKS_BEFORE_DEPTH_LIMIT: usize = 100;
 
+/// Concrete runtime/model selection supplied by a dependency-graph plan. The
+/// value is written before the task transaction commits, so claimers never
+/// observe the executor's mutable default in place of the planner target.
+#[derive(Debug, Clone)]
+pub struct TaskExecutionTargetOverride {
+    pub runtime_id: Uuid,
+    pub model_id: String,
+}
+
 /// Signals that a run resolved to no precise accountable human and the enqueue
 /// is REFUSED rather than started (PB-4302 §1/§3.5).
 #[derive(Debug, thiserror::Error)]
@@ -1882,18 +1891,69 @@ impl TaskService {
                     continue;
                 }
             };
+            let execution_target = match dependency_graph_q::get_execution_target_for_issue(
+                &self.pool,
+                issue.workspace_id,
+                issue.id,
+            )
+            .await
+            {
+                Ok(Some(target)) => match (target.runtime_id, target.model_id) {
+                    (Some(runtime_id), Some(model_id)) if !runtime_id.is_nil() && !model_id.trim().is_empty() =>
+                        Some(TaskExecutionTargetOverride { runtime_id, model_id }),
+                    (None, None) => None,
+                    _ => {
+                        tracing::warn!(
+                            issue_id = %issue.id,
+                            "dependency graph execution target is incomplete"
+                        );
+                        let _ = dependency_graph_q::release_admitted_issue_for_execution(
+                            &self.pool,
+                            issue.workspace_id,
+                            issue.id,
+                        )
+                        .await;
+                        continue;
+                    }
+                },
+                Ok(None) => None,
+                Err(error) => {
+                    tracing::warn!(
+                        issue_id = %issue.id,
+                        %error,
+                        "failed to load dependency graph execution target"
+                    );
+                    let _ = dependency_graph_q::release_admitted_issue_for_execution(
+                        &self.pool,
+                        issue.workspace_id,
+                        issue.id,
+                    )
+                    .await;
+                    continue;
+                }
+            };
             let result = if issue.executor_type.as_deref() == Some("team") {
                 match issue.executor_id {
                     Some(team_id) => {
                         match get_team_in_workspace(&self.pool, team_id, issue.workspace_id).await {
                             Ok(Some(team)) if team.archived_at.is_none() => {
-                                self.enqueue_task_for_team_leader(
-                                    &issue,
-                                    team.leader_id,
-                                    team.id,
-                                    None,
-                                )
-                                .await
+                                if let Some(target) = execution_target {
+                                    self.enqueue_task_for_team_leader_with_execution_target(
+                                        &issue,
+                                        team.leader_id,
+                                        team.id,
+                                        target,
+                                    )
+                                    .await
+                                } else {
+                                    self.enqueue_task_for_team_leader(
+                                        &issue,
+                                        team.leader_id,
+                                        team.id,
+                                        None,
+                                    )
+                                    .await
+                                }
                             }
                             Ok(_) => Err(TaskServiceError::Internal(
                                 "ready dependency team is unavailable".to_string(),
@@ -1908,7 +1968,12 @@ impl TaskService {
                     )),
                 }
             } else {
-                self.enqueue_task_for_issue(&issue, None).await
+                if let Some(target) = execution_target {
+                    self.enqueue_task_for_issue_with_execution_target(&issue, target)
+                        .await
+                } else {
+                    self.enqueue_task_for_issue(&issue, None).await
+                }
             };
             match result {
                 Ok(task) => tracing::info!(
@@ -1916,13 +1981,62 @@ impl TaskService {
                     task_id = %task.id,
                     "ready dependency task enqueued"
                 ),
-                Err(TaskServiceError::DuplicatePendingTask(_)) => {}
-                Err(TaskServiceError::DependencyGateClosed { .. }) => {}
-                Err(error) => tracing::warn!(
-                    issue_id = %issue.id,
-                    %error,
-                    "ready dependency task admission deferred"
-                ),
+                Err(error) => {
+                    // Admission changes Todo → In Progress before the normal
+                    // enqueue path can validate attribution/runtime capacity.
+                    // Reopen the node when that second phase fails so the next
+                    // graph wakeup can retry it; the SQL guard leaves a real
+                    // pending task untouched if the enqueue actually won a
+                    // race and only its response was lost.
+                    match dependency_graph_q::release_admitted_issue_for_execution(
+                        &self.pool,
+                        issue.workspace_id,
+                        issue.id,
+                    )
+                    .await
+                    {
+                        Ok(true) => {
+                            if let Err(activity_error) = activity::create_activity(
+                                &self.pool,
+                                issue.workspace_id,
+                                issue.id,
+                                Some("system"),
+                                None,
+                                "dependency_issue_admission_retry",
+                                &serde_json::json!({
+                                    "from_status": "in_progress",
+                                    "to_status": "todo",
+                                    "reason": error.to_string(),
+                                }),
+                                new_v7(),
+                            )
+                            .await
+                            {
+                                tracing::warn!(
+                                    issue_id = %issue.id,
+                                    %activity_error,
+                                    "failed to record dependency admission retry"
+                                );
+                            }
+                            self.publish_dependency_graph_wakeup(
+                                issue.workspace_id,
+                                None,
+                                &[issue.id],
+                            );
+                        }
+                        Ok(false) => {}
+                        Err(release_error) => tracing::warn!(
+                            issue_id = %issue.id,
+                            %release_error,
+                            "failed to reopen dependency task after enqueue failure"
+                        ),
+                    }
+                    tracing::warn!(
+                        issue_id = %issue.id,
+                        %error,
+                        "ready dependency task admission deferred"
+                    );
+                }
             }
         }
     }
@@ -2157,6 +2271,29 @@ impl TaskService {
             .await
     }
 
+    /// Queues an issue using the concrete target persisted by a dependency
+    /// planner. The override is applied before the transaction is published,
+    /// so a daemon can never claim the task against a stale Agent default.
+    pub async fn enqueue_task_for_issue_with_execution_target(
+        &self,
+        issue: &Issue,
+        target: TaskExecutionTargetOverride,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        self.enqueue_issue_task_with_comment_plan_internal(
+            issue,
+            None,
+            vec![],
+            false,
+            "",
+            None,
+            None,
+            None,
+            None,
+            Some(target),
+        )
+        .await
+    }
+
     /// Persists the assigned task for a media-backed channel /issue turn
     /// without making it claimable yet. fireAt is a crash-safe fallback; the
     /// channel router promotes as soon as the attachment transaction settles.
@@ -2249,6 +2386,7 @@ impl TaskService {
             None,
             None,
             Some(coordination_assignment_id),
+            None,
         )
         .await
     }
@@ -2316,6 +2454,7 @@ impl TaskService {
         trigger_comment_id: Option<Uuid>,
         actor_user_id: Option<Uuid>,
         build_overlay: bool,
+        execution_runtime_id: Option<Uuid>,
     ) -> Result<PreparedIssueEnqueue, TaskServiceError> {
         require_execution_status(&self.pool, issue).await?;
         require_dependency_gate(&self.pool, issue.workspace_id, issue.id).await?;
@@ -2332,7 +2471,7 @@ impl TaskService {
             tracing::debug!(issue_id = %issue.id, agent_id = %agent.id, "task enqueue skipped: agent is archived");
             return Err(TaskServiceError::AgentArchived);
         }
-        let Some(runtime_id) = agent.runtime_id else {
+        let Some(runtime_id) = agent.runtime_id.or(execution_runtime_id) else {
             tracing::error!(issue_id = %issue.id, "task enqueue failed: agent has no runtime");
             return Err(TaskServiceError::AgentNoRuntime);
         };
@@ -2404,6 +2543,7 @@ impl TaskService {
             rerun_of_task_id,
             fire_at,
             None,
+            None,
         )
         .await
     }
@@ -2420,20 +2560,38 @@ impl TaskService {
         rerun_of_task_id: Option<Uuid>,
         fire_at: Option<chrono::DateTime<chrono::Utc>>,
         coordination_assignment_id: Option<Uuid>,
+        execution_target: Option<TaskExecutionTargetOverride>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
         if coordination_assignment_id.is_some() && fire_at.is_some() {
             return Err(TaskServiceError::Internal(
                 "coordination tasks cannot be deferred by fire_at".to_string(),
             ));
         }
+        if let Some(target) = execution_target.as_ref() {
+            if target.runtime_id.is_nil() || target.model_id.trim().is_empty() {
+                return Err(TaskServiceError::Internal(
+                    "dependency execution target is incomplete".to_string(),
+                ));
+            }
+        }
         let prep = self
-            .prepare_issue_enqueue(issue, trigger_comment_id, actor_user_id, true)
+            .prepare_issue_enqueue(
+                issue,
+                trigger_comment_id,
+                actor_user_id,
+                true,
+                execution_target.as_ref().map(|target| target.runtime_id),
+            )
             .await?;
+        let task_runtime_id = execution_target
+            .as_ref()
+            .map(|target| target.runtime_id)
+            .unwrap_or(prep.runtime_id);
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
         // The owner-row fence acquires workspace → agent → issue → runtime
         // locks. Take it before the issue FOR UPDATE below so this transaction
         // cannot invert the teardown/merge lock order.
-        lock_task_owner_rows_before_issue(&mut tx, prep.executor_id, issue.id, prep.runtime_id)
+        lock_task_owner_rows_before_issue(&mut tx, prep.executor_id, issue.id, task_runtime_id)
             .await?;
         let (current_owner_type, current_owner_id, owner_generation): (
             Option<String>,
@@ -2479,7 +2637,7 @@ impl TaskService {
             create_deferred_channel_issue_task(
                 &mut *tx,
                 prep.executor_id,
-                prep.runtime_id,
+                task_runtime_id,
                 issue.id,
                 priority_to_int(&issue.priority),
                 trigger_comment_id.unwrap_or_else(Uuid::nil),
@@ -2509,7 +2667,7 @@ impl TaskService {
             create_agent_task(
                 &mut *tx,
                 prep.executor_id,
-                prep.runtime_id,
+                task_runtime_id,
                 issue.id,
                 priority_to_int(&issue.priority),
                 trigger_comment_id.unwrap_or_else(Uuid::nil),
@@ -2543,6 +2701,26 @@ impl TaskService {
                 tracing::error!(issue_id = %issue.id, error = %e, "task enqueue failed");
                 return Err(TaskServiceError::Sql(downcast_sqlx(e)));
             }
+        };
+        let task = if let Some(target) = execution_target.as_ref() {
+            sqlx::query(
+                "UPDATE agent_task_queue SET model_id = $2, policy_revision = policy_revision + 1, failover_reason = 'dependency_plan_override' WHERE id = $1",
+            )
+            .bind(task.id)
+            .bind(target.model_id.trim())
+            .execute(&mut *tx)
+            .await
+            .map_err(TaskServiceError::Sql)?;
+            get_agent_task(&mut *tx, task.id)
+                .await
+                .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?
+                .ok_or_else(|| {
+                    TaskServiceError::Internal(
+                        "task disappeared while applying execution target".to_string(),
+                    )
+                })?
+        } else {
+            task
         };
         tx.commit().await.map_err(TaskServiceError::Sql)?;
 
@@ -2721,6 +2899,7 @@ impl TaskService {
             None,
             false,
             None,
+            None,
         )
         .await
     }
@@ -2772,6 +2951,35 @@ impl TaskService {
             None,
             true,
             None,
+            None,
+        )
+        .await
+    }
+
+    /// Coordinator variant for a team-owned graph node with an explicit
+    /// planner-selected runtime/model target.
+    pub async fn enqueue_task_for_team_leader_with_execution_target(
+        &self,
+        issue: &Issue,
+        leader_id: Uuid,
+        team_id: Uuid,
+        target: TaskExecutionTargetOverride,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        self.enqueue_mention_task_internal(
+            issue,
+            leader_id,
+            None,
+            vec![],
+            true,
+            Some(team_id),
+            false,
+            "",
+            None,
+            None,
+            None,
+            true,
+            None,
+            Some(target),
         )
         .await
     }
@@ -2799,6 +3007,7 @@ impl TaskService {
             None,
             None,
             true,
+            None,
             None,
         )
         .await
@@ -2828,6 +3037,7 @@ impl TaskService {
             None,
             None,
             false,
+            None,
             None,
         )
         .await
@@ -2859,6 +3069,7 @@ impl TaskService {
             None,
             true,
             Some(coordination_assignment_id),
+            None,
         )
         .await
     }
@@ -3479,6 +3690,7 @@ impl TaskService {
             side_chat,
             false,
             None,
+            None,
         )
         .await
     }
@@ -3499,6 +3711,7 @@ impl TaskService {
         side_chat: Option<SideChatSeed>,
         owner_context: bool,
         coordination_assignment_id: Option<Uuid>,
+        execution_target: Option<TaskExecutionTargetOverride>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
         require_dependency_gate(&self.pool, issue.workspace_id, issue.id).await?;
         let agent = get_agent(&self.pool, agent_id)
@@ -3509,10 +3722,25 @@ impl TaskService {
             tracing::debug!(issue_id = %issue.id, agent_id = %agent_id, "mention task enqueue skipped: agent is archived");
             return Err(TaskServiceError::AgentArchived);
         }
-        let Some(runtime_id) = agent.runtime_id else {
-            tracing::error!(issue_id = %issue.id, agent_id = %agent_id, "mention task enqueue failed: agent has no runtime");
-            return Err(TaskServiceError::AgentNoRuntime);
-        };
+        if let Some(target) = execution_target.as_ref() {
+            if target.runtime_id.is_nil() || target.model_id.trim().is_empty() {
+                return Err(TaskServiceError::Internal(
+                    "dependency execution target is incomplete".to_string(),
+                ));
+            }
+        }
+        let task_runtime_id = execution_target
+            .as_ref()
+            .map(|target| target.runtime_id)
+            .or(agent.runtime_id)
+            .ok_or_else(|| {
+                tracing::error!(
+                    issue_id = %issue.id,
+                    agent_id = %agent_id,
+                    "mention task enqueue failed: agent has no runtime"
+                );
+                TaskServiceError::AgentNoRuntime
+            })?;
 
         let attr = self
             .attribution_for_issue_task(
@@ -3546,7 +3774,7 @@ impl TaskService {
         if owner_context || coordination_assignment_id.is_some() {
             // Keep the owner-row lock order ahead of the issue snapshot lock;
             // the INSERT below fences the same rows again inside its write.
-            lock_task_owner_rows_before_issue(&mut tx, agent_id, issue.id, runtime_id).await?;
+            lock_task_owner_rows_before_issue(&mut tx, agent_id, issue.id, task_runtime_id).await?;
         }
         let owner_snapshot = if coordination_assignment_id.is_some() || owner_context {
             Some(
@@ -3601,7 +3829,7 @@ impl TaskService {
         let created = create_agent_task(
             &mut *tx,
             agent_id,
-            runtime_id,
+            task_runtime_id,
             issue.id,
             priority_to_int(&issue.priority),
             trigger_comment_id.unwrap_or_else(Uuid::nil),
@@ -3642,6 +3870,27 @@ impl TaskService {
                 tracing::error!(issue_id = %issue.id, agent_id = %agent_id, error = %e, "mention task enqueue failed");
                 return Err(TaskServiceError::Sql(downcast_sqlx(e)));
             }
+        };
+
+        let task = if let Some(target) = execution_target.as_ref() {
+            sqlx::query(
+                "UPDATE agent_task_queue SET model_id = $2, policy_revision = policy_revision + 1, failover_reason = 'dependency_plan_override' WHERE id = $1",
+            )
+            .bind(task.id)
+            .bind(target.model_id.trim())
+            .execute(&mut *tx)
+            .await
+            .map_err(TaskServiceError::Sql)?;
+            get_agent_task(&mut *tx, task.id)
+                .await
+                .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?
+                .ok_or_else(|| {
+                    TaskServiceError::Internal(
+                        "task disappeared while applying execution target".to_string(),
+                    )
+                })?
+        } else {
+            task
         };
 
         tx.commit().await.map_err(TaskServiceError::Sql)?;

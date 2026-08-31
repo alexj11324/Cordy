@@ -27,9 +27,9 @@ describe("IssueTab", () => {
   it("renders a switch per field with the persisted selection", () => {
     renderWithI18n(<IssueTab />);
 
-    // 3 quick create fields + 8 manual create fields.
+    // 3 quick create fields + 9 manual create fields.
     const switches = screen.getAllByRole("switch");
-    expect(switches).toHaveLength(11);
+    expect(switches).toHaveLength(12);
 
     // Quick create defaults to project only.
     const [quickProject, quickPriority, quickDueDate] = switches;
@@ -39,9 +39,12 @@ describe("IssueTab", () => {
 
     // Manual create defaults to the classic toolbar; dates start hidden.
     const manual = switches.slice(3);
-    for (const s of manual.slice(0, 6)) expect(s).toBeChecked();
-    expect(manual[6]).not.toBeChecked();
+    for (const s of manual.slice(0, 4)) expect(s).toBeChecked();
+    expect(manual[4]).not.toBeChecked(); // reviewer is opt-in
+    expect(manual[5]).toBeChecked();
+    expect(manual[6]).toBeChecked();
     expect(manual[7]).not.toBeChecked();
+    expect(manual[8]).not.toBeChecked();
   });
 
   it("persists enabling a quick create field", async () => {
@@ -61,8 +64,8 @@ describe("IssueTab", () => {
     const user = userEvent.setup();
     renderWithI18n(<IssueTab />);
 
-    // Manual section starts at index 3; labels is its 5th row (index 7 overall).
-    const manualLabels = screen.getAllByRole("switch")[7];
+    // Manual section starts at index 3; labels is its 6th row (index 8 overall).
+    const manualLabels = screen.getAllByRole("switch")[8];
     await user.click(manualLabels!);
 
     expect(useIssueCreateSettingsStore.getState().manualCreateFields).toEqual([

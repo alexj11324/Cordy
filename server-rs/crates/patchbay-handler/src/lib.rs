@@ -60,6 +60,7 @@ pub mod issue_view;
 pub mod issue_view_preference;
 pub mod label;
 pub mod linear;
+pub mod linear_sync_worker;
 pub mod mcp_merge;
 pub mod me;
 pub mod notification;

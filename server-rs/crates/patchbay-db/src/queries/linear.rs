@@ -26,6 +26,19 @@ pub async fn get_connection_for_workspace(
     .await?)
 }
 
+/// Active connections are polled by the durable Linear sync worker. Keeping
+/// this query in the DB crate makes restart/retry behavior independent from
+/// the HTTP process that accepted the webhook.
+pub async fn list_active_connections(
+    executor: impl Executor<'_, Database = Postgres>,
+) -> anyhow::Result<Vec<LinearConnection>> {
+    Ok(sqlx::query_as::<_, LinearConnection>(
+        "SELECT * FROM linear_connection WHERE status = 'active' ORDER BY updated_at, id",
+    )
+    .fetch_all(executor)
+    .await?)
+}
+
 pub async fn upsert_connection(
     executor: impl Executor<'_, Database = Postgres>,
     connection: &LinearConnectionInput<'_>,
@@ -281,6 +294,126 @@ pub async fn get_issue_link(
     )
     .bind(workspace_id)
     .bind(issue_id)
+    .fetch_optional(executor)
+    .await?)
+}
+
+pub async fn get_issue_link_by_linear_id(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    linear_issue_id: &str,
+) -> anyhow::Result<Option<LinearIssueLink>> {
+    Ok(sqlx::query_as::<_, LinearIssueLink>(
+        "SELECT * FROM linear_issue_link WHERE workspace_id = $1 AND linear_issue_id = $2",
+    )
+    .bind(workspace_id)
+    .bind(linear_issue_id)
+    .fetch_optional(executor)
+    .await?)
+}
+
+pub async fn get_project_binding_by_linear_id(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    linear_project_id: &str,
+) -> anyhow::Result<Option<LinearProjectBinding>> {
+    Ok(sqlx::query_as::<_, LinearProjectBinding>(
+        "SELECT * FROM linear_project_binding WHERE workspace_id = $1 AND linear_project_id = $2 AND status = 'active'",
+    )
+    .bind(workspace_id)
+    .bind(linear_project_id)
+    .fetch_optional(executor)
+    .await?)
+}
+
+pub struct IssueLinkInput {
+    pub id: Uuid,
+    pub workspace_id: Uuid,
+    pub issue_id: Uuid,
+    pub linear_issue_id: String,
+    pub linear_identifier: Option<String>,
+    pub project_binding_id: Uuid,
+    pub remote_updated_at: Option<DateTime<Utc>>,
+    pub remote_snapshot: Value,
+}
+
+/// Creates or refreshes the immutable-ID link used by both sync directions.
+/// The conflict target is provided by the concurrent unique indexes added by
+/// the Linear migrations; no foreign keys are required.
+pub async fn upsert_issue_link(
+    executor: impl Executor<'_, Database = Postgres>,
+    link: &IssueLinkInput,
+) -> anyhow::Result<LinearIssueLink> {
+    Ok(sqlx::query_as::<_, LinearIssueLink>(
+        r#"INSERT INTO linear_issue_link
+           (id,workspace_id,issue_id,linear_issue_id,linear_identifier,
+            project_binding_id,remote_updated_at,remote_snapshot,status)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active')
+           ON CONFLICT (workspace_id,issue_id) DO UPDATE SET
+             linear_issue_id = EXCLUDED.linear_issue_id,
+             linear_identifier = EXCLUDED.linear_identifier,
+             project_binding_id = EXCLUDED.project_binding_id,
+             remote_updated_at = EXCLUDED.remote_updated_at,
+             remote_snapshot = EXCLUDED.remote_snapshot,
+             status = 'active', updated_at = now()
+           RETURNING *"#,
+    )
+    .bind(link.id)
+    .bind(link.workspace_id)
+    .bind(link.issue_id)
+    .bind(&link.linear_issue_id)
+    .bind(&link.linear_identifier)
+    .bind(link.project_binding_id)
+    .bind(link.remote_updated_at)
+    .bind(&link.remote_snapshot)
+    .fetch_one(executor)
+    .await?)
+}
+
+pub async fn mark_issue_link_pushed(
+    executor: impl Executor<'_, Database = Postgres>,
+    id: Uuid,
+    remote_updated_at: Option<DateTime<Utc>>,
+    remote_snapshot: &Value,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        "UPDATE linear_issue_link SET last_pushed_at = now(), remote_updated_at = COALESCE($2, remote_updated_at), remote_snapshot = $3, updated_at = now() WHERE id = $1 AND status = 'active'",
+    )
+    .bind(id)
+    .bind(remote_updated_at)
+    .bind(remote_snapshot)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn mark_issue_link_pulled(
+    executor: impl Executor<'_, Database = Postgres>,
+    id: Uuid,
+    remote_updated_at: Option<DateTime<Utc>>,
+    remote_snapshot: &Value,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        "UPDATE linear_issue_link SET last_pulled_at = now(), remote_updated_at = COALESCE($2, remote_updated_at), remote_snapshot = $3, updated_at = now() WHERE id = $1 AND status = 'active'",
+    )
+    .bind(id)
+    .bind(remote_updated_at)
+    .bind(remote_snapshot)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
+pub async fn resolve_agent_for_linear_label(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    linear_label_id: &str,
+) -> anyhow::Result<Option<Uuid>> {
+    Ok(sqlx::query_scalar::<_, Uuid>(
+        "SELECT agent_id FROM linear_agent_binding WHERE workspace_id = $1 AND linear_label_id = $2",
+    )
+    .bind(workspace_id)
+    .bind(linear_label_id)
     .fetch_optional(executor)
     .await?)
 }

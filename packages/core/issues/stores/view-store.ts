@@ -589,7 +589,7 @@ export function mergeViewStatePersisted<T extends IssueViewState>(
   persisted: unknown,
   current: T,
 ): T {
-  const p = (persisted ?? {}) as Partial<T>;
+  const p = migrateLegacyViewState(persisted) as Partial<T>;
   // `collapsedSwimlanes` changed shape from `string[]` to
   // `Record<SwimlaneGrouping, string[]>`. A snapshot saved in the old
   // shape would otherwise overwrite the default record with an array
@@ -611,9 +611,21 @@ export function mergeViewStatePersisted<T extends IssueViewState>(
   const persistedTitle = persistedTableColumns.find(
     (column) => column.key === "title",
   );
+  const grouping = isValidIssueGrouping(p.grouping)
+    ? p.grouping
+    : current.grouping;
+  const tableGrouping = isValidTableGrouping(p.tableGrouping)
+    ? p.tableGrouping
+    : current.tableGrouping;
+  const swimlaneGrouping = isValidSwimlaneGrouping(p.swimlaneGrouping)
+    ? p.swimlaneGrouping
+    : current.swimlaneGrouping;
   return {
     ...current,
     ...p,
+    grouping,
+    tableGrouping,
+    swimlaneGrouping,
     cardProperties: {
       ...current.cardProperties,
       ...(p.cardProperties ?? {}),
@@ -635,6 +647,77 @@ export function mergeViewStatePersisted<T extends IssueViewState>(
       ? p.tableCollapsedParents
       : current.tableCollapsedParents,
   };
+}
+
+/**
+ * Normalizes view snapshots written before the assignee → owner/executor
+ * split. This is deliberately an isolated persistence adapter: the old keys
+ * are accepted only while reading a saved snapshot and are removed before the
+ * state is merged back into the canonical store. The next persist therefore
+ * writes only executor/owner fields.
+ */
+export function migrateLegacyViewState(persisted: unknown): Record<string, unknown> {
+  if (!isPlainRecord(persisted)) return {};
+  const next: Record<string, unknown> = { ...persisted };
+
+  if (!("executorFilters" in next) && Array.isArray(next.assigneeFilters)) {
+    next.executorFilters = next.assigneeFilters;
+  }
+  if (!("includeNoExecutor" in next) && typeof next.includeNoAssignee === "boolean") {
+    next.includeNoExecutor = next.includeNoAssignee;
+  }
+  if (next.grouping === "assignee") next.grouping = "executor";
+  if (next.tableGrouping === "assignee") next.tableGrouping = "executor";
+  if (next.swimlaneGrouping === "assignee") next.swimlaneGrouping = "executor";
+
+  if (Array.isArray(next.tableColumns)) {
+    next.tableColumns = next.tableColumns.map((column) => {
+      if (!isPlainRecord(column)) return column;
+      return {
+        ...column,
+        key: column.key === "assignee" ? "executor" : column.key,
+      };
+    });
+  }
+  if (isPlainRecord(next.cardProperties)) {
+    const cardProperties = { ...next.cardProperties };
+    if (!("executor" in cardProperties) && "assignee" in cardProperties) {
+      cardProperties.executor = cardProperties.assignee;
+    }
+    delete cardProperties.assignee;
+    next.cardProperties = cardProperties;
+  }
+
+  // Do not let the old spelling survive in the merged state or be copied into
+  // saved-view definitions by a shallow spread.
+  delete next.assigneeFilters;
+  delete next.includeNoAssignee;
+  return next;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function isValidIssueGrouping(value: unknown): value is IssueGrouping {
+  return (
+    value === "status" ||
+    value === "executor" ||
+    (typeof value === "string" && value.startsWith(PROPERTY_VIEW_PREFIX))
+  );
+}
+
+function isValidTableGrouping(value: unknown): value is TableGrouping {
+  return (
+    value === "none" ||
+    value === "status" ||
+    value === "executor" ||
+    (typeof value === "string" && value.startsWith(PROPERTY_VIEW_PREFIX))
+  );
+}
+
+function isValidSwimlaneGrouping(value: unknown): value is SwimlaneGrouping {
+  return value === "parent" || value === "project" || value === "executor";
 }
 
 /** Factory: creates a vanilla StoreApi for use with React Context. */

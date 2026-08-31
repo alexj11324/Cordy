@@ -11,6 +11,15 @@ SET owner_type = 'member',
     owner_id = assignee_id
 WHERE assignee_type = 'member';
 
+-- The old member assignee could not execute work.  Move active member-owned
+-- issues to the Todo queue before clearing their execution target so the new
+-- active-status invariant never leaves a migrated issue uneditable or starts
+-- an agent without an explicit executor.
+UPDATE issue
+SET status = 'todo'
+WHERE assignee_type = 'member'
+  AND issue_effective_status(workspace_id, status) IN ('in_progress', 'in_review');
+
 UPDATE issue
 SET assignee_type = NULL,
     assignee_id = NULL

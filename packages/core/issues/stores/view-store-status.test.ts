@@ -1,7 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it, beforeEach } from "vitest";
 import { createStore, type StoreApi } from "zustand/vanilla";
-import { viewStoreSlice, type IssueViewState } from "./view-store";
+import {
+  migrateLegacyViewState,
+  viewStoreSlice,
+  type IssueViewState,
+} from "./view-store";
 import { baselineFromQuery } from "../../issue-views/baseline";
 
 /**
@@ -72,5 +76,44 @@ describe("saved view baseline", () => {
     const baseline = baselineFromQuery({ statusFilters: ["", "qa"] });
 
     expect([...baseline.status]).toEqual(["qa"]);
+  });
+});
+
+describe("legacy assignee view-state migration", () => {
+  it("normalizes persisted filters, groupings, columns, and card properties", () => {
+    const migrated = migrateLegacyViewState({
+      assigneeFilters: [{ type: "member", id: "member-1" }],
+      includeNoAssignee: true,
+      grouping: "assignee",
+      tableGrouping: "assignee",
+      swimlaneGrouping: "assignee",
+      tableColumns: [{ key: "assignee", width: 160 }],
+      cardProperties: { assignee: false, priority: true },
+    });
+
+    expect(migrated).toMatchObject({
+      executorFilters: [{ type: "member", id: "member-1" }],
+      includeNoExecutor: true,
+      grouping: "executor",
+      tableGrouping: "executor",
+      swimlaneGrouping: "executor",
+      tableColumns: [{ key: "executor", width: 160 }],
+      cardProperties: { executor: false, priority: true },
+    });
+    expect(migrated).not.toHaveProperty("assigneeFilters");
+    expect(migrated).not.toHaveProperty("includeNoAssignee");
+    expect(migrated.cardProperties).not.toHaveProperty("assignee");
+  });
+
+  it("does not overwrite canonical values with legacy fields", () => {
+    const migrated = migrateLegacyViewState({
+      executorFilters: [{ type: "agent", id: "agent-1" }],
+      assigneeFilters: [{ type: "member", id: "member-1" }],
+      includeNoExecutor: false,
+      includeNoAssignee: true,
+    });
+
+    expect(migrated.executorFilters).toEqual([{ type: "agent", id: "agent-1" }]);
+    expect(migrated.includeNoExecutor).toBe(false);
   });
 });

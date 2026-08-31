@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use axum::body::Bytes;
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
-use axum::response::{IntoResponse, Response};
+use axum::response::{IntoResponse, Redirect, Response};
 use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -109,6 +109,17 @@ fn redirect_uri() -> String {
     })
 }
 
+fn linear_callback_redirect(outcome: &str) -> Response {
+    let base = env_value("FRONTEND_ORIGIN")
+        .unwrap_or_else(|| "http://localhost:3000".to_string())
+        .trim_end_matches('/')
+        .to_string();
+    Redirect::temporary(&format!(
+        "{base}/settings?tab=integrations&linear_{outcome}=1"
+    ))
+    .into_response()
+}
+
 fn connection_json(connection: LinearConnection) -> Value {
     json!({
         "id": connection.id,
@@ -183,34 +194,34 @@ struct LinearTokenResponse {
 }
 
 async fn oauth_callback(State(state): State<HandlerState>, Query(query): Query<OAuthCallbackQuery>) -> Response {
-    if let Some(error) = query.error { return error_response(StatusCode::BAD_REQUEST, &format!("Linear OAuth denied: {error}")) }
-    let Some(state_token) = query.state.filter(|v| !v.trim().is_empty()) else { return error_response(StatusCode::BAD_REQUEST, "missing OAuth state") };
-    let Some(code) = query.code.filter(|v| !v.trim().is_empty()) else { return error_response(StatusCode::BAD_REQUEST, "missing OAuth code") };
-    let mut tx = match state.pool.begin().await { Ok(tx) => tx, Err(_) => return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to start OAuth transaction") };
+    if query.error.is_some() { return linear_callback_redirect("denied") }
+    let Some(state_token) = query.state.filter(|v| !v.trim().is_empty()) else { return linear_callback_redirect("invalid_request") };
+    let Some(code) = query.code.filter(|v| !v.trim().is_empty()) else { return linear_callback_redirect("invalid_request") };
+    let mut tx = match state.pool.begin().await { Ok(tx) => tx, Err(_) => return linear_callback_redirect("error") };
     let oauth_state = match linear_q::consume_oauth_state(&mut *tx, &sha256_hex(&state_token)).await {
         Ok(Some(row)) => row,
-        Ok(None) => return error_response(StatusCode::BAD_REQUEST, "OAuth state is invalid or expired"),
-        Err(error) => { tracing::warn!(%error, "failed to consume Linear OAuth state"); return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to consume OAuth state") }
+        Ok(None) => return linear_callback_redirect("invalid_state"),
+        Err(error) => { tracing::warn!(%error, "failed to consume Linear OAuth state"); return linear_callback_redirect("error") }
     };
     // Consume the one-time state before leaving the database. The token
     // exchange is network I/O and must never hold a PostgreSQL transaction or
     // leave a failed exchange able to replay the same state.
     if tx.commit().await.is_err() {
-        return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to consume OAuth state");
+        return linear_callback_redirect("error");
     }
-    let verifier = match open(&state, &oauth_state.code_verifier_encrypted) { Ok(v) => v, Err(_) => return error_response(StatusCode::SERVICE_UNAVAILABLE, "Linear OAuth secret storage unavailable") };
+    let verifier = match open(&state, &oauth_state.code_verifier_encrypted) { Ok(v) => v, Err(_) => return linear_callback_redirect("error") };
     let token = match exchange_code(&code, &verifier, &oauth_state.redirect_uri).await {
         Ok(token) => token,
-        Err(error) => { tracing::warn!(%error, "Linear OAuth token exchange failed"); return error_response(StatusCode::BAD_GATEWAY, "Linear OAuth token exchange failed") }
+        Err(error) => { tracing::warn!(%error, "Linear OAuth token exchange failed"); return linear_callback_redirect("error") }
     };
-    if token.refresh_token.trim().is_empty() { return error_response(StatusCode::BAD_GATEWAY, "Linear OAuth did not return a refresh token") }
+    if token.refresh_token.trim().is_empty() { return linear_callback_redirect("error") }
     let Some(organization_id) = token.organization_id.or_else(|| env_value("PATCHBAY_LINEAR_ORGANIZATION_ID")) else {
-        return error_response(StatusCode::BAD_GATEWAY, "Linear OAuth response did not identify an organization")
+        return linear_callback_redirect("error")
     };
-    let access = match seal(&state, &token.access_token) { Ok(v) => v, Err(_) => return error_response(StatusCode::SERVICE_UNAVAILABLE, "Linear secret storage unavailable") };
-    let refresh = match seal(&state, &token.refresh_token) { Ok(v) => v, Err(_) => return error_response(StatusCode::SERVICE_UNAVAILABLE, "Linear secret storage unavailable") };
+    let access = match seal(&state, &token.access_token) { Ok(v) => v, Err(_) => return linear_callback_redirect("error") };
+    let refresh = match seal(&state, &token.refresh_token) { Ok(v) => v, Err(_) => return linear_callback_redirect("error") };
     let scopes = token.scope.as_deref().map(|s| json!(s.split_whitespace().collect::<Vec<_>>())).unwrap_or_else(|| json!([]));
-    let connection = match linear_q::upsert_connection(&state.pool, &linear_q::LinearConnectionInput {
+    let _connection = match linear_q::upsert_connection(&state.pool, &linear_q::LinearConnectionInput {
         id: Uuid::now_v7(), workspace_id: oauth_state.workspace_id, organization_id: &organization_id,
         organization_name: token.organization_name.as_deref(), actor_id: token.actor_id.as_deref(),
         access_token_encrypted: &access, refresh_token_encrypted: &refresh,
@@ -218,9 +229,9 @@ async fn oauth_callback(State(state): State<HandlerState>, Query(query): Query<O
         scopes: &scopes, created_by_id: oauth_state.user_id,
     }).await {
         Ok(connection) => connection,
-        Err(error) => { tracing::warn!(%error, "failed to save Linear connection"); return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to save Linear connection") }
+        Err(error) => { tracing::warn!(%error, "failed to save Linear connection"); return linear_callback_redirect("error") }
     };
-    Json(json!({"connected": true, "connection": connection_json(connection)})).into_response()
+    linear_callback_redirect("connected")
 }
 
 async fn exchange_code(code: &str, verifier: &str, redirect: &str) -> anyhow::Result<LinearTokenResponse> {

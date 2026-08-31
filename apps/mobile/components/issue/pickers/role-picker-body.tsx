@@ -27,6 +27,7 @@ import { useScrollToTopOnChange } from "@/lib/use-scroll-to-top-on-change";
 import { THEME } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 import { isAgentRuntimeBound } from "@/lib/is-agent-runtime-bound";
+import { useAgentThreadCopy } from "@/lib/use-agent-thread-copy";
 
 const AVATAR_SIZE = 36;
 
@@ -65,12 +66,13 @@ export function RolePickerBody({ kind, value, query, onChange }: Props) {
   const listRef = useScrollToTopOnChange(query);
   const { colorScheme } = useColorScheme();
   const checkColor = colorScheme === "dark" ? THEME.dark.primary : THEME.light.primary;
+  const copy = useAgentThreadCopy();
 
   const rows = useMemo<Row[]>(() => {
     const q = query.trim().toLowerCase();
     const matches = (name: string) => !q || name.toLowerCase().includes(q);
     const memberRows: Row[] =
-      kind === "owner"
+      kind === "owner" || kind === "reviewer"
         ? members
             .filter((member) => matches(member.name))
             .sort((a, b) => a.name.localeCompare(b.name))
@@ -129,16 +131,16 @@ export function RolePickerBody({ kind, value, query, onChange }: Props) {
               <ActorAvatar type={item.kind} id={item[item.kind].id} size={AVATAR_SIZE} />
             )}
             <Text className="flex-1 text-base text-foreground">
-              {item.kind === "unassigned" ? "Unassigned" : item[item.kind].name}
+              {item.kind === "unassigned" ? copy.role_picker_unassigned : item[item.kind].name}
             </Text>
-            {needsRuntime ? <Text className="text-sm text-muted-foreground">Needs runtime</Text> : null}
+            {needsRuntime ? <Text className="text-sm text-muted-foreground">{copy.role_picker_needs_runtime}</Text> : null}
             {selected(value, item) ? <Ionicons name="checkmark" size={20} color={checkColor} /> : null}
           </Pressable>
         );
       }}
       ListEmptyComponent={
         <View className="px-3 py-8 items-center">
-          <Text className="text-sm text-muted-foreground">No matches.</Text>
+          <Text className="text-sm text-muted-foreground">{copy.role_picker_no_matches}</Text>
         </View>
       }
     />
