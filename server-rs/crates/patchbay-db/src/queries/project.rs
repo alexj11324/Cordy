@@ -81,7 +81,19 @@ pub async fn delete_project(
     workspace_id: Uuid,
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
-        r#"WITH deleted_linear_bindings AS (
+        r#"WITH deleted_linear_outbox AS (
+               DELETE FROM linear_sync_outbox
+               WHERE binding_id IN (
+                   SELECT id FROM linear_project_binding
+                   WHERE patchbay_project_id = $1 AND workspace_id = $2
+               )
+           ), deleted_linear_links AS (
+               DELETE FROM linear_issue_link
+               WHERE binding_id IN (
+                   SELECT id FROM linear_project_binding
+                   WHERE patchbay_project_id = $1 AND workspace_id = $2
+               )
+           ), deleted_linear_bindings AS (
                DELETE FROM linear_project_binding
                WHERE patchbay_project_id = $1 AND workspace_id = $2
            )

@@ -120,7 +120,15 @@ pub async fn upsert_connection(
     connection: &LinearConnectionInput<'_>,
 ) -> anyhow::Result<LinearConnection> {
     Ok(sqlx::query_as::<_, LinearConnection>(
-        r#"WITH changed_bindings AS (
+        r#"WITH deleted_member_bindings AS (
+               DELETE FROM linear_member_binding
+               WHERE workspace_id = $2
+                 AND connection_id IN (
+                     SELECT id
+                     FROM linear_connection
+                     WHERE workspace_id = $2 AND organization_id <> $3
+                 )
+           ), changed_bindings AS (
                UPDATE linear_project_binding
                SET status = 'tombstone',
                    paused_at = COALESCE(paused_at, now()),
@@ -801,6 +809,44 @@ pub async fn enqueue_issue_outbox(
         .await?)
 }
 
+/// Appends an outbound event for a specific binding. Activation seeding uses
+/// the binding id explicitly so a partially migrated workspace cannot enqueue
+/// an Issue into a different binding selected by project ordering.
+pub async fn enqueue_issue_outbox_for_binding(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    binding_id: Uuid,
+    issue_id: Uuid,
+    event_key: &str,
+    event_type: &str,
+    payload: &Value,
+) -> anyhow::Result<Option<LinearSyncOutbox>> {
+    let columns = outbox_columns();
+    let query = format!(
+        "INSERT INTO linear_sync_outbox \
+         (id, workspace_id, binding_id, issue_id, event_key, event_type, payload) \
+         SELECT $1, $2, binding.id, $4, $5, $6, $7 \
+         FROM linear_project_binding AS binding \
+         WHERE binding.id = $3 \
+           AND binding.workspace_id = $2 \
+           AND binding.status = 'active' \
+           AND binding.sync_mode IN ('publish', 'two_way') \
+           AND binding.linear_team_id IS NOT NULL \
+         ON CONFLICT (binding_id, event_key) DO NOTHING \
+         RETURNING {columns}"
+    );
+    Ok(sqlx::query_as::<_, LinearSyncOutbox>(&query)
+        .bind(Uuid::now_v7())
+        .bind(workspace_id)
+        .bind(binding_id)
+        .bind(issue_id)
+        .bind(event_key)
+        .bind(event_type)
+        .bind(payload)
+        .fetch_optional(executor)
+        .await?)
+}
+
 /// Claims outbound rows with a PostgreSQL lease. A separate Outbox lease is
 /// used even though Inbox has the same shape: inbound and outbound pressure
 /// must not starve each other.
@@ -809,6 +855,7 @@ pub async fn claim_sync_outbox(
     worker_id: &str,
     limit: i64,
     lease_seconds: i64,
+    workspace_ids: Option<&[Uuid]>,
 ) -> anyhow::Result<Vec<LinearSyncOutbox>> {
     let columns = outbox_columns();
     let query = format!(
@@ -825,6 +872,30 @@ pub async fn claim_sync_outbox(
                AND binding.sync_mode IN ('publish', 'two_way') \
                AND binding.linear_team_id IS NOT NULL \
                AND connection.status = 'active' \
+               AND (\
+                   $4::uuid[] IS NULL \
+                   OR connection.workspace_id = ANY($4::uuid[]) \
+               ) \
+               AND NOT EXISTS (\
+                   SELECT 1 \
+                   FROM linear_sync_outbox AS earlier \
+                   WHERE earlier.workspace_id = outbox.workspace_id \
+                     AND earlier.issue_id = outbox.issue_id \
+                     AND earlier.processed_at IS NULL \
+                     AND earlier.dead_lettered_at IS NULL \
+                     AND EXISTS (\
+                         SELECT 1 \
+                         FROM linear_project_binding AS earlier_binding \
+                         JOIN linear_connection AS earlier_connection \
+                           ON earlier_connection.id = earlier_binding.connection_id \
+                         WHERE earlier_binding.id = earlier.binding_id \
+                           AND earlier_binding.status = 'active' \
+                           AND earlier_binding.sync_mode IN ('publish', 'two_way') \
+                           AND earlier_binding.linear_team_id IS NOT NULL \
+                           AND earlier_connection.status = 'active' \
+                     ) \
+                     AND (earlier.created_at, earlier.id) < (outbox.created_at, outbox.id) \
+               ) \
              ORDER BY outbox.available_at, outbox.created_at, outbox.id \
              FOR UPDATE SKIP LOCKED \
              LIMIT $1 \
@@ -842,12 +913,14 @@ pub async fn claim_sync_outbox(
         .bind(limit.clamp(1, 100))
         .bind(worker_id)
         .bind(lease_seconds.max(1))
+        .bind(workspace_ids.map(|ids| ids.to_vec()))
         .fetch_all(executor)
         .await?)
 }
 
 pub async fn dead_letter_exhausted_sync_outbox(
     executor: impl Executor<'_, Database = Postgres>,
+    workspace_ids: Option<&[Uuid]>,
 ) -> anyhow::Result<u64> {
     let result = sqlx::query(
         r#"UPDATE linear_sync_outbox
@@ -856,11 +929,46 @@ pub async fn dead_letter_exhausted_sync_outbox(
                updated_at = now()
            WHERE processed_at IS NULL AND dead_lettered_at IS NULL
              AND attempts >= max_attempts
-             AND (locked_until IS NULL OR locked_until < now())"#,
+             AND (locked_until IS NULL OR locked_until < now())
+             AND (
+                 $1::uuid[] IS NULL
+                 OR EXISTS (
+                     SELECT 1
+                     FROM linear_project_binding
+                     JOIN linear_connection
+                       ON linear_connection.id = linear_project_binding.connection_id
+                     WHERE linear_project_binding.id = linear_sync_outbox.binding_id
+                       AND linear_connection.workspace_id = ANY($1::uuid[])
+                 )
+             )"#,
     )
+    .bind(workspace_ids.map(|ids| ids.to_vec()))
     .execute(executor)
     .await?;
     Ok(result.rows_affected())
+}
+
+pub async fn renew_claimed_sync_outbox(
+    executor: impl Executor<'_, Database = Postgres>,
+    id: Uuid,
+    worker_id: &str,
+    lease_seconds: i64,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"UPDATE linear_sync_outbox
+           SET locked_until = now() + ($3 * interval '1 second'), updated_at = now()
+           WHERE id = $1
+             AND processed_at IS NULL
+             AND dead_lettered_at IS NULL
+             AND locked_by = $2
+             AND locked_until > now()"#,
+    )
+    .bind(id)
+    .bind(worker_id)
+    .bind(lease_seconds.max(1))
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() == 1)
 }
 
 pub async fn complete_claimed_sync_outbox(

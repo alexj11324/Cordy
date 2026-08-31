@@ -16,7 +16,8 @@ use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine as _;
 use chrono::{Duration, Utc};
 use hmac::{Hmac, Mac};
-use patchbay_db::models::LinearConnection;
+use patchbay_db::models::{LinearConnection, LinearProjectBinding};
+use patchbay_db::queries::issue as issue_q;
 use patchbay_db::queries::linear as linear_q;
 use patchbay_db::queries::member as member_q;
 use patchbay_middleware::workspace::WorkspaceContext;
@@ -252,6 +253,10 @@ fn linear_token_error_response(error: LinearTokenError) -> Response {
                 "Linear rejected the requested mutation",
             )
         }
+        LinearTokenError::RateLimited => error_response(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Linear rate limit reached; retry later",
+        ),
         LinearTokenError::Storage(error) => {
             tracing::warn!(%error, "Linear storage operation failed");
             error_response(
@@ -814,6 +819,64 @@ fn is_linear_binding_unique_conflict(error: &anyhow::Error) -> bool {
     })
 }
 
+fn binding_is_publishable(binding: &LinearProjectBinding) -> bool {
+    binding.status == "active"
+        && binding.linear_team_id.is_some()
+        && (binding.sync_mode == "publish"
+            || (binding.sync_mode == "two_way"
+                && binding.initial_source_of_truth.as_deref() == Some("patchbay")))
+}
+
+fn binding_needs_outbox_seed(
+    previous: Option<&LinearProjectBinding>,
+    next: &LinearProjectBinding,
+) -> bool {
+    if !binding_is_publishable(next) {
+        return false;
+    }
+    let Some(previous) = previous else {
+        return true;
+    };
+    !binding_is_publishable(previous)
+        || (next.sync_mode == "two_way"
+            && next.initial_source_of_truth.as_deref() == Some("patchbay")
+            && previous.initial_source_of_truth.as_deref() != Some("patchbay"))
+}
+
+async fn seed_binding_outbox(
+    executor: &mut sqlx::PgConnection,
+    binding: &LinearProjectBinding,
+) -> anyhow::Result<u64> {
+    if !binding_is_publishable(binding) {
+        return Ok(0);
+    }
+    let issues = issue_q::list_issues_in_project(
+        &mut *executor,
+        binding.workspace_id,
+        binding.patchbay_project_id,
+    )
+    .await?;
+    let mut inserted = 0;
+    for issue in issues {
+        let event_key = format!("issue:{}:revision:{}", issue.id, issue.revision);
+        if linear_q::enqueue_issue_outbox_for_binding(
+            &mut *executor,
+            binding.workspace_id,
+            binding.id,
+            issue.id,
+            &event_key,
+            "issue_updated",
+            &patchbay_service::issue_service::linear_issue_sync_payload(&issue),
+        )
+        .await?
+        .is_some()
+        {
+            inserted += 1;
+        }
+    }
+    Ok(inserted)
+}
+
 async fn create_binding(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
@@ -869,8 +932,36 @@ async fn create_binding(
         agent_label_mapping: &request.agent_label_mapping,
         created_by_id: context.member.user_id,
     };
-    match linear_q::create_project_binding(&state.pool, &input).await {
-        Ok(binding) => (StatusCode::CREATED, Json(binding)).into_response(),
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, "Linear project binding transaction failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to create Linear project binding",
+            );
+        }
+    };
+    match linear_q::create_project_binding(&mut *transaction, &input).await {
+        Ok(binding) => {
+            if binding_needs_outbox_seed(None, &binding) {
+                if let Err(error) = seed_binding_outbox(&mut *transaction, &binding).await {
+                    tracing::warn!(%error, binding_id = %binding.id, "Linear binding Outbox seed failed");
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to seed Linear publication events",
+                    );
+                }
+            }
+            if let Err(error) = transaction.commit().await {
+                tracing::warn!(%error, binding_id = %binding.id, "Linear project binding commit failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to create Linear project binding",
+                );
+            }
+            (StatusCode::CREATED, Json(binding)).into_response()
+        }
         Err(error) => {
             tracing::warn!(%error, "Linear project binding creation failed");
             if is_linear_binding_unique_conflict(&error) {
@@ -927,10 +1018,11 @@ async fn update_binding(
     };
     if request.connection_id != existing.connection_id
         || request.patchbay_project_id != existing.patchbay_project_id
+        || request.linear_project_id.trim() != existing.linear_project_id
     {
         return error_response(
             StatusCode::BAD_REQUEST,
-            "Linear binding connection and Patchbay project are immutable",
+            "Linear binding connection, Patchbay project, and Linear project are immutable",
         );
     }
     let connection = match connection_for_binding(&state, workspace_id, request.connection_id).await
@@ -955,8 +1047,36 @@ async fn update_binding(
         agent_label_mapping: &request.agent_label_mapping,
         created_by_id: existing.created_by_id,
     };
-    match linear_q::update_project_binding(&state.pool, &input).await {
-        Ok(Some(binding)) => Json(binding).into_response(),
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, "Linear project binding transaction failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update Linear project binding",
+            );
+        }
+    };
+    match linear_q::update_project_binding(&mut *transaction, &input).await {
+        Ok(Some(binding)) => {
+            if binding_needs_outbox_seed(Some(&existing), &binding) {
+                if let Err(error) = seed_binding_outbox(&mut *transaction, &binding).await {
+                    tracing::warn!(%error, binding_id = %binding.id, "Linear binding Outbox seed failed");
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to seed Linear publication events",
+                    );
+                }
+            }
+            if let Err(error) = transaction.commit().await {
+                tracing::warn!(%error, binding_id = %binding.id, "Linear project binding commit failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to update Linear project binding",
+                );
+            }
+            Json(binding).into_response()
+        }
         Ok(None) => error_response(StatusCode::NOT_FOUND, "Linear project binding not found"),
         Err(error) => {
             tracing::warn!(%error, "Linear project binding update failed");
@@ -1661,6 +1781,8 @@ pub enum LinearTokenError {
     Provider,
     #[error("Linear mutation was rejected: {0}")]
     MutationRejected(String),
+    #[error("Linear provider rate limit reached")]
+    RateLimited,
     #[error("Linear integration is not configured")]
     NotConfigured,
     #[error("Linear storage operation failed: {0}")]
@@ -2209,6 +2331,10 @@ impl LinearTokenManager {
                 LinearTokenError::Provider
             })?;
         let status = response.status();
+        if status.as_u16() == 429 {
+            tracing::warn!(%status, "Linear issue mutation was rate limited");
+            return Err(LinearTokenError::RateLimited);
+        }
         let payload = response
             .json::<GraphQlResponse<Value>>()
             .await

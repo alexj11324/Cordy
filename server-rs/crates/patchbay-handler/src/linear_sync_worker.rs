@@ -14,7 +14,7 @@ use patchbay_db::models::{
     Issue, LinearConnection, LinearIssueLink, LinearProjectBinding, LinearSyncInbox,
     LinearSyncOutbox,
 };
-use patchbay_db::queries::{issue as issue_q, linear as linear_q};
+use patchbay_db::queries::{activity, issue as issue_q, linear as linear_q};
 use patchbay_service::issue_service::{
     ExternalIssueError, ExternalIssuePatch, ExternalSource, IssueCommand, IssueCreateError,
     IssueCreateOpts, IssueCreateParams,
@@ -35,6 +35,21 @@ const WORKER_COUNT: usize = 4;
 const LEASE_SECONDS: i64 = 60;
 const MAX_BACKOFF_SECONDS: i64 = 15 * 60;
 pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(30);
+
+fn linear_sync_activity_id(
+    connection_id: Uuid,
+    issue_id: Uuid,
+    source_event_id: &str,
+    action: &str,
+) -> Uuid {
+    Uuid::new_v5(
+        &Uuid::NAMESPACE_OID,
+        format!(
+            "patchbay:linear:activity:{action}:{connection_id}:{issue_id}:{source_event_id}"
+        )
+        .as_bytes(),
+    )
+}
 
 #[derive(Debug)]
 enum SyncError {
@@ -154,12 +169,22 @@ impl LinearSyncWorker {
         }
 
         if push_enabled {
-            let _ = linear_q::dead_letter_exhausted_sync_outbox(&self.state.pool).await?;
-            if let Some(row) =
-                linear_q::claim_sync_outbox(&self.state.pool, worker_id, 1, LEASE_SECONDS)
-                    .await?
-                    .into_iter()
-                    .next()
+            let workspace_filter = self.state.linear_push_workspace_filter();
+            let _ = linear_q::dead_letter_exhausted_sync_outbox(
+                &self.state.pool,
+                workspace_filter.as_deref(),
+            )
+            .await?;
+            if let Some(row) = linear_q::claim_sync_outbox(
+                &self.state.pool,
+                worker_id,
+                1,
+                LEASE_SECONDS,
+                workspace_filter.as_deref(),
+            )
+            .await?
+            .into_iter()
+            .next()
             {
                 self.finish_outbox_row(row, worker_id).await?;
                 processed = true;
@@ -280,7 +305,50 @@ impl LinearSyncWorker {
         row: LinearSyncOutbox,
         worker_id: &str,
     ) -> anyhow::Result<()> {
-        match self.process_outbox_row(&row, worker_id).await {
+        let renew_cancel = CancellationToken::new();
+        let renew_task = {
+            let pool = self.state.pool.clone();
+            let outbox_id = row.id;
+            let worker_id = worker_id.to_string();
+            let cancel = renew_cancel.clone();
+            tokio::spawn(async move {
+                let mut interval = tokio::time::interval(Duration::from_secs(20));
+                loop {
+                    tokio::select! {
+                        _ = cancel.cancelled() => return,
+                        _ = interval.tick() => {
+                            match linear_q::renew_claimed_sync_outbox(
+                                &pool,
+                                outbox_id,
+                                &worker_id,
+                                LEASE_SECONDS,
+                            ).await {
+                                Ok(true) => {}
+                                Ok(false) => {
+                                    tracing::warn!(
+                                        outbox_id = %outbox_id,
+                                        worker_id,
+                                        "Linear Outbox lease renewal lost ownership"
+                                    );
+                                    return;
+                                }
+                                Err(error) => tracing::warn!(
+                                    outbox_id = %outbox_id,
+                                    worker_id,
+                                    %error,
+                                    "Linear Outbox lease renewal failed"
+                                ),
+                            }
+                        }
+                    }
+                }
+            })
+        };
+        let result = self.process_outbox_row(&row, worker_id).await;
+        renew_cancel.cancel();
+        let _ = renew_task.await;
+
+        match result {
             Ok(()) => {
                 // Successful rows are completed inside the same transaction
                 // that writes the Issue Link. The worker method only logs a
@@ -393,12 +461,6 @@ impl LinearSyncWorker {
                 .await
                 .map_err(SyncError::retry)?
                 .ok_or_else(|| SyncError::permanent(anyhow::anyhow!("Patchbay Issue not found")))?;
-        if issue.origin_type.as_deref() == Some("linear") {
-            return Err(SyncError::permanent(anyhow::anyhow!(
-                "Linear-origin Issue cannot be published back to Linear"
-            )));
-        }
-
         let existing_link = linear_q::get_linear_issue_link_by_patchbay_issue(
             &self.state.pool,
             row.workspace_id,
@@ -502,12 +564,35 @@ impl LinearSyncWorker {
                 )
                 .await
                 .map_err(|error| classify_token_error(error, "update Linear Issue"))?
-        } else if let Some(remote) = manager
-            .find_issue_by_marker(connection.id, &binding.linear_project_id, issue.id)
-            .await
-            .map_err(|error| classify_token_error(error, "reconcile Linear Issue create"))?
-        {
-            remote
+        } else if row.attempts > 1 {
+            if let Some(remote) = manager
+                .find_issue_by_marker(connection.id, &binding.linear_project_id, issue.id)
+                .await
+                .map_err(|error| classify_token_error(error, "reconcile Linear Issue create"))?
+            {
+                remote
+            } else {
+                let team_id = binding.linear_team_id.as_deref().ok_or_else(|| {
+                    SyncError::permanent(anyhow::anyhow!(
+                        "Linear binding has no team for Issue creation"
+                    ))
+                })?;
+                manager
+                    .create_issue(
+                        connection.id,
+                        team_id,
+                        &binding.linear_project_id,
+                        issue.id,
+                        &issue.title,
+                        issue.description.as_deref(),
+                        priority,
+                        state_id.as_deref(),
+                        due_date.as_deref(),
+                        linear_owner_id.as_deref(),
+                    )
+                    .await
+                    .map_err(|error| classify_token_error(error, "create Linear Issue"))?
+            }
         } else {
             let team_id = binding.linear_team_id.as_deref().ok_or_else(|| {
                 SyncError::permanent(anyhow::anyhow!(
@@ -795,6 +880,7 @@ impl LinearSyncWorker {
         source_event_id: &str,
         event_timestamp_ms: Option<i64>,
     ) -> Result<(), SyncError> {
+        let was_unlinked = existing_link.is_none();
         let linear_project_id = remote
             .project
             .as_ref()
@@ -1136,6 +1222,28 @@ impl LinearSyncWorker {
                 "Linear Issue Link disappeared during update"
             )));
         }
+        activity::create_activity(
+            &self.state.pool,
+            connection.workspace_id,
+            issue.id,
+            Some("system"),
+            None,
+            "linear_sync_applied",
+            &json!({
+                "source": "linear",
+                "source_event_id": source_event_id,
+                "connection_id": connection.id,
+                "binding_id": binding.id,
+                "linear_issue_id": remote.id,
+                "linear_identifier": remote.identifier,
+                "remote_updated_at": remote.updated_at,
+                "event_timestamp_ms": event_timestamp_ms,
+                "imported": was_unlinked,
+            }),
+            linear_sync_activity_id(connection.id, issue.id, source_event_id, "applied"),
+        )
+        .await
+        .map_err(SyncError::retry)?;
         Ok(())
     }
 
@@ -1225,6 +1333,30 @@ impl LinearSyncWorker {
                 "Linear deletion link update lost its row"
             )));
         }
+        activity::create_activity(
+            &self.state.pool,
+            connection.workspace_id,
+            link.patchbay_issue_id,
+            Some("system"),
+            None,
+            "linear_sync_removed",
+            &json!({
+                "source": "linear",
+                "source_event_id": source_event_id,
+                "connection_id": connection.id,
+                "binding_id": link.binding_id,
+                "linear_issue_id": linear_issue_id,
+                "event_timestamp_ms": event_timestamp_ms,
+            }),
+            linear_sync_activity_id(
+                connection.id,
+                link.patchbay_issue_id,
+                source_event_id,
+                "removed",
+            ),
+        )
+        .await
+        .map_err(SyncError::retry)?;
         Ok(())
     }
 }

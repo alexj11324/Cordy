@@ -15,7 +15,8 @@ use patchbay_db::models::{
 };
 use patchbay_db::queries::workspace::increment_issue_counter;
 use patchbay_db::queries::{
-    agent as agent_q, dependency_graph as graph_q, issue as issue_q, runtime as runtime_q,
+    agent as agent_q, dependency_graph as graph_q, issue as issue_q, linear as linear_q,
+    runtime as runtime_q,
     workspace_issue_category_policy as category_policy_q,
 };
 use serde::{Deserialize, Serialize};
@@ -1336,6 +1337,17 @@ pub async fn apply_dependency_plan(
         .ok_or_else(|| {
             DependencyGraphError::Database("planned issue insert returned no row".to_string())
         })?;
+        linear_q::enqueue_issue_outbox(
+            &mut *tx,
+            issue.workspace_id,
+            issue.project_id,
+            issue.id,
+            &format!("issue:{}:created", issue.id),
+            "issue_created",
+            &crate::issue_service::linear_issue_sync_payload(&issue),
+        )
+        .await
+        .map_err(db_error)?;
         let acceptance_criteria = json!(task.acceptance_criteria);
         graph_q::set_issue_acceptance_criteria(
             &mut *tx,

@@ -869,6 +869,23 @@ pub async fn list_issues_in_workspace_by_ids(
     .await?)
 }
 
+/// Loads every Issue currently owned by a local Project. Binding activation
+/// uses this snapshot to seed the outbound queue for work that existed before
+/// the Linear binding was created.
+pub async fn list_issues_in_project(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+    project_id: Uuid,
+) -> anyhow::Result<Vec<Issue>> {
+    Ok(sqlx::query_as::<_, Issue>(
+        "SELECT id, workspace_id, title, description, status, priority, executor_type, executor_id, creator_type, creator_id, parent_issue_id, acceptance_criteria, context_refs, position, due_date, created_at, updated_at, number, project_id, origin_type, origin_id, first_executed_at, start_date, metadata, stage, properties, revision, last_activity_at, reviewer_type, reviewer_id, owner_type, owner_id FROM issue WHERE workspace_id = $1 AND project_id = $2 ORDER BY id",
+    )
+    .bind(workspace_id)
+    .bind(project_id)
+    .fetch_all(executor)
+    .await?)
+}
+
 /// Locks the non-terminal issues owned by a dependency-graph plan before the
 /// plan or its queue work is reconciled. The effective-status predicate keeps
 /// custom Done/Cancelled statuses out of graph lifecycle cancellation.

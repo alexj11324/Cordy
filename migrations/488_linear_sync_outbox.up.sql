@@ -2,7 +2,7 @@
 -- transaction as the canonical Issue mutation; the worker owns provider I/O.
 -- Relationships are enforced by application transactions, not database FKs.
 CREATE TABLE linear_sync_outbox (
-    id UUID NOT NULL PRIMARY KEY,
+    id UUID NOT NULL,
     workspace_id UUID NOT NULL,
     binding_id UUID NOT NULL,
     issue_id UUID NOT NULL,
