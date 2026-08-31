@@ -4,12 +4,12 @@
 
 - Source visual truth:
   - `/home/ubuntu/.codex/attachments/d97b40de-a66e-42e1-955a-ec6c0bb7b4cc/codex-clipboard-4097918c-f442-40ef-80e7-4163a7d9108d.png` — standalone settings hierarchy and window takeover.
-  - `/home/ubuntu/.codex/attachments/bb4b54c5-6cbc-47d5-a1cc-d8a03ef55757/codex-clipboard-100a3464-f478-4e7f-8d7a-32f6187c0f0b.png` — existing Cordy/LobeHub sidebar typography, color, and density.
+  - `/home/ubuntu/.codex/attachments/bb4b54c5-6cbc-47d5-a1cc-d8a03ef55757/codex-clipboard-100a3464-f478-4e7f-8d7a-32f6187c0f0b.png` — existing product/LobeHub sidebar typography, color, and density.
 - Implementation screenshot: `/home/ubuntu/.codex/visualizations/2026/08/31/01a055ff-b2d0-74b3-9134-63f819d5b070/settings-standalone-implementation.png`
 - Full-view combined comparison: `/home/ubuntu/.codex/visualizations/2026/08/31/01a055ff-b2d0-74b3-9134-63f819d5b070/settings-design-qa-comparison.png`
 - Focused combined comparison: `/home/ubuntu/.codex/visualizations/2026/08/31/01a055ff-b2d0-74b3-9134-63f819d5b070/settings-design-qa-focus.png`
 - Viewport: `1686 × 986` CSS px, `deviceScaleFactor: 2`.
-- Pixels: Codex source `3372 × 1972`; final implementation `3372 × 1972`. They were compared at equal CSS size and density. The existing Cordy source is `2582 × 1772` and was used as a design-language reference rather than a pixel-identical state.
+- Pixels: Codex source `3372 × 1972`; final implementation `3372 × 1972`. They were compared at equal CSS size and density. The existing product source is `2582 × 1772` and was used as a design-language reference rather than a pixel-identical state.
 - State: dark theme, Simplified Chinese, Profile selected, realistic local user/workspace data.
 - Browser evidence: Chromium rendered the production settings components and desktop styles. Back-to-app keyboard focus was exercised and matched `:focus-visible`; console and page errors were empty.
 
@@ -21,7 +21,7 @@ No actionable P0, P1, or P2 findings remain.
 - Spacing and layout: the standalone navigation width, content column, top inset, card padding, and section rhythm align with the source proportions. The focused comparison shows matching navigation/content boundaries and card width.
 - Colors and tokens: the navigation uses the existing sidebar background, primary/secondary text, hover, selected, icon, and border tokens; the content uses the existing page-canvas and surface tokens. No one-off palette was introduced.
 - Image quality and assets: the screen contains no illustrative or photographic source assets. Existing Lucide icons and the product avatar primitive remain sharp at 2× density; no CSS-drawn or placeholder replacement was introduced.
-- Copy and content: Cordy's real Profile content intentionally differs from Codex's General content. Labels are localized through the product i18n layer and remain coherent in the standalone context.
+- Copy and content: the product's real Profile content intentionally differs from Codex's General content. Labels are localized through the product i18n layer and remain coherent in the standalone context.
 - Accessibility and behavior: the return control is a semantic button with a visible keyboard focus state. Settings navigation, shortcut opening, back/close behavior, persisted-tab sanitization, and route reporting are covered by focused automated tests.
 
 ## Comparison history
