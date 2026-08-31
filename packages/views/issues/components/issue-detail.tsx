@@ -321,6 +321,14 @@ function formatActivity(
       if (details.from_id && !details.to_id) return t(($) => $.activity.removed_executor);
       return t(($) => $.activity.changed_executor);
     }
+    case "owner_changed": {
+      const toName = details.to_id && details.to_type && resolveActorName
+        ? resolveActorName(details.to_type, details.to_id)
+        : null;
+      if (toName) return t(($) => $.activity.assigned_to, { name: toName });
+      if (details.from_id && !details.to_id) return t(($) => $.activity.removed_owner);
+      return t(($) => $.activity.changed_owner);
+    }
     case "review_handoff": {
       const fromName = details.from_id && details.from_type && resolveActorName
         ? resolveActorName(details.from_type, details.from_id)

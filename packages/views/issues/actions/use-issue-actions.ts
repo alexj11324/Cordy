@@ -68,6 +68,8 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
   const issueId = issue?.id ?? null;
   const issueIdentifier = issue?.identifier ?? null;
   const issueProjectId = issue?.project_id ?? null;
+  const issueOwnerType = issue?.owner_type ?? null;
+  const issueOwnerId = issue?.owner_id ?? null;
   const issueExecutorType = issue?.executor_type ?? null;
   const issueExecutorId = issue?.executor_id ?? null;
   const { entryOf } = useIssueStatuses(wsId);
@@ -176,13 +178,15 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
       parent_issue_id: issueId,
       parent_issue_identifier: issueIdentifier,
       ...(issueProjectId ? { project_id: issueProjectId } : {}),
-      // Inherit the parent's executor (member/agent/team) so a sub-issue
-      // created from the "Add sub-issue" entry starts with the same owner
-      // (discussion #1728). The modal keys off whether these fields are
+      // Inherit the parent's owner and executor independently so a sub-issue
+      // created from the "Add sub-issue" entry keeps both responsibility
+      // fields (discussion #1728). The modal keys off whether these fields are
       // present, not their value, so a seed overrides the sticky last-used
-      // executor it would otherwise fall back to, while omitting both for
-      // an unassigned parent leaves that fallback intact. Seed the two
-      // together — executor_type is meaningless without executor_id.
+      // values it would otherwise fall back to. Executor type is meaningless
+      // without its id, and owner is only valid for workspace members.
+      ...(issueOwnerType === "member" && issueOwnerId
+        ? { owner_type: "member" as const, owner_id: issueOwnerId }
+        : {}),
       ...(issueExecutorType && issueExecutorId
         ? { executor_type: issueExecutorType, executor_id: issueExecutorId }
         : {}),
@@ -192,6 +196,8 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
     issueId,
     issueIdentifier,
     issueProjectId,
+    issueOwnerType,
+    issueOwnerId,
     issueExecutorType,
     issueExecutorId,
   ]);
