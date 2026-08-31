@@ -131,6 +131,13 @@ mutation, and then updates the existing Compose projects and ports:
 - `cordy`: Docs on `127.0.0.1:4000`. <!-- legacy-brand-compat -->
 - `patchbay-auth-broker`: Broker on `127.0.0.1:43100`.
 
+The source-controlled origin Nginx configuration routes the public
+`patchbay.aspectlylabs.com/docs` path (including its assets and localized
+pages) directly to the Docs service on `127.0.0.1:4000`. This host-level route
+is part of the public deployment contract; it must be installed together with
+the matching `deploy/origin/nginx/aspectlylabs-origin.conf` rather than relying
+on a container-only `DOCS_URL` value.
+
 Rollback is bound to both the failed source SHA and the exact GitHub Actions
 run that changed production. An unchanged redeployment cannot roll production
 back to an older revision if a later external probe fails. The rollback request
