@@ -229,7 +229,11 @@ export function resolveCargoCommand(
   ].filter(Boolean);
   for (const candidate of [...new Set(candidates)]) {
     try {
-      execFileSync(candidate, ["--version"], { env, stdio: "pipe" });
+      execFileSync(candidate, ["--version"], {
+        env,
+        stdio: "pipe",
+        timeout: 2_000,
+      });
       return candidate;
     } catch {
       // Try the next deterministic Cargo location.

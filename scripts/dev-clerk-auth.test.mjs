@@ -87,6 +87,28 @@ describe("secure Clerk development bootstrap", () => {
     assert.equal(secretProviderCalled, false);
   });
 
+  it("rejects conflicting publishable-key aliases", async () => {
+    await assert.rejects(
+      () =>
+        bootstrapDevClerkAuth({
+          env: {
+            FRONTEND_ORIGIN: "http://localhost:3000",
+            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: publishableKey,
+            CLERK_PUBLISHABLE_KEY: publishableKey.replace(
+              "example.clerk.accounts.dev",
+              "other.clerk.accounts.dev",
+            ),
+            CLERK_SECRET_KEY: "sk_test_fixture",
+            CLERK_JWT_KEY: jwtKey,
+          },
+          secretProvider: async () => {
+            throw new Error("Secret Manager should not be contacted");
+          },
+        }),
+      /publishable-key.*must match/iu,
+    );
+  });
+
   it("rejects partial injected credentials before contacting GSM", async () => {
     let secretProviderCalled = false;
     await assert.rejects(

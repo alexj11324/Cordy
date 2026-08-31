@@ -9,12 +9,19 @@ import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { binaryNameForPlatform, devRustTargetFor } from "./bundle-cli.mjs";
+import {
+  binaryNameForPlatform,
+  devBuildVariables,
+  devRustTargetFor,
+  resolveCargoCommand,
+} from "./bundle-cli.mjs";
 import { loadDevCheckoutEnv } from "./dev-checkout-env.mjs";
 import {
   defaultDevCliCacheDir,
   inspectDevRuntimeCache,
+  rustBuildEnvironmentFingerprint,
   rustSourceFingerprint,
+  rustToolchainIdentity,
 } from "./dev-cli-cache.mjs";
 import { INTEGRATION_SECRET_KEYS } from "../../../scripts/ensure-dev-integration-secrets.mjs";
 import {
@@ -97,6 +104,13 @@ export function loadDoctorEnvironment({
     );
   }
   return env;
+}
+
+export function shouldBootstrapDevClerkAuth(env) {
+  return (
+    env.PATCHBAY_DEV_MODE !== "hosted" &&
+    env.PATCHBAY_DEV_AUTH_READY !== "1"
+  );
 }
 
 function formatBytes(bytes) {
@@ -215,10 +229,22 @@ export async function inspectDevEnvironment({
   const checks = [];
 
   const cache = await inspectDevRuntimeCache({ cacheRoot });
+  const cargoCommand = resolveCargoCommand(env, platform);
+  const toolchainIdentity = rustToolchainIdentity(env, cargoCommand, {
+    platform,
+    cwd: join(repoRoot, "server-rs"),
+  });
+  const buildVariables = devBuildVariables(
+    sourceFingerprint,
+    rustBuildEnvironmentFingerprint(env, rustTarget, "dev"),
+  );
   const currentCached = cache.completeFingerprints.some(
     (entry) =>
       entry.rustTarget === rustTarget &&
-      entry.sourceFingerprint === sourceFingerprint,
+      entry.sourceFingerprint === sourceFingerprint &&
+      entry.toolchainIdentity === (toolchainIdentity || "unavailable") &&
+      JSON.stringify(entry.buildVariables || {}) ===
+        JSON.stringify(buildVariables),
   );
   checks.push({
     id: "cache",
@@ -388,7 +414,7 @@ async function main() {
     mode: process.argv.includes("--hosted") ? "hosted" : undefined,
   });
   let inspectionEnv = env;
-  if (env.PATCHBAY_DEV_MODE !== "hosted") {
+  if (shouldBootstrapDevClerkAuth(env)) {
     const auth = await bootstrapDevClerkAuth({ env });
     console.log(
       `✓ Clerk development authentication ready for ${auth.authorizedParties} (${auth.source})`,

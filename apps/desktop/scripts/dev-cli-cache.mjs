@@ -237,6 +237,7 @@ export function rustToolchainIdentity(
       cwd,
       env: toolchainEnv,
       stdio: ["ignore", "pipe", "ignore"],
+      timeout: 3_000,
     }).trim();
   } catch {
     return null;
@@ -250,6 +251,7 @@ export function rustToolchainIdentity(
         cwd,
         env: toolchainEnv,
         stdio: ["ignore", "pipe", "ignore"],
+        timeout: 3_000,
       }).trim();
       return `cargo:\n${cargoIdentity}\nrustc:\n${rustcIdentity}`;
     } catch {

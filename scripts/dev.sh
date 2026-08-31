@@ -262,6 +262,10 @@ if ! kill -0 "$backend_pid" >/dev/null 2>&1; then
   tail -n 80 "$backend_log" >&2 || true
   exit 1
 fi
+# The authenticated backend wrapper has already validated the complete Clerk
+# configuration. Carry only this non-secret readiness fact to the Desktop
+# doctor so it does not bootstrap Secret Manager a second time.
+export PATCHBAY_DEV_AUTH_READY=1
 
 frontend_ready_url="$FRONTEND_ORIGIN/"
 if port_is_listening "${FRONTEND_PORT:-3000}"; then

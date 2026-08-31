@@ -12,6 +12,7 @@ import {
   inspectDevEnvironment,
   integrationKeyStatus,
   loadDoctorEnvironment,
+  shouldBootstrapDevClerkAuth,
 } from "./dev-environment-doctor.mjs";
 import { rustSourceFingerprint } from "./dev-cli-cache.mjs";
 import { INTEGRATION_SECRET_KEYS } from "../../../scripts/ensure-dev-integration-secrets.mjs";
@@ -92,6 +93,21 @@ describe("complete Desktop development doctor", () => {
         VITE_ACCOUNTS_URL: "https://accounts.aspectlylabs.com/",
       }),
     ).toBe("https://accounts.aspectlylabs.com");
+  });
+
+  it("reuses the authenticated launcher's readiness marker", () => {
+    expect(
+      shouldBootstrapDevClerkAuth({ PATCHBAY_DEV_MODE: "local" }),
+    ).toBe(true);
+    expect(
+      shouldBootstrapDevClerkAuth({
+        PATCHBAY_DEV_MODE: "local",
+        PATCHBAY_DEV_AUTH_READY: "1",
+      }),
+    ).toBe(false);
+    expect(shouldBootstrapDevClerkAuth({ PATCHBAY_DEV_MODE: "hosted" })).toBe(
+      false,
+    );
   });
 
   it("preserves a launcher's hosted profile when the checkout env is reloaded", async () => {

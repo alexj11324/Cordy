@@ -177,9 +177,18 @@ export async function bootstrapDevClerkAuth({
 
   const credentials = useEnvironment ? env : payload;
 
-  const publishableKey =
-    credentials.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ||
-    credentials.CLERK_PUBLISHABLE_KEY;
+  const publicPublishableKey = credentials.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY;
+  const serverPublishableKey = credentials.CLERK_PUBLISHABLE_KEY;
+  if (
+    publicPublishableKey &&
+    serverPublishableKey &&
+    publicPublishableKey !== serverPublishableKey
+  ) {
+    throw authError(
+      "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY and CLERK_PUBLISHABLE_KEY must match when both are provided.",
+    );
+  }
+  const publishableKey = publicPublishableKey || serverPublishableKey;
   const secretKey = credentials.CLERK_SECRET_KEY;
   if (!/^pk_test_/.test(publishableKey || "")) {
     throw authError("Development auth requires a Clerk test publishable key.");
