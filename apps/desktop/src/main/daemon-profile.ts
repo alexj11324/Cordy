@@ -64,7 +64,10 @@ export function assertResolvedProfile(profile: string): void {
 export function deriveProfileName(targetUrl: string): string {
   try {
     const url = new URL(targetUrl);
-    const host = url.host.replace(/:/g, "-").toLowerCase();
+    // URL.host wraps IPv6 literals in brackets. Strip both brackets and
+    // colons so the generated profile stays within the Rust validator's
+    // lowercase/digit/dot/hyphen grammar while remaining deterministic.
+    const host = url.host.replace(/[\[\]:]/g, "-").toLowerCase();
     return `desktop-${host}`;
   } catch {
     return "desktop";

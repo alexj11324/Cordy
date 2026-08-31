@@ -255,7 +255,10 @@ function invalidateActiveProfile(): void {
  * work. Its health payload must still identify the expected legacy server so
  * a rare health-port collision can never stop an unrelated profile.
  */
-async function retirePendingLegacyProfile(): Promise<void> {
+async function retirePendingLegacyProfile(
+  clearCredentials: (profile: string) => Promise<void> =
+    clearProfileCredentials,
+): Promise<void> {
   const legacy = pendingLegacyProfileStop;
   if (!legacy || legacyProfileStopInFlight) return;
   legacyProfileStopInFlight = true;
@@ -287,7 +290,7 @@ async function retirePendingLegacyProfile(): Promise<void> {
         (error) => (error ? reject(error) : resolve()),
       );
     });
-    await clearProfileCredentials(legacy.name);
+    await clearCredentials(legacy.name);
     pendingLegacyProfileStop = null;
     console.log(`[daemon] retired legacy Desktop profile "${legacy.name}"`);
   } catch (error) {
@@ -708,6 +711,8 @@ async function syncTokenUnlocked(
     config.desktop_user_id.trim() !== ""
       ? config.desktop_user_id.trim()
       : null;
+  const previousToken =
+    typeof config.token === "string" ? config.token : null;
   const userChanged = Boolean(previousUserId) && previousUserId !== userId;
   const sameUserWithCachedPat =
     !userChanged &&
@@ -740,19 +745,27 @@ async function syncTokenUnlocked(
     user_id: userId,
   });
 
-  // If we just rotated credentials onto a running daemon, restart it so the
-  // in-memory token in the Rust process matches the new config.
-  if (userChanged) {
+  // If the atomic write changed any credential or target field on a running
+  // daemon, restart it so the Rust process cannot keep an older in-memory
+  // token. The owner-id comparison also covers first-run migration from the
+  // legacy sidecar, where config.desktop_user_id was previously absent.
+  const credentialsChanged =
+    previousToken !== finalToken ||
+    previousUserId !== userId ||
+    config.server_url !== serverUrl;
+  if (credentialsChanged) {
     try {
       const existing = await fetchHealthAtPort(active.port);
       if (daemonStatusAlive(existing?.status)) {
-        // Restart whether it's "running" or still "starting" — a booting daemon
-        // already loaded the old token at startup, so it must be restarted to
-        // pick up the rotated credentials.
+        // Restart whether it's "running" or still "starting" — a booting
+        // daemon already loaded the old token at startup, so it must be
+        // restarted to pick up the rotated credentials. Awaiting this call is
+        // part of the mutation so a later target switch cannot interleave with
+        // stop/start and move the daemon to a different profile.
         console.log(
-          "[daemon] user switched — restarting daemon with new credentials",
+          "[daemon] credentials changed — restarting daemon with new credentials",
         );
-        void restartDaemon();
+        await restartDaemon();
       }
     } catch (err) {
       console.warn("[daemon] restart-on-user-switch failed:", err);
@@ -1260,7 +1273,10 @@ export function setupDaemonManager(
         pendingLegacyProfileStop = normalized
           ? legacyDesktopProfileForTarget(normalized)
           : null;
-        await retirePendingLegacyProfile();
+        // This handler already owns the profile-mutation queue. Use the
+        // unlocked cleanup path so legacy retirement cannot enqueue work
+        // behind itself and deadlock the target switch.
+        await retirePendingLegacyProfile(clearProfileCredentialsUnlocked);
         await pollOnce();
       }
     });
