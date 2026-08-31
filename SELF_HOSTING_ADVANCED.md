@@ -675,7 +675,7 @@ Re-run the installer to move the Compose assets and both Rust production images
 to the same latest release tag:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | \
   bash -s -- --with-server
 ```
 
@@ -684,7 +684,7 @@ the checked-out Compose files, backend image, and web image cannot drift across
 versions. To install or roll back to an exact release, select it explicitly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | \
   PATCHBAY_SELFHOST_REF=v0.2.4 bash -s -- --with-server
 ```
 
@@ -693,7 +693,7 @@ On Windows PowerShell:
 ```powershell
 $env:PATCHBAY_SELFHOST_REF = "v0.2.4"
 $env:PATCHBAY_MODE = "with-server"
-irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
 ```
 
 Each run fetches the requested Git ref, writes the matching image tag, pulls
@@ -710,7 +710,7 @@ If the selected GHCR tag has not been published yet, fall back to `docker compos
 On a Linux host with systemd, opt in while installing the self-host stack:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | \
+curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | \
   bash -s -- --with-server --systemd
 ```
 

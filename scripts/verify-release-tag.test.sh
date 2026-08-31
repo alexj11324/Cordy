@@ -38,7 +38,7 @@ chmod +x "$tmp_dir/bin/gh"
 
 for mode in lightweight annotated; do
   PATH="$tmp_dir/bin:$PATH" \
-    GITHUB_REPOSITORY=patchbay-ai/patchbay \
+    GITHUB_REPOSITORY=alexj11324/Cordy \
     FAKE_GH_MODE="$mode" \
     bash "$guard" v1.2.3 expected-sha >/dev/null
 done
@@ -52,7 +52,7 @@ if ! grep -Fq -- "$release_concurrency" "$release_workflow" ||
 fi
 
 if PATH="$tmp_dir/bin:$PATH" \
-  GITHUB_REPOSITORY=patchbay-ai/patchbay \
+  GITHUB_REPOSITORY=alexj11324/Cordy \
   FAKE_GH_MODE=mismatch \
   bash "$guard" v1.2.3 expected-sha >/dev/null 2>&1; then
   echo "release tag guard accepted a moved tag" >&2

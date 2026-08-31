@@ -30,7 +30,7 @@ jobs:
     # A production release is incomplete without trusted macOS installers.
     # Fail before a draft Release is created unless every signing/notarization
     # credential is present in the canonical repository's Actions secrets.
-    if: github.event_name == 'workflow_dispatch' && github.repository == 'patchbay-ai/patchbay'
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     env:
       CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -173,7 +173,7 @@ jobs:
 
   self-hosted-prepare:
     needs: verify
-    if: github.event_name == 'workflow_dispatch' && github.repository == 'patchbay-ai/patchbay'
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     outputs:
       tag_name: ${{ steps.meta.outputs.tag_name }}
@@ -408,7 +408,7 @@ jobs:
     needs: [macos-release-preflight, verify, rust-cli-build]
     # Only the canonical repository stages the final release asset set. A fork
     # can still run verification and builds without creating release artifacts.
-    if: github.repository == 'patchbay-ai/patchbay'
+    if: github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     steps:
       - name: Download Rust CLI archives
@@ -744,7 +744,7 @@ jobs:
 
   helm-chart:
     needs: [self-hosted-prepare, verify, docker-backend-merge, docker-web-merge]
-    if: github.repository == 'patchbay-ai/patchbay'
+    if: github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     concurrency:
       group: self-hosted-helm-chart-${{ needs.self-hosted-prepare.outputs.tag_name }}
@@ -807,7 +807,7 @@ jobs:
     if: >-
       inputs.promote_latest &&
       needs.self-hosted-prepare.outputs.is_stable == 'true' &&
-      github.repository == 'patchbay-ai/patchbay'
+      github.repository == 'alexj11324/Cordy'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout verified release commit
@@ -1064,7 +1064,7 @@ jobs:
     needs: [verify, release, desktop, helm-chart]
     if: >-
       always() &&
-      github.repository == 'patchbay-ai/patchbay' &&
+      github.repository == 'alexj11324/Cordy' &&
       needs.verify.result == 'success' &&
       needs.release.result == 'success' &&
       needs.desktop.result == 'success' &&

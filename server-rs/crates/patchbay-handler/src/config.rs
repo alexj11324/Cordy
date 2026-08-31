@@ -394,7 +394,7 @@ mod tests {
             assert!(is_official_cloud_daemon_config(raw), "{raw}");
         }
         for raw in [
-            "https://patchbay.ai",
+            "https://www.example.invalid",
             "https://www.aspectlylabs.com",
             "http://localhost:3000",
             "https://evil.example",

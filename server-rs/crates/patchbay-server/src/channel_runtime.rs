@@ -43,6 +43,11 @@ impl ChannelRuntime {
         wecom_metrics: Option<Arc<patchbay_metrics::WecomMetrics>>,
         lark_backfill_metrics: Option<Arc<patchbay_metrics::LarkBackfillMetrics>>,
     ) -> anyhow::Result<Self> {
+        // Self-hosted operators provision installation rows from the server
+        // deployment (the Multica-style boundary). This runs before registry
+        // discovery so the supervisor sees newly materialized credentials on
+        // its first poll; the app remains read-only in server_configured mode.
+        super::channel_bootstrap::provision_from_environment(&state.pool, cfg).await?;
         let services = Arc::new(ChannelServices {
             pool: state.pool.clone(),
             issues: state.issues.clone(),

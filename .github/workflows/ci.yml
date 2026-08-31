@@ -80,6 +80,9 @@ jobs:
       - name: Test restricted production deployment gateway
         run: python3 -m unittest deploy/origin/production_deploy_test.py
 
+      - name: Test public URL contract
+        run: bash scripts/public-url-contract.test.sh
+
       - name: Test accounts origin proxy contract
         run: node --test deploy/cloudflare/accounts-origin-proxy/src/index.test.mjs
 
@@ -126,6 +129,8 @@ jobs:
               - 'scripts/selfhost-config.test.sh'
               - 'scripts/messaging-self-host-check.sh'
               - 'scripts/messaging-self-host-check.test.sh'
+              - 'scripts/messaging-self-host-setup.sh'
+              - 'scripts/messaging-self-host-setup.test.sh'
               - 'scripts/drop-database.sh'
               - 'scripts/ensure-dev-integration-secrets.mjs'
               - 'scripts/postgres-runtime.sh'
@@ -346,6 +351,10 @@ jobs:
       - name: Test self-host messaging deployment contract
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         run: bash scripts/messaging-self-host-check.test.sh
+
+      - name: Test self-host messaging setup helper
+        if: ${{ needs.changes.outputs.frontend == 'true' }}
+        run: bash scripts/messaging-self-host-setup.test.sh
 
       - name: Test worktree database cleanup
         if: ${{ needs.changes.outputs.frontend == 'true' }}

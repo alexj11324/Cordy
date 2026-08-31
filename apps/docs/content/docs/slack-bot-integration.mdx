@@ -1,13 +1,16 @@
 ---
 title: Slack Bot
-description: Create a Slack Bot for an agent and use it in DMs, channels, and the /issue command.
+description: Install a workspace-scoped Slack Bot and use it in DMs, channels, and the /issue command.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
 Patchbay uses your own Slack app. Once connected, team members can DM the Bot, @-mention it in a channel, or use `/issue` to create issues.
 
-One Slack app maps to one Patchbay agent. To connect several agents, create a separate app for each.
+The Slack app is installed at the Patchbay workspace level, not on a
+particular computer or agent. Members can choose or switch the active agent
+with `/agents`; create another Slack app only when you need a separate Bot
+identity.
 
 ## Before you start
 
@@ -88,17 +91,18 @@ The Bot connects out to Slack over Socket Mode, so no public Request URL or OAut
 4. Generate and copy the token starting with `xapp-`.
 
 
-## 3. Connect it to an agent
+## 3. Connect it to the workspace
 
-1. In Patchbay, open **Agents** and select the agent to connect to Slack.
-2. Go to **Integrations** and click **Connect Slack**.
+1. In Patchbay, open **Settings → Integrations** and click **Connect Slack**.
+2. Choose the workspace-level installation (or a dedicated agent route if you
+   explicitly need one).
 3. Paste the Bot token and the App-level token.
 4. Click **Connect**.
 
 Patchbay verifies that the two tokens come from the same app. Once connected, the page shows **Connected to Slack**.
 
 <Callout type="warning">
-Both tokens are stored encrypted on the Patchbay server. Tokens are credentials — don't put them in issues, comments, or code repositories. An app already connected to another agent or workspace can't be reused directly; disconnect the original connection first.
+Both tokens are stored encrypted on the Patchbay server. Tokens are credentials — don't put them in issues, comments, or code repositories. An app already connected to another workspace can't be reused directly; disconnect the original connection first.
 </Callout>
 
 ## First use
@@ -145,7 +149,10 @@ After disconnecting, the Socket Mode connection stops and the Bot no longer rece
 
 ## Self-hosting setup
 
-Patchbay Cloud needs no extra configuration. A self-hosted deployment must first set a key used to encrypt Slack tokens:
+Patchbay Cloud needs no extra configuration. A self-hosted deployment is
+server-managed: the app is read-only and does not accept Slack credentials.
+Follow the [self-hosted messaging deployment contract](/self-host-messaging)
+and run the setup helper on the server.
 
 ```dotenv
 PATCHBAY_SLACK_SECRET_KEY=<base64-encoded 32-byte key>
@@ -157,7 +164,11 @@ Generate one like this:
 openssl rand -base64 32
 ```
 
-Restart the API server, then connect the Slack app. Keep this key long-term: if it is rotated or lost, existing tokens can no longer be decrypted and the Bot must be reconnected.
+Set `PATCHBAY_MESSAGING_BOOTSTRAP=true` with the server-owned workspace and
+installer IDs, add the `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, team ID, and bot
+user ID to the deployment secret store, then restart the API server. Keep this
+key long-term: if it is rotated or lost, existing tokens can no longer be
+decrypted. Do not expect a Connect button in the self-hosted app.
 
 Account binding links use `PATCHBAY_APP_URL`, falling back to `FRONTEND_ORIGIN` when unset; it must point to a Patchbay address members can reach.
 

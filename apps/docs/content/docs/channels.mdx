@@ -23,9 +23,13 @@ Personal WeChat uses Tencent's official iLink QR authorization. It works with an
 
 New connections are currently open only for mainland-China Feishu; existing international Lark connections keep working and can still be managed.
 
-Each Bot is bound to one Patchbay agent. To use several agents on the same chat platform, connect a separate Bot for each.
+Each Bot is installed at the Patchbay workspace level, not on a particular
+computer or agent. Members choose or switch the active agent with `/agents`;
+the same workspace installation can therefore serve several agents without
+rebinding the IM account or creating a device-to-device link. Add a dedicated
+agent installation only when a separate Bot identity is required.
 
-DingTalk, WeCom, and Telegram are [community-maintained](/community-maintained): they ship in every release, but carry no official support SLA. Report problems in [GitHub issues](https://github.com/alexj11324/Patchbay/issues).
+DingTalk, WeCom, and Telegram are [community-maintained](/community-maintained): they ship in every release, but carry no official support SLA. Report problems in [GitHub issues](https://github.com/alexj11324/Cordy/issues).
 
 WeCom handles text messages today. Voice, image, and file messages get a short reply explaining that, and are not passed to the agent.
 
@@ -41,7 +45,8 @@ Step-by-step guides:
 
 ## How a message is processed
 
-1. Patchbay resolves the Bot to its workspace and agent.
+1. Patchbay resolves the Bot to its workspace, then applies the conversation's
+   `/agents` route (or the configured group route) to choose an agent.
 2. In a group or channel, only messages that explicitly @-mention the Bot continue; DMs need no mention.
 3. Patchbay verifies the sender's account binding and workspace membership.
 4. The message joins an [agent chat](/chat) session, and a task is created.
@@ -63,7 +68,12 @@ Follow-ups in a channel still need a fresh @-mention. The agent only receives me
 
 ## Account binding
 
-The first time a member messages the Bot, they receive an account binding link. After signing in to Patchbay, the platform account is linked to their membership in the current workspace. The WeChat account that scans the installation QR code is linked automatically.
+The first time a member messages the Bot, they receive an account binding link.
+After signing in to Patchbay, the platform account is linked to their
+membership in the current workspace. The WeChat account that scans the
+installation QR code is linked automatically. The binding belongs to the
+account and workspace, so signing in on another computer does not require a
+new bind.
 
 Patchbay only runs the agent after binding completes. Every message re-checks account binding and workspace membership; after leaving a workspace, the Bot can no longer be used to reach it.
 

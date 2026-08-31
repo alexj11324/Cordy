@@ -35,8 +35,8 @@ describe("prefixLocale", () => {
   });
 
   it("leaves external URLs alone", () => {
-    expect(prefixLocale("https://patchbay.ai/download", "zh")).toBe(
-      "https://patchbay.ai/download",
+    expect(prefixLocale("https://patchbay.aspectlylabs.com/download", "zh")).toBe(
+      "https://patchbay.aspectlylabs.com/download",
     );
     expect(prefixLocale("mailto:hello@patchbay.ai", "zh")).toBe(
       "mailto:hello@patchbay.ai",

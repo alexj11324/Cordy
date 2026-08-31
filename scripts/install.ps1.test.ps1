@@ -128,8 +128,8 @@ try {
         Update-LegacySelfHostImageRepositories -EnvPath $migrationEnv
     } | Out-Null
     $migrated = @(Get-Content $migrationEnv)
-    if ($migrated -notcontains "PATCHBAY_BACKEND_IMAGE=ghcr.io/patchbay-ai/patchbay-backend" -or
-        $migrated -notcontains "PATCHBAY_WEB_IMAGE=ghcr.io/patchbay-ai/patchbay-web") {
+    if ($migrated -notcontains "PATCHBAY_BACKEND_IMAGE=ghcr.io/alexj11324/patchbay-backend" -or
+        $migrated -notcontains "PATCHBAY_WEB_IMAGE=ghcr.io/alexj11324/patchbay-web") {
         Fail-Test "install.ps1 did not migrate the exact legacy image repositories"
     }
 

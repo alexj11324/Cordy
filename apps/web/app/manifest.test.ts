@@ -37,7 +37,7 @@ async function runProxy(request: NextRequest) {
 
 async function launch(
   cookies: Record<string, string>,
-  host = "www.patchbay.ai",
+  host = "patchbay.aspectlylabs.com",
 ) {
   const cookieHeader = Object.entries(cookies)
     .map(([key, value]) => `${key}=${value}`)
@@ -91,7 +91,7 @@ describe("web app manifest", () => {
     const target = await launch({ patchbay_logged_in: "1" });
 
     expect(target).toContain("/login");
-    expect(new URL(target ?? "", "https://www.patchbay.ai").pathname).not.toBe(
+    expect(new URL(target ?? "", "https://patchbay.aspectlylabs.com").pathname).not.toBe(
       "/",
     );
   });
@@ -103,7 +103,7 @@ describe("web app manifest", () => {
     for (const shortcut of shortcuts) {
       const resolve = async (cookie: string) => {
         const response = await runProxy(
-          new NextRequest(`https://www.patchbay.ai${shortcut.url}`, {
+          new NextRequest(`https://patchbay.aspectlylabs.com${shortcut.url}`, {
             headers: { cookie },
           }),
         );

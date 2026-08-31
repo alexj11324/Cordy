@@ -1,13 +1,13 @@
 ---
 title: Slack Bot
-description: エージェント用の Slack Bot を作成し、DM、チャンネル、/issue コマンドから利用します。
+description: ワークスペース用の Slack Bot を作成し、DM、チャンネル、/issue コマンドから利用します。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
 Patchbay では、自分で作成した Slack app を使います。接続すると、チームメンバーは Bot へ DM を送る、チャンネルで @メンションする、`/issue` でイシューを作成するといった操作ができます。
 
-1 つの Slack app に接続できる Patchbay エージェントは 1 つです。複数のエージェントを接続する場合は、エージェントごとに app を作成してください。
+Slack app は特定のコンピューターや 1 つのエージェントではなく、Patchbay ワークスペース単位でインストールします。メンバーは会話中に `/agents` でエージェントを選択・切り替えます。別の Bot アイデンティティが必要な場合だけ追加の Slack app を作成してください。
 
 ## 始める前に
 
@@ -86,17 +86,17 @@ Bot は Socket Mode で Slack へ接続するため、公開 Request URL や OAu
 3. `connections:write` scope を追加します。
 4. token を生成し、`xapp-` で始まる値をコピーします。
 
-## 3. エージェントへ接続する
+## 3. ワークスペースへ接続する
 
-1. Patchbay で**エージェント**を開き、Slack に接続するエージェントを選びます。
-2. **連携**を開き、**Slack に接続**をクリックします。
+1. Patchbay で **Settings → Integrations** を開き、**Connect Slack** をクリックします。
+2. ワークスペース単位のインストールを選択します（専用 Bot ID が必要な場合だけエージェントルートを選択します）。
 3. Bot token と App-level token を入力します。
 4. **接続**をクリックします。
 
 Patchbay は 2 つの token が同じ app のものか確認します。接続に成功すると、画面に **Slack に接続済み**と表示されます。
 
 <Callout type="warning">
-2 つの token は暗号化して Patchbay サーバーに保存されます。Token は認証情報です。イシュー、コメント、コードリポジトリには書き込まないでください。ほかのエージェントやワークスペースに接続済みの app をそのまま再利用することはできません。先に元の接続を解除してください。
+2 つの token は暗号化して Patchbay サーバーに保存されます。Token は認証情報です。イシュー、コメント、コードリポジトリには書き込まないでください。ほかのワークスペースに接続済みの app をそのまま再利用することはできません。先に元の接続を解除してください。
 </Callout>
 
 ## 初回利用
@@ -143,7 +143,7 @@ DM、または Bot を @ メンションしたチャンネルのメッセージ�
 
 ## セルフホスト設定
 
-Patchbay Cloud では追加設定は不要です。セルフホスト環境では、Slack token を暗号化するキーを先に設定してください。
+Patchbay Cloud では追加設定は不要です。セルフホスト環境はサーバー管理で、アプリは読み取り専用になり Slack の認証情報を受け取りません。[セルフホストのメッセージングデプロイ契約](/self-host-messaging)に従い、サーバーでセットアップヘルパーを実行してください。
 
 ```dotenv
 PATCHBAY_SLACK_SECRET_KEY=<base64-encoded 32-byte key>
@@ -155,7 +155,7 @@ PATCHBAY_SLACK_SECRET_KEY=<base64-encoded 32-byte key>
 openssl rand -base64 32
 ```
 
-API サービスを再起動してから Slack app を接続します。このキーは継続して保管してください。変更または紛失すると既存の token を復号できなくなり、app の再接続が必要になります。
+`PATCHBAY_MESSAGING_BOOTSTRAP=true` とサーバー所有のワークスペース/インストーラー ID を設定し、`SLACK_BOT_TOKEN`、`SLACK_APP_TOKEN`、team ID、bot user ID をデプロイのシークレットストアに登録してから API サービスを再起動します。このキーは継続して保管してください。セルフホストのアプリには接続ボタンは表示されません。
 
 アカウント連携用リンクには `PATCHBAY_APP_URL` が使われ、未設定の場合は `FRONTEND_ORIGIN` にフォールバックします。メンバーがアクセスできる Patchbay のアドレスを指定してください。
 

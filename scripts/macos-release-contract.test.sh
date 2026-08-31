@@ -27,8 +27,8 @@ require_count() {
 
 require_literal 'commit_sha: ${{ steps.meta.outputs.commit_sha }}'
 require_literal 'github.event.repository.id == 1341050282'
-if grep -Fq -- "github.repository == 'patchbay-ai/patchbay'" "$workflow"; then
-  echo "macOS release workflow still targets the unavailable Patchbay repository" >&2
+if ! grep -Fq -- "github.repository == 'alexj11324/Cordy'" "$workflow"; then
+  echo "macOS release workflow is not scoped to the canonical Cordy repository" >&2
   exit 1
 fi
 require_literal 'group: production-release-${{ inputs.tag || github.event.workflow_run.head_branch || github.run_id }}'
