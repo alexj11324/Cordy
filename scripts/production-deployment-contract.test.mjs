@@ -26,6 +26,10 @@ const docsCompose = await readFile(
   new URL("../deploy/origin/production-docs.compose.yml", import.meta.url),
   "utf8",
 );
+const originNginx = await readFile(
+  new URL("../deploy/origin/nginx/aspectlylabs-origin.conf", import.meta.url),
+  "utf8",
+);
 const workflowDirectory = new URL("../.github/workflows/", import.meta.url);
 
 test("production follows successful main CI instead of a temporary deployment branch", () => {
@@ -94,6 +98,22 @@ test("all public Next services expose the immutable build fingerprint", () => {
 test("the production Docs healthcheck uses the runtime's Node executable", () => {
   assert.match(docsCompose, /test:\n\s+- CMD\n\s+- node\n/u);
   assert.doesNotMatch(docsCompose, /wget/u);
+});
+
+test("the production origin routes Docs before the Web catch-all", () => {
+  const exactDocs = originNginx.indexOf("location = /docs {");
+  const nestedDocs = originNginx.indexOf("location ^~ /docs/ {");
+  const webCatchAll = originNginx.indexOf("location / {");
+
+  assert.ok(exactDocs >= 0);
+  assert.ok(nestedDocs > exactDocs);
+  assert.ok(webCatchAll > nestedDocs);
+  for (const blockStart of [exactDocs, nestedDocs]) {
+    const blockEnd = originNginx.indexOf("\n    }", blockStart);
+    const block = originNginx.slice(blockStart, blockEnd);
+    assert.match(block, /proxy_pass http:\/\/127\.0\.0\.1:4000;/u);
+    assert.match(block, /proxy_set_header X-Forwarded-Proto https;/u);
+  }
 });
 
 test("agents isolate main and perform safe post-merge notification", () => {
