@@ -1556,14 +1556,14 @@ async fn create_patrick(
     };
     let existing_target =
         match agent::get_agent_by_system_key(&state.pool, ws, Some("patrick")).await {
-        Ok(target) => target,
-        Err(_) => {
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to look up the workspace agent",
-            )
-        }
-    };
+            Ok(target) => target,
+            Err(_) => {
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to look up the workspace agent",
+                )
+            }
+        };
     let (runtime_id, runtime) = if existing_target.is_some() {
         (None, None)
     } else {
