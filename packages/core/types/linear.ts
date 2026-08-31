@@ -89,6 +89,11 @@ export type LinearDryRunResponse = {
   exact_link_counts_available: boolean;
 };
 
+export type LinearInitialImportResponse = {
+  queued: boolean;
+  inbox_id: string;
+};
+
 export type LinearBindingStatus =
   | "draft"
   | "active"

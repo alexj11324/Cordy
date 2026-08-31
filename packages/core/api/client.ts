@@ -183,6 +183,7 @@ import type {
   LinearConnectionResponse,
   LinearCatalogResponse,
   LinearDryRunResponse,
+  LinearInitialImportResponse,
   LinearProjectBinding,
   ListLinearBindingsResponse,
   SaveLinearProjectBindingRequest,
@@ -449,12 +450,14 @@ import {
   LinearConnectionResponseSchema,
   LinearCatalogResponseSchema,
   LinearDryRunResponseSchema,
+  LinearInitialImportResponseSchema,
   ListLinearBindingsResponseSchema,
   LinearProjectBindingSchema,
   EMPTY_LINEAR_CONNECT_RESPONSE,
   EMPTY_LINEAR_CONNECTION_RESPONSE,
   EMPTY_LINEAR_CATALOG_RESPONSE,
   EMPTY_LINEAR_DRY_RUN_RESPONSE,
+  EMPTY_LINEAR_INITIAL_IMPORT_RESPONSE,
   EMPTY_LIST_LINEAR_BINDINGS_RESPONSE,
   EMPTY_LINEAR_PROJECT_BINDING,
   RuntimeModelListRequestSchema,
@@ -4408,6 +4411,22 @@ export class ApiClient {
       LinearDryRunResponseSchema,
       EMPTY_LINEAR_DRY_RUN_RESPONSE,
       { endpoint: "POST /api/workspaces/:id/linear/dry-run" },
+    );
+  }
+
+  async enqueueLinearInitialImport(
+    workspaceId: string,
+    bindingId: string,
+  ): Promise<LinearInitialImportResponse> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/bindings/${bindingId}/import`,
+      { method: "POST" },
+    );
+    return parseWithFallback(
+      raw,
+      LinearInitialImportResponseSchema,
+      EMPTY_LINEAR_INITIAL_IMPORT_RESPONSE,
+      { endpoint: "POST /api/workspaces/:id/linear/bindings/:bindingId/import" },
     );
   }
 

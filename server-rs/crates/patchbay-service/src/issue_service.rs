@@ -18,6 +18,7 @@ use uuid::Uuid;
 use patchbay_analytics as analytics;
 use patchbay_db::dbid::new_v7;
 use patchbay_db::models::{Agent, AgentTaskQueue, Attachment, Issue, IssueLabel};
+use patchbay_db::queries::activity;
 use patchbay_db::queries::agent::{get_agent, has_pending_task_for_issue_and_agent};
 use patchbay_db::queries::attachment::{link_attachments_to_issue, list_attachments_by_issue};
 use patchbay_db::queries::issue::{create_issue, create_issue_with_origin, get_issue_in_workspace};
@@ -47,6 +48,163 @@ pub struct IssueService {
     /// metrics listener — record_event treats it as "PostHog only".
     pub metrics: Option<std::sync::Arc<patchbay_metrics::BusinessMetrics>>,
     pub task_svc: Arc<TaskService>,
+}
+
+impl IssueService {
+    /// Applies a provider-originated patch through the Issue domain boundary.
+    /// The command is deliberately explicit about its source event and about
+    /// suppressing external outbox emission; a future outbound path must not
+    /// accidentally turn an inbound Linear event into a sync loop.
+    pub async fn apply_external_patch(
+        &self,
+        workspace_id: Uuid,
+        issue_id: Uuid,
+        command: IssueCommand,
+    ) -> Result<Issue, ExternalIssueError> {
+        let IssueCommand::ApplyExternalPatch {
+            source,
+            source_event_id,
+            expected_revision,
+            suppress_external_outbox,
+            patch,
+        } = command;
+        if source_event_id.trim().is_empty() {
+            return Err(ExternalIssueError::MissingSourceEvent);
+        }
+        if !suppress_external_outbox {
+            return Err(ExternalIssueError::ExternalOutboxNotSuppressed);
+        }
+
+        let mut tx = self.pool.begin().await?;
+        let Some(previous) = sqlx::query_as::<_, Issue>(
+            "SELECT * FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
+        )
+        .bind(issue_id)
+        .bind(workspace_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        else {
+            return Err(ExternalIssueError::NotFound);
+        };
+        if let Some(expected) = expected_revision {
+            if expected != previous.revision {
+                return Err(ExternalIssueError::RevisionConflict {
+                    expected,
+                    actual: previous.revision,
+                });
+            }
+        }
+
+        let mut next = previous.clone();
+        if let Some(title) = patch.title {
+            if title.trim().is_empty() {
+                return Err(ExternalIssueError::Internal(
+                    "external issue title cannot be empty".to_string(),
+                ));
+            }
+            next.title = title;
+        }
+        if let Some(description) = patch.description {
+            next.description = description;
+        }
+        if let Some(status) = patch.status {
+            next.status = issue_status::resolve(&mut *tx, workspace_id, &status)
+                .await
+                .map_err(|_| ExternalIssueError::InvalidStatus)?
+                .key;
+        }
+        if let Some(priority) = patch.priority {
+            if !matches!(
+                priority.as_str(),
+                "urgent" | "high" | "medium" | "low" | "none"
+            ) {
+                return Err(ExternalIssueError::InvalidPriority);
+            }
+            next.priority = priority;
+        }
+        if let Some(due_date) = patch.due_date {
+            next.due_date = due_date;
+        }
+        if next.title == previous.title
+            && next.description == previous.description
+            && next.status == previous.status
+            && next.priority == previous.priority
+            && next.due_date == previous.due_date
+        {
+            tx.commit().await?;
+            return Ok(previous);
+        }
+
+        let updated = sqlx::query_as::<_, Issue>(
+            r#"UPDATE issue SET
+               title = $3,
+               description = $4,
+               status = $5,
+               priority = $6,
+               due_date = $7,
+               revision = revision + 1,
+               last_activity_at = GREATEST(COALESCE(last_activity_at, updated_at), now()),
+               updated_at = now()
+               WHERE id = $1 AND workspace_id = $2
+               RETURNING *"#,
+        )
+        .bind(issue_id)
+        .bind(workspace_id)
+        .bind(&next.title)
+        .bind(&next.description)
+        .bind(&next.status)
+        .bind(&next.priority)
+        .bind(next.due_date)
+        .fetch_one(&mut *tx)
+        .await?;
+        activity::create_activity(
+            &mut *tx,
+            workspace_id,
+            issue_id,
+            Some("system"),
+            None,
+            "issue_updated_external",
+            &json!({
+                "source": source.as_str(),
+                "source_event_id": source_event_id,
+                "suppress_external_outbox": true,
+            }),
+            new_v7(),
+        )
+        .await
+        .map_err(|error| ExternalIssueError::Internal(format!("create activity: {error}")))?;
+        tx.commit().await?;
+
+        let prefix = get_workspace(&self.pool, workspace_id)
+            .await
+            .ok()
+            .flatten()
+            .map(|workspace| workspace.issue_prefix)
+            .unwrap_or_default();
+        let category = issue_status::effective(&self.pool, workspace_id, &updated.status).await;
+        self.bus.publish(&patchbay_events::Event {
+            event_type: patchbay_protocol::EVENT_ISSUE_UPDATED.to_string(),
+            workspace_id: workspace_id.to_string(),
+            actor_type: "system".to_string(),
+            actor_id: String::new(),
+            payload: json!({
+                "issue": issue_to_map_with_category(&updated, &prefix, &category),
+                "external_source": source.as_str(),
+                "source_event_id": source_event_id,
+                "owner_changed": false,
+                "executor_changed": false,
+                "status_changed": previous.status != updated.status,
+                "priority_changed": previous.priority != updated.priority,
+                "project_changed": false,
+                "title_changed": previous.title != updated.title,
+                "description_changed": previous.description != updated.description,
+                "due_date_changed": previous.due_date != updated.due_date,
+            }),
+            task_id: String::new(),
+            chat_session_id: String::new(),
+        });
+        Ok(updated)
+    }
 }
 
 impl IssueService {
@@ -168,6 +326,61 @@ pub struct IssueCreateResult {
     pub assigned_task_id: Option<Uuid>,
     /// Authoritative label snapshot attached in the create transaction.
     pub labels: Vec<IssueLabel>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExternalSource {
+    Linear,
+}
+
+impl ExternalSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Linear => "linear",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ExternalIssuePatch {
+    pub title: Option<String>,
+    /// `Some(None)` clears the description; `None` leaves it untouched.
+    pub description: Option<Option<String>>,
+    pub status: Option<String>,
+    pub priority: Option<String>,
+    /// `Some(None)` clears the due date; `None` leaves it untouched.
+    pub due_date: Option<Option<chrono::NaiveDate>>,
+}
+
+#[derive(Debug, Clone)]
+pub enum IssueCommand {
+    ApplyExternalPatch {
+        source: ExternalSource,
+        source_event_id: String,
+        expected_revision: Option<i64>,
+        suppress_external_outbox: bool,
+        patch: ExternalIssuePatch,
+    },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ExternalIssueError {
+    #[error("external issue source event is required")]
+    MissingSourceEvent,
+    #[error("external issue writes must suppress external outbox emission")]
+    ExternalOutboxNotSuppressed,
+    #[error("issue not found in workspace")]
+    NotFound,
+    #[error("issue revision conflict: expected {expected}, actual {actual}")]
+    RevisionConflict { expected: i64, actual: i64 },
+    #[error("invalid external issue status")]
+    InvalidStatus,
+    #[error("invalid external issue priority")]
+    InvalidPriority,
+    #[error("failed to persist external issue patch: {0}")]
+    Sql(#[from] sqlx::Error),
+    #[error("external issue domain operation failed: {0}")]
+    Internal(String),
 }
 
 fn ic_err(context: &'static str, e: impl std::fmt::Display) -> IssueCreateError {

@@ -54,6 +54,7 @@ import type {
   LinearConnectResponse,
   LinearConnectionResponse,
   LinearDryRunResponse,
+  LinearInitialImportResponse,
   ListLinearBindingsResponse,
   LinearProjectBinding,
   IssueWorkProductsResponse,
@@ -414,6 +415,16 @@ export const EMPTY_LINEAR_DRY_RUN_RESPONSE: LinearDryRunResponse = {
   candidate_publish_count: 0,
   unmapped_remote_status_count: 0,
   exact_link_counts_available: false,
+};
+
+export const LinearInitialImportResponseSchema = z.object({
+  queued: z.boolean(),
+  inbox_id: z.string(),
+}).loose();
+
+export const EMPTY_LINEAR_INITIAL_IMPORT_RESPONSE: LinearInitialImportResponse = {
+  queued: false,
+  inbox_id: "",
 };
 
 export const LinearProjectBindingSchema = z.object({

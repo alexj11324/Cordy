@@ -517,6 +517,10 @@ pub struct HandlerState {
     /// Low-latency hint for the durable webhook worker. PostgreSQL polling is
     /// authoritative and recovers missed notifications or process restarts.
     webhook_delivery_notify: Option<Arc<tokio::sync::Notify>>,
+    /// Low-latency hint for the Linear Inbox worker. PostgreSQL leasing is
+    /// authoritative; the worker remains disabled unless both the feature
+    /// flag and the workspace canary allowlist are enabled.
+    linear_sync_notify: Option<Arc<tokio::sync::Notify>>,
     /// Keeps the weak notifier installed in `TaskService` alive.
     _task_wakeup: Arc<dyn patchbay_service::task_service::TaskWakeupNotifier>,
 }
@@ -699,6 +703,7 @@ impl HandlerState {
             slack_history: None,
             llm,
             webhook_delivery_notify: None,
+            linear_sync_notify: None,
             _task_wakeup: task_wakeup,
         }
     }
@@ -1040,6 +1045,47 @@ impl HandlerState {
 
     pub fn notify_webhook_delivery(&self) {
         if let Some(notify) = &self.webhook_delivery_notify {
+            notify.notify_one();
+        }
+    }
+
+    /// Returns whether Linear pull/import may mutate this workspace. The
+    /// allowlist is intentionally required even when the global flag is on,
+    /// so the first rollout cannot fan out to every connected workspace.
+    pub fn linear_pull_import_enabled(&self, workspace_id: uuid::Uuid) -> bool {
+        if !self.linear_pull_import_enabled_for_any_workspace() {
+            return false;
+        }
+        let allowlist = std::env::var("PATCHBAY_LINEAR_PULL_IMPORT_WORKSPACES").unwrap_or_default();
+        allowlist
+            .split(',')
+            .map(str::trim)
+            .any(|entry| entry == "*" || entry.eq_ignore_ascii_case(&workspace_id.to_string()))
+    }
+
+    pub fn linear_pull_import_enabled_for_any_workspace(&self) -> bool {
+        self.linear_integration_enabled
+            && self.feature_flags.as_deref().is_some_and(|flags| {
+                flags.is_enabled(patchbay_service::feature_flags::LINEAR_PULL_IMPORT, false)
+            })
+            && std::env::var("PATCHBAY_LINEAR_PULL_IMPORT_WORKSPACES")
+                .map(|value| value.split(',').any(|entry| !entry.trim().is_empty()))
+                .unwrap_or(false)
+    }
+
+    /// Prepares the Linear pull/import worker without spawning it. Production
+    /// owns the returned runtime and calls this only after final wiring.
+    pub fn prepare_linear_sync_worker(
+        mut self,
+    ) -> (Self, Arc<crate::linear_sync_worker::LinearSyncWorker>) {
+        let notify = Arc::new(tokio::sync::Notify::new());
+        let worker = crate::linear_sync_worker::LinearSyncWorker::new(self.clone(), notify.clone());
+        self.linear_sync_notify = Some(notify);
+        (self, worker)
+    }
+
+    pub fn notify_linear_sync(&self) {
+        if let Some(notify) = &self.linear_sync_notify {
             notify.notify_one();
         }
     }

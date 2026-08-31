@@ -305,6 +305,7 @@ export type {
   LinearConnectionResponse,
   LinearConnectionStatus,
   LinearDryRunResponse,
+  LinearInitialImportResponse,
   LinearInitialSource,
   LinearProjectBinding,
   LinearSyncMode,

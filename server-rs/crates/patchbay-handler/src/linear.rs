@@ -58,6 +58,10 @@ pub fn admin_router() -> Router<HandlerState> {
         .route("/api/workspaces/{id}/linear/bindings", post(create_binding))
         .route("/api/workspaces/{id}/linear/dry-run", post(dry_run_binding))
         .route(
+            "/api/workspaces/{id}/linear/bindings/{binding_id}/import",
+            post(enqueue_initial_import),
+        )
+        .route(
             "/api/workspaces/{id}/linear/bindings/{binding_id}",
             patch(update_binding).delete(delete_binding),
         )
@@ -820,6 +824,103 @@ async fn delete_binding(
     }
 }
 
+async fn enqueue_initial_import(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(path): Path<LinearBindingPath>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    if path.id != workspace_id {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "workspace id does not match context",
+        );
+    }
+    if !state.linear_pull_import_enabled(workspace_id) {
+        return error_response(StatusCode::NOT_FOUND, "Linear pull/import is not enabled");
+    }
+    let Some(binding) =
+        (match linear_q::get_project_binding(&state.pool, workspace_id, path.binding_id).await {
+            Ok(binding) => binding,
+            Err(error) => {
+                tracing::warn!(%error, "Linear initial import binding lookup failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to load Linear project binding",
+                );
+            }
+        })
+    else {
+        return error_response(StatusCode::NOT_FOUND, "Linear project binding not found");
+    };
+    if binding.status != "active" || !matches!(binding.sync_mode.as_str(), "import" | "two_way") {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "Linear binding is not configured for import",
+        );
+    }
+    if let Err(response) = connection_for_binding(&state, workspace_id, binding.connection_id).await
+    {
+        return response;
+    }
+    let job_id = Uuid::now_v7();
+    let delivery_id = format!("linear-initial-import-{job_id}");
+    let source_event_id = format!("linear-import:{job_id}");
+    let payload = json!({
+        "kind": "initial_import",
+        "binding_id": binding.id,
+        "source_event_id": source_event_id,
+    });
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, "Linear initial import transaction failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Linear import queue is unavailable",
+            );
+        }
+    };
+    let inserted = match linear_q::insert_sync_inbox(
+        &mut *transaction,
+        job_id,
+        binding.connection_id,
+        &delivery_id,
+        "linear.initial_import",
+        &payload,
+    )
+    .await
+    {
+        Ok(inserted) => inserted,
+        Err(error) => {
+            tracing::warn!(%error, "Linear initial import enqueue failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Linear import queue is unavailable",
+            );
+        }
+    };
+    if let Err(error) = transaction.commit().await {
+        tracing::warn!(%error, "Linear initial import commit failed");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Linear import queue is unavailable",
+        );
+    }
+    state.notify_linear_sync();
+    (
+        StatusCode::ACCEPTED,
+        Json(json!({ "queued": inserted, "inbox_id": job_id })),
+    )
+        .into_response()
+}
+
 async fn start_oauth(
     State(state): State<HandlerState>,
     Extension(context): Extension<WorkspaceContext>,
@@ -996,7 +1097,7 @@ struct IdentityOrganization {
     name: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 struct LinearCatalogPage<T> {
     nodes: Vec<T>,
     #[serde(rename = "pageInfo")]
@@ -1191,6 +1292,63 @@ struct LinearIssuePreviewPageInfo {
 #[derive(Debug, Deserialize)]
 struct LinearIssuePreviewData {
     issues: LinearIssuePreviewPage,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct LinearRemoteIssue {
+    pub id: String,
+    pub identifier: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub priority: i64,
+    pub state: Option<LinearRemoteState>,
+    #[serde(rename = "dueDate")]
+    pub due_date: Option<String>,
+    pub project: Option<LinearRemoteProject>,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
+    pub team: Option<LinearRemoteTeam>,
+    pub labels: LinearCatalogPage<LinearRemoteLabel>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct LinearRemoteState {
+    pub id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub state_type: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct LinearRemoteProject {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct LinearRemoteTeam {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct LinearRemoteLabel {
+    pub id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearRemoteIssueData {
+    issue: Option<LinearRemoteIssue>,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearRemoteIssuePage {
+    nodes: Vec<LinearRemoteIssue>,
+    #[serde(rename = "pageInfo")]
+    page_info: LinearIssuePreviewPageInfo,
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearRemoteIssueListData {
+    issues: LinearRemoteIssuePage,
 }
 
 #[derive(Debug, Serialize)]
@@ -1704,6 +1862,97 @@ impl LinearTokenManager {
         payload.data.ok_or(LinearTokenError::InvalidResponse)
     }
 
+    async fn query_remote_issue(
+        &self,
+        access_token: &str,
+        linear_issue_id: &str,
+    ) -> Result<Option<LinearRemoteIssue>, LinearTokenError> {
+        let response = self
+            .client
+            .post(&self.graphql_url)
+            .bearer_auth(access_token)
+            .json(&json!({
+                "query": "query LinearIssue($issueId: ID!) { issue(id: $issueId) { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } labels { nodes { id } } } }",
+                "variables": { "issueId": linear_issue_id },
+            }))
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear issue request failed");
+                LinearTokenError::Provider
+            })?;
+        let status = response.status();
+        let payload = response
+            .json::<GraphQlResponse<LinearRemoteIssueData>>()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear issue response is invalid JSON");
+                LinearTokenError::InvalidResponse
+            })?;
+        if !status.is_success() {
+            tracing::warn!(%status, "Linear issue request returned an error");
+            return Err(LinearTokenError::Provider);
+        }
+        if let Some(errors) = payload.errors.as_ref().filter(|errors| !errors.is_empty()) {
+            let message = errors
+                .first()
+                .and_then(|error| error.message.as_deref())
+                .unwrap_or("unknown GraphQL error");
+            tracing::warn!(message, "Linear issue GraphQL request failed");
+            return Err(LinearTokenError::Provider);
+        }
+        Ok(payload.data.ok_or(LinearTokenError::InvalidResponse)?.issue)
+    }
+
+    async fn query_remote_issue_page(
+        &self,
+        access_token: &str,
+        linear_project_id: &str,
+        after: Option<&str>,
+    ) -> Result<LinearRemoteIssuePage, LinearTokenError> {
+        let response = self
+            .client
+            .post(&self.graphql_url)
+            .bearer_auth(access_token)
+            .json(&json!({
+                "query": "query LinearProjectIssues($projectId: ID!, $after: String) { issues(first: 100, after: $after, filter: { project: { id: { eq: $projectId } } }) { nodes { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } labels { nodes { id } } } pageInfo { hasNextPage endCursor } } }",
+                "variables": {
+                    "projectId": linear_project_id,
+                    "after": after,
+                },
+            }))
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear project issue request failed");
+                LinearTokenError::Provider
+            })?;
+        let status = response.status();
+        let payload = response
+            .json::<GraphQlResponse<LinearRemoteIssueListData>>()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear project issue response is invalid JSON");
+                LinearTokenError::InvalidResponse
+            })?;
+        if !status.is_success() {
+            tracing::warn!(%status, "Linear project issue request returned an error");
+            return Err(LinearTokenError::Provider);
+        }
+        if let Some(errors) = payload.errors.as_ref().filter(|errors| !errors.is_empty()) {
+            let message = errors
+                .first()
+                .and_then(|error| error.message.as_deref())
+                .unwrap_or("unknown GraphQL error");
+            tracing::warn!(message, "Linear project issue GraphQL request failed");
+            return Err(LinearTokenError::Provider);
+        }
+        Ok(payload
+            .data
+            .ok_or(LinearTokenError::InvalidResponse)?
+            .issues)
+    }
+
     async fn dry_run_counts(
         &self,
         connection_id: Uuid,
@@ -1809,6 +2058,53 @@ impl LinearTokenManager {
                 .map(LinearCatalogLabelResponse::from)
                 .collect(),
         })
+    }
+
+    /// Fetches a complete Issue after a Webhook notification. Webhook data is
+    /// intentionally not treated as a durable snapshot because nested fields
+    /// may be omitted by Linear.
+    pub(crate) async fn fetch_issue(
+        &self,
+        connection_id: Uuid,
+        linear_issue_id: &str,
+    ) -> Result<Option<LinearRemoteIssue>, LinearTokenError> {
+        let access_token = self.access_token(connection_id).await?;
+        self.query_remote_issue(&access_token, linear_issue_id)
+            .await
+    }
+
+    /// Enumerates every Issue in a bound Linear Project for initial import.
+    /// A hard cap protects the worker from an unexpectedly large project; the
+    /// worker treats crossing it as a retryable provider response rather than
+    /// silently importing a partial project.
+    pub(crate) async fn list_project_issues(
+        &self,
+        connection_id: Uuid,
+        linear_project_id: &str,
+    ) -> Result<Vec<LinearRemoteIssue>, LinearTokenError> {
+        const MAX_IMPORT_ISSUES: usize = 50_000;
+        let access_token = self.access_token(connection_id).await?;
+        let mut after = None;
+        let mut issues = Vec::new();
+        loop {
+            let page = self
+                .query_remote_issue_page(&access_token, linear_project_id, after.as_deref())
+                .await?;
+            issues.extend(page.nodes);
+            if issues.len() > MAX_IMPORT_ISSUES {
+                return Err(LinearTokenError::InvalidResponse);
+            }
+            if !page.page_info.has_next_page {
+                return Ok(issues);
+            }
+            let Some(next_cursor) = page.page_info.end_cursor else {
+                return Err(LinearTokenError::InvalidResponse);
+            };
+            if after.as_deref() == Some(next_cursor.as_str()) {
+                return Err(LinearTokenError::InvalidResponse);
+            }
+            after = Some(next_cursor);
+        }
     }
 
     /// Returns an access token and refreshes it while holding the connection
@@ -2437,6 +2733,9 @@ async fn linear_webhook(
             StatusCode::INTERNAL_SERVER_ERROR,
             "Linear Webhook persistence unavailable",
         );
+    }
+    if inserted {
+        state.notify_linear_sync();
     }
     (
         StatusCode::OK,

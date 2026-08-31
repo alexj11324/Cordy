@@ -44,6 +44,7 @@ struct ProductionApp {
     failure_monitor: patchbay_service::automation_failure_monitor::FailureMonitorRuntime,
     quota_reconciler: patchbay_service::automation_quota_reconciler::QuotaReconcilerRuntime,
     webhook_delivery: patchbay_handler::webhook_delivery_worker::WebhookDeliveryRuntime,
+    linear_sync: patchbay_handler::linear_sync_worker::LinearSyncRuntime,
     coordinator: patchbay_service::coordination::CoordinatorRuntime,
     scheduler: patchbay_scheduler::ManagerRuntime,
     heartbeat_scheduler: patchbay_handler::heartbeat_scheduler::HeartbeatSchedulerRuntime,
@@ -462,6 +463,7 @@ async fn build_production_router(
         .with_daemon_heartbeat_handler()
         .with_daemon_rpc_handler();
     let (state, webhook_worker) = state.prepare_webhook_delivery_worker();
+    let (state, linear_worker) = state.prepare_linear_sync_worker();
     let (state, coordinator) = state.start_coordinator(root_cancel.child_token());
     let task_side_effects = state
         .tasks
@@ -515,6 +517,7 @@ async fn build_production_router(
         )
         .start(root_cancel.child_token());
     let webhook_delivery = webhook_worker.start(root_cancel.child_token());
+    let linear_sync = linear_worker.start(root_cancel.child_token());
     let channel_runtime = channel_runtime::ChannelRuntime::start(
         &state,
         cfg,
@@ -535,6 +538,7 @@ async fn build_production_router(
         failure_monitor,
         quota_reconciler,
         webhook_delivery,
+        linear_sync,
         coordinator,
         scheduler,
         heartbeat_scheduler,
@@ -756,6 +760,7 @@ async fn main() -> anyhow::Result<()> {
         failure_monitor,
         quota_reconciler,
         webhook_delivery,
+        linear_sync,
         coordinator,
         scheduler,
         heartbeat_scheduler,
@@ -805,6 +810,7 @@ async fn main() -> anyhow::Result<()> {
         failure_shutdown,
         quota_shutdown,
         webhook_shutdown,
+        linear_sync_shutdown,
         coordinator_shutdown,
         scheduler_shutdown,
         heartbeat_shutdown,
@@ -818,6 +824,7 @@ async fn main() -> anyhow::Result<()> {
             .shutdown(patchbay_service::automation_quota_reconciler::DEFAULT_SHUTDOWN_TIMEOUT),
         webhook_delivery
             .shutdown(patchbay_handler::webhook_delivery_worker::DEFAULT_SHUTDOWN_TIMEOUT),
+        linear_sync.shutdown(patchbay_handler::linear_sync_worker::DEFAULT_SHUTDOWN_TIMEOUT),
         coordinator.shutdown(patchbay_service::coordination::DEFAULT_SHUTDOWN_TIMEOUT),
         scheduler.shutdown(),
         heartbeat_scheduler.shutdown(),
@@ -876,6 +883,15 @@ async fn main() -> anyhow::Result<()> {
             tracing::error!("webhook delivery worker supervisor panicked during shutdown");
         }
         _ => {}
+    }
+    match linear_sync_shutdown {
+        patchbay_handler::linear_sync_worker::LinearSyncShutdownOutcome::TimedOut => {
+            tracing::warn!("Linear sync worker exceeded shutdown deadline and was aborted");
+        }
+        patchbay_handler::linear_sync_worker::LinearSyncShutdownOutcome::Panicked => {
+            tracing::error!("Linear sync worker supervisor panicked during shutdown");
+        }
+        patchbay_handler::linear_sync_worker::LinearSyncShutdownOutcome::Stopped => {}
     }
     match coordinator_shutdown {
         patchbay_service::coordination::CoordinatorShutdownOutcome::TimedOut => {

@@ -1825,14 +1825,37 @@ pub struct LinearOAuthState {
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct LinearSyncInbox {
     pub attempts: i32,
+    pub available_at: DateTime<Utc>,
     pub connection_id: Uuid,
+    pub dead_lettered_at: Option<DateTime<Utc>>,
     pub delivery_id: String,
     pub event_type: String,
     pub id: Uuid,
     pub last_error: Option<String>,
+    pub locked_by: Option<String>,
+    pub locked_until: Option<DateTime<Utc>>,
+    pub max_attempts: i32,
     pub payload: serde_json::Value,
     pub processed_at: Option<DateTime<Utc>>,
     pub received_at: DateTime<Utc>,
+}
+
+/// Durable identity and common snapshot for one imported Linear Issue.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct LinearIssueLink {
+    pub binding_id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub id: Uuid,
+    pub last_common_snapshot: serde_json::Value,
+    pub last_remote_event_at_ms: Option<i64>,
+    pub last_remote_event_id: Option<String>,
+    pub linear_identifier: String,
+    pub linear_issue_id: String,
+    pub patchbay_issue_id: Uuid,
+    pub remote_updated_at: Option<DateTime<Utc>>,
+    pub sync_status: String,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
 }
 
 /// Server-persisted execution provenance used by the post-run branch

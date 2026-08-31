@@ -657,6 +657,20 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "479_linear_project_binding_status_index",
         "idx_linear_project_binding_status",
     ),
+    ("482_linear_issue_link_id_index", "uq_linear_issue_link_id"),
+    (
+        "483_linear_issue_link_remote_index",
+        "uq_linear_issue_link_remote",
+    ),
+    (
+        "484_linear_issue_link_local_index",
+        "uq_linear_issue_link_local",
+    ),
+    (
+        "485_linear_sync_inbox_claim_index",
+        "idx_linear_sync_inbox_claim",
+    ),
+    ("487_linear_issue_origin_index", "uq_issue_linear_origin"),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
@@ -860,4 +874,18 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
         "479_linear_project_binding_status_index",
         "idx_linear_project_binding_status",
     ),
+    ("482_linear_issue_link_id_index", "uq_linear_issue_link_id"),
+    (
+        "483_linear_issue_link_remote_index",
+        "uq_linear_issue_link_remote",
+    ),
+    (
+        "484_linear_issue_link_local_index",
+        "uq_linear_issue_link_local",
+    ),
+    (
+        "485_linear_sync_inbox_claim_index",
+        "idx_linear_sync_inbox_claim",
+    ),
+    ("487_linear_issue_origin_index", "uq_issue_linear_origin"),
 ];

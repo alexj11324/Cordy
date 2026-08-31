@@ -417,6 +417,7 @@ POST	/api/workspaces
 POST	/api/workspaces/{}/dingtalk/install/byo
 POST	/api/workspaces/{}/lark/install/begin
 POST	/api/workspaces/{}/linear/bindings
+POST	/api/workspaces/{}/linear/bindings/{}/import
 POST	/api/workspaces/{}/linear/dry-run
 POST	/api/workspaces/{}/linear/connect
 POST	/api/workspaces/{}/leave

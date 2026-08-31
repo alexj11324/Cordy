@@ -313,10 +313,11 @@ function BindingWizard({
         throw new Error("Linear connection disappeared");
       }
       body.connection_id = connection.connection.id;
-      if (selectedBinding) {
-        await api.updateLinearBinding(workspaceId, selectedBinding.id, body);
-      } else {
-        await api.createLinearBinding(workspaceId, body);
+      const savedBinding = selectedBinding
+        ? await api.updateLinearBinding(workspaceId, selectedBinding.id, body)
+        : await api.createLinearBinding(workspaceId, body);
+      if (draft.syncMode === "import" && savedBinding.status === "active") {
+        await api.enqueueLinearInitialImport(workspaceId, savedBinding.id);
       }
       await qc.invalidateQueries({ queryKey: linearKeys.bindings(workspaceId) });
       toast.success(t(($) => $.page.linear.saved));

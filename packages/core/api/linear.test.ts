@@ -109,4 +109,24 @@ describe("Linear API contracts", () => {
       }),
     );
   });
+
+  it("queues an initial import only through the binding endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ queued: true, inbox_id: "inbox-1" }), {
+        status: 202,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new ApiClient("https://api.example");
+    await expect(client.enqueueLinearInitialImport("workspace-1", "binding-1")).resolves.toEqual({
+      queued: true,
+      inbox_id: "inbox-1",
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.example/api/workspaces/workspace-1/linear/bindings/binding-1/import",
+      expect.objectContaining({ credentials: "include", method: "POST" }),
+    );
+  });
 });
