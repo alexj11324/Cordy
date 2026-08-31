@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SidebarProvider, useSidebar } from "@patchbay/ui/components/ui/sidebar";
@@ -174,6 +174,11 @@ describe("SettingsPage nav trigger", () => {
   });
 
   it("keeps every existing settings destination visible in the standalone nav", async () => {
+    configStore.getState().setFeatureFlags({
+      [BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG]: true,
+      [PLUGINS_V1_FLAG]: true,
+    });
+
     renderWithI18n(
       <SettingsPage
         variant="standalone"
@@ -203,64 +208,93 @@ describe("SettingsPage nav trigger", () => {
         "Integrations",
         "Labs",
         "Members",
+        "Billing",
         "Labels",
         "Issue Statuses",
         "Properties",
         "Quick Actions",
         "MCP",
+        "Plugins",
       ]);
     });
   });
 
   it("keeps every standalone destination wired to its existing panel", async () => {
-    const panels = [
-      ["profile", "AccountTab"],
-      ["preferences", "PreferencesTab"],
-      ["shortcuts", "KeyboardShortcutsTab"],
-      ["issue", "IssueTab"],
-      ["chat", "ChatTab"],
-      ["notifications", "NotificationsTab"],
-      ["tokens", "TokensTab"],
-      ["daemon", "DaemonPanel"],
-      ["updates", "UpdatesPanel"],
-      ["workspace", "WorkspaceTab"],
-      ["repositories", "RepositoriesTab"],
-      ["github", "GitHubTab"],
-      ["integrations", "IntegrationsTab"],
-      ["labs", "LabsTab"],
-      ["members", "MembersTab"],
-      ["labels", "LabelsTab"],
-      ["issue-statuses", "IssueStatusesTab"],
-      ["properties", "PropertiesTab"],
-      ["quick-actions", "QuickActionsTab"],
-      ["mcp", "McpTab"],
+    configStore.getState().setFeatureFlags({
+      [BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG]: true,
+      [PLUGINS_V1_FLAG]: true,
+    });
+
+    const tabs = [
+      ["Profile", "profile", "AccountTab"],
+      ["Preferences", "preferences", "PreferencesTab"],
+      ["Shortcuts", "shortcuts", "KeyboardShortcutsTab"],
+      ["Issue", "issue", "IssueTab"],
+      ["Chat", "chat", "ChatTab"],
+      ["Notifications", "notifications", "NotificationsTab"],
+      ["API Tokens", "tokens", "TokensTab"],
+      ["Daemon", "daemon", "DaemonPanel"],
+      ["Updates", "updates", "UpdatesPanel"],
+      ["General", "workspace", "WorkspaceTab"],
+      ["Repositories", "repositories", "RepositoriesTab"],
+      ["GitHub", "github", "GitHubTab"],
+      ["Integrations", "integrations", "IntegrationsTab"],
+      ["Labs", "labs", "LabsTab"],
+      ["Members", "members", "MembersTab"],
+      ["Billing", "billing", "BillingTab"],
+      ["Labels", "labels", "LabelsTab"],
+      ["Issue Statuses", "issue-statuses", "IssueStatusesTab"],
+      ["Properties", "properties", "PropertiesTab"],
+      ["Quick Actions", "quick-actions", "QuickActionsTab"],
+      ["MCP", "mcp", "McpTab"],
+      ["Plugins", "plugins", "PluginsTab"],
     ] as const;
 
-    for (const [value, panel] of panels) {
-      cleanup();
-      navigationState.search = `tab=${value}`;
-      renderWithI18n(
-        <SettingsPage
-          variant="standalone"
-          extraAccountTabs={[
-            {
-              value: "daemon",
-              label: "Daemon",
-              icon: () => null,
-              content: <div>DaemonPanel</div>,
-            },
-            {
-              value: "updates",
-              label: "Updates",
-              icon: () => null,
-              content: <div>UpdatesPanel</div>,
-            },
-          ]}
-        />,
-      );
+    const extraAccountTabs = [
+      {
+        value: "daemon",
+        label: "Daemon",
+        icon: () => null,
+        content: <div>DaemonPanel</div>,
+      },
+      {
+        value: "updates",
+        label: "Updates",
+        icon: () => null,
+        content: <div>UpdatesPanel</div>,
+      },
+    ];
+    const renderSettings = () => (
+      <SettingsPage
+        variant="standalone"
+        extraAccountTabs={extraAccountTabs}
+      />
+    );
+    const view = renderWithI18n(renderSettings());
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("tab")).toHaveLength(tabs.length);
+    });
+
+    for (const [label, value, panel] of tabs) {
+      const previousReplaceCount = replace.mock.calls.length;
+      fireEvent.click(screen.getByRole("tab", { name: label }));
+
+      const destination = replace.mock.calls.at(-1)?.[0] as string | undefined;
+      if (replace.mock.calls.length === previousReplaceCount || !destination) {
+        navigationState.search = `tab=${value}`;
+      } else {
+        navigationState.search = new URL(
+          destination,
+          "https://cordy.local",
+        ).searchParams.toString();
+      }
+      view.rerender(renderSettings());
 
       await waitFor(() => {
-        expect(screen.getByText(panel)).toBeInTheDocument();
+        expect(
+          within(screen.getByRole("tabpanel")).getByText(panel),
+        ).toBeInTheDocument();
       });
     }
   }, 30_000);
