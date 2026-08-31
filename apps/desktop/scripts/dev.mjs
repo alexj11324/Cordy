@@ -16,6 +16,10 @@ import { fileURLToPath } from "node:url";
 import { envWithLocalBins } from "./package.mjs";
 import { planDevCommands } from "./dev-plan.mjs";
 import {
+  clearDevClerkEnvironment,
+  withoutDevClerkEnvironment,
+} from "../../../scripts/dev-clerk-auth.mjs";
+import {
   applyDevRuntimeAppIdentity,
   parseDevRuntimeArgs,
 } from "../../../scripts/dev-runtime-profile.mjs";
@@ -32,6 +36,7 @@ applyWorktreeDevEnv(process.env, {
   log: true,
 });
 applyDevRuntimeAppIdentity(process.env);
+const sanitizedChildEnv = withoutDevClerkEnvironment(process.env);
 
 function run(command, args, { shell = false, env = process.env } = {}) {
   const result = spawnSync(command, args, {
@@ -56,9 +61,20 @@ for (const step of planDevCommands(electronArgs, {
   nodePath: process.execPath,
   scriptsDir: here,
 })) {
+  const isDoctor =
+    step.args[0]?.endsWith("dev-environment-doctor.mjs") === true;
   const isElectronVite = step.command === "electron-vite";
   run(step.command, step.args, {
     shell: isElectronVite && isWin,
-    env: isElectronVite ? envWithLocalBins(process.env) : process.env,
+    // Only the doctor may see explicit process-only Clerk credentials. The
+    // brander and Electron/Vite receive a copied environment with all auth
+    // secrets removed; Electron obtains its normal session through the UI and
+    // must never inherit server-side Clerk material.
+    env: isDoctor
+      ? process.env
+      : isElectronVite
+        ? envWithLocalBins(sanitizedChildEnv)
+        : sanitizedChildEnv,
   });
+  if (isDoctor) clearDevClerkEnvironment();
 }

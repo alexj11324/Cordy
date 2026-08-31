@@ -230,6 +230,48 @@ describe("development CLI artifact cache", () => {
     expect(cached?.manifest.toolchainIdentity).toBe("rustc 1");
   });
 
+  it("keeps rustc-less staging within one complete runtime identity", async () => {
+    const root = await createSandbox();
+    const cacheRoot = join(root, "cache");
+    const sourceBinary = join(root, "patchbay-built");
+    await writeFile(sourceBinary, "fixture CLI");
+    const common = {
+      cacheRoot,
+      sourceFingerprint: "source-a",
+      rustTarget: "aarch64-apple-darwin",
+      buildVariables: { version: "dev-source-a" },
+    };
+    for (const profile of ["dev", "dev-server", "dev-migrate"]) {
+      await storeDevCli({
+        ...common,
+        sourceBinary,
+        binaryName: `patchbay-${profile}`,
+        profile,
+        toolchainIdentity: "rustc one",
+      });
+    }
+    await storeDevCli({
+      ...common,
+      sourceBinary,
+      binaryName: "patchbay-dev-server-newer",
+      profile: "dev-server",
+      toolchainIdentity: "rustc two",
+    });
+
+    const report = await inspectDevRuntimeCache({ cacheRoot });
+    const identityKey = report.completeFingerprints.find(
+      (entry) => entry.toolchainIdentity === "rustc one",
+    )?.identityKey;
+    expect(identityKey).toBeTruthy();
+    const selected = await findCachedDevCli({
+      ...common,
+      profile: "dev-server",
+      toolchainIdentity: null,
+      cacheIdentityKey: identityKey,
+    });
+    expect(selected?.manifest.toolchainIdentity).toBe("rustc one");
+  });
+
   it("keeps at least ten complete runtime fingerprints while pruning older entries", async () => {
     const root = await createSandbox();
     const cacheRoot = join(root, "cache");

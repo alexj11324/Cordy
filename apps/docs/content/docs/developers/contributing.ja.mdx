@@ -29,21 +29,23 @@ cd patchbay
 pnpm dev
 ```
 
-メイン checkout は `.env` を使用します。ファイルがなければ `pnpm dev` が `.env.example` から作成し、共有 PostgreSQL を起動して依存関係をインストールし、migration を実行して API、ブラウザのログイン/共有 origin、Electron を起動します。
+すべてのソース開発 checkout はそれぞれの `.env.worktree` を使用します。ファイルがなければ `pnpm dev` が分離されたデータベースとポートを含む環境を生成し、共有 PostgreSQL を起動して依存関係をインストールし、migration を実行して API、ブラウザのログイン/共有 origin、Electron を起動します。`.env` は明示的な非開発/セルフホスト設定専用で、Desktop launcher が暗黙に選択することはありません。
 
-デフォルトのアドレス:
+アドレスは生成された `.env.worktree`（`FRONTEND_PORT` と `PORT`）から決まるため、checkout ごとに異なる場合があります:
 
 ```text
 Desktop: renderer hot reload 付きの Electron ウィンドウ
-ブラウザ/共有/ログイン origin: http://localhost:3000
-API: http://localhost:8080
+ブラウザ/共有/ログイン origin: http://localhost:<FRONTEND_PORT>
+API: http://localhost:<PORT>
 ```
 
 ローカルの固定確認コードは開発環境の設定から取得されます。ローカルの `.env` を公開インターネット向けのデプロイに使用しないでください。
 
+完全な Electron 開発では、別途ターミナルで `patchbay login` を実行する必要はありません。ブラウザでサインインすると、Desktop が自身の daemon profile 用の資格情報を発行して保存します。単独のターミナル CLI を使う場合だけ `patchbay setup` または `patchbay login` を実行してください。token をリポジトリやチャットにコピーしないでください。
+
 ## worktree での開発
 
-このリポジトリでは、メイン checkout と複数の worktree を同時に実行できます。1 つの PostgreSQL コンテナを共有しますが、データベースとポートは分かれています。
+このリポジトリでは、メイン checkout、独立 clone、複数の worktree を同時に実行できます。1 つの PostgreSQL コンテナを共有しますが、データベースとポートは分かれています。
 
 ```bash
 git worktree add ../patchbay-feature -b feat/my-change main
@@ -63,7 +65,7 @@ pnpm dev
 make stop
 ```
 
-`make dev` を直接実行することもできます。スクリプトが `.git` ファイルから worktree を判定し、`.env.worktree` を選択します。
+`make dev` を直接実行することもできます。すべてのソース開発 checkout は、それぞれ生成された `.env.worktree` を使用し、開発ランチャーが `.env` を暗黙に選択することはありません。明示的な上書きが必要な場合のみ `PATCHBAY_DEV_ENV_FILE` を設定してください。
 
 <Callout type="info">
   worktree 間で共有するのは PostgreSQL

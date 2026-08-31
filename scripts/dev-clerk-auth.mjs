@@ -245,16 +245,21 @@ export function scopedDevClerkEnvironment(authEnv, scope) {
 
 export function withoutDevClerkEnvironment(env) {
   const sanitized = { ...env };
-  for (const key of [
-    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
-    "CLERK_PUBLISHABLE_KEY",
-    "CLERK_SECRET_KEY",
-    "CLERK_JWT_KEY",
-    "CLERK_ISSUER",
-    "CLERK_AUTHORIZED_PARTIES",
-    "PATCHBAY_DEV_AUTH_READY",
-  ]) {
+  for (const key of [...DEV_CLERK_ENVIRONMENT_KEYS, "PATCHBAY_DEV_AUTH_READY"]) {
     delete sanitized[key];
   }
   return sanitized;
+}
+
+/**
+ * Remove the one-shot development auth handoff from a live process env after
+ * the doctor has consumed it. Child processes should receive the copied
+ * sanitized environment from `withoutDevClerkEnvironment`; this helper also
+ * protects against an accidental default `process.env` inheritance later in
+ * the launcher.
+ */
+export function clearDevClerkEnvironment(env = process.env) {
+  for (const key of [...DEV_CLERK_ENVIRONMENT_KEYS, "PATCHBAY_DEV_AUTH_READY"]) {
+    delete env[key];
+  }
 }

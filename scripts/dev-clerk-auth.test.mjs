@@ -4,8 +4,10 @@ import { describe, it } from "node:test";
 
 import {
   bootstrapDevClerkAuth,
+  clearDevClerkEnvironment,
   defaultSecretProvider,
   issuerFromPublishableKey,
+  withoutDevClerkEnvironment,
 } from "./dev-clerk-auth.mjs";
 
 const issuer = "https://example.clerk.accounts.dev";
@@ -85,6 +87,22 @@ describe("secure Clerk development bootstrap", () => {
 
     assert.equal(result.source, "environment");
     assert.equal(secretProviderCalled, false);
+  });
+
+  it("removes the auth readiness marker as well as Clerk secrets from child env", () => {
+    const env = {
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: publishableKey,
+      CLERK_SECRET_KEY: "sk_test_fixture",
+      CLERK_JWT_KEY: jwtKey,
+      PATCHBAY_DEV_AUTH_READY: "1",
+      PATCHBAY_DEV_MODE: "local",
+    };
+
+    assert.deepEqual(withoutDevClerkEnvironment(env), {
+      PATCHBAY_DEV_MODE: "local",
+    });
+    clearDevClerkEnvironment(env);
+    assert.deepEqual(env, { PATCHBAY_DEV_MODE: "local" });
   });
 
   it("rejects partial injected credentials before contacting GSM", async () => {

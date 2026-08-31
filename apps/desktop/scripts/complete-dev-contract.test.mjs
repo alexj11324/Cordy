@@ -5,6 +5,14 @@ import { describe, expect, it } from "vitest";
 
 const repoRoot = resolve(import.meta.dirname, "..", "..", "..");
 const launcher = readFileSync(resolve(repoRoot, "scripts", "dev.sh"), "utf8");
+const windowsLauncher = readFileSync(
+  resolve(repoRoot, "scripts", "dev.ps1"),
+  "utf8",
+);
+const electronLauncher = readFileSync(
+  resolve(import.meta.dirname, "dev.mjs"),
+  "utf8",
+);
 const platformLauncher = readFileSync(
   resolve(repoRoot, "scripts", "dev-launcher.mjs"),
   "utf8",
@@ -55,6 +63,21 @@ describe("complete development launcher contract", () => {
     expect(launcher).not.toContain("pnpm dev:web");
     expect(launcher).not.toContain("run-rust.sh run");
     expect(launcher).toContain('dev.mjs "$@"');
+  });
+
+  it("hands explicit Clerk input only to the doctor, never to Electron", () => {
+    expect(launcher).toContain(
+      'run_with_injected_clerk_env node apps/desktop/scripts/dev.mjs "$@"',
+    );
+    expect(windowsLauncher).toContain("Enable-InjectedClerkEnvironment");
+    expect(windowsLauncher).toContain(
+      "& node apps/desktop/scripts/dev.mjs @ElectronArgs",
+    );
+    expect(electronLauncher).toContain(
+      "const sanitizedChildEnv = withoutDevClerkEnvironment(process.env)",
+    );
+    expect(electronLauncher).toContain("env: isDoctor");
+    expect(electronLauncher).toContain("clearDevClerkEnvironment()");
   });
 
   it("provides an explicit hosted mode without a local backend fallback", () => {

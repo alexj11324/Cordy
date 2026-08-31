@@ -1,12 +1,10 @@
 import {
-  chmodSync,
-  copyFileSync,
   existsSync,
   readFileSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { createServer } from "node:net";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { parseEnv } from "node:util";
@@ -27,20 +25,38 @@ const PROCESS_ONLY_CLERK_KEYS = [
   "CLERK_AUTHORIZED_PARTIES",
 ];
 
-function isLinkedWorktree(repoRoot) {
-  try {
-    return statSync(join(repoRoot, ".git")).isFile();
-  } catch {
-    return false;
-  }
+export const DEV_CHECKOUT_ENV_SCHEMA = "2";
+
+function checkoutIdentity(repoRoot) {
+  return createHash("sha256")
+    .update(resolve(repoRoot))
+    .digest("hex")
+    .slice(0, 16);
+}
+
+function checkoutSlug(worktreeName) {
+  return (
+    worktreeName
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "") || "patchbay"
+  );
 }
 
 export function selectDevEnvFile({ repoRoot, env = process.env }) {
-  const configured = env.PATCHBAY_DEV_ENV_FILE || env.ENV_FILE;
+  // ENV_FILE is exported by Make from its own generic .env selection, so it
+  // is not proof that a developer intentionally overrode complete-dev
+  // isolation. PATCHBAY_DEV_ENV_FILE is the single explicit override.
+  const configured = env.PATCHBAY_DEV_ENV_FILE;
   if (configured) {
     return isAbsolute(configured) ? configured : resolve(repoRoot, configured);
   }
-  return join(repoRoot, isLinkedWorktree(repoRoot) ? ".env.worktree" : ".env");
+  // A linked worktree and an independent clone are indistinguishable by a
+  // portable Git query: both consider themselves the primary checkout of
+  // their own common Git directory. Keep every source-development checkout
+  // isolated instead of letting an independent clone silently fall back to
+  // the generic .env database and ports (patchbay / 8080 / 3000).
+  return join(repoRoot, ".env.worktree");
 }
 
 function expandParsedValues(values, inherited = {}) {
@@ -180,11 +196,7 @@ export async function allocateWorktreeOffset(repoRoot) {
 }
 
 function worktreeEnvContents(repoRoot, offset, worktreeName = basename(repoRoot)) {
-  const slug =
-    worktreeName
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "_")
-      .replace(/^_+|_+$/g, "") || "patchbay";
+  const slug = checkoutSlug(worktreeName);
   const postgresDb = `patchbay_${slug}_${offset}`;
   const backendPort = 18080 + offset;
   const frontendPort = 13000 + offset;
@@ -194,6 +206,11 @@ POSTGRES_USER=patchbay
 POSTGRES_PASSWORD=patchbay
 POSTGRES_PORT=5432
 DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/${postgresDb}?sslmode=disable
+
+PATCHBAY_DEV_ENV_SCHEMA=${DEV_CHECKOUT_ENV_SCHEMA}
+PATCHBAY_DEV_CHECKOUT_ID=${checkoutIdentity(repoRoot)}
+PATCHBAY_DEV_CHECKOUT_SLUG=${slug}
+PATCHBAY_DEV_CHECKOUT_OFFSET=${offset}
 
 APP_ENV=development
 PORT=${backendPort}
@@ -210,6 +227,44 @@ NEXT_PUBLIC_WS_URL=ws://localhost:${backendPort}/ws
 DESKTOP_RENDERER_PORT=${rendererPortForOffset(offset)}
 DESKTOP_APP_SUFFIX=${appSuffixForOffset(repoRoot, offset)}
 `;
+}
+
+export function validateGeneratedDevCheckoutEnv({ repoRoot, values }) {
+  if (values.PATCHBAY_DEV_ENV_SCHEMA !== DEV_CHECKOUT_ENV_SCHEMA) {
+    return `schema ${values.PATCHBAY_DEV_ENV_SCHEMA || "missing"} is not ${DEV_CHECKOUT_ENV_SCHEMA}`;
+  }
+  if (values.PATCHBAY_DEV_CHECKOUT_ID !== checkoutIdentity(repoRoot)) {
+    return "checkout identity does not match this path";
+  }
+  const offset = Number(values.PATCHBAY_DEV_CHECKOUT_OFFSET);
+  if (!Number.isInteger(offset) || offset < 0 || offset >= 1000) {
+    return "checkout offset is invalid";
+  }
+  const slug = values.PATCHBAY_DEV_CHECKOUT_SLUG;
+  if (!slug || slug !== checkoutSlug(slug) || !/^[a-z0-9]+(?:_[a-z0-9]+)*$/.test(slug)) {
+    return "checkout slug is invalid";
+  }
+  const expectedDatabase = `patchbay_${slug}_${offset}`;
+  if (values.POSTGRES_DB !== expectedDatabase) {
+    return `database ${values.POSTGRES_DB || "missing"} does not match ${expectedDatabase}`;
+  }
+  const databaseUrl = values.DATABASE_URL || "";
+  if (!new RegExp(`/${expectedDatabase}(?:\\?|$)`).test(databaseUrl)) {
+    return "DATABASE_URL does not point at the isolated database";
+  }
+  if (Number(values.PORT) !== 18080 + offset) {
+    return "backend port does not match the isolated offset";
+  }
+  if (Number(values.FRONTEND_PORT) !== 13000 + offset) {
+    return "frontend port does not match the isolated offset";
+  }
+  if (Number(values.DESKTOP_RENDERER_PORT) !== rendererPortForOffset(offset)) {
+    return "Electron renderer port does not match the isolated offset";
+  }
+  if (values.DESKTOP_APP_SUFFIX !== appSuffixForOffset(repoRoot, offset)) {
+    return "Electron app identity does not match the isolated checkout";
+  }
+  return null;
 }
 
 export async function createWorktreeEnvFile({
@@ -237,16 +292,26 @@ export async function ensureDevCheckoutEnv({
   repoRoot,
   env = process.env,
   log = console,
+  allocateOffset = allocateWorktreeOffset,
 } = {}) {
   const envFile = selectDevEnvFile({ repoRoot, env });
   if (!existsSync(envFile)) {
-    if (isLinkedWorktree(repoRoot)) {
-      await createWorktreeEnvFile({ repoRoot, envFile });
-      log.log(`[dev] generated isolated worktree environment ${envFile}`);
-    } else {
-      copyFileSync(join(repoRoot, ".env.example"), envFile);
-      chmodSync(envFile, 0o600);
-      log.log(`[dev] created ${envFile} from .env.example`);
+    await createWorktreeEnvFile({ repoRoot, envFile, allocateOffset });
+    log.log(`[dev] generated isolated checkout environment ${envFile}`);
+  } else if (!env.PATCHBAY_DEV_ENV_FILE) {
+    let issue;
+    try {
+      issue = validateGeneratedDevCheckoutEnv({
+        repoRoot,
+        values: parseEnv(readFileSync(envFile, "utf8")),
+      });
+    } catch (error) {
+      issue = error instanceof Error ? error.message : String(error);
+    }
+    if (issue) {
+      throw new Error(
+        `development env file ${envFile} is not a current isolated checkout environment: ${issue}. Re-run FORCE=1 make worktree-env and then pnpm dev.`,
+      );
     }
   }
   const secrets = await ensureSecretsFile(envFile);

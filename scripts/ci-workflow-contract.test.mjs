@@ -3,6 +3,16 @@ import { readFile, readdir } from "node:fs/promises";
 import test from "node:test";
 
 const ci = await readFile(new URL("../.github/workflows/ci.yml", import.meta.url), "utf8");
+const release = await readFile(new URL("../.github/workflows/release.yml", import.meta.url), "utf8");
+const containerImages = await readFile(
+  new URL("../.github/workflows/container-images.yml", import.meta.url),
+  "utf8",
+);
+const desktopSmoke = await readFile(
+  new URL("../.github/workflows/desktop-smoke.yml", import.meta.url),
+  "utf8",
+);
+const dockerfile = await readFile(new URL("../Dockerfile", import.meta.url), "utf8");
 const cacheCleanup = await readFile(
   new URL("./cleanup-actions-caches.mjs", import.meta.url),
   "utf8",
@@ -43,6 +53,7 @@ test("Rust and Mobile validation are automatic path-classified merge gates", () 
 test("Rust uses one workspace test invocation and PR compiler caches are read-only", () => {
   assert.match(ci, /cargo test --workspace --all-targets --locked/u);
   assert.doesNotMatch(ci, /cargo metadata --locked --no-deps/u);
+  assert.match(ci, /key: cargo-downloads-.*hashFiles\('rust-toolchain\.toml'\)/u);
   assert.equal(
     [...ci.matchAll(/SCCACHE_GHA_RW_MODE: \$\{\{ github\.event_name == 'pull_request' && 'READ_ONLY' \|\| 'READ_WRITE' \}\}/gu)].length,
     3,
@@ -58,6 +69,27 @@ test("Actions caches never store a Cargo target directory", async () => {
       assert.doesNotMatch(block, /^\s+[-]?\s*target\/?\s*$/mu, `${name} caches target`);
     }
   }
+});
+
+test("container builds do not export Rust target trees through Actions or BuildKit caches", () => {
+  assert.doesNotMatch(containerImages, /buildkit-cache-dance/u);
+  assert.doesNotMatch(containerImages, /\.buildkit-cache(?:\/|\\)/u);
+  assert.doesNotMatch(dockerfile, /target=\/src\/server-rs\/target/u);
+  assert.match(dockerfile, /rm -rf target/u);
+});
+
+test("formal release publication is gated to the current canonical repository", () => {
+  assert.match(release, /github\.event\.repository\.id == 1341050282/u);
+  assert.doesNotMatch(release, /github\.repository == ['"]patchbay-ai\/patchbay['"]/u);
+});
+
+test("Desktop smoke builds one exact CLI artifact per matrix target", () => {
+  assert.match(desktopSmoke, /^  cli-build:\n/mu);
+  assert.match(desktopSmoke, /desktop-smoke-cli-\$\{\{ matrix\.target \}\}-\$\{\{ matrix\.arch \}\}/u);
+  assert.match(desktopSmoke, /PATCHBAY_PREBUILT_CLI_DIR: \$\{\{ runner\.temp \}\}\/patchbay-cli-bin/u);
+  assert.match(desktopSmoke, /desktop-smoke-cargo-\$\{\{ runner\.os \}\}-\$\{\{ runner\.arch \}\}-\$\{\{ matrix\.rust_target \}\}-/u);
+  assert.match(desktopSmoke, /mozilla-actions\/sccache-action@/u);
+  assert.doesNotMatch(desktopSmoke, /path:[^\n]*target(?:\/|\\)/u);
 });
 
 test("every intermediate uploaded artifact expires after one day", async () => {

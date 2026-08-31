@@ -93,4 +93,23 @@ describe("development runtime command boundaries", () => {
     assert.equal(bootstrapCalls, 0);
     assert.deepEqual(spawnCalls[0][2].env, { KEEP: "yes" });
   });
+
+  it("turns Make's explicit ENV_FILE into the runtime loader override", async () => {
+    const loadCalls = [];
+    const spawnImpl = () => completedChild();
+
+    await runDevRuntimeCommand({
+      componentId: "migrations",
+      repoRoot: "/fixture/repo",
+      env: { ENV_FILE: "/fixture/repo/.env" },
+      loadCheckoutEnv: ({ env: loadedEnv }) => loadCalls.push(loadedEnv),
+      prepareRuntime: async () => {},
+      listComponents: () => [
+        { id: "migrations", destinationBinary: "/fixture/patchbay-migrate" },
+      ],
+      spawnImpl,
+    });
+
+    assert.equal(loadCalls[0].PATCHBAY_DEV_ENV_FILE, "/fixture/repo/.env");
+  });
 });

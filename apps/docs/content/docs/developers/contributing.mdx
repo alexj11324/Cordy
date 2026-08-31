@@ -29,21 +29,23 @@ cd patchbay
 pnpm dev
 ```
 
-The primary checkout uses `.env`. If the file does not exist, `pnpm dev` creates it from `.env.example`, then starts the shared PostgreSQL instance, installs dependencies, runs migrations, and starts the API, browser login/share origin, and Electron client.
+Every source-development checkout uses its own `.env.worktree`. If the file does not exist, `pnpm dev` generates it with an isolated database and ports, then starts the shared PostgreSQL instance, installs dependencies, runs migrations, and starts the API, browser login/share origin, and Electron client. `.env` is reserved for explicit non-development/self-host configuration and is never selected implicitly by the Desktop launcher.
 
-Default addresses:
+Addresses come from the generated `.env.worktree` (`FRONTEND_PORT` and `PORT`), so they may differ for each checkout:
 
 ```text
 Desktop: Electron window with renderer hot reload
-Browser/share/login origin: http://localhost:3000
-API: http://localhost:8080
+Browser/share/login origin: http://localhost:<FRONTEND_PORT>
+API: http://localhost:<PORT>
 ```
 
 The fixed local verification code comes from the development configuration. Do not use a local `.env` for an internet-facing deployment.
 
+Complete Electron development does not require a separate terminal `patchbay login`: after browser sign-in, Desktop mints and stores its own daemon profile. A standalone terminal CLI does require `patchbay setup` or `patchbay login`; never copy tokens into the repository or chat.
+
 ## Developing in a worktree
 
-The repository supports running the primary checkout and multiple worktrees at the same time. They share one PostgreSQL container but use separate databases and ports.
+The repository supports running the primary checkout, independent clones, and multiple worktrees at the same time. They share one PostgreSQL container but use separate databases and ports.
 
 ```bash
 git worktree add ../patchbay-feature -b feat/my-change main
@@ -63,7 +65,7 @@ To stop Desktop/Electron, Web, and API for the current worktree:
 make stop
 ```
 
-You may also run `make dev` directly. The script detects a worktree through its `.git` file and selects `.env.worktree`.
+You may also run `make dev` directly. Every source-development checkout uses its own generated `.env.worktree`; `.env` is never selected implicitly by the development launcher. Set `PATCHBAY_DEV_ENV_FILE` only when you intentionally need an explicit override.
 
 <Callout type="info">
   Different worktrees share the PostgreSQL container, not the database. Do not

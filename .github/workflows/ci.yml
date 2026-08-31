@@ -700,8 +700,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('server-rs/Cargo.lock') }}
-          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('server-rs/Cargo.lock') }}
+          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
 
       - name: Enable bounded shared compiler cache
         uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
@@ -779,8 +779,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('server-rs/Cargo.lock') }}
-          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('server-rs/Cargo.lock') }}
+          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
 
       - name: Enable bounded shared compiler cache
         uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
@@ -901,8 +901,8 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('server-rs/Cargo.lock') }}
-          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-
+          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('server-rs/Cargo.lock') }}
+          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
 
       - name: Enable bounded shared compiler cache
         uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11

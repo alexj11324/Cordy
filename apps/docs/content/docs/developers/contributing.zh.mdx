@@ -29,21 +29,23 @@ cd patchbay
 pnpm dev
 ```
 
-主 checkout 会使用 `.env`。文件不存在时，`pnpm dev` 会从 `.env.example` 创建；然后启动共享 PostgreSQL、安装依赖、执行 migration，并运行 API、浏览器登录/分享服务与 Electron。
+每个源码开发 checkout 都使用自己的 `.env.worktree`。文件不存在时，`pnpm dev` 会生成包含隔离数据库和端口的环境文件；然后启动共享 PostgreSQL、安装依赖、执行 migration，并运行 API、浏览器登录/分享服务与 Electron。`.env` 仅用于明确的非开发/自托管配置，Desktop 启动器不会隐式选择它。
 
-默认地址：
+地址来自生成的 `.env.worktree`（`FRONTEND_PORT` 和 `PORT`），每个 checkout 可能不同：
 
 ```text
 Desktop：带 renderer 热更新的 Electron 窗口
-浏览器/分享/登录地址：http://localhost:3000
-API: http://localhost:8080
+浏览器/分享/登录地址：http://localhost:<FRONTEND_PORT>
+API: http://localhost:<PORT>
 ```
 
 本地固定验证码来自开发环境配置。不要把本地 `.env` 用到公网部署。
 
+完整 Electron 开发不需要额外运行终端 `patchbay login`：浏览器登录后，Desktop 会为自己的守护进程 profile 生成并保存凭据。单独使用终端 CLI 时才需要运行 `patchbay setup` 或 `patchbay login`；不要把 token 复制到仓库或聊天中。
+
 ## 在 worktree 中开发
 
-仓库支持主 checkout 和多个 worktree 同时运行。它们共用一个 PostgreSQL 容器，但使用不同数据库和端口。
+仓库支持主 checkout、独立 clone 和多个 worktree 同时运行。它们共用一个 PostgreSQL 容器，但使用不同数据库和端口。
 
 ```bash
 git worktree add ../patchbay-feature -b feat/my-change main
@@ -63,7 +65,7 @@ pnpm dev
 make stop
 ```
 
-也可以直接运行 `make dev`，脚本会通过 `.git` 文件识别 worktree 并选择 `.env.worktree`。
+也可以直接运行 `make dev`。每个源码开发 checkout 都使用自己生成的 `.env.worktree`；开发启动器不会再隐式选择 `.env`。只有在明确需要覆盖时才设置 `PATCHBAY_DEV_ENV_FILE`。
 
 <Callout type="info">
   不同 worktree 共用 PostgreSQL 容器，不共用数据库。不要为每个 worktree 启动新的

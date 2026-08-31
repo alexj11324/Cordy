@@ -62,7 +62,10 @@ set +a
 
 run_with_injected_clerk_env() {
   restore_process_only_clerk_env
-  exec "$@"
+  local command_status=0
+  "$@" || command_status=$?
+  clear_process_only_clerk_env
+  return "$command_status"
 }
 
 # Prevent legacy checkout-file or inherited Clerk values from entering install,
@@ -157,7 +160,7 @@ if [ "$dev_mode" = "hosted" ]; then
   echo "  API:     $PATCHBAY_DEV_API_URL"
   echo "  Renderer: local Electron/Vite hot reload"
   echo ""
-  node apps/desktop/scripts/dev.mjs "$@"
+  run_with_injected_clerk_env node apps/desktop/scripts/dev.mjs "$@"
   exit $?
 fi
 
@@ -288,4 +291,4 @@ done
 export PATCHBAY_REQUIRE_SOURCE_CLI=1
 export PATCHBAY_DEV_ENV_FILE="$ENV_FILE"
 
-node apps/desktop/scripts/dev.mjs "$@"
+run_with_injected_clerk_env node apps/desktop/scripts/dev.mjs "$@"

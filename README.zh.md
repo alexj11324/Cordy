@@ -62,7 +62,7 @@ Rust server、CLI、迁移 runner 和 backfill 二进制是生产入口。
 
 ### 环境要求
 
-- Node.js 22+
+- Node.js 22（仓库固定范围为 `>=22 <23`）
 - pnpm 10.28.2
 - stable Rust toolchain
 - sccache（macOS 可运行 `brew install sccache`）

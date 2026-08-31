@@ -58,6 +58,10 @@ if grep -F '[[ -v' "$root_dir/scripts/dev.sh" "$root_dir/scripts/dev-env.sh" >/d
   echo "development scripts must remain compatible with macOS Bash 3.2" >&2
   exit 1
 fi
+if grep -F 'exec "$@"' "$root_dir/scripts/dev.sh" >/dev/null; then
+  echo "dev.sh must keep its cleanup trap around injected child processes" >&2
+  exit 1
+fi
 /bin/bash -n "$root_dir/scripts/dev.sh"
 /bin/bash -n "$root_dir/scripts/dev-env.sh"
 

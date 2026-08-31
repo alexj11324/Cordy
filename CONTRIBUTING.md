@@ -29,13 +29,14 @@ See the [LICENSE](LICENSE) file for the full terms.
 
 ## Development Model
 
-Local development uses one shared PostgreSQL service and one database per checkout.
+Local development uses one shared PostgreSQL service and one database per
+source-development checkout.
 
-- the main checkout usually uses `.env` and `POSTGRES_DB=patchbay`
-- each Git worktree uses its own `.env.worktree`
+- the main checkout, independent clones, and Git worktrees each use their own `.env.worktree`
+- `.env` is reserved for explicit non-development/self-host configuration
 - every checkout connects to the same PostgreSQL host: `localhost:5432`
 - isolation happens at the database level, not by starting a separate PostgreSQL service
-- backend and frontend ports are still unique per worktree
+- backend and frontend ports are unique per checkout
 
 The service may be Docker Compose or a native local PostgreSQL installation;
 schema and data remain isolated either way.
@@ -55,65 +56,36 @@ alias and is not required on Windows.
 
 ## Important Rules
 
-- The main checkout should use `.env`.
-- A worktree should use `.env.worktree`.
-- Do not copy `.env` into a worktree directory.
-
-Why:
-
-- the current command flow prefers `.env` over `.env.worktree`
-- if a worktree contains `.env`, it can accidentally point back to the main database
+- Run `pnpm dev` (or `make dev`) from every source-development checkout.
+- The complete launcher creates and validates that checkout's `.env.worktree`.
+- Do not copy `.env` into a source-development checkout.
+- If the launcher reports a stale generated environment, run `FORCE=1 make worktree-env` once and retry.
+- Use `PATCHBAY_DEV_ENV_FILE=/absolute/path/to/file` only for an intentional,
+  explicit runtime override.
 
 ## Environment Files
 
-### Main Checkout
+### Source-development checkout
 
-Create `.env` once:
-
-```bash
-cp .env.example .env
-```
-
-By default, `.env` points to:
-
-```bash
-POSTGRES_DB=patchbay
-POSTGRES_PORT=5432
-DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable
-PORT=8080
-FRONTEND_PORT=3000
-```
-
-### Worktree
-
-Generate `.env.worktree` from inside the worktree:
+The complete launcher creates `.env.worktree` automatically. To create it
+before the first launch:
 
 ```bash
 make worktree-env
 ```
 
-That generates values like:
+Generated values are isolated to this checkout:
 
 ```bash
 POSTGRES_DB=patchbay_my_feature_702
 POSTGRES_PORT=5432
+DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/patchbay_my_feature_702?sslmode=disable
 PORT=18782
 FRONTEND_PORT=13702
-DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/patchbay_my_feature_702?sslmode=disable
 ```
 
-Notes:
-
-- `POSTGRES_DB` is unique per worktree
-- `POSTGRES_PORT` stays fixed at `5432`
-- backend and frontend ports are derived from the worktree path hash
-- `make worktree-env` refuses to overwrite an existing `.env.worktree`
-
-To regenerate a worktree env file:
-
-```bash
-FORCE=1 make worktree-env
-```
+`.env` remains available for explicit self-host or other non-development
+commands; it is never selected implicitly by the complete Desktop launcher.
 
 ## First-Time Setup
 
@@ -127,8 +99,7 @@ pnpm dev
 
 This single command:
 
-- auto-detects whether you're in a main checkout or a worktree
-- creates the appropriate env file (`.env` or `.env.worktree`) if it doesn't exist
+- creates and validates the checkout's isolated `.env.worktree`
 - checks the always-required prerequisites; Rust is required only on a runtime cache miss
 - installs JavaScript dependencies
 - uses the shared Docker or native PostgreSQL service
@@ -179,18 +150,17 @@ was never set up has no `.env.worktree`, so database cleanup is skipped.
 Running `git worktree remove` directly bypasses this cleanup and can leave an
 orphaned local database.
 
-## Running Main and Worktree at the Same Time
+## Running Multiple Checkouts at the Same Time
 
 This is a first-class workflow.
 
-Example:
+Example (all source-development checkouts use generated values):
 
 - main checkout
-  - database: `patchbay`
-  - backend: `8080`
-  - frontend: `3000`
+  - database: generated `patchbay_<checkout>_<offset>`
+  - backend/frontend: generated isolated ports
 - worktree checkout
-  - database: `patchbay_my_feature_702`
+  - database: generated `patchbay_my_feature_702`
   - backend: generated worktree port such as `18782`
   - frontend: generated worktree port such as `13702`
 
@@ -283,155 +253,31 @@ make daemon
 The daemon authenticates using the CLI's stored token (`patchbay login`).
 It registers runtimes for all watched workspaces from the CLI config.
 
-## Full-Stack Isolated Testing
+## Complete Desktop Runtime
 
-This section covers running the complete stack (backend, frontend, daemon) from
-source in a fully isolated environment. Useful for testing end-to-end changes
-that span multiple components, or for automated CI/AI workflows that need zero
-human intervention.
-
-### Why Not Just `make daemon`?
-
-`make daemon` uses the system-installed CLI's stored token and connects to
-whatever server is configured in `~/.patchbay/config.json`. That's fine for
-day-to-day development against a shared server, but for fully isolated testing
-you need:
-
-- a local backend and frontend (from source)
-- a local daemon (from source) with its own profile
-- automated authentication (no browser login)
-- no interference with your production CLI config
-
-### Dynamic Profile Naming
-
-Each worktree must use a unique daemon profile to avoid collisions when
-multiple features run in parallel.
-
-The profile name is derived from the worktree directory using the same
-slug + hash pattern as `scripts/init-worktree-env.sh`:
+The complete Desktop launcher owns the backend, browser login origin, daemon
+runtime, database, ports, and Electron process for the current checkout. Use
+one command for this path:
 
 ```bash
-WORKTREE_DIR="$(basename "$PWD")"
-SLUG="$(printf '%s' "$WORKTREE_DIR" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/_/g; s/__*/_/g; s/^_//; s/_$//')"
-HASH="$(printf '%s' "$PWD" | cksum | awk '{print $1}')"
-OFFSET=$((HASH % 1000))
-PROFILE="dev-${SLUG}-${OFFSET}"
+pnpm dev
 ```
 
-Example: worktree at `../patchbay-feat-auth` produces profile
-`dev-patchbay_feat_auth-347`, matching that worktree's port and database
-allocation.
+It creates and validates `.env.worktree`, stages a source-matched CLI/backend/
+migration set from the shared artifact cache (or performs one incremental Rust
+build on a miss), starts the isolated database and services, runs capability
+diagnostics, and then opens Electron. `pnpm dev:doctor` repeats diagnostics
+without starting another stack.
 
-### Start the Isolated Environment
+Do not manually write CLI profiles, copy tokens into config files, or use an
+ambient PATH-installed CLI for Desktop development. Browser login in Electron
+exchanges the session for a Desktop-owned CLI token. A standalone terminal CLI
+does require its own `patchbay setup`/`patchbay login`; keep that profile
+separate from Desktop's profile.
 
-Run all steps from the worktree root (where the Makefile is).
-
-#### 1. Start backend, frontend, and database
-
-```bash
-make dev
-```
-
-Wait for the backend to be healthy:
-
-```bash
-PORT=$(grep '^PORT=' .env.worktree 2>/dev/null || grep '^PORT=' .env | head -1 | cut -d= -f2)
-PORT=${PORT:-8080}
-SERVER="http://localhost:${PORT}"
-
-for i in $(seq 1 30); do
-  curl -sf "$SERVER/health" > /dev/null 2>&1 && break
-  sleep 2
-done
-```
-
-#### 2. Create a test user and token (automated auth)
-
-For deterministic local automation, set `PATCHBAY_DEV_VERIFICATION_CODE=888888`
-in your env file before starting the backend:
-
-```bash
-curl -s -X POST "$SERVER/auth/send-code" \
-  -H "Content-Type: application/json" \
-  -d '{"email": "dev@localhost"}'
-
-JWT=$(curl -s -X POST "$SERVER/auth/verify-code" \
-  -H "Content-Type: application/json" \
-  -d '{"email": "dev@localhost", "code": "888888"}' | jq -r '.token')
-
-PAT=$(curl -s -X POST "$SERVER/api/tokens" \
-  -H "Authorization: Bearer $JWT" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "auto-dev", "expires_in_days": 365}' | jq -r '.token')
-```
-
-#### 3. Create a workspace
-
-```bash
-WS=$(curl -s -X POST "$SERVER/api/workspaces" \
-  -H "Authorization: Bearer $PAT" \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Dev", "slug": "dev"}' | jq -r '.id')
-```
-
-#### 4. Compute profile name and write CLI config
-
-```bash
-# Compute profile (see Dynamic Profile Naming above)
-WORKTREE_DIR="$(basename "$PWD")"
-SLUG="$(printf '%s' "$WORKTREE_DIR" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/_/g; s/__*/_/g; s/^_//; s/_$//')"
-HASH="$(printf '%s' "$PWD" | cksum | awk '{print $1}')"
-OFFSET=$((HASH % 1000))
-PROFILE="dev-${SLUG}-${OFFSET}"
-
-FRONTEND_PORT=$(grep '^FRONTEND_PORT=' .env.worktree 2>/dev/null || grep '^FRONTEND_PORT=' .env | head -1 | cut -d= -f2)
-FRONTEND_PORT=${FRONTEND_PORT:-3000}
-
-CONFIG_DIR="$HOME/.patchbay/profiles/$PROFILE"
-mkdir -p "$CONFIG_DIR"
-
-cat > "$CONFIG_DIR/config.json" << EOF
-{
-  "server_url": "$SERVER",
-  "app_url": "http://localhost:${FRONTEND_PORT}",
-  "token": "$PAT",
-  "workspace_id": "$WS",
-  "watched_workspaces": [{"id": "$WS", "name": "Dev"}]
-}
-EOF
-```
-
-#### 5. Start the daemon from source
-
-```bash
-make cli ARGS="daemon start --profile $PROFILE"
-```
-
-The daemon runs from the current worktree's Rust `patchbay-cli` package, connecting
-to the local backend. Agent-executed `patchbay` commands automatically use the
-same binary (the daemon prepends its own directory to `PATH`).
-
-### Stop the Isolated Environment
-
-```bash
-# Compute profile (same formula)
-PROFILE="dev-$(printf '%s' "$(basename "$PWD")" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/_/g; s/__*/_/g; s/^_//; s/_$//')-$(( $(printf '%s' "$PWD" | cksum | awk '{print $1}') % 1000 ))"
-
-# 1. Stop daemon
-make cli ARGS="daemon stop --profile $PROFILE"
-
-# 2. Stop this checkout's tracked backend + frontend
-make stop
-
-# 3. (Optional) Stop shared PostgreSQL
-make db-down
-
-# 4. (Optional) Clean build artifacts
-make clean
-
-# 5. (Optional) Remove profile config
-rm -rf "$HOME/.patchbay/profiles/$PROFILE"
-```
+If a generated `.env.worktree` is from an older workflow, the launcher fails
+closed. Regenerate it once with `FORCE=1 make worktree-env`; never copy `.env`
+into a source-development checkout.
 
 ### Desktop App Local Testing
 
@@ -513,9 +359,11 @@ removing a cache is correct when transfer time approaches rebuild time. See
 [GitHub dependency caching](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)
 and [repository Actions settings](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository).
 
-Login in the Desktop UI with `dev@localhost` and the generated code from the
-backend logs. If you set `PATCHBAY_DEV_VERIFICATION_CODE=888888` before starting
-the backend, you can use `888888` instead.
+Complete Desktop development logs in through the browser Clerk development
+flow. The launcher bootstraps the development Clerk configuration from the
+approved secret store (or complete process-only Clerk variables) and fails
+before Electron if that configuration is unavailable. Never put Clerk secrets
+or CLI tokens in `.env` files, the repository, or chat.
 
 Telegram still requires a real BotFather token entered through the integration
 flow, and personal Weixin still requires a real iLink QR authorization. Without
@@ -523,15 +371,14 @@ those external credentials the UI must stop at the explicit provider step; a
 configured encryption key is capability readiness, not proof of a successful
 provider connection or test message.
 
-#### Running multiple worktrees side-by-side
+#### Running multiple checkouts side-by-side
 
-`pnpm dev` auto-isolates a worktree so several worktrees can run their
-own desktop dev instance at once — no extra setup. From a linked worktree it
-derives, from the worktree path (same `cksum % 1000` offset as the backend /
-frontend ports in `.env.worktree`):
+`pnpm dev` auto-isolates every source-development checkout so several
+checkouts can run their own desktop dev instance at once — no extra setup.
+The generated `.env.worktree` records the allocated offset (the same offset
+used for backend/frontend ports):
 
-- `DESKTOP_RENDERER_PORT` = `5174 + offset` — its own Vite dev server (`5174`
-  base leaves `5173` for the primary checkout, even when `offset` is `0`). The
+- `DESKTOP_RENDERER_PORT` = `5174 + offset` — its own Vite dev server. The
   one offset that would land on `6000` gets `6174` instead: Chromium treats
   `6000` as a restricted port and fails the load with `ERR_UNSAFE_PORT`
 - `DESKTOP_APP_SUFFIX` = `<folder>-<offset>` — its own single-instance lock /
@@ -539,62 +386,53 @@ frontend ports in `.env.worktree`):
   distinguishable in Cmd+Tab. The offset keeps it unique across worktrees that
   share a folder name at different paths.
 
-The primary checkout is left untouched (`5173`, `Patchbay Canary`). The complete
-launcher exports each worktree's backend and WebSocket endpoints to Electron,
-so no hand-written `apps/desktop/.env.development.local` is required.
+The complete launcher exports each checkout's backend and WebSocket endpoints
+to Electron, so no hand-written `apps/desktop/.env.development.local` is
+required.
 
 ### Isolation Guarantee
 
 Nothing in this flow touches the system-installed `patchbay` or the default
 `~/.patchbay/config.json`:
 
-| Resource        | System / Production            | Local Dev (per-worktree)                             |
+| Resource        | System / Production            | Local Dev (per-checkout)                             |
 | --------------- | ------------------------------ | ---------------------------------------------------- |
-| Config          | `~/.patchbay/config.json`      | `~/.patchbay/profiles/dev-<slug>-<hash>/config.json` |
-| Daemon PID      | `~/.patchbay/daemon.pid`       | `~/.patchbay/profiles/dev-<slug>-<hash>/daemon.pid`  |
-| Health port     | `19514`                        | `19514 + 1 + (name_hash % 1000)`                     |
-| Workspaces dir  | `~/patchbay_workspaces/`       | `~/patchbay_workspaces_dev-<slug>-<hash>/`           |
-| Database        | remote / production            | local Docker: `patchbay_<slug>_<hash>`               |
-| Desktop profile | `desktop-api.aspectlylabs.com` | `desktop-localhost-<port>`                           |
+| Config          | `~/.patchbay/config.json`      | `~/.patchbay/profiles/desktop-<host>/config.json` |
+| Daemon PID      | `~/.patchbay/daemon.pid`       | `~/.patchbay/profiles/desktop-<host>/daemon.pid`  |
+| Health port     | `19514`                        | derived from the Desktop profile (never `19514`)  |
+| Workspaces dir  | `~/patchbay_workspaces/`       | checkout-scoped task config root                  |
+| Database        | remote / production            | local PostgreSQL: `patchbay_<slug>_<offset>`      |
+| Desktop profile | `desktop-api.aspectlylabs.com` | `desktop-localhost-<port>`                        |
 
-Multiple worktrees can run simultaneously without conflict.
+Multiple source-development checkouts can run simultaneously without sharing
+databases, ports, Electron identities, or target directories.
 
 ## Troubleshooting
 
-### Missing Env File
+### Missing or Stale Development Env
 
 If you see:
-
-```text
-Missing env file: .env
-```
-
-or:
 
 ```text
 Missing env file: .env.worktree
 ```
 
-then create the expected env file first.
-
-Main checkout:
-
-```bash
-cp .env.example .env
-```
-
-Worktree:
+or a message saying that `.env.worktree` is not a current isolated checkout
+environment, create/regenerate the file:
 
 ```bash
 make worktree-env
 ```
+
+For an existing stale file, use `FORCE=1 make worktree-env`. Only set
+`PATCHBAY_DEV_ENV_FILE` when you intentionally want an explicit override
+outside the generated complete-dev environment.
 
 ### Check Which Database a Checkout Uses
 
 Inspect the env file:
 
 ```bash
-cat .env
 cat .env.worktree
 ```
 
@@ -611,18 +449,11 @@ Look for:
 docker compose exec -T postgres psql -U patchbay -d postgres -At -c "select datname from pg_database order by datname;"
 ```
 
-### Worktree Is Accidentally Using the Main Database
+### Checkout Is Accidentally Using the Main Database
 
-Check whether the worktree contains `.env`.
-
-It should not.
-
-The safe worktree setup is:
-
-```bash
-rm -f .env
-pnpm dev
-```
+The complete launcher validates the generated `.env.worktree` identity,
+database name, and ports before starting. If validation fails, regenerate it
+with `FORCE=1 make worktree-env` rather than copying `.env`.
 
 ### App Stops but PostgreSQL Keeps Running
 

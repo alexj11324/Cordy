@@ -58,7 +58,7 @@ Patchbay is an open-source Harness for orchestrating multi-agents on long-horizo
 
 ### Prerequisites
 
-- Node.js 22+
+- Node.js 22 (the repository pins `>=22 <23`)
 - pnpm 10.28.2
 - a stable Rust toolchain
 - sccache (`brew install sccache` on macOS)

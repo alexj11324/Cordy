@@ -24,7 +24,6 @@ ARG COMMIT=unknown
 ARG DATE=unknown
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,target=/src/server-rs/target,sharing=locked \
     PATCHBAY_BUILD_VERSION="${VERSION}" \
     PATCHBAY_BUILD_COMMIT="${COMMIT}" \
     PATCHBAY_BUILD_DATE="${DATE}" \
@@ -36,7 +35,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cp target/release/patchbay-migrate /out/migrate && \
     cp target/release/backfill_task_usage_hourly /out/ && \
     cp target/release/backfill_issue_last_activity /out/ && \
-    cp target/release/backfill_codex_usage_cache /out/
+    cp target/release/backfill_codex_usage_cache /out/ && \
+    rm -rf target
 
 # --- Runtime stage ---
 FROM alpine:3.21
