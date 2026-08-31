@@ -300,7 +300,9 @@ pub fn build_router_from_state(state: HandlerState) -> Router {
     };
     let composio_state = composio::ComposioState::from_handler(&state);
     let authenticated = workspace::authenticated_router()
-        .merge(desktop_handoff::authenticated_initiate_router())
+        .merge(desktop_handoff::authenticated_initiate_router(
+            state.auth_verify_rate_limit.clone(),
+        ))
         .merge(
             workspace::member_router().route_layer(middleware::from_fn_with_state(
                 WorkspaceGuardState::from_url(state.pool.clone(), "id"),

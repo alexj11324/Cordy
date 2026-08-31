@@ -550,8 +550,15 @@ pub fn google_router() -> Router<HandlerState> {
         .route(COMPLETE_PATH, post(complete_google_attempt))
 }
 
-pub fn authenticated_initiate_router() -> Router<HandlerState> {
-    Router::new().route(INITIATE_PATH, post(initiate_google_attempt))
+pub fn authenticated_initiate_router(
+    limit: patchbay_middleware::ratelimit::RateLimitState,
+) -> Router<HandlerState> {
+    Router::new()
+        .route(INITIATE_PATH, post(initiate_google_attempt))
+        .route_layer(axum::middleware::from_fn_with_state(
+            limit,
+            patchbay_middleware::ratelimit::rate_limit,
+        ))
 }
 
 pub fn redeem_router() -> Router<HandlerState> {
@@ -686,7 +693,8 @@ async fn initiate_google_attempt(
     if !valid_pkce_value(&request.code_challenge)
         || !valid_pkce_value(&request.state)
         || !valid_callback_protocol(&request.callback_protocol)
-        || (state.auth_settings.is_production() && request.callback_protocol != "patchbay")
+        || (request.callback_protocol != "patchbay"
+            && !state.auth_settings.is_local_development())
     {
         return error_response(
             StatusCode::BAD_REQUEST,
@@ -730,13 +738,13 @@ async fn register_google_attempt(
     }
     match state
         .desktop_handoff_tokens
-        .register_google_attempt(&request.state, &request.code_challenge, "patchbay")
+        .get_google_attempt(&request.state, &request.code_challenge)
         .await
     {
         Ok(Some(_)) => Json(serde_json::json!({ "registered": true })).into_response(),
         Ok(None) => error_response(
             StatusCode::CONFLICT,
-            "desktop Google OAuth binding is already in use",
+            "desktop Google OAuth initiation is required",
         ),
         Err(_) => error_response(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -1093,7 +1101,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn production_initiation_rejects_canary_callback_protocols() {
+    async fn only_local_development_accepts_canary_callback_protocols() {
         let mut headers = HeaderMap::new();
         headers.insert("x-user-id", Uuid::new_v4().to_string().parse().unwrap());
         let request = |callback_protocol: &str| InitiateRequest {
@@ -1120,11 +1128,43 @@ mod tests {
 
         let local_canary = initiate_google_attempt(
             State(handler_state_for_environment("development")),
-            headers,
+            headers.clone(),
             Json(request("patchbay-canary-login-fix-123")),
         )
         .await;
         assert_eq!(local_canary.status(), StatusCode::OK);
+
+        for environment in ["", "test", "staging"] {
+            let remote_canary = initiate_google_attempt(
+                State(handler_state_for_environment(environment)),
+                headers.clone(),
+                Json(request("patchbay-canary-login-fix-123")),
+            )
+            .await;
+            assert_eq!(remote_canary.status(), StatusCode::BAD_REQUEST);
+        }
+    }
+
+    #[tokio::test]
+    async fn browser_attempt_requires_authenticated_desktop_initiation() {
+        let state_value = "s".repeat(43);
+        let challenge = "c".repeat(43);
+        let state = handler_state();
+        let request = || AttemptRequest {
+            state: state_value.clone(),
+            code_challenge: challenge.clone(),
+        };
+
+        let missing = register_google_attempt(State(state.clone()), Json(request())).await;
+        assert_eq!(missing.status(), StatusCode::CONFLICT);
+
+        state
+            .desktop_handoff_tokens
+            .register_google_attempt(&state_value, &challenge, "patchbay")
+            .await
+            .unwrap();
+        let registered = register_google_attempt(State(state), Json(request())).await;
+        assert_eq!(registered.status(), StatusCode::OK);
     }
 
     #[test]

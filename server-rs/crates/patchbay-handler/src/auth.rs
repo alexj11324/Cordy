@@ -83,6 +83,10 @@ impl AuthSettings {
         self.app_env.eq_ignore_ascii_case("production")
     }
 
+    pub(crate) fn is_local_development(&self) -> bool {
+        self.app_env.eq_ignore_ascii_case("development")
+    }
+
     pub(crate) fn cookie_attributes(&self) -> (Option<String>, bool) {
         (
             patchbay_auth::cookie::cookie_domain(Some(&self.cookie_domain)),
