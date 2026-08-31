@@ -258,7 +258,7 @@ fi
 echo "==> Starting the browser/share/login origin at $FRONTEND_ORIGIN..."
 (
   cd apps/web
-  run_with_injected_clerk_env node ../../scripts/dev-auth-command.mjs web node node_modules/next/dist/bin/next dev --webpack --port "${FRONTEND_PORT:-3000}"
+  run_with_injected_clerk_env node ../../scripts/dev-auth-command.mjs web node node_modules/next/dist/bin/next dev --port "${FRONTEND_PORT:-3000}"
 ) > >(tee "$frontend_log") 2>&1 &
 web_pid=$!
 

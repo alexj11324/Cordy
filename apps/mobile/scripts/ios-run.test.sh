@@ -60,6 +60,11 @@ expected_prebuild='exec expo prebuild -p ios --no-install'
   fail "second call should be run:ios, got: $(sed -n '2p' "$CALLS_FILE")"
 [ "$(wc -l <"$CALLS_FILE")" -eq 2 ] || fail "expected exactly 2 calls"
 
+# --- the default Expo precompiled React Native path stays enabled -----------
+if grep -q 'buildReactNativeFromSource' "$SCRIPT_DIR/../app.config.ts"; then
+  fail "app.config.ts must not force React Native source compilation"
+fi
+
 # --- arguments forward to run:ios only --------------------------------------
 : >"$CALLS_FILE"
 "$SCRIPT_DIR/ios-run.sh" --device --configuration Release

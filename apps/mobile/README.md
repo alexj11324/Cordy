@@ -14,7 +14,7 @@ This connects to the same backend as `patchbay.ai`, so your existing account jus
 
 **Prerequisites**: Mac with Xcode, a free Apple ID added under Xcode → Settings → Accounts, iPhone connected via USB with [Developer Mode enabled](https://docs.expo.dev/guides/ios-developer-mode/). Walk through Expo's [Set up your environment](https://docs.expo.dev/get-started/set-up-your-environment/) (pick **Development build → iOS Device**) if any of that is missing.
 
-Xcode signs the build with the "Personal Team" your Apple ID automatically owns — created silently the first time you signed into Xcode, no setup needed. The first build downloads CocoaPods + compiles React Native from source — expect 10–20 minutes. Subsequent builds reuse Xcode's cache.
+Xcode signs the build with the "Personal Team" your Apple ID automatically owns — created silently the first time you signed into Xcode, no setup needed. The first build downloads CocoaPods and Expo's precompiled React Native artifacts; subsequent builds reuse CocoaPods and Xcode caches.
 
 **If Xcode rejects signing with "No matching provisioning profiles found"** — rare, happens if someone has claimed the default bundle id `ai.patchbay.mobile` on Apple's developer portal. Pick any reverse-domain you own and re-run:
 
@@ -89,7 +89,7 @@ Produces a **Release build**. No `expo-dev-launcher`, no Metro probe, no "Downlo
 
 Both paths share the same prerequisites: Mac with Xcode, free Apple ID added under Xcode → Settings → Accounts, iPhone connected via USB with Developer Mode enabled. Follow Expo's [Set up your environment](https://docs.expo.dev/get-started/set-up-your-environment/) — pick **Development build → iOS Device** — if any of that is missing.
 
-First build of either variant downloads CocoaPods + compiles React Native from source — expect 10-20 minutes. Subsequent builds reuse Xcode's DerivedData cache.
+The first build of either variant downloads CocoaPods and Expo's precompiled React Native artifacts. Subsequent builds reuse CocoaPods and Xcode's DerivedData cache.
 
 ## Try it in the iOS Simulator (no iPhone needed)
 

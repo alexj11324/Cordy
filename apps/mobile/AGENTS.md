@@ -80,8 +80,8 @@ This pattern repeats: timeline coalescing (`buildTimelineGroups`), inbox dedup, 
 Start minimal. Add to this list when actually adopted — do NOT pre-list libraries.
 
 - **Expo SDK 55**
-- **React Native 0.82**
-- **React 19.1** — whatever Expo SDK 55 ships. Pinned in `apps/mobile/package.json` directly, NOT via root `catalog:`.
+- **React Native 0.83.6**
+- **React 19.2** — the Expo SDK 55-compatible versions are pinned in `apps/mobile/package.json` directly, NOT via root `catalog:`.
 - **TypeScript** strict
 - **Expo Router 55** (file-based routing — version aligns with Expo SDK)
 - **NativeWind 4** + **Tailwind 3.4** — NativeWind 5 is unstable; stay on v4. (Note: web/desktop use Tailwind v4 — versions intentionally differ.)
@@ -168,7 +168,7 @@ Every `ios:*` script runs `expo prebuild -p ios` before `expo run:ios`. Keep it 
 Two things the wrapper depends on:
 
 - `--no-install` is safe because `run:ios` installs pods itself when `Podfile.lock` is stale.
-- `--clean` is avoided on purpose: `expo-build-properties` sets `buildReactNativeFromSource`, so a clean prebuild forces a from-source pod rebuild that is far too slow for the edit/run loop. Run `npx expo prebuild -p ios --clean` by hand when a native dependency changes.
+- `--clean` is avoided on purpose so CocoaPods and Xcode can reuse native intermediates. Expo's default precompiled React Native path remains enabled; run `npx expo prebuild -p ios --clean` by hand only when a native dependency or config plugin changes.
 
 The wrapper is invoked under the caller's `dotenv`/`cross-env`, so prebuild and run resolve the same `APP_ENV` and bundle identifier. A bare `expo prebuild` inside a prod/staging script would rewrite the project to the dev variant.
 

@@ -37,6 +37,10 @@ foreach ($required in @(
     }
 }
 
+if ($source -match [regex]::Escape("--webpack")) {
+    throw "scripts/dev.ps1 must use the Next.js 16 Turbopack default"
+}
+
 $stopFunctionAst = $ast.Find({
         param($node)
         $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and

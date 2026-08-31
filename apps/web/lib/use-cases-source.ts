@@ -1,7 +1,7 @@
 import { loader } from "fumadocs-core/source";
 import { defineI18n } from "fumadocs-core/i18n";
 import type { SupportedLocale } from "@patchbay/core/i18n";
-import { useCases } from "@/.source";
+import { useCases } from "@/.source/server";
 import { mergeUseCasePagesWithEnglishFallback } from "./use-case-locale-fallback";
 
 // Use-case content uses dot-suffixed MDX files (`<slug>.en.mdx`,

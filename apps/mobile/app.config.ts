@@ -76,14 +76,6 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           microphonePermission: false,
         },
       ],
-      [
-        "expo-build-properties",
-        {
-          ios: {
-            buildReactNativeFromSource: true,
-          },
-        },
-      ],
     ],
     extra: { APP_ENV: env },
   };

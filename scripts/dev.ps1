@@ -329,7 +329,7 @@ try {
     try {
         $WebProcess = Start-Process `
             -FilePath "node" `
-            -ArgumentList @("../../scripts/dev-auth-command.mjs", "web", "node", "node_modules/next/dist/bin/next", "dev", "--webpack", "--port", $FrontendPort) `
+            -ArgumentList @("../../scripts/dev-auth-command.mjs", "web", "node", "node_modules/next/dist/bin/next", "dev", "--port", $FrontendPort) `
             -WorkingDirectory (Join-Path $RepoRoot "apps/web") `
             -RedirectStandardOutput $FrontendStdoutLog `
             -RedirectStandardError $FrontendStderrLog `

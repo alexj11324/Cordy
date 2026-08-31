@@ -98,6 +98,7 @@ describe("complete development launcher contract", () => {
     expect(launcher).toContain('export VITE_APP_URL="$PATCHBAY_DEV_APP_URL"');
     expect(launcher).toContain("export VITE_ACCOUNTS_URL=");
     expect(launcher).toContain("dev-auth-command.mjs web");
+    expect(launcher).not.toContain("--webpack");
   });
 
   it("rejects an already occupied backend port and keeps a native Windows path", () => {

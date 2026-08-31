@@ -10,9 +10,9 @@
 #
 # ios/ is gitignored and fully generated, so prebuilding on every run is safe
 # and idempotent. --no-install is fine because run:ios installs pods itself
-# when Podfile.lock is out of date; --clean is deliberately avoided since
-# expo-build-properties sets buildReactNativeFromSource, making a from-source
-# pod rebuild far too slow for the normal edit/run loop.
+# when Podfile.lock is out of date. --clean is deliberately avoided in the
+# normal edit/run loop so CocoaPods and Xcode can reuse native intermediates;
+# use a clean prebuild only after changing native dependencies or config plugins.
 #
 # APP_ENV and the .env file are supplied by the calling package.json script, so
 # prebuild and run resolve the same variant. Arguments are forwarded to
