@@ -964,9 +964,8 @@ impl LinearSyncWorker {
             })
             .transpose()?;
         let remote_updated_at = parse_remote_timestamp(&remote.updated_at)?;
-        let event_timestamp_ms = event_timestamp_ms.or_else(|| {
-            Some(remote_updated_at.timestamp_millis())
-        });
+        let event_timestamp_ms =
+            event_timestamp_ms.or_else(|| Some(remote_updated_at.timestamp_millis()));
         if is_out_of_order(existing_link.as_ref(), event_timestamp_ms) {
             return Ok(());
         }
@@ -990,19 +989,17 @@ impl LinearSyncWorker {
             &mapped_status,
         )
         .await;
-        let import_status = if import_status_is_inadmissible(
-            &mapped_category,
-            linked_issue.as_ref(),
-        ) {
-            tracing::warn!(
-                issue_id = %remote.id,
-                mapped_status,
-                "parking imported Linear issue until its Patchbay assignments are admissible"
-            );
-            patchbay_service::issue_status::BACKLOG.to_string()
-        } else {
-            mapped_status.clone()
-        };
+        let import_status =
+            if import_status_is_inadmissible(&mapped_category, linked_issue.as_ref()) {
+                tracing::warn!(
+                    issue_id = %remote.id,
+                    mapped_status,
+                    "parking imported Linear issue until its Patchbay assignments are admissible"
+                );
+                patchbay_service::issue_status::BACKLOG.to_string()
+            } else {
+                mapped_status.clone()
+            };
         let remote_patch = ExternalIssuePatch {
             title: Some(remote.title.clone()),
             description: Some(strip_patchbay_issue_marker(remote.description.as_deref())),
@@ -1066,10 +1063,9 @@ impl LinearSyncWorker {
                             workspace_id: connection.workspace_id,
                             title: remote.title.clone(),
                             description: strip_patchbay_issue_marker(remote.description.as_deref()),
-                            status: remote_patch
-                                .status
-                                .clone()
-                                .unwrap_or_else(|| patchbay_service::issue_status::BACKLOG.to_string()),
+                            status: remote_patch.status.clone().unwrap_or_else(|| {
+                                patchbay_service::issue_status::BACKLOG.to_string()
+                            }),
                             priority,
                             creator_type: "member".to_string(),
                             creator_id: connection.created_by_id,
