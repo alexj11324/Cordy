@@ -78,7 +78,7 @@ type RunStatus = "issue_created" | "running" | "skipped" | "completed" | "failed
 const RUN_VISUAL: Record<RunStatus, { color: string; icon: typeof CheckCircle2; spin?: boolean }> = {
   issue_created: { color: "text-blue-500", icon: Clock },
   running: { color: "text-blue-500", icon: Loader2, spin: true },
-  // `skipped` (admission check found the assignee runtime offline,
+  // `skipped` (admission check found the executor runtime offline,
   // PB-1899) is muted so it doesn't read as a failure-ratio inflator.
   // The row still shows failure_reason which carries the skip context.
   skipped: { color: "text-muted-foreground", icon: Ban },
@@ -784,9 +784,9 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
           <span className="flex-1">
             {t(($) => $.detail.paused_runtime_required)}
           </span>
-          {automation.assignee_type === "agent" && (
+          {automation.executor_type === "agent" && (
             <AppLink
-              href={`${wsPaths.agentDetail(automation.assignee_id)}?view=general`}
+              href={`${wsPaths.agentDetail(automation.executor_id)}?view=general`}
               className="font-medium underline underline-offset-2"
             >
               {t(($) => $.detail.bind_runtime)}
@@ -807,14 +807,14 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
                 <label className="text-caption text-muted-foreground">{t(($) => $.detail.field_agent)}</label>
                 <div className="mt-1 flex items-center gap-2">
                   <ActorAvatar
-                    actorType={automation.assignee_type}
-                    actorId={automation.assignee_id}
+                    actorType={automation.executor_type}
+                    actorId={automation.executor_id}
                     size="sm"
-                    enableHoverCard={automation.assignee_type === "agent"}
-                    showStatusDot={automation.assignee_type === "agent"}
+                    enableHoverCard={automation.executor_type === "agent"}
+                    showStatusDot={automation.executor_type === "agent"}
                   />
                   <span className="cursor-pointer">
-                    {getActorName(automation.assignee_type, automation.assignee_id)}
+                    {getActorName(automation.executor_type, automation.executor_id)}
                   </span>
                 </div>
               </div>
@@ -973,8 +973,8 @@ export function AutomationDetailPage({ automationId }: { automationId: string })
             title: automation.title,
             description: automation.description ?? "",
             project_id: automation.project_id ?? null,
-            assignee_type: automation.assignee_type,
-            assignee_id: automation.assignee_id,
+            executor_type: automation.executor_type,
+            executor_id: automation.executor_id,
             execution_mode: automation.execution_mode as AutomationExecutionMode,
             subscriber_user_ids:
               automation.subscribers

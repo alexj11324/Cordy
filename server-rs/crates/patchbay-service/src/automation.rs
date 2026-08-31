@@ -85,8 +85,8 @@ impl AutomationService {
 /// changing them does not transfer accountability.
 #[derive(Debug, serde::Serialize)]
 struct AutomationRuleConfigSummary<'a> {
-    assignee_type: &'a str,
-    assignee_id: &'a str,
+    executor_type: &'a str,
+    executor_id: &'a str,
     status: &'a str,
     execution_mode: &'a str,
 }
@@ -102,8 +102,8 @@ pub async fn record_automation_rule_version(
     published_by_id: Option<Uuid>,
 ) -> anyhow::Result<()> {
     let summary = AutomationRuleConfigSummary {
-        assignee_type: &ap.assignee_type,
-        assignee_id: &ap.assignee_id.to_string(),
+        executor_type: &ap.executor_type,
+        executor_id: &ap.executor_id.to_string(),
         status: &ap.status,
         execution_mode: &ap.execution_mode,
     };
@@ -205,11 +205,11 @@ pub fn task_failure_reason_for_run(task: &patchbay_db::models::AgentTaskQueue) -
 /// For team automations the message names the team so an operator reading
 /// failure_reason knows which team's leader is down without joining back to
 /// automation_run.team_id.
-pub fn format_admission_reason(assignee_type: &str, raw: &str) -> String {
-    let prefix = if assignee_type == "team" {
+pub fn format_admission_reason(executor_type: &str, raw: &str) -> String {
+    let prefix = if executor_type == "team" {
         "team leader "
     } else {
-        "assignee "
+        "executor "
     };
     match raw {
         "agent is archived" => format!("{prefix}agent is archived"),
@@ -220,7 +220,7 @@ pub fn format_admission_reason(assignee_type: &str, raw: &str) -> String {
     }
 }
 
-/// Signals an archived team assignee — distinct from a missing/unloadable
+/// Signals an archived team executor — distinct from a missing/unloadable
 /// team so the gate phrases the skip reason precisely and the failure
 /// monitor does not log noise for an expected post-archive condition.
 #[derive(Debug, thiserror::Error)]
@@ -228,7 +228,7 @@ pub fn format_admission_reason(assignee_type: &str, raw: &str) -> String {
 pub struct ErrTeamArchived;
 
 /// Leader-resolution failure, keeping Go's three distinguishable outcomes:
-/// DB fault, known archived team, unknown assignee_type.
+/// DB fault, known archived team, unknown executor_type.
 #[derive(Debug, thiserror::Error)]
 pub enum ResolveLeaderError {
     #[error("load team: {0}")]
@@ -239,12 +239,12 @@ pub enum ResolveLeaderError {
     LoadAgent(anyhow::Error),
     #[error(transparent)]
     TeamArchived(#[from] ErrTeamArchived),
-    #[error("unknown assignee_type {0:?}")]
-    UnknownAssigneeType(String),
+    #[error("unknown executor_type {0:?}")]
+    UnknownExecutorType(String),
     /// pgx.ErrNoRows equivalent somewhere along the lookup chain — retrying
     /// cannot succeed (hard-deleted agent under migration 096's no-FK world,
     /// or a gone team row).
-    #[error("assignee lookup returned no row")]
+    #[error("executor lookup returned no row")]
     NotFound { team_resolved: bool },
 }
 
@@ -264,17 +264,17 @@ impl AutomationService {
     /// for transient agent-load faults vs fail-closed for a gone team row).
     ///
     /// Archived teams are rejected here too: DeleteTeam transfers surviving
-    /// automations to assignee_type='agent', but any row slipping through that
-    /// transfer must never produce work. Unknown assignee_type values error —
+    /// automations to executor_type='agent', but any row slipping through that
+    /// transfer must never produce work. Unknown executor_type values error —
     /// a CHECK constraint gates them at the DB layer, so this only fires for
     /// rows written around it.
     pub async fn resolve_leader(
         &self,
         ap: &Automation,
     ) -> Result<(Agent, bool), ResolveLeaderError> {
-        match ap.assignee_type.as_str() {
+        match ap.executor_type.as_str() {
             "" | "agent" => {
-                let agent = patchbay_db::queries::agent::get_agent(&self.pool, ap.assignee_id)
+                let agent = patchbay_db::queries::agent::get_agent(&self.pool, ap.executor_id)
                     .await
                     .map_err(ResolveLeaderError::LoadAgent)?
                     .ok_or_else(|| ResolveLeaderError::NotFound {
@@ -283,7 +283,7 @@ impl AutomationService {
                 Ok((agent, false))
             }
             "team" => {
-                let team = patchbay_db::queries::team::get_team(&self.pool, ap.assignee_id)
+                let team = patchbay_db::queries::team::get_team(&self.pool, ap.executor_id)
                     .await
                     .map_err(ResolveLeaderError::LoadTeam)?
                     .ok_or_else(|| ResolveLeaderError::NotFound {
@@ -300,36 +300,36 @@ impl AutomationService {
                     })?;
                 Ok((agent, true))
             }
-            other => Err(ResolveLeaderError::UnknownAssigneeType(other.to_string())),
+            other => Err(ResolveLeaderError::UnknownExecutorType(other.to_string())),
         }
     }
 
     /// Team-id attribution hook for an automation_run row; only populated for
-    /// assignee_type='team' (RFC §4.e / PB-2429).
+    /// executor_type='team' (RFC §4.e / PB-2429).
     pub fn team_attribution(ap: &Automation) -> Option<Uuid> {
-        if ap.assignee_type == "team" {
-            Some(ap.assignee_id)
+        if ap.executor_type == "team" {
+            Some(ap.executor_id)
         } else {
             None
         }
     }
 
-    /// Analytics assignee shape; resolves the team leader best-effort and
+    /// Analytics executor shape; resolves the team leader best-effort and
     /// falls back to the team id when resolution fails.
-    pub async fn assignee_analytics(&self, ap: &Automation) -> analytics::AutomationAssignee {
-        let mut out = analytics::AutomationAssignee {
-            assignee_type: ap.assignee_type.clone(),
+    pub async fn executor_analytics(&self, ap: &Automation) -> analytics::AutomationExecutor {
+        let mut out = analytics::AutomationExecutor {
+            executor_type: ap.executor_type.clone(),
             team_id: String::new(),
             agent_id: String::new(),
         };
-        if ap.assignee_type == "team" {
-            out.team_id = ap.assignee_id.to_string();
+        if ap.executor_type == "team" {
+            out.team_id = ap.executor_id.to_string();
             out.agent_id = match self.resolve_leader(ap).await {
                 Ok((leader, _)) => leader.id.to_string(),
-                Err(_) => ap.assignee_id.to_string(),
+                Err(_) => ap.executor_id.to_string(),
             };
         } else {
-            out.agent_id = ap.assignee_id.to_string();
+            out.agent_id = ap.executor_id.to_string();
         }
         out
     }
@@ -663,7 +663,7 @@ pub struct CreateAutomationRunParams {
     pub source: String,
     pub status: String,
     pub trigger_payload: serde_json::Value,
-    /// Team attribution hook; nil for agent assignees.
+    /// Team attribution hook; nil for agent executors.
     pub team_id: Uuid,
     pub planned_at: Option<DateTime<Utc>>,
     /// Nil outside the webhook delivery worker path.
@@ -888,14 +888,14 @@ impl AutomationService {
         trigger_source: &str,
     ) {
         // triggerSource doubles as cadence proxy (metrics/labels_pr3 note).
-        let assignee = self.assignee_analytics(ap).await;
+        let executor = self.executor_analytics(ap).await;
         let ev = analytics::automation_run_started(
             &automation_actor_id(ap),
             &ap.workspace_id.to_string(),
             &ap.id.to_string(),
             &run.id.to_string(),
             trigger_source,
-            &assignee,
+            &executor,
             trigger_source,
         );
         patchbay_metrics::business_events::record_event(
@@ -906,14 +906,14 @@ impl AutomationService {
     }
 
     async fn capture_automation_run_completed(&self, ap: &Automation, run: &AutomationRun) {
-        let assignee = self.assignee_analytics(ap).await;
+        let executor = self.executor_analytics(ap).await;
         let ev = analytics::automation_run_completed(
             &automation_actor_id(ap),
             &ap.workspace_id.to_string(),
             &ap.id.to_string(),
             &run.id.to_string(),
             &run.source,
-            &assignee,
+            &executor,
             &run.source,
             automation_run_duration_ms(run),
         );
@@ -932,14 +932,14 @@ impl AutomationService {
         reason: &str,
     ) {
         let reason = if reason.is_empty() { "unknown" } else { reason };
-        let assignee = self.assignee_analytics(ap).await;
+        let executor = self.executor_analytics(ap).await;
         let ev = analytics::automation_run_failed(
             &automation_actor_id(ap),
             &ap.workspace_id.to_string(),
             &ap.id.to_string(),
             &run.id.to_string(),
             trigger_source,
-            &assignee,
+            &executor,
             trigger_source,
             reason,
             automation_error_type(reason),
@@ -1548,18 +1548,18 @@ impl AutomationService {
     /// human-readable failure_reason plus the wire reason code to skip with.
     ///
     /// Transient DB faults fail open (the next scheduler tick retries); the
-    /// hard cases — archived/gone assignee, unready runtime, invocation denial
+    /// hard cases — archived/gone executor, unready runtime, invocation denial
     /// — skip deterministically.
     pub(crate) async fn should_skip_dispatch(
         &self,
         ap: &Automation,
         actor_user_id: Option<Uuid>,
     ) -> Option<(String, ReasonCode)> {
-        // Go checks !ap.AssigneeID.Valid; the schema column is NOT NULL here,
+        // Go checks !ap.ExecutorID.Valid; the schema column is NOT NULL here,
         // so the zero UUID plays the invalid role.
-        if ap.assignee_id.is_nil() {
+        if ap.executor_id.is_nil() {
             return Some((
-                "automation has no assignee".to_string(),
+                "automation has no executor".to_string(),
                 ReasonCode::TargetUnavailable,
             ));
         }
@@ -1570,7 +1570,7 @@ impl AutomationService {
                 // rows pointing at a deleted agent / archived team.
                 tracing::warn!(
                     automation_id = %ap.id,
-                    assignee_type = %ap.assignee_type,
+                    executor_type = %ap.executor_type,
                     missing = err.is_not_found(),
                     archived = err.is_team_archived(),
                     error = %err,
@@ -1578,11 +1578,11 @@ impl AutomationService {
                 );
                 match err {
                     // Team exists but is archived — DeleteTeam's transfer
-                    // should have rewritten the assignee already; surfacing it
+                    // should have rewritten the executor already; surfacing it
                     // keeps the reason useful when something slips past.
                     ResolveLeaderError::TeamArchived(_) => {
                         return Some((
-                            "assignee team is archived".to_string(),
+                            "executor team is archived".to_string(),
                             ReasonCode::TargetUnavailable,
                         ));
                     }
@@ -1590,7 +1590,7 @@ impl AutomationService {
                         team_resolved: true,
                     } => {
                         return Some((
-                            "assignee team cannot be resolved".to_string(),
+                            "executor team cannot be resolved".to_string(),
                             ReasonCode::TargetUnavailable,
                         ));
                     }
@@ -1600,7 +1600,7 @@ impl AutomationService {
                         team_resolved: false,
                     } => {
                         return Some((
-                            "assignee agent no longer exists".to_string(),
+                            "executor agent no longer exists".to_string(),
                             ReasonCode::TargetUnavailable,
                         ));
                     }
@@ -1639,7 +1639,7 @@ impl AutomationService {
                 );
             } else {
                 return Some((
-                    format_admission_reason(&ap.assignee_type, &verdict.detail),
+                    format_admission_reason(&ap.executor_type, &verdict.detail),
                     verdict.reason,
                 ));
             }
@@ -1656,12 +1656,12 @@ impl AutomationService {
         {
             if actor_user_id.is_some() {
                 return Some((
-                    "you are not allowed to trigger this automation's assignee agent".to_string(),
+                    "you are not allowed to trigger this automation's executor agent".to_string(),
                     ReasonCode::InvocationNotAllowed,
                 ));
             }
             return Some((
-                "automation creator lacks access to private assignee agent".to_string(),
+                "automation creator lacks access to private executor agent".to_string(),
                 ReasonCode::InvocationNotAllowed,
             ));
         }
@@ -2097,8 +2097,12 @@ impl AutomationService {
             Some(description.as_str()),
             "todo",
             "none",
-            Some(ap.assignee_type.as_str()),
-            Some(ap.assignee_id),
+            None,
+            None,
+            Some(ap.executor_type.as_str()),
+            Some(ap.executor_id),
+            None,
+            None,
             "agent",
             leader.id,
             None,
@@ -2182,7 +2186,7 @@ impl AutomationService {
         // attribution resolves direct_human to the triggering member
         // (PB-4302 §4); automation takes the plain paths where the
         // automation-origin issue resolves to rule_owner.
-        if ap.assignee_type == "team" {
+        if ap.executor_type == "team" {
             if !self
                 .automation_admit_invoke(ap, &leader, actor_user_id)
                 .await
@@ -2194,7 +2198,7 @@ impl AutomationService {
                     .enqueue_task_for_team_leader_with_handoff(
                         &issue,
                         leader.id,
-                        ap.assignee_id,
+                        ap.executor_id,
                         "",
                         Some(actor),
                     )
@@ -2202,7 +2206,7 @@ impl AutomationService {
                     .map_err(|e| de("enqueue team leader task", e))?;
             } else {
                 self.task_svc
-                    .enqueue_task_for_team_leader(&issue, leader.id, ap.assignee_id, None)
+                    .enqueue_task_for_team_leader(&issue, leader.id, ap.executor_id, None)
                     .await
                     .map_err(|e| de("enqueue team leader task", e))?;
             }
@@ -2220,7 +2224,7 @@ impl AutomationService {
 
         tracing::info!(
             automation_id = %ap.id,
-            assignee_type = %ap.assignee_type,
+            executor_type = %ap.executor_type,
             issue_id = %issue.id,
             leader_id = %leader.id,
             run_id = %run.id,
@@ -2325,8 +2329,8 @@ impl AutomationService {
             Err(err) if err.is_not_found() || err.is_team_archived() => {
                 return Err(DispatchError::Skipped(ErrDispatchSkipped {
                     reason: format_admission_reason(
-                        &ap.assignee_type,
-                        "assignee no longer resolvable",
+                        &ap.executor_type,
+                        "executor no longer resolvable",
                     ),
                     code: ReasonCode::TargetUnavailable,
                 }));
@@ -2338,21 +2342,21 @@ impl AutomationService {
             .map_err(|e| de("check agent readiness", e))?;
         if !verdict.ready() {
             return Err(DispatchError::Skipped(ErrDispatchSkipped {
-                reason: format_admission_reason(&ap.assignee_type, &verdict.detail),
+                reason: format_admission_reason(&ap.executor_type, &verdict.detail),
                 code: verdict.reason,
             }));
         }
 
         // Team invocation gate re-check (admission principal = manual clicker,
         // else creator).
-        if ap.assignee_type == "team"
+        if ap.executor_type == "team"
             && !self
                 .automation_admit_invoke(ap, &agent, actor_user_id)
                 .await
         {
             return Err(DispatchError::Skipped(ErrDispatchSkipped {
                 reason: format_admission_reason(
-                    &ap.assignee_type,
+                    &ap.executor_type,
                     "not allowed to invoke private team leader",
                 ),
                 code: ReasonCode::InvocationNotAllowed,
@@ -2390,7 +2394,7 @@ impl AutomationService {
             .map_err(|_| {
                 DispatchError::Skipped(ErrDispatchSkipped {
                     reason: format_admission_reason(
-                        &ap.assignee_type,
+                        &ap.executor_type,
                         "workspace fail-closed: no accountable human for automation run",
                     ),
                     code: ReasonCode::AttributionBlocked,
@@ -2712,7 +2716,7 @@ impl AutomationService {
     /// Repairs the create_issue crash window after the issue/run transaction
     /// commits but before the ordinary task enqueue does. Any existing issue
     /// task proves ownership already moved downstream; otherwise enqueue via
-    /// exactly the assignee path used by the original dispatch.
+    /// exactly the executor path used by the original dispatch.
     async fn ensure_webhook_create_issue_task(
         &self,
         automation: &Automation,
@@ -2738,12 +2742,12 @@ impl AutomationService {
         if effective != "todo" && effective != "in_progress" {
             return Ok(());
         }
-        if automation.assignee_type == "team" {
+        if automation.executor_type == "team" {
             let (leader, _) = self.resolve_leader(automation).await.map_err(|e| {
                 anyhow::anyhow!("dispatch for webhook delivery: resolve team leader: {e}")
             })?;
             self.task_svc
-                .enqueue_task_for_team_leader(&issue, leader.id, automation.assignee_id, None)
+                .enqueue_task_for_team_leader(&issue, leader.id, automation.executor_id, None)
                 .await
                 .map_err(|e| {
                     anyhow::anyhow!("dispatch for webhook delivery: repair team task: {e}")
@@ -3024,7 +3028,7 @@ mod dispatch_contract_tests {
         .expect("create contract agent");
         let automation_id: Uuid = sqlx::query_scalar(
             "INSERT INTO automation \
-             (workspace_id, title, assignee_type, assignee_id, status, execution_mode, \
+             (workspace_id, title, executor_type, executor_id, status, execution_mode, \
               issue_title_template, created_by_type, created_by_id) \
              VALUES ($1, 'recurring work', 'agent', $2, 'active', 'create_issue', \
                      'Recurring Work', 'member', $3) RETURNING id",

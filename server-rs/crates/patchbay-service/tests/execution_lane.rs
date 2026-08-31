@@ -86,7 +86,7 @@ impl Fixture {
             (second_issue_id, 2, "execution lane second issue"),
         ] {
             sqlx::query(
-                "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number) \
+                "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, executor_type, executor_id, number) \
                  VALUES ($1, $2, $3, 'todo', 'none', 'member', $4, 'agent', $5, $6)",
             )
             .bind(id)

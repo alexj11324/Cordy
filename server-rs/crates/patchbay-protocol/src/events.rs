@@ -37,6 +37,8 @@ pub const EVENT_TASK_QUEUED: &str = "task:queued"; // ∅ → queued (enqueue / 
 pub const EVENT_TASK_DISPATCH: &str = "task:dispatch"; // queued → dispatched (daemon claim)
 pub const EVENT_TASK_RUNNING: &str = "task:running"; // dispatched → running (daemon started)
 pub const EVENT_TASK_WAITING_LOCAL_DIRECTORY: &str = "task:waiting_local_directory"; // dispatched → waiting_local_directory
+pub const EVENT_TASK_WAITING_CAPACITY: &str = "task:waiting_capacity"; // queued/dispatched → waiting_capacity
+pub const EVENT_TASK_AVAILABLE: &str = "task:available"; // waiting_capacity → queued
 pub const EVENT_TASK_PROGRESS: &str = "task:progress";
 pub const EVENT_TASK_COMPLETED: &str = "task:completed"; // running → completed
 pub const EVENT_TASK_FAILED: &str = "task:failed"; // running → failed
@@ -217,6 +219,8 @@ mod tests {
             EVENT_TASK_WAITING_LOCAL_DIRECTORY,
             "task:waiting_local_directory"
         );
+        assert_eq!(EVENT_TASK_WAITING_CAPACITY, "task:waiting_capacity");
+        assert_eq!(EVENT_TASK_AVAILABLE, "task:available");
         assert_eq!(EVENT_CHAT_QUICK_ACTIONS, "chat:quick_actions");
         assert_eq!(EVENT_CHAT_CANCEL_FINALIZED, "chat:cancel_finalized");
         assert_eq!(EVENT_CHANNEL_CREATED, "channel:created");

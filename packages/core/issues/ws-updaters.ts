@@ -397,8 +397,8 @@ export function onIssueCreated(
   qc.invalidateQueries({ queryKey: issueKeys.myAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.flatAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.tableAll(wsId) });
-  qc.invalidateQueries({ queryKey: issueKeys.assigneeGroupsAll(wsId) });
-  qc.invalidateQueries({ queryKey: issueKeys.myAssigneeGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.executorGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.myExecutorGroupsAll(wsId) });
   if (issue.project_id) {
     qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
   }
@@ -417,13 +417,14 @@ export function onIssueUpdated(
   qc: QueryClient,
   wsId: string,
   issue: Partial<Issue> & { id: string },
-  // assigneeChanged / statusChanged / projectChanged come from the server's
+  // ownerChanged / executorChanged / statusChanged / projectChanged come from the server's
   // issue:updated flags — authoritative "did this write move a membership
   // dimension" signals. They feed the coordinator's changed-dims input so a
   // non-membership change (title / position / priority / label) keeps every
   // loaded list in place instead of refetching.
   meta: {
-    assigneeChanged?: boolean;
+    ownerChanged?: boolean;
+    executorChanged?: boolean;
     statusChanged?: boolean;
     projectChanged?: boolean;
   } = {},
@@ -464,13 +465,19 @@ export function onIssueUpdated(
   // coordinator pass, which never depends on these flags.
   const oldProjectId = detailData?.project_id ?? cachedIssue?.project_id ?? null;
   const changed = {
-    assignee:
-      meta.assigneeChanged ??
+    owner:
+      meta.ownerChanged ??
       (cachedIssue !== undefined &&
-        ((issue.assignee_id !== undefined &&
-          issue.assignee_id !== cachedIssue.assignee_id) ||
-          (issue.assignee_type !== undefined &&
-            issue.assignee_type !== cachedIssue.assignee_type))),
+        ((issue.owner_id !== undefined && issue.owner_id !== cachedIssue.owner_id) ||
+          (issue.owner_type !== undefined &&
+            issue.owner_type !== cachedIssue.owner_type))),
+    executor:
+      meta.executorChanged ??
+      (cachedIssue !== undefined &&
+        ((issue.executor_id !== undefined &&
+          issue.executor_id !== cachedIssue.executor_id) ||
+          (issue.executor_type !== undefined &&
+            issue.executor_type !== cachedIssue.executor_type))),
     project:
       meta.projectChanged ??
       (issue.project_id !== undefined && (issue.project_id ?? null) !== oldProjectId),
@@ -608,8 +615,8 @@ export function invalidateIssueLabelDerivatives(qc: QueryClient, wsId: string) {
   // child lanes pick up the new label set.
   qc.invalidateQueries({ queryKey: issueKeys.childrenByParentsAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.myAll(wsId) });
-  qc.invalidateQueries({ queryKey: issueKeys.assigneeGroupsAll(wsId) });
-  qc.invalidateQueries({ queryKey: issueKeys.myAssigneeGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.executorGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.myExecutorGroupsAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.tableAll(wsId) });
   qc.invalidateQueries({
     queryKey: issueKeys.flatAll(wsId),
@@ -685,11 +692,11 @@ export function onIssuePropertiesChanged(
   qc.invalidateQueries({ queryKey: issueKeys.childrenAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.childrenByParentsAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.myAll(wsId) });
-  // Plain assignee-group caches are never patched in place (their bucket
+  // Plain executor-group caches are never patched in place (their bucket
   // shape differs) and would otherwise hold stale chips forever under
   // staleTime:Infinity (clean-room review F2).
-  qc.invalidateQueries({ queryKey: issueKeys.assigneeGroupsAll(wsId) });
-  qc.invalidateQueries({ queryKey: issueKeys.myAssigneeGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.executorGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.myExecutorGroupsAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.tableAll(wsId) });
   invalidatePropertyWindowQueries(qc, wsId);
   // A property write also bumps issue.updated_at server-side
@@ -759,7 +766,7 @@ export function onIssueDeleted(
   issueId: string,
 ) {
   cleanupDeletedIssueCaches(qc, wsId, issueId);
-  qc.invalidateQueries({ queryKey: issueKeys.assigneeGroupsAll(wsId) });
-  qc.invalidateQueries({ queryKey: issueKeys.myAssigneeGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.executorGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.myExecutorGroupsAll(wsId) });
   qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
 }

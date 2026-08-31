@@ -514,14 +514,14 @@ pub fn chat_message_sent(
 
 /// Describes the automation's configured target. `agent_id` is always the agent
 /// that will actually execute the work (the team leader for team automations);
-/// `assignee_type`/`team_id` record the original configuration so reports can
+/// `executor_type`/`team_id` record the original configuration so reports can
 /// tell a solo-agent automation apart from a team one.
 #[derive(Debug, Clone, Default)]
-pub struct AutomationAssignee {
+pub struct AutomationExecutor {
     pub agent_id: String,
     /// "agent" or "team".
-    pub assignee_type: String,
-    /// Empty when assignee_type != "team".
+    pub executor_type: String,
+    /// Empty when executor_type != "team".
     pub team_id: String,
 }
 
@@ -531,7 +531,7 @@ pub fn automation_run_started(
     automation_id: &str,
     run_id: &str,
     cadence: &str,
-    assignee: &AutomationAssignee,
+    executor: &AutomationExecutor,
     trigger_source: &str,
 ) -> Event {
     automation_run_event(
@@ -541,7 +541,7 @@ pub fn automation_run_started(
         automation_id,
         run_id,
         cadence,
-        assignee,
+        executor,
         trigger_source,
         None,
     )
@@ -554,7 +554,7 @@ pub fn automation_run_completed(
     automation_id: &str,
     run_id: &str,
     cadence: &str,
-    assignee: &AutomationAssignee,
+    executor: &AutomationExecutor,
     trigger_source: &str,
     duration_ms: i64,
 ) -> Event {
@@ -565,7 +565,7 @@ pub fn automation_run_completed(
         automation_id,
         run_id,
         cadence,
-        assignee,
+        executor,
         trigger_source,
         Some(Props::from_iter([(
             "duration_ms".to_string(),
@@ -581,7 +581,7 @@ pub fn automation_run_failed(
     automation_id: &str,
     run_id: &str,
     cadence: &str,
-    assignee: &AutomationAssignee,
+    executor: &AutomationExecutor,
     trigger_source: &str,
     failure_reason: &str,
     error_type: &str,
@@ -595,7 +595,7 @@ pub fn automation_run_failed(
         automation_id,
         run_id,
         cadence,
-        assignee,
+        executor,
         trigger_source,
         Some(Props::from_iter([
             ("duration_ms".to_string(), n(duration_ms)),
@@ -991,7 +991,7 @@ fn automation_run_event(
     automation_id: &str,
     run_id: &str,
     cadence: &str,
-    assignee: &AutomationAssignee,
+    executor: &AutomationExecutor,
     trigger_source: &str,
     extra: Option<Props>,
 ) -> Event {
@@ -1006,18 +1006,18 @@ fn automation_run_event(
         &CoreProperties {
             user_id: non_agent_user_id(actor_id),
             workspace_id: workspace_id.to_string(),
-            agent_id: assignee.agent_id.clone(),
+            agent_id: executor.agent_id.clone(),
             automation_run_id: run_id.to_string(),
             source: SOURCE_AUTOMATION.to_string(),
             ..Default::default()
         },
     );
     props.insert("automation_id".to_string(), s(automation_id));
-    if !assignee.assignee_type.is_empty() {
-        props.insert("assignee_type".to_string(), s(&assignee.assignee_type));
+    if !executor.executor_type.is_empty() {
+        props.insert("executor_type".to_string(), s(&executor.executor_type));
     }
-    if !assignee.team_id.is_empty() {
-        props.insert("team_id".to_string(), s(&assignee.team_id));
+    if !executor.team_id.is_empty() {
+        props.insert("team_id".to_string(), s(&executor.team_id));
     }
     Event {
         name: name.to_string(),
@@ -1180,19 +1180,19 @@ mod tests {
 
     #[test]
     fn automation_run_events_shape() {
-        let assignee = AutomationAssignee {
+        let executor = AutomationExecutor {
             agent_id: "ag".into(),
-            assignee_type: "team".into(),
+            executor_type: "team".into(),
             team_id: "team".into(),
         };
         let started =
-            automation_run_started("u", "ws", "ap", "run", "daily", &assignee, "schedule");
+            automation_run_started("u", "ws", "ap", "run", "daily", &executor, "schedule");
         let p = started.properties.as_ref().unwrap();
         assert_eq!(p["trigger_source"], json!("schedule"));
         assert_eq!(p["trigger_kind"], json!("schedule"));
         assert_eq!(p["cadence"], json!("daily"));
         assert_eq!(p["automation_id"], json!("ap"));
-        assert_eq!(p["assignee_type"], json!("team"));
+        assert_eq!(p["executor_type"], json!("team"));
         assert_eq!(p["team_id"], json!("team"));
         assert_eq!(p["source"], json!("automation"));
         assert!(!p.contains_key("duration_ms"));
@@ -1203,7 +1203,7 @@ mod tests {
             "ap",
             "run",
             "",
-            &assignee,
+            &executor,
             "webhook",
             "timeout",
             "TimeoutError",

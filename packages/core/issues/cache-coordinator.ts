@@ -77,7 +77,7 @@ export type IssueTableRowCache = IssueTableRowsResponse;
  *
  * The detail cache and the Inbox `issue_status` projection are patched in the
  * same pass. Aggregate projections that cannot be recomputed from one entity
- * (assignee-grouped boards, Gantt, project metrics) go through
+ * (executor-grouped boards, Gantt, project metrics) go through
  * {@link invalidateIssueDerivatives}.
  */
 
@@ -127,7 +127,7 @@ function listContractFromKey(key: QueryKey): {
  *
  * `getQueriesData` matches a key PREFIX, and every issue-surface prefix also
  * covers sibling queries that hold a different shape: `myAll` covers the
- * assignee-grouped caches, `tableAll` covers the grouped (infinite) and facet
+ * executor-grouped caches, `tableAll` covers the grouped (infinite) and facet
  * caches next to the row pages, `flatAll` covers the export window. Reading
  * `data.rows` / `data.pages` / `data.byStatus` off those siblings throws
  * ("Cannot read properties of undefined"), and inside a mutation's onSuccess
@@ -228,8 +228,8 @@ const issueActivityFields = [
   "description",
   "status",
   "priority",
-  "assignee_type",
-  "assignee_id",
+  "executor_type",
+  "executor_id",
   "reviewer_type",
   "reviewer_id",
   "start_date",
@@ -273,8 +273,8 @@ function flatWindowNeedsReconcile(
     return true;
   }
   if (
-    changed.assignee &&
-    ((filter.assignee_filters?.length ?? 0) > 0 || filter.include_no_assignee)
+    changed.executor &&
+    ((filter.executor_filters?.length ?? 0) > 0 || filter.include_no_executor)
   ) {
     return true;
   }
@@ -422,7 +422,7 @@ export function applyIssueChange(
     if (wasMember === false && isMember === false) continue;
 
     // Certain count arithmetic — branch on the membership OUTCOME, never on
-    // which field changed, so status / assignee / project (and future team)
+    // which field changed, so status / executor / project (and future team)
     // all flow through the same two cases. wasMember === true implies a
     // baseIssue exists, so the old status is known.
     if (wasMember === true && baseIssue) {
@@ -507,7 +507,7 @@ export function applyIssueChange(
   // counts and ordering still reconcile through the existing tableAll
   // invalidation on settle. The entity snapshot inside every loaded row is
   // determinate, though: patch it immediately so inline edits never flash the
-  // old title/status/assignee while the authoritative branch refetch runs.
+  // old title/status/executor while the authoritative branch refetch runs.
   for (const [key, data] of tableRowEntries(qc, wsId)) {
     let found: Issue | undefined;
     const rows = data.rows.map((row) => {
@@ -584,7 +584,7 @@ export function rollbackIssueChange(
 
 /**
  * Refresh the aggregate projections a single-entity patch cannot recompute:
- * assignee-grouped boards (regrouping is server logic), every Project Gantt
+ * executor-grouped boards (regrouping is server logic), every Project Gantt
  * (schedule membership + row mirrors), and project metrics when the change
  * could shift per-project counts.
  */
@@ -593,8 +593,8 @@ export function invalidateIssueDerivatives(
   wsId: string,
   opts: { statusOrProjectChanged: boolean },
 ) {
-  qc.invalidateQueries({ queryKey: issueKeys.assigneeGroupsAll(wsId) });
-  qc.invalidateQueries({ queryKey: issueKeys.myAssigneeGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.executorGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.myExecutorGroupsAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.projectGanttAll(wsId) });
   if (opts.statusOrProjectChanged) {
     qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
@@ -628,7 +628,7 @@ function queryKeyHasSort(key: QueryKey, field: string): boolean {
  * `comment:created` (PB-5009) and the property/metadata WS events, all of
  * which advance the issue's `updated_at` server-side but bypass the
  * coordinator's field-diff path. Covers status boards, flat tables, AND
- * assignee-grouped boards (workspace + My Issues); only `updated_at`-sorted
+ * executor-grouped boards (workspace + My Issues); only `updated_at`-sorted
  * keys are touched. The refetch is authoritative (server order + tie-breaks),
  * which also surfaces a touched card sitting beyond the loaded window.
  */

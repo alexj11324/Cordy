@@ -18,8 +18,8 @@ struct IssueFields {
     workspace_id: Uuid,
     creator_type: String,
     creator_id: Uuid,
-    assignee_type: Option<String>,
-    assignee_id: Option<Uuid>,
+    executor_type: Option<String>,
+    executor_id: Option<Uuid>,
     reviewer_type: Option<String>,
     reviewer_id: Option<Uuid>,
     description: Option<String>,
@@ -56,7 +56,7 @@ async fn handle_issue_created(pool: &PgPool, bus: &Bus, event: &Event) -> anyhow
         return Ok(());
     };
 
-    // Go registration order: creator, direct assignee, mentions, delegated
+    // Go registration order: creator, direct executor, mentions, delegated
     // human. Keeping them in one task also makes notification listeners able
     // to follow this listener later without reordering these writes.
     add_subscriber(
@@ -69,7 +69,7 @@ async fn handle_issue_created(pool: &PgPool, bus: &Bus, event: &Event) -> anyhow
         "creator",
     )
     .await?;
-    if let (Some(user_type), Some(user_id)) = (fields.assignee_type.as_deref(), fields.assignee_id)
+    if let (Some(user_type), Some(user_id)) = (fields.executor_type.as_deref(), fields.executor_id)
     {
         if is_assignment_recipient(user_type)
             && !(user_type == fields.creator_type && user_id == fields.creator_id)
@@ -81,7 +81,7 @@ async fn handle_issue_created(pool: &PgPool, bus: &Bus, event: &Event) -> anyhow
                 fields.id,
                 user_type,
                 user_id,
-                "assignee",
+                "executor",
             )
             .await?;
         }
@@ -123,9 +123,9 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) -> anyhow
         return Ok(());
     };
 
-    if flag(&event.payload, "assignee_changed") {
+    if flag(&event.payload, "executor_changed") {
         if let (Some(user_type), Some(user_id)) =
-            (fields.assignee_type.as_deref(), fields.assignee_id)
+            (fields.executor_type.as_deref(), fields.executor_id)
         {
             if is_assignment_recipient(user_type) {
                 add_subscriber(
@@ -135,7 +135,7 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) -> anyhow
                     fields.id,
                     user_type,
                     user_id,
-                    "assignee",
+                    "executor",
                 )
                 .await?;
             }
@@ -192,19 +192,19 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) -> anyhow
                     fields.id,
                     user_type,
                     user_id,
-                    "assignee",
+                    "executor",
                 )
                 .await?;
             }
         }
         let mut details = Map::new();
         let previous_type_key = if review_handoff {
-            "prev_assignee_type"
+            "prev_executor_type"
         } else {
             "prev_reviewer_type"
         };
         let previous_id_key = if review_handoff {
-            "prev_assignee_id"
+            "prev_executor_id"
         } else {
             "prev_reviewer_id"
         };
@@ -256,30 +256,30 @@ async fn handle_issue_updated(pool: &PgPool, bus: &Bus, event: &Event) -> anyhow
         )
         .await?;
     }
-    if flag(&event.payload, "assignee_changed") && !review_handoff {
+    if flag(&event.payload, "executor_changed") && !review_handoff {
         let mut details = Map::new();
         insert_optional(
             &mut details,
             "from_type",
-            event.payload.get("prev_assignee_type"),
+            event.payload.get("prev_executor_type"),
         );
         insert_optional(
             &mut details,
             "from_id",
-            event.payload.get("prev_assignee_id"),
+            event.payload.get("prev_executor_id"),
         );
-        insert_optional_str(&mut details, "to_type", fields.assignee_type.as_deref());
+        insert_optional_str(&mut details, "to_type", fields.executor_type.as_deref());
         insert_optional_str(
             &mut details,
             "to_id",
-            fields.assignee_id.as_ref().map(Uuid::to_string).as_deref(),
+            fields.executor_id.as_ref().map(Uuid::to_string).as_deref(),
         );
         create_activity(
             pool,
             bus,
             event,
             &fields,
-            "assignee_changed",
+            "executor_changed",
             Value::Object(details),
         )
         .await?;
@@ -575,8 +575,8 @@ fn scoped_issue(event: &Event) -> Option<IssueFields> {
         workspace_id,
         creator_type: string(issue, "creator_type"),
         creator_id: uuid(issue, "creator_id")?,
-        assignee_type: optional_string(issue, "assignee_type"),
-        assignee_id: uuid(issue, "assignee_id"),
+        executor_type: optional_string(issue, "executor_type"),
+        executor_id: uuid(issue, "executor_id"),
         reviewer_type: optional_string(issue, "reviewer_type"),
         reviewer_id: uuid(issue, "reviewer_id"),
         description: optional_string(issue, "description"),
@@ -732,7 +732,7 @@ mod tests {
     }
 
     #[test]
-    fn only_direct_assignee_types_are_subscriber_recipients() {
+    fn only_direct_executor_types_are_subscriber_recipients() {
         assert!(is_assignment_recipient("member"));
         assert!(is_assignment_recipient("agent"));
         assert!(!is_assignment_recipient("team"));

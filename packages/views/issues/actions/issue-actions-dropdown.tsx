@@ -12,7 +12,7 @@ import {
   IssueActionsMenuItems,
   dropdownPrimitives,
 } from "./issue-actions-menu-items";
-import { AssigneePicker } from "../components/pickers";
+import { ExecutorPicker } from "../components/pickers";
 
 interface IssueActionsDropdownProps {
   issue: Issue;
@@ -31,7 +31,7 @@ export function IssueActionsDropdown({
   onDeletedFallbackPath,
 }: IssueActionsDropdownProps) {
   const actions = useIssueActions(issue);
-  const [assigneeOpen, setAssigneeOpen] = useState(false);
+  const [executorOpen, setExecutorOpen] = useState(false);
 
   // The outer `relative inline-flex` is the picker's anchor box: the
   // absolute, pointer-events-none span inside `triggerRender` fills it, so
@@ -46,7 +46,7 @@ export function IssueActionsDropdown({
             issue={issue}
             actions={actions}
             primitives={dropdownPrimitives}
-            onOpenAssignee={() => setAssigneeOpen(true)}
+            onOpenExecutor={() => setExecutorOpen(true)}
             onDeletedFallbackPath={onDeletedFallbackPath}
           />
         </DropdownMenuContent>
@@ -54,13 +54,13 @@ export function IssueActionsDropdown({
       {/* Mount the picker only once the user actually opens it. Otherwise
           every row in a list/board would subscribe to members/agents/teams
           /frequency queries on mount, multiplying memory + render cost. */}
-      {assigneeOpen && (
-        <AssigneePicker
-          assigneeType={issue.assignee_type}
-          assigneeId={issue.assignee_id}
+      {executorOpen && (
+        <ExecutorPicker
+          executorType={issue.executor_type}
+          executorId={issue.executor_id}
           onUpdate={actions.updateField}
-          open={assigneeOpen}
-          onOpenChange={setAssigneeOpen}
+          open={executorOpen}
+          onOpenChange={setExecutorOpen}
           triggerRender={
             <span
               aria-hidden

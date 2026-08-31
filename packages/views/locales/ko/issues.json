@@ -55,11 +55,11 @@
     "search_status": "상태 검색...",
     "no_results": "결과 없음",
     "no_labels": "아직 라벨이 없습니다",
-    "no_assignee": "담당자 없음",
+    "no_executor": "담당자 없음",
     "no_project": "프로젝트 없음",
     "section_status": "상태",
     "section_priority": "우선순위",
-    "section_assignee": "담당자",
+    "section_executor": "담당자",
     "section_creator": "생성자",
     "section_project": "프로젝트",
     "section_label": "라벨",
@@ -97,7 +97,7 @@
     "ascending_title": "오름차순",
     "descending_title": "내림차순",
     "group_status": "상태",
-    "group_assignee": "담당자",
+    "group_executor": "담당자",
     "group_parent": "상위 태스크",
     "group_project": "프로젝트",
     "sort_manual": "수동",
@@ -110,7 +110,7 @@
     "sort_title": "제목",
     "card_priority": "우선순위",
     "card_description": "설명",
-    "card_assignee": "담당자",
+    "card_executor": "담당자",
     "card_start_date": "시작일",
     "card_due_date": "마감일",
     "card_project": "프로젝트",
@@ -147,7 +147,7 @@
     "edge_satisfied": "충족됨",
     "edge_blocked": "차단됨",
     "canvas_label": "종속성 그래프 캔버스",
-    "node_label": "{{identifier}} {{title}} — 상태 {{status}} — 준비 상태 {{readiness}} — 담당자 {{assignee}} — 승인 기준 {{acceptance}}개",
+    "node_label": "{{identifier}} {{title}} — 상태 {{status}} — 준비 상태 {{readiness}} — 담당자 {{executor}} — 승인 기준 {{acceptance}}개",
     "filter": {
       "all": "전체",
       "ready": "준비",
@@ -179,7 +179,7 @@
     "dependent_task": "하위 작업",
     "readiness": "준비 상태",
     "prerequisites": "개 선행 조건 충족",
-    "assignee": "담당자",
+    "executor": "담당자",
     "unassigned": "미할당",
     "edge_label": "{{from}}에서 {{to}}로의 종속성",
     "edge_inspector": "종속성 게이트",
@@ -239,7 +239,7 @@
       "identifier": "식별자",
       "status": "상태",
       "priority": "우선순위",
-      "assignee": "담당자",
+      "executor": "담당자",
       "labels": "라벨",
       "project": "프로젝트",
       "start_date": "시작일",
@@ -299,7 +299,7 @@
     "no_parent": "상위 태스크 없음",
     "other_parents": "기타 상위 태스크",
     "no_project": "프로젝트 없음",
-    "no_assignee": "담당자 없음",
+    "no_executor": "담당자 없음",
     "open_parent": "상위 태스크 열기",
     "toggle_collapse": "레인 접기/펼치기"
   },
@@ -400,7 +400,8 @@
     "prop_status": "상태",
     "prop_priority": "우선순위",
     "prop_stage": "단계",
-    "prop_assignee": "담당자",
+    "prop_owner": "책임자",
+    "prop_executor": "실행자",
     "prop_reviewer": "리뷰어",
     "handoff_history": "인계 기록",
     "handoff_stack_aria": "인계 체인 {{count}}명",
@@ -476,8 +477,8 @@
     "created": "이 태스크를 만들었습니다",
     "self_assigned": "이 태스크를 본인에게 할당했습니다",
     "assigned_to": "{{name}}님에게 할당했습니다",
-    "removed_assignee": "담당자를 제거했습니다",
-    "changed_assignee": "담당자를 변경했습니다",
+    "removed_executor": "담당자를 제거했습니다",
+    "changed_executor": "담당자를 변경했습니다",
     "review_handoff": "리뷰를 {{from}}에서 {{to}}에게 인계했습니다",
     "review_handoff_short": "리뷰 인계",
     "status_changed": "상태를 {{from}}에서 {{to}}로 변경했습니다",
@@ -537,7 +538,7 @@
     "reply_count_other": "답글 {{count}}개",
     "leave_comment_placeholder": "댓글 남기기...",
     "send_tooltip": "보내기",
-    "trigger_source_issue_assignee": "담당자",
+    "trigger_source_issue_executor": "담당자",
     "trigger_source_mention_agent": "@멘션",
     "trigger_source_mention_team_leader": "Team",
     "trigger_source_unknown": "트리거",
@@ -656,6 +657,7 @@
     "status_deferred": "재시도 중",
     "status_dispatched": "시작 중",
     "status_waiting_local_directory": "로컬 디렉터리 대기 중",
+    "status_waiting_capacity": "모델 용량 대기 중",
     "status_running": "작업 중",
     "status_completed": "완료됨",
     "status_failed": "실패함",
@@ -709,10 +711,10 @@
   },
   "batch": {
     "selected": "{{count}}개 선택됨",
-    "selected_owners": "선택한 담당자",
+    "selected_executors": "선택한 실행자",
     "status": "상태",
     "priority": "우선순위",
-    "assignee": "담당자",
+    "executor": "담당자",
     "delete": "삭제",
     "update_success_other": "태스크 {{count}}개를 업데이트했습니다",
     "update_failed": "태스크를 업데이트하지 못했습니다",
@@ -730,7 +732,7 @@
   "actions": {
     "status": "상태",
     "priority": "우선순위",
-    "assignee": "담당자",
+    "executor": "담당자",
     "start_date": "시작일",
     "start_today": "오늘",
     "start_tomorrow": "내일",
@@ -757,6 +759,10 @@
     "delete_issue": "태스크 삭제"
   },
   "pickers": {
+    "owner": {
+      "trigger_unassigned": "담당자 없음",
+      "search_placeholder": "멤버 검색..."
+    },
     "custom_property": {
       "empty": "비어 있음",
       "none": "값 없음",
@@ -773,7 +779,7 @@
     },
     "filter_options_aria": "필터 옵션",
     "no_results": "결과 없음",
-    "assignee": {
+    "executor": {
       "trigger_unassigned": "담당자 없음",
       "search_placeholder": "담당자 지정...",
       "members_group": "멤버",
@@ -781,6 +787,10 @@
       "teams_group": "팀",
       "agent_runtime_required": "작업을 할당하기 전에 이 에이전트에 기기를 연결하세요",
       "team_runtime_required": "작업을 할당하기 전에 이 팀의 리더에 기기를 연결하세요"
+    },
+    "reviewer": {
+      "trigger_unassigned": "리뷰어 없음",
+      "search_placeholder": "리뷰어 검색..."
     },
     "start_date": {
       "trigger_label": "시작일",

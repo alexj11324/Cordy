@@ -45,17 +45,17 @@ pub(super) fn format_automation_table(
         "TITLE".into(),
         "STATUS".into(),
         "MODE".into(),
-        "ASSIGNEE".into(),
+        "EXECUTOR".into(),
         "LAST_RUN".into(),
     ]];
     rows.extend(automations.iter().map(|automation| {
-        let assignee_id = value_string(automation, "assignee_id");
+        let executor_id = value_string(automation, "executor_id");
         vec![
             display_id(&value_string(automation, "id"), full_id),
             value_string(automation, "title"),
             value_string(automation, "status"),
             value_string(automation, "execution_mode"),
-            agents.get(&assignee_id).cloned().unwrap_or(assignee_id),
+            agents.get(&executor_id).cloned().unwrap_or(executor_id),
             value_string(automation, "last_run_at"),
         ]
     }));

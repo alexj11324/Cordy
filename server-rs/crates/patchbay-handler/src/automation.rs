@@ -226,16 +226,16 @@ fn automation_map(
         json!(automation.project_id.map(|id| id.to_string())),
     );
     value.insert(
-        "assignee_type".into(),
-        json!(if automation.assignee_type.is_empty() {
+        "executor_type".into(),
+        json!(if automation.executor_type.is_empty() {
             "agent"
         } else {
-            &automation.assignee_type
+            &automation.executor_type
         }),
     );
     value.insert(
-        "assignee_id".into(),
-        json!(automation.assignee_id.to_string()),
+        "executor_id".into(),
+        json!(automation.executor_id.to_string()),
     );
     value.insert("status".into(), json!(automation.status));
     value.insert("pause_reason".into(), json!(automation.pause_reason));
@@ -378,8 +378,8 @@ struct Pagination {
 
 fn rule_summary(automation: &Automation) -> Value {
     json!({
-        "assignee_type": automation.assignee_type,
-        "assignee_id": automation.assignee_id.to_string(),
+        "executor_type": automation.executor_type,
+        "executor_id": automation.executor_id.to_string(),
         "status": automation.status,
         "execution_mode": automation.execution_mode,
     })
@@ -516,8 +516,8 @@ struct CreateAutomationRequest {
     title: String,
     description: Option<String>,
     project_id: Option<String>,
-    assignee_type: Option<String>,
-    assignee_id: String,
+    executor_type: Option<String>,
+    executor_id: String,
     execution_mode: String,
     issue_title_template: Option<String>,
     #[serde(default)]
@@ -577,7 +577,7 @@ async fn validate_project(
     Ok(Some(id))
 }
 
-async fn validate_assignee(
+async fn validate_executor(
     state: &HandlerState,
     context: &WorkspaceContext,
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -593,25 +593,25 @@ async fn validate_assignee(
                 .map_err(|_| {
                     error_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to validate assignee",
+                        "failed to validate executor",
                     )
                 })?
                 .ok_or_else(|| {
                     error_response(
                         StatusCode::BAD_REQUEST,
-                        "assignee_id is not an agent in this workspace",
+                        "executor_id is not an agent in this workspace",
                     )
                 })?;
             if value.archived_at.is_some() {
                 return Err(error_response(
                     StatusCode::BAD_REQUEST,
-                    "assignee agent is archived",
+                    "executor agent is archived",
                 ));
             }
             if active && value.runtime_id.is_none() {
                 return Err(error_response(
                     StatusCode::BAD_REQUEST,
-                    "assignee agent has no runtime configured",
+                    "executor agent has no runtime configured",
                 ));
             }
         }
@@ -621,19 +621,19 @@ async fn validate_assignee(
                 .map_err(|_| {
                     error_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        "failed to validate assignee",
+                        "failed to validate executor",
                     )
                 })?
                 .ok_or_else(|| {
                     error_response(
                         StatusCode::BAD_REQUEST,
-                        "assignee_id is not a team in this workspace",
+                        "executor_id is not a team in this workspace",
                     )
                 })?;
             if value.archived_at.is_some() {
                 return Err(error_response(
                     StatusCode::BAD_REQUEST,
-                    "assignee team is archived",
+                    "executor team is archived",
                 ));
             }
             let leader = agent::lock_agent_for_automation_assignment(
@@ -667,7 +667,7 @@ async fn validate_assignee(
         _ => {
             return Err(error_response(
                 StatusCode::BAD_REQUEST,
-                "assignee_type must be agent or team",
+                "executor_type must be agent or team",
             ))
         }
     }
@@ -686,8 +686,8 @@ async fn create_automation(
     if req.title.is_empty() {
         return error_response(StatusCode::BAD_REQUEST, "title is required");
     }
-    if req.assignee_id.is_empty() {
-        return error_response(StatusCode::BAD_REQUEST, "assignee_id is required");
+    if req.executor_id.is_empty() {
+        return error_response(StatusCode::BAD_REQUEST, "executor_id is required");
     }
     if !matches!(req.execution_mode.as_str(), "create_issue" | "run_only") {
         return error_response(
@@ -705,12 +705,12 @@ async fn create_automation(
         Ok(v) => v,
         Err(r) => return r,
     };
-    let assignee_id = match parse_id(&req.assignee_id, "assignee_id") {
+    let executor_id = match parse_id(&req.executor_id, "executor_id") {
         Ok(v) => v,
         Err(r) => return r,
     };
-    let assignee_type = req
-        .assignee_type
+    let executor_type = req
+        .executor_type
         .as_deref()
         .filter(|v| !v.is_empty())
         .unwrap_or("agent");
@@ -731,12 +731,12 @@ async fn create_automation(
             )
         }
     };
-    if let Err(r) = validate_assignee(
+    if let Err(r) = validate_executor(
         &state,
         &context,
         &mut tx,
-        assignee_type,
-        assignee_id,
+        executor_type,
+        executor_id,
         workspace_id,
         true,
     )
@@ -745,11 +745,11 @@ async fn create_automation(
         return r;
     }
     let created = sqlx::query_as::<_, Automation>(r#"INSERT INTO automation
-        (workspace_id,title,description,project_id,assignee_type,assignee_id,status,execution_mode,issue_title_template,created_by_type,created_by_id)
+        (workspace_id,title,description,project_id,executor_type,executor_id,status,execution_mode,issue_title_template,created_by_type,created_by_id)
         VALUES ($1,$2,$3,$4,$5,$6,'active',$7,$8,'member',$9)
         RETURNING *"#)
-        .bind(workspace_id).bind(&req.title).bind(&req.description).bind(project_id).bind(assignee_type)
-        .bind(assignee_id).bind(&req.execution_mode).bind(&req.issue_title_template).bind(context.member.user_id)
+        .bind(workspace_id).bind(&req.title).bind(&req.description).bind(project_id).bind(executor_type)
+        .bind(executor_id).bind(&req.execution_mode).bind(&req.issue_title_template).bind(context.member.user_id)
         .fetch_one(&mut *tx).await;
     let automation = match created {
         Ok(v) => v,
@@ -865,26 +865,26 @@ async fn update_automation(
             )
         }
     };
-    let type_sent = raw.contains_key("assignee_type");
-    let id_sent = raw.contains_key("assignee_id");
-    let next_type = string("assignee_type")
+    let type_sent = raw.contains_key("executor_type");
+    let id_sent = raw.contains_key("executor_id");
+    let next_type = string("executor_type")
         .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| previous.assignee_type.clone());
+        .unwrap_or_else(|| previous.executor_type.clone());
     let next_id = if id_sent {
-        match raw.get("assignee_id").and_then(Value::as_str) {
-            Some(v) => match parse_id(v, "assignee_id") {
+        match raw.get("executor_id").and_then(Value::as_str) {
+            Some(v) => match parse_id(v, "executor_id") {
                 Ok(v) => v,
                 Err(r) => return r,
             },
-            None => return error_response(StatusCode::BAD_REQUEST, "assignee_id cannot be null"),
+            None => return error_response(StatusCode::BAD_REQUEST, "executor_id cannot be null"),
         }
     } else {
-        previous.assignee_id
+        previous.executor_id
     };
-    if type_sent && !id_sent && next_type != previous.assignee_type {
+    if type_sent && !id_sent && next_type != previous.executor_type {
         return error_response(
             StatusCode::BAD_REQUEST,
-            "assignee_id is required when changing assignee_type",
+            "executor_id is required when changing executor_type",
         );
     }
     let subscriber_values = if let Some(value) = raw.get("subscribers") {
@@ -909,7 +909,7 @@ async fn update_automation(
     };
     let active = status.as_deref().unwrap_or(&previous.status) == "active";
     if (type_sent || id_sent || (active && previous.status != "active"))
-        && validate_assignee(
+        && validate_executor(
             &state,
             &context,
             &mut tx,
@@ -923,7 +923,7 @@ async fn update_automation(
     {
         return error_response(
             StatusCode::BAD_REQUEST,
-            "assignee is not ready for automation execution",
+            "executor is not ready for automation execution",
         );
     }
     let locked_updated_at = sqlx::query_scalar::<_, chrono::DateTime<Utc>>(
@@ -951,7 +951,7 @@ async fn update_automation(
     }
     let updated = sqlx::query_as::<_, Automation>(r#"UPDATE automation SET
         title=COALESCE($2,title), description=CASE WHEN $3 THEN $4 ELSE description END,
-        project_id=CASE WHEN $5 THEN $6 ELSE project_id END, assignee_type=$7, assignee_id=$8,
+        project_id=CASE WHEN $5 THEN $6 ELSE project_id END, executor_type=$7, executor_id=$8,
         status=COALESCE($9,status), execution_mode=COALESCE($10,execution_mode),
         issue_title_template=CASE WHEN $11 THEN $12 ELSE issue_title_template END,
         pause_reason=CASE WHEN COALESCE($9,status)='active' THEN NULL ELSE pause_reason END, updated_at=now()
@@ -990,8 +990,8 @@ async fn update_automation(
             }
         }
     }
-    let substantive = previous.assignee_type != updated.assignee_type
-        || previous.assignee_id != updated.assignee_id
+    let substantive = previous.executor_type != updated.executor_type
+        || previous.executor_id != updated.executor_id
         || previous.status != updated.status
         || previous.execution_mode != updated.execution_mode
         || previous.description != updated.description

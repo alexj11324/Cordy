@@ -2,13 +2,16 @@ export type {
   Issue,
   IssueStatus,
   IssuePriority,
-  IssueAssigneeType,
+  IssueActorType,
+  IssueExecutorType,
+  IssueOwnerType,
+  IssueReviewerType,
   IssueMetadata,
   IssueMetadataValue,
   IssueReaction,
 } from "./issue";
 export type {
-  DependencyGraphAssignee,
+  DependencyGraphExecutor,
   DependencyGraphEdge,
   DependencyGraphNode,
   DependencyGraphNodeReadiness,
@@ -196,7 +199,7 @@ export {
 export type {
   QuickAction,
   QuickActionVisibility,
-  QuickActionAssigneeType,
+  QuickActionExecutorType,
   QuickActionStatus,
   CreateQuickActionRequest,
   UpdateQuickActionRequest,
@@ -207,7 +210,7 @@ export {
   QUICK_ACTION_TEMPLATE_TOKEN_RE,
   findQuickActionTemplateToken,
 } from "./quick-action";
-export type { TimelineEntry, AssigneeFrequencyEntry } from "./activity";
+export type { TimelineEntry, ExecutorFrequencyEntry } from "./activity";
 export type { IssueSubscriber } from "./subscriber";
 export type * from "./events";
 export type * from "./agent-thread";
@@ -354,7 +357,7 @@ export type {
   Automation,
   AutomationStatus,
   AutomationExecutionMode,
-  AutomationAssigneeType,
+  AutomationExecutorType,
   AutomationSubscriber,
   AutomationSubscriberInput,
   AutomationCollaborator,

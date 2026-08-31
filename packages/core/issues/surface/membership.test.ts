@@ -16,8 +16,12 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
     description: null,
     status: "todo",
     priority: "none",
-    assignee_type: "member",
-    assignee_id: "me",
+    owner_type: "member",
+    owner_id: "me",
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "me",
     parent_issue_id: null,
@@ -36,34 +40,34 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
 }
 
 describe("issueMatchesListFilter", () => {
-  it("judges assignee_id filters definitively", () => {
+  it("judges owner_id filters definitively", () => {
     const issue = makeIssue();
-    expect(issueMatchesListFilter(issue, "assigned", { assignee_id: "me" })).toBe(true);
-    expect(issueMatchesListFilter(issue, "assigned", { assignee_id: "bob" })).toBe(false);
+    expect(issueMatchesListFilter(issue, "assigned", { owner_id: "me" })).toBe(true);
+    expect(issueMatchesListFilter(issue, "assigned", { owner_id: "bob" })).toBe(false);
   });
 
   it("degrades to unknown when the entity is missing the filtered field", () => {
     expect(
-      issueMatchesListFilter({ title: "partial" }, "assigned", { assignee_id: "me" }),
+      issueMatchesListFilter({ title: "partial" }, "assigned", { owner_id: "me" }),
     ).toBe("unknown");
   });
 
-  it("judges assignee_types filters, treating unassigned as a definitive miss", () => {
+  it("judges owner and executor type filters independently", () => {
     expect(
       issueMatchesListFilter(makeIssue(), "workspace:members", {
-        assignee_types: ["member"],
+        owner_types: ["member"],
       }),
     ).toBe(true);
     expect(
-      issueMatchesListFilter(makeIssue({ assignee_type: "agent" }), "workspace:members", {
-        assignee_types: ["member"],
+      issueMatchesListFilter(makeIssue({ owner_type: null, owner_id: null }), "workspace:members", {
+        owner_types: ["member"],
       }),
     ).toBe(false);
     expect(
       issueMatchesListFilter(
-        makeIssue({ assignee_type: null, assignee_id: null }),
+        makeIssue({ executor_type: null, executor_id: null }),
         "workspace:agents",
-        { assignee_types: ["agent", "team"] },
+        { executor_types: ["agent", "team"] },
       ),
     ).toBe(false);
   });
@@ -107,13 +111,15 @@ describe("issueMatchesListFilter", () => {
 
 describe("issueChangedDims", () => {
   it("treats written membership fields as changed when no base is known", () => {
-    expect(issueChangedDims({ assignee_id: "bob", assignee_type: "member" })).toEqual({
-      assignee: true,
+    expect(issueChangedDims({ owner_id: "bob", owner_type: "member" })).toEqual({
+      owner: true,
+      executor: false,
       project: false,
       status: false,
     });
     expect(issueChangedDims({ project_id: null })).toEqual({
-      assignee: false,
+      owner: false,
+      executor: false,
       project: true,
       status: false,
     });
@@ -121,8 +127,9 @@ describe("issueChangedDims", () => {
 
   it("sharpens against a base entity — writing the same value changes nothing", () => {
     const base = makeIssue();
-    expect(issueChangedDims({ assignee_id: "me", assignee_type: "member" }, base)).toEqual({
-      assignee: false,
+    expect(issueChangedDims({ owner_id: "me", owner_type: "member" }, base)).toEqual({
+      owner: false,
+      executor: false,
       project: false,
       status: false,
     });
@@ -133,7 +140,8 @@ describe("issueChangedDims", () => {
 
   it("ignores non-membership fields", () => {
     expect(issueChangedDims({ title: "x", position: 9 })).toEqual({
-      assignee: false,
+      owner: false,
+      executor: false,
       project: false,
       status: false,
     });
@@ -141,29 +149,30 @@ describe("issueChangedDims", () => {
 });
 
 describe("listFilterDependsOn", () => {
-  const none = { assignee: false, project: false, status: false };
+  const none = { owner: false, executor: false, project: false, status: false };
 
-  it("my:all reacts to assignee changes only", () => {
-    expect(listFilterDependsOn("all", {}, { ...none, assignee: true })).toBe(true);
+  it("my:all reacts to owner and executor changes", () => {
+    expect(listFilterDependsOn("all", {}, { ...none, owner: true })).toBe(true);
+    expect(listFilterDependsOn("all", {}, { ...none, executor: true })).toBe(true);
     expect(listFilterDependsOn("all", {}, { ...none, project: true })).toBe(false);
   });
 
-  it("assignee-keyed filters react to assignee changes", () => {
+  it("role-keyed filters react to their own role changes", () => {
     expect(
-      listFilterDependsOn("assigned", { assignee_id: "me" }, { ...none, assignee: true }),
+      listFilterDependsOn("assigned", { owner_id: "me" }, { ...none, owner: true }),
     ).toBe(true);
     expect(
       listFilterDependsOn(
         "workspace:members",
-        { assignee_types: ["member"] },
-        { ...none, assignee: true },
+        { owner_types: ["member"] },
+        { ...none, owner: true },
       ),
     ).toBe(true);
     expect(
-      listFilterDependsOn("agents", { involves_user_id: "me" }, { ...none, assignee: true }),
+      listFilterDependsOn("agents", { involves_user_id: "me" }, { ...none, executor: true }),
     ).toBe(true);
     expect(
-      listFilterDependsOn("assigned", { assignee_id: "me" }, { ...none, project: true }),
+      listFilterDependsOn("assigned", { owner_id: "me" }, { ...none, project: true }),
     ).toBe(false);
   });
 
@@ -172,7 +181,7 @@ describe("listFilterDependsOn", () => {
       listFilterDependsOn("project:p1", { project_id: "p1" }, { ...none, project: true }),
     ).toBe(true);
     expect(
-      listFilterDependsOn("project:p1", { project_id: "p1" }, { ...none, assignee: true }),
+      listFilterDependsOn("project:p1", { project_id: "p1" }, { ...none, executor: true }),
     ).toBe(false);
   });
 
@@ -181,14 +190,14 @@ describe("listFilterDependsOn", () => {
       listFilterDependsOn(
         "created",
         { creator_id: "me" },
-        { assignee: true, project: true, status: true },
+        { owner: true, executor: true, project: true, status: true },
       ),
     ).toBe(false);
   });
 
   it("the unfiltered workspace list never reacts", () => {
     expect(
-      listFilterDependsOn(undefined, {}, { assignee: true, project: true, status: true }),
+      listFilterDependsOn(undefined, {}, { owner: true, executor: true, project: true, status: true }),
     ).toBe(false);
   });
 });

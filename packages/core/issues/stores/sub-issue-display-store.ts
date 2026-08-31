@@ -22,7 +22,7 @@ export const SUB_ISSUE_ROW_PROPERTY_KEYS = [
   "labels",
   "childProgress",
   "dueDate",
-  "assignee",
+  "executor",
 ] as const;
 export type SubIssueRowPropertyKey =
   (typeof SUB_ISSUE_ROW_PROPERTY_KEYS)[number];
@@ -33,7 +33,7 @@ export const DEFAULT_SUB_ISSUE_ROW_PROPERTIES: SubIssueRowProperties = {
   labels: true,
   childProgress: true,
   dueDate: true,
-  assignee: true,
+  executor: true,
 };
 
 interface SubIssueDisplayStore {

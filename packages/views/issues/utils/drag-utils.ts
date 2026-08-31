@@ -3,7 +3,7 @@ import {
   closestCenter,
   type CollisionDetection,
 } from "@dnd-kit/core";
-import type { Issue, IssueAssigneeType, IssueStatus, UpdateIssueRequest } from "@patchbay/core/types";
+import type { Issue, IssueExecutorType, IssueStatus, UpdateIssueRequest } from "@patchbay/core/types";
 import type { IssueGrouping } from "@patchbay/core/issues/stores/view-store";
 import { propertyIdFromViewKey } from "@patchbay/core/issues/stores/view-store";
 import { issueColumnCategory } from "@patchbay/core/issues";
@@ -11,7 +11,7 @@ import type { BoardColumnGroup } from "../components/board-column";
 
 export type DragMoveTargetUpdates = Pick<
   UpdateIssueRequest,
-  "status" | "assignee_type" | "assignee_id" | "position"
+  "status" | "executor_type" | "executor_id" | "position"
 >;
 
 export type DragMoveUpdates = DragMoveTargetUpdates & {
@@ -19,7 +19,7 @@ export type DragMoveUpdates = DragMoveTargetUpdates & {
   after_id: string | null;
 };
 
-const UNASSIGNED_GROUP_ID = "assignee:unassigned";
+const UNASSIGNED_GROUP_ID = "executor:unassigned";
 
 export function makeKanbanCollision(groupIds: Set<string>): CollisionDetection {
   return (args) => {
@@ -41,11 +41,11 @@ export function propertyGroupId(propertyId: string, optionId: string | null): st
   return `property:${propertyId}:${optionId ?? "none"}`;
 }
 
-export function assigneeGroupId(
-  type: IssueAssigneeType | null,
+export function executorGroupId(
+  type: IssueExecutorType | null,
   id: string | null,
 ): string {
-  return type && id ? `assignee:${type}:${id}` : UNASSIGNED_GROUP_ID;
+  return type && id ? `executor:${type}:${id}` : UNASSIGNED_GROUP_ID;
 }
 
 export function getIssueGroupId(
@@ -71,7 +71,7 @@ export function getIssueGroupId(
     }
     return propertyGroupId(propertyId, optionId);
   }
-  return assigneeGroupId(issue.assignee_type, issue.assignee_id);
+  return executorGroupId(issue.executor_type, issue.executor_id);
 }
 
 export function buildColumns(
@@ -154,8 +154,8 @@ export function issueMatchesGroup(issue: Issue, group: BoardColumnGroup): boolea
     return optionId === (group.propertyOptionId ?? null);
   }
   return (
-    (issue.assignee_type ?? null) === (group.assigneeType ?? null) &&
-    (issue.assignee_id ?? null) === (group.assigneeId ?? null)
+    (issue.executor_type ?? null) === (group.executorType ?? null) &&
+    (issue.executor_id ?? null) === (group.executorId ?? null)
   );
 }
 
@@ -181,8 +181,8 @@ export function getMoveUpdates(
   // the board applies it through useSetIssueProperty after the position move.
   if (group.propertyId !== undefined) return { position };
   return {
-    assignee_type: group.assigneeType ?? null,
-    assignee_id: group.assigneeId ?? null,
+    executor_type: group.executorType ?? null,
+    executor_id: group.executorId ?? null,
     position,
   };
 }

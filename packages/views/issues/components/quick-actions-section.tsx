@@ -212,11 +212,11 @@ function QuickActionRow({
         <span className="min-w-0 flex-1 truncate">{action.name}</span>
         {action.target_name ? (
           <ActorAvatar
-            actorType={action.assignee_type === "team" ? "team" : "agent"}
-            actorId={action.assignee_id}
+            actorType={action.executor_type === "team" ? "team" : "agent"}
+            actorId={action.executor_id}
             size="xs"
             className="shrink-0"
-            showStatusDot={action.assignee_type === "agent"}
+            showStatusDot={action.executor_type === "agent"}
           />
         ) : null}
       </button>

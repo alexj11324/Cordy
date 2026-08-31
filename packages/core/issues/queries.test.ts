@@ -35,8 +35,12 @@ function makeIssue(idx: number, overrides: Partial<Issue> = {}): Issue {
     description: null,
     status: "todo",
     priority: "none",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -384,7 +388,7 @@ describe("projectGanttIssuesOptions", () => {
     expect(options.queryKey).toEqual(issueKeys.projectGantt(WS_ID, PROJECT_ID));
   });
 
-  it("threads the assignee-type tab into the request and the cache key", async () => {
+  it("threads the executor-type tab into the request and the cache key", async () => {
     const listIssues = vi
       .fn<(params?: ListIssuesParams) => Promise<ListIssuesResponse>>()
       .mockResolvedValue({ issues: [makeIssue(1)], total: 1 });
@@ -400,7 +404,7 @@ describe("projectGanttIssuesOptions", () => {
       expect.objectContaining({
         project_id: PROJECT_ID,
         scheduled: true,
-        assignee_types: ["agent", "team"],
+        executor_types: ["agent", "team"],
       }),
     );
     // Distinct tabs must not share a cache entry.
@@ -413,7 +417,7 @@ describe("projectGanttIssuesOptions", () => {
       .mockResolvedValue({ issues: [], total: 0 });
     installFakeApi(unrestricted);
     await qc.fetchQuery(projectGanttIssuesOptions(WS_ID, PROJECT_ID));
-    expect(unrestricted.mock.calls[0]![0]).not.toHaveProperty("assignee_types");
+    expect(unrestricted.mock.calls[0]![0]).not.toHaveProperty("executor_types");
   });
 });
 

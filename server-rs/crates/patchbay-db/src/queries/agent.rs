@@ -259,7 +259,7 @@ pub async fn cancel_agent_task(
     let row = sqlx::query(
         r#"UPDATE agent_task_queue
 SET status = 'cancelled', completed_at = now(), prepare_lease_expires_at = NULL
-WHERE id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+WHERE id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, automation_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, execution_lane_key"#
     )
         .bind(id)
@@ -381,7 +381,7 @@ SET status = 'cancelled',
       )
     END
 WHERE task.id = $1
-  AND task.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+  AND task.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
 RETURNING task.id, task.agent_id, task.issue_id, task.status, task.priority, task.dispatched_at, task.started_at, task.completed_at, task.result, task.error, task.created_at, task.context, task.runtime_id, task.session_id, task.work_dir, task.trigger_comment_id, task.chat_session_id, task.automation_run_id, task.attempt, task.max_attempts, task.parent_task_id, task.failure_reason, task.trigger_summary, task.force_fresh_session, task.is_leader_task, task.wait_reason, task.initiator_user_id, task.handoff_note, task.prepare_lease_expires_at, task.team_id, task.runtime_mcp_overlay, task.escalation_for_task_id, task.fire_at, task.originator_user_id, task.runtime_connected_apps, task.coalesced_comment_ids, task.delivered_comment_ids, task.chat_input_task_id, task.chat_finalize_deferred_at, task.originator_source, task.delegated_from_task_id, task.retry_of_task_id, task.rerun_of_task_id, task.rule_version_id, task.trigger_evidence_kind, task.trigger_evidence_ref_id, task.accountable_user_id, task.session_rollout_missing, task.retired_session_id, task.quick_actions_disabled, task.regenerate_quick_actions_for, task.branch_name, task.durable_work_dir, execution_lane_key"#
     )
         .bind(id)
@@ -459,7 +459,7 @@ SET status = 'cancelled',
     error = $1,
     failure_reason = $2,
     prepare_lease_expires_at = NULL
-WHERE id = $3 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+WHERE id = $3 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, automation_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, execution_lane_key"#
     )
         .bind(error)
@@ -533,7 +533,7 @@ pub async fn cancel_agent_tasks_by_agent(
     let rows = sqlx::query(
         r#"UPDATE agent_task_queue
 SET status = 'cancelled', completed_at = now(), prepare_lease_expires_at = NULL
-WHERE agent_id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+WHERE agent_id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, automation_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, execution_lane_key"#
     )
         .bind(agent_id)
@@ -608,7 +608,7 @@ pub async fn cancel_agent_tasks_by_chat_session(
     let rows = sqlx::query(
         r#"UPDATE agent_task_queue
 SET status = 'cancelled', completed_at = now(), prepare_lease_expires_at = NULL
-WHERE chat_session_id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+WHERE chat_session_id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, automation_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, execution_lane_key"#
     )
         .bind(chat_session_id)
@@ -683,7 +683,7 @@ pub async fn cancel_agent_tasks_by_issue(
     let rows = sqlx::query(
         r#"UPDATE agent_task_queue
 SET status = 'cancelled', completed_at = now(), prepare_lease_expires_at = NULL
-WHERE issue_id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+WHERE issue_id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, automation_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, execution_lane_key"#
     )
         .bind(issue_id)
@@ -759,7 +759,7 @@ pub async fn cancel_agent_tasks_by_trigger_comment(
         r#"UPDATE agent_task_queue
 SET status = 'cancelled', completed_at = now(), prepare_lease_expires_at = NULL
 WHERE (trigger_comment_id = $1 OR $1 = ANY(coalesced_comment_ids))
-  AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+  AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, automation_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, execution_lane_key"#
     )
         .bind(trigger_comment_id)
@@ -896,7 +896,7 @@ pub async fn cancel_deferred_escalations_for_issue_agent(
     SET status = 'cancelled', completed_at = now(), prepare_lease_expires_at = NULL
     FROM agent_task_queue primary_task
     WHERE fallback.escalation_for_task_id = primary_task.id
-      AND fallback.status IN ('deferred', 'queued', 'dispatched', 'waiting_local_directory')
+      AND fallback.status IN ('deferred', 'queued', 'dispatched', 'waiting_local_directory', 'waiting_capacity')
       AND primary_task.issue_id = $1
       AND primary_task.agent_id = $2
     RETURNING fallback.id, fallback.agent_id, fallback.issue_id, fallback.status, fallback.priority, fallback.dispatched_at, fallback.started_at, fallback.completed_at, fallback.result, fallback.error, fallback.created_at, fallback.context, fallback.runtime_id, fallback.session_id, fallback.work_dir, fallback.trigger_comment_id, fallback.chat_session_id, fallback.automation_run_id, fallback.attempt, fallback.max_attempts, fallback.parent_task_id, fallback.failure_reason, fallback.trigger_summary, fallback.force_fresh_session, fallback.is_leader_task, fallback.wait_reason, fallback.initiator_user_id, fallback.handoff_note, fallback.prepare_lease_expires_at, fallback.team_id, fallback.runtime_mcp_overlay, fallback.escalation_for_task_id, fallback.fire_at, fallback.originator_user_id, fallback.runtime_connected_apps, fallback.coalesced_comment_ids, fallback.delivered_comment_ids, fallback.chat_input_task_id, fallback.chat_finalize_deferred_at, fallback.originator_source, fallback.delegated_from_task_id, fallback.retry_of_task_id, fallback.rerun_of_task_id, fallback.rule_version_id, fallback.trigger_evidence_kind, fallback.trigger_evidence_ref_id, fallback.accountable_user_id, fallback.session_rollout_missing, fallback.retired_session_id, fallback.quick_actions_disabled, fallback.regenerate_quick_actions_for, fallback.branch_name, fallback.durable_work_dir, fallback.execution_lane_key
@@ -977,7 +977,7 @@ pub async fn cancel_deferred_escalations_for_task(
         r#"UPDATE agent_task_queue
 SET status = 'cancelled', completed_at = now(), prepare_lease_expires_at = NULL
 WHERE escalation_for_task_id = $1
-  AND status IN ('deferred', 'queued', 'dispatched', 'waiting_local_directory')
+  AND status IN ('deferred', 'queued', 'dispatched', 'waiting_local_directory', 'waiting_capacity')
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, automation_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, execution_lane_key"#
     )
         .bind(escalation_for_task_id)
@@ -1208,7 +1208,7 @@ pub async fn cancel_queued_agent_tasks_for_session(
   SELECT candidate.id
   FROM agent_task_queue AS candidate
   WHERE candidate.chat_session_id = $1
-    AND candidate.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+    AND candidate.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
     AND candidate.regenerate_quick_actions_for IS NULL
   ORDER BY
     CASE
@@ -1310,7 +1310,7 @@ WHERE r.runtime_id = ANY($1::uuid[])
     SELECT 1 FROM agent_task_queue successor
     WHERE successor.execution_lane_key = r.execution_lane_key
       AND successor.id <> r.id
-      AND successor.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+      AND successor.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
   )
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, automation_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, execution_lane_key"#
     )
@@ -1415,7 +1415,7 @@ WHERE id = (
       AND NOT EXISTS (
           SELECT 1 FROM agent_task_queue active
           WHERE active.execution_lane_key = atq.execution_lane_key
-            AND active.status IN ('dispatched', 'running', 'waiting_local_directory')
+            AND active.status IN ('dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
       )
     ORDER BY atq.priority DESC, atq.created_at ASC, atq.id ASC
     LIMIT 1
@@ -1856,7 +1856,7 @@ pub async fn count_running_tasks(
 ) -> anyhow::Result<Option<i64>> {
     let row = sqlx::query(
         r#"SELECT count(*) FROM agent_task_queue
-WHERE agent_id = $1 AND status IN ('dispatched', 'running', 'waiting_local_directory')"#,
+WHERE agent_id = $1 AND status IN ('dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')"#,
     )
     .bind(agent_id)
     .fetch_optional(executor)
@@ -2933,7 +2933,7 @@ pub async fn extend_agent_task_prepare_lease(
 SET prepare_lease_expires_at = now() + make_interval(secs => $3::double precision)
 WHERE id = $1
   AND runtime_id = $2
-  AND status IN ('dispatched', 'waiting_local_directory')
+  AND status IN ('dispatched', 'waiting_local_directory', 'waiting_capacity')
   AND started_at IS NULL
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, automation_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, execution_lane_key"#
     )
@@ -3026,7 +3026,7 @@ SET status = 'failed',
     session_rollout_missing = $4,
     retired_session_id = COALESCE($9, retired_session_id),
     prepare_lease_expires_at = NULL
-WHERE id = $1 AND status IN ('dispatched', 'running', 'waiting_local_directory')
+WHERE id = $1 AND status IN ('dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, automation_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, execution_lane_key"#
     )
         .bind(id)
@@ -3563,6 +3563,20 @@ WHERE id = $1 AND workspace_id = $2 AND kind = 'user'"#
     }))
 }
 
+pub async fn get_agent_task_execution_target(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    task_id: Uuid,
+) -> anyhow::Result<Option<AgentTaskExecutionTarget>> {
+    Ok(sqlx::query_as::<_, AgentTaskExecutionTarget>(
+        r#"SELECT failover_reason, model_id, policy_revision, runtime_id
+FROM agent_task_queue
+WHERE id = $1"#,
+    )
+    .bind(task_id)
+    .fetch_optional(executor)
+    .await?)
+}
+
 pub async fn get_agent_task(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
@@ -4096,7 +4110,7 @@ pub async fn has_active_task_for_issue(
 ) -> anyhow::Result<Option<bool>> {
     let row = sqlx::query(
         r#"SELECT count(*) > 0 AS has_active FROM agent_task_queue
-WHERE issue_id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')"#,
+WHERE issue_id = $1 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')"#,
     )
     .bind(issue_id)
     .fetch_optional(executor)
@@ -4114,7 +4128,7 @@ pub async fn has_active_task_for_issue_and_agent(
         r#"SELECT count(*) > 0 AS has_active FROM agent_task_queue
 WHERE issue_id = $1 AND agent_id = $2
   AND (
-    status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+    status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
     OR (status = 'deferred' AND context->>'channel_issue_media_pending' = 'true')
   )"#,
     )
@@ -4132,7 +4146,7 @@ pub async fn has_pending_task_for_issue(
 ) -> anyhow::Result<Option<bool>> {
     let row = sqlx::query(
         r#"SELECT count(*) > 0 AS has_pending FROM agent_task_queue
-WHERE issue_id = $1 AND status IN ('queued', 'dispatched')"#,
+WHERE issue_id = $1 AND status IN ('queued', 'dispatched', 'waiting_capacity')"#,
     )
     .bind(issue_id)
     .fetch_optional(executor)
@@ -4151,7 +4165,7 @@ pub async fn has_pending_task_for_issue_and_agent(
         r#"SELECT count(*) > 0 AS has_pending FROM agent_task_queue
 WHERE issue_id = $1 AND agent_id = $2
   AND (
-    status IN ('queued', 'dispatched')
+    status IN ('queued', 'dispatched', 'waiting_capacity')
     OR (status = 'deferred' AND context->>'channel_issue_media_pending' = 'true')
   )
   AND (
@@ -4180,7 +4194,7 @@ pub async fn has_pending_task_for_issue_and_agent_excluding_trigger_comment(
 WHERE issue_id = $1
   AND agent_id = $2
   AND (
-    status IN ('queued', 'dispatched')
+    status IN ('queued', 'dispatched', 'waiting_capacity')
     OR (status = 'deferred' AND context->>'channel_issue_media_pending' = 'true')
   )
   AND trigger_comment_id IS DISTINCT FROM $3::uuid
@@ -4233,7 +4247,7 @@ WHERE issue_id = $1
       OR (
           id IS DISTINCT FROM $4::uuid
           AND (
-              status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+              status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
               OR (status = 'deferred' AND context->>'channel_issue_media_pending' = 'true')
           )
           AND (trigger_comment_id = $3::uuid OR $3::uuid = ANY(coalesced_comment_ids))
@@ -4399,7 +4413,7 @@ JOIN workspace w ON w.id = i.workspace_id
 WHERE atq.agent_id = $1
   AND atq.id <> $2
   AND i.workspace_id = $3
-  AND atq.status IN ('dispatched', 'running', 'waiting_local_directory')
+  AND atq.status IN ('dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
 ORDER BY
     CASE atq.status
         WHEN 'running' THEN 0
@@ -4436,7 +4450,7 @@ pub async fn list_active_tasks_by_issue(
 ) -> anyhow::Result<Vec<AgentTaskQueue>> {
     let rows = sqlx::query(
         r#"SELECT id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, automation_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, execution_lane_key FROM agent_task_queue
-WHERE issue_id = $1 AND status IN ('queued', 'deferred', 'dispatched', 'running', 'waiting_local_directory')
+WHERE issue_id = $1 AND status IN ('queued', 'deferred', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
 ORDER BY created_at DESC"#
     )
         .bind(issue_id)
@@ -4842,7 +4856,7 @@ WHERE recovery.author_type = 'system'
             recovery.id = ANY(covering.delivered_comment_ids)
             OR (
                 (
-                    covering.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+                    covering.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
                     OR (
                         covering.status = 'deferred'
                         AND covering.context->>'channel_issue_media_pending' = 'true'
@@ -5255,7 +5269,7 @@ pub async fn list_workspace_agent_task_snapshot(
         r#"SELECT atq.id, atq.agent_id, atq.issue_id, atq.status, atq.priority, atq.dispatched_at, atq.started_at, atq.completed_at, atq.result, atq.error, atq.created_at, atq.context, atq.runtime_id, atq.session_id, atq.work_dir, atq.trigger_comment_id, atq.chat_session_id, atq.automation_run_id, atq.attempt, atq.max_attempts, atq.parent_task_id, atq.failure_reason, atq.trigger_summary, atq.force_fresh_session, atq.is_leader_task, atq.wait_reason, atq.initiator_user_id, atq.handoff_note, atq.prepare_lease_expires_at, atq.team_id, atq.runtime_mcp_overlay, atq.escalation_for_task_id, atq.fire_at, atq.originator_user_id, atq.runtime_connected_apps, atq.coalesced_comment_ids, atq.delivered_comment_ids, atq.chat_input_task_id, atq.chat_finalize_deferred_at, atq.originator_source, atq.delegated_from_task_id, atq.retry_of_task_id, atq.rerun_of_task_id, atq.rule_version_id, atq.trigger_evidence_kind, atq.trigger_evidence_ref_id, atq.accountable_user_id, atq.session_rollout_missing, atq.retired_session_id, atq.quick_actions_disabled, atq.regenerate_quick_actions_for, atq.branch_name, atq.durable_work_dir, execution_lane_key FROM agent_task_queue atq
 JOIN agent a ON a.id = atq.agent_id
 WHERE a.workspace_id = $1
-  AND atq.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+  AND atq.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
 
 UNION ALL
 
@@ -5394,8 +5408,8 @@ WHERE a.workspace_id = $1
         AND (
           (
             $3::text IN ('assigned', 'any')
-            AND i.assignee_type = 'member'
-            AND i.assignee_id = $4::uuid
+            AND i.owner_type = 'member'
+            AND i.owner_id = $4::uuid
           )
           OR (
             $3::text IN ('created', 'any')
@@ -5406,21 +5420,21 @@ WHERE a.workspace_id = $1
             $3::text IN ('involved', 'any')
             AND (
               (
-                i.assignee_type = 'agent'
+                i.executor_type = 'agent'
                 AND EXISTS (
                   SELECT 1
                   FROM agent owned_agent
-                  WHERE owned_agent.id = i.assignee_id
+                  WHERE owned_agent.id = i.executor_id
                     AND owned_agent.workspace_id = a.workspace_id
                     AND owned_agent.owner_id = $4::uuid
                 )
               )
               OR (
-                i.assignee_type = 'team'
+                i.executor_type = 'team'
                 AND EXISTS (
                   SELECT 1
                   FROM team s
-                  WHERE s.id = i.assignee_id
+                  WHERE s.id = i.executor_id
                     AND s.workspace_id = a.workspace_id
                     AND (
                       EXISTS (
@@ -5610,6 +5624,49 @@ RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, c
         durable_work_dir: row.try_get(52)?,
         execution_lane_key: row.try_get(53)?,
     }))
+}
+
+/// Park a dispatched task when its selected ACP has no capacity.  Capacity
+/// waiting is distinct from local-directory contention so the coordinator can
+/// resume it after a fresh daemon snapshot or an explicit user override.
+pub async fn mark_agent_task_waiting_capacity(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    id: Uuid,
+    wait_reason: Option<&str>,
+) -> anyhow::Result<bool> {
+    let row = sqlx::query(
+        r#"UPDATE agent_task_queue
+SET status = 'waiting_capacity',
+    wait_reason = $2,
+    prepare_lease_expires_at = NULL
+WHERE id = $1 AND status IN ('queued', 'dispatched')
+RETURNING id"#,
+    )
+    .bind(id)
+    .bind(wait_reason)
+    .fetch_optional(executor)
+    .await?;
+    Ok(row.is_some())
+}
+
+/// Resume one capacity-waiting task.  The caller must have already performed
+/// a fresh local capacity check; this function only provides the atomic state
+/// transition and never claims a task itself.
+pub async fn resume_agent_task_waiting_capacity(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    id: Uuid,
+) -> anyhow::Result<bool> {
+    let row = sqlx::query(
+        r#"UPDATE agent_task_queue
+SET status = 'queued',
+    wait_reason = NULL
+WHERE id = $1 AND status = 'waiting_capacity'
+RETURNING id"#,
+    )
+    .bind(id)
+    .fetch_optional(executor)
+    .await?;
+    Ok(row.is_some())
 }
 
 pub async fn mark_chat_finalize_deferred(
@@ -5894,7 +5951,7 @@ WHERE task.id = $1
       WHERE occupant.execution_lane_key = task.execution_lane_key
         AND occupant.id <> task.id
         AND (
-            occupant.status IN ('queued', 'dispatched')
+            occupant.status IN ('queued', 'dispatched', 'waiting_capacity')
             OR (occupant.status = 'deferred'
                 AND occupant.context->>'channel_issue_media_pending' = 'true')
         )
@@ -6000,7 +6057,7 @@ pub async fn promote_due_deferred_tasks_for_runtime(
           SELECT 1 FROM agent_task_queue active
           WHERE active.execution_lane_key = t.execution_lane_key
             AND active.id <> t.id
-            AND active.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+            AND active.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
         )
       )
       AND EXISTS (
@@ -6015,7 +6072,7 @@ pub async fn promote_due_deferred_tasks_for_runtime(
         WHERE occupant.execution_lane_key = t.execution_lane_key
           AND occupant.id <> t.id
           AND (
-            occupant.status IN ('queued', 'dispatched')
+            occupant.status IN ('queued', 'dispatched', 'waiting_capacity')
             OR (occupant.status = 'deferred' AND occupant.context->>'channel_issue_media_pending' = 'true')
           )
       )
@@ -6128,7 +6185,7 @@ pub async fn promote_due_deferred_tasks_for_runtimes(
           SELECT 1 FROM agent_task_queue active
           WHERE active.execution_lane_key = t.execution_lane_key
             AND active.id <> t.id
-            AND active.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+            AND active.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
         )
       )
       AND EXISTS (
@@ -6143,7 +6200,7 @@ pub async fn promote_due_deferred_tasks_for_runtimes(
         WHERE occupant.execution_lane_key = t.execution_lane_key
           AND occupant.id <> t.id
           AND (
-            occupant.status IN ('queued', 'dispatched')
+            occupant.status IN ('queued', 'dispatched', 'waiting_capacity')
             OR (occupant.status = 'deferred' AND occupant.context->>'channel_issue_media_pending' = 'true')
           )
       )
@@ -6501,7 +6558,7 @@ SET status = 'failed',
     failure_reason = 'runtime_recovery',
     wait_reason = NULL,
     prepare_lease_expires_at = NULL
-WHERE runtime_id = $1 AND status IN ('dispatched', 'running', 'waiting_local_directory')
+WHERE runtime_id = $1 AND status IN ('dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, automation_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, execution_lane_key"#
     )
         .bind(runtime_id)
@@ -6646,7 +6703,7 @@ SET coalesced_comment_ids = (
 WHERE id = (
     SELECT t.id FROM agent_task_queue t
     WHERE t.execution_lane_key = 'issue:' || $2::text || ':agent:' || $3::text || ':main'
-      AND t.status IN ('dispatched', 'running', 'waiting_local_directory')
+      AND t.status IN ('dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
       AND (
           COALESCE($4::text, '') = ''
           OR t.context->>'head_sha' = $4::text
@@ -6684,7 +6741,7 @@ pub async fn get_active_issue_agent_task(
         r#"SELECT id, status
 FROM agent_task_queue
 WHERE execution_lane_key = 'issue:' || $1::text || ':agent:' || $2::text || ':main'
-  AND status IN ('dispatched', 'running', 'waiting_local_directory')
+  AND status IN ('dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
 ORDER BY started_at DESC NULLS LAST, created_at DESC
 LIMIT 1"#,
     )
@@ -7170,7 +7227,7 @@ SET status = 'running',
     started_at = now(),
     wait_reason = NULL,
     prepare_lease_expires_at = NULL
-WHERE id = $1 AND status IN ('dispatched', 'waiting_local_directory')
+WHERE id = $1 AND status IN ('dispatched', 'waiting_local_directory', 'waiting_capacity')
 RETURNING id, agent_id, issue_id, status, priority, dispatched_at, started_at, completed_at, result, error, created_at, context, runtime_id, session_id, work_dir, trigger_comment_id, chat_session_id, automation_run_id, attempt, max_attempts, parent_task_id, failure_reason, trigger_summary, force_fresh_session, is_leader_task, wait_reason, initiator_user_id, handoff_note, prepare_lease_expires_at, team_id, runtime_mcp_overlay, escalation_for_task_id, fire_at, originator_user_id, runtime_connected_apps, coalesced_comment_ids, delivered_comment_ids, chat_input_task_id, chat_finalize_deferred_at, originator_source, delegated_from_task_id, retry_of_task_id, rerun_of_task_id, rule_version_id, trigger_evidence_kind, trigger_evidence_ref_id, accountable_user_id, session_rollout_missing, retired_session_id, quick_actions_disabled, regenerate_quick_actions_for, branch_name, durable_work_dir, execution_lane_key"#
     )
         .bind(id)

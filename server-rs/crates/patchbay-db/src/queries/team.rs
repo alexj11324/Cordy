@@ -147,7 +147,7 @@ pub async fn get_team(
     }))
 }
 
-pub async fn get_team_by_assignee(
+pub async fn get_team_by_executor(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     id: Uuid,
     workspace_id: Uuid,
@@ -381,7 +381,7 @@ LEFT JOIN agent_runtime ar
 LEFT JOIN agent_task_queue atq
        ON sm.member_type = 'agent'
       AND atq.agent_id = sm.member_id
-      AND atq.status IN ('dispatched', 'running', 'waiting_local_directory')
+      AND atq.status IN ('dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
 LEFT JOIN issue i
        ON i.id = atq.issue_id
 WHERE sm.team_id = $1
@@ -582,17 +582,17 @@ WHERE team_id = $1 AND member_type = $2 AND member_id = $3"#,
     Ok(r.rows_affected())
 }
 
-pub async fn transfer_team_assignees(
+pub async fn transfer_team_executors(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    assignee_id: Uuid,
-    assignee_id_2: Uuid,
+    executor_id: Uuid,
+    executor_id_2: Uuid,
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
-        r#"UPDATE issue SET assignee_type = 'agent', assignee_id = $2, revision = revision + 1, updated_at = now()
-WHERE assignee_type = 'team' AND assignee_id = $1"#
+        r#"UPDATE issue SET executor_type = 'agent', executor_id = $2, revision = revision + 1, updated_at = now()
+WHERE executor_type = 'team' AND executor_id = $1"#
     )
-        .bind(assignee_id)
-        .bind(assignee_id_2)
+        .bind(executor_id)
+        .bind(executor_id_2)
         .execute(executor)
         .await?;
     Ok(r.rows_affected())
@@ -600,19 +600,19 @@ WHERE assignee_type = 'team' AND assignee_id = $1"#
 
 pub async fn transfer_team_automations_to_leader(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
-    assignee_id: Uuid,
-    assignee_id_2: Uuid,
+    executor_id: Uuid,
+    executor_id_2: Uuid,
 ) -> anyhow::Result<Vec<Automation>> {
     let rows = sqlx::query(
         r#"UPDATE automation
-SET assignee_type = 'agent',
-    assignee_id = $2,
+SET executor_type = 'agent',
+    executor_id = $2,
     updated_at = now()
-WHERE assignee_type = 'team' AND assignee_id = $1
-RETURNING id, workspace_id, title, description, assignee_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, assignee_type, project_id, pause_reason"#,
+WHERE executor_type = 'team' AND executor_id = $1
+RETURNING id, workspace_id, title, description, executor_id, status, execution_mode, issue_title_template, created_by_type, created_by_id, last_run_at, created_at, updated_at, executor_type, project_id, pause_reason"#,
     )
-    .bind(assignee_id)
-    .bind(assignee_id_2)
+    .bind(executor_id)
+    .bind(executor_id_2)
     .fetch_all(executor)
     .await?;
     let mut out = Vec::with_capacity(rows.len());
@@ -622,7 +622,7 @@ RETURNING id, workspace_id, title, description, assignee_id, status, execution_m
             workspace_id: row.try_get(1)?,
             title: row.try_get(2)?,
             description: row.try_get(3)?,
-            assignee_id: row.try_get(4)?,
+            executor_id: row.try_get(4)?,
             status: row.try_get(5)?,
             execution_mode: row.try_get(6)?,
             issue_title_template: row.try_get(7)?,
@@ -631,7 +631,7 @@ RETURNING id, workspace_id, title, description, assignee_id, status, execution_m
             last_run_at: row.try_get(10)?,
             created_at: row.try_get(11)?,
             updated_at: row.try_get(12)?,
-            assignee_type: row.try_get(13)?,
+            executor_type: row.try_get(13)?,
             project_id: row.try_get(14)?,
             pause_reason: row.try_get(15)?,
         });

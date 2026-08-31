@@ -6,7 +6,7 @@
  * "perceived perf wins over centered spinner" pattern from InboxLoading.
  *
  * Row skeleton mirrors `IssueRow` layout (px-4 py-3, priority dot +
- * identifier slot + title flex + trailing assignee circle), and the section
+ * identifier slot + title flex + trailing executor circle), and the section
  * header skeleton mirrors the page's `SectionHeader` (px-4 py-2 with a
  * status-icon-shaped dot and a short label band).
  */

@@ -1,7 +1,7 @@
-import type { IssueAssigneeType, TimelineEntry } from "@patchbay/core/types";
+import type { IssueActorType, TimelineEntry } from "@patchbay/core/types";
 
 export type HandoffActor = {
-  type: IssueAssigneeType;
+  type: IssueActorType;
   id: string;
 };
 
@@ -10,19 +10,19 @@ export type HandoffHop = {
   to: HandoffActor;
 };
 
-function isAssigneeType(value: unknown): value is IssueAssigneeType {
+function isActorType(value: unknown): value is IssueActorType {
   return value === "member" || value === "agent" || value === "team";
 }
 
 function actorFrom(type: unknown, id: unknown): HandoffActor | null {
-  if (!isAssigneeType(type) || typeof id !== "string" || id.length === 0) {
+  if (!isActorType(type) || typeof id !== "string" || id.length === 0) {
     return null;
   }
   return { type, id };
 }
 
 export function issueActor(
-  type: IssueAssigneeType | null | undefined,
+  type: IssueActorType | null | undefined,
   id: string | null | undefined,
 ): HandoffActor | null {
   return actorFrom(type, id);
@@ -50,11 +50,11 @@ function actorKey(actor: HandoffActor): string {
 
 /**
  * Unique actors for the stacked trigger, in chain order: each hop's
- * from then to, then the current assignee and reviewer if they are new.
+ * from then to, then the current executor and reviewer if they are new.
  */
 export function handoffStackActors(
   hops: readonly HandoffHop[],
-  assignee: HandoffActor | null,
+  executor: HandoffActor | null,
   reviewer: HandoffActor | null,
 ): HandoffActor[] {
   const out: HandoffActor[] = [];
@@ -70,28 +70,28 @@ export function handoffStackActors(
     push(hop.from);
     push(hop.to);
   }
-  push(assignee);
+  push(executor);
   push(reviewer);
   return out;
 }
 
 /**
  * Hops shown in the popover. Timeline hops win; if none exist but both
- * assignee and reviewer are set and different, synthesize one hop so the
+ * executor and reviewer are set and different, synthesize one hop so the
  * popover still names the current handoff.
  */
 export function handoffHopsForDisplay(
   hops: readonly HandoffHop[],
-  assignee: HandoffActor | null,
+  executor: HandoffActor | null,
   reviewer: HandoffActor | null,
 ): HandoffHop[] {
   if (hops.length > 0) return [...hops];
   if (
-    assignee &&
+    executor &&
     reviewer &&
-    actorKey(assignee) !== actorKey(reviewer)
+    actorKey(executor) !== actorKey(reviewer)
   ) {
-    return [{ from: assignee, to: reviewer }];
+    return [{ from: executor, to: reviewer }];
   }
   return [];
 }

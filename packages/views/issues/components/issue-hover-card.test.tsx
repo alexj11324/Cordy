@@ -61,7 +61,7 @@ vi.mock("../../common/actor-avatar", () => ({
 }));
 
 // A spy, not a stub: `useActorName` subscribes to the workspace member list,
-// so "was this hook mounted at all" is the assertion that keeps the assignee
+// so "was this hook mounted at all" is the assertion that keeps the executor
 // row from being inlined back into the card body.
 const mockUseActorName = vi.hoisted(() => vi.fn(() => ({ getActorName: () => "zain" })));
 
@@ -88,8 +88,8 @@ type Issue = {
   status: string;
   priority: string;
   description?: string | null;
-  assignee_type?: string | null;
-  assignee_id?: string | null;
+  executor_type?: string | null;
+  executor_id?: string | null;
 };
 
 const BASE_ISSUE: Issue = {
@@ -240,22 +240,22 @@ describe("IssueHoverCard", () => {
     expect(screen.queryByTestId("priority-icon")).not.toBeInTheDocument();
   });
 
-  it("shows the assignee avatar and name, without nesting another hover card", async () => {
-    mockIssue({ ...BASE_ISSUE, assignee_type: "member", assignee_id: "user-9" });
+  it("shows the executor avatar and name, without nesting another hover card", async () => {
+    mockIssue({ ...BASE_ISSUE, executor_type: "agent", executor_id: "agent-9" });
 
     await openCard();
 
     const avatar = screen.getByTestId("actor-avatar");
-    expect(avatar).toHaveAttribute("data-actor-type", "member");
-    expect(avatar).toHaveAttribute("data-actor-id", "user-9");
+    expect(avatar).toHaveAttribute("data-actor-type", "agent");
+    expect(avatar).toHaveAttribute("data-actor-id", "agent-9");
     expect(avatar).toHaveAttribute("data-hover-card", "false");
     expect(avatar).toHaveAttribute("data-profile-link", "false");
     expect(screen.getByText("zain")).toBeInTheDocument();
     expect(mockUseActorName).toHaveBeenCalled();
   });
 
-  it("omits the assignee when the issue is unassigned", async () => {
-    mockIssue({ ...BASE_ISSUE, assignee_type: null, assignee_id: null });
+  it("omits the executor when the issue is unassigned", async () => {
+    mockIssue({ ...BASE_ISSUE, executor_type: null, executor_id: null });
 
     await openCard();
 

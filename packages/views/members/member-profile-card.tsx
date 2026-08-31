@@ -15,7 +15,7 @@ import { useT } from "../i18n";
 
 interface MemberProfileCardProps {
   // The User UUID — matches member.user_id and agent.owner_id. We accept user_id
-  // (not member.id) because every existing call site passes user_id (assignee_id,
+  // (not member.id) because every existing call site passes user_id (executor_id,
   // commenter_id, owner_id are all User UUIDs in the polymorphic actor model).
   userId: string;
 }

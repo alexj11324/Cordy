@@ -657,9 +657,9 @@ pub(crate) fn build_quick_create_prompt(task: &Task) -> String {
         b.push_str("- **priority**: one of `urgent`, `high`, `medium`, `low`, or omit. Map P0/P1 → urgent/high; \"asap\" → urgent. If unspecified, omit.\n\n");
     }
 
-    b.push_str("- **assignee**:\n");
-    b.push_str("    - When the user names someone (\"assign to X\" / \"@X\"), call `patchbay workspace member list --output json`, `patchbay agent list --output json`, and `patchbay team list --output json` and find the matching entity by display name. Teams are first-class assignees too — a team name (e.g. \"Super Human\") routes work to the team leader, who then delegates. On a clean unambiguous match, prefer `--assignee-id <uuid>` using the `user_id` (member) or `id` (agent or team) from that JSON — UUID matching is exact and robust to name collisions in workspaces with overlapping names. `--assignee <name>` (fuzzy) is acceptable as a fallback when names are unambiguous. On no match or ambiguous match, do NOT pass either flag — instead append a final line to the description: `Unrecognized assignee: X`.\n");
-    b.push_str("    - Treat bare @-routing as an assignee directive even when the user did not write the English word \"assign\". This includes Chinese imperatives like `让 @独立团 review 这个 PR`, `给 @X 处理`, or `交给 @X`; strip the leading `@`/`＠` before matching display names. Do not keep that routing wrapper or `@Name` in the description unless it is a true CC-style notification rather than ownership. If the matched entity is a team, pass the team's `id` as `--assignee-id`, not the leader agent's id.\n");
+    b.push_str("- **executor**:\n");
+    b.push_str("    - When the user names someone (\"assign to X\" / \"@X\"), call `patchbay workspace member list --output json`, `patchbay agent list --output json`, and `patchbay team list --output json` and find the matching entity by display name. Teams are first-class executors too — a team name (e.g. \"Super Human\") routes work to the team leader, who then delegates. On a clean unambiguous match, prefer `--executor-id <uuid>` using the `user_id` (member) or `id` (agent or team) from that JSON — UUID matching is exact and robust to name collisions in workspaces with overlapping names. `--executor <name>` (fuzzy) is acceptable as a fallback when names are unambiguous. On no match or ambiguous match, do NOT pass either flag — instead append a final line to the description: `Unrecognized executor: X`.\n");
+    b.push_str("    - Treat bare @-routing as an executor directive even when the user did not write the English word \"assign\". This includes Chinese imperatives like `让 @独立团 review 这个 PR`, `给 @X 处理`, or `交给 @X`; strip the leading `@`/`＠` before matching display names. Do not keep that routing wrapper or `@Name` in the description unless it is a true CC-style notification rather than ownership. If the matched entity is a team, pass the team's `id` as `--executor-id`, not the leader agent's id.\n");
     let agent_id = task
         .agent
         .as_ref()
@@ -674,27 +674,27 @@ pub(crate) fn build_quick_create_prompt(task: &Task) -> String {
         // Team picker opened quick-create: the team owns the flow.
         if !task.team_name.is_empty() {
             b.push_str(&format!(
-                "    - When the user did NOT name an assignee, default to the picker TEAM {:?}: pass `--assignee-id {:?}` (the team's UUID). The user opened quick-create with the team selected; you (the leader agent) are running on the team's behalf, so the team — not you — is the expected owner. Never leave the issue unassigned, and do not assign it to your own agent UUID.\n\n",
+                "    - When the user did NOT name an executor, default to the picker TEAM {:?}: pass `--executor-id {:?}` (the team's UUID). The user opened quick-create with the team selected; you (the leader agent) are running on the team's behalf, so the team — not you — is the expected owner. Never leave the issue unassigned, and do not assign it to your own agent UUID.\n\n",
                 task.team_name, task.team_id
             ));
         } else {
             b.push_str(&format!(
-                "    - When the user did NOT name an assignee, default to the picker TEAM: pass `--assignee-id {:?}` (the team's UUID). The user opened quick-create with the team selected; you (the leader agent) are running on the team's behalf, so the team — not you — is the expected owner. Never leave the issue unassigned, and do not assign it to your own agent UUID.\n\n",
+                "    - When the user did NOT name an executor, default to the picker TEAM: pass `--executor-id {:?}` (the team's UUID). The user opened quick-create with the team selected; you (the leader agent) are running on the team's behalf, so the team — not you — is the expected owner. Never leave the issue unassigned, and do not assign it to your own agent UUID.\n\n",
                 task.team_id
             ));
         }
     } else if !agent_id.is_empty() {
         b.push_str(&format!(
-            "    - When the user did NOT name an assignee, default to YOURSELF: pass `--assignee-id {:?}` (your agent UUID). The picker agent is the expected owner because the user opened quick-create with you selected — never leave the issue unassigned. Use the UUID flag, not `--assignee <name>`, so the assignment is unambiguous even when other agents share part of your name.\n\n",
+            "    - When the user did NOT name an executor, default to YOURSELF: pass `--executor-id {:?}` (your agent UUID). The picker agent is the expected owner because the user opened quick-create with you selected — never leave the issue unassigned. Use the UUID flag, not `--executor <name>`, so the assignment is unambiguous even when other agents share part of your name.\n\n",
             agent_id
         ));
     } else if !agent_name.is_empty() {
         b.push_str(&format!(
-            "    - When the user did NOT name an assignee, default to YOURSELF: pass `--assignee {:?}`. The picker agent is the expected owner because the user opened quick-create with you selected — never leave the issue unassigned.\n\n",
+            "    - When the user did NOT name an executor, default to YOURSELF: pass `--executor {:?}`. The picker agent is the expected owner because the user opened quick-create with you selected — never leave the issue unassigned.\n\n",
             agent_name
         ));
     } else {
-        b.push_str("    - When the user did NOT name an assignee, default to YOURSELF (the picker agent): pass `--assignee-id <your agent UUID>` (preferred) or `--assignee <your agent name>`. Never leave the issue unassigned.\n\n");
+        b.push_str("    - When the user did NOT name an executor, default to YOURSELF (the picker agent): pass `--executor-id <your agent UUID>` (preferred) or `--executor <your agent name>`. Never leave the issue unassigned.\n\n");
     }
 
     if !task.quick_create_due_date.is_empty() {

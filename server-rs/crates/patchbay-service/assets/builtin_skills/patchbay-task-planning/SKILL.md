@@ -1,7 +1,6 @@
 ---
 name: patchbay-task-planning
 description: "Use only for a complex, genuinely splittable goal when a team leader or an explicitly designated planner must propose a minimal dependency DAG."
-user-invocable: false
 allowed-tools: Bash(patchbay *), Bash(git *), Bash(gh *)
 ---
 
@@ -94,7 +93,13 @@ Every task must stand on its own as an issue-sized deliverable. Give it:
 - acceptance criteria that another engineer can observe and verify;
 - observable completion conditions, not an intention to “make progress”;
 - concrete `outputs` that can be consumed or inspected;
-- an `assignee` when ownership is known, or explicit candidate assignees;
+- an optional `owner` (the accountable human), an `executor` (the agent or
+  team that performs the work), and an optional independent `reviewer`. Use
+  candidate executors only when the coordinator is authorized to choose among
+  them;
+- an optional concrete `runtime_id` and `model_id` when this task needs a
+  particular ACP/model. If omitted, the coordinator uses the workspace's
+  default execution ACP/model. This skill never selects or changes skills;
 - enough context for an unfamiliar engineer to execute it without reconstructing
   the parent conversation.
 
@@ -133,11 +138,15 @@ is:
       "outputs": [
         "dependency graph API response contract"
       ],
-      "assignee": {
+      "owner": {"type": "member", "id": "<member UUID>"},
+      "executor": {
         "type": "agent",
         "id": "<agent UUID>"
       },
-      "candidate_assignees": []
+      "reviewer": {"type": "agent", "id": "<reviewer UUID>"},
+      "runtime_id": "<optional runtime UUID>",
+      "model_id": "<optional concrete model id>",
+      "candidate_executors": []
     }
   ],
   "edges": [
@@ -172,6 +181,11 @@ Before applying, verify all of the following yourself:
 - transitive-only edges have been removed;
 - every root task can run immediately;
 - every non-root task waits for all hard prerequisites to reach successful Done;
+- roots are persisted as `Todo` and admitted to `In Progress` only by the
+  coordinator after dependency, executor-capacity, and ACP-availability
+  checks;
+- non-roots are persisted as `Blocked` and become `Todo` only after every hard
+  prerequisite reaches `Done`; they are not dispatched while `Blocked`;
 - cancellation and failure remain fail-closed and visible for replanning;
 - an unfamiliar engineer can understand the goal, responsibility, output,
   acceptance, owner, and dependency reason from the plan alone.
@@ -201,7 +215,7 @@ patchbay issue dependency-graph apply <parent> \
 ```
 
 The command sends the full proposal to the server, which validates workspace
-scope, references, assignees, edge direction, output references, duplicates,
+scope, references, executors, edge direction, output references, duplicates,
 cycles, and idempotency before committing child issues, nodes, and edges in
 one transaction. A rejected plan must leave no partially created assigned
 children. Do not retry a changed body with the old idempotency key. Do not
@@ -230,17 +244,19 @@ patchbay issue dependency-graph get <parent> --output json
 
 Report the plan id, task identifiers, persisted edges and reasons, derived
 waves, initial root readiness, blocked prerequisites, and any attention state.
-The scheduler—not this prompt—decides admission. A root may be enqueued when
-its gate is open. A dependent may be enqueued only after every hard
-prerequisite is successfully Done. Replays, retries, restarts, and concurrent
-completion must not enqueue the same task twice. A cancelled or failed
-prerequisite keeps the dependent blocked and must leave the plan in an
-observable attention/replanning state.
+The coordinator—not this prompt—decides admission. A root is initially `Todo`;
+when its gate is open, the coordinator atomically assigns the default or
+explicit executor and advances it to `In Progress`. A dependent remains
+`Blocked` until every hard prerequisite is successfully `Done`, then becomes
+`Todo` and is admitted by the same coordinator. Replays, retries, restarts,
+capacity exhaustion, and concurrent completion must not enqueue the same task
+twice. A cancelled or failed prerequisite keeps the dependent blocked and must
+leave the plan in an observable attention/replanning state.
 
 When reporting completion, include:
 
 1. the parent goal and whether it was kept intact;
-2. the final typed task list with outputs and assignees/candidates;
+2. the final typed task list with outputs and executors/candidates;
 3. each real hard edge with `from`, `to`, exact consumed output, and reason;
 4. the server-derived waves and current readiness/gate state;
 5. validation or apply failures, if any, without hiding them;

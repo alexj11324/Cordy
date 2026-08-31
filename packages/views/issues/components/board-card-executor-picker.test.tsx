@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { Issue, IssueAssigneeType } from "@patchbay/core/types";
+import type { Issue, IssueExecutorType } from "@patchbay/core/types";
 import { AppLink, NavigationProvider, type NavigationAdapter } from "../../navigation";
 import {
   IssueSurfaceActionsProvider,
@@ -44,7 +44,7 @@ const viewState = vi.hoisted(() => ({
   cardProperties: {
     priority: false,
     description: false,
-    assignee: true,
+    executor: true,
     startDate: true,
     dueDate: true,
     project: false,
@@ -109,18 +109,22 @@ const actions: IssueSurfaceActions = {
   batchDelete: vi.fn().mockResolvedValue(undefined),
 };
 
-function makeIssue(assigneeType: IssueAssigneeType): Issue {
+function makeIssue(executorType: IssueExecutorType): Issue {
   return {
-    id: `issue-${assigneeType}`,
+    id: `issue-${executorType}`,
     workspace_id: "ws-1",
     number: 6082,
     identifier: "PB-6082",
-    title: "Fix Board assignee interaction",
+    title: "Fix Board executor interaction",
     description: null,
     status: "todo",
     priority: "none",
-    assignee_type: assigneeType,
-    assignee_id: `${assigneeType}-1`,
+    owner_type: null,
+    owner_id: null,
+    executor_type: executorType,
+    executor_id: `${executorType}-1`,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "member-1",
     parent_issue_id: null,
@@ -137,11 +141,11 @@ function makeIssue(assigneeType: IssueAssigneeType): Issue {
   };
 }
 
-describe("BoardCardContent assignee picker", () => {
-  it.each<IssueAssigneeType>(["member", "agent", "team"])(
-    "opens the picker from an avatar-only %s assignee without navigating the card",
-    (assigneeType) => {
-      const issue = makeIssue(assigneeType);
+describe("BoardCardContent executor picker", () => {
+  it.each<IssueExecutorType>(["agent", "team"])(
+    "opens the picker from an avatar-only %s executor without navigating the card",
+    (executorType) => {
+      const issue = makeIssue(executorType);
       const { container } = render(
         <NavigationProvider value={navigation}>
           <IssueSurfaceActionsProvider actions={actions}>

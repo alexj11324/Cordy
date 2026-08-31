@@ -80,8 +80,12 @@ const baseIssue = {
   description: null,
   status: "todo",
   priority: "medium",
-  assignee_type: null,
-  assignee_id: null,
+  owner_type: null,
+  owner_id: null,
+  executor_type: null,
+  executor_id: null,
+  reviewer_type: null,
+  reviewer_id: null,
   creator_type: "member",
   creator_id: "user-1",
   parent_issue_id: null,
@@ -1215,7 +1219,7 @@ describe("AutomationRunSchema", () => {
 
   it("preserves a blocked run's status and reason_code", () => {
     const parsed = parseWithFallback(
-      { ...baseRun, status: "skipped", failure_reason: "you are not allowed to trigger this automation's assignee agent", reason_code: "invocation_not_allowed" },
+      { ...baseRun, status: "skipped", failure_reason: "you are not allowed to trigger this automation's executor agent", reason_code: "invocation_not_allowed" },
       AutomationRunSchema,
       FALLBACK_AUTOMATION_RUN,
       ENDPOINT,

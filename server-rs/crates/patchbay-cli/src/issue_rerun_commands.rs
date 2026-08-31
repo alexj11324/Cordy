@@ -27,7 +27,7 @@ pub(super) async fn run_issue_rerun(
         OutputFormat::Table => {
             let agent_id = value_string(&task, "agent_id");
             let synthetic = [serde_json::json!({
-                "assignee_type":"agent","assignee_id":agent_id.clone()
+                "executor_type":"agent","executor_id":agent_id.clone()
             })];
             let workspace_id = resolve_current_workspace_id(cli, environment);
             let actors: IssueActorNames =

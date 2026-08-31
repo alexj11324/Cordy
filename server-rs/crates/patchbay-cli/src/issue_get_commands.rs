@@ -41,17 +41,21 @@ pub(super) fn format_issue_get_table(issue: &Value, actors: &IssueActorNames) ->
         value if value.is_empty() => id,
         value => value,
     };
-    let actor_type = value_string(issue, "assignee_type");
-    let actor_id = value_string(issue, "assignee_id");
-    let assignee = if actor_type.is_empty() || actor_id.is_empty() {
-        String::new()
-    } else {
+    let format_actor = |type_field: &str, id_field: &str| {
+        let actor_type = value_string(issue, type_field);
+        let actor_id = value_string(issue, id_field);
+        if actor_type.is_empty() || actor_id.is_empty() {
+            return String::new();
+        }
         let actor_key = format!("{actor_type}:{actor_id}");
         actors
             .0
             .get(&actor_key)
             .map_or_else(|| actor_key.clone(), |name| format!("{actor_type}:{name}"))
     };
+    let owner = format_actor("owner_type", "owner_id");
+    let executor = format_actor("executor_type", "executor_id");
+    let reviewer = format_actor("reviewer_type", "reviewer_id");
     let date = |field| {
         value_string(issue, field)
             .chars()
@@ -64,7 +68,9 @@ pub(super) fn format_issue_get_table(issue: &Value, actors: &IssueActorNames) ->
             "TITLE".into(),
             "STATUS".into(),
             "PRIORITY".into(),
-            "ASSIGNEE".into(),
+            "OWNER".into(),
+            "EXECUTOR".into(),
+            "REVIEWER".into(),
             "START DATE".into(),
             "DUE DATE".into(),
             "DESCRIPTION".into(),
@@ -74,7 +80,9 @@ pub(super) fn format_issue_get_table(issue: &Value, actors: &IssueActorNames) ->
             value_string(issue, "title"),
             value_string(issue, "status"),
             value_string(issue, "priority"),
-            assignee,
+            owner,
+            executor,
+            reviewer,
             date("start_date"),
             date("due_date"),
             value_string(issue, "description"),

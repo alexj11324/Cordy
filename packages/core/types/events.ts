@@ -109,7 +109,7 @@ export interface IssueCreatedPayload {
 export interface IssueUpdatedPayload {
   issue: Issue;
   // The server stamps issue:updated with which fields actually changed
-  // in the Rust issue publisher. assignee_changed lets the
+  // in the Rust issue publisher. owner_changed / executor_changed let the
   // realtime layer keep filtered myList caches in place on a non-membership
   // change instead of refetching; status_changed lets it reconcile board column
   // counts when a status change lands on an off-screen (unloaded) issue;
@@ -117,7 +117,8 @@ export interface IssueUpdatedPayload {
   // list (the client-side cache diff is unreliable after an optimistic local
   // move — PB-3669 / #4548). Other change flags are present on the wire too and
   // can be surfaced here when needed.
-  assignee_changed?: boolean;
+  owner_changed?: boolean;
+  executor_changed?: boolean;
   status_changed?: boolean;
   project_changed?: boolean;
 }

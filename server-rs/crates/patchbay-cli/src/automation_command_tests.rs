@@ -312,7 +312,7 @@ async fn automation_create_resolves_references_and_preserves_go_body() {
         .expect("request body");
     assert_eq!(body["title"], "Daily planner");
     assert_eq!(body["description"], "Plan each day");
-    assert_eq!(body["assignee_id"], AGENT_ID);
+    assert_eq!(body["executor_id"], AGENT_ID);
     assert_eq!(body["execution_mode"], "create_issue");
     assert_eq!(body["priority"], "high");
     assert_eq!(body["project_id"], PROJECT_ID);
@@ -461,8 +461,8 @@ async fn automation_update_resolves_references_and_patches_only_changed_fields()
         .expect("request body");
     assert_eq!(body["title"], "Updated");
     assert_eq!(body["description"], "");
-    assert_eq!(body["assignee_type"], "agent");
-    assert_eq!(body["assignee_id"], AGENT_ID);
+    assert_eq!(body["executor_type"], "agent");
+    assert_eq!(body["executor_id"], AGENT_ID);
     assert_eq!(body["project_id"], PROJECT_ID);
     assert_eq!(body["priority"], "urgent");
     assert_eq!(body["status"], "paused");
@@ -1006,7 +1006,7 @@ async fn automation_list_matches_go_filter_actor_and_output_semantics() {
                         "title":"Nightly review",
                         "status":"paused",
                         "execution_mode":"run_only",
-                        "assignee_id":"agent-1",
+                        "executor_id":"agent-1",
                         "last_run_at":"2026-08-24T01:02:03Z",
                         "server_only":"preserved"
                     }],
@@ -1096,7 +1096,7 @@ async fn automation_get_resolves_prefix_and_preserves_detail_envelope() {
                         "title":"Morning triage",
                         "status":"active",
                         "execution_mode":"create_issue",
-                        "assignee_id":"agent-1",
+                        "executor_id":"agent-1",
                         "last_run_at":null
                     },
                     "triggers":[{"id":"trigger-1","kind":"schedule"}],

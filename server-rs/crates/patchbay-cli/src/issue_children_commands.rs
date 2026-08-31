@@ -124,7 +124,7 @@ pub(super) fn format_issue_children_table(
         "TITLE".into(),
         "STATUS".into(),
         "PRIORITY".into(),
-        "ASSIGNEE".into(),
+        "EXECUTOR".into(),
     ];
     if full_id {
         headers.insert(2, "ID".into());
@@ -136,9 +136,9 @@ pub(super) fn format_issue_children_table(
             value if value.is_empty() => id.clone(),
             value => value,
         };
-        let actor_type = value_string(child, "assignee_type");
-        let actor_id = value_string(child, "assignee_id");
-        let assignee = if actor_type.is_empty() || actor_id.is_empty() {
+        let actor_type = value_string(child, "executor_type");
+        let actor_id = value_string(child, "executor_id");
+        let executor = if actor_type.is_empty() || actor_id.is_empty() {
             String::new()
         } else {
             let actor_key = format!("{actor_type}:{actor_id}");
@@ -153,7 +153,7 @@ pub(super) fn format_issue_children_table(
             value_string(child, "title"),
             value_string(child, "status"),
             value_string(child, "priority"),
-            assignee,
+            executor,
         ];
         if full_id {
             row.insert(2, id);
