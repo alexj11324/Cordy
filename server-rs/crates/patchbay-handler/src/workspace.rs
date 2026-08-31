@@ -1713,10 +1713,7 @@ async fn delete_workspace(
     );
     step!(
         "delete Linear integration data",
-        patchbay_db::queries::workspace_delete::delete_workspace_linear_data(
-            &mut tx,
-            workspace_id
-        )
+        patchbay_db::queries::workspace_delete::delete_workspace_linear_data(&mut tx, workspace_id)
     );
     step!(
         "delete integrations",

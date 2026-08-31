@@ -595,10 +595,9 @@ impl LinearTokenManager {
     /// both encrypted values are replaced in one database transaction.
     pub async fn access_token(&self, connection_id: Uuid) -> Result<String, LinearTokenError> {
         let mut transaction = self.pool.begin().await.map_err(storage_error)?;
-        let Some(connection) =
-            linear_q::get_connection_for_update(&mut transaction, connection_id)
-                .await
-                .map_err(storage_error)?
+        let Some(connection) = linear_q::get_connection_for_update(&mut transaction, connection_id)
+            .await
+            .map_err(storage_error)?
         else {
             return Err(LinearTokenError::InvalidResponse);
         };
