@@ -63,6 +63,42 @@ pub async fn consume_oauth_state(
     .await?)
 }
 
+/// Reclaims a bounded batch of PKCE state rows that can no longer be used.
+/// The expired branch is shaped to use `idx_linear_oauth_state_expiry`; the
+/// consumed branch keeps successful and denied OAuth attempts from retaining
+/// encrypted verifiers indefinitely.
+pub async fn cleanup_oauth_states(
+    executor: impl Executor<'_, Database = Postgres>,
+    limit: i64,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"WITH expired AS (
+    SELECT id
+    FROM linear_oauth_state
+    WHERE consumed_at IS NULL AND expires_at <= now()
+    ORDER BY expires_at, id
+    LIMIT $1
+), consumed AS (
+    SELECT id
+    FROM linear_oauth_state
+    WHERE consumed_at IS NOT NULL
+    ORDER BY consumed_at, id
+    LIMIT $1
+), candidates AS (
+    SELECT id FROM expired
+    UNION ALL
+    SELECT id FROM consumed
+    LIMIT $1
+)
+DELETE FROM linear_oauth_state
+WHERE id IN (SELECT id FROM candidates)"#,
+    )
+    .bind(limit.clamp(1, 500))
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
+}
+
 pub struct LinearConnectionInput<'a> {
     pub id: Uuid,
     pub workspace_id: Uuid,
@@ -140,6 +176,25 @@ pub async fn get_connection_for_workspace(
     .await?)
 }
 
+pub async fn get_connection_for_workspace_for_update(
+    executor: &mut sqlx::PgConnection,
+    workspace_id: Uuid,
+) -> anyhow::Result<Option<LinearConnection>> {
+    Ok(sqlx::query_as::<_, LinearConnection>(
+        r#"SELECT id, workspace_id, organization_id, organization_name,
+                  actor_id, access_token_encrypted, refresh_token_encrypted,
+                  token_expires_at, scopes, webhook_id, status,
+                  last_success_at, last_error, created_by_id, created_at,
+                  updated_at
+           FROM linear_connection
+           WHERE workspace_id = $1
+           FOR UPDATE"#,
+    )
+    .bind(workspace_id)
+    .fetch_optional(&mut *executor)
+    .await?)
+}
+
 pub async fn get_connection_by_id(
     executor: impl Executor<'_, Database = Postgres>,
     workspace_id: Uuid,
@@ -179,14 +234,34 @@ pub async fn get_connection_for_update(
     .await?)
 }
 
-/// Returns all possible installations while holding their rows. A webhook
-/// may bind its first delivery to a connection only when this result has one
-/// row; ambiguous organization routing is rejected by the HTTP layer.
+/// Returns exact webhook bindings first. Unbound connections are considered
+/// only when no exact binding exists, while holding the selected rows for the
+/// caller's routing/bind transaction.
 pub async fn find_connections_for_webhook(
     executor: &mut sqlx::PgConnection,
     organization_id: &str,
     webhook_id: &str,
 ) -> anyhow::Result<Vec<LinearConnection>> {
+    let exact = sqlx::query_as::<_, LinearConnection>(
+        r#"SELECT id, workspace_id, organization_id, organization_name,
+                  actor_id, access_token_encrypted, refresh_token_encrypted,
+                  token_expires_at, scopes, webhook_id, status,
+                  last_success_at, last_error, created_by_id, created_at,
+                  updated_at
+           FROM linear_connection
+           WHERE organization_id = $1
+             AND status <> 'revoked'
+             AND webhook_id = $2
+           FOR UPDATE"#,
+    )
+    .bind(organization_id)
+    .bind(webhook_id)
+    .fetch_all(&mut *executor)
+    .await?;
+    if !exact.is_empty() {
+        return Ok(exact);
+    }
+
     Ok(sqlx::query_as::<_, LinearConnection>(
         r#"SELECT id, workspace_id, organization_id, organization_name,
                   actor_id, access_token_encrypted, refresh_token_encrypted,
@@ -196,11 +271,10 @@ pub async fn find_connections_for_webhook(
            FROM linear_connection
            WHERE organization_id = $1
              AND status <> 'revoked'
-             AND (webhook_id = $2 OR webhook_id IS NULL)
+             AND webhook_id IS NULL
            FOR UPDATE"#,
     )
     .bind(organization_id)
-    .bind(webhook_id)
     .fetch_all(&mut *executor)
     .await?)
 }

@@ -41,6 +41,8 @@ const LINEAR_OAUTH_SCOPE: &str = "read,write,issues:create,app:assignable";
 const WEBHOOK_MAX_AGE_MS: i128 = 60_000;
 const TOKEN_REFRESH_SKEW: Duration = Duration::minutes(5);
 const MAX_WEBHOOK_BODY_BYTES: usize = 2 * 1024 * 1024;
+const LINEAR_HTTP_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+const LINEAR_HTTP_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
 
 pub fn member_router() -> Router<HandlerState> {
     Router::new().route("/api/workspaces/{id}/linear", get(get_connection))
@@ -87,10 +89,10 @@ fn linear_redirect_uri(state: &HandlerState) -> Option<String> {
         })
 }
 
-fn frontend_origin() -> String {
-    let Some(raw) = env_value("FRONTEND_ORIGIN") else {
-        return "http://localhost:3000".to_string();
-    };
+fn frontend_origin(state: &HandlerState) -> String {
+    let raw = configured_value(Some(&state.public_config.daemon_app_url))
+        .or_else(|| env_value("FRONTEND_ORIGIN"))
+        .unwrap_or_else(|| "http://localhost:3000".to_string());
     let Ok(mut url) = Url::parse(&raw) else {
         return "http://localhost:3000".to_string();
     };
@@ -103,10 +105,10 @@ fn frontend_origin() -> String {
     url.to_string().trim_end_matches('/').to_string()
 }
 
-fn linear_callback_redirect(outcome: &str) -> Response {
+fn linear_callback_redirect(state: &HandlerState, outcome: &str) -> Response {
     Redirect::temporary(&format!(
         "{}/settings?tab=integrations&linear_{}=1",
-        frontend_origin(),
+        frontend_origin(state),
         outcome
     ))
     .into_response()
@@ -240,6 +242,25 @@ async fn start_oauth(
         Ok(id) => id,
         Err(response) => return response,
     };
+    match linear_q::get_connection_for_workspace(&state.pool, workspace_id).await {
+        Ok(Some(connection)) if connection.status != "revoked" => {
+            return error_response(
+                StatusCode::CONFLICT,
+                "Linear is already connected; disconnect before reconnecting",
+            );
+        }
+        Ok(_) => {}
+        Err(error) => {
+            tracing::warn!(%error, "Linear connection lookup before OAuth failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to prepare Linear authorization",
+            );
+        }
+    }
+    if let Err(error) = linear_q::cleanup_oauth_states(&state.pool, 100).await {
+        tracing::warn!(%error, "Linear OAuth state cleanup failed");
+    }
 
     let state_token = random_token(32);
     let verifier = random_token(48);
@@ -409,10 +430,18 @@ impl LinearTokenManager {
         else {
             return Err(LinearTokenError::NotConfigured);
         };
+        let client = reqwest::Client::builder()
+            .connect_timeout(LINEAR_HTTP_CONNECT_TIMEOUT)
+            .timeout(LINEAR_HTTP_REQUEST_TIMEOUT)
+            .build()
+            .map_err(|error| {
+                tracing::warn!(%error, "Linear HTTP client configuration failed");
+                LinearTokenError::Provider
+            })?;
         Ok(Self {
             pool: state.pool.clone(),
             secret_box,
-            client: reqwest::Client::new(),
+            client,
             client_id,
             client_secret,
             token_url: state
@@ -709,49 +738,62 @@ async fn oauth_callback(
     Query(query): Query<OAuthCallbackQuery>,
 ) -> Response {
     if !state.linear_integration_enabled {
-        return linear_callback_redirect("not_configured");
+        return linear_callback_redirect(&state, "not_configured");
     }
     let Some(state_token) = query.state.filter(|value| !value.trim().is_empty()) else {
-        return linear_callback_redirect("invalid_request");
+        return linear_callback_redirect(&state, "invalid_request");
     };
     let mut transaction = match state.pool.begin().await {
         Ok(transaction) => transaction,
         Err(error) => {
             tracing::warn!(%error, "Linear OAuth callback transaction failed");
-            return linear_callback_redirect("error");
+            return linear_callback_redirect(&state, "error");
         }
     };
     let oauth_state =
         match linear_q::consume_oauth_state(&mut *transaction, &sha256_hex(&state_token)).await {
             Ok(Some(value)) => value,
-            Ok(None) => return linear_callback_redirect("invalid_state"),
+            Ok(None) => return linear_callback_redirect(&state, "invalid_state"),
             Err(error) => {
                 tracing::warn!(%error, "Linear OAuth state lookup failed");
-                return linear_callback_redirect("error");
+                return linear_callback_redirect(&state, "error");
             }
         };
     if let Err(error) = transaction.commit().await {
         tracing::warn!(%error, "Linear OAuth state commit failed");
-        return linear_callback_redirect("error");
+        return linear_callback_redirect(&state, "error");
     }
     if query.error.is_some() {
-        return linear_callback_redirect("denied");
+        return linear_callback_redirect(&state, "denied");
     }
     let Some(code) = query.code.filter(|value| !value.trim().is_empty()) else {
-        return linear_callback_redirect("invalid_request");
+        return linear_callback_redirect(&state, "invalid_request");
     };
+    // Avoid issuing a second provider grant when another connect completed
+    // while this callback was in flight. The locked check immediately before
+    // the upsert below closes the remaining race with a concurrent callback.
+    match linear_q::get_connection_for_workspace(&state.pool, oauth_state.workspace_id).await {
+        Ok(Some(connection)) if connection.status != "revoked" => {
+            return linear_callback_redirect(&state, "already_connected");
+        }
+        Ok(_) => {}
+        Err(error) => {
+            tracing::warn!(%error, "Linear existing connection check failed");
+            return linear_callback_redirect(&state, "error");
+        }
+    }
     let verifier = match open(&state, &oauth_state.code_verifier_encrypted) {
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "Linear OAuth verifier decryption failed");
-            return linear_callback_redirect("error");
+            return linear_callback_redirect(&state, "error");
         }
     };
     let manager = match LinearTokenManager::from_state(&state) {
         Ok(manager) => manager,
         Err(error) => {
             tracing::warn!(%error, "Linear OAuth configuration is incomplete");
-            return linear_callback_redirect("not_configured");
+            return linear_callback_redirect(&state, "not_configured");
         }
     };
     let token = match manager
@@ -761,44 +803,83 @@ async fn oauth_callback(
         Ok(token) => token,
         Err(error) => {
             tracing::warn!(%error, "Linear OAuth token exchange failed");
-            return linear_callback_redirect("error");
+            return linear_callback_redirect(&state, "error");
         }
     };
     let identity = match manager.discover_identity(&token.access_token).await {
         Ok(identity) => identity,
         Err(error) => {
             tracing::warn!(%error, "Linear installation identity discovery failed");
-            return linear_callback_redirect("error");
+            return linear_callback_redirect(&state, "error");
         }
     };
     let refresh_token = match token.refresh_token.as_deref() {
         Some(value) if !value.trim().is_empty() => value,
-        _ => return linear_callback_redirect("error"),
+        _ => return linear_callback_redirect(&state, "error"),
     };
     let expires_in = match token.expires_in {
         Some(value) if value > 0 => value,
-        _ => return linear_callback_redirect("error"),
+        _ => return linear_callback_redirect(&state, "error"),
     };
     let access_encrypted = match seal_secret(&manager.secret_box, &token.access_token) {
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "Linear access token encryption failed");
-            return linear_callback_redirect("error");
+            return linear_callback_redirect(&state, "error");
         }
     };
     let refresh_encrypted = match seal_secret(&manager.secret_box, refresh_token) {
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "Linear refresh token encryption failed");
-            return linear_callback_redirect("error");
+            return linear_callback_redirect(&state, "error");
         }
     };
     let scopes = token
         .scope
         .map(LinearScopeResponse::into_json)
         .unwrap_or_else(|| json!([]));
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, "Linear connection transaction failed");
+            return linear_callback_redirect(&state, "error");
+        }
+    };
+    let member = match patchbay_db::queries::member::lock_member_by_user_and_workspace(
+        &mut *transaction,
+        oauth_state.user_id,
+        oauth_state.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(member)) => member,
+        Ok(None) => return linear_callback_redirect(&state, "unauthorized"),
+        Err(error) => {
+            tracing::warn!(%error, "Linear OAuth membership revalidation failed");
+            return linear_callback_redirect(&state, "error");
+        }
+    };
+    if !matches!(member.role.as_str(), "owner" | "admin") {
+        return linear_callback_redirect(&state, "unauthorized");
+    }
+    match linear_q::get_connection_for_workspace_for_update(
+        &mut *transaction,
+        oauth_state.workspace_id,
+    )
+    .await
+    {
+        Ok(Some(connection)) if connection.status != "revoked" => {
+            return linear_callback_redirect(&state, "already_connected");
+        }
+        Ok(_) => {}
+        Err(error) => {
+            tracing::warn!(%error, "Linear existing connection check failed");
+            return linear_callback_redirect(&state, "error");
+        }
+    }
     if let Err(error) = linear_q::upsert_connection(
-        &state.pool,
+        &mut *transaction,
         &linear_q::LinearConnectionInput {
             id: Uuid::now_v7(),
             workspace_id: oauth_state.workspace_id,
@@ -815,9 +896,13 @@ async fn oauth_callback(
     .await
     {
         tracing::warn!(%error, "Linear connection persistence failed");
-        return linear_callback_redirect("error");
+        return linear_callback_redirect(&state, "error");
     }
-    linear_callback_redirect("connected")
+    if let Err(error) = transaction.commit().await {
+        tracing::warn!(%error, "Linear connection transaction commit failed");
+        return linear_callback_redirect(&state, "error");
+    }
+    linear_callback_redirect(&state, "connected")
 }
 
 fn open(state: &HandlerState, ciphertext: &str) -> anyhow::Result<String> {
@@ -867,10 +952,16 @@ async fn disconnect(
     match manager.revoke_connection(workspace_id, &connection).await {
         Ok(()) => StatusCode::NO_CONTENT.into_response(),
         Err(LinearTokenError::InvalidGrant | LinearTokenError::ReauthorizationRequired) => {
-            error_response(
-                StatusCode::CONFLICT,
-                "Linear authorization requires reauthorization before disconnect",
-            )
+            match linear_q::mark_revoked(&state.pool, workspace_id, connection.id).await {
+                Ok(_) => StatusCode::NO_CONTENT.into_response(),
+                Err(error) => {
+                    tracing::warn!(%error, "Linear local disconnect fallback failed");
+                    error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to disconnect Linear",
+                    )
+                }
+            }
         }
         Err(LinearTokenError::Provider) => {
             error_response(StatusCode::BAD_GATEWAY, "Linear revoke request failed")
@@ -887,6 +978,8 @@ async fn disconnect(
 
 #[derive(Debug, Deserialize)]
 struct LinearWebhookEnvelope {
+    #[serde(rename = "id")]
+    event_id: Option<String>,
     #[serde(rename = "organizationId")]
     organization_id: Option<String>,
     #[serde(rename = "webhookId")]
@@ -915,11 +1008,7 @@ enum WebhookValidationError {
     MissingOrganization,
     MissingWebhook,
     MissingTimestamp,
-    MissingHeaderTimestamp,
     ExpiredTimestamp,
-    InvalidHeaderTimestamp,
-    TimestampMismatch,
-    MissingDelivery,
 }
 
 fn validate_webhook(
@@ -956,16 +1045,16 @@ fn validate_webhook(
     if !timestamp_is_fresh(webhook_timestamp, now_ms) {
         return Err(WebhookValidationError::ExpiredTimestamp);
     }
-    let header_timestamp = header_value(headers, "linear-timestamp")
-        .ok_or(WebhookValidationError::MissingHeaderTimestamp)?;
-    let header_timestamp = header_timestamp
-        .parse::<i64>()
-        .map_err(|_| WebhookValidationError::InvalidHeaderTimestamp)?;
-    if header_timestamp != webhook_timestamp {
-        return Err(WebhookValidationError::TimestampMismatch);
-    }
-    let delivery_id =
-        header_value(headers, "linear-delivery").ok_or(WebhookValidationError::MissingDelivery)?;
+    // Linear signs the complete body, including its event id and timestamp.
+    // Prefer that documented id for retry idempotency; the authenticated body
+    // hash is a deterministic fallback for payloads without an id. A delivery
+    // header is accepted as a legacy compatibility hint but is never required.
+    let delivery_id = envelope
+        .event_id
+        .as_deref()
+        .and_then(|value| configured_value(Some(value)))
+        .or_else(|| header_value(headers, "linear-delivery"))
+        .unwrap_or_else(|| sha256_hex_bytes(body));
     let event_type = header_value(headers, "linear-event")
         .or_else(|| configured_value(envelope.event_type.as_deref()))
         .unwrap_or_else(|| "unknown".to_string());
@@ -1005,22 +1094,10 @@ fn webhook_validation_response(error: WebhookValidationError) -> Response {
             StatusCode::BAD_REQUEST,
             "Linear Webhook webhookTimestamp is required",
         ),
-        WebhookValidationError::MissingHeaderTimestamp => {
-            (StatusCode::BAD_REQUEST, "missing Linear timestamp")
-        }
         WebhookValidationError::ExpiredTimestamp => (
             StatusCode::BAD_REQUEST,
             "Linear Webhook timestamp is expired",
         ),
-        WebhookValidationError::InvalidHeaderTimestamp => {
-            (StatusCode::BAD_REQUEST, "invalid Linear timestamp")
-        }
-        WebhookValidationError::TimestampMismatch => {
-            (StatusCode::BAD_REQUEST, "Linear timestamps do not match")
-        }
-        WebhookValidationError::MissingDelivery => {
-            (StatusCode::BAD_REQUEST, "missing Linear delivery id")
-        }
     };
     error_response(status, message)
 }
@@ -1167,6 +1244,10 @@ fn sha256_hex(value: &str) -> String {
     hex::encode(Sha256::digest(value.as_bytes()))
 }
 
+fn sha256_hex_bytes(value: &[u8]) -> String {
+    hex::encode(Sha256::digest(value))
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum LinearScopeResponse {
@@ -1206,7 +1287,7 @@ mod tests {
     use super::*;
     use axum::http::HeaderValue;
 
-    fn signed_headers(secret: &str, body: &[u8], timestamp: Option<i64>) -> HeaderMap {
+    fn signed_headers(secret: &str, body: &[u8]) -> HeaderMap {
         let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).unwrap();
         mac.update(body);
         let mut headers = HeaderMap::new();
@@ -1214,13 +1295,6 @@ mod tests {
             "linear-signature",
             HeaderValue::from_str(&hex::encode(mac.finalize().into_bytes())).unwrap(),
         );
-        headers.insert("linear-delivery", HeaderValue::from_static("delivery-1"));
-        if let Some(timestamp) = timestamp {
-            headers.insert(
-                "linear-timestamp",
-                HeaderValue::from_str(&timestamp.to_string()).unwrap(),
-            );
-        }
         headers
     }
 
@@ -1329,12 +1403,12 @@ mod tests {
     fn valid_webhook_requires_and_preserves_millisecond_timestamp() {
         let secret = "webhook-secret";
         let timestamp = 1_700_000_000_000;
-        let body = br#"{"organizationId":"org-1","webhookId":"webhook-1","webhookTimestamp":1700000000000,"type":"Issue"}"#;
-        let headers = signed_headers(secret, body, Some(timestamp));
+        let body = br#"{"id":"event-1","organizationId":"org-1","webhookId":"webhook-1","webhookTimestamp":1700000000000,"type":"Issue"}"#;
+        let headers = signed_headers(secret, body);
         let webhook = validate_webhook(Some(secret), &headers, body, timestamp + 1).unwrap();
         assert_eq!(webhook.organization_id, "org-1");
         assert_eq!(webhook.webhook_id, "webhook-1");
-        assert_eq!(webhook.delivery_id, "delivery-1");
+        assert_eq!(webhook.delivery_id, "event-1");
         assert_eq!(webhook.event_type, "Issue");
     }
 
@@ -1342,7 +1416,7 @@ mod tests {
     fn webhook_without_timestamp_is_rejected_even_with_a_valid_signature() {
         let secret = "webhook-secret";
         let body = br#"{"organizationId":"org-1","webhookId":"webhook-1"}"#;
-        let headers = signed_headers(secret, body, None);
+        let headers = signed_headers(secret, body);
         assert_eq!(
             validate_webhook(Some(secret), &headers, body, 1_700_000_000_000),
             Err(WebhookValidationError::MissingTimestamp)
@@ -1350,15 +1424,13 @@ mod tests {
     }
 
     #[test]
-    fn webhook_without_header_timestamp_is_rejected_even_with_a_valid_body_timestamp() {
+    fn body_timestamp_is_authoritative_without_provider_timestamp_header() {
         let secret = "webhook-secret";
         let timestamp = 1_700_000_000_000;
         let body = br#"{"organizationId":"org-1","webhookId":"webhook-1","webhookTimestamp":1700000000000}"#;
-        let headers = signed_headers(secret, body, None);
-        assert_eq!(
-            validate_webhook(Some(secret), &headers, body, timestamp),
-            Err(WebhookValidationError::MissingHeaderTimestamp)
-        );
+        let headers = signed_headers(secret, body);
+        let webhook = validate_webhook(Some(secret), &headers, body, timestamp).unwrap();
+        assert_eq!(webhook.delivery_id, sha256_hex_bytes(body));
     }
 
     #[test]
@@ -1366,22 +1438,10 @@ mod tests {
         let secret = "webhook-secret";
         let timestamp = 1_700_000_000_000;
         let body = br#"{"organizationId":"org-1","webhookId":"webhook-1","webhookTimestamp":1700000000000}"#;
-        let headers = signed_headers(secret, body, Some(timestamp));
+        let headers = signed_headers(secret, body);
         assert_eq!(
             validate_webhook(Some(secret), &headers, body, timestamp + 60_001),
             Err(WebhookValidationError::ExpiredTimestamp)
-        );
-    }
-
-    #[test]
-    fn webhook_timestamp_header_must_match_the_signed_body() {
-        let secret = "webhook-secret";
-        let timestamp = 1_700_000_000_000;
-        let body = br#"{"organizationId":"org-1","webhookId":"webhook-1","webhookTimestamp":1700000000000}"#;
-        let headers = signed_headers(secret, body, Some(timestamp + 1));
-        assert_eq!(
-            validate_webhook(Some(secret), &headers, body, timestamp),
-            Err(WebhookValidationError::TimestampMismatch)
         );
     }
 }

@@ -261,10 +261,11 @@ mod tests {
     fn frontend_map_includes_public_plus_forced_compat() {
         let flags = FakeFlags::new(&[PLUGINS_V1]);
         let map = evaluate_frontend_public_flags(&flags);
-        assert_eq!(map.len(), 7);
+        assert_eq!(map.len(), 8);
         assert!(map[PLUGINS_V1]);
         assert!(!map[BILLING_WORKSPACE_SUBSCRIPTIONS]);
         assert!(!map[CUSTOM_ISSUE_STATUSES]);
+        assert!(!map[LINEAR_INSTALLATION_FOUNDATION]);
         // Compat keys are permanently true regardless of source state.
         assert!(map[AGENT_BUILDER_COMPAT]);
         assert!(map[AGENT_SKILL_TOGGLES_COMPAT]);

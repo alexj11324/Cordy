@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use patchbay_db::queries::{agent, runtime};
+use patchbay_db::queries::{agent, linear, runtime};
 use patchbay_events::{Bus, Event};
 use patchbay_service::task_service::TaskService;
 use serde_json::json;
@@ -25,6 +25,7 @@ const RUNNING_TIMEOUT: Duration = Duration::from_secs(9_000);
 const RECOVERY_BATCH: i32 = 100;
 const CHAT_FINALIZE_GRACE: Duration = Duration::from_secs(60);
 const CHAT_FINALIZE_BATCH: i32 = 100;
+const LINEAR_OAUTH_STATE_BATCH: i64 = 100;
 const OFFLINE_RUNTIME_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const GC_BATCH: i32 = 100;
 const GC_BLOCKED_LIMIT: i32 = 1000;
@@ -267,6 +268,14 @@ impl RuntimeTaskSweeper {
         let mut report = RuntimeTaskSweepReport::default();
         let stale_before = cutoff(now, STALE_THRESHOLD);
         report.runtimes_offline = self.sweep_stale_runtimes(stale_before).await;
+
+        match linear::cleanup_oauth_states(&self.pool, LINEAR_OAUTH_STATE_BATCH).await {
+            Ok(deleted) if deleted > 0 => {
+                tracing::debug!(deleted, "runtime sweeper: reclaimed Linear OAuth state rows");
+            }
+            Ok(_) => {}
+            Err(error) => tracing::warn!(%error, "runtime sweeper: reclaim Linear OAuth states failed"),
+        }
 
         let reconnect_before = cutoff(now, self.reconnect_grace);
         match runtime::fail_tasks_for_offline_runtimes(&self.pool, reconnect_before, OFFLINE_BATCH)
@@ -610,6 +619,11 @@ mod tests {
         )
         .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_pull_requests(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
+        patchbay_db::queries::workspace_delete::delete_workspace_linear_data(
             &mut *tx,
             workspace_id,
         )
