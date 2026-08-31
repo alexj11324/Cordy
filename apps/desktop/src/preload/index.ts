@@ -263,7 +263,8 @@ const desktopAPI = {
   },
   /** Listen for Cmd/Ctrl+, requests to open Settings. Only the main window
    *  subscribes — main delivers the chord there even when it was pressed in
-   *  an issue window, because Settings is a tab. Returns an unsubscribe fn. */
+   *  an issue window, because Settings belongs to the main app window.
+   *  Returns an unsubscribe fn. */
   onOpenSettings: (callback: () => void) =>
     subscribeToMainRendererChannel("settings:open", () => callback()),
   /** Ask the main process to close the window (used after closing the last tab). */

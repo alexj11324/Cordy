@@ -304,6 +304,7 @@
   },
   "page": {
     "title": "设置",
+    "back_to_app": "返回应用",
     "my_account": "我的账号",
     "workspace_fallback": "工作区",
     "integrations_title": "集成",

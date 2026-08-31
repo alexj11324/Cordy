@@ -2,6 +2,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
 import { useTabStore } from "@/stores/tab-store";
+import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 import { useNavigationInputBindings } from "./use-tab-history";
 
 function Probe() {
@@ -53,6 +54,7 @@ function keydown(init: KeyboardEventInit, target: EventTarget = window) {
 describe("useNavigationInputBindings", () => {
   beforeEach(() => {
     seedHistory();
+    useWindowOverlayStore.getState().close();
   });
 
   it("goes back on Cmd+Left", () => {
@@ -109,6 +111,33 @@ describe("useNavigationInputBindings", () => {
     expect(activeHistoryIndex()).toBe(0);
     window.dispatchEvent(new MouseEvent("mouseup", { button: 4 }));
     expect(activeHistoryIndex()).toBe(1);
+  });
+
+  it("closes Settings on back input without changing the hidden tab history", () => {
+    render(<Probe />);
+    useWindowOverlayStore.getState().open({
+      type: "settings",
+      path: "/acme/settings",
+    });
+
+    keydown({ key: "ArrowLeft", metaKey: true });
+
+    expect(useWindowOverlayStore.getState().overlay).toBeNull();
+    expect(activeHistoryIndex()).toBe(1);
+  });
+
+  it("ignores forward input while Settings is open", () => {
+    useTabStore.getState().goBack();
+    render(<Probe />);
+    useWindowOverlayStore.getState().open({
+      type: "settings",
+      path: "/acme/settings",
+    });
+
+    keydown({ key: "ArrowRight", metaKey: true });
+
+    expect(useWindowOverlayStore.getState().overlay?.type).toBe("settings");
+    expect(activeHistoryIndex()).toBe(0);
   });
 
   it("stops listening after unmount", () => {

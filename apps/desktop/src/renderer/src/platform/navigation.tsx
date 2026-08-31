@@ -5,6 +5,7 @@ import {
   type NavigationAdapter,
 } from "@patchbay/views/navigation";
 import { useAuthStore } from "@patchbay/core/auth";
+import { useModalStore } from "@patchbay/core/modals";
 import { isReservedSlug } from "@patchbay/core/paths";
 import {
   useTabStore,
@@ -13,6 +14,7 @@ import {
   useActiveTabUrl,
 } from "@/stores/tab-store";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
+import { isStandaloneSettingsPath } from "@/platform/standalone-settings";
 
 function requireRuntimeAppUrl(scope: string): string {
   const runtimeConfig = window.desktopAPI.runtimeConfig;
@@ -48,6 +50,23 @@ function extractWorkspaceSlug(path: string): string | null {
  */
 function tryRouteToOverlay(path: string): boolean {
   const overlay = useWindowOverlayStore.getState();
+  if (isStandaloneSettingsPath(path)) {
+    const targetSlug = extractWorkspaceSlug(path);
+    const tabs = useTabStore.getState();
+    if (!targetSlug || !tabs.validWorkspaceSlugs?.has(targetSlug)) {
+      return false;
+    }
+    if (targetSlug && targetSlug !== tabs.activeWorkspaceSlug) {
+      tabs.switchWorkspace(targetSlug);
+    }
+    // ModalRegistry dialogs render through a portal attached to document.body,
+    // outside the desktop underlay that Settings makes inert. Dismiss any
+    // active dialog before taking over the window so it cannot remain above or
+    // trap focus behind the standalone page.
+    useModalStore.getState().close();
+    overlay.open({ type: "settings", path });
+    return true;
+  }
   if (path === "/workspaces/new") {
     overlay.open({ type: "new-workspace" });
     return true;
@@ -112,6 +131,7 @@ export function routeContentLinkPath(
   path: string,
   disposition: LinkClickIntent = "push",
 ): void {
+  if (tryRouteToOverlay(path)) return;
   const store = useTabStore.getState();
   const slug = extractWorkspaceSlug(path);
   if (slug && slug !== store.activeWorkspaceSlug) {
@@ -175,13 +195,16 @@ export function DesktopNavigationProvider({
   // The active session's url IS the location. Primitive subscription: this
   // only re-renders when the active url actually changes.
   const activeUrl = useActiveTabUrl();
+  const settingsPath = useWindowOverlayStore((state) =>
+    state.overlay?.type === "settings" ? state.overlay.path : null,
+  );
   const location = useMemo(() => {
-    const url = activeUrl ?? "/";
+    const url = settingsPath ?? activeUrl ?? "/";
     const { pathname, suffix } = splitTabUrl(url);
     const hashIdx = suffix.indexOf("#");
     const search = hashIdx === -1 ? suffix : suffix.slice(0, hashIdx);
     return { pathname, search };
-  }, [activeUrl]);
+  }, [activeUrl, settingsPath]);
 
   const adapter: NavigationAdapter = useMemo(
     () => ({
@@ -204,15 +227,23 @@ export function DesktopNavigationProvider({
         useTabStore.getState().navigateActiveSession(path, { replace: true });
       },
       back: () => {
+        if (useWindowOverlayStore.getState().overlay?.type === "settings") {
+          useWindowOverlayStore.getState().close();
+          return;
+        }
         useTabStore.getState().goBack();
       },
       forward: () => {
+        if (useWindowOverlayStore.getState().overlay?.type === "settings") return;
         useTabStore.getState().goForward();
       },
       // The active tab's virtual history, same source the shell's back button
       // reads. A tab opened straight onto a destination sits at index 0 and
       // has nothing behind it.
       canGoBack: () => {
+        if (useWindowOverlayStore.getState().overlay?.type === "settings") {
+          return true;
+        }
         const active = getActiveTab(useTabStore.getState());
         return (active?.history.index ?? 0) > 0;
       },
@@ -223,6 +254,7 @@ export function DesktopNavigationProvider({
         title?: string,
         opts?: { activate?: boolean },
       ) => {
+        if (tryRouteToOverlay(path)) return;
         // Cross-workspace "open in new tab" switches workspace and opens
         // the path there (focus follows the user), REGARDLESS of
         // `opts.activate`. This is a deliberate product exception to the

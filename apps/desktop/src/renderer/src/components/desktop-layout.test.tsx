@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import { useSidebar } from "@patchbay/ui/components/ui/sidebar";
 import { RESOURCES } from "@patchbay/views/locales";
+import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 
 // The shell resolves the mocked `getCurrentSlug()` against the workspace list
 // before mounting workspace-scoped chrome, so the list has to contain it or
@@ -105,6 +106,10 @@ vi.mock("./tab-content", () => ({
 
 const { DesktopShell } = await import("./desktop-layout");
 
+beforeEach(() => {
+  useWindowOverlayStore.getState().close();
+});
+
 function renderShell(
   os: "macos" | "windows" = "macos",
   host: "electron" | "browser" = "electron",
@@ -131,6 +136,24 @@ function renderShell(
 }
 
 describe("DesktopShell sidebar trigger", () => {
+  it("makes the covered application inert while standalone Settings is open", () => {
+    const { getByTestId } = renderShell();
+    const underlay = getByTestId("desktop-application-underlay");
+
+    act(() => {
+      useWindowOverlayStore.getState().open({
+        type: "settings",
+        path: "/acme/settings",
+      });
+    });
+    expect(underlay).toHaveAttribute("inert");
+    expect(underlay).toHaveAttribute("aria-hidden", "true");
+
+    act(() => useWindowOverlayStore.getState().close());
+    expect(underlay).not.toHaveAttribute("inert");
+    expect(underlay).not.toHaveAttribute("aria-hidden");
+  });
+
   it("enables the glass shell while reserving native transparency for macOS", () => {
     const mac = renderShell("macos").container.querySelector<HTMLElement>(
       "[data-slot='sidebar-wrapper']",

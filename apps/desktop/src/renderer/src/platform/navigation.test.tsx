@@ -8,15 +8,18 @@ import { useEffect } from "react";
 // mocked so we can spy on their entry points.
 
 const overlay = vi.hoisted(() => ({
-  overlay: null as null | { type: string },
+  overlay: null as null | { type: string; path?: string },
   open: vi.fn(),
   close: vi.fn(),
 }));
 
 vi.mock("@/stores/window-overlay-store", () => ({
-  useWindowOverlayStore: Object.assign(() => null, {
+  useWindowOverlayStore: Object.assign(
+    (selector: (state: typeof overlay) => unknown) => selector(overlay),
+    {
     getState: () => overlay,
-  }),
+    },
+  ),
 }));
 
 const auth = vi.hoisted(() => ({ logout: vi.fn() }));
@@ -29,15 +32,20 @@ vi.mock("@patchbay/core/auth", () => ({
 
 import { DesktopNavigationProvider, routeContentLinkPath } from "./navigation";
 import { useNavigation } from "@patchbay/views/navigation";
+import { useModalStore } from "@patchbay/core/modals";
 import { useTabStore, getActiveTab } from "@/stores/tab-store";
 
 beforeEach(() => {
   overlay.open.mockReset();
   overlay.close.mockReset();
   overlay.overlay = null;
+  useModalStore.getState().close();
   auth.logout.mockReset();
   useTabStore.getState().reset();
   useTabStore.getState().switchWorkspace("acme"); // default tab /acme/issues
+  useTabStore
+    .getState()
+    .validateWorkspaceSlugs(new Set(["acme", "butter"]));
   Object.defineProperty(window, "desktopAPI", {
     configurable: true,
     value: {
@@ -160,6 +168,55 @@ describe("push", () => {
     expect(overlay.open).toHaveBeenCalledWith({ type: "new-workspace" });
     expect(acmeGroup()).toBe(before);
   });
+
+  it("opens Settings as a window-level page without touching sessions", () => {
+    const getAdapter = renderProvider();
+    const before = acmeGroup();
+
+    getAdapter().push("/acme/settings?tab=tokens");
+
+    expect(overlay.open).toHaveBeenCalledWith({
+      type: "settings",
+      path: "/acme/settings?tab=tokens",
+    });
+    expect(acmeGroup()).toBe(before);
+  });
+
+  it("closes a portaled modal before opening Settings", () => {
+    const getAdapter = renderProvider();
+    useModalStore.getState().open("create-issue");
+
+    getAdapter().push("/acme/settings");
+
+    expect(useModalStore.getState().modal).toBeNull();
+    expect(overlay.open).toHaveBeenCalledWith({
+      type: "settings",
+      path: "/acme/settings",
+    });
+  });
+
+  it("switches workspace before opening that workspace's Settings page", () => {
+    const getAdapter = renderProvider();
+
+    getAdapter().push("/butter/settings");
+
+    expect(useTabStore.getState().activeWorkspaceSlug).toBe("butter");
+    expect(getActiveTab(useTabStore.getState())?.url).toBe("/butter/issues");
+    expect(overlay.open).toHaveBeenCalledWith({
+      type: "settings",
+      path: "/butter/settings",
+    });
+  });
+
+  it("keeps an unknown workspace Settings deep link on the normal stale-workspace path", () => {
+    const getAdapter = renderProvider();
+
+    getAdapter().push("/deleted/settings");
+
+    expect(overlay.open).not.toHaveBeenCalled();
+    expect(useTabStore.getState().activeWorkspaceSlug).toBe("deleted");
+    expect(getActiveTab(useTabStore.getState())?.url).toBe("/deleted/issues");
+  });
 });
 
 describe("push with pinned active tab", () => {
@@ -217,6 +274,17 @@ describe("back", () => {
     expect(active.url).toBe("/acme/issues");
     expect(active.history.index).toBe(0);
   });
+
+  it("returns from the standalone Settings page without changing tab history", () => {
+    const getAdapter = renderProvider();
+    const before = getActiveTab(useTabStore.getState())!.history;
+    overlay.overlay = { type: "settings", path: "/acme/settings" };
+
+    getAdapter().back!();
+
+    expect(overlay.close).toHaveBeenCalledOnce();
+    expect(getActiveTab(useTabStore.getState())!.history).toEqual(before);
+  });
 });
 
 // Consumed by `useBackOrReplace` — a page whose subject was deleted steps back
@@ -254,6 +322,13 @@ describe("canGoBack", () => {
     getAdapter().openInNewTab!("/acme/agents", "Agents", { activate: true });
 
     expect(getAdapter().canGoBack!()).toBe(false);
+  });
+
+  it("is true in Settings because back returns to the app", () => {
+    const getAdapter = renderProvider();
+    overlay.overlay = { type: "settings", path: "/acme/settings" };
+
+    expect(getAdapter().canGoBack!()).toBe(true);
   });
 });
 

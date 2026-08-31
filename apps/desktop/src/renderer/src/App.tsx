@@ -60,6 +60,11 @@ function useCmdWCloseTab() {
         window.desktopAPI.closeWindow();
         return;
       }
+      const overlay = useWindowOverlayStore.getState();
+      if (overlay.overlay?.type === "settings") {
+        overlay.close();
+        return;
+      }
       const store = useTabStore.getState();
       const { activeWorkspaceSlug, byWorkspace } = store;
       if (!activeWorkspaceSlug) {
@@ -295,6 +300,9 @@ function AppContent() {
     if (!workspaceListReady) return;
     const validSlugs = new Set(workspaces.map((w) => w.slug));
     useTabStore.getState().validateWorkspaceSlugs(validSlugs);
+    useWindowOverlayStore
+      .getState()
+      .validateSettingsWorkspace(validSlugs);
     const { activeWorkspaceSlug, switchWorkspace } = useTabStore.getState();
     if (!activeWorkspaceSlug && workspaces.length > 0) {
       switchWorkspace(workspaces[0].slug);

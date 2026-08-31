@@ -1,5 +1,6 @@
 import { useCallback, useEffect } from "react";
 import { useTabStore, useActiveTabHistory } from "@/stores/tab-store";
+import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 
 /**
  * Shell back/forward for the active tab (PB-4741 session architecture).
@@ -12,15 +13,23 @@ import { useTabStore, useActiveTabHistory } from "@/stores/tab-store";
  */
 export function useTabHistory() {
   const { historyIndex, historyLength } = useActiveTabHistory();
+  const settingsOpen = useWindowOverlayStore(
+    (state) => state.overlay?.type === "settings",
+  );
 
-  const canGoBack = historyIndex > 0;
-  const canGoForward = historyIndex < historyLength - 1;
+  const canGoBack = settingsOpen || historyIndex > 0;
+  const canGoForward = !settingsOpen && historyIndex < historyLength - 1;
 
   const goBack = useCallback(() => {
+    if (useWindowOverlayStore.getState().overlay?.type === "settings") {
+      useWindowOverlayStore.getState().close();
+      return;
+    }
     useTabStore.getState().goBack();
   }, []);
 
   const goForward = useCallback(() => {
+    if (useWindowOverlayStore.getState().overlay?.type === "settings") return;
     useTabStore.getState().goForward();
   }, []);
 

@@ -35,6 +35,14 @@ describe("sanitizeTabPath", () => {
     expect(sanitizeTabPath("/my-team/projects/abc")).toBe("/my-team/projects/abc");
   });
 
+  it("rejects Settings because it is a standalone desktop page", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(sanitizeTabPath("/acme/settings")).toBeNull();
+    expect(sanitizeTabPath("/acme/settings?tab=tokens")).toBeNull();
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it("rejects paths whose first segment is a reserved slug (missing workspace prefix)", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(sanitizeTabPath("/issues")).toBeNull();
@@ -284,13 +292,13 @@ describe("useTabStore actions", () => {
   it("ignores updates addressed to a tab after it has been closed", () => {
     const store = useTabStore.getState();
     store.switchWorkspace("acme");
-    const closedTabId = store.addTab("/acme/settings", "Settings");
+    const closedTabId = store.addTab("/acme/skills", "Skills");
 
     store.closeTab(closedTabId);
     const before = useTabStore.getState().byWorkspace.acme;
 
     store.updateTab(closedTabId, { title: "Ghost" });
-    store.commitScrollMemento(closedTabId, "/acme/settings", {
+    store.commitScrollMemento(closedTabId, "/acme/skills", {
       main: { top: 10, height: 100 },
     });
 
@@ -716,7 +724,7 @@ describe("bulk tab closing", () => {
     const issuesId = useTabStore.getState().byWorkspace.acme.tabs[0].id;
     const projectsId = store.addTab("/acme/projects", "Projects");
     store.addTab("/acme/agents", "Agents");
-    store.addTab("/acme/settings", "Settings");
+    store.addTab("/acme/skills", "Skills");
     store.togglePin(issuesId);
     store.setActiveTab(useTabStore.getState().byWorkspace.acme.tabs[2].id);
 
@@ -733,7 +741,7 @@ describe("bulk tab closing", () => {
     const issuesId = useTabStore.getState().byWorkspace.acme.tabs[0].id;
     const projectsId = store.addTab("/acme/projects", "Projects");
     store.addTab("/acme/agents", "Agents");
-    store.addTab("/acme/settings", "Settings");
+    store.addTab("/acme/skills", "Skills");
     store.togglePin(issuesId);
     store.setActiveTab(issuesId);
 
@@ -771,18 +779,18 @@ describe("closeTab activation order (PB-5665)", () => {
     const issuesId = useTabStore.getState().byWorkspace.acme.tabs[0].id;
     const projectsId = store.addTab("/acme/projects", "Projects");
     const agentsId = store.addTab("/acme/agents", "Agents");
-    const settingsId = store.addTab("/acme/settings", "Settings");
+    const skillsId = store.addTab("/acme/skills", "Skills");
 
     store.setActiveTab(projectsId);
     store.setActiveTab(agentsId);
-    store.setActiveTab(settingsId);
+    store.setActiveTab(skillsId);
     expect(useTabStore.getState().byWorkspace.acme.recentTabIds).toEqual([
       agentsId,
       projectsId,
       issuesId,
     ]);
 
-    store.closeTab(settingsId);
+    store.closeTab(skillsId);
     expect(useTabStore.getState().byWorkspace.acme.activeTabId).toBe(agentsId);
     store.closeTab(agentsId);
     expect(useTabStore.getState().byWorkspace.acme.activeTabId).toBe(projectsId);
@@ -1153,6 +1161,51 @@ describe("mergePersistedTabs (rehydration, PB-4370)", () => {
     const tab = rehydrate(persistedTab("/acme/teams"));
     expect(tab).not.toHaveProperty("icon");
     expect(tab.url).toBe("/acme/teams");
+  });
+
+  it("drops legacy Settings tabs during rehydration", () => {
+    const state = mergePersistedTabs(
+      {
+        activeWorkspaceSlug: "acme",
+        byWorkspace: {
+          acme: {
+            activeTabId: "settings",
+            tabs: [
+              persistedTab("/acme/issues", { id: "issues" }),
+              persistedTab("/acme/settings?tab=tokens", { id: "settings" }),
+            ],
+          },
+        },
+      },
+      emptyState(),
+    );
+
+    expect(state.byWorkspace.acme.tabs.map((tab) => tab.url)).toEqual([
+      "/acme/issues",
+    ]);
+    expect(state.byWorkspace.acme.activeTabId).toBe("issues");
+  });
+
+  it("removes legacy Settings entries from persisted history and realigns the index", () => {
+    const tab = rehydrate(
+      persistedTab("/acme/inbox", {
+        history: {
+          stack: [
+            "/acme/issues",
+            "/acme/settings?tab=tokens",
+            "/acme/inbox",
+            "/other/projects",
+            "/acme/agents",
+          ],
+          index: 2,
+        },
+      }),
+    );
+
+    expect(tab.history).toEqual({
+      stack: ["/acme/issues", "/acme/inbox", "/acme/agents"],
+      index: 1,
+    });
   });
 
   // Payloads written before the generic view-state entries existed carry a
