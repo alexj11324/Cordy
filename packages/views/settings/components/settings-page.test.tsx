@@ -1,4 +1,4 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SidebarProvider, useSidebar } from "@patchbay/ui/components/ui/sidebar";
@@ -130,16 +130,22 @@ describe("SettingsPage nav trigger", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("uses the shared sidebar language for a standalone settings surface", () => {
+  it("uses the shared sidebar language for a standalone settings surface", async () => {
     const { container } = renderWithI18n(
       <SettingsPage variant="standalone" />,
     );
 
-    const settings = container.querySelector('[data-settings-variant="standalone"]');
+    await waitFor(() => {
+      expect(
+        container.querySelector('[data-settings-ui="lobe-runtime"]'),
+      ).toBeInTheDocument();
+    });
+    const settings = container.querySelector('[data-settings-ui="lobe"]');
     const navigation = container.querySelector(
-      '[data-settings-variant="standalone"] > div',
+      '[data-settings-ui="lobe"] [role="tablist"]',
     );
     expect(settings).toHaveClass("bg-page-canvas");
+    expect(container.querySelector('[data-settings-ui="lobe"]')).toBeInTheDocument();
     expect(navigation).toHaveClass("md:w-80");
     expect(navigation).not.toHaveClass("md:w-56");
     expect(container.querySelector("[data-settings-content]")).toHaveClass(

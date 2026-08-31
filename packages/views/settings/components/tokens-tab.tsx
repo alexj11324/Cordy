@@ -6,7 +6,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@patchbay/ui/components
 import type { PersonalAccessToken } from "@patchbay/core/types";
 import { Alert, AlertDescription } from "@patchbay/ui/components/ui/alert";
 import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { Input } from "@patchbay/ui/components/ui/input";
+import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Card, CardContent } from "@patchbay/ui/components/ui/card";
 import {

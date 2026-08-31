@@ -5,7 +5,7 @@ import { Crown, Shield, User, Plus, MoreHorizontal, UserMinus, Clock, X, Mail, L
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useOptionalNavigation } from "../../navigation";
 import type { MemberWithUser, MemberRole, Invitation, ShareLink } from "@patchbay/core/types";
-import { Input } from "@patchbay/ui/components/ui/input";
+import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Card, CardContent } from "@patchbay/ui/components/ui/card";
 import { Badge } from "@patchbay/ui/components/ui/badge";

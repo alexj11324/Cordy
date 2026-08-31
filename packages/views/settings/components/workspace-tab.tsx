@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LogOut } from "lucide-react";
-import { Input } from "@patchbay/ui/components/ui/input";
+import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
 import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import { Button } from "@patchbay/ui/components/ui/button";
 import {

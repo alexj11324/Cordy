@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { AlertCircle, Info, LogIn } from "lucide-react";
 import { Button } from "@patchbay/ui/components/ui/button";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+import { SettingsSwitch as Switch } from "@patchbay/ui/components/common/lobe-settings";
 import { cn } from "@patchbay/ui/lib/utils";
 import { toast } from "sonner";
 import {

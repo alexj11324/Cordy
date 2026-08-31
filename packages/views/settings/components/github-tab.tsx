@@ -7,7 +7,7 @@ import { ExternalLink, GitCommitHorizontal, PanelRight } from "lucide-react";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Card, CardContent } from "@patchbay/ui/components/ui/card";
 import { Label } from "@patchbay/ui/components/ui/label";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+import { SettingsSwitch as Switch } from "@patchbay/ui/components/common/lobe-settings";
 import {
   AlertDialog,
   AlertDialogAction,
