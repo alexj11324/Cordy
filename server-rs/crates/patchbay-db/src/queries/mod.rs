@@ -30,6 +30,7 @@ pub mod issue_reaction;
 pub mod issue_status;
 pub mod issue_view;
 pub mod issue_view_preference;
+pub mod linear;
 pub mod member;
 pub mod notification_preference;
 pub mod personal_access_token;
