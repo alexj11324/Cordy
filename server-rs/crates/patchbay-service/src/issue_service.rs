@@ -148,7 +148,10 @@ impl IssueService {
             (None, None) => {}
             (Some("member"), Some(owner_id)) => {
                 if member_q::get_member_by_user_and_workspace(&mut *tx, owner_id, workspace_id)
-                    .await?
+                    .await
+                    .map_err(|error| {
+                        ExternalIssueError::Internal(format!("validate external owner: {error}"))
+                    })?
                     .is_none()
                 {
                     return Err(ExternalIssueError::InvalidOwner);
