@@ -1,6 +1,7 @@
 ---
 name: patchbay-task-planning
 description: "Use only for a complex, genuinely splittable goal when a team leader or an explicitly designated planner must propose a minimal dependency DAG."
+user-invocable: false
 allowed-tools: Bash(patchbay *), Bash(git *), Bash(gh *)
 ---
 

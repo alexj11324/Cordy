@@ -104,6 +104,7 @@ async fn find_duplicate(
     issue::find_active_duplicate_issue(&mut **tx, workspace_id, None, None, &normalized).await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn seed_issue(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
     workspace_id: Uuid,
