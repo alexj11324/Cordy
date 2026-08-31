@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { ApiError } from "@patchbay/core/api";
 import { configStore } from "@patchbay/core/config";
 import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
@@ -204,6 +204,26 @@ describe("Settings IntegrationsTab", () => {
     expect(screen.getByRole("button", { name: "Manage" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reconnect" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
+  });
+
+  it("opens the real provider setup panel when the deployment has not enabled it", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    dingtalkInstallationsRef.current = {
+      configured: false,
+      install_supported: false,
+      installations: [],
+    };
+
+    renderTab();
+
+    expect(screen.getByText("Not enabled on this deployment")).toBeInTheDocument();
+    expect(screen.queryByText("Not configured")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Configure" }));
+
+    expect(screen.getByRole("heading", { name: "Platform setup" })).toBeInTheDocument();
+    expect(screen.getByTestId("dingtalk-tab")).toBeInTheDocument();
   });
 
   it("hides reconnect for an active international Lark Hub while that flow is disabled", () => {

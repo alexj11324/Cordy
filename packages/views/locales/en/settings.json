@@ -317,7 +317,7 @@
     "integrations_admin_only": "Workspace admin only",
     "integrations_unavailable": "Unavailable",
     "integrations_health_error": "Could not read connection health",
-    "integrations_setup_required": "Not configured",
+    "integrations_setup_required": "Not enabled on this deployment",
     "integrations_coming_soon": "Coming soon",
     "integrations_disconnected": "Disconnected",
     "integrations_existing_agent": "Existing Agent connection",
@@ -325,6 +325,8 @@
     "integrations_revoked": "Connection revoked",
     "integrations_route_note": "No Agent is preselected when you connect a Hub. Before the first message, Patchbay uses the first Agent available to this member; /agents changes the route for that conversation.",
     "integrations_manage": "Manage",
+    "integrations_configure": "Configure",
+    "integrations_setup_title": "Platform setup",
     "integrations_reconnect": "Reconnect",
     "integrations_disconnect": "Disconnect",
     "integrations_reconnect_title": "Reconnect this platform?",
@@ -748,8 +750,8 @@
     "toast_failed": "Failed to update GitHub settings"
   },
   "vcs": {
-    "section_title": "Git providers (self-hosted)",
-    "page_description": "Connect a self-hosted Forgejo, Gitea, or GitLab instance to mirror pull requests onto issues. Each connection uses an access token; agents push branches and open PRs using the runtime's own Git credentials.",
+    "section_title": "Self-hosted Git services (Forgejo / Gitea / GitLab)",
+    "page_description": "This is only for a Forgejo, Gitea, or GitLab server that you or your organization operates. If you only use GitHub.com, you do not need to configure this section. A connection mirrors pull requests onto issues; agents still use the runtime's own Git credentials to push branches and open PRs.",
     "connect_title": "Connect a provider instance",
     "connected_as": "Connected as {{login}}",
     "form_provider_label": "Provider",

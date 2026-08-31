@@ -216,16 +216,18 @@ function HubAction({
   }
   if (!query.data.configured) {
     return (
-      <span className="text-caption text-muted-foreground">
-        {t(($) => $.page.integrations_setup_required)}
-      </span>
+      <Button variant="outline" size="sm" onClick={onManage}>
+        <Settings2 />
+        {t(($) => $.page.integrations_configure)}
+      </Button>
     );
   }
   if (!query.data.install_supported && !hubConnected) {
     return (
-      <span className="text-caption text-muted-foreground">
-        {t(($) => $.page.integrations_coming_soon)}
-      </span>
+      <Button variant="outline" size="sm" onClick={onManage}>
+        <Settings2 />
+        {t(($) => $.page.integrations_configure)}
+      </Button>
     );
   }
   if (hubConnected && installationId) {
@@ -367,6 +369,12 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
   const vcsAvailable = useConfigStore((state) => state.vcsIntegrationAvailable);
 
   const listings = { lark, slack, dingtalk, wecom, telegram, weixin };
+  const managedListing = managedChannel ? listings[managedChannel].data : undefined;
+  const managedChannelNeedsSetup = Boolean(
+    managedChannel &&
+      !hasActiveHub(managedListing) &&
+      (!managedListing?.configured || !managedListing.install_supported),
+  );
 
   async function removeInstallation(channel: IntegrationChannel, installationId: string) {
     if (mutating) return;
@@ -530,7 +538,11 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
       >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
           <DialogHeader>
-            <DialogTitle>{t(($) => $.page.integrations_manage)}</DialogTitle>
+            <DialogTitle>
+              {managedChannelNeedsSetup
+                ? t(($) => $.page.integrations_setup_title)
+                : t(($) => $.page.integrations_manage)}
+            </DialogTitle>
           </DialogHeader>
           {managedChannel ? renderManagedTab(managedChannel) : null}
         </DialogContent>
