@@ -1,4 +1,4 @@
--- Provider-neutral identity between one Cordy issue and one Linear issue.
+-- Provider-neutral identity between one Patchbay issue and one Linear issue.
 -- Relationships are enforced by application transactions; no database FKs.
 CREATE TABLE linear_issue_link (
     id UUID NOT NULL,

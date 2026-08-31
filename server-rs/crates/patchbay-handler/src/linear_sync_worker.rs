@@ -485,7 +485,7 @@ impl LinearSyncWorker {
         let Some(binding) = binding else {
             // A connected organization can have many projects. Unbound Issues
             // are intentionally ignored rather than imported into a guessed
-            // Cordy Project.
+            // Patchbay Project.
             return Ok(());
         };
         if !inbound_enabled(&binding) {
@@ -537,7 +537,7 @@ impl LinearSyncWorker {
             tracing::warn!(
                 issue_id = %remote.id,
                 mapped_status,
-                "parking imported Linear issue until its Cordy assignments are admissible"
+                "parking imported Linear issue until its Patchbay assignments are admissible"
             );
             patchbay_service::issue_status::BACKLOG.to_string()
         } else {
@@ -630,7 +630,7 @@ impl LinearSyncWorker {
                     .await;
                 match result {
                     Ok(result) => result.issue.ok_or_else(|| {
-                        SyncError::retry(anyhow::anyhow!("Linear import created no Cordy issue"))
+                        SyncError::retry(anyhow::anyhow!("Linear import created no Patchbay issue"))
                     })?,
                     Err(IssueCreateError::Sql(error)) => {
                         // A concurrent delivery may win the linear-origin
