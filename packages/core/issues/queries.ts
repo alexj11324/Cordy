@@ -7,7 +7,7 @@ import {
 import { api, ApiError } from "../api";
 import type {
   Issue,
-  IssueAssigneeType,
+  IssueExecutorType,
   IssueStatusCategory,
   IssueTableFacetsRequest,
   IssueTableGroupSpec,
@@ -77,10 +77,10 @@ export const issueKeys = {
     groupKey,
     { hierarchy, parentId },
   ] as const,
-  assigneeGroupsAll: (wsId: string) =>
-    [...issueKeys.all(wsId), "assignee-groups"] as const,
-  assigneeGroups: (wsId: string, filter: AssigneeGroupedIssuesFilter) =>
-    [...issueKeys.assigneeGroupsAll(wsId), filter] as const,
+  executorGroupsAll: (wsId: string) =>
+    [...issueKeys.all(wsId), "executor-groups"] as const,
+  executorGroups: (wsId: string, filter: ExecutorGroupedIssuesFilter) =>
+    [...issueKeys.executorGroupsAll(wsId), filter] as const,
   /** All "my issues" queries — use for bulk invalidation. */
   myAll: (wsId: string) => [...issueKeys.all(wsId), "my"] as const,
   /** PREFIX for per-scope invalidation — no sort. */
@@ -89,13 +89,13 @@ export const issueKeys = {
   /** FULL KEY for queryOptions — includes sort. */
   myListSorted: (wsId: string, scope: string, filter: MyIssuesFilter, sort?: IssueSortParam) =>
     [...issueKeys.myList(wsId, scope, filter), sort ?? {}] as const,
-  myAssigneeGroupsAll: (wsId: string) =>
-    [...issueKeys.myAll(wsId), "assignee-groups"] as const,
-  myAssigneeGroups: (
+  myExecutorGroupsAll: (wsId: string) =>
+    [...issueKeys.myAll(wsId), "executor-groups"] as const,
+  myExecutorGroups: (
     wsId: string,
     scope: string,
-    filter: AssigneeGroupedIssuesFilter,
-  ) => [...issueKeys.myAssigneeGroupsAll(wsId), scope, filter] as const,
+    filter: ExecutorGroupedIssuesFilter,
+  ) => [...issueKeys.myExecutorGroupsAll(wsId), scope, filter] as const,
   /** All Project Gantt queries — prefix-match key for cross-project invalidation. */
   projectGanttAll: (wsId: string) =>
     [...issueKeys.all(wsId), "project-gantt"] as const,
@@ -108,12 +108,12 @@ export const issueKeys = {
   projectGantt: (
     wsId: string,
     projectId: string,
-    assigneeTypes?: IssueAssigneeType[],
+    executorTypes?: IssueExecutorType[],
   ) =>
     [
       ...issueKeys.projectGanttAll(wsId),
       projectId,
-      assigneeTypes ?? null,
+      executorTypes ?? null,
     ] as const,
   detail: (wsId: string, id: string) =>
     [...issueKeys.all(wsId), "detail", id] as const,
@@ -181,9 +181,12 @@ export const issueKeys = {
 
 export type MyIssuesFilter = Pick<
   ListIssuesParams,
-  | "assignee_id"
-  | "assignee_ids"
-  | "assignee_types"
+  | "owner_id"
+  | "owner_ids"
+  | "owner_types"
+  | "executor_id"
+  | "executor_ids"
+  | "executor_types"
   | "creator_id"
   | "project_id"
   | "involves_user_id"
@@ -198,8 +201,10 @@ export type IssueFlatFilter = MyIssuesFilter &
     | "q"
     | "statuses"
     | "priorities"
-    | "assignee_filters"
-    | "include_no_assignee"
+    | "owner_filters"
+    | "include_no_owner"
+    | "executor_filters"
+    | "include_no_executor"
     | "creator_filters"
     | "project_ids"
     | "include_no_project"
@@ -208,9 +213,9 @@ export type IssueFlatFilter = MyIssuesFilter &
     | "ids"
   >;
 
-export type AssigneeGroupedIssuesFilter = Omit<
+export type ExecutorGroupedIssuesFilter = Omit<
   ListGroupedIssuesParams,
-  "group_by" | "limit" | "offset" | "group_assignee_type" | "group_assignee_id"
+  "group_by" | "limit" | "offset" | "group_executor_type" | "group_executor_id"
 >;
 
 /** Page size per status column. */
@@ -363,7 +368,7 @@ export const PROJECT_GANTT_MAX_ISSUES = 10_000;
 
 async function fetchProjectGanttIssues(
   projectId: string,
-  assigneeTypes?: IssueAssigneeType[],
+  executorTypes?: IssueExecutorType[],
 ) {
   const issues = [];
   let offset = 0;
@@ -371,7 +376,7 @@ async function fetchProjectGanttIssues(
     const res = await api.listIssues({
       project_id: projectId,
       scheduled: true,
-      ...(assigneeTypes?.length ? { assignee_types: assigneeTypes } : {}),
+      ...(executorTypes?.length ? { executor_types: executorTypes } : {}),
       limit: PROJECT_GANTT_PAGE_LIMIT,
       offset,
     });
@@ -399,13 +404,13 @@ async function fetchProjectGanttIssues(
 export function projectGanttIssuesOptions(
   wsId: string,
   projectId: string,
-  // The page's assignee-type tab narrows the Gantt exactly like every
+  // The page's executor-type tab narrows the Gantt exactly like every
   // other mode — same scope, same single mapping upstream.
-  assigneeTypes?: IssueAssigneeType[],
+  executorTypes?: IssueExecutorType[],
 ) {
   return queryOptions({
-    queryKey: issueKeys.projectGantt(wsId, projectId, assigneeTypes),
-    queryFn: () => fetchProjectGanttIssues(projectId, assigneeTypes),
+    queryKey: issueKeys.projectGantt(wsId, projectId, executorTypes),
+    queryFn: () => fetchProjectGanttIssues(projectId, executorTypes),
   });
 }
 

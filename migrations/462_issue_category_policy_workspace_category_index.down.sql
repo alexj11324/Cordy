@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS uq_workspace_issue_category_policy_workspace_category;

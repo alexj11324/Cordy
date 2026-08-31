@@ -107,10 +107,10 @@ is a no-op; a malformed UUID is rejected at the request boundary.
 
 It addresses everyone on the issue. It does NOT make any specific agent run.
 And it is special at trigger time: a comment that carries an `@all` mention is
-treated as a broadcast that SUPPRESSES the issue assignee's automatic
+treated as a broadcast that SUPPRESSES the issue executor's automatic
 on-comment trigger (and the other implicit routing fallbacks — thread parent /
 conversation owner). Use `@all` to announce, not to request work from the
-assignee.
+executor.
 
 `@all` only suppresses those IMPLICIT routes. An EXPLICIT `@agent` / `@team`
 mention in the same comment still fires normally (PB-5411): a comment reading
@@ -206,7 +206,7 @@ Correct:
      → a real `user_id` parses; the link renders and resolves to Alice.
 
 @all broadcast: `[@all](mention://all/all) heads up` — addresses everyone,
-runs no specific agent, and suppresses the assignee auto-trigger.
+runs no specific agent, and suppresses the executor auto-trigger.
 
 The Rust unit tests `mention_ids_dedupe_and_ignore_other_kinds` and
 `all_and_member_mentions_are_detectable` pin UUID parsing, type separation,

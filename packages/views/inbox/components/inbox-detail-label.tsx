@@ -18,7 +18,7 @@ export function useTypeLabels(): Record<InboxItemType, string> {
     issue_assigned: t(($) => $.types.issue_assigned),
     issue_subscribed: t(($) => $.types.issue_subscribed),
     unassigned: t(($) => $.types.unassigned),
-    assignee_changed: t(($) => $.types.assignee_changed),
+    executor_changed: t(($) => $.types.executor_changed),
     status_changed: t(($) => $.types.status_changed),
     priority_changed: t(($) => $.types.priority_changed),
     start_date_changed: t(($) => $.types.start_date_changed),
@@ -81,16 +81,16 @@ export function InboxDetailLabel({ item }: { item: InboxItem }) {
       );
     }
     case "issue_assigned": {
-      if (details.new_assignee_id) {
-        return <span>{t(($) => $.labels.assigned_to, { name: getActorName(details.new_assignee_type ?? "member", details.new_assignee_id) })}</span>;
+      if (details.new_executor_id) {
+        return <span>{t(($) => $.labels.assigned_to, { name: getActorName(details.new_executor_type ?? "member", details.new_executor_id) })}</span>;
       }
       return <span>{typeLabels[item.type]}</span>;
     }
     case "unassigned":
-      return <span>{t(($) => $.labels.removed_assignee)}</span>;
-    case "assignee_changed": {
-      if (details.new_assignee_id) {
-        return <span>{t(($) => $.labels.assigned_to, { name: getActorName(details.new_assignee_type ?? "member", details.new_assignee_id) })}</span>;
+      return <span>{t(($) => $.labels.removed_executor)}</span>;
+    case "executor_changed": {
+      if (details.new_executor_id) {
+        return <span>{t(($) => $.labels.assigned_to, { name: getActorName(details.new_executor_type ?? "member", details.new_executor_id) })}</span>;
       }
       return <span>{typeLabels[item.type]}</span>;
     }

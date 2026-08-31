@@ -4,7 +4,7 @@
  * related-issues bucket.
  *
  * Layout mirrors web's `packages/views/issues/components/list-row.tsx`:
- *   [status?]  priority  identifier  title  …  assignee
+ *   [status?]  priority  identifier  title  …  executor
  *
  * `showStatus` is opt-in because the grouped lists already carry the status
  * CATEGORY in their section header (rendering the glyph again per-row would be
@@ -19,16 +19,16 @@
  * (PB-6243)
  *
  * Behavioral parity:
- *   - Same `Issue` type, same `assignee_type`/`assignee_id` semantics
+ *   - Same `Issue` type, same `executor_type`/`executor_id` semantics
  *     (root AGENTS.md "Data identity must agree").
  *   - Mirrors web `packages/views/issues/components/list-row.tsx:52`:
- *     render the assignee whenever `assignee_type && assignee_id` are both
+ *     render the executor whenever `executor_type && executor_id` are both
  *     truthy — `ActorAvatar` itself handles member / agent / team rendering
  *     (rounded square + people glyph or `team.avatar_url` for teams). A
  *     future fourth enum value falls through to ActorAvatar's initials
  *     fallback, which is the real "enum drift downgrades, not crashes"
  *     behavior — earlier whitelist (member/agent only) silently dropped
- *     team assignees instead.
+ *     team executors instead.
  */
 import { Pressable, View } from "react-native";
 import type { Issue } from "@patchbay/core/types";
@@ -75,10 +75,10 @@ export function IssueRow({ issue, onPress, showStatus = false }: Props) {
           </Text>
           <CustomStatusChip status={issue.status} catalog={catalog} />
         </View>
-        {issue.assignee_type && issue.assignee_id ? (
+        {issue.executor_type && issue.executor_id ? (
           <ActorAvatar
-            type={issue.assignee_type}
-            id={issue.assignee_id}
+            type={issue.executor_type}
+            id={issue.executor_id}
             size={20}
             showPresence
           />

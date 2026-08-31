@@ -15,7 +15,12 @@ import {
 import { Button } from "@patchbay/ui/components/ui/button";
 import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import { Spinner } from "@patchbay/ui/components/ui/spinner";
-import type { IssueAssigneeType, IssueStatus, UpdateIssueRequest } from "@patchbay/core/types";
+import type {
+  IssueExecutorType,
+  IssueReviewerType,
+  IssueStatus,
+  UpdateIssueRequest,
+} from "@patchbay/core/types";
 import {
   useUpdateIssue,
   useBatchUpdateIssues,
@@ -30,7 +35,7 @@ import { useShortcut, shortcutMatchesEvent, isPlainShortcut } from "@patchbay/co
 import { isImeComposing } from "@patchbay/core/utils";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 import { ActorAvatar } from "../common/actor-avatar";
-import { AssigneePicker } from "../issues/components/pickers/assignee-picker";
+import { ReviewerPicker } from "../issues/components/pickers/executor-picker";
 import { useStatusLabel } from "../issues/utils/status-label";
 import { useT } from "../i18n";
 
@@ -75,13 +80,13 @@ type RunConfirmData = {
   mode?: "assign" | "promote" | "review" | "review-return";
   /** promote/review/review-return only: the status KEY the issue is moving to. */
   status?: IssueStatus;
-  assigneeType?: IssueAssigneeType;
-  assigneeId?: string;
-  assigneeName?: string;
-  fromAssigneeType?: IssueAssigneeType | null;
-  fromAssigneeId?: string | null;
-  fromAssigneeName?: string;
-  excludedAssignees?: Array<{ type: IssueAssigneeType; id: string }>;
+  executorType?: IssueReviewerType;
+  executorId?: string;
+  executorName?: string;
+  fromExecutorType?: IssueExecutorType | null;
+  fromExecutorId?: string | null;
+  fromExecutorName?: string;
+  excludedExecutors?: Array<{ type: IssueExecutorType; id: string }>;
   additionalUpdates?: Partial<Omit<UpdateIssueMutationInput, "id">>;
   issueRevision?: number;
   /** Board-only callbacks kept in the in-memory modal store until the write settles. */
@@ -100,7 +105,7 @@ type RunConfirmData = {
  * keyed per issue id with staleTime 0, every new issue was a guaranteed cache
  * miss and the wait was unavoidable.
  *
- * Completion is silent: the assignee/status change and any run it starts
+ * Completion is silent: the executor/status change and any run it starts
  * surface through the issue's normal updates, so the confirm adds no result
  * toast. Whether a run starts stays the server's existing decision at write
  * time. Dismissing the dialog (X / Esc / click-outside) cancels without any
@@ -122,11 +127,11 @@ export function RunConfirmModal({
   const issueIds = d.issueIds ?? [];
 
   const [note, setNote] = useState("");
-  const [reviewerType, setReviewerType] = useState<IssueAssigneeType | null>(
-    d.mode === "review" ? d.assigneeType ?? null : null,
+  const [reviewerType, setReviewerType] = useState<IssueReviewerType | null>(
+    d.mode === "review" ? d.executorType ?? null : null,
   );
   const [reviewerId, setReviewerId] = useState<string | null>(
-    d.mode === "review" ? d.assigneeId ?? null : null,
+    d.mode === "review" ? d.executorId ?? null : null,
   );
   // Which footer action is in flight, so only the clicked button shows a
   // spinner (the request runs an agent on the server for note assigns, so it is
@@ -140,9 +145,9 @@ export function RunConfirmModal({
   // Handoff-support verdict, resolved entirely from warm client caches
   // (useWorkspacePresencePrefetch keeps agents / teams / runtimes hot), so the
   // note box settles on the first frame with no round-trip — the same shape as
-  // the quick-create version gate. An agent assignee targets its own runtime; a
+  // the quick-create version gate. An agent executor targets its own runtime; a
   // team targets its leader's, which the team list gives us directly, so both
-  // are knowable locally. `null` means "cannot tell" (assignee not in cache
+  // are knowable locally. `null` means "cannot tell" (executor not in cache
   // yet, or no runtime bound) and leaves the box enabled: the note is a soft
   // gate, and a spurious warning is worse than a note an old daemon drops.
   const wsId = useWorkspaceId();
@@ -154,17 +159,17 @@ export function RunConfirmModal({
   const { data: teams = [] } = useQuery({ ...teamListOptions(wsId), enabled: !!wsId });
   const isReview = d.mode === "review" && !!d.status;
   const isReviewReturn = d.mode === "review-return" && !!d.status;
-  const targetAssigneeType = isReview ? reviewerType : d.assigneeType ?? null;
-  const targetAssigneeId = isReview ? reviewerId : d.assigneeId ?? null;
+  const targetExecutorType = isReview ? reviewerType : d.executorType ?? null;
+  const targetExecutorId = isReview ? reviewerId : d.executorId ?? null;
   const localHandoff = useMemo<boolean | null>(() => {
-    if (!targetAssigneeId) return null;
+    if (!targetExecutorId) return null;
     let agentId: string | undefined;
-    if (targetAssigneeType === "agent") {
-      agentId = targetAssigneeId;
-    } else if (targetAssigneeType === "team") {
+    if (targetExecutorType === "agent") {
+      agentId = targetExecutorId;
+    } else if (targetExecutorType === "team") {
       // A team run is executed by its leader, so the leader's runtime is the
       // one that has to render the note.
-      agentId = teams.find((s) => s.id === targetAssigneeId)?.leader_id;
+      agentId = teams.find((s) => s.id === targetExecutorId)?.leader_id;
     }
     if (!agentId) return null;
     const agent = agents.find((a) => a.id === agentId);
@@ -172,26 +177,30 @@ export function RunConfirmModal({
     const runtime = runtimes.find((r) => r.id === agent.runtime_id);
     if (!runtime) return null;
     return handoffSupported(readRuntimeCliVersion(runtime.metadata));
-  }, [targetAssigneeType, targetAssigneeId, agents, runtimes, teams]);
+  }, [targetExecutorType, targetExecutorId, agents, runtimes, teams]);
 
   // Soft gate: an old runtime can't render the note. Disable the box but let
   // the assignment proceed (PB-3375 §6.3).
   const noteDisabled = localHandoff === false;
 
   // A promotion carries the status and nothing else: the owner is already on
-  // the issue, and re-sending the same assignee would turn a status write into
-  // an assignee write on the server's side of the trigger predicate.
+  // the issue, and re-sending the same executor would turn a status write into
+  // an executor write on the server's side of the trigger predicate.
   const isPromote = d.mode === "promote" && !!d.status;
   const isSameReviewer =
     isReview &&
-    ((reviewerType === d.fromAssigneeType && reviewerId === d.fromAssigneeId) ||
-      d.excludedAssignees?.some(
+    ((reviewerType === d.fromExecutorType && reviewerId === d.fromExecutorId) ||
+      d.excludedExecutors?.some(
         (owner) => owner.type === reviewerType && owner.id === reviewerId,
       ) === true);
   const reviewReady =
     !isReview || (!!reviewerType && !!reviewerId && !isSameReviewer);
   const noteApplies =
-    targetAssigneeType === "agent" || targetAssigneeType === "team";
+    targetExecutorType === "agent" || targetExecutorType === "team";
+  const executionType =
+    d.executorType === "agent" || d.executorType === "team"
+      ? d.executorType
+      : null;
 
   const applyTo = (extra: Partial<UpdateIssueRequest>) => {
     const base: UpdateIssueRequest = isReview
@@ -213,23 +222,23 @@ export function RunConfirmModal({
       : isPromote
       ? { status: d.status }
       : {
-          assignee_type: d.assigneeType ?? null,
-          assignee_id: d.assigneeId ?? null,
+          executor_type: executionType,
+          executor_id: d.executorId ?? null,
         };
     return { ...d.additionalUpdates, ...base, ...extra };
   };
 
   // The copy names whoever the issue is handed to; for a team that is the
   // team itself, since its leader deciding who works is an internal detail.
-  const assigneeName =
-    d.assigneeName ??
-    (targetAssigneeType && targetAssigneeId
-      ? getActorName(targetAssigneeType, targetAssigneeId)
+  const executorName =
+    d.executorName ??
+    (targetExecutorType && targetExecutorId
+      ? getActorName(targetExecutorType, targetExecutorId)
       : "");
-  const previousAssigneeName =
-    d.fromAssigneeName ??
-    (d.fromAssigneeType && d.fromAssigneeId
-      ? getActorName(d.fromAssigneeType, d.fromAssigneeId)
+  const previousExecutorName =
+    d.fromExecutorName ??
+    (d.fromExecutorType && d.fromExecutorId
+      ? getActorName(d.fromExecutorType, d.fromExecutorId)
       : t(($) => $.run_confirm.unassigned));
 
   const submit = async (suppressRun: boolean) => {
@@ -242,8 +251,8 @@ export function RunConfirmModal({
         : {}),
     });
     try {
-      // Completion is silent, exactly as before: the assignee and any run show
-      // up through the issue's normal assignee / run-status updates, so there is
+      // Completion is silent, exactly as before: the executor and any run show
+      // up through the issue's normal executor / run-status updates, so there is
       // no result toast to add here. Whether a run started is the server's
       // existing decision at write time, not something this dialog reports.
       if (issueIds.length === 1) {
@@ -304,10 +313,10 @@ export function RunConfirmModal({
   // recognisable by the name its admin gave it.
   const headline: ReactNode = boldFenced(
     isReview
-      ? assigneeName
+      ? executorName
         ? t(($) => $.run_confirm.review_single, {
-            from: fenced(previousAssigneeName),
-            to: fenced(assigneeName),
+            from: fenced(previousExecutorName),
+            to: fenced(executorName),
             status: fenced(statusLabel(d.status ?? "")),
           })
         : t(($) => $.run_confirm.review_choose, {
@@ -315,20 +324,20 @@ export function RunConfirmModal({
           })
       : isReviewReturn
       ? t(($) => $.run_confirm.review_return_single, {
-          to: fenced(assigneeName),
+          to: fenced(executorName),
           status: fenced(statusLabel(d.status ?? "")),
         })
       : isPromote
       ? t(($) => $.run_confirm.promote_single, {
-          name: fenced(assigneeName),
+          name: fenced(executorName),
           status: fenced(statusLabel(d.status ?? "")),
         })
       : issueIds.length > 1
         ? t(($) => $.run_confirm.assign_batch, {
-            name: fenced(assigneeName),
+            name: fenced(executorName),
             count: issueIds.length,
           })
-        : t(($) => $.run_confirm.assign_single, { name: fenced(assigneeName) }),
+        : t(($) => $.run_confirm.assign_single, { name: fenced(executorName) }),
   );
 
   return (
@@ -358,22 +367,22 @@ export function RunConfirmModal({
               {t(($) => $.run_confirm.reviewer_label)}
             </span>
             <div className="flex items-center gap-2 rounded-md border border-border px-3 py-2">
-              {d.fromAssigneeType && d.fromAssigneeId ? (
+              {d.fromExecutorType && d.fromExecutorId ? (
                 <ActorAvatar
-                  actorType={d.fromAssigneeType}
-                  actorId={d.fromAssigneeId}
+                  actorType={d.fromExecutorType}
+                  actorId={d.fromExecutorId}
                   size="sm"
                 />
               ) : null}
-              <span className="min-w-0 truncate text-body">{previousAssigneeName}</span>
+              <span className="min-w-0 truncate text-body">{previousExecutorName}</span>
               <ArrowRight className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
               <div className="min-w-0 flex-1">
-                <AssigneePicker
-                  assigneeType={reviewerType}
-                  assigneeId={reviewerId}
+                <ReviewerPicker
+                  reviewerType={reviewerType}
+                  reviewerId={reviewerId}
                   onUpdate={(updates) => {
-                    setReviewerType(updates.assignee_type ?? null);
-                    setReviewerId(updates.assignee_id ?? null);
+                    setReviewerType(updates.reviewer_type ?? null);
+                    setReviewerId(updates.reviewer_id ?? null);
                   }}
                   align="start"
                 />

@@ -95,8 +95,8 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
     queryKey: ["workspaces", "ws-1", "teams"],
     queryFn: () => Promise.resolve([]),
   }),
-  assigneeFrequencyOptions: () => ({
-    queryKey: ["workspaces", "ws-1", "assignee-frequency"],
+  executorFrequencyOptions: () => ({
+    queryKey: ["workspaces", "ws-1", "executor-frequency"],
     queryFn: () => Promise.resolve([]),
   }),
   workspaceListOptions: () => ({
@@ -558,8 +558,11 @@ const mockIssue: Issue = {
   description: "Add JWT auth to the backend",
   status: "in_progress",
   priority: "high",
-  assignee_type: "member",
-  assignee_id: "user-1",
+  owner_type: "member", owner_id: "user-1",
+  executor_type: "agent",
+  executor_id: "agent-1",
+  reviewer_type: "agent",
+  reviewer_id: "agent-2",
   creator_type: "member",
   creator_id: "user-1",
   parent_issue_id: null,
@@ -616,9 +619,15 @@ function dependencyNode(
     acceptance_criteria: [],
     context: {},
     outputs: [`${nodeIssue.identifier}-output`],
-    assignee_type: nodeIssue.assignee_type,
-    assignee_id: nodeIssue.assignee_id,
-    candidate_assignees: [],
+    owner_type: nodeIssue.owner_type,
+    owner_id: nodeIssue.owner_id,
+    executor_type: nodeIssue.executor_type,
+    executor_id: nodeIssue.executor_id,
+    candidate_executors: [],
+    reviewer_type: nodeIssue.reviewer_type,
+    reviewer_id: nodeIssue.reviewer_id,
+    runtime_id: null,
+    model_id: null,
     wave: 0,
     status: nodeIssue.status,
     readiness: {
@@ -1010,7 +1019,7 @@ describe("IssueDetail (shared)", () => {
 
     // Core rows — always rendered regardless of whether the issue has a value.
     expect(screen.getByText("Status")).toBeInTheDocument();
-    expect(screen.getByText("Assignee")).toBeInTheDocument();
+    expect(screen.getByText("Executor")).toBeInTheDocument();
     // "Project" appears twice (row label + picker stub), so disambiguate by id.
     expect(screen.getByTestId("project-picker")).toBeInTheDocument();
     // priority="high" + due_date are set in the fixture, so both optional rows show.
@@ -2204,8 +2213,8 @@ describe("IssueDetail (shared)", () => {
     const subIssue = (overrides: Partial<Issue>): Issue => ({
       ...mockIssue,
       parent_issue_id: "issue-1",
-      assignee_type: null,
-      assignee_id: null,
+      executor_type: null,
+      executor_id: null,
       due_date: null,
       priority: "none",
       ...overrides,

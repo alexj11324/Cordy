@@ -25,8 +25,12 @@ function makeIssue(id: string, status: Issue["status"]): Issue {
     description: null,
     status,
     priority: "none",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: "parent-1",
@@ -71,10 +75,10 @@ describe("useIssueGroupBranches", () => {
           groups: [
             {
               key: secondPage
-                ? "assignee:unassigned"
-                : "assignee:member:user-1",
+                ? "executor:unassigned"
+                : "executor:member:user-1",
               value: {
-                kind: "assignee" as const,
+                kind: "executor" as const,
                 actor: secondPage
                   ? null
                   : { type: "member" as const, id: "user-1" },
@@ -98,7 +102,7 @@ describe("useIssueGroupBranches", () => {
         useIssueGroupBranches({
           wsId: "ws-1",
           query,
-          group: { kind: "assignee" },
+          group: { kind: "executor" },
           enabled: true,
         }),
       { wrapper: wrapper(queryClient) },

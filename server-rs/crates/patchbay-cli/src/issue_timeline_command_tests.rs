@@ -56,7 +56,7 @@ fn issue_timeline_parser_filter_and_table_match_go_contract() {
     let table = format_issue_timeline_table(
         &[
             serde_json::json!({
-                "type":"activity","action":"assignee_changed",
+                "type":"activity","action":"executor_changed",
                 "actor_type":"member","actor_id":"member-1",
                 "created_at":"2026-08-24T12:34:56Z",
                 "details":{"from_type":"member","from_id":"old-member","to_type":"member","to_id":"member-1"}

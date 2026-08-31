@@ -39,8 +39,8 @@ const emptyIssueDraft = () => ({
     description: "",
     status: "todo" as const,
     startDate: null as string | null,
-    assigneeType: undefined as "agent" | "team" | "member" | undefined,
-    assigneeId: undefined as string | undefined,
+    executorType: undefined as "agent" | "team" | undefined,
+    executorId: undefined as string | undefined,
     labelIds: [] as string[],
     propertyValues: {} as Record<string, string | number | boolean | string[]>,
   },
@@ -199,7 +199,7 @@ vi.mock("@patchbay/core/runtimes", () => ({
 }));
 
 
-vi.mock("../issues/components/pickers/assignee-picker", () => ({
+vi.mock("../issues/components/pickers/executor-picker", () => ({
   canAssignAgent: () => true,
 }));
 
@@ -797,7 +797,7 @@ describe("AgentCreatePanel", () => {
 
   // Teams whose leader agent isn't visible (archived, private, etc.) must
   // not appear in the picker — the backend would reject the pick on
-  // validateAssigneePair, and showing them invites a confusing dead path.
+  // validateExecutorPair, and showing them invites a confusing dead path.
   it("hides teams whose leader agent is not in the visible-agents list", () => {
     mockTeamsData.list = [
       { id: "team-orphan", name: "Orphan Team", leader_id: "agent-missing", archived_at: null },

@@ -9,6 +9,7 @@ pub mod builtin_agents;
 pub mod builtin_skills;
 pub mod channel_media_reconciler;
 pub mod chat_quick_actions;
+pub mod category_policy;
 pub mod coordination;
 pub mod cron;
 pub mod dependency_graph;

@@ -200,8 +200,12 @@ function makeIssue(id: string): Issue {
     description: null,
     status: "todo",
     priority: "none",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "member-1",
     parent_issue_id: null,
@@ -293,7 +297,7 @@ describe("Table view on the production virtualized hierarchy path", () => {
       listMembers: async () => [],
       listAgents: async () => [],
       listTeams: async () => [],
-      getAssigneeFrequency: async () => [],
+      getExecutorFrequency: async () => [],
       listIssueTableRows: async (request: IssueTableRowsRequest) => {
         const parent = request.parent_id ?? "root";
         rowRequests.push(parent);

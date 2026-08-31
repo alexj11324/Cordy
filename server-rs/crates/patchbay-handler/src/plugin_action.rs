@@ -658,8 +658,8 @@ async fn create_comment(
         payload: json!({
             "comment": event_comment,
             "issue_title": issue.title,
-            "issue_assignee_type": issue.assignee_type,
-            "issue_assignee_id": issue.assignee_id.map(|id| id.to_string()),
+            "issue_executor_type": issue.executor_type,
+            "issue_executor_id": issue.executor_id.map(|id| id.to_string()),
             "issue_status": issue.status,
             "issue_revision": issue_revision,
         }),

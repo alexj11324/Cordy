@@ -91,7 +91,7 @@ impl Rows {
         sqlx::query(
             r#"INSERT INTO issue (
     id, workspace_id, title, status, priority, creator_type, creator_id,
-    assignee_type, assignee_id, number, position
+    executor_type, executor_id, number, position
 ) VALUES (
     $1, $2, 'Capability lease issue', 'in_progress', 'medium', 'member', $3,
     'agent', $4,

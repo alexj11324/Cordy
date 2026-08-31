@@ -40,8 +40,8 @@ const RESET_STATE = {
       description: "",
       status: "todo" as const,
       startDate: null,
-      assigneeType: undefined,
-      assigneeId: undefined,
+      executorType: undefined,
+      executorId: undefined,
       labelIds: [],
       propertyValues: {},
     },
@@ -52,38 +52,38 @@ const RESET_STATE = {
     },
     activeMode: "manual" as const,
   },
-  lastAssigneeType: undefined,
-  lastAssigneeId: undefined,
+  lastExecutorType: undefined,
+  lastExecutorId: undefined,
 };
 
-describe("issue draft store — last assignee", () => {
+describe("issue draft store — last executor", () => {
   beforeEach(() => {
     useIssueDraftStore.setState(RESET_STATE);
   });
 
-  it("clearDraft prefills the next manual draft with the remembered assignee", () => {
-    const { setManual, setLastAssignee, clearDraft } =
+  it("clearDraft prefills the next manual draft with the remembered executor", () => {
+    const { setManual, setLastExecutor, clearDraft } =
       useIssueDraftStore.getState();
 
-    setManual({ title: "first", assigneeType: "member", assigneeId: "alice" });
-    setLastAssignee("member", "alice");
+    setManual({ title: "first", executorType: "agent", executorId: "alice" });
+    setLastExecutor("agent", "alice");
     clearDraft();
 
     const { draft } = useIssueDraftStore.getState();
     expect(draft.manual.title).toBe("");
-    expect(draft.manual.assigneeType).toBe("member");
-    expect(draft.manual.assigneeId).toBe("alice");
+    expect(draft.manual.executorType).toBe("agent");
+    expect(draft.manual.executorId).toBe("alice");
   });
 
-  it("clearDraft yields an empty assignee when none has ever been remembered", () => {
+  it("clearDraft yields an empty executor when none has ever been remembered", () => {
     const { setManual, clearDraft } = useIssueDraftStore.getState();
 
     setManual({ title: "first" });
     clearDraft();
 
     const { draft } = useIssueDraftStore.getState();
-    expect(draft.manual.assigneeType).toBeUndefined();
-    expect(draft.manual.assigneeId).toBeUndefined();
+    expect(draft.manual.executorType).toBeUndefined();
+    expect(draft.manual.executorId).toBeUndefined();
   });
 
   it("clearDraft removes persisted shared attachments", () => {
@@ -149,17 +149,17 @@ describe("issue draft store — last assignee", () => {
     expect(useIssueDraftStore.getState().draft.agent.prompt).toBe("");
   });
 
-  it("setLastAssignee(undefined) lets the user opt back out of a default", () => {
-    const { setLastAssignee, clearDraft } = useIssueDraftStore.getState();
+  it("setLastExecutor(undefined) lets the user opt back out of a default", () => {
+    const { setLastExecutor, clearDraft } = useIssueDraftStore.getState();
 
-    setLastAssignee("member", "alice");
+    setLastExecutor("agent", "alice");
     clearDraft();
-    expect(useIssueDraftStore.getState().draft.manual.assigneeId).toBe("alice");
+    expect(useIssueDraftStore.getState().draft.manual.executorId).toBe("alice");
 
-    setLastAssignee(undefined, undefined);
+    setLastExecutor(undefined, undefined);
     clearDraft();
-    expect(useIssueDraftStore.getState().draft.manual.assigneeId).toBeUndefined();
-    expect(useIssueDraftStore.getState().draft.manual.assigneeType).toBeUndefined();
+    expect(useIssueDraftStore.getState().draft.manual.executorId).toBeUndefined();
+    expect(useIssueDraftStore.getState().draft.manual.executorType).toBeUndefined();
   });
 });
 
@@ -366,20 +366,20 @@ describe("issue draft store — logout cleanup", () => {
     setCurrentWorkspace(null, null);
   });
 
-  it("registered reset wipes the last-assignee preference, not just the draft", () => {
-    const { setManual, setLastAssignee } = useIssueDraftStore.getState();
-    setManual({ title: "wip", assigneeType: "member", assigneeId: "alice" });
-    setLastAssignee("member", "alice");
+  it("registered reset wipes the last-executor preference, not just the draft", () => {
+    const { setManual, setLastExecutor } = useIssueDraftStore.getState();
+    setManual({ title: "wip", executorType: "agent", executorId: "alice" });
+    setLastExecutor("agent", "alice");
 
     resetAllRegisteredDrafts();
 
     const state = useIssueDraftStore.getState();
-    expect(state.lastAssigneeType).toBeUndefined();
-    expect(state.lastAssigneeId).toBeUndefined();
-    // clearDraft() would have re-seeded the manual slot from lastAssignee —
+    expect(state.lastExecutorType).toBeUndefined();
+    expect(state.lastExecutorId).toBeUndefined();
+    // clearDraft() would have re-seeded the manual slot from lastExecutor —
     // the logout reset must not hand the next login a previous user's pick.
-    expect(state.draft.manual.assigneeType).toBeUndefined();
-    expect(state.draft.manual.assigneeId).toBeUndefined();
+    expect(state.draft.manual.executorType).toBeUndefined();
+    expect(state.draft.manual.executorId).toBeUndefined();
   });
 
   it("logout sequence (reset in-memory, then clear storage) leaves no persisted key", async () => {
@@ -387,15 +387,15 @@ describe("issue draft store — logout cleanup", () => {
     await flush();
     await flush();
 
-    const { setManual, setLastAssignee } = useIssueDraftStore.getState();
+    const { setManual, setLastExecutor } = useIssueDraftStore.getState();
     setManual({ title: "secret wip" });
-    setLastAssignee("member", "alice");
+    setLastExecutor("agent", "alice");
     expect(localStorage.getItem("patchbay_issue_draft:acme")).not.toBeNull();
 
     // use-logout's order: reset first (each reset is a setState, and persist
     // writes the new state back to storage under the still-active slug), THEN
     // remove the keys. The reverse order resurrects the key with the previous
-    // user's lastAssignee inside.
+    // user's lastExecutor inside.
     resetAllRegisteredDrafts();
     clearWorkspaceStorage(defaultStorage, "acme");
 

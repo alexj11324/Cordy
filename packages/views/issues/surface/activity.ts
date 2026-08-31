@@ -24,6 +24,7 @@ function isQueuedTaskStatus(status: AgentTask["status"]) {
     status === "deferred" ||
     status === "dispatched" ||
     status === "waiting_local_directory"
+    || status === "waiting_capacity"
   );
 }
 

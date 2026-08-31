@@ -130,7 +130,7 @@ import { useIssueSurfaceSelection } from "../surface/selection-context";
 import type { IssueCreateDefaults } from "../surface/types";
 import { ProgressRing } from "./progress-ring";
 import {
-  AssigneePicker,
+  ExecutorPicker,
   DueDatePicker,
   LabelPicker,
   PriorityPicker,
@@ -261,7 +261,7 @@ function rebaseServerBranchState(
 
 function tableGroupSpec(grouping: string): IssueTableGroupSpec {
   if (grouping === "status") return { kind: "status" };
-  if (grouping === "assignee") return { kind: "assignee" };
+  if (grouping === "executor") return { kind: "executor" };
   const propertyId = propertyIdFromViewKey(grouping);
   if (propertyId) return { kind: "property", property_id: propertyId };
   return { kind: "none" };
@@ -272,7 +272,7 @@ type ColumnLabelKey =
   | "identifier"
   | "status"
   | "priority"
-  | "assignee"
+  | "executor"
   | "labels"
   | "project"
   | "start_date"
@@ -1174,12 +1174,12 @@ function IssueTableBodyCell({
           />
         </div>
       );
-    case "assignee":
+    case "executor":
       return (
         <div onClick={stopRowNavigation} onAuxClick={stopRowNavigation}>
-          <AssigneePicker
-            assigneeType={issue.assignee_type}
-            assigneeId={issue.assignee_id}
+          <ExecutorPicker
+            executorType={issue.executor_type}
+            executorId={issue.executor_id}
             onUpdate={onUpdate}
             align="start"
             open={editorOpen}
@@ -1766,7 +1766,7 @@ export function TableView({
         // of collapsing to the schema fallback or an empty label. (PB-6243)
         return resolveStatusLabel(value.status);
       }
-      if (value.kind === "assignee") {
+      if (value.kind === "executor") {
         return value.actor
           ? getActorName(value.actor.type, value.actor.id)
           : t(($) => $.table.unassigned);
@@ -2278,7 +2278,7 @@ export function TableView({
         return !propertyId || exportPropertyById.has(propertyId);
       });
       const needsActors = csvColumns.some((column) => {
-        if (column.key === "assignee" || column.key === "creator") return true;
+        if (column.key === "executor" || column.key === "creator") return true;
         const propertyId = propertyIdFromViewKey(column.key);
         const property = propertyId ? exportPropertyById.get(propertyId) : undefined;
         return property ? isActorPropertyType(property.type) : false;
@@ -2328,9 +2328,9 @@ export function TableView({
               return resolveStatusLabel(issue.status);
             case "priority":
               return t(($) => $.priority[issue.priority]);
-            case "assignee":
-              return issue.assignee_type && issue.assignee_id
-                ? exportActorName(issue.assignee_type, issue.assignee_id)
+            case "executor":
+              return issue.executor_type && issue.executor_id
+                ? exportActorName(issue.executor_type, issue.executor_id)
                 : "";
             case "labels":
               return issue.labels?.map((label) => label.name).join(", ") ?? "";

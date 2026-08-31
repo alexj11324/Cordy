@@ -38,7 +38,7 @@ impl Source {
     pub fn delegation() -> Source {
         Source("delegation".to_string())
     }
-    /// The issue's standing assignee reacted to an agent/system-authored
+    /// The issue's standing executor reacted to an agent/system-authored
     /// comment; the human is resolved through comment.source_task_id
     /// (PB-4302 §3.3).
     pub fn comment_source() -> Source {
@@ -225,7 +225,7 @@ pub struct CommentFacts {
 
 /// Resolves attribution for a comment-triggered run. `agent_authored_source`
 /// selects the label used when the trigger comment is agent-authored:
-/// COMMENT_SOURCE for the issue-assignee-reacting path, DELEGATION for an
+/// COMMENT_SOURCE for the issue-executor-reacting path, DELEGATION for an
 /// explicit mention / thread-parent / team-leader path. The returned user_id
 /// is byte-identical to the legacy originator resolution so authorization
 /// behavior is unchanged.

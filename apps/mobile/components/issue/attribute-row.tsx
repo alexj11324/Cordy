@@ -10,7 +10,9 @@
  * numeric detents):
  *   status    →  issue/[id]/picker/status
  *   priority  →  issue/[id]/picker/priority
- *   assignee  →  issue/[id]/picker/assignee
+ *   owner     →  issue/[id]/picker/owner
+ *   executor  →  issue/[id]/picker/executor
+ *   reviewer  →  issue/[id]/picker/reviewer
  *   labels    →  issue/[id]/picker/label   (multi-select, stays open)
  *   project   →  issue/[id]/picker/project
  *   due_date  →  issue/[id]/picker/due-date
@@ -52,7 +54,9 @@ const PRIORITY_CHIP_LABEL: Record<IssuePriority, string> = {
 type IssuePickerField =
   | "status"
   | "priority"
-  | "assignee"
+  | "owner"
+  | "executor"
+  | "reviewer"
   | "label"
   | "project"
   | "due-date";
@@ -60,7 +64,9 @@ type IssuePickerField =
 const ISSUE_PICKER_PATHNAMES = {
   status: "/[workspace]/issue/[id]/picker/status",
   priority: "/[workspace]/issue/[id]/picker/priority",
-  assignee: "/[workspace]/issue/[id]/picker/assignee",
+  owner: "/[workspace]/issue/[id]/picker/owner",
+  executor: "/[workspace]/issue/[id]/picker/executor",
+  reviewer: "/[workspace]/issue/[id]/picker/reviewer",
   label: "/[workspace]/issue/[id]/picker/label",
   project: "/[workspace]/issue/[id]/picker/project",
   "due-date": "/[workspace]/issue/[id]/picker/due-date",
@@ -92,13 +98,25 @@ export function AttributeRow({ issue }: { issue: Issue }) {
 
   const labels = issue.labels ?? [];
 
-  const assigneeValue =
-    issue.assignee_type && issue.assignee_id
-      ? { type: issue.assignee_type, id: issue.assignee_id }
+  const executorValue =
+    issue.executor_type && issue.executor_id
+      ? { type: issue.executor_type, id: issue.executor_id }
+      : null;
+  const ownerValue =
+    issue.owner_type === "member" && issue.owner_id
+      ? { type: "member" as const, id: issue.owner_id }
+      : null;
+  const reviewerValue =
+    issue.reviewer_type && issue.reviewer_id
+      ? { type: issue.reviewer_type, id: issue.reviewer_id }
       : null;
 
-  const assigneeName = assigneeValue
-    ? getName(assigneeValue.type, assigneeValue.id)
+  const ownerName = ownerValue ? getName(ownerValue.type, ownerValue.id) : null;
+  const executorName = executorValue
+    ? getName(executorValue.type, executorValue.id)
+    : null;
+  const reviewerName = reviewerValue
+    ? getName(reviewerValue.type, reviewerValue.id)
     : null;
   const dueLabel = formatDueDate(issue.due_date);
 
@@ -135,31 +153,63 @@ export function AttributeRow({ issue }: { issue: Issue }) {
         onPress={() => openPicker("priority")}
       />
 
-      {/* Assignee */}
-      {assigneeValue ? (
+      {/* Owner — the human accountable for the issue. */}
+      <AttributeChip
+        icon={
+          ownerValue ? (
+            <ActorAvatar type="member" id={ownerValue.id} size={16} />
+          ) : (
+            <View className="size-4 rounded-full border border-dashed border-muted-foreground/40" />
+          )
+        }
+        label={ownerName ?? "Owner"}
+        variant={ownerValue ? "filled" : "dimmed"}
+        onPress={() => openPicker("owner")}
+      />
+
+      {/* Executor */}
+      {executorValue ? (
         <AttributeChip
           icon={
             <ActorAvatar
-              type={assigneeValue.type}
-              id={assigneeValue.id}
+              type={executorValue.type}
+              id={executorValue.id}
               size={16}
               showPresence
             />
           }
-          label={assigneeName ?? "Unknown"}
+          label={executorName ?? "Unknown"}
           variant="filled"
-          onPress={() => openPicker("assignee")}
+          onPress={() => openPicker("executor")}
         />
       ) : (
         <AttributeChip
           icon={
             <View className="size-4 rounded-full border border-dashed border-muted-foreground/40" />
           }
-          label="Assignee"
+          label="Executor"
           variant="dimmed"
-          onPress={() => openPicker("assignee")}
+          onPress={() => openPicker("executor")}
         />
       )}
+
+      {/* Reviewer — independent from the implementation executor. */}
+      <AttributeChip
+        icon={
+          reviewerValue ? (
+            <ActorAvatar
+              type={reviewerValue.type}
+              id={reviewerValue.id}
+              size={16}
+            />
+          ) : (
+            <View className="size-4 rounded-full border border-dashed border-muted-foreground/40" />
+          )
+        }
+        label={reviewerName ?? "Reviewer"}
+        variant={reviewerValue ? "filled" : "dimmed"}
+        onPress={() => openPicker("reviewer")}
+      />
 
       {/* Each existing label renders as its own chip. Tap opens the
           label picker (multi-select toggle). No quick-detach gesture

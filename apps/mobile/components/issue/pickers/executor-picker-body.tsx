@@ -1,13 +1,14 @@
 /**
- * Pure picker body for issue assignee — polymorphic single-select over
- * members + agents + teams, plus an "Unassigned" option. See
+ * Pure picker body for issue executor — polymorphic single-select over
+ * agents + teams, plus an "Unassigned" option. Human responsibility is
+ * edited through the separate owner picker. See
  * status-picker-body.tsx for the split rationale.
  *
- * Mirrors web `packages/views/issues/components/pickers/assignee-picker.tsx`
+ * Mirrors web `packages/views/issues/components/pickers/executor-picker.tsx`
  * (mobile skips frequency-sort; alphabetical instead).
  *
  * Header + search bar are owned by the iOS native nav header registered in
- * `app/(app)/[workspace]/_layout.tsx` (assignee Stack.Screen sets
+ * `app/(app)/[workspace]/_layout.tsx` (executor Stack.Screen sets
  * `headerShown: true` + `title`); the route file wires
  * `headerSearchBarOptions.onChangeText` to a local `query` state and passes
  * it in as the `query` prop. This body is just a FlatList — no chrome.
@@ -19,13 +20,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
 import type {
   Agent,
-  IssueAssigneeType,
-  MemberWithUser,
+  IssueExecutorType,
   Team,
 } from "@patchbay/core/types";
 import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
-import { memberListOptions } from "@/data/queries/members";
 import { agentListOptions } from "@/data/queries/agents";
 import { teamListOptions } from "@/data/queries/teams";
 import { useWorkspaceStore } from "@/data/workspace-store";
@@ -36,36 +35,32 @@ import { isAgentRuntimeBound } from "@/lib/is-agent-runtime-bound";
 
 const AVATAR_SIZE = 36;
 
-export type AssigneeValue = {
-  type: IssueAssigneeType;
+export type ExecutorValue = {
+  type: IssueExecutorType;
   id: string;
 } | null;
 
 interface Props {
-  value: AssigneeValue;
+  value: ExecutorValue;
   query: string;
-  onChange: (next: AssigneeValue) => void;
+  onChange: (next: ExecutorValue) => void;
 }
 
 type Row =
   | { kind: "unassigned" }
-  | { kind: "member"; member: MemberWithUser }
   | { kind: "agent"; agent: Agent }
   | { kind: "team"; team: Team };
 
-function isRowSelected(value: AssigneeValue, row: Row): boolean {
+function isRowSelected(value: ExecutorValue, row: Row): boolean {
   if (row.kind === "unassigned") return value === null;
   if (value === null) return false;
-  if (row.kind === "member")
-    return value.type === "member" && value.id === row.member.user_id;
   if (row.kind === "agent")
     return value.type === "agent" && value.id === row.agent.id;
   return value.type === "team" && value.id === row.team.id;
 }
 
-export function AssigneePickerBody({ value, query, onChange }: Props) {
+export function ExecutorPickerBody({ value, query, onChange }: Props) {
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
-  const { data: members = [] } = useQuery(memberListOptions(wsId));
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
   const { data: teams = [] } = useQuery(teamListOptions(wsId));
   const runnableAgentIds = useMemo(
@@ -90,10 +85,6 @@ export function AssigneePickerBody({ value, query, onChange }: Props) {
     const q = query.trim().toLowerCase();
     const matchName = (name: string) => !q || name.toLowerCase().includes(q);
 
-    const memberRows: Row[] = [...members]
-      .filter((m) => matchName(m.name))
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((m) => ({ kind: "member" as const, member: m }));
     const agentRows: Row[] = [...agents]
       .filter((a) => matchName(a.name))
       .sort((a, b) => a.name.localeCompare(b.name))
@@ -103,30 +94,27 @@ export function AssigneePickerBody({ value, query, onChange }: Props) {
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((s) => ({ kind: "team" as const, team: s }));
 
-    if (q) return [...memberRows, ...agentRows, ...teamRows];
+    if (q) return [...agentRows, ...teamRows];
 
     // Pin the currently-selected actor right below Unassigned and remove it
     // from its own section so it doesn't render twice. Apple HIG doesn't
     // require this — it's a product UX choice that speeds up the common
     // "see who's assigned + reassign nearby" path. Skipped when query is
     // active because search-result order should reflect matches, not state.
-    const all = [...memberRows, ...agentRows, ...teamRows];
+    const all = [...agentRows, ...teamRows];
     const selectedRow = all.find((r) => isRowSelected(value, r));
     return [
       { kind: "unassigned" },
       ...(selectedRow ? [selectedRow] : []),
-      ...memberRows.filter((r) => !isRowSelected(value, r)),
       ...agentRows.filter((r) => !isRowSelected(value, r)),
       ...teamRows.filter((r) => !isRowSelected(value, r)),
     ];
-  }, [members, agents, teams, query, value]);
+  }, [agents, teams, query, value]);
 
   const isSelected = (row: Row) => isRowSelected(value, row);
 
   const select = (row: Row) => {
     if (row.kind === "unassigned") onChange(null);
-    else if (row.kind === "member")
-      onChange({ type: "member", id: row.member.user_id });
     else if (row.kind === "agent")
       onChange({ type: "agent", id: row.agent.id });
     else onChange({ type: "team", id: row.team.id });
@@ -146,7 +134,6 @@ export function AssigneePickerBody({ value, query, onChange }: Props) {
       contentInsetAdjustmentBehavior="automatic"
       keyExtractor={(row) => {
         if (row.kind === "unassigned") return "unassigned";
-        if (row.kind === "member") return `m:${row.member.user_id}`;
         if (row.kind === "agent") return `a:${row.agent.id}`;
         return `s:${row.team.id}`;
       }}
@@ -171,12 +158,6 @@ export function AssigneePickerBody({ value, query, onChange }: Props) {
             >
               <Text className="text-sm text-muted-foreground">∅</Text>
             </View>
-          ) : item.kind === "member" ? (
-            <ActorAvatar
-              type="member"
-              id={item.member.user_id}
-              size={AVATAR_SIZE}
-            />
           ) : item.kind === "agent" ? (
             <ActorAvatar type="agent" id={item.agent.id} size={AVATAR_SIZE} />
           ) : (
@@ -185,9 +166,7 @@ export function AssigneePickerBody({ value, query, onChange }: Props) {
           <Text className="flex-1 text-base text-foreground">
             {item.kind === "unassigned"
               ? "Unassigned"
-              : item.kind === "member"
-                ? item.member.name
-                : item.kind === "agent"
+              : item.kind === "agent"
                   ? item.agent.name
                   : item.team.name}
           </Text>

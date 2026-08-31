@@ -108,13 +108,13 @@ const LAYOUT_LABEL_KEY = {
 
 const GROUPING_LABEL_KEY = {
   status: "group_status",
-  assignee: "group_assignee",
+  executor: "group_executor",
 } as const;
 
 const SWIMLANE_LABEL_KEY = {
   parent: "group_parent",
   project: "group_project",
-  assignee: "group_assignee",
+  executor: "group_executor",
 } as const;
 
 const SORT_LABEL_KEY = {
@@ -131,7 +131,7 @@ const SORT_LABEL_KEY = {
 const CARD_PROPERTY_LABEL_KEY = {
   priority: "card_priority",
   description: "card_description",
-  assignee: "card_assignee",
+  executor: "card_executor",
   startDate: "card_start_date",
   dueDate: "card_due_date",
   project: "card_project",
@@ -586,8 +586,8 @@ export function SaveViewDialog({
       query: {
         statusFilters: state.statusFilters,
         priorityFilters: state.priorityFilters,
-        assigneeFilters: state.assigneeFilters,
-        includeNoAssignee: state.includeNoAssignee,
+        executorFilters: state.executorFilters,
+        includeNoExecutor: state.includeNoExecutor,
         creatorFilters: state.creatorFilters,
         projectFilters: state.projectFilters,
         includeNoProject: state.includeNoProject,
