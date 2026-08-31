@@ -98,9 +98,7 @@ describe("complete Desktop development doctor", () => {
     );
     env.PATCHBAY_TELEGRAM_SECRET_KEY = "";
     env.PATCHBAY_WEIXIN_SECRET_KEY = "not-base64";
-    expect(
-      integrationKeyStatus(env),
-    ).toEqual(
+    expect(integrationKeyStatus(env)).toEqual(
       Object.fromEntries(
         INTEGRATION_SECRET_KEYS.map((key) => [
           key,
@@ -115,13 +113,22 @@ describe("complete Desktop development doctor", () => {
     const checks = [
       { id: "backend", ok: true },
       {
+        id: "agent-roundtrip",
+        ok: true,
+        status: "pending",
+        electronToManagedDaemonVerified: false,
+        managedDaemonToBackendVerified: false,
+        agentExecutionVerified: false,
+        message:
+          "Electron → managed daemon → backend → agent execution round-trip is not verified by this pre-launch doctor",
+      },
+      {
         id: "integrations",
         ok: true,
         status: "pending",
         providerAccountsVerified: false,
         messageRoundTripsVerified: false,
-        message:
-          "credential encryption is ready; provider account credentials and message round-trips are not verified by this doctor",
+        message: "Telegram and WeChat message round-trips are not verified",
       },
     ];
     const report = {
@@ -137,7 +144,10 @@ describe("complete Desktop development doctor", () => {
     expect(report).toMatchObject({ ok: true, acceptanceOk: false });
     printDevEnvironmentReport(report, log);
     expect(log.warn).toHaveBeenCalledWith(
-      expect.stringContaining("message round-trips are not verified"),
+      expect.stringContaining("agent execution round-trip is not verified"),
+    );
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringContaining("Telegram and WeChat message round-trips"),
     );
     expect(log.warn).toHaveBeenCalledWith(
       expect.stringContaining("acceptance checks remain pending"),
@@ -229,9 +239,7 @@ describe("complete Desktop development doctor", () => {
       ok: true,
       status: 200,
       json: async () =>
-        url.includes("accounts")
-          ? { status: "ready" }
-          : { status: "ready" },
+        url.includes("accounts") ? { status: "ready" } : { status: "ready" },
     }));
 
     const report = await inspectDevEnvironment({
@@ -261,13 +269,42 @@ describe("complete Desktop development doctor", () => {
       ["backend", true],
       ["accounts", true],
       ["agents", true],
+      ["agent-roundtrip", true],
       ["integrations", true],
     ]);
-    expect(report.checks.find(({ id }) => id === "integrations")).toMatchObject({
+    expect(report.checks.find(({ id }) => id === "integrations")).toMatchObject(
+      {
+        status: "pending",
+        providerAccountsVerified: false,
+        messageRoundTripsVerified: false,
+        providers: {
+          telegram: {
+            encryptionKeyConfigured: true,
+            credentialKind: "BotFather token",
+            providerCredentialStatus: "not_verified",
+            messageRoundTripStatus: "not_verified",
+          },
+          weixin: {
+            encryptionKeyConfigured: true,
+            credentialKind: "iLink QR authorization",
+            providerCredentialStatus: "not_verified",
+            messageRoundTripStatus: "not_verified",
+          },
+        },
+        message: expect.stringContaining(
+          "neither message round-trip has been run",
+        ),
+      },
+    );
+    expect(
+      report.checks.find(({ id }) => id === "agent-roundtrip"),
+    ).toMatchObject({
       status: "pending",
-      providerAccountsVerified: false,
-      messageRoundTripsVerified: false,
-      message: expect.stringContaining("message round-trips are not verified"),
+      preflightReady: false,
+      localAgentAvailable: false,
+      electronToManagedDaemonVerified: false,
+      managedDaemonToBackendVerified: false,
+      agentExecutionVerified: false,
     });
     expect(fetchImpl).toHaveBeenCalledWith(
       "https://accounts.aspectlylabs.com/readyz",
@@ -320,10 +357,23 @@ describe("complete Desktop development doctor", () => {
       ["cli", true],
       ["backend", true],
       ["agents", true],
+      ["agent-roundtrip", true],
       ["integrations", true],
     ]);
-    expect(report.checks.find(({ id }) => id === "integrations")).toMatchObject({
+    expect(report.checks.find(({ id }) => id === "integrations")).toMatchObject(
+      {
+        status: "pending",
+      },
+    );
+    expect(
+      report.checks.find(({ id }) => id === "agent-roundtrip"),
+    ).toMatchObject({
       status: "pending",
+      preflightReady: true,
+      localAgentAvailable: true,
+      electronToManagedDaemonVerified: false,
+      managedDaemonToBackendVerified: false,
+      agentExecutionVerified: false,
     });
     expect(execImpl.mock.calls[1][2].env.PATCHBAY_TASK_CONFIG_ROOT).toContain(
       "patchbay-dev-doctor-",
@@ -340,7 +390,10 @@ describe("complete Desktop development doctor", () => {
         PATH: process.env.PATH,
         VITE_API_URL: "http://127.0.0.1:18123",
         ...Object.fromEntries(
-          INTEGRATION_SECRET_KEYS.map((key, index) => [key, secretKey(index + 1)]),
+          INTEGRATION_SECRET_KEYS.map((key, index) => [
+            key,
+            secretKey(index + 1),
+          ]),
         ),
       },
       platform: "darwin",
@@ -360,6 +413,57 @@ describe("complete Desktop development doctor", () => {
     });
     expect(report.ok).toBe(true);
     expect(report.acceptanceOk).toBe(false);
+  });
+
+  it("rejects a malformed discovery summary instead of treating provider detection as ready", async () => {
+    const repoRoot = await fixtureRepo();
+    const execImpl = vi.fn(async (_binary, args) =>
+      args[0] === "version"
+        ? { stdout: JSON.stringify({ version: "dev-fixture" }) }
+        : {
+            stdout: JSON.stringify({
+              probe_result: "success",
+              runtime_count: 2,
+              provider_summary: { codex: 1 },
+            }),
+          },
+    );
+
+    const report = await inspectDevEnvironment({
+      repoRoot,
+      env: {
+        VITE_API_URL: "http://127.0.0.1:18123",
+        ...Object.fromEntries(
+          INTEGRATION_SECRET_KEYS.map((key, index) => [
+            key,
+            secretKey(index + 1),
+          ]),
+        ),
+      },
+      platform: "darwin",
+      arch: "arm64",
+      execImpl,
+      cacheRoot: join(repoRoot, "cache"),
+      fetchImpl: async () => ({
+        ok: true,
+        status: 200,
+        json: async () => ({ status: "ready" }),
+      }),
+    });
+
+    expect(report.ok).toBe(false);
+    expect(report.checks.find(({ id }) => id === "agents")).toMatchObject({
+      ok: false,
+      message: expect.stringContaining("provider counts do not match"),
+    });
+    expect(
+      report.checks.find(({ id }) => id === "agent-roundtrip"),
+    ).toMatchObject({
+      status: "pending",
+      preflightReady: false,
+      localAgentAvailable: false,
+      agentExecutionVerified: false,
+    });
   });
 
   it("does not execute a CLI whose checksum no longer matches the manifest", async () => {
@@ -438,5 +542,19 @@ describe("complete Desktop development doctor", () => {
     expect(
       report.checks.find(({ id }) => id === "integrations")?.message,
     ).toContain("PATCHBAY_TELEGRAM_SECRET_KEY");
+    expect(
+      report.checks.find(({ id }) => id === "integrations")?.providers,
+    ).toMatchObject({
+      telegram: {
+        encryptionKeyConfigured: false,
+        providerCredentialStatus: "not_verified",
+        messageRoundTripStatus: "not_verified",
+      },
+      weixin: {
+        encryptionKeyConfigured: false,
+        providerCredentialStatus: "not_verified",
+        messageRoundTripStatus: "not_verified",
+      },
+    });
   });
 });

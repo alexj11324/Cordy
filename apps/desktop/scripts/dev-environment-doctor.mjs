@@ -56,10 +56,7 @@ export function isValidSecretBoxKey(value) {
 
 export function integrationKeyStatus(env) {
   return Object.fromEntries(
-    INTEGRATION_SECRET_KEYS.map((key) => [
-      key,
-      isValidSecretBoxKey(env[key]),
-    ]),
+    INTEGRATION_SECRET_KEYS.map((key) => [key, isValidSecretBoxKey(env[key])]),
   );
 }
 
@@ -67,8 +64,7 @@ export function summarizeDevEnvironmentChecks(checks) {
   const ok = checks.every((check) => check.ok);
   return {
     ok,
-    acceptanceOk:
-      ok && checks.every((check) => check.status !== "pending"),
+    acceptanceOk: ok && checks.every((check) => check.status !== "pending"),
   };
 }
 
@@ -122,10 +118,7 @@ export function loadDoctorEnvironment({
   loadDevCheckoutEnv({ repoRoot, env });
   if (launcherMode) {
     Object.assign(env, launcherEnv);
-    applyDevRuntimeProfile(
-      env,
-      resolveDevRuntimeProfile(launcherMode, env),
-    );
+    applyDevRuntimeProfile(env, resolveDevRuntimeProfile(launcherMode, env));
   }
   return env;
 }
@@ -171,6 +164,27 @@ async function probeRuntimeDetection(binaryPath, env, execImpl) {
     if (parsed.probe_result !== "success") {
       throw new Error(
         `runtime probe returned ${parsed.probe_result || "unknown"}`,
+      );
+    }
+    if (
+      !Number.isSafeInteger(parsed.runtime_count) ||
+      parsed.runtime_count < 0 ||
+      !parsed.provider_summary ||
+      typeof parsed.provider_summary !== "object" ||
+      Array.isArray(parsed.provider_summary)
+    ) {
+      throw new Error("runtime probe returned a malformed discovery summary");
+    }
+    const providerCounts = Object.values(parsed.provider_summary);
+    if (
+      providerCounts.some(
+        (count) => !Number.isSafeInteger(count) || count < 0,
+      ) ||
+      providerCounts.reduce((sum, count) => sum + count, 0) !==
+        parsed.runtime_count
+    ) {
+      throw new Error(
+        "runtime probe provider counts do not match runtime_count",
       );
     }
     return parsed;
@@ -244,6 +258,8 @@ export async function inspectDevEnvironment({
   const hosted = env.PATCHBAY_DEV_MODE === "hosted";
   const accountsUrl = accountsUrlFromEnv(env);
   const checks = [];
+  let backendReady = false;
+  let localAgentAvailable = false;
 
   const cache = await inspectDevRuntimeCache({ cacheRoot });
   const currentCached = cache.completeFingerprints.some(
@@ -338,6 +354,7 @@ export async function inspectDevEnvironment({
 
   try {
     await probeBackend(apiUrl, fetchImpl);
+    backendReady = true;
     checks.push({
       id: "backend",
       ok: true,
@@ -394,6 +411,7 @@ export async function inspectDevEnvironment({
         execImpl,
       );
       const providers = Object.keys(report.provider_summary || {});
+      localAgentAvailable = report.runtime_count > 0;
       checks.push({
         id: "agents",
         ok: true,
@@ -413,6 +431,22 @@ export async function inspectDevEnvironment({
     }
   }
 
+  const runtimePreflightReady = backendReady && localAgentAvailable;
+  checks.push({
+    id: "agent-roundtrip",
+    ok: true,
+    status: "pending",
+    preflightReady: runtimePreflightReady,
+    localAgentAvailable,
+    electronToManagedDaemonVerified: false,
+    managedDaemonToBackendVerified: false,
+    agentExecutionVerified: false,
+    message: runtimePreflightReady
+      ? "backend readiness and local agent discovery are ready; Electron → managed daemon → backend → agent execution round-trip is not verified by this pre-launch doctor"
+      : "Electron → managed daemon → backend → agent execution round-trip is not verified; one or more separately reported prerequisites are unavailable",
+    fix: "After Electron login, run one disposable issue with a discovered agent and confirm the agent reply reaches the same Electron window.",
+  });
+
   if (cliProbeRoot) {
     await rm(cliProbeRoot, { recursive: true, force: true });
   }
@@ -421,6 +455,20 @@ export async function inspectDevEnvironment({
   const missingKeys = Object.entries(keyStatus)
     .filter(([, configured]) => !configured)
     .map(([key]) => key);
+  const providerStatus = {
+    telegram: {
+      encryptionKeyConfigured: keyStatus.PATCHBAY_TELEGRAM_SECRET_KEY,
+      credentialKind: "BotFather token",
+      providerCredentialStatus: "not_verified",
+      messageRoundTripStatus: "not_verified",
+    },
+    weixin: {
+      encryptionKeyConfigured: keyStatus.PATCHBAY_WEIXIN_SECRET_KEY,
+      credentialKind: "iLink QR authorization",
+      providerCredentialStatus: "not_verified",
+      messageRoundTripStatus: "not_verified",
+    },
+  };
   checks.push(
     missingKeys.length === 0
       ? {
@@ -429,13 +477,15 @@ export async function inspectDevEnvironment({
           status: "pending",
           providerAccountsVerified: false,
           messageRoundTripsVerified: false,
+          providers: providerStatus,
           message:
-            "credential encryption is ready; provider account credentials and message round-trips are not verified by this doctor",
+            "credential encryption is ready; Telegram BotFather and WeChat iLink credentials are not verified, and neither message round-trip has been run",
           fix: "After Electron login, open Settings → Integrations and complete the Telegram/WeChat connect flow; use the provider status there to verify a real account.",
         }
       : {
           id: "integrations",
           ok: false,
+          providers: providerStatus,
           message: `integration encryption configuration missing/invalid: ${missingKeys.join(", ")}`,
           fix: "Run `pnpm dev`; it generates local-only keys in the checkout env file without logging them.",
         },
@@ -492,7 +542,8 @@ async function main() {
       id: "clerk",
       ok: true,
       status: "pending",
-      message: "Hosted mode delegates authentication to the hosted account origin",
+      message:
+        "Hosted mode delegates authentication to the hosted account origin",
     });
   }
   const report = await inspectDevEnvironment({
