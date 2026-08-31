@@ -1767,6 +1767,8 @@ impl LinearSyncWorker {
             project_id: Some(Some(binding.patchbay_project_id)),
             owner_type: Some(remote_owner_id.map(|_| "member".to_string())),
             owner_id: Some(remote_owner_id),
+            executor_type: Some(agent_decision.agent_id.map(|_| "agent".to_string())),
+            executor_id: Some(agent_decision.agent_id),
         };
         let issue = {
             let existing_issue = issue_q::get_issue_by_origin(
