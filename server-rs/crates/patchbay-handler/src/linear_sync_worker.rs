@@ -143,7 +143,7 @@ fn parse_agent_session_event(payload: &Value) -> Result<LinearAgentSessionEvent,
     let session = data
         .get("agentSession")
         .or_else(|| data.get("agentSessionEvent"))
-        .filter(Value::is_object);
+        .filter(|value| value.is_object());
     let session_id = first_string(session, &["id", "agentSessionId"])
         .or_else(|| first_string(Some(data), &["agentSessionId", "sessionId"]))
         .ok_or_else(|| {
@@ -196,7 +196,7 @@ fn parse_agent_session_terminal_event(
     let data = event_data(payload);
     let session = data
         .get("agentSession")
-        .filter(Value::is_object)
+        .filter(|value| value.is_object())
         .ok_or_else(|| {
             SyncError::permanent(anyhow::anyhow!(
                 "Linear Agent Session terminal event has no session"
@@ -1187,7 +1187,7 @@ impl LinearSyncWorker {
                 }
                 Ok(None) => {}
                 Err(error) => tracing::warn!(
-                    %error,
+                    error = %error.message(),
                     issue_id = %issue.id,
                     "could not build Patchbay URL for Linear Agent attachment"
                 ),
@@ -2805,11 +2805,7 @@ fn external_patch_from_snapshot(snapshot: &Value) -> Result<ExternalIssuePatch, 
             )))
         }
     };
-    let owner_type = owner_id
-        .as_ref()
-        .and_then(|value| value.as_ref())
-        .map(|_| Some("member".to_string()))
-        .unwrap_or(Some(None));
+    let owner_type = owner_id.map(|value| value.map(|_| "member".to_string()));
     Ok(ExternalIssuePatch {
         title: Some(required_snapshot_string(snapshot, "title")?),
         description,
@@ -2818,6 +2814,7 @@ fn external_patch_from_snapshot(snapshot: &Value) -> Result<ExternalIssuePatch, 
         due_date,
         owner_type,
         owner_id,
+        project_id: None,
         executor_type: None,
         executor_id: None,
     })
@@ -2831,6 +2828,7 @@ fn classify_external_error(error: ExternalIssueError, context: &str) -> SyncErro
         | ExternalIssueError::InvalidExecutor
         | ExternalIssueError::ActiveExecutorRequired
         | ExternalIssueError::ReviewReviewerRequired
+        | ExternalIssueError::ProjectNotFound
         | ExternalIssueError::NotFound) => {
             SyncError::permanent(anyhow::anyhow!("{context}: {error}"))
         }
