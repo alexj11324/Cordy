@@ -594,6 +594,11 @@ mod tests {
             workspace_id,
         )
         .await?;
+        patchbay_db::queries::workspace_issue_category_policy::delete_workspace_issue_category_policies(
+            &mut *tx,
+            workspace_id,
+        )
+        .await?;
         patchbay_db::queries::workspace_delete::delete_workspace_automation_children(
             &mut *tx,
             workspace_id,
@@ -1365,19 +1370,19 @@ mod tests {
             pool: &PgPool,
             workspace_id: Uuid,
             creator_id: Uuid,
-            assignee_id: Uuid,
+            executor_id: Uuid,
             number: i32,
         ) -> anyhow::Result<Uuid> {
             let id: Uuid = sqlx::query_scalar(
                 "INSERT INTO issue \
-                 (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number, position) \
+                 (id, workspace_id, title, status, priority, creator_type, creator_id, executor_type, executor_id, number, position) \
                  VALUES ($1, $2, $3, 'in_progress', 'none', 'member', $4, 'agent', $5, $6, -1) RETURNING id",
             )
             .bind(new_v7())
             .bind(workspace_id)
             .bind(format!("Recovery issue {number}"))
             .bind(creator_id)
-            .bind(assignee_id)
+            .bind(executor_id)
             .bind(number)
             .fetch_one(pool)
             .await?;
@@ -2902,7 +2907,7 @@ mod tests {
             let source_issue_id = new_v7();
             let worker_issue_id = new_v7();
             sqlx::query(
-                "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number, position) \
+                "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, executor_type, executor_id, number, position) \
                  VALUES ($1, $2, 'Delegated sweeper source', 'in_progress', 'medium', 'member', $3, 'agent', $4, 1, 0)",
             )
             .bind(source_issue_id)
@@ -2912,7 +2917,7 @@ mod tests {
             .execute(&pool)
             .await?;
             sqlx::query(
-                "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, parent_issue_id, number, position) \
+                "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, executor_type, executor_id, parent_issue_id, number, position) \
                  VALUES ($1, $2, 'Delegated sweeper worker', 'in_progress', 'medium', 'member', $3, 'agent', $4, $5, 2, 0)",
             )
             .bind(worker_issue_id)

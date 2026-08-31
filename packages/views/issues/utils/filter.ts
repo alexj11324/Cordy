@@ -1,16 +1,16 @@
-import type { Issue, IssueStatus, IssuePriority, IssueAssigneeGroup } from "@patchbay/core/types";
+import type { Issue, IssueStatus, IssuePriority, IssueExecutorGroup } from "@patchbay/core/types";
 import type { ActorFilterValue } from "@patchbay/core/issues/stores/view-store";
 import type { IssueActivityState } from "../surface/activity";
 
 export interface IssueFilters {
   statusFilters: IssueStatus[];
   priorityFilters: IssuePriority[];
-  assigneeFilters: ActorFilterValue[];
-  includeNoAssignee: boolean;
-  /** Keeps an explicitly active assignee predicate distinct from the normal
-   *  empty-array = no-filter state. When true with no selected assignees and
-   *  includeNoAssignee=false, the predicate intentionally matches nothing. */
-  assigneeFilterActive?: boolean;
+  executorFilters: ActorFilterValue[];
+  includeNoExecutor: boolean;
+  /** Keeps an explicitly active executor predicate distinct from the normal
+   *  empty-array = no-filter state. When true with no selected executors and
+   *  includeNoExecutor=false, the predicate intentionally matches nothing. */
+  executorFilterActive?: boolean;
   creatorFilters: ActorFilterValue[];
   projectFilters: string[];
   includeNoProject: boolean;
@@ -33,10 +33,10 @@ export interface IssueFilters {
 export interface IssueFilterState {
   statusFilters: IssueStatus[];
   priorityFilters: IssuePriority[];
-  assigneeFilters: ActorFilterValue[];
-  includeNoAssignee: boolean;
-  /** See IssueFilters.assigneeFilterActive. */
-  assigneeFilterActive?: boolean;
+  executorFilters: ActorFilterValue[];
+  includeNoExecutor: boolean;
+  /** See IssueFilters.executorFilterActive. */
+  executorFilterActive?: boolean;
   creatorFilters: ActorFilterValue[];
   projectFilters: string[];
   includeNoProject: boolean;
@@ -103,21 +103,21 @@ function issueIsWorking(issueId: string, context: IssueFilterContext) {
  * Filter issues using positive selection model.
  * Empty arrays = no filter (show all). Non-empty = show only matching.
  *
- * Assignee has a special "No assignee" toggle (includeNoAssignee):
- * - When only includeNoAssignee is true → show only unassigned issues
- * - When assigneeFilters has items → show only those assignees' issues
- * - When both → show matching assignees + unassigned
+ * Executor has a special "No executor" toggle (includeNoExecutor):
+ * - When only includeNoExecutor is true → show only unassigned issues
+ * - When executorFilters has items → show only those executors' issues
+ * - When both → show matching executors + unassigned
  */
 export function applyIssueFilters(
   issues: Issue[],
   filters: IssueFilterState,
   context: IssueFilterContext = {},
 ): Issue[] {
-  const { statusFilters, priorityFilters, assigneeFilters, includeNoAssignee, creatorFilters, projectFilters, includeNoProject, labelFilters, workingOnly } = filters;
-  const hasAssigneeFilter =
-    filters.assigneeFilterActive === true ||
-    assigneeFilters.length > 0 ||
-    includeNoAssignee;
+  const { statusFilters, priorityFilters, executorFilters, includeNoExecutor, creatorFilters, projectFilters, includeNoProject, labelFilters, workingOnly } = filters;
+  const hasExecutorFilter =
+    filters.executorFilterActive === true ||
+    executorFilters.length > 0 ||
+    includeNoExecutor;
   const hasProjectFilter = projectFilters.length > 0 || includeNoProject;
   // Empty set passed without `agentRunningFilter` is a no-op. When the
   // filter is on but the set is missing/empty, hide everything — the
@@ -137,19 +137,21 @@ export function applyIssueFilters(
     if (priorityFilters.length > 0 && !priorityFilters.includes(issue.priority))
       return false;
 
-    if (hasAssigneeFilter) {
-      if (!issue.assignee_id) {
-        // Unassigned issue — show only if "No assignee" is checked
-        if (!includeNoAssignee) return false;
-      } else if (assigneeFilters.length > 0) {
-        // Assigned issue — show only if assignee is in the filter list
-        if (!assigneeFilters.some(
-          (f) => f.type === issue.assignee_type && f.id === issue.assignee_id,
-        )) return false;
-      } else {
-        // Only "No assignee" is checked, no specific assignees → hide assigned issues
-        return false;
-      }
+    if (hasExecutorFilter) {
+      // The filter picker is shared by all issue actors. Members are the
+      // human owner role, while agents and teams are the execution role;
+      // compare each filter against the corresponding role instead of
+      // treating a member filter as an executor id.
+      const matchesSelected = executorFilters.some((f) => {
+        if (f.type === "member") {
+          return f.type === issue.owner_type && f.id === issue.owner_id;
+        }
+        return f.type === issue.executor_type && f.id === issue.executor_id;
+      });
+      // "No executor" is the unassigned execution bucket. A human owner is
+      // independent from execution and must not exclude an issue here.
+      const matchesNoExecutor = includeNoExecutor && !issue.executor_id;
+      if (!matchesSelected && !matchesNoExecutor) return false;
     }
 
     if (
@@ -192,9 +194,9 @@ export function filterIssues(issues: Issue[], filters: IssueFilters): Issue[] {
     {
       statusFilters: filters.statusFilters,
       priorityFilters: filters.priorityFilters,
-      assigneeFilters: filters.assigneeFilters,
-      includeNoAssignee: filters.includeNoAssignee,
-      assigneeFilterActive: filters.assigneeFilterActive,
+      executorFilters: filters.executorFilters,
+      includeNoExecutor: filters.includeNoExecutor,
+      executorFilterActive: filters.executorFilterActive,
       creatorFilters: filters.creatorFilters,
       projectFilters: filters.projectFilters,
       includeNoProject: filters.includeNoProject,
@@ -209,21 +211,21 @@ export function filterIssues(issues: Issue[], filters: IssueFilters): Issue[] {
 
 /**
  * Re-apply the client-only display filters to a server-grouped response.
- * The assignee-grouped board renders straight from `groups`, bypassing the
+ * The executor-grouped board renders straight from `groups`, bypassing the
  * flat `applyIssueFilters` output, so the "Show sub-issues" toggle and the
  * agents-working quick filter must be applied per group here. Recomputes
  * each group's total and drops emptied groups. Returns the input by
  * reference when no client filter is active.
  */
-export function filterAssigneeGroups(
-  groups: IssueAssigneeGroup[] | undefined,
+export function filterExecutorGroups(
+  groups: IssueExecutorGroup[] | undefined,
   filters: {
     showSubIssues?: boolean;
     agentRunningFilter?: boolean;
     runningIssueIds?: ReadonlySet<string>;
     propertyFilters?: Record<string, string[]>;
   },
-): IssueAssigneeGroup[] | undefined {
+): IssueExecutorGroup[] | undefined {
   const applyRunning = filters.agentRunningFilter === true;
   const hideSubIssues = filters.showSubIssues === false;
   const hasPropertyFilters = Object.values(filters.propertyFilters ?? {}).some(

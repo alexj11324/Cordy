@@ -19,7 +19,7 @@ export const workspaceKeys = {
   teamMemberStatus: (wsId: string, teamId: string) =>
     ["workspaces", wsId, "teams", teamId, "members-status"] as const,
   skills: (wsId: string) => ["workspaces", wsId, "skills"] as const,
-  assigneeFrequency: (wsId: string) => ["workspaces", wsId, "assignee-frequency"] as const,
+  executorFrequency: (wsId: string) => ["workspaces", wsId, "executor-frequency"] as const,
   mcpServers: (wsId: string) => ["workspaces", wsId, "mcp-servers"] as const,
 };
 
@@ -173,10 +173,10 @@ export function myInvitationListOptions() {
   });
 }
 
-export function assigneeFrequencyOptions(wsId: string) {
+export function executorFrequencyOptions(wsId: string) {
   return queryOptions({
-    queryKey: workspaceKeys.assigneeFrequency(wsId),
-    queryFn: () => api.getAssigneeFrequency(),
+    queryKey: workspaceKeys.executorFrequency(wsId),
+    queryFn: () => api.getExecutorFrequency(),
   });
 }
 

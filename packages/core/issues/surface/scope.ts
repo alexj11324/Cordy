@@ -1,4 +1,8 @@
-import type { IssueAssigneeType } from "../../types";
+import type {
+  IssueActorType,
+  IssueExecutorType,
+  IssueOwnerType,
+} from "../../types";
 
 export type WorkspaceIssueActorKind = "all" | "members" | "agents";
 
@@ -12,28 +16,29 @@ export type IssueScope =
   | { type: "project"; projectId: string; actorKind?: WorkspaceIssueActorKind }
   | {
       type: "actor";
-      actorType: Extract<IssueAssigneeType, "member" | "agent">;
+      actorType: Extract<IssueActorType, "member" | "agent">;
       actorId: string;
       relation: "assigned" | "created";
     }
   | { type: "team"; teamId: string };
 
 /**
- * THE single translation between the UI's coarse assignee-type tab and the
- * API's `assignee_types` values. Every channel (list GET params, table
- * query spec, gantt) must compile the tab through this function — do not
- * inline the literal arrays anywhere else.
+ * THE single translation between the UI's coarse actor tab and the API role
+ * filters. Human members are owners; agents/teams are execution targets.
  */
-export function assigneeTypesForActorKind(
+export function roleFiltersForActorKind(
   actorKind: WorkspaceIssueActorKind | undefined,
-): IssueAssigneeType[] | undefined {
+): {
+  ownerTypes?: IssueOwnerType[];
+  executorTypes?: IssueExecutorType[];
+} {
   switch (actorKind) {
     case "members":
-      return ["member"];
+      return { ownerTypes: ["member"] };
     case "agents":
-      return ["agent", "team"];
+      return { executorTypes: ["agent", "team"] };
     default:
-      return undefined;
+      return {};
   }
 }
 

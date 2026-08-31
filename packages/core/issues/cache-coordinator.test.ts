@@ -21,7 +21,7 @@ const WS_ID = "ws-1";
 const sort: IssueSortParam = { sort_by: "position", sort_direction: undefined };
 
 const wsKey = issueKeys.listSorted(WS_ID, sort);
-const myAssignedKey = issueKeys.myListSorted(WS_ID, "assigned", { assignee_id: "me" }, sort);
+const myAssignedKey = issueKeys.myListSorted(WS_ID, "assigned", { owner_id: "me" }, sort);
 const myAllKey = issueKeys.myListSorted(WS_ID, "all", {}, sort);
 const involvedKey = issueKeys.myListSorted(WS_ID, "agents", { involves_user_id: "me" }, sort);
 const projectP1Key = issueKeys.myListSorted(WS_ID, "project:p1", { project_id: "p1" }, sort);
@@ -29,7 +29,7 @@ const projectP2Key = issueKeys.myListSorted(WS_ID, "project:p2", { project_id: "
 const membersKey = issueKeys.myListSorted(
   WS_ID,
   "workspace:members",
-  { assignee_types: ["member"] },
+  { owner_types: ["member"] },
   sort,
 );
 const inboxKey = inboxKeys.list(WS_ID);
@@ -102,7 +102,7 @@ const flatLastActivityKey = issueKeys.flat(
   {},
   lastActivitySort,
 );
-const assigneeGroupsLastActivityKey = issueKeys.assigneeGroups(WS_ID, {
+const executorGroupsLastActivityKey = issueKeys.executorGroups(WS_ID, {
   ...lastActivitySort,
 });
 const tableLastActivityKey = issueKeys.tableRows(
@@ -117,15 +117,15 @@ const tableLastActivityKey = issueKeys.tableRows(
   false,
   null,
 );
-// Assignee-grouped boards fold the sort into their filter bag
-// (issueAssigneeGroupsOptions does `{ ...filter, ...sort }`).
-const assigneeGroupsUpdatedKey = issueKeys.assigneeGroups(WS_ID, {
+// Executor-grouped boards fold the sort into their filter bag
+// (issueExecutorGroupsOptions does `{ ...filter, ...sort }`).
+const executorGroupsUpdatedKey = issueKeys.executorGroups(WS_ID, {
   ...updatedSort,
 });
-const assigneeGroupsPositionKey = issueKeys.assigneeGroups(WS_ID, {
+const executorGroupsPositionKey = issueKeys.executorGroups(WS_ID, {
   sort_by: "position",
 });
-const myAssigneeGroupsUpdatedKey = issueKeys.myAssigneeGroups(WS_ID, "all", {
+const myExecutorGroupsUpdatedKey = issueKeys.myExecutorGroups(WS_ID, "all", {
   ...updatedSort,
 });
 
@@ -139,8 +139,12 @@ function makeIssue(idx: number, overrides: Partial<Issue> = {}): Issue {
     description: null,
     status: "todo",
     priority: "none",
-    assignee_type: "member",
-    assignee_id: "me",
+    owner_type: "member",
+    owner_id: "me",
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "me",
     parent_issue_id: null,
@@ -442,7 +446,7 @@ describe("applyIssueChange", () => {
     // means the list's todo total counted it and must lose one.
     qc.setQueryData<ListIssuesCache>(myAssignedKey, bucketed([], 2));
 
-    const patch = { assignee_id: "bob", assignee_type: "member" as const };
+    const patch = { owner_id: "bob", owner_type: "member" as const };
     const result = applyIssueChange(qc, WS_ID, "issue-1", patch, {
       changed: issueChangedDims(patch, issue()),
       baseIssue: issue(),
@@ -457,7 +461,7 @@ describe("applyIssueChange", () => {
     // — nothing about this list can have drifted, so not even a stale key.
     qc.setQueryData<ListIssuesCache>(membersKey, bucketed([], 5));
 
-    const patch = { assignee_id: "bob", assignee_type: "member" as const };
+    const patch = { owner_id: "bob", owner_type: "member" as const };
     const result = applyIssueChange(qc, WS_ID, "issue-1", patch, {
       changed: issueChangedDims(patch, issue()),
       baseIssue: issue(),
@@ -482,14 +486,14 @@ describe("applyIssueChange", () => {
     expect(qc.getQueryData<ListIssuesCache>(projectP1Key)).toEqual(snapshot);
   });
 
-  it("assignee change me→bob: removes from my-assigned (total decremented), keeps members tab, flags union/involves scopes", () => {
+  it("owner change me→bob removes from my-assigned and keeps the members tab", () => {
     qc.setQueryData<ListIssuesCache>(wsKey, bucketed([issue()]));
     qc.setQueryData<ListIssuesCache>(myAssignedKey, bucketed([issue()]));
     qc.setQueryData<ListIssuesCache>(myAllKey, bucketed([issue()]));
     qc.setQueryData<ListIssuesCache>(involvedKey, bucketed([issue()]));
     qc.setQueryData<ListIssuesCache>(membersKey, bucketed([issue()]));
 
-    const patch = { assignee_id: "bob", assignee_type: "member" as const };
+    const patch = { owner_id: "bob", owner_type: "member" as const };
     const result = applyIssueChange(qc, WS_ID, "issue-1", patch, {
       changed: issueChangedDims(patch, issue()),
       baseIssue: issue(),
@@ -500,40 +504,40 @@ describe("applyIssueChange", () => {
     expect(ids(qc, myAssignedKey, "todo")).toEqual([]);
     expect(total(qc, myAssignedKey, "todo")).toBe(0);
     // Workspace board and members tab (bob is still a member) keep the card,
-    // with the new assignee patched in.
+    // with the new owner patched in.
     expect(ids(qc, wsKey, "todo")).toEqual(["issue-1"]);
     expect(ids(qc, membersKey, "todo")).toEqual(["issue-1"]);
     expect(
       qc.getQueryData<ListIssuesCache>(membersKey)?.byStatus.todo?.issues[0]
-        ?.assignee_id,
+        ?.owner_id,
     ).toBe("bob");
 
-    // Union (my:all) and involves membership are server knowledge — patched
-    // in place but flagged for a deferred refetch.
+    // Union (my:all) includes the owner leg and needs a deferred refetch.
+    // Involved depends only on executor/team membership, so it stays stable.
     const staleHashes = result.staleKeys.map(hashKey);
     expect(staleHashes).toContain(hashKey(myAllKey));
-    expect(staleHashes).toContain(hashKey(involvedKey));
+    expect(staleHashes).not.toContain(hashKey(involvedKey));
     expect(staleHashes).not.toContain(hashKey(myAssignedKey));
     expect(staleHashes).not.toContain(hashKey(membersKey));
   });
 
-  it("member→agent reassignment: leaves the members tab, enters the loaded agents tab via stale key", () => {
+  it("adding an executor preserves the owner tab and enters the agents tab", () => {
     const agentsKey = issueKeys.myListSorted(
       WS_ID,
       "workspace:agents",
-      { assignee_types: ["agent", "team"] },
+      { executor_types: ["agent", "team"] },
       sort,
     );
     qc.setQueryData<ListIssuesCache>(membersKey, bucketed([issue()]));
     qc.setQueryData<ListIssuesCache>(agentsKey, bucketed([]));
 
-    const patch = { assignee_id: "agent-1", assignee_type: "agent" as const };
+    const patch = { executor_id: "agent-1", executor_type: "agent" as const };
     const result = applyIssueChange(qc, WS_ID, "issue-1", patch, {
       changed: issueChangedDims(patch, issue()),
       baseIssue: issue(),
     });
 
-    expect(ids(qc, membersKey, "todo")).toEqual([]);
+    expect(ids(qc, membersKey, "todo")).toEqual(["issue-1"]);
     // Never hard-insert into the agents tab — the right page/slot is server
     // knowledge; the loaded list is flagged for refetch instead.
     expect(ids(qc, agentsKey, "todo")).toEqual([]);
@@ -555,7 +559,7 @@ describe("applyIssueChange", () => {
     expect(ids(qc, projectP1Key, "todo")).toEqual([]);
     expect(total(qc, projectP1Key, "todo")).toBe(0);
     expect(ids(qc, wsKey, "todo")).toEqual(["issue-1"]);
-    // Assignee list membership is untouched by a project move.
+    // Executor list membership is untouched by a project move.
     expect(ids(qc, myAssignedKey, "todo")).toEqual(["issue-1"]);
 
     const staleHashes = result.staleKeys.map(hashKey);
@@ -570,7 +574,7 @@ describe("applyIssueChange", () => {
     // a member (and left), so the list must refetch.
     qc.setQueryData<ListIssuesCache>(myAssignedKey, bucketed([], 2));
 
-    const patch = { assignee_id: "bob", assignee_type: "member" as const };
+    const patch = { owner_id: "bob", owner_type: "member" as const };
     const result = applyIssueChange(qc, WS_ID, "issue-99", patch, {
       changed: issueChangedDims(patch),
     });
@@ -579,11 +583,11 @@ describe("applyIssueChange", () => {
   });
 
   it("skips absent cards entirely when the change cannot affect the list", () => {
-    // Assignee change, project-filtered list, card absent, base known and in
+    // Executor change, project-filtered list, card absent, base known and in
     // another project — nothing about this list can have drifted.
     qc.setQueryData<ListIssuesCache>(projectP2Key, bucketed([]));
 
-    const patch = { assignee_id: "bob", assignee_type: "member" as const };
+    const patch = { owner_id: "bob", owner_type: "member" as const };
     const result = applyIssueChange(qc, WS_ID, "issue-1", patch, {
       changed: issueChangedDims(patch, issue()),
       baseIssue: issue(),
@@ -598,7 +602,7 @@ describe("applyIssueChange", () => {
     qc.setQueryData<Issue>(issueKeys.detail(WS_ID, "issue-1"), issue());
     qc.setQueryData<InboxItem[]>(inboxKey, []);
 
-    const patch = { assignee_id: "bob", assignee_type: "member" as const, status: "in_progress" as const };
+    const patch = { owner_id: "bob", owner_type: "member" as const, status: "in_progress" as const };
     const result = applyIssueChange(qc, WS_ID, "issue-1", patch, {
       changed: issueChangedDims(patch, issue()),
       baseIssue: issue(),
@@ -613,8 +617,8 @@ describe("applyIssueChange", () => {
   });
 
   it("skips grouped caches living under the same key prefixes", () => {
-    // myAssigneeGroups lives under the myAll prefix but has no byStatus shape.
-    const groupedKey = issueKeys.myAssigneeGroups(WS_ID, "assigned", {});
+    // myExecutorGroups lives under the myAll prefix but has no byStatus shape.
+    const groupedKey = issueKeys.myExecutorGroups(WS_ID, "assigned", {});
     const grouped = { groups: [] };
     qc.setQueryData(groupedKey, grouped);
 
@@ -663,20 +667,20 @@ describe("invalidateUpdatedAtSortedIssueLists", () => {
     expect(qc.getQueryState(flatKey)?.isInvalidated).toBe(false);
   });
 
-  it("invalidates updated_at-sorted assignee-grouped boards (workspace + My Issues)", () => {
+  it("invalidates updated_at-sorted executor-grouped boards (workspace + My Issues)", () => {
     // Grouped boards carry the sort inside their filter bag, not a standalone
     // sort key — they must still re-sort under "Updated date".
-    qc.setQueryData(assigneeGroupsUpdatedKey, { groups: [] });
-    qc.setQueryData(myAssigneeGroupsUpdatedKey, { groups: [] });
-    qc.setQueryData(assigneeGroupsPositionKey, { groups: [] });
+    qc.setQueryData(executorGroupsUpdatedKey, { groups: [] });
+    qc.setQueryData(myExecutorGroupsUpdatedKey, { groups: [] });
+    qc.setQueryData(executorGroupsPositionKey, { groups: [] });
 
     invalidateUpdatedAtSortedIssueLists(qc, WS_ID);
 
-    expect(qc.getQueryState(assigneeGroupsUpdatedKey)?.isInvalidated).toBe(true);
-    expect(qc.getQueryState(myAssigneeGroupsUpdatedKey)?.isInvalidated).toBe(
+    expect(qc.getQueryState(executorGroupsUpdatedKey)?.isInvalidated).toBe(true);
+    expect(qc.getQueryState(myExecutorGroupsUpdatedKey)?.isInvalidated).toBe(
       true,
     );
-    expect(qc.getQueryState(assigneeGroupsPositionKey)?.isInvalidated).toBe(
+    expect(qc.getQueryState(executorGroupsPositionKey)?.isInvalidated).toBe(
       false,
     );
   });
@@ -698,7 +702,7 @@ describe("invalidateLastActivitySortedIssueLists", () => {
       pages: [{ issues: [makeIssue(1)], total: 1 }],
       pageParams: [0],
     });
-    qc.setQueryData(assigneeGroupsLastActivityKey, { groups: [] });
+    qc.setQueryData(executorGroupsLastActivityKey, { groups: [] });
     qc.setQueryData(tableLastActivityKey, { rows: [] });
     qc.setQueryData<ListIssuesCache>(wsUpdatedKey, bucketed([makeIssue(1)]));
     qc.setQueryData<ListIssuesCache>(wsKey, bucketed([makeIssue(1)]));
@@ -708,7 +712,7 @@ describe("invalidateLastActivitySortedIssueLists", () => {
     for (const key of [
       wsLastActivityKey,
       flatLastActivityKey,
-      assigneeGroupsLastActivityKey,
+      executorGroupsLastActivityKey,
       tableLastActivityKey,
     ]) {
       expect(qc.getQueryState(key)?.isInvalidated).toBe(true);

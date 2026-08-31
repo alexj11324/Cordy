@@ -1,4 +1,14 @@
-import type { Issue, IssueMetadata, IssueStatus, IssueStatusCategory, IssuePriority, IssueAssigneeType } from "./issue";
+import type {
+  Issue,
+  IssueActorType,
+  IssueExecutorType,
+  IssueMetadata,
+  IssueOwnerType,
+  IssuePriority,
+  IssueReviewerType,
+  IssueStatus,
+  IssueStatusCategory,
+} from "./issue";
 import type { MemberRole } from "./workspace";
 import type { Project } from "./project";
 
@@ -8,8 +18,12 @@ export interface CreateIssueRequest {
   description?: string;
   status?: IssueStatus;
   priority?: IssuePriority;
-  assignee_type?: IssueAssigneeType;
-  assignee_id?: string;
+  owner_type?: IssueOwnerType;
+  owner_id?: string;
+  executor_type?: IssueExecutorType;
+  executor_id?: string;
+  reviewer_type?: IssueReviewerType;
+  reviewer_id?: string;
   parent_issue_id?: string;
   project_id?: string;
   /** Ordered stage (>= 1) grouping this sub-issue under its parent. */
@@ -35,9 +49,11 @@ export interface UpdateIssueRequest {
   description_base?: string;
   status?: IssueStatus;
   priority?: IssuePriority;
-  assignee_type?: IssueAssigneeType | null;
-  assignee_id?: string | null;
-  reviewer_type?: IssueAssigneeType | null;
+  owner_type?: IssueOwnerType | null;
+  owner_id?: string | null;
+  executor_type?: IssueExecutorType | null;
+  executor_id?: string | null;
+  reviewer_type?: IssueReviewerType | null;
   reviewer_id?: string | null;
   position?: number;
   start_date?: string | null;
@@ -51,7 +67,7 @@ export interface UpdateIssueRequest {
    *  surface in `issueAttachments` and keep their preview Eye on refresh. */
   attachment_ids?: string[];
   /** Skip starting the agent run this write would trigger ("暂时不启动",
-   *  PB-3375). The assignee/status change still applies. Control field —
+   *  PB-3375). The executor/status change still applies. Control field —
    *  strip from optimistic cache patches; never written onto the Issue. */
   suppress_run?: boolean;
   /** Free-text handoff instruction injected into the started run's opening
@@ -69,8 +85,10 @@ export interface MoveIssueRequest
   extends Pick<
     UpdateIssueRequest,
     | "status"
-    | "assignee_type"
-    | "assignee_id"
+    | "owner_type"
+    | "owner_id"
+    | "executor_type"
+    | "executor_id"
     | "parent_issue_id"
     | "project_id"
     | "suppress_run"
@@ -85,8 +103,8 @@ export interface MoveIssueRequest
 export interface IssueTriggerPreviewParams {
   issueIds?: string[];
   isCreate?: boolean;
-  assigneeType?: IssueAssigneeType | null;
-  assigneeId?: string | null;
+  executorType?: IssueExecutorType | null;
+  executorId?: string | null;
   status?: IssueStatus;
 }
 
@@ -125,21 +143,25 @@ export interface ListIssuesParams {
   /** Multi-value form of `status_category`. OR within the field. */
   status_categories?: IssueStatusCategory[];
   priority?: IssuePriority;
+  owner_id?: string;
+  owner_ids?: string[];
+  owner_types?: IssueOwnerType[];
+  owner_filters?: IssueOwnerRef[];
+  include_no_owner?: boolean;
   /** Multi-value table facet. OR within the field. */
   priorities?: IssuePriority[];
-  assignee_id?: string;
-  assignee_ids?: string[];
+  executor_id?: string;
+  executor_ids?: string[];
   /**
-   * Narrow to issues assigned to the given actor kinds (member / agent /
-   * team). Same semantics as `ListGroupedIssuesParams.assignee_types` —
-   * powers the workspace Members/Agents tabs server-side.
+   * Narrow to issues executed by agents or teams. Human responsibility is
+   * filtered independently through owner_id/owner_ids.
    */
-  assignee_types?: IssueAssigneeType[];
+  executor_types?: IssueExecutorType[];
   creator_id?: string;
   project_id?: string;
   /** Actor-aware table facets. OR within each field. */
-  assignee_filters?: IssueActorRef[];
-  include_no_assignee?: boolean;
+  executor_filters?: IssueExecutorRef[];
+  include_no_executor?: boolean;
   creator_filters?: IssueActorRef[];
   project_ids?: string[];
   include_no_project?: boolean;
@@ -154,11 +176,11 @@ export interface ListIssuesParams {
    */
   ids?: string[];
   /**
-   * Widen the assignee filter to issues where the user is the *indirect*
-   * assignee — assignee is one of the user's owned agents, or a team that
+   * Widen the executor filter to issues where the user is the *indirect*
+   * executor — executor is one of the user's owned agents, or a team that
    * involves the user (human member / leader-via-owned-agent / agent member
    * owned by the user). Direct member assignment is intentionally excluded:
-   * `involves_user_id` and `assignee_id=<user>` (tab "Assigned to me") produce
+   * `involves_user_id` and `executor_id=<user>` (tab "Assigned to me") produce
    * disjoint result sets by construction.
    */
   involves_user_id?: string;
@@ -193,20 +215,33 @@ export interface ListIssuesParams {
 }
 
 export interface IssueActorRef {
-  type: IssueAssigneeType;
+  type: IssueActorType;
+  id: string;
+}
+
+export interface IssueExecutorRef {
+  type: IssueExecutorType;
+  id: string;
+}
+
+export interface IssueOwnerRef {
+  type: IssueOwnerType;
   id: string;
 }
 
 export interface ListGroupedIssuesParams {
-  group_by: "assignee";
+  group_by: "executor";
   limit?: number;
   offset?: number;
   workspace_id?: string;
   statuses?: IssueStatus[];
   priorities?: IssuePriority[];
-  assignee_types?: IssueAssigneeType[];
-  assignee_id?: string;
-  assignee_ids?: string[];
+  owner_types?: IssueOwnerType[];
+  owner_id?: string;
+  owner_ids?: string[];
+  executor_types?: IssueExecutorType[];
+  executor_id?: string;
+  executor_ids?: string[];
   creator_id?: string;
   project_id?: string;
   /** See `ListIssuesParams.involves_user_id` — same semantics. */
@@ -216,14 +251,16 @@ export interface ListGroupedIssuesParams {
   /** Custom-property filter: definition id → accepted values (option ids or
    *  "true"/"false" for checkbox). OR within a definition, AND across. */
   properties?: Record<string, string[]>;
-  assignee_filters?: IssueActorRef[];
-  include_no_assignee?: boolean;
+  owner_filters?: IssueOwnerRef[];
+  include_no_owner?: boolean;
+  executor_filters?: IssueExecutorRef[];
+  include_no_executor?: boolean;
   creator_filters?: IssueActorRef[];
   project_ids?: string[];
   include_no_project?: boolean;
   label_ids?: string[];
-  group_assignee_type?: IssueAssigneeType | "none";
-  group_assignee_id?: string;
+  group_executor_type?: IssueExecutorType | "none";
+  group_executor_id?: string;
   date_field?: "created_at" | "updated_at";
   date_start?: string;
   date_end?: string;
@@ -247,34 +284,48 @@ export interface ListIssuesResponse {
   total: number;
 }
 
-export interface IssueAssigneeGroup {
+export interface IssueExecutorGroup {
   id: string;
-  assignee_type: IssueAssigneeType | null;
-  assignee_id: string | null;
+  executor_type: IssueExecutorType | null;
+  executor_id: string | null;
   issues: Issue[];
   total: number;
 }
 
-/** Raw backend response shape for `GET /api/issues/grouped?group_by=assignee`. */
+/** Raw backend response shape for `GET /api/issues/grouped?group_by=executor`. */
 export interface GroupedIssuesResponse {
-  groups: IssueAssigneeGroup[];
+  groups: IssueExecutorGroup[];
 }
 
 // Server-authoritative Table query contract. Membership, grouping and counts
 // are evaluated against the complete result set; the browser only owns view
 // state such as collapsed groups/parents.
 export type IssueTableScope =
-  | { kind: "workspace"; assignee_types?: IssueAssigneeType[] }
-  | { kind: "project"; project_id: string; assignee_types?: IssueAssigneeType[] }
-  | { kind: "assignee"; actor: IssueActorRef }
+  | {
+      kind: "workspace";
+      owner_types?: IssueOwnerType[];
+      executor_types?: IssueExecutorType[];
+    }
+  | {
+      kind: "project";
+      project_id: string;
+      owner_types?: IssueOwnerType[];
+      executor_types?: IssueExecutorType[];
+    }
+  | { kind: "owner"; actor: IssueOwnerRef }
+  | { kind: "executor"; actor: IssueExecutorRef }
   | { kind: "creator"; actor: IssueActorRef }
   | { kind: "my"; relation: "assigned" | "created" | "involved" | "any" };
 
 export interface IssueTableFilters {
   statuses?: IssueStatus[];
   priorities?: IssuePriority[];
-  assignees?: IssueActorRef[];
-  include_no_assignee?: boolean;
+  /** One OR predicate spanning human owners and agent/team executors. */
+  actors?: IssueActorRef[];
+  owners?: IssueOwnerRef[];
+  include_no_owner?: boolean;
+  executors?: IssueExecutorRef[];
+  include_no_executor?: boolean;
   creators?: IssueActorRef[];
   project_ids?: string[];
   include_no_project?: boolean;
@@ -329,12 +380,12 @@ export type IssueTableGroupSpec =
    * (PB-6243)
    */
   | { kind: "status_category" }
-  | { kind: "assignee" }
+  | { kind: "executor" }
   | { kind: "project" }
   | { kind: "parent" }
   | {
       kind: "compound";
-      primary: "assignee" | "project" | "parent";
+      primary: "executor" | "project" | "parent";
       /** `status_category` folds custom statuses into their category's cell. */
       secondary: "status" | "status_category";
       /** Optional visible secondary buckets. When present, the server pages
@@ -361,7 +412,7 @@ export interface IssueTableParentRef {
 
 export type IssueTableGroupValue =
   | { kind: "status"; status: string }
-  | { kind: "assignee"; actor: IssueTableActorRef | null }
+  | { kind: "executor"; actor: IssueTableActorRef | null }
   | { kind: "project"; project_id: string | null }
   | {
       kind: "parent";
@@ -430,7 +481,7 @@ export interface IssueTableRowsResponse {
 export type IssueTableFacetSpec =
   | { kind: "status" }
   | { kind: "priority" }
-  | { kind: "assignee" }
+  | { kind: "executor" }
   | { kind: "creator" }
   | { kind: "project" }
   | { kind: "label" }

@@ -14,14 +14,24 @@ pub(super) struct IssueListArgs {
     pub(super) priority: Option<String>,
     #[arg(
         long,
-        help = "Filter by assignee name (member, agent, or team; fuzzy match)"
+        help = "Filter by execution target name (agent or team; fuzzy match)"
     )]
-    pub(super) assignee: Option<String>,
+    pub(super) executor: Option<String>,
     #[arg(
         long,
-        help = "Filter by assignee UUID — member, agent, or team (mutually exclusive with --assignee)"
+        help = "Filter by execution target UUID — agent or team (mutually exclusive with --executor)"
     )]
-    pub(super) assignee_id: Option<String>,
+    pub(super) executor_id: Option<String>,
+    #[arg(
+        long,
+        help = "Filter by human owner name (workspace member; fuzzy match)"
+    )]
+    pub(super) owner: Option<String>,
+    #[arg(
+        long,
+        help = "Filter by human owner UUID (mutually exclusive with --owner)"
+    )]
+    pub(super) owner_id: Option<String>,
     #[arg(long, help = "Filter by project ID")]
     pub(super) project: Option<String>,
     #[arg(

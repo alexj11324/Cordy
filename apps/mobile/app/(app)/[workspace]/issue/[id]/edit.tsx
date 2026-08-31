@@ -14,7 +14,7 @@
  * pass through unchanged. New @-mentions added during the edit get serialized
  * normally via the marker pipeline.
  *
- * Properties (status / priority / assignee / labels / project / due_date)
+ * Properties (status / priority / executor / labels / project / due_date)
  * are NOT edited here — they have dedicated chip pickers on the detail page.
  * This screen only owns the two free-text fields.
  */

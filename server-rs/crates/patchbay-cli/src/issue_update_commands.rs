@@ -4,10 +4,12 @@ use std::io::Read;
 
 use super::issue_safety::guard_issue_description_local_links;
 use super::{
-    format_table, new_api_client, resolve_current_workspace_id, resolve_issue_assignee_id,
-    resolve_issue_assignee_name, resolve_issue_project_id, resolve_issue_ref,
-    resolve_issue_update_description, validate_issue_priority, validate_issue_status, value_string,
-    Cli, Environment, IssueUpdateArgs, OutputFormat, RunOutput,
+    format_table, new_api_client, resolve_current_workspace_id, resolve_issue_executor_id,
+    resolve_issue_executor_name, resolve_issue_owner_id, resolve_issue_owner_name,
+    resolve_issue_project_id, resolve_issue_ref, resolve_issue_reviewer_id,
+    resolve_issue_reviewer_name, resolve_issue_update_description, validate_issue_priority,
+    validate_issue_status, value_string, Cli, Environment, IssueUpdateArgs, OutputFormat,
+    RunOutput,
 };
 
 pub(super) async fn run_issue_update<R: Read>(
@@ -22,8 +24,14 @@ pub(super) async fn run_issue_update<R: Read>(
     if let Some(priority) = &args.priority {
         validate_issue_priority(priority)?;
     }
-    if args.assignee.is_some() && args.assignee_id.is_some() {
-        bail!("--assignee and --assignee-id are mutually exclusive");
+    if args.executor.is_some() && args.executor_id.is_some() {
+        bail!("--executor and --executor-id are mutually exclusive");
+    }
+    if args.owner.is_some() && args.owner_id.is_some() {
+        bail!("--owner and --owner-id are mutually exclusive");
+    }
+    if args.reviewer.is_some() && args.reviewer_id.is_some() {
+        bail!("--reviewer and --reviewer-id are mutually exclusive");
     }
 
     let client = new_api_client(cli, environment)?;
@@ -66,24 +74,65 @@ pub(super) async fn run_issue_update<R: Read>(
     if let Some(due_date) = &args.due_date {
         body.insert("due_date".into(), Value::String(due_date.clone()));
     }
-    let assignee = if let Some(id) = &args.assignee_id {
+    let executor = if let Some(id) = &args.executor_id {
         Some(
-            resolve_issue_assignee_id(&client, &workspace_id, id)
+            resolve_issue_executor_id(&client, &workspace_id, id)
                 .await
-                .context("resolve assignee")?,
+                .context("resolve executor")?,
         )
-    } else if let Some(name) = &args.assignee {
+    } else if let Some(name) = &args.executor {
         Some(
-            resolve_issue_assignee_name(&client, &workspace_id, name)
+            resolve_issue_executor_name(&client, &workspace_id, name)
                 .await
-                .context("resolve assignee")?,
+                .context("resolve executor")?,
         )
     } else {
         None
     };
-    if let Some(assignee) = assignee {
-        body.insert("assignee_type".into(), Value::String(assignee.actor_type));
-        body.insert("assignee_id".into(), Value::String(assignee.id));
+    if let Some(executor) = executor {
+        if !matches!(executor.actor_type.as_str(), "agent" | "team") {
+            bail!("--executor resolves to a member; use --owner for human ownership");
+        }
+        body.insert("executor_type".into(), Value::String(executor.actor_type));
+        body.insert("executor_id".into(), Value::String(executor.id));
+    }
+    let owner = if let Some(id) = &args.owner_id {
+        Some(
+            resolve_issue_owner_id(&client, &workspace_id, id)
+                .await
+                .context("resolve owner")?,
+        )
+    } else if let Some(name) = &args.owner {
+        Some(
+            resolve_issue_owner_name(&client, &workspace_id, name)
+                .await
+                .context("resolve owner")?,
+        )
+    } else {
+        None
+    };
+    if let Some(owner) = owner {
+        body.insert("owner_type".into(), Value::String(owner.actor_type));
+        body.insert("owner_id".into(), Value::String(owner.id));
+    }
+    let reviewer = if let Some(id) = &args.reviewer_id {
+        Some(
+            resolve_issue_reviewer_id(&client, &workspace_id, id)
+                .await
+                .context("resolve reviewer")?,
+        )
+    } else if let Some(name) = &args.reviewer {
+        Some(
+            resolve_issue_reviewer_name(&client, &workspace_id, name)
+                .await
+                .context("resolve reviewer")?,
+        )
+    } else {
+        None
+    };
+    if let Some(reviewer) = reviewer {
+        body.insert("reviewer_type".into(), Value::String(reviewer.actor_type));
+        body.insert("reviewer_id".into(), Value::String(reviewer.id));
     }
     if let Some(parent) = &args.parent {
         if parent.is_empty() {
@@ -108,7 +157,7 @@ pub(super) async fn run_issue_update<R: Read>(
     }
     if body.is_empty() {
         bail!(
-            "no fields to update; use flags like --title, --status, --priority, --assignee, etc."
+            "no fields to update; use flags like --title, --status, --priority, --executor, etc."
         );
     }
     if args.no_start {

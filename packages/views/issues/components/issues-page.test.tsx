@@ -66,7 +66,7 @@ const mockListIssues = vi.hoisted(() => vi.fn().mockResolvedValue({ issues: [], 
 const mockListGroupedIssues = vi.hoisted(() => vi.fn().mockResolvedValue({ groups: [] }));
 const mockListIssueTableGroups = vi.hoisted(() =>
   vi.fn(async (request: any) => {
-    if (request.group.kind !== "assignee") {
+    if (request.group.kind !== "executor") {
       return {
         query_fingerprint: "test",
         total: 0,
@@ -84,10 +84,10 @@ const mockListIssueTableGroups = vi.hoisted(() =>
       groups: response.groups.map((group: any) => ({
         key: group.id,
         value: {
-          kind: "assignee" as const,
+          kind: "executor" as const,
           actor:
-            group.assignee_type && group.assignee_id
-              ? { type: group.assignee_type, id: group.assignee_id }
+            group.executor_type && group.executor_id
+              ? { type: group.executor_type, id: group.executor_id }
               : null,
         },
         count: group.total,
@@ -98,7 +98,7 @@ const mockListIssueTableGroups = vi.hoisted(() =>
 );
 const mockListIssueTableRows = vi.hoisted(() =>
   vi.fn(async (request: any) => {
-    if (request.group.kind === "assignee") {
+    if (request.group.kind === "executor") {
       const response = await mockListGroupedIssues();
       const group = response.groups.find(
         (candidate: any) => candidate.id === request.group_key,
@@ -124,8 +124,11 @@ const mockListIssueTableRows = vi.hoisted(() =>
       status,
       limit: 50,
       offset: 0,
-      ...(request.query.scope.assignee_types
-        ? { assignee_types: request.query.scope.assignee_types }
+      ...(request.query.scope.executor_types
+        ? { executor_types: request.query.scope.executor_types }
+        : {}),
+      ...(request.query.scope.owner_types
+        ? { owner_types: request.query.scope.owner_types }
         : {}),
     });
     return {
@@ -167,8 +170,11 @@ const mockListIssueTableFacets = vi.hoisted(() =>
               status,
               limit: 50,
               offset: 0,
-              ...(request.query.scope.assignee_types
-                ? { assignee_types: request.query.scope.assignee_types }
+              ...(request.query.scope.executor_types
+                ? { executor_types: request.query.scope.executor_types }
+                : {}),
+              ...(request.query.scope.owner_types
+                ? { owner_types: request.query.scope.owner_types }
                 : {}),
             }),
           })),
@@ -297,11 +303,11 @@ vi.mock("@patchbay/core/issues/config", () => ({
 // Mock view store
 const mockViewState = {
   viewMode: "board" as "board" | "list",
-  grouping: "status" as "status" | "assignee",
+  grouping: "status" as "status" | "executor",
   statusFilters: [] as string[],
   priorityFilters: [] as string[],
-  assigneeFilters: [] as { type: string; id: string }[],
-  includeNoAssignee: false,
+  executorFilters: [] as { type: string; id: string }[],
+  includeNoExecutor: false,
   creatorFilters: [] as { type: string; id: string }[],
   projectFilters: [] as string[],
   includeNoProject: false,
@@ -310,12 +316,12 @@ const mockViewState = {
   cardPropertyIds: [] as string[],
   sortBy: "position" as const,
   sortDirection: "asc" as const,
-  cardProperties: { priority: true, description: true, assignee: true, dueDate: true, project: true, childProgress: true, labels: true },
+  cardProperties: { priority: true, description: true, executor: true, dueDate: true, project: true, childProgress: true, labels: true },
   tableColumns: [
     { key: "title", width: 360 },
     { key: "status", width: 150 },
     { key: "priority", width: 130 },
-    { key: "assignee", width: 180 },
+    { key: "executor", width: 180 },
     { key: "due_date", width: 140 },
     { key: "labels", width: 220 },
   ],
@@ -325,8 +331,8 @@ const mockViewState = {
   setGrouping: vi.fn(),
   toggleStatusFilter: vi.fn(),
   togglePriorityFilter: vi.fn(),
-  toggleAssigneeFilter: vi.fn(),
-  toggleNoAssignee: vi.fn(),
+  toggleExecutorFilter: vi.fn(),
+  toggleNoExecutor: vi.fn(),
   toggleCreatorFilter: vi.fn(),
   toggleProjectFilter: vi.fn(),
   toggleNoProject: vi.fn(),
@@ -368,12 +374,12 @@ vi.mock("@patchbay/core/issues/stores/view-store", () => ({
   ],
   GROUPING_OPTIONS: [
     { value: "status", label: "Status" },
-    { value: "assignee", label: "Assignee" },
+    { value: "executor", label: "Executor" },
   ],
   CARD_PROPERTY_OPTIONS: [
     { key: "priority", label: "Priority" },
     { key: "description", label: "Description" },
-    { key: "assignee", label: "Assignee" },
+    { key: "executor", label: "Executor" },
     { key: "dueDate", label: "Due date" },
     { key: "project", label: "Project" },
     { key: "labels", label: "Labels" },
@@ -533,8 +539,11 @@ const mockIssues: Issue[] = [
     description: "Add JWT authentication",
     status: "todo",
     priority: "high",
-    assignee_type: "member",
-    assignee_id: "user-1",
+    owner_type: "member", owner_id: "user-1",
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     start_date: null,
@@ -552,8 +561,12 @@ const mockIssues: Issue[] = [
     description: null,
     status: "in_progress",
     priority: "medium",
-    assignee_type: "agent",
-    assignee_id: "agent-1",
+    owner_type: null,
+    owner_id: null,
+    executor_type: "agent",
+    executor_id: "agent-1",
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     start_date: null,
@@ -571,8 +584,12 @@ const mockIssues: Issue[] = [
     description: null,
     status: "backlog",
     priority: "low",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     start_date: null,
@@ -590,8 +607,12 @@ const mockIssues: Issue[] = [
     description: null,
     status: "todo",
     priority: "medium",
-    assignee_type: "team",
-    assignee_id: "team-1",
+    owner_type: null,
+    owner_id: null,
+    executor_type: "team",
+    executor_id: "team-1",
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "user-1",
     start_date: null,
@@ -601,17 +622,17 @@ const mockIssues: Issue[] = [
   },
 ];
 
-function mockAssigneeGroups(issues: Issue[]) {
-  const groups = new Map<string, { assignee_type: Issue["assignee_type"]; assignee_id: string | null; issues: Issue[] }>();
+function mockExecutorGroups(issues: Issue[]) {
+  const groups = new Map<string, { executor_type: Issue["executor_type"]; executor_id: string | null; issues: Issue[] }>();
   for (const issue of issues) {
     const id =
-      issue.assignee_type && issue.assignee_id
-        ? `assignee:${issue.assignee_type}:${issue.assignee_id}`
-        : "assignee:unassigned";
+      issue.executor_type && issue.executor_id
+        ? `executor:${issue.executor_type}:${issue.executor_id}`
+        : "executor:unassigned";
     if (!groups.has(id)) {
       groups.set(id, {
-        assignee_type: issue.assignee_type,
-        assignee_id: issue.assignee_id,
+        executor_type: issue.executor_type,
+        executor_id: issue.executor_id,
         issues: [],
       });
     }
@@ -620,8 +641,8 @@ function mockAssigneeGroups(issues: Issue[]) {
   return {
     groups: [...groups.entries()].map(([id, group]) => ({
       id,
-      assignee_type: group.assignee_type,
-      assignee_id: group.assignee_id,
+      executor_type: group.executor_type,
+      executor_id: group.executor_id,
       issues: group.issues,
       total: group.issues.length,
     })),
@@ -730,37 +751,36 @@ describe("IssuesPage (shared)", () => {
     expect(screen.getAllByText("In Progress").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("groups board columns by assignee", async () => {
-    mockViewState.grouping = "assignee";
-    mockListGroupedIssues.mockResolvedValue(mockAssigneeGroups(mockIssues));
+  it("groups board columns by executor", async () => {
+    mockViewState.grouping = "executor";
+    mockListGroupedIssues.mockResolvedValue(mockExecutorGroups(mockIssues));
 
     renderWithQuery(<IssuesPage />);
 
-    // "Test User" renders both as the assignee group header and on the
-    // assignee chip of each card grouped under that header, so a unique
-    // match is not guaranteed.
-    await screen.findAllByText("Test User");
-    expect(screen.getAllByText("Agent One").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("Team One").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText("No assignee")).toBeInTheDocument();
+    // Human members are owners, not executor lanes. The executor grouping
+    // therefore contains only runnable agents/teams plus the unassigned lane.
+    expect(screen.queryByText("Test User")).not.toBeInTheDocument();
+    expect(await screen.findByText("Agent One")).toBeInTheDocument();
+    expect((await screen.findAllByText("Team One")).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText("No executor")).toBeInTheDocument();
   });
 
   it("uses table group/row branches instead of the legacy status sweep", async () => {
-    mockViewState.grouping = "assignee";
-    mockListGroupedIssues.mockResolvedValue(mockAssigneeGroups(mockIssues));
+    mockViewState.grouping = "executor";
+    mockListGroupedIssues.mockResolvedValue(mockExecutorGroups(mockIssues));
 
     renderWithQuery(<IssuesPage />);
 
     await screen.findByText("Implement auth");
     expect(mockListIssueTableGroups).toHaveBeenCalledWith(
       expect.objectContaining({
-        group: { kind: "assignee" },
+        group: { kind: "executor" },
         page: { limit: 100, cursor: null },
       }),
     );
     expect(mockListIssueTableRows).toHaveBeenCalledWith(
       expect.objectContaining({
-        group: { kind: "assignee" },
+        group: { kind: "executor" },
         page: { limit: 50, cursor: null },
       }),
     );
@@ -800,17 +820,20 @@ describe("IssuesPage (shared)", () => {
     expect(screen.getByText("Agents")).toBeInTheDocument();
   });
 
-  // The Members/Agents tabs filter server-side via assignee_types (the same
+  // The Members/Agents tabs filter server-side via executor_types (the same
   // param the grouped endpoint takes), so the mock mirrors the server's
   // WHERE clause instead of a client-side post-filter.
-  function mockListIssuesHonoringAssigneeTypes() {
+  function mockListIssuesHonoringExecutorTypes() {
     mockListIssues.mockImplementation((params: any) => {
       const matches = mockIssues.filter(
         (i) =>
           i.status === params?.status &&
-          (!params?.assignee_types ||
-            (i.assignee_type !== null &&
-              params.assignee_types.includes(i.assignee_type))),
+          (!params?.executor_types ||
+            (i.executor_type !== null &&
+              params.executor_types.includes(i.executor_type))) &&
+          (!params?.owner_types ||
+            (i.owner_type !== null &&
+              params.owner_types.includes(i.owner_type))),
       );
       return Promise.resolve({ issues: matches, total: matches.length });
     });
@@ -819,7 +842,7 @@ describe("IssuesPage (shared)", () => {
   it("agents scope includes team-assigned issues", async () => {
     mockScope = "agents";
     mockViewState.viewMode = "list";
-    mockListIssuesHonoringAssigneeTypes();
+    mockListIssuesHonoringExecutorTypes();
     renderWithQuery(<IssuesPage />);
 
     // Team task and agent task should be visible
@@ -828,21 +851,21 @@ describe("IssuesPage (shared)", () => {
     // Member task should NOT be visible
     expect(screen.queryByText("Implement auth")).not.toBeInTheDocument();
     expect(mockListIssues).toHaveBeenCalledWith(
-      expect.objectContaining({ assignee_types: ["agent", "team"] }),
+      expect.objectContaining({ executor_types: ["agent", "team"] }),
     );
   });
 
   it("members scope excludes team-assigned issues", async () => {
     mockScope = "members";
     mockViewState.viewMode = "list";
-    mockListIssuesHonoringAssigneeTypes();
+    mockListIssuesHonoringExecutorTypes();
     renderWithQuery(<IssuesPage />);
 
     await screen.findByText("Implement auth");
     expect(screen.queryByText("Team task")).not.toBeInTheDocument();
     expect(screen.queryByText("Design landing page")).not.toBeInTheDocument();
     expect(mockListIssues).toHaveBeenCalledWith(
-      expect.objectContaining({ assignee_types: ["member"] }),
+      expect.objectContaining({ owner_types: ["member"] }),
     );
   });
 });

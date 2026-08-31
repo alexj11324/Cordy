@@ -41,7 +41,7 @@
     },
     "categories": {
       "backlog": "Parked. Assigning an issue here never starts an agent run.",
-      "todo": "Queued. Moving an issue here starts the assigned agent.",
+      "todo": "Queued. The coordinator admits this issue when dependencies and capacity allow; it does not start work by itself.",
       "in_progress": "Actively being worked on.",
       "in_review": "Delivered, waiting on human review. Finalizes the automation run.",
       "done": "Completed.",
@@ -265,7 +265,7 @@
     "floating_hint": "Show the floating chat button in the corner of every page. Off by default — turn it on to summon chat anywhere; when off, Chat lives only in this tab."
   },
   "issue": {
-    "description": "Choose which fields each create dialog keeps on its toolbar. Hidden fields stay available from the ⋯ menu and reappear while they hold a value.",
+    "description": "Choose which fields each create dialog keeps on its toolbar. Hidden fields stay available from the ⋯ menu and reappear while they hold a value. These choices are saved on this device.",
     "quick_create_title": "Create with agent",
     "quick_create_description": "Fields shown in the quick create toolbar.",
     "manual_create_title": "Create manually",
@@ -273,12 +273,15 @@
     "fields": {
       "status": "Status",
       "priority": "Priority",
-      "assignee": "Assignee",
+      "owner": "Owner",
+      "executor": "Executor",
+      "reviewer": "Reviewer",
       "labels": "Labels",
       "project": "Project",
       "due_date": "Due date",
       "start_date": "Start date"
-    }
+    },
+    "reset_to_defaults": "Reset to defaults"
   },
   "mcp": {
     "title": "MCP",

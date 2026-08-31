@@ -6,7 +6,7 @@ use super::{
     display_id, format_table, load_issue_actor_names, new_api_client, resolve_current_workspace_id,
     resolve_issue_project_id, resolve_project_reference, resolve_subscriber_name, value_string,
     ApiClient, Cli, Environment, IssueActorNames, OutputFormat, ProjectCreateArgs,
-    ProjectUpdateArgs, ResolvedIssueAssignee, RunOutput,
+    ProjectUpdateArgs, ResolvedIssueExecutor, RunOutput,
 };
 
 pub(super) fn project_lead(project: &Value, actors: &IssueActorNames) -> String {
@@ -27,8 +27,8 @@ pub(super) fn project_actor_inputs(projects: &[Value]) -> Vec<Value> {
         .iter()
         .map(|project| {
             serde_json::json!({
-                "assignee_type":project.get("lead_type").cloned().unwrap_or(Value::Null),
-                "assignee_id":project.get("lead_id").cloned().unwrap_or(Value::Null),
+                "executor_type":project.get("lead_type").cloned().unwrap_or(Value::Null),
+                "executor_id":project.get("lead_id").cloned().unwrap_or(Value::Null),
             })
         })
         .collect()
@@ -191,7 +191,7 @@ async fn resolve_project_lead(
     client: &ApiClient,
     workspace_id: &str,
     lead: &str,
-) -> Result<ResolvedIssueAssignee> {
+) -> Result<ResolvedIssueExecutor> {
     resolve_subscriber_name(client, workspace_id, lead)
         .await
         .map_err(|error| anyhow::anyhow!("resolve lead: {error}"))

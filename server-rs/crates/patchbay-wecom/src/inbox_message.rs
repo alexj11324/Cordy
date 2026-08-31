@@ -86,7 +86,7 @@ fn type_label(kind: &str) -> &'static str {
         "reaction_added" => "表情反应",
         "task_failed" => "任务失败",
         "unassigned" => "取消指派",
-        "assignee_changed" => "指派人变更",
+        "executor_changed" => "指派人变更",
         "priority_changed" => "优先级变更",
         "due_date_changed" => "截止日期变更",
         "start_date_changed" => "开始日期变更",

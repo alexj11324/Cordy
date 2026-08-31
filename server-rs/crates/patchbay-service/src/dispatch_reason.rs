@@ -24,7 +24,7 @@ pub enum ReasonCode {
     /// distinguish "target is private" from "target does not exist".
     InvocationNotAllowed,
     /// The target cannot run (archived agent, deleted / archived team,
-    /// unresolvable leader, or no assignee).
+    /// unresolvable leader, or no executor).
     TargetUnavailable,
     /// The target is permitted and bound to a runtime, but that runtime is
     /// not online at dispatch time. The task is not lost — the user's fix is

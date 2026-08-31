@@ -820,7 +820,7 @@ mod tests {
         .await
         .expect("create agent");
         sqlx::query(
-            "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, assignee_type, assignee_id, number, position) \
+            "INSERT INTO issue (id, workspace_id, title, status, priority, creator_type, creator_id, executor_type, executor_id, number, position) \
              VALUES ($1, $2, 'runtime auth issue', 'in_progress', 'medium', 'member', $3, 'agent', $4, 1, 0)",
         )
         .bind(issue_id)

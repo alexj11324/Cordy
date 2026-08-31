@@ -29,8 +29,8 @@ pub(super) async fn run_issue_subscriber_list(
                 .iter()
                 .map(|subscriber| {
                     serde_json::json!({
-                        "assignee_type": subscriber.get("user_type").cloned().unwrap_or(Value::Null),
-                        "assignee_id": subscriber.get("user_id").cloned().unwrap_or(Value::Null),
+                        "executor_type": subscriber.get("user_type").cloned().unwrap_or(Value::Null),
+                        "executor_id": subscriber.get("user_id").cloned().unwrap_or(Value::Null),
                     })
                 })
                 .collect::<Vec<_>>();

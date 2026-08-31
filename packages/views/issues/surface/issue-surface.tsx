@@ -99,7 +99,7 @@ export function IssueSurface({
   );
   // While a view is open, the scope axis the view captured belongs to the
   // VIEW, not to whichever tab the user stood on: workspace/project views
-  // carry an assignee-type variant, my views a relation variant. The user's
+  // carry an executor-type variant, my views a relation variant. The user's
   // own tab state is never touched — it is exactly where they left it when
   // the view closes (or vanishes). A variant-free view resolves to the
   // unrestricted axis value.

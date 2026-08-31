@@ -143,8 +143,8 @@ function renderEditDialog(triggers: AutomationTrigger[]) {
           title: "Issue title sweep",
           description: "",
           project_id: null,
-          assignee_type: "agent",
-          assignee_id: "agent-1",
+          executor_type: "agent",
+          executor_id: "agent-1",
           execution_mode: "run_only",
           subscriber_user_ids: [],
         }}

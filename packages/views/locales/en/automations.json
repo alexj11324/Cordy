@@ -10,7 +10,7 @@
       "mode": "Mode",
       "status": "Status",
       "last_run": "Last run",
-      "assignee": "Assignee",
+      "executor": "Executor",
       "trigger": "Trigger",
       "next_run": "Next run",
       "created": "Created"
@@ -27,7 +27,7 @@
   "status": {
     "active": "Active",
     "paused": "Paused",
-    "paused_runtime_required": "Paused — the assignee needs a device",
+    "paused_runtime_required": "Paused — the executor needs a device",
     "archived": "Archived"
   },
   "execution_mode": {
@@ -70,7 +70,7 @@
     "not_found": "Automation not found",
     "pause_aria": "Pause automation",
     "activate_aria": "Activate automation",
-    "paused_runtime_required": "Paused because the assignee lost its device. Bind a device, then reactivate this automation.",
+    "paused_runtime_required": "Paused because the executor lost its device. Bind a device, then reactivate this automation.",
     "bind_runtime": "Bind device",
     "edit": "Edit",
     "run_now": "Run now",
@@ -283,9 +283,9 @@
     "toast_update_partial_with_reason": "Automation updated, but schedule failed to save: {{reason}}",
     "toast_update_failed": "Failed to update automation",
     "section_agent": "Agent",
-    "section_assignee": "Assignee",
+    "section_executor": "Executor",
     "select_agent": "Select agent",
-    "select_assignee": "Select agent or team",
+    "select_executor": "Select agent or team",
     "section_project": "Project",
     "no_project": "No project",
     "section_output_mode": "Output mode",
@@ -318,7 +318,7 @@
     "schedule_empty": "No schedule — this automation only runs when triggered manually.",
     "schedule_add": "Add schedule",
     "error_title_required": "Enter a name for this automation.",
-    "error_assignee_required": "Choose the agent or team that will run this automation.",
+    "error_executor_required": "Choose the agent or team that will run this automation.",
     "output_modes": {
       "create_issue": {
         "label": "Create issue",
@@ -419,7 +419,7 @@
   "agent_picker": {
     "filter_placeholder": "Filter agents or teams...",
     "select_agent": "Select agent",
-    "select_assignee": "Select agent or team",
+    "select_executor": "Select agent or team",
     "agents_group": "Agents",
     "teams_group": "Teams",
     "agent_runtime_required": "Bind a device before selecting this agent",
@@ -434,7 +434,7 @@
     "filter_active_count_one": "{{count}} filter",
     "filter_active_count_other": "{{count}} filters",
     "clear_filters": "Clear filters",
-    "section_assignee": "Assignee",
+    "section_executor": "Executor",
     "section_mode": "Mode",
     "section_trigger": "Trigger",
     "section_creator": "Created by",

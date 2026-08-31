@@ -6,7 +6,7 @@
  * `packages/views/issues/components/issues-page.tsx:32-94`), while
  * My Issues has its own `assigned / created / agents` scopes.
  *
- * The `scope` filter is **client-side** on `assignee_type` — see
+ * The `scope` filter is **client-side** on `executor_type` — see
  * `more/issues.tsx`'s `scopedIssues` derivation. Server param stays unset
  * so the cache key (`issueKeys.list(wsId)`) and WS realtime invalidation
  * (`useIssuesRealtime`) don't have to know about scope.

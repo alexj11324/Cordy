@@ -26,7 +26,7 @@ import {
 } from "@patchbay/core/quick-actions";
 import type {
   QuickAction,
-  QuickActionAssigneeType,
+  QuickActionExecutorType,
   QuickActionVisibility,
 } from "@patchbay/core/types";
 import { findQuickActionTemplateToken } from "@patchbay/core/types";
@@ -159,8 +159,8 @@ function TargetLine({ action, t }: { action: QuickAction; t: QuickActionsT }) {
 interface FormState {
   name: string;
   description: string;
-  assigneeType: QuickActionAssigneeType;
-  assigneeId: string;
+  executorType: QuickActionExecutorType;
+  executorId: string;
   prompt: string;
   visibility: QuickActionVisibility;
 }
@@ -168,8 +168,8 @@ interface FormState {
 const EMPTY_FORM: FormState = {
   name: "",
   description: "",
-  assigneeType: "agent",
-  assigneeId: "",
+  executorType: "agent",
+  executorId: "",
   prompt: "",
   visibility: "public",
 };
@@ -178,8 +178,8 @@ function toFormState(action: QuickAction): FormState {
   return {
     name: action.name,
     description: action.description,
-    assigneeType: action.assignee_type === "team" ? "team" : "agent",
-    assigneeId: action.assignee_id,
+    executorType: action.executor_type === "team" ? "team" : "agent",
+    executorId: action.executor_id,
     prompt: action.prompt,
     visibility: action.visibility === "private" ? "private" : "public",
   };
@@ -395,8 +395,8 @@ export function QuickActionsTab() {
               id: editing.id,
               name: form.name,
               description: form.description,
-              assignee_type: form.assigneeType,
-              assignee_id: form.assigneeId,
+              executor_type: form.executorType,
+              executor_id: form.executorId,
               prompt: form.prompt,
               visibility: form.visibility,
             });
@@ -404,8 +404,8 @@ export function QuickActionsTab() {
             await createMutation.mutateAsync({
               name: form.name,
               description: form.description,
-              assignee_type: form.assigneeType,
-              assignee_id: form.assigneeId,
+              executor_type: form.executorType,
+              executor_id: form.executorId,
               prompt: form.prompt,
               visibility: form.visibility,
             });
@@ -461,7 +461,7 @@ function QuickActionDialog({
   const canSave =
     form.name.trim().length > 0 &&
     form.prompt.trim().length > 0 &&
-    form.assigneeId.length > 0 &&
+    form.executorId.length > 0 &&
     templateToken === null;
 
   const handleSubmit = async () => {
@@ -546,9 +546,9 @@ function QuickActionDialog({
           <div className="space-y-1.5">
             <FieldLabel>{t(($) => $.quick_actions.field_target)}</FieldLabel>
             <AgentPicker
-              assignee={form.assigneeId ? { type: form.assigneeType, id: form.assigneeId } : null}
+              executor={form.executorId ? { type: form.executorType, id: form.executorId } : null}
               onChange={(next) =>
-                setForm((f) => ({ ...f, assigneeType: next.type, assigneeId: next.id }))
+                setForm((f) => ({ ...f, executorType: next.type, executorId: next.id }))
               }
             />
             {/* Public promises "everyone can run this", so the server refuses a

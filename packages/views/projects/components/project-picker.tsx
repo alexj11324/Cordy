@@ -48,7 +48,7 @@ export function ProjectPicker({
   const current = projects.find((p) => p.id === projectId);
   const [filter, setFilter] = useState("");
   // Normalize to an always-boolean controlled `open`, matching the other
-  // pickers (status/priority/assignee/labels). Base UI latches a controlled
+  // pickers (status/priority/executor/labels). Base UI latches a controlled
   // `open={true}` — a later `undefined` does NOT close it — so callers wiring
   // `open={cond ? true : undefined}` (create-issue dialog) would otherwise
   // leave the popup stuck open after selecting a project.
@@ -97,7 +97,7 @@ export function ProjectPicker({
       >
         {/* "No project" — always the first row, search active or not, and the
             only clear entry now that the pill carries no inline ×. Mirrors
-            the unassigned row in the assignee picker. */}
+            the unassigned row in the executor picker. */}
         <PickerItem
           emptyValue
           selected={!projectId}

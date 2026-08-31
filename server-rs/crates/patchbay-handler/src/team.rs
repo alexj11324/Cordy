@@ -188,8 +188,8 @@ struct AutomationEventResponse {
     title: String,
     description: Option<String>,
     project_id: Option<String>,
-    assignee_type: String,
-    assignee_id: String,
+    executor_type: String,
+    executor_id: String,
     status: String,
     pause_reason: Option<String>,
     execution_mode: String,
@@ -210,12 +210,12 @@ impl From<Automation> for AutomationEventResponse {
             title: value.title,
             description: value.description,
             project_id: value.project_id.map(|id| id.to_string()),
-            assignee_type: if value.assignee_type.is_empty() {
+            executor_type: if value.executor_type.is_empty() {
                 "agent".into()
             } else {
-                value.assignee_type
+                value.executor_type
             },
-            assignee_id: value.assignee_id.to_string(),
+            executor_id: value.executor_id.to_string(),
             status: value.status,
             pause_reason: value.pause_reason,
             execution_mode: value.execution_mode,
@@ -766,9 +766,9 @@ async fn remove(
         }
     };
     if let Err(error) =
-        team::transfer_team_assignees(&mut *transaction, locked.id, locked.leader_id).await
+        team::transfer_team_executors(&mut *transaction, locked.id, locked.leader_id).await
     {
-        tracing::warn!(%error, team_id = %locked.id, "transfer team assignees failed");
+        tracing::warn!(%error, team_id = %locked.id, "transfer team executors failed");
         return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to archive team");
     }
     let transferred_automations = match team::transfer_team_automations_to_leader(

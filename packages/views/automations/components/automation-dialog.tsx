@@ -49,7 +49,7 @@ import {
 import { buildAutomationWebhookUrl } from "@patchbay/core/automations";
 import { api } from "@patchbay/core/api";
 import type {
-  AutomationAssigneeType,
+  AutomationExecutorType,
   AutomationCollaborator,
   AutomationExecutionMode,
   AutomationTrigger,
@@ -59,7 +59,7 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import { SegmentedToggle } from "../../common/segmented-toggle";
 import { ProjectPicker } from "../../projects/components/project-picker";
 import { ProjectIcon } from "../../projects/components/project-icon";
-import { AgentPicker, type AssigneeSelection } from "./pickers/agent-picker";
+import { AgentPicker, type ExecutorSelection } from "./pickers/agent-picker";
 import { SubscriberMultiSelect } from "./subscriber-multi-select";
 import { AutomationAccessManager } from "./automation-access-manager";
 import { ScheduleEditor } from "./schedule-editor/schedule-editor";
@@ -81,8 +81,8 @@ export interface AutomationInitial {
   title: string;
   description: string;
   project_id: string | null;
-  assignee_type: AutomationAssigneeType;
-  assignee_id: string;
+  executor_type: AutomationExecutorType;
+  executor_id: string;
   execution_mode: AutomationExecutionMode;
   subscriber_user_ids?: string[];
 }
@@ -153,10 +153,10 @@ export function AutomationDialog(props: AutomationDialogProps) {
   const [title, setTitle] = useState(initial.title ?? "");
   const [description, setDescription] = useState(initial.description ?? "");
   const [projectId, setProjectId] = useState<string | null>(initial.project_id ?? null);
-  const [assigneeType, setAssigneeType] = useState<AutomationAssigneeType>(
-    initial.assignee_type ?? "agent",
+  const [executorType, setExecutorType] = useState<AutomationExecutorType>(
+    initial.executor_type ?? "agent",
   );
-  const [assigneeId, setAssigneeId] = useState<string>(initial.assignee_id ?? "");
+  const [executorId, setExecutorId] = useState<string>(initial.executor_id ?? "");
   const [executionMode, setExecutionMode] = useState<AutomationExecutionMode>(
     initial.execution_mode ?? "create_issue",
   );
@@ -236,23 +236,23 @@ export function AutomationDialog(props: AutomationDialogProps) {
   const showScheduleEmptyState =
     !isCreate && existingSchedule === null && !scheduleAdded && !schedulePillDisabled;
 
-  const selectedAssignee = useMemo(() => {
-    if (!assigneeId) return null;
-    if (assigneeType === "team") {
-      const team = teams.find((s) => s.id === assigneeId);
+  const selectedExecutor = useMemo(() => {
+    if (!executorId) return null;
+    if (executorType === "team") {
+      const team = teams.find((s) => s.id === executorId);
       return team ? { name: team.name, description: team.description } : null;
     }
-    const agent = agents.find((a) => a.id === assigneeId);
+    const agent = agents.find((a) => a.id === executorId);
     return agent ? { name: agent.name, description: agent.description } : null;
-  }, [agents, teams, assigneeId, assigneeType]);
+  }, [agents, teams, executorId, executorType]);
   const selectedProject = useMemo(
     () => projects.find((project) => project.id === projectId) ?? null,
     [projects, projectId],
   );
 
-  const handleAssigneeChange = (next: AssigneeSelection) => {
-    setAssigneeType(next.type);
-    setAssigneeId(next.id);
+  const handleExecutorChange = (next: ExecutorSelection) => {
+    setExecutorType(next.type);
+    setExecutorId(next.id);
   };
 
   const createAutomation = useCreateAutomation();
@@ -273,7 +273,7 @@ export function AutomationDialog(props: AutomationDialogProps) {
   // locked schedule (2+ triggers) or a stored one the user never touched is not
   // sent, so a preview 400 on the stored expression — an expression the server
   // accepted once and may now reject, e.g. a timezone its tzdata dropped — must
-  // not veto edits to the title, prompt or assignee. A schedule the user just
+  // not veto edits to the title, prompt or executor. A schedule the user just
   // added has no stored counterpart to differ from: adding it IS the change.
   const scheduleWillBeWritten =
     triggerKind === "schedule" &&
@@ -283,8 +283,8 @@ export function AutomationDialog(props: AutomationDialogProps) {
   // The FIRST empty required field in reading order — the user fills one, the
   // next surfaces. Only these two are answered here: a rejected schedule is
   // re-checked against the server below, which toasts its actual reason.
-  const missingField: "title" | "assignee" | null =
-    title.trim().length === 0 ? "title" : assigneeId.length === 0 ? "assignee" : null;
+  const missingField: "title" | "executor" | null =
+    title.trim().length === 0 ? "title" : executorId.length === 0 ? "executor" : null;
 
   // Inline errors appear only after a submit attempt: a form that opens already
   // shouting at the user for fields they have not reached yet is worse than the
@@ -292,8 +292,8 @@ export function AutomationDialog(props: AutomationDialogProps) {
   // so filling the field clears its error without a second submit.
   const [showErrors, setShowErrors] = useState(false);
   const titleEditorRef = useRef<TitleEditorRef>(null);
-  const assigneeTriggerRef = useRef<HTMLButtonElement>(null);
-  const assigneeErrorId = useId();
+  const executorTriggerRef = useRef<HTMLButtonElement>(null);
+  const executorErrorId = useId();
 
   const handleSubmit = async () => {
     if (submitting) return;
@@ -302,7 +302,7 @@ export function AutomationDialog(props: AutomationDialogProps) {
       // focusing scrolls the config column to it on its own.
       setShowErrors(true);
       if (missingField === "title") titleEditorRef.current?.focus();
-      else assigneeTriggerRef.current?.focus();
+      else executorTriggerRef.current?.focus();
       return;
     }
     setSubmitting(true);
@@ -316,8 +316,8 @@ export function AutomationDialog(props: AutomationDialogProps) {
           title: title.trim(),
           description: description.trim() || undefined,
           project_id: executionMode === "create_issue" ? projectId : null,
-          assignee_type: assigneeType,
-          assignee_id: assigneeId,
+          executor_type: executorType,
+          executor_id: executorId,
           execution_mode: executionMode,
           subscribers: subscriberUserIds.map((user_id) => ({
             user_type: "member" as const,
@@ -369,8 +369,8 @@ export function AutomationDialog(props: AutomationDialogProps) {
           title: title.trim(),
           description: description.trim() || null,
           project_id: executionMode === "create_issue" ? projectId : null,
-          assignee_type: assigneeType,
-          assignee_id: assigneeId,
+          executor_type: executorType,
+          executor_id: executorId,
           execution_mode: executionMode,
           subscribers: subscriberUserIds.map((user_id) => ({
             user_type: "member" as const,
@@ -609,14 +609,14 @@ export function AutomationDialog(props: AutomationDialogProps) {
           {/* Right: Configuration */}
           <aside className="w-full lg:w-[380px] shrink-0 overflow-visible lg:overflow-y-auto px-5 py-5 space-y-5 bg-muted/30">
             <AgentSection
-              ref={assigneeTriggerRef}
-              selectedType={assigneeType}
-              selectedId={assigneeId}
-              onChange={handleAssigneeChange}
-              selectedName={selectedAssignee?.name}
-              selectedDescription={selectedAssignee?.description}
-              invalid={showErrors && assigneeId.length === 0}
-              errorId={assigneeErrorId}
+              ref={executorTriggerRef}
+              selectedType={executorType}
+              selectedId={executorId}
+              onChange={handleExecutorChange}
+              selectedName={selectedExecutor?.name}
+              selectedDescription={selectedExecutor?.description}
+              invalid={showErrors && executorId.length === 0}
+              errorId={executorErrorId}
             />
 
             <OutputModeSection mode={executionMode} onChange={setExecutionMode} />
@@ -764,12 +764,12 @@ function AgentSection({
   errorId,
 }: {
   ref: React.Ref<HTMLButtonElement>;
-  selectedType: AutomationAssigneeType;
+  selectedType: AutomationExecutorType;
   selectedId: string;
-  onChange: (next: AssigneeSelection) => void;
+  onChange: (next: ExecutorSelection) => void;
   selectedName?: string;
   selectedDescription?: string;
-  /** A submit was attempted with no assignee picked. */
+  /** A submit was attempted with no executor picked. */
   invalid: boolean;
   errorId: string;
 }) {
@@ -780,9 +780,9 @@ function AgentSection({
       {/* Marked required, unlike the Project and Subscribers pickers below it:
           the three look identical, and nothing else told the user that only
           this one blocks Create (#6231). */}
-      <SectionLabel required>{t(($) => $.dialog.section_assignee)}</SectionLabel>
+      <SectionLabel required>{t(($) => $.dialog.section_executor)}</SectionLabel>
       <AgentPicker
-        assignee={hasSelection ? { type: selectedType, id: selectedId } : null}
+        executor={hasSelection ? { type: selectedType, id: selectedId } : null}
         onChange={onChange}
         align="start"
         triggerRender={
@@ -811,7 +811,7 @@ function AgentSection({
             )}
             <span className="flex-1 min-w-0">
               <span className="block text-body font-medium truncate">
-                {selectedName ?? t(($) => $.dialog.select_assignee)}
+                {selectedName ?? t(($) => $.dialog.select_executor)}
               </span>
               {selectedDescription && (
                 <span className="block text-caption text-muted-foreground truncate">
@@ -825,7 +825,7 @@ function AgentSection({
       />
       {invalid && (
         <p id={errorId} role="alert" className="mt-1.5 text-caption text-destructive">
-          {t(($) => $.dialog.error_assignee_required)}
+          {t(($) => $.dialog.error_executor_required)}
         </p>
       )}
     </div>

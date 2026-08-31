@@ -1,9 +1,9 @@
 // @vitest-environment node
 import { describe, it, expect } from "vitest";
-import type { Issue, IssueAssigneeGroup } from "@patchbay/core/types";
+import type { Issue, IssueExecutorGroup } from "@patchbay/core/types";
 import {
   applyIssueFilters,
-  filterAssigneeGroups,
+  filterExecutorGroups,
   filterIssues,
   NO_PROPERTY_VALUE,
   type IssueFilters,
@@ -12,8 +12,8 @@ import {
 const NO_FILTER: IssueFilters = {
   statusFilters: [],
   priorityFilters: [],
-  assigneeFilters: [],
-  includeNoAssignee: false,
+  executorFilters: [],
+  includeNoExecutor: false,
   creatorFilters: [],
   projectFilters: [],
   includeNoProject: false,
@@ -30,8 +30,12 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
     description: null,
     status: "todo",
     priority: "medium",
-    assignee_type: null,
-    assignee_id: null,
+    owner_type: null,
+    owner_id: null,
+    executor_type: null,
+    executor_id: null,
+    reviewer_type: null,
+    reviewer_id: null,
     creator_type: "member",
     creator_id: "u-1",
     parent_issue_id: null,
@@ -49,10 +53,10 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
 }
 
 const issues: Issue[] = [
-  makeIssue({ id: "1", status: "todo", priority: "high", assignee_type: "member", assignee_id: "u-1", creator_type: "member", creator_id: "u-1", project_id: "p-1" }),
-  makeIssue({ id: "2", status: "in_progress", priority: "medium", assignee_type: "agent", assignee_id: "a-1", creator_type: "agent", creator_id: "a-1", project_id: "p-2" }),
-  makeIssue({ id: "3", status: "done", priority: "low", assignee_type: null, assignee_id: null, creator_type: "member", creator_id: "u-2", project_id: null }),
-  makeIssue({ id: "4", status: "todo", priority: "urgent", assignee_type: "member", assignee_id: "u-2", creator_type: "member", creator_id: "u-1", project_id: "p-1" }),
+  makeIssue({ id: "1", status: "todo", priority: "high", owner_type: "member", owner_id: "u-1", creator_type: "member", creator_id: "u-1", project_id: "p-1" }),
+  makeIssue({ id: "2", status: "in_progress", priority: "medium", executor_type: "agent", executor_id: "a-1", creator_type: "agent", creator_id: "a-1", project_id: "p-2" }),
+  makeIssue({ id: "3", status: "done", priority: "low", executor_type: null, executor_id: null, creator_type: "member", creator_id: "u-2", project_id: null }),
+  makeIssue({ id: "4", status: "todo", priority: "urgent", owner_type: "member", owner_id: "u-2", creator_type: "member", creator_id: "u-1", project_id: "p-1" }),
 ];
 
 describe("filterIssues", () => {
@@ -72,40 +76,40 @@ describe("filterIssues", () => {
     expect(result.map((i) => i.id)).toEqual(["1", "4"]);
   });
 
-  // --- Assignee ---
-  it("filters by specific assignee", () => {
+  // --- Executor ---
+  it("filters by specific executor", () => {
     const result = filterIssues(issues, {
       ...NO_FILTER,
-      assigneeFilters: [{ type: "member", id: "u-1" }],
+      executorFilters: [{ type: "member", id: "u-1" }],
     });
     expect(result.map((i) => i.id)).toEqual(["1"]);
   });
 
-  it("filters by 'No assignee' only", () => {
-    const result = filterIssues(issues, { ...NO_FILTER, includeNoAssignee: true });
-    expect(result.map((i) => i.id)).toEqual(["3"]);
+  it("filters by 'No executor' only", () => {
+    const result = filterIssues(issues, { ...NO_FILTER, includeNoExecutor: true });
+    expect(result.map((i) => i.id)).toEqual(["1", "3", "4"]);
   });
 
-  it("filters by assignee + No assignee combined", () => {
+  it("filters by executor + No executor combined", () => {
     const result = filterIssues(issues, {
       ...NO_FILTER,
-      assigneeFilters: [{ type: "agent", id: "a-1" }],
-      includeNoAssignee: true,
+      executorFilters: [{ type: "agent", id: "a-1" }],
+      includeNoExecutor: true,
     });
-    expect(result.map((i) => i.id)).toEqual(["2", "3"]);
+    expect(result.map((i) => i.id)).toEqual(["1", "2", "3", "4"]);
   });
 
-  it("treats an explicitly active empty assignee predicate as match-none", () => {
+  it("treats an explicitly active empty executor predicate as match-none", () => {
     const result = filterIssues(issues, {
       ...NO_FILTER,
-      assigneeFilterActive: true,
+      executorFilterActive: true,
     });
     expect(result).toEqual([]);
   });
 
-  it("hides assigned issues when only 'No assignee' is selected", () => {
-    const result = filterIssues(issues, { ...NO_FILTER, includeNoAssignee: true });
-    expect(result.every((i) => !i.assignee_id)).toBe(true);
+  it("hides assigned issues when only 'No executor' is selected", () => {
+    const result = filterIssues(issues, { ...NO_FILTER, includeNoExecutor: true });
+    expect(result.every((i) => !i.executor_id)).toBe(true);
   });
 
   // --- Creator ---
@@ -118,11 +122,11 @@ describe("filterIssues", () => {
   });
 
   // --- Combinations ---
-  it("applies status + assignee filters together", () => {
+  it("applies status + executor filters together", () => {
     const result = filterIssues(issues, {
       ...NO_FILTER,
       statusFilters: ["todo"],
-      assigneeFilters: [{ type: "member", id: "u-1" }],
+      executorFilters: [{ type: "member", id: "u-1" }],
     });
     expect(result.map((i) => i.id)).toEqual(["1"]);
   });
@@ -184,7 +188,7 @@ describe("filterIssues", () => {
 
   // --- Label ---
   // Build a separate fixture for label tests so we can sprinkle labels onto
-  // specific rows without polluting the assignee/project test cases above.
+  // specific rows without polluting the executor/project test cases above.
   const makeLabel = (id: string, name: string, color: string) => ({
     id,
     name,
@@ -324,24 +328,24 @@ describe("filterIssues", () => {
   });
 });
 
-describe("filterAssigneeGroups", () => {
-  const group = (id: string, groupIssues: Issue[]): IssueAssigneeGroup => ({
+describe("filterExecutorGroups", () => {
+  const group = (id: string, groupIssues: Issue[]): IssueExecutorGroup => ({
     id,
-    assignee_type: id === "none" ? null : "agent",
-    assignee_id: id === "none" ? null : id,
+    executor_type: id === "none" ? null : "agent",
+    executor_id: id === "none" ? null : id,
     issues: groupIssues,
     total: groupIssues.length,
   });
 
   it("returns the same reference when no client-side filter is active", () => {
     const groups = [group("a1", [makeIssue({ id: "1" })])];
-    expect(filterAssigneeGroups(groups, {})).toBe(groups);
-    expect(filterAssigneeGroups(groups, { showSubIssues: true })).toBe(groups);
-    expect(filterAssigneeGroups(groups, { agentRunningFilter: false })).toBe(groups);
+    expect(filterExecutorGroups(groups, {})).toBe(groups);
+    expect(filterExecutorGroups(groups, { showSubIssues: true })).toBe(groups);
+    expect(filterExecutorGroups(groups, { agentRunningFilter: false })).toBe(groups);
   });
 
   it("passes undefined through untouched", () => {
-    expect(filterAssigneeGroups(undefined, { showSubIssues: false })).toBeUndefined();
+    expect(filterExecutorGroups(undefined, { showSubIssues: false })).toBeUndefined();
   });
 
   it("hides sub-issues, recomputes total, and drops emptied groups", () => {
@@ -353,7 +357,7 @@ describe("filterAssigneeGroups", () => {
       // Every issue in this group is a sub-issue → group is removed entirely.
       group("a2", [makeIssue({ id: "C2", parent_issue_id: "P2" })]),
     ];
-    const result = filterAssigneeGroups(groups, { showSubIssues: false });
+    const result = filterExecutorGroups(groups, { showSubIssues: false });
     expect(
       result!.map((g) => ({ id: g.id, ids: g.issues.map((i) => i.id), total: g.total })),
     ).toEqual([{ id: "a1", ids: ["P1"], total: 1 }]);
@@ -365,7 +369,7 @@ describe("filterAssigneeGroups", () => {
       group("a2", [makeIssue({ id: "3" })]),
       group("none", [makeIssue({ id: "4" })]),
     ];
-    const result = filterAssigneeGroups(groups, {
+    const result = filterExecutorGroups(groups, {
       agentRunningFilter: true,
       runningIssueIds: new Set(["2", "4"]),
     });
@@ -386,7 +390,7 @@ describe("filterAssigneeGroups", () => {
     ];
     // "C" is running but is a sub-issue; "P" is a top-level issue but not
     // running → both dropped, group removed.
-    const result = filterAssigneeGroups(groups, {
+    const result = filterExecutorGroups(groups, {
       showSubIssues: false,
       agentRunningFilter: true,
       runningIssueIds: new Set(["C"]),
@@ -478,11 +482,11 @@ describe("property filters", () => {
     expect(result).toHaveLength(3);
   });
 
-  it("filterAssigneeGroups applies property filters per group", () => {
-    const groups: IssueAssigneeGroup[] = [
-      { id: "assignee:member:u-1", assignee_type: "member", assignee_id: "u-1", issues: [critical, minor], total: 2 },
+  it("filterExecutorGroups applies property filters per group", () => {
+    const groups: IssueExecutorGroup[] = [
+      { id: "executor:agent:a-1", executor_type: "agent", executor_id: "a-1", issues: [critical, minor], total: 2 },
     ];
-    const result = filterAssigneeGroups(groups, {
+    const result = filterExecutorGroups(groups, {
       propertyFilters: { [sevId]: ["opt-critical"] },
     });
     expect(result?.[0]?.issues.map((i) => i.id)).toEqual(["P1"]);

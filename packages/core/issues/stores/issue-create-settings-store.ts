@@ -9,7 +9,9 @@ export type QuickCreateField = "project" | "priority" | "due_date";
 export type ManualCreateField =
   | "status"
   | "priority"
-  | "assignee"
+  | "owner"
+  | "executor"
+  | "reviewer"
   | "labels"
   | "project"
   | "due_date"
@@ -22,7 +24,9 @@ export const QUICK_CREATE_FIELDS: QuickCreateField[] = ["project", "priority", "
 export const MANUAL_CREATE_FIELDS: ManualCreateField[] = [
   "status",
   "priority",
-  "assignee",
+  "owner",
+  "executor",
+  "reviewer",
   "labels",
   "project",
   "due_date",
@@ -30,12 +34,14 @@ export const MANUAL_CREATE_FIELDS: ManualCreateField[] = [
 ];
 
 export const DEFAULT_QUICK_CREATE_FIELDS: QuickCreateField[] = ["project"];
-// Mirrors the manual dialog's historical toolbar: these five always rendered,
-// while due/start date lived behind the ⋯ overflow.
+// Keep the first-run form focused on execution. Owner is still defaulted to
+// the current member by the create dialog, but its picker is available from
+// the overflow. Reviewer appears when a review status or workspace policy
+// requires it.
 export const DEFAULT_MANUAL_CREATE_FIELDS: ManualCreateField[] = [
   "status",
   "priority",
-  "assignee",
+  "executor",
   "labels",
   "project",
 ];
@@ -52,10 +58,66 @@ interface IssueCreateSettingsState {
   setQuickCreateFieldVisible: (field: QuickCreateField, visible: boolean) => void;
   manualCreateFields: ManualCreateField[];
   setManualCreateFieldVisible: (field: ManualCreateField, visible: boolean) => void;
+  resetToDefaults: () => void;
 }
 
 function toggle<F extends string>(all: F[], current: F[], field: F, visible: boolean): F[] {
   return all.filter((f) => (f === field ? visible : current.includes(f)));
+}
+
+export function normalizeIssueCreateFields<F extends string>(
+  value: unknown,
+  all: readonly F[],
+  fallback: readonly F[],
+): F[] {
+  if (!Array.isArray(value)) return [...fallback];
+  const known = new Set(
+    value.filter(
+      (field): field is F =>
+        typeof field === "string" && (all as readonly string[]).includes(field),
+    ),
+  );
+  if (value.length > 0 && known.size === 0) return [...fallback];
+  return all.filter((field) => known.has(field));
+}
+
+type PersistedIssueCreateSettings = {
+  quickCreateFields?: unknown;
+  manualCreateFields?: unknown;
+};
+
+export function migrateIssueCreateSettings(
+  persistedState: unknown,
+  version: number,
+): Pick<IssueCreateSettingsState, "quickCreateFields" | "manualCreateFields"> {
+  const persisted =
+    persistedState && typeof persistedState === "object"
+      ? (persistedState as PersistedIssueCreateSettings)
+      : {};
+  let manualFields = persisted.manualCreateFields;
+  if (version < 2 && Array.isArray(manualFields) && manualFields.includes("assignee")) {
+    // The old single assignee picker represented both human responsibility
+    // and execution. Preserve that user's intent in the two explicit role
+    // pickers; otherwise the new default keeps Owner out of the first-run
+    // toolbar while still defaulting it to the current member.
+    manualFields = [
+      ...manualFields.filter((field) => field !== "assignee"),
+      "owner",
+      "executor",
+    ];
+  }
+  return {
+    quickCreateFields: normalizeIssueCreateFields(
+      persisted.quickCreateFields,
+      QUICK_CREATE_FIELDS,
+      DEFAULT_QUICK_CREATE_FIELDS,
+    ),
+    manualCreateFields: normalizeIssueCreateFields(
+      manualFields,
+      MANUAL_CREATE_FIELDS,
+      DEFAULT_MANUAL_CREATE_FIELDS,
+    ),
+  };
 }
 
 export const useIssueCreateSettingsStore = create<IssueCreateSettingsState>()(
@@ -71,17 +133,23 @@ export const useIssueCreateSettingsStore = create<IssueCreateSettingsState>()(
         set((s) => ({
           manualCreateFields: toggle(MANUAL_CREATE_FIELDS, s.manualCreateFields, field, visible),
         })),
+      resetToDefaults: () =>
+        set({
+          quickCreateFields: [...DEFAULT_QUICK_CREATE_FIELDS],
+          manualCreateFields: [...DEFAULT_MANUAL_CREATE_FIELDS],
+        }),
     }),
     {
       name: "patchbay_issue_create_settings",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
+      version: 2,
+      migrate: (persistedState, version) =>
+        migrateIssueCreateSettings(persistedState, version),
       merge: (persistedState, currentState) => {
-        const persisted = (persistedState ?? {}) as Partial<IssueCreateSettingsState>;
+        const normalized = migrateIssueCreateSettings(persistedState, 2);
         return {
           ...currentState,
-          ...persisted,
-          quickCreateFields: persisted.quickCreateFields ?? DEFAULT_QUICK_CREATE_FIELDS,
-          manualCreateFields: persisted.manualCreateFields ?? DEFAULT_MANUAL_CREATE_FIELDS,
+          ...normalized,
         };
       },
     },

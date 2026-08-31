@@ -44,7 +44,7 @@ pub const DEFAULT_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 const ACTIVE_REVIEWER_TASKS_FOR_UPDATE: &str = r#"SELECT task.id
 FROM agent_task_queue task
 WHERE task.issue_id = $1
-  AND task.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+  AND task.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
   AND EXISTS (
       SELECT 1
       FROM agent_coordination_assignment assignment
@@ -151,8 +151,8 @@ struct DispatchPlan {
     publish_reviewer_update: bool,
     issue_update_publication_key: Option<String>,
     previous_status: String,
-    previous_assignee_type: Option<String>,
-    previous_assignee_id: Option<Uuid>,
+    previous_executor_type: Option<String>,
+    previous_executor_id: Option<Uuid>,
     previous_reviewer_type: Option<String>,
     previous_reviewer_id: Option<Uuid>,
     handoff_note: Option<String>,
@@ -452,8 +452,8 @@ FOR UPDATE"#,
             .and(assignment.owner_id)
             .or_else(|| explicit_reviewer.and_then(|(kind, id)| (kind == "agent").then_some(id)));
         let reviewer_team_id = reviewer_snapshot.as_ref().and_then(|issue| {
-            (issue.assignee_type.as_deref() == Some("team"))
-                .then_some(issue.assignee_id)
+            (issue.executor_type.as_deref() == Some("team"))
+                .then_some(issue.executor_id)
                 .flatten()
         });
         let explicit_reviewer_required = requires_explicit_reviewer(
@@ -548,8 +548,8 @@ FOR UPDATE"#,
         };
         if let Some(snapshot) = reviewer_snapshot.as_ref() {
             if snapshot.status != issue.status
-                || snapshot.assignee_type != issue.assignee_type
-                || snapshot.assignee_id != issue.assignee_id
+                || snapshot.executor_type != issue.executor_type
+                || snapshot.executor_id != issue.executor_id
                 || snapshot.reviewer_type != issue.reviewer_type
                 || snapshot.reviewer_id != issue.reviewer_id
             {
@@ -591,7 +591,7 @@ FOR UPDATE"#,
             }
         }
         let current_owner_generation: i64 = sqlx::query_scalar(
-            "SELECT assignee_generation FROM issue WHERE id = $1 AND workspace_id = $2",
+            "SELECT executor_generation FROM issue WHERE id = $1 AND workspace_id = $2",
         )
         .bind(issue.id)
         .bind(issue.workspace_id)
@@ -761,8 +761,8 @@ FOR UPDATE"#,
             if let (Some(captured_owner_type), Some(captured_owner_id)) =
                 (captured_owner_type, captured_owner_id)
             {
-                if issue.assignee_type.as_deref() != Some(captured_owner_type)
-                    || issue.assignee_id != Some(captured_owner_id)
+                if issue.executor_type.as_deref() != Some(captured_owner_type)
+                    || issue.executor_id != Some(captured_owner_id)
                     || captured_owner_generation
                         .is_some_and(|captured| captured != current_owner_generation)
                 {
@@ -778,8 +778,8 @@ FOR UPDATE"#,
                             "captured_owner_type": captured_owner_type,
                             "captured_owner_id": captured_owner_id,
                             "captured_owner_generation": captured_owner_generation,
-                            "current_owner_type": issue.assignee_type,
-                            "current_owner_id": issue.assignee_id,
+                            "current_owner_type": issue.executor_type,
+                            "current_owner_id": issue.executor_id,
                             "current_owner_generation": current_owner_generation,
                         }),
                         Some("implementation owner changed after task was assigned"),
@@ -802,7 +802,7 @@ FOR UPDATE"#,
         newer.created_at > source.created_at
         OR (newer.created_at = source.created_at AND newer.id > source.id)
       )
-      AND newer.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+      AND newer.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
       AND COALESCE(newer.context->>'side_chat_parent_task_id', '') = ''
       AND newer.context ? 'coordination_owner_type'
       AND newer.context ? 'coordination_owner_id'
@@ -915,8 +915,8 @@ RETURNING *"#,
                             "candidate_agent_name": candidate.name.clone(),
                             "explicit_reviewer": false,
                             "previous_status": issue.status,
-                            "previous_assignee_type": issue.assignee_type,
-                            "previous_assignee_id": issue.assignee_id,
+                            "previous_executor_type": issue.executor_type,
+                            "previous_executor_id": issue.executor_id,
                             "previous_reviewer_type": issue.reviewer_type,
                             "previous_reviewer_id": issue.reviewer_id,
                             "source_agent_id": source_agent_id,
@@ -968,8 +968,8 @@ RETURNING *"#,
                     };
                 let (
                     previous_status,
-                    previous_assignee_type,
-                    previous_assignee_id,
+                    previous_executor_type,
+                    previous_executor_id,
                     previous_reviewer_type,
                     previous_reviewer_id,
                     publish_issue_update,
@@ -977,8 +977,8 @@ RETURNING *"#,
                 ) = if reviewer_replaced {
                     (
                         issue.status.clone(),
-                        issue.assignee_type.clone(),
-                        issue.assignee_id,
+                        issue.executor_type.clone(),
+                        issue.executor_id,
                         reviewer_before_recovery_type,
                         reviewer_before_recovery_id,
                         false,
@@ -1004,18 +1004,18 @@ RETURNING *"#,
                         .and_then(Value::as_str)
                         .map(str::to_owned)
                         .unwrap_or_else(|| issue.status.clone());
-                    let previous_assignee_type = assignment
+                    let previous_executor_type = assignment
                         .decision
-                        .get("previous_assignee_type")
+                        .get("previous_executor_type")
                         .and_then(Value::as_str)
                         .map(str::to_owned)
-                        .or_else(|| issue.assignee_type.clone());
-                    let previous_assignee_id = assignment
+                        .or_else(|| issue.executor_type.clone());
+                    let previous_executor_id = assignment
                         .decision
-                        .get("previous_assignee_id")
+                        .get("previous_executor_id")
                         .and_then(Value::as_str)
                         .and_then(|value| Uuid::parse_str(value).ok())
-                        .or(issue.assignee_id);
+                        .or(issue.executor_id);
                     let previous_reviewer_type =
                         if assignment.decision.get("previous_reviewer_type").is_some() {
                             assignment
@@ -1038,8 +1038,8 @@ RETURNING *"#,
                         };
                     (
                         previous_status,
-                        previous_assignee_type,
-                        previous_assignee_id,
+                        previous_executor_type,
+                        previous_executor_id,
                         previous_reviewer_type,
                         previous_reviewer_id,
                         !issue_update_published && publication_kind != Some("reviewer_replacement"),
@@ -1084,8 +1084,8 @@ RETURNING *"#,
                     publish_reviewer_update,
                     issue_update_publication_key,
                     previous_status,
-                    previous_assignee_type,
-                    previous_assignee_id,
+                    previous_executor_type,
+                    previous_executor_id,
                     previous_reviewer_type,
                     previous_reviewer_id,
                     handoff_note: None,
@@ -1127,7 +1127,7 @@ RETURNING *"#,
 
         let (owner_type, owner_id, publish_issue_update, assignment_activity) =
             if is_task_completion {
-                let Some(previous_owner_type) = issue.assignee_type.clone() else {
+                let Some(previous_owner_type) = issue.executor_type.clone() else {
                     complete_claimed_tx(
                         &mut *tx,
                         event,
@@ -1141,7 +1141,7 @@ RETURNING *"#,
                     tx.commit().await?;
                     return Ok(None);
                 };
-                let Some(previous_owner_id) = issue.assignee_id else {
+                let Some(previous_owner_id) = issue.executor_id else {
                     complete_claimed_tx(
                         &mut *tx,
                         event,
@@ -1224,8 +1224,8 @@ RETURNING *"#,
                     "candidate_agent_name": candidate.name.clone(),
                     "explicit_reviewer": explicit_reviewer_required,
                     "previous_status": issue.status,
-                    "previous_assignee_type": issue.assignee_type,
-                    "previous_assignee_id": issue.assignee_id,
+                    "previous_executor_type": issue.executor_type,
+                    "previous_executor_id": issue.executor_id,
                     "previous_reviewer_type": issue.reviewer_type,
                     "previous_reviewer_id": issue.reviewer_id,
                     "source_agent_id": source_agent_id,
@@ -1294,8 +1294,8 @@ RETURNING *"#,
                     tx.commit().await?;
                     return Ok(None);
                 };
-                if issue.assignee_type.as_deref() != Some(target_type.as_str())
-                    || issue.assignee_id != Some(target_id)
+                if issue.executor_type.as_deref() != Some(target_type.as_str())
+                    || issue.executor_id != Some(target_id)
                     || event
                         .payload
                         .get("owner_generation")
@@ -1470,8 +1470,8 @@ RETURNING *"#,
             publish_reviewer_update: false,
             issue_update_publication_key: publication_key,
             previous_status: previous_issue.status,
-            previous_assignee_type: previous_issue.assignee_type,
-            previous_assignee_id: previous_issue.assignee_id,
+            previous_executor_type: previous_issue.executor_type,
+            previous_executor_id: previous_issue.executor_id,
             previous_reviewer_type: None,
             previous_reviewer_id: None,
             handoff_note,
@@ -1557,7 +1557,7 @@ RETURNING *"#,
 WHERE issue_id = $1
   AND agent_id = $2
   AND context->>$3 = $4::text
-  AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'deferred')
+  AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity', 'deferred')
 ORDER BY created_at DESC, id DESC
 LIMIT 1"#,
         )
@@ -1976,8 +1976,8 @@ WHERE id = $1
             payload: json!({
                 "issue": issue_to_map_with_category(&plan.issue, prefix, issue_status::IN_REVIEW),
                 // On the current issue contract the implementation owner stays
-                // in assignee_* while the reviewer is recorded separately.
-                "assignee_changed": false,
+                // in executor_* while the reviewer is recorded separately.
+                "executor_changed": false,
                 "status_changed": true,
                 "review_handoff": true,
                 "coordination_publication": "review_handoff",
@@ -1990,8 +1990,8 @@ WHERE id = $1
                 "description_changed": false,
                 "title_changed": false,
                 "prev_status": plan.previous_status,
-                "prev_assignee_type": plan.previous_assignee_type,
-                "prev_assignee_id": plan.previous_assignee_id.map(|id| id.to_string()),
+                "prev_executor_type": plan.previous_executor_type,
+                "prev_executor_id": plan.previous_executor_id.map(|id| id.to_string()),
             }),
             task_id: plan.event_id.to_string(),
             chat_session_id: String::new(),
@@ -2006,7 +2006,7 @@ WHERE id = $1
             actor_id: String::new(),
             payload: json!({
                 "issue": issue_to_map_with_category(&plan.issue, prefix, issue_status::IN_REVIEW),
-                "assignee_changed": false,
+                "executor_changed": false,
                 "status_changed": false,
                 "review_handoff": false,
                 "reviewer_changed": true,
@@ -2020,8 +2020,8 @@ WHERE id = $1
                 "description_changed": false,
                 "title_changed": false,
                 "prev_status": plan.previous_status,
-                "prev_assignee_type": plan.previous_assignee_type,
-                "prev_assignee_id": plan.previous_assignee_id.map(|id| id.to_string()),
+                "prev_executor_type": plan.previous_executor_type,
+                "prev_executor_id": plan.previous_executor_id.map(|id| id.to_string()),
                 "prev_reviewer_type": plan.previous_reviewer_type,
                 "prev_reviewer_id": plan.previous_reviewer_id.map(|id| id.to_string()),
             }),
@@ -2113,7 +2113,7 @@ async fn issue_matches_dispatch_plan(
     let owner_generation_matches = match plan.expected_owner_generation {
         Some(expected) => {
             sqlx::query_scalar::<_, i64>(
-                "SELECT assignee_generation FROM issue WHERE id = $1 AND workspace_id = $2",
+                "SELECT executor_generation FROM issue WHERE id = $1 AND workspace_id = $2",
             )
             .bind(issue.id)
             .bind(issue.workspace_id)
@@ -2143,6 +2143,7 @@ fn coordinated_task_is_promotable(status: Option<&str>) -> bool {
             | Some("dispatched")
             | Some("running")
             | Some("waiting_local_directory")
+            | Some("waiting_capacity")
     )
 }
 
@@ -2159,8 +2160,8 @@ fn issue_matches_dispatch_fields(
                 && issue.reviewer_type.as_deref() == Some("agent")
                 && issue.reviewer_id == Some(owner_id)
         } else if expected_category == issue_status::IN_PROGRESS {
-            issue.assignee_type.as_deref() == Some(owner_type)
-                && issue.assignee_id == Some(owner_id)
+            issue.executor_type.as_deref() == Some(owner_type)
+                && issue.executor_id == Some(owner_id)
         } else {
             false
         }
@@ -2264,21 +2265,30 @@ WHERE a.workspace_id = $1
   AND a.archived_at IS NULL
   AND a.runtime_id IS NOT NULL
   AND ($3::uuid IS NULL OR a.id <> $3)
-  AND EXISTS (
-      SELECT 1
-      FROM team_member tm
-      JOIN team t ON t.id = tm.team_id AND t.workspace_id = a.workspace_id
-                  AND t.archived_at IS NULL
-      WHERE tm.member_type = 'agent'
-        AND tm.member_id = a.id
-        AND tm.role = 'reviewer'
-        AND ($2::uuid IS NULL OR tm.team_id = $2)
+  AND (
+      EXISTS (
+          SELECT 1
+          FROM team_member tm
+          JOIN team t ON t.id = tm.team_id AND t.workspace_id = a.workspace_id
+                      AND t.archived_at IS NULL
+          WHERE tm.member_type = 'agent'
+            AND tm.member_id = a.id
+            AND tm.role = 'reviewer'
+            AND ($2::uuid IS NULL OR tm.team_id = $2)
+      )
+      OR EXISTS (
+          SELECT 1
+          FROM workspace_issue_category_policy policy
+          WHERE policy.workspace_id = a.workspace_id
+            AND policy.category = 'in_review'
+            AND policy.default_reviewer_agent_id = a.id
+      )
   )
   AND (
       SELECT count(*)
       FROM agent_task_queue q
       WHERE q.agent_id = a.id
-        AND q.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+        AND q.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
   ) + (
       SELECT count(*)
       FROM agent_coordination_assignment reservation
@@ -2287,7 +2297,14 @@ WHERE a.workspace_id = $1
         AND reservation.status = 'assigned'
         AND reservation.dispatched_task_id IS NULL
   ) < a.max_concurrent_tasks
-ORDER BY CASE WHEN a.status = 'idle' THEN 0 ELSE 1 END,
+ORDER BY CASE WHEN EXISTS (
+             SELECT 1
+             FROM workspace_issue_category_policy policy
+             WHERE policy.workspace_id = a.workspace_id
+               AND policy.category = 'in_review'
+               AND policy.default_reviewer_agent_id = a.id
+         ) THEN 0 ELSE 1 END,
+         CASE WHEN a.status = 'idle' THEN 0 ELSE 1 END,
          a.updated_at ASC,
          a.id ASC
 LIMIT 1
@@ -2324,21 +2341,30 @@ WHERE a.id = $4
   AND a.archived_at IS NULL
   AND a.runtime_id IS NOT NULL
   AND ($3::uuid IS NULL OR a.id <> $3)
-  AND EXISTS (
-      SELECT 1
-      FROM team_member tm
-      JOIN team t ON t.id = tm.team_id AND t.workspace_id = a.workspace_id
-                  AND t.archived_at IS NULL
-      WHERE tm.member_type = 'agent'
-        AND tm.member_id = a.id
-        AND tm.role = 'reviewer'
-        AND ($2::uuid IS NULL OR tm.team_id = $2)
+  AND (
+      EXISTS (
+          SELECT 1
+          FROM team_member tm
+          JOIN team t ON t.id = tm.team_id AND t.workspace_id = a.workspace_id
+                      AND t.archived_at IS NULL
+          WHERE tm.member_type = 'agent'
+            AND tm.member_id = a.id
+            AND tm.role = 'reviewer'
+            AND ($2::uuid IS NULL OR tm.team_id = $2)
+      )
+      OR EXISTS (
+          SELECT 1
+          FROM workspace_issue_category_policy policy
+          WHERE policy.workspace_id = a.workspace_id
+            AND policy.category = 'in_review'
+            AND policy.default_reviewer_agent_id = a.id
+      )
   )
   AND (
       SELECT count(*)
         FROM agent_task_queue q
       WHERE q.agent_id = a.id
-        AND q.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+        AND q.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
         AND COALESCE(q.context->>'coordination_assignment_id', '') <> $5::uuid::text
   ) + (
       SELECT count(*)
@@ -2378,21 +2404,30 @@ WHERE a.id = $4
   AND a.archived_at IS NULL
   AND a.runtime_id IS NOT NULL
   AND ($3::uuid IS NULL OR a.id <> $3)
-  AND EXISTS (
-      SELECT 1
-      FROM team_member tm
-      JOIN team t ON t.id = tm.team_id AND t.workspace_id = a.workspace_id
-                  AND t.archived_at IS NULL
-      WHERE tm.member_type = 'agent'
-        AND tm.member_id = a.id
-        AND tm.role = 'reviewer'
-        AND ($2::uuid IS NULL OR tm.team_id = $2)
+  AND (
+      EXISTS (
+          SELECT 1
+          FROM team_member tm
+          JOIN team t ON t.id = tm.team_id AND t.workspace_id = a.workspace_id
+                      AND t.archived_at IS NULL
+          WHERE tm.member_type = 'agent'
+            AND tm.member_id = a.id
+            AND tm.role = 'reviewer'
+            AND ($2::uuid IS NULL OR tm.team_id = $2)
+      )
+      OR EXISTS (
+          SELECT 1
+          FROM workspace_issue_category_policy policy
+          WHERE policy.workspace_id = a.workspace_id
+            AND policy.category = 'in_review'
+            AND policy.default_reviewer_agent_id = a.id
+      )
   )
   AND (
       SELECT count(*)
       FROM agent_task_queue q
       WHERE q.agent_id = a.id
-        AND q.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory')
+        AND q.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory', 'waiting_capacity')
         AND COALESCE(q.context->>'coordination_assignment_id', '') <> $5::uuid::text
   ) + (
       SELECT count(*)
@@ -2745,7 +2780,7 @@ pub async fn record_task_completed(
     }
 
     let issue = sqlx::query(
-        "SELECT workspace_id, assignee_type, assignee_id, assignee_generation FROM issue WHERE id = $1",
+        "SELECT workspace_id, executor_type, executor_id, executor_generation FROM issue WHERE id = $1",
     )
     .bind(issue_id)
     .fetch_optional(&mut *executor)
@@ -2875,7 +2910,7 @@ pub async fn record_review_return(
     handoff_note: Option<&str>,
 ) -> anyhow::Result<()> {
     let owner_generation: i64 = sqlx::query_scalar(
-        "SELECT assignee_generation FROM issue WHERE id = $1 AND workspace_id = $2",
+        "SELECT executor_generation FROM issue WHERE id = $1 AND workspace_id = $2",
     )
     .bind(issue.id)
     .bind(issue.workspace_id)
@@ -2883,8 +2918,8 @@ pub async fn record_review_return(
     .await?;
     let payload = json!({
         "issue_id": issue.id,
-        "owner_type": issue.assignee_type,
-        "owner_id": issue.assignee_id,
+        "owner_type": issue.executor_type,
+        "owner_id": issue.executor_id,
         "owner_generation": owner_generation,
         "issue_revision": issue.revision,
         "handoff_note": handoff_note,
@@ -3140,8 +3175,10 @@ mod tests {
     fn fixture_review_issue(reviewer_id: Uuid, revision: i64) -> Issue {
         Issue {
             acceptance_criteria: serde_json::json!([]),
-            assignee_id: Some(Uuid::from_u128(2)),
-            assignee_type: Some("agent".to_string()),
+            owner_id: None,
+            owner_type: None,
+            executor_id: Some(Uuid::from_u128(2)),
+            executor_type: Some("agent".to_string()),
             context_refs: serde_json::json!([]),
             created_at: Utc::now(),
             creator_id: Uuid::from_u128(3),
@@ -3455,6 +3492,7 @@ mod tests {
             "dispatched",
             "running",
             "waiting_local_directory",
+            "waiting_capacity",
             "deferred",
         ] {
             assert!(
@@ -3472,6 +3510,7 @@ mod tests {
             "dispatched",
             "running",
             "waiting_local_directory",
+            "waiting_capacity",
         ] {
             assert!(coordinated_task_is_promotable(Some(status)), "{status}");
         }
