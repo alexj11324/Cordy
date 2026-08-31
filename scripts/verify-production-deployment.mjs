@@ -56,12 +56,10 @@ export async function verifyProductionOnce(sourceSha, fetchImpl = fetch) {
 
   for (const url of [
     "https://patchbay.aspectlylabs.com/login",
-    "https://patchbay.aspectlylabs.com/acme/issues",
-    "https://patchbay.aspectlylabs.com/acme/task-graph",
     "https://patchbay.aspectlylabs.com/docs",
   ]) {
     const response = await request(fetchImpl, url);
-    requireHealthyResponse(response, { url, expectedBuild });
+    requireHealthyResponse(response, { url, expectedBuild, exactStatus: 200 });
   }
 
   for (const [url, exactStatus] of [

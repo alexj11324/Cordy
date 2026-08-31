@@ -9,36 +9,6 @@ import {
 const SOURCE_SHA = "a".repeat(40);
 const EXPECTED_BUILD = `sha-${SOURCE_SHA}`;
 
-test("rejects a protected route server error", () => {
-  const response = new Response("error", {
-    status: 500,
-    headers: { "x-patchbay-build": EXPECTED_BUILD },
-  });
-  assert.throws(
-    () =>
-      requireHealthyResponse(response, {
-        url: "https://patchbay.aspectlylabs.com/acme/task-graph",
-        expectedBuild: EXPECTED_BUILD,
-      }),
-    /unacceptable HTTP 500/u,
-  );
-});
-
-test("rejects a missing task graph route", () => {
-  const response = new Response("missing", {
-    status: 404,
-    headers: { "x-patchbay-build": EXPECTED_BUILD },
-  });
-  assert.throws(
-    () =>
-      requireHealthyResponse(response, {
-        url: "https://patchbay.aspectlylabs.com/acme/task-graph",
-        expectedBuild: EXPECTED_BUILD,
-      }),
-    /unacceptable HTTP 404/u,
-  );
-});
-
 test("rejects a healthy route served by the wrong Web image", () => {
   const response = new Response("ok", {
     status: 200,
@@ -51,6 +21,22 @@ test("rejects a healthy route served by the wrong Web image", () => {
         expectedBuild: EXPECTED_BUILD,
       }),
     /reported build sha-old/u,
+  );
+});
+
+test("public pages must render instead of redirecting", () => {
+  const response = new Response(null, {
+    status: 307,
+    headers: { "x-patchbay-build": EXPECTED_BUILD },
+  });
+  assert.throws(
+    () =>
+      requireHealthyResponse(response, {
+        url: "https://patchbay.aspectlylabs.com/login",
+        expectedBuild: EXPECTED_BUILD,
+        exactStatus: 200,
+      }),
+    /expected 200/u,
   );
 });
 
@@ -71,8 +57,6 @@ test("verifies backend, Web, Docs, and Auth Broker from one source SHA", async (
   assert.deepEqual(seen, [
     "https://api.aspectlylabs.com/api/config",
     "https://patchbay.aspectlylabs.com/login",
-    "https://patchbay.aspectlylabs.com/acme/issues",
-    "https://patchbay.aspectlylabs.com/acme/task-graph",
     "https://patchbay.aspectlylabs.com/docs",
     "https://accounts.aspectlylabs.com/readyz",
     "https://accounts.aspectlylabs.com/oauth/google",

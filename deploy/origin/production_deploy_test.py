@@ -107,6 +107,123 @@ class ProductionDeployContractTests(unittest.TestCase):
     def test_receipt_payload_is_json_serializable(self):
         self.assertEqual(json.loads(json.dumps(self.manifest()))["schema_version"], 1)
 
+    def test_clerk_user_list_accepts_raw_and_paginated_responses(self):
+        user = {"id": "user_smoke"}
+        self.assertEqual(production_deploy.clerk_users([user]), [user])
+        self.assertEqual(production_deploy.clerk_users({"data": [user]}), [user])
+        with self.assertRaisesRegex(production_deploy.DeploymentError, "invalid user-list"):
+            production_deploy.clerk_users({"data": "invalid"})
+
+    def test_browser_credentials_are_short_lived_and_bound_to_the_smoke_user(self):
+        with tempfile.TemporaryDirectory() as directory:
+            deployment = production_deploy.ProductionDeployment(Path(directory))
+            deployment.initialize_directories()
+            deployment.atomic_json(
+                deployment.secrets / "product-env.json",
+                {"CLERK_SECRET_KEY": "sk_live_fixture"},
+            )
+            calls = []
+
+            def fake_clerk_request(_secret, path, *, payload=None):
+                calls.append((path, payload))
+                if path.startswith("users?"):
+                    return [
+                        {
+                            "id": "user_smoke",
+                            "email_addresses": [
+                                {
+                                    "email_address": production_deploy.PRODUCTION_SMOKE_USER_EMAIL
+                                }
+                            ],
+                        }
+                    ]
+                if path == "sign_in_tokens":
+                    return {"token": "sign-in-ticket"}
+                if path == "testing_tokens":
+                    return {"token": "testing-token"}
+                raise AssertionError(path)
+
+            with mock.patch.object(
+                production_deploy, "clerk_api_request", side_effect=fake_clerk_request
+            ):
+                credentials = deployment.issue_browser_acceptance_credentials()
+
+            self.assertEqual(
+                credentials,
+                {
+                    "sign_in_ticket": "sign-in-ticket",
+                    "testing_token": "testing-token",
+                },
+            )
+            self.assertIn(
+                (
+                    "sign_in_tokens",
+                    {"user_id": "user_smoke", "expires_in_seconds": 300},
+                ),
+                calls,
+            )
+
+    def test_deploy_requires_a_bootstrapped_rollback_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            deployment = production_deploy.ProductionDeployment(Path(directory))
+            deployment.fetch_main = mock.Mock(return_value="a" * 40)
+            with self.assertRaisesRegex(production_deploy.DeploymentError, "--bootstrap"):
+                deployment.deploy(self.manifest())
+
+    def test_deploy_receipt_contains_browser_credentials(self):
+        with tempfile.TemporaryDirectory() as directory:
+            deployment = production_deploy.ProductionDeployment(Path(directory))
+            deployment.initialize_directories()
+            previous = self.manifest()
+            previous["source_sha"] = "b" * 40
+            deployment.atomic_json(deployment.current_path, previous)
+            deployment.fetch_main = mock.Mock(return_value="a" * 40)
+            deployment.apply = mock.Mock()
+            deployment.issue_browser_acceptance_credentials = mock.Mock(
+                return_value={
+                    "sign_in_ticket": "sign-in-ticket",
+                    "testing_token": "testing-token",
+                }
+            )
+            deployment.prune_releases = mock.Mock()
+
+            receipt = deployment.deploy(self.manifest())
+
+            self.assertEqual(receipt["browser_auth"]["sign_in_ticket"], "sign-in-ticket")
+            self.assertFalse(receipt["unchanged"])
+            deployment.prune_releases.assert_called_once_with()
+
+    def test_release_pruning_retains_only_current_and_rollback_worktrees(self):
+        with tempfile.TemporaryDirectory() as directory:
+            deployment = production_deploy.ProductionDeployment(Path(directory))
+            deployment.initialize_directories()
+            current = self.manifest()
+            previous = self.manifest()
+            previous["source_sha"] = "b" * 40
+            deployment.atomic_json(deployment.current_path, current)
+            deployment.atomic_json(deployment.previous_path, previous)
+            for sha in ("a" * 40, "b" * 40, "c" * 40):
+                (deployment.releases / sha).mkdir()
+
+            observed = []
+
+            def fake_run(arguments, *, env=None, capture=False):
+                observed.append(arguments)
+                if capture and arguments[1] == "-C":
+                    return Path(arguments[2]).name
+                return ""
+
+            with mock.patch.object(production_deploy, "run", side_effect=fake_run):
+                deployment.prune_releases()
+
+            removals = [
+                arguments
+                for arguments in observed
+                if "worktree" in arguments and "remove" in arguments
+            ]
+            self.assertEqual(len(removals), 1)
+            self.assertEqual(Path(removals[0][-1]).name, "c" * 40)
+
     def observed_apply_probes(self, *, bootstrap):
         with tempfile.TemporaryDirectory() as directory:
             deployment = production_deploy.ProductionDeployment(Path(directory))
@@ -126,10 +243,10 @@ class ProductionDeployContractTests(unittest.TestCase):
         self.assertNotIn("http://127.0.0.1:3110/acme/issues", urls)
         self.assertNotIn("http://127.0.0.1:3110/acme/task-graph", urls)
 
-    def test_normal_deploy_and_rollback_require_business_routes(self):
+    def test_gateway_readiness_does_not_treat_login_redirects_as_business_routes(self):
         urls = self.observed_apply_probes(bootstrap=False)
-        self.assertIn("http://127.0.0.1:3110/acme/issues", urls)
-        self.assertIn("http://127.0.0.1:3110/acme/task-graph", urls)
+        self.assertNotIn("http://127.0.0.1:3110/acme/issues", urls)
+        self.assertNotIn("http://127.0.0.1:3110/acme/task-graph", urls)
 
 
 if __name__ == "__main__":

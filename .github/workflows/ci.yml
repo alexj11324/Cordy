@@ -74,6 +74,7 @@ jobs:
           scripts/github-actions-pinning-contract.test.mjs
           scripts/dev-clerk-auth.test.mjs
           scripts/production-deployment-contract.test.mjs
+          scripts/verify-production-browser.test.mjs
           scripts/verify-production-deployment.test.mjs
 
       - name: Test restricted production deployment gateway

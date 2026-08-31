@@ -12,9 +12,14 @@ revision. Completion means all of the following are true:
    `main`, deployed the four digests, and retained the preceding manifest.
 4. The API reports `server_version=sha-<full-sha>`; Web, Docs, and Auth Broker
    report `X-Patchbay-Build: sha-<full-sha>`.
-5. `/login`, `/acme/issues`, `/acme/task-graph`, `/docs`, and the Accounts
-   OAuth entry route return a successful or redirect response (HTTP 2xx/3xx)
-   through the public domains. API config and readiness routes must return 200.
+5. `/login` and `/docs` render with HTTP 200 through the public domain; API
+   config and readiness routes return 200; the Accounts OAuth entry remains
+   reachable.
+6. A real headless Chromium session signs in as the dedicated synthetic user,
+   exchanges Clerk for the normal HttpOnly application session, and renders
+   `/production-smoke/issues` plus `/production-smoke/task-graph` at the exact
+   deployed Web SHA without a redirect, page exception, failed first-party
+   request, or server error. The task graph canvas itself must become visible.
 
 A merged PR, green image build, healthy Accounts domain, or successful SSH
 command alone does not satisfy this acceptance contract.
@@ -30,6 +35,7 @@ merge to main
   -> restricted server gateway
   -> local runtime/version probes
   -> public domain/version/route probes
+  -> authenticated Chromium Issues + Task Graph acceptance
   -> success, or automatic rollback to previous manifest
 ```
 
@@ -41,7 +47,8 @@ optimizations; every run still executes each production Dockerfile.
 was a same-repository push, the branch is `main`, and the conclusion is
 successful. The resolver and server gateway both reject a SHA that is no
 longer the current `origin/main`, preventing an older queued run from rolling
-production backward.
+production backward. Production has no manual dispatch entry that can bypass
+the successful-CI prerequisite.
 
 ## GitHub Environment
 
@@ -58,6 +65,14 @@ The private key must be dedicated to this pipeline. Its public key is installed
 with OpenSSH `restrict` plus a forced command, so it cannot open a shell,
 forward ports, copy files, or choose a server command. The forced command is
 the root-owned `/usr/local/bin/patchbay-production-deploy` gateway.
+
+The existing `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` build secret is also supplied
+to the browser verifier. The Clerk secret key stays only in the server's
+mode-0600 environment snapshot. After a successful local apply, the gateway
+uses it to issue one single-use five-minute sign-in ticket and one short-lived
+testing token for the synthetic user. Those values travel only in the
+mode-0600 deployment receipt on the ephemeral runner; they are masked, never
+uploaded, and are not stored as GitHub secrets.
 
 ## One-time server bootstrap
 
@@ -77,11 +92,25 @@ has no digest) so the first automatic deployment also has a rollback target.
 Re-running the installer validates and preserves existing deployment history
 instead of bootstrapping over it.
 
+Provision the dedicated synthetic identity and its isolated empty workspace
+once before enabling automatic deployment. `--provision` is deliberately a
+separate operator action; normal deployments are read-only with respect to the
+fixture and fail closed if it was removed. Pipe a JSON object containing the
+server's `clerk_secret_key` and `clerk_publishable_key` to:
+
+```bash
+node scripts/verify-production-browser.mjs --provision
+```
+
+Do not put either value on a command line or in a repository file. The
+provisioner creates or reuses only `production-smoke@aspectlylabs.com` and the
+`production-smoke` workspace, then marks that synthetic account onboarded.
+
 That bootstrap target is checked for service readiness only, because it may
-predate this pipeline's complete route contract (and may be the broken version
-the first deployment is intended to replace). After the first successful
-automated deployment, every normal deployment and rollback must pass the full
-version and business-route checks.
+predate this pipeline's complete acceptance contract (and may be the broken
+version the first deployment is intended to replace). Normal deployment and
+rollback perform local readiness/version checks; GitHub's authenticated browser
+gate owns business-page acceptance and requests rollback if it fails.
 
 The server gateway accepts a maximum 64 KiB JSON request. A deployment request
 must name `alexj11324/Cordy`, the exact current 40-character `main` SHA, and <!-- legacy-brand-compat -->
@@ -100,12 +129,17 @@ mutation, and then updates the existing Compose projects and ports:
 - `cordy`: Docs on `127.0.0.1:4000`. <!-- legacy-brand-compat -->
 - `patchbay-auth-broker`: Broker on `127.0.0.1:43100`.
 
+After a successful state transition, the gateway keeps only the current and
+immediately preceding detached release worktrees. Older release worktrees are
+removed through the bare repository; compact JSON history remains for audit.
+
 Backend is made ready before Web, so migrations finish before new Web traffic.
-Every image update is followed by local version and route probes. If any
-command or local probe fails, the gateway immediately reapplies the preceding
-manifest. If the later public-domain probes fail, GitHub Actions sends a
-separate rollback request; it is accepted only when the failed SHA is still the
-current deployment, preventing rollback from racing a newer release.
+Every image update is followed by local readiness and version probes. If any
+command, local probe, or short-lived browser credential request fails, the
+gateway immediately reapplies the preceding manifest. If the later public or
+authenticated-browser probes fail, GitHub Actions sends a separate rollback
+request; it is accepted only when the failed SHA is still the current
+deployment, preventing rollback from racing a newer release.
 
 Database migrations must remain backward-compatible with the immediately prior
 application image. Automatic image rollback cannot reverse a destructive

@@ -20,6 +20,7 @@ import sys
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 
@@ -43,6 +44,7 @@ BOOTSTRAP_CONTAINERS = {
     "docs": "cordy-docs-1",  # legacy-brand-compat: existing production project
     "auth-broker": "patchbay-auth-broker-broker-1",
 }
+PRODUCTION_SMOKE_USER_EMAIL = "production-smoke@aspectlylabs.com"
 
 
 class DeploymentError(RuntimeError):
@@ -185,6 +187,47 @@ def select_bootstrap_image(name: str, configured: str, repo_digests: Any) -> str
     return validate_image_ref(name, configured, immutable=False)
 
 
+def clerk_api_request(
+    secret_key: str,
+    path: str,
+    *,
+    payload: dict[str, Any] | None = None,
+) -> Any:
+    if not secret_key.startswith("sk_"):
+        raise DeploymentError("production Clerk secret is missing or invalid")
+    data = None if payload is None else json.dumps(payload).encode("utf-8")
+    headers = {
+        "Authorization": f"Bearer {secret_key}",
+        "Accept": "application/json",
+    }
+    if data is not None:
+        headers["Content-Type"] = "application/json"
+    request = Request(
+        f"https://api.clerk.com/v1/{path.lstrip('/')}",
+        data=data,
+        headers=headers,
+        method="POST" if data is not None else "GET",
+    )
+    try:
+        with urlopen(request, timeout=15) as response:
+            return json.load(response)
+    except HTTPError as error:
+        raise DeploymentError(
+            f"Clerk browser-acceptance credential request returned HTTP {error.code}"
+        ) from error
+    except (URLError, TimeoutError, json.JSONDecodeError) as error:
+        raise DeploymentError(
+            "Clerk browser-acceptance credential request failed"
+        ) from error
+
+
+def clerk_users(value: Any) -> list[dict[str, Any]]:
+    candidates = value.get("data") if isinstance(value, dict) else value
+    if not isinstance(candidates, list):
+        raise DeploymentError("Clerk returned an invalid user-list response")
+    return [candidate for candidate in candidates if isinstance(candidate, dict)]
+
+
 class ProductionDeployment:
     def __init__(
         self,
@@ -281,6 +324,36 @@ class ProductionDeployment:
         )
         return release
 
+    def prune_releases(self) -> None:
+        retained: set[str] = set()
+        for state_path in (self.current_path, self.previous_path):
+            raw = self.read_json(state_path)
+            if raw is not None:
+                retained.add(validate_stored_manifest(raw)["source_sha"])
+
+        for release in sorted(self.releases.iterdir()):
+            if not SHA_RE.fullmatch(release.name) or release.name in retained:
+                continue
+            if release.is_symlink() or not release.is_dir():
+                raise DeploymentError(f"refusing unsafe release path {release}")
+            actual = run(["git", "-C", str(release), "rev-parse", "HEAD"], capture=True)
+            if actual != release.name:
+                raise DeploymentError(
+                    f"refusing to prune release {release}; checked-out commit is {actual}"
+                )
+            run(
+                [
+                    "git",
+                    "--git-dir",
+                    str(self.repository),
+                    "worktree",
+                    "remove",
+                    "--force",
+                    str(release),
+                ]
+            )
+        run(["git", "--git-dir", str(self.repository), "worktree", "prune"])
+
     def container_environment(self, container: str) -> dict[str, str]:
         raw = run(
             ["docker", "inspect", "--format", "{{json .Config.Env}}", container],
@@ -343,6 +416,7 @@ class ProductionDeployment:
         }
         validate_stored_manifest(manifest)
         self.atomic_json(self.current_path, manifest)
+        self.prune_releases()
         return {"ok": True, "action": "bootstrap", "source_sha": source_sha}
 
     def check(self) -> dict[str, Any]:
@@ -383,6 +457,51 @@ class ProductionDeployment:
         broker_env.update(broker)
         broker_env["PATCHBAY_AUTH_BROKER_IMAGE"] = manifest["images"]["auth-broker"]
         return product_env, broker_env
+
+    def issue_browser_acceptance_credentials(self) -> dict[str, str]:
+        product = self.read_json(self.secrets / "product-env.json")
+        if not isinstance(product, dict):
+            raise DeploymentError("production environment snapshot is missing")
+        secret_key = product.get("CLERK_SECRET_KEY")
+        if not isinstance(secret_key, str):
+            raise DeploymentError("production Clerk secret is missing")
+
+        query = urlencode(
+            [("email_address", PRODUCTION_SMOKE_USER_EMAIL), ("limit", "2")]
+        )
+        users = clerk_users(clerk_api_request(secret_key, f"users?{query}"))
+        exact = []
+        for user in users:
+            addresses = user.get("email_addresses")
+            if not isinstance(addresses, list):
+                continue
+            if any(
+                isinstance(address, dict)
+                and address.get("email_address") == PRODUCTION_SMOKE_USER_EMAIL
+                for address in addresses
+            ):
+                exact.append(user)
+        if len(exact) != 1 or not isinstance(exact[0].get("id"), str):
+            raise DeploymentError(
+                "the dedicated production browser-acceptance Clerk user is missing or ambiguous"
+            )
+        user_id = exact[0]["id"]
+        sign_in = clerk_api_request(
+            secret_key,
+            "sign_in_tokens",
+            payload={"user_id": user_id, "expires_in_seconds": 300},
+        )
+        testing = clerk_api_request(secret_key, "testing_tokens", payload={})
+        sign_in_ticket = sign_in.get("token") if isinstance(sign_in, dict) else None
+        testing_token = testing.get("token") if isinstance(testing, dict) else None
+        if not isinstance(sign_in_ticket, str) or not sign_in_ticket:
+            raise DeploymentError("Clerk did not return a browser sign-in ticket")
+        if not isinstance(testing_token, str) or not testing_token:
+            raise DeploymentError("Clerk did not return a browser testing token")
+        return {
+            "sign_in_ticket": sign_in_ticket,
+            "testing_token": testing_token,
+        }
 
     def compose(self, arguments: list[str], *, env: dict[str, str]) -> None:
         run(["docker", "compose", *arguments], env=env)
@@ -508,22 +627,6 @@ class ProductionDeployment:
             expected_build=expected,
             headers=public_host_headers,
         )
-        # The one-time bootstrap records the already-running baseline, which
-        # may predate the complete route acceptance contract. It is retained
-        # solely as a recovery target for the first automated deployment. Once
-        # one automated revision succeeds, every subsequent apply and rollback
-        # must pass the complete business-route probes below.
-        if not is_bootstrap:
-            self.probe(
-                "http://127.0.0.1:3110/acme/issues",
-                expected_build=expected,
-                headers=public_host_headers,
-            )
-            self.probe(
-                "http://127.0.0.1:3110/acme/task-graph",
-                expected_build=expected,
-                headers=public_host_headers,
-            )
         self.probe("http://127.0.0.1:4000/docs", expected_build=expected)
         self.probe("http://127.0.0.1:43100/readyz", expected_build=expected)
 
@@ -535,39 +638,41 @@ class ProductionDeployment:
                 f"refusing stale deployment {source_sha}; current origin/main is {current_main}"
             )
         current_raw = self.read_json(self.current_path)
-        current = validate_stored_manifest(current_raw) if current_raw else None
-        if (
-            current
+        if current_raw is None:
+            raise DeploymentError("production state is missing; run --bootstrap first")
+        current = validate_stored_manifest(current_raw)
+        unchanged = (
+            not current["bootstrap"]
             and current["source_sha"] == source_sha
             and current["images"] == request["images"]
-        ):
-            self.apply(request)
-            return {
-                "ok": True,
-                "action": "deploy",
-                "source_sha": source_sha,
-                "unchanged": True,
-            }
+        )
 
         try:
             self.apply(request)
+            browser_auth = self.issue_browser_acceptance_credentials()
         except Exception as deploy_error:
-            if current is not None:
-                log(f"deployment failed; restoring {current['source_sha']}")
-                try:
-                    self.apply(current)
-                except Exception as rollback_error:
-                    raise DeploymentError(
-                        f"deployment failed ({deploy_error}); automatic rollback also failed "
-                        f"({rollback_error})"
-                    ) from rollback_error
+            log(f"deployment failed; restoring {current['source_sha']}")
+            try:
+                self.apply(current)
+            except Exception as rollback_error:
+                raise DeploymentError(
+                    f"deployment failed ({deploy_error}); automatic rollback also failed "
+                    f"({rollback_error})"
+                ) from rollback_error
             raise
 
-        self.atomic_json(self.history / f"{source_sha}.json", request)
-        if current is not None:
+        if not unchanged:
+            self.atomic_json(self.history / f"{source_sha}.json", request)
             self.atomic_json(self.previous_path, current)
-        self.atomic_json(self.current_path, request)
-        return {"ok": True, "action": "deploy", "source_sha": source_sha, "unchanged": False}
+            self.atomic_json(self.current_path, request)
+        self.prune_releases()
+        return {
+            "ok": True,
+            "action": "deploy",
+            "source_sha": source_sha,
+            "unchanged": unchanged,
+            "browser_auth": browser_auth,
+        }
 
     def rollback(self, failed_source_sha: str) -> dict[str, Any]:
         failed_source_sha = require_sha(failed_source_sha, "failed_source_sha")
@@ -590,6 +695,7 @@ class ProductionDeployment:
         self.atomic_json(self.history / f"failed-{failed_source_sha}.json", current)
         self.atomic_json(self.current_path, previous)
         self.previous_path.unlink(missing_ok=True)
+        self.prune_releases()
         return {
             "ok": True,
             "action": "rollback",

@@ -36,6 +36,7 @@ test("production follows successful main CI instead of a temporary deployment br
     workflow,
     /github\.event\.workflow_run\.head_repository\.full_name == github\.repository/u,
   );
+  assert.doesNotMatch(workflow, /workflow_dispatch/u);
   assert.doesNotMatch(workflow, /codex\/aspectlylabs-fce7-build/u);
 });
 
@@ -64,6 +65,10 @@ test("production uses a protected serialized deployment with rollback and runtim
   assert.match(workflow, /StrictHostKeyChecking=yes/u);
   assert.match(workflow, /action: "rollback"/u);
   assert.match(workflow, /verify-production-deployment\.mjs/u);
+  assert.match(workflow, /verify-production-browser\.mjs/u);
+  assert.match(workflow, /playwright install --with-deps chromium/u);
+  assert.match(workflow, /browser_auth\.sign_in_ticket/u);
+  assert.doesNotMatch(workflow, /CLERK_SECRET_KEY/u);
 });
 
 test("obsolete partial image publication workflows are removed", async () => {
