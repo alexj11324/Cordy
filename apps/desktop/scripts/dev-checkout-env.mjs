@@ -1,8 +1,4 @@
-import {
-  existsSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createServer } from "node:net";
@@ -152,7 +148,8 @@ function reservedWorktreePorts(repoRoot) {
       try {
         const values = parseEnv(readFileSync(candidate, "utf8"));
         for (const key of ["PORT", "FRONTEND_PORT", "DESKTOP_RENDERER_PORT"]) {
-          if (/^[0-9]+$/.test(values[key] || "")) reserved.add(Number(values[key]));
+          if (/^[0-9]+$/.test(values[key] || ""))
+            reserved.add(Number(values[key]));
         }
       } catch {
         // A malformed sibling environment should not prevent this checkout
@@ -165,17 +162,26 @@ function reservedWorktreePorts(repoRoot) {
 }
 
 async function portIsAvailable(port) {
-  return new Promise((resolvePort) => {
+  return new Promise((resolvePort, rejectPort) => {
     const server = createServer();
     server.unref();
-    server.once("error", () => resolvePort(false));
+    server.once("error", (error) => {
+      if (error?.code === "EADDRINUSE") {
+        resolvePort(false);
+        return;
+      }
+      rejectPort(error);
+    });
     server.listen({ host: "127.0.0.1", port, exclusive: true }, () => {
       server.close(() => resolvePort(true));
     });
   });
 }
 
-export async function allocateWorktreeOffset(repoRoot) {
+export async function allocateWorktreeOffset(
+  repoRoot,
+  { portCheck = portIsAvailable } = {},
+) {
   const reserved = reservedWorktreePorts(repoRoot);
   const initial = offsetForPath(repoRoot);
   for (let attempt = 0; attempt < 1000; attempt += 1) {
@@ -186,7 +192,21 @@ export async function allocateWorktreeOffset(repoRoot) {
       rendererPortForOffset(offset),
     ];
     if (ports.some((port) => reserved.has(port))) continue;
-    if ((await Promise.all(ports.map(portIsAvailable))).every(Boolean)) {
+    let available;
+    try {
+      available = (await Promise.all(ports.map(portCheck))).every(Boolean);
+    } catch (error) {
+      const code = error?.code;
+      if (code === "EACCES" || code === "EPERM") {
+        throw new Error(
+          "could not check isolated development ports: the operating system denied binding to 127.0.0.1; run the launcher outside a restricted sandbox or grant local bind permission",
+        );
+      }
+      throw new Error(
+        `could not check isolated development ports: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (available) {
       return offset;
     }
   }
@@ -195,7 +215,11 @@ export async function allocateWorktreeOffset(repoRoot) {
   );
 }
 
-function worktreeEnvContents(repoRoot, offset, worktreeName = basename(repoRoot)) {
+function worktreeEnvContents(
+  repoRoot,
+  offset,
+  worktreeName = basename(repoRoot),
+) {
   const slug = checkoutSlug(worktreeName);
   const postgresDb = `patchbay_${slug}_${offset}`;
   const backendPort = 18080 + offset;
@@ -241,7 +265,11 @@ export function validateGeneratedDevCheckoutEnv({ repoRoot, values }) {
     return "checkout offset is invalid";
   }
   const slug = values.PATCHBAY_DEV_CHECKOUT_SLUG;
-  if (!slug || slug !== checkoutSlug(slug) || !/^[a-z0-9]+(?:_[a-z0-9]+)*$/.test(slug)) {
+  if (
+    !slug ||
+    slug !== checkoutSlug(slug) ||
+    !/^[a-z0-9]+(?:_[a-z0-9]+)*$/.test(slug)
+  ) {
     return "checkout slug is invalid";
   }
   const expectedDatabase = `patchbay_${slug}_${offset}`;
@@ -280,11 +308,9 @@ export async function createWorktreeEnvFile({
     );
   }
   const offset = await allocateOffset(repoRoot);
-  writeFileSync(
-    envFile,
-    worktreeEnvContents(repoRoot, offset, worktreeName),
-    { mode: 0o600 },
-  );
+  writeFileSync(envFile, worktreeEnvContents(repoRoot, offset, worktreeName), {
+    mode: 0o600,
+  });
   return { envFile, offset };
 }
 

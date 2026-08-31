@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  allocateWorktreeOffset,
   createWorktreeEnvFile,
   ensureDevCheckoutEnv,
   loadDevCheckoutEnv,
@@ -128,9 +129,7 @@ describe("development checkout environment", () => {
       "PATCHBAY_TELEGRAM_SECRET_KEY",
       "PATCHBAY_WEIXIN_SECRET_KEY",
     ]) {
-      expect(contents).toMatch(
-        new RegExp(`${key}=[A-Za-z0-9+/]{43}=`),
-      );
+      expect(contents).toMatch(new RegExp(`${key}=[A-Za-z0-9+/]{43}=`));
     }
     expect(Number(env.PORT)).toBeGreaterThanOrEqual(18080);
     expect(Number(env.PORT)).toBeLessThanOrEqual(19079);
@@ -203,7 +202,9 @@ describe("development checkout environment", () => {
         log: { log() {} },
         allocateOffset: async () => 17,
       }),
-    ).rejects.toThrow(/not a current isolated checkout environment.*FORCE=1 make worktree-env/);
+    ).rejects.toThrow(
+      /not a current isolated checkout environment.*FORCE=1 make worktree-env/,
+    );
   });
 
   it("accepts the current generated env contract", async () => {
@@ -219,6 +220,23 @@ describe("development checkout environment", () => {
         .map((line) => line.split("=")),
     );
 
-    expect(validateGeneratedDevCheckoutEnv({ repoRoot: sandbox, values })).toBeNull();
+    expect(
+      validateGeneratedDevCheckoutEnv({ repoRoot: sandbox, values }),
+    ).toBeNull();
+  });
+
+  it("reports local bind permission errors instead of misclassifying them as occupied ports", async () => {
+    sandbox = await mkdtemp(join(tmpdir(), "patchbay-port-permission-"));
+    const error = Object.assign(new Error("operation not permitted"), {
+      code: "EPERM",
+    });
+
+    await expect(
+      allocateWorktreeOffset(sandbox, {
+        portCheck: async () => {
+          throw error;
+        },
+      }),
+    ).rejects.toThrow(/operating system denied binding.*restricted sandbox/);
   });
 });
