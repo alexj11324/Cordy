@@ -132,10 +132,12 @@ function formatConflictValue(value: unknown) {
 }
 
 function ConflictCenter({
+  canManage,
   conflicts,
   onClose,
   workspaceId,
 }: {
+  canManage: boolean;
   conflicts: LinearSyncConflict[];
   onClose: () => void;
   workspaceId: string;
@@ -166,6 +168,38 @@ function ConflictCenter({
     }
   }
 
+  function fieldLabel(field: string) {
+    switch (field) {
+      case "title":
+        return t(($) => $.page.linear.conflict_field_title);
+      case "description":
+        return t(($) => $.page.linear.conflict_field_description);
+      case "priority":
+        return t(($) => $.page.linear.conflict_field_priority);
+      case "status":
+        return t(($) => $.page.linear.conflict_field_status);
+      case "due_date":
+        return t(($) => $.page.linear.conflict_field_due_date);
+      case "owner_id":
+        return t(($) => $.page.linear.conflict_field_owner);
+      default:
+        return field;
+    }
+  }
+
+  function statusLabel(status: string) {
+    switch (status) {
+      case "open":
+        return t(($) => $.page.linear.conflict_status_open);
+      case "resolved":
+        return t(($) => $.page.linear.conflict_status_resolved);
+      case "dismissed":
+        return t(($) => $.page.linear.conflict_status_dismissed);
+      default:
+        return status;
+    }
+  }
+
   return (
     <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
       <DialogHeader>
@@ -179,8 +213,8 @@ function ConflictCenter({
           {conflicts.map((conflict) => (
             <div className="space-y-3 rounded-lg border p-3" key={conflict.id}>
               <div className="flex items-center justify-between gap-2">
-                <span className="font-medium">{conflict.field}</span>
-                <Badge variant="destructive">{conflict.status}</Badge>
+                <span className="font-medium">{fieldLabel(conflict.field)}</span>
+                <Badge variant="destructive">{statusLabel(conflict.status)}</Badge>
               </div>
               <div className="grid gap-2 text-micro sm:grid-cols-3">
                 <div>
@@ -196,44 +230,50 @@ function ConflictCenter({
                   <div className="break-words">{formatConflictValue(conflict.remote_value)}</div>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  disabled={pendingId === conflict.id}
-                  onClick={() => void resolve(conflict, "local")}
-                  size="sm"
-                  variant="outline"
-                >
-                  {t(($) => $.page.linear.conflict_use_local)}
-                </Button>
-                <Button
-                  disabled={pendingId === conflict.id}
-                  onClick={() => void resolve(conflict, "remote")}
-                  size="sm"
-                  variant="outline"
-                >
-                  {t(($) => $.page.linear.conflict_use_remote)}
-                </Button>
-                <input
-                  aria-label={t(($) => $.page.linear.conflict_manual)}
-                  className="h-9 min-w-48 flex-1 rounded-md border border-input bg-background px-3 text-body"
-                  onChange={(event) =>
-                    setManualValues((current) => ({
-                      ...current,
-                      [conflict.id]: event.target.value,
-                    }))
-                  }
-                  placeholder={t(($) => $.page.linear.conflict_manual_placeholder)}
-                  value={manualValues[conflict.id] ?? ""}
-                />
-                <Button
-                  disabled={pendingId === conflict.id || !(manualValues[conflict.id] ?? "").trim()}
-                  onClick={() => void resolve(conflict, "manual")}
-                  size="sm"
-                  variant="outline"
-                >
-                  {t(($) => $.page.linear.conflict_use_manual)}
-                </Button>
-              </div>
+              {canManage ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    disabled={pendingId === conflict.id}
+                    onClick={() => void resolve(conflict, "local")}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {t(($) => $.page.linear.conflict_use_local)}
+                  </Button>
+                  <Button
+                    disabled={pendingId === conflict.id}
+                    onClick={() => void resolve(conflict, "remote")}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {t(($) => $.page.linear.conflict_use_remote)}
+                  </Button>
+                  <input
+                    aria-label={t(($) => $.page.linear.conflict_manual)}
+                    className="h-9 min-w-48 flex-1 rounded-md border border-input bg-background px-3 text-body"
+                    onChange={(event) =>
+                      setManualValues((current) => ({
+                        ...current,
+                        [conflict.id]: event.target.value,
+                      }))
+                    }
+                    placeholder={t(($) => $.page.linear.conflict_manual_placeholder)}
+                    value={manualValues[conflict.id] ?? ""}
+                  />
+                  <Button
+                    disabled={pendingId === conflict.id || !(manualValues[conflict.id] ?? "").trim()}
+                    onClick={() => void resolve(conflict, "manual")}
+                    size="sm"
+                    variant="outline"
+                  >
+                    {t(($) => $.page.linear.conflict_use_manual)}
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-micro text-muted-foreground">
+                  {t(($) => $.page.linear.conflict_read_only)}
+                </p>
+              )}
             </div>
           ))}
         </div>
@@ -1130,6 +1170,7 @@ export function LinearIntegrationCard({
       <Dialog open={conflictOpen} onOpenChange={setConflictOpen}>
         {conflictOpen ? (
           <ConflictCenter
+            canManage={canManage}
             conflicts={openConflicts}
             onClose={() => setConflictOpen(false)}
             workspaceId={workspaceId}
