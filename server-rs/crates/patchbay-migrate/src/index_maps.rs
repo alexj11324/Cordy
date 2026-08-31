@@ -695,6 +695,18 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "495_linear_member_binding_id_index",
         "uq_linear_member_binding_id",
     ),
+    (
+        "495_linear_sync_conflict_open_index",
+        "uq_linear_sync_conflict_open",
+    ),
+    (
+        "496_linear_sync_conflict_list_index",
+        "idx_linear_sync_conflict_list",
+    ),
+    (
+        "497_linear_sync_conflict_id_index",
+        "uq_linear_sync_conflict_id",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
@@ -935,5 +947,17 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
     (
         "495_linear_member_binding_id_index",
         "uq_linear_member_binding_id",
+    ),
+    (
+        "495_linear_sync_conflict_open_index",
+        "uq_linear_sync_conflict_open",
+    ),
+    (
+        "496_linear_sync_conflict_list_index",
+        "idx_linear_sync_conflict_list",
+    ),
+    (
+        "497_linear_sync_conflict_id_index",
+        "uq_linear_sync_conflict_id",
     ),
 ];

@@ -185,9 +185,12 @@ import type {
   LinearDryRunResponse,
   LinearInitialImportResponse,
   LinearMemberBinding,
+  LinearSyncConflict,
   LinearProjectBinding,
   ListLinearBindingsResponse,
   ListLinearMemberBindingsResponse,
+  ListLinearSyncConflictsResponse,
+  ResolveLinearSyncConflictRequest,
   SaveLinearMemberBindingRequest,
   SaveLinearProjectBindingRequest,
   ListVCSConnectionsResponse,
@@ -455,6 +458,8 @@ import {
   LinearDryRunResponseSchema,
   LinearInitialImportResponseSchema,
   LinearMemberBindingSchema,
+  LinearSyncConflictSchema,
+  ListLinearSyncConflictsResponseSchema,
   ListLinearMemberBindingsResponseSchema,
   ListLinearBindingsResponseSchema,
   LinearProjectBindingSchema,
@@ -465,6 +470,7 @@ import {
   EMPTY_LINEAR_INITIAL_IMPORT_RESPONSE,
   EMPTY_LINEAR_MEMBER_BINDING,
   EMPTY_LIST_LINEAR_MEMBER_BINDINGS_RESPONSE,
+  EMPTY_LIST_LINEAR_SYNC_CONFLICTS_RESPONSE,
   EMPTY_LIST_LINEAR_BINDINGS_RESPONSE,
   EMPTY_LINEAR_PROJECT_BINDING,
   RuntimeModelListRequestSchema,
@@ -4442,6 +4448,58 @@ export class ApiClient {
     await this.fetch(
       `/api/workspaces/${workspaceId}/linear/members/${patchbayUserId}`,
       { method: "DELETE" },
+    );
+  }
+
+  async listLinearSyncConflicts(
+    workspaceId: string,
+    status: "open" | "resolved" | "dismissed" | undefined = "open",
+  ): Promise<ListLinearSyncConflictsResponse> {
+    const query = status ? `?status=${encodeURIComponent(status)}` : "";
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/conflicts${query}`,
+    );
+    return parseWithFallback(
+      raw,
+      ListLinearSyncConflictsResponseSchema,
+      EMPTY_LIST_LINEAR_SYNC_CONFLICTS_RESPONSE,
+      { endpoint: "GET /api/workspaces/:id/linear/conflicts" },
+    );
+  }
+
+  async resolveLinearSyncConflict(
+    workspaceId: string,
+    conflictId: string,
+    body: ResolveLinearSyncConflictRequest,
+  ): Promise<LinearSyncConflict> {
+    const raw = await this.fetch<unknown>(
+      `/api/workspaces/${workspaceId}/linear/conflicts/${conflictId}`,
+      { method: "PATCH", body: JSON.stringify(body) },
+    );
+    return parseWithFallback(
+      raw,
+      LinearSyncConflictSchema,
+      {
+        id: "",
+        workspace_id: "",
+        binding_id: "",
+        link_id: "",
+        patchbay_issue_id: "",
+        linear_issue_id: "",
+        field: "",
+        base_value: null,
+        local_value: null,
+        remote_value: null,
+        source_event_id: "",
+        source_event_at_ms: null,
+        status: "",
+        resolution: null,
+        resolved_value: null,
+        resolved_by_id: null,
+        created_at: "",
+        updated_at: "",
+      },
+      { endpoint: "PATCH /api/workspaces/:id/linear/conflicts/:conflictId" },
     );
   }
 

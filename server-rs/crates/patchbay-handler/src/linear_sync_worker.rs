@@ -26,7 +26,8 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::linear::{
-    strip_patchbay_issue_marker, LinearRemoteIssue, LinearTokenError, LinearTokenManager,
+    strip_patchbay_issue_marker, LinearRemoteIssue, LinearRemoteUser, LinearTokenError,
+    LinearTokenManager,
 };
 use crate::state::HandlerState;
 
@@ -454,7 +455,7 @@ impl LinearSyncWorker {
             });
         }
 
-        let issue =
+        let mut issue =
             issue_q::get_issue_in_workspace(&self.state.pool, row.issue_id, row.workspace_id)
                 .await
                 .map_err(SyncError::retry)?
@@ -492,25 +493,92 @@ impl LinearSyncWorker {
                     ))
                 })?;
             let remote_updated_at = parse_remote_timestamp(&remote.updated_at)?;
-            if link
-                .remote_updated_at
-                .is_some_and(|last| remote_updated_at > last)
-            {
-                let marked = linear_q::mark_linear_issue_link_conflict(
-                    &self.state.pool,
+            let remote_status = map_remote_status(&binding, remote.state.as_ref())?;
+            let remote_priority = map_remote_priority(remote.priority)?;
+            let remote_owner_id = self
+                .remote_owner_id(&connection, remote.assignee.as_ref())
+                .await?;
+            let remote_snapshot =
+                remote_sync_snapshot(&remote, &remote_status, &remote_priority, remote_owner_id);
+            let base_snapshot = normalized_base_snapshot(&link.last_common_snapshot, &binding)?;
+            let local_snapshot = local_sync_snapshot(&issue);
+            let merge = merge_sync_snapshots(&base_snapshot, &local_snapshot, &remote_snapshot);
+            if !merge.conflicts.is_empty() {
+                let source_event_id = format!("linear-outbox:{}", row.id);
+                let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
+                for conflict in &merge.conflicts {
+                    linear_q::create_linear_sync_conflict(
+                        &mut *transaction,
+                        &linear_q::LinearSyncConflictInput {
+                            id: Uuid::now_v7(),
+                            workspace_id: row.workspace_id,
+                            binding_id: binding.id,
+                            link_id: link.id,
+                            patchbay_issue_id: issue.id,
+                            linear_issue_id: &remote.id,
+                            field: &conflict.field,
+                            base_value: &conflict.base_value,
+                            local_value: &conflict.local_value,
+                            remote_value: &conflict.remote_value,
+                            source_event_id: &source_event_id,
+                            source_event_at_ms: None,
+                        },
+                    )
+                    .await
+                    .map_err(SyncError::retry)?;
+                }
+                let updated = linear_q::update_linear_issue_link(
+                    &mut *transaction,
                     link.id,
                     row.workspace_id,
+                    &base_snapshot,
+                    Some(remote_updated_at),
+                    link.last_remote_event_at_ms,
+                    link.last_remote_event_id.as_deref(),
+                    "conflict",
                 )
                 .await
                 .map_err(SyncError::retry)?;
-                if !marked {
+                if !updated {
                     return Err(SyncError::retry(anyhow::anyhow!(
-                        "failed to mark Linear Issue Link as conflicted"
+                        "Linear Issue Link disappeared while recording push conflict"
                     )));
                 }
+                transaction.commit().await.map_err(SyncError::retry)?;
                 return Err(SyncError::permanent(anyhow::anyhow!(
-                    "remote Linear Issue changed before push"
+                    "remote Linear Issue changed before push; conflict recorded"
                 )));
+            }
+            if merge.remote_changed {
+                self.state
+                    .issues
+                    .apply_external_patch(
+                        row.workspace_id,
+                        issue.id,
+                        IssueCommand::ApplyExternalPatch {
+                            source: ExternalSource::Linear,
+                            source_event_id: format!("linear-outbox:{}", row.id),
+                            expected_revision: Some(issue.revision),
+                            suppress_external_outbox: true,
+                            patch: external_patch_from_snapshot(&merge.merged)?,
+                        },
+                    )
+                    .await
+                    .map_err(|error| {
+                        classify_external_error(error, "merge Linear Issue before push")
+                    })?;
+                issue = issue_q::get_issue_in_workspace(
+                    &self.state.pool,
+                    row.issue_id,
+                    row.workspace_id,
+                )
+                .await
+                .map_err(SyncError::retry)?
+                .ok_or_else(|| {
+                    SyncError::retry(anyhow::anyhow!(
+                        "Patchbay Issue disappeared after Linear merge"
+                    ))
+                })?;
             }
             Some(remote)
         } else {
@@ -743,6 +811,7 @@ impl LinearSyncWorker {
         };
         let source_event_id = format!("linear-delivery:{}", row.delivery_id);
         let event_timestamp_ms = extract_event_timestamp_ms(&row.payload);
+        let updated_from = extract_updated_from(&row.payload);
         let existing_link = linear_q::find_linear_issue_link(
             &self.state.pool,
             connection.workspace_id,
@@ -794,6 +863,7 @@ impl LinearSyncWorker {
             existing_link,
             &source_event_id,
             event_timestamp_ms,
+            updated_from,
         )
         .await
     }
@@ -853,6 +923,7 @@ impl LinearSyncWorker {
                     existing_link,
                     &format!("{source_prefix}:{issue_id}"),
                     None,
+                    None,
                 )
                 .await
             {
@@ -877,6 +948,7 @@ impl LinearSyncWorker {
         existing_link: Option<LinearIssueLink>,
         source_event_id: &str,
         event_timestamp_ms: Option<i64>,
+        updated_from: Option<&Value>,
     ) -> Result<(), SyncError> {
         let was_unlinked = existing_link.is_none();
         let linear_project_id = remote
@@ -964,36 +1036,52 @@ impl LinearSyncWorker {
             })
             .transpose()?;
         let remote_updated_at = parse_remote_timestamp(&remote.updated_at)?;
-        let event_timestamp_ms = event_timestamp_ms.or_else(|| {
-            Some(remote_updated_at.timestamp_millis())
-        });
+        let event_timestamp_ms = event_timestamp_ms.or(Some(remote_updated_at.timestamp_millis()));
         if is_out_of_order(existing_link.as_ref(), event_timestamp_ms) {
             return Ok(());
         }
-        let snapshot = serde_json::to_value(&remote).map_err(|error| {
-            SyncError::permanent(anyhow::anyhow!("serialize Linear snapshot: {error}"))
-        })?;
-        let linked_issue = if let Some(link) = existing_link.as_ref() {
-            issue_q::get_issue_in_workspace(
-                &self.state.pool,
-                link.patchbay_issue_id,
-                connection.workspace_id,
-            )
-            .await
-            .map_err(SyncError::retry)?
-        } else {
-            None
-        };
+        let remote_owner_id = self
+            .remote_owner_id(connection, remote.assignee.as_ref())
+            .await?;
+        let snapshot = remote_sync_snapshot(&remote, &mapped_status, &priority, remote_owner_id);
+        if let Some(mut link) = existing_link {
+            if needs_rebind && link.binding_id != binding.id {
+                let rebound = linear_q::rebind_linear_issue_link(
+                    &self.state.pool,
+                    link.id,
+                    connection.workspace_id,
+                    binding.id,
+                )
+                .await
+                .map_err(SyncError::retry)?;
+                if !rebound {
+                    return Err(SyncError::retry(anyhow::anyhow!(
+                        "Linear Issue Link disappeared during project rebind"
+                    )));
+                }
+                link.binding_id = binding.id;
+            }
+            return self
+                .apply_existing_remote_issue(
+                    connection,
+                    binding,
+                    link,
+                    remote,
+                    snapshot,
+                    source_event_id,
+                    event_timestamp_ms,
+                    remote_updated_at,
+                    updated_from,
+                )
+                .await;
+        }
         let mapped_category = patchbay_service::issue_status::effective(
             &self.state.pool,
             connection.workspace_id,
             &mapped_status,
         )
         .await;
-        let import_status = if import_status_is_inadmissible(
-            &mapped_category,
-            linked_issue.as_ref(),
-        ) {
+        let import_status = if import_status_is_inadmissible(&mapped_category, None) {
             tracing::warn!(
                 issue_id = %remote.id,
                 mapped_status,
@@ -1006,28 +1094,14 @@ impl LinearSyncWorker {
         let remote_patch = ExternalIssuePatch {
             title: Some(remote.title.clone()),
             description: Some(strip_patchbay_issue_marker(remote.description.as_deref())),
-            status: Some(import_status),
+            status: Some(import_status.clone()),
             priority: Some(priority.clone()),
             due_date: Some(due_date),
             project_id: Some(Some(binding.patchbay_project_id)),
+            owner_type: Some(remote_owner_id.map(|_| "member".to_string())),
+            owner_id: Some(remote_owner_id),
         };
-        let issue = if let Some(link) = existing_link.as_ref() {
-            self.state
-                .issues
-                .apply_external_patch(
-                    connection.workspace_id,
-                    link.patchbay_issue_id,
-                    IssueCommand::ApplyExternalPatch {
-                        source: ExternalSource::Linear,
-                        source_event_id: source_event_id.to_string(),
-                        expected_revision: None,
-                        suppress_external_outbox: true,
-                        patch: remote_patch.clone(),
-                    },
-                )
-                .await
-                .map_err(classify_external_issue_error)?
-        } else {
+        let issue = {
             let existing_issue = issue_q::get_issue_by_origin(
                 &self.state.pool,
                 connection.workspace_id,
@@ -1047,7 +1121,7 @@ impl LinearSyncWorker {
                             source_event_id: source_event_id.to_string(),
                             expected_revision: None,
                             suppress_external_outbox: true,
-                            patch: remote_patch,
+                            patch: remote_patch.clone(),
                         },
                     )
                     .await
@@ -1066,15 +1140,14 @@ impl LinearSyncWorker {
                             workspace_id: connection.workspace_id,
                             title: remote.title.clone(),
                             description: strip_patchbay_issue_marker(remote.description.as_deref()),
-                            status: remote_patch
-                                .status
-                                .clone()
-                                .unwrap_or_else(|| patchbay_service::issue_status::BACKLOG.to_string()),
+                            status: import_status,
                             priority,
                             creator_type: "member".to_string(),
                             creator_id: connection.created_by_id,
                             project_id: Some(binding.patchbay_project_id),
                             due_date,
+                            owner_type: remote_owner_id.map(|_| "member".to_string()),
+                            owner_id: remote_owner_id,
                             origin_type: Some("linear".to_string()),
                             origin_id: Some(remote_uuid),
                             allow_duplicate: true,
@@ -1124,9 +1197,7 @@ impl LinearSyncWorker {
             }
         };
 
-        let mut link = if let Some(link) = existing_link {
-            link
-        } else if let Some(link) = linear_q::find_linear_issue_link(
+        let link = if let Some(link) = linear_q::find_linear_issue_link(
             &self.state.pool,
             connection.workspace_id,
             connection.id,
@@ -1172,22 +1243,6 @@ impl LinearSyncWorker {
                 })?
             }
         };
-        if needs_rebind && link.binding_id != binding.id {
-            let rebound = linear_q::rebind_linear_issue_link(
-                &self.state.pool,
-                link.id,
-                connection.workspace_id,
-                binding.id,
-            )
-            .await
-            .map_err(SyncError::retry)?;
-            if !rebound {
-                return Err(SyncError::retry(anyhow::anyhow!(
-                    "Linear Issue Link disappeared during project rebind"
-                )));
-            }
-            link.binding_id = binding.id;
-        }
         let last_event_at_ms = event_timestamp_ms.or(link.last_remote_event_at_ms);
         let last_event_id = event_timestamp_ms
             .map(|_| source_event_id)
@@ -1242,6 +1297,153 @@ impl LinearSyncWorker {
         )
         .await
         .map_err(SyncError::retry)?;
+        Ok(())
+    }
+
+    async fn remote_owner_id(
+        &self,
+        connection: &LinearConnection,
+        assignee: Option<&LinearRemoteUser>,
+    ) -> Result<Option<Uuid>, SyncError> {
+        let Some(assignee) = assignee else {
+            return Ok(None);
+        };
+        let binding = linear_q::get_linear_member_binding_by_linear_user(
+            &self.state.pool,
+            connection.workspace_id,
+            connection.id,
+            &assignee.id,
+        )
+        .await
+        .map_err(SyncError::retry)?;
+        binding
+            .map(|binding| Some(binding.patchbay_user_id))
+            .ok_or_else(|| {
+                SyncError::permanent(anyhow::anyhow!(
+                    "Linear human assignee has no Patchbay member mapping"
+                ))
+            })
+    }
+
+    async fn apply_existing_remote_issue(
+        &self,
+        connection: &LinearConnection,
+        binding: LinearProjectBinding,
+        link: LinearIssueLink,
+        remote: LinearRemoteIssue,
+        remote_snapshot: Value,
+        source_event_id: &str,
+        event_timestamp_ms: Option<i64>,
+        remote_updated_at: DateTime<Utc>,
+        updated_from: Option<&Value>,
+    ) -> Result<(), SyncError> {
+        if event_timestamp_ms.is_none()
+            && link
+                .remote_updated_at
+                .is_some_and(|previous| remote_updated_at <= previous)
+        {
+            return Ok(());
+        }
+        let issue = issue_q::get_issue_in_workspace(
+            &self.state.pool,
+            link.patchbay_issue_id,
+            connection.workspace_id,
+        )
+        .await
+        .map_err(SyncError::retry)?
+        .ok_or_else(|| SyncError::permanent(anyhow::anyhow!("Patchbay Issue not found")))?;
+        let base_snapshot = normalized_base_snapshot(&link.last_common_snapshot, &binding)?;
+        let local_snapshot = local_sync_snapshot(&issue);
+        let merge = merge_sync_snapshots_with_updated_from(
+            &base_snapshot,
+            &local_snapshot,
+            &remote_snapshot,
+            updated_from,
+        );
+        let last_event_at_ms = event_timestamp_ms.or(link.last_remote_event_at_ms);
+        let last_event_id = event_timestamp_ms
+            .map(|_| source_event_id)
+            .or(link.last_remote_event_id.as_deref());
+
+        if !merge.conflicts.is_empty() {
+            let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
+            for conflict in &merge.conflicts {
+                linear_q::create_linear_sync_conflict(
+                    &mut *transaction,
+                    &linear_q::LinearSyncConflictInput {
+                        id: Uuid::now_v7(),
+                        workspace_id: connection.workspace_id,
+                        binding_id: binding.id,
+                        link_id: link.id,
+                        patchbay_issue_id: issue.id,
+                        linear_issue_id: &remote.id,
+                        field: &conflict.field,
+                        base_value: &conflict.base_value,
+                        local_value: &conflict.local_value,
+                        remote_value: &conflict.remote_value,
+                        source_event_id,
+                        source_event_at_ms: event_timestamp_ms,
+                    },
+                )
+                .await
+                .map_err(SyncError::retry)?;
+            }
+            let updated = linear_q::update_linear_issue_link(
+                &mut *transaction,
+                link.id,
+                connection.workspace_id,
+                &base_snapshot,
+                Some(remote_updated_at),
+                last_event_at_ms,
+                last_event_id,
+                "conflict",
+            )
+            .await
+            .map_err(SyncError::retry)?;
+            if !updated {
+                return Err(SyncError::retry(anyhow::anyhow!(
+                    "Linear Issue Link disappeared while recording conflict"
+                )));
+            }
+            transaction.commit().await.map_err(SyncError::retry)?;
+            return Ok(());
+        }
+
+        if merge.remote_changed {
+            self.state
+                .issues
+                .apply_external_patch(
+                    connection.workspace_id,
+                    issue.id,
+                    IssueCommand::ApplyExternalPatch {
+                        source: ExternalSource::Linear,
+                        source_event_id: source_event_id.to_string(),
+                        expected_revision: Some(issue.revision),
+                        suppress_external_outbox: true,
+                        patch: external_patch_from_snapshot(&merge.merged)?,
+                    },
+                )
+                .await
+                .map_err(|error| classify_external_error(error, "apply merged Linear Issue"))?;
+        }
+
+        let updated = linear_q::update_linear_issue_link(
+            &self.state.pool,
+            link.id,
+            connection.workspace_id,
+            &merge.common,
+            Some(remote_updated_at),
+            last_event_at_ms,
+            last_event_id,
+            "active",
+        )
+        .await
+        .map_err(SyncError::retry)?;
+        if !updated {
+            return Err(SyncError::retry(anyhow::anyhow!(
+                "Linear Issue Link disappeared after merge"
+            )));
+        }
         Ok(())
     }
 
@@ -1359,6 +1561,275 @@ impl LinearSyncWorker {
     }
 }
 
+const SHARED_SYNC_FIELDS: [&str; 6] = [
+    "title",
+    "description",
+    "priority",
+    "status",
+    "due_date",
+    "owner_id",
+];
+
+#[derive(Debug)]
+struct SyncConflictValue {
+    field: String,
+    base_value: Value,
+    local_value: Value,
+    remote_value: Value,
+}
+
+#[derive(Debug)]
+struct SyncMergePlan {
+    common: Value,
+    conflicts: Vec<SyncConflictValue>,
+    merged: Value,
+    remote_changed: bool,
+}
+
+fn local_sync_snapshot(issue: &patchbay_db::models::Issue) -> Value {
+    json!({
+        "title": issue.title,
+        "description": issue.description,
+        "priority": issue.priority,
+        "status": issue.status,
+        "due_date": issue.due_date.map(|date| date.format("%Y-%m-%d").to_string()),
+        "owner_id": (issue.owner_type.as_deref() == Some("member"))
+            .then(|| issue.owner_id.map(|id| id.to_string()))
+            .flatten(),
+    })
+}
+
+fn remote_sync_snapshot(
+    remote: &LinearRemoteIssue,
+    status: &str,
+    priority: &str,
+    owner_id: Option<Uuid>,
+) -> Value {
+    json!({
+        "title": remote.title,
+        "description": strip_patchbay_issue_marker(remote.description.as_deref()),
+        "priority": priority,
+        "status": status,
+        "due_date": remote.due_date,
+        "owner_id": owner_id.map(|id| id.to_string()),
+    })
+}
+
+fn normalized_base_snapshot(
+    snapshot: &Value,
+    binding: &LinearProjectBinding,
+) -> Result<Value, SyncError> {
+    let object = snapshot.as_object().ok_or_else(|| {
+        SyncError::permanent(anyhow::anyhow!(
+            "Linear Issue Link common snapshot is not an object"
+        ))
+    })?;
+    let field = |name: &str| object.get(name).cloned().unwrap_or(Value::Null);
+    let priority = match object.get("priority") {
+        Some(Value::String(value)) => Value::String(value.clone()),
+        Some(Value::Number(value)) => {
+            Value::String(map_remote_priority(value.as_i64().ok_or_else(|| {
+                SyncError::permanent(anyhow::anyhow!(
+                    "Linear Issue Link priority snapshot is invalid"
+                ))
+            })?)?)
+        }
+        Some(Value::Null) | None => Value::Null,
+        Some(_) => {
+            return Err(SyncError::permanent(anyhow::anyhow!(
+                "Linear Issue Link priority snapshot is invalid"
+            )))
+        }
+    };
+    let status = if let Some(value) = object.get("status").and_then(Value::as_str) {
+        Value::String(value.to_string())
+    } else if let Some(state) = object.get("state").and_then(Value::as_object) {
+        let state_id = state.get("id").and_then(Value::as_str);
+        let state_type = state.get("type").and_then(Value::as_str);
+        match (state_id, state_type) {
+            (Some(state_id), _) => binding
+                .status_mapping
+                .as_object()
+                .and_then(|mapping| mapping.get(state_id))
+                .and_then(Value::as_str)
+                .map(|value| Value::String(value.to_string()))
+                .unwrap_or(Value::Null),
+            (None, Some(state_type)) => Value::String(
+                match state_type {
+                    "backlog" => "backlog",
+                    "unstarted" => "todo",
+                    "started" => "in_progress",
+                    "completed" => "done",
+                    "canceled" | "cancelled" => "cancelled",
+                    _ => "",
+                }
+                .to_string(),
+            ),
+            (None, None) => Value::Null,
+        }
+    } else {
+        Value::Null
+    };
+    let description = object
+        .get("description")
+        .map(|value| match value {
+            Value::String(value) => strip_patchbay_issue_marker(Some(value))
+                .map(Value::String)
+                .unwrap_or(Value::Null),
+            Value::Null => Value::Null,
+            _ => Value::Null,
+        })
+        .unwrap_or(Value::Null);
+    let due_date = object
+        .get("due_date")
+        .or_else(|| object.get("dueDate"))
+        .cloned()
+        .unwrap_or(Value::Null);
+    let owner_id = object
+        .get("owner_id")
+        .or_else(|| object.get("assignee").and_then(|value| value.get("id")))
+        .cloned()
+        .unwrap_or(Value::Null);
+    Ok(json!({
+        "title": field("title"),
+        "description": description,
+        "priority": priority,
+        "status": status,
+        "due_date": due_date,
+        "owner_id": owner_id,
+    }))
+}
+
+fn merge_sync_snapshots(base: &Value, local: &Value, remote: &Value) -> SyncMergePlan {
+    merge_sync_snapshots_with_updated_from(base, local, remote, None)
+}
+
+fn merge_sync_snapshots_with_updated_from(
+    base: &Value,
+    local: &Value,
+    remote: &Value,
+    updated_from: Option<&Value>,
+) -> SyncMergePlan {
+    let mut common = serde_json::Map::new();
+    let mut merged = serde_json::Map::new();
+    let mut conflicts = Vec::new();
+    let mut remote_changed = false;
+    for field in SHARED_SYNC_FIELDS {
+        let base_value = base.get(field).cloned().unwrap_or(Value::Null);
+        let local_value = local.get(field).cloned().unwrap_or(Value::Null);
+        let remote_value = remote.get(field).cloned().unwrap_or(Value::Null);
+        // Linear's updatedFrom contains the previous values of the properties
+        // changed by this event. The full Issue fetch remains authoritative for
+        // the current values, while updatedFrom prevents a mapped/no-op value
+        // from being mistaken for an unchanged remote field.
+        let remote_field_changed =
+            remote_value != base_value || updated_from_changed_field(updated_from, field);
+        if local_value == remote_value {
+            common.insert(field.to_string(), local_value.clone());
+            merged.insert(field.to_string(), local_value);
+        } else if local_value == base_value && remote_field_changed {
+            remote_changed = true;
+            common.insert(field.to_string(), remote_value.clone());
+            merged.insert(field.to_string(), remote_value);
+        } else if remote_value == base_value && !remote_field_changed {
+            merged.insert(field.to_string(), local_value.clone());
+            common.insert(field.to_string(), base_value);
+        } else {
+            remote_changed = true;
+            conflicts.push(SyncConflictValue {
+                field: field.to_string(),
+                base_value,
+                local_value,
+                remote_value,
+            });
+        }
+    }
+    SyncMergePlan {
+        common: Value::Object(common),
+        conflicts,
+        merged: Value::Object(merged),
+        remote_changed,
+    }
+}
+
+fn required_snapshot_string(snapshot: &Value, field: &str) -> Result<String, SyncError> {
+    snapshot
+        .get(field)
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| SyncError::permanent(anyhow::anyhow!("merged Linear {field} is invalid")))
+}
+
+fn external_patch_from_snapshot(snapshot: &Value) -> Result<ExternalIssuePatch, SyncError> {
+    let description = match snapshot.get("description") {
+        Some(Value::String(value)) => Some(Some(value.clone())),
+        Some(Value::Null) | None => Some(None),
+        Some(_) => {
+            return Err(SyncError::permanent(anyhow::anyhow!(
+                "merged Linear description is invalid"
+            )))
+        }
+    };
+    let due_date = match snapshot.get("due_date") {
+        Some(Value::String(value)) if !value.trim().is_empty() => {
+            Some(Some(NaiveDate::parse_from_str(value, "%Y-%m-%d").map_err(
+                |_| SyncError::permanent(anyhow::anyhow!("merged Linear due date is invalid")),
+            )?))
+        }
+        Some(Value::Null) | None => Some(None),
+        Some(_) => {
+            return Err(SyncError::permanent(anyhow::anyhow!(
+                "merged Linear due date is invalid"
+            )))
+        }
+    };
+    let owner_id = match snapshot.get("owner_id") {
+        Some(Value::String(value)) if !value.trim().is_empty() => {
+            Some(Some(value.parse::<Uuid>().map_err(|_| {
+                SyncError::permanent(anyhow::anyhow!("merged Linear owner is invalid"))
+            })?))
+        }
+        Some(Value::Null) | None => Some(None),
+        Some(_) => {
+            return Err(SyncError::permanent(anyhow::anyhow!(
+                "merged Linear owner is invalid"
+            )))
+        }
+    };
+    let owner_type = owner_id
+        .as_ref()
+        .and_then(|value| value.as_ref())
+        .map(|_| Some("member".to_string()))
+        .unwrap_or(Some(None));
+    Ok(ExternalIssuePatch {
+        title: Some(required_snapshot_string(snapshot, "title")?),
+        description,
+        status: Some(required_snapshot_string(snapshot, "status")?),
+        priority: Some(required_snapshot_string(snapshot, "priority")?),
+        due_date,
+        owner_type,
+        owner_id,
+    })
+}
+
+fn classify_external_error(error: ExternalIssueError, context: &str) -> SyncError {
+    match error {
+        error @ (ExternalIssueError::InvalidStatus
+        | ExternalIssueError::InvalidPriority
+        | ExternalIssueError::InvalidOwner
+        | ExternalIssueError::ActiveExecutorRequired
+        | ExternalIssueError::ReviewReviewerRequired
+        | ExternalIssueError::NotFound) => {
+            SyncError::permanent(anyhow::anyhow!("{context}: {error}"))
+        }
+        ExternalIssueError::RevisionConflict { .. } => {
+            SyncError::retry(anyhow::anyhow!("{context}: {error}"))
+        }
+        other => SyncError::retry(anyhow::anyhow!("{context}: {other}")),
+    }
+}
+
 fn retry_delay(attempts: i32) -> chrono::Duration {
     let exponent = attempts.saturating_sub(1).clamp(0, 8) as u32;
     let seconds = (5_i64)
@@ -1408,6 +1879,30 @@ fn extract_event_timestamp_ms(payload: &Value) -> Option<i64> {
                 .and_then(Value::as_str)
                 .and_then(|value| value.parse().ok())
         })
+}
+
+fn extract_updated_from(payload: &Value) -> Option<&Value> {
+    payload
+        .get("updatedFrom")
+        .filter(|value| value.as_object().is_some())
+}
+
+fn updated_from_changed_field(updated_from: Option<&Value>, field: &str) -> bool {
+    let Some(updated_from) = updated_from.and_then(Value::as_object) else {
+        return false;
+    };
+    let aliases: &[&str] = match field {
+        "title" => &["title"],
+        "description" => &["description"],
+        "priority" => &["priority"],
+        "status" => &["state", "status"],
+        "due_date" => &["dueDate", "due_date"],
+        "owner_id" => &["assignee", "assigneeId", "owner_id", "ownerId"],
+        _ => &[],
+    };
+    aliases
+        .iter()
+        .any(|alias| updated_from.contains_key(*alias))
 }
 
 fn is_out_of_order(link: Option<&LinearIssueLink>, event_timestamp_ms: Option<i64>) -> bool {
@@ -1584,8 +2079,9 @@ mod tests {
     use uuid::Uuid;
 
     use super::{
-        extract_event_timestamp_ms, extract_issue_id, inbound_enabled, is_out_of_order,
-        map_local_priority, map_local_status, map_remote_priority, map_remote_status,
+        extract_event_timestamp_ms, extract_issue_id, extract_updated_from, inbound_enabled,
+        is_out_of_order, map_local_priority, map_local_status, map_remote_priority,
+        map_remote_status, merge_sync_snapshots, merge_sync_snapshots_with_updated_from,
         parse_remote_timestamp, retry_delay,
     };
     use crate::linear::LinearRemoteState;
@@ -1656,6 +2152,12 @@ mod tests {
             Some("direct")
         );
         assert_eq!(extract_issue_id(&json!({"data": {}})), None);
+        assert_eq!(
+            extract_updated_from(&json!({"updatedFrom": {"title": "old"}}))
+                .and_then(|value| value.get("title")),
+            Some(&json!("old"))
+        );
+        assert_eq!(extract_updated_from(&json!({"updatedFrom": null})), None);
     }
 
     #[test]
@@ -1726,5 +2228,113 @@ mod tests {
     fn remote_timestamp_requires_rfc3339() {
         assert!(parse_remote_timestamp("2026-08-31T12:00:00Z").is_ok());
         assert!(parse_remote_timestamp("not-a-timestamp").is_err());
+    }
+
+    #[test]
+    fn three_way_merge_keeps_disjoint_changes_and_advances_common_fields() {
+        let base = json!({
+            "title": "Base",
+            "description": "Base description",
+            "priority": "medium",
+            "status": "todo",
+            "due_date": null,
+            "owner_id": null
+        });
+        let local = json!({
+            "title": "Local title",
+            "description": "Base description",
+            "priority": "medium",
+            "status": "todo",
+            "due_date": null,
+            "owner_id": null
+        });
+        let remote = json!({
+            "title": "Base",
+            "description": "Remote description",
+            "priority": "medium",
+            "status": "todo",
+            "due_date": null,
+            "owner_id": null
+        });
+
+        let plan = merge_sync_snapshots(&base, &local, &remote);
+        assert!(plan.conflicts.is_empty());
+        assert_eq!(plan.merged["title"], "Local title");
+        assert_eq!(plan.merged["description"], "Remote description");
+        assert_eq!(plan.common["title"], "Base");
+        assert_eq!(plan.common["description"], "Remote description");
+        assert!(plan.remote_changed);
+    }
+
+    #[test]
+    fn three_way_merge_records_same_field_conflicts_without_overwriting() {
+        let base = json!({
+            "title": "Base",
+            "description": null,
+            "priority": "medium",
+            "status": "todo",
+            "due_date": null,
+            "owner_id": null
+        });
+        let local = json!({
+            "title": "Local",
+            "description": null,
+            "priority": "medium",
+            "status": "todo",
+            "due_date": null,
+            "owner_id": null
+        });
+        let remote = json!({
+            "title": "Remote",
+            "description": null,
+            "priority": "medium",
+            "status": "todo",
+            "due_date": null,
+            "owner_id": null
+        });
+
+        let plan = merge_sync_snapshots(&base, &local, &remote);
+        assert_eq!(plan.conflicts.len(), 1);
+        assert_eq!(plan.conflicts[0].field, "title");
+        assert_eq!(plan.conflicts[0].base_value, "Base");
+        assert_eq!(plan.conflicts[0].local_value, "Local");
+        assert_eq!(plan.conflicts[0].remote_value, "Remote");
+    }
+
+    #[test]
+    fn updated_from_marks_a_remote_change_even_when_normalization_matches_base() {
+        let base = json!({
+            "title": "Base",
+            "description": null,
+            "priority": "medium",
+            "status": "todo",
+            "due_date": null,
+            "owner_id": null
+        });
+        let local = json!({
+            "title": "Local",
+            "description": null,
+            "priority": "medium",
+            "status": "todo",
+            "due_date": null,
+            "owner_id": null
+        });
+        let remote = json!({
+            "title": "Base",
+            "description": null,
+            "priority": "medium",
+            "status": "todo",
+            "due_date": null,
+            "owner_id": null
+        });
+
+        let plan = merge_sync_snapshots_with_updated_from(
+            &base,
+            &local,
+            &remote,
+            Some(&json!({"title": "Base"})),
+        );
+        assert_eq!(plan.conflicts.len(), 1);
+        assert_eq!(plan.conflicts[0].field, "title");
     }
 }

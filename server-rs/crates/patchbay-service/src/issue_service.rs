@@ -25,6 +25,7 @@ use patchbay_db::queries::issue::{create_issue, create_issue_with_origin, get_is
 use patchbay_db::queries::issue_label::{attach_label_to_issue_on_create, get_label};
 use patchbay_db::queries::issue_status::lock_issue_status_catalog_shared;
 use patchbay_db::queries::linear as linear_q;
+use patchbay_db::queries::member as member_q;
 use patchbay_db::queries::project::get_project_in_workspace;
 use patchbay_db::queries::team::get_team_in_workspace;
 use patchbay_db::queries::workspace::{get_workspace, increment_issue_counter};
@@ -137,6 +138,24 @@ impl IssueService {
             }
             next.project_id = project_id;
         }
+        if let Some(owner_type) = patch.owner_type {
+            next.owner_type = owner_type;
+        }
+        if let Some(owner_id) = patch.owner_id {
+            next.owner_id = owner_id;
+        }
+        match (next.owner_type.as_deref(), next.owner_id) {
+            (None, None) => {}
+            (Some("member"), Some(owner_id)) => {
+                if member_q::get_member_by_user_and_workspace(&mut *tx, owner_id, workspace_id)
+                    .await?
+                    .is_none()
+                {
+                    return Err(ExternalIssueError::InvalidOwner);
+                }
+            }
+            _ => return Err(ExternalIssueError::InvalidOwner),
+        }
         let next_category = issue_status::effective(&mut *tx, workspace_id, &next.status).await;
         validate_external_workflow(
             &next_category,
@@ -151,6 +170,8 @@ impl IssueService {
             && next.priority == previous.priority
             && next.due_date == previous.due_date
             && next.project_id == previous.project_id
+            && next.owner_type == previous.owner_type
+            && next.owner_id == previous.owner_id
         {
             tx.commit().await?;
             return Ok(previous);
@@ -164,6 +185,8 @@ impl IssueService {
                priority = $6,
                due_date = $7,
                project_id = $8,
+               owner_type = $9,
+               owner_id = $10,
                revision = revision + 1,
                last_activity_at = GREATEST(COALESCE(last_activity_at, updated_at), now()),
                updated_at = now()
@@ -178,6 +201,8 @@ impl IssueService {
         .bind(&next.priority)
         .bind(next.due_date)
         .bind(next.project_id)
+        .bind(&next.owner_type)
+        .bind(next.owner_id)
         .fetch_one(&mut *tx)
         .await?;
         activity::create_activity(
@@ -197,6 +222,8 @@ impl IssueService {
                 "prev_priority": previous.priority,
                 "prev_due_date": previous.due_date.map(|date| date.format("%Y-%m-%d").to_string()),
                 "prev_project_id": previous.project_id.map(|id| id.to_string()),
+                "prev_owner_type": previous.owner_type,
+                "prev_owner_id": previous.owner_id.map(|id| id.to_string()),
             }),
             new_v7(),
         )
@@ -220,7 +247,8 @@ impl IssueService {
                 "issue": issue_to_map_with_category(&updated, &prefix, &category),
                 "external_source": source.as_str(),
                 "source_event_id": source_event_id,
-                "owner_changed": false,
+                "owner_changed": previous.owner_type != updated.owner_type
+                    || previous.owner_id != updated.owner_id,
                 "executor_changed": false,
                 "status_changed": previous.status != updated.status,
                 "priority_changed": previous.priority != updated.priority,
@@ -434,6 +462,10 @@ pub struct ExternalIssuePatch {
     /// binding normally supplies a concrete workspace-local Project, but the
     /// tri-state keeps the domain command explicit for future providers.
     pub project_id: Option<Option<Uuid>>,
+    /// `Some(None)` clears the human owner. When present, the type and id are
+    /// validated as one member-scoped pair before the update commits.
+    pub owner_type: Option<Option<String>>,
+    pub owner_id: Option<Option<Uuid>>,
 }
 
 #[derive(Debug, Clone)]
@@ -463,6 +495,8 @@ pub enum ExternalIssueError {
     InvalidPriority,
     #[error("external issue project not found in workspace")]
     ProjectNotFound,
+    #[error("invalid external issue owner")]
+    InvalidOwner,
     #[error("external issue status requires an executor")]
     ActiveExecutorRequired,
     #[error("external issue review status requires a reviewer different from the executor")]

@@ -58,6 +58,7 @@ import type {
   LinearMemberBinding,
   ListLinearBindingsResponse,
   ListLinearMemberBindingsResponse,
+  ListLinearSyncConflictsResponse,
   LinearProjectBinding,
   IssueWorkProductsResponse,
   TaskWorkProductsResponse,
@@ -421,6 +422,35 @@ export const EMPTY_LINEAR_MEMBER_BINDING: LinearMemberBinding = {
 
 export const EMPTY_LIST_LINEAR_MEMBER_BINDINGS_RESPONSE: ListLinearMemberBindingsResponse = {
   bindings: [],
+};
+
+export const LinearSyncConflictSchema = z.object({
+  id: z.string(),
+  workspace_id: z.string(),
+  binding_id: z.string(),
+  link_id: z.string(),
+  patchbay_issue_id: z.string(),
+  linear_issue_id: z.string(),
+  field: z.string(),
+  base_value: z.unknown(),
+  local_value: z.unknown(),
+  remote_value: z.unknown(),
+  source_event_id: z.string(),
+  source_event_at_ms: z.number().int().nullable(),
+  status: z.string(),
+  resolution: z.string().nullable(),
+  resolved_value: z.unknown().nullable(),
+  resolved_by_id: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+}).loose();
+
+export const ListLinearSyncConflictsResponseSchema = z.object({
+  conflicts: z.array(LinearSyncConflictSchema).default([]),
+}).loose();
+
+export const EMPTY_LIST_LINEAR_SYNC_CONFLICTS_RESPONSE: ListLinearSyncConflictsResponse = {
+  conflicts: [],
 };
 
 export const LinearDryRunResponseSchema = z.object({

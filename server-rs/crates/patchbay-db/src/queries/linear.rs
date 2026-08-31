@@ -6,7 +6,7 @@
 
 use crate::models::{
     Issue, LinearConnection, LinearIssueLink, LinearMemberBinding, LinearOAuthState,
-    LinearProjectBinding, LinearSyncInbox, LinearSyncOutbox,
+    LinearProjectBinding, LinearSyncConflict, LinearSyncInbox, LinearSyncOutbox,
 };
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -454,6 +454,25 @@ pub async fn get_linear_member_binding(
         .bind(workspace_id)
         .bind(connection_id)
         .bind(patchbay_user_id)
+        .fetch_optional(executor)
+        .await?)
+}
+
+pub async fn get_linear_member_binding_by_linear_user(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    connection_id: Uuid,
+    linear_user_id: &str,
+) -> anyhow::Result<Option<LinearMemberBinding>> {
+    let query = format!(
+        "SELECT {columns} FROM linear_member_binding\
+         WHERE workspace_id = $1 AND connection_id = $2 AND linear_user_id = $3",
+        columns = member_binding_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearMemberBinding>(&query)
+        .bind(workspace_id)
+        .bind(connection_id)
+        .bind(linear_user_id)
         .fetch_optional(executor)
         .await?)
 }
@@ -1228,6 +1247,169 @@ pub async fn rebind_linear_issue_link(
     .execute(executor)
     .await?;
     Ok(result.rows_affected() == 1)
+}
+
+pub async fn get_linear_issue_link(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    link_id: Uuid,
+) -> anyhow::Result<Option<LinearIssueLink>> {
+    Ok(sqlx::query_as::<_, LinearIssueLink>(
+        r#"SELECT id, workspace_id, binding_id, patchbay_issue_id,
+                  linear_issue_id, linear_identifier, last_common_snapshot,
+                  remote_updated_at, last_remote_event_at_ms,
+                  last_remote_event_id, sync_status, created_at, updated_at
+           FROM linear_issue_link
+           WHERE id = $1 AND workspace_id = $2"#,
+    )
+    .bind(link_id)
+    .bind(workspace_id)
+    .fetch_optional(executor)
+    .await?)
+}
+
+fn conflict_columns() -> &'static str {
+    "id, workspace_id, binding_id, link_id, patchbay_issue_id, linear_issue_id,\
+     field, base_value, local_value, remote_value, source_event_id,\
+     source_event_at_ms, status, resolution, resolved_value, resolved_by_id,\
+     created_at, updated_at"
+}
+
+pub async fn list_linear_sync_conflicts(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    status: Option<&str>,
+) -> anyhow::Result<Vec<LinearSyncConflict>> {
+    let query = format!(
+        "SELECT {columns} FROM linear_sync_conflict\
+         WHERE workspace_id = $1 AND ($2::text IS NULL OR status = $2)\
+         ORDER BY CASE WHEN status = 'open' THEN 0 ELSE 1 END, updated_at DESC, id DESC",
+        columns = conflict_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearSyncConflict>(&query)
+        .bind(workspace_id)
+        .bind(status)
+        .fetch_all(executor)
+        .await?)
+}
+
+pub async fn get_linear_sync_conflict(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    conflict_id: Uuid,
+) -> anyhow::Result<Option<LinearSyncConflict>> {
+    let query = format!(
+        "SELECT {columns} FROM linear_sync_conflict\
+         WHERE workspace_id = $1 AND id = $2",
+        columns = conflict_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearSyncConflict>(&query)
+        .bind(workspace_id)
+        .bind(conflict_id)
+        .fetch_optional(executor)
+        .await?)
+}
+
+pub struct LinearSyncConflictInput<'a> {
+    pub id: Uuid,
+    pub workspace_id: Uuid,
+    pub binding_id: Uuid,
+    pub link_id: Uuid,
+    pub patchbay_issue_id: Uuid,
+    pub linear_issue_id: &'a str,
+    pub field: &'a str,
+    pub base_value: &'a Value,
+    pub local_value: &'a Value,
+    pub remote_value: &'a Value,
+    pub source_event_id: &'a str,
+    pub source_event_at_ms: Option<i64>,
+}
+
+pub async fn create_linear_sync_conflict(
+    executor: impl Executor<'_, Database = Postgres>,
+    input: &LinearSyncConflictInput<'_>,
+) -> anyhow::Result<Option<LinearSyncConflict>> {
+    let query = format!(
+        "INSERT INTO linear_sync_conflict\
+         (id, workspace_id, binding_id, link_id, patchbay_issue_id, linear_issue_id,\
+          field, base_value, local_value, remote_value, source_event_id,\
+          source_event_at_ms)\
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)\
+         ON CONFLICT (link_id, field) WHERE status = 'open' DO NOTHING\
+         RETURNING {columns}",
+        columns = conflict_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearSyncConflict>(&query)
+        .bind(input.id)
+        .bind(input.workspace_id)
+        .bind(input.binding_id)
+        .bind(input.link_id)
+        .bind(input.patchbay_issue_id)
+        .bind(input.linear_issue_id)
+        .bind(input.field)
+        .bind(input.base_value)
+        .bind(input.local_value)
+        .bind(input.remote_value)
+        .bind(input.source_event_id)
+        .bind(input.source_event_at_ms)
+        .fetch_optional(executor)
+        .await?)
+}
+
+pub async fn resolve_linear_sync_conflict(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    conflict_id: Uuid,
+    resolution: &str,
+    resolved_value: &Value,
+    resolved_by_id: Uuid,
+) -> anyhow::Result<Option<LinearSyncConflict>> {
+    let query = format!(
+        "UPDATE linear_sync_conflict\
+         SET status = 'resolved', resolution = $3, resolved_value = $4,\
+             resolved_by_id = $5, updated_at = now()\
+         WHERE workspace_id = $1 AND id = $2 AND status = 'open'\
+         RETURNING {columns}",
+        columns = conflict_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearSyncConflict>(&query)
+        .bind(workspace_id)
+        .bind(conflict_id)
+        .bind(resolution)
+        .bind(resolved_value)
+        .bind(resolved_by_id)
+        .fetch_optional(executor)
+        .await?)
+}
+
+pub async fn count_open_linear_sync_conflicts(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+) -> anyhow::Result<i64> {
+    Ok(sqlx::query_scalar(
+        r#"SELECT COUNT(*)::bigint
+           FROM linear_sync_conflict
+           WHERE workspace_id = $1 AND status = 'open'"#,
+    )
+    .bind(workspace_id)
+    .fetch_one(executor)
+    .await?)
+}
+
+pub async fn count_open_linear_sync_conflicts_for_link(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    link_id: Uuid,
+) -> anyhow::Result<i64> {
+    Ok(sqlx::query_scalar(
+        r#"SELECT COUNT(*)::bigint
+           FROM linear_sync_conflict
+           WHERE workspace_id = $1 AND link_id = $2 AND status = 'open'"#,
+    )
+    .bind(workspace_id)
+    .bind(link_id)
+    .fetch_one(executor)
+    .await?)
 }
 
 pub async fn mark_linear_issue_link_deleted(

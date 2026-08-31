@@ -3,11 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { CheckCircle2, CircleAlert, Loader2, Settings2, Trash2 } from "lucide-react";
+import { CheckCircle2, CircleAlert, GitMerge, Loader2, Settings2, Trash2 } from "lucide-react";
 import { ApiError, api } from "@patchbay/core/api";
 import {
   linearBindingsOptions,
   linearCatalogOptions,
+  linearConflictsOptions,
   linearConnectionOptions,
   linearMemberBindingsOptions,
   linearKeys,
@@ -19,6 +20,7 @@ import type {
   LinearDryRunResponse,
   LinearMemberBinding,
   LinearProjectBinding,
+  LinearSyncConflict,
   LinearSyncMode,
   MemberWithUser,
   SaveLinearProjectBindingRequest,
@@ -112,6 +114,130 @@ function SyncModeLabel({ mode }: { mode: LinearSyncMode }) {
     default:
       return <>{t(($) => $.page.linear.mode_import)}</>;
   }
+}
+
+function formatConflictValue(value: unknown) {
+  if (value === null || value === undefined) return "—";
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function ConflictCenter({
+  conflicts,
+  onClose,
+  workspaceId,
+}: {
+  conflicts: LinearSyncConflict[];
+  onClose: () => void;
+  workspaceId: string;
+}) {
+  const { t } = useT("settings");
+  const qc = useQueryClient();
+  const [manualValues, setManualValues] = useState<Record<string, string>>({});
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  async function resolve(
+    conflict: LinearSyncConflict,
+    resolution: "local" | "remote" | "manual",
+  ) {
+    setPendingId(conflict.id);
+    try {
+      await api.resolveLinearSyncConflict(workspaceId, conflict.id, {
+        resolution,
+        ...(resolution === "manual"
+          ? { manual_value: manualValues[conflict.id] ?? "" }
+          : {}),
+      });
+      await qc.invalidateQueries({ queryKey: linearKeys.conflicts(workspaceId) });
+      toast.success(t(($) => $.page.linear.conflict_resolved));
+    } catch {
+      toast.error(t(($) => $.page.linear.conflict_resolve_failed));
+    } finally {
+      setPendingId(null);
+    }
+  }
+
+  return (
+    <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+      <DialogHeader>
+        <DialogTitle>{t(($) => $.page.linear.conflict_center)}</DialogTitle>
+        <DialogDescription>{t(($) => $.page.linear.conflict_center_description)}</DialogDescription>
+      </DialogHeader>
+      {conflicts.length === 0 ? (
+        <p className="text-body text-muted-foreground">{t(($) => $.page.linear.no_conflicts)}</p>
+      ) : (
+        <div className="space-y-3">
+          {conflicts.map((conflict) => (
+            <div className="space-y-3 rounded-lg border p-3" key={conflict.id}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-medium">{conflict.field}</span>
+                <Badge variant="destructive">{conflict.status}</Badge>
+              </div>
+              <div className="grid gap-2 text-micro sm:grid-cols-3">
+                <div>
+                  <div className="text-muted-foreground">{t(($) => $.page.linear.conflict_base)}</div>
+                  <div className="break-words">{formatConflictValue(conflict.base_value)}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">{t(($) => $.page.linear.conflict_local)}</div>
+                  <div className="break-words">{formatConflictValue(conflict.local_value)}</div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground">{t(($) => $.page.linear.conflict_remote)}</div>
+                  <div className="break-words">{formatConflictValue(conflict.remote_value)}</div>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  disabled={pendingId === conflict.id}
+                  onClick={() => void resolve(conflict, "local")}
+                  size="sm"
+                  variant="outline"
+                >
+                  {t(($) => $.page.linear.conflict_use_local)}
+                </Button>
+                <Button
+                  disabled={pendingId === conflict.id}
+                  onClick={() => void resolve(conflict, "remote")}
+                  size="sm"
+                  variant="outline"
+                >
+                  {t(($) => $.page.linear.conflict_use_remote)}
+                </Button>
+                <input
+                  aria-label={t(($) => $.page.linear.conflict_manual)}
+                  className="h-9 min-w-48 flex-1 rounded-md border border-input bg-background px-3 text-body"
+                  onChange={(event) =>
+                    setManualValues((current) => ({
+                      ...current,
+                      [conflict.id]: event.target.value,
+                    }))
+                  }
+                  placeholder={t(($) => $.page.linear.conflict_manual_placeholder)}
+                  value={manualValues[conflict.id] ?? ""}
+                />
+                <Button
+                  disabled={pendingId === conflict.id || !(manualValues[conflict.id] ?? "").trim()}
+                  onClick={() => void resolve(conflict, "manual")}
+                  size="sm"
+                  variant="outline"
+                >
+                  {t(($) => $.page.linear.conflict_use_manual)}
+                </Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      <DialogFooter>
+        <Button onClick={onClose} variant="outline">{t(($) => $.page.linear.conflict_close)}</Button>
+      </DialogFooter>
+    </DialogContent>
+  );
 }
 
 function WizardProgress({ step }: { step: WizardStep }) {
@@ -698,6 +824,7 @@ export function LinearIntegrationCard({
   const qc = useQueryClient();
   const [wizardOpen, setWizardOpen] = useState(false);
   const [disconnectOpen, setDisconnectOpen] = useState(false);
+  const [conflictOpen, setConflictOpen] = useState(false);
   const connectionQuery = useQuery(linearConnectionOptions(workspaceId));
   const bindingsQuery = useQuery(linearBindingsOptions(workspaceId));
   const membersQuery = useQuery(memberListOptions(workspaceId));
@@ -714,6 +841,11 @@ export function LinearIntegrationCard({
     ...linearMemberBindingsOptions(workspaceId),
     enabled: Boolean(isConnected),
   });
+  const conflictsQuery = useQuery({
+    ...linearConflictsOptions(workspaceId),
+    enabled: Boolean(isConnected),
+  });
+  const openConflicts = conflictsQuery.data?.conflicts ?? [];
   const isReauthorizationRequired = connection?.status === "reauthorization_required";
   const hasUnknownStatus = Boolean(
     connection && !["active", "reauthorization_required", "revoked"].includes(connection.status),
@@ -788,7 +920,16 @@ export function LinearIntegrationCard({
   return (
     <>
       <IntegrationCard
-        action={action}
+        action={
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {openConflicts.length > 0 ? (
+              <Button onClick={() => setConflictOpen(true)} size="sm" variant="outline">
+                <GitMerge />{t(($) => $.page.linear.conflict_center)}
+              </Button>
+            ) : null}
+            {action}
+          </div>
+        }
         channel="linear"
         description={t(($) => $.page.linear.description)}
         iconClassName="bg-[#5E6AD2]/10"
@@ -802,6 +943,9 @@ export function LinearIntegrationCard({
                 {lastSync
                   ? t(($) => $.page.linear.last_webhook_received, { time: lastSync })
                   : t(($) => $.page.linear.last_webhook_never)}
+                {openConflicts.length > 0
+                  ? ` · ${t(($) => $.page.linear.conflicts_count, { count: openConflicts.length })}`
+                  : ""}
               </span>
             ) : null}
           </div>
@@ -833,6 +977,15 @@ export function LinearIntegrationCard({
             {catalogQuery.isLoading ? <Loader2 className="mx-auto animate-spin" /> : null}
           </DialogContent>
         )}
+      </Dialog>
+      <Dialog open={conflictOpen} onOpenChange={setConflictOpen}>
+        {conflictOpen ? (
+          <ConflictCenter
+            conflicts={openConflicts}
+            onClose={() => setConflictOpen(false)}
+            workspaceId={workspaceId}
+          />
+        ) : null}
       </Dialog>
       <AlertDialog open={disconnectOpen} onOpenChange={setDisconnectOpen}>
         <AlertDialogContent>

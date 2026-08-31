@@ -97,6 +97,36 @@ export type SaveLinearMemberBindingRequest = {
   linear_user_id: string;
 };
 
+export type LinearSyncConflict = {
+  id: string;
+  workspace_id: string;
+  binding_id: string;
+  link_id: string;
+  patchbay_issue_id: string;
+  linear_issue_id: string;
+  field: string;
+  base_value: unknown;
+  local_value: unknown;
+  remote_value: unknown;
+  source_event_id: string;
+  source_event_at_ms: number | null;
+  status: string;
+  resolution: string | null;
+  resolved_value: unknown | null;
+  resolved_by_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ListLinearSyncConflictsResponse = {
+  conflicts: LinearSyncConflict[];
+};
+
+export type ResolveLinearSyncConflictRequest = {
+  resolution: "local" | "remote" | "manual";
+  manual_value?: unknown;
+};
+
 export type LinearDryRunResponse = {
   patchbay_project_id: string;
   linear_project_id: string;
