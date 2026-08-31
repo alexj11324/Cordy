@@ -5,6 +5,7 @@ import { existsSync, watchFile, unwatchFile, type StatsListener } from "fs";
 import { join } from "path";
 import { homedir, hostname } from "os";
 import type {
+  DaemonAutoStartResult,
   DaemonStatus,
   DaemonPrefs,
   LocalRuntimeProbe,
@@ -608,6 +609,14 @@ async function getCliBinaryVersion(): Promise<string | null> {
 async function ensureRunningDaemonVersionMatches(): Promise<
   "restarted" | "deferred" | "ok" | "not_running"
 > {
+  return serializeProfileMutation(() =>
+    ensureRunningDaemonVersionMatchesUnlocked(),
+  );
+}
+
+async function ensureRunningDaemonVersionMatchesUnlocked(): Promise<
+  "restarted" | "deferred" | "ok" | "not_running"
+> {
   const active = await ensureActiveProfile();
   if (!active) return "not_running";
   const running = await fetchHealthAtPort(active.port);
@@ -647,7 +656,7 @@ async function ensureRunningDaemonVersionMatches(): Promise<
         `[daemon] CLI version mismatch (bundled=${bundled} running=${running?.cli_version}) — restarting daemon`,
       );
       pendingVersionRestart = false;
-      await restartDaemon();
+      await restartDaemonUnlocked();
       return "restarted";
   }
 }
@@ -1567,20 +1576,91 @@ export function setupDaemonManager(
       return savePrefs(merged).then(() => merged);
     }),
   );
-  ipcMain.handle("daemon:auto-start", async () => {
-    const prefs = await loadPrefs();
-    if (!prefs.autoStart) return;
-    const bin = await resolveCliBinary();
-    if (!bin) return;
-    const health = await fetchHealth();
-    if (health.state === "running") {
-      // Daemon is up but may be running an older CLI than the one we just
-      // bundled. Restart it so the new binary actually takes effect.
-      await ensureRunningDaemonVersionMatches();
-      return;
-    }
-    await startDaemon();
-  });
+  ipcMain.handle(
+    "daemon:auto-start",
+    (): Promise<DaemonAutoStartResult> =>
+      serializeProfileMutation(async () => {
+        const active = await ensureActiveProfile();
+        const profile = active?.name;
+        const prefs = await loadPrefs();
+        const current = await fetchHealth();
+
+        // An explicitly disabled auto-start is still a real capability failure
+        // for the complete login gate. Reuse an already-running daemon, but do
+        // not resolve the IPC call as if a stopped daemon were usable.
+        if (!prefs.autoStart) {
+          if (current.state === "running" || current.state === "starting") {
+            return { success: true, state: current.state, profile };
+          }
+          return {
+            success: false,
+            state: current.state,
+            reason: "auto_start_disabled",
+            profile,
+            error:
+              "automatic daemon start is disabled; enable it in Desktop Settings before using the complete development runtime",
+          };
+        }
+
+        const bin = await resolveCliBinary();
+        if (!bin) {
+          return {
+            success: false,
+            state: "cli_not_found",
+            reason: "cli_not_found",
+            profile,
+            error:
+              "the source-matched Patchbay CLI is unavailable; run `pnpm dev` to prepare the development runtime",
+          };
+        }
+
+        try {
+          if (current.state === "running") {
+            // Daemon is up but may be running an older CLI than the one we just
+            // bundled. Restart it so the new binary actually takes effect.
+            await ensureRunningDaemonVersionMatchesUnlocked();
+          } else {
+            const result = await startDaemonUnlocked();
+            if (!result.success) {
+              const state = (await fetchHealth()).state;
+              return {
+                success: false,
+                state,
+                reason:
+                  state === "auth_expired" ? "auth_expired" : "start_failed",
+                profile,
+                error: result.error ?? "daemon failed to start",
+              };
+            }
+          }
+        } catch (error) {
+          const state = (await fetchHealth()).state;
+          return {
+            success: false,
+            state,
+            reason: state === "auth_expired" ? "auth_expired" : "start_failed",
+            profile,
+            error: errorMessage(error),
+          };
+        }
+
+        const ready = await fetchHealth();
+        if (ready.state === "running" || ready.state === "starting") {
+          return { success: true, state: ready.state, profile };
+        }
+        return {
+          success: false,
+          state: ready.state,
+          reason:
+            ready.state === "auth_expired" ? "auth_expired" : "not_ready",
+          profile,
+          error:
+            ready.state === "auth_expired"
+              ? "daemon credentials are expired; sign in again to reconnect this Desktop"
+              : `daemon did not become ready (state: ${ready.state})`,
+        };
+      }),
+  );
 
   ipcMain.on("daemon:start-log-stream", () => {
     if (credentialSyncError) return;

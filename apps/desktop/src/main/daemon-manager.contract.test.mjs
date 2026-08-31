@@ -14,6 +14,54 @@ const rustConfigPath = resolve(
 );
 
 describe("daemon manager mutation contracts", () => {
+  it("returns an explicit auto-start result instead of resolving a false-ready IPC call", () => {
+    const source = readFileSync(sourcePath, "utf8");
+    const start = source.indexOf('ipcMain.handle(\n    "daemon:auto-start"');
+    const end = source.indexOf('ipcMain.on("daemon:start-log-stream"', start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+
+    const handler = source.slice(start, end);
+    expect(handler).toContain(
+      ": Promise<DaemonAutoStartResult> =>",
+    );
+    expect(handler).toContain("serializeProfileMutation(async () => {");
+    expect(handler).toContain("const result = await startDaemonUnlocked();");
+    expect(handler).toContain(
+      "await ensureRunningDaemonVersionMatchesUnlocked();",
+    );
+    expect(handler).toContain("if (!result.success)");
+    expect(handler).toContain("source-matched Patchbay CLI is unavailable");
+    expect(handler).toContain("daemon did not become ready");
+    expect(handler).not.toContain("if (!prefs.autoStart) return;");
+    expect(handler).not.toContain("if (!bin) return;");
+    expect(handler).not.toMatch(/^\s+await startDaemon\(\);\s*$/mu);
+  });
+
+  it("serializes version checks and uses unlocked lifecycle calls inside the queue", () => {
+    const source = readFileSync(sourcePath, "utf8");
+    const wrapperStart = source.indexOf(
+      "async function ensureRunningDaemonVersionMatches():",
+    );
+    const unlockedStart = source.indexOf(
+      "async function ensureRunningDaemonVersionMatchesUnlocked():",
+    );
+    expect(wrapperStart).toBeGreaterThan(-1);
+    expect(unlockedStart).toBeGreaterThan(wrapperStart);
+
+    const wrapper = source.slice(wrapperStart, unlockedStart);
+    expect(wrapper).toContain("return serializeProfileMutation(() =>");
+    expect(wrapper).toContain(
+      "ensureRunningDaemonVersionMatchesUnlocked(),",
+    );
+
+    const unlockedEnd = source.indexOf("/**\n * Exchange the user's JWT", unlockedStart);
+    expect(unlockedEnd).toBeGreaterThan(unlockedStart);
+    const unlocked = source.slice(unlockedStart, unlockedEnd);
+    expect(unlocked).toContain("await restartDaemonUnlocked();");
+    expect(unlocked).not.toContain("await restartDaemon();");
+  });
+
   it("retires the legacy profile with the unlocked cleanup path inside target switching", () => {
     const source = readFileSync(sourcePath, "utf8");
     const handlerStart = source.indexOf(

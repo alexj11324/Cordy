@@ -30,6 +30,7 @@ import { DiagnosticRouteReporter } from "./platform/diagnostic-route-reporter";
 import { flushFreezeBreadcrumb } from "./freeze-flush";
 import { DesktopAuthSessionBridge } from "./platform/auth-session-bridge";
 import { completeDesktopHandoff } from "./pages/login-handoff";
+import type { DaemonRecoveryReason } from "../../shared/daemon-types";
 
 // BCP-47 region tags for the <html lang> attribute, mirroring
 // apps/web/app/layout.tsx HTML_LANG. index.html ships a static lang="en";
@@ -122,6 +123,8 @@ export function AppContent() {
   const [daemonSyncState, setDaemonSyncState] = useState<
     "idle" | "pending" | "ready" | "error"
   >(isElectronRenderer ? "pending" : "ready");
+  const [daemonSyncError, setDaemonSyncError] =
+    useState<DaemonRecoveryReason | null>(null);
   // A ready state is only valid for the exact authenticated identity and
   // backend target that produced it. Keeping the key beside the state closes
   // the render/effect gap during account or target switches: the previous
@@ -194,11 +197,13 @@ export function AppContent() {
     const generation = ++daemonSyncGeneration.current;
     if (!user) {
       setDaemonSyncState("idle");
+      setDaemonSyncError(null);
       setDaemonSyncedKey(null);
       return;
     }
     if (!isElectronRenderer || !runtimeConfig) {
       setDaemonSyncState("ready");
+      setDaemonSyncError(null);
       setDaemonSyncedKey(daemonIdentityKey);
       return;
     }
@@ -208,11 +213,13 @@ export function AppContent() {
       // main process can mint the Desktop-owned daemon PAT. Do not mount the
       // shell with a daemon that still belongs to another account.
       setDaemonSyncState("error");
+      setDaemonSyncError("session_token_missing");
       setDaemonSyncedKey(daemonIdentityKey);
       return;
     }
     const userId = user.id;
     setDaemonSyncState("pending");
+    setDaemonSyncError(null);
     setDaemonSyncedKey(null);
     (async () => {
       try {
@@ -230,6 +237,16 @@ export function AppContent() {
         console.error("Failed to sync daemon on login", err);
         if (generation === daemonSyncGeneration.current) {
           setDaemonSyncState("error");
+          const reason = (err as { reason?: unknown })?.reason;
+          setDaemonSyncError(
+            reason === "auto_start_disabled" ||
+              reason === "cli_not_found" ||
+              reason === "auth_expired" ||
+              reason === "start_failed" ||
+              reason === "not_ready"
+              ? reason
+              : "start_failed",
+          );
           setDaemonSyncedKey(daemonIdentityKey);
         }
       }
@@ -408,6 +425,7 @@ export function AppContent() {
       <DesktopAuthRecoveryPage
         onRetry={() => setDaemonSyncRetry((attempt) => attempt + 1)}
         isRetrying={false}
+        errorReason={daemonSyncError ?? undefined}
       />
     );
   }

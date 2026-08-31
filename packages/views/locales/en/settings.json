@@ -1140,6 +1140,7 @@
     "connected": "WeChat connected",
     "disconnected": "WeChat disconnected",
     "connect_failed": "Could not connect WeChat",
+    "connect_failed_detail": "WeChat connection failed: {{details}}",
     "scan_title": "Scan with WeChat",
     "starting": "Preparing a secure QR code…",
     "status": "Status: {{status}}",

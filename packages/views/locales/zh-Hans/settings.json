@@ -1139,6 +1139,7 @@
     "connected": "微信已连接",
     "disconnected": "微信已断开",
     "connect_failed": "无法连接微信",
+    "connect_failed_detail": "微信连接失败：{{details}}",
     "scan_title": "使用微信扫码",
     "starting": "正在生成安全二维码…",
     "status": "状态：{{status}}",

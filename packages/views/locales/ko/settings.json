@@ -859,6 +859,7 @@
     "connected": "WeChat 연결됨",
     "disconnected": "WeChat 연결을 해제했습니다",
     "connect_failed": "WeChat에 연결하지 못했습니다",
+    "connect_failed_detail": "WeChat 연결 실패: {{details}}",
     "scan_title": "WeChat으로 스캔",
     "starting": "안전한 QR 코드를 준비하는 중…",
     "status": "상태: {{status}}",

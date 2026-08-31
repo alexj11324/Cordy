@@ -63,7 +63,9 @@ vi.mock("@patchbay/ui/components/common/patchbay-icon", () => ({
 }));
 
 vi.mock("./pages/auth-recovery", () => ({
-  DesktopAuthRecoveryPage: () => <div data-testid="auth-recovery" />,
+  DesktopAuthRecoveryPage: ({ errorReason }: { errorReason?: string }) => (
+    <div data-testid="auth-recovery">{errorReason}</div>
+  ),
 }));
 
 vi.mock("./pages/login", () => ({
@@ -221,5 +223,22 @@ describe("AppContent desktop daemon identity gate", () => {
     await waitFor(() => {
       expect(screen.getByTestId("desktop-shell")).toBeInTheDocument();
     });
+  });
+
+  it("blocks the shell and exposes the daemon failure for repair", async () => {
+    const error = Object.assign(
+      new Error("source-matched Patchbay CLI is unavailable; run pnpm dev"),
+      { reason: "cli_not_found" },
+    );
+    mocks.syncDaemonOnLogin.mockRejectedValueOnce(error);
+
+    render(<AppContent />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("auth-recovery")).toHaveTextContent(
+        "cli_not_found",
+      );
+    });
+    expect(screen.queryByTestId("desktop-shell")).toBeNull();
   });
 });

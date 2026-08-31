@@ -22,6 +22,7 @@ import {
 import { AUTH_SESSION_STATE_CHANNEL } from "../shared/auth-session";
 import type {
   DaemonStatus,
+  DaemonAutoStartResult,
   LocalRuntimeProbe,
 } from "../shared/daemon-types";
 import {
@@ -314,7 +315,7 @@ const daemonAPI = {
     ipcRenderer.invoke("daemon:get-prefs"),
   setPrefs: (prefs: Partial<{ autoStart: boolean; autoStop: boolean }>): Promise<{ autoStart: boolean; autoStop: boolean }> =>
     ipcRenderer.invoke("daemon:set-prefs", prefs),
-  autoStart: (): Promise<void> =>
+  autoStart: (): Promise<DaemonAutoStartResult> =>
     ipcRenderer.invoke("daemon:auto-start"),
   retryInstall: (): Promise<void> =>
     ipcRenderer.invoke("daemon:retry-install"),

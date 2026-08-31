@@ -1139,6 +1139,7 @@
     "connected": "WeChat 接続済み",
     "disconnected": "WeChat の接続を解除しました",
     "connect_failed": "WeChat に接続できませんでした",
+    "connect_failed_detail": "WeChat 接続に失敗しました：{{details}}",
     "scan_title": "WeChat でスキャン",
     "starting": "安全な QR コードを準備中…",
     "status": "状態：{{status}}",
