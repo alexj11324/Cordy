@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
@@ -11,6 +12,10 @@ import {
 
 const SOURCE_SHA = "a".repeat(40);
 const EXPECTED_BUILD = `sha-${SOURCE_SHA}`;
+const browserVerifierSource = await readFile(
+  new URL("./verify-production-browser.mjs", import.meta.url),
+  "utf8",
+);
 
 test("extracts short-lived browser credentials only from the matching receipt", () => {
   assert.deepEqual(
@@ -117,4 +122,12 @@ test("builds a valid desktop OAuth handoff and requires downstream navigation", 
       }),
     /valid desktop handoff/u,
   );
+});
+
+test("validates the browser URL after Playwright completes Google navigation", () => {
+  assert.match(
+    browserVerifierSource,
+    /await downstreamNavigation;\s+requireGoogleOAuthNavigation\(page\.url\(\)\);/u,
+  );
+  assert.doesNotMatch(browserVerifierSource, /downstream\.href/u);
 });

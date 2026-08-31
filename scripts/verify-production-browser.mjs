@@ -201,8 +201,8 @@ async function verifyGoogleOAuthStart(browser) {
         "Google OAuth handoff registration returned an invalid response",
       );
     }
-    const downstream = await downstreamNavigation;
-    requireGoogleOAuthNavigation(downstream.href);
+    await downstreamNavigation;
+    requireGoogleOAuthNavigation(page.url());
   } catch (error) {
     await page
       .screenshot({ path: SCREENSHOT_PATH, fullPage: true })
