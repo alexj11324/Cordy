@@ -882,7 +882,7 @@ fn extract_issue_id(payload: &Value) -> Option<String> {
     ]
     .into_iter()
     .flatten()
-    .filter_map(Value::as_str)
+    .find_map(Value::as_str)
     .map(str::trim)
     .filter(|id| !id.is_empty())
     .map(str::to_string)
