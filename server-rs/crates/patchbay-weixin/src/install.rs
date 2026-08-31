@@ -57,7 +57,7 @@ pub async fn finalize_with_limit(
     let mut tx = pool.begin().await?;
     if let Some(limit) = installation_limit {
         let allowed = patchbay_db::queries::channel::channel_installation_limit_allows(
-            &mut *tx,
+            &mut tx,
             params.workspace_id,
             crate::TYPE_WEIXIN,
             (!params.agent_id.is_nil()).then_some(params.agent_id),
