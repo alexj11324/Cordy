@@ -144,6 +144,16 @@ function hasHealthyAgentInstallation(listing: InstallationListing | undefined) {
   );
 }
 
+function hasHostedQuotaPause(listing: InstallationListing | undefined) {
+  return (
+    listing?.installations.some(
+      (installation) =>
+        installation.status === "active" &&
+        installation.runtime?.errorCode === "hosted_quota_paused",
+    ) ?? false
+  );
+}
+
 function ConnectionStatus({ query }: { query: IntegrationQuery }) {
   const { t } = useT("settings");
   if (query.isLoading) {
@@ -180,13 +190,7 @@ function ConnectionStatus({ query }: { query: IntegrationQuery }) {
   if (hasHealthyAgentInstallation(query.data)) {
     return <Badge variant="outline">{t(($) => $.page.integrations_existing_agent)}</Badge>;
   }
-  if (
-    query.data.installations.some(
-      (installation) =>
-        installation.status === "active" &&
-        installation.runtime?.errorCode === "hosted_quota_paused",
-    )
-  ) {
+  if (hasHostedQuotaPause(query.data)) {
     return (
       <Badge variant="outline">
         {t(($) => $.page.integrations_runtime_quota_paused)}
