@@ -20,7 +20,7 @@ import {
 import { SubmitButton } from "@patchbay/ui/components/common/submit-button";
 import { ChatAddMenu } from "./chat-add-menu";
 import { ChatFollowUpMenu } from "./chat-follow-up-menu";
-import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
+import { DesktopChatInput } from "./desktop-chat-input";
 import { useChatStore, DRAFT_NEW_SESSION } from "@patchbay/core/chat";
 import { attachmentToDraftUpload, type DraftUpload } from "@patchbay/core/drafts";
 import { createLogger } from "@patchbay/core/logger";
@@ -634,168 +634,133 @@ export function ChatInput({
     />
   );
 
-  return (
-    <div
-      ref={composerRef}
-      className={cn(
-        // The composer grows with the draft up to half the surface it sits on
-        // — a fixed 160px cap made long drafts unreadable in a five-line
-        // porthole (PB-5196). `max-h-[50%]` resolves against the chat
-        // surface (floating window, chat tab, agent builder), all of which
-        // give this wrapper a definite height, so the cap scales when the
-        // user resizes or expands the window. The wrapper must be a flex
-        // column for the card below to shrink into that cap instead of
-        // spilling out of it.
-        "flex max-h-[50%] min-h-0 flex-col pb-3 pt-0",
-        CHAT_GUTTER,
-        "relative z-10",
-        // Outer wrapper carries the disabled cursor. Inner card sets
-        // pointer-events-none, which suppresses hover (and therefore
-        // any cursor of its own) — splitting the two layers lets hover
-        // bubble back here so the browser actually reads cursor.
-        noAgent && "cursor-not-allowed",
-      )}
-    >
+  const projectHeader = selectedProject ? (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 pt-2">
       <div
-        data-slot="chat-input-surface"
-        {...(uploadEnabled ? dropZoneProps : {})}
         className={cn(
-          // max-h-96 is the absolute ceiling on top of the wrapper's 50%: on a
-          // tall surface half the height is more composer than anyone reads at
-          // once, and it keeps the cap finite if a future host ever mounts the
-          // composer without a definite height (percentage max-height would
-          // then resolve to none).
-          CHAT_COLUMN,
-          "relative flex min-h-0 max-h-96 flex-col overflow-hidden rounded-xl border border-surface-border bg-surface shadow-sm",
-          "transition-[border-color,box-shadow] focus-within:border-brand focus-within:ring-2 focus-within:ring-ring/20",
-          // Visual + interaction lock when there's no agent. We don't
-          // toggle ContentEditor's editable mode (Tiptap can't switch
-          // cleanly post-mount, and the prop has been removed); instead
-          // we drop pointer events at the wrapper level so clicks miss
-          // the editor entirely, and dim the surface so it reads as
-          // "disabled" rather than "broken".
-          noAgent && "pointer-events-none opacity-60",
+          "inline-flex max-w-full",
+          !projectSelectionEnabled && "pointer-events-none opacity-60",
         )}
-        aria-disabled={noAgent || undefined}
       >
-        {queueSlot}
-        {selectedProject && (
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-3 pt-2">
-            <div
-              className={cn(
-                "inline-flex max-w-full",
-                !projectSelectionEnabled && "pointer-events-none opacity-60",
-              )}
-            >
-              <ProjectPicker
-                projectId={selectedProject.id}
-                onUpdate={(updates) => onProjectChange?.(updates.project_id ?? null)}
-                disabled={!projectSelectionEnabled}
-                triggerRender={
-                  <ClearablePillButton
-                    disabled={!projectSelectionEnabled}
-                    aria-label={t(($) => $.input.change_project_context)}
-                    title={t(($) => $.input.change_project_context)}
-                    onClear={() => onProjectChange?.(null)}
-                    clearLabel={t(($) => $.input.remove_project_context)}
-                    className="h-6 border-surface-border bg-surface-raised font-medium text-foreground"
-                  />
-                }
-              />
-            </div>
-            {projectContextUnsupported && (
-              <span className="inline-flex min-w-0 items-center gap-1 text-caption text-warning">
-                <TriangleAlert className="size-3 shrink-0" />
-                {t(($) => $.input.project_context_unsupported)}
-              </span>
-            )}
-          </div>
-        )}
-        <div className="min-h-12 flex-1 overflow-y-auto px-3 pt-3">
-          <ContentEditor
-            // See the editorKey / draftKey split note above — editor identity
-            // intentionally tracks neither the session nor the agent.
-            key={editorKey}
-            ref={editorRef}
-            value={inputDraft}
-            placeholder={placeholder}
-            onUpdate={(md) => {
-              setIsEmpty(!md.trim());
-              // The LOADED key, not the selected one: while an upload pins the
-              // document this fires for the source draft's body — including the
-              // upload's own completion dispatch.
-              commitDraft(editorDraftKeyRef.current, md);
-            }}
-            onSubmit={requestSend}
-            onUploadFile={uploadEnabled ? handleUpload : undefined}
-            pasteAsFileThreshold={PASTE_AS_FILE_THRESHOLD}
-            onUploadingChange={uploadGate.onUploadingChange}
-            attachments={draftAttachments}
-            debounceMs={100}
-            mentionMode={contextItems ? "context" : "default"}
-            mentionContextItems={contextItems}
-            enableSlashCommands
-            // The bubble menu carries the only affordance that can strip
-            // formatting — "Normal text" (setParagraph) plus the mark/list
-            // toggles. Once a `# ` input rule or a Markdown/HTML paste turns a
-            // line into a heading, chat has no other way to remove it, so
-            // without the bubble menu formatting can be created but never
-            // undone (PB-5106).
-            showBubbleMenu
-          />
-        </div>
-        <div
-          data-slot="chat-input-actions"
-          className="flex items-center justify-between gap-2 px-2 pb-2 pt-1"
-        >
-          <div className="flex min-w-0 items-center gap-0.5">
-            {leftAdornment}
-            {(uploadEnabled || projectSelectionEnabled) && (
-              <ChatAddMenu
-                onSelectFile={uploadEnabled
-                  ? (file) => editorRef.current?.uploadFile(file)
-                  : undefined}
-                projects={projects}
-                projectId={projectId}
-                onSelectProject={projectSelectionEnabled ? onProjectChange : undefined}
-                projectContextUnsupported={projectContextUnsupported}
-              />
-            )}
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
-            {showStop && (
-              <SubmitButton
-                onClick={() => {}}
-                running
-                onStop={onStop}
-                stopTooltip={t(($) => $.input.stop_tooltip)}
-                stopAriaLabel={t(($) => $.input.stop_tooltip)}
-              />
-            )}
-            {showSend && (
-              chooseFollowUp && isRunning ? (
-                <ChatFollowUpMenu
-                  open={followUpOpen}
-                  onOpenChange={setFollowUpOpen}
-                  onWait={() => {
-                    followUpModeRef.current = "wait";
-                    void submit();
-                  }}
-                  onSteer={() => {
-                    followUpModeRef.current = "steer";
-                    void submit();
-                  }}
-                >
-                  {sendButton}
-                </ChatFollowUpMenu>
-              ) : (
-                sendButton
-              )
-            )}
-          </div>
-        </div>
-        {uploadEnabled && isDragOver && <FileDropOverlay />}
+        <ProjectPicker
+          projectId={selectedProject.id}
+          onUpdate={(updates) => onProjectChange?.(updates.project_id ?? null)}
+          disabled={!projectSelectionEnabled}
+          triggerRender={
+            <ClearablePillButton
+              disabled={!projectSelectionEnabled}
+              aria-label={t(($) => $.input.change_project_context)}
+              title={t(($) => $.input.change_project_context)}
+              onClear={() => onProjectChange?.(null)}
+              clearLabel={t(($) => $.input.remove_project_context)}
+              className="h-6 border-surface-border bg-surface-raised font-medium text-foreground"
+            />
+          }
+        />
       </div>
+      {projectContextUnsupported && (
+        <span className="inline-flex min-w-0 items-center gap-1 text-caption text-warning">
+          <TriangleAlert className="size-3 shrink-0" />
+          {t(($) => $.input.project_context_unsupported)}
+        </span>
+      )}
     </div>
+  ) : null;
+
+  return (
+    <DesktopChatInput
+      composerRef={composerRef}
+      dropZoneProps={dropZoneProps}
+      uploadEnabled={uploadEnabled}
+      noAgent={noAgent}
+      header={
+        <>
+          {queueSlot}
+          {projectHeader}
+        </>
+      }
+      leftActions={
+        <div className="flex min-w-0 items-center gap-0.5">
+          {leftAdornment}
+          {(uploadEnabled || projectSelectionEnabled) && (
+            <ChatAddMenu
+              onSelectFile={uploadEnabled
+                ? (file) => editorRef.current?.uploadFile(file)
+                : undefined}
+              projects={projects}
+              projectId={projectId}
+              onSelectProject={projectSelectionEnabled ? onProjectChange : undefined}
+              projectContextUnsupported={projectContextUnsupported}
+            />
+          )}
+        </div>
+      }
+      rightActions={
+        <div className="flex shrink-0 items-center gap-1">
+          {showStop && (
+            <SubmitButton
+              onClick={() => {}}
+              running
+              onStop={onStop}
+              stopTooltip={t(($) => $.input.stop_tooltip)}
+              stopAriaLabel={t(($) => $.input.stop_tooltip)}
+            />
+          )}
+          {showSend && (
+            chooseFollowUp && isRunning ? (
+              <ChatFollowUpMenu
+                open={followUpOpen}
+                onOpenChange={setFollowUpOpen}
+                onWait={() => {
+                  followUpModeRef.current = "wait";
+                  void submit();
+                }}
+                onSteer={() => {
+                  followUpModeRef.current = "steer";
+                  void submit();
+                }}
+              >
+                {sendButton}
+              </ChatFollowUpMenu>
+            ) : (
+              sendButton
+            )
+          )}
+        </div>
+      }
+      overlay={uploadEnabled && isDragOver ? <FileDropOverlay /> : null}
+    >
+      <ContentEditor
+        // See the editorKey / draftKey split note above — editor identity
+        // intentionally tracks neither the session nor the agent.
+        key={editorKey}
+        ref={editorRef}
+        value={inputDraft}
+        placeholder={placeholder}
+        onUpdate={(md) => {
+          setIsEmpty(!md.trim());
+          // The LOADED key, not the selected one: while an upload pins the
+          // document this fires for the source draft's body — including the
+          // upload's own completion dispatch.
+          commitDraft(editorDraftKeyRef.current, md);
+        }}
+        onSubmit={requestSend}
+        onUploadFile={uploadEnabled ? handleUpload : undefined}
+        pasteAsFileThreshold={PASTE_AS_FILE_THRESHOLD}
+        onUploadingChange={uploadGate.onUploadingChange}
+        attachments={draftAttachments}
+        debounceMs={100}
+        mentionMode={contextItems ? "context" : "default"}
+        mentionContextItems={contextItems}
+        enableSlashCommands
+        // The bubble menu carries the only affordance that can strip
+        // formatting — "Normal text" (setParagraph) plus the mark/list
+        // toggles. Once a `# ` input rule or a Markdown/HTML paste turns a
+        // line into a heading, chat has no other way to remove it, so
+        // without the bubble menu formatting can be created but never
+        // undone (PB-5106).
+        showBubbleMenu
+      />
+    </DesktopChatInput>
   );
 }

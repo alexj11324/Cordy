@@ -63,6 +63,36 @@ const editorProps = vi.hoisted(() => ({
 // scrubbed the editor (clearEditor) or left it intact (fire-and-forget).
 const editorState = vi.hoisted(() => ({ cleared: 0, blurred: 0, focused: 0 }));
 
+vi.mock("@lobehub/ui/es/Flex/index", () => ({
+  Flexbox: ({
+    children,
+    className,
+    style,
+    ...rest
+  }: React.PropsWithChildren<{
+    className?: string;
+    style?: React.CSSProperties;
+    [key: string]: unknown;
+  }>) => {
+    const dom: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(rest)) {
+      if (
+        key.startsWith("data-") ||
+        key.startsWith("aria-") ||
+        key === "id" ||
+        key === "role"
+      ) {
+        dom[key] = value;
+      }
+    }
+    return (
+      <div className={className} style={style} {...dom}>
+        {children}
+      </div>
+    );
+  },
+}));
+
 vi.mock("../../editor", async () => ({
   // Real submit gate (pure React) driven by the mock editor's
   // `hasActiveUploads` / `onUploadingChange`.
@@ -722,7 +752,8 @@ describe("ChatInput project context", () => {
     const actions = container.querySelector('[data-slot="chat-input-actions"]');
 
     expect(container.firstElementChild).toHaveClass("relative", "z-10");
-    expect(surface).toHaveClass("rounded-xl", "shadow-sm");
+    expect(surface).toHaveAttribute("data-lobe-chat-input");
+    expect(surface).toHaveClass("rounded-xl");
     expect(actions).toBeInTheDocument();
   });
 
@@ -733,7 +764,7 @@ describe("ChatInput project context", () => {
     const surface = container.querySelector('[data-slot="chat-input-surface"]');
 
     expect(surface?.contains(screen.getByTestId("queue-slot"))).toBe(true);
-    expect(surface).toHaveClass("rounded-xl");
+    expect(surface).toHaveAttribute("data-lobe-chat-input");
   });
 
   it("locks the project control while a send is in flight so a mid-send switch cannot retarget the session", async () => {
