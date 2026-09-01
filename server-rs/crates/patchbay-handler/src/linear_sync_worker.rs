@@ -2907,7 +2907,11 @@ impl LinearSyncWorker {
             )
             .await;
             if base_snapshot.get("status") != remote_snapshot.get("status")
-                && import_status_is_inadmissible(&remote_category, Some(&issue))
+                && import_status_is_inadmissible(
+                    &remote_category,
+                    Some(&issue),
+                    agent_decision.agent_id,
+                )
                 && !merge
                     .conflicts
                     .iter()
