@@ -5,7 +5,7 @@ interface FeedbackDraft {
 }
 
 export const useFeedbackDraftStore = createDraftStore<FeedbackDraft>({
-  storageKey: "multica_feedback_draft",
+  storageKey: "patchbay_feedback_draft",
   emptyData: { message: "" },
   hasMeaningful: (d) => !!d.message,
 });

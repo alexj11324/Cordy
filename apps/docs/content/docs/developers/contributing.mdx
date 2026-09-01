@@ -1,11 +1,11 @@
 ---
 title: Contributing
-description: Set up a local Multica development environment, run tests, and submit changes using the repository conventions.
+description: Set up a local Patchbay development environment, run tests, and submit changes using the repository conventions.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Multica is a Go backend and pnpm monorepo. The simplest way to start locally is `make dev`; it prepares the environment, database, and migrations for the current checkout, then starts Web and API.
+Patchbay is a Go backend and pnpm monorepo. The simplest way to start locally is `make dev`; it prepares the environment, database, and migrations for the current checkout, then starts Web and API.
 
 ## Requirements
 
@@ -20,8 +20,8 @@ Treat the root `package.json`, `server/go.mod`, and CI workflows as the source o
 ## First start
 
 ```bash
-git clone https://github.com/multica-ai/multica.git
-cd multica
+git clone https://github.com/patchbay-ai/patchbay.git
+cd patchbay
 make dev
 ```
 
@@ -41,8 +41,8 @@ The fixed local verification code comes from the development configuration. Do n
 The repository supports running the primary checkout and multiple worktrees at the same time. They share one PostgreSQL container but use separate databases and ports.
 
 ```bash
-git worktree add ../multica-feature -b feat/my-change main
-cd ../multica-feature
+git worktree add ../patchbay-feature -b feat/my-change main
+cd ../patchbay-feature
 make setup-worktree
 make start-worktree
 ```
@@ -82,7 +82,7 @@ make build            # Build the server, CLI, and migrate binaries
 ```
 
 `make up` treats an environment as a named object: it allocates the API, Web and Desktop renderer ports,
-database name and CLI profile under a lock and records them in `~/.multica/dev/`,
+database name and CLI profile under a lock and records them in `~/.patchbay/dev/`,
 so two checkouts cannot land on the same slot without one of them being told.
 It verifies the database through `DATABASE_URL` and the backend through
 `GET /health`, which reports `pid`, `commit` and `started_at` — a 200 alone
@@ -162,7 +162,7 @@ Use an application transaction in the service layer when multiple writes must su
 Run the check closest to the change first, then expand the scope. For a Docs-only change:
 
 ```bash
-pnpm --filter @multica/docs typecheck
+pnpm --filter @patchbay/docs typecheck
 ```
 
 For shared frontend changes:

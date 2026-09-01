@@ -5,9 +5,9 @@
     "agent_link_no_access": "このエージェントとチャットする権限がありません。"
   },
   "fab": {
-    "running": "Multica が作業中です...",
+    "running": "Patchbay が作業中です...",
     "unread_other": "未読のチャット {{count}}件",
-    "default": "Multica に質問"
+    "default": "Patchbay に質問"
   },
   "input": {
     "placeholder_no_agent": "チャットを始めるにはエージェントを作成してください",
@@ -59,7 +59,7 @@
       "runtime_recovery": "完了する前にエージェントが再起動しました。もう一度お試しください。",
       "manual": "この返信はキャンセルされました。",
       "skill_bundle_unavailable": "エージェントの skill をダウンロードできず、返信を開始できませんでした。多くの場合はネットワークの問題です。もう一度お試しください。",
-      "runtime_cli_timeout": "ローカルの OpenClaw CLI が時間内に応答せず、この実行は開始されませんでした。ネットワークではなくローカルの起動タイムアウトです。CLI が速くなるか、タイムアウト（MULTICA_OPENCLAW_CLI_TIMEOUT）を延ばすまで再試行しても成功しません。",
+      "runtime_cli_timeout": "ローカルの OpenClaw CLI が時間内に応答せず、この実行は開始されませんでした。ネットワークではなくローカルの起動タイムアウトです。CLI が速くなるか、タイムアウト（PATCHBAY_OPENCLAW_CLI_TIMEOUT）を延ばすまで再試行しても成功しません。",
       "provider_network": "モデルサービスとの接続が切断され、返信を完了できませんでした。ネットワークを確認してから再度お試しください。",
       "provider_auth_or_access": "エージェントのモデルアカウントのログインが無効になりました。再度ログインしてからお試しください。",
       "provider_quota_limit": "エージェントのモデルアカウントの残高が不足しています。チャージするかアカウントを切り替えてからお試しください。",
@@ -143,7 +143,7 @@
     "first_time_pillars_suffix": "。",
     "first_time_actions": "要約を頼んだり、今日の予定を立てたり、簡単なタスクを任せたりしてみましょう。",
     "returning_title_named": "こんにちは、{{name}} です",
-    "returning_title_default": "Multica へようこそ",
+    "returning_title_default": "Patchbay へようこそ",
     "returning_subtitle": "こう聞いてみましょう",
     "chat_with_named": "{{name}} とチャット"
   },

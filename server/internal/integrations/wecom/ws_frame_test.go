@@ -8,8 +8,8 @@ package wecom
 import (
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
 )
 
 func TestChannelMessageFromCallback_GroupKeepsSenderDistinctFromChat(t *testing.T) {
@@ -77,7 +77,7 @@ func TestChannelMessageFromCallback_P2PMentionIsProseNotACommand(t *testing.T) {
 
 			// A configured display name must not change this either: it is the
 			// chat type that decides, not whose name is at the front.
-			msg := channelMessageFromCallback("bot-1", "Multica Bot", mc, tc.content, "req-p2p")
+			msg := channelMessageFromCallback("bot-1", "Patchbay Bot", mc, tc.content, "req-p2p")
 
 			if msg.CommandText != tc.content {
 				t.Errorf("CommandText = %q, want %q untouched — in a 1:1 the leading @ is a colleague's "+
@@ -107,7 +107,7 @@ func TestChannelMessageFromCallback_P2PCommandStillWorks(t *testing.T) {
 	mc.From.UserID = "USER_A"
 	mc.Text.Content = "/issue 登录失败"
 
-	msg := channelMessageFromCallback("bot-1", "Multica Bot", mc, mc.Text.Content, "req-p2p-cmd")
+	msg := channelMessageFromCallback("bot-1", "Patchbay Bot", mc, mc.Text.Content, "req-p2p-cmd")
 
 	cmd, ok := engine.ParseIssueCommand(msg.CommandText)
 	if !ok {

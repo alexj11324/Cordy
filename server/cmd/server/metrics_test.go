@@ -5,10 +5,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/analytics"
-	"github.com/multica-ai/multica/server/internal/events"
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	"github.com/multica-ai/multica/server/internal/realtime"
+	"github.com/patchbay-ai/patchbay/server/internal/analytics"
+	"github.com/patchbay-ai/patchbay/server/internal/events"
+	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
+	"github.com/patchbay-ai/patchbay/server/internal/realtime"
 )
 
 func TestMainRouterDoesNotExposeDiagnostics(t *testing.T) {

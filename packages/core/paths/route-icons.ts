@@ -12,7 +12,7 @@
  * this registry for the page case.
  *
  * Icon values are *names*, not React components, so this module stays
- * React-free and safe inside `@multica/core`. The name → component registry
+ * React-free and safe inside `@patchbay/core`. The name → component registry
  * lives in `packages/views/layout/route-icon-components.tsx`; its
  * `Record<RouteIconName, LucideIcon>` type makes a missing component a compile
  * error.

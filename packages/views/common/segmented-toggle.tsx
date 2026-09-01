@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { cn } from "@multica/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 
 /** A pill-button group for picking between mutually exclusive modes: the active
  *  option lifts to the background, the rest stay muted. One control for every

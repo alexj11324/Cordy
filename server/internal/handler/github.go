@@ -24,10 +24,10 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/issuestatus"
-	"github.com/multica-ai/multica/server/internal/middleware"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
+	"github.com/patchbay-ai/patchbay/server/internal/middleware"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 // githubAPIBase is the base URL for GitHub's REST API. Mutable so tests can
@@ -456,7 +456,7 @@ func githubSettingsURL(frontend, returnTo string) string {
 }
 
 // GitHubConnect (GET /api/workspaces/{id}/github/connect) returns the URL the
-// browser should open to install the Multica GitHub App against the caller's
+// browser should open to install the Patchbay GitHub App against the caller's
 // repos. The state token binds the resulting setup callback to this workspace.
 func (h *Handler) GitHubConnect(w http.ResponseWriter, r *http.Request) {
 	workspaceID := chi.URLParam(r, "id")
@@ -538,7 +538,7 @@ func (h *Handler) GitHubSetupCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Best-effort capture of the connecting user (may be nil if the public
 	// callback was hit without a session — e.g. user wasn't logged in to
-	// Multica when they finished the GitHub install). Either way we save
+	// Patchbay when they finished the GitHub install). Either way we save
 	// the row so the workspace owner sees the connection on next reload.
 	connectedBy := pgtype.UUID{}
 	if userID := requestUserID(r); userID != "" {

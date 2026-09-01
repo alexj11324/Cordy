@@ -63,7 +63,7 @@ type trickleBody struct {
 // killed for taking too long in total. The stall-aware client completes the
 // same download the total-elapsed client cannot.
 func TestStallAwareClientCompletesSlowButSteadyTransfer(t *testing.T) {
-	t.Setenv("MULTICA_HTTP_STALL_TIMEOUT", "400ms")
+	t.Setenv("PATCHBAY_HTTP_STALL_TIMEOUT", "400ms")
 	const (
 		chunks = 12
 		pause  = 40 * time.Millisecond
@@ -97,7 +97,7 @@ func TestStallAwareClientCompletesSlowButSteadyTransfer(t *testing.T) {
 }
 
 func TestStallAwareClientFailsOnStalledBody(t *testing.T) {
-	t.Setenv("MULTICA_HTTP_STALL_TIMEOUT", "150ms")
+	t.Setenv("PATCHBAY_HTTP_STALL_TIMEOUT", "150ms")
 	srv := trickleServer(t, 20, 10*time.Millisecond, 4)
 
 	client := &APIClient{BaseURL: srv.URL, HTTPClient: NewStallAwareHTTPClient()}
@@ -134,7 +134,7 @@ func TestStallAwareClientFailsOnStalledBody(t *testing.T) {
 // "context deadline exceeded ... while reading body" out of the JSON decoder,
 // because only errors from http.Client.Do were ever classified.
 func TestStalledTransferIsClassifiedAsNetworkError(t *testing.T) {
-	t.Setenv("MULTICA_HTTP_STALL_TIMEOUT", "150ms")
+	t.Setenv("PATCHBAY_HTTP_STALL_TIMEOUT", "150ms")
 	srv := trickleServer(t, 20, 10*time.Millisecond, 4)
 
 	client := &APIClient{BaseURL: srv.URL, HTTPClient: NewStallAwareHTTPClient()}
@@ -155,7 +155,7 @@ func TestStalledTransferIsClassifiedAsNetworkError(t *testing.T) {
 		t.Errorf("ExitCodeFor = %d, want %d", got, ExitNetwork)
 	}
 	msg := FormatError(err, false)
-	if !strings.Contains(msg, "MULTICA_HTTP_STALL_TIMEOUT") {
+	if !strings.Contains(msg, "PATCHBAY_HTTP_STALL_TIMEOUT") {
 		t.Errorf("user message does not name the knob that fixes it: %q", msg)
 	}
 	if strings.Contains(msg, "context deadline exceeded") {
@@ -192,40 +192,40 @@ func TestMalformedJSONIsNotReportedAsNetworkFailure(t *testing.T) {
 
 func TestStallTimeoutEnvPrecedence(t *testing.T) {
 	t.Run("default when nothing is set", func(t *testing.T) {
-		t.Setenv("MULTICA_HTTP_STALL_TIMEOUT", "")
-		t.Setenv("MULTICA_HTTP_TIMEOUT", "")
+		t.Setenv("PATCHBAY_HTTP_STALL_TIMEOUT", "")
+		t.Setenv("PATCHBAY_HTTP_TIMEOUT", "")
 		if got := StallTimeout(); got != defaultStallTimeout {
 			t.Errorf("StallTimeout = %v, want %v", got, defaultStallTimeout)
 		}
 	})
 
-	// An explicitly set MULTICA_HTTP_TIMEOUT keeps meaning "how long am I
+	// An explicitly set PATCHBAY_HTTP_TIMEOUT keeps meaning "how long am I
 	// willing to wait for this server" on the stall-aware path, rather than
 	// silently reverting to a total-elapsed limit.
 	t.Run("legacy timeout var still has effect", func(t *testing.T) {
-		t.Setenv("MULTICA_HTTP_STALL_TIMEOUT", "")
-		t.Setenv("MULTICA_HTTP_TIMEOUT", "90s")
+		t.Setenv("PATCHBAY_HTTP_STALL_TIMEOUT", "")
+		t.Setenv("PATCHBAY_HTTP_TIMEOUT", "90s")
 		if got, want := StallTimeout(), 90*time.Second; got != want {
 			t.Errorf("StallTimeout = %v, want %v", got, want)
 		}
 	})
 
 	t.Run("dedicated var wins", func(t *testing.T) {
-		t.Setenv("MULTICA_HTTP_STALL_TIMEOUT", "5s")
-		t.Setenv("MULTICA_HTTP_TIMEOUT", "90s")
+		t.Setenv("PATCHBAY_HTTP_STALL_TIMEOUT", "5s")
+		t.Setenv("PATCHBAY_HTTP_TIMEOUT", "90s")
 		if got, want := StallTimeout(), 5*time.Second; got != want {
 			t.Errorf("StallTimeout = %v, want %v", got, want)
 		}
 	})
 
 	t.Run("bare seconds and invalid values", func(t *testing.T) {
-		t.Setenv("MULTICA_HTTP_TIMEOUT", "")
-		t.Setenv("MULTICA_HTTP_STALL_TIMEOUT", "45")
+		t.Setenv("PATCHBAY_HTTP_TIMEOUT", "")
+		t.Setenv("PATCHBAY_HTTP_STALL_TIMEOUT", "45")
 		if got, want := StallTimeout(), 45*time.Second; got != want {
 			t.Errorf("StallTimeout = %v, want %v", got, want)
 		}
 		for _, bad := range []string{"nonsense", "0", "-5s"} {
-			t.Setenv("MULTICA_HTTP_STALL_TIMEOUT", bad)
+			t.Setenv("PATCHBAY_HTTP_STALL_TIMEOUT", bad)
 			if got := StallTimeout(); got != defaultStallTimeout {
 				t.Errorf("StallTimeout with %q = %v, want the default %v", bad, got, defaultStallTimeout)
 			}
@@ -236,14 +236,14 @@ func TestStallTimeoutEnvPrecedence(t *testing.T) {
 // The ceiling is a backstop, so it must never be the thing that fires first —
 // including when someone sets a very generous stall budget.
 func TestTransferCeilingStaysAboveStallBudget(t *testing.T) {
-	t.Setenv("MULTICA_HTTP_TIMEOUT", "")
+	t.Setenv("PATCHBAY_HTTP_TIMEOUT", "")
 
-	t.Setenv("MULTICA_HTTP_STALL_TIMEOUT", "")
+	t.Setenv("PATCHBAY_HTTP_STALL_TIMEOUT", "")
 	if got := TransferCeiling(); got != defaultTransferCeiling {
 		t.Errorf("TransferCeiling = %v, want %v", got, defaultTransferCeiling)
 	}
 
-	t.Setenv("MULTICA_HTTP_STALL_TIMEOUT", "20m")
+	t.Setenv("PATCHBAY_HTTP_STALL_TIMEOUT", "20m")
 	if got, want := TransferCeiling(), 80*time.Minute; got != want {
 		t.Errorf("TransferCeiling = %v, want %v", got, want)
 	}
@@ -256,8 +256,8 @@ func TestTransferCeilingStaysAboveStallBudget(t *testing.T) {
 }
 
 func TestStallAwareContextLeavesTransportDeadlineFirst(t *testing.T) {
-	t.Setenv("MULTICA_HTTP_STALL_TIMEOUT", "")
-	t.Setenv("MULTICA_HTTP_TIMEOUT", "")
+	t.Setenv("PATCHBAY_HTTP_STALL_TIMEOUT", "")
+	t.Setenv("PATCHBAY_HTTP_TIMEOUT", "")
 
 	ctx, cancel := StallAwareContext(context.Background())
 	defer cancel()
@@ -272,7 +272,7 @@ func TestStallAwareContextLeavesTransportDeadlineFirst(t *testing.T) {
 
 // Closing a body early must not leave the guard's timer or context alive.
 func TestStallGuardBodyCloseReleasesGuard(t *testing.T) {
-	t.Setenv("MULTICA_HTTP_STALL_TIMEOUT", "50ms")
+	t.Setenv("PATCHBAY_HTTP_STALL_TIMEOUT", "50ms")
 	srv := trickleServer(t, 20, 10*time.Millisecond, 4)
 
 	client := NewStallAwareHTTPClient()

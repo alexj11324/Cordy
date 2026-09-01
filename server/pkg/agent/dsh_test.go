@@ -64,7 +64,7 @@ func TestDshBackendExecuteStreamsProtocol(t *testing.T) {
 		t.Skip("shell fixture")
 	}
 	bin := writeDshFixture(t, `
-if [ "$1" != "--profile" ] || [ "$2" != "multica" ] || [ "$3" != "--stdio" ]; then exit 9; fi
+if [ "$1" != "--profile" ] || [ "$2" != "patchbay" ] || [ "$3" != "--stdio" ]; then exit 9; fi
 printf '%s\n' '{"v":1,"type":"ready","runtime":"dsh","plugin_version":"test","capabilities":{}}'
 IFS= read -r command
 case "$command" in *'"type":"execute"'*) ;; *) exit 8 ;; esac

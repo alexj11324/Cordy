@@ -12,21 +12,21 @@ import {
   useQueryClient,
   type UseQueryResult,
 } from "@tanstack/react-query";
-import { ALL_STATUSES } from "@multica/core/issues/config";
-import { issueColumnCategory } from "@multica/core/issues";
-import type { IssueStatusCatalog } from "@multica/core/issue-statuses";
-import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
+import { ALL_STATUSES } from "@patchbay/core/issues/config";
+import { issueColumnCategory } from "@patchbay/core/issues";
+import type { IssueStatusCatalog } from "@patchbay/core/issue-statuses";
+import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
 import {
   issueKeys,
   issueTableRowPageOptions,
-} from "@multica/core/issues/queries";
+} from "@patchbay/core/issues/queries";
 import type {
   Issue,
   IssueStatusCategory,
   IssueTableFacetsResponse,
   IssueTableQuerySpec,
   IssueTableRowsResponse,
-} from "@multica/core/types";
+} from "@patchbay/core/types";
 
 export interface IssueStatusPageState {
   total: number;

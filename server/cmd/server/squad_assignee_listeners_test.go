@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/handler"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/patchbay-ai/patchbay/server/internal/events"
+	"github.com/patchbay-ai/patchbay/server/internal/handler"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 func createAssignmentListenerTestSquad(t *testing.T) string {

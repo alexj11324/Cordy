@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { cn } from "@multica/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 
 /**
  * Do the type scale's role-named steps survive `cn()`?

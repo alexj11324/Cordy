@@ -4,8 +4,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { SkillSummary } from "@multica/core/types";
-import { I18nProvider } from "@multica/core/i18n/react";
+import type { SkillSummary } from "@patchbay/core/types";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSkills from "../../locales/en/skills.json";
 import type { SkillRow } from "./skills-page";
@@ -13,12 +13,12 @@ import type { SkillActionsContext } from "./skill-list-actions";
 
 const TEST_RESOURCES = { en: { common: enCommon, skills: enSkills } };
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: { refreshSkill: vi.fn() },
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-import { api } from "@multica/core/api";
+import { api } from "@patchbay/core/api";
 import { toast } from "sonner";
 import { UpdateSkillsDialog } from "./skill-list-actions";
 

@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	publicapiv1 "github.com/multica-ai/multica/server/pkg/publicapi/v1"
+	publicapiv1 "github.com/patchbay-ai/patchbay/server/pkg/publicapi/v1"
 )
 
 // These are the Action API's security properties, not its happy path. Each one
@@ -388,7 +388,7 @@ func createIssueInForeignWorkspace(t *testing.T) string {
 
 	var ownerID string
 	if err := testPool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ('Foreign Owner', $1) RETURNING id`,
-		"foreign-plugin-"+testUserID+"@multica.test").Scan(&ownerID); err != nil {
+		"foreign-plugin-"+testUserID+"@patchbay.test").Scan(&ownerID); err != nil {
 		t.Fatalf("seed foreign user: %v", err)
 	}
 	var workspaceID string

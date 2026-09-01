@@ -16,16 +16,16 @@ import (
 )
 
 const (
-	dshProfile         = "multica"
+	dshProfile         = "patchbay"
 	dshProtocolVersion = 1
 	dshCancelGrace     = 3 * time.Second
 	dshTerminateGrace  = 2 * time.Second
 )
 
-// dshBackend drives the Multica DSH bundle over its versioned JSONL
+// dshBackend drives the Patchbay DSH bundle over its versioned JSONL
 // stdio protocol. The adapter is intentionally independent of ACP: DSH owns
 // the agent loop, session store, model catalog, tools, and MCP clients, while
-// this package only translates those events into Multica's Backend contract.
+// this package only translates those events into Patchbay's Backend contract.
 type dshBackend struct {
 	cfg Config
 }
@@ -248,7 +248,7 @@ func (b *dshBackend) Execute(ctx context.Context, prompt string, opts ExecOption
 
 	requestID := b.cfg.TaskID
 	if requestID == "" {
-		requestID = "multica-" + strconv.FormatInt(time.Now().UnixNano(), 10)
+		requestID = "patchbay-" + strconv.FormatInt(time.Now().UnixNano(), 10)
 	}
 	command := dshExecuteCommand{
 		Version: dshProtocolVersion, Type: "execute", RequestID: requestID,

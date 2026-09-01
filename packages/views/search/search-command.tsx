@@ -1,6 +1,6 @@
 "use client";
 
-import { issueStatusCategory } from "@multica/core/issues";
+import { issueStatusCategory } from "@patchbay/core/issues";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
@@ -26,43 +26,43 @@ import type {
   MemberWithUser,
   SearchIssueResult,
   SearchProjectResult,
-} from "@multica/core/types";
-import { api } from "@multica/core/api";
-import { partitionAggregatedSearchResults } from "@multica/core/search/cancelled-rank";
+} from "@patchbay/core/types";
+import { api } from "@patchbay/core/api";
+import { partitionAggregatedSearchResults } from "@patchbay/core/search/cancelled-rank";
 import {
   openCreateIssueWithPreference,
   selectRecentIssues,
   useCommentCollapseStore,
   useRecentIssuesStore,
   useResolvedExpandStore,
-} from "@multica/core/issues/stores";
-import { issueDetailOptions, issueTimelineOptions } from "@multica/core/issues/queries";
-import { useWorkspaceId } from "@multica/core";
-import { useWorkspacePaths, WORKSPACE_PAGES } from "@multica/core/paths";
-import type { WorkspacePageKey, WorkspacePaths } from "@multica/core/paths";
-import { useModalStore } from "@multica/core/modals";
-import { createShortcutChord } from "@multica/core/shortcuts";
-import { memberListOptions } from "@multica/core/workspace/queries";
-import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
+} from "@patchbay/core/issues/stores";
+import { issueDetailOptions, issueTimelineOptions } from "@patchbay/core/issues/queries";
+import { useWorkspaceId } from "@patchbay/core";
+import { useWorkspacePaths, WORKSPACE_PAGES } from "@patchbay/core/paths";
+import type { WorkspacePageKey, WorkspacePaths } from "@patchbay/core/paths";
+import { useModalStore } from "@patchbay/core/modals";
+import { createShortcutChord } from "@patchbay/core/shortcuts";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
 import { StatusIcon } from "../issues/components";
 import { resolvedThreadRootIds, rootCommentIds } from "../issues/components/thread-utils";
 import { ProjectIcon } from "../projects/components/project-icon";
 import { useProjectStatusLabels } from "../projects/components/labels";
 import { routeIconForPath } from "../layout/route-icon-components";
-import { PROJECT_STATUS_CONFIG } from "@multica/core/projects/config";
-import type { ProjectStatus } from "@multica/core/types";
+import { PROJECT_STATUS_CONFIG } from "@patchbay/core/projects/config";
+import type { ProjectStatus } from "@patchbay/core/types";
 import { ActorAvatar } from "../common/actor-avatar";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
-import { ActorAvatar as ActorAvatarBase } from "@multica/ui/components/common/actor-avatar";
+import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@multica/ui/components/ui/dialog";
-import { useTheme } from "@multica/ui/components/common/theme-provider";
-import { copyText } from "@multica/ui/lib/clipboard";
+} from "@patchbay/ui/components/ui/dialog";
+import { useTheme } from "@patchbay/ui/components/common/theme-provider";
+import { copyText } from "@patchbay/ui/lib/clipboard";
 import {
   resolveClickIntent,
   useIntentNavigate,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { cn } from "@multica/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 import { redactSecrets } from "./redact";
 import type { TraceDiffLine, TracePatchFile } from "./trace-event-presenter";
 import { highlightBlock, highlightToLines, languageForPath } from "./diff-highlight";

@@ -61,7 +61,7 @@ describe("RichContent import boundary", () => {
   it("no product surface imports the generic ui Markdown renderer", () => {
     const offenders = sourceFiles(PRODUCT_SURFACES)
       .filter(({ text }) =>
-        /from\s+["']@multica\/ui\/markdown["']/.test(text) &&
+        /from\s+["']@patchbay\/ui\/markdown["']/.test(text) &&
         /\bMarkdown\b|\bMemoizedMarkdown\b|\bStreamingMarkdown\b/.test(text),
       )
       .map(({ path }) => path);
@@ -140,7 +140,7 @@ describe("RichContent import boundary", () => {
     const uiRoot = join(VIEWS_ROOT, "..", "ui");
     const offenders = walk(uiRoot)
       .map((path) => ({ path, text: stripComments(readFileSync(path, "utf8")) }))
-      .filter(({ text }) => /\bRichContent\b|from\s+["']@multica\/views/.test(text))
+      .filter(({ text }) => /\bRichContent\b|from\s+["']@patchbay\/views/.test(text))
       .map(({ path }) => relative(uiRoot, path));
 
     expect(offenders).toEqual([]);

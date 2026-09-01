@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/delegatedrecoverybackfill"
+	"github.com/patchbay-ai/patchbay/server/internal/delegatedrecoverybackfill"
 )
 
 func cursorFor(createdAt time.Time, id string) *delegatedrecoverybackfill.Cursor {

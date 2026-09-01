@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/testutil"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 func TestCreateWorkspace_RejectsReservedSlug(t *testing.T) {
@@ -171,17 +171,17 @@ INSERT INTO github_pending_check_suite (
 	workspace_id, installation_id, repo_owner, repo_name, pr_number,
 	suite_id, head_sha, app_id, status, suite_updated_at
 )
-VALUES ($1, 123456789, 'multica-ai', 'multica', 3366, 987654321, 'abc123', 15368, 'completed', now())
+VALUES ($1, 123456789, 'patchbay-ai', 'patchbay', 3366, 987654321, 'abc123', 15368, 'completed', now())
 `, wsID)
 	githubPRID := dbfx.Insert(t, "github_pull_request", testutil.Cols{
 		"workspace_id":    wsID,
 		"installation_id": 123456789,
-		"repo_owner":      "multica-ai",
-		"repo_name":       "multica",
+		"repo_owner":      "patchbay-ai",
+		"repo_name":       "patchbay",
 		"pr_number":       5265,
 		"title":           "Workspace cleanup snapshot",
 		"state":           "open",
-		"html_url":        "https://github.com/multica-ai/multica/pull/5265",
+		"html_url":        "https://github.com/patchbay-ai/patchbay/pull/5265",
 		"pr_created_at":   testutil.Raw("now()"),
 		"pr_updated_at":   testutil.Raw("now()"),
 		"head_sha":        "head-a",
@@ -388,7 +388,7 @@ FROM pg_trigger
 WHERE tgname = $1
   AND NOT tgisinternal
 `, triggerName).Scan(&definition)
-		if !strings.Contains(definition, "multica.workspace_teardown") {
+		if !strings.Contains(definition, "patchbay.workspace_teardown") {
 			t.Fatalf("trigger %s does not guard workspace teardown: %s", triggerName, definition)
 		}
 	}
@@ -406,7 +406,7 @@ func TestWorkspaceTeardownModeDoesNotLeakIntoOrdinaryDeletes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin teardown marker transaction: %v", err)
 	}
-	if _, err := tx.Exec(ctx, `SELECT set_config('multica.workspace_teardown', 'on', true)`); err != nil {
+	if _, err := tx.Exec(ctx, `SELECT set_config('patchbay.workspace_teardown', 'on', true)`); err != nil {
 		_ = tx.Rollback(ctx)
 		t.Fatalf("set transaction-local teardown mode: %v", err)
 	}
@@ -415,7 +415,7 @@ func TestWorkspaceTeardownModeDoesNotLeakIntoOrdinaryDeletes(t *testing.T) {
 	}
 
 	var teardownMode string
-	if err := conn.QueryRow(ctx, `SELECT current_setting('multica.workspace_teardown', true)`).Scan(&teardownMode); err != nil {
+	if err := conn.QueryRow(ctx, `SELECT current_setting('patchbay.workspace_teardown', true)`).Scan(&teardownMode); err != nil {
 		t.Fatalf("read teardown mode after commit: %v", err)
 	}
 	if teardownMode != "" {
@@ -777,14 +777,14 @@ VALUES ($1, $2, 'owner')
 		req := newRequest("PATCH", "/api/workspaces/"+wsID, map[string]any{
 			"repos": []map[string]any{
 				{
-					"url":         "  https://github.com/multica-ai/multica.git  ",
+					"url":         "  https://github.com/patchbay-ai/patchbay.git  ",
 					"description": "  main monorepo  ",
 				},
 				{
-					"url": "https://github.com/multica-ai/multica.git",
+					"url": "https://github.com/patchbay-ai/patchbay.git",
 				},
 				{
-					"url": "git@github.com:multica-ai/multica-cloud.git",
+					"url": "git@github.com:patchbay-ai/patchbay-cloud.git",
 				},
 			},
 		})
@@ -800,10 +800,10 @@ VALUES ($1, $2, 'owner')
 		if len(repos) != 2 {
 			t.Fatalf("expected duplicate URL to be deduped, got %d repos: %s", len(repos), raw)
 		}
-		if repos[0].URL != "https://github.com/multica-ai/multica.git" || repos[0].Description != "main monorepo" {
+		if repos[0].URL != "https://github.com/patchbay-ai/patchbay.git" || repos[0].Description != "main monorepo" {
 			t.Fatalf("first repo not normalized: %+v", repos[0])
 		}
-		if repos[1].URL != "git@github.com:multica-ai/multica-cloud.git" {
+		if repos[1].URL != "git@github.com:patchbay-ai/patchbay-cloud.git" {
 			t.Fatalf("second repo not preserved: %+v", repos[1])
 		}
 	})
@@ -844,7 +844,7 @@ func setupRevocationFixture(t *testing.T, slug, daemonID string) revocationFixtu
 INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')
 `, wsID, testUserID)
 
-	targetEmail := fmt.Sprintf("revocation-%s@multica.ai", slug)
+	targetEmail := fmt.Sprintf("revocation-%s@patchbay.ai", slug)
 	targetUserID := dbfx.Insert(t, "user", testutil.Cols{
 		"name":  "Revocation Target " + slug,
 		"email": targetEmail,
@@ -868,7 +868,7 @@ INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')
 		"workspace_id": wsID,
 		"daemon_id":    daemonID,
 		"runtime_mode": "local",
-		"provider":     "multica_daemon",
+		"provider":     "patchbay_daemon",
 		"owner_id":     targetUserID,
 	})
 
@@ -988,14 +988,14 @@ RETURNING id
 
 	// Binding for the member being removed — must be pruned.
 	dbfx.Exec(t, `
-INSERT INTO channel_user_binding (workspace_id, multica_user_id, installation_id, channel_type, channel_user_id)
+INSERT INTO channel_user_binding (workspace_id, patchbay_user_id, installation_id, channel_type, channel_user_id)
 VALUES ($1, $2, $3, 'feishu', $4)
 `, fx.WorkspaceID, fx.TargetUserID, installID, removedOpenID)
 
 	// Binding for the requester (an owner who stays) — must survive, proving
 	// the prune is scoped to the removed user, not the whole workspace.
 	dbfx.Exec(t, `
-INSERT INTO channel_user_binding (workspace_id, multica_user_id, installation_id, channel_type, channel_user_id)
+INSERT INTO channel_user_binding (workspace_id, patchbay_user_id, installation_id, channel_type, channel_user_id)
 VALUES ($1, $2, $3, 'feishu', $4)
 `, fx.WorkspaceID, testUserID, installID, keepOpenID)
 
@@ -1058,7 +1058,7 @@ VALUES ($1, 'member', $2), ($1, 'member', $3)
 		"workspace_id": otherWorkspaceID,
 		"daemon_id":    "daemon-revoke-autopilot-subscriber-other",
 		"runtime_mode": "local",
-		"provider":     "multica_daemon",
+		"provider":     "patchbay_daemon",
 		"owner_id":     fx.TargetUserID,
 	})
 	otherAgentID := dbfx.Agent(t, "Other workspace agent", otherRuntimeID, testutil.Cols{
@@ -1150,7 +1150,7 @@ func TestDeleteMember_CancelsTasksFromAgentReassignment(t *testing.T) {
 		"workspace_id": fx.WorkspaceID,
 		"daemon_id":    "daemon-revoke-reassign-other",
 		"runtime_mode": "local",
-		"provider":     "multica_daemon",
+		"provider":     "patchbay_daemon",
 	})
 
 	// Queue a task on the agent while it was still pinned to the OTHER
@@ -1238,7 +1238,7 @@ INSERT INTO member (workspace_id, user_id, role) VALUES ($1, $2, 'owner')
 
 	targetUserID := dbfx.Insert(t, "user", testutil.Cols{
 		"name":  "Revocation No Runtimes Target",
-		"email": "revocation-no-runtimes@multica.ai",
+		"email": "revocation-no-runtimes@patchbay.ai",
 	})
 	t.Cleanup(func() {
 		_, _ = testPool.Exec(context.Background(), `DELETE FROM workspace WHERE id = $1`, wsID)

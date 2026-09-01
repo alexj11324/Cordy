@@ -14,10 +14,10 @@ import { renderWithI18n } from "../../test/i18n";
 const mockCreateAutopilot = vi.hoisted(() => vi.fn());
 const mockCreateTrigger = vi.hoisted(() => vi.fn());
 
-vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
-vi.mock("@multica/core/paths", () => ({ useCurrentWorkspace: () => ({ name: "Acme" }) }));
+vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-test" }));
+vi.mock("@patchbay/core/paths", () => ({ useCurrentWorkspace: () => ({ name: "Acme" }) }));
 
-vi.mock("@multica/core/workspace/queries", () => ({
+vi.mock("@patchbay/core/workspace/queries", () => ({
   agentListOptions: (wsId: string) => ({
     queryKey: ["agents", wsId],
     queryFn: async () => [
@@ -36,14 +36,14 @@ vi.mock("@multica/core/workspace/queries", () => ({
   }),
 }));
 
-vi.mock("@multica/core/projects/queries", () => ({
+vi.mock("@patchbay/core/projects/queries", () => ({
   projectListOptions: (wsId: string) => ({
     queryKey: ["projects", wsId],
     queryFn: async () => [],
   }),
 }));
 
-vi.mock("@multica/core/autopilots/queries", () => ({
+vi.mock("@patchbay/core/autopilots/queries", () => ({
   cronPreviewOptions: (wsId: string, expr: string, tz: string) => ({
     queryKey: ["cron-preview", wsId, expr, tz],
     queryFn: async () => ({ next_runs: ["2126-07-14T01:00:00Z"] }),
@@ -51,7 +51,7 @@ vi.mock("@multica/core/autopilots/queries", () => ({
   }),
 }));
 
-vi.mock("@multica/core/autopilots/mutations", () => ({
+vi.mock("@patchbay/core/autopilots/mutations", () => ({
   useCreateAutopilot: () => ({ mutateAsync: mockCreateAutopilot }),
   useCreateAutopilotTrigger: () => ({ mutateAsync: mockCreateTrigger }),
   useUpdateAutopilot: () => ({ mutateAsync: vi.fn() }),

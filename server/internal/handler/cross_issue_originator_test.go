@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/testutil"
+	"github.com/patchbay-ai/patchbay/server/internal/testutil"
 )
 
 // MUL-6490 / GH #7328 — the authorization chain must survive a cross-issue hop.

@@ -6,11 +6,11 @@ import {
   AGENT_CONVERSATION_STARTER_MAX_LENGTH,
   AGENT_CONVERSATION_STARTERS_MAX,
   selectConversationStarters,
-} from "@multica/core/agents";
-import type { AgentConversationStarter } from "@multica/core/types";
-import { Button } from "@multica/ui/components/ui/button";
-import { Input } from "@multica/ui/components/ui/input";
-import { Textarea } from "@multica/ui/components/ui/textarea";
+} from "@patchbay/core/agents";
+import type { AgentConversationStarter } from "@patchbay/core/types";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import {
   ConversationStarterList,
   useFallbackConversationStarters,

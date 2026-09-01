@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useUpdateRuntime } from "@multica/core/runtimes/mutations";
+import { useUpdateRuntime } from "@patchbay/core/runtimes/mutations";
 import {
   AlertDialog,
   AlertDialogContent,
-} from "@multica/ui/components/ui/alert-dialog";
-import { Button } from "@multica/ui/components/ui/button";
-import { Input } from "@multica/ui/components/ui/input";
+} from "@patchbay/ui/components/ui/alert-dialog";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
 import { useT } from "../../i18n";
 
 // RenameMachineDialog names a whole machine (MUL-4217). A machine hosts one

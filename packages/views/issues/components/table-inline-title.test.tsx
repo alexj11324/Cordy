@@ -6,7 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 
-import type { Issue } from "@multica/core/types";
+import type { Issue } from "@patchbay/core/types";
 
 // InlineTitle renders the self-contained agent-activity badge, which fetches
 // the workspace agent-task snapshot via React Query. Stub it (same pattern as

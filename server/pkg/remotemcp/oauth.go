@@ -148,7 +148,7 @@ func DiscoverOAuth(ctx context.Context, rawEndpoint string, allowedHosts []strin
 }
 
 func probeResourceMetadataURL(ctx context.Context, endpoint *url.URL) string {
-	payload := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"multica-oauth-discovery","version":"1"}}}`)
+	payload := []byte(`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"patchbay-oauth-discovery","version":"1"}}}`)
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(payload))
 	if err != nil {
 		return ""
@@ -258,7 +258,7 @@ func RegisterOAuthClient(ctx context.Context, metadata OAuthMetadata, redirectUR
 		return OAuthClientRegistration{}, err
 	}
 	body, _ := json.Marshal(map[string]any{
-		"client_name":                "Multica",
+		"client_name":                "Patchbay",
 		"redirect_uris":              []string{redirectURI},
 		"grant_types":                []string{"authorization_code", "refresh_token"},
 		"response_types":             []string{"code"},

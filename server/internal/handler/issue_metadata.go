@@ -10,10 +10,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
-	"github.com/multica-ai/multica/server/internal/logger"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/patchbay-ai/patchbay/server/internal/logger"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 // Per-issue metadata is a small JSONB KV map agents use to record pipeline

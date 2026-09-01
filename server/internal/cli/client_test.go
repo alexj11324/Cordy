@@ -614,7 +614,7 @@ func TestHTTPErrorTaskScopedFollowsTheRequestNotTheClient(t *testing.T) {
 	})
 
 	t.Run("member token is never task-scoped", func(t *testing.T) {
-		memberClient := NewAPIClient(srv.URL, "ws-1", "mul_0123456789abcdef")
+		memberClient := NewAPIClient(srv.URL, "ws-1", "pby_0123456789abcdef")
 		err := memberClient.GetJSON(context.Background(), "/api/me", &struct{}{})
 		var httpErr *HTTPError
 		if !errors.As(err, &httpErr) {

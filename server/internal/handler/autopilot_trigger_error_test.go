@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/multica-ai/multica/server/internal/entitlement"
-	"github.com/multica-ai/multica/server/internal/entitlement/entitlementtest"
-	"github.com/multica-ai/multica/server/internal/testutil"
+	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
+	"github.com/patchbay-ai/patchbay/server/internal/entitlement/entitlementtest"
+	"github.com/patchbay-ai/patchbay/server/internal/testutil"
 )
 
 // TestTriggerAutopilot_InternalFailureDoesNotEchoError pins MUL-6472: an

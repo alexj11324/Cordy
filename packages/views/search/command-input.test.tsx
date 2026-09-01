@@ -1,12 +1,12 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { Command, CommandInput } from "@multica/ui/components/ui/command";
+import { Command, CommandInput } from "@patchbay/ui/components/ui/command";
 
 // Contract for the shared CommandInput: Home/End must stop propagating to
 // cmdk's root keydown handler (which otherwise hijacks them to jump the result
 // list to first/last), while every key — including Home/End — is still handed
-// to a caller-provided onKeyDown. cmdk lives in @multica/ui, which has no test
+// to a caller-provided onKeyDown. cmdk lives in @patchbay/ui, which has no test
 // runner, so the contract is pinned here alongside the SearchCommand
 // regression that depends on it.
 describe("CommandInput", () => {

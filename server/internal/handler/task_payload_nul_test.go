@@ -10,8 +10,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // seedNULTask creates an agent with one running task, ready to be driven

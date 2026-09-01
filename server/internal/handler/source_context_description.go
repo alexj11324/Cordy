@@ -3,8 +3,8 @@ package handler
 import (
 	"strings"
 
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/internal/util"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
 )
 
 type sourceContextDescriptionAttachmentReference struct {

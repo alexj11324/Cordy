@@ -22,11 +22,11 @@ func TestChannelLeaseMetricsRegisterAndRecord(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]bool{
-		"multica_channel_lease_operations_total":                          false,
-		"multica_channel_lease_active_owners":                             false,
-		"multica_channel_lease_owners_with_renewal_errors":                false,
-		"multica_channel_lease_last_successful_renewal_timestamp_seconds": false,
-		"multica_channel_lease_takeover_latency_seconds":                  false,
+		"patchbay_channel_lease_operations_total":                          false,
+		"patchbay_channel_lease_active_owners":                             false,
+		"patchbay_channel_lease_owners_with_renewal_errors":                false,
+		"patchbay_channel_lease_last_successful_renewal_timestamp_seconds": false,
+		"patchbay_channel_lease_takeover_latency_seconds":                  false,
 	}
 	for _, family := range families {
 		if _, ok := want[family.GetName()]; ok {

@@ -16,7 +16,7 @@
  * currently painted.
  *
  * Pure — no React, no DOM, no platform APIs. Mobile shares it (see
- * apps/mobile/CLAUDE.md: pure functions from @multica/core are importable).
+ * apps/mobile/CLAUDE.md: pure functions from @patchbay/core are importable).
  */
 
 import type { Attachment } from "../types/attachment";

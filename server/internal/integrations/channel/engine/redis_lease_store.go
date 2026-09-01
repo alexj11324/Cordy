@@ -10,7 +10,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const redisLeaseKeyPrefix = "multica:channel-lease:v1:"
+const redisLeaseKeyPrefix = "patchbay:channel-lease:v1:"
 
 var leaseNamespacePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 

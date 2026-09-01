@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { render } from "@testing-library/react";
-import { I18nProvider } from "@multica/core/i18n/react";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import enChat from "../../locales/en/chat.json";
 import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
 import { ChatMessageSkeleton } from "./chat-message-list";

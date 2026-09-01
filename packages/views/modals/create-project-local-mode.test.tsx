@@ -62,11 +62,11 @@ vi.mock("@tanstack/react-query", () => ({
   queryOptions: (options: unknown) => options,
 }));
 
-vi.mock("@multica/core/projects/mutations", () => ({
+vi.mock("@patchbay/core/projects/mutations", () => ({
   useCreateProject: () => ({ mutateAsync: createProjectMock }),
 }));
 
-vi.mock("@multica/core/projects", () => ({
+vi.mock("@patchbay/core/projects", () => ({
   useProjectDraftStore: (selector: (state: unknown) => unknown) =>
     selector({
       draft: {
@@ -90,21 +90,21 @@ vi.mock("@multica/core/projects", () => ({
 // Whether the connected server validates execution_mode at all. Absent on every
 // release before the worktree save gate.
 let serverValidatesWorktree = true;
-vi.mock("@multica/core/config", () => ({
+vi.mock("@patchbay/core/config", () => ({
   useConfigStore: (selector: (state: { localWorktreeSupported: boolean }) => unknown) =>
     selector({ localWorktreeSupported: serverValidatesWorktree }),
 }));
 
-vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
+vi.mock("@patchbay/core/paths", () => ({
   useCurrentWorkspace: () => ({ id: "workspace-1", slug: "ws", repos: [] }),
   useWorkspacePaths: () => ({ projectDetail: (id: string) => `/ws/projects/${id}` }),
 }));
-vi.mock("@multica/core/workspace/queries", () => ({
+vi.mock("@patchbay/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
   agentListOptions: () => ({ queryKey: ["agents"], queryFn: vi.fn() }),
 }));
-vi.mock("@multica/core/workspace/hooks", () => ({
+vi.mock("@patchbay/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: vi.fn() }),
 }));
 vi.mock("../navigation", () => ({ useNavigation: () => ({ push: vi.fn() }) }));
@@ -145,17 +145,17 @@ vi.mock("../platform/use-local-daemon-status", () => ({
 }));
 
 // Render overlays inline so their contents are assertable.
-vi.mock("@multica/ui/components/ui/dialog", () => ({
+vi.mock("@patchbay/ui/components/ui/dialog", () => ({
   Dialog: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DialogContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DialogTitle: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("@multica/ui/components/ui/popover", () => ({
+vi.mock("@patchbay/ui/components/ui/popover", () => ({
   Popover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   PopoverTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   PopoverContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("@multica/ui/components/ui/dropdown-menu", () => ({
+vi.mock("@patchbay/ui/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -294,7 +294,7 @@ describe("CreateProjectModal — local directory execution mode", () => {
     await pickLocalDirectory(user);
 
     expect(screen.getByRole("radio", { name: /Run in parallel, isolated/i })).toBeDisabled();
-    expect(screen.getByText(/Multica server is too old/i)).toBeInTheDocument();
+    expect(screen.getByText(/Patchbay server is too old/i)).toBeInTheDocument();
     // And it must not have been preselected either — that would submit a mode
     // the server would silently downgrade.
     expect(screen.getByRole("button", { name: /^Direct$/i })).toBeInTheDocument();

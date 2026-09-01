@@ -9,7 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 var testWorkspace = pgtype.UUID{Bytes: [16]byte{1}, Valid: true}

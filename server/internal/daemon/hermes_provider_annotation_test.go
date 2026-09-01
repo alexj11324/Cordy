@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
 )
 
 // hermesProviderUnconfiguredError is the failure exactly as it reaches the
@@ -78,7 +78,7 @@ func TestAnnotateHermesProviderUnconfigured(t *testing.T) {
 //
 // So anything embedded in this text gets a vote on session recovery. Paths are
 // user-controlled (HERMES_HOME via the agent's custom_env, the overlay root via
-// MULTICA_WORKSPACES_ROOT), and a home under /srv/400-invalid_request_error/ is
+// PATCHBAY_WORKSPACES_ROOT), and a home under /srv/400-invalid_request_error/ is
 // a legal directory that would trip the poisoned-request guard on a failure
 // that has nothing to do with it. A constant hint has no such vote.
 func TestAnnotationCannotChangeMachineDecisions(t *testing.T) {

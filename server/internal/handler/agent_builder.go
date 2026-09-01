@@ -12,11 +12,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/dbid"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
 )
 
-const agentBuilderInstructions = `You are Multica Agent Builder. Help the user design one practical AI agent through a short conversation.
+const agentBuilderInstructions = `You are Patchbay Agent Builder. Help the user design one practical AI agent through a short conversation.
 
 Your job is to propose and refine configuration, never to create resources yourself. Ask only questions that materially change behavior. Prefer making a reasonable draft immediately, then ask at most two focused questions per turn.
 
@@ -106,7 +106,7 @@ func (h *Handler) CreateAgentBuilderSession(w http.ResponseWriter, r *http.Reque
 
 	builder, err := qtx.CreateAgentBuilder(r.Context(), db.CreateAgentBuilderParams{
 		WorkspaceID:  workspaceUUID,
-		Name:         fmt.Sprintf(".multica-agent-builder-%s", flowID),
+		Name:         fmt.Sprintf(".patchbay-agent-builder-%s", flowID),
 		RuntimeMode:  runtime.RuntimeMode,
 		RuntimeID:    runtime.ID,
 		OwnerID:      ownerUUID,
@@ -396,7 +396,7 @@ type SwitchAgentBuilderRuntimeResponse struct {
 // chat_session.runtime_id is deliberately left pointing at the old runtime: the
 // daemon only resumes a stored provider session when that pointer matches the
 // claiming task's runtime, so leaving it stale is what makes B start a fresh
-// provider session instead of resuming A's. Multica-side chat history and the
+// provider session instead of resuming A's. Patchbay-side chat history and the
 // draft are untouched.
 func (h *Handler) SwitchAgentBuilderRuntime(w http.ResponseWriter, r *http.Request) {
 	workspaceID := h.resolveWorkspaceID(r)

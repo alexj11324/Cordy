@@ -6,14 +6,14 @@ import { Gauge, Loader2 } from "lucide-react";
 import {
   useCreateWorkspaceSubscriptionPortal,
   workspaceSubscriptionSummaryOptions,
-} from "@multica/core/billing";
-import { useFeatureEnabled } from "@multica/core/config";
-import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@multica/core/feature-flags";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useModalStore } from "@multica/core/modals";
-import { useWorkspacePaths } from "@multica/core/paths";
-import type { WorkspaceSubscriptionSummary } from "@multica/core/types";
-import { Button } from "@multica/ui/components/ui/button";
+} from "@patchbay/core/billing";
+import { useFeatureEnabled } from "@patchbay/core/config";
+import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@patchbay/core/feature-flags";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useModalStore } from "@patchbay/core/modals";
+import { useWorkspacePaths } from "@patchbay/core/paths";
+import type { WorkspaceSubscriptionSummary } from "@patchbay/core/types";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -21,7 +21,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import { useT } from "../i18n";
 import { useNavigation } from "../navigation";
 import { openExternal } from "../platform";

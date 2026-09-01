@@ -1,4 +1,4 @@
-const OFFICIAL_MARKETING_HOSTS = new Set(["multica.ai", "www.multica.ai"]);
+const OFFICIAL_MARKETING_HOSTS = new Set(["patchbay.ai", "www.patchbay.ai"]);
 
 export function isOfficialMarketingHost(hostname: string): boolean {
   const normalized = hostname.trim().toLowerCase().replace(/\.$/, "");

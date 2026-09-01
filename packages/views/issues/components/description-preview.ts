@@ -1,4 +1,4 @@
-import { stripChannelMediaMarkers } from "@multica/core/types";
+import { stripChannelMediaMarkers } from "@patchbay/core/types";
 
 // A preview surface shows one or two clamped lines, but the clamp is CSS:
 // the full description still mounts into the DOM and the accessibility

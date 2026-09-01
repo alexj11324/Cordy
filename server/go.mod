@@ -1,4 +1,4 @@
-module github.com/multica-ai/multica/server
+module github.com/patchbay-ai/patchbay/server
 
 go 1.26.6
 

@@ -14,9 +14,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/integrations/slack"
-	"github.com/multica-ai/multica/server/internal/util"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/slack"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
 )
 
 type fakeChatHistoryReader struct {
@@ -594,7 +594,7 @@ func TestGetChatHistory_TranscriptPagesWithoutDuplicatesOrGaps(t *testing.T) {
 
 // TestGetChatHistory_RejectsForgedTaskID: a normal request (no server-set
 // X-Actor-Source) that forges X-Task-ID — what a member could do with a JWT /
-// mul_ PAT, since the Auth middleware does NOT strip a client-sent X-Task-ID —
+// pby_ PAT, since the Auth middleware does NOT strip a client-sent X-Task-ID —
 // must be rejected, never served another session's history.
 func TestGetChatHistory_RejectsForgedTaskID(t *testing.T) {
 	if testHandler == nil {

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/multica-ai/multica/server/internal/service"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/multica-ai/multica/server/pkg/plugincontract"
+	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
 )
 
 // hookHandlerTestManifest declares the three host-driven triggers. Its endpoint
@@ -68,7 +68,7 @@ func installHookPlugin(t *testing.T) string {
 
 func invokeHookRequest(installationID, hookKey string, payload map[string]any) *http.Request {
 	body, _ := json.Marshal(payload)
-	request := httptest.NewRequest(http.MethodPost, "/api/plugin-bridge/v1/hooks/"+hookKey, bytes.NewReader(body))
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/plugin/hooks/"+hookKey, bytes.NewReader(body))
 	request.Header.Set("X-User-ID", testUserID)
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set(pluginInstallationHeader, installationID)

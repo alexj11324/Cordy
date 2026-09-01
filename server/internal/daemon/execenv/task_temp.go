@@ -14,7 +14,7 @@ import (
 // per-task temp directory the daemon creates under the task temp base. The
 // sweep below removes nothing without it, so the base itself — usually a
 // shared /tmp holding other programs' files — is never at risk.
-const TaskTempDirPrefix = "multica-task-"
+const TaskTempDirPrefix = "patchbay-task-"
 
 // taskTempLockClaimFile is the name the marker is locked under before being
 // renamed into place, so .task_lock never exists unlocked while its owner is
@@ -269,7 +269,7 @@ func PruneTaskTempDirs(base string, legacyTTL time.Duration, now time.Time, logg
 		logger.Info("gc: pre-lock task temp dirs left in place",
 			"base", base,
 			"count", legacyKept,
-			"hint", "set MULTICA_GC_TASK_TEMP_LEGACY_TTL to reclaim them on age",
+			"hint", "set PATCHBAY_GC_TASK_TEMP_LEGACY_TTL to reclaim them on age",
 		)
 	}
 	return removed, bytesFreed

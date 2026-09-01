@@ -5,7 +5,7 @@ description: 由一名 leader 协调多名智能体或成员，把工作交给�
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-小队由一名 leader 智能体和若干成员组成。把任务分配给小队后，不会同时运行所有智能体。Multica 会先唤醒 leader，由它阅读上下文并决定下一步交给谁。
+小队由一名 leader 智能体和若干成员组成。把任务分配给小队后，不会同时运行所有智能体。Patchbay 会先唤醒 leader，由它阅读上下文并决定下一步交给谁。
 
 小队解决的是把工作交给谁的问题。它不会把多个智能体合并成一个新的智能体，也不会自动提高并发。
 
@@ -28,12 +28,12 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## 分配后的执行流程
 
-非 backlog 状态的任务分配给小队后，Multica 会立刻给**队长智能体**入队一个 task（不是给每个成员都入一个）：
+非 backlog 状态的任务分配给小队后，Patchbay 会立刻给**队长智能体**入队一个 task（不是给每个成员都入一个）：
 
 1. **队长的运行时领走 task**，和普通智能体的分配流程一样。
-2. **队长拿到 briefing。** 领走的瞬间，Multica 会在队长的指令后面追加三段内容，见下文[队长每次执行看到的内容](#队长每次执行看到的内容)。
+2. **队长拿到 briefing。** 领走的瞬间，Patchbay 会在队长的指令后面追加三段内容，见下文[队长每次执行看到的内容](#队长每次执行看到的内容)。
 3. **队长发一条派活评论。** 评论里用花名册给好的 mention markdown `@` 选中的成员——这个 `@` 会触发被派的成员入队新 task。
-4. **队长记录 evaluation**：`multica squad activity <issue-id> <outcome> --reason "..."`。这一行会写进任务的 activity 时间线，方便人类回溯队长的每次评估。
+4. **队长记录 evaluation**：`patchbay squad activity <issue-id> <outcome> --reason "..."`。这一行会写进任务的 activity 时间线，方便人类回溯队长的每次评估。
 5. **派活轮让父任务处于 `in_progress`。** 和直接分配给智能体同一套状态约定：协调小队就是在推进父任务本身的工作，所以父任务从 `todo` 进入 `in_progress`；派活不等于交付，小队干活期间保持不变。
 6. **队长停下。** 派完活，队长不亲自动手。被派成员有回复时，队长会被自动唤醒，决定下一步：继续派活、上抛给人类、在整体目标达成后把父任务推到 `in_review`，或保持沉默。`done` 留给人工确认或既有集成（例如带 close intent 的 PR merge）。
 
@@ -74,7 +74,7 @@ import { Callout } from "fumadocs-ui/components/callout";
 | **把任务分配给小队** | 是 | 小队成为负责人，并触发 leader。 |
 | **在评论中 @小队** | 否 | 只让 leader 处理这条评论，原负责人不变。 |
 
-直接 @某名成员时，工作会交给该成员处理。Multica 也会合并重复触发并阻止 leader 的评论再次触发自己，避免形成执行循环。
+直接 @某名成员时，工作会交给该成员处理。Patchbay 也会合并重复触发并阻止 leader 的评论再次触发自己，避免形成执行循环。
 
 ## 小队与 Access
 
@@ -101,8 +101,8 @@ import { Callout } from "fumadocs-ui/components/callout";
 ## 使用 CLI
 
 ```bash
-multica squad create --name "Product Delivery" --leader delivery-lead
-multica squad member add <squad-id> \
+patchbay squad create --name "Product Delivery" --leader delivery-lead
+patchbay squad member add <squad-id> \
  --member-id <agent-or-member-id> \
  --type agent \
  --role "负责前端实现"

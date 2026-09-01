@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/multica-ai/multica/server/pkg/agent"
+	"github.com/patchbay-ai/patchbay/server/pkg/agent"
 )
 
 // modelListFixture stands up a Daemon whose model-list report is captured and

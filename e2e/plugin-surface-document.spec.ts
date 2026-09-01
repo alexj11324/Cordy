@@ -27,7 +27,7 @@ test.describe("plugin surface document (real Chromium, sandboxed srcdoc)", () =>
       window.addEventListener("message", (event) => {
         const type = (event.data as { type?: string } | null)?.type;
         if (type === "plugin-test-ran") state.ran++;
-        if (type === "multica:plugin-surface-navigated") state.navigated++;
+        if (type === "patchbay:plugin-surface-navigated") state.navigated++;
       });
       const frame = document.createElement("iframe");
       frame.id = "surface";
@@ -74,11 +74,11 @@ test.describe("plugin surface document (real Chromium, sandboxed srcdoc)", () =>
     await page.evaluate(() => {
       (window as unknown as { __surfaceErrors: number }).__surfaceErrors = 0;
       window.addEventListener("message", (event) => {
-        if ((event.data as { type?: string } | null)?.type !== "multica:plugin-surface-error") return;
+        if ((event.data as { type?: string } | null)?.type !== "patchbay:plugin-surface-error") return;
         const frame = document.querySelector<HTMLIFrameElement>("#surface")!;
         if (event.source !== frame.contentWindow) return;
         (window as unknown as { __surfaceErrors: number }).__surfaceErrors++;
-        frame.contentWindow!.postMessage({ type: "multica:plugin-surface-error-ack" }, "*");
+        frame.contentWindow!.postMessage({ type: "patchbay:plugin-surface-error-ack" }, "*");
       });
     });
 

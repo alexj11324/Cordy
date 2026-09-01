@@ -13,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/multica-ai/multica/server/internal/migrations"
+	"github.com/patchbay-ai/patchbay/server/internal/migrations"
 )
 
 // readinessQuery counts how many of the binary's required migration versions

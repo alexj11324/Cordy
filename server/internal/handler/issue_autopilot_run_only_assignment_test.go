@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/testutil"
+	"github.com/patchbay-ai/patchbay/server/internal/testutil"
 )
 
 // runOnlyFixtureSeq keeps leader agent names unique: the agent table has a
@@ -270,7 +270,7 @@ func TestCreateIssue_RunOnlyAutopilotLeaderAssignsPrivateWorker(t *testing.T) {
 					// user, so it runs BEFORE the user delete) to keep the FK
 					// from stranding the row.
 					outsiderID := dbfx.User(t, "MUL-6691 Outsider",
-						fmt.Sprintf("mul6691-outsider-%s@multica.test", workerID))
+						fmt.Sprintf("mul6691-outsider-%s@patchbay.test", workerID))
 					dbfx.Exec(t, `UPDATE agent SET owner_id = $1 WHERE id = $2`, outsiderID, workerID)
 					t.Cleanup(func() {
 						dbfx.Exec(t, `UPDATE agent SET owner_id = $1 WHERE id = $2`, ownerID, workerID)

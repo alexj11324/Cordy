@@ -214,7 +214,7 @@
       "search_placeholder": "Search agents and squads…",
       "agents_group": "Agents",
       "squads_group": "Squads",
-      "version_missing": "This agent's daemon doesn't report a CLI version. Create with agent needs multica CLI ≥ {{min}}. Upgrade the daemon and reconnect, or switch to manual create.",
+      "version_missing": "This agent's daemon doesn't report a CLI version. Create with agent needs patchbay CLI ≥ {{min}}. Upgrade the daemon and reconnect, or switch to manual create.",
       "version_below": "This agent's daemon CLI is {{current}} — Create with agent needs ≥ {{min}}. Upgrade the daemon, or switch to manual create.",
       "prompt_placeholder": "Tell the agent what to do, e.g. \"let Bohan fix the inbox loading slowness in the Web project\"",
       "source_context_prompt_placeholder": "Tell the agent what to do with this context, e.g. \"continue investigating and fix the issue described here\"",

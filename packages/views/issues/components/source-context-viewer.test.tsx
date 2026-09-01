@@ -1,8 +1,8 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ComponentProps } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@multica/core/i18n/react";
-import type { Issue, IssueSourceContext, SourceContextCommentSnapshot } from "@multica/core/types";
+import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { Issue, IssueSourceContext, SourceContextCommentSnapshot } from "@patchbay/core/types";
 import enIssues from "../../locales/en/issues.json";
 import zhHansIssues from "../../locales/zh-Hans/issues.json";
 
@@ -13,7 +13,7 @@ vi.mock("../../navigation", () => ({
   AppLink: ({ href, ...props }: ComponentProps<"a">) => <a href={href} {...props} />,
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   useWorkspacePaths: () => ({ issueDetail: (id: string) => `/acme/issues/${id}` }),
 }));
 

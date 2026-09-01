@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Issue } from "@multica/core/types";
+import type { Issue } from "@patchbay/core/types";
 import type { BoardColumnGroup } from "../components/board-column";
 import {
   buildColumns,

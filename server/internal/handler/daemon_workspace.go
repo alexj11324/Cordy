@@ -7,7 +7,7 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/middleware"
+	"github.com/patchbay-ai/patchbay/server/internal/middleware"
 )
 
 type DaemonWorkspaceResponse struct {

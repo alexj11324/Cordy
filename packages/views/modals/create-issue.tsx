@@ -1,6 +1,6 @@
 "use client";
 
-import { issueStatusCategory } from "@multica/core/issues";
+import { issueStatusCategory } from "@patchbay/core/issues";
 import { useState, useRef, useEffect, useLayoutEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AppLink, resolveClickIntent, useNavigation } from "../navigation";
@@ -23,7 +23,7 @@ import {
   Tag,
   X as XIcon,
 } from "lucide-react";
-import { cn } from "@multica/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 import { toast } from "sonner";
 import type {
   Issue,
@@ -32,12 +32,12 @@ import type {
   IssueAssigneeType,
   IssuePropertyValue,
   SourceContextPreview,
-} from "@multica/core/types";
-import { contentReferencesAttachment } from "@multica/core/types";
+} from "@patchbay/core/types";
+import { contentReferencesAttachment } from "@patchbay/core/types";
 import {
   DialogContent,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,47 +47,47 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@multica/ui/components/ui/tooltip";
-import { Button } from "@multica/ui/components/ui/button";
-import { Switch } from "@multica/ui/components/ui/switch";
+} from "@patchbay/ui/components/ui/dropdown-menu";
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@patchbay/ui/components/ui/tooltip";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import { ContentEditor, type ContentEditorRef, TitleEditor, type TitleEditorRef, useFileDropZone, FileDropOverlay, useUploadGate, useComposerSubmit } from "../editor";
 import { useIssueCreateUploads } from "./use-issue-create-uploads";
-import { useShortcut } from "@multica/core/shortcuts";
+import { useShortcut } from "@patchbay/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 import { StatusIcon, StatusPicker, PriorityIcon, PriorityPicker, StagePicker, AssigneePicker, StartDatePicker, DueDatePicker, LabelPicker } from "../issues/components";
 import { maxSiblingStage } from "../issues/components/pickers/stage-picker";
 import { ProjectPicker } from "../projects/components/project-picker";
 import { useIssueTriggerPreview } from "../issues/hooks/use-issue-trigger-preview";
-import { useActorName } from "@multica/core/workspace/hooks";
-import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
-import { useIssueDraftStore, type IssueCreateDraft } from "@multica/core/issues/stores/draft-store";
-import { useCreateModeStore } from "@multica/core/issues/stores/create-mode-store";
-import { useQuickCreateStore } from "@multica/core/issues/stores/quick-create-store";
+import { useActorName } from "@patchbay/core/workspace/hooks";
+import { useCurrentWorkspace, useWorkspacePaths } from "@patchbay/core/paths";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
+import { useIssueDraftStore, type IssueCreateDraft } from "@patchbay/core/issues/stores/draft-store";
+import { useCreateModeStore } from "@patchbay/core/issues/stores/create-mode-store";
+import { useQuickCreateStore } from "@patchbay/core/issues/stores/quick-create-store";
 import {
   useIssueCreateSettingsStore,
   type ManualCreateField,
-} from "@multica/core/issues/stores/issue-create-settings-store";
-import { issueDetailOptions, childIssuesOptions } from "@multica/core/issues/queries";
+} from "@patchbay/core/issues/stores/issue-create-settings-store";
+import { issueDetailOptions, childIssuesOptions } from "@patchbay/core/issues/queries";
 import {
   useCreateCommentSubIssue,
   useCreateIssue,
   useUpdateIssue,
-} from "@multica/core/issues/mutations";
-import { useAttachLabelToIssue } from "@multica/core/labels";
+} from "@patchbay/core/issues/mutations";
+import { useAttachLabelToIssue } from "@patchbay/core/labels";
 import {
   propertyListOptions,
   useSetIssueProperty,
-} from "@multica/core/properties";
+} from "@patchbay/core/properties";
 import {
   ApiError,
   DuplicateIssueErrorBodySchema,
   type DuplicateIssueErrorBody,
   parseWithFallback,
-} from "@multica/core/api";
-import { FileUploadButton } from "@multica/ui/components/common/file-upload-button";
+} from "@patchbay/core/api";
+import { FileUploadButton } from "@patchbay/ui/components/common/file-upload-button";
 import { ClearablePillButton, PillButton } from "../common/pill-button";
 import { ActorAvatar } from "../common/actor-avatar";
 import { PropertyIcon } from "../common/property-icon";
@@ -1435,7 +1435,7 @@ export function manualDialogContentClass(isExpanded: boolean) {
 // shell's shared Dialog, but a few legacy callers (and the test suite) still
 // import this module's modal version. Equivalent runtime behavior to the
 // pre-refactor component when used standalone.
-import { Dialog as DialogRoot } from "@multica/ui/components/ui/dialog";
+import { Dialog as DialogRoot } from "@patchbay/ui/components/ui/dialog";
 export function CreateIssueModal(props: {
   onClose: () => void;
   data?: Record<string, unknown> | null;

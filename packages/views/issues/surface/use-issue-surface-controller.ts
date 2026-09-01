@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { hashKey, keepPreviousData, useQuery } from "@tanstack/react-query";
-import { api } from "@multica/core/api";
+import { api } from "@patchbay/core/api";
 import type {
   Issue,
   IssueStatusCategory,
@@ -12,27 +12,27 @@ import type {
   IssueTableQuerySpec,
   Project,
   WorkingAgentSummary,
-} from "@multica/core/types";
-import { workspaceWorkingAgentsOptions } from "@multica/core/agents";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { ALL_STATUSES } from "@multica/core/issues/config";
-import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
-import { statusFilterColumns } from "@multica/core/issues";
-import { dateOnlyToLocalDate } from "@multica/core/issues/date";
-import type { IssueSortParam } from "@multica/core/issues/queries";
-import { issueTableFacetsOptions } from "@multica/core/issues/queries";
+} from "@patchbay/core/types";
+import { workspaceWorkingAgentsOptions } from "@patchbay/core/agents";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { ALL_STATUSES } from "@patchbay/core/issues/config";
+import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
+import { statusFilterColumns } from "@patchbay/core/issues";
+import { dateOnlyToLocalDate } from "@patchbay/core/issues/date";
+import type { IssueSortParam } from "@patchbay/core/issues/queries";
+import { issueTableFacetsOptions } from "@patchbay/core/issues/queries";
 import {
   buildIssueSurfaceQueryPlan,
   type IssueSurfaceQueryPlan,
-} from "@multica/core/issues/surface/query-plan";
+} from "@patchbay/core/issues/surface/query-plan";
 import {
   assigneeTypesForActorKind,
   type IssueScope,
-} from "@multica/core/issues/surface/scope";
-import type { IssueDateFilter, SortField } from "@multica/core/issues/stores/view-store";
-import { propertyListOptions } from "@multica/core/properties";
-import { propertyIdFromViewKey } from "@multica/core/issues/stores/view-store";
-import { useViewStore } from "@multica/core/issues/stores/view-store-context";
+} from "@patchbay/core/issues/surface/scope";
+import type { IssueDateFilter, SortField } from "@patchbay/core/issues/stores/view-store";
+import { propertyListOptions } from "@patchbay/core/properties";
+import { propertyIdFromViewKey } from "@patchbay/core/issues/stores/view-store";
+import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
 import type { IssueFilters } from "../utils/filter";
 import type { ChildProgress } from "../components/list-row";
 import { IssueTableExportIntegrityError } from "../components/table-view-model";

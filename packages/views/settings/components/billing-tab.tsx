@@ -11,8 +11,8 @@ import {
   Plus,
   RefreshCw,
 } from "lucide-react";
-import { ApiError, errorCode } from "@multica/core/api";
-import { autopilotQuotaUsageOptions } from "@multica/core/autopilots";
+import { ApiError, errorCode } from "@patchbay/core/api";
+import { autopilotQuotaUsageOptions } from "@patchbay/core/autopilots";
 import {
   useCreateWorkspaceSubscriptionCheckout,
   useCreateWorkspaceSubscriptionPortal,
@@ -21,20 +21,20 @@ import {
   issueLimitUsageOptions,
   workspaceSubscriptionPricesOptions,
   workspaceSubscriptionSummaryOptions,
-} from "@multica/core/billing";
-import { useFeatureEnabled } from "@multica/core/config";
-import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@multica/core/feature-flags";
-import { useCurrentWorkspace } from "@multica/core/paths";
+} from "@patchbay/core/billing";
+import { useFeatureEnabled } from "@patchbay/core/config";
+import { BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG } from "@patchbay/core/feature-flags";
+import { useCurrentWorkspace } from "@patchbay/core/paths";
 import type {
   PurchaseWorkspaceSeatsRequest,
   WorkspaceSeatPurchasePreview,
   WorkspaceSubscriptionInterval,
-} from "@multica/core/types";
+} from "@patchbay/core/types";
 import {
   Alert,
   AlertDescription,
   AlertTitle,
-} from "@multica/ui/components/ui/alert";
+} from "@patchbay/ui/components/ui/alert";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,9 +44,9 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
-import { Badge } from "@multica/ui/components/ui/badge";
-import { Button } from "@multica/ui/components/ui/button";
+} from "@patchbay/ui/components/ui/alert-dialog";
+import { Badge } from "@patchbay/ui/components/ui/badge";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -54,14 +54,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
-import { Input } from "@multica/ui/components/ui/input";
+} from "@patchbay/ui/components/ui/dialog";
+import { Input } from "@patchbay/ui/components/ui/input";
 import {
   Progress,
   ProgressLabel,
   ProgressValue,
-} from "@multica/ui/components/ui/progress";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
+} from "@patchbay/ui/components/ui/progress";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
 import { useLocale, useT } from "../../i18n";
 import { useNavigation } from "../../navigation";
 import { openExternal } from "../../platform";

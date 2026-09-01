@@ -5,9 +5,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { setApiInstance } from "@multica/core/api";
-import type { ApiClient } from "@multica/core/api/client";
-import type { Issue, IssueStatusCategory, IssueTableRowsRequest } from "@multica/core/types";
+import { setApiInstance } from "@patchbay/core/api";
+import type { ApiClient } from "@patchbay/core/api/client";
+import type { Issue, IssueStatusCategory, IssueTableRowsRequest } from "@patchbay/core/types";
 import { useIssueStatusBranches } from "./use-issue-status-branches";
 
 /**

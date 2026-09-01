@@ -19,12 +19,12 @@ import (
 )
 
 const (
-	StartupTimeoutEnv = "MULTICA_DATABASE_STARTUP_TIMEOUT"
-	ConnectTimeoutEnv = "MULTICA_DATABASE_CONNECT_TIMEOUT"
+	StartupTimeoutEnv = "PATCHBAY_DATABASE_STARTUP_TIMEOUT"
+	ConnectTimeoutEnv = "PATCHBAY_DATABASE_CONNECT_TIMEOUT"
 	// startupStartedAtEnv is set by the container entrypoint so the migrator
 	// and API server consume one shared retry budget. It is intentionally not
 	// a user-facing setting.
-	startupStartedAtEnv = "MULTICA_INTERNAL_DATABASE_STARTUP_STARTED_AT_UNIX"
+	startupStartedAtEnv = "PATCHBAY_INTERNAL_DATABASE_STARTUP_STARTED_AT_UNIX"
 
 	DefaultStartupTimeout = 3 * time.Minute
 	DefaultConnectTimeout = 5 * time.Second

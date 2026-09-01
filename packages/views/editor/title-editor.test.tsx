@@ -39,7 +39,7 @@ vi.mock("@tiptap/react", () => ({
   EditorContent: () => <div data-testid="editor-content" />,
 }));
 
-import { createShortcutChord } from "@multica/core/shortcuts";
+import { createShortcutChord } from "@patchbay/core/shortcuts";
 import { TitleEditor, titleShortcutSubmitAllowed } from "./title-editor";
 
 describe("TitleEditor", () => {

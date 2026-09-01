@@ -4,8 +4,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/daemon/execenv"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // TestRelativeWorkDir covers the privacy-safe display derivation that
@@ -48,35 +48,35 @@ func TestRelativeWorkDir(t *testing.T) {
 		},
 		{
 			name:     "standard envRoot path strips workspaces root",
-			workDir:  "/Users/alice/multica_workspaces/" + wsID + "/" + taskSeg + "/workdir",
+			workDir:  "/Users/alice/patchbay_workspaces/" + wsID + "/" + taskSeg + "/workdir",
 			wsID:     wsID,
 			taskID:   taskID,
 			expected: wsID + "/" + taskSeg + "/workdir",
 		},
 		{
 			name:     "standard envRoot path without trailing workdir",
-			workDir:  "/Users/alice/multica_workspaces/" + wsID + "/" + taskSeg,
+			workDir:  "/Users/alice/patchbay_workspaces/" + wsID + "/" + taskSeg,
 			wsID:     wsID,
 			taskID:   taskID,
 			expected: wsID + "/" + taskSeg,
 		},
 		{
 			name:     "readable envRoot path strips workspaces root",
-			workDir:  "/Users/alice/multica_workspaces/asset-feed-" + wsSeg + "/mul-6063-" + taskSeg + "/workdir",
+			workDir:  "/Users/alice/patchbay_workspaces/asset-feed-" + wsSeg + "/mul-6063-" + taskSeg + "/workdir",
 			wsID:     wsID,
 			taskID:   taskID,
 			expected: "asset-feed-" + wsSeg + "/mul-6063-" + taskSeg + "/workdir",
 		},
 		{
 			name:     "legacy readable envRoot keeps privacy-safe display",
-			workDir:  "/Users/alice/multica_workspaces/asset-feed-a05b0e10/mul-6063-5c57b65b/workdir",
+			workDir:  "/Users/alice/patchbay_workspaces/asset-feed-a05b0e10/mul-6063-5c57b65b/workdir",
 			wsID:     wsID,
 			taskID:   taskID,
 			expected: "asset-feed-a05b0e10/mul-6063-5c57b65b/workdir",
 		},
 		{
 			name:     "legacy opaque envRoot keeps privacy-safe display",
-			workDir:  "/Users/alice/multica_workspaces/" + wsID + "/5c57b65b/workdir",
+			workDir:  "/Users/alice/patchbay_workspaces/" + wsID + "/5c57b65b/workdir",
 			wsID:     wsID,
 			taskID:   taskID,
 			expected: wsID + "/5c57b65b/workdir",
@@ -90,10 +90,10 @@ func TestRelativeWorkDir(t *testing.T) {
 		},
 		{
 			name:     "local_directory deep path under home keeps full remainder",
-			workDir:  "/Users/df007df/code/work/projects/multica/foo",
+			workDir:  "/Users/df007df/code/work/projects/patchbay/foo",
 			wsID:     wsID,
 			taskID:   taskID,
-			expected: "code/work/projects/multica/foo",
+			expected: "code/work/projects/patchbay/foo",
 		},
 		{
 			name:     "shallow /Users home path strips username segment",
@@ -160,28 +160,28 @@ func TestRelativeWorkDir(t *testing.T) {
 		},
 		{
 			name:     "Windows backslash separators are normalized",
-			workDir:  `C:\Users\alice\multica_workspaces\` + wsID + `\` + taskSeg + `\workdir`,
+			workDir:  `C:\Users\alice\patchbay_workspaces\` + wsID + `\` + taskSeg + `\workdir`,
 			wsID:     wsID,
 			taskID:   taskID,
 			expected: wsID + "/" + taskSeg + "/workdir",
 		},
 		{
 			name:     "missing workspace_id under home strips home prefix instead of envRoot",
-			workDir:  "/Users/alice/multica_workspaces/" + wsID + "/" + taskSeg + "/workdir",
+			workDir:  "/Users/alice/patchbay_workspaces/" + wsID + "/" + taskSeg + "/workdir",
 			wsID:     "",
 			taskID:   taskID,
-			expected: "multica_workspaces/" + wsID + "/" + taskSeg + "/workdir",
+			expected: "patchbay_workspaces/" + wsID + "/" + taskSeg + "/workdir",
 		},
 		{
 			name:     "missing task_id under home strips home prefix instead of envRoot",
-			workDir:  "/Users/alice/multica_workspaces/" + wsID + "/" + taskSeg + "/workdir",
+			workDir:  "/Users/alice/patchbay_workspaces/" + wsID + "/" + taskSeg + "/workdir",
 			wsID:     wsID,
 			taskID:   "",
-			expected: "multica_workspaces/" + wsID + "/" + taskSeg + "/workdir",
+			expected: "patchbay_workspaces/" + wsID + "/" + taskSeg + "/workdir",
 		},
 		{
 			name:     "trailing slash on envRoot path is preserved in returned suffix",
-			workDir:  "/Users/alice/multica_workspaces/" + wsID + "/" + taskSeg + "/workdir/",
+			workDir:  "/Users/alice/patchbay_workspaces/" + wsID + "/" + taskSeg + "/workdir/",
 			wsID:     wsID,
 			taskID:   taskID,
 			expected: wsID + "/" + taskSeg + "/workdir/",
@@ -216,15 +216,15 @@ func TestRelativeWorkDir(t *testing.T) {
 func TestTaskToResponseDerivesPrivateDurableWorkDir(t *testing.T) {
 	response := taskToResponse(db.AgentTaskQueue{
 		DurableWorkDir: pgtype.Text{
-			String: "/Users/alice/repos/multica",
+			String: "/Users/alice/repos/patchbay",
 			Valid:  true,
 		},
 	}, "")
 
-	if response.DurableWorkDir != "/Users/alice/repos/multica" {
+	if response.DurableWorkDir != "/Users/alice/repos/patchbay" {
 		t.Fatalf("durable_work_dir = %q, want absolute clipboard value", response.DurableWorkDir)
 	}
-	if response.RelativeDurableWorkDir != "repos/multica" {
+	if response.RelativeDurableWorkDir != "repos/patchbay" {
 		t.Fatalf("relative_durable_work_dir = %q, want privacy-safe display value", response.RelativeDurableWorkDir)
 	}
 }

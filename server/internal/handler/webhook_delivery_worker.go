@@ -11,9 +11,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/service"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 const (

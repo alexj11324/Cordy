@@ -17,7 +17,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
-	"github.com/multica-ai/multica/server/internal/auth"
+	"github.com/patchbay-ai/patchbay/server/internal/auth"
 )
 
 // MembershipChecker verifies a user belongs to a workspace.
@@ -77,14 +77,14 @@ func loadAllowedOrigins() []string {
 	return origins
 }
 
-// loadTrustedProxies reads the same MULTICA_TRUSTED_PROXIES env var the rest of
+// loadTrustedProxies reads the same PATCHBAY_TRUSTED_PROXIES env var the rest of
 // the server uses (see cmd/server/router.go and handler.Config.TrustedProxies),
 // parsing it as a comma-separated list of CIDR prefixes. Invalid entries are
 // dropped with a warn-line rather than crashing. Empty input returns nil, which
 // means "trust no proxy" — X-Forwarded-Host is then never honored. The router
 // overrides this at startup via SetTrustedProxies so both share one config.
 func loadTrustedProxies() []netip.Prefix {
-	raw := strings.TrimSpace(os.Getenv("MULTICA_TRUSTED_PROXIES"))
+	raw := strings.TrimSpace(os.Getenv("PATCHBAY_TRUSTED_PROXIES"))
 	if raw == "" {
 		return nil
 	}
@@ -110,7 +110,7 @@ func SetAllowedOrigins(origins []string) {
 }
 
 // SetTrustedProxies overrides the trusted proxy CIDR list. The server wires the
-// shared MULTICA_TRUSTED_PROXIES value in here at startup.
+// shared PATCHBAY_TRUSTED_PROXIES value in here at startup.
 func SetTrustedProxies(proxies []netip.Prefix) {
 	trustedProxies.Store(proxies)
 }
@@ -677,7 +677,7 @@ func (h *Hub) Snapshot() map[string]any {
 
 // authenticateToken validates a JWT or PAT string and returns the user ID.
 func authenticateToken(tokenStr string, pr PATResolver, ctx context.Context) (string, string) {
-	if strings.HasPrefix(tokenStr, "mul_") {
+	if strings.HasPrefix(tokenStr, "pby_") {
 		if pr == nil {
 			return "", `{"error":"invalid token"}`
 		}

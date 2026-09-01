@@ -16,13 +16,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/featureflags"
-	"github.com/multica-ai/multica/server/internal/scheduler"
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/featureflag"
-	"github.com/multica-ai/multica/server/pkg/plugincontract"
+	"github.com/patchbay-ai/patchbay/server/internal/featureflags"
+	"github.com/patchbay-ai/patchbay/server/internal/scheduler"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/featureflag"
+	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
 )
 
 type receivedScheduledHook struct {
@@ -67,9 +67,9 @@ func TestPluginHookScheduleTwoReplicasRetryWithStableDelivery(t *testing.T) {
 		mu.Unlock()
 		if err := service.VerifyHookSignature(
 			secret,
-			r.Header.Get("X-Multica-Timestamp"),
+			r.Header.Get("X-Patchbay-Timestamp"),
 			raw,
-			r.Header.Get("X-Multica-Signature"),
+			r.Header.Get("X-Patchbay-Signature"),
 			time.Now(),
 		); err != nil {
 			mu.Lock()

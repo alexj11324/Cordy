@@ -134,9 +134,9 @@ describe("browser runtime URLs", () => {
   it("keeps a non-/api path prefix so prefix-mounted backends still work", () => {
     expect(
       resolveBrowserApiBaseUrl({
-        NEXT_PUBLIC_API_URL: "https://app.example.com/multica",
+        NEXT_PUBLIC_API_URL: "https://app.example.com/patchbay",
       }),
-    ).toBe("https://app.example.com/multica");
+    ).toBe("https://app.example.com/patchbay");
   });
 
   it("does not mistake an `api` host for an /api path suffix", () => {
@@ -213,7 +213,7 @@ describe("browser runtime URLs", () => {
 describe("runtimeRewriteDestination", () => {
   it("keeps same-origin fallback when no runtime upstreams are configured", () => {
     expect(runtimeRewriteDestination("/api/config", {})).toBeUndefined();
-    expect(runtimeRewriteDestination("/v1/context", {})).toBeUndefined();
+    expect(runtimeRewriteDestination("/api/v1/plugin/context", {})).toBeUndefined();
     expect(runtimeRewriteDestination("/auth/send-code", {})).toBeUndefined();
     expect(
       runtimeRewriteDestination("/uploads/workspaces/a.png", {}),
@@ -245,10 +245,10 @@ describe("runtimeRewriteDestination", () => {
       }),
     ).toBe("http://backend:8080/api/config");
     expect(
-      runtimeRewriteDestination("/v1/issues/MUL-6581", {
+      runtimeRewriteDestination("/api/v1/plugin/issues/PB-6581", {
         REMOTE_API_URL: "http://backend:8080",
       }),
-    ).toBe("http://backend:8080/v1/issues/MUL-6581");
+    ).toBe("http://backend:8080/api/v1/plugin/issues/PB-6581");
     expect(
       runtimeRewriteDestination("/auth/send-code", {
         REMOTE_API_URL: "http://backend:8080",
@@ -271,9 +271,9 @@ describe("runtimeRewriteDestination", () => {
   it("maps docs paths to the runtime docs origin", () => {
     expect(
       runtimeRewriteDestination("/docs/zh/agents", {
-        DOCS_URL: "http://multica-docs:3000",
+        DOCS_URL: "http://patchbay-docs:3000",
       }),
-    ).toBe("http://multica-docs:3000/docs/zh/agents");
+    ).toBe("http://patchbay-docs:3000/docs/zh/agents");
   });
 
   it("maps the CLI health probe to the runtime API origin", () => {

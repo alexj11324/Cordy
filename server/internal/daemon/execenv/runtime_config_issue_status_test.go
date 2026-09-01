@@ -9,7 +9,7 @@ import (
 // custom statuses — including every deployment behind an old server — must
 // keep rendering it byte-identical: it is part of the prompt-cache prefix and
 // the no-custom-statuses path is the compatibility contract of MUL-6460.
-const legacyStatusLine = "- `multica issue status <id> <status> [--no-start]` — flip status (todo / in_progress / in_review / done / blocked / backlog / cancelled).\n"
+const legacyStatusLine = "- `patchbay issue status <id> <status> [--no-start]` — flip status (todo / in_progress / in_review / done / blocked / backlog / cancelled).\n"
 
 // catalogBridgeBullet is the workflow-section bridge from category rules to a
 // concrete key choice; it must appear exactly when a catalog is present.
@@ -48,7 +48,7 @@ func TestBriefStatusCatalogRendered(t *testing.T) {
 		t.Errorf("catalog brief must replace the legacy seven-value enumeration")
 	}
 	for _, want := range []string{
-		"- `multica issue status <id> <status> [--no-start]` — flip status. This workspace's statuses by category — a custom status inherits its category's platform behavior in full:\n",
+		"- `patchbay issue status <id> <status> [--no-start]` — flip status. This workspace's statuses by category — a custom status inherits its category's platform behavior in full:\n",
 		"  - `backlog`: `backlog` (built-in), `later` (Later — Deferred on purpose)\n",
 		"  - `todo`: `todo` (built-in), `rework` (Rework)\n",
 		"  - `in_review`: `in_review` (built-in), `human_review` (Human Review — Awaiting human acceptance)\n",

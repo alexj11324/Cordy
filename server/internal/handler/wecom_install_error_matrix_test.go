@@ -25,7 +25,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/wecom"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/wecom"
 )
 
 // TestWecomInstallErrorMatrix pins status + error + code for every error class
@@ -71,7 +71,7 @@ func TestWecomInstallErrorMatrix(t *testing.T) {
 			err:        wecom.ErrBotOwnedByAnotherWorkspace,
 			wantStatus: http.StatusConflict,
 			wantCode:   "wecom_bot_owned_by_another_workspace",
-			wantError:  "this bot is already connected to a different Multica workspace — disconnect it there before connecting it here",
+			wantError:  "this bot is already connected to a different Patchbay workspace — disconnect it there before connecting it here",
 			why:        "go disconnect it in the other workspace",
 		},
 		{

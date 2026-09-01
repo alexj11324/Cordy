@@ -22,9 +22,9 @@ import {
   shouldShowPullRequestStats,
   type PullRequestChecksStatus,
   type PullRequestMergeStatus,
-} from "@multica/core/github";
-import type { GitHubPullRequest, GitHubPullRequestState } from "@multica/core/types";
-import { cn } from "@multica/ui/lib/utils";
+} from "@patchbay/core/github";
+import type { GitHubPullRequest, GitHubPullRequestState } from "@patchbay/core/types";
+import { cn } from "@patchbay/ui/lib/utils";
 import { useT, useTimeAgo } from "../../i18n";
 
 type IssuesT = ReturnType<typeof useT<"issues">>["t"];

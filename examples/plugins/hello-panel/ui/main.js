@@ -1,20 +1,20 @@
-// Hello Panel — the reference Multica surface.
+// Hello Panel — the reference Patchbay surface.
 //
 // Plain ES module, no build step: the point is to show the contract, not a
 // toolchain. It runs in a sandboxed iframe with an opaque origin, so there is
 // no cookie, no localStorage and no access to the page around it. Everything it
 // does goes through the host bridge.
 //
-// In a real plugin you would `import { multica } from "@multica/plugin-sdk"`.
+// In a real plugin you would `import { patchbay } from "@patchbay/plugin-sdk"`.
 // This file inlines a minimal client so it can be served as a single static
 // file with nothing to install.
 
 const pending = new Map();
-const port = globalThis.__multicaPluginBridgePortV2;
+const port = globalThis.__patchbayPluginBridgePortV2;
 let sequence = 0;
 
-if (!(port instanceof MessagePort)) throw new Error("Multica surface bridge is unavailable");
-delete globalThis.__multicaPluginBridgePortV2;
+if (!(port instanceof MessagePort)) throw new Error("Patchbay surface bridge is unavailable");
+delete globalThis.__patchbayPluginBridgePortV2;
 port.onmessage = (message) => {
   const payload = message.data;
   if (payload?.kind === "theme") return applyTheme(payload.theme);

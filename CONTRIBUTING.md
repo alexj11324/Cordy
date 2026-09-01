@@ -1,6 +1,6 @@
 # Contributing Guide
 
-This guide documents the local development workflow for contributors working on the Multica codebase.
+This guide documents the local development workflow for contributors working on the Patchbay codebase.
 
 It covers:
 
@@ -15,15 +15,15 @@ It covers:
 
 ## Contribution Terms
 
-By submitting a contribution to Multica — a pull request, a patch, or any
-other work — you agree to condition 2 of the [Multica License](LICENSE):
+By submitting a contribution to Patchbay — a pull request, a patch, or any
+other work — you agree to condition 2 of the [Patchbay License](LICENSE):
 
-- your contribution is submitted under the Multica License as a whole (the
+- your contribution is submitted under the Patchbay License as a whole (the
   additional conditions in Part I together with the incorporated Apache
   License 2.0 text in Part II), not under the Apache License 2.0 alone;
 - your contributed code may be used for commercial purposes, including the
   producer's cloud business operations;
-- the producer can adjust the Multica License to be more strict or relaxed
+- the producer can adjust the Patchbay License to be more strict or relaxed
   as deemed necessary.
 
 See the [LICENSE](LICENSE) file for the full terms.
@@ -32,7 +32,7 @@ See the [LICENSE](LICENSE) file for the full terms.
 
 Local development uses one shared PostgreSQL container and one database per checkout.
 
-- the main checkout usually uses `.env` and `POSTGRES_DB=multica`
+- the main checkout usually uses `.env` and `POSTGRES_DB=patchbay`
 - each Git worktree uses its own `.env.worktree`
 - every checkout connects to the same PostgreSQL host: `localhost:5432`
 - isolation happens at the database level, not by starting a separate Docker Compose project
@@ -71,9 +71,9 @@ cp .env.example .env
 By default, `.env` points to:
 
 ```bash
-POSTGRES_DB=multica
+POSTGRES_DB=patchbay
 POSTGRES_PORT=5432
-DATABASE_URL=postgres://multica:multica@localhost:5432/multica?sslmode=disable
+DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable
 PORT=8080
 FRONTEND_PORT=3000
 ```
@@ -89,11 +89,11 @@ make worktree-env
 That generates values like:
 
 ```bash
-POSTGRES_DB=multica_my_feature_702
+POSTGRES_DB=patchbay_my_feature_702
 POSTGRES_PORT=5432
 PORT=18782
 FRONTEND_PORT=13702
-DATABASE_URL=postgres://multica:multica@localhost:5432/multica_my_feature_702?sslmode=disable
+DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/patchbay_my_feature_702?sslmode=disable
 ```
 
 Notes:
@@ -134,7 +134,7 @@ Three properties are worth knowing because the old flow lacked them:
 - **API, Web and Desktop renderer ports, database names and profiles are allocated, not recomputed.** The
   allocator starts from this directory's path hash, so a checkout keeps the
   numbers it has always had, and moves only when the registry or a live
-  listener says the slot is taken. The registry lives in `~/.multica/dev/`;
+  listener says the slot is taken. The registry lives in `~/.patchbay/dev/`;
   deleting it and re-running `make up` is a supported recovery.
 - **Nothing reports success for something it has not reached.** The database is
   created and verified through `DATABASE_URL` — the same string the backend
@@ -230,8 +230,8 @@ make check-main
 Use a worktree when you want isolated data and separate app ports.
 
 ```bash
-git worktree add ../multica-feature -b feat/my-change main
-cd ../multica-feature
+git worktree add ../patchbay-feature -b feat/my-change main
+cd ../patchbay-feature
 make dev
 ```
 
@@ -250,7 +250,7 @@ from another checkout so database cleanup happens before Git removes the
 worktree directory:
 
 ```bash
-make remove-worktree WORKTREE=../multica-feature
+make remove-worktree WORKTREE=../patchbay-feature
 ```
 
 The command refuses to remove the primary checkout, the current checkout, a
@@ -269,11 +269,11 @@ This is a first-class workflow.
 Example:
 
 - main checkout
-  - database: `multica`
+  - database: `patchbay`
   - backend: `8080`
   - frontend: `3000`
 - worktree checkout
-  - database: `multica_my_feature_702`
+  - database: `patchbay_my_feature_702`
   - backend: generated worktree port such as `18782`
   - frontend: generated worktree port such as `13702`
 
@@ -392,7 +392,7 @@ Run the local daemon:
 make daemon
 ```
 
-The daemon authenticates using the CLI's stored token (`multica login`).
+The daemon authenticates using the CLI's stored token (`patchbay login`).
 It registers runtimes for all watched workspaces from the CLI config.
 
 ## Full-Stack Isolated Testing
@@ -406,7 +406,7 @@ make up C=api,web,daemon
 
 It creates the environment if needed, sets the fixed local verification code
 before the first launch, logs in as `dev@localhost`, mints a personal access
-token, creates a workspace, writes the CLI profile, builds `server/bin/multica`
+token, creates a workspace, writes the CLI profile, builds `server/bin/patchbay`
 and starts the daemon from that binary. It then prints the URL, the login, the
 commit, and the stop command.
 
@@ -416,9 +416,9 @@ Two constraints are enforced rather than documented:
   its own executable path at startup and re-execs it as the
   execution-environment helper for every task; `go run` deletes that binary when
   the launcher exits, so the daemon would register, heartbeat, and then fail
-  every task with `fork/exec …/go-build…/exe/multica: no such file or directory`.
+  every task with `fork/exec …/go-build…/exe/patchbay: no such file or directory`.
 - **`daemon start` is refused under a daemon-managed task.** A checkout below a
-  `.multica/daemon_task_context.json` marker cannot start a second daemon
+  `.patchbay/daemon_task_context.json` marker cannot start a second daemon
   competing for its own work, so `make up C=daemon` stops with that explanation
   before spending a login on it. Use `C=api,web` there.
 
@@ -440,17 +440,17 @@ Log in with `dev@localhost` and `888888`.
 
 ### Isolation Guarantee
 
-Nothing in this flow touches the system-installed `multica` or the default
-`~/.multica/config.json`:
+Nothing in this flow touches the system-installed `patchbay` or the default
+`~/.patchbay/config.json`:
 
 | Resource | System / Production | Local Dev (per environment) |
 |---|---|---|
-| Config | `~/.multica/config.json` | `~/.multica/profiles/dev-<slug>-<offset>/config.json` |
-| Daemon PID | `~/.multica/daemon.pid` | `~/.multica/profiles/dev-<slug>-<offset>/daemon.pid` |
-| Workspaces dir | `~/multica_workspaces/` | `~/multica_workspaces_dev-<slug>-<offset>/` |
-| Database | remote / production | local: `multica_<slug>_<offset>` |
-| Registry | — | `~/.multica/dev/envs/<name>/` |
-| Desktop profile | `desktop-api.multica.ai` | `desktop-localhost-<port>` |
+| Config | `~/.patchbay/config.json` | `~/.patchbay/profiles/dev-<slug>-<offset>/config.json` |
+| Daemon PID | `~/.patchbay/daemon.pid` | `~/.patchbay/profiles/dev-<slug>-<offset>/daemon.pid` |
+| Workspaces dir | `~/patchbay_workspaces/` | `~/patchbay_workspaces_dev-<slug>-<offset>/` |
+| Database | remote / production | local: `patchbay_<slug>_<offset>` |
+| Registry | — | `~/.patchbay/dev/envs/<name>/` |
+| Desktop profile | `desktop-api.patchbay.ai` | `desktop-localhost-<port>` |
 
 Multiple environments run simultaneously without conflict; `make list` shows
 all of them.
@@ -504,7 +504,7 @@ Look for:
 ### List All Local Databases in Shared PostgreSQL
 
 ```bash
-docker compose exec -T postgres psql -U multica -d postgres -At -c "select datname from pg_database order by datname;"
+docker compose exec -T postgres psql -U patchbay -d postgres -At -c "select datname from pg_database order by datname;"
 ```
 
 ### Worktree Is Accidentally Using the Main Database
@@ -567,7 +567,7 @@ make db-drop ENV_FILE=.env.worktree
 The command prints the selected database and environment file, then requires a
 `y/N` confirmation. It only operates on the local Docker PostgreSQL service,
 protects PostgreSQL system databases, and refuses to drop the default main
-database `multica` unless `ALLOW_MAIN_DB_DROP=1` is explicitly supplied.
+database `patchbay` unless `ALLOW_MAIN_DB_DROP=1` is explicitly supplied.
 Declining the confirmation is a successful no-op; when called by
 `make remove-worktree`, it also leaves the worktree in place.
 
@@ -594,15 +594,15 @@ make dev
 ### Feature Worktree
 
 ```bash
-git worktree add ../multica-feature -b feat/my-change main
-cd ../multica-feature
+git worktree add ../patchbay-feature -b feat/my-change main
+cd ../patchbay-feature
 make dev
 ```
 
 ### Return to a Previously Configured Worktree
 
 ```bash
-cd ../multica-feature
+cd ../patchbay-feature
 make start-worktree
 ```
 

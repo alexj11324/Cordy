@@ -17,11 +17,11 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/util"
-	"github.com/multica-ai/multica/server/internal/util/secretbox"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/featureflag"
-	"github.com/multica-ai/multica/server/pkg/plugincontract"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
+	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/featureflag"
+	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
 )
 
 // PluginService owns plugin publishing, installation, configuration, and
@@ -32,18 +32,18 @@ type PluginService struct {
 	// Secrets encrypts `secret` config values. Nil disables secret writes so a
 	// misconfigured deployment fails closed instead of storing plaintext.
 	Secrets *secretbox.Box
-	// LocalDir is MULTICA_PLUGIN_DIR: a directory of plugin sources an author
+	// LocalDir is PATCHBAY_PLUGIN_DIR: a directory of plugin sources an author
 	// can publish from without zipping and uploading after every edit. Empty
 	// disables the development publish channel.
 	LocalDir string
-	// DevOrigins is MULTICA_PLUGIN_DEV_ORIGINS: hook endpoint origins an author
+	// DevOrigins is PATCHBAY_PLUGIN_DEV_ORIGINS: hook endpoint origins an author
 	// may point a plugin at while building one, typically a localhost server.
 	// Empty in every deployment that has not opted in, which is the only reason
 	// it is safe to skip the public-HTTPS guard for them.
 	DevOrigins []string
 	// Host gates which declared contributions this build can actually run.
 	Host plugincontract.Capabilities
-	// DeploymentKey is the raw MULTICA_PLUGIN_SECRET_KEY, used to derive each
+	// DeploymentKey is the raw PATCHBAY_PLUGIN_SECRET_KEY, used to derive each
 	// installation's hook signing secret. Held separately from Secrets because
 	// signing needs a key it can reproduce, not a sealed box.
 	DeploymentKey []byte
@@ -69,11 +69,11 @@ func NewPluginService(queries *db.Queries, txStarter TxStarter) *PluginService {
 	service := &PluginService{
 		Queries:    queries,
 		TxStarter:  txStarter,
-		LocalDir:   strings.TrimSpace(os.Getenv("MULTICA_PLUGIN_DIR")),
-		DevOrigins: parseDevOrigins(os.Getenv("MULTICA_PLUGIN_DEV_ORIGINS")),
+		LocalDir:   strings.TrimSpace(os.Getenv("PATCHBAY_PLUGIN_DIR")),
+		DevOrigins: parseDevOrigins(os.Getenv("PATCHBAY_PLUGIN_DEV_ORIGINS")),
 		Host:       plugincontract.HostCapabilities(),
 	}
-	service.HookClient = devHookClient(service.DevOrigins, os.Getenv("MULTICA_PLUGIN_DEV_CA"))
+	service.HookClient = devHookClient(service.DevOrigins, os.Getenv("PATCHBAY_PLUGIN_DEV_CA"))
 	return service
 }
 
@@ -95,12 +95,12 @@ func devHookClient(devOrigins []string, caPath string) *http.Client {
 	}
 	pem, err := os.ReadFile(caPath)
 	if err != nil {
-		slog.Warn("plugins: MULTICA_PLUGIN_DEV_CA could not be read; dev hook endpoints will not be trusted", "path", caPath, "error", err)
+		slog.Warn("plugins: PATCHBAY_PLUGIN_DEV_CA could not be read; dev hook endpoints will not be trusted", "path", caPath, "error", err)
 		return nil
 	}
 	pool := x509.NewCertPool()
 	if !pool.AppendCertsFromPEM(pem) {
-		slog.Warn("plugins: MULTICA_PLUGIN_DEV_CA contained no certificates", "path", caPath)
+		slog.Warn("plugins: PATCHBAY_PLUGIN_DEV_CA contained no certificates", "path", caPath)
 		return nil
 	}
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -584,7 +584,7 @@ func (s *PluginService) SetConfig(ctx context.Context, installation db.PluginIns
 	}
 
 	if len(secrets) > 0 && s.Secrets == nil {
-		return db.PluginInstallation{}, pluginErrf(PluginErrorUnavailable, "plugin secrets are disabled: MULTICA_PLUGIN_SECRET_KEY is not configured")
+		return db.PluginInstallation{}, pluginErrf(PluginErrorUnavailable, "plugin secrets are disabled: PATCHBAY_PLUGIN_SECRET_KEY is not configured")
 	}
 
 	// Secrets and plain values are two tables with no foreign key between them,

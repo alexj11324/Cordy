@@ -1,9 +1,9 @@
 ---
 title: 프로젝트 아키텍처
-description: Multica의 클라이언트, Go 서비스, 실행 데몬, 공유 프런트엔드 패키지가 함께 작동하는 방식을 알아봅니다.
+description: Patchbay의 클라이언트, Go 서비스, 실행 데몬, 공유 프런트엔드 패키지가 함께 작동하는 방식을 알아봅니다.
 ---
 
-Multica는 Go backend, 여러 클라이언트, 실행 컴퓨터에서 동작하는 데몬으로 구성됩니다. PostgreSQL이 협업 데이터를 저장하고 데몬이 작업을 가져가 로컬 AI 코딩 도구를 호출합니다.
+Patchbay는 Go backend, 여러 클라이언트, 실행 컴퓨터에서 동작하는 데몬으로 구성됩니다. PostgreSQL이 협업 데이터를 저장하고 데몬이 작업을 가져가 로컬 AI 코딩 도구를 호출합니다.
 
 ```text
 Web / Desktop / Mobile / CLI
@@ -17,7 +17,7 @@ Web / Desktop / Mobile / CLI
       로컬 데몬 ─── AI 코딩 도구
 ```
 
-제품 사용자 관점의 설명은 [Multica의 작동 방식](/how-multica-works)을 참고하세요. 이 페이지에서는 코드의 계층 구조를 설명합니다.
+제품 사용자 관점의 설명은 [Patchbay의 작동 방식](/how-patchbay-works)을 참고하세요. 이 페이지에서는 코드의 계층 구조를 설명합니다.
 
 ## 저장소 구조
 
@@ -54,7 +54,7 @@ apps/web/platform/         Next.js 라우팅 adapter
 apps/desktop/.../platform/ Electron 라우팅 adapter
 ```
 
-Mobile은 이 React 페이지를 재사용하지 않습니다. `@multica/core`의 유형과 순수 함수를 import할 수 있지만 UI, query key, 상태, 실시간 구독, 출시 절차는 별도로 소유합니다.
+Mobile은 이 React 페이지를 재사용하지 않습니다. `@patchbay/core`의 유형과 순수 함수를 import할 수 있지만 UI, query key, 상태, 실시간 구독, 출시 절차는 별도로 소유합니다.
 
 ## 프런트엔드 상태
 
@@ -76,7 +76,7 @@ API 응답은 `packages/core/api/` 경계에서 zod schema로 parsing합니다. 
 | entry point | 역할 |
 | --- | --- |
 | `server` | HTTP API, WebSocket, scheduler, 연동 worker 시작 |
-| `multica` | CLI와 로컬 데몬 |
+| `patchbay` | CLI와 로컬 데몬 |
 | `migrate` | 데이터베이스 migration 실행 |
 | `backfill_*` | 특정 버전의 데이터 backfill 도구 |
 
@@ -98,7 +98,7 @@ PostgreSQL은 비즈니스 데이터의 신뢰할 수 있는 원본입니다. Re
 
 ## 실시간 연결
 
-Multica에는 서로 다른 두 WebSocket 경로가 있습니다.
+Patchbay에는 서로 다른 두 WebSocket 경로가 있습니다.
 
 - `internal/realtime/`은 태스크, 댓글, 인박스 등의 변경을 사용자 클라이언트로 전달합니다.
 - `internal/daemonws/`는 데몬을 연결해 런타임을 깨우고 daemon RPC를 실행합니다.

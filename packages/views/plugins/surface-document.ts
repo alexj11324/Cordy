@@ -13,7 +13,7 @@ export const SURFACE_THEME_TOKENS = [
   "--text-body",
 ] as const;
 
-export const SURFACE_BRIDGE_CONNECT_MESSAGE = "multica:plugin-bridge-connect";
+export const SURFACE_BRIDGE_CONNECT_MESSAGE = "patchbay:plugin-bridge-init";
 export const SURFACE_BRIDGE_PROTOCOL_VERSION = 2;
 
 export function readThemeTokens(element: Element | null): Record<string, string> {
@@ -41,7 +41,7 @@ function encodeUTF8(value: string): string {
 }
 
 export interface SurfaceFrameDocumentInput {
-  /** Short-lived URL on Multica's dedicated, cookie-free content origin. */
+  /** Short-lived URL on Patchbay's dedicated, cookie-free content origin. */
   url: string;
   /** Single-use proof embedded in both trusted documents, never plugin code. */
   bridgeToken: string;
@@ -54,7 +54,7 @@ export interface SurfaceFrameDocumentInput {
  * page-wide policy would also have to allow every attachment preview origin;
  * that wider list would let a hostile surface navigate to those origins. Here
  * the only network navigation an inner frame may make is back to the exact
- * Multica content origin that served it.
+ * Patchbay content origin that served it.
  *
  * The outer frame is host-authored and same-origin with the app. The INNER
  * frame is still `sandbox="allow-scripts"` without `allow-same-origin`, so two
@@ -87,12 +87,12 @@ export function buildSurfaceFrameDocument({ url, bridgeToken }: SurfaceFrameDocu
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-html, body, #multica-plugin-root, iframe { width: 100%; height: 100%; margin: 0; padding: 0; border: 0; }
+html, body, #patchbay-plugin-root, iframe { width: 100%; height: 100%; margin: 0; padding: 0; border: 0; }
 body { overflow: hidden; background: transparent; }
 </style>
 </head>
 <body>
-<div id="multica-plugin-root"></div>
+<div id="patchbay-plugin-root"></div>
 <script>
 (function () {
   var encoded = ${JSON.stringify(config)};
@@ -117,19 +117,19 @@ body { overflow: hidden; background: transparent; }
 
   document.addEventListener("securitypolicyviolation", function (event) {
     if (event.effectiveDirective === "frame-src" || event.effectiveDirective === "child-src") {
-      stopSurface("multica:plugin-surface-navigation-blocked");
+      stopSurface("patchbay:plugin-surface-navigation-blocked");
     }
   });
 
   child.addEventListener("load", function () {
     loadCount += 1;
-    if (loadCount > 1) stopSurface("multica:plugin-surface-navigated");
+    if (loadCount > 1) stopSurface("patchbay:plugin-surface-navigated");
   });
 
   window.addEventListener("message", function (event) {
     if (!child.contentWindow || event.source !== child.contentWindow) return;
     var data = event.data || {};
-    if (data.type === "multica:plugin-surface-error" || data.type === "multica:plugin-surface-navigated") {
+    if (data.type === "patchbay:plugin-surface-error" || data.type === "patchbay:plugin-surface-navigated") {
       stopSurface(data.type);
       return;
     }
@@ -148,7 +148,7 @@ body { overflow: hidden; background: transparent; }
 
   child.src = config.url;
   config.url = "";
-  document.getElementById("multica-plugin-root").appendChild(child);
+  document.getElementById("patchbay-plugin-root").appendChild(child);
 })();
 </script>
 </body>

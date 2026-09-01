@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"testing"
 
-	publicapiv1 "github.com/multica-ai/multica/server/pkg/publicapi/v1"
+	publicapiv1 "github.com/patchbay-ai/patchbay/server/pkg/publicapi/v1"
 )
 
 func TestPluginActionRouteTrustBoundaries(t *testing.T) {
@@ -20,58 +20,45 @@ func TestPluginActionRouteTrustBoundaries(t *testing.T) {
 		wantProblem   bool
 	}{
 		{
-			name:       "public API rejects a missing token before the handler",
+			name:       "legacy /v1 prefix is not routed",
 			path:       "/v1/context",
-			wantStatus: http.StatusUnauthorized,
-		},
-		{
-			name:          "public API rejects a browser session token",
-			path:          "/v1/context",
-			authorization: "Bearer " + testToken,
-			wantStatus:    http.StatusUnauthorized,
-		},
-		{
-			name:          "public API passes plugin tokens to the Action handler",
-			path:          "/v1/context",
-			authorization: "Bearer mpi_invalid",
-			wantHandler:   true,
-		},
-		{
-			name:          "surface bridge accepts a browser session",
-			path:          "/api/plugin-bridge/v1/context",
-			authorization: "Bearer " + testToken,
-			wantHandler:   true,
-		},
-		{
-			name:       "removed legacy prefix is not routed",
-			path:       "/api/v1/plugin/context",
 			wantStatus: http.StatusNotFound,
 		},
 		{
-			name:          "public API does not expose person-triggered hooks",
-			path:          "/v1/hooks/summarize",
+			name:       "unified plugin API rejects a missing token",
+			path:       "/api/v1/plugin/context",
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:          "unified plugin API accepts a browser session",
+			path:          "/api/v1/plugin/context",
+			authorization: "Bearer " + testToken,
+			wantHandler:   true,
+		},
+		{
+			name:          "unified plugin API passes plugin tokens to the Action handler",
+			path:          "/api/v1/plugin/context",
+			authorization: "Bearer mpi_invalid",
+			wantHandler:   true,
+		},
+		{
+			name:          "empty resource path uses the problem contract",
+			path:          "/api/v1/plugin/issues/",
 			authorization: "Bearer mpi_invalid",
 			wantStatus:    http.StatusNotFound,
 			wantProblem:   true,
 		},
 		{
-			name:          "public API empty resource path uses the problem contract",
-			path:          "/v1/issues/",
-			authorization: "Bearer mpi_invalid",
-			wantStatus:    http.StatusNotFound,
-			wantProblem:   true,
-		},
-		{
-			name:          "public API unsupported method uses the problem contract",
+			name:          "unsupported method uses the problem contract",
 			method:        http.MethodPut,
-			path:          "/v1/context",
+			path:          "/api/v1/plugin/context",
 			authorization: "Bearer mpi_invalid",
 			wantStatus:    http.StatusMethodNotAllowed,
 			wantProblem:   true,
 		},
 		{
-			name:          "surface bridge retains person-triggered hooks",
-			path:          "/api/plugin-bridge/v1/hooks/summarize",
+			name:          "person-triggered hooks stay on the unified prefix",
+			path:          "/api/v1/plugin/hooks/summarize",
 			authorization: "Bearer " + testToken,
 			wantStatus:    http.StatusMethodNotAllowed,
 		},
@@ -123,23 +110,23 @@ func TestPluginActionRouteTrustBoundaries(t *testing.T) {
 }
 
 func TestPluginActionBaseURLPrefersDedicatedVersionedBase(t *testing.T) {
-	t.Setenv("MULTICA_PLUGIN_API_URL", " https://plugin-api.example.com/v1/ ")
+	t.Setenv("PATCHBAY_PLUGIN_API_URL", " https://plugin-api.example.com/api/v1/plugin/ ")
 
-	if got := pluginActionBaseURL("https://api.example.com/"); got != "https://plugin-api.example.com/v1" {
+	if got := pluginActionBaseURL("https://api.example.com/"); got != "https://plugin-api.example.com/api/v1/plugin" {
 		t.Fatalf("pluginActionBaseURL() = %q", got)
 	}
 }
 
 func TestPluginActionBaseURLFallsBackToPublicURL(t *testing.T) {
-	t.Setenv("MULTICA_PLUGIN_API_URL", "")
+	t.Setenv("PATCHBAY_PLUGIN_API_URL", "")
 
-	if got := pluginActionBaseURL(" https://api.example.com/ "); got != "https://api.example.com/v1" {
+	if got := pluginActionBaseURL(" https://api.example.com/ "); got != "https://api.example.com/api/v1/plugin" {
 		t.Fatalf("pluginActionBaseURL() = %q", got)
 	}
 }
 
 func TestPluginActionBaseURLOmittedWithoutPublicOrigin(t *testing.T) {
-	t.Setenv("MULTICA_PLUGIN_API_URL", "")
+	t.Setenv("PATCHBAY_PLUGIN_API_URL", "")
 
 	if got := pluginActionBaseURL(""); got != "" {
 		t.Fatalf("pluginActionBaseURL() = %q, want empty", got)

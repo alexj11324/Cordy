@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/multica-ai/multica/server/internal/service"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/plugincontract"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
 )
 
 // The identity model, exercised through the path that actually decides it.
@@ -193,7 +193,7 @@ func TestPluginContextOmitsTheUserForAPluginActor(t *testing.T) {
 
 	token := issueCallbackToken(t, installationID, service.HookActor{Type: "plugin", ID: parseUUID(installationID)})
 	recorder := httptest.NewRecorder()
-	testHandler.GetPluginContext(recorder, callbackRequest(token, http.MethodGet, "/v1/context", nil, nil))
+	testHandler.GetPluginContext(recorder, callbackRequest(token, http.MethodGet, "/api/v1/plugin/context", nil, nil))
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
 	}

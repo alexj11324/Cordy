@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { PluginInstallation } from "@multica/core/types";
+import type { PluginInstallation } from "@patchbay/core/types";
 import { collectManualHookActions, pluginHookActionKey } from "./plugin-hook-actions";
 
 // The canonical matrix for which hooks become menu entries. The component

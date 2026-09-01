@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	dto "github.com/prometheus/client_model/go"
 
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // TestRuntimeLookupClassifiesResult pins the distinction the metric exists to
@@ -70,9 +70,9 @@ func TestRuntimeLookupNilMetricsIsSafe(t *testing.T) {
 func lookupCount(t *testing.T, m *obsmetrics.BusinessMetrics, source, result string) float64 {
 	t.Helper()
 
-	fam := obsmetrics.GatherForTest(t, m)["multica_agent_runtime_lookup_total"]
+	fam := obsmetrics.GatherForTest(t, m)["patchbay_agent_runtime_lookup_total"]
 	if fam == nil {
-		t.Fatalf("multica_agent_runtime_lookup_total not registered")
+		t.Fatalf("patchbay_agent_runtime_lookup_total not registered")
 	}
 	for _, mtr := range fam.GetMetric() {
 		if labelValue(mtr, "source") == source && labelValue(mtr, "result") == result {

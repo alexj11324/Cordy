@@ -11,9 +11,9 @@ import (
 )
 
 // daemonTokenCachePrefix namespaces daemon-token cache keys separately
-// from PAT (mul:auth:pat:*) so the two key spaces can't collide and an
+// from PAT (pby:auth:pat:*) so the two key spaces can't collide and an
 // invalidation on one kind of token doesn't accidentally hit the other.
-const daemonTokenCachePrefix = "mul:auth:daemon:"
+const daemonTokenCachePrefix = "pby:auth:daemon:"
 
 // DaemonTokenIdentity is what DaemonAuth needs from the cached lookup —
 // the workspace_id and daemon_id that the middleware injects into the

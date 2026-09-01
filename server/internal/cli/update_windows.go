@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/multica-ai/multica/server/internal/selfexec"
+	"github.com/patchbay-ai/patchbay/server/internal/selfexec"
 )
 
 // oldBinarySuffix is appended to the previous executable while a new one is
@@ -37,7 +37,7 @@ func replaceBinary(tmpPath, exePath string) error {
 	}
 
 	if err := os.Rename(tmpPath, exePath); err != nil {
-		// Restore so the user isn't left without a multica.exe.
+		// Restore so the user isn't left without a patchbay.exe.
 		if rerr := os.Rename(oldPath, exePath); rerr != nil {
 			return fmt.Errorf("install new binary: %w (and failed to restore: %v)", err, rerr)
 		}

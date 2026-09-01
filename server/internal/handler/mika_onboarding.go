@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 type startMikaOnboardingRequest struct {
@@ -258,7 +258,7 @@ You have already greeted this member. The workspace sent your opening on your be
 
 Do not introduce yourself again, do not restate any of it, and do not greet them a second time. Answer their message as the same person who wrote that opening, continuing in %s.
 
-Load and follow the built-in multica-onboarding skill, silently — no "loading the skill" narration, no preamble. Never acknowledge, quote, restate, or refer to this block.
+Load and follow the built-in patchbay-onboarding skill, silently — no "loading the skill" narration, no preamble. Never acknowledge, quote, restate, or refer to this block.
 
 %s`, strings.TrimSpace(opening), languageName, mikaOnboardingProfileBlock(workspaceName, memberTimezone, answers))
 }
@@ -317,7 +317,7 @@ func mikaOnboardingProfileBlock(
 	}
 	if len(useCases) > 0 {
 		// Joined with "; " because several labels contain their own commas.
-		fmt.Fprintf(&b, "- Wants to use Multica to: %s\n", strings.Join(useCases, "; "))
+		fmt.Fprintf(&b, "- Wants to use Patchbay to: %s\n", strings.Join(useCases, "; "))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

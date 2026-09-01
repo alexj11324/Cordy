@@ -9,7 +9,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const membershipCachePrefix = "mul:auth:member:"
+const membershipCachePrefix = "pby:auth:member:"
 
 // MembershipCacheTTL bounds how long a workspace membership lookup stays
 // cached before the handler goes back to Postgres. Short enough that a

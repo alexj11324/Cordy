@@ -15,40 +15,40 @@ import {
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { DialogTitle } from "@multica/ui/components/ui/dialog";
+import { DialogTitle } from "@patchbay/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
-import { Button } from "@multica/ui/components/ui/button";
-import { Switch } from "@multica/ui/components/ui/switch";
-import { cn } from "@multica/ui/lib/utils";
-import { api, ApiError } from "@multica/core/api";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
+} from "@patchbay/ui/components/ui/dropdown-menu";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Switch } from "@patchbay/ui/components/ui/switch";
+import { cn } from "@patchbay/ui/lib/utils";
+import { api, ApiError } from "@patchbay/core/api";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useCurrentWorkspace, useWorkspacePaths } from "@patchbay/core/paths";
 import { AppLink, resolveClickIntent } from "../navigation";
-import { agentListOptions, squadListOptions } from "@multica/core/workspace/queries";
-import { projectListOptions } from "@multica/core/projects/queries";
+import { agentListOptions, squadListOptions } from "@patchbay/core/workspace/queries";
+import { projectListOptions } from "@patchbay/core/projects/queries";
 import {
   useQuickCreateStore,
   type QuickCreateActorType,
-} from "@multica/core/issues/stores/quick-create-store";
+} from "@patchbay/core/issues/stores/quick-create-store";
 import {
   useIssueCreateSettingsStore,
   type QuickCreateField,
-} from "@multica/core/issues/stores/issue-create-settings-store";
-import { useIssueDraftStore, type IssueCreateDraft } from "@multica/core/issues/stores/draft-store";
-import { useCreateModeStore } from "@multica/core/issues/stores/create-mode-store";
+} from "@patchbay/core/issues/stores/issue-create-settings-store";
+import { useIssueDraftStore, type IssueCreateDraft } from "@patchbay/core/issues/stores/draft-store";
+import { useCreateModeStore } from "@patchbay/core/issues/stores/create-mode-store";
 import {
   runtimeListOptions,
   checkQuickCreateCliVersion,
   checkQuickCreateFieldsCliVersion,
   readRuntimeCliVersion,
-} from "@multica/core/runtimes";
-import { useShortcut } from "@multica/core/shortcuts";
+} from "@patchbay/core/runtimes";
+import { useShortcut } from "@patchbay/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 import {
   contentReferencesAttachment,
@@ -56,21 +56,21 @@ import {
   type IssuePriority,
   type SourceContextPreview,
   type Squad,
-} from "@multica/core/types";
+} from "@patchbay/core/types";
 import { ActorAvatar } from "../common/actor-avatar";
 import { ClearablePillButton, PillButton } from "../common/pill-button";
 import { ProjectPicker } from "../projects/components/project-picker";
 import { DueDatePicker, PriorityIcon, PriorityPicker } from "../issues/components";
 import { canAssignAgent } from "../issues/components/pickers/assignee-picker";
-import { isAgentRuntimeBound } from "@multica/core/agents";
+import { isAgentRuntimeBound } from "@patchbay/core/agents";
 import {
   PropertyPicker,
   PickerItem,
   PickerSection,
   PickerEmpty,
 } from "../issues/components/pickers/property-picker";
-import { useAuthStore } from "@multica/core/auth";
-import { memberListOptions } from "@multica/core/workspace/queries";
+import { useAuthStore } from "@patchbay/core/auth";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
 import {
   ContentEditor,
   type ContentEditorRef,
@@ -80,7 +80,7 @@ import {
   useComposerSubmit,
 } from "../editor";
 import { useIssueCreateUploads } from "./use-issue-create-uploads";
-import { FileUploadButton } from "@multica/ui/components/common/file-upload-button";
+import { FileUploadButton } from "@patchbay/ui/components/common/file-upload-button";
 import { useT } from "../i18n";
 import { matchesPinyin } from "../editor/extensions/pinyin-match";
 import { SourceContextPreviewCard, useSourceContextFailureMessage } from "./source-context-preview";
@@ -322,7 +322,7 @@ export function AgentCreatePanel({
   }, [setActiveMode]);
 
   // Daemon CLI version gate. The agent-create flow needs the runtime's
-  // bundled multica CLI to be ≥ MIN_QUICK_CREATE_CLI_VERSION; older
+  // bundled patchbay CLI to be ≥ MIN_QUICK_CREATE_CLI_VERSION; older
   // daemons handle attachments and partial-failure retries incorrectly
   // (see PR #1851 / MUL-1496). Pre-check on the picker so the user gets
   // immediate feedback instead of waiting for the inbox failure; the

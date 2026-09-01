@@ -7,8 +7,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // RuntimeLookup is the only way production code reads a single agent_runtime

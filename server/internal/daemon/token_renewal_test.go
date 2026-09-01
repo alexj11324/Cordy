@@ -31,8 +31,8 @@ func TestClient_RenewToken_PostsToCorrectEndpoint(t *testing.T) {
 		if r.URL.Path != "/api/tokens/current/renew" {
 			t.Errorf("expected /api/tokens/current/renew, got %s", r.URL.Path)
 		}
-		if got := r.Header.Get("Authorization"); got != "Bearer mul_abc" {
-			t.Errorf("expected Bearer mul_abc, got %q", got)
+		if got := r.Header.Get("Authorization"); got != "Bearer pby_abc" {
+			t.Errorf("expected Bearer pby_abc, got %q", got)
 		}
 		// Body must be valid JSON — postJSON marshals an empty object when
 		// reqBody is a non-nil map[string]any{}.
@@ -49,7 +49,7 @@ func TestClient_RenewToken_PostsToCorrectEndpoint(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	c := NewClient(srv.URL)
-	c.SetToken("mul_abc")
+	c.SetToken("pby_abc")
 
 	resp, err := c.RenewToken(context.Background())
 	if err != nil {
@@ -128,8 +128,8 @@ func TestTryRenewToken_SurfacesReloginWarningOn401(t *testing.T) {
 	if !strings.Contains(out, "level=WARN") {
 		t.Fatalf("401 must surface as WARN, got: %s", out)
 	}
-	if !strings.Contains(out, "multica login") {
-		t.Fatalf("401 warning must tell the user to run 'multica login', got: %s", out)
+	if !strings.Contains(out, "patchbay login") {
+		t.Fatalf("401 warning must tell the user to run 'patchbay login', got: %s", out)
 	}
 }
 
@@ -180,7 +180,7 @@ func TestTryRenewToken_TransientErrorIsDebugNotWarn(t *testing.T) {
 // must-fix from MUL-2744 review: when the daemon starts with an already-
 // revoked or expired PAT, the renewal call has to happen BEFORE the first
 // workspace sync, because the workspace sync's 401 would short-circuit Run
-// and the operator would never see a "run multica login" hint.
+// and the operator would never see a "run patchbay login" hint.
 func TestPreflightAuth_RenewsBeforeWorkspaceSyncOnExpiredToken(t *testing.T) {
 	var mu sync.Mutex
 	var seen []string
@@ -197,7 +197,7 @@ func TestPreflightAuth_RenewsBeforeWorkspaceSyncOnExpiredToken(t *testing.T) {
 
 	var buf bytes.Buffer
 	d := &Daemon{client: NewClient(srv.URL), logger: captureLogger(&buf)}
-	d.client.SetToken("mul_already_revoked")
+	d.client.SetToken("pby_already_revoked")
 
 	err := d.preflightAuth(context.Background())
 	if err == nil {
@@ -219,8 +219,8 @@ func TestPreflightAuth_RenewsBeforeWorkspaceSyncOnExpiredToken(t *testing.T) {
 	if !strings.Contains(out, "level=WARN") {
 		t.Fatalf("expected re-login WARN, got: %s", out)
 	}
-	if !strings.Contains(out, "multica login") {
-		t.Fatalf("expected the actionable 'run multica login' hint in the WARN, got: %s", out)
+	if !strings.Contains(out, "patchbay login") {
+		t.Fatalf("expected the actionable 'run patchbay login' hint in the WARN, got: %s", out)
 	}
 }
 
@@ -250,7 +250,7 @@ func TestPreflightAuth_SyncProceedsWhenRenewIsNoOp(t *testing.T) {
 
 	var buf bytes.Buffer
 	d := &Daemon{client: NewClient(srv.URL), logger: captureLogger(&buf)}
-	d.client.SetToken("mul_healthy")
+	d.client.SetToken("pby_healthy")
 
 	if err := d.preflightAuth(context.Background()); err != nil {
 		t.Fatalf("preflightAuth returned error on healthy startup: %v", err)
@@ -283,7 +283,7 @@ func TestPreflightAuth_TransientRenewFailureDoesNotBlockStartup(t *testing.T) {
 
 	var buf bytes.Buffer
 	d := &Daemon{client: NewClient(srv.URL), logger: captureLogger(&buf)}
-	d.client.SetToken("mul_healthy")
+	d.client.SetToken("pby_healthy")
 
 	if err := d.preflightAuth(context.Background()); err != nil {
 		t.Fatalf("preflightAuth must not surface transient renew failures: %v", err)

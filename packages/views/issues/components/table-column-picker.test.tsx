@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { MouseEventHandler, ReactNode } from "react";
-import type { IssueProperty } from "@multica/core/types";
+import type { IssueProperty } from "@patchbay/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { TableColumnPicker } from "./table-view";
 
@@ -10,7 +10,7 @@ const { toggleTableColumn } = vi.hoisted(() => ({
   toggleTableColumn: vi.fn(),
 }));
 
-vi.mock("@multica/core/issues/stores/view-store-context", () => ({
+vi.mock("@patchbay/core/issues/stores/view-store-context", () => ({
   useViewStore: (selector: (state: unknown) => unknown) =>
     selector({
       tableColumns: [{ key: "title" }],
@@ -18,7 +18,7 @@ vi.mock("@multica/core/issues/stores/view-store-context", () => ({
     }),
 }));
 
-vi.mock("@multica/ui/components/ui/dropdown-menu", () => ({
+vi.mock("@patchbay/ui/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: ReactNode }) => children,
   DropdownMenuContent: ({ children }: { children: ReactNode }) => (
     <div>{children}</div>

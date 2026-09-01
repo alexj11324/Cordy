@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // Mixed-version contract for subtree unsubscribe (MUL-5483 review round 6,

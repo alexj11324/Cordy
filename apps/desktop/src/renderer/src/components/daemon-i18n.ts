@@ -1,4 +1,4 @@
-import type { useT } from "@multica/views/i18n";
+import type { useT } from "@patchbay/views/i18n";
 import type { DaemonState } from "../../../shared/daemon-types";
 
 export type DaemonTranslator = ReturnType<typeof useT<"settings">>["t"];

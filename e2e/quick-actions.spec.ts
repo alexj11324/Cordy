@@ -8,7 +8,7 @@ import type { TestApiClient } from "./fixtures";
 
 const DATABASE_URL =
   process.env.DATABASE_URL ??
-  "postgres://multica:multica@localhost:5432/multica?sslmode=disable";
+  "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable";
 
 test("renders assistant quick actions and sends the hidden prompt", async ({
   page,
@@ -98,9 +98,9 @@ test("renders assistant quick actions and sends the hidden prompt", async ({
     if (!token) throw new Error("E2E token missing");
     await page.addInitScript(
       ({ authToken, activeSessionId }) => {
-        localStorage.setItem("multica_token", authToken);
-        localStorage.setItem("multica:chat:activeSessionId", activeSessionId);
-        localStorage.setItem("multica:chat:isOpen", "false");
+        localStorage.setItem("patchbay_token", authToken);
+        localStorage.setItem("patchbay:chat:activeSessionId", activeSessionId);
+        localStorage.setItem("patchbay:chat:isOpen", "false");
       },
       { authToken: token, activeSessionId: sessionId },
     );

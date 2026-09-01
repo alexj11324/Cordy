@@ -9,9 +9,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	"github.com/multica-ai/multica/server/internal/testutil"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
+	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -109,13 +109,13 @@ func TestClaimTaskChatCompletePointerSkipsSessionFallbackQuery(t *testing.T) {
 	seenRolloutQuery := false
 	for _, family := range families {
 		switch family.GetName() {
-		case "multica_chat_claim_session_fallback_needed_total":
+		case "patchbay_chat_claim_session_fallback_needed_total":
 			if len(family.Metric) != 1 || family.Metric[0].GetCounter().GetValue() != 0 {
 				t.Fatalf("complete pointer unexpectedly needed session fallback: %v", family)
 			}
-		case "multica_chat_claim_session_fallback_result_total":
+		case "patchbay_chat_claim_session_fallback_result_total":
 			t.Fatalf("complete pointer unexpectedly emitted a session fallback result: %v", family)
-		case "multica_chat_claim_resume_query_duration_seconds":
+		case "patchbay_chat_claim_resume_query_duration_seconds":
 			for _, metric := range family.Metric {
 				for _, label := range metric.Label {
 					if label.GetName() != "query" {
@@ -184,13 +184,13 @@ func TestClaimTaskChatInputLoadFailureSkipsResumeQueries(t *testing.T) {
 	}
 	for _, family := range families {
 		switch family.GetName() {
-		case "multica_chat_claim_session_fallback_needed_total":
+		case "patchbay_chat_claim_session_fallback_needed_total":
 			if len(family.Metric) != 1 || family.Metric[0].GetCounter().GetValue() != 0 {
 				t.Fatalf("input load failure unexpectedly needed session fallback: %v", family)
 			}
-		case "multica_chat_claim_session_fallback_result_total":
+		case "patchbay_chat_claim_session_fallback_result_total":
 			t.Fatalf("input load failure unexpectedly emitted a session fallback result: %v", family)
-		case "multica_chat_claim_resume_query_duration_seconds":
+		case "patchbay_chat_claim_resume_query_duration_seconds":
 			t.Fatalf("input load failure unexpectedly ran a resume-history query: %v", family)
 		}
 	}

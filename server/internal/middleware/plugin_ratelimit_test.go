@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	publicapiv1 "github.com/multica-ai/multica/server/pkg/publicapi/v1"
+	publicapiv1 "github.com/patchbay-ai/patchbay/server/pkg/publicapi/v1"
 )
 
 func TestPluginRateLimitIsPerCredentialAndUsesStableProblem(t *testing.T) {
@@ -17,7 +17,7 @@ func TestPluginRateLimitIsPerCredentialAndUsesStableProblem(t *testing.T) {
 	handler := PluginRateLimit(rdb, 1, time.Minute)(okHandler)
 
 	call := func(token string) *httptest.ResponseRecorder {
-		request := httptest.NewRequest(http.MethodGet, "/v1/issues/MUL-1", nil)
+		request := httptest.NewRequest(http.MethodGet, "/api/v1/plugin/issues/PB-1", nil)
 		request.Header.Set("Authorization", "Bearer "+token)
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
@@ -42,7 +42,7 @@ func TestPluginRateLimitIsPerCredentialAndUsesStableProblem(t *testing.T) {
 		t.Fatalf("different credential shared budget: status=%d", response.Code)
 	}
 
-	keys, err := rdb.Keys(context.Background(), "mul:ratelimit:plugin:*").Result()
+	keys, err := rdb.Keys(context.Background(), "pby:ratelimit:plugin:*").Result()
 	if err != nil {
 		t.Fatalf("list limiter keys: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestPluginRateLimitIsPerCredentialAndUsesStableProblem(t *testing.T) {
 
 func TestPluginRateLimitWithoutRedisFailsOpen(t *testing.T) {
 	handler := PluginRateLimit(nil, 1, time.Minute)(okHandler)
-	request := httptest.NewRequest(http.MethodGet, "/v1/context", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/plugin/context", nil)
 	request.Header.Set("Authorization", "Bearer mpi_local")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)

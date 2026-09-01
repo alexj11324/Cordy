@@ -148,7 +148,7 @@ func zeroclawSessionNewErrorMessage(err error) string {
 // transport over stdin/stdout.
 //
 // ZeroClaw is a Rust-based, single-binary generic agent runtime (see
-// multica-ai/multica#1543). Its ACP server exposes the same protocol
+// patchbay-ai/patchbay#1543). Its ACP server exposes the same protocol
 // surface that Hermes/Kimi/Reasonix/Dim/Traecli/Grok/QwenPaw/MCode use, so
 // the backend reuses the shared hermesClient ACP transport — only the
 // binary, the session bootstrap, and the tool-name extraction differ.
@@ -238,7 +238,7 @@ func (b *zeroclawBackend) Execute(ctx context.Context, prompt string, opts ExecO
 	// runtime, so reaching here means a value saved before that — warn and
 	// continue rather than bricking the task over config we cannot honour.
 	if len(opts.McpConfig) > 0 {
-		b.cfg.Logger.Warn("zeroclaw ignores MCP servers supplied by Multica; its ACP server reads MCP only from its own config-dir ([[mcp.servers]] + [mcp_bundles.*] + agents.<alias>.mcp_bundles with acp_enable_mcp = true)",
+		b.cfg.Logger.Warn("zeroclaw ignores MCP servers supplied by Patchbay; its ACP server reads MCP only from its own config-dir ([[mcp.servers]] + [mcp_bundles.*] + agents.<alias>.mcp_bundles with acp_enable_mcp = true)",
 			"backend", "zeroclaw",
 		)
 	}
@@ -388,7 +388,7 @@ func (b *zeroclawBackend) Execute(ctx context.Context, prompt string, opts ExecO
 		initResult, err := c.request(runCtx, "initialize", map[string]any{
 			"protocolVersion": 1,
 			"clientInfo": map[string]any{
-				"name":    "multica-agent-sdk",
+				"name":    "patchbay-agent-sdk",
 				"version": "0.2.0",
 			},
 			"clientCapabilities": map[string]any{},

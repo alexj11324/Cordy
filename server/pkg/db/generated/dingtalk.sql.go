@@ -351,14 +351,14 @@ const listDingTalkUserBindingsForMember = `-- name: ListDingTalkUserBindingsForM
 SELECT installation_id, channel_user_id
 FROM channel_user_binding
 WHERE workspace_id = $1
-  AND multica_user_id = $2
+  AND patchbay_user_id = $2
   AND channel_type = 'dingtalk'
 ORDER BY bound_at DESC, id ASC
 `
 
 type ListDingTalkUserBindingsForMemberParams struct {
 	WorkspaceID   pgtype.UUID `json:"workspace_id"`
-	MulticaUserID pgtype.UUID `json:"multica_user_id"`
+	PatchbayUserID pgtype.UUID `json:"patchbay_user_id"`
 }
 
 type ListDingTalkUserBindingsForMemberRow struct {
@@ -369,11 +369,11 @@ type ListDingTalkUserBindingsForMemberRow struct {
 // DingTalk-specific installation identity operations. The underlying channel_*
 // tables are shared, but these replacement semantics belong to DingTalk's BYO
 // AppKey model and deliberately stay out of the shared channel query surface.
-// Returns only the requesting Multica member's DingTalk identities. The
+// Returns only the requesting Patchbay member's DingTalk identities. The
 // installation list is member-visible, so returning every member's staff id
 // here would expose staff ID values more broadly than necessary.
 func (q *Queries) ListDingTalkUserBindingsForMember(ctx context.Context, arg ListDingTalkUserBindingsForMemberParams) ([]ListDingTalkUserBindingsForMemberRow, error) {
-	rows, err := q.db.Query(ctx, listDingTalkUserBindingsForMember, arg.WorkspaceID, arg.MulticaUserID)
+	rows, err := q.db.Query(ctx, listDingTalkUserBindingsForMember, arg.WorkspaceID, arg.PatchbayUserID)
 	if err != nil {
 		return nil, err
 	}

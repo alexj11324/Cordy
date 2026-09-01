@@ -9,10 +9,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/entitlement"
-	"github.com/multica-ai/multica/server/internal/entitlement/entitlementtest"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
+	"github.com/patchbay-ai/patchbay/server/internal/entitlement/entitlementtest"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 type issueLimitProviderFunc func(context.Context, uuid.UUID, entitlement.GateName) entitlement.Decision

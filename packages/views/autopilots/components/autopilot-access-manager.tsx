@@ -3,14 +3,14 @@
 import { useMemo, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { memberListOptions } from "@multica/core/workspace/queries";
-import { useActorName } from "@multica/core/workspace/hooks";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { useActorName } from "@patchbay/core/workspace/hooks";
 import {
   useGrantAutopilotAccess,
   useRevokeAutopilotAccess,
-} from "@multica/core/autopilots/mutations";
-import type { AutopilotCollaborator } from "@multica/core/types";
+} from "@patchbay/core/autopilots/mutations";
+import type { AutopilotCollaborator } from "@patchbay/core/types";
 import { toast } from "sonner";
 import { ActorAvatar } from "../../common/actor-avatar";
 import {

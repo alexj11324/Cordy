@@ -18,8 +18,8 @@ import (
 )
 
 const (
-	AuthCookieName      = "multica_auth"
-	CSRFCookieName      = "multica_csrf"
+	AuthCookieName      = "patchbay_auth"
+	CSRFCookieName      = "patchbay_csrf"
 	defaultAuthTokenTTL = 30 * 24 * time.Hour // 30 days
 )
 

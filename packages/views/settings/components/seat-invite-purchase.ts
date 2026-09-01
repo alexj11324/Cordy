@@ -2,7 +2,7 @@ import type {
   PurchaseWorkspaceSeatsResponse,
   WorkspaceSeatPurchasePreview,
   WorkspaceSubscriptionSummary,
-} from "@multica/core/types";
+} from "@patchbay/core/types";
 
 export type SeatInvitationCapacityFailure =
   | "full"

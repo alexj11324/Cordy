@@ -12,12 +12,12 @@ import (
 )
 
 func TestCodeArtsRealSmoke(t *testing.T) {
-	if os.Getenv("MULTICA_RUN_REAL_AGENT_SMOKE") != "1" {
-		t.Skip("set MULTICA_RUN_REAL_AGENT_SMOKE=1 to run an authenticated CodeArts smoke test")
+	if os.Getenv("PATCHBAY_RUN_REAL_AGENT_SMOKE") != "1" {
+		t.Skip("set PATCHBAY_RUN_REAL_AGENT_SMOKE=1 to run an authenticated CodeArts smoke test")
 	}
 
 	backend, err := ResolveBackend("codearts", Config{
-		ExecutablePath: os.Getenv("MULTICA_CODEARTS_PATH"),
+		ExecutablePath: os.Getenv("PATCHBAY_CODEARTS_PATH"),
 		Logger:         slog.Default(),
 	})
 	if err != nil {
@@ -28,7 +28,7 @@ func TestCodeArtsRealSmoke(t *testing.T) {
 	defer cancel()
 	session, err := backend.Execute(ctx, "Reply with exactly CODEARTS_SMOKE_OK and nothing else.", ExecOptions{
 		Cwd:     t.TempDir(),
-		Model:   os.Getenv("MULTICA_CODEARTS_MODEL"),
+		Model:   os.Getenv("PATCHBAY_CODEARTS_MODEL"),
 		Timeout: 2 * time.Minute,
 	})
 	if err != nil {

@@ -12,7 +12,7 @@ import (
 // `--content-stdin` + HEREDOC mandate (#1795 / #1851 / MUL-2904) was kept
 // for years to defend against backtick / `$()` substitution in the body,
 // but the heredoc/flag boundary turned out to be fragile in its own right:
-// when a model wrapped extra flags around the heredoc on `multica issue
+// when a model wrapped extra flags around the heredoc on `patchbay issue
 // create`, the flags got swallowed into stdin and silently dropped (OXY-78,
 // OXY-76). The file path defeats both classes — the body never reaches the
 // shell, and all flags live on one shell-token line.
@@ -29,7 +29,7 @@ func TestBuildCommentReplyInstructionsCodexLinux(t *testing.T) {
 	got := BuildCommentReplyInstructions("codex", issueID, triggerID, false)
 
 	for _, want := range []string{
-		"multica issue comment add " + issueID + " --parent " + triggerID + " --content-file ./reply.md",
+		"patchbay issue comment add " + issueID + " --parent " + triggerID + " --content-file ./reply.md",
 		"Write the body file first",
 		"--content-file ./reply.md",
 		"#4182",
@@ -85,7 +85,7 @@ func TestBuildCommentReplyInstructionsNonCodexLinux(t *testing.T) {
 				got := BuildCommentReplyInstructions(provider, issueID, triggerID, false)
 
 				for _, want := range []string{
-					"multica issue comment add " + issueID + " --parent " + triggerID + " --content-file ./reply.md",
+					"patchbay issue comment add " + issueID + " --parent " + triggerID + " --content-file ./reply.md",
 					// MUL-5442 cross-channel dedup: shell-hazard mechanics live in
 					// the brief's Comment Formatting; the cookbook keeps the
 					// file-first order, the command, and the pointer.
@@ -140,7 +140,7 @@ func TestBuildCommentReplyInstructionsWindowsUsesContentFile(t *testing.T) {
 		t.Run(provider+"/windows", func(t *testing.T) {
 			got := BuildCommentReplyInstructions(provider, issueID, triggerID, false)
 			for _, want := range []string{
-				"multica issue comment add " + issueID + " --parent " + triggerID + " --content-file",
+				"patchbay issue comment add " + issueID + " --parent " + triggerID + " --content-file",
 				// MUL-5442 cross-channel dedup: the $OutputEncoding trap's
 				// full mechanics live once, in the brief's Windows Comment
 				// Formatting variant; the per-turn cookbook keeps the ban,
@@ -243,7 +243,7 @@ func TestWindowsCommentReplyInstructionsHaveNoStdin(t *testing.T) {
 		t.Run(provider, func(t *testing.T) {
 			s := BuildCommentReplyInstructions(provider, issueID, triggerID, false)
 			for _, want := range []string{
-				"multica issue comment add " + issueID + " --parent " + triggerID + " --content-file",
+				"patchbay issue comment add " + issueID + " --parent " + triggerID + " --content-file",
 				"--content-file",
 			} {
 				if !strings.Contains(s, want) {

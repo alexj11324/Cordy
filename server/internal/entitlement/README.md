@@ -1,11 +1,11 @@
 # Entitlement policy consumer
 
-This package is the mechanical Multica-side consumer of the private Cloud
+This package is the mechanical Patchbay-side consumer of the private Cloud
 enforcement-policy endpoint. Commercial inputs stay in Cloud: this package does
 not contain plan names, subscription-state mapping, limit values, or policy
 switches.
 
-Production wiring has one boundary: setting `MULTICA_CLOUD_URL` connects this
+Production wiring has one boundary: setting `PATCHBAY_CLOUD_URL` connects this
 consumer as well as the other managed Cloud clients. An empty URL performs no
 HTTP request, issue creation does not count rows, and the autopilot consumer
 does not access its quota tables. Self-hosted deployments therefore retain the
@@ -30,7 +30,7 @@ The client reads:
 - `valid_until`: diagnostic Cloud wall-clock time only; it is never used to
   extend enforcement.
 - `gates`: effective `off` or `enforce` instructions and parameters. Cloud does
-  not expose an `observe` rollout mode; `observe` exists only as Multica's local
+  not expose an `observe` rollout mode; `observe` exists only as Patchbay's local
   downgrade of an expired cached `enforce` instruction.
 
 Responses tolerate unknown JSON fields for additive compatibility. Unknown

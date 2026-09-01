@@ -22,10 +22,10 @@ var MinVersions = map[string]string{
 }
 
 // MinQuickCreateCLIVersion gates the agent-create (quick-create) flow against
-// the multica CLI version reported by the daemon at registration time. The
+// the patchbay CLI version reported by the daemon at registration time. The
 // quick-create prompt that the agent runs depends on CLI behavior introduced
 // after this version (attachment URL handling, quick-create attachment
-// binding, no-retry semantics on `multica issue create` failure — see PR
+// binding, no-retry semantics on `patchbay issue create` failure — see PR
 // #1851); older daemons would either double-create issues or mishandle pasted
 // screenshot URLs. Treated as a hard requirement: missing / unparsable / below
 // this threshold all fail closed.
@@ -53,7 +53,7 @@ const MinQuickCreateFieldsCLIVersion = "0.4.3"
 // through the floor and ran two tasks in the user's own directory.
 const MinLocalWorktreeCLIVersion = "0.4.24"
 
-// MinHandoffCLIVersion is the lowest multica CLI version whose daemon renders
+// MinHandoffCLIVersion is the lowest patchbay CLI version whose daemon renders
 // the assignment handoff note into the run's opening prompt + issue_context.md
 // (MUL-3375). Unlike quick-create this is a SOFT gate: assigning an issue with
 // a note never fails on an old daemon — the assignment still takes effect, the
@@ -88,8 +88,8 @@ func HandoffSupported(cliVersion string) bool {
 // Errors returned by CheckMinCLIVersion. Callers branch on these to surface
 // "needs upgrade" vs "version not reported" with the right user message.
 var (
-	ErrCLIVersionMissing = errors.New("multica CLI version not reported by daemon")
-	ErrCLIVersionTooOld  = errors.New("multica CLI version is below required minimum")
+	ErrCLIVersionMissing = errors.New("patchbay CLI version not reported by daemon")
+	ErrCLIVersionTooOld  = errors.New("patchbay CLI version is below required minimum")
 )
 
 // devDescribeRe matches the `git describe --tags --always --dirty` output for

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/util"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
 	"gopkg.in/yaml.v3"
 )
 
@@ -45,10 +45,10 @@ func TestBuiltinSkillsConformToTemplate(t *testing.T) {
 
 	for _, skill := range skills {
 		t.Run(skill.Name, func(t *testing.T) {
-			// The multica- prefix keeps the on-disk slug from colliding with a
+			// The patchbay- prefix keeps the on-disk slug from colliding with a
 			// user-authored workspace skill.
-			if !strings.HasPrefix(skill.Name, "multica-") {
-				t.Errorf("skill name %q must carry the multica- prefix", skill.Name)
+			if !strings.HasPrefix(skill.Name, "patchbay-") {
+				t.Errorf("skill name %q must carry the patchbay- prefix", skill.Name)
 			}
 
 			fm, body, ok := splitFrontmatter(skill.Content)
@@ -127,10 +127,10 @@ func TestBuiltinSkillsFrontmatterIsStrictYAML(t *testing.T) {
 
 // TestMentioningSkillFollowsContractFrontmatter locks the reference template:
 // the mentioning skill is a context-triggered platform-contract skill, so it
-// must declare user-invocable:false and fence itself to the multica CLI. New
+// must declare user-invocable:false and fence itself to the patchbay CLI. New
 // contract skills should copy this shape.
 func TestMentioningSkillFollowsContractFrontmatter(t *testing.T) {
-	skill, ok := findSkill(t, "multica-mentioning")
+	skill, ok := findSkill(t, "patchbay-mentioning")
 	if !ok {
 		return
 	}
@@ -139,8 +139,8 @@ func TestMentioningSkillFollowsContractFrontmatter(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false (a platform-contract skill triggers from context, not a slash command)", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); got != "Bash(multica *)" {
-		t.Errorf("allowed-tools = %q, want Bash(multica *) (fence the skill to the CLI it teaches)", got)
+	if got := strings.TrimSpace(fm["allowed-tools"]); got != "Bash(patchbay *)" {
+		t.Errorf("allowed-tools = %q, want Bash(patchbay *) (fence the skill to the CLI it teaches)", got)
 	}
 }
 
@@ -209,7 +209,7 @@ func TestMentioningSkillTeachesTheParserContract(t *testing.T) {
 }
 
 func TestWorkingOnIssuesSkillCoversIssueLoopContracts(t *testing.T) {
-	skill, ok := findSkill(t, "multica-working-on-issues")
+	skill, ok := findSkill(t, "patchbay-working-on-issues")
 	if !ok {
 		return
 	}
@@ -218,17 +218,17 @@ func TestWorkingOnIssuesSkillCoversIssueLoopContracts(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false (issue workflow guidance triggers from context)", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(multica *)") {
-		t.Errorf("allowed-tools = %q, want access to the Multica CLI", got)
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
+		t.Errorf("allowed-tools = %q, want access to the Patchbay CLI", got)
 	}
 
 	// Contract anchors only — exact file:line citations live in the skill's
 	// references/source-map.md, not here, so a downstream main merge that
 	// shifts a line cannot rot this test into pinning a stale lie.
 	mustContain := []string{
-		"multica issue pull-requests <issue-id> --output json",
+		"patchbay issue pull-requests <issue-id> --output json",
 		"Default for code-changing issue work",
-		"open or update a PR before posting the final Multica issue comment",
+		"open or update a PR before posting the final Patchbay issue comment",
 		"This is a default, not",
 		"Use a routable issue key in the PR title, body, or branch",
 		"include the PR URL when a PR exists",
@@ -245,7 +245,7 @@ func TestWorkingOnIssuesSkillCoversIssueLoopContracts(t *testing.T) {
 		"`todo` starts work now, `backlog` parks it",
 		"`--stage <N>`",
 		"when a whole stage finishes",
-		"multica issue status <child-id> todo",
+		"patchbay issue status <child-id> todo",
 		// MUL-5442: the brief's Issue Metadata section defers the full
 		// write discipline here. Every relocated ban is anchored
 		// individually — both defining categories AND each example —
@@ -277,10 +277,10 @@ func TestWorkingOnIssuesSkillCoversIssueLoopContracts(t *testing.T) {
 		"scratchpad for run state",
 		"(`pr_url`, `waiting_on`",
 		"Start from the trigger, not from memory",
-		"multica issue get <issue-id> --output json",
-		"multica issue metadata list <issue-id> --output json",
-		"multica issue comment list <issue-id> --thread <trigger-comment-id>",
-		"multica issue comment add <issue-id> --parent <trigger-comment-id>",
+		"patchbay issue get <issue-id> --output json",
+		"patchbay issue metadata list <issue-id> --output json",
+		"patchbay issue comment list <issue-id> --thread <trigger-comment-id>",
+		"patchbay issue comment add <issue-id> --parent <trigger-comment-id>",
 	}
 	for _, forbidden := range mustNotContain {
 		if strings.Contains(body, forbidden) {
@@ -294,7 +294,7 @@ func TestWorkingOnIssuesSkillCoversIssueLoopContracts(t *testing.T) {
 }
 
 func TestSkillImportingSkillCoversWorkspaceImportContracts(t *testing.T) {
-	skill, ok := findSkill(t, "multica-skill-importing")
+	skill, ok := findSkill(t, "patchbay-skill-importing")
 	if !ok {
 		return
 	}
@@ -303,12 +303,12 @@ func TestSkillImportingSkillCoversWorkspaceImportContracts(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false (skill import guidance triggers from context)", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(multica *)") {
-		t.Errorf("allowed-tools = %q, want access to the Multica CLI", got)
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
+		t.Errorf("allowed-tools = %q, want access to the Patchbay CLI", got)
 	}
 
 	mustContain := []string{
-		"multica skill import --url <url> --output json",
+		"patchbay skill import --url <url> --output json",
 		"/api/skills/import",
 		"clawhub.ai",
 		"skills.sh",
@@ -326,10 +326,10 @@ func TestSkillImportingSkillCoversWorkspaceImportContracts(t *testing.T) {
 		"id",
 		"name",
 		"legacy",
-		"multica skill list --output json",
+		"patchbay skill list --output json",
 		"npx skills add",
-		"multica agent skills add <agent-id> --skill-ids <skill-id> --output json",
-		"multica agent skills list <agent-id> --output json",
+		"patchbay agent skills add <agent-id> --skill-ids <skill-id> --output json",
+		"patchbay agent skills list <agent-id> --output json",
 		"replace-all",
 		"`set` is the replacement path",
 		"references/skill-importing-source-map.md",
@@ -341,7 +341,7 @@ func TestSkillImportingSkillCoversWorkspaceImportContracts(t *testing.T) {
 	}
 
 	mustNotContain := []string{
-		"multica agent skills set <agent-id> --skill-ids <skill-id>",
+		"patchbay agent skills set <agent-id> --skill-ids <skill-id>",
 		"merge the new skill id with the existing ids",
 	}
 	for _, forbidden := range mustNotContain {
@@ -356,7 +356,7 @@ func TestSkillImportingSkillCoversWorkspaceImportContracts(t *testing.T) {
 }
 
 func TestCreatingAgentsSkillCoversAgentCreationContracts(t *testing.T) {
-	skill, ok := findSkill(t, "multica-creating-agents")
+	skill, ok := findSkill(t, "patchbay-creating-agents")
 	if !ok {
 		return
 	}
@@ -365,8 +365,8 @@ func TestCreatingAgentsSkillCoversAgentCreationContracts(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false (agent creation guidance triggers from context)", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(multica *)") {
-		t.Errorf("allowed-tools = %q, want access to the Multica CLI", got)
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
+		t.Errorf("allowed-tools = %q, want access to the Patchbay CLI", got)
 	}
 
 	mustContain := []string{
@@ -375,15 +375,15 @@ func TestCreatingAgentsSkillCoversAgentCreationContracts(t *testing.T) {
 		"`instructions` is the runtime behavior contract",
 		"`conversation_starters`",
 		"`avatar_url` → a random `emoji:<glyph>`",
-		"multica agent create --name <name> --runtime-id <runtime-id>",
+		"patchbay agent create --name <name> --runtime-id <runtime-id>",
 		"`model` is a first-class persisted column",
 		"custom_env",
 		"Never put credentials or other secrets in `custom_args`",
 		"--custom-env-stdin",
 		"--custom-env-file",
-		"multica agent skills add <agent-id> --skill-ids <skill-id> --output json",
-		"multica agent skills list <agent-id> --output json",
-		"multica agent get <agent-id> --output json",
+		"patchbay agent skills add <agent-id> --skill-ids <skill-id> --output json",
+		"patchbay agent skills list <agent-id> --output json",
+		"patchbay agent get <agent-id> --output json",
 		"255",
 		"references/creating-agents-source-map.md",
 	}
@@ -417,7 +417,7 @@ func TestCreatingAgentsSkillCoversAgentCreationContracts(t *testing.T) {
 }
 
 func TestSquadsSkillCoversLeaderRoutingContract(t *testing.T) {
-	skill, ok := findSkill(t, "multica-squads")
+	skill, ok := findSkill(t, "patchbay-squads")
 	if !ok {
 		return
 	}
@@ -426,15 +426,15 @@ func TestSquadsSkillCoversLeaderRoutingContract(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false (squad guidance triggers from context)", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(multica *)") {
-		t.Errorf("allowed-tools = %q, want access to the Multica CLI", got)
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
+		t.Errorf("allowed-tools = %q, want access to the Patchbay CLI", got)
 	}
 
 	mustContain := []string{
 		"A squad is not an agent",
 		"squad's `leader_id` agent",
 		"squad members are not automatically fanned out",
-		"multica squad member set-role",
+		"patchbay squad member set-role",
 		"mention://squad/<squad-id>",
 		"recording squad activity",
 		"references/squad-source-map.md",
@@ -457,7 +457,7 @@ func TestSquadsSkillCoversLeaderRoutingContract(t *testing.T) {
 	// `issue comment list` in the CLI section; both shapes contradict the
 	// brief's "two bounded reads, never one bulk pull" doctrine.
 	for _, banned := range []string{
-		"multica issue comment list <issue-id> --output json",
+		"patchbay issue comment list <issue-id> --output json",
 		"--recent 10",
 	} {
 		if strings.Contains(body, banned) {
@@ -471,7 +471,7 @@ func TestSquadsSkillCoversLeaderRoutingContract(t *testing.T) {
 }
 
 func TestAutopilotsSkillCoversDispatchAndSideEffects(t *testing.T) {
-	skill, ok := findSkill(t, "multica-autopilots")
+	skill, ok := findSkill(t, "patchbay-autopilots")
 	if !ok {
 		return
 	}
@@ -480,16 +480,16 @@ func TestAutopilotsSkillCoversDispatchAndSideEffects(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(multica *)") {
-		t.Errorf("allowed-tools = %q, want access to the Multica CLI", got)
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
+		t.Errorf("allowed-tools = %q, want access to the Patchbay CLI", got)
 	}
 
 	mustContain := []string{
 		"An autopilot is not an agent",
 		"create_issue",
 		"run_only",
-		"multica autopilot trigger-add <autopilot-id> --kind schedule",
-		"multica autopilot trigger <autopilot-id> --output json",
+		"patchbay autopilot trigger-add <autopilot-id> --kind schedule",
+		"patchbay autopilot trigger <autopilot-id> --output json",
 		"Do not run `trigger`",
 		"webhook tokens",
 		"{{date}}",
@@ -507,7 +507,7 @@ func TestAutopilotsSkillCoversDispatchAndSideEffects(t *testing.T) {
 }
 
 func TestRuntimesAndReposSkillCoversClaimAndCheckoutChain(t *testing.T) {
-	skill, ok := findSkill(t, "multica-runtimes-and-repos")
+	skill, ok := findSkill(t, "patchbay-runtimes-and-repos")
 	if !ok {
 		return
 	}
@@ -516,16 +516,16 @@ func TestRuntimesAndReposSkillCoversClaimAndCheckoutChain(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(multica *)") {
-		t.Errorf("allowed-tools = %q, want access to the Multica CLI", got)
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
+		t.Errorf("allowed-tools = %q, want access to the Patchbay CLI", got)
 	}
 
 	mustContain := []string{
 		"agent_task_queue",
 		"daemon polls/claims the task",
-		"multica runtime list --output json",
-		"multica repo checkout <url>",
-		"MULTICA_DAEMON_PORT",
+		"patchbay runtime list --output json",
+		"patchbay repo checkout <url>",
+		"PATCHBAY_DAEMON_PORT",
 		"resource_ref.ref",
 		"github_repo",
 		"local_directory",
@@ -533,7 +533,7 @@ func TestRuntimesAndReposSkillCoversClaimAndCheckoutChain(t *testing.T) {
 		"references/runtimes-and-repos-source-map.md",
 		// An agent reads this to know whether its checkout can be committed to.
 		// Codex on Linux and Windows gets task-local Git metadata; every other
-		// runtime gets a linked worktree (multica-ai/multica#2925, #6449).
+		// runtime gets a linked worktree (patchbay-ai/patchbay#2925, #6449).
 		"Linux and Windows Codex",
 		"task-local Git metadata",
 	}
@@ -548,7 +548,7 @@ func TestRuntimesAndReposSkillCoversClaimAndCheckoutChain(t *testing.T) {
 }
 
 func TestProjectsAndResourcesSkillCoversDurableContext(t *testing.T) {
-	skill, ok := findSkill(t, "multica-projects-and-resources")
+	skill, ok := findSkill(t, "patchbay-projects-and-resources")
 	if !ok {
 		return
 	}
@@ -557,17 +557,17 @@ func TestProjectsAndResourcesSkillCoversDurableContext(t *testing.T) {
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
 		t.Errorf("user-invocable = %q, want false", got)
 	}
-	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(multica *)") {
-		t.Errorf("allowed-tools = %q, want access to the Multica CLI", got)
+	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
+		t.Errorf("allowed-tools = %q, want access to the Patchbay CLI", got)
 	}
 
 	mustContain := []string{
 		"Projects are durable context containers",
-		".multica/project/resources.json",
-		"multica project resource list <project-id> --output json",
-		"multica project resource add <project-id> --type github_repo --url <github-url> --output json",
-		"multica project resource add <project-id> --type github_repo --url <github-url> --ref <branch-or-sha> --output json",
-		"multica project resource add <project-id> --type local_directory",
+		".patchbay/project/resources.json",
+		"patchbay project resource list <project-id> --output json",
+		"patchbay project resource add <project-id> --type github_repo --url <github-url> --output json",
+		"patchbay project resource add <project-id> --type github_repo --url <github-url> --ref <branch-or-sha> --output json",
+		"patchbay project resource add <project-id> --type local_directory",
 		"Project resources are durable and affect future tasks",
 		"github_repo.resource_ref.url",
 		"resource_ref.ref",

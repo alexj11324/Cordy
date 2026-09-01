@@ -1,6 +1,6 @@
 -- A DingTalk Stream robot can participate in multiple group conversations.
 -- Keep the robot credentials on channel_installation and route each observed
--- group to its own Multica agent. Relationships are application-owned; this
+-- group to its own Patchbay agent. Relationships are application-owned; this
 -- table intentionally has no foreign keys or inline unique constraints.
 CREATE TABLE dingtalk_group_route (
     id                   UUID NOT NULL DEFAULT gen_random_uuid(),

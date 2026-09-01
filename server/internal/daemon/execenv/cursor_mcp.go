@@ -19,7 +19,7 @@ const (
 	// CursorMcpAuthSourceEnv is an agent custom_env key the daemon consumes
 	// before launching cursor-agent. When set, it must point at an explicit
 	// mcp-auth.json file, or at a Cursor project data directory containing one.
-	// The key is intentionally not MULTICA_* because custom_env blocks those
+	// The key is intentionally not PATCHBAY_* because custom_env blocks those
 	// from being set by users.
 	CursorMcpAuthSourceEnv = "CURSOR_MCP_AUTH_SOURCE"
 
@@ -99,7 +99,7 @@ func prepareCursorMcpConfig(envRoot, workDir string, mcpConfig json.RawMessage, 
 	trustData, err := json.MarshalIndent(map[string]string{
 		"trustedAt":     "1970-01-01T00:00:00Z",
 		"workspacePath": projectRoot,
-		"trustMethod":   "multica-managed",
+		"trustMethod":   "patchbay-managed",
 	}, "", "  ")
 	if err != nil {
 		return "", fmt.Errorf("marshal cursor workspace trust: %w", err)

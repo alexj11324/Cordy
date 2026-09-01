@@ -17,10 +17,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/dbid"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
 )
 
 // originWecomChat is the issue.origin_type label written for issues created
@@ -145,7 +145,7 @@ func (r *installationResolver) ResolveInstallation(ctx context.Context, msg chan
 type identityResolver struct{ store *Store }
 
 // ResolveSender maps the WeCom smart-bot userid (the anonymized "T"-prefixed
-// id the aibot API assigns per bot, from Source.SenderID) to a Multica user
+// id the aibot API assigns per bot, from Source.SenderID) to a Patchbay user
 // via the channel_user_binding table. First-time senders have no row and
 // return engine.ErrSenderUnbound, which the Router pairs with the outbound
 // binding prompt (see OutboundReplier.sendBindingPrompt).
@@ -176,14 +176,14 @@ func (r *identityResolver) ResolveSender(ctx context.Context, inst engine.Resolv
 		}
 		return engine.ResolvedIdentity{}, err
 	}
-	isMember, err := r.store.IsWorkspaceMember(ctx, inst.WorkspaceID, binding.MulticaUserID)
+	isMember, err := r.store.IsWorkspaceMember(ctx, inst.WorkspaceID, binding.PatchbayUserID)
 	if err != nil {
 		return engine.ResolvedIdentity{}, err
 	}
 	if !isMember {
 		return engine.ResolvedIdentity{}, engine.ErrSenderNotMember
 	}
-	return engine.ResolvedIdentity{UserID: binding.MulticaUserID}, nil
+	return engine.ResolvedIdentity{UserID: binding.PatchbayUserID}, nil
 }
 
 // ---- dedup ----
@@ -252,7 +252,7 @@ func (r *sessionBinder) AppendMessage(ctx context.Context, p engine.AppendParams
 	// The adapter's own command source wins, and Text is only the fallback.
 	// Overwriting it with Text — which this used to do — threw away the
 	// mention-stripped line the adapter had already worked out, so in a group
-	// the /issue parser was handed "@Multica Bot /issue …" and saw prose.
+	// the /issue parser was handed "@Patchbay Bot /issue …" and saw prose.
 	// Same two lines as lark/feishu_resolvers.go:206 and slack/resolvers.go:337.
 	commandText := p.Message.CommandText
 	if commandText == "" {

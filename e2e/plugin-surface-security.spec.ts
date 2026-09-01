@@ -10,7 +10,7 @@ test.describe("plugin surface browser boundary", () => {
         body: `<!doctype html><script>
           const channel = new MessageChannel();
           parent.postMessage({
-            type: "multica:plugin-bridge-connect",
+            type: "patchbay:plugin-bridge-init",
             version: 2,
             challenge: "proof"
           }, "*", [channel.port1]);
@@ -22,7 +22,7 @@ test.describe("plugin surface browser boundary", () => {
       bridgeToken: "proof",
     });
     await page.setContent(`<script>window.bridgeCount = 0; addEventListener("message", event => {
-      if (event.data?.type === "multica:plugin-bridge-connect" && event.ports[0]) window.bridgeCount += 1;
+      if (event.data?.type === "patchbay:plugin-bridge-init" && event.ports[0]) window.bridgeCount += 1;
     });</script><iframe id="host" sandbox="allow-scripts allow-same-origin"></iframe>`);
     await page.locator("#host").evaluate((frame, srcdoc) => {
       (frame as HTMLIFrameElement).srcdoc = srcdoc as string;
@@ -43,7 +43,7 @@ test.describe("plugin surface browser boundary", () => {
           const channel = new MessageChannel();
           channel.port2.onmessage = () => channel.port2.postMessage("still-alive");
           parent.postMessage({
-            type: "multica:plugin-bridge-connect",
+            type: "patchbay:plugin-bridge-init",
             version: 2,
             challenge: "proof"
           }, "*", [channel.port1]);
@@ -63,13 +63,13 @@ test.describe("plugin surface browser boundary", () => {
       bridgeToken: "proof",
     });
     await page.setContent(`<script>window.bridgeCount = 0; window.blockedCount = 0; window.bridgeReply = false; addEventListener("message", event => {
-      if (event.data?.type === "multica:plugin-bridge-connect" && event.ports[0]) {
+      if (event.data?.type === "patchbay:plugin-bridge-init" && event.ports[0]) {
         window.bridgeCount += 1;
         window.bridgePort = event.ports[0];
         window.bridgePort.onmessage = () => { window.bridgeReply = true; };
         window.bridgePort.start();
       }
-      if (event.data?.type === "multica:plugin-surface-navigation-blocked") {
+      if (event.data?.type === "patchbay:plugin-surface-navigation-blocked") {
         window.blockedCount += 1;
         window.bridgePort?.close();
       }

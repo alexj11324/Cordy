@@ -1,8 +1,8 @@
 import { act, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@multica/core/i18n/react";
-import { RESOURCES } from "@multica/views/locales";
+import { I18nProvider } from "@patchbay/core/i18n/react";
+import { RESOURCES } from "@patchbay/views/locales";
 import type { DaemonStatus } from "../../../shared/daemon-types";
 import { DaemonPanel } from "./daemon-panel";
 import { DaemonSettingsTab } from "./daemon-settings-tab";
@@ -59,8 +59,8 @@ describe("Desktop daemon localization with real zh-Hans resources", () => {
         "登录时启动守护进程。应用打开期间，它会同时监控自动启动和手动启动的守护进程。",
       ),
     ).toBeInTheDocument();
-    const command = screen.getByText("multica daemon stop");
-    expect(command.closest("p")).toHaveTextContent(/multica daemon stop。$/);
+    const command = screen.getByText("patchbay daemon stop");
+    expect(command.closest("p")).toHaveTextContent(/patchbay daemon stop。$/);
   });
 
   it("renders repeated log messages with straight double quotes", async () => {

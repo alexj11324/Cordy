@@ -7,7 +7,7 @@ import {
   toStoredAgentDraft,
   useManualAgentDraftStore,
   type AgentDraft,
-} from "@multica/core/agents";
+} from "@patchbay/core/agents";
 import { useManualDraftSync } from "./use-manual-draft-sync";
 
 function seedStoredDraft(owner: string, name: string) {

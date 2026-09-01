@@ -7,8 +7,8 @@ import (
 	"strings"
 	"unicode/utf16"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
 )
 
 // This file holds the translation from a Telegram Update to the engine's

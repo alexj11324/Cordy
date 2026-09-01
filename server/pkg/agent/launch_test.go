@@ -49,7 +49,7 @@ func TestLaunchPrefixPrecedesProtocolFlags(t *testing.T) {
 }
 
 // TestLaunchPrefixPlacesFlagStyleWrappersFirst pins where a flag-style prefix
-// lands. It asserts the argv Multica builds, not that any particular third-party
+// lands. It asserts the argv Patchbay builds, not that any particular third-party
 // parser accepts the new position — most treat the two orders as equivalent,
 // but a CLI that separates global from subcommand flags may not, which is why
 // the docs call the move out instead of promising it is invisible.
@@ -274,7 +274,7 @@ func TestLogAgentCommandRedactsTextAndJSON(t *testing.T) {
 
 			var buf bytes.Buffer
 			cfg := Config{Logger: slog.New(tc.handler(&buf)), provider: "codex"}
-			cmd := &exec.Cmd{Path: "/opt/multica/bin/codex", Args: append([]string{"codex"}, args...)}
+			cmd := &exec.Cmd{Path: "/opt/patchbay/bin/codex", Args: append([]string{"codex"}, args...)}
 			cfg.logAgentCommandWithPrompt(cmd, newAgentCommandLogArgs(args), 123)
 
 			output := buf.String()
@@ -284,7 +284,7 @@ func TestLogAgentCommandRedactsTextAndJSON(t *testing.T) {
 				}
 			}
 			for _, diagnostic := range []string{
-				"agent command", "provider", "codex", "/opt/multica/bin/codex",
+				"agent command", "provider", "codex", "/opt/patchbay/bin/codex",
 				"--api-key", "--token", "--header", "-c", "--future-secret",
 				redactedAgentCommandArg, "arg_count", "prompt_bytes",
 			} {
@@ -319,7 +319,7 @@ func TestBackendFactoriesSetCommandLogProvider(t *testing.T) {
 // TestOnlyLaunchGoSpawnsRuntimeProcesses is the structural half of this fix.
 //
 // Distributed opt-in is what let ExtraArgs rot: it was honoured by six of
-// twenty-one backends, and MULTICA_QWENPAW_ARGS shipped plumbed-but-dropped
+// twenty-one backends, and PATCHBAY_QWENPAW_ARGS shipped plumbed-but-dropped
 // because nothing failed when a backend forgot to read it. Re-establishing the
 // same convention for the launch prefix would rot the same way, so the rule is
 // mechanical instead: every runtime process in this package is constructed in

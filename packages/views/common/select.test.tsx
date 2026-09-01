@@ -4,7 +4,7 @@ import {
   Select,
   SelectTrigger,
   SelectValue,
-} from "@multica/ui/components/ui/select";
+} from "@patchbay/ui/components/ui/select";
 
 describe("Select", () => {
   it("renders the selected item label instead of its raw value", () => {

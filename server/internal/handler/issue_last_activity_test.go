@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 func TestUpdateIssueActivityExcludesPositionOnlyWrites(t *testing.T) {

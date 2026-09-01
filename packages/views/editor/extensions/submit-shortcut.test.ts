@@ -7,7 +7,7 @@ import {
   createShortcutChord,
   configureShortcutPlatform,
   useShortcutStore,
-} from "@multica/core/shortcuts";
+} from "@patchbay/core/shortcuts";
 import { PatchedListItem } from "./list-item";
 import {
   createSubmitShortcutExtension,

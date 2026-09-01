@@ -19,9 +19,9 @@ import {
   getShortcutPlatform,
   type ShortcutChord,
   type ShortcutPlatform,
-} from "@multica/core/shortcuts";
-import { Kbd } from "@multica/ui/components/ui/kbd";
-import { cn } from "@multica/ui/lib/utils";
+} from "@patchbay/core/shortcuts";
+import { Kbd } from "@patchbay/ui/components/ui/kbd";
+import { cn } from "@patchbay/ui/lib/utils";
 
 type ShortcutToken = {
   id: string;

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/multica-ai/multica/server/pkg/agent"
+	"github.com/patchbay-ai/patchbay/server/pkg/agent"
 )
 
 // openclawConfigFile is the per-task synthesized OpenClaw config the daemon
@@ -46,7 +46,7 @@ const openclawUserSnapshotFile = "openclaw-user-snapshot.json"
 // inside the outer 5-minute task preparation deadline, so a genuinely hung CLI
 // fails with this specific, actionable reason instead of the generic prepare
 // timeout. Hosts outside that envelope can override with
-// MULTICA_OPENCLAW_CLI_TIMEOUT (or backends.openclaw.cli_timeout in the CLI
+// PATCHBAY_OPENCLAW_CLI_TIMEOUT (or backends.openclaw.cli_timeout in the CLI
 // config, which the daemon translates into the same env var).
 //
 // The gap that used to be documented here — that this was a deadline and not a
@@ -88,7 +88,7 @@ const openclawCLITimeout = 30 * time.Second
 // [openclawCLIMinTimeout, openclawCLIMaxTimeout] are clamped, and anything
 // unparseable is ignored, so a typo degrades to the default instead of
 // disabling the deadline.
-const OpenclawCLITimeoutEnv = "MULTICA_OPENCLAW_CLI_TIMEOUT"
+const OpenclawCLITimeoutEnv = "PATCHBAY_OPENCLAW_CLI_TIMEOUT"
 
 const (
 	// openclawCLIMinTimeout keeps an override from being so small that no real
@@ -157,7 +157,7 @@ func (e *openclawCLITimeoutError) Unwrap() []error {
 }
 
 // resolveOpenclawCLITimeout picks the deadline for one CLI invocation:
-// explicit (tests) > MULTICA_OPENCLAW_CLI_TIMEOUT > openclawCLITimeout.
+// explicit (tests) > PATCHBAY_OPENCLAW_CLI_TIMEOUT > openclawCLITimeout.
 func resolveOpenclawCLITimeout(explicit time.Duration, logger *slog.Logger) time.Duration {
 	if explicit > 0 {
 		return explicit
@@ -199,7 +199,7 @@ type OpenclawConfigPrep struct {
 	OpenclawBin string
 	// Timeout sets the context deadline for each CLI invocation — not a
 	// guaranteed cap on how long the call takes; see openclawCLITimeout. Zero
-	// falls back to the MULTICA_OPENCLAW_CLI_TIMEOUT override, then to
+	// falls back to the PATCHBAY_OPENCLAW_CLI_TIMEOUT override, then to
 	// openclawCLITimeout.
 	Timeout time.Duration
 	// CacheDir is the directory holding this daemon profile's shared
@@ -570,7 +570,7 @@ func buildPerTaskOpenclawConfig(activePath string, exists bool, snapshotPath str
 	// `gateway.*` shape so OpenClaw's deep-merge $include semantics produce
 	// the right composed config: anything we set here wins over the user's
 	// global, anything we omit inherits from the user's global. Only emit
-	// fields the multica admin explicitly populated — zero strings/ints
+	// fields the patchbay admin explicitly populated — zero strings/ints
 	// would override the user's value with junk.
 	if gw := buildGatewayOverride(gateway); gw != nil {
 		cfg["gateway"] = gw
@@ -1380,7 +1380,7 @@ func execOpenclawCLI(ctx context.Context, bin string, args ...string) (string, e
 // `{}` / `{"mcpServers":{}}` — and `false` when the field is null/absent so
 // the user's global config flows through unmodified.
 //
-// Input shape mirrors the rest of Multica: Claude-style
+// Input shape mirrors the rest of Patchbay: Claude-style
 // `{"mcpServers": {"<name>": {...}}}`. The server-entry fields pass through
 // verbatim. OpenClaw's stdio schema uses the same camelCase keys (`command`,
 // `args`, `env`) as Claude; HTTP/SSE entries should set OpenClaw's

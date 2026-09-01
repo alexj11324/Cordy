@@ -10,10 +10,10 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/patchbay-ai/patchbay/server/internal/events"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 // CardStatus mirrors lark_outbound_card_message.status. Kept as a typed
@@ -79,7 +79,7 @@ type defaultRenderer struct{}
 func NewDefaultRenderer() Renderer { return &defaultRenderer{} }
 
 func (defaultRenderer) Render(in RenderInput) (CardRender, error) {
-	header := "Multica"
+	header := "Patchbay"
 	if in.AgentName != "" {
 		header = in.AgentName
 	}
@@ -343,7 +343,7 @@ func (p *Patcher) processEvent(ctx context.Context, e events.Event) error {
 	delivery, err := p.queries.GetChannelTaskDelivery(ctx, taskID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			// Direct Multica task or violated snapshot invariant — fail closed.
+			// Direct Patchbay task or violated snapshot invariant — fail closed.
 			return nil
 		}
 		return fmt.Errorf("lookup lark task delivery: %w", err)
@@ -359,7 +359,7 @@ func (p *Patcher) processEvent(ctx context.Context, e events.Event) error {
 
 	// Only bound sessions reach here, so classify the task origin before
 	// spending any send work. Web/mobile direct-chat tasks can reuse a session
-	// that originated in Lark, but their replies belong only in Multica.
+	// that originated in Lark, but their replies belong only in Patchbay.
 	// Sealed channel tasks own an input batch just like direct tasks, so the
 	// discriminator is the immutable channel_ingested provenance of that
 	// batch, not chat_input_task_id presence (which #5645 originally used).

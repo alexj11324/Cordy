@@ -5,12 +5,12 @@ import type {
   DashboardRunTimeDaily,
   DashboardFailureDaily,
   DashboardFailureByAgent,
-} from "@multica/core/types";
+} from "@patchbay/core/types";
 import {
   FAILURE_CLASSES,
   failureClassOf,
   type FailureClass,
-} from "@multica/core/dashboard";
+} from "@patchbay/core/dashboard";
 import {
   addDaysIso,
   estimateCost,
@@ -503,7 +503,7 @@ export function formatDuration(seconds: number, lessThanMinuteLabel: string): st
 // expired in the queue never started.
 //
 // Everything here folds raw reasons into the seven display classes from
-// `@multica/core/dashboard`; the raw reason survives only in
+// `@patchbay/core/dashboard`; the raw reason survives only in
 // `aggregateFailureReasons`, which powers the detail rows under the class
 // summary.
 // ---------------------------------------------------------------------------

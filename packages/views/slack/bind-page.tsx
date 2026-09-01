@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Card, CardContent } from "@multica/ui/components/ui/card";
-import { Button } from "@multica/ui/components/ui/button";
-import { api } from "@multica/core/api";
-import { useAuthStore } from "@multica/core/auth";
+import { Card, CardContent } from "@patchbay/ui/components/ui/card";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { api } from "@patchbay/core/api";
+import { useAuthStore } from "@patchbay/core/auth";
 import { AppLink } from "../navigation";
 import { useT } from "../i18n";
 
@@ -17,7 +17,7 @@ type RedeemState =
 
 // SlackBindPage is the destination the bot's "link your account" prompt points
 // at (MUL-3666). The user lands here logged out OR logged in; we require auth
-// before redeeming because the redeemer's Multica identity is taken from the
+// before redeeming because the redeemer's Patchbay identity is taken from the
 // session (the token alone never proves who is binding — see
 // slack.BindingTokenService.RedeemAndBind).
 //

@@ -7,11 +7,11 @@ import (
 	"net/http"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/internal/util"
-	agentver "github.com/multica-ai/multica/server/pkg/agent"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
+	agentver "github.com/patchbay-ai/patchbay/server/pkg/agent"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // maxPreviewTriggerIssues caps a single preview request so a pathological

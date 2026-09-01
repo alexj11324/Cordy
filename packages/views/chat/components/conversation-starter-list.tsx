@@ -1,7 +1,7 @@
 "use client";
 
-import type { AgentConversationStarter } from "@multica/core/types";
-import { cn } from "@multica/ui/lib/utils";
+import type { AgentConversationStarter } from "@patchbay/core/types";
+import { cn } from "@patchbay/ui/lib/utils";
 import { useT } from "../../i18n";
 
 /**

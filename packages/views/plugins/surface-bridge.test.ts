@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockCall = vi.hoisted(() => vi.fn());
-vi.mock("@multica/core/api", () => ({ api: { callPluginAction: mockCall } }));
+vi.mock("@patchbay/core/api", () => ({ api: { callPluginAction: mockCall } }));
 
 import { createSurfaceBridge } from "./surface-bridge";
 
@@ -9,7 +9,7 @@ const TOKEN = "single-use-launch-proof";
 
 function connectMessage(source: Window | null, port: MessagePort, challenge = TOKEN, version = 2) {
   const event = new MessageEvent("message", {
-    data: { type: "multica:plugin-bridge-connect", version, challenge },
+    data: { type: "patchbay:plugin-bridge-init", version, challenge },
   });
   Object.defineProperty(event, "source", { value: source, configurable: true });
   Object.defineProperty(event, "ports", { value: [port], configurable: true });

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/testutil"
+	"github.com/patchbay-ai/patchbay/server/internal/testutil"
 )
 
 func TestNormaliseAgentConversationStarters(t *testing.T) {

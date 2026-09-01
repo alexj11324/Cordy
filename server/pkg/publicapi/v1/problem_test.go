@@ -8,7 +8,7 @@ import (
 )
 
 func TestWriteProblemKeepsLegacyErrorAndStableFields(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/v1/issues/MUL-1", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/plugin/issues/PB-1", nil)
 	req.Header.Set("X-Request-ID", "request-123")
 	response := httptest.NewRecorder()
 
@@ -30,7 +30,7 @@ func TestWriteProblemKeepsLegacyErrorAndStableFields(t *testing.T) {
 	if problem.Code != "missing_scope" || problem.Detail != "issues:read is required" || problem.Error != problem.Detail {
 		t.Fatalf("unexpected problem: %+v", problem)
 	}
-	if problem.RequestID != "request-123" || problem.Type != "urn:multica:problem:missing_scope" {
+	if problem.RequestID != "request-123" || problem.Type != "urn:patchbay:problem:missing_scope" {
 		t.Fatalf("unexpected identity fields: %+v", problem)
 	}
 }

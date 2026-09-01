@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/events"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 func newTaskClaimRacePool(t *testing.T) *pgxpool.Pool {
@@ -20,7 +20,7 @@ func newTaskClaimRacePool(t *testing.T) *pgxpool.Pool {
 
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		dbURL = "postgres://multica:multica@localhost:5432/multica?sslmode=disable"
+		dbURL = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -141,7 +141,7 @@ func createClaimCapacityFixture(t *testing.T, ctx context.Context, pool *pgxpool
 	t.Helper()
 
 	suffix := time.Now().UnixNano()
-	email := fmt.Sprintf("claim-capacity-%d@multica.ai", suffix)
+	email := fmt.Sprintf("claim-capacity-%d@patchbay.ai", suffix)
 	slug := fmt.Sprintf("claim-capacity-%d", suffix)
 
 	var userID string

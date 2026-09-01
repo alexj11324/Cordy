@@ -164,7 +164,7 @@ export function deriveDuplicateAccess(
  * they were chosen for, so they ride along only when the copy stays on that
  * exact runtime. When the source runtime is gone, private to somebody else or
  * offline, the draft falls back to another runtime and the three are cleared
- * for the user to pick again — the same rule `multica agent copy` already
+ * for the user to pick again — the same rule `patchbay agent copy` already
  * enforces server-side (cmd_agent_copy.go). Before MUL-5390 the fallback kept
  * the source `model` and silently persisted a cross-provider value.
  */
@@ -206,7 +206,7 @@ export function buildDuplicateDraft(
  * Assembles the `POST /api/agents` body. Empty execution overrides are omitted
  * rather than sent as `""` so the runtime resolves its own default, and the
  * duplicate-only fields are the runtime-independent ones (`custom_args`,
- * concurrency) — mirroring `multica agent copy`.
+ * concurrency) — mirroring `patchbay agent copy`.
  */
 export function buildCreateAgentRequest(options: {
   draft: AgentDraft;

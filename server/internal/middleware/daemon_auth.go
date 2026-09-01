@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/multica-ai/multica/server/internal/auth"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/auth"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // Daemon context keys.
@@ -66,12 +66,12 @@ func WithDaemonContext(ctx context.Context, workspaceID, daemonID string) contex
 // Both caches are optional. When non-nil:
 //   - daemonCache short-circuits the daemon_token DB lookup on the mdt_ path
 //   - patCache short-circuits the PAT DB lookup AND the last_used_at update
-//     on the mul_ fallback path. This is the same cache shared with the
+//     on the pby_ fallback path. This is the same cache shared with the
 //     regular Auth middleware, so a single hot PAT used by both human CLI
 //     and a daemon converges on one DB round-trip per AuthCacheTTL window.
 //
 // cloudPAT is optional; when non-nil, tokens with the mcn_ prefix are
-// validated by calling the Multica Cloud Fleet service (X-User-ID gets the
+// validated by calling the Patchbay Cloud Fleet service (X-User-ID gets the
 // returned owner_id). When nil, mcn_ tokens are rejected at the prefix
 // branch — same fail-closed contract as the regular Auth middleware.
 //
@@ -146,7 +146,7 @@ func DaemonAuth(queries *db.Queries, patCache *auth.PATCache, daemonCache *auth.
 			}
 
 			// Cloud Node PAT: "mcn_" prefix. Mirrors the mcn_ branch
-			// in Auth — Multica Cloud Fleet is authoritative, we only
+			// in Auth — Patchbay Cloud Fleet is authoritative, we only
 			// surface the resolved owner_id as X-User-ID for the
 			// downstream daemon handlers (which then check workspace
 			// membership the usual way). Same fail-closed semantics:
@@ -189,8 +189,8 @@ func DaemonAuth(queries *db.Queries, patCache *auth.PATCache, daemonCache *auth.
 				return
 			}
 
-			// Fallback: PAT tokens ("mul_" prefix).
-			if strings.HasPrefix(tokenString, "mul_") {
+			// Fallback: PAT tokens ("pby_" prefix).
+			if strings.HasPrefix(tokenString, "pby_") {
 				hash := auth.HashToken(tokenString)
 
 				if userID, ok := patCache.Get(r.Context(), hash); ok {

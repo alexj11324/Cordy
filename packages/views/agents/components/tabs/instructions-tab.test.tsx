@@ -3,9 +3,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { configStore } from "@multica/core/config";
-import { I18nProvider } from "@multica/core/i18n/react";
-import type { Agent } from "@multica/core/types";
+import { configStore } from "@patchbay/core/config";
+import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { Agent } from "@patchbay/core/types";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
 // The conversation-starter editor previews the chat empty state, so it reads the

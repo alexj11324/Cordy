@@ -685,7 +685,7 @@ export class ApiClient {
     if (typeof document === "undefined") return null;
     const match = document.cookie
       .split("; ")
-      .find((c) => c.startsWith("multica_csrf="));
+      .find((c) => c.startsWith("patchbay_csrf="));
     return match ? match.split("=")[1] ?? null : null;
   }
 
@@ -1688,8 +1688,8 @@ export class ApiClient {
   }
 
   // ---------------------------------------------------------------------
-  // Cloud Billing — proxies to multica-cloud /api/v1/billing/*. The
-  // multica-api server stamps X-User-ID and forwards bytes; everything
+  // Cloud Billing — proxies to patchbay-cloud /api/v1/billing/*. The
+  // patchbay-api server stamps X-User-ID and forwards bytes; everything
   // here is upstream-shaped. See packages/core/types/billing.ts for the
   // response field documentation.
   // ---------------------------------------------------------------------
@@ -2708,7 +2708,7 @@ export class ApiClient {
   }
 
   /**
-   * Publishes from a directory the operator hosts (MULTICA_PLUGIN_DIR) — the
+   * Publishes from a directory the operator hosts (PATCHBAY_PLUGIN_DIR) — the
    * development channel, so iterating on a surface does not mean zipping and
    * uploading after every edit. It still produces an immutable version.
    */
@@ -2795,9 +2795,9 @@ export class ApiClient {
     const query = request.path === "/context" && request.issueId
       ? `?issue_id=${encodeURIComponent(request.issueId)}`
       : "";
-    return this.fetch<unknown>(`/api/plugin-bridge/v1${request.path}${query}`, {
+    return this.fetch<unknown>(`/api/v1/plugin${request.path}${query}`, {
       method: request.method,
-      headers: { "X-Multica-Plugin-Installation": installationId },
+      headers: { "X-Patchbay-Plugin-Installation": installationId },
       body: request.body === undefined ? undefined : JSON.stringify(request.body),
     });
   }
@@ -2816,9 +2816,9 @@ export class ApiClient {
     hookKey: string,
     request: { trigger: "ui" | "manual"; issueId?: string; input?: unknown },
   ): Promise<PluginHookResult> {
-    const raw = await this.fetch<unknown>(`/api/plugin-bridge/v1/hooks/${encodeURIComponent(hookKey)}`, {
+    const raw = await this.fetch<unknown>(`/api/v1/plugin/hooks/${encodeURIComponent(hookKey)}`, {
       method: "POST",
-      headers: { "X-Multica-Plugin-Installation": installationId },
+      headers: { "X-Patchbay-Plugin-Installation": installationId },
       body: JSON.stringify({ trigger: request.trigger, issue_id: request.issueId, input: request.input }),
     });
     return parseWithFallback(raw, PluginHookResultSchema, {
@@ -2827,7 +2827,7 @@ export class ApiClient {
       trigger: request.trigger,
       latency_ms: 0,
       attempts: 1,
-    }, { endpoint: "POST /api/plugin-bridge/v1/hooks/{key}" });
+    }, { endpoint: "POST /api/v1/plugin/hooks/{key}" });
   }
 
   async listPluginInvocations(workspaceId: string, installationId: string): Promise<PluginInvocation[]> {
@@ -4621,7 +4621,7 @@ export class ApiClient {
 
   // registerWecomBYO performs a bring-your-own-app install: the admin pastes
   // the bot id and long-connection secret from the WeCom admin console,
-  // and the backend seals the secret with MULTICA_WECOM_SECRET_KEY before
+  // and the backend seals the secret with PATCHBAY_WECOM_SECRET_KEY before
   // persisting, returning the new installation.
   async registerWecomBYO(
     workspaceId: string,
@@ -4648,8 +4648,8 @@ export class ApiClient {
   }
 
   // redeemWecomBindingToken binds the WeCom aibot userid carried by the
-  // token to the logged-in Multica user. Called by the /wecom/bind redeem
-  // page after the user clicks through the "link your Multica account"
+  // token to the logged-in Patchbay user. Called by the /wecom/bind redeem
+  // page after the user clicks through the "link your Patchbay account"
   // prompt the bot sent in WeCom. Status codes:
   //   410 Gone      → invalid / expired / already consumed
   //   409 Conflict  → the WeCom user is already bound to a different user

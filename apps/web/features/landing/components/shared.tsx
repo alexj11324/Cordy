@@ -1,7 +1,7 @@
-import { cn } from "@multica/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 
-export const githubUrl = "https://github.com/multica-ai/multica";
-export const twitterUrl = "https://x.com/MulticaAI";
+export const githubUrl = "https://github.com/patchbay-ai/patchbay";
+export const twitterUrl = "https://x.com/PatchbayAI";
 export const discordUrl = "https://discord.gg/W8gYBn226t";
 
 export function GitHubMark({ className }: { className?: string }) {

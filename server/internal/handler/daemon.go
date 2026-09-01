@@ -19,22 +19,22 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/analytics"
-	"github.com/multica-ai/multica/server/internal/auth"
-	"github.com/multica-ai/multica/server/internal/daemonws"
-	"github.com/multica-ai/multica/server/internal/integrations/slack"
-	"github.com/multica-ai/multica/server/internal/issuestatus"
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	"github.com/multica-ai/multica/server/internal/middleware"
-	"github.com/multica-ai/multica/server/internal/runtimeapps"
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/dbid"
-	"github.com/multica-ai/multica/server/pkg/protocol"
-	"github.com/multica-ai/multica/server/pkg/redact"
-	"github.com/multica-ai/multica/server/pkg/skillbundle"
-	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/patchbay-ai/patchbay/server/internal/analytics"
+	"github.com/patchbay-ai/patchbay/server/internal/auth"
+	"github.com/patchbay-ai/patchbay/server/internal/daemonws"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/slack"
+	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
+	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
+	"github.com/patchbay-ai/patchbay/server/internal/middleware"
+	"github.com/patchbay-ai/patchbay/server/internal/runtimeapps"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
+	"github.com/patchbay-ai/patchbay/server/pkg/redact"
+	"github.com/patchbay-ai/patchbay/server/pkg/skillbundle"
+	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
 )
 
 // ---------------------------------------------------------------------------
@@ -182,7 +182,7 @@ type DaemonRegisterRequest struct {
 	// and tasks keep working without manual intervention.
 	LegacyDaemonIDs []string `json:"legacy_daemon_ids"`
 	DeviceName      string   `json:"device_name"`
-	CLIVersion      string   `json:"cli_version"` // multica CLI version
+	CLIVersion      string   `json:"cli_version"` // patchbay CLI version
 	LaunchedBy      string   `json:"launched_by"` // "desktop" when spawned by the Electron app
 	Runtimes        []struct {
 		Name    string `json:"name"`
@@ -1861,7 +1861,7 @@ func (h *Handler) rejectClaimSkillLoad(task *db.AgentTaskQueue, err error) *clai
 
 // rejectClaimOnWorkspaceMismatch enforces the claim's tenant boundary against
 // the workspace that OWNS the task's context (issue / chat session / autopilot
-// / quick-create), which is the only authority for MULTICA_WORKSPACE_ID in the
+// / quick-create), which is the only authority for PATCHBAY_WORKSPACE_ID in the
 // agent env. An empty value would make the CLI silently fall back to the
 // user-global config and talk to whatever workspace the user happened to last
 // configure; a value that doesn't match the runtime's workspace means upstream
@@ -2634,7 +2634,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		// A task-level delivery snapshot, not the Chat's historical binding,
 		// decides whether this run is operating for an external audience.
 		// Web/Desktop/Mobile turns in an old channel-originated Chat have no
-		// snapshot and remain private to Multica after /new rotates the route.
+		// snapshot and remain private to Patchbay after /new rotates the route.
 		delivery, deliveryErr := h.Queries.GetChannelTaskDelivery(r.Context(), task.ID)
 		if deliveryErr == nil {
 			resp.ChatChannelType = delivery.ChannelType
@@ -2692,7 +2692,7 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		// (MUL-2968: "看上海天气" then "还有青岛" must both be delivered) —
 		// so a rolling deploy never replays their history. Attachments are
 		// collected per included message so the agent can
-		// `multica attachment download <id>` (the inline markdown URL is
+		// `patchbay attachment download <id>` (the inline markdown URL is
 		// signed + 30-min expiring on the CDN).
 		var unanswered []db.ChatMessage
 		var inputLoadErr error
@@ -3224,8 +3224,8 @@ func worktreeClaimBlockReason(resources []ProjectResourceData, runtime db.AgentR
 			continue
 		}
 		return fmt.Sprintf(
-			"This machine's Multica runtime does not support parallel (worktree) mode, which %q is set to use. "+
-				"Update the Multica app on that machine to the latest version, then re-run this task. "+
+			"This machine's Patchbay runtime does not support parallel (worktree) mode, which %q is set to use. "+
+				"Update the Patchbay app on that machine to the latest version, then re-run this task. "+
 				"Refusing to run rather than falling back to editing the directory directly, which is what this mode exists to prevent.",
 			ref.LocalPath)
 	}
@@ -3318,7 +3318,7 @@ func (h *Handler) ClaimTaskByRuntime(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Mint a task-scoped `mat_` token bound to (agent, task, workspace,
-	// owner). The daemon will inject this as MULTICA_TOKEN into the agent
+	// owner). The daemon will inject this as PATCHBAY_TOKEN into the agent
 	// process instead of its own credential, so any API call the agent
 	// makes — even one that strips X-Agent-ID / X-Task-ID headers — is
 	// recognized server-side as actor=agent, closing the lateral-movement

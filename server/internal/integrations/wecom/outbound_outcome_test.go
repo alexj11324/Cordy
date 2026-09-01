@@ -5,7 +5,7 @@ package wecom
 //
 // The point is not that these branches exist; most of them are correct. It is
 // that they used to be indistinguishable from outside. One symptom — the answer
-// is in the Multica transcript, the WeCom chat stayed quiet — with five
+// is in the Patchbay transcript, the WeCom chat stayed quiet — with five
 // different causes and no way to tell which fired, is a report that can be
 // argued about but not settled.
 
@@ -19,9 +19,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/multica-ai/multica/server/internal/events"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/patchbay-ai/patchbay/server/internal/events"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 const (

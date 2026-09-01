@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/multica-ai/multica/server/internal/daemonws"
-	"github.com/multica-ai/multica/server/internal/realtime"
+	"github.com/patchbay-ai/patchbay/server/internal/daemonws"
+	"github.com/patchbay-ai/patchbay/server/internal/realtime"
 )
 
 // realtimeMetricsHandler returns the HTTP handler for /health/realtime.

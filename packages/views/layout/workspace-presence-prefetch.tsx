@@ -1,7 +1,7 @@
 "use client";
 
-import { useWorkspaceId } from "@multica/core";
-import { useWorkspacePresencePrefetch } from "@multica/core/agents";
+import { useWorkspaceId } from "@patchbay/core";
+import { useWorkspacePresencePrefetch } from "@patchbay/core/agents";
 
 // Mount once inside any subtree that's already gated on "workspace resolved"
 // (DashboardLayout on web, WorkspaceRouteLayout on desktop). useWorkspaceId

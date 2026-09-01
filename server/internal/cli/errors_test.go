@@ -28,12 +28,12 @@ func TestClassifyNetworkError(t *testing.T) {
 		{"context deadline", context.DeadlineExceeded, KindNetworkTimeout},
 		{"wrapped deadline", fmt.Errorf("resolve issue: %w", context.DeadlineExceeded), KindNetworkTimeout},
 		{"net timeout", timeoutErr{}, KindNetworkTimeout},
-		{"dns", &net.DNSError{Err: "no such host", Name: "api.multica.ai", IsNotFound: true}, KindNetworkDNS},
+		{"dns", &net.DNSError{Err: "no such host", Name: "api.patchbay.ai", IsNotFound: true}, KindNetworkDNS},
 		{"connection refused", syscall.ECONNREFUSED, KindNetworkRefused},
 		{"x509 unknown authority", x509.UnknownAuthorityError{}, KindNetworkTLS},
-		{"x509 hostname", x509.HostnameError{Host: "api.multica.ai"}, KindNetworkTLS},
+		{"x509 hostname", x509.HostnameError{Host: "api.patchbay.ai"}, KindNetworkTLS},
 		{"timeout string fallback", errors.New("Get \"https://x\": net/http: request canceled (Client.Timeout exceeded)"), KindNetworkTimeout},
-		{"dns string fallback", errors.New("dial tcp: lookup api.multica.ai: no such host"), KindNetworkDNS},
+		{"dns string fallback", errors.New("dial tcp: lookup api.patchbay.ai: no such host"), KindNetworkDNS},
 		{"refused string fallback", errors.New("dial tcp 127.0.0.1:443: connect: connection refused"), KindNetworkRefused},
 		{"tls string fallback", errors.New("x509: certificate signed by unknown authority"), KindNetworkTLS},
 		{"offline catch-all", errors.New("write: connection reset by peer"), KindNetworkOffline},
@@ -96,7 +96,7 @@ func TestFormatErrorAllKinds(t *testing.T) {
 
 func TestFormatErrorNetwork(t *testing.T) {
 	withLang(t, "en_US.UTF-8")
-	raw := errors.New("Get \"https://api.multica.ai/api/issues/abc\": context deadline exceeded")
+	raw := errors.New("Get \"https://api.patchbay.ai/api/issues/abc\": context deadline exceeded")
 	netErr := &NetworkError{Kind: KindNetworkTimeout, Op: "GET /api/issues/abc", Err: raw}
 	wrapped := fmt.Errorf("resolve issue: %w", netErr)
 
@@ -105,7 +105,7 @@ func TestFormatErrorNetwork(t *testing.T) {
 		t.Errorf("expected friendly timeout message, got %q", got)
 	}
 	// Must not leak the URL or internal verb chain when debug is off.
-	if strings.Contains(got, "api.multica.ai") || strings.Contains(got, "resolve issue") {
+	if strings.Contains(got, "api.patchbay.ai") || strings.Contains(got, "resolve issue") {
 		t.Errorf("user message leaked internal detail: %q", got)
 	}
 }
@@ -355,7 +355,7 @@ func TestHTTPTimeout(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv("MULTICA_HTTP_TIMEOUT", tc.val)
+			t.Setenv("PATCHBAY_HTTP_TIMEOUT", tc.val)
 			if got := httpTimeout().String(); got != tc.want {
 				t.Errorf("httpTimeout() with %q = %s, want %s", tc.val, got, tc.want)
 			}
@@ -407,7 +407,7 @@ func TestErrorKindString(t *testing.T) {
 }
 
 // TestFormatErrorRejectedTaskTokenDoesNotSuggestAnotherCredential is GH #7522
-// in one assertion. The generic 401 copy tells the reader to run `multica
+// in one assertion. The generic 401 copy tells the reader to run `patchbay
 // login` or ask an administrator for valid credentials. That is right for a
 // person and wrong for an agent: after its task token stopped working mid-run,
 // one read the daemon owner's profile PAT and kept working under the member's
@@ -434,10 +434,10 @@ func TestFormatErrorRejectedTaskTokenDoesNotSuggestAnotherCredential(t *testing.
 			[]string{"rejected", "no longer usable", "Stop here", "do not retry",
 				"do not fall back to a profile or member credential"},
 			// No sign-in advice, and no claim about a cause it cannot verify.
-			[]string{"multica login", "administrator", "cancelled", "finished", "terminal state"}},
+			[]string{"patchbay login", "administrator", "cancelled", "finished", "terminal state"}},
 		{"zh_CN.UTF-8",
 			[]string{"已被拒绝", "不再可用", "不要重试", "不要改用 profile 或成员凭证"},
-			[]string{"multica login", "管理员", "已完成", "被取消", "终态"}},
+			[]string{"patchbay login", "管理员", "已完成", "被取消", "终态"}},
 	} {
 		withLang(t, tc.lang)
 		got := FormatError(httpErr, false)
@@ -468,7 +468,7 @@ func TestFormatErrorRejectedTaskTokenDoesNotSuggestAnotherCredential(t *testing.
 	// A member 401 is unchanged: that really is an expired login.
 	withLang(t, "en_US.UTF-8")
 	member := FormatError(&HTTPError{Method: "GET", Path: "/api/me", StatusCode: 401}, false)
-	if !strings.Contains(member, "multica login") {
+	if !strings.Contains(member, "patchbay login") {
 		t.Errorf("a member 401 should still point at sign-in, got %q", member)
 	}
 
@@ -487,7 +487,7 @@ func TestFormatErrorActionableHints(t *testing.T) {
 		enWant []string
 		zhWant []string
 	}{
-		{401, []string{"multica login", "self-hosted", "administrator"}, []string{"multica login", "自托管", "管理员"}},
+		{401, []string{"patchbay login", "self-hosted", "administrator"}, []string{"patchbay login", "自托管", "管理员"}},
 		{403, []string{"permission", "workspace"}, []string{"无权", "workspace"}},
 		{404, []string{"not found", "list"}, []string{"未找到", "list"}},
 		{409, []string{"conflict", "again"}, []string{"冲突", "重新获取"}},
@@ -521,10 +521,10 @@ func TestFormatErrorActionableHints(t *testing.T) {
 // custom message is shown by default (overriding the generic kind copy),
 // ExitCodeFor still classifies by the underlying typed error, and --debug
 // still exposes the full original chain. This is the mechanism that makes the
-// `multica login` failure guidance visible without losing classification.
+// `patchbay login` failure guidance visible without losing classification.
 func TestUserMessageError(t *testing.T) {
 	withLang(t, "en_US.UTF-8")
-	const hint = "Could not sign in with that token — make sure it is valid and not expired, then run `multica login --token <token>` again."
+	const hint = "Could not sign in with that token — make sure it is valid and not expired, then run `patchbay login --token <token>` again."
 
 	t.Run("wrapped HTTPError (invalid token -> 401)", func(t *testing.T) {
 		underlying := &HTTPError{Method: "GET", Path: "/api/me", StatusCode: 401, Body: `{"error":"unauthorized"}`}
@@ -559,7 +559,7 @@ func TestUserMessageError(t *testing.T) {
 
 	t.Run("wrapped NetworkError classifies as network", func(t *testing.T) {
 		underlying := &NetworkError{Kind: KindNetworkTimeout, Op: "GET /api/me", Err: errors.New("context deadline exceeded")}
-		err := WithUserMessage("Sign-in did not complete: the server did not accept the new credential. Run `multica login` again.", underlying)
+		err := WithUserMessage("Sign-in did not complete: the server did not accept the new credential. Run `patchbay login` again.", underlying)
 
 		if code := ExitCodeFor(err); code != ExitNetwork {
 			t.Errorf("ExitCodeFor = %d, want ExitNetwork(%d)", code, ExitNetwork)

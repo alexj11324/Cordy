@@ -16,7 +16,7 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
-	"github.com/multica-ai/multica/server/internal/auth"
+	"github.com/patchbay-ai/patchbay/server/internal/auth"
 )
 
 const testWorkspaceID = "test-workspace"
@@ -72,8 +72,8 @@ func TestAuthenticateTokenRejectsTemporarilyDisabledJWTUser(t *testing.T) {
 }
 
 func TestAuthenticateTokenRejectsTemporarilyDisabledPATUser(t *testing.T) {
-	uid, errMsg := authenticateToken("mul_disabled", staticPATResolver{
-		"mul_disabled": "1d542296-17c6-484a-9914-dcee589be116",
+	uid, errMsg := authenticateToken("pby_disabled", staticPATResolver{
+		"pby_disabled": "1d542296-17c6-484a-9914-dcee589be116",
 	}, context.Background())
 	if uid != "" {
 		t.Fatalf("expected no user ID, got %q", uid)
@@ -448,7 +448,7 @@ func TestCheckOrigin(t *testing.T) {
 	prev := allowedWSOrigins.Load().([]string)
 	SetAllowedOrigins([]string{
 		"http://localhost:3000",
-		"https://multica.ai",
+		"https://patchbay.ai",
 	})
 	t.Cleanup(func() { SetAllowedOrigins(prev) })
 
@@ -468,24 +468,24 @@ func TestCheckOrigin(t *testing.T) {
 		remoteAddr string
 		want       bool
 	}{
-		{"empty origin allowed", "api.multica.ai", "", "", "1.2.3.4:5678", true},
+		{"empty origin allowed", "api.patchbay.ai", "", "", "1.2.3.4:5678", true},
 		{"same-origin allowed (native client default)", "localhost:8080", "http://localhost:8080", "", "1.2.3.4:5678", true},
-		{"same-origin allowed (https)", "api.multica.ai", "https://api.multica.ai", "", "1.2.3.4:5678", true},
-		{"same-origin allowed (case-insensitive host, RFC 7230)", "API.Multica.AI", "https://api.multica.ai", "", "1.2.3.4:5678", true},
+		{"same-origin allowed (https)", "api.patchbay.ai", "https://api.patchbay.ai", "", "1.2.3.4:5678", true},
+		{"same-origin allowed (case-insensitive host, RFC 7230)", "API.Patchbay.AI", "https://api.patchbay.ai", "", "1.2.3.4:5678", true},
 		{"whitelisted origin allowed (web cross-origin)", "localhost:8080", "http://localhost:3000", "", "1.2.3.4:5678", true},
-		{"whitelisted origin allowed (prod web)", "api.multica.ai", "https://multica.ai", "", "1.2.3.4:5678", true},
-		{"unknown origin rejected (CSWSH defense)", "api.multica.ai", "https://evil.com", "", "1.2.3.4:5678", false},
+		{"whitelisted origin allowed (prod web)", "api.patchbay.ai", "https://patchbay.ai", "", "1.2.3.4:5678", true},
+		{"unknown origin rejected (CSWSH defense)", "api.patchbay.ai", "https://evil.com", "", "1.2.3.4:5678", false},
 		{"different port rejected", "localhost:8080", "http://localhost:9999", "", "1.2.3.4:5678", false},
-		{"X-Forwarded-Host from trusted proxy matches origin", "internal.proxy", "https://multica.ai", "multica.ai", "127.0.0.1:5678", true},
-		{"X-Forwarded-Host from trusted proxy case-insensitive", "internal.proxy", "https://Multica.AI", "multica.ai", "10.0.0.1:5678", true},
+		{"X-Forwarded-Host from trusted proxy matches origin", "internal.proxy", "https://patchbay.ai", "patchbay.ai", "127.0.0.1:5678", true},
+		{"X-Forwarded-Host from trusted proxy case-insensitive", "internal.proxy", "https://Patchbay.AI", "patchbay.ai", "10.0.0.1:5678", true},
 		{"X-Forwarded-Host from untrusted source rejected", "internal.proxy", "https://example.com", "example.com", "1.2.3.4:5678", false},
-		{"X-Forwarded-Host from trusted proxy but evil origin rejected", "internal.proxy", "https://evil.com", "multica.ai", "127.0.0.1:5678", false},
-		{"X-Forwarded-Host present but origin matches direct Host", "multica.ai", "https://multica.ai", "other.host", "1.2.3.4:5678", true},
+		{"X-Forwarded-Host from trusted proxy but evil origin rejected", "internal.proxy", "https://evil.com", "patchbay.ai", "127.0.0.1:5678", false},
+		{"X-Forwarded-Host present but origin matches direct Host", "patchbay.ai", "https://patchbay.ai", "other.host", "1.2.3.4:5678", true},
 		{"X-Forwarded-Host spoofed by attacker rejected", "internal.proxy", "https://evil.com", "evil.com", "1.2.3.4:5678", false},
-		{"X-Forwarded-Host from trusted CIDR range matches origin", "internal.proxy", "https://multica.ai", "multica.ai", "10.5.6.7:5678", true},
-		{"X-Forwarded-Host from trusted IPv6 proxy matches origin", "internal.proxy", "https://multica.ai", "multica.ai", "[::1]:5678", true},
-		{"X-Forwarded-Host comma list uses first (client-facing) value", "internal.proxy", "https://multica.ai", "multica.ai, proxy.internal", "127.0.0.1:5678", true},
-		{"X-Forwarded-Host comma list ignores trailing values", "internal.proxy", "https://staging.multica.ai", "proxy.internal, staging.multica.ai", "127.0.0.1:5678", false},
+		{"X-Forwarded-Host from trusted CIDR range matches origin", "internal.proxy", "https://patchbay.ai", "patchbay.ai", "10.5.6.7:5678", true},
+		{"X-Forwarded-Host from trusted IPv6 proxy matches origin", "internal.proxy", "https://patchbay.ai", "patchbay.ai", "[::1]:5678", true},
+		{"X-Forwarded-Host comma list uses first (client-facing) value", "internal.proxy", "https://patchbay.ai", "patchbay.ai, proxy.internal", "127.0.0.1:5678", true},
+		{"X-Forwarded-Host comma list ignores trailing values", "internal.proxy", "https://staging.patchbay.ai", "proxy.internal, staging.patchbay.ai", "127.0.0.1:5678", false},
 	}
 
 	for _, tc := range cases {

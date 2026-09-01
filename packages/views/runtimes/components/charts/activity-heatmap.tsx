@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import type { RuntimeUsage } from "@multica/core/types";
-import { useCustomPricingStore } from "@multica/core/runtimes/custom-pricing-store";
+import type { RuntimeUsage } from "@patchbay/core/types";
+import { useCustomPricingStore } from "@patchbay/core/runtimes/custom-pricing-store";
 import { addDaysIso, estimateCost, formatUsd, todayIso, weekStartIso } from "../../utils";
 import { useLocale, useT } from "../../../i18n";
 

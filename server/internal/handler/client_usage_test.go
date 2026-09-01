@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/middleware"
+	"github.com/patchbay-ai/patchbay/server/internal/middleware"
 )
 
 func ptrInt32(value int32) *int32 { return &value }

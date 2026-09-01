@@ -148,7 +148,7 @@ func TestIsBusinessEmailDomain(t *testing.T) {
 		email string
 		want  bool
 	}{
-		{"ada@multica.ai", true},
+		{"ada@patchbay.ai", true},
 		{"ada@example.com", true},
 		{"ada@gmail.com", false},
 		{"ada@Gmail.COM", false},
@@ -172,15 +172,15 @@ func TestCanonicalBusinessEmail(t *testing.T) {
 		want   string
 		wantOk bool
 	}{
-		{"plain", "ada@multica.ai", "ada@multica.ai", true},
-		{"uppercase normalized", "Ada@Multica.AI", "ada@multica.ai", true},
-		{"trim whitespace", "  ada@multica.ai  ", "ada@multica.ai", true},
-		{"display name stripped", "Ada Lovelace <ada@multica.ai>", "ada@multica.ai", true},
-		{"angle-bracketed", "<ada@multica.ai>", "ada@multica.ai", true},
+		{"plain", "ada@patchbay.ai", "ada@patchbay.ai", true},
+		{"uppercase normalized", "Ada@Patchbay.AI", "ada@patchbay.ai", true},
+		{"trim whitespace", "  ada@patchbay.ai  ", "ada@patchbay.ai", true},
+		{"display name stripped", "Ada Lovelace <ada@patchbay.ai>", "ada@patchbay.ai", true},
+		{"angle-bracketed", "<ada@patchbay.ai>", "ada@patchbay.ai", true},
 		{"empty", "", "", false},
 		{"only whitespace", "   ", "", false},
 		{"missing at", "no-at-sign", "", false},
-		{"missing local", "@multica.ai", "", false},
+		{"missing local", "@patchbay.ai", "", false},
 		{"missing domain", "ada@", "", false},
 	}
 	for _, c := range cases {

@@ -12,7 +12,7 @@
 // This module owns no React and no fetching, so it is unit-testable in
 // isolation and independent of whichever list shell renders the events.
 
-import { truncateWithEllipsis } from "@multica/core/utils";
+import { truncateWithEllipsis } from "@patchbay/core/utils";
 
 export interface TraceEvent {
   seq?: number;

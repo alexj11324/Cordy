@@ -5,10 +5,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
 )
 
-const verifiedTestBotName = "Multica Bot - Local"
+const verifiedTestBotName = "Patchbay Bot - Local"
 
 func TestInboundFromCallbackWithBotName_PlainTextRemovesOnlyVerifiedBot(t *testing.T) {
 	tests := []struct {
@@ -19,73 +19,73 @@ func TestInboundFromCallbackWithBotName_PlainTextRemovesOnlyVerifiedBot(t *testi
 	}{
 		{
 			name:        "bot before chat",
-			content:     "@Multica Bot - Local /new inspect this",
+			content:     "@Patchbay Bot - Local /new inspect this",
 			want:        "/new inspect this",
 			wantCommand: true,
 		},
 		{
 			name:        "bot after chat",
-			content:     "/new @Multica Bot - Local inspect this",
+			content:     "/new @Patchbay Bot - Local inspect this",
 			want:        "/new inspect this",
 			wantCommand: true,
 		},
 		{
 			name:        "bot after body",
-			content:     "/new inspect this @Multica Bot - Local",
+			content:     "/new inspect this @Patchbay Bot - Local",
 			want:        "/new inspect this",
 			wantCommand: true,
 		},
 		{
 			name:        "repeated bot mentions",
-			content:     "@Multica Bot - Local @Multica Bot - Local /new inspect this",
+			content:     "@Patchbay Bot - Local @Patchbay Bot - Local /new inspect this",
 			want:        "/new inspect this",
 			wantCommand: true,
 		},
 		{
 			name:        "other mention before bot",
-			content:     "@Alice @Multica Bot - Local /new inspect this",
+			content:     "@Alice @Patchbay Bot - Local /new inspect this",
 			want:        "@Alice /new inspect this",
 			wantCommand: false,
 		},
 		{
 			name:        "other mention after command",
-			content:     "@Multica Bot - Local /new inspect this with @Alice",
+			content:     "@Patchbay Bot - Local /new inspect this with @Alice",
 			want:        "/new inspect this with @Alice",
 			wantCommand: true,
 		},
 		{
 			name:        "different bot preserved",
-			content:     "@Multica Bot - DEV @Multica Bot - Local /new inspect this",
-			want:        "@Multica Bot - DEV /new inspect this",
+			content:     "@Patchbay Bot - DEV @Patchbay Bot - Local /new inspect this",
+			want:        "@Patchbay Bot - DEV /new inspect this",
 			wantCommand: false,
 		},
 		{
 			name:        "longer name preserved",
-			content:     "@Multica Bot - Locality /new inspect this",
-			want:        "@Multica Bot - Locality /new inspect this",
+			content:     "@Patchbay Bot - Locality /new inspect this",
+			want:        "@Patchbay Bot - Locality /new inspect this",
 			wantCommand: false,
 		},
 		{
 			name:        "punctuation-extended name preserved",
-			content:     "@Multica Bot - Local-DEV /new inspect this",
-			want:        "@Multica Bot - Local-DEV /new inspect this",
+			content:     "@Patchbay Bot - Local-DEV /new inspect this",
+			want:        "@Patchbay Bot - Local-DEV /new inspect this",
 			wantCommand: false,
 		},
 		{
 			name:        "embedded literal preserved",
-			content:     "quote@Multica Bot - Local /new inspect this",
-			want:        "quote@Multica Bot - Local /new inspect this",
+			content:     "quote@Patchbay Bot - Local /new inspect this",
+			want:        "quote@Patchbay Bot - Local /new inspect this",
 			wantCommand: false,
 		},
 		{
 			name:        "mid sentence command stays prose",
-			content:     "@Multica Bot - Local please /new later",
+			content:     "@Patchbay Bot - Local please /new later",
 			want:        "please /new later",
 			wantCommand: false,
 		},
 		{
 			name:        "blank line before command",
-			content:     "@Multica Bot - Local\n\n/new inspect this",
+			content:     "@Patchbay Bot - Local\n\n/new inspect this",
 			want:        "/new inspect this",
 			wantCommand: true,
 		},
@@ -122,7 +122,7 @@ func TestInboundFromCallbackWithBotName_RichTextPreservesMediaAndOtherMentions(t
 			name: "image bot command text",
 			content: `{"richText":[
 				{"type":"picture","downloadCode":"dl-1"},
-				{"text":"@Multica Bot - Local /new inspect this"}
+				{"text":"@Patchbay Bot - Local /new inspect this"}
 			]}`,
 			wantText:        "[Image]\ninspect this",
 			wantCommandText: "/new inspect this",
@@ -131,7 +131,7 @@ func TestInboundFromCallbackWithBotName_RichTextPreservesMediaAndOtherMentions(t
 		{
 			name: "bot image command text image",
 			content: `{"richText":[
-				{"text":"@Multica Bot - Local "},
+				{"text":"@Patchbay Bot - Local "},
 				{"type":"picture","downloadCode":"dl-1"},
 				{"text":"/new inspect this"},
 				{"type":"picture","downloadCode":"dl-2"}
@@ -143,7 +143,7 @@ func TestInboundFromCallbackWithBotName_RichTextPreservesMediaAndOtherMentions(t
 		{
 			name: "command keeps colleague mention",
 			content: `{"richText":[
-				{"text":"@Multica Bot - Local /new ask @Alice"},
+				{"text":"@Patchbay Bot - Local /new ask @Alice"},
 				{"type":"picture","downloadCode":"dl-1"}
 			]}`,
 			wantText:        "ask @Alice\n[Image]",
@@ -153,7 +153,7 @@ func TestInboundFromCallbackWithBotName_RichTextPreservesMediaAndOtherMentions(t
 		{
 			name: "colleague before command remains anchor",
 			content: `{"richText":[
-				{"text":"@Alice @Multica Bot - Local /new inspect this"},
+				{"text":"@Alice @Patchbay Bot - Local /new inspect this"},
 				{"type":"picture","downloadCode":"dl-1"}
 			]}`,
 			wantText:        "@Alice /new inspect this\n[Image]",
@@ -201,8 +201,8 @@ func TestInboundFromCallbackWithBotName_FailClosedWithoutVerifiedName(t *testing
 		},
 		{
 			name: "plain multiword bot before command",
-			text: "@Multica Bot - Local /new inspect this",
-			want: "@Multica Bot - Local /new inspect this",
+			text: "@Patchbay Bot - Local /new inspect this",
+			want: "@Patchbay Bot - Local /new inspect this",
 		},
 		{
 			name:    "plain callback without visible bot",
@@ -212,15 +212,15 @@ func TestInboundFromCallbackWithBotName_FailClosedWithoutVerifiedName(t *testing
 		},
 		{
 			name:    "plain command before unknown bot",
-			text:    "/new inspect this @Multica Bot - Local",
-			want:    "/new inspect this @Multica Bot - Local",
+			text:    "/new inspect this @Patchbay Bot - Local",
+			want:    "/new inspect this @Patchbay Bot - Local",
 			command: true,
 		},
 		{
 			name:    "rich text preserves unknown bot",
 			msgtype: "richText",
-			content: `{"richText":[{"text":"@Multica Bot - Local /new inspect this"}]}`,
-			want:    "@Multica Bot - Local /new inspect this",
+			content: `{"richText":[{"text":"@Patchbay Bot - Local /new inspect this"}]}`,
+			want:    "@Patchbay Bot - Local /new inspect this",
 		},
 	}
 
@@ -256,7 +256,7 @@ func TestInboundFromCallbackWithBotName_DoesNotStripPrivateOrUnaddressedText(t *
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cb := textCallback(tc.convType, tc.atBot)
-			cb.Text.Content = "@Multica Bot - Local /new inspect this"
+			cb.Text.Content = "@Patchbay Bot - Local /new inspect this"
 			msg, ok := inboundFromCallbackWithBotName(cb, "appkey-A", verifiedTestBotName)
 			if !ok || msg.Text != cb.Text.Content {
 				t.Fatalf("non-addressing text changed: ok=%v text=%q", ok, msg.Text)
@@ -273,7 +273,7 @@ func TestInboundFromCallbackWithBotName_AllSharedCommandsKeepFirstTextLineContra
 	}{
 		{
 			name:    "chat",
-			content: "@Multica Bot - Local /new inspect this",
+			content: "@Patchbay Bot - Local /new inspect this",
 			parse: func(body string) bool {
 				_, ok := engine.ParseNewChatCommand(body)
 				return ok
@@ -281,7 +281,7 @@ func TestInboundFromCallbackWithBotName_AllSharedCommandsKeepFirstTextLineContra
 		},
 		{
 			name:    "new",
-			content: "@Multica Bot - Local /clear inspect this",
+			content: "@Patchbay Bot - Local /clear inspect this",
 			parse: func(body string) bool {
 				_, ok := engine.ParseFreshSessionCommand(body)
 				return ok
@@ -289,7 +289,7 @@ func TestInboundFromCallbackWithBotName_AllSharedCommandsKeepFirstTextLineContra
 		},
 		{
 			name:    "issue",
-			content: "@Multica Bot - Local /issue login failed",
+			content: "@Patchbay Bot - Local /issue login failed",
 			parse: func(body string) bool {
 				_, ok := engine.ParseIssueCommand(body)
 				return ok
@@ -306,7 +306,7 @@ func TestInboundFromCallbackWithBotName_AllSharedCommandsKeepFirstTextLineContra
 				t.Fatalf("normalized %s command was not recognized: ok=%v CommandText=%q", tc.name, ok, msg.CommandText)
 			}
 
-			cb.Text.Content = "@Multica Bot - Local please " + strings.TrimPrefix(tc.content, "@Multica Bot - Local ")
+			cb.Text.Content = "@Patchbay Bot - Local please " + strings.TrimPrefix(tc.content, "@Patchbay Bot - Local ")
 			msg, ok = inboundFromCallbackWithBotName(cb, "appkey-A", verifiedTestBotName)
 			if !ok || tc.parse(msg.CommandText) {
 				t.Fatalf("mid-sentence %s was promoted: ok=%v CommandText=%q", tc.name, ok, msg.CommandText)

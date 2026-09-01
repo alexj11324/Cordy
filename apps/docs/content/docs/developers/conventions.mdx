@@ -5,7 +5,7 @@ description: Single source of truth for code naming, i18n translation glossary, 
 
 This page is the single source of truth for code naming, the i18n translation glossary, and the Chinese voice guide. Anything that used to live in `packages/views/locales/glossary.md` or in scattered comments now lives here.
 
-If you write Multica code, change a translation, or write Chinese product copy, this is the page to reference.
+If you write Patchbay code, change a translation, or write Chinese product copy, this is the page to reference.
 
 ---
 
@@ -31,11 +31,11 @@ The monorepo enforces strict package boundaries:
 | Package | May depend on | Must NOT depend on |
 | --- | --- | --- |
 | `packages/core` | nothing app-specific | `react-dom`, `localStorage`, `process.env`, `next/*`, UI libraries |
-| `packages/ui` | nothing | `@multica/core`, business logic |
+| `packages/ui` | nothing | `@patchbay/core`, business logic |
 | `packages/views` | `core/`, `ui/` | `next/*`, `react-router-dom`, stores |
 | `apps/web/platform/` | `next/*` | other apps |
 | `apps/desktop/.../platform/` | `react-router-dom`, electron | other apps |
-| `apps/mobile/` | types and pure functions from `@multica/core` | Web/Desktop React pages, stores, and platform implementations |
+| `apps/mobile/` | types and pure functions from `@patchbay/core` | Web/Desktop React pages, stores, and platform implementations |
 
 If logic appears in both apps, it MUST be extracted to a shared package. There are no exceptions for "small" duplication. Mobile owns a separate UI, data layer, and release process; it shares only types and pure functions.
 
@@ -107,12 +107,12 @@ Conventional format: `feat(scope)`, `fix(scope)`, `refactor(scope)`, `docs`, `te
 
 This is the **mandatory** glossary for every translation PR. It used to live at `packages/views/locales/glossary.md`; that file has been removed and this page replaces it.
 
-### The core distinction: everyday noun vs Multica-specific term
+### The core distinction: everyday noun vs Patchbay-specific term
 
-Multica's product nouns split into two categories:
+Patchbay's product nouns split into two categories:
 
 - **Everyday noun** — the word a user would say out loud for it. **Translate fully**, whether or not it is a database entity: `issue` → 任务, `workspace` → 工作区, `project` → 项目.
-- **Multica-specific term** — a concept no local word carries (`skill`), or a schema-level identifier a user may have to type or match (`todo`, `in_progress`, `task_id`). Render as **lowercase English** so it reads like a type name.
+- **Patchbay-specific term** — a concept no local word carries (`skill`), or a schema-level identifier a user may have to type or match (`todo`, `in_progress`, `task_id`). Render as **lowercase English** so it reads like a type name.
 
 The Chinese pages under `apps/docs/content/docs/*.zh.mdx` are the de facto voice standard for everything else on this page. The `*.zh.mdx`, `*.ja.mdx`, and `*.ko.mdx` prose now follows the table below as well.
 
@@ -130,11 +130,11 @@ Both nouns are user-visible and they are **not** the same thing — an issue can
 What does not move:
 
 - **API / DB fields** stay `issue` / `task` / `skill` everywhere: `issue_status`, `task_id`, `skill_uuid`.
-- **Code references and literal commands** stay English: `multica issue ...`, the `/issue` Slack and Lark slash command.
-- **`skill`** keeps lowercase English in Chinese text — a Multica-specific concept with no established Chinese term; titles may capitalize as `Skills`.
+- **Code references and literal commands** stay English: `patchbay issue ...`, the `/issue` Slack and Lark slash command.
+- **`skill`** keeps lowercase English in Chinese text — a Patchbay-specific concept with no established Chinese term; titles may capitalize as `Skills`.
 - **`issue` in the "problem" sense** (runtime health) is a plain noun, not the entity: `{{count}} issues` on a machine card is `{{count}} 个异常` / `問題 {{count}} 件` / `문제 {{count}}개`, never the entity word.
 
-**Why `issue` is translated while `skill` is not**: users file and read issues all day, and "issue" has no meaning in Chinese, Japanese, or Korean outside of dev jargon. The everyday task word is what people already say for this. `skill` is a Multica-specific concept where no local word carries the meaning.
+**Why `issue` is translated while `skill` is not**: users file and read issues all day, and "issue" has no meaning in Chinese, Japanese, or Korean outside of dev jargon. The everyday task word is what people already say for this. `skill` is a Patchbay-specific concept where no local word carries the meaning.
 
 Other product nouns follow the same "translate what has a settled local word" test:
 
@@ -145,7 +145,7 @@ Other product nouns follow the same "translate what has a settled local word" te
 
 | Category | Terms |
 | --- | --- |
-| Brands | **Multica**, GitHub, Slack, Google, Anthropic, OpenAI, Claude, Codex, Cursor, Linear, Jira |
+| Brands | **Patchbay**, GitHub, Slack, Google, Anthropic, OpenAI, Claude, Codex, Cursor, Linear, Jira |
 | Acronyms | API, CLI, URL, SDK, OAuth, JWT, SSO, WebSocket, HTTP, JSON, YAML, SQL |
 
 ### Translate fully — concepts

@@ -1,24 +1,24 @@
 ---
 title: 自托管快速上手
-description: 用 Docker Compose 启动 Multica，完成登录，并连接第一台执行电脑。
+description: 用 Docker Compose 启动 Patchbay，完成登录，并连接第一台执行电脑。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-自托管 Multica 分成两部分：
+自托管 Patchbay 分成两部分：
 
 | 部分 | 运行什么 | 放在哪里 |
 |---|---|---|
-| **Multica 服务** | Web、API 和 PostgreSQL | 一台安装了 Docker 的机器 |
-| **执行电脑** | Multica 守护进程和 AI 编程工具 | 开发者实际工作的电脑 |
+| **Patchbay 服务** | Web、API 和 PostgreSQL | 一台安装了 Docker 的机器 |
+| **执行电脑** | Patchbay 守护进程和 AI 编程工具 | 开发者实际工作的电脑 |
 
-它们可以是同一台机器，也可以分开。自托管替换的只是 Multica Cloud 部分。
+它们可以是同一台机器，也可以分开。自托管替换的只是 Patchbay Cloud 部分。
 
-这篇文档使用 Docker Compose。Kubernetes 部署见仓库中的 [Self-hosting guide](https://github.com/multica-ai/multica/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative)。
+这篇文档使用 Docker Compose。Kubernetes 部署见仓库中的 [Self-hosting guide](https://github.com/patchbay-ai/patchbay/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative)。
 
 ## 开始前
 
-运行 Multica 服务的机器需要：
+运行 Patchbay 服务的机器需要：
 
 - Docker Engine 或 Docker Desktop，并且 `docker compose` 可以运行
 - Git、Make、curl 和 OpenSSL
@@ -31,25 +31,25 @@ docker info
 docker compose version
 ```
 
-Multica 使用 Compose v2，也就是 `docker compose`。旧版的 `docker-compose` v1 不受支持。
+Patchbay 使用 Compose v2，也就是 `docker compose`。旧版的 `docker-compose` v1 不受支持。
 
-执行电脑还需要至少一款已经安装并登录的 [AI 编程工具](/providers)，例如 Claude Code、Codex 或 Cursor。第 5 步再安装 Multica CLI。
+执行电脑还需要至少一款已经安装并登录的 [AI 编程工具](/providers)，例如 Claude Code、Codex 或 Cursor。第 5 步再安装 Patchbay CLI。
 
-## 1. 启动 Multica
+## 1. 启动 Patchbay
 
 在准备运行服务的机器上执行：
 
 ```bash
-git clone --depth 1 https://github.com/multica-ai/multica.git
-cd multica
+git clone --depth 1 https://github.com/patchbay-ai/patchbay.git
+cd patchbay
 make selfhost
 ```
 
 第一次运行时，`make selfhost` 会：
 
 1. 从 `.env.example` 创建 `.env`
-2. 随机生成 `JWT_SECRET`、PostgreSQL 密码和 `MULTICA_VCS_SECRET_KEY`（自托管 Git 集成的加密密钥）
-3. 拉取 PostgreSQL、Multica backend 和 Multica frontend 镜像
+2. 随机生成 `JWT_SECRET`、PostgreSQL 密码和 `PATCHBAY_VCS_SECRET_KEY`（自托管 Git 集成的加密密钥）
+3. 拉取 PostgreSQL、Patchbay backend 和 Patchbay frontend 镜像
 4. 创建持久化数据卷并启动三个容器
 5. 等待 backend 开始响应健康检查
 
@@ -92,7 +92,7 @@ Backend 容器每次启动时都会先运行数据库 migration，再启动服�
 
 ### 本机访问
 
-直接打开 [http://localhost:3000P172。后面运行 `multica setup self-host` 时也不需要传 URL。
+直接打开 [http://localhost:3000P172。后面运行 `patchbay setup self-host` 时也不需要传 URL。
 
 ### 远程访问
 
@@ -100,15 +100,15 @@ Docker Compose 默认只把 `3000` 和 `8080` 绑定到 `127.0.0.1`。不要直�
 
 下面以两个域名为例：
 
-- `app.example.com`：Multica Web
+- `app.example.com`：Patchbay Web
 - `api.example.com`：API、健康检查和守护进程连接
 
 先在 `.env` 中设置公开地址：
 
 ```bash
 FRONTEND_ORIGIN=https://app.example.com
-MULTICA_APP_URL=https://app.example.com
-MULTICA_PUBLIC_URL=https://api.example.com
+PATCHBAY_APP_URL=https://app.example.com
+PATCHBAY_PUBLIC_URL=https://api.example.com
 ```
 
 以上配置让浏览器流量全部走 app 域，cookie 不跨域，因此不需要配置 `COOKIE_DOMAIN`。如果改为让浏览器直接访问 api 域，则必须配置它，见[环境变量](/environment-variables)。
@@ -141,8 +141,8 @@ api.example.com {
 如果想让所有流量走**单一 origin**（一个域名，或一台主机一个端口——小服务器上常见），把守护进程依赖的路径显式转给 backend，其余交给 frontend：
 
 ```text
-multica.example.com {
- # CLI 可达性探测：`multica setup` 会 GET <server-url>/health 并要求 200，
+patchbay.example.com {
+ # CLI 可达性探测：`patchbay setup` 会 GET <server-url>/health 并要求 200，
  # 旧版 frontend 不转发这个路径，直接路由到 backend
  handle /health {
  reverse_proxy 127.0.0.1:8080
@@ -170,7 +170,7 @@ multica.example.com {
 }
 ```
 
-单一 origin 模式下，两个 URL 都指向它（`.env` 里的 `FRONTEND_ORIGIN` 和 `MULTICA_APP_URL`，以及 `multica setup self-host` 的 `--server-url` 和 `--app-url`）。
+单一 origin 模式下，两个 URL 都指向它（`.env` 里的 `FRONTEND_ORIGIN` 和 `PATCHBAY_APP_URL`，以及 `patchbay setup self-host` 的 `--server-url` 和 `--app-url`）。
 
 Caddy 会申请 TLS 证书并转发 WebSocket。修改 `.env` 后，用 `up -d` 重新创建容器，让新配置生效：
 
@@ -180,7 +180,7 @@ curl -fsS https://api.example.com/readyz
 curl -fsS https://app.example.com/api/config | grep -o '"daemon_server_url":"[^"]*"'
 ```
 
-最后一条命令输出 `daemon_server_url`——daemon 连接 API 用的地址：设了 `MULTICA_DAEMON_SERVER_URL` 时用它，其次是 `MULTICA_PUBLIC_URL`，否则用 app URL（`MULTICA_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`）。当 `MULTICA_APP_URL` 和 `FRONTEND_ORIGIN` 都没设时，这个字段会整个从响应里省略（上面的 grep 无输出）——即使设了 `MULTICA_DAEMON_SERVER_URL` 或 `MULTICA_PUBLIC_URL` 也是如此。如果输出的是 `localhost`，说明 `.env` 里还是本地默认值：不要依赖从 `.env.example` 复制来的 `${FRONTEND_PORT}` 引用，把 `FRONTEND_ORIGIN` 和 `MULTICA_APP_URL` 显式设置为公网地址，然后重建容器。
+最后一条命令输出 `daemon_server_url`——daemon 连接 API 用的地址：设了 `PATCHBAY_DAEMON_SERVER_URL` 时用它，其次是 `PATCHBAY_PUBLIC_URL`，否则用 app URL（`PATCHBAY_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`）。当 `PATCHBAY_APP_URL` 和 `FRONTEND_ORIGIN` 都没设时，这个字段会整个从响应里省略（上面的 grep 无输出）——即使设了 `PATCHBAY_DAEMON_SERVER_URL` 或 `PATCHBAY_PUBLIC_URL` 也是如此。如果输出的是 `localhost`，说明 `.env` 里还是本地默认值：不要依赖从 `.env.example` 复制来的 `${FRONTEND_PORT}` 引用，把 `FRONTEND_ORIGIN` 和 `PATCHBAY_APP_URL` 显式设置为公网地址，然后重建容器。
 
 <Callout type="warning">
 `docker compose restart` 只重启现有容器，不会重新读取 `.env`。修改配置后，重新读取 `.env` 需要运行 `docker compose -f docker-compose.selfhost.yml up -d`。
@@ -206,7 +206,7 @@ docker compose -f docker-compose.selfhost.yml logs backend \
 输入验证码并创建第一个工作区。配置 Resend 或 SMTP 后，验证码通过邮件发送，成员无需读取容器日志，具体见[登录与注册配置](/auth-setup)。
 
 <Callout type="warning">
-自托管部署默认使用 `APP_ENV=production`，不会启用固定验证码。不要在公网实例上设置 `MULTICA_DEV_VERIFICATION_CODE`。
+自托管部署默认使用 `APP_ENV=production`，不会启用固定验证码。不要在公网实例上设置 `PATCHBAY_DEV_VERIFICATION_CODE`。
 </Callout>
 
 ## 5. 连接执行电脑
@@ -217,40 +217,40 @@ docker compose -f docker-compose.selfhost.yml logs backend \
 task 以运行守护进程的用户的全部权限执行——该用户能读写的一切，task 都能读写。请用专用 Unix 用户、容器或虚拟机来运行守护进程，而不是你的个人账号。详见[安全模型](/security-model)。
 </Callout>
 
-先安装 Multica CLI：
+先安装 Patchbay CLI：
 
 **macOS / Linux**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash
 ```
 
 **Windows PowerShell**
 
 ```powershell
-irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex
 ```
 
-如果 Multica 服务也在这台电脑上，运行：
+如果 Patchbay 服务也在这台电脑上，运行：
 
 ```bash
-multica setup self-host
+patchbay setup self-host
 ```
 
-如果 Multica 服务在另一台机器上，传入刚才配置的两个地址：
+如果 Patchbay 服务在另一台机器上，传入刚才配置的两个地址：
 
 ```bash
-multica setup self-host \
+patchbay setup self-host \
  --server-url https://api.example.com \
  --app-url https://app.example.com
 ```
 
-这条命令会先检查 `<server-url>/health`，再打开浏览器完成登录。登录完成后，它会保存本机凭据并启动守护进程。这一步报 `Server not reachable`，说明 `/health` 没有通过探测拿到 200：可能是代理把所有流量转给了不转发该路径的旧版 frontend，可能是代理根本没把 `/health` 路由到 backend，也可能是更底层的问题（DNS、TLS、防火墙、超时、backend 返回 5xx）——见[故障排查](/troubleshooting#multica-setup-报告服务器不可达)。
+这条命令会先检查 `<server-url>/health`，再打开浏览器完成登录。登录完成后，它会保存本机凭据并启动守护进程。这一步报 `Server not reachable`，说明 `/health` 没有通过探测拿到 200：可能是代理把所有流量转给了不转发该路径的旧版 frontend，可能是代理根本没把 `/health` 路由到 backend，也可能是更底层的问题（DNS、TLS、防火墙、超时、backend 返回 5xx）——见[故障排查](/troubleshooting#patchbay-setup-报告服务器不可达)。
 
 确认连接状态：
 
 ```bash
-multica daemon status
+patchbay daemon status
 ```
 
 正常情况下，输出中会显示：
@@ -261,13 +261,13 @@ multica daemon status
 
 ## 6. 完成第一次执行
 
-回到 Multica。运行时列表中出现在线的运行时后，创建一个智能体，并把第一个任务分配给它。
+回到 Patchbay。运行时列表中出现在线的运行时后，创建一个智能体，并把第一个任务分配给它。
 
 执行日志变为"已完成"、时间线中出现智能体的回复，说明自托管服务、执行电脑和 AI 编程工具已经连通。详细步骤见[快速上手](/cloud-quickstart)第 3-5 步。
 
 ## 常用管理命令
 
-以下命令都在 `multica` 仓库目录中运行：
+以下命令都在 `patchbay` 仓库目录中运行：
 
 ```bash
 # 查看状态
@@ -295,13 +295,13 @@ curl -fsS http://localhost:8080/readyz
 Docker Compose 部署有两种升级写法。在已有部署上两者**结果相同**——`Makefile` 里的 `selfhost` target 跑的就是同一套 `docker compose pull` + `up -d`，只是额外多做了两件事：`.env` 缺失时生成一份，以及等 `/health` 就绪后打印一段状态汇总。用哪个都行：
 
 ```bash
-cd multica
+cd patchbay
 git pull
 make selfhost
 ```
 
 ```bash
-cd multica
+cd patchbay
 git pull
 docker compose -f docker-compose.selfhost.yml pull
 docker compose -f docker-compose.selfhost.yml up -d
@@ -309,16 +309,16 @@ docker compose -f docker-compose.selfhost.yml up -d
 
 ### `git pull` 到底更新了什么
 
-`git pull` 更新的是 **`docker-compose.selfhost.yml` 本身**——新增的环境变量、新增的服务、改过的 healthcheck。它**不是**拉新版本 Multica 的机制。
+`git pull` 更新的是 **`docker-compose.selfhost.yml` 本身**——新增的环境变量、新增的服务、改过的 healthcheck。它**不是**拉新版本 Patchbay 的机制。
 
 真正决定你跑哪个版本的是 `docker compose pull`：它去 GHCR 查这个 tag 当前指向哪个镜像。所以一个几个月没更新的 checkout 照样能拉到今天的 `latest` 镜像；反过来，只跑 `git pull` 而不拉镜像、不重建容器，什么都不会变。
 
 <Callout type="warning">
-**如果你在 `.env` 里钉死了 `MULTICA_IMAGE_TAG`，两种写法都升不上去。** 两个镜像都写成 `${MULTICA_IMAGE_TAG:-latest}`（`docker-compose.selfhost.yml:42`、`:125`），而 `.env.example` 里默认是 `MULTICA_IMAGE_TAG=latest`。一旦你把它改成了具体版本，`pull` 只是把同一个 tag 重拉一遍，版本原地不动——不报错，也没有任何警告。升级前先确认：
+**如果你在 `.env` 里钉死了 `PATCHBAY_IMAGE_TAG`，两种写法都升不上去。** 两个镜像都写成 `${PATCHBAY_IMAGE_TAG:-latest}`（`docker-compose.selfhost.yml:42`、`:125`），而 `.env.example` 里默认是 `PATCHBAY_IMAGE_TAG=latest`。一旦你把它改成了具体版本，`pull` 只是把同一个 tag 重拉一遍，版本原地不动——不报错，也没有任何警告。升级前先确认：
 
 ```bash
-grep MULTICA_IMAGE_TAG .env
-# MULTICA_IMAGE_TAG=v0.4.5 ← 钉死了：先改成 latest（或你想要的版本）
+grep PATCHBAY_IMAGE_TAG .env
+# PATCHBAY_IMAGE_TAG=v0.4.5 ← 钉死了：先改成 latest（或你想要的版本）
 ```
 </Callout>
 
@@ -332,18 +332,18 @@ migration 只往前走、不回滚，所以正式环境升级前先导一份：
 
 ```bash
 docker compose -f docker-compose.selfhost.yml exec -T postgres \
- pg_dump -U multica multica > multica-backup.sql && gzip multica-backup.sql
+ pg_dump -U patchbay patchbay > patchbay-backup.sql && gzip patchbay-backup.sql
 ```
 
 <Callout type="warning">
 **不要把 `pg_dump` 直接管道接给 `gzip`。** shell 取的是管道里**最后一条**命令的退出码，所以 `pg_dump ... | gzip > backup.sql.gz` 在导出失败时照样返回 `0`，留下一个格式完全合法、但里面什么都没有的 20 字节压缩包。先重定向到文件，`pg_dump` 自己的退出码才算数，`&&` 也只会压缩真正成功的那份导出。
 </Callout>
 
-如果你改过 `POSTGRES_USER` / `POSTGRES_DB`，把 `multica` 换成 `.env` 里的实际值。数据存在名为 `multica_pgdata` 的 volume 里，`docker compose down` 不会删它——但 `down -v` 会。
+如果你改过 `POSTGRES_USER` / `POSTGRES_DB`，把 `patchbay` 换成 `.env` 里的实际值。数据存在名为 `patchbay_pgdata` 的 volume 里，`docker compose down` 不会删它——但 `down -v` 会。
 
 ### migration 自动执行
 
-和[第 1 步](#1-启动-multica)一样，backend 容器启动时会在对外提供服务之前先跑 `./migrate up`（`docker/entrypoint.sh`）。没有单独的升级命令——把新镜像起起来，本身就是升级这一步。想看过程：
+和[第 1 步](#1-启动-patchbay)一样，backend 容器启动时会在对外提供服务之前先跑 `./migrate up`（`docker/entrypoint.sh`）。没有单独的升级命令——把新镜像起起来，本身就是升级这一步。想看过程：
 
 ```bash
 docker compose -f docker-compose.selfhost.yml logs -f backend
@@ -366,7 +366,7 @@ curl -s localhost:8080/readyz
 
 Helm 有自己的升级路径：在 values 文件里把 `images.backend.tag` / `images.frontend.tag` 设成你要的版本，然后 `helm upgrade`。改 tag 就改了 pod spec，Kubernetes 会拉新镜像并滚动更新——这是可靠的路径。
 
-`kubectl -n multica rollout restart` 本身**不是**升级。chart 默认 `pullPolicy: IfNotPresent`（`deploy/helm/multica/values.yaml`），节点上已经缓存过这个 tag 的话，restart 只会用回旧镜像，什么都没变——和钉死 `MULTICA_IMAGE_TAG` 是同一类坑。真要靠浮动 tag 走这条路，得先把 `images.backend.pullPolicy` / `images.frontend.pullPolicy` 设成 `Always`。详见仓库的 [Self-hosting guide](https://github.com/multica-ai/multica/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative)。
+`kubectl -n patchbay rollout restart` 本身**不是**升级。chart 默认 `pullPolicy: IfNotPresent`（`deploy/helm/patchbay/values.yaml`），节点上已经缓存过这个 tag 的话，restart 只会用回旧镜像，什么都没变——和钉死 `PATCHBAY_IMAGE_TAG` 是同一类坑。真要靠浮动 tag 走这条路，得先把 `images.backend.pullPolicy` / `images.frontend.pullPolicy` 设成 `Always`。详见仓库的 [Self-hosting guide](https://github.com/patchbay-ai/patchbay/blob/main/SELF_HOSTING.md#kubernetes-deployment-alternative)。
 
 <Callout type="warning">
 `docker compose down` 会保留 `pgdata` 和 `backend_uploads`。加上 `-v` 会删除这些数据卷，包括数据库；除非确定要清空实例，否则不要运行 `docker compose down -v`。
@@ -378,9 +378,9 @@ Helm 有自己的升级路径：在 values 文件里把 `images.backend.tag` / `
 |---|---|
 | `/readyz` 没有返回 `ok` | 运行 `docker compose -f docker-compose.selfhost.yml logs backend postgres`。 |
 | 收不到验证码 | 请求一次验证码，再从 backend 日志中查找 `Verification code`。 |
-| `setup self-host` 提示 server 不可达 | 在执行电脑上请求 `https://api.example.com/health`，确认 DNS、TLS 和反向代理都可达。返回 404 说明代理把 `/health` 转给了不转发该路径的旧版 frontend——改为直通 backend（见[故障排查](/troubleshooting#multica-setup-报告服务器不可达)）。 |
-| 守护进程没有列出 `Agents` | 确认 AI 编程工具在 `PATH` 中并已登录，然后运行 `multica daemon restart`。 |
-| 任务一直排队 | 运行 `multica daemon status`，确认守护进程正在运行并连接了工作区。 |
+| `setup self-host` 提示 server 不可达 | 在执行电脑上请求 `https://api.example.com/health`，确认 DNS、TLS 和反向代理都可达。返回 404 说明代理把 `/health` 转给了不转发该路径的旧版 frontend——改为直通 backend（见[故障排查](/troubleshooting#patchbay-setup-报告服务器不可达)）。 |
+| 守护进程没有列出 `Agents` | 确认 AI 编程工具在 `PATH` 中并已登录，然后运行 `patchbay daemon restart`。 |
+| 任务一直排队 | 运行 `patchbay daemon status`，确认守护进程正在运行并连接了工作区。 |
 
 更多情况见[故障排查](/troubleshooting)。
 
@@ -388,5 +388,5 @@ Helm 有自己的升级路径：在 values 文件里把 `images.backend.tag` / `
 
 - [登录与注册配置](/auth-setup) — 配置邮件、Google 登录和注册范围。
 - [环境变量](/environment-variables) — 查看完整的服务端配置。
-- [Self-hosting guide](https://github.com/multica-ai/multica/blob/main/SELF_HOSTING.md) — Kubernetes、升级和手动部署。
+- [Self-hosting guide](https://github.com/patchbay-ai/patchbay/blob/main/SELF_HOSTING.md) — Kubernetes、升级和手动部署。
 - [桌面应用](/desktop-app) — 让 Desktop 连接自托管服务。

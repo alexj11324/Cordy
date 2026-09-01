@@ -2,14 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@multica/core/i18n/react";
-import type { AgentRuntime } from "@multica/core/types";
+import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { AgentRuntime } from "@patchbay/core/types";
 import enAgents from "../../locales/en/agents.json";
 import enCommon from "../../locales/en/common.json";
 import enRuntimes from "../../locales/en/runtimes.json";
 import { MikaRuntimeChoice } from "./mika-runtime-choice";
 
-vi.mock("@multica/core/api", () => ({ api: { listRuntimeModels: vi.fn() } }));
+vi.mock("@patchbay/core/api", () => ({ api: { listRuntimeModels: vi.fn() } }));
 
 const RESOURCES = {
   en: { agents: enAgents, common: enCommon, runtimes: enRuntimes },

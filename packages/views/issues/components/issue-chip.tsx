@@ -1,10 +1,10 @@
 "use client";
 
-import { issueStatusCategory } from "@multica/core/issues";
+import { issueStatusCategory } from "@patchbay/core/issues";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { issueListOptions, issueDetailOptions } from "@multica/core/issues/queries";
-import { useWorkspaceId } from "@multica/core/hooks";
+import { issueListOptions, issueDetailOptions } from "@patchbay/core/issues/queries";
+import { useWorkspaceId } from "@patchbay/core/hooks";
 import { StatusIcon } from "./status-icon";
 
 /**

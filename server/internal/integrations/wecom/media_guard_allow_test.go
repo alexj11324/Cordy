@@ -17,7 +17,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
 )
 
 func withAllowed(t *testing.T, cidrs ...string) {
@@ -224,7 +224,7 @@ func TestTheProxyEscapeHatchSurvivesTheTranslationBlock(t *testing.T) {
 // classifyMediaFailure has to tell the guard's refusal apart from an ordinary
 // failed download, because those two put an operator in completely different
 // places: one is a URL that should not have been sent (or a proxy range that
-// needs declaring in MULTICA_WECOM_MEDIA_ALLOW_CIDRS), the other is WeCom or
+// needs declaring in PATCHBAY_WECOM_MEDIA_ALLOW_CIDRS), the other is WeCom or
 // the network.
 //
 // Driven from real errors rather than hand-built ones. The refusal travels

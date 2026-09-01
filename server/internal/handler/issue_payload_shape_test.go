@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/service"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // An issue reaches clients rendered two different ways: the HTTP handler

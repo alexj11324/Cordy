@@ -4,18 +4,18 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { MoreHorizontal, Pencil, Plus, Search, Tag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { useWorkspaceId } from "@multica/core/hooks";
+import { useWorkspaceId } from "@patchbay/core/hooks";
 import {
   labelListOptions,
   useCreateLabel,
   useDeleteLabel,
   useUpdateLabel,
-} from "@multica/core/labels";
-import type { Label, LabelResourceType } from "@multica/core/types";
-import { Button } from "@multica/ui/components/ui/button";
-import { Input } from "@multica/ui/components/ui/input";
-import { Textarea } from "@multica/ui/components/ui/textarea";
-import { Label as FieldLabel } from "@multica/ui/components/ui/label";
+} from "@patchbay/core/labels";
+import type { Label, LabelResourceType } from "@patchbay/core/types";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
+import { Label as FieldLabel } from "@patchbay/ui/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -23,7 +23,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,14 +33,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
+} from "@patchbay/ui/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
-import { cn } from "@multica/ui/lib/utils";
+} from "@patchbay/ui/components/ui/dropdown-menu";
+import { cn } from "@patchbay/ui/lib/utils";
 import { ColorPicker, COLOR_PICKER_PRESETS } from "../../common/color-picker";
 import { useLocale, useT } from "../../i18n";
 import { SettingsTab } from "./settings-layout";

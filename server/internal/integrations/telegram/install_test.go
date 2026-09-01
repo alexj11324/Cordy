@@ -14,8 +14,8 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/util/secretbox"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/util/secretbox"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 type fakeTelegramInstallQueries struct {
@@ -102,7 +102,7 @@ func telegramInstallAPIServer(t *testing.T, webhookURL string) *httptest.Server 
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/getMe"):
-			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":12345,"is_bot":true,"first_name":"Multica","username":"multica_test_bot"}}`))
+			_, _ = w.Write([]byte(`{"ok":true,"result":{"id":12345,"is_bot":true,"first_name":"Patchbay","username":"patchbay_test_bot"}}`))
 		case strings.HasSuffix(r.URL.Path, "/getWebhookInfo"):
 			_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{"url": webhookURL}})
 		default:
@@ -129,7 +129,7 @@ func TestRegisterValidatesAndEncryptsBotToken(t *testing.T) {
 	if err := json.Unmarshal(q.upsert.Config, &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.AppID != "12345" || cfg.BotUsername != "multica_test_bot" || strings.Contains(cfg.BotTokenEncrypted, "secret") {
+	if cfg.AppID != "12345" || cfg.BotUsername != "patchbay_test_bot" || strings.Contains(cfg.BotTokenEncrypted, "secret") {
 		t.Fatalf("unsafe or incorrect config = %+v", cfg)
 	}
 	plain, err := decryptToken(cfg.BotTokenEncrypted, svc.box.Open)

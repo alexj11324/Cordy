@@ -10,8 +10,8 @@ import (
 )
 
 const (
-	reclaimCheckSchedulePrefix = "mul:claim:runtime:reclaim-schedule:"
-	reclaimCheckBackstopPrefix = "mul:claim:runtime:reclaim-backstop:"
+	reclaimCheckSchedulePrefix = "pby:claim:runtime:reclaim-schedule:"
+	reclaimCheckBackstopPrefix = "pby:claim:runtime:reclaim-backstop:"
 	reclaimCheckRetryBatchSize = 256
 
 	// The backstop remains at or below the PostgreSQL recovery window so a

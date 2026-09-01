@@ -3,8 +3,8 @@
 import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, Gauge } from "lucide-react";
-import type { RuntimeModelServiceTier } from "@multica/core/types";
-import { runtimeModelsOptions } from "@multica/core/runtimes";
+import type { RuntimeModelServiceTier } from "@patchbay/core/types";
+import { runtimeModelsOptions } from "@patchbay/core/runtimes";
 import {
   PickerItem,
   PropertyPicker,

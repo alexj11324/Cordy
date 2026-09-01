@@ -23,7 +23,7 @@ import (
 //     permission (the whole point of raising permission from the read-only
 //     default) — a sentinel file is written and read back
 //
-// This test is gated by MULTICA_RUN_REAL_AGENT_SMOKE=1 and requires `dim`
+// This test is gated by PATCHBAY_RUN_REAL_AGENT_SMOKE=1 and requires `dim`
 // on PATH with an active Dim OAuth login. The RPCs it exercises are the ones
 // the execution path needs, verified against dimcode 0.3.10.
 func TestDimRealACPSmoke(t *testing.T) {
@@ -112,7 +112,7 @@ func TestDimRealACPSmoke(t *testing.T) {
 //
 // dim 0.3.10+ releases its per-process session lock within ~5s of the owning
 // process exiting, so the resume succeeds once run A's process has torn down.
-// Gated by MULTICA_RUN_REAL_AGENT_SMOKE=1 and requires `dim` on PATH with an
+// Gated by PATCHBAY_RUN_REAL_AGENT_SMOKE=1 and requires `dim` on PATH with an
 // active Dim OAuth login.
 func TestDimRealCrossRunResume(t *testing.T) {
 	requireRealAgentSmoke(t)

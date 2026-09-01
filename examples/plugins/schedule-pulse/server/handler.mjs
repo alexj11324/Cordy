@@ -3,7 +3,7 @@
  * Schedule Pulse handler — the plugin author's side of a durable scheduled Hook.
  *
  * Run:
- *   MULTICA_SIGNING_SECRET=whsec_... node handler.mjs
+ *   PATCHBAY_SIGNING_SECRET=whsec_... node handler.mjs
  */
 
 import { createServer as createHTTPServer } from "node:http";
@@ -12,12 +12,12 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 const PORT = Number(process.env.PORT ?? 8787);
-const SIGNING_SECRET = process.env.MULTICA_SIGNING_SECRET ?? "";
+const SIGNING_SECRET = process.env.PATCHBAY_SIGNING_SECRET ?? "";
 const TOLERANCE_SECONDS = 5 * 60;
 const PULSE_KEY = "last_pulse";
 
 if (!SIGNING_SECRET) {
-  console.error("MULTICA_SIGNING_SECRET is required. Rotate the plugin token in Multica to obtain it.");
+  console.error("PATCHBAY_SIGNING_SECRET is required. Rotate the plugin token in Patchbay to obtain it.");
   process.exit(1);
 }
 
@@ -33,8 +33,8 @@ function rememberSignature(signature, now) {
 }
 
 function verify(rawBody, headers) {
-  const timestamp = headers["x-multica-timestamp"];
-  const presented = String(headers["x-multica-signature"] ?? "").replace(/^v1=/, "");
+  const timestamp = headers["x-patchbay-timestamp"];
+  const presented = String(headers["x-patchbay-signature"] ?? "").replace(/^v1=/, "");
   if (!timestamp || !presented) return "missing signature headers";
 
   const drift = Math.abs(Math.floor(Date.now() / 1000) - Number(timestamp));
@@ -67,7 +67,7 @@ async function callback(body, method, path, payload) {
   const text = await response.text();
   if (response.status === 404) return null;
   if (!response.ok) {
-    throw new Error(`Multica answered ${response.status}: ${text}`);
+    throw new Error(`Patchbay answered ${response.status}: ${text}`);
   }
   return text ? JSON.parse(text) : null;
 }
@@ -82,8 +82,8 @@ async function loadPulse(body) {
   }
 }
 
-const tlsCert = process.env.MULTICA_HOOK_TLS_CERT;
-const tlsKey = process.env.MULTICA_HOOK_TLS_KEY;
+const tlsCert = process.env.PATCHBAY_HOOK_TLS_CERT;
+const tlsKey = process.env.PATCHBAY_HOOK_TLS_KEY;
 const createServer = tlsCert && tlsKey
   ? (handler) => createHTTPSServer({ cert: readFileSync(tlsCert), key: readFileSync(tlsKey) }, handler)
   : createHTTPServer;

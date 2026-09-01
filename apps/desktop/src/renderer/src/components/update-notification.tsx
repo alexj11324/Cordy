@@ -9,7 +9,7 @@ type UpdateState =
   | { status: "ready"; version: string };
 
 function changelogUrl(version: string): string {
-  return `https://multica.ai/changelog#release-${version.replace(/\./g, "-")}`;
+  return `https://patchbay.ai/changelog#release-${version.replace(/\./g, "-")}`;
 }
 
 export function UpdateNotification() {

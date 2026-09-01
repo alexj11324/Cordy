@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
+	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
 )
 
 // ---------------------------------------------------------------------------

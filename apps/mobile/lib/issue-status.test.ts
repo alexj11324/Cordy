@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { Issue, IssueStatusEntry } from "@multica/core/types";
+import type { Issue, IssueStatusEntry } from "@patchbay/core/types";
 import {
   BOARD_CATEGORIES,
   CLOSED_CATEGORIES,

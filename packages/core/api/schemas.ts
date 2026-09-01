@@ -2433,7 +2433,7 @@ export const EMPTY_INBOX_ITEMS: InboxItem[] = [];
 // ---------------------------------------------------------------------------
 // Billing schemas (cloud-billing proxy surface)
 //
-// All billing JSON we receive comes from multica-cloud verbatim — we proxy
+// All billing JSON we receive comes from patchbay-cloud verbatim — we proxy
 // the bytes without re-shaping. These schemas use `loose()` so a future
 // non-breaking field addition on the cloud side doesn't crash us; required
 // fields are still strictly enforced. EMPTY_* constants supply the
@@ -2603,7 +2603,7 @@ export const EMPTY_CREATE_BILLING_PORTAL_SESSION_RESPONSE: CreateBillingPortalSe
 // ---------------------------------------------------------------------------
 // Workspace subscriptions (`/api/cloud-subscriptions/*`)
 //
-// These schemas are the compatibility boundary with multica-cloud. Three rules
+// These schemas are the compatibility boundary with patchbay-cloud. Three rules
 // hold for all of them:
 //
 //  1. There is no fallback value. Callers get `null` on any parse failure and

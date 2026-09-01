@@ -1,6 +1,6 @@
 # Schedule Pulse
 
-A real scheduled plugin, not a log line. Multica POSTs the plugin's own HTTPS
+A real scheduled plugin, not a log line. Patchbay POSTs the plugin's own HTTPS
 endpoint every five minutes. The handler records each unique `delivery_id` in
 workspace storage **before** it answers, so a retry of the same planned wake
 does not look like a second pulse.
@@ -22,7 +22,7 @@ It does not create issues. That is a later Plugin Action API, not this trigger.
 ## Running the handler
 
 ```bash
-MULTICA_SIGNING_SECRET=whsec_… node server/handler.mjs
+PATCHBAY_SIGNING_SECRET=whsec_… node server/handler.mjs
 ```
 
 The signing secret is shown once, next to the install token, when an admin
@@ -32,7 +32,7 @@ Point `transport.url` at this process and declare the matching `net:` scope.
 Local development also needs:
 
 ```bash
-export MULTICA_PLUGIN_DEV_ORIGINS=https://localhost:8787
+export PATCHBAY_PLUGIN_DEV_ORIGINS=https://localhost:8787
 ```
 
 Without that opt-in the host refuses a private address.

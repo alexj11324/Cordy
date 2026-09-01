@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/pkg/agent"
+	"github.com/patchbay-ai/patchbay/server/pkg/agent"
 )
 
 // newSelfHealTestDaemon builds a Daemon with just the state resolveAgentEntry

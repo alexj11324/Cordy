@@ -130,5 +130,5 @@ func isTrustedProxy(ip net.IP, cidrs []*net.IPNet) bool {
 func rateLimitKey(path, ip string) string {
 	sanitized := strings.TrimPrefix(path, "/")
 	sanitized = strings.ReplaceAll(sanitized, "/", ":")
-	return fmt.Sprintf("mul:ratelimit:%s:%s", sanitized, ip)
+	return fmt.Sprintf("pby:ratelimit:%s:%s", sanitized, ip)
 }

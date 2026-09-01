@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // TimelineEntry represents a single entry in the issue timeline, which can be
@@ -120,7 +120,7 @@ type timelinePaginatedResponse struct {
 // Two response shapes coexist for boundary compatibility (#1929):
 //
 //   - No pagination params → flat ASC `TimelineEntry[]`. Matches the legacy
-//     desktop contract (Multica.app ≤ v0.2.25) and the new client.
+//     desktop contract (Patchbay.app ≤ v0.2.25) and the new client.
 //   - Any of `limit` / `before` / `after` / `around` present → wrapped object
 //     with DESC entries + null cursors + has_more_after=false. Matches what a
 //     stale v0.2.26+ build expects when it parses the response with

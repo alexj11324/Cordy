@@ -13,14 +13,14 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/plugincontract"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
 )
 
 // Publishing.
 //
-// An author uploads an artifact bundle; Multica stores it and serves it. There
+// An author uploads an artifact bundle; Patchbay stores it and serves it. There
 // is no source URL, and there is no second way in: what an administrator
 // approves and what a reader's browser runs are the same rows in this database.
 //
@@ -68,7 +68,7 @@ func (s *PluginService) PublishBundle(ctx context.Context, workspaceID, userID p
 	return s.publish(ctx, workspaceID, userID, bundle, false)
 }
 
-// PublishLocalBundle publishes from MULTICA_PLUGIN_DIR — the development
+// PublishLocalBundle publishes from PATCHBAY_PLUGIN_DIR — the development
 // channel, so an author iterating on a surface does not have to zip and upload
 // after every edit.
 //
@@ -80,10 +80,10 @@ func (s *PluginService) PublishBundle(ctx context.Context, workspaceID, userID p
 // of a conflict.
 func (s *PluginService) PublishLocalBundle(ctx context.Context, workspaceID, userID pgtype.UUID, name string) (PluginPackageSummary, error) {
 	if s.LocalDir == "" {
-		return PluginPackageSummary{}, pluginErrf(PluginErrorInvalid, "local plugin sources require MULTICA_PLUGIN_DIR")
+		return PluginPackageSummary{}, pluginErrf(PluginErrorInvalid, "local plugin sources require PATCHBAY_PLUGIN_DIR")
 	}
 	if name == "" || strings.ContainsAny(name, `/\`) || strings.HasPrefix(name, ".") {
-		return PluginPackageSummary{}, pluginErrf(PluginErrorInvalid, "local plugin source must be a single directory name under MULTICA_PLUGIN_DIR")
+		return PluginPackageSummary{}, pluginErrf(PluginErrorInvalid, "local plugin source must be a single directory name under PATCHBAY_PLUGIN_DIR")
 	}
 	bundle, err := plugincontract.ParseBundleFromDir(func(entry string) ([]byte, bool, error) {
 		content, readErr := s.readLocalFile(name, entry)
@@ -503,10 +503,10 @@ func (s *PluginService) packageFile(ctx context.Context, queries *db.Queries, ve
 // directory after cleaning.
 func (s *PluginService) readLocalFile(name, entry string) ([]byte, error) {
 	if s.LocalDir == "" {
-		return nil, pluginErrf(PluginErrorInvalid, "local plugin sources require MULTICA_PLUGIN_DIR")
+		return nil, pluginErrf(PluginErrorInvalid, "local plugin sources require PATCHBAY_PLUGIN_DIR")
 	}
 	if name == "" || strings.ContainsAny(name, `/\`) || strings.HasPrefix(name, ".") {
-		return nil, pluginErrf(PluginErrorInvalid, "local plugin source must be a single directory name under MULTICA_PLUGIN_DIR")
+		return nil, pluginErrf(PluginErrorInvalid, "local plugin source must be a single directory name under PATCHBAY_PLUGIN_DIR")
 	}
 	root := filepath.Join(s.LocalDir, name)
 	path := filepath.Clean(filepath.Join(root, entry))

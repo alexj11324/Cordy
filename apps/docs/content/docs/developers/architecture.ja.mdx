@@ -1,9 +1,9 @@
 ---
 title: プロジェクトアーキテクチャ
-description: Multica のクライアント、Go サービス、実行デーモン、共有フロントエンドパッケージがどのように連携するかを説明します。
+description: Patchbay のクライアント、Go サービス、実行デーモン、共有フロントエンドパッケージがどのように連携するかを説明します。
 ---
 
-Multica は Go バックエンド、複数のクライアント、実行用コンピューター上で動作するデーモンで構成されています。PostgreSQL がコラボレーションデータを保存し、デーモンが作業を取得してローカルの AI コーディングツールを呼び出します。
+Patchbay は Go バックエンド、複数のクライアント、実行用コンピューター上で動作するデーモンで構成されています。PostgreSQL がコラボレーションデータを保存し、デーモンが作業を取得してローカルの AI コーディングツールを呼び出します。
 
 ```text
 Web / Desktop / Mobile / CLI
@@ -17,7 +17,7 @@ Web / Desktop / Mobile / CLI
   ローカルデーモン ─── AI コーディングツール
 ```
 
-プロダクト利用者向けの説明は [Multica の仕組み](/how-multica-works)を参照してください。このページではコードの階層構造に焦点を当てます。
+プロダクト利用者向けの説明は [Patchbay の仕組み](/how-patchbay-works)を参照してください。このページではコードの階層構造に焦点を当てます。
 
 ## リポジトリ構成
 
@@ -54,7 +54,7 @@ apps/web/platform/         Next.js ルーティングアダプター
 apps/desktop/.../platform/ Electron ルーティングアダプター
 ```
 
-Mobile はこれらの React ページを再利用しません。`@multica/core` の型や純粋関数をインポートできますが、UI、query key、状態、リアルタイム購読、リリースフローは独自に持ちます。
+Mobile はこれらの React ページを再利用しません。`@patchbay/core` の型や純粋関数をインポートできますが、UI、query key、状態、リアルタイム購読、リリースフローは独自に持ちます。
 
 ## フロントエンドの状態
 
@@ -76,7 +76,7 @@ API レスポンスは `packages/core/api/` の境界で zod schema により解
 | エントリーポイント | 役割 |
 | --- | --- |
 | `server` | HTTP API、WebSocket、スケジューラー、インテグレーション worker を起動 |
-| `multica` | CLI とローカルデーモン |
+| `patchbay` | CLI とローカルデーモン |
 | `migrate` | データベース migration を実行 |
 | `backfill_*` | 特定バージョン向けのデータ backfill ツール |
 
@@ -98,7 +98,7 @@ PostgreSQL がビジネスデータの信頼できる情報源です。Redis は
 
 ## リアルタイム接続
 
-Multica には異なる 2 つの WebSocket パスがあります。
+Patchbay には異なる 2 つの WebSocket パスがあります。
 
 - `internal/realtime/` はタスク、コメント、受信トレイなどの変更をユーザークライアントへ配信します。
 - `internal/daemonws/` はデーモンを接続し、ランタイムの起動通知と daemon RPC に使います。

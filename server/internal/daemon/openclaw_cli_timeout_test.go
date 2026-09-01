@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/daemon/execenv"
-	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
+	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
 )
 
 // TestTaskRunFailureReasonLabelsOpenclawCLITimeout is the daemon half of the

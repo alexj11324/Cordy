@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, beforeEach, vi } from "vitest";
-import { useCustomPricingStore } from "@multica/core/runtimes/custom-pricing-store";
-import type { AgentRuntime, RuntimeUsage } from "@multica/core/types";
+import { useCustomPricingStore } from "@patchbay/core/runtimes/custom-pricing-store";
+import type { AgentRuntime, RuntimeUsage } from "@patchbay/core/types";
 
 import {
   addDaysIso,

@@ -72,7 +72,7 @@ func (b *qwenpawBackend) Execute(ctx context.Context, prompt string, opts ExecOp
 	// auto-approves in hermesClient.handleAgentRequest by selecting
 	// a safe granting option for each session/request_permission request.
 	//
-	// ExtraArgs (MULTICA_QWENPAW_ARGS, daemon-wide) precede CustomArgs
+	// ExtraArgs (PATCHBAY_QWENPAW_ARGS, daemon-wide) precede CustomArgs
 	// (per-agent), matching the documented precedence and the other backends
 	// that accept both.
 	qwenpawArgs := []string{"acp"}
@@ -192,7 +192,7 @@ func (b *qwenpawBackend) Execute(ctx context.Context, prompt string, opts ExecOp
 		initResult, err := c.request(runCtx, "initialize", map[string]any{
 			"protocolVersion": 1,
 			"clientInfo": map[string]any{
-				"name":    "multica-agent-sdk",
+				"name":    "patchbay-agent-sdk",
 				"version": "0.2.0",
 			},
 			"clientCapabilities": map[string]any{},

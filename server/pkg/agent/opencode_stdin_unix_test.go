@@ -74,7 +74,7 @@ func opencodeStdinProbe(t *testing.T, prompt string) ([]string, string, Result) 
 func TestOpencodeExecuteSendsPromptOnStdinNotArgv(t *testing.T) {
 	t.Parallel()
 
-	prompt := "MULTICA_AGENT_BUILDER_INPUT\n" +
+	prompt := "PATCHBAY_AGENT_BUILDER_INPUT\n" +
 		"{\n" +
 		`  "user_request": "专注本机 CPA 有关的所有工作",` + "\n" +
 		`  "current_draft": {"instructions": "Run go build -ldflags \"-X main.version=foo\""},` + "\n" +
@@ -87,7 +87,7 @@ func TestOpencodeExecuteSendsPromptOnStdinNotArgv(t *testing.T) {
 		t.Errorf("prompt did not arrive on stdin intact:\n got  %q\n want %q", stdinGot, prompt)
 	}
 	for _, arg := range argv {
-		for _, needle := range []string{"MULTICA_AGENT_BUILDER_INPUT", "user_request", "-X", "inspect local"} {
+		for _, needle := range []string{"PATCHBAY_AGENT_BUILDER_INPUT", "user_request", "-X", "inspect local"} {
 			if strings.Contains(arg, needle) {
 				t.Errorf("prompt fragment %q leaked into argv element %q; argv=%v", needle, arg, argv)
 			}
@@ -111,7 +111,7 @@ func TestOpencodeExecuteSendsPromptOnStdinNotArgv(t *testing.T) {
 func TestOpencodeExecutePromptExceedingWindowsCommandLineLimit(t *testing.T) {
 	t.Parallel()
 
-	prompt := strings.Repeat("multica opencode workspace skill catalogue 0123456789\n", 800)
+	prompt := strings.Repeat("patchbay opencode workspace skill catalogue 0123456789\n", 800)
 	if len(prompt) <= 32767 {
 		t.Fatalf("test prompt must exceed the Windows command-line limit, got %d bytes", len(prompt))
 	}
@@ -141,7 +141,7 @@ func TestOpencodeExecuteLargePromptDoesNotDeadlock(t *testing.T) {
 	fakePath := filepath.Join(dir, "opencode")
 	writeTestExecutable(t, fakePath, []byte(script))
 
-	prompt := strings.Repeat("multica opencode stdin payload 0123456789\n", 16_384)
+	prompt := strings.Repeat("patchbay opencode stdin payload 0123456789\n", 16_384)
 	if len(prompt) < 512*1024 {
 		t.Fatalf("test prompt too small: %d bytes", len(prompt))
 	}

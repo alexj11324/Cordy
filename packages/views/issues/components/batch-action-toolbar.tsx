@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { X, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@multica/ui/components/ui/button";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,19 +14,19 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
-import type { Issue, UpdateIssueRequest } from "@multica/core/types";
-import { commonIssueFields } from "@multica/core/issues/batch";
-import { issueBehavesAs } from "@multica/core/issues";
-import { useBatchUpdateIssues, useBatchDeleteIssues } from "@multica/core/issues/mutations";
-import { useModalStore } from "@multica/core/modals";
+} from "@patchbay/ui/components/ui/alert-dialog";
+import type { Issue, UpdateIssueRequest } from "@patchbay/core/types";
+import { commonIssueFields } from "@patchbay/core/issues/batch";
+import { issueBehavesAs } from "@patchbay/core/issues";
+import { useBatchUpdateIssues, useBatchDeleteIssues } from "@patchbay/core/issues/mutations";
+import { useModalStore } from "@patchbay/core/modals";
 import { StatusPicker, PriorityPicker, AssigneePicker } from "./pickers";
 import { useT } from "../../i18n";
-import { cn } from "@multica/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 import {
   UI_EASE_OUT,
   UI_MOTION_DURATION,
-} from "@multica/ui/lib/motion";
+} from "@patchbay/ui/lib/motion";
 import { useIssueSurfaceActionsOptional } from "../surface/actions-context";
 import { useIssueSurfaceSelection } from "../surface/selection-context";
 

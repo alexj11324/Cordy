@@ -9,9 +9,9 @@ import (
 	"github.com/google/uuid"
 	dto "github.com/prometheus/client_model/go"
 
-	"github.com/multica-ai/multica/server/internal/daemonws"
-	obsmetrics "github.com/multica-ai/multica/server/internal/metrics"
-	"github.com/multica-ai/multica/server/internal/testutil"
+	"github.com/patchbay-ai/patchbay/server/internal/daemonws"
+	obsmetrics "github.com/patchbay-ai/patchbay/server/internal/metrics"
+	"github.com/patchbay-ai/patchbay/server/internal/testutil"
 )
 
 // TestAgentRuntimeLookupSourcesAreDistinct drives the three entry points the
@@ -100,9 +100,9 @@ func withTestMetrics(t *testing.T) *obsmetrics.BusinessMetrics {
 func lookupSnapshot(t *testing.T, m *obsmetrics.BusinessMetrics) map[string]float64 {
 	t.Helper()
 
-	fam := obsmetrics.GatherForTest(t, m)["multica_agent_runtime_lookup_total"]
+	fam := obsmetrics.GatherForTest(t, m)["patchbay_agent_runtime_lookup_total"]
 	if fam == nil {
-		t.Fatalf("multica_agent_runtime_lookup_total not registered")
+		t.Fatalf("patchbay_agent_runtime_lookup_total not registered")
 	}
 	out := map[string]float64{}
 	for _, mtr := range fam.GetMetric() {

@@ -4,8 +4,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/multica-ai/multica/server/internal/entitlement"
-	"github.com/multica-ai/multica/server/internal/service"
+	"github.com/patchbay-ai/patchbay/server/internal/entitlement"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
 )
 
 type IssueLimitUsageResponse struct {

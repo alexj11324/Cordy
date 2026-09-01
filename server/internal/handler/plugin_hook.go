@@ -5,9 +5,9 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/multica-ai/multica/server/internal/service"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/plugincontract"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
 )
 
 // Hook invocation from a person: a button inside a surface (`ui`) or an entry in
@@ -28,7 +28,7 @@ type invokePluginHookRequest struct {
 	Input   json.RawMessage `json:"input,omitempty"`
 }
 
-// InvokePluginHook — POST /api/plugin-bridge/v1/hooks/{key}
+// InvokePluginHook — POST /api/v1/plugin/hooks/{key}
 func (h *Handler) InvokePluginHook(w http.ResponseWriter, r *http.Request) {
 	// No scope of its own: a hook is the plugin's own capability, and what it
 	// may do on the way back is bounded by the installation's scopes when the

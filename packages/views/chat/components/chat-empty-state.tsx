@@ -1,8 +1,8 @@
 "use client";
 
 import { Settings2 } from "lucide-react";
-import { selectConversationStarters } from "@multica/core/agents";
-import type { Agent } from "@multica/core/types";
+import { selectConversationStarters } from "@patchbay/core/agents";
+import type { Agent } from "@patchbay/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 import { AppLink } from "../../navigation";

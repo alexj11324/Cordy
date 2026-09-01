@@ -1,11 +1,11 @@
 ---
 title: デスクトップアプリ
-description: Multica Desktop をインストールし、デスクトップタブと内蔵デーモンを使い、セルフホストインスタンスに接続します。
+description: Patchbay Desktop をインストールし、デスクトップタブと内蔵デーモンを使い、セルフホストインスタンスに接続します。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Multica Desktop は macOS、Windows、Linux で利用できます。Web 版と同じアカウントとワークスペースデータを使いますが、ローカルマシンのデーモンを自動で管理し、ワークスペースごとに独立したタブのセットを保持します。
+Patchbay Desktop は macOS、Windows、Linux で利用できます。Web 版と同じアカウントとワークスペースデータを使いますが、ローカルマシンのデーモンを自動で管理し、ワークスペースごとに独立したタブのセットを保持します。
 
 ## Desktop と Web
 
@@ -18,11 +18,11 @@ Multica Desktop は macOS、Windows、Linux で利用できます。Web 版と�
 
 ちょっと確認するだけのときや共用のパソコンでは、Web のほうが手軽です。
 
-両方に同時にサインインできます。同じ Multica サービスに接続している限り、表示されるデータは共有されます。
+両方に同時にサインインできます。同じ Patchbay サービスに接続している限り、表示されるデータは共有されます。
 
 ## インストール
 
-[Multica ダウンロードページ](https://multica.ai/download)から、OS と CPU アーキテクチャに合ったインストーラーを選びます:
+[Patchbay ダウンロードページ](https://patchbay.ai/download)から、OS と CPU アーキテクチャに合ったインストーラーを選びます:
 
 | プラットフォーム | インストーラー |
 | --- | --- |
@@ -30,10 +30,10 @@ Multica Desktop は macOS、Windows、Linux で利用できます。Web 版と�
 | Windows | `.exe` |
 | Linux | `.AppImage`、`.deb` または `.rpm` |
 
-インストール後、Web 版と同じメールアドレスでサインインします。サインインすると、Desktop は内蔵の Multica CLI を起動し、マシンにすでにインストールされている AI コーディングツールを検出します。
+インストール後、Web 版と同じメールアドレスでサインインします。サインインすると、Desktop は内蔵の Patchbay CLI を起動し、マシンにすでにインストールされている AI コーディングツールを検出します。
 
 <Callout type="info">
-Desktop に内蔵された CLI は、アプリが管理するランタイム専用です。ターミナルで `multica issue` などのコマンドも実行したい場合は、[クイックスタートのステップ 2](/cloud-quickstart#2-コンピュータを接続する)に従って CLI を別途インストールしてください。
+Desktop に内蔵された CLI は、アプリが管理するランタイム専用です。ターミナルで `patchbay issue` などのコマンドも実行したい場合は、[クイックスタートのステップ 2](/cloud-quickstart#2-コンピュータを接続する)に従って CLI を別途インストールしてください。
 </Callout>
 
 ## デスクトップタブ
@@ -46,13 +46,13 @@ Desktop はワークスペースごとにタブを保存します。たとえば
 
 ## 内蔵デーモン
 
-サインイン後、Desktop は現在の Multica サービス専用の CLI プロファイルを作成し、それを使ってデーモンを起動します。プロファイルの場所:
+サインイン後、Desktop は現在の Patchbay サービス専用の CLI プロファイルを作成し、それを使ってデーモンを起動します。プロファイルの場所:
 
 ```text
-~/.multica/profiles/desktop-<host>/
+~/.patchbay/profiles/desktop-<host>/
 ```
 
-このプロファイルが、ターミナルで使っているデフォルトのプロファイルを読み取ったり上書きしたりすることはありません。別のデーモンを手動で起動した場合、Multica はそれらを別々のランタイムとして表示します。
+このプロファイルが、ターミナルで使っているデフォルトのプロファイルを読み取ったり上書きしたりすることはありません。別のデーモンを手動で起動した場合、Patchbay はそれらを別々のランタイムとして表示します。
 
 ランタイムの状態とログは Desktop の設定で確認できます。ツールが検出されないときは、まず通常のターミナルで動作しサインイン済みであることを確認してから、Desktop のデーモンを再起動してください。
 
@@ -70,13 +70,13 @@ Desktop はワークスペースごとにタブを保存します。たとえば
 
 ## セルフホストインスタンスへの接続
 
-Desktop はデフォルトで Multica Cloud に接続します。セルフホストインスタンスに接続するには、ホームディレクトリの `.multica` の中に `desktop.json` を作成します:
+Desktop はデフォルトで Patchbay Cloud に接続します。セルフホストインスタンスに接続するには、ホームディレクトリの `.patchbay` の中に `desktop.json` を作成します:
 
 | プラットフォーム | パス |
 | --- | --- |
-| macOS | `/Users/<you>/.multica/desktop.json` |
-| Linux | `/home/<you>/.multica/desktop.json` |
-| Windows | `C:\Users\<you>\.multica\desktop.json` |
+| macOS | `/Users/<you>/.patchbay/desktop.json` |
+| Linux | `/home/<you>/.patchbay/desktop.json` |
+| Windows | `C:\Users\<you>\.patchbay\desktop.json` |
 
 これらはデフォルトの場所です。ホームディレクトリを移動またはリダイレクトしている場合は、実際のパスを使ってください。
 
@@ -88,7 +88,7 @@ Desktop はデフォルトで Multica Cloud に接続します。セルフホス
 ```
 
 <Callout type="warning">
-これは CLI の `~/.multica/config.json` と**別のファイル**で、キー名も異なります: CLI は `server_url`、Desktop は `apiUrl` を使います。Desktop は CLI の設定を読みません。`~/.multica/profiles/desktop-<host>/` の下に専用の daemon プロファイルを管理します。`config.json` を編集しても、Desktop の接続先は変わりません。
+これは CLI の `~/.patchbay/config.json` と**別のファイル**で、キー名も異なります: CLI は `server_url`、Desktop は `apiUrl` を使います。Desktop は CLI の設定を読みません。`~/.patchbay/profiles/desktop-<host>/` の下に専用の daemon プロファイルを管理します。`config.json` を編集しても、Desktop の接続先は変わりません。
 </Callout>
 
 `apiUrl` はバックエンドの公開アドレスです。必須で、`http` または `https` を使う必要があります。残りの 2 つのアドレスは省略でき、Desktop が自動で導出します:
@@ -126,13 +126,13 @@ Desktop が接続できるのは、ブラウザと実行マシンの両方から
 
 Windows では、エディタの 2 つのデフォルト動作が Desktop の読めないファイルを気づかないうちに作ってしまいます:
 
-- **メモ帳は `.txt` を付け足します。** `desktop.json` として保存したつもりでも実際には `desktop.json.txt` になることがあり、Desktop はファイルが見つからないものとして扱います。エクスプローラーでファイル名拡張子の表示を有効にするか、保存ダイアログで*すべてのファイル*を選んでください。実際のファイル名を確認するには、PowerShell で `Get-ChildItem "$env:USERPROFILE\.multica" -Filter "desktop.json*"` を実行します。`Name` 列がちょうど `desktop.json` になっている必要があります。
+- **メモ帳は `.txt` を付け足します。** `desktop.json` として保存したつもりでも実際には `desktop.json.txt` になることがあり、Desktop はファイルが見つからないものとして扱います。エクスプローラーでファイル名拡張子の表示を有効にするか、保存ダイアログで*すべてのファイル*を選んでください。実際のファイル名を確認するには、PowerShell で `Get-ChildItem "$env:USERPROFILE\.patchbay" -Filter "desktop.json*"` を実行します。`Name` 列がちょうど `desktop.json` になっている必要があります。
 - **PowerShell のリダイレクトは UTF-16 や BOM 付きで書き込みます。** `> desktop.json` や `Out-File` はパースできないエンコーディングを生成することがあり、設定エラーとして現れます。
 
 どちらも避けるには、PowerShell で一度に作成します:
 
 ```powershell
-$dir = "$env:USERPROFILE\.multica"
+$dir = "$env:USERPROFILE\.patchbay"
 New-Item -ItemType Directory -Force $dir | Out-Null
 $json = @'
 {
@@ -143,36 +143,36 @@ $json = @'
 [System.IO.File]::WriteAllText("$dir\desktop.json", $json)
 ```
 
-## Windows Defender が Multica をウイルスとして検出する
+## Windows Defender が Patchbay をウイルスとして検出する
 
 **症状**: Windows セキュリティが `Trojan:Script/Wacatac.B!ml` のような脅威を報告し、Desktop のインストール先にあるファイルを隔離します。対象になるのは通常、アプリ本体の実行ファイルではなく同梱の CLI です。
 
 ```text
-C:\Users\<ユーザー名>\AppData\Local\Programs\@multicadesktop\resources\app.asar.unpacked\resources\bin\multica.exe
+C:\Users\<ユーザー名>\AppData\Local\Programs\@patchbaydesktop\resources\app.asar.unpacked\resources\bin\patchbay.exe
 ```
 
-**これは誤検知です。** `!ml` というサフィックスは、この判定がマルウェアのシグネチャ一致ではなく Defender の機械学習ヒューリスティックによるものであることを示します。Multica の Windows ビルドはまだ Authenticode コード署名を行っておらず、公開されたばかりで署名がなく、バックグラウンドプロセスを起動してネットワーク接続を張るバイナリは、この種のヒューリスティックが最も疑わしいと判定するプロファイルそのものです。Windows 向けの成果物はすべて、このリポジトリの公開ソースから GitHub Actions でビルドされています。
+**これは誤検知です。** `!ml` というサフィックスは、この判定がマルウェアのシグネチャ一致ではなく Defender の機械学習ヒューリスティックによるものであることを示します。Patchbay の Windows ビルドはまだ Authenticode コード署名を行っておらず、公開されたばかりで署名がなく、バックグラウンドプロセスを起動してネットワーク接続を張るバイナリは、この種のヒューリスティックが最も疑わしいと判定するプロファイルそのものです。Windows 向けの成果物はすべて、このリポジトリの公開ソースから GitHub Actions でビルドされています。
 
 **自分で検証できます** — 各 GitHub リリースには、すべての CLI アーカイブを網羅した `checksums.txt` が公開されています。
 
 ```powershell
-Get-FileHash .\multica-cli-<version>-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\patchbay-cli-<version>-windows-amd64.zip -Algorithm SHA256
 ```
 
-出力されたハッシュを、[最新リリース](https://github.com/multica-ai/multica/releases/latest)の `checksums.txt` の該当行と照合してください。
+出力されたハッシュを、[最新リリース](https://github.com/patchbay-ai/patchbay/releases/latest)の `checksums.txt` の該当行と照合してください。
 
 **対処方法**:
 
-1. **隔離されたファイルを復元する** — Windows セキュリティ → *ウイルスと脅威の防止* → *保護の履歴* → Multica の項目を選択 → *操作* → *復元*。
+1. **隔離されたファイルを復元する** — Windows セキュリティ → *ウイルスと脅威の防止* → *保護の履歴* → Patchbay の項目を選択 → *操作* → *復元*。
 2. **除外を追加する**（再び隔離されないように）— *ウイルスと脅威の防止* → *設定の管理* → *除外* → *除外の追加または削除* → *フォルダー* で、次の両方を追加します。
-   - `%LOCALAPPDATA%\Programs\@multicadesktop`
-   - `%APPDATA%\Multica`
+   - `%LOCALAPPDATA%\Programs\@patchbaydesktop`
+   - `%APPDATA%\Patchbay`
 
-   両方が必要です。同梱の CLI が失われると Desktop は代替バイナリを `%APPDATA%\Multica\bin` にダウンロードするため、インストール先だけを除外してもダウンロードした代替バイナリが再び隔離され、同じことの繰り返しになります。
+   両方が必要です。同梱の CLI が失われると Desktop は代替バイナリを `%APPDATA%\Patchbay\bin` にダウンロードするため、インストール先だけを除外してもダウンロードした代替バイナリが再び隔離され、同じことの繰り返しになります。
 3. **誤検知を Microsoft に報告する** — [Microsoft Security Intelligence のファイル送信ページ](https://www.microsoft.com/en-us/wdsi/filesubmission)で *Software developer* と *Incorrectly detected as malware* を選択します。すべてのユーザーに対して検出を取り下げてもらうにはこの手順が必要で、通常は数日で反映されます。
 
 <Callout type="warning">
-これらの除外を追加してよいのは、[ダウンロードページ](https://multica.ai/download)または [GitHub リリース](https://github.com/multica-ai/multica/releases)からインストールし、チェックサムが一致している場合だけです。除外を設定すると、そのフォルダー内のすべてのファイルでリアルタイム保護が無効になります。
+これらの除外を追加してよいのは、[ダウンロードページ](https://patchbay.ai/download)または [GitHub リリース](https://github.com/patchbay-ai/patchbay/releases)からインストールし、チェックサムが一致している場合だけです。除外を設定すると、そのフォルダー内のすべてのファイルでリアルタイム保護が無効になります。
 </Callout>
 
 ## 次のステップ

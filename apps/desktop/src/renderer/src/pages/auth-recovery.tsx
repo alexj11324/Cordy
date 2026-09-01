@@ -1,8 +1,8 @@
-import { useAuthStore } from "@multica/core/auth";
-import { Button } from "@multica/ui/components/ui/button";
-import { MulticaIcon } from "@multica/ui/components/common/multica-icon";
-import { useT } from "@multica/views/i18n";
-import { DragStrip } from "@multica/views/platform";
+import { useAuthStore } from "@patchbay/core/auth";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
+import { useT } from "@patchbay/views/i18n";
+import { DragStrip } from "@patchbay/views/platform";
 
 export function DesktopAuthRecoveryPage({
   onRetry,
@@ -21,7 +21,7 @@ export function DesktopAuthRecoveryPage({
       <DragStrip />
       <div className="flex flex-1 items-center justify-center p-8">
         <div className="flex max-w-sm flex-col items-center text-center">
-          <MulticaIcon bordered size="lg" />
+          <PatchbayIcon bordered size="lg" />
           <h1 className="mt-6 text-title font-semibold">
             {t(($) => $.desktop.recovery.title)}
           </h1>

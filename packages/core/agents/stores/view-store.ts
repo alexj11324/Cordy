@@ -162,7 +162,7 @@ export const useAgentsViewStore = create<AgentsViewState>()(
       clearFilters: () => set({ filters: EMPTY_AGENT_FILTERS }),
     }),
     {
-      name: "multica_agents_view",
+      name: "patchbay_agents_view",
       storage: createJSONStorage(() =>
         createWorkspaceAwareStorage(defaultStorage),
       ),

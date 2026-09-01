@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
-import type { TimelineEntry } from "@multica/core/types";
-import { useActorName } from "@multica/core/workspace/hooks";
-import { cn } from "@multica/ui/lib/utils";
+import type { TimelineEntry } from "@patchbay/core/types";
+import { useActorName } from "@patchbay/core/workspace/hooks";
+import { cn } from "@patchbay/ui/lib/utils";
 import { useT } from "../../i18n";
 
 // ---------------------------------------------------------------------------

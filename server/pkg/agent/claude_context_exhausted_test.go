@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
 )
 
 // TestClaudeTerminalReasonFailure covers the mapping in isolation: only the one

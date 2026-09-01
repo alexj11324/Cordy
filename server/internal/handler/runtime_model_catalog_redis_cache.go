@@ -19,11 +19,11 @@ import (
 // Key layout — one plain string key per runtime, TTL = serve window, so
 // expiry is Redis's job and there is nothing to sweep:
 //
-//	mul:runtime_model_catalog:<runtime_id> → JSON-encoded ModelCatalogSnapshot
+//	pby:runtime_model_catalog:<runtime_id> → JSON-encoded ModelCatalogSnapshot
 //
 // No hash tag: every operation here is single-key, so cluster slot co-location
 // buys nothing (unlike the Lua-scripted pending queues).
-const modelCatalogKeyPrefix = "mul:runtime_model_catalog:"
+const modelCatalogKeyPrefix = "pby:runtime_model_catalog:"
 
 func modelCatalogKey(runtimeID string) string { return modelCatalogKeyPrefix + runtimeID }
 

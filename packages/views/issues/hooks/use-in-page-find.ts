@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getShortcut, shortcutMatchesEvent } from "@multica/core/shortcuts";
-import { isImeComposing } from "@multica/core/utils";
+import { getShortcut, shortcutMatchesEvent } from "@patchbay/core/shortcuts";
+import { isImeComposing } from "@patchbay/core/utils";
 
 // ---------------------------------------------------------------------------
 // In-page find (Cmd/Ctrl+F) for the issue detail page.
@@ -16,8 +16,8 @@ import { isImeComposing } from "@multica/core/utils";
 // editors without fighting ProseMirror.
 // ---------------------------------------------------------------------------
 
-const HIGHLIGHT_NAME = "multica-find";
-const ACTIVE_HIGHLIGHT_NAME = "multica-find-active";
+const HIGHLIGHT_NAME = "patchbay-find";
+const ACTIVE_HIGHLIGHT_NAME = "patchbay-find-active";
 
 // Feature detection, evaluated lazily per call site. On browsers without the
 // CSS Custom Highlight API the bar still opens and navigates, it just paints

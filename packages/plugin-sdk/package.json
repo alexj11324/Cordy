@@ -1,7 +1,7 @@
 {
-  "name": "@multica/plugin-sdk",
+  "name": "@patchbay/plugin-sdk",
   "version": "0.1.0",
-  "description": "Client SDK for Multica plugin surfaces.",
+  "description": "Client SDK for Patchbay plugin surfaces.",
   "type": "module",
   "license": "Apache-2.0",
   "scripts": {
@@ -18,8 +18,8 @@
     "README.md"
   ],
   "devDependencies": {
-    "@multica/eslint-config": "workspace:*",
-    "@multica/tsconfig": "workspace:*",
+    "@patchbay/eslint-config": "workspace:*",
+    "@patchbay/tsconfig": "workspace:*",
     "typescript": "catalog:"
   }
 }

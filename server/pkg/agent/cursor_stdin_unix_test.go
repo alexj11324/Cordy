@@ -134,7 +134,7 @@ printf '%%s\n' '{"type":"result","subtype":"success","is_error":false,"result":"
 	fakePath := filepath.Join(dir, "cursor-agent")
 	writeTestExecutable(t, fakePath, []byte(script))
 
-	prompt := strings.Repeat("multica cursor stdin payload 0123456789\n", 13_108)
+	prompt := strings.Repeat("patchbay cursor stdin payload 0123456789\n", 13_108)
 	if len(prompt) < 512*1024 {
 		t.Fatalf("test prompt too small: %d bytes", len(prompt))
 	}

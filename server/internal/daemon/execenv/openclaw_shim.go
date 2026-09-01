@@ -34,7 +34,7 @@ const openclawShimInterpreter = "node"
 // from the normal Linux/macOS test job rather than only on a Windows runner.
 //
 // A batch extension is NOT proof the file is an npm shim — an operator can
-// point MULTICA_OPENCLAW_PATH at any batch file. The diagnostic below is
+// point PATCHBAY_OPENCLAW_PATH at any batch file. The diagnostic below is
 // therefore phrased conditionally and never asserts npm shim semantics as fact.
 func isOpenclawShimPath(bin string) bool {
 	ext := strings.ToLower(filepath.Ext(strings.TrimSpace(bin)))

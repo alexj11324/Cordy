@@ -22,31 +22,31 @@ function GithubIcon({ className }: { className?: string }) {
   );
 }
 import { useQuery } from "@tanstack/react-query";
-import { useCreateProject } from "@multica/core/projects/mutations";
-import { useProjectDraftStore } from "@multica/core/projects";
+import { useCreateProject } from "@patchbay/core/projects/mutations";
+import { useProjectDraftStore } from "@patchbay/core/projects";
 import {
   PROJECT_STATUS_CONFIG,
   PROJECT_STATUS_ORDER,
   PROJECT_PRIORITY_ORDER,
-} from "@multica/core/projects/config";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
-import { memberListOptions, agentListOptions } from "@multica/core/workspace/queries";
-import { useActorName } from "@multica/core/workspace/hooks";
-import type { ProjectStatus, ProjectPriority } from "@multica/core/types";
-import { cn } from "@multica/ui/lib/utils";
+} from "@patchbay/core/projects/config";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useCurrentWorkspace, useWorkspacePaths } from "@patchbay/core/paths";
+import { memberListOptions, agentListOptions } from "@patchbay/core/workspace/queries";
+import { useActorName } from "@patchbay/core/workspace/hooks";
+import type { ProjectStatus, ProjectPriority } from "@patchbay/core/types";
+import { cn } from "@patchbay/ui/lib/utils";
 import { toast } from "sonner";
-import { Dialog, DialogContent, DialogTitle } from "@multica/ui/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@patchbay/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
-import { Popover, PopoverTrigger, PopoverContent } from "@multica/ui/components/ui/popover";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
-import { Button } from "@multica/ui/components/ui/button";
-import { EmojiPicker } from "@multica/ui/components/common/emoji-picker";
+} from "@patchbay/ui/components/ui/dropdown-menu";
+import { Popover, PopoverTrigger, PopoverContent } from "@patchbay/ui/components/ui/popover";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@patchbay/ui/components/ui/tooltip";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { EmojiPicker } from "@patchbay/ui/components/common/emoji-picker";
 import { ContentEditor, type ContentEditorRef, TitleEditor } from "../editor";
 import { PriorityIcon } from "../issues/components/priority-icon";
 import { ActorAvatar } from "../common/actor-avatar";
@@ -70,9 +70,9 @@ import { useLocalDaemonStatus } from "../platform/use-local-daemon-status";
 import {
   runtimeAdvertisesLocalWorktree,
   runtimeListOptions,
-} from "@multica/core/runtimes";
-import { useConfigStore } from "@multica/core/config";
-import type { LocalDirectoryExecutionMode } from "@multica/core/types";
+} from "@patchbay/core/runtimes";
+import { useConfigStore } from "@patchbay/core/config";
+import type { LocalDirectoryExecutionMode } from "@patchbay/core/types";
 import { LocalDirectoryModeOptions } from "../projects/components/local-directory-mode-dialog";
 
 /**

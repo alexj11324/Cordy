@@ -11,7 +11,7 @@ import (
 // The operator opt-in that lets a Plugin author point an `mcp` hook at a server
 // running on their own machine.
 //
-// The `http` transport already has this: MULTICA_PLUGIN_DEV_ORIGINS names exact
+// The `http` transport already has this: PATCHBAY_PLUGIN_DEV_ORIGINS names exact
 // origins whose endpoints skip the public-internet requirement. The `mcp`
 // transport did not, so an author had to deploy to the public internet before
 // they could try anything — and, for the same reason, the startup path that
@@ -24,14 +24,14 @@ import (
 
 // DevOriginsEnv is read by both the server and the daemon. They are separate
 // processes, so the value is looked up per call rather than cached at init.
-const DevOriginsEnv = "MULTICA_PLUGIN_DEV_ORIGINS"
+const DevOriginsEnv = "PATCHBAY_PLUGIN_DEV_ORIGINS"
 
 // DevCAEnv is the CA bundle to trust for those origins. A locally-run MCP
 // server still has to speak HTTPS — the manifest validator requires it, and
 // relaxing that would mean the URL an administrator consented to no longer says
 // whether the connection is encrypted. So the dev allowance is "trust this
 // extra CA", never "skip verification".
-const DevCAEnv = "MULTICA_PLUGIN_DEV_CA"
+const DevCAEnv = "PATCHBAY_PLUGIN_DEV_CA"
 
 // isDevOrigin reports whether the operator named this exact origin.
 //

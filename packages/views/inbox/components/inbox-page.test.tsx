@@ -1,9 +1,9 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
-import { ApiError } from "@multica/core/api";
-import type { InboxItem } from "@multica/core/types";
-import { useInboxFilterStore } from "@multica/core/inbox/filter-store";
+import { ApiError } from "@patchbay/core/api";
+import type { InboxItem } from "@patchbay/core/types";
+import { useInboxFilterStore } from "@patchbay/core/inbox/filter-store";
 import { InboxPage } from "./inbox-page";
 
 vi.mock("sonner", () => ({
@@ -30,11 +30,11 @@ vi.mock("@tanstack/react-query", () => ({
   }),
 }));
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   useWorkspacePaths: () => ({
     inbox: () => "/acme/inbox",
     issueDetail: (id: string) => `/acme/issues/${id}`,
@@ -45,15 +45,15 @@ const modalState: { modal: string | null; open: ReturnType<typeof vi.fn> } = {
   modal: null,
   open: vi.fn(),
 };
-vi.mock("@multica/core/modals", () => ({
+vi.mock("@patchbay/core/modals", () => ({
   useModalStore: { getState: () => modalState },
 }));
 
-vi.mock("@multica/core/issues/stores/draft-store", () => ({
+vi.mock("@patchbay/core/issues/stores/draft-store", () => ({
   useIssueDraftStore: { getState: () => ({ setDraft: vi.fn() }) },
 }));
 
-vi.mock("@multica/core/inbox/queries", () => ({
+vi.mock("@patchbay/core/inbox/queries", () => ({
   inboxListOptions: () => ({ queryKey: ["inbox", "workspace-1", "list"] }),
   archivedInboxListOptions: () => ({ queryKey: ["inbox", "workspace-1", "archived"] }),
   deduplicateInboxItems: (items: InboxItem[]) => items.filter((i) => !i.archived),
@@ -74,7 +74,7 @@ vi.mock("../../modals/use-issue-limit-upgrade-prompt", () => ({
   useIssueLimitUpgradePrompt: () => showIssueLimitUpgradePrompt,
 }));
 
-vi.mock("@multica/core/inbox/mutations", () => {
+vi.mock("@patchbay/core/inbox/mutations", () => {
   const mutation = () => ({ mutate: vi.fn() });
   return {
     useMarkInboxRead: () => ({ mutate: markReadMutate }),
@@ -127,11 +127,11 @@ const FOLD_INNER = 851;
 const TABLET = 1024;
 const DESKTOP = 1440;
 const layout = { width: PHONE };
-vi.mock("@multica/ui/hooks/use-mobile", () => ({
+vi.mock("@patchbay/ui/hooks/use-mobile", () => ({
   useIsMobile: () => layout.width < 768,
   useIsCompact: () => layout.width < 1024,
 }));
-vi.mock("@multica/ui/components/ui/resizable", () => ({
+vi.mock("@patchbay/ui/components/ui/resizable", () => ({
   ResizablePanelGroup: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),

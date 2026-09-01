@@ -10,10 +10,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/events"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/patchbay-ai/patchbay/server/internal/events"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 // outboundQueries is the slice of generated queries the DingTalk outbound
@@ -83,7 +83,7 @@ func (o *Outbound) processEvent(ctx context.Context, e events.Event) error {
 	delivery, err := o.q.GetChannelTaskDelivery(ctx, taskID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil // direct Multica task or violated snapshot invariant: fail closed
+			return nil // direct Patchbay task or violated snapshot invariant: fail closed
 		}
 		return fmt.Errorf("lookup dingtalk task delivery: %w", err)
 	}

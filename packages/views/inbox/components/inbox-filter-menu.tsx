@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import { CircleDot, Filter, Mail, RotateCcw, SignalHigh, UserRound } from "lucide-react";
-import { PRIORITY_DISPLAY_ORDER } from "@multica/core/issues/config";
+import { PRIORITY_DISPLAY_ORDER } from "@patchbay/core/issues/config";
 import {
   filterInboxItems,
   inboxActorKey,
@@ -12,11 +12,11 @@ import {
   type InboxPriorityFilterSupport,
   useInboxFilters,
   useInboxFilterStore,
-} from "@multica/core/inbox/filter-store";
-import { useActorName } from "@multica/core/workspace/hooks";
-import type { InboxItem } from "@multica/core/types";
-import { ActorAvatar } from "@multica/ui/components/common/actor-avatar";
-import { Button } from "@multica/ui/components/ui/button";
+} from "@patchbay/core/inbox/filter-store";
+import { useActorName } from "@patchbay/core/workspace/hooks";
+import type { InboxItem } from "@patchbay/core/types";
+import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
+import { Button } from "@patchbay/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -27,8 +27,8 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
-import { cn } from "@multica/ui/lib/utils";
+} from "@patchbay/ui/components/ui/dropdown-menu";
+import { cn } from "@patchbay/ui/lib/utils";
 import { PriorityIcon } from "../../issues/components/priority-icon";
 import { StatusIcon } from "../../issues/components/status-icon";
 import { useStatusOptions } from "../../issues/utils/status-options";

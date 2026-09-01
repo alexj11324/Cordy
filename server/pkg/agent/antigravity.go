@@ -52,7 +52,7 @@ func (b *antigravityBackend) Execute(ctx context.Context, prompt string, opts Ex
 	// Guard against agy's silent no-op on an unrecognised --model: it exits 0
 	// with empty output, which would otherwise surface as a "completed" but
 	// empty task. opts.Model is the single funnel for both agent.model and the
-	// daemon-wide MULTICA_ANTIGRAVITY_MODEL default (resolved in daemon.go), so
+	// daemon-wide PATCHBAY_ANTIGRAVITY_MODEL default (resolved in daemon.go), so
 	// validating it here covers every source — UI free-text, API, a persisted
 	// value, and the env default alike. Reject a non-empty model the installed
 	// CLI definitively does not advertise, with an actionable error. Validation
@@ -69,7 +69,7 @@ func (b *antigravityBackend) Execute(ctx context.Context, prompt string, opts Ex
 	timeout := opts.Timeout
 	runCtx, cancel := runContext(ctx, timeout)
 
-	logFile, err := os.CreateTemp("", "multica-agy-log-*.log")
+	logFile, err := os.CreateTemp("", "patchbay-agy-log-*.log")
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("create agy log file: %w", err)
@@ -511,7 +511,7 @@ func antigravityModelError(model string, available []Model) error {
 // fires before the daemon's inactivity watchdog reclaims a genuinely stuck run.
 // 24h is effectively unbounded for any real turn while still being a finite
 // duration agy can parse, and it stays above the watchdog budget even when an
-// operator raises MULTICA_AGENT_IDLE_WATCHDOG well past its default.
+// operator raises PATCHBAY_AGENT_IDLE_WATCHDOG well past its default.
 const antigravityNoCapPrintTimeout = 24 * time.Hour
 
 // antigravityPrintTimeout resolves the wall-clock budget handed to agy's

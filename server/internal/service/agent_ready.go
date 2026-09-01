@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/multica-ai/multica/server/internal/dispatch"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/dispatch"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // AgentAvailability is what a readiness check concluded, in the vocabulary the
@@ -84,7 +84,7 @@ const runtimeOfflineCodeNotExecutable = "not_executable"
 //
 // The lookup carries the connection to read on plus the source label the
 // runtime read is attributed to (MUL-6884), so each admission path stays
-// distinguishable in multica_agent_runtime_lookup_total.
+// distinguishable in patchbay_agent_runtime_lookup_total.
 //
 // err is non-nil only on DB lookup failure for the runtime row. Callers that
 // treat a transient DB error as "do not skip" (the autopilot admission gate)

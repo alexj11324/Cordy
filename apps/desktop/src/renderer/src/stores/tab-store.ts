@@ -1,9 +1,9 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { arrayMove } from "@dnd-kit/sortable";
-import { createPersistStorage, defaultStorage } from "@multica/core/platform";
-import { createSafeId } from "@multica/core/utils";
-import { isReservedSlug } from "@multica/core/paths";
+import { createPersistStorage, defaultStorage } from "@patchbay/core/platform";
+import { createSafeId } from "@patchbay/core/utils";
+import { isReservedSlug } from "@patchbay/core/paths";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -22,7 +22,7 @@ import { isReservedSlug } from "@multica/core/paths";
  *
  * `contentKey` is an optional fingerprint of the rendered content, used by
  * out-of-DOM scroll sources (the sandboxed HTML-attachment iframe — see
- * multica-ai#6405) to invalidate restoration when the content changed
+ * patchbay-ai#6405) to invalidate restoration when the content changed
  * (re-upload to the same attachment id). Plain `[data-tab-scroll-root]`
  * containers leave it undefined; identity comparison (undefined ===
  * undefined) means their behavior is unchanged.
@@ -282,8 +282,8 @@ interface TabStore {
 // ---------------------------------------------------------------------------
 //
 // A tab's icon is NOT part of this model. It is derived from `tab.url` at
-// render time via `routeIconForPath` (@multica/views/layout), which shares the
-// route → icon map in `@multica/core/paths` with the sidebar nav — so the two
+// render time via `routeIconForPath` (@patchbay/views/layout), which shares the
+// route → icon map in `@patchbay/core/paths` with the sidebar nav — so the two
 // surfaces cannot drift, and no stale icon can survive in persisted state.
 // Title is likewise not determined here; it comes from document.title.
 
@@ -979,7 +979,7 @@ export const useTabStore = create<TabStore>()(
       },
     }),
     {
-      name: "multica_tabs",
+      name: "patchbay_tabs",
       version: 4,
       storage: createJSONStorage(() => createPersistStorage(defaultStorage)),
       migrate: (persistedState, version) => {

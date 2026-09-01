@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@multica/core/i18n/react";
-import { chatKeys } from "@multica/core/chat/queries";
-import type { TaskMessagePayload } from "@multica/core/types";
+import { I18nProvider } from "@patchbay/core/i18n/react";
+import { chatKeys } from "@patchbay/core/chat/queries";
+import type { TaskMessagePayload } from "@patchbay/core/types";
 import type { ReactElement } from "react";
 import enChat from "../../locales/en/chat.json";
 import { ChatMessageList } from "./chat-message-list";

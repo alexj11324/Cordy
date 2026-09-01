@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { TimelineEntry } from "@multica/core/types";
+import type { TimelineEntry } from "@patchbay/core/types";
 import {
   collectThreadReplies,
   resolvedThreadRootIds,

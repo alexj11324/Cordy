@@ -100,7 +100,7 @@ type AdvanceChannelChatContextGenerationRow struct {
 	CreatedAt              pgtype.Timestamptz `json:"created_at"`
 }
 
-// Opens a new agent-visible context while retaining the same Multica Chat.
+// Opens a new agent-visible context while retaining the same Patchbay Chat.
 // The triggering platform message is the exclusive end of the old generation
 // and, when it has a body, the inclusive start of the new one.
 func (q *Queries) AdvanceChannelChatContextGeneration(ctx context.Context, arg AdvanceChannelChatContextGenerationParams) (AdvanceChannelChatContextGenerationRow, error) {
@@ -737,7 +737,7 @@ func (q *Queries) CreateChannelTaskDeliveryFromSession(ctx context.Context, arg 
 const createChannelUserBinding = `-- name: CreateChannelUserBinding :one
 
 INSERT INTO channel_user_binding (
-    workspace_id, multica_user_id, installation_id,
+    workspace_id, patchbay_user_id, installation_id,
     channel_type, channel_user_id, config
 ) VALUES (
     $1, $2, $3, $4, $5, $6
@@ -749,13 +749,13 @@ ON CONFLICT (installation_id, channel_user_id) DO UPDATE SET
     -- erase a union_id we already captured. Only non-null incoming keys win.
     config   = channel_user_binding.config || jsonb_strip_nulls(EXCLUDED.config),
     bound_at = now()
-WHERE channel_user_binding.multica_user_id = EXCLUDED.multica_user_id
-RETURNING id, workspace_id, multica_user_id, installation_id, channel_type, channel_user_id, config, bound_at
+WHERE channel_user_binding.patchbay_user_id = EXCLUDED.patchbay_user_id
+RETURNING id, workspace_id, patchbay_user_id, installation_id, channel_type, channel_user_id, config, bound_at
 `
 
 type CreateChannelUserBindingParams struct {
 	WorkspaceID    pgtype.UUID `json:"workspace_id"`
-	MulticaUserID  pgtype.UUID `json:"multica_user_id"`
+	PatchbayUserID  pgtype.UUID `json:"patchbay_user_id"`
 	InstallationID pgtype.UUID `json:"installation_id"`
 	ChannelType    string      `json:"channel_type"`
 	ChannelUserID  string      `json:"channel_user_id"`
@@ -766,17 +766,17 @@ type CreateChannelUserBindingParams struct {
 // channel_user_binding
 // =====================
 // Records that a platform user id (per-installation; Feishu open_id) maps
-// to a Multica user. The old composite member-FK is gone, so this no
+// to a Patchbay user. The old composite member-FK is gone, so this no
 // longer fails when the redeemer is not a workspace member — the caller
 // (BindingTokenService.RedeemAndBind) validates membership explicitly
-// before calling. ON CONFLICT DO UPDATE is still gated on multica_user_id
+// before calling. ON CONFLICT DO UPDATE is still gated on patchbay_user_id
 // matching, so a second redeemer cannot steal an already-bound user id;
 // a cross-user conflict updates zero rows and the caller maps that to
 // ErrBindingAlreadyAssigned. config carries secondary identity (union_id).
 func (q *Queries) CreateChannelUserBinding(ctx context.Context, arg CreateChannelUserBindingParams) (ChannelUserBinding, error) {
 	row := q.db.QueryRow(ctx, createChannelUserBinding,
 		arg.WorkspaceID,
-		arg.MulticaUserID,
+		arg.PatchbayUserID,
 		arg.InstallationID,
 		arg.ChannelType,
 		arg.ChannelUserID,
@@ -786,7 +786,7 @@ func (q *Queries) CreateChannelUserBinding(ctx context.Context, arg CreateChanne
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
-		&i.MulticaUserID,
+		&i.PatchbayUserID,
 		&i.InstallationID,
 		&i.ChannelType,
 		&i.ChannelUserID,
@@ -1007,27 +1007,27 @@ func (q *Queries) DeleteChannelUserBindingsByInstallation(ctx context.Context, i
 
 const deleteChannelUserBindingsByWorkspaceMember = `-- name: DeleteChannelUserBindingsByWorkspaceMember :exec
 DELETE FROM channel_user_binding
-WHERE workspace_id = $1 AND multica_user_id = $2
+WHERE workspace_id = $1 AND patchbay_user_id = $2
 `
 
 type DeleteChannelUserBindingsByWorkspaceMemberParams struct {
 	WorkspaceID   pgtype.UUID `json:"workspace_id"`
-	MulticaUserID pgtype.UUID `json:"multica_user_id"`
+	PatchbayUserID pgtype.UUID `json:"patchbay_user_id"`
 }
 
 // Application-layer integrity (replaces the old member-FK ON DELETE
 // CASCADE): prune every binding for a user who has been removed from a
 // workspace, across all installations in that workspace.
 func (q *Queries) DeleteChannelUserBindingsByWorkspaceMember(ctx context.Context, arg DeleteChannelUserBindingsByWorkspaceMemberParams) error {
-	_, err := q.db.Exec(ctx, deleteChannelUserBindingsByWorkspaceMember, arg.WorkspaceID, arg.MulticaUserID)
+	_, err := q.db.Exec(ctx, deleteChannelUserBindingsByWorkspaceMember, arg.WorkspaceID, arg.PatchbayUserID)
 	return err
 }
 
 const findChannelBindingForMember = `-- name: FindChannelBindingForMember :one
-SELECT b.id, b.workspace_id, b.multica_user_id, b.installation_id, b.channel_type, b.channel_user_id, b.config, b.bound_at FROM channel_user_binding b
+SELECT b.id, b.workspace_id, b.patchbay_user_id, b.installation_id, b.channel_type, b.channel_user_id, b.config, b.bound_at FROM channel_user_binding b
 JOIN channel_installation ci ON ci.id = b.installation_id
 WHERE b.workspace_id = $1
-  AND b.multica_user_id = $2
+  AND b.patchbay_user_id = $2
   AND b.channel_type = $3
   AND ci.status = 'active'
 ORDER BY b.bound_at DESC
@@ -1036,11 +1036,11 @@ LIMIT 1
 
 type FindChannelBindingForMemberParams struct {
 	WorkspaceID   pgtype.UUID `json:"workspace_id"`
-	MulticaUserID pgtype.UUID `json:"multica_user_id"`
+	PatchbayUserID pgtype.UUID `json:"patchbay_user_id"`
 	ChannelType   string      `json:"channel_type"`
 }
 
-// Outbound notification lookup: given a Multica member and a channel_type,
+// Outbound notification lookup: given a Patchbay member and a channel_type,
 // return the (installation, channel_user_id) that outbound push should
 // target. The wecom smart-bot inbox-notification path uses this to decide
 // whether to deliver via the bot at all — no row means "unbound member,
@@ -1050,12 +1050,12 @@ type FindChannelBindingForMemberParams struct {
 // one workspace (multi-bot org), the most-recently-bound wins — matches
 // FindReusableChannelUserBinding's tiebreak so the two lookups agree.
 func (q *Queries) FindChannelBindingForMember(ctx context.Context, arg FindChannelBindingForMemberParams) (ChannelUserBinding, error) {
-	row := q.db.QueryRow(ctx, findChannelBindingForMember, arg.WorkspaceID, arg.MulticaUserID, arg.ChannelType)
+	row := q.db.QueryRow(ctx, findChannelBindingForMember, arg.WorkspaceID, arg.PatchbayUserID, arg.ChannelType)
 	var i ChannelUserBinding
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
-		&i.MulticaUserID,
+		&i.PatchbayUserID,
 		&i.InstallationID,
 		&i.ChannelType,
 		&i.ChannelUserID,
@@ -1126,7 +1126,7 @@ func (q *Queries) FindLiveChannelBindingToken(ctx context.Context, arg FindLiveC
 }
 
 const findReusableChannelUserBinding = `-- name: FindReusableChannelUserBinding :one
-SELECT b.id, b.workspace_id, b.multica_user_id, b.installation_id, b.channel_type, b.channel_user_id, b.config, b.bound_at FROM channel_user_binding b
+SELECT b.id, b.workspace_id, b.patchbay_user_id, b.installation_id, b.channel_type, b.channel_user_id, b.config, b.bound_at FROM channel_user_binding b
 JOIN channel_installation ci ON ci.id = b.installation_id
 WHERE b.workspace_id = $1
   AND b.channel_type = $2
@@ -1145,12 +1145,12 @@ type FindReusableChannelUserBindingParams struct {
 
 // Cross-installation account-link reuse (MUL-3911). When a platform user
 // messages an installation they have NOT linked, but the SAME user id is already
-// bound to ANOTHER installation in the SAME Multica workspace + SAME Slack team,
+// bound to ANOTHER installation in the SAME Patchbay workspace + SAME Slack team,
 // the inbound identity step reuses that link instead of re-prompting. Slack user
 // ids are stable within a team, so an identical channel_user_id denotes the same
 // human across that team's apps. The match is fenced to one workspace AND one
 // team (installation config->>'team_id'): a Slack team can be connected to two
-// different Multica workspaces, and a user may hold different Multica accounts in
+// different Patchbay workspaces, and a user may hold different Patchbay accounts in
 // each, so reuse must cross neither boundary. Most-recently-bound wins. The
 // caller re-checks membership and materializes a fresh per-installation binding.
 //
@@ -1168,7 +1168,7 @@ func (q *Queries) FindReusableChannelUserBinding(ctx context.Context, arg FindRe
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
-		&i.MulticaUserID,
+		&i.PatchbayUserID,
 		&i.InstallationID,
 		&i.ChannelType,
 		&i.ChannelUserID,
@@ -1443,7 +1443,7 @@ type GetChannelInstallationOwnerByAppIDRow struct {
 
 // Identifies the LIVE owner of a (channel_type, config->>'app_id') routing slot
 // so the install path can refuse a rebind with an ACCURATE message instead of the
-// old catch-all "connected to a different Multica workspace". Meant to be read
+// old catch-all "connected to a different Patchbay workspace". Meant to be read
 // only after ReclaimDeadChannelInstallationByAppID has removed every DEAD owner,
 // so a returned row is a live active owner. `agent_archived` distinguishes an
 // archived (reversible) owner — its bot stays owned, recovered by unarchiving the
@@ -1567,7 +1567,7 @@ func (q *Queries) GetChannelTaskDelivery(ctx context.Context, taskID pgtype.UUID
 }
 
 const getChannelUserBindingByUserID = `-- name: GetChannelUserBindingByUserID :one
-SELECT id, workspace_id, multica_user_id, installation_id, channel_type, channel_user_id, config, bound_at FROM channel_user_binding
+SELECT id, workspace_id, patchbay_user_id, installation_id, channel_type, channel_user_id, config, bound_at FROM channel_user_binding
 WHERE installation_id = $1 AND channel_user_id = $2
 `
 
@@ -1576,7 +1576,7 @@ type GetChannelUserBindingByUserIDParams struct {
 	ChannelUserID  string      `json:"channel_user_id"`
 }
 
-// The inbound identity lookup: does this platform user id map to a Multica
+// The inbound identity lookup: does this platform user id map to a Patchbay
 // user for this installation? With the member-FK removed, a row's
 // existence no longer proves current workspace membership — the dispatcher
 // re-checks membership after this lookup.
@@ -1586,7 +1586,7 @@ func (q *Queries) GetChannelUserBindingByUserID(ctx context.Context, arg GetChan
 	err := row.Scan(
 		&i.ID,
 		&i.WorkspaceID,
-		&i.MulticaUserID,
+		&i.PatchbayUserID,
 		&i.InstallationID,
 		&i.ChannelType,
 		&i.ChannelUserID,
@@ -2839,14 +2839,14 @@ type UpsertChannelInstallationByAppIDParams struct {
 // Team-keyed install / re-install for channels whose natural identity is the
 // platform workspace, not the (agent) pairing. Slack: one Slack workspace
 // (team_id, stored as config->>'app_id') maps to exactly one installation, so
-// re-connecting it — even to represent a DIFFERENT agent in the SAME Multica
+// re-connecting it — even to represent a DIFFERENT agent in the SAME Patchbay
 // workspace — UPDATES the existing row (moving agent_id) instead of colliding
 // with the (channel_type, app_id) unique index. Contrast UpsertChannelInstallation,
 // whose conflict key is (workspace_id, agent_id, channel_type): right for Feishu
 // (one app per agent), wrong for Slack.
 //
 // The `WHERE channel_installation.workspace_id = EXCLUDED.workspace_id` fences
-// the conflict update to the SAME Multica workspace: a team already owned by a
+// the conflict update to the SAME Patchbay workspace: a team already owned by a
 // DIFFERENT workspace updates no row and RETURNING is empty (pgx.ErrNoRows),
 // which the caller maps to ErrTeamOwnedByAnotherWorkspace. This is the ATOMIC
 // cross-workspace guard — a plain SELECT before the upsert cannot stop two

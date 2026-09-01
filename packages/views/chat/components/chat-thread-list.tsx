@@ -14,19 +14,19 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { cn } from "@multica/ui/lib/utils";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { paths, useWorkspaceSlug } from "@multica/core/paths";
-import { useWorkspacePresenceMap } from "@multica/core/agents";
-import { api } from "@multica/core/api";
-import { pendingChatTasksOptions, chatKeys, sortChatSessions } from "@multica/core/chat/queries";
+import { cn } from "@patchbay/ui/lib/utils";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { paths, useWorkspaceSlug } from "@patchbay/core/paths";
+import { useWorkspacePresenceMap } from "@patchbay/core/agents";
+import { api } from "@patchbay/core/api";
+import { pendingChatTasksOptions, chatKeys, sortChatSessions } from "@patchbay/core/chat/queries";
 import {
   useDeleteChatSession,
   useSetChatSessionArchived,
   useSetChatSessionPinned,
-} from "@multica/core/chat/mutations";
-import { useChatStore } from "@multica/core/chat";
-import type { Agent, ChatSession, PendingChatTasksResponse } from "@multica/core/types";
+} from "@patchbay/core/chat/mutations";
+import { useChatStore } from "@patchbay/core/chat";
+import type { Agent, ChatSession, PendingChatTasksResponse } from "@patchbay/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import {
   RowActionsMenu,
@@ -34,8 +34,8 @@ import {
   type RowActionItem,
 } from "../../common/row-actions-menu";
 import { resolveClickIntent, useOptionalNavigation } from "../../navigation";
-import { createLogger } from "@multica/core/logger";
-import { removeChatMessageFromCaches } from "@multica/core/realtime";
+import { createLogger } from "@patchbay/core/logger";
+import { removeChatMessageFromCaches } from "@patchbay/core/realtime";
 import { useLocale, useT } from "../../i18n";
 
 const apiLogger = createLogger("chat.api");

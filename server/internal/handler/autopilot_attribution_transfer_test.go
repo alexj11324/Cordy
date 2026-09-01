@@ -24,7 +24,7 @@ func seedTransferMember(t *testing.T, label string) string {
 	ctx := context.Background()
 	var uid string
 	if err := testPool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ($1, $2) RETURNING id`,
-		label, fmt.Sprintf("%s-%d@multica.test", label, time.Now().UnixNano())).Scan(&uid); err != nil {
+		label, fmt.Sprintf("%s-%d@patchbay.test", label, time.Now().UnixNano())).Scan(&uid); err != nil {
 		t.Fatalf("seed %s user: %v", label, err)
 	}
 	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM "user" WHERE id = $1`, uid) })

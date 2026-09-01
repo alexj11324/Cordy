@@ -1,7 +1,7 @@
 // @vitest-environment node
 
 import { describe, expect, it } from "vitest";
-import type { AgentRuntime } from "@multica/core/types";
+import type { AgentRuntime } from "@patchbay/core/types";
 import {
   buildRuntimeMachines,
   filterRuntimeMachines,

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
 )
 
 func noopHandler(_ context.Context, _ channel.InboundMessage) error { return nil }
@@ -385,7 +385,7 @@ func TestOnMessage_ReturnsBeforeBotNameLookupAndQueuesCallbackSnapshot(t *testin
 		}
 		close(lookupStarted)
 		<-releaseLookup
-		_, _ = w.Write([]byte(`{"chatbotInstanceVOList":[{"robotCode":"robot-1","name":"Multica Bot - Local"}]}`))
+		_, _ = w.Write([]byte(`{"chatbotInstanceVOList":[{"robotCode":"robot-1","name":"Patchbay Bot - Local"}]}`))
 	}))
 	defer srv.Close()
 
@@ -403,7 +403,7 @@ func TestOnMessage_ReturnsBeforeBotNameLookupAndQueuesCallbackSnapshot(t *testin
 	data := &botCallbackData{
 		ConversationId: "cid-1", ConversationType: convTypeGroup, IsInAtList: true,
 		SenderStaffId: "staff-1", MsgId: "msg-1", Msgtype: "text",
-		Text: botCallbackText{Content: "@Multica Bot - Local /new inspect this"},
+		Text: botCallbackText{Content: "@Patchbay Bot - Local /new inspect this"},
 	}
 	returned := make(chan struct{})
 	go func() {

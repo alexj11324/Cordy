@@ -14,7 +14,7 @@ import (
 
 // grokBlockedArgs are flags/subcommands hardcoded by the daemon that must not
 // be overridden by user-configured custom_args. `agent` + `stdio` select the
-// ACP transport; `--always-approve` is daemon-owned so headless Multica runs
+// ACP transport; `--always-approve` is daemon-owned so headless Patchbay runs
 // do not block on interactive permission prompts. Switching into
 // headless/serve/leader/print modes would break the daemon↔grok ACP contract.
 // Model / thinking are managed via session/set_model and --effort.
@@ -275,7 +275,7 @@ func (b *grokBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 		initResult, err := c.request(runCtx, "initialize", map[string]any{
 			"protocolVersion": 1,
 			"clientInfo": map[string]any{
-				"name":    "multica-agent-sdk",
+				"name":    "patchbay-agent-sdk",
 				"version": "0.2.0",
 			},
 			"clientCapabilities": map[string]any{},
@@ -406,7 +406,7 @@ func (b *grokBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 		userText := prompt
 		if opts.SystemPrompt != "" {
 			// Grok also reads AGENTS.md from cwd; inline system prompt covers
-			// Multica runtime brief delivery when file injection is not enough.
+			// Patchbay runtime brief delivery when file injection is not enough.
 			userText = opts.SystemPrompt + "\n\n---\n\n" + prompt
 		}
 
@@ -552,7 +552,7 @@ func selectGrokAuthMethod(methods []string, haveAPIKey bool) (string, error) {
 	if len(advertised) == 0 {
 		return "", fmt.Errorf("Grok advertised no usable authentication methods; set XAI_API_KEY or run `grok login`")
 	}
-	return "", fmt.Errorf("Grok advertised unsupported authentication methods %q; update Multica or authenticate with XAI_API_KEY / `grok login`", advertised)
+	return "", fmt.Errorf("Grok advertised unsupported authentication methods %q; update Patchbay or authenticate with XAI_API_KEY / `grok login`", advertised)
 }
 
 // waitForGrokNotificationQuiescence gives the ACP stdout reader a bounded

@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/multica-ai/multica/server/internal/selfexec"
+	"github.com/patchbay-ai/patchbay/server/internal/selfexec"
 )
 
 const maxSearchDepth = 4

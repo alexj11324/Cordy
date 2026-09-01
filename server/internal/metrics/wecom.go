@@ -70,7 +70,7 @@ type WecomMetrics struct {
 func NewWecomMetrics() *WecomMetrics {
 	counter := func(name, help string) prometheus.Counter {
 		return prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "multica", Subsystem: "wecom", Name: name, Help: help,
+			Namespace: "patchbay", Subsystem: "wecom", Name: name, Help: help,
 		})
 	}
 	return &WecomMetrics{
@@ -85,31 +85,31 @@ func NewWecomMetrics() *WecomMetrics {
 		OutboundDelivered: counter("outbound_delivered_total",
 			"Agent replies this adapter put in front of a WeCom user. The denominator the drop breakdown is read against."),
 		OutboundDropped: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "multica", Subsystem: "wecom", Name: "outbound_dropped_total",
+			Namespace: "patchbay", Subsystem: "wecom", Name: "outbound_dropped_total",
 			Help: "Agent replies the adapter owed a WeCom user and did not deliver, by reason. Every reason here means somebody in WeCom is waiting on an answer that is not coming; the completions the adapter was never going to deliver are counted apart, in outbound_skipped_total.",
 		}, []string{"reason"}),
 		OutboundSkipped: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "multica", Subsystem: "wecom", Name: "outbound_skipped_total",
-			Help: "Completions this adapter was never going to deliver to WeCom, by reason. Kept apart from dropped because none of these is a delivery failure: origin_not_channel is a question typed in Multica on a WeCom-bound session, installation_inactive means there is no longer an installation to deliver through, nothing_to_say is an empty completion carrying no file. Counting them as drops would make ordinary web usage read as a WeCom outage.",
+			Namespace: "patchbay", Subsystem: "wecom", Name: "outbound_skipped_total",
+			Help: "Completions this adapter was never going to deliver to WeCom, by reason. Kept apart from dropped because none of these is a delivery failure: origin_not_channel is a question typed in Patchbay on a WeCom-bound session, installation_inactive means there is no longer an installation to deliver through, nothing_to_say is an empty completion carrying no file. Counting them as drops would make ordinary web usage read as a WeCom outage.",
 		}, []string{"reason"}),
 		AttachmentDelivered: counter("outbound_attachment_delivered_total",
 			"Files put in front of a WeCom user. Counts FILES; the outbound_delivered/dropped/skipped trio counts REPLIES."),
 		AttachmentDropped: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "multica", Subsystem: "wecom", Name: "outbound_attachment_dropped_total",
+			Namespace: "patchbay", Subsystem: "wecom", Name: "outbound_attachment_dropped_total",
 			Help: "Files an agent produced that did not reach the WeCom user, by reason. Separate from the reply counters because a reply whose words arrived and whose file did not is a delivered reply with a failed attachment, and one number cannot say both.",
 		}, []string{"reason"}),
 		AttachmentSheds: counter("outbound_attachment_delivery_shed_total",
 			"Attachment delivery attempts refused admission before the lookup ran. Counts SCHEDULING decisions, not files: at that point nothing knows whether the turn carries zero files or five, so a per-file count from this gate would fabricate cardinality."),
 		OutboundUnconfirmed: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "multica", Subsystem: "wecom", Name: "outbound_unconfirmed_total",
+			Namespace: "patchbay", Subsystem: "wecom", Name: "outbound_unconfirmed_total",
 			Help: "Agent replies whose delivery outcome is UNKNOWN: the frame reached the wire (write_attempted), the verdict never came back (ack_timeout), or the wait was cut short (interrupted). The message may already be in front of the user, which is why these are not drops — an operator paging on the drop rate must not be paged for deliveries that probably happened, and nothing here should prompt a resend.",
 		}, []string{"reason"}),
 		AttachmentUnconfirmed: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "multica", Subsystem: "wecom", Name: "outbound_attachment_unconfirmed_total",
+			Namespace: "patchbay", Subsystem: "wecom", Name: "outbound_attachment_unconfirmed_total",
 			Help: "Files whose delivery outcome is UNKNOWN, by reason. Counts FILES, same unit as the attachment delivered/dropped pair; see outbound_unconfirmed_total for why unknown is not a drop.",
 		}, []string{"reason"}),
 		RelayShed: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "multica", Subsystem: "wecom", Name: "outbound_relay_shed_total",
+			Namespace: "patchbay", Subsystem: "wecom", Name: "outbound_relay_shed_total",
 			Help: "Frames the cross-replica dispatcher refused because a shard queue was full, by kind (reply|inbox). An ADMISSION decision, not a per-reply outcome: the relay carries inbox notifications too, and counting those as dropped replies would make the delivered/dropped ratio track which replica held a socket instead of what happened to anyone's message. Recorded on whichever replica refused the frame, and it moves no reply counter: every replica reads every frame, so no replica can tell locally whether its own shed cost the user anything. Whether a shed reply was in fact lost is settled once by the replica that routed it, as outbound_dropped_total{reason=\"no_live_connection\"} when no replica claimed the delivery.",
 		}, []string{"kind"}),
 	}

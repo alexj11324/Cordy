@@ -1,5 +1,5 @@
-import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
-import { cn } from "@multica/ui/lib/utils";
+import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
+import { cn } from "@patchbay/ui/lib/utils";
 
 const sizeMap = {
   sm: "h-5 w-5 text-caption rounded-full",

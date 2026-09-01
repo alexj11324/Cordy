@@ -1,12 +1,12 @@
 version: 2
 
-project_name: multica
+project_name: patchbay
 
 builds:
-  - id: multica
-    main: ./cmd/multica
+  - id: patchbay
+    main: ./cmd/patchbay
     dir: server
-    binary: multica
+    binary: patchbay
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
@@ -23,8 +23,8 @@ builds:
       - arm64
 
 archives:
-  # Legacy archive name kept so already-released CLIs (whose `multica update`
-  # looks for `multica_{os}_{arch}.{ext}`) can keep self-updating. Remove
+  # Legacy archive name kept so already-released CLIs (whose `patchbay update`
+  # looks for `patchbay_{os}_{arch}.{ext}`) can keep self-updating. Remove
   # once those versions are no longer in use.
   - id: legacy
     files:
@@ -65,21 +65,21 @@ changelog:
       - "^chore:"
 
 brews:
-  - name: multica
+  - name: patchbay
     ids:
       - versioned
     repository:
-      owner: multica-ai
+      owner: patchbay-ai
       name: homebrew-tap
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
-    homepage: "https://github.com/multica-ai/multica"
-    description: "Multica CLI — local agent runtime and management tool for the Multica platform"
-    # No license stanza: Multica ships under the Multica License (Apache 2.0
+    homepage: "https://github.com/patchbay-ai/patchbay"
+    description: "Patchbay CLI — local agent runtime and management tool for the Patchbay platform"
+    # No license stanza: Patchbay ships under the Patchbay License (Apache 2.0
     # terms with additional conditions, see LICENSE), which has no SPDX
     # identifier, so declaring "Apache-2.0" here would be a false claim.
     install: |
-      bin.install "multica"
+      bin.install "patchbay"
     test: |
-      system "#{bin}/multica", "version"
+      system "#{bin}/patchbay", "version"

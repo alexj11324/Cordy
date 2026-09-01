@@ -1,4 +1,4 @@
-const COOKIE_NAME = "multica_logged_in";
+const COOKIE_NAME = "patchbay_logged_in";
 
 export function setLoggedInCookie() {
   document.cookie = `${COOKIE_NAME}=1; path=/; max-age=31536000; samesite=lax`;

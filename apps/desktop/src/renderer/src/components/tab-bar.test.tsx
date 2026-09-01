@@ -6,8 +6,8 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { useScrollFade } from "@multica/ui/hooks/use-scroll-fade";
-import { SIDEBAR_WRAPPER_FILL_CLASS } from "@multica/ui/components/ui/sidebar";
+import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
+import { SIDEBAR_WRAPPER_FILL_CLASS } from "@patchbay/ui/components/ui/sidebar";
 
 type MockTab = {
   id: string;
@@ -65,9 +65,9 @@ vi.mock("@/stores/tab-store", () => {
   return { useTabStore, useActiveGroup };
 });
 
-vi.mock("@multica/core/paths", async (importOriginal) => ({
+vi.mock("@patchbay/core/paths", async (importOriginal) => ({
   // Spread the real module so pure helpers (parseTabSubject etc.) keep working.
-  ...(await importOriginal<typeof import("@multica/core/paths")>()),
+  ...(await importOriginal<typeof import("@patchbay/core/paths")>()),
   paths: {
     workspace: (slug: string) => ({
       issues: () => `/${slug}/issues`,
@@ -82,7 +82,7 @@ vi.mock("@multica/core/paths", async (importOriginal) => ({
 // fallback); a test can set `pres.title` to simulate a resolved title that
 // differs, to exercise the active-tab persist effect.
 const pres = vi.hoisted(() => ({ title: null as string | null }));
-vi.mock("@multica/views/layout", () => ({
+vi.mock("@patchbay/views/layout", () => ({
   useTabPresentation: (_url: string, fallbackTitle?: string) => ({
     visual: { kind: "icon", icon: "ListTodo" },
     title: pres.title ?? fallbackTitle ?? "",

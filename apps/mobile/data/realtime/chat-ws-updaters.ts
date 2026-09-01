@@ -23,7 +23,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import {
   enqueuePendingChatTask,
   removePendingChatTask,
-} from "@multica/core/chat/pending";
+} from "@patchbay/core/chat/pending";
 import type {
   ChatDonePayload,
   ChatMessage,
@@ -34,7 +34,7 @@ import type {
   TaskMessagePayload,
   TaskQueuedPayload,
   TaskDispatchPayload,
-} from "@multica/core/types";
+} from "@patchbay/core/types";
 import { chatKeys } from "@/data/queries/chat";
 
 // =====================================================

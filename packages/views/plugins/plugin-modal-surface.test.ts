@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { PluginInstallation } from "@multica/core/types";
+import type { PluginInstallation } from "@patchbay/core/types";
 import { collectModalSurfaces, pluginModalKey } from "./plugin-modal-surface";
 
 // Canonical matrix for which surfaces become modal menu entries. The component

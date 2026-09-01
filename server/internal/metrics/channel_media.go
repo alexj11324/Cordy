@@ -20,25 +20,25 @@ type ChannelMediaReconcilerMetrics struct {
 func NewChannelMediaReconcilerMetrics() *ChannelMediaReconcilerMetrics {
 	return &ChannelMediaReconcilerMetrics{
 		ObjectsDeleted: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "patchbay",
 			Subsystem: "channel_media",
 			Name:      "reconciler_objects_deleted_total",
 			Help:      "Unreferenced media objects deleted by the reconciler.",
 		}),
 		RowsReferenced: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "patchbay",
 			Subsystem: "channel_media",
 			Name:      "reconciler_rows_referenced_total",
 			Help:      "Ledger rows cleared because a durable attachment references the object.",
 		}),
 		DeleteFailures: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "patchbay",
 			Subsystem: "channel_media",
 			Name:      "reconciler_delete_failures_total",
 			Help:      "Object-storage deletes that failed and were scheduled for retry.",
 		}),
 		TombstoneReferenced: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "multica",
+			Namespace: "patchbay",
 			Subsystem: "channel_media",
 			Name:      "reconciler_tombstone_referenced_total",
 			Help:      "Tombstone passes that found an attachment referencing the object (invariant violation; the object is kept).",

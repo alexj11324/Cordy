@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	skillpkg "github.com/multica-ai/multica/server/internal/skill"
+	skillpkg "github.com/patchbay-ai/patchbay/server/internal/skill"
 )
 
 // maxImportArchiveUploadSize bounds the compressed upload accepted by the

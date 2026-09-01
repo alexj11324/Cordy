@@ -1,14 +1,14 @@
 // Schedule Pulse — reads the workspace-storage row the scheduled Hook writes.
 //
 // Plain ES module, no build step. The surface has no credential; it talks to
-// Multica only through the host bridge.
+// Patchbay only through the host bridge.
 
 const pending = new Map();
-const port = globalThis.__multicaPluginBridgePortV2;
+const port = globalThis.__patchbayPluginBridgePortV2;
 let sequence = 0;
 
-if (!(port instanceof MessagePort)) throw new Error("Multica surface bridge is unavailable");
-delete globalThis.__multicaPluginBridgePortV2;
+if (!(port instanceof MessagePort)) throw new Error("Patchbay surface bridge is unavailable");
+delete globalThis.__patchbayPluginBridgePortV2;
 port.onmessage = (message) => {
   const payload = message.data;
   if (payload?.kind === "theme") return applyTheme(payload.theme);
@@ -53,7 +53,7 @@ async function start() {
   try {
     const stored = await call("GET", "/storage/workspace/last_pulse");
     const pulse = JSON.parse(stored.value);
-    status.textContent = "Multica has woken this plugin on a durable five-minute schedule.";
+    status.textContent = "Patchbay has woken this plugin on a durable five-minute schedule.";
     list.style.display = "grid";
     list.innerHTML = `
       <dt style="color:var(--muted-foreground)">Count</dt><dd style="margin:0">${pulse.count ?? 0}</dd>
@@ -61,7 +61,7 @@ async function start() {
       <dt style="color:var(--muted-foreground)">Planned</dt><dd style="margin:0">${pulse.last_planned_at ?? "—"}</dd>
       <dt style="color:var(--muted-foreground)">Attempt</dt><dd style="margin:0">${pulse.last_attempt ?? "—"}</dd>`;
   } catch {
-    status.textContent = "No pulse yet. After install, Multica calls this plugin every five minutes and writes the first delivery here.";
+    status.textContent = "No pulse yet. After install, Patchbay calls this plugin every five minutes and writes the first delivery here.";
   }
   resize();
 }

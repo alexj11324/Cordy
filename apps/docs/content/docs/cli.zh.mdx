@@ -1,50 +1,50 @@
 ---
 title: 使用 CLI
-description: 安装并登录 Multica CLI，在终端中管理工作区、任务、智能体和运行时。
+description: 安装并登录 Patchbay CLI，在终端中管理工作区、任务、智能体和运行时。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Multica CLI 既负责连接本机运行时，也可以在终端中管理工作区、任务、智能体和自动化。这里介绍常用路径；当前版本支持的参数始终以命令自身的 `--help` 为准。
+Patchbay CLI 既负责连接本机运行时，也可以在终端中管理工作区、任务、智能体和自动化。这里介绍常用路径；当前版本支持的参数始终以命令自身的 `--help` 为准。
 
 ## 安装
 
 **macOS / Linux**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash
 ```
 
 安装了 Homebrew 时也可以运行：
 
 ```bash
-brew install multica-ai/tap/multica
+brew install patchbay-ai/tap/patchbay
 ```
 
 **Windows PowerShell**
 
 ```powershell
-irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex
+irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex
 ```
 
 确认安装成功：
 
 ```bash
-multica version
+patchbay version
 ```
 
 ## 第一次连接
 
-连接 Multica Cloud：
+连接 Patchbay Cloud：
 
 ```bash
-multica setup
+patchbay setup
 ```
 
 连接自托管实例：
 
 ```bash
-multica setup self-host \
+patchbay setup self-host \
  --server-url https://api.example.com \
  --app-url https://app.example.com
 ```
@@ -52,14 +52,14 @@ multica setup self-host \
 `setup` 会保存服务地址、打开浏览器完成登录，并启动守护进程。完成后检查：
 
 ```bash
-multica auth status
-multica daemon status
+patchbay auth status
+patchbay daemon status
 ```
 
-如果只需要重新登录，不想覆盖其他配置，运行 `multica login`。没有浏览器的环境可以先在 Web 设置中创建个人访问令牌，再输入：
+如果只需要重新登录，不想覆盖其他配置，运行 `patchbay login`。没有浏览器的环境可以先在 Web 设置中创建个人访问令牌，再输入：
 
 ```bash
-multica login --token
+patchbay login --token
 ```
 
 命令会在终端中提示粘贴令牌，避免把完整值留在 shell history 中。
@@ -69,72 +69,72 @@ multica login --token
 列出并切换默认工作区：
 
 ```bash
-multica workspace list
-multica workspace switch <slug>
+patchbay workspace list
+patchbay workspace switch <slug>
 ```
 
-之后的命令会使用这个工作区。单次命令可以通过 `--workspace-id` 临时覆盖，也可以设置 `MULTICA_WORKSPACE_ID`。
+之后的命令会使用这个工作区。单次命令可以通过 `--workspace-id` 临时覆盖，也可以设置 `PATCHBAY_WORKSPACE_ID`。
 
 邀请成员：
 
 ```bash
-multica workspace member invite teammate@example.com
-multica workspace member invite admin@example.com --role admin
+patchbay workspace member invite teammate@example.com
+patchbay workspace member invite admin@example.com --role admin
 ```
 
 ## 常用任务操作
 
 ```bash
 # 查看和搜索
-multica issue list
-multica issue get MUL-123
-multica issue search "登录失败"
+patchbay issue list
+patchbay issue get MUL-123
+patchbay issue search "登录失败"
 
 # 创建和修改
-multica issue create --title "修复登录失败"
-multica issue status MUL-123 in_progress
-multica issue assign MUL-123 --to "Backend Agent"
+patchbay issue create --title "修复登录失败"
+patchbay issue status MUL-123 in_progress
+patchbay issue assign MUL-123 --to "Backend Agent"
 
 # 评论和执行记录
-multica issue comment list MUL-123
-multica issue comment add MUL-123 --content "请先检查回归测试"
-multica issue runs MUL-123
+patchbay issue comment list MUL-123
+patchbay issue comment add MUL-123 --content "请先检查回归测试"
+patchbay issue runs MUL-123
 ```
 
 长描述或评论从 stdin 读取，避免处理换行和引号：
 
 ```bash
-multica issue create --title "升级说明" --description-stdin < notes.md
-multica issue comment add MUL-123 --content-stdin < review.md
+patchbay issue create --title "升级说明" --description-stdin < notes.md
+patchbay issue comment add MUL-123 --content-stdin < review.md
 ```
 
 查看某次执行的消息，或停止 task：
 
 ```bash
-multica issue run-messages <task-id> --issue MUL-123
-multica issue cancel-task <task-id> --issue MUL-123
+patchbay issue run-messages <task-id> --issue MUL-123
+patchbay issue cancel-task <task-id> --issue MUL-123
 ```
 
 ## 智能体和 skill
 
 ```bash
-multica agent list
-multica agent get <agent-id>
-multica agent create --help
-multica agent update <agent-id> --help
+patchbay agent list
+patchbay agent get <agent-id>
+patchbay agent create --help
+patchbay agent update <agent-id> --help
 
-multica skill list
-multica skill get <skill-id>
-multica skill import --url <skill-url>
-multica agent skills add <agent-id> --skill-ids <skill-id>
+patchbay skill list
+patchbay skill get <skill-id>
+patchbay skill import --url <skill-url>
+patchbay agent skills add <agent-id> --skill-ids <skill-id>
 ```
 
 导入时遇到同名 skill，默认会停止且不修改现有内容。按意图选择：
 
 ```bash
-multica skill import --url <skill-url> --on-conflict overwrite
-multica skill import --url <skill-url> --on-conflict rename
-multica skill import --url <skill-url> --on-conflict skip
+patchbay skill import --url <skill-url> --on-conflict overwrite
+patchbay skill import --url <skill-url> --on-conflict rename
+patchbay skill import --url <skill-url> --on-conflict skip
 ```
 
 `overwrite` 只允许 skill 的创建者使用，并保留原来的 ID 与智能体绑定关系。
@@ -142,19 +142,19 @@ multica skill import --url <skill-url> --on-conflict skip
 ## 守护进程和运行时
 
 ```bash
-multica daemon start
-multica daemon stop
-multica daemon restart
-multica daemon status --output json
-multica daemon logs --follow
+patchbay daemon start
+patchbay daemon stop
+patchbay daemon restart
+patchbay daemon status --output json
+patchbay daemon logs --follow
 
-multica runtime list
-multica runtime rename <runtime-id> "Office Mac"
-multica runtime usage <runtime-id>
-multica runtime activity <runtime-id>
+patchbay runtime list
+patchbay runtime rename <runtime-id> "Office Mac"
+patchbay runtime usage <runtime-id>
+patchbay runtime activity <runtime-id>
 ```
 
-删除仍绑定活跃智能体的运行时时，命令默认拒绝。`multica runtime delete <id> --cascade` 会解绑这些智能体、保留其配置与历史记录，并取消它们的活动 task。
+删除仍绑定活跃智能体的运行时时，命令默认拒绝。`patchbay runtime delete <id> --cascade` 会解绑这些智能体、保留其配置与历史记录，并取消它们的活动 task。
 
 运行机制和自定义 profile 见[守护进程与运行时](/daemon-runtimes)。
 
@@ -176,7 +176,7 @@ multica runtime activity <runtime-id>
 | `config` | 查看或修改当前 CLI profile 的本地配置 |
 | `update`、`version` | 更新 CLI 或查看版本 |
 
-`multica chat` 读取的是**智能体当前正在处理的外部聊天会话**，主要供聊天集成中的智能体使用；它不是用于浏览任意工作区对话的通用命令。
+`patchbay chat` 读取的是**智能体当前正在处理的外部聊天会话**，主要供聊天集成中的智能体使用；它不是用于浏览任意工作区对话的通用命令。
 
 ## ID 和输出格式
 
@@ -187,38 +187,38 @@ multica runtime activity <runtime-id>
 许多命令支持结构化输出：
 
 ```bash
-multica issue list --output json
-multica agent list --output json
+patchbay issue list --output json
+patchbay agent list --output json
 ```
 
-脚本使用 JSON 输出，不解析面向终端的表格。各命令支持的输出格式和分页参数以 `multica <command> --help` 为准。
+脚本使用 JSON 输出，不解析面向终端的表格。各命令支持的输出格式和分页参数以 `patchbay <command> --help` 为准。
 
 ## Profile 与配置
 
-默认配置保存在 `~/.multica/config.json`。使用 `--profile <name>` 可以隔离另一套服务地址、令牌、默认工作区和守护进程状态：
+默认配置保存在 `~/.patchbay/config.json`。使用 `--profile <name>` 可以隔离另一套服务地址、令牌、默认工作区和守护进程状态：
 
 ```bash
-multica setup self-host --profile staging \
+patchbay setup self-host --profile staging \
  --server-url https://api.staging.example.com \
  --app-url https://app.staging.example.com
 
-multica issue list --profile staging
+patchbay issue list --profile staging
 ```
 
-命名 profile 保存在 `~/.multica/profiles/<name>/config.json`。查看当前值：
+命名 profile 保存在 `~/.patchbay/profiles/<name>/config.json`。查看当前值：
 
 ```bash
-multica config show
-multica config show --profile staging
+patchbay config show
+patchbay config show --profile staging
 ```
 
 <Callout type="warning">
-CLI 配置文件包含可代表你访问 Multica 的令牌。不要提交到仓库、上传到日志或与他人共享。
+CLI 配置文件包含可代表你访问 Patchbay 的令牌。不要提交到仓库、上传到日志或与他人共享。
 </Callout>
 
 ## 命令参考
 
-下表覆盖当前全部顶层命令，按 CLI 自身的分组排列。所有命令都接受全局 flag `--server-url`、`--workspace-id`、`--profile` 和 `--debug`。`--output` 是逐命令注册的 flag，默认格式因命令而异：`list` 类默认表格，`get`、`create` 类多默认 JSON。完整参数以 `multica <command> --help` 为准。
+下表覆盖当前全部顶层命令，按 CLI 自身的分组排列。所有命令都接受全局 flag `--server-url`、`--workspace-id`、`--profile` 和 `--debug`。`--output` 是逐命令注册的 flag，默认格式因命令而异：`list` 类默认表格，`get`、`create` 类多默认 JSON。完整参数以 `patchbay <command> --help` 为准。
 
 ### Core
 
@@ -261,7 +261,7 @@ CLI 配置文件包含可代表你访问 Multica 的令牌。不要提交到仓�
 | | `runs <id>` | 查看运行历史 | |
 | | `trigger-add/trigger-update/trigger-delete/trigger-rotate-url` | 管理定时和 webhook 触发器 | |
 | `workspace` | `list/get/create/update/switch` | 管理工作区；`switch` 设置当前 profile 的默认工作区 | |
-| | `mcp list/add/update/remove` | 管理工作区的 MCP 服务库 | 写操作需要 owner/admin。这里添加的服务不会分配给任何 agent——用 `multica agent mcp add` 分配给某个 agent。`list` 只列出名称与 transport；存储的条目是只写的，任何角色都读不回。`--server-config-file` / `--server-config-stdin` 避免 token 进入 shell 历史 |
+| | `mcp list/add/update/remove` | 管理工作区的 MCP 服务库 | 写操作需要 owner/admin。这里添加的服务不会分配给任何 agent——用 `patchbay agent mcp add` 分配给某个 agent。`list` 只列出名称与 transport；存储的条目是只写的，任何角色都读不回。`--server-config-file` / `--server-config-stdin` 避免 token 进入 shell 历史 |
 | | `member list/invite <email>` | 查看成员、发出邀请 | `invite`：`--role`（member 或 admin，默认 member） |
 | `repo` | `list/add/remove/checkout` | 管理工作区仓库并检出到本机 | `--url`（可重复）；`checkout`：`--ref` |
 | `skill` | `list/get/create/update/delete` | 管理 skill | |
@@ -277,7 +277,7 @@ CLI 配置文件包含可代表你访问 Multica 的令牌。不要提交到仓�
 
 | 命令 | 子命令 | 用途 | 关键 flag |
 | --- | --- | --- | --- |
-| `daemon` | `start` | 启动本机守护进程 | `--foreground`、`--device-name`、`--runtime-name`、`--workspaces-root`、`--poll-interval`、`--heartbeat-interval`、`--agent-timeout`（`0` 表示不设上限）、`--max-concurrent-tasks`、`--no-auto-update`；均有对应的 `MULTICA_*` 环境变量 |
+| `daemon` | `start` | 启动本机守护进程 | `--foreground`、`--device-name`、`--runtime-name`、`--workspaces-root`、`--poll-interval`、`--heartbeat-interval`、`--agent-timeout`（`0` 表示不设上限）、`--max-concurrent-tasks`、`--no-auto-update`；均有对应的 `PATCHBAY_*` 环境变量 |
 | | `stop` / `status` / `restart` | 停止、查看状态、重启（`restart` 与 `start` 同一套 flag） | |
 | | `logs` | 查看守护进程日志 | `--follow`、`--lines` |
 | | `disk-usage` | 查看本机磁盘占用 | `--by-workspace`、`--by-task`、`--top` |
@@ -298,10 +298,10 @@ CLI 配置文件包含可代表你访问 Multica 的令牌。不要提交到仓�
 | `update` | — | 更新 CLI 到最新版本 | |
 | `version` | — | 查看版本信息 | `--output`（`text` 或 `json`） |
 
-## 在其他编码智能体里操作 Multica
+## 在其他编码智能体里操作 Patchbay
 
-如果你的工作大多发生在 Codex、Claude Code 或 Cursor 里，可以直接在那里操作 Multica，
-不必切回终端。[Multica CLI skill](https://github.com/multica-ai/multica-cli)
+如果你的工作大多发生在 Codex、Claude Code 或 Cursor 里，可以直接在那里操作 Patchbay，
+不必切回终端。[Patchbay CLI skill](https://github.com/patchbay-ai/patchbay-cli)
 会教这些智能体安全地使用本页的命令：低成本地读任务和评论线程、通过文件写评论，
 以及正确处理 mention、状态变更和指派带来的副作用。
 
@@ -312,7 +312,7 @@ Claude Code 插件市场、Codex skill 安装器、Cursor 以及其他任何加�
 
 ## 接下来
 
-- [Multica CLI skill](https://github.com/multica-ai/multica-cli) — 在 Codex、Claude Code 或 Cursor 里操作 Multica。
+- [Patchbay CLI skill](https://github.com/patchbay-ai/patchbay-cli) — 在 Codex、Claude Code 或 Cursor 里操作 Patchbay。
 - [认证与令牌](/auth-tokens) — PAT 的创建、续期和吊销。
 - [故障排查](/troubleshooting) — 命令报错和 task 不开始的排查路径。
 - [创建和配置智能体](/agents-create) — `agent create` 各字段的完整语义。

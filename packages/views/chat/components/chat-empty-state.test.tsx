@@ -2,8 +2,8 @@
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@multica/core/i18n/react";
-import type { Agent } from "@multica/core/types";
+import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { Agent } from "@patchbay/core/types";
 import enChat from "../../locales/en/chat.json";
 import { NavigationProvider } from "../../navigation";
 import type { NavigationAdapter } from "../../navigation";

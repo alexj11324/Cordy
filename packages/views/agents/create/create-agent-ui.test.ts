@@ -2,12 +2,12 @@ import { createElement } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
-import { ApiError } from "@multica/core/api";
-import type { Agent } from "@multica/core/types";
+import { ApiError } from "@patchbay/core/api";
+import type { Agent } from "@patchbay/core/types";
 import {
   cacheAgentResponse,
   workspaceKeys,
-} from "@multica/core/workspace/queries";
+} from "@patchbay/core/workspace/queries";
 import { AgentNameField } from "./agent-configuration-panel";
 import { CreateMethodChooser } from "./choose-create-method-page";
 import { CreateAgentFooter } from "./create-agent-footer";
@@ -256,7 +256,7 @@ describe("Unfinished draft preview", () => {
       draftPreview({
         last_message_role: "user",
         last_message_content:
-          'MULTICA_AGENT_BUILDER_INPUT\n{"user_request":"Create a release manager","current_draft":{"name":"X"}}',
+          'PATCHBAY_AGENT_BUILDER_INPUT\n{"user_request":"Create a release manager","current_draft":{"name":"X"}}',
       }),
     ).toBe("Create a release manager");
   });

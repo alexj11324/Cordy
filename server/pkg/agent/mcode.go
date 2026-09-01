@@ -29,7 +29,7 @@ var mcodeBlockedArgs = map[string]blockedArgMode{
 
 // mcodeBackend runs MiniMax Code as an ACP v1 agent server via `mcode acp`.
 // MiniMax Code owns its Runtime, Session, permission, and questionnaire loops;
-// this adapter only maps the shared ACP stream into Multica's Backend contract.
+// this adapter only maps the shared ACP stream into Patchbay's Backend contract.
 //
 // The current public ACP surface deliberately declares loadSession:false and
 // does not expose session-scoped model selection. Resume therefore returns a
@@ -211,7 +211,7 @@ func (b *mcodeBackend) Execute(ctx context.Context, prompt string, opts ExecOpti
 		initResult, err := c.request(runCtx, "initialize", map[string]any{
 			"protocolVersion": 1,
 			"clientInfo": map[string]any{
-				"name":    "multica-agent-sdk",
+				"name":    "patchbay-agent-sdk",
 				"version": "0.2.0",
 			},
 			"clientCapabilities": map[string]any{},

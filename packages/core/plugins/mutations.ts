@@ -31,7 +31,7 @@ export function usePublishPluginPackage(wsId: string) {
   });
 }
 
-/** The development channel: publish from MULTICA_PLUGIN_DIR instead of a zip. */
+/** The development channel: publish from PATCHBAY_PLUGIN_DIR instead of a zip. */
 export function usePublishLocalPluginPackage(wsId: string) {
   const invalidate = useInvalidatePlugins(wsId);
   return useMutation({

@@ -1,5 +1,5 @@
 {
-  "name": "@multica/core",
+  "name": "@patchbay/core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -174,8 +174,8 @@
     "react": "catalog:"
   },
   "devDependencies": {
-    "@multica/eslint-config": "workspace:*",
-    "@multica/tsconfig": "workspace:*",
+    "@patchbay/eslint-config": "workspace:*",
+    "@patchbay/tsconfig": "workspace:*",
     "@testing-library/react": "catalog:",
     "@types/react": "catalog:",
     "jsdom": "catalog:",

@@ -1,6 +1,6 @@
 {
   "title": "账单（测试页）",
-  "subtitle": "直接透传 multica-cloud 的 /api/v1/billing/*。不是正式 UI——只是把所有端点塞到一个页面方便验证 Stripe 流程。",
+  "subtitle": "直接透传 patchbay-cloud 的 /api/v1/billing/*。不是正式 UI——只是把所有端点塞到一个页面方便验证 Stripe 流程。",
   "endpoints": {
     "balance": "GET /api/cloud-billing/balance",
     "transactions": "GET /api/cloud-billing/transactions",
@@ -261,6 +261,6 @@
     "workspace_missing_title": "找不到该工作区",
     "workspace_missing_description": "你已从 Stripe 返回，但该工作区对你已不可用——可能已被删除，或你的访问权限发生了变化。请到你预期的那个工作区的账单页确认当前状态。",
     "retry": "重试",
-    "go_to_app": "前往 Multica"
+    "go_to_app": "前往 Patchbay"
   }
 }

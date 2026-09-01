@@ -237,7 +237,7 @@ export const useCommentDraftStore = create<CommentDraftStore>()(
         }),
     }),
     {
-      name: "multica_comment_drafts",
+      name: "patchbay_comment_drafts",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
       onRehydrateStorage: () => (state) => {
         if (state) {
@@ -251,7 +251,7 @@ export const useCommentDraftStore = create<CommentDraftStore>()(
 registerForWorkspaceRehydration(() => useCommentDraftStore.persist.rehydrate());
 
 registerDraftCleanup({
-  storageKey: "multica_comment_drafts",
+  storageKey: "patchbay_comment_drafts",
   workspaceScoped: true,
   resetInMemory: () => useCommentDraftStore.setState({ drafts: {} }),
 });

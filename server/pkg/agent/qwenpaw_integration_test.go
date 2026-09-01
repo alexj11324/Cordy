@@ -21,7 +21,7 @@ import (
 //   - session/new + session/prompt + session/load succeed
 //   - the --workspace flag is accepted (qwenpaw acp's workspace skill discovery)
 //
-// This test is gated by MULTICA_RUN_REAL_AGENT_SMOKE=1 and requires
+// This test is gated by PATCHBAY_RUN_REAL_AGENT_SMOKE=1 and requires
 // `qwenpaw` on PATH. The RPCs it exercises are the ones the execution
 // path needs, all present since QwenPaw v2.0.1 (see qwenpaw.go for the
 // version contract).

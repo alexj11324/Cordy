@@ -214,7 +214,7 @@ describe("issue draft store — legacy rehydrate", () => {
 
   it("migrates a pre-MUL-5181 flat draft into the shared/manual slots", async () => {
     localStorage.setItem(
-      "multica_issue_draft:acme",
+      "patchbay_issue_draft:acme",
       JSON.stringify({
         state: {
           draft: {
@@ -257,7 +257,7 @@ describe("issue draft store — legacy rehydrate", () => {
 
   it("backfills missing sub-fields on an already-nested persisted draft", async () => {
     localStorage.setItem(
-      "multica_issue_draft:beta",
+      "patchbay_issue_draft:beta",
       JSON.stringify({
         state: {
           draft: {
@@ -289,7 +289,7 @@ describe("issue draft store — legacy rehydrate", () => {
 
   it("normalizes pre-L2 shared attachments and drops stale uploading placeholders", async () => {
     localStorage.setItem(
-      "multica_issue_draft:gamma",
+      "patchbay_issue_draft:gamma",
       JSON.stringify({
         state: {
           draft: {
@@ -405,7 +405,7 @@ describe("issue draft store — logout cleanup", () => {
     const { setManual, setLastAssignee } = useIssueDraftStore.getState();
     setManual({ title: "secret wip" });
     setLastAssignee("member", "alice");
-    expect(localStorage.getItem("multica_issue_draft:acme")).not.toBeNull();
+    expect(localStorage.getItem("patchbay_issue_draft:acme")).not.toBeNull();
 
     // use-logout's order: reset first (each reset is a setState, and persist
     // writes the new state back to storage under the still-active slug), THEN
@@ -414,6 +414,6 @@ describe("issue draft store — logout cleanup", () => {
     resetAllRegisteredDrafts();
     clearWorkspaceStorage(defaultStorage, "acme");
 
-    expect(localStorage.getItem("multica_issue_draft:acme")).toBeNull();
+    expect(localStorage.getItem("patchbay_issue_draft:acme")).toBeNull();
   });
 });

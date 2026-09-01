@@ -9,9 +9,9 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ApiError } from "@multica/core/api";
-import type { Agent } from "@multica/core/types";
-import { I18nProvider } from "@multica/core/i18n/react";
+import { ApiError } from "@patchbay/core/api";
+import type { Agent } from "@patchbay/core/types";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
 import {
@@ -60,15 +60,15 @@ const mockModalOpen = vi.hoisted(() => vi.fn());
 const mockGetAgent = vi.hoisted(() => vi.fn());
 const mockUpdateAgent = vi.hoisted(() => vi.fn());
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
-vi.mock("@multica/core/agents", () => ({
+vi.mock("@patchbay/core/agents", () => ({
   isAgentRuntimeBound: (agent: { runtime_id: string; runtime_bound?: boolean }) =>
     agent.runtime_bound !== false && agent.runtime_id.length > 0,
   useWorkspacePresenceMap: () => ({ byAgent: new Map() }),
 }));
-vi.mock("@multica/core/workspace/queries", () => ({
+vi.mock("@patchbay/core/workspace/queries", () => ({
   agentListOptions: (wsId: string) => ({
     queryKey: ["agents", wsId],
     queryFn: () => Promise.resolve(agentsRef.current),
@@ -113,13 +113,13 @@ vi.mock("@multica/core/workspace/queries", () => ({
     ],
   },
 }));
-vi.mock("@multica/core/runtimes", () => ({
+vi.mock("@patchbay/core/runtimes", () => ({
   runtimeListOptions: (wsId: string) => ({
     queryKey: ["runtimes", wsId],
     queryFn: () => Promise.resolve([]),
   }),
 }));
-vi.mock("@multica/core/auth", () => {
+vi.mock("@patchbay/core/auth", () => {
   type AuthState = { user: { id: string } | null };
   const state = (): AuthState => ({ user: currentUserRef.current });
   const useAuthStore = Object.assign(
@@ -129,18 +129,18 @@ vi.mock("@multica/core/auth", () => {
   );
   return { useAuthStore };
 });
-vi.mock("@multica/core/modals", () => ({
+vi.mock("@patchbay/core/modals", () => ({
   useModalStore: Object.assign(vi.fn(), {
     getState: () => ({ open: mockModalOpen }),
   }),
 }));
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   useWorkspacePaths: () => ({
     agents: () => "/acme/agents",
     chat: () => "/acme/chat",
   }),
 }));
-vi.mock("@multica/core/api", () => {
+vi.mock("@patchbay/core/api", () => {
   class ApiError extends Error {
     status: number;
     constructor(message: string, status: number) {

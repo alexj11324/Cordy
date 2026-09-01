@@ -9,14 +9,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/logger"
+	"github.com/patchbay-ai/patchbay/server/internal/logger"
 	"github.com/redis/go-redis/v9"
 )
 
 const (
-	invitationActorLimiterKeyPrefix     = "mul:invitation:actor:"
-	invitationWorkspaceLimiterKeyPrefix = "mul:invitation:workspace:"
-	invitationRecipientLimiterKeyPrefix = "mul:invitation:recipient:"
+	invitationActorLimiterKeyPrefix     = "pby:invitation:actor:"
+	invitationWorkspaceLimiterKeyPrefix = "pby:invitation:workspace:"
+	invitationRecipientLimiterKeyPrefix = "pby:invitation:recipient:"
 )
 
 // InvitationRateLimits configures the independent invitation admission gates.

@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { ChevronRight, Loader2, RefreshCw } from "lucide-react";
-import { Button } from "@multica/ui/components/ui/button";
-import { cn } from "@multica/ui/lib/utils";
-import type { SourceContextPreview } from "@multica/core/types";
-import { ApiError } from "@multica/core/api";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { cn } from "@patchbay/ui/lib/utils";
+import type { SourceContextPreview } from "@patchbay/core/types";
+import { ApiError } from "@patchbay/core/api";
 import { SourceContextContent } from "../issues/components/source-context-content";
 import { useT } from "../i18n";
 

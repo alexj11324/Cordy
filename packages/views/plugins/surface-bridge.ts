@@ -1,11 +1,11 @@
-import { api } from "@multica/core/api";
+import { api } from "@patchbay/core/api";
 
 /**
  * The host half of the bridge.
  *
  * A surface asks; the host performs the call on the signed-in user's own
  * session and returns the result. The plugin holds no credential, so this is
- * the only path from a surface into Multica.
+ * the only path from a surface into Patchbay.
  *
  * Identity is bound by three things together: the expected outer frame window,
  * a single-use launch challenge, and the guest-created MessagePort. Origin is
@@ -13,7 +13,7 @@ import { api } from "@multica/core/api";
  */
 
 const BRIDGE_PROTOCOL_VERSION = 2;
-const BRIDGE_CONNECT_MESSAGE = "multica:plugin-bridge-connect";
+const BRIDGE_CONNECT_MESSAGE = "patchbay:plugin-bridge-init";
 
 type BridgeMethod = "GET" | "POST" | "PATCH" | "PUT" | "DELETE";
 

@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@multica/core/i18n/react";
-import enCommon from "@multica/views/locales/en/common.json";
-import enAuth from "@multica/views/locales/en/auth.json";
-import enSettings from "@multica/views/locales/en/settings.json";
+import { I18nProvider } from "@patchbay/core/i18n/react";
+import enCommon from "@patchbay/views/locales/en/common.json";
+import enAuth from "@patchbay/views/locales/en/auth.json";
+import enSettings from "@patchbay/views/locales/en/settings.json";
 import type { ReactNode } from "react";
 
 const TEST_RESOURCES = {
@@ -57,10 +57,10 @@ vi.mock("next/navigation", () => ({
 // web wrapper uses useAuthStore((s) => s.user/isLoading). Keep the real
 // sanitizeNextUrl so the redirect-sanitization rules are exercised rather
 // than silently drifting behind a mock reimplementation.
-vi.mock("@multica/core/auth", async () => {
+vi.mock("@patchbay/core/auth", async () => {
   const actual =
-    await vi.importActual<typeof import("@multica/core/auth")>(
-      "@multica/core/auth",
+    await vi.importActual<typeof import("@patchbay/core/auth")>(
+      "@patchbay/core/auth",
     );
   const useAuthStore = Object.assign(
     (selector: (s: typeof authStateRef.state) => unknown) =>
@@ -76,7 +76,7 @@ vi.mock("@/features/auth/auth-cookie", () => ({
 }));
 
 // Mock api
-vi.mock("@multica/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: {
     listWorkspaces: mockListWorkspaces,
     listMyInvitations: mockListMyInvitations,
@@ -106,10 +106,10 @@ describe("LoginPage", () => {
   // Regression: MUL-1080 — if the user is already authenticated on the web
   // and the Desktop app redirects them to /login?platform=desktop, the web
   // must exchange the cookie session for a bearer token and hand it off via
-  // the multica:// deep link, not silently redirect to the workspace page.
+  // the patchbay:// deep link, not silently redirect to the workspace page.
   it("mints a token and deep-links to Desktop when already logged in with platform=desktop", async () => {
     searchParamsState.params = new URLSearchParams({ platform: "desktop" });
-    authStateRef.state.user = { id: "u1", email: "test@multica.ai" };
+    authStateRef.state.user = { id: "u1", email: "test@patchbay.ai" };
     mockIssueCliToken.mockImplementation(() =>
       Promise.resolve({ token: "handoff-jwt" }),
     );
@@ -129,11 +129,11 @@ describe("LoginPage", () => {
       });
       await waitFor(() => {
         expect(hrefSetter).toHaveBeenCalledWith(
-          "multica://auth/callback?token=handoff-jwt",
+          "patchbay://auth/callback?token=handoff-jwt",
         );
       });
       expect(
-        await screen.findByRole("button", { name: "Open Multica Desktop" }),
+        await screen.findByRole("button", { name: "Open Patchbay Desktop" }),
       ).toBeInTheDocument();
     } finally {
       Object.defineProperty(window, "location", {
@@ -152,7 +152,7 @@ describe("LoginPage", () => {
   describe("post-login redirect ownership (#5009)", () => {
     const onboardedUser = {
       id: "u1",
-      email: "test@multica.ai",
+      email: "test@patchbay.ai",
       onboarded_at: "2026-01-01T00:00:00Z",
     };
 

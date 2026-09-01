@@ -17,24 +17,24 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useWorkspaceId } from "@multica/core/hooks";
+import { useWorkspaceId } from "@patchbay/core/hooks";
 import {
   quickActionListOptions,
   useCreateQuickAction,
   useDeleteQuickAction,
   useUpdateQuickAction,
-} from "@multica/core/quick-actions";
+} from "@patchbay/core/quick-actions";
 import type {
   QuickAction,
   QuickActionAssigneeType,
   QuickActionVisibility,
-} from "@multica/core/types";
-import { findQuickActionTemplateToken } from "@multica/core/types";
-import { Button } from "@multica/ui/components/ui/button";
-import { Badge } from "@multica/ui/components/ui/badge";
-import { Input } from "@multica/ui/components/ui/input";
-import { Textarea } from "@multica/ui/components/ui/textarea";
-import { Label as FieldLabel } from "@multica/ui/components/ui/label";
+} from "@patchbay/core/types";
+import { findQuickActionTemplateToken } from "@patchbay/core/types";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Badge } from "@patchbay/ui/components/ui/badge";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
+import { Label as FieldLabel } from "@patchbay/ui/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -42,7 +42,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@multica/ui/components/ui/dialog";
+} from "@patchbay/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,14 +52,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@multica/ui/components/ui/alert-dialog";
+} from "@patchbay/ui/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
-import { cn } from "@multica/ui/lib/utils";
+} from "@patchbay/ui/components/ui/dropdown-menu";
+import { cn } from "@patchbay/ui/lib/utils";
 import { AgentPicker } from "../../autopilots/components/pickers/agent-picker";
 import { useLocale, useT } from "../../i18n";
 import { SettingsTab } from "./settings-layout";

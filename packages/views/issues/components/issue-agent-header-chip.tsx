@@ -6,12 +6,12 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@multica/ui/components/ui/popover";
-import { useActorName } from "@multica/core/workspace/hooks";
-import { cn } from "@multica/ui/lib/utils";
-import { api } from "@multica/core/api";
-import { issueKeys } from "@multica/core/issues/queries";
-import type { AgentTask } from "@multica/core/types";
+} from "@patchbay/ui/components/ui/popover";
+import { useActorName } from "@patchbay/core/workspace/hooks";
+import { cn } from "@patchbay/ui/lib/utils";
+import { api } from "@patchbay/core/api";
+import { issueKeys } from "@patchbay/core/issues/queries";
+import type { AgentTask } from "@patchbay/core/types";
 import { TranscriptButton } from "../../common/task-transcript";
 import { AgentAvatarStack } from "../../agents/components/agent-avatar-stack";
 import { ActiveTaskRow } from "./execution-log-section";

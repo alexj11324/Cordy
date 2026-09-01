@@ -22,7 +22,7 @@ cat >"$TEST_DIR/migrate" <<'SCRIPT'
 #!/bin/sh
 trap 'printf "TERM\n" >"$MIGRATE_SIGNAL_FILE"; exit 143' TERM
 printf '%s\n' "$$" >"$MIGRATE_PID_FILE"
-printf '%s\n' "$MULTICA_INTERNAL_DATABASE_STARTUP_STARTED_AT_UNIX" >"$MIGRATE_STARTED_AT_FILE"
+printf '%s\n' "$PATCHBAY_INTERNAL_DATABASE_STARTUP_STARTED_AT_UNIX" >"$MIGRATE_STARTED_AT_FILE"
 while :; do
   sleep 1
 done
@@ -31,7 +31,7 @@ SCRIPT
 cat >"$TEST_DIR/server" <<'SCRIPT'
 #!/bin/sh
 printf 'started\n' >"$SERVER_STARTED_FILE"
-printf '%s\n' "$MULTICA_INTERNAL_DATABASE_STARTUP_STARTED_AT_UNIX" >"$SERVER_STARTED_AT_FILE"
+printf '%s\n' "$PATCHBAY_INTERNAL_DATABASE_STARTUP_STARTED_AT_UNIX" >"$SERVER_STARTED_AT_FILE"
 SCRIPT
 
 chmod +x "$TEST_DIR/entrypoint.sh" "$TEST_DIR/migrate" "$TEST_DIR/server"
@@ -81,7 +81,7 @@ fi
 
 cat >"$TEST_DIR/migrate" <<'SCRIPT'
 #!/bin/sh
-printf '%s\n' "$MULTICA_INTERNAL_DATABASE_STARTUP_STARTED_AT_UNIX" >"$MIGRATE_STARTED_AT_FILE"
+printf '%s\n' "$PATCHBAY_INTERNAL_DATABASE_STARTUP_STARTED_AT_UNIX" >"$MIGRATE_STARTED_AT_FILE"
 exit 0
 SCRIPT
 chmod +x "$TEST_DIR/migrate"

@@ -49,14 +49,14 @@ func TestBuildPiArgsBasicFlags(t *testing.T) {
 // Forwarding it anyway would duplicate the whole runtime brief on every turn.
 func TestBuildPiArgsIgnoresSystemPrompt(t *testing.T) {
 	args := buildPiArgs("/tmp/s.jsonl", ExecOptions{
-		SystemPrompt: "the entire multica runtime brief",
+		SystemPrompt: "the entire patchbay runtime brief",
 	}, slog.Default())
 
 	for _, a := range args {
 		if a == "--append-system-prompt" {
 			t.Fatalf("unexpected --append-system-prompt in args: %v", args)
 		}
-		if a == "the entire multica runtime brief" {
+		if a == "the entire patchbay runtime brief" {
 			t.Fatalf("SystemPrompt leaked into args: %v", args)
 		}
 	}
@@ -521,7 +521,7 @@ func TestStripPiToolCallMarkup(t *testing.T) {
 	tests := map[string]string{
 		`before call:bash{command:<|"|>cd repo/path && ls -F<|"|>}<tool_call|> after`:                           "before  after",
 		`before call:read{path:<|"|>repo/path/roles/example/verify.yml<|"|>} after`:                             "before  after",
-		`before response:bash{command:<|"|>multica issue comment list issue-id --all --output json<|"|>} after`: "before  after",
+		`before response:bash{command:<|"|>patchbay issue comment list issue-id --all --output json<|"|>} after`: "before  after",
 		`before call:bash{command:<|"|>printf '{"key":"value"}'<|"|>} after`:                                    "before  after",
 		`before <|turn>model after`: "before  after",
 	}
@@ -582,7 +582,7 @@ func TestFlushPiTextBufferKeepsUnmatchedToolPrefixes(t *testing.T) {
 
 // TestBuildPiArgsKeepsSlashShapedModelIDIntact is the GH #7300 regression.
 // A gateway-style provider registers model ids that themselves contain a
-// slash (`claude/claude-opus-5` under provider `multica-anthropic`). Splitting
+// slash (`claude/claude-opus-5` under provider `patchbay-anthropic`). Splitting
 // on that slash to fill --provider produced `--provider claude --model
 // claude-opus-5`, and pi answers an unknown --provider with a hard
 // `Unknown provider "claude"` before it ever looks at --model. The whole
@@ -605,10 +605,10 @@ func TestBuildPiArgsKeepsSlashShapedModelIDIntact(t *testing.T) {
 // A fully-qualified selector is passed through the same way: pi infers the
 // provider from the prefix itself, so the daemon never has to take it apart.
 func TestBuildPiArgsPassesQualifiedSelectorWhole(t *testing.T) {
-	args := buildPiArgs("/tmp/s.jsonl", ExecOptions{Model: "multica-anthropic/claude/claude-opus-5"}, slog.Default())
+	args := buildPiArgs("/tmp/s.jsonl", ExecOptions{Model: "patchbay-anthropic/claude/claude-opus-5"}, slog.Default())
 
 	joined := strings.Join(args, " ")
-	if !strings.Contains(joined, "--model multica-anthropic/claude/claude-opus-5") {
+	if !strings.Contains(joined, "--model patchbay-anthropic/claude/claude-opus-5") {
 		t.Errorf("qualified selector was not passed through intact: %v", args)
 	}
 	if strings.Contains(joined, "--provider") {

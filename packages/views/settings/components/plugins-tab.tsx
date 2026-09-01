@@ -4,7 +4,7 @@ import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, CalendarClock, Loader2, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
-import { useCurrentMember } from "@multica/core/permissions";
+import { useCurrentMember } from "@patchbay/core/permissions";
 import {
   pluginInstallationsOptions,
   pluginPackagesOptions,
@@ -15,28 +15,28 @@ import {
   usePublishPluginPackage,
   useSetPluginEnabled,
   useUninstallPlugin,
-} from "@multica/core/plugins";
-import { useCurrentWorkspace } from "@multica/core/paths";
+} from "@patchbay/core/plugins";
+import { useCurrentWorkspace } from "@patchbay/core/paths";
 import type {
   PluginConfigField,
   PluginInstallation,
   PluginPackage,
   PluginPreview,
-} from "@multica/core/types";
-import { Alert, AlertDescription, AlertTitle } from "@multica/ui/components/ui/alert";
-import { Badge } from "@multica/ui/components/ui/badge";
-import { Button } from "@multica/ui/components/ui/button";
-import { Input } from "@multica/ui/components/ui/input";
+} from "@patchbay/core/types";
+import { Alert, AlertDescription, AlertTitle } from "@patchbay/ui/components/ui/alert";
+import { Badge } from "@patchbay/ui/components/ui/badge";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@multica/ui/components/ui/select";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
-import { Textarea } from "@multica/ui/components/ui/textarea";
-import { Switch } from "@multica/ui/components/ui/switch";
+} from "@patchbay/ui/components/ui/select";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
+import { Switch } from "@patchbay/ui/components/ui/switch";
 import { mcpHooks, PluginHookActivity, PluginMCPApproval, PluginScheduleActivity } from "../../plugins";
 import { useLocale, useT } from "../../i18n";
 import { SettingsCard, SettingsSection, SettingsTab } from "./settings-layout";

@@ -170,8 +170,8 @@ done
 	start := time.Now()
 	_, err := discoverACPModels(context.Background(), Command{Path: fakePath}, acpDiscoveryProvider{
 		defaultBin:   "stalled",
-		clientName:   "multica-model-discovery",
-		tmpdirPrefix: "multica-timeout-test-",
+		clientName:   "patchbay-model-discovery",
+		tmpdirPrefix: "patchbay-timeout-test-",
 		strictErrors: true,
 		timeout:      300 * time.Millisecond,
 	})

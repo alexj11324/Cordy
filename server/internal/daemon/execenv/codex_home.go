@@ -246,7 +246,7 @@ func prepareCodexHomeWithOpts(codexHome string, opts CodexHomeOptions, logger *s
 	// Drop `[[skills.config]]` entries inherited from the user's
 	// ~/.codex/config.toml. Codex Desktop writes plugin-backed skills with a
 	// `name` and no `path`, which the CLI's stricter TOML parser rejects with
-	// `missing field path` and bails out of `thread/start`. Multica writes the
+	// `missing field path` and bails out of `thread/start`. Patchbay writes the
 	// agent's active skills directly to `codex-home/skills/`, so the
 	// user-level registry is redundant here. See codex_skill_strip.go.
 	if err := sanitizeCopiedCodexConfig(filepath.Join(codexHome, "config.toml")); err != nil {
@@ -307,7 +307,7 @@ func prepareCodexHomeWithOpts(codexHome string, opts CodexHomeOptions, logger *s
 	}
 
 	// Disable Codex native auto-memory inside daemon-managed task sessions
-	// so cross-task and cross-workspace context leaks (multica#3130) cannot
+	// so cross-task and cross-workspace context leaks (patchbay#3130) cannot
 	// happen via `codex-home/memories/` or `~/.codex/memories/`. See
 	// codex_memory.go for the full rationale and escape hatch.
 	if err := ensureCodexMemoryConfig(filepath.Join(codexHome, "config.toml"), logger); err != nil {
@@ -355,9 +355,9 @@ var codexSessionStateGlobs = []string{
 // codexSessionStoreRoot is the directory under the shared Codex home that holds
 // the per-issue session stores. It sits beside the user's own `sessions/` so it
 // shares that volume (making resume-rollout hard links zero-copy) but is never
-// enumerated by a plain `codex` run, keeping Multica task history out of the
+// enumerated by a plain `codex` run, keeping Patchbay task history out of the
 // user's own thread list.
-const codexSessionStoreRoot = "multica-sessions"
+const codexSessionStoreRoot = "patchbay-sessions"
 
 // codexSessionStoreDir returns the persistent, per-(agent, issue) Codex sessions
 // store for key, rooted on the shared Codex home's volume. It survives across
@@ -430,7 +430,7 @@ func sanitizePathSegment(s string) string {
 }
 
 // PruneCodexSessionStores reclaims per-issue Codex session stores under the
-// shared home's multica-sessions root that have not been touched within
+// shared home's patchbay-sessions root that have not been touched within
 // retention, bounding the lifetime of the conversation history each one holds.
 //
 // The stores deliberately live outside the task-scoped envRoot the task GC

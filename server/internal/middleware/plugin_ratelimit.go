@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	publicapiv1 "github.com/multica-ai/multica/server/pkg/publicapi/v1"
+	publicapiv1 "github.com/patchbay-ai/patchbay/server/pkg/publicapi/v1"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -21,8 +21,13 @@ func PluginRateLimit(rdb *redis.Client, limit int, window time.Duration) func(ht
 			return next
 		}
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			digest := sha256.Sum256([]byte(BearerToken(r)))
-			key := fmt.Sprintf("mul:ratelimit:plugin:%x", digest)
+			token := BearerToken(r)
+			if !IsPluginBearerToken(token) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			digest := sha256.Sum256([]byte(token))
+			key := fmt.Sprintf("pby:ratelimit:plugin:%x", digest)
 			count, err := rateLimitScript.Run(r.Context(), rdb, []string{key}, int(window.Seconds())).Int64()
 			if err != nil {
 				slog.Warn("plugin ratelimit: redis error; allowing request", "error", err)

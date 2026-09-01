@@ -12,7 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -167,7 +167,7 @@ func TestRegisterBYO_CredentialValidationTimesOut(t *testing.T) {
 func TestRegisterBYO_RobotConnectedToAnotherWorkspace_Rejected(t *testing.T) {
 	srv := dingtalkMockServer(t, true)
 	defer srv.Close()
-	// The pasted robot is live-owned by an agent in a DIFFERENT Multica
+	// The pasted robot is live-owned by an agent in a DIFFERENT Patchbay
 	// workspace, so after the dead-owner reclaim the (channel_type, app_id)
 	// routing index still rejects the upsert. We must refuse, not steal it — and
 	// name the real case (another workspace), not a catch-all.

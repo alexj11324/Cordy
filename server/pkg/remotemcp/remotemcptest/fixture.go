@@ -57,7 +57,7 @@ func (fixture *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		result = map[string]any{
 			"protocolVersion": "2025-03-26",
 			"capabilities":    map[string]any{"tools": map[string]any{}},
-			"serverInfo":      map[string]any{"name": "multica-remote-mcp-fixture", "version": "1.0.0"},
+			"serverInfo":      map[string]any{"name": "patchbay-remote-mcp-fixture", "version": "1.0.0"},
 		}
 	case "notifications/initialized":
 		w.WriteHeader(http.StatusAccepted)

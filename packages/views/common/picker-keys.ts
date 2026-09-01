@@ -52,7 +52,7 @@ export type PickerNavigationDirection = "next" | "prev";
  * `Cmd`-based aliases are deliberately absent. cmdk does not bind them either,
  * so the command bar never supported them, and `Cmd+P`/`Cmd+N` are browser and
  * OS accelerators (print, new window) that a web page cannot own — the same
- * rule `isReservedShortcut` in `@multica/core/shortcuts` already encodes.
+ * rule `isReservedShortcut` in `@patchbay/core/shortcuts` already encodes.
  *
  * The letter aliases require Ctrl *alone*. With another modifier the chord
  * belongs to the browser or OS (`Ctrl+Shift+N` opens an incognito window), so

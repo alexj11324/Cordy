@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/auth"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/auth"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // insertTestPAT creates a PAT row for the shared test user with the given
@@ -158,7 +158,7 @@ func TestRenewPAT_RejectsNonPATAuthHeader(t *testing.T) {
 		header string
 	}{
 		{"empty", ""},
-		{"missing bearer prefix", "mul_abc123"},
+		{"missing bearer prefix", "pby_abc123"},
 		{"wrong prefix", "Bearer mdt_abc123"},
 		{"jwt", "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.sig"},
 	}
@@ -329,7 +329,7 @@ func TestRenewPAT_RejectsTokenBelongingToDifferentUser(t *testing.T) {
 		INSERT INTO "user" (name, email)
 		VALUES ($1, $2)
 		RETURNING id
-	`, "Other User", "other-renew@multica.ai").Scan(&otherUserID); err != nil {
+	`, "Other User", "other-renew@patchbay.ai").Scan(&otherUserID); err != nil {
 		t.Fatalf("create other user: %v", err)
 	}
 	t.Cleanup(func() {

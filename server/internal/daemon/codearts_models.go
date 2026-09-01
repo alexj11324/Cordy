@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/multica-ai/multica/server/pkg/agent"
+	"github.com/patchbay-ai/patchbay/server/pkg/agent"
 )
 
 // loadCodeArtsConfiguredModels reads OpenCode-compatible custom providers

@@ -22,7 +22,7 @@ vi.mock("next/navigation", () => ({
   usePathname: () => state.pathname,
 }));
 
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@patchbay/core/auth", () => ({
   useAuthStore: (
     selector: (auth: {
       user: typeof state.user;
@@ -31,7 +31,7 @@ vi.mock("@multica/core/auth", () => ({
   ) => selector({ user: state.user, isLoading: state.isAuthLoading }),
 }));
 
-vi.mock("@multica/core/workspace", () => ({
+vi.mock("@patchbay/core/workspace", () => ({
   workspaceBySlugOptions: (slug: string) => ({
     queryKey: ["workspace-by-slug", slug],
     queryFn: async () => {
@@ -42,7 +42,7 @@ vi.mock("@multica/core/workspace", () => ({
   }),
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   WorkspaceSlugProvider: ({ children }: { children: ReactNode }) => (
     <>{children}</>
   ),
@@ -52,27 +52,27 @@ vi.mock("@multica/core/paths", () => ({
   },
 }));
 
-vi.mock("@multica/core/platform", () => ({
+vi.mock("@patchbay/core/platform", () => ({
   setCurrentWorkspace: vi.fn(),
 }));
 
-vi.mock("@multica/views/workspace/no-access-page", () => ({
+vi.mock("@patchbay/views/workspace/no-access-page", () => ({
   NoAccessPage: () => <div data-testid="no-access" />,
 }));
 
-vi.mock("@multica/views/workspace/welcome-after-onboarding", () => ({
+vi.mock("@patchbay/views/workspace/welcome-after-onboarding", () => ({
   WelcomeAfterOnboarding: () => null,
 }));
 
-vi.mock("@multica/views/workspace/use-workspace-seen", () => ({
+vi.mock("@patchbay/views/workspace/use-workspace-seen", () => ({
   useWorkspaceSeen: () => state.hasBeenSeen,
 }));
 
-vi.mock("@multica/ui/components/common/multica-icon", () => ({
-  MulticaIcon: () => <div data-testid="workspace-loading" />,
+vi.mock("@patchbay/ui/components/common/patchbay-icon", () => ({
+  PatchbayIcon: () => <div data-testid="workspace-loading" />,
 }));
 
-import { setCurrentWorkspace } from "@multica/core/platform";
+import { setCurrentWorkspace } from "@patchbay/core/platform";
 import WorkspaceLayout from "./layout";
 
 /** `use()` unwraps a params promise synchronously only when it is already

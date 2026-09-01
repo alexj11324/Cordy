@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/plugincontract"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
 )
 
 const testManifestJSON = `{
@@ -80,7 +80,7 @@ func TestNormalizeConfigValue(t *testing.T) {
 		return got
 	}
 
-	if value, err := normalizeConfigValue(field("repo"), "multica-ai/multica"); err != nil || value != "multica-ai/multica" {
+	if value, err := normalizeConfigValue(field("repo"), "patchbay-ai/patchbay"); err != nil || value != "patchbay-ai/patchbay" {
 		t.Fatalf("string field = (%v, %v)", value, err)
 	}
 	if value, err := normalizeConfigValue(field("count"), float64(3)); err != nil || value != float64(3) {
@@ -176,7 +176,7 @@ func TestConfigFieldsForManifestKeepsDeclarationOrder(t *testing.T) {
 
 // readLocalFile is the only path left that touches the filesystem on behalf of
 // an API caller. The directory name arrives over HTTP, so it must not be able to
-// escape MULTICA_PLUGIN_DIR or name a dotfile path.
+// escape PATCHBAY_PLUGIN_DIR or name a dotfile path.
 func TestReadLocalFileStaysInsideThePluginDirectory(t *testing.T) {
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, "hello"), 0o755); err != nil {
@@ -216,7 +216,7 @@ func TestReadLocalFileStaysInsideThePluginDirectory(t *testing.T) {
 
 	disabled := &PluginService{}
 	if _, err := disabled.readLocalFile("hello", plugincontract.ManifestFilename); err == nil {
-		t.Fatal("local sources must require MULTICA_PLUGIN_DIR")
+		t.Fatal("local sources must require PATCHBAY_PLUGIN_DIR")
 	}
 }
 

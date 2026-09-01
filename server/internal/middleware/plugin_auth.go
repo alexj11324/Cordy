@@ -4,13 +4,12 @@ import (
 	"net/http"
 	"strings"
 
-	publicapiv1 "github.com/multica-ai/multica/server/pkg/publicapi/v1"
+	"github.com/patchbay-ai/patchbay/server/internal/auth"
+	publicapiv1 "github.com/patchbay-ai/patchbay/server/pkg/publicapi/v1"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
-// PluginBearerOnly keeps the public Action API on a machine-credential trust
-// boundary. Browser sessions use the separate, session-authenticated bridge
-// route; the public /v1 contract accepts only installation and callback tokens.
-//
+// PluginBearerOnly keeps a route on a machine-credential trust boundary.
 // Prefix matching is only routing. The Action handler still resolves the token
 // against its store and rejects an invalid or expired credential.
 func PluginBearerOnly(next http.Handler) http.Handler {
@@ -21,6 +20,23 @@ func PluginBearerOnly(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// PluginAuth lets the Action API be reached two ways without weakening either.
+// Plugin bearer tokens skip the user session chain and are resolved by the
+// handler. Every other request runs through ordinary Auth.
+func PluginAuth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATVerifier) func(http.Handler) http.Handler {
+	userAuth := Auth(queries, patCache, cloudPAT)
+	return func(next http.Handler) http.Handler {
+		sessionHandler := userAuth(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if IsPluginBearerToken(BearerToken(r)) {
+				next.ServeHTTP(w, r)
+				return
+			}
+			sessionHandler.ServeHTTP(w, r)
+		})
+	}
 }
 
 // BearerToken pulls the raw credential out of an Authorization header.

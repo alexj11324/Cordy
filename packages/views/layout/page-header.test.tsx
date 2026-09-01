@@ -2,7 +2,7 @@ import { ListTodo, Plus, Zap } from "lucide-react";
 import { within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { SidebarProvider } from "@multica/ui/components/ui/sidebar";
+import { SidebarProvider } from "@patchbay/ui/components/ui/sidebar";
 import { renderWithI18n } from "../test/i18n";
 import {
   CollectionPageHeader,

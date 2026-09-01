@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/multica-ai/multica/server/internal/featureflags"
-	composio "github.com/multica-ai/multica/server/internal/integrations/composio"
+	"github.com/patchbay-ai/patchbay/server/internal/featureflags"
+	composio "github.com/patchbay-ai/patchbay/server/internal/integrations/composio"
 )
 
 // Composio integration handlers (MUL-3720, Stage 2 MVP). A Composio connection

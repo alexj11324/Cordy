@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 // TestWSRPCClient_CallRoundTrip: a request is framed and sent, and a matching

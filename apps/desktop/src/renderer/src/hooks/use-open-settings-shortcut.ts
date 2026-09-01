@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { paths } from "@multica/core/paths";
+import { paths } from "@patchbay/core/paths";
 import { useTabStore } from "@/stores/tab-store";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 

@@ -1,13 +1,13 @@
 openapi: 3.1.0
 info:
-  title: Multica Public API
+  title: Patchbay Public API
   version: v1
   description: >-
-    Canonical v1 resource contract shared by Multica API surfaces. The Plugin
+    Canonical v1 resource contract shared by Patchbay API surfaces. The Plugin
     API is the first deployed consumer and applies installation identity plus
     manifest scopes. Plugin-specific context and storage remain extensions.
 servers:
-  - url: https://plugin-api.multica.ai/v1
+  - url: https://plugin-api.patchbay.ai/api/v1/plugin
     description: Installed Plugin and invocation callback tokens
 security:
   - pluginBearer: []
@@ -16,7 +16,7 @@ paths:
     get:
       operationId: getPluginContext
       summary: Get the authorized Plugin invocation context
-      x-multica-contract: plugin_extension
+      x-patchbay-contract: plugin_extension
       responses:
         "200":
           description: Plugin context
@@ -32,8 +32,8 @@ paths:
     get:
       operationId: getIssue
       summary: Get an issue
-      x-multica-contract: shared_resource
-      x-multica-scope: issues:read
+      x-patchbay-contract: shared_resource
+      x-patchbay-scope: issues:read
       responses:
         "200":
           description: Issue
@@ -49,8 +49,8 @@ paths:
     patch:
       operationId: patchIssue
       summary: Update an issue title or description
-      x-multica-contract: shared_resource
-      x-multica-scope: issues:write
+      x-patchbay-contract: shared_resource
+      x-patchbay-scope: issues:write
       parameters:
         - $ref: "#/components/parameters/IfMatch"
       requestBody:
@@ -77,8 +77,8 @@ paths:
     get:
       operationId: listIssueComments
       summary: List the newest 200 comments in chronological order
-      x-multica-contract: shared_resource
-      x-multica-scope: comments:read
+      x-patchbay-contract: shared_resource
+      x-patchbay-scope: comments:read
       responses:
         "200":
           description: Comments
@@ -91,8 +91,8 @@ paths:
     post:
       operationId: createIssueComment
       summary: Create an issue comment without mention dispatch
-      x-multica-contract: shared_resource
-      x-multica-scope: comments:write
+      x-patchbay-contract: shared_resource
+      x-patchbay-scope: comments:write
       requestBody:
         required: true
         content:
@@ -112,7 +112,7 @@ paths:
     get:
       operationId: listPluginStorageKeys
       summary: List Plugin storage keys
-      x-multica-contract: plugin_extension
+      x-patchbay-contract: plugin_extension
       parameters:
         - $ref: "#/components/parameters/StorageScope"
       responses:
@@ -131,7 +131,7 @@ paths:
     get:
       operationId: getPluginStorageValue
       summary: Get a Plugin storage value
-      x-multica-contract: plugin_extension
+      x-patchbay-contract: plugin_extension
       responses:
         "200":
           description: Storage value
@@ -144,7 +144,7 @@ paths:
     put:
       operationId: putPluginStorageValue
       summary: Put a Plugin storage value
-      x-multica-contract: plugin_extension
+      x-patchbay-contract: plugin_extension
       requestBody:
         required: true
         content:
@@ -159,7 +159,7 @@ paths:
     delete:
       operationId: deletePluginStorageValue
       summary: Delete a Plugin storage value
-      x-multica-contract: plugin_extension
+      x-patchbay-contract: plugin_extension
       responses:
         "204":
           description: Deleted

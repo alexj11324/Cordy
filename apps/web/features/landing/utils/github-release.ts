@@ -5,7 +5,7 @@ import {
 } from "./parse-release-assets";
 
 /**
- * Server-side fetcher for the latest downloadable Multica release,
+ * Server-side fetcher for the latest downloadable Patchbay release,
  * designed to run inside a Next.js server component. Response is cached
  * by the Next.js fetch cache for 5 minutes (Vercel ISR) so hitting
  * /download costs at most one GitHub API call per region per 5 minutes.
@@ -37,7 +37,7 @@ export interface LatestRelease {
 // ship roughly daily, so that is days of head room — while staying one
 // cheap request.
 const GITHUB_RELEASES_URL =
-  "https://api.github.com/repos/multica-ai/multica/releases?per_page=5";
+  "https://api.github.com/repos/patchbay-ai/patchbay/releases?per_page=5";
 
 const REVALIDATE_SECONDS = 300;
 
@@ -76,7 +76,7 @@ export async function fetchLatestRelease(): Promise<LatestRelease> {
     }
     const data = (await res.json()) as GitHubReleasePayload[];
 
-    // Defensive filter — Multica doesn't publish prereleases or drafts
+    // Defensive filter — Patchbay doesn't publish prereleases or drafts
     // today, but the endpoint returns them if that ever changes. A
     // prerelease shadowing a stable version on /download would be a
     // regression.

@@ -443,7 +443,7 @@ type ListSkillFileMetadataRow struct {
 // without the body. Same reason as ListSkillSummariesByWorkspace — a skill
 // whose supporting files total ~600KB cannot be listed at all when every row
 // carries its full content, and the one command that would show which file is
-// oversized was the command that timed out (GH multica-ai/multica#7498).
+// oversized was the command that timed out (GH patchbay-ai/patchbay#7498).
 // size/hash are computed in Postgres so the file bodies never leave it.
 //
 // convert_to(content, 'UTF8'), never content::bytea: the cast runs the bytea
@@ -575,7 +575,7 @@ type ListSkillSummariesByWorkspaceRow struct {
 // Same as ListSkillsByWorkspace but omits the SKILL.md `content` column. Used
 // by list endpoints (CLI table, web list page) where the body is never read;
 // shipping it everywhere blew up payload size on workspaces with many skills
-// and caused 15s CLI timeouts from high-latency regions (GH multica-ai/multica#2174).
+// and caused 15s CLI timeouts from high-latency regions (GH patchbay-ai/patchbay#2174).
 func (q *Queries) ListSkillSummariesByWorkspace(ctx context.Context, workspaceID pgtype.UUID) ([]ListSkillSummariesByWorkspaceRow, error) {
 	rows, err := q.db.Query(ctx, listSkillSummariesByWorkspace, workspaceID)
 	if err != nil {

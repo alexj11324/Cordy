@@ -10,7 +10,7 @@ package wecom
 // describe what they saw on a phone, which is slow, lossy, and impossible for
 // anything about ordering or timing.
 //
-// With MULTICA_WECOM_TRACE=1 the server records enough to check a real-device
+// With PATCHBAY_WECOM_TRACE=1 the server records enough to check a real-device
 // session afterwards: which way the frame went, what chat it was addressed
 // to, whether that chat is a room or a person, and what the server said back.
 // The switch also covers the one thing a frame does not carry — what an
@@ -50,7 +50,7 @@ import (
 var tracing atomic.Bool
 
 // SetTrace turns frame tracing on or off. Called from the server wiring with
-// MULTICA_WECOM_TRACE; returns what it set so the caller can log it.
+// PATCHBAY_WECOM_TRACE; returns what it set so the caller can log it.
 func SetTrace(on bool) bool {
 	tracing.Store(on)
 	return on
@@ -95,14 +95,14 @@ const traceHeaderRunes = 2048
 // the cut is on a rune boundary.
 //
 // The redaction is not optional. OutboundReplier.sendBindingPrompt builds
-// "👋 请先绑定你的 Multica 账号，才能与我对话：\n" + appURL + "/wecom/bind?token=" +
-// a 43-character token, and with a normal MULTICA_APP_URL the token's last
+// "👋 请先绑定你的 Patchbay 账号，才能与我对话：\n" + appURL + "/wecom/bind?token=" +
+// a 43-character token, and with a normal PATCHBAY_APP_URL the token's last
 // character lands at rune 107-112 — inside the cap. Without this, turning
 // tracing on for a debugging session would log live binding credentials in
 // full. A binding token is a bearer credential (RedeemAndBind checks only
 // that the redeemer belongs to the token's workspace, and the bind page
 // redeems on load as whoever is signed in), so whoever could read the log
-// could bind that sender's WeCom identity to their own Multica account before
+// could bind that sender's WeCom identity to their own Patchbay account before
 // the user clicked their own link — the same hijack replier.go:150 already
 // guards against by refusing to post the link into a room.
 //

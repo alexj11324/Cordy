@@ -11,24 +11,24 @@ import {
   type TabTitleSpec,
   type TabEntityData,
   type TabLabelKey,
-} from "@multica/core/paths";
-import { issueDetailOptions } from "@multica/core/issues/queries";
-import { projectDetailOptions } from "@multica/core/projects/queries";
-import { autopilotDetailOptions } from "@multica/core/autopilots/queries";
+} from "@patchbay/core/paths";
+import { issueDetailOptions } from "@patchbay/core/issues/queries";
+import { projectDetailOptions } from "@patchbay/core/projects/queries";
+import { autopilotDetailOptions } from "@patchbay/core/autopilots/queries";
 import {
   skillDetailOptions,
   agentListOptions,
   memberListOptions,
   squadListOptions,
-} from "@multica/core/workspace/queries";
-import { runtimeListOptions } from "@multica/core/runtimes/queries";
-import { runtimeDisplayName } from "@multica/core/runtimes";
-import { chatSessionsOptions } from "@multica/core/chat/queries";
+} from "@patchbay/core/workspace/queries";
+import { runtimeListOptions } from "@patchbay/core/runtimes/queries";
+import { runtimeDisplayName } from "@patchbay/core/runtimes";
+import { chatSessionsOptions } from "@patchbay/core/chat/queries";
 import {
   inboxListOptions,
   archivedInboxListOptions,
-} from "@multica/core/inbox/queries";
-import { cn } from "@multica/ui/lib/utils";
+} from "@patchbay/core/inbox/queries";
+import { cn } from "@patchbay/ui/lib/utils";
 import { StatusIcon } from "../issues/components";
 import { ProjectIcon } from "../projects/components/project-icon";
 import { ActorAvatar } from "../common/actor-avatar";
@@ -39,7 +39,7 @@ import { ROUTE_ICON_COMPONENTS } from "./route-icon-components";
 /**
  * Desktop tab presentation: turn a tab URL into a leading visual and a title,
  * live from the query cache. This is the view half of the contract whose pure
- * core is `@multica/core/paths` (`parseTabSubject` + `resolveTabPresentation`).
+ * core is `@patchbay/core/paths` (`parseTabSubject` + `resolveTabPresentation`).
  *
  * Cache-only reads: every query in `useTabEntityData` is `enabled: false`. It
  * observes whatever the pages/directory already loaded and re-renders when that

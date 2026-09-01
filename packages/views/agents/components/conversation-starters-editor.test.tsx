@@ -2,8 +2,8 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@multica/core/i18n/react";
-import type { AgentConversationStarter } from "@multica/core/types";
+import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { AgentConversationStarter } from "@patchbay/core/types";
 import enAgents from "../../locales/en/agents.json";
 import enChat from "../../locales/en/chat.json";
 import { ConversationStartersEditor } from "./conversation-starters-editor";

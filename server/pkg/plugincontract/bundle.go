@@ -350,7 +350,7 @@ func zipEntryPaths(reader *zip.Reader) ([]string, error) {
 // manifestPrefix finds the directory the manifest sits in.
 //
 // Zipping a folder is what a person does, and it produces
-// `my-plugin/multica.plugin.json`. Accepting exactly one leading directory turns
+// `my-plugin/patchbay.plugin.json`. Accepting exactly one leading directory turns
 // the most common publish failure into a non-event; two different roots stay an
 // error, because then there is no single answer to what the package is.
 func manifestPrefix(paths []string) (string, error) {

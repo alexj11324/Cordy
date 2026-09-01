@@ -34,10 +34,10 @@ const (
 	runtimePendingRedisHashTag = "{runtime_pending}"
 
 	// Namespaced so we don't collide with the realtime relay's ws:* keys.
-	localSkillListKeyPrefix       = "mul:" + runtimePendingRedisHashTag + ":local_skill:list:"
-	localSkillListPendingPrefix   = "mul:" + runtimePendingRedisHashTag + ":local_skill:list:pending:"
-	localSkillImportKeyPrefix     = "mul:" + runtimePendingRedisHashTag + ":local_skill:import:"
-	localSkillImportPendingPrefix = "mul:" + runtimePendingRedisHashTag + ":local_skill:import:pending:"
+	localSkillListKeyPrefix       = "pby:" + runtimePendingRedisHashTag + ":local_skill:list:"
+	localSkillListPendingPrefix   = "pby:" + runtimePendingRedisHashTag + ":local_skill:list:pending:"
+	localSkillImportKeyPrefix     = "pby:" + runtimePendingRedisHashTag + ":local_skill:import:"
+	localSkillImportPendingPrefix = "pby:" + runtimePendingRedisHashTag + ":local_skill:import:pending:"
 	localSkillRedisPopMaxRetries  = 5
 )
 

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/pkg/plugincontract"
+	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
 )
 
 const bundleManifest = `{
@@ -69,7 +69,7 @@ func TestParseBundleKeepsOnlyDeclaredFiles(t *testing.T) {
 }
 
 // Zipping a folder is what a person does, and it produces
-// `my-plugin/multica.plugin.json`. One leading directory is accepted; the
+// `my-plugin/patchbay.plugin.json`. One leading directory is accepted; the
 // manifest's own entries stay relative to it.
 func TestParseBundleAcceptsOneWrappingDirectory(t *testing.T) {
 	archive := zipBundle(t, map[string]string{
@@ -130,7 +130,7 @@ func TestParseBundleRejections(t *testing.T) {
 			name: "surface entry has a top-level import",
 			files: map[string]string{
 				plugincontract.ManifestFilename: bundleManifest,
-				"ui/main.js":                    "import { multica } from \"https://esm.sh/@multica/plugin-sdk@1\";\n",
+				"ui/main.js":                    "import { patchbay } from \"https://esm.sh/@patchbay/plugin-sdk@1\";\n",
 				"skills/pr-review/SKILL.md":     "Read the diff.\n",
 			},
 			want: "top-level import",
@@ -235,10 +235,10 @@ func TestParseBundleFromDirMatchesTheUploadPath(t *testing.T) {
 // blocks a legitimate publish outright. This pins both directions.
 func TestSurfaceEntryModuleDetection(t *testing.T) {
 	refused := map[string]string{
-		"bare import":                    "import { multica } from \"./sdk.js\";\n",
-		"indented import":                "  import { multica } from \"./sdk.js\";\n",
-		"import after a line comment":    "// set up\nimport { multica } from \"./sdk.js\";\n",
-		"import after a block comment":   "/* set up */ import { multica } from \"./sdk.js\";\n",
+		"bare import":                    "import { patchbay } from \"./sdk.js\";\n",
+		"indented import":                "  import { patchbay } from \"./sdk.js\";\n",
+		"import after a line comment":    "// set up\nimport { patchbay } from \"./sdk.js\";\n",
+		"import after a block comment":   "/* set up */ import { patchbay } from \"./sdk.js\";\n",
 		"namespace import":               "import * as sdk from \"./sdk.js\";\n",
 		"named export":                   "export { render };\n",
 		"import after another statement": "const x = 1; import y from \"./y.js\";\n",
@@ -258,7 +258,7 @@ func TestSurfaceEntryModuleDetection(t *testing.T) {
 	accepted := map[string]string{
 		// The case the line-prefix version got wrong: a surface that renders a
 		// code sample is ordinary, and refusing it leaves the author stuck.
-		"import inside a template literal": "const help = `\nimport { multica } from \"@multica/plugin-sdk\";\n`;\nconsole.log(help);\n",
+		"import inside a template literal": "const help = `\nimport { patchbay } from \"@patchbay/plugin-sdk\";\n`;\nconsole.log(help);\n",
 		"import inside a string":           "const help = \"import x from 'y'\";\nconsole.log(help);\n",
 		"import inside a comment":          "// import { x } from \"./x.js\";\nconsole.log(1);\n",
 		// Dynamic import is legal in a classic script.

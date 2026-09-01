@@ -9,12 +9,12 @@ const state = vi.hoisted(() => ({
   refetch: vi.fn(),
 }));
 
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@patchbay/core/auth", () => ({
   useAuthStore: (selector: (auth: { user: { id: string } }) => unknown) =>
     selector({ user: { id: "user-1" } }),
 }));
 
-vi.mock("@multica/core/workspace", () => ({
+vi.mock("@patchbay/core/workspace", () => ({
   useWorkspaceList: () => ({
     workspaces: state.workspaces,
     ready: state.ready,
@@ -24,29 +24,29 @@ vi.mock("@multica/core/workspace", () => ({
   }),
 }));
 
-vi.mock("@multica/core/platform", () => ({
+vi.mock("@patchbay/core/platform", () => ({
   setCurrentWorkspace: vi.fn(),
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   WorkspaceSlugProvider: ({ children }: { children: React.ReactNode }) => (
     <>{children}</>
   ),
 }));
 
-vi.mock("@multica/ui/components/common/multica-icon", () => ({
-  MulticaIcon: () => <div data-testid="workspace-loading" />,
+vi.mock("@patchbay/ui/components/common/patchbay-icon", () => ({
+  PatchbayIcon: () => <div data-testid="workspace-loading" />,
 }));
 
-vi.mock("@multica/views/modals/registry", () => ({
+vi.mock("@patchbay/views/modals/registry", () => ({
   ModalRegistry: () => null,
 }));
 
-vi.mock("@multica/views/layout", () => ({
+vi.mock("@patchbay/views/layout", () => ({
   WorkspacePresencePrefetch: () => null,
 }));
 
-vi.mock("@multica/views/platform", () => ({
+vi.mock("@patchbay/views/platform", () => ({
   DragStrip: () => null,
 }));
 

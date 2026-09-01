@@ -7,13 +7,13 @@ import type {
   Agent,
   AgentRuntime,
   RuntimeModelListRequest,
-} from "@multica/core/types";
+} from "@patchbay/core/types";
 import { renderWithI18n } from "../../test/i18n";
 
 const mockInitiateListModels = vi.hoisted(() => vi.fn());
 const mockGetListModelsResult = vi.hoisted(() => vi.fn());
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: {
     initiateListModels: (...args: unknown[]) =>
       mockInitiateListModels(...args),

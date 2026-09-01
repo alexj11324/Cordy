@@ -10,9 +10,9 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/auth"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/auth"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 func uuidToString(u pgtype.UUID) string { return util.UUIDToString(u) }
@@ -34,7 +34,7 @@ func rejectTemporarilyDisabledUser(w http.ResponseWriter, r *http.Request, userI
 // Auth middleware validates JWT tokens or Personal Access Tokens.
 // Token sources (in priority order):
 //  1. Authorization: Bearer <token> header (PAT or JWT)
-//  2. multica_auth HttpOnly cookie (JWT) — requires valid CSRF token for state-changing requests
+//  2. patchbay_auth HttpOnly cookie (JWT) — requires valid CSRF token for state-changing requests
 //
 // Sets X-User-ID and X-User-Email headers on the request for downstream handlers.
 //
@@ -44,17 +44,17 @@ func rejectTemporarilyDisabledUser(w http.ResponseWriter, r *http.Request, userI
 // at most once per TTL window per token, not per request.
 //
 // cloudPAT is optional; when non-nil, tokens with the mcn_ prefix are
-// validated by calling the Multica Cloud Fleet service rather than the
+// validated by calling the Patchbay Cloud Fleet service rather than the
 // local DB. When nil (Fleet URL unset) mcn_ tokens are rejected at the
-// prefix branch — we don't fall through to the mul_ / JWT paths, since
-// an mcn_ string is by construction not a valid mul_ PAT or JWT.
+// prefix branch — we don't fall through to the pby_ / JWT paths, since
+// an mcn_ string is by construction not a valid pby_ PAT or JWT.
 func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATVerifier) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// X-Actor-Source is server-set only — any value supplied by
 			// the client is untrusted and discarded before the auth
 			// branches run. Only the mat_ branch below re-sets it. This
-			// is what prevents a client from sending a normal mul_ PAT
+			// is what prevents a client from sending a normal pby_ PAT
 			// plus a forged `X-Actor-Source: member` (or anything else)
 			// to convince a downstream handler that its request came
 			// from a non-task-token path.
@@ -115,13 +115,13 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 			}
 
 			// Cloud Node PAT: "mcn_" prefix. Verified by calling the
-			// Multica Cloud Fleet service — Cloud (not us) is the
+			// Patchbay Cloud Fleet service — Cloud (not us) is the
 			// authoritative owner of the token's status and owner_id
 			// binding. We never look at the local
 			// personal_access_tokens table for this prefix; an mcn_
-			// string is not a valid mul_ value, so falling through
+			// string is not a valid pby_ value, so falling through
 			// would just be a redundant DB miss. When the verifier
-			// is unconfigured (no MULTICA_CLOUD_URL) we reject
+			// is unconfigured (no PATCHBAY_CLOUD_URL) we reject
 			// at this branch rather than treating the token as a
 			// JWT/PAT — failing closed avoids a misconfigured prod
 			// silently downgrading auth.
@@ -174,8 +174,8 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 				return
 			}
 
-			// PAT: tokens starting with "mul_"
-			if strings.HasPrefix(tokenString, "mul_") {
+			// PAT: tokens starting with "pby_"
+			if strings.HasPrefix(tokenString, "pby_") {
 				hash := auth.HashToken(tokenString)
 
 				// Cache hit: TTL has not expired, the token was valid the
@@ -267,7 +267,7 @@ func Auth(queries *db.Queries, patCache *auth.PATCache, cloudPAT *auth.CloudPATV
 }
 
 // extractToken returns the bearer token and whether it came from a cookie.
-// Priority: Authorization header > multica_auth cookie.
+// Priority: Authorization header > patchbay_auth cookie.
 func extractToken(r *http.Request) (token string, fromCookie bool) {
 	if authHeader := r.Header.Get("Authorization"); authHeader != "" {
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")

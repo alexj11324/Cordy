@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
 )
 
 // A post referencing the same image_key twice must yield ONE resource: the

@@ -45,7 +45,7 @@ const (
 	// Git ignores files it does not know about under $GIT_DIR, and nothing
 	// here is visible from a working tree — `git status` never sees it, and
 	// `git ls-files --others` cannot list it.
-	gitRootLockFileName = "multica-worktree.lock"
+	gitRootLockFileName = "patchbay-worktree.lock"
 
 	// gitRootLockPoll is the retry interval while waiting. flock has no
 	// portable timed variant, so the wait is a poll over the non-blocking
@@ -185,7 +185,7 @@ func acquireGitRootFileLock(gitRoot string, logger *slog.Logger) (*os.File, erro
 			// both then believe they hold it — the exact overlap this lock
 			// exists to prevent. The kernel already releases it when the
 			// holding process exits, so an idle lock file is never stale.
-			return nil, fmt.Errorf("%w: %q was still locked after %s by another Multica task (%s) — "+
+			return nil, fmt.Errorf("%w: %q was still locked after %s by another Patchbay task (%s) — "+
 				"wait for that task to finish or stop it, then retry; the lock is released "+
 				"automatically when the holding process exits, so the file itself is never stale "+
 				"and deleting it would let two tasks into this section at once",

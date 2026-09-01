@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/multica-ai/multica/server/internal/testutil"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // The claim path resolves project context from a SOFT reference: issue.project_id,

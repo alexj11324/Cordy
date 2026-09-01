@@ -116,12 +116,12 @@ Access는 어떤 멤버가 이 에이전트를 실행할 수 있는지 결정합
 환경 변수에는 이 에이전트 실행에 필요한 제한된 권한의 자격 증명을 넣는 것이 적합합니다. 예를 들면 읽기 전용 API key나 단일 scope token입니다.
 
 <Callout type="warning">
-**`custom_env` 값은 Multica 서버 데이터베이스에 평문으로 저장되며** "로컬에만 남는" 데이터가 아닙니다. 에이전트 목록 및 상세 API는 env 값을 전혀 반환하지 않고 키 개수만 반환합니다. 워크스페이스 `owner`와 `admin`만 잠금을 해제하고 수정할 수 있으며 모든 읽기와 수정이 감사 기록에 남습니다. 실행 중인 에이전트는 관리 API로 다른 에이전트의 변수를 읽을 수 없습니다.
+**`custom_env` 값은 Patchbay 서버 데이터베이스에 평문으로 저장되며** "로컬에만 남는" 데이터가 아닙니다. 에이전트 목록 및 상세 API는 env 값을 전혀 반환하지 않고 키 개수만 반환합니다. 워크스페이스 `owner`와 `admin`만 잠금을 해제하고 수정할 수 있으며 모든 읽기와 수정이 감사 기록에 남습니다. 실행 중인 에이전트는 관리 API로 다른 에이전트의 변수를 읽을 수 없습니다.
 </Callout>
 
 프로덕션 데이터베이스의 관리자 비밀번호나 가치가 높은 장기 자격 증명을 사용하지 마세요.
 
-`PATH`, `HOME`, `MULTICA_*` 같은 핵심 실행 환경 변수는 여기서 덮어쓸 수 없습니다.
+`PATH`, `HOME`, `PATCHBAY_*` 같은 핵심 실행 환경 변수는 여기서 덮어쓸 수 없습니다.
 
 ## 사용자 지정 인수와 MCP
 
@@ -142,7 +142,7 @@ MCP 설정에는 token이 포함될 수 있으며 저장 및 표시 규칙은 �
 ## CLI로 만들기
 
 ```bash
-multica agent create \
+patchbay agent create \
   --name "Frontend Reviewer" \
   --runtime-id <runtime-id> \
   --description "프런트엔드 Pull Request 검토" \
@@ -154,7 +154,7 @@ multica agent create \
 비슷한 설정의 에이전트가 이미 있다면 바로 복사할 수 있습니다.
 
 ```bash
-multica agent copy <agent-id>
+patchbay agent copy <agent-id>
 ```
 
 기본적으로 같은 런타임으로 복사됩니다. 다른 런타임으로 바꾸려면 `--runtime-id`를 추가하고 `--model`도 함께 지정해야 합니다. 환경 변수, MCP 설정, `runtime_config`는 절대 복사되지 않지만 런타임 연결 자체는 유지됩니다. 전체 인수는 [CLI 사용](/cli)을 참고하세요.

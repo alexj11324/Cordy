@@ -18,15 +18,15 @@ func TestCLIConfig_BackwardCompat_OldFileLoadsWithNilBackends(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	// Write a 4-field config exactly as the historical daemon would have.
-	cfgDir := filepath.Join(tmp, ".multica")
+	cfgDir := filepath.Join(tmp, ".patchbay")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	historical := `{
-  "server_url": "https://api.multica.ai",
-  "app_url": "https://multica.ai",
+  "server_url": "https://api.patchbay.ai",
+  "app_url": "https://patchbay.ai",
   "workspace_id": "ws-123",
-  "token": "mul_abcdef"
+  "token": "pby_abcdef"
 }`
 	if err := os.WriteFile(filepath.Join(cfgDir, "config.json"), []byte(historical), 0o600); err != nil {
 		t.Fatal(err)
@@ -37,10 +37,10 @@ func TestCLIConfig_BackwardCompat_OldFileLoadsWithNilBackends(t *testing.T) {
 		t.Fatalf("LoadCLIConfig on historical file: %v", err)
 	}
 
-	if cfg.ServerURL != "https://api.multica.ai" {
+	if cfg.ServerURL != "https://api.patchbay.ai" {
 		t.Errorf("ServerURL: got %q, want historical value", cfg.ServerURL)
 	}
-	if cfg.Token != "mul_abcdef" {
+	if cfg.Token != "pby_abcdef" {
 		t.Errorf("Token: got %q, want historical value", cfg.Token)
 	}
 	if cfg.Backends != nil {
@@ -58,14 +58,14 @@ func TestCLIConfig_BackwardCompat_NilBackendsOmittedFromJSON(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	cfg := CLIConfig{
-		ServerURL: "https://api.multica.ai",
-		Token:     "mul_xyz",
+		ServerURL: "https://api.patchbay.ai",
+		Token:     "pby_xyz",
 	}
 	if err := SaveCLIConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmp, ".multica", "config.json"))
+	data, err := os.ReadFile(filepath.Join(tmp, ".patchbay", "config.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,8 +90,8 @@ func TestCLIConfig_OpenClawOverride_RoundTrip(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	original := CLIConfig{
-		ServerURL: "https://api.multica.ai",
-		Token:     "mul_xyz",
+		ServerURL: "https://api.patchbay.ai",
+		Token:     "pby_xyz",
 		Backends: &BackendOverrides{
 			OpenClaw: &OpenClawOverride{
 				BinaryPath: "/opt/openclaw-prod/bin/openclaw",
@@ -131,8 +131,8 @@ func TestCLIConfig_OpenClawOverride_PartialFieldsOmitted(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	cfg := CLIConfig{
-		ServerURL: "https://api.multica.ai",
-		Token:     "mul_xyz",
+		ServerURL: "https://api.patchbay.ai",
+		Token:     "pby_xyz",
 		Backends: &BackendOverrides{
 			OpenClaw: &OpenClawOverride{
 				StateDir: "/var/lib/openclaw-prod",
@@ -144,7 +144,7 @@ func TestCLIConfig_OpenClawOverride_PartialFieldsOmitted(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmp, ".multica", "config.json"))
+	data, err := os.ReadFile(filepath.Join(tmp, ".patchbay", "config.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,10 +176,10 @@ func TestCLIConfig_ProfileCommandOverrides_RoundTrip(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	original := CLIConfig{
-		ServerURL:   "https://api.multica.ai",
-		AppURL:      "https://multica.ai",
+		ServerURL:   "https://api.patchbay.ai",
+		AppURL:      "https://patchbay.ai",
 		WorkspaceID: "ws-123",
-		Token:       "mul_xyz",
+		Token:       "pby_xyz",
 		Backends: &BackendOverrides{
 			OpenClaw: &OpenClawOverride{StateDir: "/var/lib/openclaw-prod"},
 		},
@@ -234,12 +234,12 @@ func TestCLIConfig_ProfileCommandOverrides_OmittedWhenEmpty(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
-	cfg := CLIConfig{ServerURL: "https://api.multica.ai", Token: "mul_xyz"}
+	cfg := CLIConfig{ServerURL: "https://api.patchbay.ai", Token: "pby_xyz"}
 	if err := SaveCLIConfig(cfg); err != nil {
 		t.Fatal(err)
 	}
 
-	data, err := os.ReadFile(filepath.Join(tmp, ".multica", "config.json"))
+	data, err := os.ReadFile(filepath.Join(tmp, ".patchbay", "config.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,13 +267,13 @@ func TestCLIConfig_UnknownFieldsArePreserved(t *testing.T) {
 	tmp := t.TempDir()
 	t.Setenv("HOME", tmp)
 
-	cfgDir := filepath.Join(tmp, ".multica")
+	cfgDir := filepath.Join(tmp, ".patchbay")
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	withFutureField := `{
-  "server_url": "https://api.multica.ai",
-  "token": "mul_xyz",
+  "server_url": "https://api.patchbay.ai",
+  "token": "pby_xyz",
   "backends": {
     "openclaw": {"state_dir": "/x"},
     "future_backend_xyz": {"some_setting": "preserve me"}
@@ -339,15 +339,15 @@ func TestCLIConfig_DaemonKnobs_RoundTrip(t *testing.T) {
 
 func TestCLIConfig_TaskRootOverridesOwnerHome(t *testing.T) {
 	ownerHome := t.TempDir()
-	taskRoot := filepath.Join(t.TempDir(), "task-multica")
+	taskRoot := filepath.Join(t.TempDir(), "task-patchbay")
 	t.Setenv("HOME", ownerHome)
-	t.Setenv("MULTICA_TASK_CONFIG_ROOT", taskRoot)
+	t.Setenv("PATCHBAY_TASK_CONFIG_ROOT", taskRoot)
 
-	ownerPath := filepath.Join(ownerHome, ".multica", "config.json")
+	ownerPath := filepath.Join(ownerHome, ".patchbay", "config.json")
 	if err := os.MkdirAll(filepath.Dir(ownerPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ownerBytes := []byte("{\n  \"server_url\": \"https://owner.invalid\",\n  \"token\": \"mul_owner_sentinel\"\n}\n")
+	ownerBytes := []byte("{\n  \"server_url\": \"https://owner.invalid\",\n  \"token\": \"pby_owner_sentinel\"\n}\n")
 	if err := os.WriteFile(ownerPath, ownerBytes, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -402,20 +402,20 @@ func TestCLIConfig_TaskRootOverridesOwnerHome(t *testing.T) {
 func TestCLIConfig_NoTaskRootKeepsInteractiveHomeResolution(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv("MULTICA_TASK_CONFIG_ROOT", "")
+	t.Setenv("PATCHBAY_TASK_CONFIG_ROOT", "")
 
 	path, err := CLIConfigPathForProfile("dev")
 	if err != nil {
 		t.Fatalf("CLIConfigPathForProfile: %v", err)
 	}
-	want := filepath.Join(home, ".multica", "profiles", "dev", "config.json")
+	want := filepath.Join(home, ".patchbay", "profiles", "dev", "config.json")
 	if path != want {
 		t.Fatalf("path = %q, want interactive path %q", path, want)
 	}
 }
 
 func TestCLIConfig_TaskRootRejectsProfilePathTraversal(t *testing.T) {
-	t.Setenv("MULTICA_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-multica"))
+	t.Setenv("PATCHBAY_TASK_CONFIG_ROOT", filepath.Join(t.TempDir(), "task-patchbay"))
 
 	for _, profile := range []string{".", "..", "../owner", "nested/profile", filepath.Join(string(filepath.Separator), "owner")} {
 		if path, err := CLIConfigPathForProfile(profile); err == nil {
@@ -428,7 +428,7 @@ func TestCLIConfig_TaskRootRejectsProfilePathTraversal(t *testing.T) {
 }
 
 func TestCLIConfig_TaskRootMustBeAbsolute(t *testing.T) {
-	t.Setenv("MULTICA_TASK_CONFIG_ROOT", "relative/task-multica")
+	t.Setenv("PATCHBAY_TASK_CONFIG_ROOT", "relative/task-patchbay")
 
 	if _, err := CLIConfigPath(); err == nil || !strings.Contains(err.Error(), "must be an absolute path") {
 		t.Fatalf("CLIConfigPath error = %v, want absolute path validation", err)
@@ -444,8 +444,8 @@ func TestCLIConfig_OpenClawCLITimeout_RoundTrip(t *testing.T) {
 	t.Setenv("HOME", tmp)
 
 	original := CLIConfig{
-		ServerURL: "https://api.multica.ai",
-		Token:     "mul_xyz",
+		ServerURL: "https://api.patchbay.ai",
+		Token:     "pby_xyz",
 		Backends: &BackendOverrides{
 			OpenClaw: &OpenClawOverride{CLITimeout: "45s"},
 		},

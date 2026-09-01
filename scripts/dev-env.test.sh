@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Registry-level behaviour of scripts/dev-env.sh, with no services started.
 #
-# Everything here runs against a throwaway MULTICA_DEV_HOME holding hand-written
+# Everything here runs against a throwaway PATCHBAY_DEV_HOME holding hand-written
 # manifests, so the verbs are exercised end to end without a database, a
 # backend, or a port.
 set -euo pipefail
@@ -10,10 +10,10 @@ root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
-export MULTICA_DEV_HOME="$tmp_dir/dev"
-export MULTICA_DEV_WORKSPACES_PARENT="$tmp_dir/workspaces-parent"
-export MULTICA_DEV_DESKTOP_APP_DATA="$tmp_dir/app-data"
-export MULTICA_DEV_PROFILES_HOME="$tmp_dir/profiles"
+export PATCHBAY_DEV_HOME="$tmp_dir/dev"
+export PATCHBAY_DEV_WORKSPACES_PARENT="$tmp_dir/workspaces-parent"
+export PATCHBAY_DEV_DESKTOP_APP_DATA="$tmp_dir/app-data"
+export PATCHBAY_DEV_PROFILES_HOME="$tmp_dir/profiles"
 
 fake_bin="$tmp_dir/bin"
 mkdir -p "$fake_bin"
@@ -49,8 +49,8 @@ dev_env() {
 write_manifest() {
   local name=$1 dir=$2 offset=$3
   local profile="dev-dev-env-test-$offset"
-  mkdir -p "$MULTICA_DEV_HOME/envs/$name/logs"
-  cat > "$MULTICA_DEV_HOME/envs/$name/manifest.env" <<EOF
+  mkdir -p "$PATCHBAY_DEV_HOME/envs/$name/logs"
+  cat > "$PATCHBAY_DEV_HOME/envs/$name/manifest.env" <<EOF
 NAME=$name
 DIR=$(printf '%q' "$dir")
 CREATED_AT=2026-01-01T00:00:00Z
@@ -60,10 +60,10 @@ ENV_FILE=.env.example
 OFFSET=$offset
 BACKEND_PORT=$((18080 + offset))
 FRONTEND_PORT=$((13000 + offset))
-DB_NAME=multica_dev_env_test_$offset
-DATABASE_URL=postgres://multica:multica@localhost:5432/multica_dev_env_test_$offset?sslmode=disable
+DB_NAME=patchbay_dev_env_test_$offset
+DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/patchbay_dev_env_test_$offset?sslmode=disable
 PROFILE=$profile
-WORKSPACES_ROOT=$(printf '%q' "$MULTICA_DEV_WORKSPACES_PARENT/multica_workspaces_$profile")
+WORKSPACES_ROOT=$(printf '%q' "$PATCHBAY_DEV_WORKSPACES_PARENT/patchbay_workspaces_$profile")
 DESKTOP_RENDERER_PORT=$((5174 + offset))
 DESKTOP_APP_SUFFIX=$name
 EOF
@@ -158,14 +158,14 @@ require_contains "$out" "stopped"
 # Commands launched through env-exec must not inherit the daemon-task identity
 # hints that make human/profile CLI commands reject --profile.
 write_manifest "clean-env-903" "$root_dir" 903
-MULTICA_TASK_CONFIG_ROOT=/task/config \
-MULTICA_TASK_WORKSPACES_ROOT=/task/workspaces \
-MULTICA_WORKSPACES_ROOT=/owner/workspaces \
+PATCHBAY_TASK_CONFIG_ROOT=/task/config \
+PATCHBAY_TASK_WORKSPACES_ROOT=/task/workspaces \
+PATCHBAY_WORKSPACES_ROOT=/owner/workspaces \
   dev_env exec clean-env-903 -- sh -c '
-    test -z "${MULTICA_TASK_CONFIG_ROOT:-}" &&
-    test -z "${MULTICA_TASK_WORKSPACES_ROOT:-}" &&
-    test "$MULTICA_WORKSPACES_ROOT" = "$1"
-  ' _ "$MULTICA_DEV_WORKSPACES_PARENT/multica_workspaces_dev-dev-env-test-903" \
+    test -z "${PATCHBAY_TASK_CONFIG_ROOT:-}" &&
+    test -z "${PATCHBAY_TASK_WORKSPACES_ROOT:-}" &&
+    test "$PATCHBAY_WORKSPACES_ROOT" = "$1"
+  ' _ "$PATCHBAY_DEV_WORKSPACES_PARENT/patchbay_workspaces_dev-dev-env-test-903" \
   > "$out" 2>&1 || fail "env-exec leaked daemon task identity or owner workspaces root"
 
 # A health response without process identity is never proof that the process is
@@ -199,7 +199,7 @@ require_contains "$out" "orphan-902 would be collected"
 if grep -Fq "probe-901 would be collected" "$out"; then
   fail "gc must not collect an environment whose directory still exists"
 fi
-[ -f "$MULTICA_DEV_HOME/envs/orphan-902/manifest.env" ] || fail "gc --dry-run deleted a manifest"
+[ -f "$PATCHBAY_DEV_HOME/envs/orphan-902/manifest.env" ] || fail "gc --dry-run deleted a manifest"
 
 # A failed database drop keeps the manifest and slot so cleanup can be retried;
 # destroy must never print success and forget the only deletion recipe.
@@ -207,7 +207,7 @@ write_manifest "drop-fails-904" "$root_dir" 904
 status=0
 FAIL_DROP=1 dev_env destroy drop-fails-904 --yes > "$out" 2>&1 || status=$?
 [ "$status" -ne 0 ] || fail "destroy succeeded after DROP DATABASE failed"
-[ -f "$MULTICA_DEV_HOME/envs/drop-fails-904/manifest.env" ] \
+[ -f "$PATCHBAY_DEV_HOME/envs/drop-fails-904/manifest.env" ] \
   || fail "destroy discarded the manifest after DROP DATABASE failed"
 require_contains "$out" "manifest and slot were kept"
 dev_env destroy drop-fails-904 --yes > "$out" 2>&1 || fail "retrying destroy after database recovery failed"
@@ -217,7 +217,7 @@ dev_env destroy drop-fails-904 --yes > "$out" 2>&1 || fail "retrying destroy aft
 # makes the registry an allocator rather than a second place to leak.
 # ---------------------------------------------------------------------------
 dev_env destroy probe-901 --yes > "$out" 2>&1 || fail "destroy must succeed"
-[ ! -d "$MULTICA_DEV_HOME/envs/probe-901" ] || fail "destroy left the environment directory behind"
+[ ! -d "$PATCHBAY_DEV_HOME/envs/probe-901" ] || fail "destroy left the environment directory behind"
 
 dev_env list > "$out" 2>&1 || fail "list must succeed after destroy"
 if grep -Fq "probe-901" "$out"; then
@@ -227,6 +227,6 @@ fi
 # Declining the confirmation is a successful no-op, not a failure.
 printf 'n\n' | dev_env destroy orphan-902 > "$out" 2>&1 || fail "declining destroy must exit 0"
 require_contains "$out" "Cancelled."
-[ -d "$MULTICA_DEV_HOME/envs/orphan-902" ] || fail "declined destroy removed the environment anyway"
+[ -d "$PATCHBAY_DEV_HOME/envs/orphan-902" ] || fail "declined destroy removed the environment anyway"
 
 echo "✓ dev-env.sh registry behaviour verified"

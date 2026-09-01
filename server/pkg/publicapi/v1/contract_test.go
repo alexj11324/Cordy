@@ -54,12 +54,12 @@ func TestOpenAPICoversCapabilityLedger(t *testing.T) {
 			t.Errorf("OpenAPI operation %s %s is not an object", operation.Method, operation.Path)
 			continue
 		}
-		if got, _ := raw["x-multica-contract"].(string); got != string(operation.Contract) {
-			t.Errorf("%s %s x-multica-contract = %q, want %q", operation.Method, operation.Path, got, operation.Contract)
+		if got, _ := raw["x-patchbay-contract"].(string); got != string(operation.Contract) {
+			t.Errorf("%s %s x-patchbay-contract = %q, want %q", operation.Method, operation.Path, got, operation.Contract)
 		}
-		gotScope, _ := raw["x-multica-scope"].(string)
+		gotScope, _ := raw["x-patchbay-scope"].(string)
 		if gotScope != operation.Policy.Scope {
-			t.Errorf("%s %s x-multica-scope = %q, want %q", operation.Method, operation.Path, gotScope, operation.Policy.Scope)
+			t.Errorf("%s %s x-patchbay-scope = %q, want %q", operation.Method, operation.Path, gotScope, operation.Policy.Scope)
 		}
 	}
 	if _, exposed := doc.Paths["/hooks/{hook_key}"]; exposed {

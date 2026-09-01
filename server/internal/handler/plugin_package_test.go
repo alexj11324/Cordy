@@ -14,8 +14,8 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/multica-ai/multica/server/internal/service"
-	"github.com/multica-ai/multica/server/pkg/plugincontract"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
+	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
 )
 
 // Publishing, and the guarantee it exists for.
@@ -153,7 +153,7 @@ func surfaceScript(t *testing.T, installationID, surfaceKey string) (*httptest.R
 	if documentRecorder.Code != http.StatusOK {
 		t.Fatalf("serve hosted surface: status=%d body=%s", documentRecorder.Code, documentRecorder.Body.String())
 	}
-	encoded := regexp.MustCompile(`id="multica-surface-code">([^<]+)</script>`).FindStringSubmatch(documentRecorder.Body.String())
+	encoded := regexp.MustCompile(`id="patchbay-surface-code">([^<]+)</script>`).FindStringSubmatch(documentRecorder.Body.String())
 	if len(encoded) != 2 {
 		t.Fatal("hosted surface did not contain stored code")
 	}

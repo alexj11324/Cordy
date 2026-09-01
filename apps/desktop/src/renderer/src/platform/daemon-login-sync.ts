@@ -5,7 +5,7 @@
  * inline awaits. Desktop's daemon profile is derived from the target API URL,
  * so until the main process has that URL there is no Desktop-owned profile —
  * and main now refuses to write the token at all rather than fall back to the
- * user's default CLI profile at `~/.multica/` (#6399).
+ * user's default CLI profile at `~/.patchbay/` (#6399).
  *
  * That refusal has no retry of its own: the login effect re-runs on `user`, not
  * on the target URL. So the URL must be pushed and awaited here, before the

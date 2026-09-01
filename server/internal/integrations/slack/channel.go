@@ -9,8 +9,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/slack-go/slack"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/util"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
 )
 
 // TypeSlack is the channel discriminator for the Slack adapter. It is defined
@@ -76,7 +76,7 @@ func (c *slackSender) send(ctx context.Context, out channel.OutboundMessage, met
 	return channel.SendResult{MessageID: lastTS, MessageIDs: messageIDs}, nil
 }
 
-const slackOutboundMetadataEvent = "multica_channel_outbound"
+const slackOutboundMetadataEvent = "patchbay_channel_outbound"
 
 func outboundMetadata(bindingID pgtype.UUID, routeRevision int64, kind string) slack.SlackMetadata {
 	return slack.SlackMetadata{EventType: slackOutboundMetadataEvent, EventPayload: map[string]any{

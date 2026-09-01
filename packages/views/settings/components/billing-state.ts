@@ -2,7 +2,7 @@ import type {
   AutopilotQuotaUsage,
   WorkspaceSubscriptionEntitlements,
   WorkspaceSubscriptionSummary,
-} from "@multica/core/types";
+} from "@patchbay/core/types";
 
 export type AutopilotUsageView =
   | { kind: "unlimited" }

@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // OutcomeReplier reacts to the Dispatcher's verdict by posting the
@@ -90,16 +90,16 @@ type LarkOutcomeReplier struct {
 	bindingSvc   BindingTokenMinter
 	credentials  CredentialsResolver
 	queries      OutcomeReplierQueries
-	appURL       string // e.g. https://multica.example, trailing slash trimmed
+	appURL       string // e.g. https://patchbay.example, trailing slash trimmed
 	bindingPath  string // path component of the binding URL, default "/lark/bind"
 	noticeHeader string // header text used by the offline/archived cards
 	log          *slog.Logger
 }
 
-// OutcomeReplierConfig wires the production replier. AppURL is the Multica web
+// OutcomeReplierConfig wires the production replier. AppURL is the Patchbay web
 // app host the user clicks into to redeem the binding token or open an issue
-// (e.g. https://multica.example). It comes from MULTICA_APP_URL and is
-// intentionally separate from MULTICA_PUBLIC_URL, which is the backend/API
+// (e.g. https://patchbay.example). It comes from PATCHBAY_APP_URL and is
+// intentionally separate from PATCHBAY_PUBLIC_URL, which is the backend/API
 // public URL used for webhook and daemon-facing endpoints. Empty means the
 // binding flow can only log the open_id, not produce a clickable card. The
 // other fields default at construction.
@@ -129,7 +129,7 @@ func NewLarkOutcomeReplier(cfg OutcomeReplierConfig) OutcomeReplier {
 		return NewNoopOutcomeReplier(log)
 	}
 	if cfg.AppURL == "" {
-		log.Warn("lark outcome replier: MULTICA_APP_URL not set; binding prompt CTA will not work")
+		log.Warn("lark outcome replier: PATCHBAY_APP_URL not set; binding prompt CTA will not work")
 	}
 	bindingPath := cfg.BindingPath
 	if bindingPath == "" {
@@ -145,7 +145,7 @@ func NewLarkOutcomeReplier(cfg OutcomeReplierConfig) OutcomeReplier {
 		queries:      cfg.Queries,
 		appURL:       strings.TrimRight(cfg.AppURL, "/"),
 		bindingPath:  bindingPath,
-		noticeHeader: "Multica",
+		noticeHeader: "Patchbay",
 		log:          log,
 	}
 }
@@ -292,7 +292,7 @@ func inboundReplyTarget(msg InboundMessage) ReplyTarget {
 // issueCreatedText composes the user-facing confirmation. Identifier
 // always wins over a bare number — DispatchResult.IssueIdentifier
 // already encodes the workspace prefix when available. AppURL is optional:
-// when empty (self-host operators who haven't configured MULTICA_APP_URL) the
+// when empty (self-host operators who haven't configured PATCHBAY_APP_URL) the
 // message still confirms the issue, just without a deep link the user can tap.
 func issueCreatedText(res DispatchResult, appURL string) string {
 	identifier := res.IssueIdentifier
@@ -414,7 +414,7 @@ const (
 	agentOfflineCopy        = "Agent 当前离线，消息已记录。下次 daemon 上线后会自动继续处理。"
 	agentArchivedCopy       = "这个 Agent 已被归档，无法继续处理消息。请联系工作区管理员恢复或重新绑定。"
 	freshPendingCopy        = "✅ 已准备从空上下文运行。你的下一条聊天消息仍会进入当前对话，但不会带上之前的上下文。"
-	chatStartedCopy         = "✅ 已新建 Multica 对话。你的下一条消息会进入该对话。"
+	chatStartedCopy         = "✅ 已新建 Patchbay 对话。你的下一条消息会进入该对话。"
 	issueUsageCopy          = "请填写任务标题，格式如下：\n\n`/issue <标题>`\n`[描述]`（可选）"
 	issueUsageWithMediaCopy = "请添加标题，并与图片或视频一起重新发送（*图片或视频可以位于命令之前或之后*）：\n\n`/issue <标题>`\n`[描述]`（可选）"
 )

@@ -5,21 +5,21 @@ description: 了解浏览器登录、个人访问令牌，以及智能体执行�
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-日常使用 Multica 时，你主要会接触两种凭据：浏览器登录会话和个人访问令牌。浏览器会话用于 Web 与 Desktop；个人访问令牌用于 CLI、守护进程、脚本和 API。
+日常使用 Patchbay 时，你主要会接触两种凭据：浏览器登录会话和个人访问令牌。浏览器会话用于 Web 与 Desktop；个人访问令牌用于 CLI、守护进程、脚本和 API。
 
 ## 浏览器登录会话
 
-通过邮箱验证码或 Google 登录后，Multica 会把 JWT 保存到名为 `multica_auth` 的 HttpOnly cookie 中。浏览器自动携带它，JavaScript 无法直接读取。
+通过邮箱验证码或 Google 登录后，Patchbay 会把 JWT 保存到名为 `patchbay_auth` 的 HttpOnly cookie 中。浏览器自动携带它，JavaScript 无法直接读取。
 
 会话默认有效 30 天。自托管管理员可以通过 `AUTH_TOKEN_TTL` 调整之后签发的会话有效期，见[登录与注册](/auth-setup#登录有效期)。退出登录会清除当前浏览器的认证与 CSRF cookie。
 
-浏览器 cookie 不适合复制到脚本或 CLI；从终端访问 Multica 使用个人访问令牌。
+浏览器 cookie 不适合复制到脚本或 CLI；从终端访问 Patchbay 使用个人访问令牌。
 
 ## 个人访问令牌
 
-个人访问令牌（PAT）以 `mul_` 开头，代表你的账号。它可以访问你有权访问的全部工作区和 API，需要像密码一样保管。
+个人访问令牌（PAT）以 `pby_` 开头，代表你的账号。它可以访问你有权访问的全部工作区和 API，需要像密码一样保管。
 
-在 **设置 → API Token** 中创建令牌时，需要填写名称，并选择 30 天、90 天、1 年或永不过期，默认选中 90 天。完整令牌只显示一次；关闭窗口后，Multica 只保留：
+在 **设置 → API Token** 中创建令牌时，需要填写名称，并选择 30 天、90 天、1 年或永不过期，默认选中 90 天。完整令牌只显示一次；关闭窗口后，Patchbay 只保留：
 
 - 令牌的哈希值；
 - 用于辨认它的开头几位；
@@ -33,19 +33,19 @@ import { Callout } from "fumadocs-ui/components/callout";
 
 ## CLI 与 PAT
 
-运行 `multica login` 时，CLI 会通过浏览器完成登录，再创建一个有效期为 90 天的 PAT，保存到当前 profile 的配置文件：
+运行 `patchbay login` 时，CLI 会通过浏览器完成登录，再创建一个有效期为 90 天的 PAT，保存到当前 profile 的配置文件：
 
 ```text
-~/.multica/config.json
-~/.multica/profiles/<name>/config.json
+~/.patchbay/config.json
+~/.patchbay/profiles/<name>/config.json
 ```
 
-守护进程使用同一个 PAT 连接 Multica。带过期时间的 `mul_` PAT 在剩余有效期不足 7 天时自动续期，延长到当时起 90 天后。续期失败不会改变令牌本身；令牌已经过期或被吊销时，需要重新运行 `multica login`。
+守护进程使用同一个 PAT 连接 Patchbay。带过期时间的 `pby_` PAT 在剩余有效期不足 7 天时自动续期，延长到当时起 90 天后。续期失败不会改变令牌本身；令牌已经过期或被吊销时，需要重新运行 `patchbay login`。
 
 无浏览器环境可以先在 Web 中创建 PAT，再让 CLI 安全地提示输入：
 
 ```bash
-multica login --token
+patchbay login --token
 ```
 
 ## 在 API 请求中使用 PAT
@@ -53,25 +53,25 @@ multica login --token
 把 PAT 放进 `Authorization` header：
 
 ```bash
-export MULTICA_TOKEN='mul_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+export PATCHBAY_TOKEN='pby_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 
-curl https://api.multica.ai/api/me \
- -H "Authorization: Bearer $MULTICA_TOKEN"
+curl https://api.patchbay.ai/api/me \
+ -H "Authorization: Bearer $PATCHBAY_TOKEN"
 ```
 
 调用工作区级 API 时，还需要按接口要求提供工作区：
 
 ```bash
-curl https://api.multica.ai/api/issues \
- -H "Authorization: Bearer $MULTICA_TOKEN" \
- -H "X-Workspace-ID: $MULTICA_WORKSPACE_ID"
+curl https://api.patchbay.ai/api/issues \
+ -H "Authorization: Bearer $PATCHBAY_TOKEN" \
+ -H "X-Workspace-ID: $PATCHBAY_WORKSPACE_ID"
 ```
 
 脚本中的令牌取自 secret manager 或受保护的环境变量，不要硬编码。自托管实例把域名替换为自己的公开 API 地址。
 
 ## 退出登录与吊销
 
-`multica auth logout` 只删除当前 CLI profile 中保存的 PAT；Web 退出登录只删除当前浏览器的 cookie。它们不会吊销服务器上的个人访问令牌。
+`patchbay auth logout` 只删除当前 CLI profile 中保存的 PAT；Web 退出登录只删除当前浏览器的 cookie。它们不会吊销服务器上的个人访问令牌。
 
 如果令牌可能泄露，到 **设置 → API Token** 中立即吊销。吊销后，这个 PAT 无法再次使用，已经保存它的其他电脑和脚本也会失去访问权限。
 
@@ -89,10 +89,10 @@ curl https://api.multica.ai/api/issues \
 
 | 前缀 | 用途 | 谁管理 |
 | --- | --- | --- |
-| `mcn_` | Multica Cloud Node 连接 | Multica Cloud Fleet |
+| `mcn_` | Patchbay Cloud Node 连接 | Patchbay Cloud Fleet |
 | `mdt_` | 工作区范围的守护进程认证协议 | 服务端内部流程 |
 
-普通 Cloud、自托管和 Desktop 安装都不需要手动创建它们。用户侧的 CLI 与守护进程始终使用 `mul_` PAT；不要自行构造其他前缀的令牌。
+普通 Cloud、自托管和 Desktop 安装都不需要手动创建它们。用户侧的 CLI 与守护进程始终使用 `pby_` PAT；不要自行构造其他前缀的令牌。
 
 ## 接下来
 

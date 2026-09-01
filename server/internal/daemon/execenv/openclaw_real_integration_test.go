@@ -12,19 +12,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/pkg/agent"
+	"github.com/patchbay-ai/patchbay/server/pkg/agent"
 )
 
 func realOpenclawBin(t *testing.T) string {
 	t.Helper()
-	if os.Getenv("MULTICA_RUN_REAL_AGENT_SMOKE") != "1" {
-		t.Skip("set MULTICA_RUN_REAL_AGENT_SMOKE=1 to allow real agent CLI access")
+	if os.Getenv("PATCHBAY_RUN_REAL_AGENT_SMOKE") != "1" {
+		t.Skip("set PATCHBAY_RUN_REAL_AGENT_SMOKE=1 to allow real agent CLI access")
 	}
 	if testing.Short() {
 		t.Skip("skipping real-binary smoke test in -short mode")
 	}
 
-	bin := os.Getenv("MULTICA_REAL_OPENCLAW_BIN")
+	bin := os.Getenv("PATCHBAY_REAL_OPENCLAW_BIN")
 	if bin == "" {
 		var err error
 		bin, err = exec.LookPath("openclaw")
@@ -81,7 +81,7 @@ func TestOpenclawDaemonEquivalentRealTask(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
-	session, err := backend.Execute(ctx, "Reply with exactly: MULTICA_DAEMON_REAL_OK", agent.ExecOptions{
+	session, err := backend.Execute(ctx, "Reply with exactly: PATCHBAY_DAEMON_REAL_OK", agent.ExecOptions{
 		Cwd:     environment.WorkDir,
 		Model:   "main",
 		Timeout: 2 * time.Minute,
@@ -103,7 +103,7 @@ func TestOpenclawDaemonEquivalentRealTask(t *testing.T) {
 	if result.Status != "completed" {
 		t.Fatalf("real OpenClaw task status = %q, error = %q", result.Status, result.Error)
 	}
-	if strings.TrimSpace(result.Output) != "MULTICA_DAEMON_REAL_OK" {
+	if strings.TrimSpace(result.Output) != "PATCHBAY_DAEMON_REAL_OK" {
 		t.Fatalf("real OpenClaw task output = %q", result.Output)
 	}
 	t.Logf("real daemon-equivalent task completed in %dms", result.DurationMs)

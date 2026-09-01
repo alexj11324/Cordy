@@ -144,7 +144,7 @@ func TestChatDraftRestores_NonCreatorForbidden(t *testing.T) {
 		INSERT INTO "user" (name, email)
 		VALUES ('Draft Restore Other', $1)
 		RETURNING id
-	`, fmt.Sprintf("draft-restore-other-%d@multica.ai", time.Now().UnixNano())).Scan(&otherUserID); err != nil {
+	`, fmt.Sprintf("draft-restore-other-%d@patchbay.ai", time.Now().UnixNano())).Scan(&otherUserID); err != nil {
 		t.Fatalf("create other user: %v", err)
 	}
 	if _, err := testPool.Exec(context.Background(), `

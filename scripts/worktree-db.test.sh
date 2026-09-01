@@ -34,9 +34,9 @@ chmod +x "$stub_dir/docker"
 
 local_env="$tmp_dir/local.env"
 cat >"$local_env" <<'EOF'
-POSTGRES_DB=multica_feature_123
-POSTGRES_USER=multica
-DATABASE_URL=postgres://multica:multica@localhost:5432/multica_feature_123?sslmode=disable
+POSTGRES_DB=patchbay_feature_123
+POSTGRES_USER=patchbay
+DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/patchbay_feature_123?sslmode=disable
 EOF
 
 output="$tmp_dir/output"
@@ -65,8 +65,8 @@ fi
 printf 'y\n' | PATH="$stub_dir:$PATH" DOCKER_LOG="$docker_log" \
   bash "$root_dir/scripts/drop-database.sh" "$local_env" >"$output"
 require_contains "$docker_log" \
-  "compose exec -T postgres dropdb --username multica --maintenance-db postgres --if-exists --force -- multica_feature_123"
-require_contains "$output" "Dropped database 'multica_feature_123'."
+  "compose exec -T postgres dropdb --username patchbay --maintenance-db postgres --if-exists --force -- patchbay_feature_123"
+require_contains "$output" "Dropped database 'patchbay_feature_123'."
 
 remote_env="$tmp_dir/remote.env"
 cat >"$remote_env" <<'EOF'
@@ -86,7 +86,7 @@ fi
 system_env="$tmp_dir/system.env"
 cat >"$system_env" <<'EOF'
 POSTGRES_DB=postgres
-DATABASE_URL=postgres://multica:multica@localhost:5432/postgres
+DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/postgres
 EOF
 if printf 'y\n' | PATH="$stub_dir:$PATH" DOCKER_LOG="$docker_log" \
   bash "$root_dir/scripts/drop-database.sh" "$system_env" >"$output" 2>&1; then
@@ -96,8 +96,8 @@ require_contains "$output" "Refusing to drop protected PostgreSQL database"
 
 main_env="$tmp_dir/main.env"
 cat >"$main_env" <<'EOF'
-POSTGRES_DB=multica
-DATABASE_URL=postgres://multica:multica@localhost:5432/multica
+POSTGRES_DB=patchbay
+DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/patchbay
 EOF
 if printf 'y\n' | PATH="$stub_dir:$PATH" DOCKER_LOG="$docker_log" \
   bash "$root_dir/scripts/drop-database.sh" "$main_env" >"$output" 2>&1; then
@@ -130,9 +130,9 @@ git -C "$repo" add .gitignore tracked.txt backend/tracked.txt
 git -C "$repo" commit -qm "test: initialize fixture"
 git -C "$repo" worktree add -q -b feature "$worktree"
 cat >"$worktree/.env.worktree" <<'EOF'
-POSTGRES_DB=multica_worktree_456
-POSTGRES_USER=multica
-DATABASE_URL=postgres://multica:multica@localhost:5432/multica_worktree_456?sslmode=disable
+POSTGRES_DB=patchbay_worktree_456
+POSTGRES_USER=patchbay
+DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/patchbay_worktree_456?sslmode=disable
 EOF
 
 : >"$docker_log"
@@ -167,7 +167,7 @@ if [ -e "$worktree" ]; then
   fail "remove-worktree did not remove the worktree after database deletion"
 fi
 require_contains "$docker_log" \
-  "compose exec -T postgres dropdb --username multica --maintenance-db postgres --if-exists --force -- multica_worktree_456"
+  "compose exec -T postgres dropdb --username patchbay --maintenance-db postgres --if-exists --force -- patchbay_worktree_456"
 
 dirty_worktree="$tmp_dir/dirty-worktree"
 git -C "$repo" worktree add -q -b dirty-feature "$dirty_worktree"

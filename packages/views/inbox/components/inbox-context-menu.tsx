@@ -11,13 +11,13 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-import type { InboxItem } from "@multica/core/types";
+import type { InboxItem } from "@patchbay/core/types";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-} from "@multica/ui/components/ui/context-menu";
+} from "@patchbay/ui/components/ui/context-menu";
 import type { InboxView } from "./inbox-view";
 import { useInboxItemActions, type InboxRowActions } from "./inbox-item-actions";
 

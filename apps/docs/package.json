@@ -1,5 +1,5 @@
 {
-  "name": "@multica/docs",
+  "name": "@patchbay/docs",
   "version": "0.2.0",
   "private": true,
   "type": "module",
@@ -13,7 +13,7 @@
     "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
-    "@multica/ui": "workspace:*",
+    "@patchbay/ui": "workspace:*",
     "fumadocs-core": "^15.5.2",
     "fumadocs-mdx": "^12.0.3",
     "fumadocs-ui": "^15.5.2",

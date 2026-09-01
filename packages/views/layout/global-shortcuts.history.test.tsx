@@ -1,19 +1,19 @@
 import { render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { configureShortcutPlatform } from "@multica/core/shortcuts";
+import { configureShortcutPlatform } from "@patchbay/core/shortcuts";
 import { NavigationProvider, type NavigationAdapter } from "../navigation";
 import { GlobalShortcuts } from "./global-shortcuts";
 
 // GlobalShortcuts pulls workspace paths and the sidebar/chat stores at render
 // time; none of that is exercised by the history chords, so stub them to keep
 // the test focused on the back/forward wiring and free of provider setup.
-vi.mock("@multica/ui/components/ui/sidebar", () => ({
+vi.mock("@patchbay/ui/components/ui/sidebar", () => ({
   useSidebar: () => ({ toggleSidebar: vi.fn() }),
 }));
-vi.mock("@multica/core/chat", () => ({
+vi.mock("@patchbay/core/chat", () => ({
   useChatStore: { getState: () => ({ floatingChatEnabled: false }) },
 }));
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   useWorkspacePaths: () => ({
     inbox: () => "/w/inbox",
     chat: () => "/w/chat",

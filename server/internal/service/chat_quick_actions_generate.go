@@ -12,9 +12,9 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 // Budgets for one suggestion pass. The whole call is a nicety attached to a
@@ -83,7 +83,7 @@ const (
 // A nil ChatQuickActionsLLM, or one whose Enabled() is false, disables the
 // feature entirely: no pending marker is raised and no pills are generated.
 // That is the expected state for a self-hosted deployment with no
-// MULTICA_LLM_API_KEY / MULTICA_LLM_BASE_URL, and matches how chat auto-titling
+// PATCHBAY_LLM_API_KEY / PATCHBAY_LLM_BASE_URL, and matches how chat auto-titling
 // already degrades.
 type ChatQuickActionsLLM interface {
 	Enabled() bool
@@ -96,7 +96,7 @@ type ChatQuickActionsLLM interface {
 //
 // The rules are deliberately prescriptive about WHO the suggestions are for.
 // The retired daemon pass ran as a resumed turn inside the agent's own session,
-// so it inherited the Multica runtime brief's identity and drifted toward
+// so it inherited the Patchbay runtime brief's identity and drifted toward
 // agent-operations actions; this pass has no such context and must be told the
 // frame explicitly.
 //
@@ -214,7 +214,7 @@ func (s *TaskService) GenerateChatQuickActionsForTask(ctx context.Context, task 
 	}
 
 	raw, err := s.QuickActions.GenerateJSON(ctx,
-		"", // deployment default: MULTICA_LLM_DEFAULT_MODEL, else llm.FallbackModel
+		"", // deployment default: PATCHBAY_LLM_DEFAULT_MODEL, else llm.FallbackModel
 		chatQuickActionsSystemPrompt,
 		prompt,
 		chatQuickActionsTemperature,

@@ -11,7 +11,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from "@multica/ui/components/ui/chart";
+} from "@patchbay/ui/components/ui/chart";
 import { useLocale, useT } from "../../../i18n";
 
 // Weekly counterpart of DailyTasksChart — same completed/cancelled/failed

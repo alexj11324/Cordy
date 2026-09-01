@@ -5,7 +5,7 @@ set -eu
 # one container-level budget. Both binaries derive their remaining time from
 # this entrypoint timestamp. Always overwrite inherited values to avoid reusing
 # a stale timestamp after a container restart.
-export MULTICA_INTERNAL_DATABASE_STARTUP_STARTED_AT_UNIX="$(date +%s)"
+export PATCHBAY_INTERNAL_DATABASE_STARTUP_STARTED_AT_UNIX="$(date +%s)"
 
 migrate_pid=""
 

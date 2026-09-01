@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef } from "react";
-import { Textarea } from "@multica/ui/components/ui/textarea";
-import { parseFrontmatter } from "@multica/core/skills/frontmatter";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
+import { parseFrontmatter } from "@patchbay/core/skills/frontmatter";
 import { RichContent } from "../../rich-content";
 import { useT } from "../../i18n";
 

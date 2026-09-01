@@ -6,15 +6,15 @@
 //
 // Everything below runs in a sandboxed iframe with an opaque origin: no cookies,
 // no localStorage, no access to the page around it. State lives in
-// multica.storage (server-side), and the comment goes through the host bridge on
+// patchbay.storage (server-side), and the comment goes through the host bridge on
 // the user's own session.
 
 const pending = new Map();
-const port = globalThis.__multicaPluginBridgePortV2;
+const port = globalThis.__patchbayPluginBridgePortV2;
 let sequence = 0;
 
-if (!(port instanceof MessagePort)) throw new Error("Multica surface bridge is unavailable");
-delete globalThis.__multicaPluginBridgePortV2;
+if (!(port instanceof MessagePort)) throw new Error("Patchbay surface bridge is unavailable");
+delete globalThis.__patchbayPluginBridgePortV2;
 port.onmessage = (message) => {
   const payload = message.data;
   if (payload?.kind === "theme") return applyTheme(payload.theme);

@@ -20,7 +20,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/util"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
 )
 
 // sendersRegistry is a goroutine-safe installation_id → wsSender map.

@@ -11,7 +11,7 @@ import type {
   Comment,
   TimelineEntry,
   Reaction,
-} from "@multica/core/types";
+} from "@patchbay/core/types";
 import type {
   CommentCreatedPayload,
   CommentUpdatedPayload,
@@ -21,11 +21,11 @@ import type {
   ActivityCreatedPayload,
   ReactionAddedPayload,
   ReactionRemovedPayload,
-} from "@multica/core/types";
+} from "@patchbay/core/types";
 import {
   issueTimelineOptions,
   issueKeys,
-} from "@multica/core/issues/queries";
+} from "@patchbay/core/issues/queries";
 import {
   useCreateComment,
   useUpdateComment,
@@ -33,13 +33,13 @@ import {
   useResolveComment,
   useToggleCommentReaction,
   type ToggleCommentReactionVars,
-} from "@multica/core/issues/mutations";
-import { sortTimelineEntriesAsc } from "@multica/core/issues/timeline-sort";
+} from "@patchbay/core/issues/mutations";
+import { sortTimelineEntriesAsc } from "@patchbay/core/issues/timeline-sort";
 import {
   unhandledCommentTriggerOutcomes,
   mentionLabelsByTarget,
-} from "@multica/core/issues/comment-trigger-outcomes";
-import { useWSEvent, useWSReconnect } from "@multica/core/realtime";
+} from "@patchbay/core/issues/comment-trigger-outcomes";
+import { useWSEvent, useWSReconnect } from "@patchbay/core/realtime";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import { blockedShortReasonLabel } from "../blocked-trigger-copy";

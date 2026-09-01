@@ -23,7 +23,7 @@ import (
 //
 // Known gap: resolveSkillSlugs cannot see the filesystem, so a skill that
 // collides with a *user-installed* directory is still written to
-// `<slug>-multica` while the listing shows the bare slug. Closing that needs
+// `<slug>-patchbay` while the listing shows the bare slug. Closing that needs
 // the allocated slug threaded back from Prepare, which these renderers
 // deliberately cannot reach — they are pure so the brief stays byte-identical
 // across runs. Tracked in MUL-5550.
@@ -47,7 +47,7 @@ func modelVisibleSkills(skills []SkillContextForEnv) []SkillContextForEnv {
 //
 // sanitizeSkillName alone is not injective: "A B" and "A-B" both reduce to
 // "a-b". writeSkillFiles resolves that at write time via
-// allocateCollisionFreeSkillDir, so the second skill lands in `a-b-multica` —
+// allocateCollisionFreeSkillDir, so the second skill lands in `a-b-patchbay` —
 // but a listing built from sanitizeSkillName alone would name both `a-b`,
 // leaving the second skill with no invocable name and silently pointing the
 // model at the first. Deriving both sides from this function keeps them in

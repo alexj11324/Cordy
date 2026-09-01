@@ -9,9 +9,9 @@
 // This package covers the LLM calls the API process makes on its own behalf.
 // Running an agent is a different data path entirely: the daemon executes an
 // AI coding tool as a subprocess under that tool's own credentials, and does
-// not forward this layer's MULTICA_LLM_* settings to it. (It does inject the
-// task-scoped Multica connection variables the agent itself needs — see
-// mergeEnv in pkg/agent, which drops the daemon's inherited MULTICA_* and then
+// not forward this layer's PATCHBAY_LLM_* settings to it. (It does inject the
+// task-scoped Patchbay connection variables the agent itself needs — see
+// mergeEnv in pkg/agent, which drops the daemon's inherited PATCHBAY_* and then
 // appends the values assembled for that task.) Nothing here governs that path,
 // and operator-facing copy about this layer must not imply otherwise — an
 // admin who reads "empty means nothing is sent" as covering the whole product
@@ -51,8 +51,8 @@
 // every call fails with ErrNotConfigured before an HTTP request is ever built,
 // and both consumers check Enabled() before doing any work
 // (TestUnconfiguredClientMakesZeroUpstreamRequests). An operator who must not
-// let THIS layer send chat content leaves MULTICA_LLM_API_KEY and
-// MULTICA_LLM_BASE_URL empty; the product stays whole (client-derived chat
+// let THIS layer send chat content leaves PATCHBAY_LLM_API_KEY and
+// PATCHBAY_LLM_BASE_URL empty; the product stays whole (client-derived chat
 // titles, no follow-up question buttons).
 //
 // The wrapper is intentionally small:
@@ -106,17 +106,17 @@ var ErrNotConfigured = errors.New("llm: no API key or base URL configured")
 // Config holds the tunables for the LLM layer. All fields are optional; an
 // empty Config yields a disabled client (see Client.Enabled).
 type Config struct {
-	// APIKey authenticates against the upstream. Maps to MULTICA_LLM_API_KEY.
+	// APIKey authenticates against the upstream. Maps to PATCHBAY_LLM_API_KEY.
 	APIKey string
 	// BaseURL points at OpenAI or any OpenAI-compatible gateway. When empty the
 	// SDK's default (https://api.openai.com/v1) is used. Maps to
-	// MULTICA_LLM_BASE_URL.
+	// PATCHBAY_LLM_BASE_URL.
 	BaseURL string
 	// DefaultModel is used when a request omits the model. Maps to
-	// MULTICA_LLM_DEFAULT_MODEL. When empty, FallbackModel is used.
+	// PATCHBAY_LLM_DEFAULT_MODEL. When empty, FallbackModel is used.
 	DefaultModel string
 	// MaxRetries is the transport-level retry budget applied to every request
-	// this client makes. Maps to MULTICA_LLM_MAX_RETRIES. Build one with
+	// this client makes. Maps to PATCHBAY_LLM_MAX_RETRIES. Build one with
 	// Retries; nil means unset, and DefaultMaxRetries applies.
 	//
 	//   - nil            — unset; DefaultMaxRetries applies.

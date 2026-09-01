@@ -11,7 +11,7 @@ import (
 	"sync"
 )
 
-const defaultJWTSecret = "multica-dev-secret-change-in-production"
+const defaultJWTSecret = "patchbay-dev-secret-change-in-production"
 
 var (
 	jwtSecret     []byte
@@ -57,13 +57,13 @@ func ValidateJWTSecret(secret string) error {
 	return nil
 }
 
-// GeneratePATToken creates a new personal access token: "mul_" + 40 random hex chars.
+// GeneratePATToken creates a new personal access token: "pby_" + 40 random hex chars.
 func GeneratePATToken() (string, error) {
 	b := make([]byte, 20) // 20 bytes = 40 hex chars
 	if _, err := rand.Read(b); err != nil {
 		return "", fmt.Errorf("generate PAT token: %w", err)
 	}
-	return "mul_" + hex.EncodeToString(b), nil
+	return "pby_" + hex.EncodeToString(b), nil
 }
 
 // GenerateDaemonToken creates a new daemon auth token: "mdt_" + 40 random hex chars.

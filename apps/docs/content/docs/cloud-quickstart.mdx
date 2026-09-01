@@ -6,12 +6,12 @@ description: Connect a computer, create your first agent, and have it complete i
 import { Callout } from "fumadocs-ui/components/callout";
 
 <Callout type="info">
-Before an agent can execute, the computer that runs it needs at least one [supported AI coding tool](/providers) installed and signed in — for example Claude Code, Codex, or Cursor. Multica does not ship these tools.
+Before an agent can execute, the computer that runs it needs at least one [supported AI coding tool](/providers) installed and signed in — for example Claude Code, Codex, or Cursor. Patchbay does not ship these tools.
 </Callout>
 
 ## 1. Sign in and open your workspace
 
-Sign in on the web ([multica.ai](https://multica.ai)) or with [Multica Desktop](https://multica.ai/download). Email verification codes and Google are both supported.
+Sign in on the web ([patchbay.ai](https://patchbay.ai)) or with [Patchbay Desktop](https://patchbay.ai/download). Email verification codes and Google are both supported.
 
 - **Desktop**: can connect this computer automatically.
 - **Web**: connect from the command line in the next step.
@@ -26,18 +26,18 @@ Agents execute work on the computers you connect. Open **Configure → Runtimes*
   **macOS / Linux**
 
   ```bash
-  curl -fsSL https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.sh | bash
-  multica setup
+  curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash
+  patchbay setup
   ```
 
   **Windows PowerShell**
 
   ```powershell
-  irm https://raw.githubusercontent.com/multica-ai/multica/main/scripts/install.ps1 | iex
-  multica setup
+  irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex
+  patchbay setup
   ```
 
-  `multica setup` opens a browser to complete sign-in, then leaves the daemon running in the background. Once the daemon is online, the dialog usually detects the computer within a minute.
+  `patchbay setup` opens a browser to complete sign-in, then leaves the daemon running in the background. Once the daemon is online, the dialog usually detects the computer within a minute.
 
 **Success check**: an online computer appears in the runtime list.
 
@@ -66,9 +66,9 @@ Click **New Issue** at the top of the sidebar (or press `C`). In the default age
 
 1. Under **Created by**, select the agent you just created.
 2. Describe the work in a sentence or two, for example "Explain how this workspace can be used."
-3. Submit. Multica creates the issue, sets the agent as the assignee, and starts executing immediately.
+3. Submit. Patchbay creates the issue, sets the agent as the assignee, and starts executing immediately.
 
-![New issue dialog in agent mode: Created by set to Multica Assistant](/images/docs/quickstart-new-issue.webp)
+![New issue dialog in agent mode: Created by set to Patchbay Assistant](/images/docs/quickstart-new-issue.webp)
 
 ## 5. Watch progress and results
 
@@ -82,14 +82,14 @@ After submitting, open the issue: the execution log shows the run status, and th
 
 | Symptom | Check first |
 |---|---|
-| No runtime found | Confirm the AI coding tool is installed and runs in a terminal. On Desktop, click **Refresh**; on the CLI path, rerun `multica setup`. |
-| Runtime shows offline | Keep Desktop open; on the CLI path, run `multica daemon status`, and `multica daemon start` if it is not running. |
+| No runtime found | Confirm the AI coding tool is installed and runs in a terminal. On Desktop, click **Refresh**; on the CLI path, rerun `patchbay setup`. |
+| Runtime shows offline | Keep Desktop open; on the CLI path, run `patchbay daemon status`, and `patchbay daemon start` if it is not running. |
 | Issue stays queued | Confirm the runtime the agent uses is online. When a runtime hits its concurrency limit, new tasks keep queueing. |
 
 For more cases, see [Troubleshooting](/troubleshooting).
 
 ## Next steps
 
-- [Core concepts](/concepts) — meet all of Multica's core objects in three minutes.
-- [How Multica works](/how-multica-works) — how issues, agents, runtimes, and each run relate.
+- [Core concepts](/concepts) — meet all of Patchbay's core objects in three minutes.
+- [How Patchbay works](/how-patchbay-works) — how issues, agents, runtimes, and each run relate.
 - [Put agents to work](/triggering-agents) — beyond assignment: @-mentions, chat, and Autopilots.

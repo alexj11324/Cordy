@@ -7,7 +7,7 @@
 -- became our uptime, and every panel open told the author who was reading which
 -- issue.
 --
--- What replaces it: the author uploads an artifact bundle, Multica stores it,
+-- What replaces it: the author uploads an artifact bundle, Patchbay stores it,
 -- and an installation is bound to one immutable version. Nothing about a
 -- published version is ever updated in place — a new publish is a new row, and
 -- an installed workspace keeps running the version it consented to until an

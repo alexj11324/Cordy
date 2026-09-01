@@ -1235,7 +1235,7 @@ func TestCollectLocalSkillFiles_SkipsInvalidUTF8WithNoExtension(t *testing.T) {
 
 // validUTF8WithNUL is UTF-16LE encoding of "Hello": every byte is a valid
 // single-byte UTF-8 sequence (printable ASCII or NUL), so utf8.Valid alone
-// would accept it — multica-eve's review on #7175 flagged this as a
+// would accept it — patchbay-eve's review on #7175 flagged this as a
 // realistic byte-integrity hole: the server-side import path
 // (server/internal/handler/skill_create.go's sanitizeNullBytes) strips every
 // 0x00, so a file like this still comes back different from what went in.

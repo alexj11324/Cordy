@@ -85,7 +85,7 @@ func seedAgentOnRuntime(t *testing.T, runtimeID, name string, archived bool) str
 
 // seedSquad creates a squad with the given leader. If archived is true the
 // row is created with archived_at = now() (the case the user originally hit
-// — `multica squad list` filters out archived squads, hiding the FK
+// — `patchbay squad list` filters out archived squads, hiding the FK
 // blocker).
 func seedSquad(t *testing.T, leaderID, name string, archived bool) string {
 	t.Helper()
@@ -150,7 +150,7 @@ func runtimeExists(t *testing.T, runtimeID string) bool {
 // cleanly, and neither the squads nor the leaders may be destroyed.
 //
 // The archived squad in this fixture is the case originally reported: it is
-// invisible to `multica squad list`, so a user could not see what was blocking
+// invisible to `patchbay squad list`, so a user could not see what was blocking
 // the delete — and the old fix resolved that by deleting the squad.
 func TestDeleteAgentRuntime_KeepsSquadsLedByUnboundAgents(t *testing.T) {
 	if testHandler == nil {

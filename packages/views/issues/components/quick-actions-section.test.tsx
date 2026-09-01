@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import type { QuickAction } from "@multica/core/types";
+import type { QuickAction } from "@patchbay/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { QuickActionsSection } from "./quick-actions-section";
 
@@ -23,17 +23,17 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: listData, isLoading: false }),
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   useCurrentWorkspace: () => ({ id: "ws-1" }),
 }));
 
-vi.mock("@multica/core/quick-actions", () => ({
+vi.mock("@patchbay/core/quick-actions", () => ({
   quickActionListOptions: () => ({ queryKey: ["quick-actions"], queryFn: vi.fn() }),
   useRunQuickAction: () => ({ mutateAsync: runMock, isPending: false }),
 }));
 
 let reasonCode: string | undefined;
-vi.mock("@multica/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   dispatchReasonCode: () => reasonCode,
 }));
 

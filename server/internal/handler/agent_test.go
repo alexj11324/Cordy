@@ -195,7 +195,7 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 	var outsiderUserID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO "user" (name, email)
-		VALUES ('Working Agents Outsider', 'working-agents-outsider-' || gen_random_uuid()::text || '@multica.test')
+		VALUES ('Working Agents Outsider', 'working-agents-outsider-' || gen_random_uuid()::text || '@patchbay.test')
 		RETURNING id
 	`).Scan(&outsiderUserID); err != nil {
 		t.Fatalf("insert outsider user: %v", err)

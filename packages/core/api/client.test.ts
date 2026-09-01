@@ -272,12 +272,12 @@ describe("ApiClient Plugin surface bridge routes", () => {
     );
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      "https://api.example.test/api/plugin-bridge/v1/context?issue_id=MUL-42",
+      "https://api.example.test/api/v1/plugin/context?issue_id=MUL-42",
     );
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
       method: "GET",
       headers: expect.objectContaining({
-        "X-Multica-Plugin-Installation": "installation-1",
+        "X-Patchbay-Plugin-Installation": "installation-1",
       }),
     });
   });
@@ -301,7 +301,7 @@ describe("ApiClient Plugin surface bridge routes", () => {
     );
 
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
-      "https://api.example.test/api/plugin-bridge/v1/hooks/summarize",
+      "https://api.example.test/api/v1/plugin/hooks/summarize",
     );
   });
 });

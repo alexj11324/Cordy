@@ -5,7 +5,7 @@ import {
   runtimeListOptions,
   readRuntimeCliVersion,
   chatProjectContextSupported,
-} from "@multica/core/runtimes";
+} from "@patchbay/core/runtimes";
 
 /**
  * Whether the active agent's daemon is new enough to inject a chat session's

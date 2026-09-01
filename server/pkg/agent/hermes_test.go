@@ -648,7 +648,7 @@ func (b *bufferWriter) String() string {
 // answers an ACP agent's `session/request_permission`. It must select an
 // optionId the agent *actually offered* — an id the agent never offered is
 // treated as a denial and, on Hermes' edit path, silently blocks every file
-// write (GitHub multica#5300). It prefers a session-scoped grant over a
+// write (GitHub patchbay#5300). It prefers a session-scoped grant over a
 // single-use one, refuses to auto-select a permanent "allow_always" (which
 // persists to the runtime owner's on-disk allowlist), denies a single action
 // by selecting an offered reject_once rather than replying "cancelled" (which
@@ -666,7 +666,7 @@ func TestHermesClientAutoApprovesPermissionRequest(t *testing.T) {
 	}{
 		{
 			// Hermes edit-approval offers only these two and requires
-			// exactly "allow_once"; this is the multica#5300 regression
+			// exactly "allow_once"; this is the patchbay#5300 regression
 			// the old hardcoded "approve_for_session" reply broke.
 			name:    "hermes edit approval selects allow_once",
 			options: `[{"optionId":"allow_once","name":"Allow edit","kind":"allow_once"},{"optionId":"deny","name":"Deny","kind":"reject_once"}]`,
@@ -2001,12 +2001,12 @@ func TestHermesProviderErrorSnifferBoundedBuffer(t *testing.T) {
 }
 
 // TestHermesProviderErrorSnifferIgnoresEchoedInfoRecords guards pollution
-// failures from GitHub multica#5862.
+// failures from GitHub patchbay#5862.
 //
 // Pollution failure ≠ real provider failure:
 //   - real failure: Hermes/provider crashes; no successful final reply.
 //   - pollution failure: Hermes already produced a correct final reply /
-//     completed the requested work, then Multica suddenly flips the same
+//     completed the requested work, then Patchbay suddenly flips the same
 //     run to failed because an `[INFO] root:` conversation/tool echo on
 //     stderr embedded error-looking tokens (Error:, KeyError:, ❌, ...).
 //
@@ -2090,7 +2090,7 @@ func TestHermesProviderErrorSnifferStillCapturesErrorRootRecords(t *testing.T) {
 }
 
 // TestHermesProviderErrorSnifferIgnoresMultiLineInfoRecords guards the
-// second pollution shape from GitHub multica#5862. Hermes echoes a
+// second pollution shape from GitHub patchbay#5862. Hermes echoes a
 // conversation/tool record whose JSON spans several physical lines: only
 // the first line carries the `[INFO] root:` prefix, the continuation lines
 // do not, yet they may embed both a capture token (`Error:`) and a terminal
@@ -2345,7 +2345,7 @@ func TestHermesBackendMergesLateCumulativeUsageAfterPromptResponse(t *testing.T)
 }
 
 // fakeHermesACPRateLimitScript impersonates hermes for the GitHub
-// multica#1952 scenario: the upstream LLM returns HTTP 429 (rate
+// patchbay#1952 scenario: the upstream LLM returns HTTP 429 (rate
 // limited / no credit), hermes retries internally and ultimately
 // emits both a sniffable stderr error block AND a synthetic agent
 // text turn ("API call failed after 3 retries..."), then completes
@@ -2435,7 +2435,7 @@ func TestHermesProviderErrorSnifferTerminalNonRetryable(t *testing.T) {
 }
 
 // TestHermesBackendPromotesProviderErrorWithNonEmptyOutput pins the
-// fix for GitHub multica#1952: a hermes run that hits a 429 (or any
+// fix for GitHub patchbay#1952: a hermes run that hits a 429 (or any
 // upstream provider error) must surface as Status=failed even though
 // hermes' synthetic "API call failed..." agent turn means the output
 // buffer is non-empty. Before the fix the sniffer-promotion was
@@ -2553,7 +2553,7 @@ func TestIsACPSessionNotFound(t *testing.T) {
 }
 
 // fakeHermesACPStaleResumeScript impersonates the failure shape from
-// GitHub multica#4010: session/resume succeeds and echoes back the
+// GitHub patchbay#4010: session/resume succeeds and echoes back the
 // requested sessionId, and the subsequent session/prompt then fails with
 // JSON-RPC -32603 "Session not found".
 //
@@ -2584,7 +2584,7 @@ done
 }
 
 // TestHermesBackendClearsSessionIDWhenResumedSessionNotFound pins the
-// fix for GitHub multica#4010: when a resumed session turns out to be
+// fix for GitHub patchbay#4010: when a resumed session turns out to be
 // gone on the agent side (resume echoes the requested id, prompt then
 // fails -32603 "Session not found"), the Result must carry an empty
 // SessionID. The daemon's resume-failure fallback keys on
@@ -2746,7 +2746,7 @@ done
 }
 
 // TestHermesBackendDoesNotPromoteOnTransientRetry pins the
-// regression GPT-Boy flagged on the multica#1952 fix: a per-attempt
+// regression GPT-Boy flagged on the patchbay#1952 fix: a per-attempt
 // ⚠️ warning on stderr that does NOT include any terminal marker
 // ("after N retries", Non-retryable, ❌, [ERROR], BadRequest /
 // Authentication errors) and is followed by a successful agent
@@ -4004,7 +4004,7 @@ func TestHermesClientEmitsToolUseWhenStartFrameCarriesCommand(t *testing.T) {
 		onMessage:                  func(msg Message) { got = append(got, msg) },
 	}
 
-	c.handleLine(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_1","update":{"content":[{"content":{"text":"$ multica issue get 7473e16c --output json","type":"text"},"type":"content"}],"kind":"execute","locations":[],"title":"terminal: multica issue get 7473e16c --output json","toolCallId":"tc-305462f5d67d","sessionUpdate":"tool_call"}}}`)
+	c.handleLine(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"ses_1","update":{"content":[{"content":{"text":"$ patchbay issue get 7473e16c --output json","type":"text"},"type":"content"}],"kind":"execute","locations":[],"title":"terminal: patchbay issue get 7473e16c --output json","toolCallId":"tc-305462f5d67d","sessionUpdate":"tool_call"}}}`)
 
 	if len(got) != 1 {
 		t.Fatalf("expected MessageToolUse on the start frame, got %d: %+v", len(got), got)
@@ -4018,7 +4018,7 @@ func TestHermesClientEmitsToolUseWhenStartFrameCarriesCommand(t *testing.T) {
 	if got[0].CallID != "tc-305462f5d67d" {
 		t.Errorf("callID: got %q", got[0].CallID)
 	}
-	if text, _ := got[0].Input["text"].(string); text != "$ multica issue get 7473e16c --output json" {
+	if text, _ := got[0].Input["text"].(string); text != "$ patchbay issue get 7473e16c --output json" {
 		t.Errorf("input.text: got %v", got[0].Input["text"])
 	}
 

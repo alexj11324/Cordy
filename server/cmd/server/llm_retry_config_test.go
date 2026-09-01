@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/pkg/llm"
+	"github.com/patchbay-ai/patchbay/server/pkg/llm"
 )
 
 // TestParseLLMMaxRetriesAccepted pins the states an operator is allowed to

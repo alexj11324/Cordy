@@ -34,17 +34,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	"github.com/multica-ai/multica/server/internal/service"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 func mediaBindTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
-		dsn = "postgres://multica:multica@localhost:5432/multica?sslmode=disable"
+		dsn = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
 	}
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, dsn)
@@ -90,7 +90,7 @@ func seedMediaBindFixture(t *testing.T, pool *pgxpool.Pool) mediaBindFixture {
 	var runtimeID pgtype.UUID
 
 	if err := pool.QueryRow(ctx, `INSERT INTO "user" (name, email) VALUES ($1, $2) RETURNING id`,
-		"wecom media bind", fmt.Sprintf("wecom-media-bind-%d@multica.test", suffix)).Scan(&f.userID); err != nil {
+		"wecom media bind", fmt.Sprintf("wecom-media-bind-%d@patchbay.test", suffix)).Scan(&f.userID); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 	t.Cleanup(func() {
@@ -114,7 +114,7 @@ func seedMediaBindFixture(t *testing.T, pool *pgxpool.Pool) mediaBindFixture {
 	}
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO agent_runtime (workspace_id, name, runtime_mode, provider, owner_id)
-		VALUES ($1, $2, 'local', 'multica_daemon', $3) RETURNING id`,
+		VALUES ($1, $2, 'local', 'patchbay_daemon', $3) RETURNING id`,
 		f.workspaceID, fmt.Sprintf("wecom-bind-runtime-%d", suffix), f.userID).Scan(&runtimeID); err != nil {
 		t.Fatalf("create runtime: %v", err)
 	}
@@ -133,7 +133,7 @@ func seedMediaBindFixture(t *testing.T, pool *pgxpool.Pool) mediaBindFixture {
 		t.Fatalf("create installation: %v", err)
 	}
 	if _, err := pool.Exec(ctx, `
-		INSERT INTO channel_user_binding (workspace_id, multica_user_id, installation_id, channel_type, channel_user_id)
+		INSERT INTO channel_user_binding (workspace_id, patchbay_user_id, installation_id, channel_type, channel_user_id)
 		VALUES ($1, $2, $3, 'wecom', $4)`,
 		f.workspaceID, f.userID, f.installationID, f.senderID); err != nil {
 		t.Fatalf("create user binding: %v", err)
@@ -583,15 +583,15 @@ func TestIssueAfterAnImageIsStillFiled(t *testing.T) {
 // test. It fails if EITHER half is lost.
 //
 // In a group the @-mention is how the bot is reached, so it arrives glued to
-// the front of the text run: "@Multica Bot /issue 登录坏了". main strips that
+// the front of the text run: "@Patchbay Bot /issue 登录坏了". main strips that
 // (stripLeadingMentions) and this PR keeps the placeholders out of the
 // command source, and the parser needs both to see "/issue" on the line it
 // reads. Take main's version of ws_frame.go wholesale and the strip goes and
-// the parser sees "@Multica Bot"; derive the command from the resolved body
+// the parser sees "@Patchbay Bot"; derive the command from the resolved body
 // and it sees "[Image]". Either way no issue is filed, and this is the
 // assertion that says so.
 func TestGroupMentionedIssueAfterAnImageIsStillFiled(t *testing.T) {
-	issues, body := runMixedIssueThroughTheRouter(t, "Multica Bot", "group", "GROUP-BIND-1", "@Multica Bot /issue 登录坏了", false)
+	issues, body := runMixedIssueThroughTheRouter(t, "Patchbay Bot", "group", "GROUP-BIND-1", "@Patchbay Bot /issue 登录坏了", false)
 
 	filed := issues.filed()
 	if len(filed) != 1 {
@@ -600,7 +600,7 @@ func TestGroupMentionedIssueAfterAnImageIsStillFiled(t *testing.T) {
 	if filed[0].Title != "登录坏了" {
 		t.Errorf("issue title = %q, want 登录坏了 (a title carrying the bot's own name means the mention strip was lost)", filed[0].Title)
 	}
-	if want := "[Image]\n@Multica Bot /issue 登录坏了"; body != want {
+	if want := "[Image]\n@Patchbay Bot /issue 登录坏了"; body != want {
 		t.Errorf("durable body = %q, want %q — the transcript keeps who was addressed", body, want)
 	}
 }
@@ -615,7 +615,7 @@ func TestGroupMentionedIssueAfterAnImageIsStillFiled(t *testing.T) {
 // unlike the dispatch-level test this one asks the database whether an issue
 // exists.
 func TestGroupMentionedSpokenIssueAfterAnImageIsStillFiled(t *testing.T) {
-	issues, body := runMixedIssueThroughTheRouter(t, "Multica Bot", "group", "GROUP-BIND-2", "@Multica Bot /issue 登录坏了", true)
+	issues, body := runMixedIssueThroughTheRouter(t, "Patchbay Bot", "group", "GROUP-BIND-2", "@Patchbay Bot /issue 登录坏了", true)
 
 	filed := issues.filed()
 	if len(filed) != 1 {
@@ -624,7 +624,7 @@ func TestGroupMentionedSpokenIssueAfterAnImageIsStillFiled(t *testing.T) {
 	if filed[0].Title != "登录坏了" {
 		t.Errorf("issue title = %q, want 登录坏了", filed[0].Title)
 	}
-	if want := "[Image]\n@Multica Bot /issue 登录坏了"; body != want {
+	if want := "[Image]\n@Patchbay Bot /issue 登录坏了"; body != want {
 		t.Errorf("durable body = %q, want %q — a spoken run reads into the body like a typed one", body, want)
 	}
 }

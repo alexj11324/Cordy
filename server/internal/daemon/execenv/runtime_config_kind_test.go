@@ -68,7 +68,7 @@ func TestBuildMetaSkillContentBriefContent(t *testing.T) {
 		AgentID:          "eve-1",
 	})
 
-	if !strings.Contains(out, "- `multica issue get <id> --output json` — full issue.\n") {
+	if !strings.Contains(out, "- `patchbay issue get <id> --output json` — full issue.\n") {
 		t.Errorf("brief is missing the `issue get` one-liner\n---\n%s", out)
 	}
 	if strings.Contains(out, "Get full issue details.") {
@@ -131,13 +131,13 @@ func TestBuildMetaSkillContentSlimKindMatrix(t *testing.T) {
 	}
 	issueKinds := map[taskKind]bool{kindIssue: true}
 	checks := []sectionCheck{
-		{"# Multica Agent Runtime", allKinds},
+		{"# Patchbay Agent Runtime", allKinds},
 		{"## Background Task Safety", allKinds},
 		{"## Agent Identity", allKinds},
 		{"## Available Commands", allKinds},
 		{"## Issue Body Formatting", allKinds},
 		{"### Workflow", allKinds},
-		{"## Important: Always Use the `multica` CLI", allKinds},
+		{"## Important: Always Use the `patchbay` CLI", allKinds},
 		{"## Output", allKinds},
 		{"## Comment Formatting", issueKinds},
 		{"## Repositories", map[taskKind]bool{
@@ -225,8 +225,8 @@ func TestSlimQuickCreateAvailableCommands(t *testing.T) {
 
 	for _, want := range []string{
 		"## Available Commands",
-		"multica issue create --title",
-		"`multica --help`",
+		"patchbay issue create --title",
+		"`patchbay --help`",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("quick_create slim Available Commands missing %q", want)
@@ -234,18 +234,18 @@ func TestSlimQuickCreateAvailableCommands(t *testing.T) {
 	}
 
 	for _, banned := range []string{
-		"multica issue get <id>",
-		"multica issue comment list <issue-id>",
-		"multica issue update <id>",
-		"multica issue status <id> <status>",
-		"multica issue comment add <issue-id>",
-		"multica issue metadata list <issue-id>",
-		"multica issue metadata set <issue-id>",
-		"multica issue metadata delete <issue-id>",
-		"multica issue children <id>",
-		"multica repo checkout <url>",
+		"patchbay issue get <id>",
+		"patchbay issue comment list <issue-id>",
+		"patchbay issue update <id>",
+		"patchbay issue status <id> <status>",
+		"patchbay issue comment add <issue-id>",
+		"patchbay issue metadata list <issue-id>",
+		"patchbay issue metadata set <issue-id>",
+		"patchbay issue metadata delete <issue-id>",
+		"patchbay issue children <id>",
+		"patchbay repo checkout <url>",
 		"### Squad maintenance",
-		"multica squad member set-role",
+		"patchbay squad member set-role",
 	} {
 		if strings.Contains(out, banned) {
 			t.Errorf("quick_create slim Available Commands should NOT advertise %q (hard guardrails forbid the call)", banned)
@@ -299,9 +299,9 @@ func TestBackgroundTaskSafetySlimHardPins(t *testing.T) {
 		"verify readiness",
 		"URL, logs, and stop instructions",
 		"survival as best-effort, not guaranteed",
-		"Never terminate `multica` or `multica.exe` by executable name",
+		"Never terminate `patchbay` or `patchbay.exe` by executable name",
 		"exact child PID you started",
-		"`multica daemon status --output json`",
+		"`patchbay daemon status --output json`",
 		"never kill it if it is the reported daemon PID",
 	} {
 		if !strings.Contains(out, want) {

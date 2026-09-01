@@ -32,9 +32,9 @@ func TestRedisLeaseStoreReadyPingsAndLoadsScripts(t *testing.T) {
 	mock.ExpectScriptLoad(redisTryAcquireLeaseSource).SetVal(redisTryAcquireLease.Hash())
 	mock.ExpectScriptLoad(redisRenewLeaseSource).SetVal(redisRenewLease.Hash())
 	mock.ExpectScriptLoad(redisReleaseLeaseSource).SetVal(redisReleaseLease.Hash())
-	mock.Regexp().ExpectEvalSha(redisTryAcquireLease.Hash(), []string{`multica:channel-lease:v1:prod:__ready__:.+`}, "readiness-check", int64(5000)).SetVal(int64(1))
-	mock.Regexp().ExpectEvalSha(redisRenewLease.Hash(), []string{`multica:channel-lease:v1:prod:__ready__:.+`}, "readiness-check", int64(5000)).SetVal(int64(1))
-	mock.Regexp().ExpectEvalSha(redisReleaseLease.Hash(), []string{`multica:channel-lease:v1:prod:__ready__:.+`}, "readiness-check").SetVal(int64(1))
+	mock.Regexp().ExpectEvalSha(redisTryAcquireLease.Hash(), []string{`patchbay:channel-lease:v1:prod:__ready__:.+`}, "readiness-check", int64(5000)).SetVal(int64(1))
+	mock.Regexp().ExpectEvalSha(redisRenewLease.Hash(), []string{`patchbay:channel-lease:v1:prod:__ready__:.+`}, "readiness-check", int64(5000)).SetVal(int64(1))
+	mock.Regexp().ExpectEvalSha(redisReleaseLease.Hash(), []string{`patchbay:channel-lease:v1:prod:__ready__:.+`}, "readiness-check").SetVal(int64(1))
 	if err := store.Ready(context.Background()); err != nil {
 		t.Fatalf("Ready: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestRedisLeaseStoreAtomicOperationsAreTokenFenced(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := uuidFromString(t, "12121212-1212-1212-1212-121212121212")
-	key := "multica:channel-lease:v1:prod:12121212-1212-1212-1212-121212121212"
+	key := "patchbay:channel-lease:v1:prod:12121212-1212-1212-1212-121212121212"
 	arg := AcquireLeaseParams{ID: id, Token: "node-g1", TTL: 180 * time.Second}
 
 	mock.ExpectEvalSha(redisTryAcquireLease.Hash(), []string{key}, "node-g1", int64(180000)).SetVal(int64(1))

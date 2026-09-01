@@ -15,8 +15,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/multica-ai/multica/server/internal/migrations"
-	"github.com/multica-ai/multica/server/internal/taskusagebackfill"
+	"github.com/patchbay-ai/patchbay/server/internal/migrations"
+	"github.com/patchbay-ai/patchbay/server/internal/taskusagebackfill"
 )
 
 // TestHook_DirectV034Upgrade simulates the path described in
@@ -39,7 +39,7 @@ import (
 func TestHook_DirectV034Upgrade(t *testing.T) {
 	adminURL := os.Getenv("DATABASE_URL")
 	if adminURL == "" {
-		adminURL = "postgres://multica:multica@localhost:5432/multica?sslmode=disable"
+		adminURL = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
 	}
 
 	ctx := context.Background()
@@ -47,7 +47,7 @@ func TestHook_DirectV034Upgrade(t *testing.T) {
 		t.Skip("integration test requires Postgres at DATABASE_URL")
 	}
 
-	tmpDB := fmt.Sprintf("multica_v034_upgrade_%d", time.Now().UnixNano())
+	tmpDB := fmt.Sprintf("patchbay_v034_upgrade_%d", time.Now().UnixNano())
 	if err := createDatabase(ctx, adminURL, tmpDB); err != nil {
 		t.Fatalf("create temp database %s: %v", tmpDB, err)
 	}
@@ -159,14 +159,14 @@ func TestHook_DirectV034Upgrade(t *testing.T) {
 func TestHook_FreshDatabaseStampsWatermarkOnly(t *testing.T) {
 	adminURL := os.Getenv("DATABASE_URL")
 	if adminURL == "" {
-		adminURL = "postgres://multica:multica@localhost:5432/multica?sslmode=disable"
+		adminURL = "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable"
 	}
 	ctx := context.Background()
 	if !databaseReachable(ctx, adminURL) {
 		t.Skip("integration test requires Postgres at DATABASE_URL")
 	}
 
-	tmpDB := fmt.Sprintf("multica_v034_fresh_%d", time.Now().UnixNano())
+	tmpDB := fmt.Sprintf("patchbay_v034_fresh_%d", time.Now().UnixNano())
 	if err := createDatabase(ctx, adminURL, tmpDB); err != nil {
 		t.Fatalf("create temp database: %v", err)
 	}

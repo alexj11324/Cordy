@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useModalStore } from "@multica/core/modals";
+import { useModalStore } from "@patchbay/core/modals";
 import { CreateIssueDialog } from "./create-issue-dialog";
 import { CreateProjectModal } from "./create-project";
 import { CreateSquadModal } from "./create-squad";

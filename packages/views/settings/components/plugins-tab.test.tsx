@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@multica/core/i18n/react";
+import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -30,7 +30,7 @@ vi.mock("@tanstack/react-query", () => ({
       : { data: data.installed, isLoading: false, isError: false },
 }));
 
-vi.mock("@multica/core/plugins", () => ({
+vi.mock("@patchbay/core/plugins", () => ({
   pluginInstallationsOptions: () => ({ queryKey: ["plugins", "installed"] }),
   pluginPackagesOptions: () => ({ queryKey: ["plugins", "packages"] }),
   usePreviewPlugin: () => ({ mutateAsync: mockPreview, isPending: false }),
@@ -42,11 +42,11 @@ vi.mock("@multica/core/plugins", () => ({
   useDeletePluginPackage: () => ({ mutateAsync: mockDeletePackage, isPending: false }),
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   useCurrentWorkspace: () => ({ id: "workspace-1", name: "Acme", slug: "acme" }),
 }));
 
-vi.mock("@multica/core/permissions", () => ({
+vi.mock("@patchbay/core/permissions", () => ({
   useCurrentMember: () => ({ role: data.role, isLoading: false }),
 }));
 
@@ -73,7 +73,7 @@ const INSTALLATION = {
     { key: "repo", type: "string", label: "Repo", required: true, options: [] },
     { key: "token", type: "secret", label: "Token", required: true, options: [] },
   ],
-  config: { repo: "multica-ai/multica" },
+  config: { repo: "patchbay-ai/patchbay" },
   configured_secrets: ["token"],
   surfaces: [{ key: "hello", type: "issue_panel", name: "Hello", entry: "ui/main.js", platforms: [] }],
   hooks: [],
@@ -198,7 +198,7 @@ describe("PluginsTab", () => {
     const user = userEvent.setup();
     render(<PluginsTab />, { wrapper: Wrapper });
 
-    const repo = screen.getByDisplayValue("multica-ai/multica");
+    const repo = screen.getByDisplayValue("patchbay-ai/patchbay");
     expect(repo).toBeInTheDocument();
 
     const secret = screen.getByPlaceholderText("Saved — enter a new value to replace it");
@@ -210,7 +210,7 @@ describe("PluginsTab", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockConfigure).toHaveBeenCalledWith({
       installationId: "installation-1",
-      values: { repo: "multica-ai/multica" },
+      values: { repo: "patchbay-ai/patchbay" },
     }));
 
     mockConfigure.mockClear();
@@ -218,7 +218,7 @@ describe("PluginsTab", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(mockConfigure).toHaveBeenCalledWith({
       installationId: "installation-1",
-      values: { repo: "multica-ai/multica", token: "new-token" },
+      values: { repo: "patchbay-ai/patchbay", token: "new-token" },
     }));
   });
 

@@ -18,12 +18,12 @@ import { useCallback, useRef } from "react";
 import type {
   NotificationPreferenceResponse,
   NotificationPreferences,
-} from "@multica/core/types";
+} from "@patchbay/core/types";
 import {
   applyNotificationPreferencePatch,
   deriveNotificationPreferencePatch,
   rollbackNotificationPreferencePatch,
-} from "@multica/core/notification-preferences/patch";
+} from "@patchbay/core/notification-preferences/patch";
 import { api } from "@/data/api";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { notificationPreferenceKeys } from "@/data/queries/notification-preferences";

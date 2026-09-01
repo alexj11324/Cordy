@@ -18,7 +18,7 @@ const { getAttachmentTextContentMock, resolveAttachmentMock, openByUrlMock, tryO
     tryOpenMock: vi.fn(),
   }));
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: { getAttachmentTextContent: getAttachmentTextContentMock },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
@@ -51,8 +51,8 @@ vi.mock("../../navigation", () => ({
   }),
 }));
 
-vi.mock("@multica/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@multica/core/paths")>();
+vi.mock("@patchbay/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@patchbay/core/paths")>();
   return {
     ...actual,
     useWorkspaceSlug: () => "acme",

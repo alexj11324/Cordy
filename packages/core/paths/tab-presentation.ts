@@ -7,7 +7,7 @@
  * decision lives — icon and title no longer come from two unrelated code paths.
  *
  * It is pure and React-free: the visual is a descriptor (rendered by
- * `@multica/views`' `ResourceLeadingVisual`) and the title is a spec that is
+ * `@patchbay/views`' `ResourceLeadingVisual`) and the title is a spec that is
  * either literal text or a localization key (localized by the view layer).
  * Keeping it pure makes the whole "URL + data → icon + title" matrix unit
  * testable without React, which is exactly what the tab behavior needs guarded.

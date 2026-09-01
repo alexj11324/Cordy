@@ -12,7 +12,7 @@ import (
 // skipped guard.
 const routerSourceFile = "router.go"
 
-const wecomMediaAllowEnv = "MULTICA_WECOM_MEDIA_ALLOW_CIDRS"
+const wecomMediaAllowEnv = "PATCHBAY_WECOM_MEDIA_ALLOW_CIDRS"
 
 // TestWecomMediaAllowListIsWiredAtBoot guards the operator switch behind the
 // media guard's allow-list.
@@ -20,7 +20,7 @@ const wecomMediaAllowEnv = "MULTICA_WECOM_MEDIA_ALLOW_CIDRS"
 // wecom.SetMediaAllowedPrefixes widens the SSRF guard that stands between a
 // WeCom-supplied URL and the deployment's own network. It shipped once with no
 // production caller at all: the exemption existed, its own doc comment claimed
-// it was "called at boot from MULTICA_WECOM_MEDIA_ALLOW_CIDRS", and nothing
+// it was "called at boot from PATCHBAY_WECOM_MEDIA_ALLOW_CIDRS", and nothing
 // read that variable. An operator behind a fake-IP proxy — where every
 // hostname resolves into 198.18.0.0/15 and the guard therefore refuses every
 // download — had the exemption and no way to turn it on.

@@ -21,10 +21,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/daemon/execenv"
-	"github.com/multica-ai/multica/server/internal/daemon/repocache"
-	"github.com/multica-ai/multica/server/pkg/agent"
-	"github.com/multica-ai/multica/server/pkg/taskfailure"
+	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
+	"github.com/patchbay-ai/patchbay/server/internal/daemon/repocache"
+	"github.com/patchbay-ai/patchbay/server/pkg/agent"
+	"github.com/patchbay-ai/patchbay/server/pkg/taskfailure"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -68,7 +68,7 @@ func TestTriggerRestart_BrewLinuxCellarDeleted(t *testing.T) {
 	})
 
 	prefix := filepath.Join(t.TempDir(), "home", "linuxbrew", ".linuxbrew")
-	deletedCellarPath := filepath.Join(prefix, "Cellar", "multica", "0.2.9", "bin", "multica")
+	deletedCellarPath := filepath.Join(prefix, "Cellar", "patchbay", "0.2.9", "bin", "patchbay")
 	isBrewInstall = func() bool { return true }
 	getBrewPrefix = func() string { return prefix }
 
@@ -77,7 +77,7 @@ func TestTriggerRestart_BrewLinuxCellarDeleted(t *testing.T) {
 	}
 	d.triggerRestart()
 
-	want := filepath.Join(prefix, "bin", "multica")
+	want := filepath.Join(prefix, "bin", "patchbay")
 	if got := d.RestartBinary(); got != want {
 		t.Fatalf("restart binary = %q, want %q", got, want)
 	}
@@ -94,7 +94,7 @@ func TestTriggerRestart_UsesResolvedFallback(t *testing.T) {
 		isBrewInstall = originalIsBrewInstall
 	})
 
-	want := filepath.Join(t.TempDir(), "multica")
+	want := filepath.Join(t.TempDir(), "patchbay")
 	if err := os.WriteFile(want, []byte("test executable"), 0o755); err != nil {
 		t.Fatalf("write executable fixture: %v", err)
 	}
@@ -149,8 +149,8 @@ func TestIsBlockedEnvKey(t *testing.T) {
 		key  string
 		want bool
 	}{
-		{key: "MULTICA_TOKEN", want: true},
-		{key: "multica_runtime_id", want: true},
+		{key: "PATCHBAY_TOKEN", want: true},
+		{key: "patchbay_runtime_id", want: true},
 		{key: "HOME", want: true},
 		{key: "PATH", want: true},
 		{key: "TMPDIR", want: true},
@@ -194,7 +194,7 @@ func TestPrepareReasonixTaskStateHome(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareReasonixTaskStateHome: %v", err)
 	}
-	want := filepath.Join(home, ".multica", "profiles", "work", "reasonix-state", "runtime-1", "agent_2")
+	want := filepath.Join(home, ".patchbay", "profiles", "work", "reasonix-state", "runtime-1", "agent_2")
 	if got != want {
 		t.Fatalf("state home = %q, want %q", got, want)
 	}
@@ -216,7 +216,7 @@ func TestPrepareDshTaskSessionRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepareDshTaskSessionRoot: %v", err)
 	}
-	want := filepath.Join(home, ".multica", "profiles", "work", "dsh-sessions", "runtime-1", "agent_2")
+	want := filepath.Join(home, ".patchbay", "profiles", "work", "dsh-sessions", "runtime-1", "agent_2")
 	if got != want {
 		t.Fatalf("session root = %q, want %q", got, want)
 	}
@@ -289,10 +289,10 @@ func TestLayerCustomEnvAndHermesHome(t *testing.T) {
 		},
 		{
 			name:        "blocklisted key dropped, overlay still applied",
-			customEnv:   map[string]string{"CODEX_HOME": "/evil", "MULTICA_TOKEN": "x"},
+			customEnv:   map[string]string{"CODEX_HOME": "/evil", "PATCHBAY_TOKEN": "x"},
 			overlayHome: "/tmp/task/hermes-home",
 			wantHermes:  "/tmp/task/hermes-home",
-			wantAbsent:  []string{"CODEX_HOME", "MULTICA_TOKEN"},
+			wantAbsent:  []string{"CODEX_HOME", "PATCHBAY_TOKEN"},
 		},
 	}
 
@@ -360,15 +360,15 @@ func TestConfigureCodexTaskShellEnvironment(t *testing.T) {
 			"SystemRoot=C:\\Windows",
 			"USERPROFILE=C:\\Users\\test",
 			"OPENAI_API_KEY=host-secret",
-			"MULTICA_LLM_API_KEY=daemon-secret",
+			"PATCHBAY_LLM_API_KEY=daemon-secret",
 		}
 		agentEnv := map[string]string{
 			"CUSTOM_ACCESS_TOKEN":      "agent-secret",
 			"CUSTOM_FLAG":              "enabled",
 			"UNAUTHORIZED_TOKEN":       "daemon-secret",
-			"MULTICA_TASK_CONFIG_ROOT": "/task/multica-config",
-			"MULTICA_SERVER_URL":       "https://task.example",
-			"MULTICA_TOKEN":            "mat_task",
+			"PATCHBAY_TASK_CONFIG_ROOT": "/task/patchbay-config",
+			"PATCHBAY_SERVER_URL":       "https://task.example",
+			"PATCHBAY_TOKEN":            "mat_task",
 		}
 		agentCustomEnv := map[string]string{
 			"CUSTOM_ACCESS_TOKEN": "agent-secret",
@@ -382,12 +382,12 @@ func TestConfigureCodexTaskShellEnvironment(t *testing.T) {
 			t.Fatalf("read config.toml: %v", err)
 		}
 		config := string(data)
-		for _, want := range []string{"SystemRoot", "USERPROFILE", "CUSTOM_ACCESS_TOKEN", "CUSTOM_FLAG", "MULTICA_TASK_CONFIG_ROOT", "MULTICA_SERVER_URL", "MULTICA_TOKEN"} {
+		for _, want := range []string{"SystemRoot", "USERPROFILE", "CUSTOM_ACCESS_TOKEN", "CUSTOM_FLAG", "PATCHBAY_TASK_CONFIG_ROOT", "PATCHBAY_SERVER_URL", "PATCHBAY_TOKEN"} {
 			if !strings.Contains(config, want) {
 				t.Errorf("config.toml missing %q:\n%s", want, config)
 			}
 		}
-		for _, unwanted := range []string{"OPENAI_API_KEY", "MULTICA_LLM_API_KEY", "UNAUTHORIZED_TOKEN", "MULTICA_*", "agent-secret", "daemon-secret", "mat_task"} {
+		for _, unwanted := range []string{"OPENAI_API_KEY", "PATCHBAY_LLM_API_KEY", "UNAUTHORIZED_TOKEN", "PATCHBAY_*", "agent-secret", "daemon-secret", "mat_task"} {
 			if strings.Contains(config, unwanted) {
 				t.Errorf("config.toml unexpectedly contains %q:\n%s", unwanted, config)
 			}
@@ -396,7 +396,7 @@ func TestConfigureCodexTaskShellEnvironment(t *testing.T) {
 
 	t.Run("Codex without task home fails closed", func(t *testing.T) {
 		t.Parallel()
-		err := configureCodexTaskShellEnvironment("codex", "", nil, map[string]string{"MULTICA_TOKEN": "mat_task"}, nil, slog.Default())
+		err := configureCodexTaskShellEnvironment("codex", "", nil, map[string]string{"PATCHBAY_TOKEN": "mat_task"}, nil, slog.Default())
 		if err == nil || !strings.Contains(err.Error(), "CODEX_HOME is missing") {
 			t.Fatalf("error = %v, want missing CODEX_HOME", err)
 		}
@@ -427,9 +427,9 @@ func TestCodexTaskShellEnvInheritsRealHome(t *testing.T) {
 	// task-scoped CODEX_HOME, and — since MUL-5578 — no HOME/XDG entry.
 	explicit := map[string]string{
 		"CODEX_HOME":               codexHome,
-		"MULTICA_TASK_CONFIG_ROOT": "/task/multica-config",
-		"MULTICA_TOKEN":            "mat_task",
-		"MULTICA_SERVER_URL":       "https://task.example",
+		"PATCHBAY_TASK_CONFIG_ROOT": "/task/patchbay-config",
+		"PATCHBAY_TOKEN":            "mat_task",
+		"PATCHBAY_SERVER_URL":       "https://task.example",
 	}
 
 	if err := configureCodexTaskShellEnvironment("codex", codexHome, inherited, explicit, nil, slog.Default()); err != nil {
@@ -461,8 +461,8 @@ func TestCodexTaskShellEnvInheritsRealHome(t *testing.T) {
 	if !slices.Contains(include, "CODEX_HOME") {
 		t.Errorf("include_only missing CODEX_HOME, got %v", include)
 	}
-	if !slices.Contains(include, "MULTICA_TASK_CONFIG_ROOT") {
-		t.Errorf("include_only missing MULTICA_TASK_CONFIG_ROOT, got %v", include)
+	if !slices.Contains(include, "PATCHBAY_TASK_CONFIG_ROOT") {
+		t.Errorf("include_only missing PATCHBAY_TASK_CONFIG_ROOT, got %v", include)
 	}
 }
 
@@ -472,7 +472,7 @@ func TestCodexShellAuthorizedCustomEnvNamesUsesDaemonBlocklist(t *testing.T) {
 	got := codexShellAuthorizedCustomEnvNames(map[string]string{
 		"CUSTOM_ACCESS_TOKEN": "agent-secret",
 		"custom_secret":       "agent-secret",
-		"MULTICA_TOKEN":       "must-not-authorize",
+		"PATCHBAY_TOKEN":       "must-not-authorize",
 		"PATH":                "/must/not/override",
 		"HOME":                "/must/not/override",
 		"CODEX_HOME":          "/must/not/override",
@@ -500,7 +500,7 @@ func TestTaskScopedAuthToken(t *testing.T) {
 		},
 		{
 			name:    "member token fails closed",
-			token:   "mul_member_token",
+			token:   "pby_member_token",
 			wantErr: "server provided non-task-scoped auth token",
 		},
 		{
@@ -534,59 +534,59 @@ func TestTaskScopedAuthToken(t *testing.T) {
 	}
 }
 
-func TestTaskMulticaEnvironmentIncludesPrivateConfigRoot(t *testing.T) {
+func TestTaskPatchbayEnvironmentIncludesPrivateConfigRoot(t *testing.T) {
 	t.Parallel()
 
 	const (
 		fakeToken      = "mat_task_environment_sentinel"
-		taskRoot       = "/task/private-multica-config"
-		workspacesRoot = "/daemon/multica_workspaces_staging"
+		taskRoot       = "/task/private-patchbay-config"
+		workspacesRoot = "/daemon/patchbay_workspaces_staging"
 	)
 	task := Task{
 		ID:          "task-test",
 		AgentID:     "agent-test",
 		WorkspaceID: "workspace-test",
 	}
-	env := taskMulticaEnvironment(task, "agent-name", fakeToken, taskRoot, workspacesRoot, "https://task.example", 19514, 3, "/task/tmp")
+	env := taskPatchbayEnvironment(task, "agent-name", fakeToken, taskRoot, workspacesRoot, "https://task.example", 19514, 3, "/task/tmp")
 
 	want := map[string]string{
-		"MULTICA_TOKEN":                fakeToken,
-		"MULTICA_TASK_CONFIG_ROOT":     taskRoot,
-		"MULTICA_TASK_WORKSPACES_ROOT": workspacesRoot,
-		"MULTICA_SERVER_URL":           "https://task.example",
-		"MULTICA_DAEMON_PORT":          "19514",
-		"MULTICA_WORKSPACE_ID":         "workspace-test",
-		"MULTICA_AGENT_NAME":           "agent-name",
-		"MULTICA_AGENT_ID":             "agent-test",
-		"MULTICA_TASK_ID":              "task-test",
-		"MULTICA_TASK_SLOT":            "3",
+		"PATCHBAY_TOKEN":                fakeToken,
+		"PATCHBAY_TASK_CONFIG_ROOT":     taskRoot,
+		"PATCHBAY_TASK_WORKSPACES_ROOT": workspacesRoot,
+		"PATCHBAY_SERVER_URL":           "https://task.example",
+		"PATCHBAY_DAEMON_PORT":          "19514",
+		"PATCHBAY_WORKSPACE_ID":         "workspace-test",
+		"PATCHBAY_AGENT_NAME":           "agent-name",
+		"PATCHBAY_AGENT_ID":             "agent-test",
+		"PATCHBAY_TASK_ID":              "task-test",
+		"PATCHBAY_TASK_SLOT":            "3",
 		"TMPDIR":                       "/task/tmp",
 		"TMP":                          "/task/tmp",
 		"TEMP":                         "/task/tmp",
 	}
 	if !maps.Equal(env, want) {
-		t.Fatalf("taskMulticaEnvironment() = %#v, want %#v", env, want)
+		t.Fatalf("taskPatchbayEnvironment() = %#v, want %#v", env, want)
 	}
 
 	layerCustomEnvAndHermesHome(env, map[string]string{
-		"MULTICA_TASK_CONFIG_ROOT":     "/owner/config",
-		"MULTICA_TASK_WORKSPACES_ROOT": "/owner/multica_workspaces",
-		"MULTICA_TOKEN":                "mul_owner_sentinel",
+		"PATCHBAY_TASK_CONFIG_ROOT":     "/owner/config",
+		"PATCHBAY_TASK_WORKSPACES_ROOT": "/owner/patchbay_workspaces",
+		"PATCHBAY_TOKEN":                "pby_owner_sentinel",
 	}, "", nil)
-	if env["MULTICA_TASK_CONFIG_ROOT"] != taskRoot {
-		t.Fatalf("custom env replaced task config root: %q", env["MULTICA_TASK_CONFIG_ROOT"])
+	if env["PATCHBAY_TASK_CONFIG_ROOT"] != taskRoot {
+		t.Fatalf("custom env replaced task config root: %q", env["PATCHBAY_TASK_CONFIG_ROOT"])
 	}
 	if env[TaskWorkspacesRootEnv] != workspacesRoot {
 		t.Fatalf("custom env replaced task workspaces root: %q", env[TaskWorkspacesRootEnv])
 	}
-	if env["MULTICA_TOKEN"] != fakeToken {
+	if env["PATCHBAY_TOKEN"] != fakeToken {
 		t.Fatal("custom env replaced task-scoped token")
 	}
 }
 
 // When `brew --prefix` is unavailable but the executable path is under a
 // known Cellar root, triggerRestart must recover the prefix from the
-// known-prefix list and target <prefix>/bin/multica.
+// known-prefix list and target <prefix>/bin/patchbay.
 func TestTriggerRestart_BrewPrefixUnavailable_FallsBackToKnownPrefix(t *testing.T) {
 	originalIsBrewInstall := isBrewInstall
 	originalGetBrewPrefix := getBrewPrefix
@@ -600,7 +600,7 @@ func TestTriggerRestart_BrewPrefixUnavailable_FallsBackToKnownPrefix(t *testing.
 	})
 
 	const knownPrefix = "/home/linuxbrew/.linuxbrew"
-	cellarPath := filepath.Join(knownPrefix, "Cellar", "multica", "0.2.9", "bin", "multica")
+	cellarPath := filepath.Join(knownPrefix, "Cellar", "patchbay", "0.2.9", "bin", "patchbay")
 	isBrewInstall = func() bool { return true }
 	getBrewPrefix = func() string { return "" }
 	resolveSelfExecutable = func() (string, error) { return cellarPath, nil }
@@ -616,7 +616,7 @@ func TestTriggerRestart_BrewPrefixUnavailable_FallsBackToKnownPrefix(t *testing.
 	}
 	d.triggerRestart()
 
-	want := filepath.Join(knownPrefix, "bin", "multica")
+	want := filepath.Join(knownPrefix, "bin", "patchbay")
 	if got := d.RestartBinary(); got != want {
 		t.Fatalf("restart binary = %q, want %q", got, want)
 	}
@@ -624,7 +624,7 @@ func TestTriggerRestart_BrewPrefixUnavailable_FallsBackToKnownPrefix(t *testing.
 
 // When `brew --prefix` is unavailable AND the executable is not under any
 // known Cellar root, triggerRestart logs a warning and keeps the executable
-// path (no fabricated <prefix>/bin/multica path).
+// path (no fabricated <prefix>/bin/patchbay path).
 func TestTriggerRestart_BrewPrefixUnavailable_NoKnownPrefix_KeepsExecutable(t *testing.T) {
 	originalIsBrewInstall := isBrewInstall
 	originalGetBrewPrefix := getBrewPrefix
@@ -818,7 +818,7 @@ func TestBuildPromptContainsIssueID(t *testing.T) {
 	// Prompt should contain the issue ID and CLI hint.
 	for _, want := range []string{
 		issueID,
-		"multica issue get",
+		"patchbay issue get",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q", want)
@@ -838,7 +838,7 @@ func TestBuildPromptContainsIssueID(t *testing.T) {
 // one sentence. The dividing question is whether the conversation can still be
 // READ, not whether it is a chat: an issue's comments, a Slack channel's
 // history, and a web chat's / Feishu's / WeCom's / DingTalk's stored
-// chat_message transcript all can; only a surface Multica stores no transcript
+// chat_message transcript all can; only a surface Patchbay stores no transcript
 // for cannot. Announcing a loss on the readable ones describes something that
 // did not happen — the user hears "the discussion is gone" when every word
 // survives.
@@ -859,28 +859,28 @@ func TestSessionContinuityNoticeMatchesSurface(t *testing.T) {
 		},
 		{
 			// Slack has a history reader, so the conversation is recoverable —
-			// just from the channel rather than from Multica. Telling the user it
+			// just from the channel rather than from Patchbay. Telling the user it
 			// was lost contradicts the commands the same prompt hands the agent.
 			name:         "slack rebuilds from the channel",
 			task:         Task{ChatSessionID: "chat-1", ChatChannelType: execenv.ChannelTypeSlack},
 			tellUser:     false,
-			wantMentions: "multica chat history",
+			wantMentions: "patchbay chat history",
 		},
 		{
-			// Web chat history is persisted in chat_message, which `multica chat
-			// history` reads back — recoverable, just from Multica's store.
+			// Web chat history is persisted in chat_message, which `patchbay chat
+			// history` reads back — recoverable, just from Patchbay's store.
 			name:         "web chat rebuilds from the stored transcript",
 			task:         Task{ChatSessionID: "chat-1"},
 			tellUser:     false,
-			wantMentions: "multica chat history",
+			wantMentions: "patchbay chat history",
 		},
 		{
 			// Feishu's conversation is persisted to chat_message too, and the
-			// handler's non-Slack fallback reads it back via `multica chat history`.
+			// handler's non-Slack fallback reads it back via `patchbay chat history`.
 			name:         "feishu rebuilds from the stored transcript",
 			task:         Task{ChatSessionID: "chat-1", ChatChannelType: execenv.ChannelTypeFeishu},
 			tellUser:     false,
-			wantMentions: "multica chat history",
+			wantMentions: "patchbay chat history",
 		},
 		{
 			// WeCom is fully wired on main (persists chat_message, stamps
@@ -889,7 +889,7 @@ func TestSessionContinuityNoticeMatchesSurface(t *testing.T) {
 			name:         "wecom rebuilds from the stored transcript",
 			task:         Task{ChatSessionID: "chat-1", ChatChannelType: execenv.ChannelTypeWecom},
 			tellUser:     false,
-			wantMentions: "multica chat history",
+			wantMentions: "patchbay chat history",
 		},
 		{
 			// DingTalk persists to chat_message through the same AppendUserMessage
@@ -897,7 +897,7 @@ func TestSessionContinuityNoticeMatchesSurface(t *testing.T) {
 			name:         "dingtalk rebuilds from the stored transcript",
 			task:         Task{ChatSessionID: "chat-1", ChatChannelType: execenv.ChannelTypeDingtalk},
 			tellUser:     false,
-			wantMentions: "multica chat history",
+			wantMentions: "patchbay chat history",
 		},
 	}
 
@@ -1100,7 +1100,7 @@ func TestBuildPromptAutopilotRunOnly(t *testing.T) {
 		"Autopilot run ID: run-1",
 		"Daily dependency check",
 		"Check dependencies and report outdated packages.",
-		"multica autopilot get autopilot-1 --output json",
+		"patchbay autopilot get autopilot-1 --output json",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("autopilot prompt missing %q\n---\n%s", want, prompt)
@@ -1111,7 +1111,7 @@ func TestBuildPromptAutopilotRunOnly(t *testing.T) {
 	// workflow section (execenv.AutopilotIssueCommandsGuard). MUL-5696 found
 	// that a second hand-maintained per-turn copy drifts, so the per-turn
 	// prompt must not restate it in any form.
-	if strings.Contains(prompt, "Do not run `multica issue get`") {
+	if strings.Contains(prompt, "Do not run `patchbay issue get`") {
 		t.Fatalf("autopilot prompt restates the issue-command boundary the brief owns (MUL-5696)\n---\n%s", prompt)
 	}
 	if strings.Contains(prompt, "Your assigned issue ID is:") {
@@ -1142,7 +1142,7 @@ func TestBuildPromptCommentTriggered(t *testing.T) {
 		commentContent,
 		"Focus on THIS comment",
 		commentID,
-		"multica issue comment add " + issueID + " --parent " + commentID,
+		"patchbay issue comment add " + issueID + " --parent " + commentID,
 		"do NOT reuse --parent values from previous turns",
 		// MUL-5442 (2026-08-06): with the generic no-reply rule retired,
 		// the reply command is framed as a plain imperative again — the
@@ -1155,7 +1155,7 @@ func TestBuildPromptCommentTriggered(t *testing.T) {
 	}
 
 	// Should still contain CLI hint for fetching issue context.
-	if !strings.Contains(prompt, "multica issue get") {
+	if !strings.Contains(prompt, "patchbay issue get") {
 		t.Fatal("prompt missing CLI hint for issue context")
 	}
 }
@@ -1246,7 +1246,7 @@ func TestBuildPromptCommentTriggeredNoContent(t *testing.T) {
 		Agent:            &AgentData{Name: "Test"},
 	}, "claude")
 
-	if !strings.Contains(prompt, "multica issue get") {
+	if !strings.Contains(prompt, "patchbay issue get") {
 		t.Fatal("prompt missing CLI hint")
 	}
 }
@@ -1275,7 +1275,7 @@ func TestBuildPromptSquadLeaderNoActionProhibition(t *testing.T) {
 	for _, want := range []string{
 		"Squad leader no_action rule",
 		"DO NOT post any comment",
-		"multica squad activity",
+		"patchbay squad activity",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("squad leader prompt missing %q\n---\n%s", want, prompt)
@@ -3207,8 +3207,8 @@ func TestExecuteAndDrain_CodexInactivityReportsMCPToolResultTranscript(t *testin
 		`read line` + "\n" +
 		`echo '{"jsonrpc":"2.0","id":3,"result":{}}'` + "\n" +
 		`echo '{"jsonrpc":"2.0","method":"turn/started","params":{"threadId":"thr-drain","turn":{"id":"turn-drain"}}}'` + "\n" +
-		`echo '{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thr-drain","item":{"type":"mcpToolCall","id":"mcp-1","server":"plugin-exa-search","tool":"web_search_exa","arguments":{"query":"latest Multica news"},"status":"inProgress"}}}'` + "\n" +
-		`echo '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thr-drain","item":{"type":"mcpToolCall","id":"mcp-1","server":"plugin-exa-search","tool":"web_search_exa","arguments":{"query":"latest Multica news"},"status":"completed","durationMs":1627,"result":{"content":[{"type":"text","text":"private provider payload"}]}}}}'` + "\n" +
+		`echo '{"jsonrpc":"2.0","method":"item/started","params":{"threadId":"thr-drain","item":{"type":"mcpToolCall","id":"mcp-1","server":"plugin-exa-search","tool":"web_search_exa","arguments":{"query":"latest Patchbay news"},"status":"inProgress"}}}'` + "\n" +
+		`echo '{"jsonrpc":"2.0","method":"item/completed","params":{"threadId":"thr-drain","item":{"type":"mcpToolCall","id":"mcp-1","server":"plugin-exa-search","tool":"web_search_exa","arguments":{"query":"latest Patchbay news"},"status":"completed","durationMs":1627,"result":{"content":[{"type":"text","text":"private provider payload"}]}}}}'` + "\n" +
 		`sleep 5` + "\n"
 	if err := os.WriteFile(fakePath, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake codex: %v", err)
@@ -3265,7 +3265,7 @@ func TestExecuteAndDrain_CodexInactivityReportsMCPToolResultTranscript(t *testin
 		for _, msg := range reported {
 			if msg.Seq == 1 && msg.Type == "tool_use" && msg.Tool == "web_search_exa" {
 				arguments, _ := msg.Input["arguments"].(map[string]any)
-				gotToolUse = msg.Input["server"] == "plugin-exa-search" && arguments["query"] == "latest Multica news"
+				gotToolUse = msg.Input["server"] == "plugin-exa-search" && arguments["query"] == "latest Patchbay news"
 			}
 			if msg.Seq == 2 && msg.Type == "tool_result" && msg.Tool == "web_search_exa" && msg.Output == "completed\nduration: 1627 ms" {
 				gotToolResult = true
@@ -3907,7 +3907,7 @@ func TestEnsureRepoReadyRefreshesOnMiss(t *testing.T) {
 }
 
 // A project github_repo URL that the workspace itself does not bind must still
-// be allowed for `multica repo checkout` after registerTaskRepos runs. Without
+// be allowed for `patchbay repo checkout` after registerTaskRepos runs. Without
 // this, the new project-repos-override-workspace-repos behavior would surface
 // repos in the meta-skill that the agent then can't actually clone.
 func TestRegisterTaskReposAllowsProjectOnlyURL(t *testing.T) {
@@ -4131,8 +4131,8 @@ func TestContextLockCancelsWaitWithoutConsumingToken(t *testing.T) {
 }
 
 func TestShellArgsFromEnv(t *testing.T) {
-	t.Setenv("MULTICA_CLAUDE_ARGS", `--max-turns 60 --append-system-prompt "multi word"`)
-	got, err := shellArgsFromEnv("MULTICA_CLAUDE_ARGS")
+	t.Setenv("PATCHBAY_CLAUDE_ARGS", `--max-turns 60 --append-system-prompt "multi word"`)
+	got, err := shellArgsFromEnv("PATCHBAY_CLAUDE_ARGS")
 	if err != nil {
 		t.Fatalf("shellArgsFromEnv: %v", err)
 	}
@@ -4143,8 +4143,8 @@ func TestShellArgsFromEnv(t *testing.T) {
 }
 
 func TestShellArgsFromEnvEmptyIsNil(t *testing.T) {
-	t.Setenv("MULTICA_CODEX_ARGS", "   ")
-	got, err := shellArgsFromEnv("MULTICA_CODEX_ARGS")
+	t.Setenv("PATCHBAY_CODEX_ARGS", "   ")
+	got, err := shellArgsFromEnv("PATCHBAY_CODEX_ARGS")
 	if err != nil {
 		t.Fatalf("shellArgsFromEnv: %v", err)
 	}
@@ -4303,7 +4303,7 @@ func TestReportTaskResult_CancelledParentStillReportsTerminalState(t *testing.T)
 	}
 }
 
-// Pins the GitHub multica#1952 fail-closed behaviour: a task whose
+// Pins the GitHub patchbay#1952 fail-closed behaviour: a task whose
 // agent run never produced a real result (blocked, cancelled, or any
 // future status we forget to enumerate) MUST go through FailTask, so
 // the UI never shows a green "Completed" badge for a run that didn't
@@ -5335,12 +5335,12 @@ func TestSanitizeAgentEnv(t *testing.T) {
 	in := map[string]string{
 		"HOME":        "/evil",
 		"PATH":        "/evil/bin",
-		"MULTICA_X":   "1",
+		"PATCHBAY_X":   "1",
 		"TEAM_SKILLS": "/srv/team",
 		"HERMES_HOME": "/some/home",
 	}
 	got := sanitizeAgentEnv(in)
-	for _, blocked := range []string{"HOME", "PATH", "MULTICA_X"} {
+	for _, blocked := range []string{"HOME", "PATH", "PATCHBAY_X"} {
 		if _, ok := got[blocked]; ok {
 			t.Errorf("blocklisted key %q must be dropped from the effective env", blocked)
 		}

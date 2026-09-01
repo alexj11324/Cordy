@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/plugincontract"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
 )
 
 // These exercise the real outbound path — a live HTTPS server, a real request,
@@ -42,8 +42,8 @@ func newHookTestServer(t *testing.T) *hookTestServer {
 		body, _ := io.ReadAll(r.Body)
 		harness.received <- hookReceivedRequest{
 			Body:      body,
-			Signature: r.Header.Get("X-Multica-Signature"),
-			Timestamp: r.Header.Get("X-Multica-Timestamp"),
+			Signature: r.Header.Get("X-Patchbay-Signature"),
+			Timestamp: r.Header.Get("X-Patchbay-Timestamp"),
 			Header:    r.Header.Clone(),
 		}
 		if harness.respond != nil {
@@ -65,7 +65,7 @@ func hookTestService(t *testing.T, harness *hookTestServer) *PluginService {
 	service.DevOrigins = []string{harness.server.URL}
 	service.HookClient = harness.server.Client()
 	service.Callbacks = NewCallbackTokens()
-	service.CallbackBaseURL = "https://plugin-api.multica.test/v1"
+	service.CallbackBaseURL = "https://plugin-api.patchbay.test/v1"
 	return service
 }
 
@@ -244,7 +244,7 @@ func TestHookCarriesAnInvocationScopedCallbackToken(t *testing.T) {
 	if body.CallbackToken == "" {
 		t.Fatal("the handler needs a callback token to answer with")
 	}
-	if body.CallbackURL != "https://plugin-api.multica.test/v1" {
+	if body.CallbackURL != "https://plugin-api.patchbay.test/v1" {
 		t.Fatalf("unexpected callback url %q", body.CallbackURL)
 	}
 	if body.Actor.Type != "member" {

@@ -3,8 +3,8 @@ import { describe, it, expect, vi } from "vitest";
 import { screen, waitFor, fireEvent } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ApiError } from "@multica/core/api";
-import type { SupportedLocale } from "@multica/core/i18n";
+import { ApiError } from "@patchbay/core/api";
+import type { SupportedLocale } from "@patchbay/core/i18n";
 import { renderWithI18n } from "../../../test/i18n";
 import { ScheduleEditor } from "./schedule-editor";
 import type { ScheduleConfig } from "./model";
@@ -37,7 +37,7 @@ const previewFailure = {
 // absence for a given expression is visible as a missing entry here.
 const previewCalls: string[] = [];
 
-vi.mock("@multica/core/autopilots/queries", () => ({
+vi.mock("@patchbay/core/autopilots/queries", () => ({
   cronPreviewOptions: (
     wsId: string,
     expr: string,

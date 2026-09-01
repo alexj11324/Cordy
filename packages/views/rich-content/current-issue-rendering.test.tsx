@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import type { Issue } from "@multica/core/types";
+import type { Issue } from "@patchbay/core/types";
 import { renderWithI18n } from "../test/i18n";
 import { NavigationProvider } from "../navigation/context";
 import type { NavigationAdapter } from "../navigation/types";
@@ -50,14 +50,14 @@ vi.mock("../editor/link-hover-card", () => ({
   LinkHoverCard: () => null,
 }));
 
-vi.mock("@multica/core/api", () => ({
+vi.mock("@patchbay/core/api", () => ({
   api: { getAttachmentTextContent: vi.fn() },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
 }));
 
-vi.mock("@multica/core/paths", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@multica/core/paths")>()),
+vi.mock("@patchbay/core/paths", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@patchbay/core/paths")>()),
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/acme/issues/${id}`,
     projectDetail: (id: string) => `/acme/projects/${id}`,

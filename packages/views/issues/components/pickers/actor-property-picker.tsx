@@ -2,16 +2,16 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { IssueProperty, IssuePropertyValue } from "@multica/core/types";
+import type { IssueProperty, IssuePropertyValue } from "@patchbay/core/types";
 import {
   actorRefsFromValue,
   actorRefValuesFromValue,
   formatActorRef,
   MAX_ISSUE_PROPERTY_ACTOR_VALUES,
-} from "@multica/core/types";
-import { memberListOptions } from "@multica/core/workspace/queries";
-import { useActorName } from "@multica/core/workspace/hooks";
-import { useWorkspaceId } from "@multica/core/hooks";
+} from "@patchbay/core/types";
+import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { useActorName } from "@patchbay/core/workspace/hooks";
+import { useWorkspaceId } from "@patchbay/core/hooks";
 import { ActorAvatar } from "../../../common/actor-avatar";
 import { useT } from "../../../i18n";
 import { matchesPinyin } from "../../../editor/extensions/pinyin-match";

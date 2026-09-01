@@ -12,10 +12,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // This file is the Telegram OutboundReplier — the engine seam that delivers a
@@ -29,10 +29,10 @@ import (
 
 const (
 	msgFreshPending   = "✅ Fresh start ready. Your next chat message will run without previous context."
-	msgChatStarted    = "✅ Started a new Multica chat. Your next message will enter it."
+	msgChatStarted    = "✅ Started a new Patchbay chat. Your next message will enter it."
 	msgIssueUsage     = "Please include an issue title. Use:\n\n/issue <title>\n[description] (optional)"
-	msgIssueNotMember = "You're not a member of this Multica workspace, so I can't file an issue for you. Ask a workspace admin to invite you, then send the command again."
-	msgIssueDisabled  = "This Telegram bot isn't connected to Multica (or was disconnected). Ask a workspace admin to reconnect it."
+	msgIssueNotMember = "You're not a member of this Patchbay workspace, so I can't file an issue for you. Ask a workspace admin to invite you, then send the command again."
+	msgIssueDisabled  = "This Telegram bot isn't connected to Patchbay (or was disconnected). Ask a workspace admin to reconnect it."
 )
 
 // bindingMinter is the binding-token surface the replier needs.
@@ -58,8 +58,8 @@ type OutboundReplier struct {
 type OutboundReplierConfig struct {
 	Binding bindingMinter
 	Decrypt Decrypter
-	// AppURL is the Multica web app host for the redeem link, same sourcing as
-	// the Slack replier (MULTICA_APP_URL ?? FRONTEND_ORIGIN).
+	// AppURL is the Patchbay web app host for the redeem link, same sourcing as
+	// the Slack replier (PATCHBAY_APP_URL ?? FRONTEND_ORIGIN).
 	AppURL      string
 	BindingPath string // default "/telegram/bind"
 	APIBase     string
@@ -150,7 +150,7 @@ func (r *OutboundReplier) Reply(ctx context.Context, inst engine.ResolvedInstall
 
 func (r *OutboundReplier) sendBindingPrompt(ctx context.Context, inst engine.ResolvedInstallation, msg channel.InboundMessage, res engine.Result) error {
 	// A group-visible bearer link can be redeemed by another group member and
-	// would bind the original sender's Telegram identity to the wrong Multica
+	// would bind the original sender's Telegram identity to the wrong Patchbay
 	// user. Ask the sender to start a private chat first; only private-chat
 	// prompts carry a redeem token.
 	if msg.Source.ChatType == channel.ChatTypeGroup {
@@ -174,7 +174,7 @@ func (r *OutboundReplier) sendBindingPrompt(ctx context.Context, inst engine.Res
 		return fmt.Errorf("mint binding token: %w", err)
 	}
 	bindURL := r.appURL + r.bindingPath + "?token=" + url.QueryEscape(token.Raw)
-	text := "👋 To start chatting with me, link your Telegram account to Multica:\n" + bindURL + "\n(This link expires in 15 minutes.)"
+	text := "👋 To start chatting with me, link your Telegram account to Patchbay:\n" + bindURL + "\n(This link expires in 15 minutes.)"
 	return r.post(ctx, inst, msg, text)
 }
 

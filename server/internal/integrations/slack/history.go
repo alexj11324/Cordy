@@ -14,15 +14,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/slack-go/slack"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // ErrNoSlackSession reports that the chat session has no Slack channel binding —
 // it is a Feishu or web-only session. Callers surface it as an empty (not
-// failed) read so the unified `multica chat history` / `multica chat thread`
+// failed) read so the unified `patchbay chat history` / `patchbay chat thread`
 // commands answer gracefully on a non-Slack conversation.
 var ErrNoSlackSession = errors.New("slack: session has no slack channel binding")
 
@@ -51,7 +51,7 @@ type historyClient interface {
 }
 
 // History reads a Slack conversation on demand — the pull side of the unified
-// `multica chat history` (channel overview) and `multica chat thread [id]`
+// `patchbay chat history` (channel overview) and `patchbay chat thread [id]`
 // (one thread) commands (MUL-3871). Both are scoped to the session's OWN
 // channel: the channel is resolved server-side from the binding and never taken
 // from the agent, so a thread id is only a within-channel locator. Sessions with
@@ -94,7 +94,7 @@ type slackTarget struct {
 
 // resolve maps a chat_session to its Slack channel + bot client. The channel is
 // server-derived here and never accepted from the caller — that is the security
-// boundary for `multica chat thread <id>` (the agent supplies only a
+// boundary for `patchbay chat thread <id>` (the agent supplies only a
 // within-channel thread locator).
 func (h *History) resolve(ctx context.Context, chatSessionID pgtype.UUID) (slackTarget, error) {
 	binding, err := h.q.GetChannelChatSessionBindingBySession(ctx, db.GetChannelChatSessionBindingBySessionParams{
@@ -138,7 +138,7 @@ func (h *History) resolve(ctx context.Context, chatSessionID pgtype.UUID) (slack
 // ChannelOverview returns the channel's recent top-level messages (oldest-first),
 // each thread tagged with its id + reply count. It does NOT expand thread
 // contents — it is the table of contents the agent reads to find a thread, then
-// drills into with `multica chat thread <id>`. Backs `multica chat history`.
+// drills into with `patchbay chat thread <id>`. Backs `patchbay chat history`.
 func (h *History) ChannelOverview(ctx context.Context, chatSessionID pgtype.UUID, opts channel.HistoryOptions) (channel.HistoryPage, error) {
 	t, err := h.resolve(ctx, chatSessionID)
 	if err != nil {
@@ -180,7 +180,7 @@ func (h *History) ChannelOverview(ctx context.Context, chatSessionID pgtype.UUID
 // Thread returns one thread's messages (oldest-first). threadID empty reads the
 // thread the session is in (the agent's own thread); a non-empty id reads that
 // specific thread — but always within the session's pinned channel. A DM (no
-// threads) reads its linear conversation. Backs `multica chat thread [id]`.
+// threads) reads its linear conversation. Backs `patchbay chat thread [id]`.
 func (h *History) Thread(ctx context.Context, chatSessionID pgtype.UUID, threadID string, opts channel.HistoryOptions) (channel.HistoryPage, error) {
 	t, err := h.resolve(ctx, chatSessionID)
 	if err != nil {
@@ -449,7 +449,7 @@ func historyTarget(b db.ChannelChatSessionBinding) (channelID, threadRoot string
 // it resolves display names in one batch, labels senders, maps roles, and
 // computes the back-paging cursor. When overview is true, a message that heads a
 // thread (reply_count > 0) is tagged with its thread id + reply count so the
-// agent can drill in with `multica chat thread <id>`.
+// agent can drill in with `patchbay chat thread <id>`.
 func normalizePage(ctx context.Context, client historyClient, logger *slog.Logger, raw []slack.Message, botUserID string, limit int, overview bool) channel.HistoryPage {
 	sort.SliceStable(raw, func(i, j int) bool { return slackTSLess(raw[i].Timestamp, raw[j].Timestamp) })
 

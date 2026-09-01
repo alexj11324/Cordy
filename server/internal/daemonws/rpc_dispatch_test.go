@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 // dialRPCTestConn spins up a hub-backed WS server and returns a connected

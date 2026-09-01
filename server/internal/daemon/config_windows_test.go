@@ -15,12 +15,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/pkg/agent"
+	"github.com/patchbay-ai/patchbay/server/pkg/agent"
 )
 
 const (
-	longPathExecutableHelperEnv = "MULTICA_LONG_PATH_EXECUTABLE_HELPER"
-	longPathExecutableMarkerEnv = "MULTICA_LONG_PATH_EXECUTABLE_MARKER"
+	longPathExecutableHelperEnv = "PATCHBAY_LONG_PATH_EXECUTABLE_HELPER"
+	longPathExecutableMarkerEnv = "PATCHBAY_LONG_PATH_EXECUTABLE_MARKER"
 )
 
 func TestLongPathExecutableHelper(t *testing.T) {

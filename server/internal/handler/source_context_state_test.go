@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/service"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
 )
 
 func sourceContextStateFixture() service.SourceContextSnapshot {

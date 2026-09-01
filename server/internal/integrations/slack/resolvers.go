@@ -9,10 +9,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel"
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/dbid"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/dbid"
 )
 
 // Slack resolvers connect the channel-agnostic inbound pipeline to Slack
@@ -217,7 +217,7 @@ func (r *identityResolver) ResolveSender(ctx context.Context, inst engine.Resolv
 	// reused link this also gates materialization: we never persist a binding for
 	// a user who has since left the workspace.
 	if _, err := r.q.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
-		UserID:      binding.MulticaUserID,
+		UserID:      binding.PatchbayUserID,
 		WorkspaceID: inst.WorkspaceID,
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -237,7 +237,7 @@ func (r *identityResolver) ResolveSender(ctx context.Context, inst engine.Resolv
 		// first message that already wrote it returns the same row.
 		if _, err := r.q.CreateChannelUserBinding(ctx, db.CreateChannelUserBindingParams{
 			WorkspaceID:    inst.WorkspaceID,
-			MulticaUserID:  binding.MulticaUserID,
+			PatchbayUserID:  binding.PatchbayUserID,
 			InstallationID: inst.ID,
 			ChannelType:    string(TypeSlack),
 			ChannelUserID:  senderID,
@@ -246,7 +246,7 @@ func (r *identityResolver) ResolveSender(ctx context.Context, inst engine.Resolv
 			return engine.ResolvedIdentity{}, fmt.Errorf("materialize reused slack binding: %w", err)
 		}
 	}
-	return engine.ResolvedIdentity{UserID: binding.MulticaUserID}, nil
+	return engine.ResolvedIdentity{UserID: binding.PatchbayUserID}, nil
 }
 
 // reusableBinding looks for a link the same Slack user already made to ANOTHER

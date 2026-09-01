@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/testutil"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/testutil"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 func installAutopilotSubscriberInsertFailure(t *testing.T) {
@@ -217,7 +217,7 @@ func TestAutopilotSubscriberSave_LosesToConcurrentRevoke(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			targetUserID := createPlainMember(t, fmt.Sprintf("autopilot-revoke-race-%s-%d@multica.ai", tc.name, time.Now().UnixNano()))
+			targetUserID := createPlainMember(t, fmt.Sprintf("autopilot-revoke-race-%s-%d@patchbay.ai", tc.name, time.Now().UnixNano()))
 			run := tc.prepare(t, targetUserID)
 
 			revokeTx, err := testPool.Begin(ctx)
@@ -532,7 +532,7 @@ func TestUpdateAutopilotPreservesSubscribersWhenOmitted(t *testing.T) {
 // row without weakening create/update validation for arbitrary foreign ids.
 func TestAutopilotDepartedSubscriberReadRepair(t *testing.T) {
 	ctx := context.Background()
-	departedUserID := createPlainMember(t, fmt.Sprintf("autopilot-departed-%d@multica.ai", time.Now().UnixNano()))
+	departedUserID := createPlainMember(t, fmt.Sprintf("autopilot-departed-%d@patchbay.ai", time.Now().UnixNano()))
 
 	var agentID string
 	if err := testPool.QueryRow(ctx, `SELECT id FROM agent WHERE workspace_id = $1 LIMIT 1`, testWorkspaceID).Scan(&agentID); err != nil {

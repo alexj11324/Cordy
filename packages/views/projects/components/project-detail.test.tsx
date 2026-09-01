@@ -2,7 +2,7 @@ import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { Project } from "@multica/core/types";
+import type { Project } from "@patchbay/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 import { ProjectDetail } from "./project-detail";
@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   toastSuccess: vi.fn(),
 }));
 
-vi.mock("@multica/ui/lib/clipboard", () => ({
+vi.mock("@patchbay/ui/lib/clipboard", () => ({
   copyText: mocks.copyText,
 }));
 
@@ -40,48 +40,48 @@ vi.mock("@tanstack/react-query", () => ({
   },
 }));
 
-vi.mock("@multica/core/projects/queries", () => ({
+vi.mock("@patchbay/core/projects/queries", () => ({
   projectDetailOptions: () => ({ queryKey: ["project-detail"] }),
 }));
 
-vi.mock("@multica/core/projects/mutations", () => ({
+vi.mock("@patchbay/core/projects/mutations", () => ({
   useUpdateProject: () => ({ mutate: vi.fn() }),
   useDeleteProject: () => ({ mutate: mocks.deleteProject }),
 }));
 
-vi.mock("@multica/core/pins", () => ({
+vi.mock("@patchbay/core/pins", () => ({
   pinListOptions: () => ({ queryKey: ["pins"] }),
   useCreatePin: () => ({ mutate: vi.fn() }),
   useDeletePin: () => ({ mutate: vi.fn() }),
 }));
 
-vi.mock("@multica/core/workspace/queries", () => ({
+vi.mock("@patchbay/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"] }),
   agentListOptions: () => ({ queryKey: ["agents"] }),
 }));
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@patchbay/core/auth", () => ({
   useAuthStore: (selector: (state: { user: { id: string } }) => unknown) =>
     selector({ user: { id: "user-1" } }),
 }));
 
-vi.mock("@multica/core/chat", () => ({
+vi.mock("@patchbay/core/chat", () => ({
   useRecentContextStore: (
     selector: (state: { recordVisit: typeof mocks.recordVisit }) => unknown,
   ) => selector({ recordVisit: mocks.recordVisit }),
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   useWorkspacePaths: () => ({
     projects: () => "/test-workspace/projects",
   }),
 }));
 
-vi.mock("@multica/core/workspace/hooks", () => ({
+vi.mock("@patchbay/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "User One" }),
 }));
 
@@ -103,15 +103,15 @@ vi.mock("react-resizable-panels", () => ({
   }),
 }));
 
-vi.mock("@multica/ui/hooks/use-mobile", () => ({
+vi.mock("@patchbay/ui/hooks/use-mobile", () => ({
   useIsMobile: () => false,
 }));
 
-vi.mock("@multica/ui/components/common/emoji-picker", () => ({
+vi.mock("@patchbay/ui/components/common/emoji-picker", () => ({
   EmojiPicker: () => null,
 }));
 
-vi.mock("@multica/ui/components/ui/resizable", () => ({
+vi.mock("@patchbay/ui/components/ui/resizable", () => ({
   ResizablePanelGroup: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),
@@ -121,7 +121,7 @@ vi.mock("@multica/ui/components/ui/resizable", () => ({
   ResizableHandle: () => null,
 }));
 
-vi.mock("@multica/ui/components/ui/dropdown-menu", () => ({
+vi.mock("@patchbay/ui/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   DropdownMenuTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   DropdownMenuContent: ({ children }: { children: React.ReactNode }) => (
@@ -141,7 +141,7 @@ vi.mock("@multica/ui/components/ui/dropdown-menu", () => ({
   DropdownMenuSeparator: () => <hr />,
 }));
 
-vi.mock("@multica/ui/components/ui/popover", () => ({
+vi.mock("@patchbay/ui/components/ui/popover", () => ({
   Popover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   PopoverTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   PopoverContent: ({ children }: { children: React.ReactNode }) => (
@@ -149,7 +149,7 @@ vi.mock("@multica/ui/components/ui/popover", () => ({
   ),
 }));
 
-vi.mock("@multica/ui/components/ui/tooltip", () => ({
+vi.mock("@patchbay/ui/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   TooltipContent: ({ children }: { children: React.ReactNode }) => (
@@ -157,14 +157,14 @@ vi.mock("@multica/ui/components/ui/tooltip", () => ({
   ),
 }));
 
-vi.mock("@multica/ui/components/ui/sheet", () => ({
+vi.mock("@patchbay/ui/components/ui/sheet", () => ({
   Sheet: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   SheetContent: ({ children }: { children: React.ReactNode }) => (
     <div>{children}</div>
   ),
 }));
 
-vi.mock("@multica/ui/components/ui/alert-dialog", () => ({
+vi.mock("@patchbay/ui/components/ui/alert-dialog", () => ({
   AlertDialog: ({
     open,
     children,

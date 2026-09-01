@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/util"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
 )
 
 // TestCreateComment_StripsNullBytesInsteadOf500 pins the fix for GH #5388.

@@ -115,7 +115,7 @@ export const useProjectViewStore = create<ProjectViewState>()(
       clearFilters: () => set({ filters: EMPTY_PROJECT_FILTERS }),
     }),
     {
-      name: "multica_projects_view",
+      name: "patchbay_projects_view",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
       partialize: (state) => ({
         viewMode: state.viewMode,

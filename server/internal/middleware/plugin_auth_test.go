@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	publicapiv1 "github.com/multica-ai/multica/server/pkg/publicapi/v1"
+	publicapiv1 "github.com/patchbay-ai/patchbay/server/pkg/publicapi/v1"
 )
 
 func TestPluginBearerOnlyRejectsNonPluginCredentials(t *testing.T) {
@@ -16,7 +16,7 @@ func TestPluginBearerOnlyRejectsNonPluginCredentials(t *testing.T) {
 	}{
 		{name: "missing"},
 		{name: "session jwt", authorization: "Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature"},
-		{name: "personal access token", authorization: "Bearer mul_personal"},
+		{name: "personal access token", authorization: "Bearer pby_personal"},
 		{name: "wrong scheme", authorization: "Basic mpi_installation"},
 	}
 
@@ -26,7 +26,7 @@ func TestPluginBearerOnlyRejectsNonPluginCredentials(t *testing.T) {
 			next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 				called = true
 			})
-			req := httptest.NewRequest(http.MethodGet, "/v1/context", nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/plugin/context", nil)
 			if tt.authorization != "" {
 				req.Header.Set("Authorization", tt.authorization)
 			}
@@ -62,7 +62,7 @@ func TestPluginBearerOnlyPassesPluginTokenKindsToTheHandler(t *testing.T) {
 				called = true
 				w.WriteHeader(http.StatusNoContent)
 			})
-			req := httptest.NewRequest(http.MethodGet, "/v1/context", nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/plugin/context", nil)
 			req.Header.Set("Authorization", "Bearer "+token)
 			response := httptest.NewRecorder()
 

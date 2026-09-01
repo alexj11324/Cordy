@@ -217,7 +217,7 @@ func (c *hermesClient) nextACPTerminalID() string {
 	c.terminalMu.Lock()
 	defer c.terminalMu.Unlock()
 	c.nextTerminalID++
-	return fmt.Sprintf("multica-terminal-%d", c.nextTerminalID)
+	return fmt.Sprintf("patchbay-terminal-%d", c.nextTerminalID)
 }
 
 func (c *hermesClient) acpTerminalFor(id string) (*acpTerminal, bool) {

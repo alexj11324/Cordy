@@ -221,7 +221,7 @@ func (b *kimiBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 		initResult, err := c.request(runCtx, "initialize", map[string]any{
 			"protocolVersion": 1,
 			"clientInfo": map[string]any{
-				"name":    "multica-agent-sdk",
+				"name":    "patchbay-agent-sdk",
 				"version": "0.2.0",
 			},
 			"clientCapabilities": map[string]any{
@@ -461,7 +461,7 @@ func (b *kimiBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 		// Fallback: kimi-code 0.33.0 exports no token counters over ACP.
 		// Its session/prompt result carries only stopReason, and its
 		// `usage_update` notification carries only {used,size} — context
-		// window occupancy, not billing. Verified against the CLI Multica's
+		// window occupancy, not billing. Verified against the CLI Patchbay's
 		// own onboarding installs. Without this scan every kimi task lands
 		// on the usage dashboard with no row at all (MUL-5773 / #6448).
 		//
@@ -516,7 +516,7 @@ func (b *kimiBackend) Execute(ctx context.Context, prompt string, opts ExecOptio
 }
 
 // kimiToolNameFromTitle normalises tool names emitted by Kimi's ACP
-// server into the snake_case identifiers the Multica UI expects.
+// server into the snake_case identifiers the Patchbay UI expects.
 //
 // Kimi follows the ACP spec where `title` is a short human-readable
 // label such as "Read file: /path/to/foo.go" or "Run command: ls".

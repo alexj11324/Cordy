@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { Brain, ChevronDown } from "lucide-react";
-import type { RuntimeModelThinkingLevel } from "@multica/core/types";
-import { Label } from "@multica/ui/components/ui/label";
+import type { RuntimeModelThinkingLevel } from "@patchbay/core/types";
+import { Label } from "@patchbay/ui/components/ui/label";
 import {
   PickerItem,
   PropertyPicker,
@@ -23,7 +23,7 @@ import { useT } from "../../../i18n";
  * default decides what the model runs at. We render that state as
  * "Follow CLI config" rather than singling out one level as the
  * factory default, because the actual default at runtime is owned by
- * the user's local CLI install, not by Multica's catalog.
+ * the user's local CLI install, not by Patchbay's catalog.
  */
 export function ThinkingPicker({
   value,
@@ -155,7 +155,7 @@ export function ThinkingPicker({
               is deterministic across rows regardless of whether the label
               row has the `default` badge sibling. */}
           {/* No model-factory-default badge here on purpose: when the
-              picker is "Follow CLI config" (value === ""), Multica omits
+              picker is "Follow CLI config" (value === ""), Patchbay omits
               `--effort` and the local CLI config decides — the model's
               factory default is irrelevant to what actually fires, so
               flagging one option as "default" was misleading. */}

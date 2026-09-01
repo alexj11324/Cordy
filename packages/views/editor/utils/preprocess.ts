@@ -3,8 +3,8 @@ import {
   preprocessMentionShortcodes,
   preprocessFileCards,
   preprocessIssueIdentifiers,
-} from "@multica/ui/markdown";
-import { stripChannelMediaMarkers } from "@multica/core/types";
+} from "@patchbay/ui/markdown";
+import { stripChannelMediaMarkers } from "@patchbay/core/types";
 
 /**
  * Preprocess a markdown string before loading into Tiptap via contentType: 'markdown'.

@@ -25,7 +25,7 @@ vi.mock("@tanstack/react-query", () => ({
   }),
 }));
 
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@patchbay/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: (s: unknown) => unknown) => {
       const state = { logout: mockAuthLogout };
@@ -35,20 +35,20 @@ vi.mock("@multica/core/auth", () => ({
   ),
 }));
 
-vi.mock("@multica/core/workspace/queries", () => ({
+vi.mock("@patchbay/core/workspace/queries", () => ({
   workspaceKeys: { list: () => ["workspaces", "list"] },
 }));
 
-vi.mock("@multica/core/platform", () => ({
+vi.mock("@patchbay/core/platform", () => ({
   clearWorkspaceStorage: mockClearWorkspaceStorage,
   defaultStorage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
 }));
 
-vi.mock("@multica/core/drafts/cleanup-registry", () => ({
+vi.mock("@patchbay/core/drafts/cleanup-registry", () => ({
   resetAllRegisteredDrafts: mockReset,
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   paths: { login: () => "/login" },
 }));
 

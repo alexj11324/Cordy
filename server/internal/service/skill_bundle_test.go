@@ -28,11 +28,11 @@ func TestBuildAgentSkillBundlesProducesRefsAndFullBundles(t *testing.T) {
 }
 
 func TestBuildAgentSkillBundlesAssignsBuiltinID(t *testing.T) {
-	_, refs := BuildAgentSkillBundles([]AgentSkillData{{Name: "multica-working-on-issues", Content: "body"}})
+	_, refs := BuildAgentSkillBundles([]AgentSkillData{{Name: "patchbay-working-on-issues", Content: "body"}})
 	if len(refs) != 1 {
 		t.Fatalf("refs = %d, want 1", len(refs))
 	}
-	if refs[0].ID != "builtin:multica-working-on-issues" || refs[0].Source != "builtin" {
+	if refs[0].ID != "builtin:patchbay-working-on-issues" || refs[0].Source != "builtin" {
 		t.Fatalf("builtin ref = %+v", refs[0])
 	}
 }

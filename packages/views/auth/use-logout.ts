@@ -2,12 +2,12 @@
 
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "@multica/core/auth";
-import { workspaceKeys } from "@multica/core/workspace/queries";
-import { clearWorkspaceStorage, defaultStorage } from "@multica/core/platform";
-import { resetAllRegisteredDrafts } from "@multica/core/drafts/cleanup-registry";
-import { paths } from "@multica/core/paths";
-import type { Workspace } from "@multica/core/types";
+import { useAuthStore } from "@patchbay/core/auth";
+import { workspaceKeys } from "@patchbay/core/workspace/queries";
+import { clearWorkspaceStorage, defaultStorage } from "@patchbay/core/platform";
+import { resetAllRegisteredDrafts } from "@patchbay/core/drafts/cleanup-registry";
+import { paths } from "@patchbay/core/paths";
+import type { Workspace } from "@patchbay/core/types";
 import { useNavigation } from "../navigation";
 
 /**
@@ -60,7 +60,7 @@ export function useLogout() {
     // Clear desktop tab state. Tab paths can contain workspace slugs and
     // issue UUIDs that must not survive across user sessions on a shared
     // machine. No-op on web (web doesn't write this key).
-    defaultStorage.removeItem("multica_tabs");
+    defaultStorage.removeItem("patchbay_tabs");
 
     queryClient.clear();
     authLogout();

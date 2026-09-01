@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
-import { MULTICA_LOCALE_HEADER } from "./lib/locale-routing";
+import { PATCHBAY_LOCALE_HEADER } from "./lib/locale-routing";
 import { config, proxy } from "./proxy";
 
 function makeRequest(
   path: string,
   cookies: Record<string, string> = {},
-  host = "app.multica.test",
+  host = "app.patchbay.test",
 ) {
   const cookieHeader = Object.entries(cookies)
     .map(([key, value]) => `${key}=${value}`)
@@ -52,7 +52,7 @@ function withoutRuntimeUpstreams(run: () => void) {
 
 describe("proxy legacy workspace route redirects", () => {
   const sessionCookies = {
-    multica_logged_in: "1",
+    patchbay_logged_in: "1",
     last_workspace_slug: "acme",
   };
 
@@ -72,7 +72,7 @@ describe("proxy legacy workspace route redirects", () => {
     "redirects legacy /%s URLs through the last workspace slug",
     (segment, expectedPath) => {
       expect(redirectLocation(`/${segment}?tab=all`, sessionCookies)).toBe(
-        `https://app.multica.test${expectedPath}?tab=all`,
+        `https://app.patchbay.test${expectedPath}?tab=all`,
       );
     },
   );
@@ -80,12 +80,12 @@ describe("proxy legacy workspace route redirects", () => {
   it("preserves nested legacy paths and query strings", () => {
     expect(
       redirectLocation("/squads/squad-123?view=members", sessionCookies),
-    ).toBe("https://app.multica.test/acme/squads/squad-123?view=members");
+    ).toBe("https://app.patchbay.test/acme/squads/squad-123?view=members");
   });
 
   it("sends logged-out legacy URLs to login", () => {
     expect(redirectLocation("/usage?tab=billing")).toBe(
-      "https://app.multica.test/login?tab=billing",
+      "https://app.patchbay.test/login?tab=billing",
     );
   });
 
@@ -96,15 +96,15 @@ describe("proxy legacy workspace route redirects", () => {
     // instead. The deep-link query is dropped because feeding a legacy path
     // back through `next` would return here and loop.
     expect(
-      redirectLocation("/squads?view=members", { multica_logged_in: "1" }),
-    ).toBe("https://app.multica.test/login");
+      redirectLocation("/squads?view=members", { patchbay_logged_in: "1" }),
+    ).toBe("https://app.patchbay.test/login");
   });
 
-  it.each(["multica.ai", "www.multica.ai"])(
+  it.each(["patchbay.ai", "www.patchbay.ai"])(
     "resolves a slugless session off the marketing host %s instead of stranding it",
     (host) => {
       expect(
-        redirectLocation("/inbox", { multica_logged_in: "1" }, host),
+        redirectLocation("/inbox", { patchbay_logged_in: "1" }, host),
       ).toBe(`https://${host}/login`);
     },
   );
@@ -115,11 +115,11 @@ describe("proxy legacy workspace route redirects", () => {
 
   it("redirects app-host root URLs to the last workspace", () => {
     expect(redirectLocation("/", sessionCookies)).toBe(
-      "https://app.multica.test/acme/issues",
+      "https://app.patchbay.test/acme/issues",
     );
   });
 
-  it.each(["multica.ai", "www.multica.ai"])(
+  it.each(["patchbay.ai", "www.patchbay.ai"])(
     "does not redirect public marketing root on %s",
     (host) => {
       expect(redirectLocation("/", sessionCookies, host)).toBeNull();
@@ -127,15 +127,15 @@ describe("proxy legacy workspace route redirects", () => {
   );
 
   it("still redirects explicit legacy app routes on the public marketing host", () => {
-    expect(redirectLocation("/issues/ABC-123", sessionCookies, "multica.ai")).toBe(
-      "https://multica.ai/acme/issues/ABC-123",
+    expect(redirectLocation("/issues/ABC-123", sessionCookies, "patchbay.ai")).toBe(
+      "https://patchbay.ai/acme/issues/ABC-123",
     );
   });
 });
 
 describe("proxy runtime upstream rewrites", () => {
-  it("matches globally versioned Plugin API requests", () => {
-    expect(config.matcher).toContain("/v1/:path*");
+  it("matches Plugin API requests through the /api prefix", () => {
+    expect(config.matcher).toContain("/api/:path*");
   });
 
   it("does not rewrite API requests when no runtime API origin is configured", () => {
@@ -145,14 +145,14 @@ describe("proxy runtime upstream rewrites", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("x-middleware-rewrite")).toBeNull();
       expect(
-        res.headers.get(`x-middleware-request-${MULTICA_LOCALE_HEADER}`),
+        res.headers.get(`x-middleware-request-${PATCHBAY_LOCALE_HEADER}`),
       ).toBe("en");
     });
   });
 
   it("does not rewrite Plugin API requests when no runtime API origin is configured", () => {
     withoutRuntimeUpstreams(() => {
-      const res = proxy(makeRequest("/v1/context?x=1"));
+      const res = proxy(makeRequest("/api/v1/plugin/context?x=1"));
 
       expect(res.status).toBe(200);
       expect(res.headers.get("x-middleware-rewrite")).toBeNull();
@@ -166,7 +166,7 @@ describe("proxy runtime upstream rewrites", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("x-middleware-rewrite")).toBeNull();
       expect(
-        res.headers.get(`x-middleware-request-${MULTICA_LOCALE_HEADER}`),
+        res.headers.get(`x-middleware-request-${PATCHBAY_LOCALE_HEADER}`),
       ).toBe("en");
     });
   });
@@ -205,11 +205,11 @@ describe("proxy runtime upstream rewrites", () => {
     const previous = process.env.REMOTE_API_URL;
     process.env.REMOTE_API_URL = "http://backend:8080";
     try {
-      const res = proxy(makeRequest("/v1/issues/MUL-6581?x=1"));
+      const res = proxy(makeRequest("/api/v1/plugin/issues/PB-6581?x=1"));
 
       expect(res.status).toBe(200);
       expect(res.headers.get("x-middleware-rewrite")).toBe(
-        "http://backend:8080/v1/issues/MUL-6581?x=1",
+        "http://backend:8080/api/v1/plugin/issues/PB-6581?x=1",
       );
     } finally {
       restoreEnv("REMOTE_API_URL", previous);
@@ -255,7 +255,7 @@ describe("proxy runtime upstream rewrites", () => {
       expect(res.status).toBe(200);
       expect(res.headers.get("x-middleware-rewrite")).toBeNull();
       expect(
-        res.headers.get(`x-middleware-request-${MULTICA_LOCALE_HEADER}`),
+        res.headers.get(`x-middleware-request-${PATCHBAY_LOCALE_HEADER}`),
       ).toBe("en");
     } finally {
       restoreEnv("REMOTE_API_URL", previous);
@@ -267,24 +267,24 @@ describe("proxy root and locale handling", () => {
   it("redirects logged-in root visits to the last workspace", () => {
     const res = proxy(
       makeRequest("/", {
-        multica_logged_in: "1",
+        patchbay_logged_in: "1",
         last_workspace_slug: "acme",
       }),
     );
 
     expect(res.status).toBe(307);
     expect(res.headers.get("location")).toBe(
-      "https://app.multica.test/acme/issues",
+      "https://app.patchbay.test/acme/issues",
     );
   });
 
   it("forwards locale on login requests", () => {
-    const res = proxy(makeRequest("/login", { "multica-locale": "zh-Hans" }));
+    const res = proxy(makeRequest("/login", { "patchbay-locale": "zh-Hans" }));
 
     expect(res.status).toBe(200);
     expect(res.headers.get("location")).toBeNull();
     expect(
-      res.headers.get(`x-middleware-request-${MULTICA_LOCALE_HEADER}`),
+      res.headers.get(`x-middleware-request-${PATCHBAY_LOCALE_HEADER}`),
     ).toBe("zh-Hans");
   });
 });

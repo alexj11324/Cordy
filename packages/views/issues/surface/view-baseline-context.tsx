@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, use, type ReactNode } from "react";
-import type { IssueViewBaseline } from "@multica/core/issue-views/baseline";
+import type { IssueViewBaseline } from "@patchbay/core/issue-views/baseline";
 
 /**
  * The open saved view's baseline for everything living inside an

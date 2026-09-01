@@ -5,14 +5,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { setApiInstance } from "@multica/core/api";
-import type { ApiClient } from "@multica/core/api/client";
+import { setApiInstance } from "@patchbay/core/api";
+import type { ApiClient } from "@patchbay/core/api/client";
 import type {
   Issue,
   IssueStatusCategory,
   IssueTableQuerySpec,
   IssueTableRowsRequest,
-} from "@multica/core/types";
+} from "@patchbay/core/types";
 import { useIssueStatusBranches } from "./use-issue-status-branches";
 
 function makeIssue(id: string): Issue {

@@ -356,7 +356,7 @@ func TestBuildClaudeArgsUsesStrictMCPForManagedConfig(t *testing.T) {
 func TestBuildClaudeArgsIgnoresSystemPrompt(t *testing.T) {
 	t.Parallel()
 
-	const brief = "the entire multica runtime brief"
+	const brief = "the entire patchbay runtime brief"
 	args := buildClaudeArgs(ExecOptions{SystemPrompt: brief}, slog.Default())
 	if slices.Contains(args, "--append-system-prompt") {
 		t.Fatalf("unexpected --append-system-prompt in args: %v", args)
@@ -609,12 +609,12 @@ func TestMergeEnvFiltersClaudeCodeVars(t *testing.T) {
 		"CLAUDE_CODE_GIT_BASH_PATH=C:\\Program Files\\Git\\bin\\bash.exe",
 		"CLAUDE_CODE_USE_BEDROCK=1",
 		"CLAUDE_CODE_TMPDIR=/custom/tmp",
-		"MULTICA_LLM_API_KEY=daemon-secret",
-		"MULTICA_SERVER_URL=https://daemon.example",
+		"PATCHBAY_LLM_API_KEY=daemon-secret",
+		"PATCHBAY_SERVER_URL=https://daemon.example",
 	}, map[string]string{
 		"FOO":                "bar",
-		"MULTICA_SERVER_URL": "https://task.example",
-		"MULTICA_TOKEN":      "mat_task",
+		"PATCHBAY_SERVER_URL": "https://task.example",
+		"PATCHBAY_TOKEN":      "mat_task",
 	})
 
 	// Internal runtime/session markers must be stripped so the child does not
@@ -625,8 +625,8 @@ func TestMergeEnvFiltersClaudeCodeVars(t *testing.T) {
 		"CLAUDE_CODE_EXECPATH=/opt/claude",
 		"CLAUDE_CODE_SESSION_ID=abc123",
 		"CLAUDE_CODE_SSE_PORT=9999",
-		"MULTICA_LLM_API_KEY=daemon-secret",
-		"MULTICA_SERVER_URL=https://daemon.example",
+		"PATCHBAY_LLM_API_KEY=daemon-secret",
+		"PATCHBAY_SERVER_URL=https://daemon.example",
 	}
 	for _, entry := range env {
 		for _, banned := range filteredOut {
@@ -663,8 +663,8 @@ func TestMergeEnvFiltersClaudeCodeVars(t *testing.T) {
 	if !found["FOO=bar"] {
 		t.Fatalf("expected extra env var to be appended, got %v", env)
 	}
-	if !found["MULTICA_SERVER_URL=https://task.example"] || !found["MULTICA_TOKEN=mat_task"] {
-		t.Fatalf("expected explicit task MULTICA_* values to be appended, got %v", env)
+	if !found["PATCHBAY_SERVER_URL=https://task.example"] || !found["PATCHBAY_TOKEN=mat_task"] {
+		t.Fatalf("expected explicit task PATCHBAY_* values to be appended, got %v", env)
 	}
 }
 
@@ -843,7 +843,7 @@ func TestResumeWasRejected(t *testing.T) {
 		want      bool
 	}{
 		{
-			// Verbatim from multica-ai/multica#5704 (Claude Code 2.1.207,
+			// Verbatim from patchbay-ai/patchbay#5704 (Claude Code 2.1.207,
 			// zh-CN). This is the failure the whole signal exists for: the
 			// session belongs to the account the user switched away from, and
 			// claude echoes the requested id back rather than a fresh one.
@@ -1306,7 +1306,7 @@ func TestBuildClaudeArgsExtraArgsBeforeCustomArgsAndFiltersBoth(t *testing.T) {
 
 func TestBuildClaudeArgsManagedSkillSettingsWins(t *testing.T) {
 	args := buildClaudeArgs(ExecOptions{
-		ClaudeSettingsPath: "/tmp/multica-claude-settings.json",
+		ClaudeSettingsPath: "/tmp/patchbay-claude-settings.json",
 		ExtraArgs:          []string{"--settings", "/tmp/default.json"},
 		CustomArgs:         []string{"--settings=/tmp/agent.json", "--max-turns", "7"},
 	}, slog.Default())
@@ -1314,7 +1314,7 @@ func TestBuildClaudeArgsManagedSkillSettingsWins(t *testing.T) {
 	if strings.Contains(joined, "default.json") || strings.Contains(joined, "agent.json") {
 		t.Fatalf("competing settings args were not filtered: %v", args)
 	}
-	if !strings.Contains(joined, "--settings /tmp/multica-claude-settings.json") {
+	if !strings.Contains(joined, "--settings /tmp/patchbay-claude-settings.json") {
 		t.Fatalf("managed settings missing: %v", args)
 	}
 	if !strings.Contains(joined, "--max-turns 7") {

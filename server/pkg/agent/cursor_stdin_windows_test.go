@@ -17,9 +17,9 @@ import (
 // Env contract between the test and the helper process it re-executes as the
 // native child of the PowerShell shim.
 const (
-	shimHelperEnv      = "MULTICA_CURSOR_SHIM_HELPER"
-	shimHelperArgvFile = "MULTICA_CURSOR_SHIM_ARGV_FILE"
-	shimHelperInFile   = "MULTICA_CURSOR_SHIM_STDIN_FILE"
+	shimHelperEnv      = "PATCHBAY_CURSOR_SHIM_HELPER"
+	shimHelperArgvFile = "PATCHBAY_CURSOR_SHIM_ARGV_FILE"
+	shimHelperInFile   = "PATCHBAY_CURSOR_SHIM_STDIN_FILE"
 )
 
 // TestCursorShimHelperProcess is not a test. Re-executed by the fake

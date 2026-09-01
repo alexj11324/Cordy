@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/issuestatus"
+	"github.com/patchbay-ai/patchbay/server/internal/issuestatus"
 )
 
 // insertCustomStatus adds one custom status directly, returning its id.

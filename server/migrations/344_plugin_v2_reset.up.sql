@@ -79,7 +79,7 @@ CREATE TABLE plugin_storage (
 );
 
 -- Secrets live in their own table so no storage read path can reach them by
--- construction. Values are encrypted with MULTICA_PLUGIN_SECRET_KEY and are
+-- construction. Values are encrypted with PATCHBAY_PLUGIN_SECRET_KEY and are
 -- never returned by any endpoint.
 CREATE TABLE plugin_secret (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

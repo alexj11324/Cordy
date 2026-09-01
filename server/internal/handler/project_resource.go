@@ -14,9 +14,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	agentpkg "github.com/multica-ai/multica/server/pkg/agent"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	agentpkg "github.com/patchbay-ai/patchbay/server/pkg/agent"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 // ProjectResourceResponse is the JSON shape returned by the project resource API.
@@ -189,7 +189,7 @@ func (h *Handler) requireWorktreeCapableDaemon(w http.ResponseWriter, r *http.Re
 	// never dispatch correctly is worse than a save-time error.
 	writeJSON(w, http.StatusUnprocessableEntity, map[string]any{
 		"error": fmt.Sprintf(
-			"local_directory: %q is set to parallel (worktree) mode, but the Multica runtime on that machine does not support it. Update the Multica app on that machine to the latest version, or keep the resource on in_place.",
+			"local_directory: %q is set to parallel (worktree) mode, but the Patchbay runtime on that machine does not support it. Update the Patchbay app on that machine to the latest version, or keep the resource on in_place.",
 			ref.LocalPath),
 		"code":            "daemon_version_unsupported",
 		"current_version": latestDaemonCLIVersion(runtimes, ref.DaemonID),
@@ -868,8 +868,8 @@ func parseUUIDLoose(s string) (pgtype.UUID, error) {
 
 // claimProjectContext is the project-scoped context a daemon claim exposes to
 // the agent: the project identity the prompt names, the resource manifest
-// execenv materializes into .multica/project/resources.json, and the repo list
-// `multica repo checkout` reads.
+// execenv materializes into .patchbay/project/resources.json, and the repo list
+// `patchbay repo checkout` reads.
 type claimProjectContext struct {
 	ProjectID   string
 	Title       string
@@ -967,7 +967,7 @@ func (h *Handler) resolveClaimProjectContext(ctx context.Context, projectID, wor
 }
 
 // projectResourcesForClaim maps resource rows onto the claim wire shape and
-// lifts github_repo resources into the repo list so `multica repo checkout` and
+// lifts github_repo resources into the repo list so `patchbay repo checkout` and
 // the meta-skill render them as the task's repos.
 func projectResourcesForClaim(rows []db.ProjectResource) ([]ProjectResourceData, []RepoData) {
 	if len(rows) == 0 {

@@ -1,8 +1,8 @@
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { AgentDetailPage as SharedAgentDetailPage } from "@multica/views/agents";
-import { useWorkspaceId } from "@multica/core/hooks";
-import { agentListOptions } from "@multica/core/workspace/queries";
+import { AgentDetailPage as SharedAgentDetailPage } from "@patchbay/views/agents";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { agentListOptions } from "@patchbay/core/workspace/queries";
 import { useDocumentTitle } from "@/hooks/use-document-title";
 
 export function AgentDetailPage() {

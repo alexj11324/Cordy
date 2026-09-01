@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import type { Issue, IssueAssigneeType } from "@multica/core/types";
+import type { Issue, IssueAssigneeType } from "@patchbay/core/types";
 import { AppLink, NavigationProvider, type NavigationAdapter } from "../../navigation";
 import {
   IssueSurfaceActionsProvider,
@@ -13,25 +13,25 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
   useQuery: () => ({ data: [] }),
 }));
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@multica/core/properties", () => ({
+vi.mock("@patchbay/core/properties", () => ({
   propertyListOptions: () => ({ queryKey: ["properties"] }),
 }));
 
-vi.mock("@multica/core/auth", () => ({
+vi.mock("@patchbay/core/auth", () => ({
   useAuthStore: (selector: (state: { user: { id: string } }) => unknown) =>
     selector({ user: { id: "viewer-1" } }),
 }));
 
-vi.mock("@multica/core/agents", () => ({
+vi.mock("@patchbay/core/agents", () => ({
   isAgentRuntimeBound: () => true,
   useAgentPresenceDetail: () => ({ availability: "offline", workload: null }),
 }));
 
-vi.mock("@multica/core/paths", () => ({
+vi.mock("@patchbay/core/paths", () => ({
   useCurrentWorkspace: () => ({ id: "ws-1", slug: "acme" }),
   useWorkspacePaths: () => ({
     memberDetail: (id: string) => `/acme/members/${id}`,
@@ -54,11 +54,11 @@ const viewState = vi.hoisted(() => ({
   cardPropertyIds: [],
 }));
 
-vi.mock("@multica/core/issues/stores/view-store-context", () => ({
+vi.mock("@patchbay/core/issues/stores/view-store-context", () => ({
   useViewStore: (selector: (state: typeof viewState) => unknown) => selector(viewState),
 }));
 
-vi.mock("@multica/core/workspace/hooks", () => ({
+vi.mock("@patchbay/core/workspace/hooks", () => ({
   useActorName: () => ({
     getActorName: (type: string) => `Assigned ${type}`,
     getActorInitials: () => "AA",

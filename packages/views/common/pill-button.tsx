@@ -1,7 +1,7 @@
 "use client";
 
 import { X as XIcon } from "lucide-react";
-import { cn } from "@multica/ui/lib/utils";
+import { cn } from "@patchbay/ui/lib/utils";
 
 // Shared pill chrome. `PillButton` puts it on the button itself; the clearable
 // variant puts it on the shell that holds the trigger and the clear button, so

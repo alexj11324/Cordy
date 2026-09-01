@@ -10,13 +10,13 @@ import (
 )
 
 const (
-	defaultCLIConfigPath = ".multica/config.json"
+	defaultCLIConfigPath = ".patchbay/config.json"
 
 	// TaskConfigRootEnv points daemon-managed CLI invocations at a private,
-	// per-task Multica config directory. It is deliberately Multica-specific:
+	// per-task Patchbay config directory. It is deliberately Patchbay-specific:
 	// phase-one hardening keeps the real HOME/XDG environment available to
 	// provider tooling while preventing implicit Owner-profile discovery.
-	TaskConfigRootEnv = "MULTICA_TASK_CONFIG_ROOT"
+	TaskConfigRootEnv = "PATCHBAY_TASK_CONFIG_ROOT"
 )
 
 // CLIConfig holds persistent CLI settings.
@@ -35,7 +35,7 @@ type CLIConfig struct {
 	// makes the runtimes list navigable.
 	//
 	// Resolution precedence (highest wins): --device-name flag,
-	// MULTICA_DAEMON_DEVICE_NAME env, this field, os.Hostname().
+	// PATCHBAY_DAEMON_DEVICE_NAME env, this field, os.Hostname().
 	DeviceName string `json:"device_name,omitempty"`
 
 	// RuntimeName is the daemon's own runtime label ("Runtime display name"
@@ -43,7 +43,7 @@ type CLIConfig struct {
 	// rather than the host: users who run several distinct daemons per
 	// profile (rare, but supported) can pin different runtime names for
 	// each. Resolution precedence (highest wins): --runtime-name flag,
-	// MULTICA_AGENT_RUNTIME_NAME env, this field, the built-in
+	// PATCHBAY_AGENT_RUNTIME_NAME env, this field, the built-in
 	// DefaultRuntimeName.
 	RuntimeName string `json:"runtime_name,omitempty"`
 
@@ -51,7 +51,7 @@ type CLIConfig struct {
 	// workspaces. Persisting it per profile avoids relying on a process-wide
 	// environment variable and preserves profile isolation. Empty means "not
 	// set — use env / built-in default". Resolution precedence (highest wins):
-	// --workspaces-root flag, MULTICA_WORKSPACES_ROOT env, this field, the
+	// --workspaces-root flag, PATCHBAY_WORKSPACES_ROOT env, this field, the
 	// profile-aware built-in default.
 	WorkspacesRoot string `json:"workspaces_root,omitempty"`
 
@@ -60,7 +60,7 @@ type CLIConfig struct {
 	// --max-concurrent-tasks on every daemon start / auto-restart. 0 means
 	// "not set — use env / built-in default". Resolution precedence
 	// (highest wins): --max-concurrent-tasks flag,
-	// MULTICA_DAEMON_MAX_CONCURRENT_TASKS env, this field, default.
+	// PATCHBAY_DAEMON_MAX_CONCURRENT_TASKS env, this field, default.
 	MaxConcurrentTasks int `json:"max_concurrent_tasks,omitempty"`
 
 	// PollInterval is how often the daemon polls the server for new tasks
@@ -72,7 +72,7 @@ type CLIConfig struct {
 	// so a value that reaches this field is always well-formed. Use
 	// `config set poll_interval ""` to clear a previously persisted
 	// value. Resolution precedence (highest wins): --poll-interval flag,
-	// MULTICA_DAEMON_POLL_INTERVAL env, this field, DefaultPollInterval.
+	// PATCHBAY_DAEMON_POLL_INTERVAL env, this field, DefaultPollInterval.
 	PollInterval string `json:"poll_interval,omitempty"`
 
 	// HeartbeatInterval is how often the daemon sends heartbeat pings to
@@ -80,7 +80,7 @@ type CLIConfig struct {
 	// PollInterval. Empty ("") means "not set — use env / built-in
 	// default"; `config set heartbeat_interval` rejects zero and
 	// negative durations. Resolution precedence: --heartbeat-interval
-	// flag, MULTICA_DAEMON_HEARTBEAT_INTERVAL env, this field,
+	// flag, PATCHBAY_DAEMON_HEARTBEAT_INTERVAL env, this field,
 	// DefaultHeartbeatInterval.
 	HeartbeatInterval string `json:"heartbeat_interval,omitempty"`
 
@@ -93,7 +93,7 @@ type CLIConfig struct {
 	// = use this string (which may be "0s"). `config set agent_timeout`
 	// accepts any non-negative Go duration; "" clears the persisted
 	// value. Resolution precedence: --agent-timeout flag (including
-	// explicit 0), MULTICA_AGENT_TIMEOUT env, this field,
+	// explicit 0), PATCHBAY_AGENT_TIMEOUT env, this field,
 	// DefaultAgentTimeout.
 	AgentTimeout *string `json:"agent_timeout,omitempty"`
 
@@ -101,39 +101,39 @@ type CLIConfig struct {
 	// watchdog window (Go duration string). Persist-once semantics match
 	// PollInterval: empty = not set, positive = use this value.
 	// Resolution precedence: --codex-semantic-inactivity-timeout flag,
-	// MULTICA_CODEX_SEMANTIC_INACTIVITY_TIMEOUT env, this field,
+	// PATCHBAY_CODEX_SEMANTIC_INACTIVITY_TIMEOUT env, this field,
 	// DefaultCodexSemanticInactivityTimeout.
 	CodexSemanticInactivityTimeout string `json:"codex_semantic_inactivity_timeout,omitempty"`
 
 	// CodexHandshakeTimeout caps the Codex app-server startup RPCs (Go
 	// duration string). Persist-once semantics match PollInterval.
 	// Resolution precedence: --codex-handshake-timeout flag,
-	// MULTICA_CODEX_HANDSHAKE_TIMEOUT env, this field,
+	// PATCHBAY_CODEX_HANDSHAKE_TIMEOUT env, this field,
 	// DefaultCodexHandshakeTimeout.
 	CodexHandshakeTimeout string `json:"codex_handshake_timeout,omitempty"`
 
 	// DisableAutoUpdate, when true, turns off the daemon's periodic CLI
 	// self-update poll. Only a single direction is persistable — the
 	// --no-auto-update flag is likewise one-way — because the env/default
-	// already resolves to enabled on Multica Cloud. Absent / false means
+	// already resolves to enabled on Patchbay Cloud. Absent / false means
 	// "let env/default decide". Resolution precedence:
-	// --no-auto-update flag, MULTICA_DAEMON_AUTO_UPDATE=false env, this
+	// --no-auto-update flag, PATCHBAY_DAEMON_AUTO_UPDATE=false env, this
 	// field, cloud/self-host default.
 	DisableAutoUpdate bool `json:"disable_auto_update,omitempty"`
 
 	// AutoUpdateCheckInterval is how often the daemon polls GitHub for a
 	// newer CLI release (Go duration string). Persist-once semantics
 	// match PollInterval. Resolution precedence:
-	// --auto-update-interval flag, MULTICA_DAEMON_AUTO_UPDATE_INTERVAL
+	// --auto-update-interval flag, PATCHBAY_DAEMON_AUTO_UPDATE_INTERVAL
 	// env, this field, DefaultAutoUpdateCheckInterval.
 	AutoUpdateCheckInterval string `json:"auto_update_check_interval,omitempty"`
 
 	// DisableAutoReload, when true, stops the daemon from restarting into a
-	// multica binary that was replaced on disk out of band. Single-direction
+	// patchbay binary that was replaced on disk out of band. Single-direction
 	// like DisableAutoUpdate, and separate from it on purpose: "don't pull
 	// new versions from GitHub" and "don't follow the binary I installed
 	// myself" are different decisions. Resolution precedence:
-	// --no-auto-reload flag, MULTICA_DAEMON_AUTO_RELOAD=false env, this
+	// --no-auto-reload flag, PATCHBAY_DAEMON_AUTO_RELOAD=false env, this
 	// field, default (enabled).
 	DisableAutoReload bool `json:"disable_auto_reload,omitempty"`
 
@@ -150,7 +150,7 @@ type CLIConfig struct {
 	// but the same logical profile may live at a different path on each
 	// machine (or not be on PATH at all). This map lets an operator pin the
 	// exact binary for a profile on this host via
-	// `multica runtime profile set-path`; the daemon prefers it over the
+	// `patchbay runtime profile set-path`; the daemon prefers it over the
 	// PATH lookup in appendProfileRuntimes. Empty / absent means "resolve the
 	// profile's command_name on PATH" — the default behavior. The mapping is
 	// intentionally local-only (it is never sent to the server) because the
@@ -174,19 +174,19 @@ type BackendOverrides struct {
 //
 // Resolution precedence (env beats config beats default, for back-compat):
 //
-//	BinaryPath: MULTICA_OPENCLAW_PATH (env)  > backends.openclaw.binary_path > PATH lookup
+//	BinaryPath: PATCHBAY_OPENCLAW_PATH (env)  > backends.openclaw.binary_path > PATH lookup
 //	StateDir:   OPENCLAW_STATE_DIR (env)     > backends.openclaw.state_dir   > OpenClaw's built-in default (~/.openclaw)
-//	CLITimeout: MULTICA_OPENCLAW_CLI_TIMEOUT (env) > backends.openclaw.cli_timeout > built-in default
+//	CLITimeout: PATCHBAY_OPENCLAW_CLI_TIMEOUT (env) > backends.openclaw.cli_timeout > built-in default
 //
 // The StateDir env var here is OpenClaw's own OPENCLAW_STATE_DIR — NOT a new
-// MULTICA_OPENCLAW_STATE_DIR. Rationale: OpenClaw already honors its own env
+// PATCHBAY_OPENCLAW_STATE_DIR. Rationale: OpenClaw already honors its own env
 // var, the daemon already forwards inherited env to spawned children via
 // `mergeEnv`, and a user who exports OPENCLAW_STATE_DIR in their shell
 // already gets the right behavior with zero daemon changes today. This field
 // is purely additive: when set, the daemon injects OPENCLAW_STATE_DIR=<value>
 // into the spawned child's env unless the user already exported one upstream.
 // (If a future use case needs daemon-namespaced isolation distinct from
-// OpenClaw's own env, MULTICA_OPENCLAW_STATE_DIR can be layered on top
+// OpenClaw's own env, PATCHBAY_OPENCLAW_STATE_DIR can be layered on top
 // without breaking this contract — see #3875 discussion.)
 //
 // Setting StateDir is the fix for the long-standing usability gap where
@@ -208,7 +208,7 @@ type OpenClawOverride struct {
 	// slow-CLI tail (#7112), where discovery legitimately needs longer than the
 	// default and the user previously had no way to say so.
 	//
-	// Resolution mirrors the fields above: MULTICA_OPENCLAW_CLI_TIMEOUT (env) >
+	// Resolution mirrors the fields above: PATCHBAY_OPENCLAW_CLI_TIMEOUT (env) >
 	// backends.openclaw.cli_timeout > built-in default.
 	CLITimeout string `json:"cli_timeout,omitempty"`
 }
@@ -219,12 +219,12 @@ func CLIConfigPath() (string, error) {
 }
 
 // CLIConfigPathForProfile returns the config file path for the given profile.
-// An empty profile returns the default path (~/.multica/config.json).
-// A named profile returns ~/.multica/profiles/<name>/config.json.
+// An empty profile returns the default path (~/.patchbay/config.json).
+// A named profile returns ~/.patchbay/profiles/<name>/config.json.
 // When TaskConfigRootEnv is set by the daemon, the same profile layout is
 // rooted directly below that private task directory instead of the user's home.
 func CLIConfigPathForProfile(profile string) (string, error) {
-	root, taskLocal, err := multicaConfigRoot()
+	root, taskLocal, err := patchbayConfigRoot()
 	if err != nil {
 		return "", fmt.Errorf("resolve CLI config path: %w", err)
 	}
@@ -242,14 +242,14 @@ func CLIConfigPathForProfile(profile string) (string, error) {
 	if taskLocal {
 		return filepath.Join(root, "profiles", profile, "config.json"), nil
 	}
-	return filepath.Join(root, ".multica", "profiles", profile, "config.json"), nil
+	return filepath.Join(root, ".patchbay", "profiles", profile, "config.json"), nil
 }
 
 // ProfileDir returns the base directory for a profile's state files (pid, log).
-// An empty profile returns ~/.multica/. A named profile returns ~/.multica/profiles/<name>/.
+// An empty profile returns ~/.patchbay/. A named profile returns ~/.patchbay/profiles/<name>/.
 // Task invocations resolve the equivalent paths below TaskConfigRootEnv.
 func ProfileDir(profile string) (string, error) {
-	root, taskLocal, err := multicaConfigRoot()
+	root, taskLocal, err := patchbayConfigRoot()
 	if err != nil {
 		return "", fmt.Errorf("resolve profile dir: %w", err)
 	}
@@ -262,15 +262,15 @@ func ProfileDir(profile string) (string, error) {
 		if taskLocal {
 			return root, nil
 		}
-		return filepath.Join(root, ".multica"), nil
+		return filepath.Join(root, ".patchbay"), nil
 	}
 	if taskLocal {
 		return filepath.Join(root, "profiles", profile), nil
 	}
-	return filepath.Join(root, ".multica", "profiles", profile), nil
+	return filepath.Join(root, ".patchbay", "profiles", profile), nil
 }
 
-func multicaConfigRoot() (root string, taskLocal bool, err error) {
+func patchbayConfigRoot() (root string, taskLocal bool, err error) {
 	if rawRoot := strings.TrimSpace(os.Getenv(TaskConfigRootEnv)); rawRoot != "" {
 		root := filepath.Clean(rawRoot)
 		if !filepath.IsAbs(root) {
@@ -290,7 +290,7 @@ func validateTaskLocalProfile(profile string) error {
 		return nil
 	}
 	if profile == "." || profile == ".." || filepath.IsAbs(profile) || strings.ContainsAny(profile, `/\\`) || filepath.Clean(profile) != profile {
-		return fmt.Errorf("invalid task-local Multica profile name %q", profile)
+		return fmt.Errorf("invalid task-local Patchbay profile name %q", profile)
 	}
 	return nil
 }
@@ -340,7 +340,7 @@ func SaveCLIConfigForProfile(cfg CLIConfig, profile string) error {
 		return fmt.Errorf("create CLI config directory: %w", err)
 	}
 	if dirMode == 0o700 {
-		root, _, err := multicaConfigRoot()
+		root, _, err := patchbayConfigRoot()
 		if err != nil {
 			return fmt.Errorf("resolve task-local CLI config root: %w", err)
 		}

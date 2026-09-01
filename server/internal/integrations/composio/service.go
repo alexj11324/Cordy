@@ -1,5 +1,5 @@
-// Package composio is the Stage 2 business-integration glue between Multica and
-// the standalone Composio SDK (server/pkg/composio). It owns Multica semantics:
+// Package composio is the Stage 2 business-integration glue between Patchbay and
+// the standalone Composio SDK (server/pkg/composio). It owns Patchbay semantics:
 // the signed-state connect handshake, the local user_composio_connection
 // mirror, idempotent disconnect, and the per-user MCP session helper.
 //
@@ -22,11 +22,11 @@ import (
 	"sync"
 	"time"
 
-	sdk "github.com/multica-ai/multica/server/pkg/composio"
+	sdk "github.com/patchbay-ai/patchbay/server/pkg/composio"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // Service-level errors surfaced to the handler layer.
@@ -97,11 +97,11 @@ type Config struct {
 	// StateSecret signs the connect-state HMAC. Required (non-empty).
 	StateSecret []byte
 	// CallbackBaseURL is the absolute, public base URL of THIS API, with no
-	// trailing slash (e.g. "https://multica.ai"). The Composio callback
+	// trailing slash (e.g. "https://patchbay.ai"). The Composio callback
 	// URL is built as CallbackBaseURL + CallbackPath. Required.
 	CallbackBaseURL string
 	// FrontendBaseURL is the web app base used to build the post-callback
-	// browser redirect (e.g. "https://multica.ai"). May be empty, in which
+	// browser redirect (e.g. "https://patchbay.ai"). May be empty, in which
 	// case CallbackRedirect returns a site-relative path.
 	FrontendBaseURL string
 	// StateTTL overrides the default connect-state lifetime. Zero uses
@@ -236,7 +236,7 @@ func toolkitLogoURL(slug, upstreamLogoURL string) string {
 // config for it — no static env map. A toolkit with none yields
 // ErrToolkitNotSupported.
 //
-// The composio_user_id sent to Composio is the Multica user id verbatim — the
+// The composio_user_id sent to Composio is the Patchbay user id verbatim — the
 // invariant the rest of the integration relies on.
 func (s *Service) BeginConnect(ctx context.Context, userID pgtype.UUID, toolkitSlug string) (string, error) {
 	slug := strings.ToLower(strings.TrimSpace(toolkitSlug))
@@ -318,7 +318,7 @@ func (s *Service) CompleteCallback(ctx context.Context, state, status, connected
 	// redirect could pair a valid, un-expired state with someone else's account
 	// id and we would mirror it verbatim. Before writing, confirm with Composio
 	// that this account actually belongs to the state's user (the
-	// composio_user_id == multica user id invariant) and was created under the
+	// composio_user_id == patchbay user id invariant) and was created under the
 	// toolkit's auth config. Any mismatch fails closed with ErrAccountVerification.
 	if err := s.verifyAccountOwnership(ctx, connectedAccountID, claims.UserID, authConfigID); err != nil {
 		return claims.ToolkitSlug, err
@@ -329,7 +329,7 @@ func (s *Service) CompleteCallback(ctx context.Context, state, status, connected
 		ToolkitSlug:        claims.ToolkitSlug,
 		AuthConfigID:       authConfigID,
 		ConnectedAccountID: connectedAccountID,
-		// Invariant: composio_user_id == Multica user id.
+		// Invariant: composio_user_id == Patchbay user id.
 		ComposioUserID: claims.UserID,
 	}); err != nil {
 		return claims.ToolkitSlug, fmt.Errorf("composio: upsert connection: %w", err)

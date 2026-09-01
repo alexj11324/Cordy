@@ -1,24 +1,24 @@
 ---
 title: AI 编程工具对照
-description: 比较 Multica 支持的 AI 编程工具，以及模型、MCP、会话和 Skill 的差异。
+description: 比较 Patchbay 支持的 AI 编程工具，以及模型、MCP、会话和 Skill 的差异。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Multica 不会替代你使用的 AI 编程工具。运行时会调用电脑上已经安装并登录的工具，再把执行进度和结果写回任务。
+Patchbay 不会替代你使用的 AI 编程工具。运行时会调用电脑上已经安装并登录的工具，再把执行进度和结果写回任务。
 
 如果你已经在使用其中一款，通常可以直接沿用。选择工具时的四个判断维度：
 
 - 电脑上是否已经安装；
 - 账号可以使用哪些模型；
-- 是否需要由 Multica 配置 MCP；
+- 是否需要由 Patchbay 配置 MCP；
 - 团队要复用哪些 skill。
 
 安装方法见 [安装 AI 编程工具](/install-agent-runtime)。
 
 ## 支持的工具
 
-| 工具 | 检测命令 | 会话恢复 | Multica 管理 MCP | Skill 注入位置 |
+| 工具 | 检测命令 | 会话恢复 | Patchbay 管理 MCP | Skill 注入位置 |
 |---|---|---:|---:|---|
 | Antigravity | `agy` | ✓ | — | `.agents/skills/` |
 | Claude Code | `claude` | ✓ | ✓ | `.claude/skills/` |
@@ -46,17 +46,17 @@ Multica 不会替代你使用的 AI 编程工具。运行时会调用电脑上�
 | Trae CLI | `traecli` | ✓ | ✓ | `.traecli/skills/` |
 | Dim | `dim` | ✓ | ✓ | — |
 
-"Multica 管理 MCP" 表示你可以在智能体配置中填写 MCP server，由 Multica 在执行前传给对应工具。它不代表该工具本身没有其他 MCP 配置方式。
+"Patchbay 管理 MCP" 表示你可以在智能体配置中填写 MCP server，由 Patchbay 在执行前传给对应工具。它不代表该工具本身没有其他 MCP 配置方式。
 
 ## 模型来源
 
 创建智能体时，模型列表来自对应的运行时。有些工具提供固定的模型名称，有些会根据本机配置、登录账号和订阅权益返回可用模型。
 
-不选择模型时，Multica 使用该工具的默认设置。列表为空时，先确认运行时在线并且工具已经登录，再刷新模型列表。
+不选择模型时，Patchbay 使用该工具的默认设置。列表为空时，先确认运行时在线并且工具已经登录，再刷新模型列表。
 
-QwenPaw 和 MiniMax Code 是例外：它们不接受在 Multica 侧选择的模型，因此选择框不可用，显示为"由运行时管理"。请改在工具自身的配置里选择模型。模型列表为空属于正常情况，并不表示运行时离线。
+QwenPaw 和 MiniMax Code 是例外：它们不接受在 Patchbay 侧选择的模型，因此选择框不可用，显示为"由运行时管理"。请改在工具自身的配置里选择模型。模型列表为空属于正常情况，并不表示运行时离线。
 
-DeepSeek Harness 的模型目录由运行时自身提供（`dsh --profile multica --list-models`）。它的模型 id 采用 `provider/model` 形式（例如 `deepseek-official/deepseek-chat`），请从列表中选择完整 id。
+DeepSeek Harness 的模型目录由运行时自身提供（`dsh --profile patchbay --list-models`）。它的模型 id 采用 `provider/model` 形式（例如 `deepseek-official/deepseek-chat`），请从列表中选择完整 id。
 
 <Callout type="info">
 不同工具可能使用不同的模型名称。更换 AI 编程工具后，原有的模型值在新工具中无效，需要重新选择。
@@ -66,7 +66,7 @@ DeepSeek Harness 的模型目录由运行时自身提供（`dsh --profile multic
 
 表格中标记 ✓ 的工具支持在后续执行中继续已有会话。前提是原来的会话仍然存在，并且 task 由能够访问它的运行时执行。MiniMax Code 0.1.2 尚未通过 ACP 声明会话加载能力，因此后续执行会新建 MCode 会话。
 
-Multica 会保存工具返回的会话标识。下一次在同一任务中继续工作时，运行时会尝试恢复这段会话；无法恢复时，会创建一个新会话继续执行。Pi 保存的是本地会话文件路径，因此更依赖原来的电脑和文件。
+Patchbay 会保存工具返回的会话标识。下一次在同一任务中继续工作时，运行时会尝试恢复这段会话；无法恢复时，会创建一个新会话继续执行。Pi 保存的是本地会话文件路径，因此更依赖原来的电脑和文件。
 
 有关重试和会话恢复的规则，见 [Task](/tasks#手动重试)。
 
@@ -80,9 +80,9 @@ MCP server 的命令、参数和环境变量会随智能体配置保存在服务
 
 ## Skill 注入方式
 
-执行开始前，Multica 会把智能体绑定的 skill 写入上表对应的位置，让工具通过自己的原生机制发现它们。
+执行开始前，Patchbay 会把智能体绑定的 skill 写入上表对应的位置，让工具通过自己的原生机制发现它们。
 
-仓库里原本存在的 skill 不会被覆盖。如果名称冲突，Multica 会为注入的副本使用另一个目录名；执行结束后，只清理自己创建的文件。
+仓库里原本存在的 skill 不会被覆盖。如果名称冲突，Patchbay 会为注入的副本使用另一个目录名；执行结束后，只清理自己创建的文件。
 
 Codex、Hermes 和 OpenClaw 的处理稍有不同：
 

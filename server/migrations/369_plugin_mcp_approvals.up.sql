@@ -1,7 +1,7 @@
 -- Admin approval for an mcp-transport hook's tool list.
 --
 -- A hook with transport.type == "mcp" points at an MCP server the plugin author
--- already runs, and Multica adopts its tools as callable hooks. Unlike an http
+-- already runs, and Patchbay adopts its tools as callable hooks. Unlike an http
 -- hook — where the manifest declares exactly one endpoint and one shape — an MCP
 -- server decides its own tool list at runtime and can change it whenever it
 -- likes.

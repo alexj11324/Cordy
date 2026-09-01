@@ -5,7 +5,7 @@ description: Connect an agent to Feishu and hand it work directly from a DM or a
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Connect a Multica agent as a Feishu Bot and team members can DM it in Feishu, @-mention it in a group, or use `/issue` to create issues. Conversations and run records are still saved to the Multica workspace.
+Connect a Patchbay agent as a Feishu Bot and team members can DM it in Feishu, @-mention it in a group, or use `/issue` to create issues. Conversations and run records are still saved to the Patchbay workspace.
 
 Each Bot maps to exactly one agent. To use several agents in Feishu, connect a Bot for each of them.
 
@@ -16,7 +16,7 @@ The agent's owner and workspace owners and admins can start a connection:
 1. Open **Agents** and select the agent to connect to Feishu.
 2. Go to **Integrations** and click **Bind to Feishu**.
 3. Scan the QR code with Feishu and confirm the authorization.
-4. Return to Multica. Once the page shows **Connected to Feishu**, the Bot is ready.
+4. Return to Patchbay. Once the page shows **Connected to Feishu**, the Bot is ready.
 
 
 The QR code is a one-time credential; if it expires, generate a new one. An agent that is already connected no longer shows the scan entry point; to rename the Bot or adjust its permissions, click **Manage in Feishu**.
@@ -29,17 +29,17 @@ New connections are currently open only for mainland-China Feishu. Existing inte
 
 The first time a member messages the Bot, they receive an account binding link:
 
-1. Open the link and sign in to Multica.
+1. Open the link and sign in to Patchbay.
 2. Confirm the workspace account to link.
 3. Return to Feishu and send the message again.
 
-Only after binding can Multica confirm which workspace member a message comes from. Non-members cannot use the Bot.
+Only after binding can Patchbay confirm which workspace member a message comes from. Non-members cannot use the Bot.
 
 ## Hand work to the agent in Feishu
 
 ### Direct messages
 
-Message the Bot directly. Consecutive messages stay in the same Multica conversation, and the agent's replies go back to that conversation.
+Message the Bot directly. Consecutive messages stay in the same Patchbay conversation, and the agent's replies go back to that conversation.
 
 ### Group chats
 
@@ -64,10 +64,10 @@ After disconnecting, the Bot stops receiving new messages. Existing conversation
 
 ## Self-hosting setup
 
-Multica Cloud needs no extra configuration. A self-hosted deployment must first set a key used to encrypt Bot credentials:
+Patchbay Cloud needs no extra configuration. A self-hosted deployment must first set a key used to encrypt Bot credentials:
 
 ```dotenv
-MULTICA_LARK_SECRET_KEY=<base64-encoded 32-byte key>
+PATCHBAY_LARK_SECRET_KEY=<base64-encoded 32-byte key>
 ```
 
 Generate one like this:
@@ -78,13 +78,13 @@ openssl rand -base64 32
 
 Restart the API server, then connect the Bot from the agent's **Integrations** page. Keep this key long-term: if it is rotated or lost, existing credentials can no longer be decrypted and the Bot must be reconnected.
 
-`MULTICA_LARK_HTTP_BASE_URL` and `MULTICA_LARK_CALLBACK_BASE_URL` exist only for special deployments such as proxies and testing; leave them unset in normal operation.
+`PATCHBAY_LARK_HTTP_BASE_URL` and `PATCHBAY_LARK_CALLBACK_BASE_URL` exist only for special deployments such as proxies and testing; leave them unset in normal operation.
 
 ## Troubleshooting
 
 - **No bind button**: confirm the current account is the agent's owner or a workspace owner or admin, and check that the self-hosting key is configured.
 - **QR code expired**: close the dialog and start the connection again.
-- **The Bot asks for account binding**: open the binding link and sign in with the Multica account for that workspace.
+- **The Bot asks for account binding**: open the binding link and sign in with the Patchbay account for that workspace.
 - **The Bot doesn't run**: check whether the agent is archived and whether the [runtime](/daemon-runtimes) it uses is online.
 
 ## Next steps

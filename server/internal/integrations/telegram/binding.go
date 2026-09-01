@@ -13,15 +13,15 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // This file is the Telegram user-binding token flow, mirroring
 // slack/binding.go on the generic channel_* queries with
 // channel_type='telegram': an unbound Telegram user who messages the bot gets
 // a "link your account" prompt, clicks through to the in-product redeem page,
-// and their Telegram user id is bound to their Multica account.
+// and their Telegram user id is bound to their Patchbay account.
 
 // BindingTokenTTL bounds a token's life; the channel_binding_token CHECK
 // enforces the same 15-minute cap.
@@ -32,7 +32,7 @@ var (
 	// opaque error avoids a replay timing oracle.
 	ErrBindingTokenInvalid = errors.New("telegram: binding token invalid or expired")
 	// ErrBindingAlreadyAssigned: this Telegram user id is already bound to a
-	// different Multica user.
+	// different Patchbay user.
 	ErrBindingAlreadyAssigned = errors.New("telegram: user id is already bound to a different user")
 	// ErrBindingNotWorkspaceMember: the redeemer is not a member of the token's
 	// workspace.
@@ -88,8 +88,8 @@ func (s *BindingTokenService) Mint(ctx context.Context, workspaceID, installatio
 }
 
 // RedeemAndBind atomically consumes a raw token and binds the Telegram user
-// id to multicaUserID (taken from the session, never from the token).
-func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, multicaUserID pgtype.UUID) (RedeemedBindingToken, error) {
+// id to patchbayUserID (taken from the session, never from the token).
+func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, patchbayUserID pgtype.UUID) (RedeemedBindingToken, error) {
 	if s.tx == nil {
 		return RedeemedBindingToken{}, errors.New("telegram: BindingTokenService missing TxStarter")
 	}
@@ -117,7 +117,7 @@ func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, mul
 	// Explicit membership gate (no member FK): returning before Commit rolls
 	// the consume back, so a non-member's attempt does not burn the token.
 	if _, err := qtx.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
-		UserID:      multicaUserID,
+		UserID:      patchbayUserID,
 		WorkspaceID: row.WorkspaceID,
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -128,7 +128,7 @@ func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, mul
 
 	if _, err := qtx.CreateChannelUserBinding(ctx, db.CreateChannelUserBindingParams{
 		WorkspaceID:    row.WorkspaceID,
-		MulticaUserID:  multicaUserID,
+		PatchbayUserID:  patchbayUserID,
 		InstallationID: row.InstallationID,
 		ChannelType:    string(TypeTelegram),
 		ChannelUserID:  row.ChannelUserID,

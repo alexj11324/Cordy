@@ -18,17 +18,17 @@ vi.mock("@tanstack/react-query", () => ({
   }),
 }));
 
-vi.mock("@multica/core/hooks", () => ({
+vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "ws-test",
 }));
 
-vi.mock("@multica/core/issues/queries", () => ({
+vi.mock("@patchbay/core/issues/queries", () => ({
   sourceContextPreviewOptions: (wsId: string, anchorCommentId: string) => ({
     queryKey: ["source-context", "preview", wsId, anchorCommentId],
   }),
 }));
 
-vi.mock("@multica/core/issues/stores/draft-store", () => ({
+vi.mock("@patchbay/core/issues/stores/draft-store", () => ({
   useIssueDraftStore: {
     getState: () => ({
       beginIsolatedDraft: mockBeginIsolatedDraft,
@@ -42,7 +42,7 @@ const mockCreateModeStore = {
   setLastMode: mockSetLastMode,
 };
 
-vi.mock("@multica/core/issues/stores/create-mode-store", () => ({
+vi.mock("@patchbay/core/issues/stores/create-mode-store", () => ({
   useCreateModeStore: Object.assign(
     (selector: (s: typeof mockCreateModeStore) => unknown) =>
       selector(mockCreateModeStore),
@@ -50,7 +50,7 @@ vi.mock("@multica/core/issues/stores/create-mode-store", () => ({
   ),
 }));
 
-vi.mock("@multica/ui/components/ui/dialog", () => ({
+vi.mock("@patchbay/ui/components/ui/dialog", () => ({
   Dialog: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogContent: ({
     className,

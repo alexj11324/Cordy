@@ -9,7 +9,7 @@ import (
 )
 
 // TestRequireHumanActor_AllowsHumanRequest pins the happy path: a
-// request that passed Auth as a JWT or mul_ PAT does NOT carry
+// request that passed Auth as a JWT or pby_ PAT does NOT carry
 // X-Actor-Source, so the guard lets it through and the inner handler
 // runs.
 //
@@ -26,7 +26,7 @@ func TestRequireHumanActor_AllowsHumanRequest(t *testing.T) {
 	mw := RequireHumanActor(next)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/cloud-billing/balance", nil)
-	// No X-Actor-Source — this is the JWT / mul_ PAT shape.
+	// No X-Actor-Source — this is the JWT / pby_ PAT shape.
 	w := httptest.NewRecorder()
 	mw.ServeHTTP(w, req)
 
@@ -94,7 +94,7 @@ func TestRequireHumanActor_BlocksMachineCredentials(t *testing.T) {
 //
 //   - The Auth middleware today sets X-Actor-Source for exactly one
 //     case: mat_ task tokens. Every other authenticated path (JWT,
-//     mul_ PAT) leaves the header empty. So "non-empty AND not
+//     pby_ PAT) leaves the header empty. So "non-empty AND not
 //     task_token" is unreachable in current production.
 //
 //   - If a future actor kind is added (say a hypothetical

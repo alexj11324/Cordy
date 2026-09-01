@@ -51,16 +51,16 @@ const (
 
 // StallTimeout returns the no-progress budget for a single read.
 //
-// MULTICA_HTTP_STALL_TIMEOUT sets it directly. Failing that, an explicitly set
-// MULTICA_HTTP_TIMEOUT is honored: on this path it keeps its plain-language
+// PATCHBAY_HTTP_STALL_TIMEOUT sets it directly. Failing that, an explicitly set
+// PATCHBAY_HTTP_TIMEOUT is honored: on this path it keeps its plain-language
 // meaning — the longest the user is willing to wait with nothing arriving —
 // rather than silently becoming a total-elapsed limit again. With neither set,
 // defaultStallTimeout applies.
 func StallTimeout() time.Duration {
-	if d, ok := durationFromEnv("MULTICA_HTTP_STALL_TIMEOUT"); ok {
+	if d, ok := durationFromEnv("PATCHBAY_HTTP_STALL_TIMEOUT"); ok {
 		return d
 	}
-	if _, ok := durationFromEnv("MULTICA_HTTP_TIMEOUT"); ok {
+	if _, ok := durationFromEnv("PATCHBAY_HTTP_TIMEOUT"); ok {
 		return httpTimeout()
 	}
 	return defaultStallTimeout

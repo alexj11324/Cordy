@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 func TestBuildMikaOnboardingKickoffSelectsSkillWithKnownContext(t *testing.T) {
@@ -21,7 +21,7 @@ func TestBuildMikaOnboardingKickoffSelectsSkillWithKnownContext(t *testing.T) {
 	)
 
 	for _, want := range []string{
-		"multica-onboarding skill",
+		"patchbay-onboarding skill",
 		"Simplified Chinese",
 		`Workspace name: "Venus"`,
 		"Role: engineer / developer",
@@ -56,7 +56,7 @@ func TestBuildMikaOnboardingKickoffCarriesTheOpeningAlreadySent(t *testing.T) {
 		"already greeted this member",
 		"Do not introduce yourself again",
 		opening,
-		"multica-onboarding skill",
+		"patchbay-onboarding skill",
 		"Never acknowledge, quote, restate, or refer to this block",
 	} {
 		if !strings.Contains(prompt, want) {

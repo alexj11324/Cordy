@@ -10,10 +10,10 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/multica-ai/multica/server/pkg/agent"
+	"github.com/patchbay-ai/patchbay/server/pkg/agent"
 )
 
-// runtimeMarkerBegin and runtimeMarkerEnd delimit the Multica-managed brief
+// runtimeMarkerBegin and runtimeMarkerEnd delimit the Patchbay-managed brief
 // inside the runtime config file (CLAUDE.md / AGENTS.md). The
 // markers exist so writeRuntimeConfigFile can:
 //
@@ -29,8 +29,8 @@ import (
 // text is a breaking change for any file that already carries the previous
 // markers — bump deliberately.
 const (
-	runtimeMarkerBegin = "<!-- BEGIN MULTICA-RUNTIME (auto-managed; do not edit) -->"
-	runtimeMarkerEnd   = "<!-- END MULTICA-RUNTIME -->"
+	runtimeMarkerBegin = "<!-- BEGIN PATCHBAY-RUNTIME (auto-managed; do not edit) -->"
+	runtimeMarkerEnd   = "<!-- END PATCHBAY-RUNTIME -->"
 
 	// runtimeManagedSeparator is the fixed separator inserted between any
 	// pre-existing user content and the marker block whenever Inject
@@ -222,7 +222,7 @@ func runtimeConfigPath(workDir, provider string) string {
 	}
 }
 
-// writeRuntimeConfigFile writes the Multica runtime brief to path without
+// writeRuntimeConfigFile writes the Patchbay runtime brief to path without
 // clobbering any user-authored content already present. Behaviour by file
 // state:
 //
@@ -274,7 +274,7 @@ func writeRuntimeConfigFile(path, brief string) error {
 	return os.WriteFile(path, []byte(existingStr+runtimeManagedSeparator+block), 0o644)
 }
 
-// locateMarkerBlock finds the [start, end) byte range of the Multica marker
+// locateMarkerBlock finds the [start, end) byte range of the Patchbay marker
 // block inside content. The returned `end` is one past the block's trailing
 // newline (if any) so callers can splice the block out without leaving an
 // orphan blank line behind.
@@ -283,7 +283,7 @@ func writeRuntimeConfigFile(path, brief string) error {
 // matters for two malformed cases that the previous naive `strings.Index`
 // pair would mishandle:
 //
-//   - User content carries a stray `<!-- END MULTICA-RUNTIME -->` (e.g. a
+//   - User content carries a stray `<!-- END PATCHBAY-RUNTIME -->` (e.g. a
 //     documentation snippet showing what the wire format looks like) before
 //     any begin marker. The naive parser would find that end and reject the
 //     block (`endIdx > startIdx` false), then append a fresh block — and
@@ -314,12 +314,12 @@ func locateMarkerBlock(content string) (start, end int, found bool) {
 	return start, end, true
 }
 
-// CleanupRuntimeConfig excises the Multica marker block from the runtime
+// CleanupRuntimeConfig excises the Patchbay marker block from the runtime
 // config file for the given provider and restores the file to its exact
 // pre-injection state, byte for byte. The cleanup is the second half of
 // the contract `writeRuntimeConfigFile` establishes: together they must
 // round-trip a user's local repository config across an arbitrary number
-// of Multica runs without ever touching a single non-managed byte.
+// of Patchbay runs without ever touching a single non-managed byte.
 //
 // Behaviour, mirroring the three Inject states:
 //
@@ -338,7 +338,7 @@ func locateMarkerBlock(content string) (start, end int, found bool) {
 //
 // Required for the local_directory flow (WorkDir is the user's own repo):
 // without this pass, a manual `claude` / `codex` run started by
-// the user inside the same directory after a Multica task would pick up
+// the user inside the same directory after a Patchbay task would pick up
 // the stale brief and act on the previous task's issue id, trigger
 // comment id, and reply rules. Cloud workspace runs never trigger this
 // pollution because their workdir is daemon scratch that the GC loop
@@ -394,7 +394,7 @@ func CleanupRuntimeConfig(workDir, provider string) error {
 }
 
 // buildMetaSkillContent generates the meta skill markdown that teaches the
-// agent about the Multica runtime environment and available CLI tools.
+// agent about the Patchbay runtime environment and available CLI tools.
 //
 // The brief is assembled by buildMetaSkillContentSlim (runtime_config_sections.go),
 // which applies kind-driven section gating + per-section prose compression.

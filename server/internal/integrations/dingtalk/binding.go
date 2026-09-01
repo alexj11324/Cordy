@@ -13,14 +13,14 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // This file is the DingTalk user-binding token flow: an unbound DingTalk user
 // who messages the bot gets a "link your account" prompt (minted here, delivered
 // by the OutboundReplier), clicks through to the in-product redeem page, and
-// their DingTalk staff id is bound to their Multica account. It mirrors
+// their DingTalk staff id is bound to their Patchbay account. It mirrors
 // slack.BindingTokenService but runs on the generic channel_* queries with
 // channel_type='dingtalk'.
 
@@ -33,7 +33,7 @@ var (
 	// opaque error for all three avoids a replay timing oracle.
 	ErrBindingTokenInvalid = errors.New("dingtalk: binding token invalid or expired")
 	// ErrBindingAlreadyAssigned: this DingTalk user id is already bound to a
-	// different Multica user (account transfer must go through explicit unbind).
+	// different Patchbay user (account transfer must go through explicit unbind).
 	ErrBindingAlreadyAssigned = errors.New("dingtalk: user id is already bound to a different user")
 	// ErrBindingNotWorkspaceMember: the redeemer is not a member of the token's
 	// workspace. Translated to 403 at the HTTP boundary.
@@ -92,9 +92,9 @@ func (s *BindingTokenService) Mint(ctx context.Context, workspaceID, installatio
 }
 
 // RedeemAndBind atomically consumes a raw token and binds the DingTalk user id
-// to multicaUserID (taken from the session, never from the token). Returns
+// to patchbayUserID (taken from the session, never from the token). Returns
 // ErrBindingTokenInvalid / ErrBindingAlreadyAssigned / ErrBindingNotWorkspaceMember.
-func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, multicaUserID pgtype.UUID) (RedeemedBindingToken, error) {
+func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, patchbayUserID pgtype.UUID) (RedeemedBindingToken, error) {
 	if s.tx == nil {
 		return RedeemedBindingToken{}, errors.New("dingtalk: BindingTokenService missing TxStarter")
 	}
@@ -122,7 +122,7 @@ func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, mul
 	// Explicit membership gate (no member FK): returning before Commit rolls the
 	// consume back, so a non-member's attempt does not burn the token.
 	if _, err := qtx.GetMemberByUserAndWorkspace(ctx, db.GetMemberByUserAndWorkspaceParams{
-		UserID:      multicaUserID,
+		UserID:      patchbayUserID,
 		WorkspaceID: row.WorkspaceID,
 	}); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -133,14 +133,14 @@ func (s *BindingTokenService) RedeemAndBind(ctx context.Context, raw string, mul
 
 	if _, err := qtx.CreateChannelUserBinding(ctx, db.CreateChannelUserBindingParams{
 		WorkspaceID:    row.WorkspaceID,
-		MulticaUserID:  multicaUserID,
+		PatchbayUserID:  patchbayUserID,
 		InstallationID: row.InstallationID,
 		ChannelType:    string(TypeDingTalk),
 		ChannelUserID:  row.ChannelUserID,
 		Config:         []byte(`{}`),
 	}); err != nil {
 		// pgx.ErrNoRows means the existing binding points at a different user —
-		// the ON CONFLICT DO UPDATE WHERE multica_user_id=… gating rejected it.
+		// the ON CONFLICT DO UPDATE WHERE patchbay_user_id=… gating rejected it.
 		if errors.Is(err, pgx.ErrNoRows) {
 			return RedeemedBindingToken{}, ErrBindingAlreadyAssigned
 		}

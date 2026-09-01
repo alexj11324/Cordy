@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   SIDEBAR_WRAPPER_FILL_CLASS,
   SidebarProvider,
-} from "@multica/ui/components/ui/sidebar";
+} from "@patchbay/ui/components/ui/sidebar";
 import { renderWithI18n } from "../test/i18n";
 
 // The wrapper's fill is conditional, and descendants that paint an opaque layer

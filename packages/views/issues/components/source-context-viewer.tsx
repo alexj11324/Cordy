@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { AlertTriangle, ChevronRight, LocateFixed, Maximize2, Minimize2, XIcon } from "lucide-react";
-import { issueStatusCategory } from "@multica/core/issues";
-import type { Issue, IssueSourceContext, SourceContextCommentSnapshot } from "@multica/core/types";
-import { Button } from "@multica/ui/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@multica/ui/components/ui/dialog";
-import { cn } from "@multica/ui/lib/utils";
-import { useWorkspacePaths } from "@multica/core/paths";
+import { issueStatusCategory } from "@patchbay/core/issues";
+import type { Issue, IssueSourceContext, SourceContextCommentSnapshot } from "@patchbay/core/types";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@patchbay/ui/components/ui/dialog";
+import { cn } from "@patchbay/ui/lib/utils";
+import { useWorkspacePaths } from "@patchbay/core/paths";
 import { AppLink, useNavigation } from "../../navigation";
 import { useLocale, useT } from "../../i18n";
 import { ProgressRing } from "./progress-ring";

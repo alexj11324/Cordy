@@ -16,10 +16,10 @@ import (
 )
 
 const (
-	piShimHelperEnv      = "MULTICA_PI_SHIM_HELPER"
-	piShimHelperRPCEnv   = "MULTICA_PI_SHIM_RPC_HELPER"
-	piShimHelperArgvFile = "MULTICA_PI_SHIM_ARGV_FILE"
-	piShimHelperInFile   = "MULTICA_PI_SHIM_STDIN_FILE"
+	piShimHelperEnv      = "PATCHBAY_PI_SHIM_HELPER"
+	piShimHelperRPCEnv   = "PATCHBAY_PI_SHIM_RPC_HELPER"
+	piShimHelperArgvFile = "PATCHBAY_PI_SHIM_ARGV_FILE"
+	piShimHelperInFile   = "PATCHBAY_PI_SHIM_STDIN_FILE"
 )
 
 // TestPiShimHelperProcess is re-executed by the fake pi.ps1 as its native
@@ -67,9 +67,9 @@ func runPiRPCHelper() {
 		line := scanner.Text()
 		switch {
 		case strings.Contains(line, `"get_state"`):
-			fmt.Println(`{"id":"multica-state","type":"response","command":"get_state","success":true,"data":{"model":{"id":"reasoning-model","provider":"provider","reasoning":true,"thinkingLevelMap":{"xhigh":"xhigh","max":"max"}},"thinkingLevel":"max"}}`)
+			fmt.Println(`{"id":"patchbay-state","type":"response","command":"get_state","success":true,"data":{"model":{"id":"reasoning-model","provider":"provider","reasoning":true,"thinkingLevelMap":{"xhigh":"xhigh","max":"max"}},"thinkingLevel":"max"}}`)
 		case strings.Contains(line, `"get_available_models"`):
-			fmt.Println(`{"id":"multica-models","type":"response","command":"get_available_models","success":true,"data":{"models":[{"id":"reasoning-model","provider":"provider","reasoning":true,"thinkingLevelMap":{"xhigh":"xhigh","max":"max"}}]}}`)
+			fmt.Println(`{"id":"patchbay-models","type":"response","command":"get_available_models","success":true,"data":{"models":[{"id":"reasoning-model","provider":"provider","reasoning":true,"thinkingLevelMap":{"xhigh":"xhigh","max":"max"}}]}}`)
 		}
 	}
 }
@@ -198,7 +198,7 @@ func assertPiPromptSurvivesShim(t *testing.T) {
 		self)
 	writeFile(t, filepath.Join(dir, "pi.ps1"), ps1)
 
-	prompt := "MULTICA_AGENT_BUILDER_INPUT\n" +
+	prompt := "PATCHBAY_AGENT_BUILDER_INPUT\n" +
 		`{"instructions":"Run go build -ldflags \"-X main.version=foo\"","description":"- local work"}`
 	backend, err := New("pi", Config{ExecutablePath: cmdPath, Logger: slog.Default()})
 	if err != nil {
@@ -227,7 +227,7 @@ func assertPiPromptSurvivesShim(t *testing.T) {
 		t.Fatalf("native child never recorded stdin: %v; result=%+v", err, result)
 	}
 	for _, arg := range strings.Split(strings.TrimSuffix(string(argvRaw), "\n"), "\n") {
-		for _, needle := range []string{"MULTICA_AGENT_BUILDER_INPUT", "instructions", "-X", "local work"} {
+		for _, needle := range []string{"PATCHBAY_AGENT_BUILDER_INPUT", "instructions", "-X", "local work"} {
 			if strings.Contains(arg, needle) {
 				t.Errorf("prompt fragment %q leaked into native child argv element %q", needle, arg)
 			}

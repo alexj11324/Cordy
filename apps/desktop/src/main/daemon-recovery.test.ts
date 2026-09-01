@@ -151,7 +151,7 @@ describe("DaemonRecoveryPolicy", () => {
 });
 
 describe("recovery orchestration guards", () => {
-  const profile = { name: "desktop-api.multica.ai", port: 19_999 };
+  const profile = { name: "desktop-api.patchbay.ai", port: 19_999 };
 
   it("allows first-start recovery for a Desktop-owned profile", () => {
     expect(

@@ -54,7 +54,7 @@ const mediaDialTimeout = 10 * time.Second
 //
 // Both lists are the IANA IPv4 and IPv6 Special-Purpose Address Registries
 // minus what netip's own predicates already catch (IsLoopback / IsPrivate /
-// IsLinkLocal* / IsMulticast / IsUnspecified), minus the handful of
+// IsLinkLocal* / IsPatchbayst / IsUnspecified), minus the handful of
 // special-purpose blocks that are ordinary globally-routed unicast (the AS112
 // delegations 192.31.196.0/24, 192.175.48.0/24 and 2620:4f:8000::/48, and
 // AMT's 192.52.193.0/24) — those are "special" in who runs them, not in where
@@ -116,7 +116,7 @@ var reservedMediaPrefixes = []netip.Prefix{
 // only knows how to recognise an IPv4 address when it is written as one. This
 // list is the ONLY thing standing between the guard and the address embedded
 // inside. Letting mediaAllowedPrefixes override it would mean
-// MULTICA_WECOM_MEDIA_ALLOW_CIDRS=::/0 — or, just as well, =2002::/16 —
+// PATCHBAY_WECOM_MEDIA_ALLOW_CIDRS=::/0 — or, just as well, =2002::/16 —
 // reaching the loopback and the metadata endpoint the guard exists to refuse,
 // written in a spelling the operator never thought they were opening.
 //
@@ -156,7 +156,7 @@ type addrPolicy func(netip.Addr) bool
 var mediaAllowedPrefixes []netip.Prefix
 
 // SetMediaAllowedPrefixes declares ranges the media guard may dial. Called at
-// boot from MULTICA_WECOM_MEDIA_ALLOW_CIDRS. An unparseable entry is reported
+// boot from PATCHBAY_WECOM_MEDIA_ALLOW_CIDRS. An unparseable entry is reported
 // and skipped rather than silently widening or silently narrowing the guard.
 func SetMediaAllowedPrefixes(cidrs []string) []error {
 	var (
@@ -189,8 +189,8 @@ func publicAddrOnly(a netip.Addr) bool {
 		return false
 	}
 	if a.IsLoopback() || a.IsPrivate() || a.IsUnspecified() ||
-		a.IsLinkLocalUnicast() || a.IsLinkLocalMulticast() ||
-		a.IsInterfaceLocalMulticast() || a.IsMulticast() {
+		a.IsLinkLocalUnicast() || a.IsLinkLocalPatchbayst() ||
+		a.IsInterfaceLocalPatchbayst() || a.IsPatchbayst() {
 		return false
 	}
 	// Translation space first, and before the allow-list is consulted at all.

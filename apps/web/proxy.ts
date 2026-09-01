@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { LOCALE_COOKIE } from "@multica/core/i18n";
+import { LOCALE_COOKIE } from "@patchbay/core/i18n";
 import {
-  MULTICA_LOCALE_HEADER,
+  PATCHBAY_LOCALE_HEADER,
   resolveLocaleFromSignals,
 } from "./lib/locale-routing";
 import { runtimeRewriteDestination } from "./config/runtime-urls";
@@ -32,13 +32,13 @@ function resolveLocale(req: NextRequest): string {
   });
 }
 
-// Forward the resolved locale to RSC layouts via the `x-multica-locale`
+// Forward the resolved locale to RSC layouts via the `x-patchbay-locale`
 // request header. layout.tsx reads it through `await headers()`. The
 // `request: { headers }` form is what makes the header land on the upstream
 // request — without it the value would only sit on the response.
 function nextWithLocale(req: NextRequest): NextResponse {
   const headers = new Headers(req.headers);
-  headers.set(MULTICA_LOCALE_HEADER, resolveLocale(req));
+  headers.set(PATCHBAY_LOCALE_HEADER, resolveLocale(req));
   return NextResponse.next({ request: { headers } });
 }
 
@@ -55,7 +55,7 @@ export function proxy(req: NextRequest) {
     return NextResponse.rewrite(url);
   }
 
-  const hasSession = req.cookies.has("multica_logged_in");
+  const hasSession = req.cookies.has("patchbay_logged_in");
   const lastSlug = req.cookies.get("last_workspace_slug")?.value;
 
   // --- Legacy URL redirect: /issues/... → /{slug}/issues/... ---
@@ -92,7 +92,7 @@ export function proxy(req: NextRequest) {
 
   // --- Root path: redirect logged-in users to their last workspace ---
   // The official cloud host also serves the public marketing site. Visiting
-  // https://multica.ai/ must remain a public-site navigation even when a local
+  // https://patchbay.ai/ must remain a public-site navigation even when a local
   // desktop/runtime session has fresh auth cookies; explicit app routes such
   // as /acme/issues and legacy /issues still route to the workspace app.
   if (
@@ -117,12 +117,11 @@ export const config = {
   // proxy routes whose upstream origins are resolved from process.env at
   // request time instead of being baked into next.config.js at build time.
   matcher: [
-    "/v1/:path*",
     "/api/:path*",
     "/auth/:path*",
     "/uploads/:path*",
     "/docs/:path*",
     "/ws",
-    "/((?!api|v1|_next/static|_next/image|favicon.ico|.*\\.).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.).*)",
   ],
 };

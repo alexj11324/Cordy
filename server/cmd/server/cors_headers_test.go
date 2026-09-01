@@ -4,8 +4,8 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/handler"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/patchbay-ai/patchbay/server/internal/handler"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 // The app advertises its capabilities on the cancel request (#5219). Browsers

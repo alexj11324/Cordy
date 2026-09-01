@@ -18,8 +18,8 @@ import (
 //
 // Key layout:
 //
-//   mul:{runtime_pending}:model_list:req:<request_id>           → JSON-encoded ModelListRequest, TTL = retention
-//   mul:{runtime_pending}:model_list:pending:<runtime_id>       → ZSET { member = request_id, score = created_at UnixNano }
+//   pby:{runtime_pending}:model_list:req:<request_id>           → JSON-encoded ModelListRequest, TTL = retention
+//   pby:{runtime_pending}:model_list:pending:<runtime_id>       → ZSET { member = request_id, score = created_at UnixNano }
 //                                                                  TTL = retention*2 (kept alive long enough for
 //                                                                  lazy sweep on PopPending)
 //
@@ -29,10 +29,10 @@ import (
 // requests on a transient Redis hiccup between them.
 
 const (
-	// Namespaced under mul:*:model_list:* so the key set doesn't collide with
+	// Namespaced under pby:*:model_list:* so the key set doesn't collide with
 	// the realtime relay (ws:*) or the local-skill stores.
-	modelListKeyPrefix          = "mul:" + runtimePendingRedisHashTag + ":model_list:req:"
-	modelListPendingPrefix      = "mul:" + runtimePendingRedisHashTag + ":model_list:pending:"
+	modelListKeyPrefix          = "pby:" + runtimePendingRedisHashTag + ":model_list:req:"
+	modelListPendingPrefix      = "pby:" + runtimePendingRedisHashTag + ":model_list:pending:"
 	modelListRedisPopMaxRetries = 5
 )
 

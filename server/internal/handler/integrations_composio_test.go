@@ -13,10 +13,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	composio "github.com/multica-ai/multica/server/internal/integrations/composio"
-	"github.com/multica-ai/multica/server/internal/util"
-	sdk "github.com/multica-ai/multica/server/pkg/composio"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	composio "github.com/patchbay-ai/patchbay/server/internal/integrations/composio"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
+	sdk "github.com/patchbay-ai/patchbay/server/pkg/composio"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 const composioTestUserID = "22222222-2222-2222-2222-222222222222"
@@ -139,8 +139,8 @@ func newComposioTestHandler(t *testing.T, sdkFake composio.SDK, store composio.S
 	t.Helper()
 	svc, err := composio.NewService(sdkFake, store, composio.Config{
 		StateSecret:     []byte("handler-test-secret"),
-		CallbackBaseURL: "https://multica.ai",
-		FrontendBaseURL: "https://multica.ai",
+		CallbackBaseURL: "https://patchbay.ai",
+		FrontendBaseURL: "https://patchbay.ai",
 	})
 	if err != nil {
 		t.Fatalf("NewService: %v", err)

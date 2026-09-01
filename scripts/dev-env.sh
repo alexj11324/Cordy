@@ -27,38 +27,38 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-DEV_HOME="${MULTICA_DEV_HOME:-$HOME/.multica/dev}"
+DEV_HOME="${PATCHBAY_DEV_HOME:-$HOME/.patchbay/dev}"
 ENVS_DIR="$DEV_HOME/envs"
 LOCK_DIR="$DEV_HOME/lock.d"
-DEV_WORKSPACES_PARENT="${MULTICA_DEV_WORKSPACES_PARENT:-$HOME}"
-DEV_DESKTOP_APP_DATA="${MULTICA_DEV_DESKTOP_APP_DATA:-}"
-DEV_PROFILES_HOME="${MULTICA_DEV_PROFILES_HOME:-$HOME/.multica/profiles}"
+DEV_WORKSPACES_PARENT="${PATCHBAY_DEV_WORKSPACES_PARENT:-$HOME}"
+DEV_DESKTOP_APP_DATA="${PATCHBAY_DEV_DESKTOP_APP_DATA:-}"
+DEV_PROFILES_HOME="${PATCHBAY_DEV_PROFILES_HOME:-$HOME/.patchbay/profiles}"
 
-DEV_EMAIL="${MULTICA_DEV_EMAIL:-dev@localhost}"
+DEV_EMAIL="${PATCHBAY_DEV_EMAIL:-dev@localhost}"
 DEV_CODE_DEFAULT=888888
-WORKSPACE_NAME="${MULTICA_DEV_WORKSPACE_NAME:-Dev}"
-WORKSPACE_SLUG="${MULTICA_DEV_WORKSPACE_SLUG:-dev}"
+WORKSPACE_NAME="${PATCHBAY_DEV_WORKSPACE_NAME:-Dev}"
+WORKSPACE_SLUG="${PATCHBAY_DEV_WORKSPACE_SLUG:-dev}"
 
 ALL_COMPONENTS="api web daemon desktop"
 DEFAULT_COMPONENTS="api web"
 
-# An agent runs with TMPDIR=/tmp/multica-task-<id>, deleted when the run ends.
+# An agent runs with TMPDIR=/tmp/patchbay-task-<id>, deleted when the run ends.
 # Anything the Go toolchain builds there goes with it, so a binary started from
 # such a build stops being re-executable the moment its creator finishes.
-DEV_TMPDIR="${MULTICA_DEV_TMPDIR:-$HOME/.multica/dev-tmp}"
+DEV_TMPDIR="${PATCHBAY_DEV_TMPDIR:-$HOME/.patchbay/dev-tmp}"
 
-# The agent runtime exports these pointing at PRODUCTION, and MULTICA_SERVER_URL
+# The agent runtime exports these pointing at PRODUCTION, and PATCHBAY_SERVER_URL
 # silently outranks server_url in a saved profile config. Every long-lived child
 # is launched without them, so a local daemon cannot authenticate its local
 # token against the production API — which fails as a bare 401 and reads like a
 # product bug. PATH is never stripped: the daemon resolves agent CLI paths by
 # forking the login shell.
 CLEAN_ENV=(env
-  -u MULTICA_SERVER_URL -u MULTICA_TOKEN -u MULTICA_WORKSPACE_ID
-  -u MULTICA_DAEMON_PORT -u MULTICA_AGENT_ID -u MULTICA_AGENT_NAME
-  -u MULTICA_TASK_ID -u MULTICA_TASK_SLOT
-  -u MULTICA_TASK_CONFIG_ROOT -u MULTICA_TASK_WORKSPACES_ROOT
-  -u MULTICA_WORKSPACES_ROOT)
+  -u PATCHBAY_SERVER_URL -u PATCHBAY_TOKEN -u PATCHBAY_WORKSPACE_ID
+  -u PATCHBAY_DAEMON_PORT -u PATCHBAY_AGENT_ID -u PATCHBAY_AGENT_NAME
+  -u PATCHBAY_TASK_ID -u PATCHBAY_TASK_SLOT
+  -u PATCHBAY_TASK_CONFIG_ROOT -u PATCHBAY_TASK_WORKSPACES_ROOT
+  -u PATCHBAY_WORKSPACES_ROOT)
 
 # ---------------------------------------------------------------- output ----
 
@@ -251,7 +251,7 @@ desktop_app_data_root() {
 }
 
 desktop_user_data_dir() {
-  printf '%s/Multica Canary %s' "$(desktop_app_data_root)" "$1"
+  printf '%s/Patchbay Canary %s' "$(desktop_app_data_root)" "$1"
 }
 
 offset_registered() {
@@ -321,17 +321,17 @@ load_env_file() {
 # makes `up` able to log itself in without a human reading a log for a code.
 ensure_dev_code() {
   local file="$REPO_ROOT/$1" tmp
-  if grep -qE '^MULTICA_DEV_VERIFICATION_CODE=[0-9]{6}$' "$file"; then
+  if grep -qE '^PATCHBAY_DEV_VERIFICATION_CODE=[0-9]{6}$' "$file"; then
     return 0
   fi
-  if grep -q '^MULTICA_DEV_VERIFICATION_CODE=' "$file"; then
+  if grep -q '^PATCHBAY_DEV_VERIFICATION_CODE=' "$file"; then
     tmp="$(mktemp)"
-    sed "s/^MULTICA_DEV_VERIFICATION_CODE=.*/MULTICA_DEV_VERIFICATION_CODE=$DEV_CODE_DEFAULT/" "$file" > "$tmp"
+    sed "s/^PATCHBAY_DEV_VERIFICATION_CODE=.*/PATCHBAY_DEV_VERIFICATION_CODE=$DEV_CODE_DEFAULT/" "$file" > "$tmp"
     mv "$tmp" "$file"
   else
-    printf '\nMULTICA_DEV_VERIFICATION_CODE=%s\n' "$DEV_CODE_DEFAULT" >> "$file"
+    printf '\nPATCHBAY_DEV_VERIFICATION_CODE=%s\n' "$DEV_CODE_DEFAULT" >> "$file"
   fi
-  info "Set MULTICA_DEV_VERIFICATION_CODE=$DEV_CODE_DEFAULT in $1 (ignored when APP_ENV=production)."
+  info "Set PATCHBAY_DEV_VERIFICATION_CODE=$DEV_CODE_DEFAULT in $1 (ignored when APP_ENV=production)."
 }
 
 rewrite_env_ports() {
@@ -346,9 +346,9 @@ rewrite_env_ports() {
     -e "s|^FRONTEND_ORIGIN=.*|FRONTEND_ORIGIN=http://localhost:${frontend}|" \
     -e "s|^POSTGRES_DB=.*|POSTGRES_DB=${db}|" \
     -e "s|^DATABASE_URL=.*|DATABASE_URL=${escaped_database_url}|" \
-    -e "s|^MULTICA_SERVER_URL=.*|MULTICA_SERVER_URL=ws://localhost:${backend}/ws|" \
-    -e "s|^MULTICA_PUBLIC_URL=.*|MULTICA_PUBLIC_URL=http://localhost:${backend}|" \
-    -e "s|^MULTICA_APP_URL=.*|MULTICA_APP_URL=http://localhost:${frontend}|" \
+    -e "s|^PATCHBAY_SERVER_URL=.*|PATCHBAY_SERVER_URL=ws://localhost:${backend}/ws|" \
+    -e "s|^PATCHBAY_PUBLIC_URL=.*|PATCHBAY_PUBLIC_URL=http://localhost:${backend}|" \
+    -e "s|^PATCHBAY_APP_URL=.*|PATCHBAY_APP_URL=http://localhost:${frontend}|" \
     -e "s|^NEXT_PUBLIC_API_URL=.*|NEXT_PUBLIC_API_URL=http://localhost:${backend}|" \
     -e "s|^NEXT_PUBLIC_WS_URL=.*|NEXT_PUBLIC_WS_URL=ws://localhost:${backend}/ws|" \
     "$file" > "$tmp"
@@ -601,7 +601,7 @@ EOF
 
 ensure_credentials() {
   local server="http://localhost:${BACKEND_PORT}" config="$PROFILE_DIR/config.json"
-  local code="${MULTICA_DEV_VERIFICATION_CODE:-$DEV_CODE_DEFAULT}"
+  local code="${PATCHBAY_DEV_VERIFICATION_CODE:-$DEV_CODE_DEFAULT}"
   local verify jwt pat ws
 
   if [ -f "$config" ]; then
@@ -617,7 +617,7 @@ ensure_credentials() {
 
   curl -sf -X POST "$server/auth/send-code" -H 'Content-Type: application/json' \
     -d "{\"email\":\"${DEV_EMAIL}\"}" >/dev/null \
-    || die "send-code failed. Is MULTICA_DEV_VERIFICATION_CODE set and APP_ENV non-production?"
+    || die "send-code failed. Is PATCHBAY_DEV_VERIFICATION_CODE set and APP_ENV non-production?"
 
   verify="$(curl -sS -X POST "$server/auth/verify-code" -H 'Content-Type: application/json' \
     -d "{\"email\":\"${DEV_EMAIL}\",\"code\":\"${code}\"}")"
@@ -665,8 +665,8 @@ Do not retry immediately — repeated attempts lock the code. Wait ~40s and re-r
 daemon_task_marker() {
   local dir="$REPO_ROOT" marker
   while :; do
-    marker="$dir/.multica/daemon_task_context.json"
-    if [ -f "$marker" ] && grep -q 'multica-daemon-task' "$marker" 2>/dev/null; then
+    marker="$dir/.patchbay/daemon_task_context.json"
+    if [ -f "$marker" ] && grep -q 'patchbay-daemon-task' "$marker" 2>/dev/null; then
       printf '%s' "$marker"
       return 0
     fi
@@ -684,15 +684,15 @@ start_daemon() {
   # and re-execs it as the execution-environment helper for every task. Under
   # `go run` the toolchain deletes that binary when the launcher exits, so the
   # daemon registers, heartbeats, and then fails every task with
-  # "fork/exec .../go-build.../exe/multica: no such file or directory".
-  info "Building $MULTICA_BIN (a go run daemon would fail every task later)."
-  (cd "$REPO_ROOT/server" && go build -o bin/multica ./cmd/multica) || die "Failed to build the multica CLI."
+  # "fork/exec .../go-build.../exe/patchbay: no such file or directory".
+  info "Building $PATCHBAY_BIN (a go run daemon would fail every task later)."
+  (cd "$REPO_ROOT/server" && go build -o bin/patchbay ./cmd/patchbay) || die "Failed to build the patchbay CLI."
 
-  "${CLEAN_ENV[@]}" MULTICA_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
-    "$MULTICA_BIN" daemon start --profile "$PROFILE" 2>&1 | sed 's/^/    /' || true
+  "${CLEAN_ENV[@]}" PATCHBAY_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
+    "$PATCHBAY_BIN" daemon start --profile "$PROFILE" 2>&1 | sed 's/^/    /' || true
 
-  status="$("${CLEAN_ENV[@]}" MULTICA_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
-    "$MULTICA_BIN" daemon status --profile "$PROFILE" --output json 2>/dev/null || true)"
+  status="$("${CLEAN_ENV[@]}" PATCHBAY_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
+    "$PATCHBAY_BIN" daemon status --profile "$PROFILE" --output json 2>/dev/null || true)"
   state="$(json_field "$status" status || echo unknown)"
   # `daemon status` reports "stopped" plus port_conflict when the daemon
   # answering this profile's health port belongs to another profile, so a
@@ -776,13 +776,13 @@ stop_component() {
   local name=$1 pid launcher="" status state recorded_listener=""
   case "$name" in
     daemon)
-      if [ -x "$MULTICA_BIN" ]; then
-        if "${CLEAN_ENV[@]}" MULTICA_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
-          "$MULTICA_BIN" daemon stop --profile "$PROFILE" >/dev/null 2>&1; then
+      if [ -x "$PATCHBAY_BIN" ]; then
+        if "${CLEAN_ENV[@]}" PATCHBAY_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
+          "$PATCHBAY_BIN" daemon stop --profile "$PROFILE" >/dev/null 2>&1; then
           ok "daemon stopped"
         else
-          status="$("${CLEAN_ENV[@]}" MULTICA_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
-            "$MULTICA_BIN" daemon status --profile "$PROFILE" --output json 2>/dev/null || true)"
+          status="$("${CLEAN_ENV[@]}" PATCHBAY_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
+            "$PATCHBAY_BIN" daemon status --profile "$PROFILE" --output json 2>/dev/null || true)"
           state="$(json_field "$status" status || echo stopped)"
           if [ "$state" = running ]; then
             warn "daemon for profile $PROFILE is still running"
@@ -793,7 +793,7 @@ stop_component() {
       else
         pid="$(cat "$PROFILE_DIR/daemon.pid" 2>/dev/null || true)"
         if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-          warn "cannot stop daemon pid $pid because no usable multica binary was found"
+          warn "cannot stop daemon pid $pid because no usable patchbay binary was found"
           return 1
         fi
         info "daemon skipped (no usable binary and no live profile pid)"
@@ -890,9 +890,9 @@ component_state() {
       ;;
     daemon)
       local status state
-      if [ -x "$MULTICA_BIN" ]; then
-        status="$("${CLEAN_ENV[@]}" MULTICA_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
-          "$MULTICA_BIN" daemon status --profile "$PROFILE" --output json 2>/dev/null || true)"
+      if [ -x "$PATCHBAY_BIN" ]; then
+        status="$("${CLEAN_ENV[@]}" PATCHBAY_WORKSPACES_ROOT="$WORKSPACES_ROOT" \
+          "$PATCHBAY_BIN" daemon status --profile "$PROFILE" --output json 2>/dev/null || true)"
         state="$(json_field "$status" status || echo stopped)"
         printf '%s|%s|pid %s' "$state" "$PROFILE" "$(json_field "$status" pid || echo '-')"
       else
@@ -980,7 +980,7 @@ print_handoff() {
 ${C_GREEN}✓ Environment ready.${C_OFF}
 
   ${entrypoint}
-  Sign in     ${DEV_EMAIL}  ·  code ${MULTICA_DEV_VERIFICATION_CODE:-$DEV_CODE_DEFAULT}
+  Sign in     ${DEV_EMAIL}  ·  code ${PATCHBAY_DEV_VERIFICATION_CODE:-$DEV_CODE_DEFAULT}
   Backend     http://localhost:${BACKEND_PORT}   (GET /health reports pid + commit + started_at)
   Commit      $(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)
   Environment ${NAME}$( [ "${TTL_HOURS:-0}" != 0 ] && printf ' (expires %s)' "$EXPIRES_AT" )
@@ -1008,15 +1008,15 @@ bind_paths() {
   STATE_DIR="$(env_dir "$NAME")"
   LOG_DIR="$STATE_DIR/logs"
   PROFILE_DIR="$DEV_PROFILES_HOME/$PROFILE"
-  WORKSPACES_ROOT="${WORKSPACES_ROOT:-$DEV_WORKSPACES_PARENT/multica_workspaces_$PROFILE}"
+  WORKSPACES_ROOT="${WORKSPACES_ROOT:-$DEV_WORKSPACES_PARENT/patchbay_workspaces_$PROFILE}"
   DESKTOP_RENDERER_PORT="${DESKTOP_RENDERER_PORT:-$(renderer_port_for_offset "$OFFSET")}"
   DESKTOP_APP_SUFFIX="${DESKTOP_APP_SUFFIX:-$NAME}"
   DESKTOP_USER_DATA_DIR="${DESKTOP_USER_DATA_DIR:-$(desktop_user_data_dir "$DESKTOP_APP_SUFFIX")}"
   DESKTOP_ENV_FILE="${DESKTOP_ENV_FILE:-$DIR/apps/desktop/.env.development.local}"
   EXPIRES_AT="${EXPIRES_AT:-}"
-  MULTICA_BIN="$DIR/server/bin/multica"
-  if [ ! -x "$MULTICA_BIN" ] && [ -x "$REPO_ROOT/server/bin/multica" ]; then
-    MULTICA_BIN="$REPO_ROOT/server/bin/multica"
+  PATCHBAY_BIN="$DIR/server/bin/patchbay"
+  if [ ! -x "$PATCHBAY_BIN" ] && [ -x "$REPO_ROOT/server/bin/patchbay" ]; then
+    PATCHBAY_BIN="$REPO_ROOT/server/bin/patchbay"
   fi
   mkdir -p "$LOG_DIR"
 }
@@ -1145,7 +1145,7 @@ Start the rest with 'make up C=api,web', or run 'make up C=daemon' from your own
       fi
       offset="$(allocate_offset "$REPO_ROOT")" || die "No free slot left; run 'make gc' or 'make list'."
       local new_backend=$((18080 + offset)) new_frontend=$((13000 + offset))
-      local new_db="multica_$(slugify "$(basename "$REPO_ROOT")")_${offset}"
+      local new_db="patchbay_$(slugify "$(basename "$REPO_ROOT")")_${offset}"
       rewrite_env_ports "$ENV_FILE" "$offset" "$new_backend" "$new_frontend" "$new_db"
       load_env_file "$ENV_FILE"
       info "Allocated slot $offset — backend $new_backend, frontend $new_frontend, database $new_db"
@@ -1154,7 +1154,7 @@ Start the rest with 'make up C=api,web', or run 'make up C=daemon' from your own
     NAME="${name:-$(slugify "$(basename "$REPO_ROOT")")-${offset}}"
     require_env_name "$NAME"
     PROFILE="dev-$(slugify "$(basename "$REPO_ROOT")")-${offset}"
-    WORKSPACES_ROOT="$DEV_WORKSPACES_PARENT/multica_workspaces_$PROFILE"
+    WORKSPACES_ROOT="$DEV_WORKSPACES_PARENT/patchbay_workspaces_$PROFILE"
     DESKTOP_RENDERER_PORT="$(renderer_port_for_offset "$offset")"
     DESKTOP_APP_SUFFIX="$NAME"
     DESKTOP_USER_DATA_DIR="$(desktop_user_data_dir "$DESKTOP_APP_SUFFIX")"
@@ -1272,7 +1272,7 @@ cmd_destroy() {
     failures=$((failures + 1))
   fi
 
-  expected_workspaces="$DEV_WORKSPACES_PARENT/multica_workspaces_$PROFILE"
+  expected_workspaces="$DEV_WORKSPACES_PARENT/patchbay_workspaces_$PROFILE"
   if [ "$WORKSPACES_ROOT" != "$expected_workspaces" ]; then
     warn "refusing to remove unexpected workspaces root $WORKSPACES_ROOT (expected $expected_workspaces)"
     failures=$((failures + 1))
@@ -1410,7 +1410,7 @@ EOF
 }
 
 # Runs a command with this environment's variables, without the agent runtime's
-# production MULTICA_* values and with a durable TMPDIR. Replaces the prefix
+# production PATCHBAY_* values and with a durable TMPDIR. Replaces the prefix
 # people used to have to copy out of a document by hand.
 cmd_exec() {
   local name=""
@@ -1424,8 +1424,8 @@ cmd_exec() {
   load_env_file "$ENV_FILE" "$DIR"
   export PORT="$BACKEND_PORT" FRONTEND_PORT DATABASE_URL POSTGRES_DB="$DB_NAME"
   export TMPDIR="$DEV_TMPDIR" TMP="$DEV_TMPDIR" TEMP="$DEV_TMPDIR"
-  export MULTICA_DEV_PROFILE="$PROFILE"
-  exec "${CLEAN_ENV[@]}" MULTICA_WORKSPACES_ROOT="$WORKSPACES_ROOT" "$@"
+  export PATCHBAY_DEV_PROFILE="$PROFILE"
+  exec "${CLEAN_ENV[@]}" PATCHBAY_WORKSPACES_ROOT="$WORKSPACES_ROOT" "$@"
 }
 
 usage() {

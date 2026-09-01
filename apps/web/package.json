@@ -1,5 +1,5 @@
 {
-  "name": "@multica/web",
+  "name": "@patchbay/web",
   "version": "0.4.37",
   "private": true,
   "type": "module",
@@ -14,9 +14,9 @@
     "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
-    "@multica/core": "workspace:*",
-    "@multica/ui": "workspace:*",
-    "@multica/views": "workspace:*",
+    "@patchbay/core": "workspace:*",
+    "@patchbay/ui": "workspace:*",
+    "@patchbay/views": "workspace:*",
     "@tanstack/react-query": "catalog:",
     "dotenv": "^17.4.1",
     "fumadocs-core": "^15.5.2",
@@ -30,7 +30,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@multica/eslint-config": "workspace:*",
+    "@patchbay/eslint-config": "workspace:*",
     "@tailwindcss/postcss": "catalog:",
     "postcss": "catalog:",
     "@testing-library/jest-dom": "catalog:",

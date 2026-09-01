@@ -16,10 +16,10 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/storage"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/patchbay-ai/patchbay/server/internal/storage"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 // extContentTypes overrides http.DetectContentType for extensions it gets wrong.
@@ -83,8 +83,8 @@ type AttachmentResponse struct {
 	// chat messages). It is computed per deployment policy by
 	// buildMarkdownURL — preferring the storage URL when it is already a
 	// public, durable absolute URL (public CDN / LocalStorage with
-	// MULTICA_LOCAL_UPLOAD_BASE_URL), and otherwise prefixing
-	// MULTICA_PUBLIC_URL onto the stable per-attachment endpoint that the
+	// PATCHBAY_LOCAL_UPLOAD_BASE_URL), and otherwise prefixing
+	// PATCHBAY_PUBLIC_URL onto the stable per-attachment endpoint that the
 	// server self-resigns / proxies on every request.
 	//
 	// Why a separate field from URL / DownloadURL:
@@ -222,11 +222,11 @@ func (h *Handler) attachmentToResponse(a db.Attachment, mode attachmentURLMode) 
 //     against a private bucket without a CDN domain, raw S3 / R2 /
 //     MinIO, LocalStorage with no `LOCAL_UPLOAD_BASE_URL` — uses the
 //     stable per-attachment endpoint that the server self-signs /
-//     proxies on every request, anchored on `MULTICA_PUBLIC_URL` so the
+//     proxies on every request, anchored on `PATCHBAY_PUBLIC_URL` so the
 //     persisted URL keeps working for clients that don't share the
 //     document origin (Desktop / mobile webview).
 //
-//  3. Last-resort fallback (no `MULTICA_PUBLIC_URL` configured): emit
+//  3. Last-resort fallback (no `PATCHBAY_PUBLIC_URL` configured): emit
 //     the site-relative path. Web's Next.js rewrite handles this; non-
 //     web clients on a deployment without `PublicURL` configured were
 //     already broken before MUL-3192 and stay broken here, but we
@@ -508,7 +508,7 @@ func (h *Handler) UploadFile(w http.ResponseWriter, r *http.Request) {
 			// chat_history.go:chatHistorySession). X-Task-ID is only trustworthy
 			// when the auth middleware set it from a task-scoped `mat_` token —
 			// that path is also the ONLY one that stamps X-Actor-Source=task_token
-			// and strips a client-forged X-Task-ID. A normal JWT / `mul_` PAT
+			// and strips a client-forged X-Task-ID. A normal JWT / `pby_` PAT
 			// leaves X-Actor-Source empty and does NOT strip a forged X-Task-ID,
 			// and resolveActor's fallback will accept a real X-Agent-ID +
 			// X-Task-ID pair. So without this gate a member who learns a task ID
@@ -924,7 +924,7 @@ func shouldProxyAttachmentURL(rawURL string) bool {
 		return addr.IsLoopback() ||
 			addr.IsPrivate() ||
 			addr.IsLinkLocalUnicast() ||
-			addr.IsLinkLocalMulticast() ||
+			addr.IsLinkLocalPatchbayst() ||
 			addr.IsUnspecified()
 	}
 	return false

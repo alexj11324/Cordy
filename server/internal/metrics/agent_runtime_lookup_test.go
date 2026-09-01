@@ -10,11 +10,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/metrics"
+	"github.com/patchbay-ai/patchbay/server/internal/metrics"
 	dto "github.com/prometheus/client_model/go"
 )
 
-const runtimeLookupMetric = "multica_agent_runtime_lookup_total"
+const runtimeLookupMetric = "patchbay_agent_runtime_lookup_total"
 
 // TestAgentRuntimeLookupPrewarmsEverySeries asserts the counter ships every
 // source x result combination at zero. An absent series and a zero series look

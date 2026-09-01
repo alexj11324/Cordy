@@ -1,10 +1,10 @@
-# Multica License
+# Patchbay License
 
-Multica is provided under the terms of the Apache License, Version 2.0 —
+Patchbay is provided under the terms of the Apache License, Version 2.0 —
 the complete, unmodified text of which is reproduced in Part II of this
 file — subject to the additional conditions in Part I.
 
-Part I and Part II together constitute the "Multica License". Neither part
+Part I and Part II together constitute the "Patchbay License". Neither part
 grants any rights on its own. Condition 3 states how the two parts fit
 together and what must be delivered when you redistribute.
 
@@ -12,17 +12,17 @@ together and what must be delivered when you redistribute.
 
                        Part I — Additional Conditions
 
-1. Multica may be utilized commercially, including as a backend service for
+1. Patchbay may be utilized commercially, including as a backend service for
    other applications or as a task management platform for enterprises,
    subject to the following conditions:
 
    a. Hosted or embedded service: Unless you have obtained a commercial
-      license from the producer, you may not use the Multica source code
-      to provide a hosted service to third parties, or embed Multica as a
+      license from the producer, you may not use the Patchbay source code
+      to provide a hosted service to third parties, or embed Patchbay as a
       component of a product or service that is sold, licensed, or
       otherwise commercially distributed to third parties.
 
-      - This restriction applies to offering Multica (in whole or
+      - This restriction applies to offering Patchbay (in whole or
         substantial part) as a SaaS platform, a managed service, or as
         an integrated component within another commercial offering.
       - Providing a hosted service to third parties is restricted whether
@@ -36,42 +36,42 @@ together and what must be delivered when you redistribute.
         code of a fork in a public repository, is not itself a hosted
         service and does not require a commercial license. Any such
         distribution remains subject to all applicable terms of this
-        Multica License, including conditions (b) and (c) below and
+        Patchbay License, including conditions (b) and (c) below and
         condition 3. Source distribution does not grant recipients the
         right to operate a hosted service; each operator must obtain its
         own commercial license.
 
    b. Branding and copyright information: Unless the producer has granted
       you a written branding waiver, you may not remove or modify the
-      Multica LOGO, the Multica product name, or the copyright and
-      attribution information displayed by a Multica user interface.
+      Patchbay LOGO, the Patchbay product name, or the copyright and
+      attribution information displayed by a Patchbay user interface.
 
       - User Interface Definition: For the purposes of this license, a
-        "Multica user interface" means any user interface derived, in whole
+        "Patchbay user interface" means any user interface derived, in whole
         or in substantial part, from the user interface code in this
         repository. This includes the components located in the
         `apps/web/`, `apps/desktop/`, `apps/mobile/`, `packages/views/`,
-        and `packages/ui/` directories when running Multica from the raw
+        and `packages/ui/` directories when running Patchbay from the raw
         source code, the frontend container image (published as
-        `ghcr.io/multica-ai/multica-web`) when running Multica with
+        `ghcr.io/patchbay-ai/patchbay-web`) when running Patchbay with
         Docker, and any compiled desktop or mobile application built from
         that code. That enumeration is illustrative rather than
         exhaustive: user interface code remains covered when it is
         modified, moved, renamed, or extracted into another package or
         repository.
-      - This restriction is inapplicable to uses of Multica that do not
-        involve a Multica user interface, such as running only the
+      - This restriction is inapplicable to uses of Patchbay that do not
+        involve a Patchbay user interface, such as running only the
         `server/` backend, the daemon, or the CLI without redistributing
-        or operating any Multica user interface. Such uses remain subject
+        or operating any Patchbay user interface. Such uses remain subject
         to condition (c) below.
 
    c. Attribution for non-interface use: If you redistribute or operate a
-      product or service built on Multica's backend, daemon, or CLI
-      without a Multica user interface, you must retain all copyright,
+      product or service built on Patchbay's backend, daemon, or CLI
+      without a Patchbay user interface, you must retain all copyright,
       patent, trademark, and attribution notices present in the source
       code and in the NOTICE file, and state in your user-facing
-      documentation that the product is built on Multica, including a link
-      to https://github.com/multica-ai/multica.
+      documentation that the product is built on Patchbay, including a link
+      to https://github.com/patchbay-ai/patchbay.
 
    d. Relationship between grants: A branding waiver is not a commercial
       license and does not permit any use restricted by condition (a). A
@@ -81,26 +81,26 @@ together and what must be delivered when you redistribute.
       or from the producer's silence, review, or acceptance of your
       contributions.
 
-2. Contributions: By submitting a contribution to Multica, you agree that:
+2. Contributions: By submitting a contribution to Patchbay, you agree that:
 
-   a. The producer can adjust this Multica License to be more strict or
+   a. The producer can adjust this Patchbay License to be more strict or
       relaxed as deemed necessary.
 
    b. Your contributed code may be used for commercial purposes, including
       but not limited to its cloud business operations.
 
-   c. Your contribution is submitted under this Multica License as a whole,
+   c. Your contribution is submitted under this Patchbay License as a whole,
       as described in condition 3, and not under Part II alone.
 
 3. Composition, precedence, and redistribution:
 
-   a. This entire file is the Multica License. Part I (these additional
+   a. This entire file is the Patchbay License. Part I (these additional
       conditions) and Part II (the incorporated Apache License, Version
       2.0) together form a single set of terms. Apart from the conditions
       stated in Part I, all other rights and restrictions follow Part II.
 
    b. Wherever Part II refers to "this License", that reference means the
-      Multica License as a whole — Part I and Part II together — and not
+      Patchbay License as a whole — Part I and Part II together — and not
       Part II in isolation. This includes the copy of the License that
       section 4(a) of Part II requires you to give to recipients, and the
       terms under which section 5 of Part II treats a contribution as
@@ -108,11 +108,11 @@ together and what must be delivered when you redistribute.
 
    c. If Part I and Part II conflict, Part I controls.
 
-   d. If you redistribute Multica or a derivative work of it, you must
+   d. If you redistribute Patchbay or a derivative work of it, you must
       deliver this complete file. Delivering Part II alone does not
-      satisfy the Multica License or section 4(a) of Part II.
+      satisfy the Patchbay License or section 4(a) of Part II.
 
-© 2025-2026 Multica, Inc.
+© 2025-2026 Patchbay, Inc.
 
 ------------------------------------------------------------------------
 
@@ -120,7 +120,7 @@ together and what must be delivered when you redistribute.
 
 The text below is reproduced verbatim and unmodified from
 https://www.apache.org/licenses/LICENSE-2.0.txt. It is incorporated into
-the Multica License as described in condition 3 above.
+the Patchbay License as described in condition 3 above.
 
 ------------------------------------------------------------------------
 

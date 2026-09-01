@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 const workspaceLockReleaseTimeout = 3 * time.Second
@@ -176,6 +176,6 @@ func (l *postgresWorkspaceLocker) dropLocalRef(workspaceID uuid.UUID, local *loc
 }
 
 func workspaceAdvisoryLockKey(workspaceID uuid.UUID) int64 {
-	sum := sha256.Sum256(append([]byte("multica-seat-capacity:"), workspaceID[:]...))
+	sum := sha256.Sum256(append([]byte("patchbay-seat-capacity:"), workspaceID[:]...))
 	return int64(binary.BigEndian.Uint64(sum[:8]))
 }

@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/daemon/repocache"
+	"github.com/patchbay-ai/patchbay/server/internal/daemon/repocache"
 )
 
 // workspaceCoAuthoredByEnabled gates the prepare-commit-msg hook installed in
@@ -512,7 +512,7 @@ func TestPersistCoAuthoredByStateReconcilesIsolatedCheckouts(t *testing.T) {
 	// Two env roots that look identical on disk and differ only in the
 	// workspace that owns them, plus a daemon-internal cache directory the walk
 	// must not treat as a workspace.
-	ours := seedEnvRootCheckout(t, root, "multica-ws-1", "env-a", workspaceAwareOwner(workspaceID))
+	ours := seedEnvRootCheckout(t, root, "patchbay-ws-1", "env-a", workspaceAwareOwner(workspaceID))
 	theirs := seedEnvRootCheckout(t, root, "other-ws", "env-b", workspaceAwareOwner("ws-2"))
 	if err := os.MkdirAll(filepath.Join(root, ".repos", "ws-1"), 0o755); err != nil {
 		t.Fatalf("seed cache dir: %v", err)
@@ -592,7 +592,7 @@ func TestPersistCoAuthoredByStateReconcilesLegacyEnvRoots(t *testing.T) {
 	// be attributed to this workspace, so neither may be touched.
 	otherNoMarker := seedEnvRootCheckout(t, root, otherWorkspaceID, "v0431-style", "")
 	otherTaskOnly := seedEnvRootCheckout(t, root, otherWorkspaceID, "v0434-style", legacyTaskOnlyOwner)
-	readableUnattributed := seedEnvRootCheckout(t, root, "multica-61070eA_", "env-x", legacyTaskOnlyOwner)
+	readableUnattributed := seedEnvRootCheckout(t, root, "patchbay-61070eA_", "env-x", legacyTaskOnlyOwner)
 
 	d.persistCoAuthoredByState(workspaceID)
 

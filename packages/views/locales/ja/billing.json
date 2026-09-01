@@ -1,6 +1,6 @@
 {
   "title": "請求（テストページ）",
-  "subtitle": "multica-cloud の /api/v1/billing/* に直接パススルーします。完成した UI ではなく、proxy と Stripe フローを検証するためにすべての endpoint を 1 つのページにまとめたものです。",
+  "subtitle": "patchbay-cloud の /api/v1/billing/* に直接パススルーします。完成した UI ではなく、proxy と Stripe フローを検証するためにすべての endpoint を 1 つのページにまとめたものです。",
   "endpoints": {
     "balance": "GET /api/cloud-billing/balance",
     "transactions": "GET /api/cloud-billing/transactions",
@@ -261,6 +261,6 @@
     "workspace_missing_title": "ワークスペースが見つかりません",
     "workspace_missing_description": "Stripe から戻りましたが、このワークスペースは利用できません。削除されたか、アクセス権が変更された可能性があります。対象のワークスペースの請求ページで現在の状態を確認してください。",
     "retry": "再試行",
-    "go_to_app": "Multica を開く"
+    "go_to_app": "Patchbay を開く"
   }
 }

@@ -10,7 +10,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
-} from "@multica/ui/components/ui/chart";
+} from "@patchbay/ui/components/ui/chart";
 import { useLocale, useT } from "../../../i18n";
 
 // Three-segment stack — completed runs at the bottom (chart-1, primary

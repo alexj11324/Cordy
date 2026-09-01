@@ -19,28 +19,28 @@ import type {
   RuntimeLocalSkillImportConflict,
   RuntimeLocalSkillSummary,
   Skill,
-} from "@multica/core/types";
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceId } from "@multica/core/hooks";
+} from "@patchbay/core/types";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceId } from "@patchbay/core/hooks";
 import {
   runtimeDisplayLabel,
   runtimeListOptions,
   runtimeLocalSkillsKeys,
   runtimeLocalSkillsOptions,
   resolveRuntimeLocalSkillImport,
-} from "@multica/core/runtimes";
+} from "@patchbay/core/runtimes";
 import {
   memberListOptions,
   skillDetailOptions,
   workspaceKeys,
-} from "@multica/core/workspace/queries";
-import { Button } from "@multica/ui/components/ui/button";
-import { Badge } from "@multica/ui/components/ui/badge";
-import { Checkbox } from "@multica/ui/components/ui/checkbox";
-import { Input } from "@multica/ui/components/ui/input";
-import { Label } from "@multica/ui/components/ui/label";
-import { Progress } from "@multica/ui/components/ui/progress";
-import { Textarea } from "@multica/ui/components/ui/textarea";
+} from "@patchbay/core/workspace/queries";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Badge } from "@patchbay/ui/components/ui/badge";
+import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Label } from "@patchbay/ui/components/ui/label";
+import { Progress } from "@patchbay/ui/components/ui/progress";
+import { Textarea } from "@patchbay/ui/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -49,13 +49,13 @@ import {
   SelectLabel,
   SelectTrigger,
   SelectValue,
-} from "@multica/ui/components/ui/select";
-import { Skeleton } from "@multica/ui/components/ui/skeleton";
-import { useScrollFade } from "@multica/ui/hooks/use-scroll-fade";
+} from "@patchbay/ui/components/ui/select";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
 import {
   UI_EASE_OUT,
   UI_MOTION_DURATION,
-} from "@multica/ui/lib/motion";
+} from "@patchbay/ui/lib/motion";
 import { useT } from "../../i18n";
 import { HighlightText } from "../../search/highlight-text";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";

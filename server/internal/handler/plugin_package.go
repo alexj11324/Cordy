@@ -7,12 +7,12 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/multica-ai/multica/server/pkg/plugincontract"
+	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
 )
 
 // Publishing endpoints.
 //
-// An author uploads an artifact bundle and Multica stores it. There is no
+// An author uploads an artifact bundle and Patchbay stores it. There is no
 // install-by-URL any more, and no second way for plugin code to reach a reader's
 // browser: the settings page publishes here, and installing names a version this
 // endpoint created.
@@ -97,7 +97,7 @@ func (h *Handler) PublishPluginPackage(w http.ResponseWriter, r *http.Request) {
 const multipartOverheadBytes = 64 * 1024
 
 type publishLocalPluginRequest struct {
-	// Name is a directory under MULTICA_PLUGIN_DIR.
+	// Name is a directory under PATCHBAY_PLUGIN_DIR.
 	Name string `json:"name"`
 }
 

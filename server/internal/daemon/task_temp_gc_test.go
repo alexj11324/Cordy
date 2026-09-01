@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
 )
 
 // TestTaskTempDirSurvivesGCWhileTheRunHoldsIt wires the two halves of the fix
@@ -26,10 +26,10 @@ import (
 // `now` is a year ahead throughout, so nothing below can pass or fail on age.
 func TestTaskTempDirSurvivesGCWhileTheRunHoldsIt(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("MULTICA_AGENT_TEMP_BASE is ignored on Windows; execenv's task temp tests cover the lock contract there")
+		t.Skip("PATCHBAY_AGENT_TEMP_BASE is ignored on Windows; execenv's task temp tests cover the lock contract there")
 	}
 	base := t.TempDir()
-	t.Setenv("MULTICA_AGENT_TEMP_BASE", base)
+	t.Setenv("PATCHBAY_AGENT_TEMP_BASE", base)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	future := time.Now().Add(365 * 24 * time.Hour)
 

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/multica-ai/multica/server/internal/auth"
+	"github.com/patchbay-ai/patchbay/server/internal/auth"
 )
 
 const capabilityTestAttachmentID = "11111111-2222-3333-4444-555555555555"

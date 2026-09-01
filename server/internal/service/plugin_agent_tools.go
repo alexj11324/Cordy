@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/pkg/plugincontract"
+	"github.com/patchbay-ai/patchbay/server/pkg/plugincontract"
 )
 
 // The `agent` trigger: a plugin hook offered to an agent as an MCP tool.

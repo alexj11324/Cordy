@@ -11,7 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
-	"github.com/multica-ai/multica/server/internal/storage"
+	"github.com/patchbay-ai/patchbay/server/internal/storage"
 )
 
 // withAvatarStorage swaps the handler's storage/config for one test and

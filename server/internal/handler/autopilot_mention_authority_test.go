@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/util"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/util"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // autopilotDelegationFixture builds the MUL-4857 create_issue scenario: a
@@ -644,7 +644,7 @@ func TestUpdateComment_AdminEditOfAgentCommentClearsStaleLineage(t *testing.T) {
 	commentID := seedLeaderPlainComment(t, issueID, fx.LeaderAgentID, fx.LeaderTaskID)
 
 	// A workspace admin who is NEITHER the worker owner nor the comment author.
-	adminID := createPermissionTestAdmin(t, "mul4857-edit-admin@multica.test")
+	adminID := createPermissionTestAdmin(t, "mul4857-edit-admin@patchbay.test")
 
 	countQueued := func() int {
 		var n int

@@ -33,15 +33,15 @@ func TestMcodeRealACPContextAndToolSmoke(t *testing.T) {
 	}
 
 	workDir := t.TempDir()
-	writeMcodeSmokeFile(t, filepath.Join(workDir, "AGENTS.md"), `# Multica smoke context
+	writeMcodeSmokeFile(t, filepath.Join(workDir, "AGENTS.md"), `# Patchbay smoke context
 
 For every response in this workspace, include the exact marker AGENTS-MCODE-OK.
 `)
-	writeMcodeSmokeFile(t, filepath.Join(workDir, ".minimax", "skills", "multica-smoke", "SKILL.md"), `---
-name: multica-smoke
-description: Use when asked to run the Multica MiniMax Code integration smoke.
+	writeMcodeSmokeFile(t, filepath.Join(workDir, ".minimax", "skills", "patchbay-smoke", "SKILL.md"), `---
+name: patchbay-smoke
+description: Use when asked to run the Patchbay MiniMax Code integration smoke.
 ---
-# Multica smoke skill
+# Patchbay smoke skill
 
 Read tool-canary.txt with a file-reading tool. Include the exact marker SKILL-MCODE-OK and the file contents in the final response.
 `)
@@ -55,7 +55,7 @@ Read tool-canary.txt with a file-reading tool. Include the exact marker SKILL-MC
 	defer cancel()
 
 	session, err := backend.Execute(ctx,
-		"Run the multica-smoke skill. Follow the workspace instructions and return its requested evidence.",
+		"Run the patchbay-smoke skill. Follow the workspace instructions and return its requested evidence.",
 		ExecOptions{Cwd: workDir, Timeout: 210 * time.Second},
 	)
 	if err != nil {

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/multica-ai/multica/server/internal/middleware"
-	"github.com/multica-ai/multica/server/internal/testutil"
+	"github.com/patchbay-ai/patchbay/server/internal/middleware"
+	"github.com/patchbay-ai/patchbay/server/internal/testutil"
 )
 
 func inboxRequest(method, path, workspaceID string) *http.Request {

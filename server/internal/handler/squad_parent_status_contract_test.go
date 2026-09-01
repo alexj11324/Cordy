@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/daemon/execenv"
+	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
 )
 
 // The two tests below are composition tests, not text-presence tests. The
@@ -80,7 +80,7 @@ func TestSquadAssignedLeaderCanWrapUpOnCommentTurn(t *testing.T) {
 
 	// End to end: both halves must agree that in_review is reachable here.
 	combined := briefing + "\n" + brief
-	if !strings.Contains(combined, "multica issue status <issue-id> in_review") {
+	if !strings.Contains(combined, "patchbay issue status <issue-id> in_review") {
 		t.Error("combined instructions never tell the owning leader how to wrap up")
 	}
 }
@@ -119,7 +119,7 @@ func TestGuestLeaderCannotChangeStatusOnCommentTurn(t *testing.T) {
 		t.Errorf("guest leader must not receive the status-ownership grant:\n%s", briefing)
 	}
 	combined := briefing + "\n" + brief
-	if strings.Contains(combined, "multica issue status <issue-id> in_review") {
+	if strings.Contains(combined, "patchbay issue status <issue-id> in_review") {
 		t.Error("combined instructions hand a guest leader an in_review command for " +
 			"an issue assigned to someone else")
 	}
@@ -127,7 +127,7 @@ func TestGuestLeaderCannotChangeStatusOnCommentTurn(t *testing.T) {
 	compact := strings.Join(strings.Fields(briefing), " ")
 	for _, want := range []string{
 		"Do NOT change this issue's status",
-		"never run `multica issue status` on it",
+		"never run `patchbay issue status` on it",
 	} {
 		if !strings.Contains(compact, want) {
 			t.Errorf("guest-leader briefing missing %q\n--- briefing ---\n%s", want, briefing)

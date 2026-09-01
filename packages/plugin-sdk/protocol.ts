@@ -1,8 +1,8 @@
 /**
  * The bridge wire format, shared in spirit by the surface (this package) and
  * the host (`packages/views/plugins`). It is duplicated rather than imported:
- * the SDK ships to plugin authors and must not pull `@multica/core` or
- * `@multica/ui` in behind it, and the host must not depend on a package a
+ * the SDK ships to plugin authors and must not pull `@patchbay/core` or
+ * `@patchbay/ui` in behind it, and the host must not depend on a package a
  * third party could install a different version of.
  *
  * Two properties matter more than the shape:
@@ -20,11 +20,11 @@
 export const BRIDGE_PROTOCOL_VERSION = 2;
 
 /**
- * Installed by Multica's bootstrap before any plugin code executes. The guest
+ * Installed by Patchbay's bootstrap before any plugin code executes. The guest
  * creates this port; the trusted wrapper transfers its peer to the host only
  * after the launch challenge and navigation policy have passed.
  */
-export const BRIDGE_PORT_GLOBAL = "__multicaPluginBridgePortV2";
+export const BRIDGE_PORT_GLOBAL = "__patchbayPluginBridgePortV2";
 
 /** Design tokens the host pushes so a surface matches the product it sits in. */
 export type ThemeTokens = Record<string, string>;

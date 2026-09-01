@@ -174,7 +174,7 @@ func TestUploadFile_TaskScopedChatAttachment(t *testing.T) {
 	})
 
 	t.Run("forged agent headers without task token rejected", func(t *testing.T) {
-		// The real forgery vector: a normal JWT / mul_ PAT request that the auth
+		// The real forgery vector: a normal JWT / pby_ PAT request that the auth
 		// middleware did NOT stamp with X-Actor-Source=task_token, but which
 		// forges a valid X-Agent-ID + X-Task-ID pair (resolveActor's fallback
 		// would otherwise accept it). Even with the form task_id equal to the

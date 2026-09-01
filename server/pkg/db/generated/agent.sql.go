@@ -3360,7 +3360,7 @@ type ExpireStaleQueuedTasksParams struct {
 // queue ahead of it is long", and the second one is not a failure. MUL-6558
 // was exactly that — a self-hosted runtime with low task concurrency held its
 // own queue past 2h and healthy work died as queued_expired. The TTL knob
-// added then (MULTICA_TASK_QUEUED_TTL) only moved the cliff; it did not stop
+// added then (PATCHBAY_TASK_QUEUED_TTL) only moved the cliff; it did not stop
 // a busy runtime from eventually crossing it.
 //
 // So the question is not "how long has this waited" but "is anything still

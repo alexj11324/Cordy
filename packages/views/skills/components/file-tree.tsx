@@ -13,14 +13,14 @@ import {
   PencilLine,
   Trash2,
 } from "lucide-react";
-import { Input } from "@multica/ui/components/ui/input";
+import { Input } from "@patchbay/ui/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@multica/ui/components/ui/dropdown-menu";
-import { cn } from "@multica/ui/lib/utils";
+} from "@patchbay/ui/components/ui/dropdown-menu";
+import { cn } from "@patchbay/ui/lib/utils";
 import { useT } from "../../i18n";
 
 /**

@@ -1,9 +1,9 @@
 ---
 title: Project architecture
-description: Learn how Multica's clients, Go service, execution daemon, and shared frontend packages work together.
+description: Learn how Patchbay's clients, Go service, execution daemon, and shared frontend packages work together.
 ---
 
-Multica consists of a Go backend, multiple clients, and a daemon that runs on execution computers. PostgreSQL stores collaboration data; the daemon claims tasks and invokes local AI coding tools.
+Patchbay consists of a Go backend, multiple clients, and a daemon that runs on execution computers. PostgreSQL stores collaboration data; the daemon claims tasks and invokes local AI coding tools.
 
 ```text
 Web / Desktop / Mobile / CLI
@@ -17,7 +17,7 @@ Web / Desktop / Mobile / CLI
      local daemon ─── AI coding tools
 ```
 
-For a product-facing explanation, see [How Multica works](/how-multica-works). This page focuses on how the code is layered.
+For a product-facing explanation, see [How Patchbay works](/how-patchbay-works). This page focuses on how the code is layered.
 
 ## Repository layout
 
@@ -54,7 +54,7 @@ apps/web/platform/         Next.js routing adapter
 apps/desktop/.../platform/ Electron routing adapter
 ```
 
-Mobile does not reuse these React pages. It may import types and pure functions from `@multica/core`, but it owns its UI, query keys, state, realtime subscriptions, and release process.
+Mobile does not reuse these React pages. It may import types and pure functions from `@patchbay/core`, but it owns its UI, query keys, state, realtime subscriptions, and release process.
 
 ## Frontend state
 
@@ -76,7 +76,7 @@ The main entry points are in `server/cmd/`:
 | Entry point | Purpose |
 | --- | --- |
 | `server` | Starts the HTTP API, WebSocket services, scheduler, and integration workers |
-| `multica` | CLI and local daemon |
+| `patchbay` | CLI and local daemon |
 | `migrate` | Runs database migrations |
 | `backfill_*` | Data backfill tools for specific releases |
 
@@ -98,7 +98,7 @@ PostgreSQL is the source of truth for business data. Redis is optional and is us
 
 ## Realtime connections
 
-Multica has two distinct WebSocket paths:
+Patchbay has two distinct WebSocket paths:
 
 - `internal/realtime/` pushes issue, comment, inbox, and other changes to user clients.
 - `internal/daemonws/` connects daemons to wake runtimes and perform daemon RPC.

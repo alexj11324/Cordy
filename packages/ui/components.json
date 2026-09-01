@@ -12,11 +12,11 @@
   },
   "iconLibrary": "lucide",
   "aliases": {
-    "components": "@multica/ui/components",
-    "ui": "@multica/ui/components/ui",
-    "hooks": "@multica/ui/hooks",
-    "lib": "@multica/ui/lib",
-    "utils": "@multica/ui/lib/utils"
+    "components": "@patchbay/ui/components",
+    "ui": "@patchbay/ui/components/ui",
+    "hooks": "@patchbay/ui/hooks",
+    "lib": "@patchbay/ui/lib",
+    "utils": "@patchbay/ui/lib/utils"
   },
   "registries": {
     "@reui": {

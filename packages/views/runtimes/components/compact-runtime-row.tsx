@@ -1,6 +1,6 @@
-import { cn } from "@multica/ui/lib/utils";
-import type { AgentRuntime } from "@multica/core/types";
-import { runtimeDisplayName } from "@multica/core/runtimes";
+import { cn } from "@patchbay/ui/lib/utils";
+import type { AgentRuntime } from "@patchbay/core/types";
+import { runtimeDisplayName } from "@patchbay/core/runtimes";
 import { ProviderLogo } from "./provider-logo";
 import { useT } from "../../i18n";
 

@@ -40,7 +40,7 @@ const allowedDevOrigins = process.env.CORS_ALLOWED_ORIGINS
 
 const nextConfig: NextConfig = {
   ...(process.env.STANDALONE === "true" ? { output: "standalone" as const } : {}),
-  transpilePackages: ["@multica/core", "@multica/ui", "@multica/views"],
+  transpilePackages: ["@patchbay/core", "@patchbay/ui", "@patchbay/views"],
   ...(allowedDevOrigins && allowedDevOrigins.length > 0
     ? { allowedDevOrigins }
     : {}),
@@ -66,10 +66,6 @@ const nextConfig: NextConfig = {
         : [],
       afterFiles: remoteApiUrl
         ? [
-            {
-              source: "/v1/:path*",
-              destination: `${remoteApiUrl}/v1/:path*`,
-            },
             {
               source: "/api/:path*",
               destination: `${remoteApiUrl}/api/:path*`,

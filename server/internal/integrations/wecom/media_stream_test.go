@@ -28,7 +28,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/multica-ai/multica/server/internal/integrations/channel/engine"
+	"github.com/patchbay-ai/patchbay/server/internal/integrations/channel/engine"
 )
 
 // sealMedia builds ciphertext the way WeCom does: PKCS#7 to a 32-byte block,

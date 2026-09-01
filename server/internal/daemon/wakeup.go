@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/multica-ai/multica/server/pkg/protocol"
+	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
 var errRuntimeSetChanged = errors.New("runtime set changed")

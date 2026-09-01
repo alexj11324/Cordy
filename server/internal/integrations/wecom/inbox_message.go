@@ -43,11 +43,11 @@ func inboxTypeLabel(t string) string {
 }
 
 // inboxAppURL resolves the frontend URL for building the "view detail" link.
-// Priority: WECOM_APP_URL → MULTICA_APP_URL → FRONTEND_ORIGIN. Only HTTPS
+// Priority: WECOM_APP_URL → PATCHBAY_APP_URL → FRONTEND_ORIGIN. Only HTTPS
 // values are accepted; a non-HTTPS override is silently dropped so a
 // misconfigured env cannot leak an http:// URL into a user chat.
 func inboxAppURL() string {
-	for _, name := range []string{"WECOM_APP_URL", "MULTICA_APP_URL", "FRONTEND_ORIGIN"} {
+	for _, name := range []string{"WECOM_APP_URL", "PATCHBAY_APP_URL", "FRONTEND_ORIGIN"} {
 		v := strings.TrimSpace(os.Getenv(name))
 		if v == "" {
 			continue

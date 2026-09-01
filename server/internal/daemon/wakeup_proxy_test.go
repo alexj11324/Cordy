@@ -16,7 +16,7 @@ import (
 const (
 	// The child process re-runs this same test with the proxy environment in
 	// place; the marker tells it which half of the test to execute.
-	wakeupProxyChildEnv = "MULTICA_TEST_WAKEUP_PROXY_CHILD"
+	wakeupProxyChildEnv = "PATCHBAY_TEST_WAKEUP_PROXY_CHILD"
 
 	// A non-loopback, permanently unresolvable host. Loopback targets are the
 	// wrong choice here: net/http's proxy resolver bypasses proxies for

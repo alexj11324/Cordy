@@ -10,15 +10,15 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/auth"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/auth"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 // PATRenewThreshold is the remaining-lifetime window at which a PAT becomes
 // eligible for an in-place renewal. The daemon polls every ~3 days, so a 7-day
 // threshold guarantees at least one renewal attempt while the token still has
 // ≥ 4 days of validity left — enough margin to absorb a transient network
-// failure before the user actually has to re-run `multica login`.
+// failure before the user actually has to re-run `patchbay login`.
 const PATRenewThreshold = 7 * 24 * time.Hour
 
 // PATRenewExtension is how far into the future a renewed PAT's expires_at is
@@ -152,9 +152,9 @@ type RenewPATResponse struct {
 // (auth.AuthCacheTTL ≤ 10m) that the cache catches up to the new expiry on
 // the next cache miss without an explicit invalidation.
 //
-// Only mul_ PATs may be renewed: a cookie/JWT session has no PAT row to
+// Only pby_ PATs may be renewed: a cookie/JWT session has no PAT row to
 // extend, and an mat_ task token is single-purpose and short-lived. mcn_
-// cloud-node PATs are owned by Multica Cloud Fleet, not us — we don't even
+// cloud-node PATs are owned by Patchbay Cloud Fleet, not us — we don't even
 // see the expiry locally.
 func (h *Handler) RenewCurrentPersonalAccessToken(w http.ResponseWriter, r *http.Request) {
 	userID, ok := requireUserID(w, r)
@@ -167,7 +167,7 @@ func (h *Handler) RenewCurrentPersonalAccessToken(w http.ResponseWriter, r *http
 	// and we need the row, not just the user.
 	authHeader := r.Header.Get("Authorization")
 	rawToken := strings.TrimPrefix(authHeader, "Bearer ")
-	if rawToken == "" || rawToken == authHeader || !strings.HasPrefix(rawToken, "mul_") {
+	if rawToken == "" || rawToken == authHeader || !strings.HasPrefix(rawToken, "pby_") {
 		writeError(w, http.StatusBadRequest, "only personal access tokens can be renewed")
 		return
 	}

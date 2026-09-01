@@ -2,15 +2,15 @@
 
 import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Issue, Project } from "@multica/core/types";
-import { ALL_STATUSES } from "@multica/core/issues/config";
-import { projectListOptions } from "@multica/core/projects/queries";
-import { childIssueProgressOptions } from "@multica/core/issues/queries";
-import { issueSurfaceGanttOptions } from "@multica/core/issues/surface/repository";
-import type { IssueSurfaceQueryPlan } from "@multica/core/issues/surface/query-plan";
-import type { IssueStatus, IssueStatusCategory, PropertyFilterValue } from "@multica/core/types";
-import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
-import { issueBehavesAsAny, statusFilterColumns } from "@multica/core/issues";
+import type { Issue, Project } from "@patchbay/core/types";
+import { ALL_STATUSES } from "@patchbay/core/issues/config";
+import { projectListOptions } from "@patchbay/core/projects/queries";
+import { childIssueProgressOptions } from "@patchbay/core/issues/queries";
+import { issueSurfaceGanttOptions } from "@patchbay/core/issues/surface/repository";
+import type { IssueSurfaceQueryPlan } from "@patchbay/core/issues/surface/query-plan";
+import type { IssueStatus, IssueStatusCategory, PropertyFilterValue } from "@patchbay/core/types";
+import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
+import { issueBehavesAsAny, statusFilterColumns } from "@patchbay/core/issues";
 import {
   applyIssueFilters,
   type IssueFilterState,

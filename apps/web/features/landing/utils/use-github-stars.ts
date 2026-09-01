@@ -18,7 +18,7 @@ import { useEffect, useState } from "react";
  * a loop; the button just degrades to its plain "GitHub" label.
  */
 
-const REPO = "multica-ai/multica";
+const REPO = "patchbay-ai/patchbay";
 
 // `undefined` = never fetched; `number` = resolved count; `null` = fetch failed.
 let cachedStars: number | null | undefined;

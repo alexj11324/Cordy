@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/multica-ai/multica/server/internal/daemon/execenv"
-	"github.com/multica-ai/multica/server/internal/daemon/repocache"
+	"github.com/patchbay-ai/patchbay/server/internal/daemon/execenv"
+	"github.com/patchbay-ai/patchbay/server/internal/daemon/repocache"
 )
 
 // newGCTestDaemon creates a minimal Daemon for GC testing with a mock HTTP server.
@@ -553,7 +553,7 @@ func TestRunGC_SharedRootPreservesForeignDirectories(t *testing.T) {
 	d.runGC(context.Background())
 
 	if got, err := os.ReadFile(database); err != nil || string(got) != "do not delete" {
-		t.Fatalf("GC mutated non-Multica data under a shared root: data=%q err=%v", got, err)
+		t.Fatalf("GC mutated non-Patchbay data under a shared root: data=%q err=%v", got, err)
 	}
 }
 
@@ -1947,17 +1947,17 @@ func TestPruneWorktreePreemptionCleansLocksBeforeTaskStarts(t *testing.T) {
 	script := `#!/bin/sh
 if [ "$3" = "reflog" ] && [ "$4" = "expire" ]; then
   : > "$2/refs/remotes/origin/main.lock"
-  : > "$MULTICA_TEST_MAINTENANCE_STARTED"
+  : > "$PATCHBAY_TEST_MAINTENANCE_STARTED"
   trap 'exit 143' TERM INT
   while :; do sleep 1; done
 fi
-exec "$MULTICA_TEST_REAL_GIT" "$@"
+exec "$PATCHBAY_TEST_REAL_GIT" "$@"
 `
 	if err := os.WriteFile(fakeGit, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("MULTICA_TEST_REAL_GIT", realGit)
-	t.Setenv("MULTICA_TEST_MAINTENANCE_STARTED", startedPath)
+	t.Setenv("PATCHBAY_TEST_REAL_GIT", realGit)
+	t.Setenv("PATCHBAY_TEST_MAINTENANCE_STARTED", startedPath)
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	pruneDone := make(chan struct{})

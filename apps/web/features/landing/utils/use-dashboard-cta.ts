@@ -1,13 +1,13 @@
 "use client";
 
-import { useAuthStore } from "@multica/core/auth";
-import { useWorkspaceList } from "@multica/core/workspace";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useWorkspaceList } from "@patchbay/core/workspace";
 import {
   paths,
   resolvePostAuthDestination,
   useHasOnboarded,
-} from "@multica/core/paths";
-import type { Workspace } from "@multica/core/types";
+} from "@patchbay/core/paths";
+import type { Workspace } from "@patchbay/core/types";
 
 /**
  * While the workspace list is in flight the CTA points at `/issues`, which the

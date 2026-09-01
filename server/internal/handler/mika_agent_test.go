@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/multica-ai/multica/server/internal/service"
-	db "github.com/multica-ai/multica/server/pkg/db/generated"
+	"github.com/patchbay-ai/patchbay/server/internal/service"
+	db "github.com/patchbay-ai/patchbay/server/pkg/db/generated"
 )
 
 func createMika(t *testing.T, body any) *httptest.ResponseRecorder {
@@ -167,7 +167,7 @@ func TestMikaSystemInstructionsUsesTheCurrentDisplayName(t *testing.T) {
 	}
 	// The product identity is still stated, just not as the display name.
 	if !strings.Contains(renamed, "built-in system agent (Mika)") {
-		t.Fatal("prompt should still identify itself as Multica's built-in agent")
+		t.Fatal("prompt should still identify itself as Patchbay's built-in agent")
 	}
 
 	if blank := service.MikaSystemInstructions("   "); !strings.HasPrefix(blank, "You are Mika,") {

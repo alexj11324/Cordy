@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/multica-ai/multica/server/internal/dbstartup"
+	"github.com/patchbay-ai/patchbay/server/internal/dbstartup"
 )
 
 const (

@@ -15,7 +15,7 @@
  */
 
 import { memo } from "react";
-import type { Attachment } from "@multica/core/types";
+import type { Attachment } from "@patchbay/core/types";
 import { RichContent } from "../rich-content";
 
 interface ReadonlyContentProps {
