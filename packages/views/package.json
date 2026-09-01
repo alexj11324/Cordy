@@ -68,6 +68,7 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@floating-ui/dom": "^1.7.6",
+    "@lobehub/editor": "4.24.1",
     "@lobehub/fluent-emoji": "^4.1.1",
     "@lobehub/icons": "^5.16.0",
     "@lobehub/ui": "5.36.2",

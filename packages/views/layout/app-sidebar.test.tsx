@@ -119,9 +119,6 @@ vi.mock("../common/use-app-foreground", () => ({
 vi.mock("./help-launcher", () => ({
   HelpLauncher: () => <button type="button">Help</button>,
 }));
-vi.mock("../chat/components/chat-thread-list", () => ({
-  ChatThreadList: () => null,
-}));
 vi.mock("../auth", () => ({ useLogout: () => vi.fn() }));
 vi.mock("../issues/components/status-icon", () => ({ StatusIcon: () => <span /> }));
 vi.mock("../navigation", () => ({
@@ -454,6 +451,20 @@ describe("personal nav — Chat", () => {
   it("renders a Chat nav link to the workspace chat route", () => {
     const { container } = render(<AppSidebar />);
     expect(chatNav(container)).not.toBeNull();
+  });
+
+  it("keeps the workspace navigation on the chat route", () => {
+    // The Agent page must use the same Patchbay sidebar as Issues/Projects,
+    // not a LobeHub-style Agent shell that replaces Inbox/Issues/etc.
+    navigation.current = { pathname: "/acme/chat" };
+    const { container } = render(<AppSidebar />);
+    expect(container.querySelector('button[data-href="/acme/inbox"]')).not.toBeNull();
+    expect(chatNav(container)).not.toBeNull();
+    expect(container.querySelector('button[data-href="/acme/issues"]')).not.toBeNull();
+    expect(container.querySelector('button[data-href="/acme/projects"]')).not.toBeNull();
+    expect(container.querySelector('button[data-href="/acme/automations"]')).not.toBeNull();
+    expect(container.querySelector('button[data-href="/acme/agents"]')).not.toBeNull();
+    expect(container.querySelector('button[data-href="/acme/teams"]')).not.toBeNull();
   });
 
   it("badges the Chat nav with the summed unread_count of chat sessions", () => {

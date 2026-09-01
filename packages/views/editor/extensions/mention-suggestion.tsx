@@ -687,9 +687,123 @@ function matchesMentionQuery(item: MentionItem, query: string): boolean {
   );
 }
 
-interface MentionSuggestionOptions {
+export interface MentionSuggestionOptions {
   mode?: "default" | "context";
   getContextItems?: () => MentionItem[];
+}
+
+function buildSyncMentionItems(qc: QueryClient, query: string): MentionItem[] {
+  // Read workspace id imperatively because this runs in TipTap factory scope
+  // (outside React render). getCurrentWsId() is the non-React singleton set
+  // by the URL-driven workspace layout.
+  const wsId = getCurrentWsId();
+  if (!wsId) return [];
+
+  const members: MemberWithUser[] = qc.getQueryData(workspaceKeys.members(wsId)) ?? [];
+  const agents: Agent[] = qc.getQueryData(workspaceKeys.agents(wsId)) ?? [];
+  const teams: Team[] = qc.getQueryData(workspaceKeys.teams(wsId)) ?? [];
+  const listQueries = qc.getQueriesData<ListIssuesCache>({ queryKey: issueKeys.list(wsId) });
+  const cachedResponse = listQueries[0]?.[1];
+  const cachedIssues: Issue[] = cachedResponse ? flattenIssueBuckets(cachedResponse) : [];
+
+  // Read current user identity imperatively — this factory runs outside
+  // React render so we can't useAuthStore() as a hook here. The Proxy in
+  // packages/core/auth/index.ts forwards `.getState()` to the registered
+  // store. Used to gate personal agents in the @mention list so members
+  // don't see (or auto-complete) agents they couldn't assign anyway.
+  const userId = useAuthStore.getState().user?.id ?? null;
+  const myRole =
+    members.find((m) => m.user_id === userId)?.role ?? null;
+
+  const q = query.toLowerCase();
+
+  const allItem: MentionItem[] =
+    "all members".includes(q) || "all".includes(q)
+      ? [{ id: "all", label: "All members", type: "all" as const }]
+      : [];
+
+  const memberItems: MentionItem[] = members
+    .filter((m) => m.name.toLowerCase().includes(q) || matchesPinyin(m.name, q))
+    .map((m) => ({
+      id: m.user_id,
+      label: m.name,
+      type: "member" as const,
+    }));
+
+  const agentItems: MentionItem[] = agents
+    .filter(
+      (a) =>
+        !a.archived_at &&
+        (a.name.toLowerCase().includes(q) || matchesPinyin(a.name, q)) &&
+        canAssignAgentToIssue(a, { userId, role: myRole }).allowed,
+    )
+    .map((a) => ({
+      id: a.id,
+      label: a.name,
+      type: "agent" as const,
+      disabledReason: isAgentRuntimeBound(a)
+        ? undefined
+        : ("agent_runtime_required" as const),
+    }));
+  const activeAgentRuntimeBinding = new Map(
+    agents
+      .filter((agent) => !agent.archived_at)
+      .map((agent) => [agent.id, isAgentRuntimeBound(agent)]),
+  );
+
+  const teamItems: MentionItem[] = teams
+    .filter(
+      (s) =>
+        !s.archived_at &&
+        (s.name.toLowerCase().includes(q) || matchesPinyin(s.name, q)),
+    )
+    .map((s) => ({
+      id: s.id,
+      label: s.name,
+      type: "team" as const,
+      disabledReason:
+        activeAgentRuntimeBinding.get(s.leader_id) === false
+          ? ("agent_runtime_required" as const)
+          : undefined,
+    }));
+
+  // Members and agents share a single ranked list — recently mentioned
+  // targets come first regardless of type, with an alphabetical fallback
+  // for everyone the user hasn't mentioned yet on this device.
+  const recency = getRecencyMap(wsId);
+  const userItems = sortUserItemsByRecency(
+    [...memberItems, ...agentItems, ...teamItems],
+    recency,
+  );
+
+  // Cached issues give an instant first paint; MentionList adds server
+  // matches for done/cancelled and any other issues not in this cache.
+  const issueItems: MentionItem[] = cachedIssues
+    .filter(
+      (i) =>
+        i.identifier.toLowerCase().includes(q) ||
+        i.title.toLowerCase().includes(q),
+    )
+    .map(issueToMention);
+
+  return [...allItem, ...userItems, ...issueItems];
+}
+
+/** Agent-chat `@` list. Shared by Tiptap and the LobeHub Lexical composer. */
+export function listMentionSuggestionItems(
+  qc: QueryClient,
+  query: string,
+  options: MentionSuggestionOptions = {},
+): MentionItem[] {
+  if (options.mode === "context") {
+    const normalizedQuery = query.trim();
+    const contextItems = (options.getContextItems?.() ?? []).filter((item) =>
+      matchesMentionQuery(item, query),
+    );
+    if (!normalizedQuery) return contextItems;
+    return mergeMentionItems(contextItems, buildSyncMentionItems(qc, query));
+  }
+  return buildSyncMentionItems(qc, query);
 }
 
 export function createMentionSuggestion(
@@ -703,103 +817,6 @@ export function createMentionSuggestion(
   // shared popup controller when it dispatches exitSuggestion(view, pluginKey).
   const pluginKey = new PluginKey("mentionSuggestion");
 
-  function buildSyncItems(query: string): MentionItem[] {
-    // Read workspace id imperatively because this runs in TipTap factory scope
-    // (outside React render). getCurrentWsId() is the non-React singleton set
-    // by the URL-driven workspace layout.
-    const wsId = getCurrentWsId();
-    if (!wsId) return [];
-
-    const members: MemberWithUser[] = qc.getQueryData(workspaceKeys.members(wsId)) ?? [];
-    const agents: Agent[] = qc.getQueryData(workspaceKeys.agents(wsId)) ?? [];
-    const teams: Team[] = qc.getQueryData(workspaceKeys.teams(wsId)) ?? [];
-    const listQueries = qc.getQueriesData<ListIssuesCache>({ queryKey: issueKeys.list(wsId) });
-    const cachedResponse = listQueries[0]?.[1];
-    const cachedIssues: Issue[] = cachedResponse ? flattenIssueBuckets(cachedResponse) : [];
-
-    // Read current user identity imperatively — this factory runs outside
-    // React render so we can't useAuthStore() as a hook here. The Proxy in
-    // packages/core/auth/index.ts forwards `.getState()` to the registered
-    // store. Used to gate personal agents in the @mention list so members
-    // don't see (or auto-complete) agents they couldn't assign anyway.
-    const userId = useAuthStore.getState().user?.id ?? null;
-    const myRole =
-      members.find((m) => m.user_id === userId)?.role ?? null;
-
-    const q = query.toLowerCase();
-
-    const allItem: MentionItem[] =
-      "all members".includes(q) || "all".includes(q)
-        ? [{ id: "all", label: "All members", type: "all" as const }]
-        : [];
-
-    const memberItems: MentionItem[] = members
-      .filter((m) => m.name.toLowerCase().includes(q) || matchesPinyin(m.name, q))
-      .map((m) => ({
-        id: m.user_id,
-        label: m.name,
-        type: "member" as const,
-      }));
-
-    const agentItems: MentionItem[] = agents
-      .filter(
-        (a) =>
-          !a.archived_at &&
-          (a.name.toLowerCase().includes(q) || matchesPinyin(a.name, q)) &&
-          canAssignAgentToIssue(a, { userId, role: myRole }).allowed,
-      )
-      .map((a) => ({
-        id: a.id,
-        label: a.name,
-        type: "agent" as const,
-        disabledReason: isAgentRuntimeBound(a)
-          ? undefined
-          : ("agent_runtime_required" as const),
-      }));
-    const activeAgentRuntimeBinding = new Map(
-      agents
-        .filter((agent) => !agent.archived_at)
-        .map((agent) => [agent.id, isAgentRuntimeBound(agent)]),
-    );
-
-    const teamItems: MentionItem[] = teams
-      .filter(
-        (s) =>
-          !s.archived_at &&
-          (s.name.toLowerCase().includes(q) || matchesPinyin(s.name, q)),
-      )
-      .map((s) => ({
-        id: s.id,
-        label: s.name,
-        type: "team" as const,
-        disabledReason:
-          activeAgentRuntimeBinding.get(s.leader_id) === false
-            ? ("agent_runtime_required" as const)
-            : undefined,
-      }));
-
-    // Members and agents share a single ranked list — recently mentioned
-    // targets come first regardless of type, with an alphabetical fallback
-    // for everyone the user hasn't mentioned yet on this device.
-    const recency = getRecencyMap(wsId);
-    const userItems = sortUserItemsByRecency(
-      [...memberItems, ...agentItems, ...teamItems],
-      recency,
-    );
-
-    // Cached issues give an instant first paint; MentionList adds server
-    // matches for done/cancelled and any other issues not in this cache.
-    const issueItems: MentionItem[] = cachedIssues
-      .filter(
-        (i) =>
-          i.identifier.toLowerCase().includes(q) ||
-          i.title.toLowerCase().includes(q),
-      )
-      .map(issueToMention);
-
-    return [...allItem, ...userItems, ...issueItems];
-  }
-
   return {
     pluginKey,
     allowSpaces: true,
@@ -807,15 +824,7 @@ export function createMentionSuggestion(
     // content alone, so without this a pasted, dropped, undone or server-loaded
     // `@` opens the picker just as readily (PB-5429).
     shouldShow: ({ editor, range }) => isTriggerArmedAt(editor, range.from),
-    items: ({ query }) => {
-      if (options.mode === "context") {
-        const normalizedQuery = query.trim();
-        const contextItems = (options.getContextItems?.() ?? []).filter((item) => matchesMentionQuery(item, query));
-        if (!normalizedQuery) return contextItems;
-        return mergeMentionItems(contextItems, buildSyncItems(query));
-      }
-      return buildSyncItems(query);
-    },
+    items: ({ query }) => listMentionSuggestionItems(qc, query, options),
 
     render: createSuggestionPopupRender<MentionItem, MentionItem, MentionListRef, MentionListProps>({
       pluginKey,

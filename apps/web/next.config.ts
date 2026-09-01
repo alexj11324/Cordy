@@ -42,7 +42,12 @@ const nextConfig: NextConfig = {
   ...(process.env.STANDALONE === "true"
     ? { output: "standalone" as const }
     : {}),
-  transpilePackages: ["@patchbay/core", "@patchbay/ui", "@patchbay/views"],
+  transpilePackages: [
+    "@patchbay/core",
+    "@patchbay/ui",
+    "@patchbay/views",
+    "@lobehub/editor",
+  ],
   ...(allowedDevOrigins && allowedDevOrigins.length > 0
     ? { allowedDevOrigins }
     : {}),

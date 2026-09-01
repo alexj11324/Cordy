@@ -14,9 +14,11 @@ import { ChatInput } from "./components/chat-input";
  *
  * Thin Agent-route wrapper around the shared Conversation `ChatInput`. Send,
  * drafts, queue, mentions, slash commands, and attachments stay in that
- * shared input; this wrapper is the Agent surface entry so ChatPage does not
- * invent a second composer.
+ * shared input. This wrapper is the Agent surface entry so ChatPage does not
+ * invent a second composer, and it is the only callsite that opts the body
+ * into LobeHub's Lexical editor (`@lobehub/editor`, the same stack as
+ * `src/features/ChatInput/InputEditor`).
  */
-export function MainChatInput(props: ComponentProps<typeof ChatInput>) {
-  return <ChatInput {...props} />;
+export function MainChatInput(props: Omit<ComponentProps<typeof ChatInput>, "editorEngine">) {
+  return <ChatInput {...props} editorEngine="lexical" />;
 }

@@ -47,7 +47,8 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild",
-      "electron"
+      "electron",
+      "@lobehub/editor"
     ],
     "overrides": {
       "@types/react": "catalog:",

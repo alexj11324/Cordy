@@ -192,7 +192,11 @@ function rankSkillMatches<T extends { name: string; description?: string }>(
     .map((entry) => entry.skill);
 }
 
-function buildItems(qc: QueryClient, query: string): SlashCommandItem[] {
+/** Agent-chat `/` skill list. Shared by Tiptap and the LobeHub Lexical composer. */
+export function buildChatSkillItems(
+  qc: QueryClient,
+  query: string,
+): SlashCommandItem[] {
   const wsId = getCurrentWsId();
   if (!wsId) return [];
 
@@ -233,7 +237,7 @@ export function createSlashCommandSuggestion(qc: QueryClient): Omit<
     // Only open over a `/` the user actually typed, so a pasted path
     // (`/usr/local/bin`) never opens the skill picker (PB-5429).
     shouldShow: ({ editor, range }) => isTriggerArmedAt(editor, range.from),
-    items: ({ query }) => buildItems(qc, query),
+    items: ({ query }) => buildChatSkillItems(qc, query),
     command: ({ editor, range, props }) => {
       const nodeAfter = editor.view.state.selection.$to.nodeAfter;
       const overrideSpace = nodeAfter?.text?.startsWith(" ");

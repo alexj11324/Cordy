@@ -210,6 +210,29 @@ vi.mock("../../editor", async () => ({
   }),
 }));
 
+vi.mock("./lexical-composer-editor", () => ({
+  LexicalComposerEditor: forwardRef(function MockLexicalComposerEditor(
+    props: Record<string, unknown>,
+    ref: React.Ref<unknown>,
+  ) {
+    editorProps.last = { ...props, editorEngine: "lexical" };
+    useImperativeHandle(ref, () => ({
+      getMarkdown: () => "",
+      clearContent: () => undefined,
+      focus: () => undefined,
+      blur: () => undefined,
+      uploadFile: () => undefined,
+      hasActiveUploads: () => false,
+      insertUploadPlaceholder: () => true,
+      settleUploadPlaceholder: () => false,
+      insertMarkdownAtEnd: () => true,
+      flushPendingUpdate: () => null,
+      adoptContent: () => undefined,
+    }));
+    return <textarea data-testid="lexical-composer-editor" />;
+  }),
+}));
+
 vi.mock("../../projects/components/project-picker", () => ({
   ProjectPicker: ({
     projectId,
@@ -534,6 +557,15 @@ describe("ChatInput @ context wiring", () => {
 
     expect(editorProps.last?.mentionMode).toBe("context");
     expect(editorProps.last?.mentionContextItems).toBe(contextItems);
+  });
+});
+
+describe("ChatInput Lexical engine", () => {
+  it("renders the Lexical composer when editorEngine is lexical", async () => {
+    renderInput({ editorEngine: "lexical" });
+    expect(await screen.findByTestId("lexical-composer-editor")).toBeInTheDocument();
+    expect(editorProps.last?.editorEngine).toBe("lexical");
+    expect(editorProps.last?.enableSlashCommands).toBe(true);
   });
 });
 

@@ -4,19 +4,6 @@
     "select_prompt": "会話を選ぶか、＋ で新規作成してください",
     "agent_link_no_access": "このエージェントとチャットする権限がありません。"
   },
-  "navigation": {
-    "new_topic": "新しいトピック",
-    "search": "検索",
-    "topics": "トピック",
-    "profile": "エージェントプロフィール",
-    "tasks": "タスク",
-    "history": "チャット履歴",
-    "history_search": "トピックを検索...",
-    "switch_agent": "エージェントを切り替え",
-    "switch_workspace": "ワークスペースを切り替え",
-    "topic_actions": "トピックの操作",
-    "topic_count": "{{count}}件のトピック"
-  },
   "fab": {
     "running": "Patchbay が作業中です...",
     "unread_other": "未読のチャット {{count}}件",

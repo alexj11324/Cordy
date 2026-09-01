@@ -18,8 +18,7 @@ const TEST_RESOURCES = { en: { common: enCommon, chat: enChat } };
 // These tests target the page-level URL wiring (`?agent=` / `?session=`), so
 // the conversation internals are stubbed and the controller is replaced with
 // a ref-driven fake the tests can steer. The thread-list stub stays
-// interactive for the compact list view; desktop history now lives in the
-// global Agent sidebar.
+// interactive so desktop two-pane and compact list can both select a session.
 vi.mock("./components/chat-message-list", () => ({
   ChatMessageList: () => <div>chat-message-list</div>,
   ChatMessageSkeleton: () => <div>chat-message-skeleton</div>,
@@ -59,8 +58,8 @@ vi.mock("./components/no-agent-banner", () => ({
 vi.mock("./components/archived-agent-banner", () => ({
   ArchivedAgentBanner: () => null,
 }));
-// Same width-driven layout mock the inbox page tests use. Deep-link tests use
-// the desktop canvas by default; the breakpoint tests set their own width.
+// Same width-driven layout mock the inbox page tests use. Deep-link tests
+// want the desktop two-pane layout; the breakpoint tests set their own width.
 const FOLD_INNER = 851;
 const TABLET = 1024;
 const DESKTOP = 1440;
@@ -304,21 +303,15 @@ describe("ChatPage ?agent= deep link", () => {
     expect(mockStartNewChat).not.toHaveBeenCalled();
     expect(mockToastError).toHaveBeenCalledWith(NO_ACCESS_MSG);
     expect(replace).toHaveBeenCalledWith("/acme/chat");
-    // The Lobe-style desktop canvas keeps the composer mounted even when a
-    // deep link is rejected; the controller still marks it unavailable in the
-    // real runtime, while the URL intent is consumed exactly once.
-    expect(screen.getByText("chat-input")).toBeInTheDocument();
+    expect(screen.queryByText("chat-input")).not.toBeInTheDocument();
     rerender();
     expect(mockToastError).toHaveBeenCalledTimes(1);
   });
 
   it("lets an explicit thread selection supersede a still-pending intent", () => {
     // Deferred-intent race (review P1): the user picks a thread from the
-    // compact list while the agent/member queries are still loading; when
-    // they settle, the stale deep link must NOT fire and clobber that
-    // selection. Desktop history uses the same handler from the global
-    // Agent sidebar.
-    layout.width = FOLD_INNER;
+    // list while the agent/member queries are still loading; when they
+    // settle, the stale deep link must NOT fire and clobber that selection.
     availableAgentsRef.current = [];
     agentsSettledRef.current = false;
     const { replace, rerender } = renderPage("agent=agent-1");
@@ -351,6 +344,16 @@ describe("ChatPage ?agent= deep link", () => {
 
 describe("ChatPage responsive layout", () => {
   const SELECT_PROMPT = "Pick a conversation, or start a new one with +";
+
+  it("shows the thread list and select prompt on desktop with nothing selected", () => {
+    renderPage("");
+
+    expect(
+      screen.getByRole("button", { name: "select-thread" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(SELECT_PROMPT)).toBeInTheDocument();
+    expect(screen.queryByText("chat-input")).not.toBeInTheDocument();
+  });
 
   it("folds to a single column on a folded inner screen", () => {
     // 851px — the reported Pixel Fold inner screen. Too narrow for nav + thread
@@ -401,10 +404,10 @@ describe("ChatPage responsive layout", () => {
     expect(screen.queryByText("chat-input")).not.toBeInTheDocument();
   });
 
-  it("keeps a single conversation canvas at the 1024px desktop breakpoint", () => {
-    // 1024px is the first width treated as desktop by useIsCompact. The app
-    // sidebar may collapse there, but the Agent sidebar owns topic history, so
-    // ChatPage still renders one conversation canvas.
+  it("keeps both panes at the compact breakpoint", () => {
+    // 1024px is the first width that keeps two panes. The nav auto-collapses
+    // there instead (see the sidebar), so the thread list stays on screen next
+    // to an open conversation.
     layout.width = TABLET;
     storeRef.current = {
       activeSessionId: "session-1",
@@ -414,8 +417,8 @@ describe("ChatPage responsive layout", () => {
     renderPage("session=session-1");
 
     expect(
-      screen.queryByRole("button", { name: "select-thread" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("button", { name: "select-thread" }),
+    ).toBeInTheDocument();
     expect(screen.getByText("chat-input")).toBeInTheDocument();
   });
 });

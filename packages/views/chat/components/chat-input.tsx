@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { TriangleAlert } from "lucide-react";
 import { cn } from "@patchbay/ui/lib/utils";
 import {
@@ -35,6 +35,11 @@ const logger = createLogger("chat.ui");
 const EMPTY_UPLOADS: DraftUpload[] = [];
 /** Editor identity for the chat composer — see the editorKey note below. */
 const CHAT_COMPOSER_EDITOR_KEY = "chat-composer";
+
+const LexicalComposerEditor = lazy(async () => {
+  const mod = await import("./lexical-composer-editor");
+  return { default: mod.LexicalComposerEditor };
+});
 
 function attachmentReferenceUrls(attachment: Attachment): string[] {
   const withUploadFields = attachment as Attachment & {
@@ -147,6 +152,11 @@ interface ChatInputProps {
    */
   draftKeyOverride?: string;
   editorKeyOverride?: string;
+  /**
+   * Agent-page composer uses LobeHub's Lexical editor. FAB / builder /
+   * agent-thread keep the shared Tiptap ContentEditor.
+   */
+  editorEngine?: "tiptap" | "lexical";
 }
 
 export function ChatInput({
@@ -176,6 +186,7 @@ export function ChatInput({
   focusRequest,
   draftKeyOverride,
   editorKeyOverride,
+  editorEngine = "tiptap",
 }: ChatInputProps) {
   const { t } = useT("chat");
   const { t: tEditor } = useT("editor");
@@ -730,37 +741,62 @@ export function ChatInput({
       }
       overlay={uploadEnabled && isDragOver ? <FileDropOverlay /> : null}
     >
-      <ContentEditor
-        // See the editorKey / draftKey split note above — editor identity
-        // intentionally tracks neither the session nor the agent.
-        key={editorKey}
-        ref={editorRef}
-        value={inputDraft}
-        placeholder={placeholder}
-        onUpdate={(md) => {
-          setIsEmpty(!md.trim());
-          // The LOADED key, not the selected one: while an upload pins the
-          // document this fires for the source draft's body — including the
-          // upload's own completion dispatch.
-          commitDraft(editorDraftKeyRef.current, md);
-        }}
-        onSubmit={requestSend}
-        onUploadFile={uploadEnabled ? handleUpload : undefined}
-        pasteAsFileThreshold={PASTE_AS_FILE_THRESHOLD}
-        onUploadingChange={uploadGate.onUploadingChange}
-        attachments={draftAttachments}
-        debounceMs={100}
-        mentionMode={contextItems ? "context" : "default"}
-        mentionContextItems={contextItems}
-        enableSlashCommands
-        // The bubble menu carries the only affordance that can strip
-        // formatting — "Normal text" (setParagraph) plus the mark/list
-        // toggles. Once a `# ` input rule or a Markdown/HTML paste turns a
-        // line into a heading, chat has no other way to remove it, so
-        // without the bubble menu formatting can be created but never
-        // undone (PB-5106).
-        showBubbleMenu
-      />
+      {editorEngine === "lexical" ? (
+        <Suspense fallback={<div className="min-h-9" />}>
+          <LexicalComposerEditor
+            // See the editorKey / draftKey split note above — editor identity
+            // intentionally tracks neither the session nor the agent.
+            key={editorKey}
+            ref={editorRef}
+            value={inputDraft}
+            placeholder={placeholder}
+            onUpdate={(md) => {
+              setIsEmpty(!md.trim());
+              commitDraft(editorDraftKeyRef.current, md);
+            }}
+            onSubmit={requestSend}
+            onUploadFile={uploadEnabled ? handleUpload : undefined}
+            pasteAsFileThreshold={PASTE_AS_FILE_THRESHOLD}
+            onUploadingChange={uploadGate.onUploadingChange}
+            debounceMs={100}
+            mentionMode={contextItems ? "context" : "default"}
+            mentionContextItems={contextItems}
+            enableSlashCommands
+          />
+        </Suspense>
+      ) : (
+        <ContentEditor
+          // See the editorKey / draftKey split note above — editor identity
+          // intentionally tracks neither the session nor the agent.
+          key={editorKey}
+          ref={editorRef}
+          value={inputDraft}
+          placeholder={placeholder}
+          onUpdate={(md) => {
+            setIsEmpty(!md.trim());
+            // The LOADED key, not the selected one: while an upload pins the
+            // document this fires for the source draft's body — including the
+            // upload's own completion dispatch.
+            commitDraft(editorDraftKeyRef.current, md);
+          }}
+          onSubmit={requestSend}
+          onUploadFile={uploadEnabled ? handleUpload : undefined}
+          pasteAsFileThreshold={PASTE_AS_FILE_THRESHOLD}
+          onUploadingChange={uploadGate.onUploadingChange}
+          attachments={draftAttachments}
+          debounceMs={100}
+          mentionMode={contextItems ? "context" : "default"}
+          mentionContextItems={contextItems}
+          enableSlashCommands
+          // The bubble menu carries the only affordance that can strip
+          // formatting — "Normal text" (setParagraph) plus the mark/list
+          // toggles. Once a `# ` input rule or a Markdown/HTML paste turns a
+          // line into a heading, chat has no other way to remove it, so
+          // without the bubble menu formatting can be created but never
+          // undone (PB-5106).
+          showBubbleMenu
+        />
+      )}
     </DesktopChatInput>
   );
 }
