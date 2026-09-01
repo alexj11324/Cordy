@@ -457,7 +457,7 @@ pub async fn mark_revoked(
                RETURNING queue.*
            ), settled_sessions AS (
                UPDATE linear_agent_session
-               SET status = 'cancelled', updated_at = now()
+               SET status = 'revocation_cancellation_pending', updated_at = now()
                WHERE workspace_id = $1
                  AND connection_id IN (SELECT id FROM revoked_connection)
                  AND status NOT IN ('completed', 'failed', 'cancelled')

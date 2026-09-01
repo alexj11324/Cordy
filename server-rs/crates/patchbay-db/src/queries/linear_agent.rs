@@ -4,7 +4,7 @@
 //! Keeping their association here makes prompts resumable without changing
 //! the runtime provider's own `agent_task_queue.session_id` contract.
 
-use crate::models::LinearAgentSession;
+use crate::models::{AgentTaskQueue, LinearAgentSession};
 use serde_json::Value;
 use sqlx::{Executor, PgConnection, Postgres};
 use uuid::Uuid;
@@ -139,7 +139,7 @@ pub async fn lock_linear_agent_initial_dispatch_authority(
     if connection.is_none() {
         return Ok(false);
     }
-    Ok(sqlx::query_scalar::<_, Uuid>(
+    let session = sqlx::query_scalar::<_, Uuid>(
         r#"SELECT id FROM linear_agent_session
            WHERE workspace_id = $1 AND connection_id = $2
              AND linear_session_id = $3 AND linear_issue_id = $4
@@ -157,6 +157,29 @@ pub async fn lock_linear_agent_initial_dispatch_authority(
     .bind(requester_linear_user_id)
     .bind(last_event_id)
     .bind(format!("dispatching:{claim_owner}"))
+    .fetch_optional(&mut *executor)
+    .await?;
+    if session.is_none() {
+        return Ok(false);
+    }
+    Ok(sqlx::query_scalar::<_, Uuid>(
+        r#"SELECT link.id
+           FROM linear_issue_link AS link
+           JOIN linear_project_binding AS binding ON binding.id = link.binding_id
+           WHERE link.workspace_id = $1
+             AND link.linear_issue_id = $3
+             AND link.patchbay_issue_id = $4
+             AND link.sync_status NOT IN ('deleted', 'agent_selection_required')
+             AND binding.workspace_id = $1
+             AND binding.connection_id = $2
+             AND binding.status = 'active'
+             AND binding.sync_mode IN ('import', 'two_way')
+           FOR SHARE OF binding, link"#,
+    )
+    .bind(workspace_id)
+    .bind(connection_id)
+    .bind(linear_issue_id)
+    .bind(patchbay_issue_id)
     .fetch_optional(&mut *executor)
     .await?
     .is_some())
@@ -633,6 +656,65 @@ pub async fn recover_missing_failed_terminal_events(
     )
     .bind(limit)
     .execute(&mut *executor)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+pub async fn list_pending_revocation_cancellation_connections(
+    executor: impl Executor<'_, Database = Postgres>,
+    limit: i64,
+) -> anyhow::Result<Vec<Uuid>> {
+    Ok(sqlx::query_scalar::<_, Uuid>(
+        r#"SELECT DISTINCT connection_id
+           FROM linear_agent_session
+           WHERE status = 'revocation_cancellation_pending'
+           ORDER BY connection_id
+           LIMIT $1"#,
+    )
+    .bind(limit)
+    .fetch_all(executor)
+    .await?)
+}
+
+pub async fn list_revocation_cancelled_tasks(
+    executor: impl Executor<'_, Database = Postgres>,
+    connection_id: Uuid,
+) -> anyhow::Result<Vec<AgentTaskQueue>> {
+    Ok(sqlx::query_as::<_, AgentTaskQueue>(
+        r#"WITH RECURSIVE task_tree AS (
+               SELECT task_id AS id
+               FROM linear_agent_session
+               WHERE connection_id = $1
+                 AND status = 'revocation_cancellation_pending'
+                 AND task_id IS NOT NULL
+               UNION
+               SELECT child.id
+               FROM agent_task_queue AS child
+               JOIN task_tree AS parent ON child.parent_task_id = parent.id
+           )
+           SELECT queue.*
+           FROM agent_task_queue AS queue
+           JOIN task_tree AS task ON task.id = queue.id
+           WHERE queue.status = 'cancelled'
+           ORDER BY queue.created_at, queue.id"#,
+    )
+    .bind(connection_id)
+    .fetch_all(executor)
+    .await?)
+}
+
+pub async fn complete_revocation_cancellation(
+    executor: impl Executor<'_, Database = Postgres>,
+    connection_id: Uuid,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"UPDATE linear_agent_session
+           SET status = 'cancelled', updated_at = now()
+           WHERE connection_id = $1
+             AND status = 'revocation_cancellation_pending'"#,
+    )
+    .bind(connection_id)
+    .execute(executor)
     .await?;
     Ok(result.rows_affected())
 }

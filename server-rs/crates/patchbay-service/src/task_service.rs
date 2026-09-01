@@ -4272,6 +4272,37 @@ impl TaskService {
         self.notify_tasks_finished(cancelled).await;
     }
 
+    pub async fn replay_linear_revocation_cancellation(
+        &self,
+        connection_id: Uuid,
+    ) -> Result<usize, TaskServiceError> {
+        let cancelled = linear_agent_q::list_revocation_cancelled_tasks(&self.pool, connection_id)
+            .await
+            .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?;
+        self.publish_transactional_cancellations(&cancelled).await;
+        linear_agent_q::complete_revocation_cancellation(&self.pool, connection_id)
+            .await
+            .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?;
+        Ok(cancelled.len())
+    }
+
+    pub async fn recover_pending_linear_revocation_cancellations(
+        &self,
+        limit: i64,
+    ) -> Result<usize, TaskServiceError> {
+        let connection_ids =
+            linear_agent_q::list_pending_revocation_cancellation_connections(&self.pool, limit)
+                .await
+                .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?;
+        let mut recovered = 0usize;
+        for connection_id in connection_ids {
+            recovered += self
+                .replay_linear_revocation_cancellation(connection_id)
+                .await?;
+        }
+        Ok(recovered)
+    }
+
     // --- Chat task family -------------------------------------------------------
 
     /// Creates a task-owned input batch for a chat session. Channel media

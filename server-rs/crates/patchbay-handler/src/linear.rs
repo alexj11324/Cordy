@@ -3964,7 +3964,7 @@ async fn disconnect(
         }
     };
     if connection.status == "revoked" {
-        return StatusCode::NO_CONTENT.into_response();
+        return finish_linear_disconnect(&state, connection.id).await;
     }
     let manager = match LinearTokenManager::from_state(&state) {
         Ok(manager) => manager,
@@ -3977,22 +3977,10 @@ async fn disconnect(
         }
     };
     match manager.revoke_connection(workspace_id, &connection).await {
-        Ok(cancelled) => {
-            state
-                .tasks
-                .publish_transactional_cancellations(&cancelled)
-                .await;
-            StatusCode::NO_CONTENT.into_response()
-        }
+        Ok(_) => finish_linear_disconnect(&state, connection.id).await,
         Err(LinearTokenError::InvalidGrant | LinearTokenError::ReauthorizationRequired) => {
             match linear_q::mark_revoked(&state.pool, workspace_id, connection.id).await {
-                Ok(cancelled) => {
-                    state
-                        .tasks
-                        .publish_transactional_cancellations(&cancelled)
-                        .await;
-                    StatusCode::NO_CONTENT.into_response()
-                }
+                Ok(_) => finish_linear_disconnect(&state, connection.id).await,
                 Err(error) => {
                     tracing::warn!(%error, "Linear local disconnect fallback failed");
                     error_response(
@@ -4010,6 +3998,23 @@ async fn disconnect(
             error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to disconnect Linear",
+            )
+        }
+    }
+}
+
+async fn finish_linear_disconnect(state: &HandlerState, connection_id: Uuid) -> Response {
+    match state
+        .tasks
+        .replay_linear_revocation_cancellation(connection_id)
+        .await
+    {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => {
+            tracing::warn!(%error, %connection_id, "Linear disconnect cancellation replay failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to finalize Linear disconnect",
             )
         }
     }

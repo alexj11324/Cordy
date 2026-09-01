@@ -27,6 +27,7 @@ const CHAT_FINALIZE_GRACE: Duration = Duration::from_secs(60);
 const CHAT_FINALIZE_BATCH: i32 = 100;
 const LINEAR_OAUTH_STATE_BATCH: i64 = 100;
 const LINEAR_AGENT_TERMINAL_RECOVERY_BATCH: i64 = 100;
+const LINEAR_REVOCATION_CANCELLATION_BATCH: i64 = 100;
 const OFFLINE_RUNTIME_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const GC_BATCH: i32 = 100;
 const GC_BLOCKED_LIMIT: i32 = 1000;
@@ -359,6 +360,21 @@ impl RuntimeTaskSweeper {
             Err(error) => {
                 tracing::warn!(%error, "runtime sweeper: recover Linear Agent terminal events failed")
             }
+        }
+        match self
+            .tasks
+            .recover_pending_linear_revocation_cancellations(LINEAR_REVOCATION_CANCELLATION_BATCH)
+            .await
+        {
+            Ok(recovered) if recovered > 0 => tracing::info!(
+                recovered,
+                "runtime sweeper: replayed Linear revocation cancellations"
+            ),
+            Ok(_) => {}
+            Err(error) => tracing::warn!(
+                %error,
+                "runtime sweeper: replay Linear revocation cancellations failed"
+            ),
         }
         match self
             .tasks
