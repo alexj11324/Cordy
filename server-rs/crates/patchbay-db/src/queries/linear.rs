@@ -120,7 +120,24 @@ pub async fn upsert_connection(
     connection: &LinearConnectionInput<'_>,
 ) -> anyhow::Result<LinearConnection> {
     Ok(sqlx::query_as::<_, LinearConnection>(
-        r#"WITH deleted_inbox AS (
+        r#"WITH old_agent_sessions AS MATERIALIZED (
+               SELECT session.task_id
+               FROM linear_agent_session AS session
+               WHERE session.workspace_id = $2
+                 AND session.task_id IS NOT NULL
+                 AND session.connection_id IN (
+                     SELECT id
+                     FROM linear_connection
+                     WHERE workspace_id = $2 AND organization_id <> $3
+                 )
+           ), cancelled_agent_tasks AS (
+               UPDATE agent_task_queue
+               SET status = 'cancelled', completed_at = now(), prepare_lease_expires_at = NULL
+               WHERE id IN (SELECT task_id FROM old_agent_sessions)
+                 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory',
+                                'waiting_capacity', 'deferred')
+               RETURNING id
+           ), deleted_inbox AS (
                DELETE FROM linear_sync_inbox
                WHERE connection_id IN (
                    SELECT id

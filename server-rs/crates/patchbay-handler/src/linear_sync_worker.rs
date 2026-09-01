@@ -193,6 +193,17 @@ fn parse_agent_session_event(payload: &Value) -> Result<LinearAgentSessionEvent,
     })
 }
 
+fn combined_agent_prompt(body: Option<&str>, context: Option<&str>) -> Option<String> {
+    let combined = [body, context]
+        .into_iter()
+        .flatten()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    (!combined.is_empty()).then_some(combined)
+}
+
 fn parse_agent_session_terminal_event(
     payload: &Value,
 ) -> Result<LinearAgentSessionTerminalEvent, SyncError> {
@@ -1368,35 +1379,33 @@ impl LinearSyncWorker {
         .await
         .map_err(SyncError::retry)?;
 
-        // A delegated Issue can arrive before the ordinary Issue webhook. Use
-        // the same full-snapshot bootstrap as Project Sync, then persist an
-        // explicit waiting state if the binding is not import-capable.
-        if link.is_none() {
-            let manager = LinearTokenManager::from_state(&self.state)
-                .map_err(|error| classify_token_error(error, "create Linear token manager"))?;
-            if let Some(remote) = manager
-                .fetch_issue(connection.id, &event.linear_issue_id)
-                .await
-                .map_err(|error| classify_token_error(error, "fetch Linear Agent Issue"))?
-            {
-                self.apply_remote_issue(
-                    connection,
-                    remote,
-                    None,
-                    &source_event_id,
-                    event_timestamp_ms,
-                    None,
-                )
-                .await?;
-                link = linear_q::find_linear_issue_link(
-                    &self.state.pool,
-                    connection.workspace_id,
-                    connection.id,
-                    &event.linear_issue_id,
-                )
-                .await
-                .map_err(SyncError::retry)?;
-            }
+        // Agent Session and ordinary Issue deliveries are claimed by
+        // independent workers. Refresh the full Issue even when already
+        // linked so dispatch always observes the current Agent label route.
+        let manager = LinearTokenManager::from_state(&self.state)
+            .map_err(|error| classify_token_error(error, "create Linear token manager"))?;
+        if let Some(remote) = manager
+            .fetch_issue(connection.id, &event.linear_issue_id)
+            .await
+            .map_err(|error| classify_token_error(error, "fetch Linear Agent Issue"))?
+        {
+            self.apply_remote_issue(
+                connection,
+                remote,
+                link.clone(),
+                &source_event_id,
+                event_timestamp_ms,
+                None,
+            )
+            .await?;
+            link = linear_q::find_linear_issue_link(
+                &self.state.pool,
+                connection.workspace_id,
+                connection.id,
+                &event.linear_issue_id,
+            )
+            .await
+            .map_err(SyncError::retry)?;
         }
 
         let Some(link) = link else {
@@ -1500,21 +1509,37 @@ impl LinearSyncWorker {
         )
         .await
         .map_err(SyncError::retry)?;
-        if existing_session.as_ref().is_some_and(|session| {
-            matches!(
-                session.status.as_str(),
-                "completed" | "failed" | "cancelled"
-            )
-        }) {
-            return Ok(());
-        }
-        if existing_session.as_ref().is_some_and(|session| {
-            session.last_event_id != row.delivery_id
+        let synthetic_retry = row
+            .payload
+            .get("linearAgentSessionRetry")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let newer_prompt_reopens = existing_session.as_ref().is_some_and(|session| {
+            event.action == "prompted"
                 && matches!(
                     (event_timestamp_ms, session.last_event_at_ms),
-                    (Some(incoming), Some(previous)) if incoming <= previous
+                    (Some(incoming), Some(previous)) if incoming > previous
                 )
-        }) {
+        });
+        if !newer_prompt_reopens
+            && existing_session.as_ref().is_some_and(|session| {
+                matches!(
+                    session.status.as_str(),
+                    "completed" | "failed" | "cancelled"
+                )
+            })
+        {
+            return Ok(());
+        }
+        if !synthetic_retry
+            && existing_session.as_ref().is_some_and(|session| {
+                session.last_event_id != row.delivery_id
+                    && matches!(
+                        (event_timestamp_ms, session.last_event_at_ms),
+                        (Some(incoming), Some(previous)) if incoming <= previous
+                    )
+            })
+        {
             return Ok(());
         }
         let same_delivery_with_task = existing_session.as_ref().is_some_and(|session| {
@@ -1532,6 +1557,7 @@ impl LinearSyncWorker {
         // continuing a task. Terminal Inbox work observes `dispatching` and
         // retries, so it cannot publish a final response between this guard
         // and the durable task correlation below.
+        let claim_owner = format!("{worker_id}:{}", Uuid::now_v7());
         let Some(claimed_session) = linear_agent_q::claim_linear_agent_session_dispatch(
             &self.state.pool,
             Uuid::now_v7(),
@@ -1547,7 +1573,9 @@ impl LinearSyncWorker {
             event.requester_user_id.as_deref(),
             &row.delivery_id,
             event_timestamp_ms,
-            worker_id,
+            &claim_owner,
+            synthetic_retry,
+            newer_prompt_reopens,
         )
         .await
         .map_err(SyncError::retry)?
@@ -1610,17 +1638,17 @@ impl LinearSyncWorker {
         }
 
         let mut continuation_task_id = None;
-        let event_context = event
-            .prompt_body
-            .as_deref()
-            .or(event.prompt_context.as_deref())
-            .map(str::trim)
-            .filter(|context| !context.is_empty());
+        let event_context = combined_agent_prompt(
+            event.prompt_body.as_deref(),
+            event.prompt_context.as_deref(),
+        );
         let should_continue_existing =
             event.action == "prompted" || (event.action == "created" && event_context.is_some());
         if should_continue_existing && !same_delivery_with_task {
             if let Some(parent_task) = task.as_ref() {
-                let handoff = event_context.unwrap_or("Linear Agent Session prompt");
+                let handoff = event_context
+                    .as_deref()
+                    .unwrap_or("Linear Agent Session prompt");
                 let idempotency_key = format!(
                     "linear-agent-session:{}:{}",
                     event.session_id, row.delivery_id
@@ -1647,7 +1675,7 @@ impl LinearSyncWorker {
             let mut agent_issue = issue.clone();
             agent_issue.executor_type = Some("agent".to_string());
             agent_issue.executor_id = Some(agent_id);
-            let handoff = match event_context {
+            let handoff = match event_context.as_deref() {
                 Some(context) => format!("{session_marker}\n\n{context}"),
                 None => session_marker.clone(),
             };
@@ -1717,7 +1745,7 @@ impl LinearSyncWorker {
             &event.session_id,
             &row.delivery_id,
             task_id,
-            worker_id,
+            &claim_owner,
         )
         .await
         .map_err(SyncError::retry)?;
@@ -1787,27 +1815,19 @@ impl LinearSyncWorker {
             )
             .await
             .map_err(|error| classify_token_error(error, "acknowledge Linear Agent Session"))?;
-        let released = linear_agent_q::upsert_linear_agent_session(
+        let released = linear_agent_q::release_linear_agent_session_dispatch(
             &self.state.pool,
-            Uuid::now_v7(),
             connection.workspace_id,
             connection.id,
             &event.session_id,
-            &event.linear_issue_id,
-            Some(issue.id),
-            Some(agent_id),
-            Some(task_id),
-            &event.action,
-            session_status,
-            event.prompt_context.as_deref(),
-            event.prompt_body.as_deref(),
-            event.requester_user_id.as_deref(),
             &row.delivery_id,
-            event_timestamp_ms,
+            task_id,
+            session_status,
+            &claim_owner,
         )
         .await
         .map_err(SyncError::retry)?;
-        if released.is_none() {
+        if !released {
             return Err(SyncError::retry(anyhow::anyhow!(
                 "Linear Agent Session dispatch could not release its reservation"
             )));
@@ -1829,12 +1849,22 @@ impl LinearSyncWorker {
             &event.session_id,
         )
         .await
-        .map_err(SyncError::retry)?
-        .ok_or_else(|| {
-            SyncError::permanent(anyhow::anyhow!(
-                "Linear Agent Session terminal event has no local correlation"
-            ))
-        })?;
+        .map_err(SyncError::retry)?;
+        let Some(existing) = existing else {
+            let manager = LinearTokenManager::from_state(&self.state)
+                .map_err(|error| classify_token_error(error, "create Linear token manager"))?;
+            manager
+                .create_agent_activity(
+                    connection.id,
+                    &event.session_id,
+                    json!({"type": "response", "body": event.body}),
+                )
+                .await
+                .map_err(|error| {
+                    classify_token_error(error, "publish deleted Linear Agent Session result")
+                })?;
+            return Ok(());
+        };
         let Some(current_task_id) = existing.task_id else {
             return Ok(());
         };
@@ -1866,6 +1896,7 @@ impl LinearSyncWorker {
             return Ok(());
         }
 
+        let claim_owner = format!("{worker_id}:{}", Uuid::now_v7());
         let claimed = linear_agent_q::claim_linear_agent_session_terminal(
             &self.state.pool,
             connection.workspace_id,
@@ -1873,7 +1904,7 @@ impl LinearSyncWorker {
             &event.session_id,
             &row.delivery_id,
             event_timestamp_ms,
-            worker_id,
+            &claim_owner,
         )
         .await
         .map_err(SyncError::retry)?;
@@ -1918,6 +1949,7 @@ impl LinearSyncWorker {
             &event.status,
             &row.delivery_id,
             event_timestamp_ms,
+            &claim_owner,
         )
         .await
         .map_err(SyncError::retry)?;
@@ -3461,12 +3493,13 @@ mod tests {
     use uuid::Uuid;
 
     use super::{
-        agent_label_decision, agent_label_ids_for_issue, extract_event_timestamp_ms,
-        extract_issue_id, extract_updated_from, import_status_is_inadmissible, inbound_enabled,
-        is_out_of_order, map_local_priority, map_local_status, map_remote_priority,
-        map_remote_status, merge_sync_snapshots, merge_sync_snapshots_with_updated_from,
-        parse_agent_session_event, parse_agent_session_terminal_event, parse_remote_timestamp,
-        remote_sync_snapshot, retry_delay,
+        agent_label_decision, agent_label_ids_for_issue, combined_agent_prompt,
+        extract_event_timestamp_ms, extract_issue_id, extract_updated_from,
+        import_status_is_inadmissible, inbound_enabled, is_out_of_order, map_local_priority,
+        map_local_status, map_remote_priority, map_remote_status, merge_sync_snapshots,
+        merge_sync_snapshots_with_updated_from, parse_agent_session_event,
+        parse_agent_session_terminal_event, parse_remote_timestamp, remote_sync_snapshot,
+        retry_delay,
     };
     use crate::linear::{LinearRemoteIssue, LinearRemoteLabel, LinearRemoteState};
 
@@ -3762,6 +3795,13 @@ mod tests {
         assert_eq!(event.linear_issue_id, "issue-1");
         assert_eq!(event.action, "prompted");
         assert_eq!(event.prompt_body.as_deref(), Some("Please continue"));
+        assert_eq!(
+            combined_agent_prompt(
+                event.prompt_body.as_deref(),
+                event.prompt_context.as_deref()
+            ),
+            Some("Please continue\n\ncontinue the implementation".to_string())
+        );
         assert_eq!(
             event.requester_user_id,
             Some("018f0d7f-3b4f-7b1a-8c4e-7baf8ecbda40".to_string())

@@ -123,6 +123,8 @@ pub async fn claim_linear_agent_session_dispatch(
     last_event_id: &str,
     last_event_at_ms: Option<i64>,
     claim_owner: &str,
+    allow_equal_timestamp: bool,
+    allow_terminal_reopen: bool,
 ) -> anyhow::Result<Option<LinearAgentSession>> {
     let query = format!(
         "INSERT INTO linear_agent_session \
@@ -143,7 +145,8 @@ pub async fn claim_linear_agent_session_dispatch(
            last_event_id = EXCLUDED.last_event_id,\
            last_event_at_ms = EXCLUDED.last_event_at_ms,\
            updated_at = now() \
-         WHERE linear_agent_session.status NOT IN ('completed', 'failed', 'cancelled') \
+         WHERE (linear_agent_session.status NOT IN ('completed', 'failed', 'cancelled') \
+                OR ($16 AND EXCLUDED.action = 'prompted')) \
            AND (linear_agent_session.status NOT IN ('dispatching', 'terminal_dispatching') \
              AND linear_agent_session.status NOT LIKE 'dispatching:%' \
              AND linear_agent_session.status NOT LIKE 'terminal_dispatching:%' \
@@ -152,6 +155,7 @@ pub async fn claim_linear_agent_session_dispatch(
            AND (EXCLUDED.last_event_at_ms IS NULL \
             OR linear_agent_session.last_event_at_ms IS NULL \
             OR EXCLUDED.last_event_at_ms > linear_agent_session.last_event_at_ms \
+            OR ($15 AND EXCLUDED.last_event_at_ms = linear_agent_session.last_event_at_ms) \
             OR EXCLUDED.last_event_id = linear_agent_session.last_event_id) \
          RETURNING {columns}",
         columns = columns(),
@@ -171,6 +175,8 @@ pub async fn claim_linear_agent_session_dispatch(
         .bind(last_event_id)
         .bind(last_event_at_ms)
         .bind(format!("dispatching:{claim_owner}"))
+        .bind(allow_equal_timestamp)
+        .bind(allow_terminal_reopen)
         .fetch_optional(executor)
         .await?)
 }
@@ -233,6 +239,37 @@ pub async fn correlate_linear_agent_session_dispatch(
     .bind(linear_session_id)
     .bind(last_event_id)
     .bind(task_id)
+    .bind(format!("dispatching:{claim_owner}"))
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn release_linear_agent_session_dispatch(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    connection_id: Uuid,
+    linear_session_id: &str,
+    last_event_id: &str,
+    task_id: Uuid,
+    status: &str,
+    claim_owner: &str,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"UPDATE linear_agent_session
+           SET task_id = $5, status = $6, updated_at = now()
+           WHERE workspace_id = $1
+             AND connection_id = $2
+             AND linear_session_id = $3
+             AND last_event_id = $4
+             AND status = $7"#,
+    )
+    .bind(workspace_id)
+    .bind(connection_id)
+    .bind(linear_session_id)
+    .bind(last_event_id)
+    .bind(task_id)
+    .bind(status)
     .bind(format!("dispatching:{claim_owner}"))
     .execute(executor)
     .await?;
@@ -350,7 +387,7 @@ pub async fn enqueue_linear_agent_terminal_event(
         r#"WITH RECURSIVE task_chain AS (
                SELECT id, parent_task_id
                FROM agent_task_queue
-               WHERE id = $4
+               WHERE id = $3
                UNION ALL
                SELECT parent.id, parent.parent_task_id
                FROM agent_task_queue AS parent
@@ -358,11 +395,11 @@ pub async fn enqueue_linear_agent_terminal_event(
            )
            INSERT INTO linear_sync_inbox
            (id, connection_id, delivery_id, event_type, payload)
-           SELECT $1,
+           SELECT gen_random_uuid(),
                   session.connection_id,
-                  $2,
+                  $1 || ':' || session.linear_session_id,
                   'linear.agentSession.terminal',
-                  $3 || jsonb_build_object(
+                  $2 || jsonb_build_object(
                       'agentSession', jsonb_build_object(
                           'id', session.linear_session_id,
                           'issue', jsonb_build_object('id', session.linear_issue_id)
@@ -370,18 +407,15 @@ pub async fn enqueue_linear_agent_terminal_event(
                   )
            FROM linear_agent_session AS session
            WHERE session.task_id IN (SELECT id FROM task_chain)
-           ORDER BY session.updated_at DESC, session.id DESC
-           LIMIT 1
            ON CONFLICT (connection_id, delivery_id) DO NOTHING
            RETURNING id"#,
     )
-    .bind(Uuid::now_v7())
     .bind(delivery_id)
     .bind(payload)
     .bind(task_id)
-    .fetch_optional(&mut *executor)
+    .fetch_all(&mut *executor)
     .await?;
-    Ok(row.is_some())
+    Ok(!row.is_empty())
 }
 
 /// A terminal event is current when its task is the session-correlated task
@@ -418,6 +452,7 @@ pub async fn mark_linear_agent_session_terminal(
     status: &str,
     last_event_id: &str,
     last_event_at_ms: Option<i64>,
+    claim_owner: &str,
 ) -> anyhow::Result<bool> {
     let result = sqlx::query(
         r#"UPDATE linear_agent_session
@@ -428,6 +463,7 @@ pub async fn mark_linear_agent_session_terminal(
            WHERE workspace_id = $1
              AND connection_id = $2
              AND linear_session_id = $3
+             AND status = $7
              AND ($6 IS NULL OR last_event_at_ms IS NULL OR $6 > last_event_at_ms OR last_event_id = $5)"#,
     )
     .bind(workspace_id)
@@ -436,6 +472,7 @@ pub async fn mark_linear_agent_session_terminal(
     .bind(status)
     .bind(last_event_id)
     .bind(last_event_at_ms)
+    .bind(format!("terminal_dispatching:{claim_owner}"))
     .execute(executor)
     .await?;
     Ok(result.rows_affected() == 1)

@@ -29,8 +29,8 @@ use patchbay_db::queries::issue_reaction::AddIssueReactionRow;
 use patchbay_db::queries::{
     activity, agent, agent_invocation_target, attachment, automation, comment as comment_q,
     dependency_graph as dependency_graph_q, issue as issue_q, issue_label, issue_property,
-    issue_reaction, linear as linear_q, member, quick_action, runtime, subscriber, task_usage,
-    team, user, workspace,
+    issue_reaction, linear as linear_q, linear_agent as linear_agent_q, member, quick_action,
+    runtime, subscriber, task_usage, team, user, workspace,
 };
 use patchbay_middleware::workspace::{WorkspaceContext, WorkspaceGuardState};
 use patchbay_service::issue_service::{
@@ -2362,6 +2362,20 @@ async fn delete_issue_and_collect_attachment_urls(
     )
     .await?;
     let target_tasks = agent::cancel_agent_tasks_by_issue(&mut *tx, issue.id).await?;
+    for task in &target_tasks {
+        linear_agent_q::enqueue_linear_agent_terminal_event(
+            &mut tx,
+            task.id,
+            &format!("linear-agent-terminal:{}:cancelled", task.id),
+            &json!({
+                "action": "terminal",
+                "linearAgentSessionTerminal": true,
+                "status": "cancelled",
+                "taskId": task.id,
+            }),
+        )
+        .await?;
+    }
     cancellation.cancelled_tasks.extend(target_tasks);
     let urls = attachment::list_attachment_ur_ls_by_issue_or_comments(&mut *tx, issue.id).await?;
     if issue_q::delete_issue(&mut *tx, issue.id, issue.workspace_id).await? != 1 {

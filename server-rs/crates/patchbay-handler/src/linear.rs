@@ -17,6 +17,7 @@ use base64::Engine as _;
 use chrono::{Duration, NaiveDate, Utc};
 use hmac::{Hmac, Mac};
 use patchbay_db::models::{LinearConnection, LinearProjectBinding};
+use patchbay_db::queries::agent as agent_q;
 use patchbay_db::queries::issue as issue_q;
 use patchbay_db::queries::linear as linear_q;
 use patchbay_db::queries::member as member_q;
@@ -1290,6 +1291,18 @@ fn agent_label_mapping_matches_catalog(
     linear_team_id: Option<&str>,
     catalog: &LinearCatalogResponse,
 ) -> bool {
+    if mapping
+        .get("default_agent_id")
+        .filter(|value| !value.is_null())
+        .is_some_and(|value| {
+            value
+                .as_str()
+                .and_then(|value| value.parse::<Uuid>().ok())
+                .is_none()
+        })
+    {
+        return false;
+    }
     let Some(group_id) = mapping
         .get("group_id")
         .and_then(Value::as_str)
@@ -1332,6 +1345,59 @@ async fn validate_agent_label_mapping(
     connection: &LinearConnection,
     request: &SaveLinearProjectBindingRequest,
 ) -> Result<(), Response> {
+    let mut agent_ids = std::collections::HashSet::new();
+    if let Some(value) = request
+        .agent_label_mapping
+        .get("default_agent_id")
+        .filter(|value| !value.is_null())
+    {
+        let agent_id = value
+            .as_str()
+            .and_then(|value| value.parse::<Uuid>().ok())
+            .ok_or_else(|| {
+                error_response(
+                    StatusCode::BAD_REQUEST,
+                    "Linear default Agent target must be a valid Agent id",
+                )
+            })?;
+        agent_ids.insert(agent_id);
+    }
+    if let Some(labels) = request
+        .agent_label_mapping
+        .get("labels")
+        .and_then(Value::as_object)
+    {
+        for value in labels.values() {
+            let agent_id = value
+                .as_str()
+                .and_then(|value| value.parse::<Uuid>().ok())
+                .ok_or_else(|| {
+                    error_response(
+                        StatusCode::BAD_REQUEST,
+                        "Linear Agent label targets must be valid Agent ids",
+                    )
+                })?;
+            agent_ids.insert(agent_id);
+        }
+    }
+    for agent_id in agent_ids {
+        let agent = agent_q::get_agent_in_workspace(&state.pool, agent_id, connection.workspace_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, %agent_id, "Linear Agent target validation failed");
+                error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to validate Agent target",
+                )
+            })?;
+        if agent.is_none_or(|agent| agent.archived_at.is_some()) {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "Linear Agent target must be an available workspace Agent",
+            ));
+        }
+    }
+
     if request
         .agent_label_mapping
         .get("group_id")
@@ -2547,6 +2613,10 @@ impl LinearTokenManager {
         if status == StatusCode::TOO_MANY_REQUESTS {
             return Err(LinearTokenError::RateLimited);
         }
+        if status.is_server_error() {
+            tracing::warn!(%status, operation, "Linear Agent mutation returned a server error");
+            return Err(LinearTokenError::Provider);
+        }
         let payload = response
             .json::<GraphQlResponse<IdentityData>>()
             .await
@@ -3026,6 +3096,10 @@ impl LinearTokenManager {
         let status = response.status();
         if status == StatusCode::TOO_MANY_REQUESTS {
             return Err(LinearTokenError::RateLimited);
+        }
+        if status.is_server_error() {
+            tracing::warn!(%status, operation, "Linear Agent mutation returned a server error");
+            return Err(LinearTokenError::Provider);
         }
         let payload = response
             .json::<GraphQlResponse<Value>>()
@@ -4428,6 +4502,15 @@ mod tests {
             &json!({
                 "group_id": "workspace-group",
                 "labels": {"other-team-group": Uuid::nil().to_string()},
+            }),
+            Some("team-1"),
+            &catalog,
+        ));
+        assert!(!agent_label_mapping_matches_catalog(
+            &json!({
+                "default_agent_id": "not-a-uuid",
+                "group_id": "workspace-group",
+                "labels": {},
             }),
             Some("team-1"),
             &catalog,
