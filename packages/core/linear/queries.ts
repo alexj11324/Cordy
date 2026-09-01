@@ -48,4 +48,5 @@ export const linearConflictsOptions = (workspaceId: string) =>
     queryKey: linearKeys.conflicts(workspaceId),
     queryFn: () => api.listLinearSyncConflicts(workspaceId),
     enabled: !!workspaceId,
+    refetchInterval: 10_000,
   });

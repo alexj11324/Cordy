@@ -403,6 +403,7 @@ struct ExistingRemoteIssueInput<'a> {
     remote_updated_at: DateTime<Utc>,
     updated_from: Option<&'a Value>,
     agent_decision: AgentLabelDecision,
+    destination_project_id: Option<Uuid>,
 }
 
 /// A supervisor-owned Linear Inbox worker. `HandlerState` is cloned into the
@@ -886,17 +887,15 @@ impl LinearSyncWorker {
                     .await
                     .map_err(SyncError::retry)?;
                 }
-                let updated = linear_q::update_linear_issue_link(
+                let updated = linear_q::set_linear_issue_link_state(
                     &mut *transaction,
-                    &linear_q::LinearIssueLinkUpdate {
-                        link_id: link.id,
-                        workspace_id: row.workspace_id,
-                        last_common_snapshot: &base_snapshot,
-                        remote_updated_at: Some(remote_updated_at),
-                        last_remote_event_at_ms: link.last_remote_event_at_ms,
-                        last_remote_event_id: link.last_remote_event_id.as_deref(),
-                        sync_status: "conflict",
-                    },
+                    link.id,
+                    row.workspace_id,
+                    &base_snapshot,
+                    Some(remote_updated_at),
+                    link.last_remote_event_at_ms,
+                    link.last_remote_event_id.as_deref(),
+                    "conflict",
                 )
                 .await
                 .map_err(SyncError::retry)?;
@@ -1981,23 +1980,9 @@ impl LinearSyncWorker {
             .remote_owner_id(connection, remote.assignee.as_ref())
             .await?;
         let snapshot = remote_sync_snapshot(&remote, &mapped_status, &priority, remote_owner_id);
-        if let Some(mut link) = existing_link {
-            if needs_rebind && link.binding_id != binding.id {
-                let rebound = linear_q::rebind_linear_issue_link(
-                    &self.state.pool,
-                    link.id,
-                    connection.workspace_id,
-                    binding.id,
-                )
-                .await
-                .map_err(SyncError::retry)?;
-                if !rebound {
-                    return Err(SyncError::retry(anyhow::anyhow!(
-                        "Linear Issue Link disappeared during project rebind"
-                    )));
-                }
-                link.binding_id = binding.id;
-            }
+        if let Some(link) = existing_link {
+            let destination_project_id = (needs_rebind && link.binding_id != binding.id)
+                .then_some(binding.patchbay_project_id);
             return self
                 .apply_existing_remote_issue(ExistingRemoteIssueInput {
                     connection,
@@ -2010,6 +1995,7 @@ impl LinearSyncWorker {
                     remote_updated_at,
                     updated_from,
                     agent_decision,
+                    destination_project_id,
                 })
                 .await;
         }
@@ -2322,6 +2308,7 @@ impl LinearSyncWorker {
             remote_updated_at,
             updated_from,
             agent_decision,
+            destination_project_id,
         } = input;
         if event_timestamp_ms.is_none()
             && link
@@ -2350,9 +2337,101 @@ impl LinearSyncWorker {
         let last_event_id = event_timestamp_ms
             .map(|_| source_event_id)
             .or(link.last_remote_event_id.as_deref());
+        let executor_changed = agent_decision.configured
+            && (issue.executor_type.as_deref() != agent_decision.agent_id.map(|_| "agent")
+                || issue.executor_id != agent_decision.agent_id);
+
+        let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
+        let (applied, agent_selection_required) = if merge.remote_changed
+            || destination_project_id.is_some()
+            || (merge.conflicts.is_empty() && executor_changed)
+        {
+            let mut patch = if merge.remote_changed {
+                external_patch_from_snapshot(&merge.merged)?
+            } else {
+                ExternalIssuePatch::default()
+            };
+            patch.project_id = destination_project_id.map(Some);
+            if merge.conflicts.is_empty() && executor_changed {
+                patch.executor_type = Some(agent_decision.agent_id.map(|_| "agent".to_string()));
+                patch.executor_id = Some(agent_decision.agent_id);
+            }
+            let mut fallback_patch = patch.clone();
+            fallback_patch.executor_type = None;
+            fallback_patch.executor_id = None;
+            let apply_result = self
+                .state
+                .issues
+                .apply_external_patch_in_transaction(
+                    &mut transaction,
+                    connection.workspace_id,
+                    issue.id,
+                    IssueCommand::ApplyExternalPatch {
+                        source: ExternalSource::Linear,
+                        source_event_id: source_event_id.to_string(),
+                        expected_revision: Some(issue.revision),
+                        suppress_external_outbox: true,
+                        patch,
+                    },
+                )
+                .await;
+            match apply_result {
+                Ok(applied) => (Some(applied), false),
+                Err(ExternalIssueError::ActiveExecutorRequired) if executor_changed => {
+                    let applied = if merge.remote_changed || destination_project_id.is_some() {
+                        Some(
+                            self.state
+                                .issues
+                                .apply_external_patch_in_transaction(
+                                    &mut transaction,
+                                    connection.workspace_id,
+                                    issue.id,
+                                    IssueCommand::ApplyExternalPatch {
+                                        source: ExternalSource::Linear,
+                                        source_event_id: source_event_id.to_string(),
+                                        expected_revision: Some(issue.revision),
+                                        suppress_external_outbox: true,
+                                        patch: fallback_patch,
+                                    },
+                                )
+                                .await
+                                .map_err(|error| {
+                                    classify_external_error(error, "apply merged Linear Issue")
+                                })?,
+                        )
+                    } else {
+                        None
+                    };
+                    tracing::warn!(
+                        issue_id = %issue.id,
+                        "Linear Agent label requires an executor compatible with the current Issue status"
+                    );
+                    (applied, true)
+                }
+                Err(error) => {
+                    return Err(classify_external_error(error, "apply merged Linear Issue"));
+                }
+            }
+        } else {
+            (None, false)
+        };
+        if destination_project_id.is_some() {
+            let rebound = linear_q::rebind_linear_issue_link(
+                &mut *transaction,
+                link.id,
+                connection.workspace_id,
+                binding.id,
+            )
+            .await
+            .map_err(SyncError::retry)?;
+            if !rebound {
+                return Err(SyncError::retry(anyhow::anyhow!(
+                    "Linear Issue Link disappeared during project rebind"
+                )));
+            }
+        }
 
         if !merge.conflicts.is_empty() {
-            let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
             for conflict in &merge.conflicts {
                 linear_q::create_linear_sync_conflict(
                     &mut *transaction,
@@ -2379,7 +2458,7 @@ impl LinearSyncWorker {
                 &linear_q::LinearIssueLinkUpdate {
                     link_id: link.id,
                     workspace_id: connection.workspace_id,
-                    last_common_snapshot: &base_snapshot,
+                    last_common_snapshot: &merge.common,
                     remote_updated_at: Some(remote_updated_at),
                     last_remote_event_at_ms: last_event_at_ms,
                     last_remote_event_id: last_event_id,
@@ -2394,73 +2473,14 @@ impl LinearSyncWorker {
                 )));
             }
             transaction.commit().await.map_err(SyncError::retry)?;
+            if let Some(applied) = &applied {
+                self.state.issues.publish_external_issue_apply(applied).await;
+            }
             return Ok(());
         }
 
-        let executor_changed = agent_decision.configured
-            && (issue.executor_type.as_deref() != agent_decision.agent_id.map(|_| "agent")
-                || issue.executor_id != agent_decision.agent_id);
-        if merge.remote_changed || executor_changed {
-            let mut patch = if merge.remote_changed {
-                external_patch_from_snapshot(&merge.merged)?
-            } else {
-                ExternalIssuePatch::default()
-            };
-            if executor_changed {
-                patch.executor_type = Some(agent_decision.agent_id.map(|_| "agent".to_string()));
-                patch.executor_id = Some(agent_decision.agent_id);
-            }
-            let apply_result = self
-                .state
-                .issues
-                .apply_external_patch(
-                    connection.workspace_id,
-                    issue.id,
-                    IssueCommand::ApplyExternalPatch {
-                        source: ExternalSource::Linear,
-                        source_event_id: source_event_id.to_string(),
-                        expected_revision: Some(issue.revision),
-                        suppress_external_outbox: true,
-                        patch,
-                    },
-                )
-                .await;
-            match apply_result {
-                Ok(_) => {}
-                Err(ExternalIssueError::ActiveExecutorRequired) => {
-                    let updated = linear_q::update_linear_issue_link(
-                        &self.state.pool,
-                        &linear_q::LinearIssueLinkUpdate {
-                            link_id: link.id,
-                            workspace_id: connection.workspace_id,
-                            last_common_snapshot: &merge.common,
-                            remote_updated_at: Some(remote_updated_at),
-                            last_remote_event_at_ms: last_event_at_ms,
-                            last_remote_event_id: last_event_id,
-                            sync_status: "agent_selection_required",
-                        },
-                    )
-                    .await
-                    .map_err(SyncError::retry)?;
-                    if !updated {
-                        return Err(SyncError::retry(anyhow::anyhow!(
-                            "Linear Issue Link disappeared while recording Agent selection state"
-                        )));
-                    }
-                    tracing::warn!(
-                        issue_id = %issue.id,
-                        "Linear Agent label requires an executor compatible with the current Issue status"
-                    );
-                    return Ok(());
-                }
-                Err(error) => {
-                    return Err(classify_external_error(error, "apply merged Linear Issue"));
-                }
-            }
-        }
-
         let updated = linear_q::update_linear_issue_link(
-            &self.state.pool,
+            &mut *transaction,
             &linear_q::LinearIssueLinkUpdate {
                 link_id: link.id,
                 workspace_id: connection.workspace_id,
@@ -2468,7 +2488,11 @@ impl LinearSyncWorker {
                 remote_updated_at: Some(remote_updated_at),
                 last_remote_event_at_ms: last_event_at_ms,
                 last_remote_event_id: last_event_id,
-                sync_status: "active",
+                sync_status: if agent_selection_required {
+                    "agent_selection_required"
+                } else {
+                    "active"
+                },
             },
         )
         .await
@@ -2477,6 +2501,13 @@ impl LinearSyncWorker {
             return Err(SyncError::retry(anyhow::anyhow!(
                 "Linear Issue Link disappeared after merge"
             )));
+        }
+        transaction.commit().await.map_err(SyncError::retry)?;
+        if let Some(applied) = &applied {
+            self.state.issues.publish_external_issue_apply(applied).await;
+        }
+        if agent_selection_required {
+            return Ok(());
         }
         if let Some(agent_id) = agent_decision.agent_id {
             self.resume_waiting_agent_sessions(connection, &issue, agent_id, source_event_id)
@@ -2776,6 +2807,11 @@ fn merge_sync_snapshots_with_updated_from(
             common.insert(field.to_string(), base_value);
         } else {
             remote_changed = true;
+            // Keep both plans complete. Conflicting fields stay local in the
+            // applied Issue and retain the previous common value as their
+            // merge base while independent remote changes can proceed.
+            merged.insert(field.to_string(), local_value.clone());
+            common.insert(field.to_string(), base_value.clone());
             conflicts.push(SyncConflictValue {
                 field: field.to_string(),
                 base_value,
@@ -3523,6 +3559,43 @@ mod tests {
         assert_eq!(plan.conflicts[0].base_value, "Base");
         assert_eq!(plan.conflicts[0].local_value, "Local");
         assert_eq!(plan.conflicts[0].remote_value, "Remote");
+        assert_eq!(plan.merged["title"], "Local");
+        assert_eq!(plan.common["title"], "Base");
+    }
+
+    #[test]
+    fn three_way_merge_keeps_nonconflicting_remote_changes_with_a_conflict() {
+        let base = json!({
+            "title": "Base",
+            "description": null,
+            "priority": "medium",
+            "status": "todo",
+            "due_date": null,
+            "owner_id": null
+        });
+        let local = json!({
+            "title": "Local",
+            "description": null,
+            "priority": "medium",
+            "status": "todo",
+            "due_date": null,
+            "owner_id": null
+        });
+        let remote = json!({
+            "title": "Remote",
+            "description": "Remote description",
+            "priority": "medium",
+            "status": "todo",
+            "due_date": null,
+            "owner_id": null
+        });
+
+        let plan = merge_sync_snapshots(&base, &local, &remote);
+        assert_eq!(plan.conflicts.len(), 1);
+        assert_eq!(plan.merged["title"], "Local");
+        assert_eq!(plan.merged["description"], "Remote description");
+        assert_eq!(plan.common["title"], "Base");
+        assert_eq!(plan.common["description"], "Remote description");
     }
 
     #[test]
