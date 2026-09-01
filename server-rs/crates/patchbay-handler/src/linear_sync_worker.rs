@@ -176,6 +176,7 @@ fn parse_agent_session_event(payload: &Value) -> Result<LinearAgentSessionEvent,
     let prompt_body = nested_string(Some(data), &["agentActivity", "body"])
         .or_else(|| nested_string(Some(data), &["agentActivity", "content", "body"]))
         .or_else(|| nested_string(session, &["prompt", "body"]))
+        .or_else(|| first_string(session, &["promptBody", "body"]))
         .or_else(|| first_string(Some(data), &["prompt", "promptBody", "body"]));
     let requester_user_id = first_string(session, &["creatorId"])
         .or_else(|| nested_string(session, &["creator", "id"]))
@@ -1211,6 +1212,8 @@ impl LinearSyncWorker {
                 ),
             }
         }
+        self.resume_agent_sessions_awaiting_issue_link(&connection, &remote.id)
+            .await?;
         Ok(())
     }
 
@@ -1317,7 +1320,9 @@ impl LinearSyncWorker {
             event_timestamp_ms,
             updated_from,
         )
-        .await
+        .await?;
+        self.resume_agent_sessions_awaiting_issue_link(&connection, &linear_issue_id)
+            .await
     }
 
     async fn process_agent_session_event(
@@ -1382,6 +1387,8 @@ impl LinearSyncWorker {
                 &event.action,
                 "awaiting_issue_link",
                 event.prompt_context.as_deref(),
+                event.prompt_body.as_deref(),
+                event.requester_user_id.as_deref(),
                 &row.delivery_id,
                 event_timestamp_ms,
             )
@@ -1415,6 +1422,8 @@ impl LinearSyncWorker {
                 &event.action,
                 "agent_selection_required",
                 event.prompt_context.as_deref(),
+                event.prompt_body.as_deref(),
+                event.requester_user_id.as_deref(),
                 &row.delivery_id,
                 event_timestamp_ms,
             )
@@ -1444,6 +1453,8 @@ impl LinearSyncWorker {
                 &event.action,
                 "agent_selection_required",
                 event.prompt_context.as_deref(),
+                event.prompt_body.as_deref(),
+                event.requester_user_id.as_deref(),
                 &row.delivery_id,
                 event_timestamp_ms,
             )
@@ -1451,6 +1462,9 @@ impl LinearSyncWorker {
             .map_err(SyncError::retry)?;
             return Ok(());
         }
+        let requester_user_id = self
+            .patchbay_requester_id(connection, event.requester_user_id.as_deref())
+            .await?;
 
         let existing_session = linear_agent_q::get_linear_agent_session(
             &self.state.pool,
@@ -1460,6 +1474,15 @@ impl LinearSyncWorker {
         )
         .await
         .map_err(SyncError::retry)?;
+        if existing_session.as_ref().is_some_and(|session| {
+            session.last_event_id != row.delivery_id
+                && matches!(
+                    (event_timestamp_ms, session.last_event_at_ms),
+                    (Some(incoming), Some(previous)) if incoming <= previous
+                )
+        }) {
+            return Ok(());
+        }
         let same_delivery_with_task = existing_session.as_ref().is_some_and(|session| {
             session.last_event_id == row.delivery_id && session.task_id.is_some()
         });
@@ -1514,9 +1537,6 @@ impl LinearSyncWorker {
                     "linear-agent-session:{}:{}",
                     event.session_id, row.delivery_id
                 );
-                let requester_user_id = self
-                    .patchbay_requester_id(connection, event.requester_user_id.as_deref())
-                    .await?;
                 let receipt = self
                     .state
                     .tasks
@@ -1539,24 +1559,24 @@ impl LinearSyncWorker {
             let mut agent_issue = issue.clone();
             agent_issue.executor_type = Some("agent".to_string());
             agent_issue.executor_id = Some(agent_id);
-            let handoff = if event.action == "prompted" {
-                match event
-                    .prompt_body
-                    .as_deref()
-                    .or(event.prompt_context.as_deref())
-                    .map(str::trim)
-                    .filter(|context| !context.is_empty())
-                {
-                    Some(context) => format!("{session_marker}\n\n{context}"),
-                    None => session_marker.clone(),
-                }
-            } else {
-                session_marker.clone()
+            let handoff = match event
+                .prompt_body
+                .as_deref()
+                .or(event.prompt_context.as_deref())
+                .map(str::trim)
+                .filter(|context| !context.is_empty())
+            {
+                Some(context) => format!("{session_marker}\n\n{context}"),
+                None => session_marker.clone(),
             };
             let enqueue_result = self
                 .state
                 .tasks
-                .enqueue_task_for_issue_with_handoff(&agent_issue, &handoff, None)
+                .enqueue_task_for_issue_with_handoff(
+                    &agent_issue,
+                    &handoff,
+                    Some(requester_user_id),
+                )
                 .await;
             task = match enqueue_result {
                 Ok(task) => Some(task),
@@ -1621,11 +1641,46 @@ impl LinearSyncWorker {
             &event.action,
             session_status,
             event.prompt_context.as_deref(),
+            event.prompt_body.as_deref(),
+            event.requester_user_id.as_deref(),
             &row.delivery_id,
             event_timestamp_ms,
         )
         .await
         .map_err(SyncError::retry)?;
+
+        // A very fast task can reach a terminal state before the session row
+        // becomes visible to the task terminal hook. Recover that race after
+        // correlation using the same idempotent Inbox delivery key.
+        if let Some(terminal_task) =
+            agent_q::get_agent_task_in_workspace(&self.state.pool, task_id, connection.workspace_id)
+                .await
+                .map_err(SyncError::retry)?
+                .filter(|task| matches!(task.status.as_str(), "completed" | "failed" | "cancelled"))
+        {
+            let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
+            linear_agent_q::enqueue_linear_agent_terminal_event(
+                &mut transaction,
+                terminal_task.id,
+                &format!(
+                    "linear-agent-terminal:{}:{}",
+                    terminal_task.id, terminal_task.status
+                ),
+                &json!({
+                    "action": "terminal",
+                    "linearAgentSessionTerminal": true,
+                    "status": terminal_task.status,
+                    "result": terminal_task.result,
+                    "error": terminal_task.error,
+                    "failureReason": terminal_task.failure_reason,
+                    "taskId": terminal_task.id,
+                }),
+            )
+            .await
+            .map_err(SyncError::retry)?;
+            transaction.commit().await.map_err(SyncError::retry)?;
+            self.notify.notify_waiters();
+        }
 
         let manager = LinearTokenManager::from_state(&self.state)
             .map_err(|error| classify_token_error(error, "create Linear token manager"))?;
@@ -1673,6 +1728,13 @@ impl LinearSyncWorker {
         if existing.status == event.status && existing.last_event_id == row.delivery_id {
             return Ok(());
         }
+        let event_timestamp_ms = extract_event_timestamp_ms(&row.payload);
+        if matches!(
+            (event_timestamp_ms, existing.last_event_at_ms),
+            (Some(incoming), Some(previous)) if incoming <= previous
+        ) {
+            return Ok(());
+        }
 
         let manager = LinearTokenManager::from_state(&self.state)
             .map_err(|error| classify_token_error(error, "create Linear token manager"))?;
@@ -1692,7 +1754,7 @@ impl LinearSyncWorker {
             &event.session_id,
             &event.status,
             &row.delivery_id,
-            extract_event_timestamp_ms(&row.payload),
+            event_timestamp_ms,
         )
         .await
         .map_err(SyncError::retry)?;
@@ -1762,7 +1824,57 @@ impl LinearSyncWorker {
                 connection.id,
                 &delivery_id,
                 &session,
-                agent_id,
+                Some(agent_id),
+            )
+            .await
+            .map_err(SyncError::retry)?;
+        }
+        transaction.commit().await.map_err(SyncError::retry)?;
+        self.notify.notify_waiters();
+        Ok(())
+    }
+
+    async fn resume_agent_sessions_awaiting_issue_link(
+        &self,
+        connection: &LinearConnection,
+        linear_issue_id: &str,
+    ) -> Result<(), SyncError> {
+        if linear_q::find_linear_issue_link(
+            &self.state.pool,
+            connection.workspace_id,
+            connection.id,
+            linear_issue_id,
+        )
+        .await
+        .map_err(SyncError::retry)?
+        .is_none()
+        {
+            return Ok(());
+        }
+        let sessions = linear_agent_q::list_linear_agent_sessions_awaiting_issue_link(
+            &self.state.pool,
+            connection.workspace_id,
+            connection.id,
+            linear_issue_id,
+        )
+        .await
+        .map_err(SyncError::retry)?;
+        if sessions.is_empty() {
+            return Ok(());
+        }
+
+        let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
+        for session in sessions {
+            let delivery_id = format!(
+                "linear-agent-issue-link-retry:{}",
+                session.linear_session_id
+            );
+            linear_agent_q::enqueue_linear_agent_session_retry(
+                &mut transaction,
+                connection.id,
+                &delivery_id,
+                &session,
+                None,
             )
             .await
             .map_err(SyncError::retry)?;
@@ -2005,16 +2117,17 @@ impl LinearSyncWorker {
             &mapped_status,
         )
         .await;
-        let import_status = if import_status_is_inadmissible(&mapped_category, None) {
-            tracing::warn!(
-                issue_id = %remote.id,
-                mapped_status,
-                "parking imported Linear issue until its Patchbay assignments are admissible"
-            );
-            patchbay_service::issue_status::BACKLOG.to_string()
-        } else {
-            mapped_status.clone()
-        };
+        let import_status =
+            if import_status_is_inadmissible(&mapped_category, None, agent_decision.agent_id) {
+                tracing::warn!(
+                    issue_id = %remote.id,
+                    mapped_status,
+                    "parking imported Linear issue until its Patchbay assignments are admissible"
+                );
+                patchbay_service::issue_status::BACKLOG.to_string()
+            } else {
+                mapped_status.clone()
+            };
         let remote_patch = ExternalIssuePatch {
             title: Some(remote.title.clone()),
             description: Some(strip_patchbay_issue_marker(remote.description.as_deref())),
@@ -2474,7 +2587,10 @@ impl LinearSyncWorker {
             }
             transaction.commit().await.map_err(SyncError::retry)?;
             if let Some(applied) = &applied {
-                self.state.issues.publish_external_issue_apply(applied).await;
+                self.state
+                    .issues
+                    .publish_external_issue_apply(applied)
+                    .await;
             }
             return Ok(());
         }
@@ -2504,7 +2620,10 @@ impl LinearSyncWorker {
         }
         transaction.commit().await.map_err(SyncError::retry)?;
         if let Some(applied) = &applied {
-            self.state.issues.publish_external_issue_apply(applied).await;
+            self.state
+                .issues
+                .publish_external_issue_apply(applied)
+                .await;
         }
         if agent_selection_required {
             return Ok(());
@@ -2921,16 +3040,20 @@ fn inbound_enabled(binding: &LinearProjectBinding) -> bool {
     binding.status == "active" && matches!(binding.sync_mode.as_str(), "import" | "two_way")
 }
 
-fn import_status_is_inadmissible(category: &str, issue: Option<&Issue>) -> bool {
-    let Some(issue) = issue else {
-        return patchbay_service::issue_status::requires_executor(category)
-            || patchbay_service::issue_status::requires_reviewer(category);
-    };
-    let has_executor = issue.executor_type.is_some() && issue.executor_id.is_some();
-    let has_reviewer = issue.reviewer_type.is_some() && issue.reviewer_id.is_some();
+fn import_status_is_inadmissible(
+    category: &str,
+    issue: Option<&Issue>,
+    incoming_agent_id: Option<Uuid>,
+) -> bool {
+    let has_executor = incoming_agent_id.is_some()
+        || issue.is_some_and(|issue| issue.executor_type.is_some() && issue.executor_id.is_some());
+    let has_reviewer =
+        issue.is_some_and(|issue| issue.reviewer_type.is_some() && issue.reviewer_id.is_some());
+    let same_reviewer_and_executor = issue
+        .is_some_and(|issue| issue.reviewer_id.is_some() && issue.reviewer_id == issue.executor_id);
     (patchbay_service::issue_status::requires_executor(category) && !has_executor)
         || (patchbay_service::issue_status::requires_reviewer(category)
-            && (!has_reviewer || issue.reviewer_id == issue.executor_id))
+            && (!has_reviewer || same_reviewer_and_executor))
 }
 
 fn extract_issue_id(payload: &Value) -> Option<String> {
@@ -3159,11 +3282,11 @@ mod tests {
 
     use super::{
         agent_label_decision, agent_label_ids_for_issue, extract_event_timestamp_ms,
-        extract_issue_id, extract_updated_from, inbound_enabled, is_out_of_order,
-        map_local_priority, map_local_status, map_remote_priority, map_remote_status,
-        merge_sync_snapshots, merge_sync_snapshots_with_updated_from, parse_agent_session_event,
-        parse_agent_session_terminal_event, parse_remote_timestamp, remote_sync_snapshot,
-        retry_delay,
+        extract_issue_id, extract_updated_from, import_status_is_inadmissible, inbound_enabled,
+        is_out_of_order, map_local_priority, map_local_status, map_remote_priority,
+        map_remote_status, merge_sync_snapshots, merge_sync_snapshots_with_updated_from,
+        parse_agent_session_event, parse_agent_session_terminal_event, parse_remote_timestamp,
+        remote_sync_snapshot, retry_delay,
     };
     use crate::linear::{LinearRemoteIssue, LinearRemoteLabel, LinearRemoteState};
 
@@ -3306,6 +3429,21 @@ mod tests {
     }
 
     #[test]
+    fn delegated_import_keeps_executor_required_mapped_status() {
+        assert!(import_status_is_inadmissible("in_progress", None, None));
+        assert!(!import_status_is_inadmissible(
+            "in_progress",
+            None,
+            Some(Uuid::now_v7())
+        ));
+        assert!(import_status_is_inadmissible(
+            "in_review",
+            None,
+            Some(Uuid::now_v7())
+        ));
+    }
+
+    #[test]
     fn remote_timestamp_requires_rfc3339() {
         assert!(parse_remote_timestamp("2026-08-31T12:00:00Z").is_ok());
         assert!(parse_remote_timestamp("not-a-timestamp").is_err());
@@ -3430,6 +3568,20 @@ mod tests {
             event.requester_user_id,
             Some("018f0d7f-3b4f-7b1a-8c4e-7baf8ecbda40".to_string())
         );
+
+        let retry = parse_agent_session_event(&json!({
+            "action": "prompted",
+            "agentSession": {
+                "id": "session-1",
+                "issue": {"id": "issue-1"},
+                "promptContext": "original context",
+                "promptBody": "original prompt body",
+                "creatorId": "linear-user-1"
+            }
+        }))
+        .unwrap();
+        assert_eq!(retry.prompt_body.as_deref(), Some("original prompt body"));
+        assert_eq!(retry.requester_user_id.as_deref(), Some("linear-user-1"));
     }
 
     #[test]

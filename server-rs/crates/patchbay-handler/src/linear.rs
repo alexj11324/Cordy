@@ -2462,6 +2462,9 @@ impl LinearTokenManager {
                 LinearTokenError::Provider
             })?;
         let status = response.status();
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            return Err(LinearTokenError::RateLimited);
+        }
         let payload = response
             .json::<GraphQlResponse<IdentityData>>()
             .await
@@ -2939,6 +2942,9 @@ impl LinearTokenManager {
                 LinearTokenError::Provider
             })?;
         let status = response.status();
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            return Err(LinearTokenError::RateLimited);
+        }
         let payload = response
             .json::<GraphQlResponse<Value>>()
             .await

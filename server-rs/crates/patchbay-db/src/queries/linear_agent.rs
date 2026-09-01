@@ -12,6 +12,7 @@ use uuid::Uuid;
 fn columns() -> &'static str {
     "id, workspace_id, connection_id, linear_session_id, linear_issue_id,\
      patchbay_issue_id, agent_id, task_id, action, status, prompt_context,\
+     prompt_body, requester_linear_user_id,\
      last_event_id, last_event_at_ms, created_at, updated_at"
 }
 
@@ -29,15 +30,17 @@ pub async fn upsert_linear_agent_session(
     action: &str,
     status: &str,
     prompt_context: Option<&str>,
+    prompt_body: Option<&str>,
+    requester_linear_user_id: Option<&str>,
     last_event_id: &str,
     last_event_at_ms: Option<i64>,
-) -> anyhow::Result<LinearAgentSession> {
+) -> anyhow::Result<Option<LinearAgentSession>> {
     let query = format!(
         "INSERT INTO linear_agent_session \
          (id, workspace_id, connection_id, linear_session_id, linear_issue_id,\
           patchbay_issue_id, agent_id, task_id, action, status, prompt_context,\
-          last_event_id, last_event_at_ms)\
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) \
+          prompt_body, requester_linear_user_id, last_event_id, last_event_at_ms)\
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) \
          ON CONFLICT (connection_id, linear_session_id) DO UPDATE SET \
            workspace_id = EXCLUDED.workspace_id,\
            linear_issue_id = EXCLUDED.linear_issue_id,\
@@ -47,9 +50,15 @@ pub async fn upsert_linear_agent_session(
            action = EXCLUDED.action,\
            status = EXCLUDED.status,\
            prompt_context = COALESCE(EXCLUDED.prompt_context, linear_agent_session.prompt_context),\
+           prompt_body = COALESCE(EXCLUDED.prompt_body, linear_agent_session.prompt_body),\
+           requester_linear_user_id = COALESCE(EXCLUDED.requester_linear_user_id, linear_agent_session.requester_linear_user_id),\
            last_event_id = EXCLUDED.last_event_id,\
            last_event_at_ms = EXCLUDED.last_event_at_ms,\
            updated_at = now() \
+         WHERE EXCLUDED.last_event_at_ms IS NULL \
+            OR linear_agent_session.last_event_at_ms IS NULL \
+            OR EXCLUDED.last_event_at_ms > linear_agent_session.last_event_at_ms \
+            OR EXCLUDED.last_event_id = linear_agent_session.last_event_id \
          RETURNING {columns}",
         columns = columns(),
     );
@@ -65,9 +74,11 @@ pub async fn upsert_linear_agent_session(
         .bind(action)
         .bind(status)
         .bind(prompt_context)
+        .bind(prompt_body)
+        .bind(requester_linear_user_id)
         .bind(last_event_id)
         .bind(last_event_at_ms)
-        .fetch_one(executor)
+        .fetch_optional(executor)
         .await?)
 }
 
@@ -133,6 +144,27 @@ pub async fn list_waiting_linear_agent_sessions(
         .await?)
 }
 
+pub async fn list_linear_agent_sessions_awaiting_issue_link(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    connection_id: Uuid,
+    linear_issue_id: &str,
+) -> anyhow::Result<Vec<LinearAgentSession>> {
+    let query = format!(
+        "SELECT {columns} FROM linear_agent_session \
+         WHERE workspace_id = $1 AND connection_id = $2 AND linear_issue_id = $3 \
+           AND status = 'awaiting_issue_link' \
+         ORDER BY created_at, id",
+        columns = columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearAgentSession>(&query)
+        .bind(workspace_id)
+        .bind(connection_id)
+        .bind(linear_issue_id)
+        .fetch_all(executor)
+        .await?)
+}
+
 /// Replays a waiting native Agent Session after the Issue has acquired a
 /// valid Patchbay executor. The replay is itself an Inbox row so selecting an
 /// Agent and dispatching the session remain durable across worker crashes.
@@ -141,7 +173,7 @@ pub async fn enqueue_linear_agent_session_retry(
     connection_id: Uuid,
     delivery_id: &str,
     session: &LinearAgentSession,
-    agent_id: Uuid,
+    agent_id: Option<Uuid>,
 ) -> anyhow::Result<bool> {
     let payload = serde_json::json!({
         "action": session.action,
@@ -149,6 +181,8 @@ pub async fn enqueue_linear_agent_session_retry(
             "id": session.linear_session_id,
             "issue": {"id": session.linear_issue_id},
             "promptContext": session.prompt_context,
+            "promptBody": session.prompt_body,
+            "creatorId": session.requester_linear_user_id,
         },
         "selectedAgentId": agent_id,
         "linearAgentSessionRetry": true,
@@ -228,7 +262,8 @@ pub async fn mark_linear_agent_session_terminal(
                updated_at = now()
            WHERE workspace_id = $1
              AND connection_id = $2
-             AND linear_session_id = $3"#,
+             AND linear_session_id = $3
+             AND ($6 IS NULL OR last_event_at_ms IS NULL OR $6 > last_event_at_ms)"#,
     )
     .bind(workspace_id)
     .bind(connection_id)

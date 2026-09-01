@@ -602,8 +602,8 @@ pub async fn claim_sync_inbox(
                              AND replace(lower(event_type), '_', '') NOT LIKE '%agentsession%'
                              AND NOT (payload ? 'agentSession')
                              AND NOT (payload ? 'agentSessionEvent')
-                             AND NOT (payload->'data' ? 'agentSession')
-                             AND NOT (payload->'data' ? 'agentSessionEvent')
+                             AND NOT COALESCE(payload->'data' ? 'agentSession', false)
+                             AND NOT COALESCE(payload->'data' ? 'agentSessionEvent', false)
                          )
                          OR (
                              NOT $5
@@ -611,8 +611,8 @@ pub async fn claim_sync_inbox(
                                  replace(lower(event_type), '_', '') LIKE '%agentsession%'
                                  OR payload ? 'agentSession'
                                  OR payload ? 'agentSessionEvent'
-                                 OR payload->'data' ? 'agentSession'
-                                 OR payload->'data' ? 'agentSessionEvent'
+                                 OR COALESCE(payload->'data' ? 'agentSession', false)
+                                 OR COALESCE(payload->'data' ? 'agentSessionEvent', false)
                              )
                          )
                      )

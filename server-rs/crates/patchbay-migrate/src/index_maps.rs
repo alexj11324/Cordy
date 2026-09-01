@@ -719,6 +719,10 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "503_linear_agent_session_issue_index",
         "idx_linear_agent_session_issue",
     ),
+    (
+        "505_linear_agent_session_task_index",
+        "idx_linear_agent_session_task_id",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
@@ -983,5 +987,9 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[
     (
         "503_linear_agent_session_issue_index",
         "idx_linear_agent_session_issue",
+    ),
+    (
+        "505_linear_agent_session_task_index",
+        "idx_linear_agent_session_task_id",
     ),
 ];
