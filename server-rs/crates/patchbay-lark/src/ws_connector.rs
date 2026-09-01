@@ -506,6 +506,7 @@ impl EventConnector for WsLongConnConnector {
         ctx: CancellationToken,
         inst: Installation,
         emit: EventEmitter,
+        runtime_health: Option<patchbay_channel::RuntimeHealthReporter>,
     ) -> anyhow::Result<()> {
         let provider = self
             .cfg
@@ -546,6 +547,9 @@ impl EventConnector for WsLongConnConnector {
             )
             .await
             .map_err(|e| anyhow::anyhow!("dial ws: {e:#}"))?;
+        if let Some(reporter) = &runtime_health {
+            reporter.healthy().await;
+        }
 
         // runCtx fans out cancellation to the ping task on EVERY run exit,
         // not just on outer-ctx cancel. A read error or emit-infra failure

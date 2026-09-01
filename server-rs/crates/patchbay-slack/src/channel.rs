@@ -190,6 +190,7 @@ pub struct SlackChannel {
     handler: Option<InboundHandler>,
     /// None disables /issue slash-command handling.
     slash: Option<Arc<SlashCommandProcessor>>,
+    runtime_health: Option<patchbay_channel::RuntimeHealthReporter>,
 }
 
 #[async_trait]
@@ -319,6 +320,12 @@ impl SlackChannel {
     ) -> anyhow::Result<()> {
         use crate::socket_mode::EnvelopeKind;
         match envelope.kind {
+            EnvelopeKind::Hello => {
+                if let Some(reporter) = &self.runtime_health {
+                    reporter.healthy().await;
+                }
+                Ok(())
+            }
             EnvelopeKind::EventsApi => {
                 let payload: EventsApiEnvelope =
                     serde_json::from_value(envelope.payload.clone())
@@ -466,6 +473,7 @@ pub fn new_slack_factory(deps: ChannelDeps) -> patchbay_channel::Factory {
                 bot_api: SlackClient::new(bot_token),
                 handler: cfg.handler,
                 slash,
+                runtime_health: cfg.runtime_health,
             }) as patchbay_channel::BuiltChannel)
         })
     })
@@ -526,6 +534,7 @@ mod tests {
             bot_api: SlackClient::new("xoxb-"),
             handler: None,
             slash: None,
+            runtime_health: None,
         };
         assert_eq!(
             ch.capabilities(),
@@ -552,6 +561,7 @@ mod tests {
                 })
             })),
             slash: None,
+            runtime_health: None,
         };
         let ctx = CancellationToken::new();
         ctx.cancel();
@@ -640,6 +650,7 @@ mod tests {
                 id: None,
                 handler: None,
                 generation: None,
+                runtime_health: None,
             })
             .await
         {
@@ -661,6 +672,7 @@ mod tests {
                 id: None,
                 handler: None,
                 generation: None,
+                runtime_health: None,
             })
             .await
             .unwrap();

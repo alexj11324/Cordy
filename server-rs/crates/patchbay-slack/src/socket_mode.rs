@@ -19,6 +19,7 @@ const SOCKET_WRITE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs
 /// error frames remain lifecycle noise.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EnvelopeKind {
+    Hello,
     EventsApi,
     SlashCommand,
     Disconnect,
@@ -44,6 +45,7 @@ impl Envelope {
     fn parse(raw: &str) -> Option<Envelope> {
         let v: serde_json::Value = serde_json::from_str(raw).ok()?;
         let kind = match v.get("type").and_then(|t| t.as_str())? {
+            "hello" => EnvelopeKind::Hello,
             "events_api" => EnvelopeKind::EventsApi,
             "slash_commands" => EnvelopeKind::SlashCommand,
             "disconnect" => EnvelopeKind::Disconnect,
@@ -220,7 +222,7 @@ mod tests {
         );
 
         let e = Envelope::parse(r#"{"type":"hello"}"#).unwrap();
-        assert_eq!(e.kind, EnvelopeKind::Other);
+        assert_eq!(e.kind, EnvelopeKind::Hello);
         assert!(!e.needs_ack);
         assert!(e.ack_frame().is_none());
 

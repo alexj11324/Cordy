@@ -528,6 +528,20 @@ pub struct ChannelInstallation {
     pub ws_lease_token: Option<String>,
 }
 
+/// Latest token-fenced transport observation for a channel installation.
+/// This table deliberately has no foreign key; installation cleanup removes
+/// observations explicitly in the application transaction.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct ChannelInstallationRuntimeObservation {
+    pub installation_id: Uuid,
+    pub state: String,
+    pub observed_at: DateTime<Utc>,
+    pub error_code: Option<String>,
+    pub error_summary: Option<String>,
+    pub observer_token: String,
+    pub updated_at: DateTime<Utc>,
+}
+
 /// Row of `channel_media_pending_object`.
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
 pub struct ChannelMediaPendingObject {

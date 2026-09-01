@@ -9,6 +9,121 @@ use chrono::{DateTime, Utc};
 use sqlx::{PgConnection, Row};
 use uuid::Uuid;
 
+pub async fn claim_channel_runtime_observer(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    installation_id: Uuid,
+    observer_token: &str,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"INSERT INTO channel_installation_runtime_observation (
+    installation_id, state, observed_at, error_code, error_summary, observer_token
+) VALUES ($1, 'starting', now(), NULL, NULL, $2)
+ON CONFLICT (installation_id) DO UPDATE SET
+    state = 'starting',
+    observed_at = now(),
+    error_code = NULL,
+    error_summary = NULL,
+    observer_token = EXCLUDED.observer_token,
+    updated_at = now()"#,
+    )
+    .bind(installation_id)
+    .bind(observer_token)
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+/// Writes an authoritative control-plane observation and transfers ownership
+/// of the row to `observer_token`. Use this for webhook ingress and explicit
+/// revoke/uninstall transitions; connection adapters use the token-fenced
+/// `observe_channel_runtime` path instead.
+pub async fn upsert_channel_runtime_observation(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    installation_id: Uuid,
+    observer_token: &str,
+    state: &str,
+    error_code: Option<&str>,
+    error_summary: Option<&str>,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"INSERT INTO channel_installation_runtime_observation (
+    installation_id, state, observed_at, error_code, error_summary, observer_token
+) VALUES ($1, $3, now(), $4, $5, $2)
+ON CONFLICT (installation_id) DO UPDATE SET
+    state = EXCLUDED.state,
+    observed_at = EXCLUDED.observed_at,
+    error_code = EXCLUDED.error_code,
+    error_summary = EXCLUDED.error_summary,
+    observer_token = EXCLUDED.observer_token,
+    updated_at = now()"#,
+    )
+    .bind(installation_id)
+    .bind(observer_token)
+    .bind(state)
+    .bind(error_code)
+    .bind(error_summary)
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+pub async fn observe_channel_runtime(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    installation_id: Uuid,
+    observer_token: &str,
+    state: &str,
+    error_code: Option<&str>,
+    error_summary: Option<&str>,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"UPDATE channel_installation_runtime_observation
+SET state = $3,
+    observed_at = now(),
+    error_code = $4,
+    error_summary = $5,
+    updated_at = now()
+WHERE installation_id = $1
+  AND observer_token = $2"#,
+    )
+    .bind(installation_id)
+    .bind(observer_token)
+    .bind(state)
+    .bind(error_code)
+    .bind(error_summary)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn list_channel_runtime_observations(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    installation_ids: &[Uuid],
+) -> anyhow::Result<Vec<ChannelInstallationRuntimeObservation>> {
+    if installation_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(sqlx::query_as::<_, ChannelInstallationRuntimeObservation>(
+        r#"SELECT installation_id, state, observed_at, error_code, error_summary,
+       observer_token, updated_at
+FROM channel_installation_runtime_observation
+WHERE installation_id = ANY($1::uuid[])"#,
+    )
+    .bind(installation_ids)
+    .fetch_all(executor)
+    .await?)
+}
+
+pub async fn delete_channel_runtime_observation(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    installation_id: Uuid,
+) -> anyhow::Result<()> {
+    sqlx::query("DELETE FROM channel_installation_runtime_observation WHERE installation_id = $1")
+        .bind(installation_id)
+        .execute(executor)
+        .await?;
+    Ok(())
+}
+
 pub async fn acquire_channel_ws_lease(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     new_token: Option<&str>,
@@ -631,6 +746,10 @@ cleared_inbound_dedup AS (
 ),
 cleared_receive_state AS (
     DELETE FROM channel_receive_state WHERE installation_id IN (SELECT id FROM doomed)
+),
+cleared_runtime_observations AS (
+    DELETE FROM channel_installation_runtime_observation
+    WHERE installation_id IN (SELECT id FROM doomed)
 ),
 cleared_audit AS (
     -- Hard delete: purge audit rows rather than detaching them into permanently
@@ -1557,6 +1676,10 @@ cleared_receive_state AS (
     DELETE FROM channel_receive_state
     WHERE installation_id IN (SELECT id FROM dead)
 ),
+cleared_runtime_observations AS (
+    DELETE FROM channel_installation_runtime_observation
+    WHERE installation_id IN (SELECT id FROM dead)
+),
 detached_audit AS (
     -- Reclaim keeps the DETACH semantics: the workspace still exists, so a
     -- NULL-installation audit row stays meaningful for operator triage. The hard-
@@ -1614,6 +1737,10 @@ cleared_inbound_dedup AS (
 ),
 cleared_receive_state AS (
     DELETE FROM channel_receive_state
+    WHERE installation_id IN (SELECT id FROM doomed)
+),
+cleared_runtime_observations AS (
+    DELETE FROM channel_installation_runtime_observation
     WHERE installation_id IN (SELECT id FROM doomed)
 ),
 detached_audit AS (

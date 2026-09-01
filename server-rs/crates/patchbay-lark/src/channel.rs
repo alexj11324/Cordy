@@ -23,6 +23,7 @@ pub struct FeishuChannel {
     handler: Option<InboundHandler>,
     api: Arc<dyn ApiClient>,
     credentials: Arc<dyn CredentialsResolver>,
+    runtime_health: Option<patchbay_channel::RuntimeHealthReporter>,
 }
 
 #[async_trait]
@@ -46,7 +47,12 @@ impl Channel for FeishuChannel {
             })
         });
         self.connector
-            .run(ctx, self.installation.clone(), emit)
+            .run(
+                ctx,
+                self.installation.clone(),
+                emit,
+                self.runtime_health.clone(),
+            )
             .await
     }
 
@@ -155,6 +161,7 @@ fn feishu_factory(deps: FeishuChannelDeps) -> Factory {
                 handler: cfg.handler,
                 api: deps.api,
                 credentials: deps.credentials,
+                runtime_health: cfg.runtime_health,
             }) as Arc<dyn Channel>)
         })
     })

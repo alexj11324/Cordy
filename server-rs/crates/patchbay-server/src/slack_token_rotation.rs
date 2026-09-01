@@ -24,6 +24,15 @@ struct RefreshResponse {
     expires_in: i64,
 }
 
+#[derive(Debug, Deserialize)]
+struct AuthTestResponse {
+    ok: bool,
+    #[serde(default)]
+    error: String,
+}
+
+const MANAGED_SLACK_OBSERVER_TOKEN: &str = "managed:slack:webhook:v1";
+
 pub fn start(
     pool: sqlx::PgPool,
     cfg: &patchbay_config::Config,
@@ -91,66 +100,105 @@ async fn refresh_due_installations(
                 continue;
             }
         };
-        if cfg.transport != "webhook"
-            || cfg.refresh_token_encrypted.is_empty()
-            || !needs_rotation(cfg.token_expires_at, Utc::now())
-        {
+        if cfg.transport != "webhook" {
             continue;
         }
-        let token_box = secret_box.clone();
-        let decrypt = move |sealed: &[u8]| token_box.open(sealed).map_err(anyhow::Error::from);
-        let refresh_token = match patchbay_slack::config::decrypt_token(
-            &cfg.refresh_token_encrypted,
-            Some(&decrypt),
-        ) {
-            Ok(value) if !value.is_empty() => value,
-            Ok(_) => continue,
-            Err(error) => {
-                tracing::error!(%error, installation_id = %row.id, "failed to decrypt Slack refresh token");
-                continue;
-            }
-        };
-        let response = client
-            .post("https://slack.com/api/oauth.v2.access")
-            .basic_auth(client_id, Some(client_secret))
-            .form(&[
-                ("grant_type", "refresh_token"),
-                ("refresh_token", refresh_token.as_str()),
-            ])
-            .send()
+        let rotated_access_token = if !cfg.refresh_token_encrypted.is_empty()
+            && needs_rotation(cfg.token_expires_at, Utc::now())
+        {
+            match rotate_access_token(
+                pool,
+                client,
+                secret_box,
+                client_id,
+                client_secret,
+                row.id,
+                &cfg,
+            )
             .await
-            .and_then(reqwest::Response::error_for_status);
-        let refreshed = match response {
-            Ok(response) => match response.json::<RefreshResponse>().await {
-                Ok(value)
-                    if value.ok
-                        && !value.access_token.is_empty()
-                        && !value.refresh_token.is_empty()
-                        && value.expires_in > 0 =>
-                {
-                    value
+            {
+                Ok(value) => value,
+                Err(error) => {
+                    tracing::warn!(%error, installation_id = %row.id, "Slack token rotation failed");
+                    None
                 }
-                Ok(value) => {
-                    tracing::warn!(installation_id = %row.id, error = value.error, "Slack token rotation rejected");
+            }
+        } else {
+            None
+        };
+        let access_token = match rotated_access_token {
+            Some(value) => value,
+            None => match decrypt_stored_token(secret_box, &cfg.bot_token_encrypted) {
+                Ok(value) if !value.is_empty() => value,
+                Ok(_) => {
+                    record_health(
+                        pool,
+                        row.id,
+                        "error",
+                        Some("credential_missing"),
+                        Some("The managed Slack access token is missing."),
+                    )
+                    .await;
                     continue;
                 }
                 Err(error) => {
-                    tracing::warn!(%error, installation_id = %row.id, "Slack token rotation response decode failed");
+                    tracing::error!(%error, installation_id = %row.id, "failed to decrypt Slack access token");
+                    record_health(
+                        pool,
+                        row.id,
+                        "error",
+                        Some("credential_decryption_failed"),
+                        Some("The managed Slack credential could not be read."),
+                    )
+                    .await;
                     continue;
                 }
             },
-            Err(error) => {
-                tracing::warn!(%error, installation_id = %row.id, "Slack token rotation request failed");
-                continue;
-            }
         };
-        let sealed_access = base64::engine::general_purpose::STANDARD
-            .encode(secret_box.seal(refreshed.access_token.as_bytes())?);
-        let sealed_refresh = base64::engine::general_purpose::STANDARD
-            .encode(secret_box.seal(refreshed.refresh_token.as_bytes())?);
-        let expires_at = Utc::now() + chrono::Duration::seconds(refreshed.expires_in);
-        let updated = sqlx::query(
-            r#"UPDATE channel_installation
+        probe_health(pool, client, row.id, &access_token).await;
+    }
+    Ok(())
+}
+
+async fn rotate_access_token(
+    pool: &sqlx::PgPool,
+    client: &reqwest::Client,
+    secret_box: &patchbay_util::secretbox::SecretBox,
+    client_id: &str,
+    client_secret: &str,
+    installation_id: uuid::Uuid,
+    cfg: &patchbay_slack::config::InstallConfig,
+) -> anyhow::Result<Option<String>> {
+    let refresh_token = decrypt_stored_token(secret_box, &cfg.refresh_token_encrypted)?;
+    if refresh_token.is_empty() {
+        return Ok(None);
+    }
+    let response = client
+        .post("https://slack.com/api/oauth.v2.access")
+        .basic_auth(client_id, Some(client_secret))
+        .form(&[
+            ("grant_type", "refresh_token"),
+            ("refresh_token", refresh_token.as_str()),
+        ])
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<RefreshResponse>()
+        .await?;
+    if !response.ok
+        || response.access_token.is_empty()
+        || response.refresh_token.is_empty()
+        || response.expires_in <= 0
+    {
+        anyhow::bail!("Slack rejected token rotation: {}", response.error);
+    }
+    let sealed_access = base64::engine::general_purpose::STANDARD
+        .encode(secret_box.seal(response.access_token.as_bytes())?);
+    let sealed_refresh = base64::engine::general_purpose::STANDARD
+        .encode(secret_box.seal(response.refresh_token.as_bytes())?);
+    let expires_at = Utc::now() + chrono::Duration::seconds(response.expires_in);
+    let updated = sqlx::query(
+        r#"UPDATE channel_installation
 SET config = config || jsonb_build_object(
         'bot_token_encrypted', $2::text,
         'refresh_token_encrypted', $3::text,
@@ -160,19 +208,102 @@ SET config = config || jsonb_build_object(
 WHERE id = $1
   AND status = 'active'
   AND config ->> 'refresh_token_encrypted' = $5::text"#,
-        )
-        .bind(row.id)
-        .bind(sealed_access)
-        .bind(sealed_refresh)
-        .bind(expires_at)
-        .bind(&cfg.refresh_token_encrypted)
-        .execute(pool)
-        .await?;
-        if updated.rows_affected() == 1 {
-            tracing::info!(installation_id = %row.id, %expires_at, "managed Slack token rotated");
+    )
+    .bind(installation_id)
+    .bind(sealed_access)
+    .bind(sealed_refresh)
+    .bind(expires_at)
+    .bind(&cfg.refresh_token_encrypted)
+    .execute(pool)
+    .await?;
+    if updated.rows_affected() != 1 {
+        return Ok(None);
+    }
+    tracing::info!(%installation_id, %expires_at, "managed Slack token rotated");
+    Ok(Some(response.access_token))
+}
+
+fn decrypt_stored_token(
+    secret_box: &patchbay_util::secretbox::SecretBox,
+    encrypted: &str,
+) -> anyhow::Result<String> {
+    let decrypt = |sealed: &[u8]| secret_box.open(sealed).map_err(anyhow::Error::from);
+    patchbay_slack::config::decrypt_token(encrypted, Some(&decrypt))
+}
+
+async fn probe_health(
+    pool: &sqlx::PgPool,
+    client: &reqwest::Client,
+    installation_id: uuid::Uuid,
+    access_token: &str,
+) {
+    let response = client
+        .post("https://slack.com/api/auth.test")
+        .bearer_auth(access_token)
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status);
+    match response {
+        Ok(response) => match response.json::<AuthTestResponse>().await {
+            Ok(value) if value.ok => {
+                record_health(pool, installation_id, "healthy", None, None).await;
+            }
+            Ok(value) => {
+                tracing::warn!(%installation_id, error = value.error, "managed Slack health probe rejected");
+                record_health(
+                    pool,
+                    installation_id,
+                    "error",
+                    Some("authentication_failed"),
+                    Some("Slack rejected the managed app credential."),
+                )
+                .await;
+            }
+            Err(error) => {
+                tracing::warn!(%error, %installation_id, "managed Slack health response decode failed");
+                record_health(
+                    pool,
+                    installation_id,
+                    "degraded",
+                    Some("health_probe_invalid_response"),
+                    Some("Slack returned an unreadable health response."),
+                )
+                .await;
+            }
+        },
+        Err(error) => {
+            tracing::warn!(%error, %installation_id, "managed Slack health probe failed");
+            record_health(
+                pool,
+                installation_id,
+                "degraded",
+                Some("health_probe_failed"),
+                Some("The managed Slack health probe could not reach Slack."),
+            )
+            .await;
         }
     }
-    Ok(())
+}
+
+async fn record_health(
+    pool: &sqlx::PgPool,
+    installation_id: uuid::Uuid,
+    state: &str,
+    error_code: Option<&str>,
+    error_summary: Option<&str>,
+) {
+    if let Err(error) = patchbay_db::queries::channel::upsert_channel_runtime_observation(
+        pool,
+        installation_id,
+        MANAGED_SLACK_OBSERVER_TOKEN,
+        state,
+        error_code,
+        error_summary,
+    )
+    .await
+    {
+        tracing::warn!(%error, %installation_id, "failed to record managed Slack health");
+    }
 }
 
 fn needs_rotation(expires_at: Option<DateTime<Utc>>, now: DateTime<Utc>) -> bool {

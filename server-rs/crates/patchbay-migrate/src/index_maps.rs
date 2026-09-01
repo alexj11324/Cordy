@@ -649,6 +649,10 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "474_linear_sync_inbox_pending_index",
         "idx_linear_sync_inbox_pending",
     ),
+    (
+        "482_channel_installation_runtime_observation_index",
+        "channel_installation_runtime_observation_uidx",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[

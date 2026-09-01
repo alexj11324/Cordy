@@ -13,7 +13,7 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use base64::Engine as _;
 use chrono::{DateTime, Utc};
-use patchbay_db::models::ChannelInstallation;
+use patchbay_db::models::{ChannelInstallation, ChannelInstallationRuntimeObservation};
 use patchbay_db::queries::{agent, channel, dingtalk};
 use patchbay_lark::client::ApiClient as _;
 use patchbay_middleware::workspace::WorkspaceContext;
@@ -301,8 +301,9 @@ fn installation_response(
     provider: Provider,
     row: ChannelInstallation,
     messaging: &crate::config::MessagingCapabilities,
+    observation: Option<&ChannelInstallationRuntimeObservation>,
 ) -> Value {
-    let runtime = runtime_observation(&row);
+    let runtime = runtime_observation(&row, observation);
     let mut value = json!({
         "id": row.id,
         "workspace_id": row.workspace_id,
@@ -352,31 +353,68 @@ fn provider_setup_mode(
     }
 }
 
-/// Projects the supervisor's durable lease observation into the public
-/// runtime contract. A future lease means one supervisor currently owns the
-/// installation and is attempting its transport loop; an expired/missing
-/// lease is offline. The setup capability keeps unverified providers out of
-/// the production-healthy presentation until their real handshake is signed
-/// off.
-fn runtime_observation(row: &ChannelInstallation) -> Value {
-    let now = Utc::now();
-    let (state, error_code, observed_at) = if row.status != "active" {
-        ("offline", Some("installation_revoked"), None)
-    } else if let Some(expires_at) = row.ws_lease_expires_at {
-        if expires_at > now {
-            ("healthy", None, Some(row.updated_at))
-        } else {
-            ("offline", Some("lease_expired"), Some(row.updated_at))
-        }
-    } else if (0..60).contains(&now.signed_duration_since(row.updated_at).num_seconds()) {
-        ("starting", None, Some(row.updated_at))
-    } else {
-        ("offline", Some("lease_missing"), Some(row.updated_at))
+/// Projects the adapter-reported platform observation into the public runtime
+/// contract. A lease only proves that a supervisor owns an attempt; it never
+/// proves that Slack sent `hello`, Telegram completed a poll, or another
+/// provider accepted the transport handshake.
+fn runtime_observation(
+    row: &ChannelInstallation,
+    observation: Option<&ChannelInstallationRuntimeObservation>,
+) -> Value {
+    if row.status != "active" {
+        return json!({
+            "state": "offline",
+            "observedAt": Value::Null,
+            "errorCode": "installation_revoked",
+            "errorSummary": Value::Null,
+        });
+    }
+    let Some(observation) = observation else {
+        let starting = row
+            .ws_lease_expires_at
+            .is_some_and(|expires_at| expires_at > Utc::now())
+            || (0..60).contains(
+                &Utc::now()
+                    .signed_duration_since(row.updated_at)
+                    .num_seconds(),
+            );
+        return json!({
+            "state": if starting { "starting" } else { "offline" },
+            "observedAt": Value::Null,
+            "errorCode": if starting { Value::Null } else { json!("runtime_unobserved") },
+            "errorSummary": if starting { Value::Null } else { json!("No platform handshake has been observed.") },
+        });
     };
+    let supervisor_observation = !observation.observer_token.starts_with("managed:")
+        && !observation.observer_token.starts_with("control:");
+    if observation.observer_token.starts_with("managed:")
+        && Utc::now().signed_duration_since(observation.observed_at) > chrono::Duration::minutes(15)
+    {
+        return json!({
+            "state": "offline",
+            "observedAt": crate::timefmt::rfc3339(observation.observed_at),
+            "errorCode": "health_observation_stale",
+            "errorSummary": "The hosted gateway has not refreshed this connection recently.",
+        });
+    }
+    if supervisor_observation
+        && matches!(observation.state.as_str(), "starting" | "healthy")
+        && row
+            .ws_lease_expires_at
+            .is_none_or(|expires_at| expires_at <= Utc::now())
+    {
+        return json!({
+            "state": "offline",
+            "observedAt": crate::timefmt::rfc3339(observation.observed_at),
+            "errorCode": "lease_expired",
+            "errorSummary": "The runtime that owned this connection is no longer active.",
+        });
+    }
     json!({
-        "state": state,
-        "observedAt": observed_at.map(crate::timefmt::rfc3339),
-        "errorCode": error_code,
+        "state": observation.state,
+        "observedAt": crate::timefmt::rfc3339(observation.observed_at),
+        "errorCode": observation.error_code,
+        "errorSummary": observation.error_summary,
     })
 }
 
@@ -390,29 +428,52 @@ async fn list(state: HandlerState, context: WorkspaceContext, provider: Provider
         Ok(value) => value,
         Err(response) => return response,
     };
-    match channel::list_channel_installations_by_workspace(
+    let rows = match channel::list_channel_installations_by_workspace(
         &state.pool,
         workspace_id,
         provider.channel_type(),
     )
     .await
     {
-        Ok(rows) => Json(json!({
-            "installations": rows.into_iter().map(|row| installation_response(provider, row, &state.public_config.messaging)).collect::<Vec<_>>(),
-            "configured": true,
-            "install_supported": state.public_config.messaging.setup_writable
-                && (!matches!(provider, Provider::Slack) || crate::slack_managed::configured(&state)),
-            "setup_mode": provider_setup_mode(provider, &state.public_config.messaging),
-        }))
-        .into_response(),
+        Ok(rows) => rows,
         Err(error) => {
             tracing::error!(%error, provider = provider.label(), "list connector installations failed");
-            error_response(
+            return error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to list installations",
-            )
+            );
         }
-    }
+    };
+    let installation_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let observations = match channel::list_channel_runtime_observations(
+        &state.pool,
+        &installation_ids,
+    )
+    .await
+    {
+        Ok(rows) => rows
+            .into_iter()
+            .map(|row| (row.installation_id, row))
+            .collect::<HashMap<_, _>>(),
+        Err(error) => {
+            tracing::error!(%error, provider = provider.label(), "list connector runtime observations failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to list installation health",
+            );
+        }
+    };
+    Json(json!({
+        "installations": rows.into_iter().map(|row| {
+            let observation = observations.get(&row.id);
+            installation_response(provider, row, &state.public_config.messaging, observation)
+        }).collect::<Vec<_>>(),
+        "configured": true,
+        "install_supported": state.public_config.messaging.setup_writable
+            && (!matches!(provider, Provider::Slack) || crate::slack_managed::configured(&state)),
+        "setup_mode": provider_setup_mode(provider, &state.public_config.messaging),
+    }))
+    .into_response()
 }
 
 macro_rules! list_handler {
@@ -593,10 +654,31 @@ async fn list_dingtalk(
     } else {
         None
     };
+    let installation_ids = rows.iter().map(|row| row.id).collect::<Vec<_>>();
+    let observations =
+        match channel::list_channel_runtime_observations(&state.pool, &installation_ids).await {
+            Ok(rows) => rows
+                .into_iter()
+                .map(|row| (row.installation_id, row))
+                .collect::<HashMap<_, _>>(),
+            Err(error) => {
+                tracing::error!(%error, "list DingTalk runtime observations failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to list installation health",
+                );
+            }
+        };
     let installations = rows
         .into_iter()
         .map(|row| {
-            dingtalk_installation_response(row, bindings.as_ref(), &state.public_config.messaging)
+            let observation = observations.get(&row.id);
+            dingtalk_installation_response(
+                row,
+                bindings.as_ref(),
+                &state.public_config.messaging,
+                observation,
+            )
         })
         .collect::<Vec<_>>();
     Json(json!({
@@ -612,10 +694,11 @@ fn dingtalk_installation_response(
     row: ChannelInstallation,
     bindings: Option<&HashMap<Uuid, Vec<String>>>,
     messaging: &crate::config::MessagingCapabilities,
+    observation: Option<&ChannelInstallationRuntimeObservation>,
 ) -> Value {
     let installation_id = row.id;
     dingtalk_installation_bindings(
-        installation_response(Provider::DingTalk, row, messaging),
+        installation_response(Provider::DingTalk, row, messaging, observation),
         installation_id,
         bindings,
     )
@@ -2010,10 +2093,41 @@ pub(crate) async fn revoke(
             return error_response(StatusCode::FORBIDDEN, "not allowed to manage this agent");
         }
     }
-    if channel::set_channel_installation_status(&state.pool, id, "revoked")
-        .await
-        .is_err()
+    let mut transaction = match state.pool.begin().await {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::error!(%error, installation_id = %id, "failed to begin installation revoke");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to revoke installation",
+            );
+        }
+    };
+    let revoked = channel::set_channel_installation_status(&mut *transaction, id, "revoked").await;
+    if !matches!(revoked, Ok(1)) {
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to revoke installation",
+        );
+    }
+    if let Err(error) = channel::upsert_channel_runtime_observation(
+        &mut *transaction,
+        id,
+        "control:revoked",
+        "offline",
+        Some("installation_revoked"),
+        Some("The integration was disconnected."),
+    )
+    .await
     {
+        tracing::error!(%error, installation_id = %id, "failed to record revoked runtime state");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to revoke installation",
+        );
+    }
+    if let Err(error) = transaction.commit().await {
+        tracing::error!(%error, installation_id = %id, "failed to commit installation revoke");
         return error_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             "failed to revoke installation",
@@ -2249,6 +2363,7 @@ async fn install_dingtalk(
                 Provider::DingTalk,
                 row,
                 &state.public_config.messaging,
+                None,
             ))
             .into_response()
         }
@@ -2335,6 +2450,7 @@ async fn install_wecom(
                 Provider::WeCom,
                 row,
                 &state.public_config.messaging,
+                None,
             ))
             .into_response()
         }
@@ -2547,6 +2663,7 @@ async fn install_telegram(
                 Provider::Telegram,
                 row,
                 &state.public_config.messaging,
+                None,
             ))
             .into_response()
         }
@@ -2814,6 +2931,7 @@ async fn install_slack(
                 Provider::Slack,
                 row,
                 &state.public_config.messaging,
+                None,
             ))
             .into_response()
         }
@@ -2867,7 +2985,141 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use axum::http::Request;
+    use chrono::Duration;
     use tower::ServiceExt;
+
+    fn runtime_test_installation(
+        status: &str,
+        updated_at: DateTime<Utc>,
+        lease_expires_at: Option<DateTime<Utc>>,
+    ) -> ChannelInstallation {
+        ChannelInstallation {
+            agent_id: None,
+            channel_type: "telegram".into(),
+            config: json!({}),
+            created_at: updated_at,
+            id: Uuid::now_v7(),
+            installed_at: updated_at,
+            installer_user_id: Uuid::now_v7(),
+            status: status.into(),
+            updated_at,
+            workspace_id: Uuid::now_v7(),
+            ws_lease_expires_at: lease_expires_at,
+            ws_lease_token: None,
+        }
+    }
+
+    fn runtime_test_observation(
+        installation_id: Uuid,
+        observer_token: &str,
+        state: &str,
+    ) -> ChannelInstallationRuntimeObservation {
+        let now = Utc::now();
+        ChannelInstallationRuntimeObservation {
+            installation_id,
+            state: state.into(),
+            observed_at: now,
+            error_code: None,
+            error_summary: None,
+            observer_token: observer_token.into(),
+            updated_at: now,
+        }
+    }
+
+    #[test]
+    fn runtime_lease_without_platform_observation_is_only_starting() {
+        let now = Utc::now();
+        let installation =
+            runtime_test_installation("active", now, Some(now + Duration::minutes(1)));
+
+        let runtime = runtime_observation(&installation, None);
+
+        assert_eq!(runtime["state"], "starting");
+        assert!(runtime["observedAt"].is_null());
+        assert!(runtime["errorCode"].is_null());
+    }
+
+    #[test]
+    fn runtime_supervisor_observation_requires_a_current_lease() {
+        let now = Utc::now();
+        let installation = runtime_test_installation(
+            "active",
+            now - Duration::minutes(5),
+            Some(now - Duration::seconds(1)),
+        );
+        let observation = runtime_test_observation(installation.id, "lease-token", "healthy");
+
+        let runtime = runtime_observation(&installation, Some(&observation));
+
+        assert_eq!(runtime["state"], "offline");
+        assert_eq!(runtime["errorCode"], "lease_expired");
+    }
+
+    #[test]
+    fn runtime_supervisor_observation_with_a_current_lease_is_preserved() {
+        let now = Utc::now();
+        let installation =
+            runtime_test_installation("active", now, Some(now + Duration::minutes(1)));
+        let observation = runtime_test_observation(installation.id, "lease-token", "healthy");
+
+        let runtime = runtime_observation(&installation, Some(&observation));
+
+        assert_eq!(runtime["state"], "healthy");
+        assert!(runtime["errorCode"].is_null());
+    }
+
+    #[test]
+    fn runtime_supervisor_degradation_is_preserved_between_retries() {
+        let now = Utc::now();
+        let installation = runtime_test_installation("active", now - Duration::minutes(5), None);
+        let mut observation = runtime_test_observation(installation.id, "lease-token", "degraded");
+        observation.error_code = Some("transport_error".into());
+
+        let runtime = runtime_observation(&installation, Some(&observation));
+
+        assert_eq!(runtime["state"], "degraded");
+        assert_eq!(runtime["errorCode"], "transport_error");
+    }
+
+    #[test]
+    fn runtime_managed_webhook_observation_does_not_require_a_local_lease() {
+        let now = Utc::now();
+        let installation = runtime_test_installation("active", now - Duration::minutes(5), None);
+        let observation =
+            runtime_test_observation(installation.id, "managed:slack:webhook:v1", "healthy");
+
+        let runtime = runtime_observation(&installation, Some(&observation));
+
+        assert_eq!(runtime["state"], "healthy");
+    }
+
+    #[test]
+    fn runtime_managed_webhook_observation_expires_without_a_gateway_probe() {
+        let now = Utc::now();
+        let installation = runtime_test_installation("active", now - Duration::minutes(20), None);
+        let mut observation =
+            runtime_test_observation(installation.id, "managed:slack:webhook:v1", "healthy");
+        observation.observed_at = now - Duration::minutes(16);
+        observation.updated_at = observation.observed_at;
+
+        let runtime = runtime_observation(&installation, Some(&observation));
+
+        assert_eq!(runtime["state"], "offline");
+        assert_eq!(runtime["errorCode"], "health_observation_stale");
+    }
+
+    #[test]
+    fn runtime_revocation_overrides_a_stale_healthy_observation() {
+        let now = Utc::now();
+        let installation = runtime_test_installation("revoked", now, None);
+        let observation =
+            runtime_test_observation(installation.id, "managed:slack:webhook:v1", "healthy");
+
+        let runtime = runtime_observation(&installation, Some(&observation));
+
+        assert_eq!(runtime["state"], "offline");
+        assert_eq!(runtime["errorCode"], "installation_revoked");
+    }
 
     #[test]
     fn public_projections_never_include_credentials() {
