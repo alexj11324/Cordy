@@ -153,7 +153,7 @@ func TestBusinessMetricsRegistryExposesAllFamilies(t *testing.T) {
 	exerciseEvent(m, analytics.EventIssueCreated, map[string]any{"source": "manual", "platform": "web"})
 	exerciseEvent(m, analytics.EventChatMessageSent, map[string]any{"platform": "web"})
 	exerciseEvent(m, analytics.EventAgentCreated, map[string]any{"runtime_mode": "local", "source": "manual"})
-	exerciseEvent(m, analytics.EventSquadCreated, nil)
+	exerciseEvent(m, analytics.EventTeamCreated, nil)
 	exerciseEvent(m, analytics.EventAutopilotCreated, map[string]any{"cadence": "manual"})
 	exerciseEvent(m, analytics.EventIssueExecuted, map[string]any{"source": "manual"})
 	exerciseEvent(m, analytics.EventRuntimeRegistered, map[string]any{"runtime_mode": "local", "provider": "claude"})

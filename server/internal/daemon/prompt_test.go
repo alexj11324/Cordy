@@ -110,19 +110,19 @@ func TestIssuePromptsKeepSourceContextRuleOutOfPerTurnMessage(t *testing.T) {
 	}
 }
 
-// TestBuildQuickCreatePromptAssigneeIncludesSquads locks in the MUL-2165
+// TestBuildQuickCreatePromptAssigneeIncludesTeams locks in the MUL-2165
 // fix: the assignee-resolution rules must tell the agent to consult the
-// squad list alongside members and agents. Before this, a quick-create
-// input like "assign to <SquadName>" silently fell through to
-// "Unrecognized assignee" because squads were never queried.
-func TestBuildQuickCreatePromptAssigneeIncludesSquads(t *testing.T) {
+// team list alongside members and agents. Before this, a quick-create
+// input like "assign to <TeamName>" silently fell through to
+// "Unrecognized assignee" because teams were never queried.
+func TestBuildQuickCreatePromptAssigneeIncludesTeams(t *testing.T) {
 	out := buildQuickCreatePrompt(Task{QuickCreatePrompt: "fix the login button color"})
 	mustContain := []string{
-		"patchbay squad list",
-		"Squads are first-class assignees",
+		"patchbay team list",
+		"Teams are first-class assignees",
 		"Treat bare @-routing as an assignee directive",
 		"让 @独立团 review 这个 PR",
-		"pass the squad's `id` as `--assignee-id`",
+		"pass the team's `id` as `--assignee-id`",
 	}
 	for _, s := range mustContain {
 		if !strings.Contains(out, s) {
@@ -131,48 +131,48 @@ func TestBuildQuickCreatePromptAssigneeIncludesSquads(t *testing.T) {
 	}
 }
 
-// TestBuildQuickCreatePromptSquadDefaultsToSquad locks in the MUL-2203
-// fix: when the picker was a squad, the task runs on the squad's leader
+// TestBuildQuickCreatePromptTeamDefaultsToTeam locks in the MUL-2203
+// fix: when the picker was a team, the task runs on the team's leader
 // agent, but the default assignee for issues created by this run must
-// point at the SQUAD's UUID — not the leader agent's UUID. The previous
-// "default to YOURSELF" instruction made squad-created issues land under
-// the leader, hiding them from the squad's delegation flow.
-func TestBuildQuickCreatePromptSquadDefaultsToSquad(t *testing.T) {
+// point at the TEAM's UUID — not the leader agent's UUID. The previous
+// "default to YOURSELF" instruction made team-created issues land under
+// the leader, hiding them from the team's delegation flow.
+func TestBuildQuickCreatePromptTeamDefaultsToTeam(t *testing.T) {
 	const (
-		squadID   = "aaaa1111-2222-3333-4444-555555555555"
-		squadName = "独立团"
+		teamID   = "aaaa1111-2222-3333-4444-555555555555"
+		teamName = "独立团"
 		leaderID  = "bbbb1111-2222-3333-4444-666666666666"
 	)
 	out := buildQuickCreatePrompt(Task{
 		QuickCreatePrompt: "fix the login button color",
 		Agent:             &AgentData{ID: leaderID, Name: "leader-agent"},
-		SquadID:           squadID,
-		SquadName:         squadName,
+		TeamID:           teamID,
+		TeamName:         teamName,
 	})
 
-	// The default-assignee instruction must point at the squad UUID.
-	if !strings.Contains(out, "--assignee-id \""+squadID+"\"") {
-		t.Errorf("buildQuickCreatePrompt with SquadID must default to the squad's UUID, got:\n%s", out)
+	// The default-assignee instruction must point at the team UUID.
+	if !strings.Contains(out, "--assignee-id \""+teamID+"\"") {
+		t.Errorf("buildQuickCreatePrompt with TeamID must default to the team's UUID, got:\n%s", out)
 	}
 	// And it must NOT tell the agent to default to itself (the leader).
 	if strings.Contains(out, "--assignee-id \""+leaderID+"\"") {
-		t.Errorf("buildQuickCreatePrompt with SquadID must NOT default to the leader agent's UUID, got:\n%s", out)
+		t.Errorf("buildQuickCreatePrompt with TeamID must NOT default to the leader agent's UUID, got:\n%s", out)
 	}
-	// The squad name should appear in the instruction so the agent has
+	// The team name should appear in the instruction so the agent has
 	// human-readable context for the routing decision.
-	if !strings.Contains(out, squadName) {
-		t.Errorf("buildQuickCreatePrompt with SquadID should mention the squad name %q, got:\n%s", squadName, out)
+	if !strings.Contains(out, teamName) {
+		t.Errorf("buildQuickCreatePrompt with TeamID should mention the team name %q, got:\n%s", teamName, out)
 	}
-	// And the prompt must explicitly call out the squad-vs-leader rule
+	// And the prompt must explicitly call out the team-vs-leader rule
 	// so the agent does not silently regress to "default to YOURSELF".
 	mustContain := []string{
-		"picker SQUAD",
-		"running on the squad's behalf",
+		"picker TEAM",
+		"running on the team's behalf",
 		"do not assign it to your own agent UUID",
 	}
 	for _, s := range mustContain {
 		if !strings.Contains(out, s) {
-			t.Errorf("buildQuickCreatePrompt with SquadID missing %q\n--- output ---\n%s", s, out)
+			t.Errorf("buildQuickCreatePrompt with TeamID missing %q\n--- output ---\n%s", s, out)
 		}
 	}
 }
@@ -282,13 +282,13 @@ func TestBuildQuickCreatePromptParentPinning(t *testing.T) {
 	}
 }
 
-// TestBuildPromptSquadLeaderNoActionFailureFallback locks the escape hatch added
+// TestBuildPromptTeamLeaderNoActionFailureFallback locks the escape hatch added
 // in MUL-6622 / GH #7487. The comment prohibition is conditional on the
-// `squad activity` call succeeding — the server only rejects a leader comment
+// `team activity` call succeeding — the server only rejects a leader comment
 // once the no_action activity exists — so a failed call must not end the turn in
 // silence. The fallback is capped at ONE comment so it cannot collide with the
 // one-comment-per-turn rule.
-func TestBuildPromptSquadLeaderNoActionFailureFallback(t *testing.T) {
+func TestBuildPromptTeamLeaderNoActionFailureFallback(t *testing.T) {
 	out := BuildPrompt(Task{
 		IssueID:               "issue-123",
 		TriggerCommentID:      "comment-456",
@@ -298,7 +298,7 @@ func TestBuildPromptSquadLeaderNoActionFailureFallback(t *testing.T) {
 		IsLeaderTask:          true,
 		LeaderRoleResolved:    true,
 		Agent: &AgentData{
-			Instructions: "Some instructions\n\n## Squad Operating Protocol\n\nYou are the LEADER...",
+			Instructions: "Some instructions\n\n## Team Operating Protocol\n\nYou are the LEADER...",
 		},
 	}, "claude")
 
@@ -308,19 +308,19 @@ func TestBuildPromptSquadLeaderNoActionFailureFallback(t *testing.T) {
 		"does not license a second one",
 	} {
 		if !strings.Contains(out, want) {
-			t.Errorf("squad leader no_action rule must contain %q, got:\n%s", want, out)
+			t.Errorf("team leader no_action rule must contain %q, got:\n%s", want, out)
 		}
 	}
 }
 
-// TestBuildPromptSquadLeaderNoActionForMemberTrigger verifies that the
-// squad leader no_action prohibition is injected in the per-turn prompt
+// TestBuildPromptTeamLeaderNoActionForMemberTrigger verifies that the
+// team leader no_action prohibition is injected in the per-turn prompt
 // regardless of whether the triggering comment was posted by an agent or
 // a member. This was the root cause of the "LGTM is a pure acknowledgment
 // — no reply needed. Exiting silently." noise comment: the prohibition
 // only fired for agent-triggered comments, so member-triggered ones
 // (like "LGTM") bypassed it.
-func TestBuildPromptSquadLeaderNoActionForMemberTrigger(t *testing.T) {
+func TestBuildPromptTeamLeaderNoActionForMemberTrigger(t *testing.T) {
 	task := Task{
 		IssueID:               "issue-123",
 		TriggerCommentID:      "comment-456",
@@ -330,21 +330,21 @@ func TestBuildPromptSquadLeaderNoActionForMemberTrigger(t *testing.T) {
 		IsLeaderTask:          true,
 		LeaderRoleResolved:    true,
 		Agent: &AgentData{
-			Instructions: "Some instructions\n\n## Squad Operating Protocol\n\nYou are the LEADER...",
+			Instructions: "Some instructions\n\n## Team Operating Protocol\n\nYou are the LEADER...",
 		},
 	}
 	out := BuildPrompt(task, "claude")
-	if !strings.Contains(out, "Squad leader no_action rule") {
-		t.Errorf("buildCommentPrompt must inject squad leader no_action rule for member-triggered comments, got:\n%s", out)
+	if !strings.Contains(out, "Team leader no_action rule") {
+		t.Errorf("buildCommentPrompt must inject team leader no_action rule for member-triggered comments, got:\n%s", out)
 	}
 	if !strings.Contains(out, "DO NOT post any comment") {
-		t.Errorf("buildCommentPrompt must contain DO NOT post prohibition for member-triggered squad leader, got:\n%s", out)
+		t.Errorf("buildCommentPrompt must contain DO NOT post prohibition for member-triggered team leader, got:\n%s", out)
 	}
 }
 
-// TestBuildPromptSquadLeaderNoActionForAgentTrigger verifies the rule also
+// TestBuildPromptTeamLeaderNoActionForAgentTrigger verifies the rule also
 // fires for agent-triggered comments (the original path that already worked).
-func TestBuildPromptSquadLeaderNoActionForAgentTrigger(t *testing.T) {
+func TestBuildPromptTeamLeaderNoActionForAgentTrigger(t *testing.T) {
 	task := Task{
 		IssueID:               "issue-123",
 		TriggerCommentID:      "comment-456",
@@ -354,17 +354,17 @@ func TestBuildPromptSquadLeaderNoActionForAgentTrigger(t *testing.T) {
 		IsLeaderTask:          true,
 		LeaderRoleResolved:    true,
 		Agent: &AgentData{
-			Instructions: "Some instructions\n\n## Squad Operating Protocol\n\nYou are the LEADER...",
+			Instructions: "Some instructions\n\n## Team Operating Protocol\n\nYou are the LEADER...",
 		},
 	}
 	out := BuildPrompt(task, "claude")
-	if !strings.Contains(out, "Squad leader no_action rule") {
-		t.Errorf("buildCommentPrompt must inject squad leader no_action rule for agent-triggered comments, got:\n%s", out)
+	if !strings.Contains(out, "Team leader no_action rule") {
+		t.Errorf("buildCommentPrompt must inject team leader no_action rule for agent-triggered comments, got:\n%s", out)
 	}
 }
 
-// TestTaskIsSquadLeaderReadsProtocolFields pins the role signal to the wire
-// fields a current server sets when (and only when) it injects a squad-leader
+// TestTaskIsTeamLeaderReadsProtocolFields pins the role signal to the wire
+// fields a current server sets when (and only when) it injects a team-leader
 // briefing, and pins the legacy fallback to what BOTH pre-capability server
 // shapes require: those before #4951 (briefing injected, is_leader_task never
 // sent) and those after it (flag sent, but no guarantee a briefing came with
@@ -373,16 +373,16 @@ func TestBuildPromptSquadLeaderNoActionForAgentTrigger(t *testing.T) {
 // Two regressions live in this table. The "current" instructions-only row is
 // MUL-5811 itself: the previous implementation grepped Instructions for the
 // briefing heading, so any agent whose own instructions used that heading was
-// promoted to squad leader. The "legacy" rows are the inverse — reading the
+// promoted to team leader. The "legacy" rows are the inverse — reading the
 // fields unconditionally would demote a real leader on an un-upgraded server
 // to a plain worker and drop the whole operating protocol.
-func TestTaskIsSquadLeaderReadsProtocolFields(t *testing.T) {
+func TestTaskIsTeamLeaderReadsProtocolFields(t *testing.T) {
 	t.Parallel()
 
 	// What an agent's Instructions look like once the server has appended the
-	// briefing — and what an ordinary agent that merely writes about squads
+	// briefing — and what an ordinary agent that merely writes about teams
 	// looks like. They are indistinguishable by text, which is the point.
-	const briefed = "Some instructions\n\n## Squad Operating Protocol\n\nYou are the LEADER..."
+	const briefed = "Some instructions\n\n## Team Operating Protocol\n\nYou are the LEADER..."
 	const plain = "You are a regular agent."
 
 	cases := []struct {
@@ -391,15 +391,15 @@ func TestTaskIsSquadLeaderReadsProtocolFields(t *testing.T) {
 		want bool
 	}{
 		// --- current server: leader_role_resolved advertises that
-		// is_leader_task / squad_id are authoritative ---
+		// is_leader_task / team_id are authoritative ---
 		{
 			name: "current: issue-bound leader task",
 			task: Task{LeaderRoleResolved: true, IsLeaderTask: true, Agent: &AgentData{Instructions: briefed}},
 			want: true,
 		},
 		{
-			name: "current: quick-create routed through a squad picker",
-			task: Task{LeaderRoleResolved: true, SquadID: "5f7f7c12-b579-4c6d-aaa0-8ae1d7e72b61", Agent: &AgentData{Instructions: briefed}},
+			name: "current: quick-create routed through a team picker",
+			task: Task{LeaderRoleResolved: true, TeamID: "5f7f7c12-b579-4c6d-aaa0-8ae1d7e72b61", Agent: &AgentData{Instructions: briefed}},
 			want: true,
 		},
 		{
@@ -413,7 +413,7 @@ func TestTaskIsSquadLeaderReadsProtocolFields(t *testing.T) {
 			want: false,
 		},
 		{
-			// Briefing withheld by the claim's defensive gate (squad deleted /
+			// Briefing withheld by the claim's defensive gate (team deleted /
 			// leader swapped): the server clears the flag, so no leader role.
 			name: "current: withheld briefing leaves no leader signal",
 			task: Task{LeaderRoleResolved: true, Agent: &AgentData{Instructions: plain}},
@@ -444,8 +444,8 @@ func TestTaskIsSquadLeaderReadsProtocolFields(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			if got := taskIsSquadLeader(tc.task); got != tc.want {
-				t.Fatalf("taskIsSquadLeader(%s) = %v, want %v", tc.name, got, tc.want)
+			if got := taskIsTeamLeader(tc.task); got != tc.want {
+				t.Fatalf("taskIsTeamLeader(%s) = %v, want %v", tc.name, got, tc.want)
 			}
 		})
 	}
@@ -453,8 +453,8 @@ func TestTaskIsSquadLeaderReadsProtocolFields(t *testing.T) {
 
 // TestBuildPromptProtocolHeadingInInstructionsIsNotALeader is the end-to-end
 // negative regression for MUL-5811: on a current server, a plain agent that
-// happens to document a "## Squad Operating Protocol" section in its own
-// instructions must get the ordinary comment prompt — no squad activity
+// happens to document a "## Team Operating Protocol" section in its own
+// instructions must get the ordinary comment prompt — no team activity
 // obligation, no silent-exit licence, and the unconditional reply imperative
 // intact.
 func TestBuildPromptProtocolHeadingInInstructionsIsNotALeader(t *testing.T) {
@@ -469,18 +469,18 @@ func TestBuildPromptProtocolHeadingInInstructionsIsNotALeader(t *testing.T) {
 		LeaderRoleResolved:    true,
 		Agent: &AgentData{
 			Name:         "Docs writer",
-			Instructions: "I document squads.\n\n## Squad Operating Protocol\n\nHow leaders dispatch work...",
+			Instructions: "I document teams.\n\n## Team Operating Protocol\n\nHow leaders dispatch work...",
 		},
 	}, "claude")
 
 	for _, banned := range []string{
-		"Squad leader no_action rule",
-		"patchbay squad activity",
+		"Team leader no_action rule",
+		"patchbay team activity",
 		"DO NOT post any comment",
 		"Unless your outcome is `no_action`",
 	} {
 		if strings.Contains(out, banned) {
-			t.Fatalf("ordinary agent prompt leaked squad-leader rule %q\n---\n%s", banned, out)
+			t.Fatalf("ordinary agent prompt leaked team-leader rule %q\n---\n%s", banned, out)
 		}
 	}
 	if !strings.Contains(out, "Post your reply as a comment") {
@@ -491,7 +491,7 @@ func TestBuildPromptProtocolHeadingInInstructionsIsNotALeader(t *testing.T) {
 // TestBuildPromptLegacyServerKeepsBriefingBasedLeaderRole is the other half of
 // the compatibility contract. A server predating `leader_role_resolved` still
 // injects the briefing but never sends is_leader_task on claim (#4951), so an
-// upgraded daemon that trusted the fields alone would demote a real squad
+// upgraded daemon that trusted the fields alone would demote a real team
 // leader to a plain worker and drop the entire operating protocol. Absent
 // capability must keep the legacy briefing-marker inference.
 func TestBuildPromptLegacyServerKeepsBriefingBasedLeaderRole(t *testing.T) {
@@ -507,13 +507,13 @@ func TestBuildPromptLegacyServerKeepsBriefingBasedLeaderRole(t *testing.T) {
 		// neither, and the injected briefing is the only evidence it produced.
 		Agent: &AgentData{
 			Name:         "Lead",
-			Instructions: "You lead the team.\n\n## Squad Operating Protocol\n\nYou are the LEADER...",
+			Instructions: "You lead the team.\n\n## Team Operating Protocol\n\nYou are the LEADER...",
 		},
 	}, "claude")
 
 	for _, want := range []string{
-		"Squad leader no_action rule",
-		"patchbay squad activity",
+		"Team leader no_action rule",
+		"patchbay team activity",
 		"DO NOT post any comment",
 	} {
 		if !strings.Contains(out, want) {
@@ -1118,9 +1118,9 @@ func TestBuildPromptOmitsActiveSiblingRunsForChatTask(t *testing.T) {
 	}
 }
 
-// TestBuildPromptNonSquadLeaderNoRule verifies that non-squad-leader agents
-// do NOT get the squad leader no_action rule injected.
-func TestBuildPromptNonSquadLeaderNoRule(t *testing.T) {
+// TestBuildPromptNonTeamLeaderNoRule verifies that non-team-leader agents
+// do NOT get the team leader no_action rule injected.
+func TestBuildPromptNonTeamLeaderNoRule(t *testing.T) {
 	task := Task{
 		IssueID:               "issue-123",
 		TriggerCommentID:      "comment-456",
@@ -1128,12 +1128,12 @@ func TestBuildPromptNonSquadLeaderNoRule(t *testing.T) {
 		TriggerAuthorType:     "member",
 		TriggerAuthorName:     "Bohan",
 		Agent: &AgentData{
-			Instructions: "Some instructions without the squad marker",
+			Instructions: "Some instructions without the team marker",
 		},
 	}
 	out := BuildPrompt(task, "claude")
-	if strings.Contains(out, "Squad leader no_action rule") {
-		t.Errorf("buildCommentPrompt must NOT inject squad leader no_action rule for non-squad-leader agents, got:\n%s", out)
+	if strings.Contains(out, "Team leader no_action rule") {
+		t.Errorf("buildCommentPrompt must NOT inject team leader no_action rule for non-team-leader agents, got:\n%s", out)
 	}
 }
 

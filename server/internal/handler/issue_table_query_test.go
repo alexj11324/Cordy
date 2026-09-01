@@ -177,7 +177,7 @@ func TestIssueTableProjectScopeAssigneeTypes(t *testing.T) {
 		Scope: issueTableScope{
 			Kind:          "project",
 			ProjectID:     "00000000-0000-0000-0000-000000000001",
-			AssigneeTypes: []string{"agent", "squad"},
+			AssigneeTypes: []string{"agent", "team"},
 		},
 		Sort: issueTableSortRequest{Field: "position", Direction: "asc"},
 	}

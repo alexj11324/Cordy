@@ -63,7 +63,7 @@ describe("issueMatchesListFilter", () => {
       issueMatchesListFilter(
         makeIssue({ assignee_type: null, assignee_id: null }),
         "workspace:agents",
-        { assignee_types: ["agent", "squad"] },
+        { assignee_types: ["agent", "team"] },
       ),
     ).toBe(false);
   });

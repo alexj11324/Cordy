@@ -13,14 +13,14 @@ export type RunConfirmIntent =
   | {
       issueIds: [string];
       mode: "assign";
-      assigneeType: "agent" | "squad";
+      assigneeType: "agent" | "team";
       assigneeId: string;
     }
   | {
       issueIds: [string];
       mode: "promote";
       status: string;
-      assigneeType: "agent" | "squad";
+      assigneeType: "agent" | "team";
       assigneeId: string;
     };
 
@@ -58,7 +58,7 @@ const NEVER_STARTS = ["backlog", "done", "cancelled"];
  * directly. Pure so every entry point — issue detail, context menu, table row —
  * routes on one answer instead of re-deriving it (MUL-6463).
  *
- * - **assign**: giving the issue an agent/squad owner. Skipped only when the
+ * - **assign**: giving the issue an agent/team owner. Skipped only when the
  *   issue is KNOWN to be parked, because assigning into the backlog category
  *   never starts a run (`server/internal/service/issue_trigger.go`) and the
  *   dialog would promise something that cannot happen.
@@ -79,7 +79,7 @@ export function runConfirmIntent(
   const parked = issueCategory === "backlog";
 
   if (
-    (updates.assignee_type === "agent" || updates.assignee_type === "squad") &&
+    (updates.assignee_type === "agent" || updates.assignee_type === "team") &&
     updates.assignee_id &&
     !parked
   ) {
@@ -97,7 +97,7 @@ export function runConfirmIntent(
     updates.status !== issue.status &&
     // Unknown counts as possibly-parked: the write may promote, so confirm.
     (parked || issueCategory === null) &&
-    (owner === "agent" || owner === "squad") &&
+    (owner === "agent" || owner === "team") &&
     issue.assignee_id
   ) {
     const target = resolveStatusCategory(updates.status, undefined, catalog);

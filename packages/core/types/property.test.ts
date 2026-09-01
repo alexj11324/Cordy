@@ -75,9 +75,9 @@ describe("parseActorRef", () => {
   });
 
   it("rejects kinds outside the V1 range", () => {
-    // Agents and squads are assignable but deliberately not referenceable.
+    // Agents and teams are assignable but deliberately not referenceable.
     expect(parseActorRef(`agent:${AGENT}`)).toBeNull();
-    expect(parseActorRef(`squad:${AGENT}`)).toBeNull();
+    expect(parseActorRef(`team:${AGENT}`)).toBeNull();
     expect(parseActorRef(`user:${MEMBER}`)).toBeNull();
   });
 

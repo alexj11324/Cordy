@@ -49,7 +49,7 @@ endpoint-specific concurrency rules.
 
 The migrated slice is Issue read/content update and Comment read/create. Context
 and Storage remain Plugin extensions; Hook and invocation delivery remain on
-the bridge. Projects, Members, Issue search/create/transition, Agents, Squads,
+the bridge. Projects, Members, Issue search/create/transition, Agents, Teams,
 Skills, Tasks/Runs, and Autopilots are subsequent vertical slices. Each slice
 adds its Public contract first, then explicitly opts the safe Plugin subset into
 the capability ledger.

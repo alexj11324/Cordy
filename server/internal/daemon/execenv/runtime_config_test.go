@@ -115,7 +115,7 @@ func TestBriefHasNoParentNotificationGuidance(t *testing.T) {
 			"`@mention` the parent's assignee",
 			"`mention://agent/<id>`",
 			"`mention://member/<id>`",
-			"`mention://squad/<id>`",
+			"`mention://team/<id>`",
 			// Intermediate "do NOT do it yourself" framing (PR #3055
 			// before Bohan's call) — also out per product direction.
 			"**Do NOT post your own parent-notification comment.**",
@@ -129,7 +129,7 @@ func TestBriefHasNoParentNotificationGuidance(t *testing.T) {
 			// come back either.
 			"| Parent assignee | Parent status |",
 			"The same agent as yourself",
-			"| Member or squad |",
+			"| Member or team |",
 			"### A. Notify the parent",
 			"### B. Choose",
 			"When this issue has `parent_issue_id`:",
@@ -267,9 +267,9 @@ func TestStatusRuleIsFactJudgmentAtBothMoments(t *testing.T) {
 		t.Errorf("the exit-side status check must be anchored inside step 5\n---\n%s", step5)
 	}
 
-	// The squad-leader bullet must not leak into the ordinary path.
+	// The team-leader bullet must not leak into the ordinary path.
 	if strings.Contains(out, "dispatching members is not delivery") {
-		t.Errorf("ordinary-agent brief must not carry the squad-leader status bullet:\n%s", out)
+		t.Errorf("ordinary-agent brief must not carry the team-leader status bullet:\n%s", out)
 	}
 }
 
@@ -463,17 +463,17 @@ func TestIssueWorkflowHonorsAgentIdentity(t *testing.T) {
 	}
 }
 
-// A squad leader's dispatch turn must not read as completion: the end-of-turn
+// A team leader's dispatch turn must not read as completion: the end-of-turn
 // fact is in_progress, and in_review waits for the re-trigger that confirms
 // the overall goal is met. Without this bullet the general rule's "delivered →
 // in_review" reading would let a leader close out the parent on the very turn
 // it hands work to members.
-func TestSquadLeaderIssueWorkflowKeepsParentInProgress(t *testing.T) {
+func TestTeamLeaderIssueWorkflowKeepsParentInProgress(t *testing.T) {
 	t.Parallel()
 	const issueID = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
 	out := buildMetaSkillContent("claude", TaskContextForEnv{
 		IssueID:       issueID,
-		IsSquadLeader: true,
+		IsTeamLeader: true,
 	})
 
 	for _, want := range []string{
@@ -484,36 +484,36 @@ func TestSquadLeaderIssueWorkflowKeepsParentInProgress(t *testing.T) {
 		"questions, discussion, and acknowledgements never touch status",
 	} {
 		if !strings.Contains(out, want) {
-			t.Errorf("squad-leader issue brief missing %q\n---\n%s", want, out)
+			t.Errorf("team-leader issue brief missing %q\n---\n%s", want, out)
 		}
 	}
 }
 
 // TestProtocolHeadingInInstructionsGetsNoLeaderBrief is the brief-side half of
-// the MUL-5811 negative regression. IsSquadLeader now comes from the claim's
-// is_leader_task / squad_id, so an ordinary agent that documents a
-// "## Squad Operating Protocol" section in its own instructions must get the
+// the MUL-5811 negative regression. IsTeamLeader now comes from the claim's
+// is_leader_task / team_id, so an ordinary agent that documents a
+// "## Team Operating Protocol" section in its own instructions must get the
 // ordinary brief — its instructions rendered verbatim under Agent Identity,
 // and not one leader-only branch.
 func TestProtocolHeadingInInstructionsGetsNoLeaderBrief(t *testing.T) {
 	t.Parallel()
 
-	const instructions = "I write docs about squads.\n\n## Squad Operating Protocol\n\nHow leaders dispatch work..."
+	const instructions = "I write docs about teams.\n\n## Team Operating Protocol\n\nHow leaders dispatch work..."
 	out := buildMetaSkillContent("claude", TaskContextForEnv{
 		IssueID:           "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
 		TriggerCommentID:  "bbbbbbbb-cccc-dddd-eeee-ffffffffffff",
 		AgentName:         "Docs writer",
 		AgentInstructions: instructions,
-		IsSquadLeader:     false,
+		IsTeamLeader:     false,
 	})
 
 	if !strings.Contains(out, instructions) {
 		t.Fatalf("agent instructions must reach the brief verbatim\n---\n%s", out)
 	}
 	for _, banned := range []string{
-		"### Squad maintenance",
-		"patchbay squad member set-role",
-		"patchbay squad activity",
+		"### Team maintenance",
+		"patchbay team member set-role",
+		"patchbay team activity",
 		"unless your outcome is `no_action`",
 		"dispatching members is not delivery",
 	} {

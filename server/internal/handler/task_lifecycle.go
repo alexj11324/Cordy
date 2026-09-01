@@ -153,7 +153,7 @@ type RerunIssueRequest struct {
 }
 
 // RerunIssue manually re-enqueues an agent run for the issue. By default it
-// targets the issue's current assignee (agent or squad leader); if the
+// targets the issue's current assignee (agent or team leader); if the
 // request body carries task_id, the rerun targets the agent that ran that
 // specific past task instead. The new task is flagged force_fresh_session=true:
 // the daemon claim handler skips the (agent_id, issue_id) session-resume

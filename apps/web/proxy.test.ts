@@ -60,7 +60,7 @@ describe("proxy legacy workspace route redirects", () => {
     ["issues", "/acme/issues"],
     ["projects", "/acme/projects"],
     ["agents", "/acme/agents"],
-    ["squads", "/acme/squads"],
+    ["teams", "/acme/teams"],
     ["inbox", "/acme/inbox"],
     ["my-issues", "/acme/my-issues"],
     ["autopilots", "/acme/autopilots"],
@@ -79,8 +79,8 @@ describe("proxy legacy workspace route redirects", () => {
 
   it("preserves nested legacy paths and query strings", () => {
     expect(
-      redirectLocation("/squads/squad-123?view=members", sessionCookies),
-    ).toBe("https://app.patchbay.test/acme/squads/squad-123?view=members");
+      redirectLocation("/teams/team-123?view=members", sessionCookies),
+    ).toBe("https://app.patchbay.test/acme/teams/team-123?view=members");
   });
 
   it("sends logged-out legacy URLs to login", () => {
@@ -96,7 +96,7 @@ describe("proxy legacy workspace route redirects", () => {
     // instead. The deep-link query is dropped because feeding a legacy path
     // back through `next` would return here and loop.
     expect(
-      redirectLocation("/squads?view=members", { patchbay_logged_in: "1" }),
+      redirectLocation("/teams?view=members", { patchbay_logged_in: "1" }),
     ).toBe("https://app.patchbay.test/login");
   });
 
@@ -110,7 +110,7 @@ describe("proxy legacy workspace route redirects", () => {
   );
 
   it("does not redirect workspace-scoped URLs whose first segment is already a slug", () => {
-    expect(redirectLocation("/acme/squads", sessionCookies)).toBeNull();
+    expect(redirectLocation("/acme/teams", sessionCookies)).toBeNull();
   });
 
   it("redirects app-host root URLs to the last workspace", () => {

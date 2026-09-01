@@ -319,7 +319,7 @@ func TestCompleteTask_ReconcilesAgentAuthoredMentionToCompletedAgent(t *testing.
 // boundary of MUL-4304 on an agent-assigned issue: an agent-authored comment
 // with NO explicit @mention (a plain reply / acknowledgement) must never earn a
 // follow-up, even though reconcile now considers agent comments. Only explicit
-// @agent/@squad mentions are replayed.
+// @agent/@team mentions are replayed.
 func TestCompleteTask_DoesNotReconcilePlainAgentReply(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
@@ -370,21 +370,21 @@ func TestCompleteTask_DoesNotReconcilePlainAgentReply(t *testing.T) {
 	}
 }
 
-// TestCompleteTask_DoesNotReconcilePlainWorkerReplyOnSquadIssue is the MUL-4304
-// review must-fix #2 regression test. On a SQUAD-assigned issue,
+// TestCompleteTask_DoesNotReconcilePlainWorkerReplyOnTeamIssue is the MUL-4304
+// review must-fix #2 regression test. On a TEAM-assigned issue,
 // computeCommentAgentTriggers routes a plain worker-agent reply (no mention) to
-// the squad leader via routeAssignedSquadLeaderFallback (Source = issue
+// the team leader via routeAssignedTeamLeaderFallback (Source = issue
 // assignee) — that is the create-time leader→worker→leader coordination path.
 // Reconcile must NOT replay that fallback: it compensates ONLY explicit
-// @agent/@squad mentions (keepExplicitMentionTriggers). So when the squad leader
+// @agent/@team mentions (keepExplicitMentionTriggers). So when the team leader
 // completes a task and a worker's plain reply arrived during the run, no
 // completion-driven follow-up may be enqueued for the leader. Without the
 // explicit-mention filter this test enqueues 1 leader task and fails.
-func TestCompleteTask_DoesNotReconcilePlainWorkerReplyOnSquadIssue(t *testing.T) {
+func TestCompleteTask_DoesNotReconcilePlainWorkerReplyOnTeamIssue(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
-	fx := newSquadCommentTriggerFixture(t)
+	fx := newTeamCommentTriggerFixture(t)
 	issueID := uuidToString(fx.Issue.ID)
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
@@ -399,13 +399,13 @@ func TestCompleteTask_DoesNotReconcilePlainWorkerReplyOnSquadIssue(t *testing.T)
 		"issue_id":       issueID,
 		"status":         "running",
 		"is_leader_task": true,
-		"squad_id":       fx.SquadID,
+		"team_id":       fx.TeamID,
 		"created_at":     testutil.Raw("now() - interval '10 minutes'"),
 		"started_at":     testutil.Raw("now() - interval '5 minutes'"),
 	})
 
 	// A plain worker-agent reply (no mention) posted during the leader's run.
-	// At create time this WOULD route to the leader via the squad-leader
+	// At create time this WOULD route to the leader via the team-leader
 	// fallback; reconcile must not replay it.
 	dbfx.Exec(t, `
 		INSERT INTO comment (issue_id, workspace_id, author_type, author_id, content, type, created_at)
@@ -416,10 +416,10 @@ func TestCompleteTask_DoesNotReconcilePlainWorkerReplyOnSquadIssue(t *testing.T)
 		t.Fatalf("CompleteTask: expected 200, got %d: %s", w.Code, w.Body.String())
 	}
 
-	// The squad-leader fallback is a non-mention route, so reconcile must not
+	// The team-leader fallback is a non-mention route, so reconcile must not
 	// enqueue any follow-up for the leader from a plain worker reply.
 	if n := pendingTaskCountForAgentIssue(t, issueID, fx.LeaderID); n != 0 {
-		t.Fatalf("plain worker reply must not reconcile-wake the squad leader, got %d leader task(s)", n)
+		t.Fatalf("plain worker reply must not reconcile-wake the team leader, got %d leader task(s)", n)
 	}
 }
 

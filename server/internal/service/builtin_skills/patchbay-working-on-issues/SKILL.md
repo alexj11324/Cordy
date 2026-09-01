@@ -212,7 +212,7 @@ close intent writes the literal `done` key.
   planning, and review all count as the work exactly when they are what the
   issue asks for (a review-the-PR issue is being worked the moment reviewing
   starts). Questions, discussion, or acknowledgements never move the status.
-  Squad leaders: dispatching members is not delivery — a dispatch turn
+  Team leaders: dispatching members is not delivery — a dispatch turn
   leaves the parent `in_progress`, and it moves to `in_review` only when a
   later re-trigger confirms the overall goal is met.
 - **`in_review`** is an accepted issue status. Some workflows use it while a PR

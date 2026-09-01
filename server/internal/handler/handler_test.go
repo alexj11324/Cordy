@@ -3038,29 +3038,29 @@ func TestBatchBacklogToTodoByAgentTriggersAssignee(t *testing.T) {
 	}
 }
 
-// TestBacklogToTodoByAgentTriggersSquadLeader covers the squad branch of
+// TestBacklogToTodoByAgentTriggersTeamLeader covers the team branch of
 // the backlog→active trigger when the actor is an agent: the leader agent
-// of a squad must wake when one of its squad-assigned backlog issues is
+// of a team must wake when one of its team-assigned backlog issues is
 // promoted by another agent (or by the leader itself acting from a task
 // on a different issue). The task-issue self-loop guard must allow this —
 // only a true same-issue self-loop should be suppressed.
-func TestBacklogToTodoByAgentTriggersSquadLeader(t *testing.T) {
+func TestBacklogToTodoByAgentTriggersTeamLeader(t *testing.T) {
 	if testHandler == nil {
 		t.Skip("database not available")
 	}
 	ctx := context.Background()
 
-	leaderAgent := createHandlerTestAgent(t, "Backlog Squad Leader", nil)
-	driverAgent := createHandlerTestAgent(t, "Backlog Squad Driver", nil)
+	leaderAgent := createHandlerTestAgent(t, "Backlog Team Leader", nil)
+	driverAgent := createHandlerTestAgent(t, "Backlog Team Driver", nil)
 	driverTask := createHandlerTestTaskForAgent(t, driverAgent)
 
-	squadID := dbfx.Squad(t, "Backlog Trigger Squad", leaderAgent)
+	teamID := dbfx.Team(t, "Backlog Trigger Team", leaderAgent)
 
 	req := newRequest("POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-		"title":         "Squad backlog issue",
+		"title":         "Team backlog issue",
 		"status":        "backlog",
-		"assignee_type": "squad",
-		"assignee_id":   squadID,
+		"assignee_type": "team",
+		"assignee_id":   teamID,
 	})
 	w := testutil.Call(t, testHandler.CreateIssue, req).Want(http.StatusCreated)
 	var created IssueResponse
@@ -3071,7 +3071,7 @@ func TestBacklogToTodoByAgentTriggersSquadLeader(t *testing.T) {
 	})
 
 	// Driver agent (not the leader, task is on no specific issue) promotes
-	// the squad-assigned backlog issue. Squad leader must be enqueued.
+	// the team-assigned backlog issue. Team leader must be enqueued.
 	req = newRequest("PUT", "/api/issues/"+created.ID, map[string]any{"status": "todo"})
 	req = withURLParam(req, "id", created.ID)
 	req.Header.Set("X-Agent-ID", driverAgent)
@@ -3084,7 +3084,7 @@ func TestBacklogToTodoByAgentTriggersSquadLeader(t *testing.T) {
 		created.ID, leaderAgent,
 	).Scan(&leaderTasks)
 	if leaderTasks != 1 {
-		t.Fatalf("expected exactly 1 squad-leader task after agent-driven backlog→todo on squad issue, got %d", leaderTasks)
+		t.Fatalf("expected exactly 1 team-leader task after agent-driven backlog→todo on team issue, got %d", leaderTasks)
 	}
 }
 

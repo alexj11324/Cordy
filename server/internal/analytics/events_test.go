@@ -37,7 +37,7 @@ func TestIsMetricsOnly(t *testing.T) {
 		EventOnboardingStarted, EventOnboardingQuestionnaireSubmit, EventOnboardingSourceSubmit,
 		EventAgentCreated,
 		EventOnboardingCompleted, EventCloudWaitlistJoined, EventFeedbackSubmitted,
-		EventContactSalesSubmitted, EventSquadCreated, EventAutopilotCreated,
+		EventContactSalesSubmitted, EventTeamCreated, EventAutopilotCreated,
 	} {
 		if !IsMetricsOnly(name) {
 			t.Errorf("IsMetricsOnly(%q) = false, want true (server events stay out of PostHog since MUL-4127)", name)

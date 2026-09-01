@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useModalStore } from "@patchbay/core/modals";
 import { CreateIssueDialog } from "./create-issue-dialog";
 import { CreateProjectModal } from "./create-project";
-import { CreateSquadModal } from "./create-squad";
+import { CreateTeamModal } from "./create-team";
 import { FeedbackModal } from "./feedback";
 import { SetParentIssueModal } from "./set-parent-issue";
 import { AddChildIssueModal } from "./add-child-issue";
@@ -42,8 +42,8 @@ export function ModalRegistry() {
     case "create-project":
       activeModal = <CreateProjectModal onClose={close} />;
       break;
-    case "create-squad":
-      activeModal = <CreateSquadModal onClose={close} />;
+    case "create-team":
+      activeModal = <CreateTeamModal onClose={close} />;
       break;
     case "feedback":
       activeModal = <FeedbackModal onClose={close} data={data} />;

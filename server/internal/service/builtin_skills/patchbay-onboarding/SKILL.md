@@ -98,9 +98,9 @@ Prefer the default even when a specialist looks tempting. Every extra object is
 one more confirmation step and one more unknown standing between the member and
 the first thing that visibly works.
 
-Never create a squad during onboarding, and create an autopilot only for the
+Never create a team during onboarding, and create an autopilot only for the
 digest starter play above (or when the member explicitly asks for one).
-Squads and speculative automations only pay off against a workflow that
+Teams and speculative automations only pay off against a workflow that
 already repeats, and cannot be judged by a member who has not yet watched a
 single issue finish — the digest card is the exception because the member
 picked that exact outcome themselves.

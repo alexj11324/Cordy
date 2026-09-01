@@ -421,9 +421,9 @@
     "select_agent": "エージェントを選択",
     "select_assignee": "エージェントまたはスクワッドを選択",
     "agents_group": "エージェント",
-    "squads_group": "スクワッド",
+    "teams_group": "スクワッド",
     "agent_runtime_required": "このエージェントを選択する前にランタイムをバインドしてください",
-    "squad_runtime_required": "選択する前に、このスクワッドのリーダーにランタイムをバインドしてください"
+    "team_runtime_required": "選択する前に、このスクワッドのリーダーにランタイムをバインドしてください"
   },
   "timezone_picker": {
     "search_placeholder": "タイムゾーンを検索..."

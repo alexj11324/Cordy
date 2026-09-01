@@ -116,24 +116,24 @@ WHERE i.workspace_id = $1
            WHERE a.workspace_id = $1
              AND a.owner_id     = $10::uuid
     ))
-    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
-          SELECT sm.squad_id
-            FROM squad_member sm
-            JOIN squad s ON s.id = sm.squad_id
+    OR (i.assignee_type = 'team' AND i.assignee_id IN (
+          SELECT sm.team_id
+            FROM team_member sm
+            JOIN team s ON s.id = sm.team_id
            WHERE s.workspace_id = $1
              AND sm.member_type = 'member'
              AND sm.member_id   = $10::uuid
           UNION
           SELECT s.id
-            FROM squad s
+            FROM team s
             JOIN agent a ON a.id = s.leader_id
            WHERE s.workspace_id = $1
              AND a.workspace_id = $1
              AND a.owner_id     = $10::uuid
           UNION
-          SELECT sm.squad_id
-            FROM squad_member sm
-            JOIN squad s ON s.id = sm.squad_id
+          SELECT sm.team_id
+            FROM team_member sm
+            JOIN team s ON s.id = sm.team_id
             JOIN agent a ON a.id = sm.member_id
            WHERE s.workspace_id = $1
              AND sm.member_type = 'agent'
@@ -1070,31 +1070,31 @@ WHERE i.workspace_id = $1
            WHERE a.workspace_id = $1
              AND a.owner_id     = $12::uuid
     ))
-    -- (2)(3)(4) assignee is a squad related to the user — three relations
-    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
-          -- (2) the user is a human member of the squad
-          SELECT sm.squad_id
-            FROM squad_member sm
-            JOIN squad s ON s.id = sm.squad_id
+    -- (2)(3)(4) assignee is a team related to the user — three relations
+    OR (i.assignee_type = 'team' AND i.assignee_id IN (
+          -- (2) the user is a human member of the team
+          SELECT sm.team_id
+            FROM team_member sm
+            JOIN team s ON s.id = sm.team_id
            WHERE s.workspace_id = $1
              AND sm.member_type = 'member'
              AND sm.member_id   = $12::uuid
           UNION
-          -- (3) the squad's canonical leader is an agent owned by the user.
-          -- We read squad.leader_id directly rather than relying on a
-          -- squad_member row, because the leader copy in squad_member is
-          -- best-effort (see squad.go AddSquadMember error handling).
+          -- (3) the team's canonical leader is an agent owned by the user.
+          -- We read team.leader_id directly rather than relying on a
+          -- team_member row, because the leader copy in team_member is
+          -- best-effort (see team.go AddTeamMember error handling).
           SELECT s.id
-            FROM squad s
+            FROM team s
             JOIN agent a ON a.id = s.leader_id
            WHERE s.workspace_id = $1
              AND a.workspace_id = $1
              AND a.owner_id     = $12::uuid
           UNION
-          -- (4) the squad has an agent member owned by the user
-          SELECT sm.squad_id
-            FROM squad_member sm
-            JOIN squad s ON s.id = sm.squad_id
+          -- (4) the team has an agent member owned by the user
+          SELECT sm.team_id
+            FROM team_member sm
+            JOIN team s ON s.id = sm.team_id
             JOIN agent a ON a.id = sm.member_id
            WHERE s.workspace_id = $1
              AND sm.member_type = 'agent'
@@ -1148,7 +1148,7 @@ type ListIssuesRow struct {
 }
 
 // involves_user_id widens the assignee filter to surface issues where the user
-// is *indirectly* the assignee — via an owned agent or a squad they belong to /
+// is *indirectly* the assignee — via an owned agent or a team they belong to /
 // lead / have an agent inside. The semantics intentionally exclude direct
 // member assignment (`assignee_type='member' AND assignee_id=involves_user_id`)
 // because that is already the meaning of the `assignee_id` filter (tab 1
@@ -1284,24 +1284,24 @@ WHERE i.workspace_id = $1
            WHERE a.workspace_id = $1
              AND a.owner_id     = $10::uuid
     ))
-    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
-          SELECT sm.squad_id
-            FROM squad_member sm
-            JOIN squad s ON s.id = sm.squad_id
+    OR (i.assignee_type = 'team' AND i.assignee_id IN (
+          SELECT sm.team_id
+            FROM team_member sm
+            JOIN team s ON s.id = sm.team_id
            WHERE s.workspace_id = $1
              AND sm.member_type = 'member'
              AND sm.member_id   = $10::uuid
           UNION
           SELECT s.id
-            FROM squad s
+            FROM team s
             JOIN agent a ON a.id = s.leader_id
            WHERE s.workspace_id = $1
              AND a.workspace_id = $1
              AND a.owner_id     = $10::uuid
           UNION
-          SELECT sm.squad_id
-            FROM squad_member sm
-            JOIN squad s ON s.id = sm.squad_id
+          SELECT sm.team_id
+            FROM team_member sm
+            JOIN team s ON s.id = sm.team_id
             JOIN agent a ON a.id = sm.member_id
            WHERE s.workspace_id = $1
              AND sm.member_type = 'agent'

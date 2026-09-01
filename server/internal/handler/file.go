@@ -924,7 +924,7 @@ func shouldProxyAttachmentURL(rawURL string) bool {
 		return addr.IsLoopback() ||
 			addr.IsPrivate() ||
 			addr.IsLinkLocalUnicast() ||
-			addr.IsLinkLocalPatchbayst() ||
+			addr.IsLinkLocalMulticast() ||
 			addr.IsUnspecified()
 	}
 	return false

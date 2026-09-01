@@ -110,9 +110,9 @@ func TestListIssues_AssigneeTypesFilter(t *testing.T) {
 		t.Fatalf("member total: want 1, got %d", memberTotal)
 	}
 
-	// Agents tab: agent+squad kinds — squad has no rows here, param must
+	// Agents tab: agent+team kinds — team has no rows here, param must
 	// still parse and return the agent-assigned issue only.
-	agentIDs, agentTotal := list("&assignee_types=agent,squad")
+	agentIDs, agentTotal := list("&assignee_types=agent,team")
 	if !containsIssueID(agentIDs, agentIssue) {
 		t.Fatalf("agent filter missing %s — got %v", agentIssue, agentIDs)
 	}

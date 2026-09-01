@@ -371,8 +371,8 @@ LIMIT 1;
 -- This does NOT reopen the anti-loop guarantees the member-only filter was
 -- protecting. The reconcile pass runs each returned comment through
 -- computeCommentAgentTriggers under its OWN author_type, and for an agent author
--- it then keeps ONLY explicit @agent/@squad mention triggers
--- (keepExplicitMentionTriggers) — the assigned-squad-leader fallback and all
+-- it then keeps ONLY explicit @agent/@team mention triggers
+-- (keepExplicitMentionTriggers) — the assigned-team-leader fallback and all
 -- other conversational routing are dropped, so a plain agent reply /
 -- acknowledgement yields nothing regardless of issue assignment. The reconcile
 -- pass further keeps only triggers routing to the agent that just completed, so

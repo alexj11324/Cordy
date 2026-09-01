@@ -95,7 +95,7 @@ import { buildActorNameResolver, useActorName } from "@patchbay/core/workspace/h
 import {
   agentListOptions,
   memberListOptions,
-  squadListOptions,
+  teamListOptions,
 } from "@patchbay/core/workspace/queries";
 import type {
   Issue,
@@ -2318,9 +2318,9 @@ export function TableView({
           ? Promise.all([
               queryClient.fetchQuery(memberListOptions(wsId)),
               queryClient.fetchQuery(agentListOptions(wsId)),
-              queryClient.fetchQuery(squadListOptions(wsId)),
-            ]).then(([members, agents, squads]) =>
-              buildActorNameResolver({ members, agents, squads }),
+              queryClient.fetchQuery(teamListOptions(wsId)),
+            ]).then(([members, agents, teams]) =>
+              buildActorNameResolver({ members, agents, teams }),
             )
           : Promise.resolve(getActorName),
       ]);

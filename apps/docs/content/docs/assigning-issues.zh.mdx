@@ -39,7 +39,7 @@ Patchbay 会为智能体创建一条[Task](/tasks)。在线运行时领取 task 
 
 执行过程中，智能体根据工作对任务的实际影响管理状态：开始做任务本身要求的工作时立刻推到 `in_progress`，交付即推到 `in_review`，工作跨轮继续则保持 `in_progress`，仅答疑或讨论则不动状态——这些动作以智能体的身份出现在时间线中。task 的生命周期和任务状态是分开的：task 完成本身不会改变任务状态。
 
-负责人是[小队](/squads)时，同样的规则适用：Patchbay 入队的是队长，派活不等于交付——派活轮结束时父任务处于 `in_progress`，整体目标达成后队长才推到 `in_review`。
+负责人是[小队](/teams)时，同样的规则适用：Patchbay 入队的是队长，派活不等于交付——派活轮结束时父任务处于 `in_progress`，整体目标达成后队长才推到 `in_review`。
 
 ## 只分配，暂时不启动
 
@@ -86,4 +86,4 @@ patchbay issue assign MUL-42 --unassign
 
 - [在评论中 @智能体](/mentioning-agents) — 不改变负责人，处理新的问题。
 - [Task](/tasks) — 查看排队、重试和停止规则。
-- [小队](/squads) — 由 leader 协调多个智能体。
+- [小队](/teams) — 由 leader 协调多个智能体。

@@ -284,7 +284,7 @@
     "section_agent": "Agent",
     "section_assignee": "Assignee",
     "select_agent": "Select agent",
-    "select_assignee": "Select agent or squad",
+    "select_assignee": "Select agent or team",
     "section_project": "Project",
     "project_hint": "Also sets where runs execute — the project's repository or local directory",
     "no_project": "No project",
@@ -318,7 +318,7 @@
     "schedule_empty": "No schedule — this autopilot only runs when triggered manually.",
     "schedule_add": "Add schedule",
     "error_title_required": "Enter a name for this autopilot.",
-    "error_assignee_required": "Choose the agent or squad that will run this autopilot.",
+    "error_assignee_required": "Choose the agent or team that will run this autopilot.",
     "output_modes": {
       "create_issue": {
         "label": "Create issue",
@@ -417,13 +417,13 @@
     }
   },
   "agent_picker": {
-    "filter_placeholder": "Filter agents or squads...",
+    "filter_placeholder": "Filter agents or teams...",
     "select_agent": "Select agent",
-    "select_assignee": "Select agent or squad",
+    "select_assignee": "Select agent or team",
     "agents_group": "Agents",
-    "squads_group": "Squads",
+    "teams_group": "Teams",
     "agent_runtime_required": "Bind a runtime before selecting this agent",
-    "squad_runtime_required": "Bind a runtime to this squad's leader before selecting it"
+    "team_runtime_required": "Bind a runtime to this team's leader before selecting it"
   },
   "timezone_picker": {
     "search_placeholder": "Search timezone..."

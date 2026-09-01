@@ -32,14 +32,14 @@ INSERT INTO activity_log (
 ) VALUES ($1, $2, $3, $4, $5, $6, COALESCE(sqlc.narg('id')::uuid, gen_random_uuid()))
 RETURNING *;
 
--- name: HasSquadLeaderNoActionEvaluationForTask :one
+-- name: HasTeamLeaderNoActionEvaluationForTask :one
 SELECT EXISTS (
   SELECT 1
   FROM activity_log
   WHERE issue_id = @issue_id
     AND actor_type = 'agent'
     AND actor_id = @agent_id
-    AND action = 'squad_leader_evaluated'
+    AND action = 'team_leader_evaluated'
     AND details->>'outcome' = 'no_action'
     AND details->>'task_id' = @task_id::text
 ) AS exists;

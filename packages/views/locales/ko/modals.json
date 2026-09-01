@@ -64,10 +64,10 @@
     "dont_start": "아직 시작 안 함",
     "toast_failed": "작업에 실패했습니다",
     "create_will_start": "생성 후 {{name}}이(가) 바로 작업을 시작합니다.",
-    "create_will_start_squad": "생성 후 {{name}}의 리더가 내용을 평가한 뒤 작업 배분을 시작합니다.",
+    "create_will_start_team": "생성 후 {{name}}의 리더가 내용을 평가한 뒤 작업 배분을 시작합니다.",
     "create_parked": "할당됨 — 백로그에서는 작업을 시작하지 않습니다."
   },
-  "create_squad": {
+  "create_team": {
     "title": "스쿼드 만들기",
     "description": "리더 에이전트와 선택 멤버로 협업 스쿼드를 만듭니다.",
     "name_label": "이름",
@@ -211,7 +211,7 @@
       "no_agents": "사용 가능한 에이전트나 스쿼드가 없습니다.",
       "search_placeholder": "에이전트와 스쿼드 검색...",
       "agents_group": "에이전트",
-      "squads_group": "스쿼드",
+      "teams_group": "스쿼드",
       "version_missing": "이 에이전트의 데몬이 CLI 버전을 보고하지 않습니다. 에이전트로 만들기에는 patchbay CLI {{min}} 이상이 필요합니다. 데몬을 업그레이드하고 다시 연결하거나 직접 만들기로 전환하세요.",
       "version_below": "이 에이전트의 데몬 CLI는 {{current}}입니다. 에이전트로 만들기에는 {{min}} 이상이 필요합니다. 데몬을 업그레이드하거나 직접 만들기로 전환하세요.",
       "prompt_placeholder": "에이전트에게 할 일을 알려주세요. 예: \"Bohan이 Web 프로젝트의 인박스 로딩 지연을 고치게 해줘\"",

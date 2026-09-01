@@ -52,7 +52,7 @@ export function IssueActionsDropdown({
         </DropdownMenuContent>
       </DropdownMenu>
       {/* Mount the picker only once the user actually opens it. Otherwise
-          every row in a list/board would subscribe to members/agents/squads
+          every row in a list/board would subscribe to members/agents/teams
           /frequency queries on mount, multiplying memory + render cost. */}
       {assigneeOpen && (
         <AssigneePicker

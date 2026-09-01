@@ -53,10 +53,10 @@ import (
 //
 // The comment is inserted directly via db.Queries (not through the
 // CreateComment HTTP handler) so it bypasses the generic on_comment trigger
-// path. When the parent has an agent or squad assignee, the comment body
-// embeds a single `mention://{agent,squad}/<id>` link that targets the
+// path. When the parent has an agent or team assignee, the comment body
+// embeds a single `mention://{agent,team}/<id>` link that targets the
 // parent assignee — Bohan's product call on MUL-2538 ("system child-done
-// comment 无脑 mention parent assignee，member/squad/agent 都覆盖", later
+// comment 无脑 mention parent assignee，member/team/agent 都覆盖", later
 // narrowed to skip member assignees outright). To keep the platform in
 // control of side effects, the cmd/server notification + subscriber
 // listeners still skip system comments wholesale, so smuggled mentions from
@@ -541,15 +541,15 @@ func (h *Handler) resolveAssigneeMentionLabel(ctx context.Context, workspaceID p
 			return "", false
 		}
 		return sanitizeMentionLabel(agent.Name), true
-	case "squad":
-		squad, err := h.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{
+	case "team":
+		team, err := h.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
 			ID:          assigneeID,
 			WorkspaceID: workspaceID,
 		})
 		if err != nil {
 			return "", false
 		}
-		return sanitizeMentionLabel(squad.Name), true
+		return sanitizeMentionLabel(team.Name), true
 	}
 	return "", false
 }
@@ -569,7 +569,7 @@ func sanitizeMentionLabel(name string) string {
 
 // dispatchParentAssigneeTrigger fires the explicit side effect that pairs
 // with the @mention link in the system comment body — an agent task for
-// agent or squad-leader assignees. Member assignees never reach this code
+// agent or team-leader assignees. Member assignees never reach this code
 // path; notifyParentOfChildDone skips them outright. The generic comment
 // listener is intentionally bypassed (it short-circuits on
 // author_type='system'), so this is the single place where the platform
@@ -579,14 +579,14 @@ func sanitizeMentionLabel(name string) string {
 //   - agent parent: one EnqueueTaskForMention on the parent assignee, same
 //     trigger surface as a real @-mention so dedupe and readiness checks
 //     match what users already rely on.
-//   - squad parent: one EnqueueTaskForSquadLeader on the squad LEADER only.
-//     Unlike a human @squad mention, this does NOT fan out to squad members
+//   - team parent: one EnqueueTaskForTeamLeader on the team LEADER only.
+//     Unlike a human @team mention, this does NOT fan out to team members
 //     — child-done is a coordination signal, the leader decides whether
-//     and how to wake the rest of the squad. Documented here so reviewers
+//     and how to wake the rest of the team. Documented here so reviewers
 //     don't read "system mention" as inheriting the full member fan-out. The
 //     actor that closed the child is irrelevant to routing: the target is the
-//     parent's own leader, chosen (and permission-checked) at squad-assign
-//     time, so no actor identity is threaded in — see triggerChildDoneSquad.
+//     parent's own leader, chosen (and permission-checked) at team-assign
+//     time, so no actor identity is threaded in — see triggerChildDoneTeam.
 //   - notification_preference is not consulted: this is a platform routing
 //     signal targeted at the assignee that already owns the parent, not a
 //     general notification. Per-user mute settings are evaluated by the
@@ -597,18 +597,18 @@ func sanitizeMentionLabel(name string) string {
 //
 // Guards applied here:
 //   - No-op when the parent has no assignee row.
-//   - NO self-trigger guard on either the agent OR the squad path. Waking the
+//   - NO self-trigger guard on either the agent OR the team path. Waking the
 //     parent assignee when one of its children finishes is a serial sub-task
 //     handoff across two DIFFERENT issues, not a self-loop — legitimate per
 //     isAgentRunningOnIssue and the @mention self-trigger path
-//     (computeMentionedAgentCommentTriggers). The squad path used to skip a
-//     same-squad or shared-leader child on the theory that the leader had
+//     (computeMentionedAgentCommentTriggers). The team path used to skip a
+//     same-team or shared-leader child on the theory that the leader had
 //     already observed the work through its own coordination cycle on the
-//     child. That stranded the common pattern where a squad decomposes its
-//     parent into sub-issues assigned to its own squad: the stage-barrier
+//     child. That stranded the common pattern where a team decomposes its
+//     parent into sub-issues assigned to its own team: the stage-barrier
 //     system comment lands on the PARENT carrying the "advance the next stage /
 //     wrap up" instruction, which a child-side wake never delivers — so the
-//     parent silently stalled in in_progress (MUL-3969). The squad path now
+//     parent silently stalled in in_progress (MUL-3969). The team path now
 //     mirrors the agent path (MUL-2808): always dispatch, bounded only by
 //     idempotency.
 //   - Idempotency: HasPendingTaskForIssueAndAgent dedupes rapid-fire enqueues
@@ -625,8 +625,8 @@ func (h *Handler) dispatchParentAssigneeTrigger(ctx context.Context, parent db.I
 	switch parent.AssigneeType.String {
 	case "agent":
 		h.triggerChildDoneAgent(ctx, parent, systemComment.ID)
-	case "squad":
-		h.triggerChildDoneSquad(ctx, parent, systemComment.ID)
+	case "team":
+		h.triggerChildDoneTeam(ctx, parent, systemComment.ID)
 	}
 }
 
@@ -634,7 +634,7 @@ func (h *Handler) dispatchParentAssigneeTrigger(ctx context.Context, parent db.I
 // agent assignee.
 //
 // There is intentionally NO same-agent self-trigger guard here, unlike the
-// squad path. Waking the parent agent when one of its children finishes is a
+// team path. Waking the parent agent when one of its children finishes is a
 // serial sub-task handoff between two DIFFERENT issues, which the platform
 // loop model treats as legitimate ("not a loop and must fire" — see
 // isAgentRunningOnIssue); only re-entering the SAME issue is a loop. A lone
@@ -670,33 +670,33 @@ func (h *Handler) triggerChildDoneAgent(ctx context.Context, parent db.Issue, tr
 	}
 }
 
-// triggerChildDoneSquad enqueues a leader-role task for the parent's squad
+// triggerChildDoneTeam enqueues a leader-role task for the parent's team
 // assignee. It mirrors the agent path (see triggerChildDoneAgent) exactly:
 //
 //   - NO self-trigger guard: even when the finished child is owned by the same
-//     squad or by another squad sharing this leader, the leader must still be
+//     team or by another team sharing this leader, the leader must still be
 //     woken on the PARENT to advance the next stage or wrap up. The prior
-//     same-squad / shared-leader guards assumed the leader had already observed
+//     same-team / shared-leader guards assumed the leader had already observed
 //     the child via its own coordination cycle, but that wake lands on the
 //     CHILD and never carries the parent-level stage-barrier instruction, so it
-//     stranded the common "squad decomposes its parent into sub-issues assigned
-//     to its own squad" pattern (MUL-3969).
-//   - NO leader-invocation gate. Waking the parent's OWN squad leader on
+//     stranded the common "team decomposes its parent into sub-issues assigned
+//     to its own team" pattern (MUL-3969).
+//   - NO leader-invocation gate. Waking the parent's OWN team leader on
 //     child-done is a coordination handoff on an issue the leader already owns,
 //     not a fresh invocation — invocation permission was already enforced when
-//     the parent was assigned to the squad (validateAssigneePair). The agent
+//     the parent was assigned to the team (validateAssigneePair). The agent
 //     path has never gated this. Re-checking it here on behalf of the child's
 //     completer — an agent/system actor with no resolvable human originator —
 //     failed closed for the DEFAULT private leader, silently stranding every
-//     process-squad pipeline after its first stage while direct-to-leader-agent
-//     parents advanced fine (MUL-4063 / GH #4928). Removed so agent and squad
+//     process-team pipeline after its first stage while direct-to-leader-agent
+//     parents advanced fine (MUL-4063 / GH #4928). Removed so agent and team
 //     child-done follow one path; if invocation permission is ever reintroduced
 //     it must be added to BOTH paths together.
 //
 // Re-triggering is bounded by the HasPendingTaskForIssueAndAgent idempotency
 // check below, exactly as the agent path relies on it.
-func (h *Handler) triggerChildDoneSquad(ctx context.Context, parent db.Issue, triggerCommentID pgtype.UUID) {
-	squad, err := h.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{
+func (h *Handler) triggerChildDoneTeam(ctx context.Context, parent db.Issue, triggerCommentID pgtype.UUID) {
+	team, err := h.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
 		ID:          parent.AssigneeID,
 		WorkspaceID: parent.WorkspaceID,
 	})
@@ -704,14 +704,14 @@ func (h *Handler) triggerChildDoneSquad(ctx context.Context, parent db.Issue, tr
 		return
 	}
 
-	agent, err := h.Queries.GetAgent(ctx, squad.LeaderID)
+	agent, err := h.Queries.GetAgent(ctx, team.LeaderID)
 	if err != nil || !agent.RuntimeID.Valid || agent.ArchivedAt.Valid {
 		return
 	}
 
 	hasPending, err := h.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
 		IssueID: parent.ID,
-		AgentID: squad.LeaderID,
+		AgentID: team.LeaderID,
 		// Key dedup on the reviewed head (TEN-356).
 		HeadSha: h.TaskService.ResolveIssueReviewSHAParam(ctx, parent.ID),
 	})
@@ -719,11 +719,11 @@ func (h *Handler) triggerChildDoneSquad(ctx context.Context, parent db.Issue, tr
 		return
 	}
 
-	if _, err := h.TaskService.EnqueueTaskForSquadLeader(ctx, parent, squad.LeaderID, squad.ID, triggerCommentID); err != nil {
-		slog.Warn("child done: enqueue parent squad leader task failed",
+	if _, err := h.TaskService.EnqueueTaskForTeamLeader(ctx, parent, team.LeaderID, team.ID, triggerCommentID); err != nil {
+		slog.Warn("child done: enqueue parent team leader task failed",
 			"error", err,
 			"parent_id", uuidToString(parent.ID),
-			"squad_id", uuidToString(squad.ID),
-			"leader_id", uuidToString(squad.LeaderID))
+			"team_id", uuidToString(team.ID),
+			"leader_id", uuidToString(team.LeaderID))
 	}
 }

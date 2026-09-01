@@ -21,11 +21,11 @@ func TestCreateComment_TriggeredTaskRejectsTopLevelComment(t *testing.T) {
 		t.Skip("database not available")
 	}
 
-	fx := newRunningSquadLeaderTaskFixture(t)
+	fx := newRunningTeamLeaderTaskFixture(t)
 
 	w := httptest.NewRecorder()
 	r := newRequest("POST", "/api/issues/"+fx.IssueID+"/comments", map[string]any{
-		"content": "dispatching a squad from this task",
+		"content": "dispatching a team from this task",
 	})
 	r = withURLParam(r, "id", fx.IssueID)
 	r.Header.Set("X-Agent-ID", fx.LeaderID)
@@ -67,7 +67,7 @@ func TestCreateComment_TriggeredTaskAllowsReplyUnderTrigger(t *testing.T) {
 		t.Skip("database not available")
 	}
 
-	fx := newRunningSquadLeaderTaskFixture(t)
+	fx := newRunningTeamLeaderTaskFixture(t)
 
 	w := httptest.NewRecorder()
 	r := newRequest("POST", "/api/issues/"+fx.IssueID+"/comments", map[string]any{
@@ -95,7 +95,7 @@ func TestCreateComment_TriggeredTaskRejectsForeignParent(t *testing.T) {
 		t.Skip("database not available")
 	}
 
-	fx := newRunningSquadLeaderTaskFixture(t)
+	fx := newRunningTeamLeaderTaskFixture(t)
 
 	// Must be a real comment on the same issue: a nonexistent id, or one from
 	// another issue, is refused earlier with a 400 and never reaches this guard.

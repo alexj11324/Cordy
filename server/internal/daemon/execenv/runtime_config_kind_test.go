@@ -244,8 +244,8 @@ func TestSlimQuickCreateAvailableCommands(t *testing.T) {
 		"patchbay issue metadata delete <issue-id>",
 		"patchbay issue children <id>",
 		"patchbay repo checkout <url>",
-		"### Squad maintenance",
-		"patchbay squad member set-role",
+		"### Team maintenance",
+		"patchbay team member set-role",
 	} {
 		if strings.Contains(out, banned) {
 			t.Errorf("quick_create slim Available Commands should NOT advertise %q (hard guardrails forbid the call)", banned)

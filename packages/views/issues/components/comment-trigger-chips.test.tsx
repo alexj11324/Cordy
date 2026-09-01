@@ -175,9 +175,9 @@ describe("CommentTriggerChips", () => {
         agents={[]}
         blocked={[
           { target_type: "agent", target_id: "deadbeef-0001", status: "blocked", reason_code: "invocation_not_allowed" },
-          { target_type: "squad", target_id: "cafef00d-0002", status: "blocked", reason_code: "runtime_offline" },
+          { target_type: "team", target_id: "cafef00d-0002", status: "blocked", reason_code: "runtime_offline" },
         ]}
-        draftContent="[@Go](mention://agent/deadbeef-0001) [@Ops](mention://squad/cafef00d-0002)"
+        draftContent="[@Go](mention://agent/deadbeef-0001) [@Ops](mention://team/cafef00d-0002)"
         suppressedAgentIds={new Set()}
         onToggle={vi.fn()}
       />,

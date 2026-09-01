@@ -231,7 +231,7 @@
         "label": "前往智能体",
         "description": "打开智能体列表。"
       },
-      "goSquads": {
+      "goTeams": {
         "label": "前往小队",
         "description": "打开小队列表。"
       },
@@ -575,7 +575,7 @@
       },
       "mentions": {
         "label": "提及",
-        "description": "有人 @ 你时，包括 @all 和 @squad"
+        "description": "有人 @ 你时，包括 @all 和 @team"
       },
       "updates": {
         "label": "优先级与截止日期",

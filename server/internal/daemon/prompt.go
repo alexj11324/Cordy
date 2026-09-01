@@ -306,8 +306,8 @@ func buildQuickCreatePrompt(task Task) string {
 
 	// assignee
 	b.WriteString("- **assignee**:\n")
-	b.WriteString("    - When the user names someone (\"assign to X\" / \"@X\"), call `patchbay workspace member list --output json`, `patchbay agent list --output json`, and `patchbay squad list --output json` and find the matching entity by display name. Squads are first-class assignees too — a squad name (e.g. \"Super Human\") routes work to the squad leader, who then delegates. On a clean unambiguous match, prefer `--assignee-id <uuid>` using the `user_id` (member) or `id` (agent or squad) from that JSON — UUID matching is exact and robust to name collisions in workspaces with overlapping names. `--assignee <name>` (fuzzy) is acceptable as a fallback when names are unambiguous. On no match or ambiguous match, do NOT pass either flag — instead append a final line to the description: `Unrecognized assignee: X`.\n")
-	b.WriteString("    - Treat bare @-routing as an assignee directive even when the user did not write the English word \"assign\". This includes Chinese imperatives like `让 @独立团 review 这个 PR`, `给 @X 处理`, or `交给 @X`; strip the leading `@`/`＠` before matching display names. Do not keep that routing wrapper or `@Name` in the description unless it is a true CC-style notification rather than ownership. If the matched entity is a squad, pass the squad's `id` as `--assignee-id`, not the leader agent's id.\n")
+	b.WriteString("    - When the user names someone (\"assign to X\" / \"@X\"), call `patchbay workspace member list --output json`, `patchbay agent list --output json`, and `patchbay team list --output json` and find the matching entity by display name. Teams are first-class assignees too — a team name (e.g. \"Super Human\") routes work to the team leader, who then delegates. On a clean unambiguous match, prefer `--assignee-id <uuid>` using the `user_id` (member) or `id` (agent or team) from that JSON — UUID matching is exact and robust to name collisions in workspaces with overlapping names. `--assignee <name>` (fuzzy) is acceptable as a fallback when names are unambiguous. On no match or ambiguous match, do NOT pass either flag — instead append a final line to the description: `Unrecognized assignee: X`.\n")
+	b.WriteString("    - Treat bare @-routing as an assignee directive even when the user did not write the English word \"assign\". This includes Chinese imperatives like `让 @独立团 review 这个 PR`, `给 @X 处理`, or `交给 @X`; strip the leading `@`/`＠` before matching display names. Do not keep that routing wrapper or `@Name` in the description unless it is a true CC-style notification rather than ownership. If the matched entity is a team, pass the team's `id` as `--assignee-id`, not the leader agent's id.\n")
 	agentID := ""
 	agentName := ""
 	if task.Agent != nil {
@@ -315,15 +315,15 @@ func buildQuickCreatePrompt(task Task) string {
 		agentName = task.Agent.Name
 	}
 	switch {
-	case task.SquadID != "":
-		// The user opened quick-create with a SQUAD selected. The task
-		// runs on the squad's leader agent, but the squad is the expected
-		// owner — assigning to the leader would mask the squad's
-		// delegation flow. Always point the default at the squad UUID.
-		if task.SquadName != "" {
-			fmt.Fprintf(&b, "    - When the user did NOT name an assignee, default to the picker SQUAD %q: pass `--assignee-id %q` (the squad's UUID). The user opened quick-create with the squad selected; you (the leader agent) are running on the squad's behalf, so the squad — not you — is the expected owner. Never leave the issue unassigned, and do not assign it to your own agent UUID.\n\n", task.SquadName, task.SquadID)
+	case task.TeamID != "":
+		// The user opened quick-create with a TEAM selected. The task
+		// runs on the team's leader agent, but the team is the expected
+		// owner — assigning to the leader would mask the team's
+		// delegation flow. Always point the default at the team UUID.
+		if task.TeamName != "" {
+			fmt.Fprintf(&b, "    - When the user did NOT name an assignee, default to the picker TEAM %q: pass `--assignee-id %q` (the team's UUID). The user opened quick-create with the team selected; you (the leader agent) are running on the team's behalf, so the team — not you — is the expected owner. Never leave the issue unassigned, and do not assign it to your own agent UUID.\n\n", task.TeamName, task.TeamID)
 		} else {
-			fmt.Fprintf(&b, "    - When the user did NOT name an assignee, default to the picker SQUAD: pass `--assignee-id %q` (the squad's UUID). The user opened quick-create with the squad selected; you (the leader agent) are running on the squad's behalf, so the squad — not you — is the expected owner. Never leave the issue unassigned, and do not assign it to your own agent UUID.\n\n", task.SquadID)
+			fmt.Fprintf(&b, "    - When the user did NOT name an assignee, default to the picker TEAM: pass `--assignee-id %q` (the team's UUID). The user opened quick-create with the team selected; you (the leader agent) are running on the team's behalf, so the team — not you — is the expected owner. Never leave the issue unassigned, and do not assign it to your own agent UUID.\n\n", task.TeamID)
 		}
 	case agentID != "":
 		fmt.Fprintf(&b, "    - When the user did NOT name an assignee, default to YOURSELF: pass `--assignee-id %q` (your agent UUID). The picker agent is the expected owner because the user opened quick-create with you selected — never leave the issue unassigned. Use the UUID flag, not `--assignee <name>`, so the assignment is unambiguous even when other agents share part of your name.\n\n", agentID)
@@ -470,8 +470,8 @@ func buildCommentPrompt(task Task, provider string) string {
 			fmt.Fprintf(&b, "Fetch each id you still need directly: `patchbay issue comment list %s --thread <comment-id> --tail 30 --compact --output json`. `--thread` accepts a reply id, not just a thread root, so you do not need to know which thread the comment lives in. If it is older than those 30 replies, page back with the `Next reply cursor` values (`--before` / `--before-id`) until it appears. Do not finish this turn until every id above is accounted for.\n\n",
 				task.IssueID)
 		}
-		if taskIsSquadLeader(task) {
-			fmt.Fprintf(&b, "⚠️ **Squad leader no_action rule:** If you decide no action is needed, call `patchbay squad activity %s no_action --reason \"...\"` and EXIT. DO NOT post any comment — not even one that says \"no action needed\" or \"exiting silently\". The squad activity call records your decision; a comment is redundant noise. The comment prohibition is conditional on that call SUCCEEDING: if it exits non-zero, your decision has no trace anywhere, so post exactly ONE short comment stating the outcome and the error instead of exiting silently. That failure comment is this turn's only comment — it does not license a second one.\n\n", task.IssueID)
+		if taskIsTeamLeader(task) {
+			fmt.Fprintf(&b, "⚠️ **Team leader no_action rule:** If you decide no action is needed, call `patchbay team activity %s no_action --reason \"...\"` and EXIT. DO NOT post any comment — not even one that says \"no action needed\" or \"exiting silently\". The team activity call records your decision; a comment is redundant noise. The comment prohibition is conditional on that call SUCCEEDING: if it exits non-zero, your decision has no trace anywhere, so post exactly ONE short comment stating the outcome and the error instead of exiting silently. That failure comment is this turn's only comment — it does not license a second one.\n\n", task.IssueID)
 		}
 	}
 	fmt.Fprintf(&b, "Start by running `patchbay issue get %s --output json` to understand your task, then decide how to proceed.\n\n", task.IssueID)
@@ -496,9 +496,9 @@ func buildCommentPrompt(task Task, provider string) string {
 	// group upstream, so they keep the ordinary single-parent path below and can
 	// never be split into duplicate replies.
 	if targets := commentReplyThreads(task); len(targets) >= 2 {
-		b.WriteString(execenv.BuildMultiThreadCommentReplyInstructions(task.IssueID, targets, taskIsSquadLeader(task)))
+		b.WriteString(execenv.BuildMultiThreadCommentReplyInstructions(task.IssueID, targets, taskIsTeamLeader(task)))
 	} else {
-		b.WriteString(execenv.BuildCommentReplyInstructions(provider, task.IssueID, task.TriggerCommentID, taskIsSquadLeader(task)))
+		b.WriteString(execenv.BuildCommentReplyInstructions(provider, task.IssueID, task.TriggerCommentID, taskIsTeamLeader(task)))
 	}
 	return b.String()
 }
@@ -765,23 +765,23 @@ func buildAutopilotPrompt(task Task) string {
 	return b.String()
 }
 
-// squadBriefingMarker is the first heading of the squad-leader briefing the
+// teamBriefingMarker is the first heading of the team-leader briefing the
 // server appends to Instructions. It is ONLY a legacy role signal — see
-// taskIsSquadLeader — never a role signal against a current server.
-const squadBriefingMarker = "## Squad Operating Protocol"
+// taskIsTeamLeader — never a role signal against a current server.
+const teamBriefingMarker = "## Team Operating Protocol"
 
-// taskIsSquadLeader reports whether THIS TASK runs the agent as a squad
+// taskIsTeamLeader reports whether THIS TASK runs the agent as a team
 // leader. Leadership is a PER-TASK role — the same agent can be leader one
 // turn and worker the next — and a current server says so explicitly on the
-// wire: `is_leader_task` for issue-bound leader runs, `squad_id` for
-// quick-create runs the squad picker routed to its leader. The claim handler
+// wire: `is_leader_task` for issue-bound leader runs, `team_id` for
+// quick-create runs the team picker routed to its leader. The claim handler
 // sets each field on exactly the responses it injected a briefing into, and
 // advertises that it did so with `leader_role_resolved`.
 //
 // The role used to be inferred by sniffing Instructions for the briefing's
 // first heading, which made detection depend on user-writable Markdown: any
 // ordinary agent whose own instructions happened to contain that heading was
-// promoted to leader and handed the leader rules (mandatory `patchbay squad
+// promoted to leader and handed the leader rules (mandatory `patchbay team
 // activity`, silent no_action exit).
 //
 // The capability gate is load-bearing, not ceremony. Servers without it split
@@ -795,9 +795,9 @@ const squadBriefingMarker = "## Squad Operating Protocol"
 // and the legacy text inference — exactly today's behavior against both
 // groups — is the only correct read. Drop this branch once a minimum server
 // version is enforced (MUL-5811).
-func taskIsSquadLeader(task Task) bool {
+func taskIsTeamLeader(task Task) bool {
 	if !task.LeaderRoleResolved {
-		return task.Agent != nil && strings.Contains(task.Agent.Instructions, squadBriefingMarker)
+		return task.Agent != nil && strings.Contains(task.Agent.Instructions, teamBriefingMarker)
 	}
-	return task.IsLeaderTask || task.SquadID != ""
+	return task.IsLeaderTask || task.TeamID != ""
 }

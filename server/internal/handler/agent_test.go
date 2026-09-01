@@ -189,8 +189,8 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 	workingAgentID := createHandlerTestAgent(t, "working-agents-running", []byte(`{}`))
 	queuedAgentID := createHandlerTestAgent(t, "working-agents-queued", []byte(`{}`))
 
-	// An agent owned by someone else keeps the squad fixtures mutually
-	// exclusive: it can lead a squad without accidentally satisfying the
+	// An agent owned by someone else keeps the team fixtures mutually
+	// exclusive: it can lead a team without accidentally satisfying the
 	// "leader owned by me" branch.
 	var outsiderUserID string
 	if err := testPool.QueryRow(ctx, `
@@ -224,12 +224,12 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 		testPool.Exec(ctx, `DELETE FROM agent WHERE id = $1`, outsiderAgentID)
 	})
 
-	insertedSquadIDs := make([]string, 0, 3)
-	insertSquad := func(name, leaderID string) string {
+	insertedTeamIDs := make([]string, 0, 3)
+	insertTeam := func(name, leaderID string) string {
 		t.Helper()
-		var squadID string
+		var teamID string
 		if err := testPool.QueryRow(ctx, `
-			INSERT INTO squad (
+			INSERT INTO team (
 				workspace_id, name, description, leader_id, creator_id
 			)
 			VALUES ($1, $2, '', $3, $4)
@@ -239,47 +239,47 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 			name,
 			leaderID,
 			testUserID,
-		).Scan(&squadID); err != nil {
-			t.Fatalf("insert squad %q: %v", name, err)
+		).Scan(&teamID); err != nil {
+			t.Fatalf("insert team %q: %v", name, err)
 		}
-		insertedSquadIDs = append(insertedSquadIDs, squadID)
-		return squadID
+		insertedTeamIDs = append(insertedTeamIDs, teamID)
+		return teamID
 	}
-	directMemberSquadID := insertSquad(
-		"working-agents-direct-member-squad",
+	directMemberTeamID := insertTeam(
+		"working-agents-direct-member-team",
 		outsiderAgentID,
 	)
-	ownedLeaderSquadID := insertSquad(
-		"working-agents-owned-leader-squad",
+	ownedLeaderTeamID := insertTeam(
+		"working-agents-owned-leader-team",
 		workingAgentID,
 	)
-	ownedMemberSquadID := insertSquad(
-		"working-agents-owned-member-squad",
+	ownedMemberTeamID := insertTeam(
+		"working-agents-owned-member-team",
 		outsiderAgentID,
 	)
 	if _, err := testPool.Exec(ctx, `
-		INSERT INTO squad_member (squad_id, member_type, member_id)
+		INSERT INTO team_member (team_id, member_type, member_id)
 		VALUES
 			($1, 'member', $2),
 			($3, 'agent', $4)
 	`,
-		directMemberSquadID,
+		directMemberTeamID,
 		testUserID,
-		ownedMemberSquadID,
+		ownedMemberTeamID,
 		workingAgentID,
 	); err != nil {
-		t.Fatalf("insert squad involvement fixtures: %v", err)
+		t.Fatalf("insert team involvement fixtures: %v", err)
 	}
 	t.Cleanup(func() {
-		for _, squadID := range insertedSquadIDs {
-			testPool.Exec(ctx, `DELETE FROM squad WHERE id = $1`, squadID)
+		for _, teamID := range insertedTeamIDs {
+			testPool.Exec(ctx, `DELETE FROM team WHERE id = $1`, teamID)
 		}
 	})
 
 	// Insert source issues directly: this test is about the working-agent
 	// projection, so it must not inherit unrelated CreateIssue validation or
 	// side effects. The fixtures cover every direct My Issues relation plus
-	// all three squad-involvement branches.
+	// all three team-involvement branches.
 	insertedIssueIDs := make([]string, 0, 6)
 	insertIssue := func(
 		title, creatorType, creatorID string,
@@ -331,26 +331,26 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 		nil,
 		nil,
 	)
-	directMemberSquadIssueID := insertIssue(
-		"working-agent-direct-member-squad",
+	directMemberTeamIssueID := insertIssue(
+		"working-agent-direct-member-team",
 		"agent",
 		outsiderAgentID,
-		"squad",
-		directMemberSquadID,
+		"team",
+		directMemberTeamID,
 	)
-	ownedLeaderSquadIssueID := insertIssue(
-		"working-agent-owned-leader-squad",
+	ownedLeaderTeamIssueID := insertIssue(
+		"working-agent-owned-leader-team",
 		"agent",
 		outsiderAgentID,
-		"squad",
-		ownedLeaderSquadID,
+		"team",
+		ownedLeaderTeamID,
 	)
-	ownedMemberSquadIssueID := insertIssue(
-		"working-agent-owned-member-squad",
+	ownedMemberTeamIssueID := insertIssue(
+		"working-agent-owned-member-team",
 		"agent",
 		outsiderAgentID,
-		"squad",
-		ownedMemberSquadID,
+		"team",
+		ownedMemberTeamID,
 	)
 	t.Cleanup(func() {
 		for _, issueID := range insertedIssueIDs {
@@ -382,9 +382,9 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 		{workingAgentID, "running", assignedIssueID, nil, nil},
 		{workingAgentID, "running", ownedAgentIssueID, nil, nil},
 		{workingAgentID, "running", outsideIssueID, nil, nil},
-		{workingAgentID, "running", directMemberSquadIssueID, nil, nil},
-		{workingAgentID, "running", ownedLeaderSquadIssueID, nil, nil},
-		{workingAgentID, "running", ownedMemberSquadIssueID, nil, nil},
+		{workingAgentID, "running", directMemberTeamIssueID, nil, nil},
+		{workingAgentID, "running", ownedLeaderTeamIssueID, nil, nil},
+		{workingAgentID, "running", ownedMemberTeamIssueID, nil, nil},
 		{workingAgentID, "running", nil, chatSessionID, nil},
 		{workingAgentID, "running", assignedIssueID, nil, autopilotRunID},
 		{workingAgentID, "running", nil, nil, nil},
@@ -429,9 +429,9 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 				assignedIssueID,
 				ownedAgentIssueID,
 				outsideIssueID,
-				directMemberSquadIssueID,
-				ownedLeaderSquadIssueID,
-				ownedMemberSquadIssueID,
+				directMemberTeamIssueID,
+				ownedLeaderTeamIssueID,
+				ownedMemberTeamIssueID,
 			},
 		},
 		{
@@ -442,9 +442,9 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 				assignedIssueID,
 				ownedAgentIssueID,
 				outsideIssueID,
-				directMemberSquadIssueID,
-				ownedLeaderSquadIssueID,
-				ownedMemberSquadIssueID,
+				directMemberTeamIssueID,
+				ownedLeaderTeamIssueID,
+				ownedMemberTeamIssueID,
 			},
 		},
 		{
@@ -461,9 +461,9 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 			wantIssueIDs: []string{
 				assignedIssueID,
 				ownedAgentIssueID,
-				directMemberSquadIssueID,
-				ownedLeaderSquadIssueID,
-				ownedMemberSquadIssueID,
+				directMemberTeamIssueID,
+				ownedLeaderTeamIssueID,
+				ownedMemberTeamIssueID,
 			},
 		},
 		{
@@ -473,9 +473,9 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 			wantIssueIDs: []string{
 				assignedIssueID,
 				ownedAgentIssueID,
-				directMemberSquadIssueID,
-				ownedLeaderSquadIssueID,
-				ownedMemberSquadIssueID,
+				directMemberTeamIssueID,
+				ownedLeaderTeamIssueID,
+				ownedMemberTeamIssueID,
 			},
 		},
 		{
@@ -496,9 +496,9 @@ func TestListWorkspaceWorkingAgents(t *testing.T) {
 			wantCount: 4,
 			wantIssueIDs: []string{
 				ownedAgentIssueID,
-				directMemberSquadIssueID,
-				ownedLeaderSquadIssueID,
-				ownedMemberSquadIssueID,
+				directMemberTeamIssueID,
+				ownedLeaderTeamIssueID,
+				ownedMemberTeamIssueID,
 			},
 		},
 	} {

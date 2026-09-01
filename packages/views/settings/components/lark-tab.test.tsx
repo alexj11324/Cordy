@@ -79,7 +79,7 @@ vi.mock("@patchbay/core/workspace/hooks", () => ({
     getAgentName: (agentId: string) =>
       agentNameByIdRef.current.get(agentId) ?? "Unknown Agent",
     getMemberName: () => "Unknown",
-    getSquadName: () => "Unknown Squad",
+    getTeamName: () => "Unknown Team",
     getActorName: () => "Unknown",
     getActorInitials: () => "??",
     getActorAvatarUrl: () => null,

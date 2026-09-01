@@ -1483,13 +1483,13 @@ func TestInjectRuntimeConfigAvailableCommandsCoreOnly(t *testing.T) {
 		}
 	}
 
-	// Squad maintenance is squad-leader surface and is gated on that (MUL-5442):
-	// an agent leading no squad has no squad whose roles it could change.
-	if strings.Contains(s, "### Squad maintenance") {
-		t.Errorf("non-leader brief must not carry the squad maintenance block\n---\n%s", s)
+	// Team maintenance is team-leader surface and is gated on that (MUL-5442):
+	// an agent leading no team has no team whose roles it could change.
+	if strings.Contains(s, "### Team maintenance") {
+		t.Errorf("non-leader brief must not carry the team maintenance block\n---\n%s", s)
 	}
 	leaderDir := t.TempDir()
-	if _, err := InjectRuntimeConfig(leaderDir, "codex", TaskContextForEnv{IssueID: "issue-1", IsSquadLeader: true}); err != nil {
+	if _, err := InjectRuntimeConfig(leaderDir, "codex", TaskContextForEnv{IssueID: "issue-1", IsTeamLeader: true}); err != nil {
 		t.Fatalf("InjectRuntimeConfig failed: %v", err)
 	}
 	leader, err := os.ReadFile(filepath.Join(leaderDir, "AGENTS.md"))
@@ -1497,11 +1497,11 @@ func TestInjectRuntimeConfigAvailableCommandsCoreOnly(t *testing.T) {
 		t.Fatalf("failed to read leader AGENTS.md: %v", err)
 	}
 	for _, want := range []string{
-		"### Squad maintenance",
-		"patchbay squad member set-role <squad-id>",
+		"### Team maintenance",
+		"patchbay team member set-role <team-id>",
 	} {
 		if !strings.Contains(string(leader), want) {
-			t.Errorf("squad-leader AGENTS.md missing %q\n---\n%s", want, leader)
+			t.Errorf("team-leader AGENTS.md missing %q\n---\n%s", want, leader)
 		}
 	}
 
@@ -1512,7 +1512,7 @@ func TestInjectRuntimeConfigAvailableCommandsCoreOnly(t *testing.T) {
 		"patchbay label list",
 		"patchbay workspace member list",
 		"patchbay agent list",
-		"patchbay squad list",
+		"patchbay team list",
 		"patchbay issue runs",
 		"patchbay issue run-messages",
 		"patchbay attachment download",
@@ -5466,10 +5466,10 @@ func TestInjectRuntimeConfigMentionLoopHardening(t *testing.T) {
 		// MUL-5442 owner decision (2026-08-06): the generic no-reply rule is
 		// retired. It never carried the loop prevention — agent comments
 		// trigger nothing without an explicit @mention (the sole implicit
-		// wake is the squad-leader path), so the mention discipline pinned in
+		// wake is the team-leader path), so the mention discipline pinned in
 		// the Mentions subtest above is the real defense. Ordinary agents are
 		// back on the unconditional one-comment-per-run contract; recorded
-		// silence via `no_action` remains squad-leader-only. Retired pins,
+		// silence via `no_action` remains team-leader-only. Retired pins,
 		// replaced by the negative guards below so the apparatus cannot creep
 		// back: "Decide whether a reply is warranted", "produced actual
 		// work", "pure acknowledgment / thanks / sign-off", "do NOT reply",
@@ -5510,19 +5510,19 @@ func TestInjectRuntimeConfigMentionLoopHardening(t *testing.T) {
 	})
 }
 
-// TestInjectRuntimeConfigSquadLeaderCommentTriggeredNoAction verifies that
-// when IsSquadLeader is true and the task is comment-triggered, the generated
+// TestInjectRuntimeConfigTeamLeaderCommentTriggeredNoAction verifies that
+// when IsTeamLeader is true and the task is comment-triggered, the generated
 // CLAUDE.md explicitly forbids posting comments that merely announce no_action.
-// This is the fix for MUL-2168 — squad leaders were posting "Exiting silently"
+// This is the fix for MUL-2168 — team leaders were posting "Exiting silently"
 // comments because the comment-triggered path lacked the prohibition.
-func TestInjectRuntimeConfigSquadLeaderCommentTriggeredNoAction(t *testing.T) {
+func TestInjectRuntimeConfigTeamLeaderCommentTriggeredNoAction(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
 	ctx := TaskContextForEnv{
 		IssueID:          "issue-1",
 		TriggerCommentID: "comment-1",
-		IsSquadLeader:    true,
+		IsTeamLeader:    true,
 	}
 	if _, err := InjectRuntimeConfig(dir, "claude", ctx); err != nil {
 		t.Fatalf("InjectRuntimeConfig failed: %v", err)
@@ -5539,30 +5539,30 @@ func TestInjectRuntimeConfigSquadLeaderCommentTriggeredNoAction(t *testing.T) {
 	// can contradict it (MUL-5442 #6493 review).
 	for _, want := range []string{
 		"unless your outcome is `no_action`",
-		"patchbay squad activity",
+		"patchbay team activity",
 		"DO NOT post a comment announcing no_action",
 	} {
 		if !strings.Contains(s, want) {
-			t.Errorf("squad leader comment-triggered CLAUDE.md missing %q", want)
+			t.Errorf("team leader comment-triggered CLAUDE.md missing %q", want)
 		}
 	}
 	// The unconditional ordinary-agent imperative must not coexist with the
 	// carve-out variant.
 	if strings.Contains(s, "**Post your final results as a comment — this step is mandatory**") {
-		t.Errorf("squad leader CLAUDE.md still carries the unconditional delivery step")
+		t.Errorf("team leader CLAUDE.md still carries the unconditional delivery step")
 	}
 
 	// The Output section must use strong prohibition language.
 	if !strings.Contains(s, "you MUST exit without posting any comment") {
-		t.Errorf("Output section missing strong prohibition for squad leader no_action")
+		t.Errorf("Output section missing strong prohibition for team leader no_action")
 	}
 
-	// Non-squad-leader should NOT have the squad leader rule in comment-triggered path.
+	// Non-team-leader should NOT have the team leader rule in comment-triggered path.
 	dir2 := t.TempDir()
 	ctx2 := TaskContextForEnv{
 		IssueID:          "issue-1",
 		TriggerCommentID: "comment-1",
-		IsSquadLeader:    false,
+		IsTeamLeader:    false,
 	}
 	if _, err := InjectRuntimeConfig(dir2, "claude", ctx2); err != nil {
 		t.Fatalf("InjectRuntimeConfig failed: %v", err)
@@ -5573,7 +5573,7 @@ func TestInjectRuntimeConfigSquadLeaderCommentTriggeredNoAction(t *testing.T) {
 	}
 	s2 := string(data2)
 	if strings.Contains(s2, "unless your outcome is `no_action`") {
-		t.Errorf("non-squad-leader CLAUDE.md should NOT contain the leader no_action carve-out")
+		t.Errorf("non-team-leader CLAUDE.md should NOT contain the leader no_action carve-out")
 	}
 }
 

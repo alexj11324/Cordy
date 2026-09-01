@@ -1965,24 +1965,24 @@ func NewRouterWithOptions(pool *pgxpool.Pool, hub *realtime.Hub, bus *events.Bus
 				})
 			})
 
-			// Squads
-			r.Route("/api/squads", func(r chi.Router) {
-				r.Get("/", h.ListSquads)
-				r.Post("/", h.CreateSquad)
+			// Teams
+			r.Route("/api/teams", func(r chi.Router) {
+				r.Get("/", h.ListTeams)
+				r.Post("/", h.CreateTeam)
 				r.Route("/{id}", func(r chi.Router) {
-					r.Get("/", h.GetSquad)
-					r.Put("/", h.UpdateSquad)
-					r.Delete("/", h.DeleteSquad)
-					r.Get("/members", h.ListSquadMembers)
-					r.Get("/members/status", h.ListSquadMemberStatus)
-					r.Post("/members", h.AddSquadMember)
-					r.Delete("/members", h.RemoveSquadMember)
-					r.Patch("/members/role", h.UpdateSquadMemberRole)
+					r.Get("/", h.GetTeam)
+					r.Put("/", h.UpdateTeam)
+					r.Delete("/", h.DeleteTeam)
+					r.Get("/members", h.ListTeamMembers)
+					r.Get("/members/status", h.ListTeamMemberStatus)
+					r.Post("/members", h.AddTeamMember)
+					r.Delete("/members", h.RemoveTeamMember)
+					r.Patch("/members/role", h.UpdateTeamMemberRole)
 				})
 			})
 
-			// Squad leader evaluation (writes to activity_log)
-			r.Post("/api/issues/{id}/squad-evaluated", h.RecordSquadLeaderEvaluation)
+			// Team leader evaluation (writes to activity_log)
+			r.Post("/api/issues/{id}/team-evaluated", h.RecordTeamLeaderEvaluation)
 
 			// Autopilots
 			r.Route("/api/autopilots", func(r chi.Router) {

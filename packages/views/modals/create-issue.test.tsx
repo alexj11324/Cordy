@@ -129,14 +129,14 @@ const emptyIssueDraft = () => ({
     description: "",
     status: "todo" as const,
     startDate: null as string | null,
-    assigneeType: undefined as "agent" | "squad" | "member" | undefined,
+    assigneeType: undefined as "agent" | "team" | "member" | undefined,
     assigneeId: undefined as string | undefined,
     labelIds: [] as string[],
     propertyValues: {} as Record<string, string | number | boolean | string[]>,
   },
   agent: {
     prompt: "",
-    actorType: undefined as "agent" | "squad" | undefined,
+    actorType: undefined as "agent" | "team" | undefined,
     actorId: undefined as string | undefined,
   },
   activeMode: "manual" as "manual" | "agent",
@@ -144,7 +144,7 @@ const emptyIssueDraft = () => ({
 
 const mockDraftStore = {
   draft: emptyIssueDraft(),
-  lastAssigneeType: undefined as "agent" | "squad" | "member" | undefined,
+  lastAssigneeType: undefined as "agent" | "team" | "member" | undefined,
   lastAssigneeId: undefined as string | undefined,
   setShared: mockSetShared,
   setManual: mockSetManual,
@@ -235,7 +235,7 @@ vi.mock("@patchbay/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "Agent" }),
 }));
 
-// CreateRunHint now renders an ActorAvatar for agent/squad assignees. This
+// CreateRunHint now renders an ActorAvatar for agent/team assignees. This
 // suite is about the create form, not the avatar (whose own workspace/presence/
 // navigation hook tree is exercised elsewhere), so stub it inert.
 vi.mock("../common/actor-avatar", () => ({
@@ -1058,12 +1058,12 @@ describe("CreateIssueModal", () => {
     });
   });
 
-  // Manual → agent must seed the agent actor from the picked squad. Without
+  // Manual → agent must seed the agent actor from the picked team. Without
   // this the agent panel silently falls back to the persisted actor / first
-  // visible agent and the user loses the squad they just chose in manual.
-  it("seeds the agent actor from the picked squad when switching to agent mode", async () => {
-    mockDraftStore.draft.manual.assigneeType = "squad";
-    mockDraftStore.draft.manual.assigneeId = "squad-1";
+  // visible agent and the user loses the team they just chose in manual.
+  it("seeds the agent actor from the picked team when switching to agent mode", async () => {
+    mockDraftStore.draft.manual.assigneeType = "team";
+    mockDraftStore.draft.manual.assigneeId = "team-1";
     const user = userEvent.setup();
     const onSwitchMode = vi.fn();
 
@@ -1080,11 +1080,11 @@ describe("CreateIssueModal", () => {
     await user.click(screen.getByRole("button", { name: /Switch to Agent/i }));
 
     expect(onSwitchMode).toHaveBeenCalledTimes(1);
-    // Prompt assist-init + squad actor land in the unified agent draft.
+    // Prompt assist-init + team actor land in the unified agent draft.
     expect(mockSetAgent).toHaveBeenCalledWith({ prompt: "Refactor auth" });
     expect(mockSetAgent).toHaveBeenCalledWith({
-      actorType: "squad",
-      actorId: "squad-1",
+      actorType: "team",
+      actorId: "team-1",
     });
     // Actor rides the store, not the carry; no parent here → carry is null.
     expect(onSwitchMode.mock.calls[0]?.[0]).toBeNull();

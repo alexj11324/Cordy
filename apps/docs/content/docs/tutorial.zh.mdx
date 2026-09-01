@@ -239,7 +239,7 @@ Engineer 交付了第一版，但有些问题它自己意识不到。审查交�
 
 ## 组建小队
 
-MUL-1 的循环跑通了，但每一次衔接都由你发起：验收后提及 Reviewer，审查后提及 Engineer。协调本身成了你的工作。这层工作也交出去。Patchbay 为此提供的组织形式是**小队（squad）**：一组智能体和成员的命名集合，由一名队长智能体领导。任务分配给小队后，接手的是队长：读任务、派活、推进状态；成员有了回复，它被自动唤醒，决定下一步；收尾时向你汇报交付产物。队长接手的正是你刚才的角色。
+MUL-1 的循环跑通了，但每一次衔接都由你发起：验收后提及 Reviewer，审查后提及 Engineer。协调本身成了你的工作。这层工作也交出去。Patchbay 为此提供的组织形式是**小队（team）**：一组智能体和成员的命名集合，由一名队长智能体领导。任务分配给小队后，接手的是队长：读任务、派活、推进状态；成员有了回复，它被自动唤醒，决定下一步；收尾时向你汇报交付产物。队长接手的正是你刚才的角色。
 
 小队就是已有的分工加一名队长：
 
@@ -252,11 +252,11 @@ MUL-1 的循环跑通了，但每一次衔接都由你发起：验收后提及 R
 
 这套配置描述给 Patchbay helper 就够了：创建小队和队长，成员各司其职，Lead 和 Engineer 各绑定一个 skill（下一节展开），小队指令写明工作流——开发派给 Engineer，PR 审查通过才交付，你验收后由 Engineer 合并。helper 用 CLI 一次完成全部配置：
 
-![helper 一次完成小队的全部配置](/images/docs/tutorial-helper-create-squad.webp)
+![helper 一次完成小队的全部配置](/images/docs/tutorial-helper-create-team.webp)
 
-打开侧边栏的**小队 → Website Team** 检查结果：队长、成员和角色描述都在。小队也可以在这个页面用表单创建；完整机制见[小队文档](/squads)：
+打开侧边栏的**小队 → Website Team** 检查结果：队长、成员和角色描述都在。小队也可以在这个页面用表单创建；完整机制见[小队文档](/teams)：
 
-![小队详情页：队长、成员和角色](/images/docs/tutorial-squad-detail.webp)
+![小队详情页：队长、成员和角色](/images/docs/tutorial-team-detail.webp)
 
 ## Skill：可复用的方法
 
@@ -289,15 +289,15 @@ Skill 是给智能体的知识包：一个 `SKILL.md` 加上可选的支持文�
 
 生成的任务里，需求已经被整理成结构化描述；标题旁的徽章显示队长已经接手：
 
-![MUL-2：Lead 创建任务并开始工作](/images/docs/tutorial-issue-squad-created.webp)
+![MUL-2：Lead 创建任务并开始工作](/images/docs/tutorial-issue-team-created.webp)
 
 接下来全是队长的工作。它的派活评论不只是转发：补上两条任务里没有的约束（占位身份全站统一、清查范围列到元数据和 README），再交给 Engineer。Engineer 完成后，把 PR 回报在同一条时间线里：
 
-![Lead 派活，Engineer 回报 PR](/images/docs/tutorial-squad-dispatch.webp)
+![Lead 派活，Engineer 回报 PR](/images/docs/tutorial-team-dispatch.webp)
 
 审查零发现，Lead 随即交付：提及你验收，第一行是结论，往下是 PR 链接、改动说明和两个需要你判断的点，结尾一句——你不点头就不合并：
 
-![Lead 的交付汇报](/images/docs/tutorial-squad-delivery.webp)
+![Lead 的交付汇报](/images/docs/tutorial-team-delivery.webp)
 
 从整理需求、确认方案、开发、审查到交付汇报，这条任务没有一步需要你衔接。验收方式和 MUL-1 相同——也可以让它启动本地服务在浏览器里看，不再展开。「已完成」仍然留给你：回复合并，或手动改状态。整条时间线的每一步都有记录，和人类团队的任务没有区别——变的只是执行的人。
 
@@ -341,6 +341,6 @@ Skill 是给智能体的知识包：一个 `SKILL.md` 加上可选的支持文�
 ## 接下来
 
 - [核心概念](/concepts) — 三分钟认识 Patchbay 的全部核心对象。
-- [小队](/squads) — 队长如何路由工作、什么时候用小队而不是单个智能体。
+- [小队](/teams) — 队长如何路由工作、什么时候用小队而不是单个智能体。
 - [Skills](/skills) — 导入、编写和共享智能体的方法。
 - [自动化](/autopilots) — 定时和 webhook 两类触发器的完整配置。

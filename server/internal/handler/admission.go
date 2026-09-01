@@ -69,7 +69,7 @@ const (
 // private-agent invoke returns Type/ID (already known to the caller from their
 // own request) but never a Name they were not otherwise entitled to.
 type DispatchTarget struct {
-	Type string `json:"type"` // "agent" | "squad"
+	Type string `json:"type"` // "agent" | "team"
 	ID   string `json:"id"`
 	Name string `json:"name,omitempty"`
 }

@@ -105,7 +105,7 @@ func (a *localDirectoryAssignment) ValidateExecutionMode() error {
 }
 
 // localDirectoryAssignmentForTask returns the local_directory assignment a task
-// should execute inside. Squad-leader tasks are coordinators: they may create
+// should execute inside. Team-leader tasks are coordinators: they may create
 // child issues or comments, but should not bind to the user's repo worktree or
 // hold the path mutex while downstream workers are ready to write.
 //
@@ -140,7 +140,7 @@ func localDirectoryAssignmentForTask(task Task, daemonID string) (*localDirector
 // A chat turn is not. It is a conversation that reads the tree to answer
 // questions and at most saves a file the way the user's own Cmd+S does — the
 // risk class the lock already declines to cover. Serialising it bought nothing
-// and muted the squad leader for the length of every build (issue #7344).
+// and muted the team leader for the length of every build (issue #7344).
 //
 // Keyed on ChatSessionID because that is the daemon's only chat discriminator
 // (see Task.ChatSessionID). IsLeaderTask cannot serve here even though the

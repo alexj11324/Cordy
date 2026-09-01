@@ -27,7 +27,7 @@ const (
 	EventCloudWaitlistJoined           = "cloud_waitlist_joined"
 	EventFeedbackSubmitted             = "feedback_submitted"
 	EventContactSalesSubmitted         = "contact_sales_submitted"
-	EventSquadCreated                  = "squad_created"
+	EventTeamCreated                  = "team_created"
 	EventAutopilotCreated              = "autopilot_created"
 )
 
@@ -69,7 +69,7 @@ var metricsOnlyEvents = map[string]struct{}{
 	EventCloudWaitlistJoined:           {},
 	EventFeedbackSubmitted:             {},
 	EventContactSalesSubmitted:         {},
-	EventSquadCreated:                  {},
+	EventTeamCreated:                  {},
 	EventAutopilotCreated:              {},
 	// High-volume runtime / autopilot execution-lifecycle telemetry — always
 	// Prometheus-only (Grafana already carries the equivalent counters).
@@ -360,14 +360,14 @@ func ChatMessageSent(userID, workspaceID, chatSessionID, taskID, agentID, runtim
 }
 
 // AutopilotAssignee describes the autopilot's configured target. agent_id is
-// always the agent that will actually execute the work (the squad leader for
-// squad autopilots) so funnels grouping by agent stay consistent. assignee_*
+// always the agent that will actually execute the work (the team leader for
+// team autopilots) so funnels grouping by agent stay consistent. assignee_*
 // fields record the original configuration so reports can tell a solo-agent
-// autopilot apart from a squad one without joining back to the autopilot row.
+// autopilot apart from a team one without joining back to the autopilot row.
 type AutopilotAssignee struct {
-	AgentID      string // executing agent — leader for squad autopilots
-	AssigneeType string // "agent" or "squad"
-	SquadID      string // empty when AssigneeType != "squad"
+	AgentID      string // executing agent — leader for team autopilots
+	AssigneeType string // "agent" or "team"
+	TeamID      string // empty when AssigneeType != "team"
 }
 
 func AutopilotRunStarted(actorID, workspaceID, autopilotID, runID, cadence string, assignee AutopilotAssignee, triggerSource string) Event {
@@ -678,16 +678,16 @@ func ContactSalesSubmitted(inquiryID, companySize, countryRegion, useCase, formS
 	}
 }
 
-// SquadCreated fires when a workspace member or admin creates a new squad.
-// `memberCount` is the number of members the squad was seeded with at
+// TeamCreated fires when a workspace member or admin creates a new team.
+// `memberCount` is the number of members the team was seeded with at
 // creation time (frontend can pre-populate via the picker).
-func SquadCreated(actorID, workspaceID, squadID string, memberCount int) Event {
+func TeamCreated(actorID, workspaceID, teamID string, memberCount int) Event {
 	return Event{
-		Name:        EventSquadCreated,
+		Name:        EventTeamCreated,
 		DistinctID:  actorID,
 		WorkspaceID: workspaceID,
 		Properties: withCoreProperties(map[string]any{
-			"squad_id":     squadID,
+			"team_id":     teamID,
 			"member_count": int64(memberCount),
 		}, CoreProperties{
 			UserID:      nonAgentUserID(actorID),
@@ -739,8 +739,8 @@ func autopilotRunEvent(name, actorID, workspaceID, autopilotID, runID, cadence s
 	if assignee.AssigneeType != "" {
 		props["assignee_type"] = assignee.AssigneeType
 	}
-	if assignee.SquadID != "" {
-		props["squad_id"] = assignee.SquadID
+	if assignee.TeamID != "" {
+		props["team_id"] = assignee.TeamID
 	}
 	return Event{
 		Name:        name,

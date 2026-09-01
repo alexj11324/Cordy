@@ -96,8 +96,8 @@ func TestBuildersInsertRowsTheSchemaAccepts(t *testing.T) {
 	issueID := f.Issue(t, "fixture issue")
 	commentID := f.Comment(t, issueID, "fixture comment")
 	taskID := f.Task(t, agentID, Cols{"runtime_id": runtimeID, "issue_id": issueID})
-	squadID := f.Squad(t, "fixture squad", agentID)
-	f.SquadMember(t, squadID, "agent", agentID)
+	teamID := f.Team(t, "fixture team", agentID)
+	f.TeamMember(t, teamID, "agent", agentID)
 	projectID := f.Project(t, "fixture project")
 	sessionID := f.ChatSession(t, agentID)
 
@@ -110,7 +110,7 @@ func TestBuildersInsertRowsTheSchemaAccepts(t *testing.T) {
 		{"issue", issueID},
 		{"comment", commentID},
 		{"agent_task_queue", taskID},
-		{"squad", squadID},
+		{"team", teamID},
 		{"project", projectID},
 		{"chat_session", sessionID},
 	} {

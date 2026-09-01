@@ -54,7 +54,7 @@ const mediaDialTimeout = 10 * time.Second
 //
 // Both lists are the IANA IPv4 and IPv6 Special-Purpose Address Registries
 // minus what netip's own predicates already catch (IsLoopback / IsPrivate /
-// IsLinkLocal* / IsPatchbayst / IsUnspecified), minus the handful of
+// IsLinkLocal* / IsMulticast / IsUnspecified), minus the handful of
 // special-purpose blocks that are ordinary globally-routed unicast (the AS112
 // delegations 192.31.196.0/24, 192.175.48.0/24 and 2620:4f:8000::/48, and
 // AMT's 192.52.193.0/24) — those are "special" in who runs them, not in where
@@ -189,8 +189,8 @@ func publicAddrOnly(a netip.Addr) bool {
 		return false
 	}
 	if a.IsLoopback() || a.IsPrivate() || a.IsUnspecified() ||
-		a.IsLinkLocalUnicast() || a.IsLinkLocalPatchbayst() ||
-		a.IsInterfaceLocalPatchbayst() || a.IsPatchbayst() {
+		a.IsLinkLocalUnicast() || a.IsLinkLocalMulticast() ||
+		a.IsInterfaceLocalMulticast() || a.IsMulticast() {
 		return false
 	}
 	// Translation space first, and before the allow-list is consulted at all.

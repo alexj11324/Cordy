@@ -89,7 +89,7 @@ the mention-link form instead, with the project UUID from
 Every client makes it navigable, with different presentation: web and desktop
 render a chip carrying the project's icon and current title, while mobile
 renders an ordinary link that opens the project on tap. Unlike `@agent` /
-`@squad`, it is a pure link: `util.MentionRe` does not even include `project`,
+`@team`, it is a pure link: `util.MentionRe` does not even include `project`,
 so it enqueues nothing and notifies nobody — the same no-side-effect contract
 as an `issue` mention.
 

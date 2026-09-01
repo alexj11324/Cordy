@@ -324,12 +324,12 @@ func TestInjectRuntimeConfigWindowsAssignmentBriefStaysFileOnly(t *testing.T) {
 	}
 }
 
-// TestBuildCommentReplyInstructionsSquadLeaderCarveOut pins that the squad
+// TestBuildCommentReplyInstructionsTeamLeaderCarveOut pins that the team
 // leader variant scopes the reply imperative with the `no_action` exception
 // (MUL-5442 #6493 review): the leader's only silent path must not be
 // contradicted by a later unconditional "Post your reply" line, and the
 // ordinary variant must never carry the leader carve-out.
-func TestBuildCommentReplyInstructionsSquadLeaderCarveOut(t *testing.T) {
+func TestBuildCommentReplyInstructionsTeamLeaderCarveOut(t *testing.T) {
 	t.Parallel()
 
 	leader := BuildCommentReplyInstructions("claude", "issue-1", "comment-1", true)

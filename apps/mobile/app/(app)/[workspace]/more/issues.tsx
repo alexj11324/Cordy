@@ -104,7 +104,7 @@ export default function IssuesPage() {
     }
     if (scope === "agents") {
       return allIssues.filter(
-        (i) => i.assignee_type === "agent" || i.assignee_type === "squad",
+        (i) => i.assignee_type === "agent" || i.assignee_type === "team",
       );
     }
     return allIssues;
@@ -376,6 +376,6 @@ function emptyMessageForScope(scope: IssuesScope): string {
     case "members":
       return "No issues assigned to a member.";
     case "agents":
-      return "No issues assigned to agents or squads.";
+      return "No issues assigned to agents or teams.";
   }
 }

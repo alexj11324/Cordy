@@ -8,10 +8,10 @@ import (
 	"testing"
 )
 
-// TestCreateAutopilot_SquadPrivateLeader_PlainMemberBlocked verifies that a
-// plain member cannot create an autopilot assigned to a squad whose leader
+// TestCreateAutopilot_TeamPrivateLeader_PlainMemberBlocked verifies that a
+// plain member cannot create an autopilot assigned to a team whose leader
 // is a private agent.
-func TestCreateAutopilot_SquadPrivateLeader_PlainMemberBlocked(t *testing.T) {
+func TestCreateAutopilot_TeamPrivateLeader_PlainMemberBlocked(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
@@ -19,23 +19,23 @@ func TestCreateAutopilot_SquadPrivateLeader_PlainMemberBlocked(t *testing.T) {
 
 	agentID, _, memberID := privateAgentTestFixture(t)
 
-	var squadID string
+	var teamID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		INSERT INTO team (workspace_id, name, description, leader_id, creator_id)
 		VALUES ($1, 'AP Private Leader Create', '', $2, $3)
 		RETURNING id
-	`, testWorkspaceID, agentID, testUserID).Scan(&squadID); err != nil {
-		t.Fatalf("create squad: %v", err)
+	`, testWorkspaceID, agentID, testUserID).Scan(&teamID); err != nil {
+		t.Fatalf("create team: %v", err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1`, squadID)
+		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID)
 	})
 
 	w := httptest.NewRecorder()
 	r := newRequestAs(memberID, "POST", "/api/autopilots?workspace_id="+testWorkspaceID, map[string]any{
 		"title":          "should be blocked",
-		"assignee_type":  "squad",
-		"assignee_id":    squadID,
+		"assignee_type":  "team",
+		"assignee_id":    teamID,
 		"execution_mode": "create_issue",
 	})
 	testHandler.CreateAutopilot(w, r)
@@ -44,9 +44,9 @@ func TestCreateAutopilot_SquadPrivateLeader_PlainMemberBlocked(t *testing.T) {
 	}
 }
 
-// TestUpdateAutopilot_SquadPrivateLeader_PlainMemberBlocked verifies that a
-// plain member cannot update an autopilot to point at a private-leader squad.
-func TestUpdateAutopilot_SquadPrivateLeader_PlainMemberBlocked(t *testing.T) {
+// TestUpdateAutopilot_TeamPrivateLeader_PlainMemberBlocked verifies that a
+// plain member cannot update an autopilot to point at a private-leader team.
+func TestUpdateAutopilot_TeamPrivateLeader_PlainMemberBlocked(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
@@ -57,16 +57,16 @@ func TestUpdateAutopilot_SquadPrivateLeader_PlainMemberBlocked(t *testing.T) {
 	// Create a non-private agent for the initial autopilot.
 	publicAgentID := createHandlerTestAgent(t, "ap-private-leader-public", nil)
 
-	var squadID string
+	var teamID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		INSERT INTO team (workspace_id, name, description, leader_id, creator_id)
 		VALUES ($1, 'AP Private Leader Update', '', $2, $3)
 		RETURNING id
-	`, testWorkspaceID, agentID, testUserID).Scan(&squadID); err != nil {
-		t.Fatalf("create squad: %v", err)
+	`, testWorkspaceID, agentID, testUserID).Scan(&teamID); err != nil {
+		t.Fatalf("create team: %v", err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1`, squadID)
+		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID)
 	})
 
 	// Create autopilot as workspace owner assigned to the public agent.
@@ -88,12 +88,12 @@ func TestUpdateAutopilot_SquadPrivateLeader_PlainMemberBlocked(t *testing.T) {
 		testPool.Exec(context.Background(), `DELETE FROM autopilot WHERE id = $1`, ap.ID)
 	})
 
-	// Plain member tries to update to the private-leader squad.
-	squadType := "squad"
+	// Plain member tries to update to the private-leader team.
+	teamType := "team"
 	w = httptest.NewRecorder()
 	r = newRequestAs(memberID, "PATCH", "/api/autopilots/"+ap.ID+"?workspace_id="+testWorkspaceID, map[string]any{
-		"assignee_type": squadType,
-		"assignee_id":   squadID,
+		"assignee_type": teamType,
+		"assignee_id":   teamID,
 	})
 	r = withURLParam(r, "id", ap.ID)
 	testHandler.UpdateAutopilot(w, r)
@@ -102,9 +102,9 @@ func TestUpdateAutopilot_SquadPrivateLeader_PlainMemberBlocked(t *testing.T) {
 	}
 }
 
-// TestCreateAutopilot_SquadPrivateLeader_OwnerAllowed verifies that a
-// workspace owner CAN create an autopilot assigned to a private-leader squad.
-func TestCreateAutopilot_SquadPrivateLeader_OwnerAllowed(t *testing.T) {
+// TestCreateAutopilot_TeamPrivateLeader_OwnerAllowed verifies that a
+// workspace owner CAN create an autopilot assigned to a private-leader team.
+func TestCreateAutopilot_TeamPrivateLeader_OwnerAllowed(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
@@ -112,25 +112,25 @@ func TestCreateAutopilot_SquadPrivateLeader_OwnerAllowed(t *testing.T) {
 
 	agentID, ownerID, _ := privateAgentTestFixture(t)
 
-	var squadID string
+	var teamID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		INSERT INTO team (workspace_id, name, description, leader_id, creator_id)
 		VALUES ($1, 'AP Private Leader Owner', '', $2, $3)
 		RETURNING id
-	`, testWorkspaceID, agentID, testUserID).Scan(&squadID); err != nil {
-		t.Fatalf("create squad: %v", err)
+	`, testWorkspaceID, agentID, testUserID).Scan(&teamID); err != nil {
+		t.Fatalf("create team: %v", err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1`, squadID)
+		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID)
 	})
 
 	// The AGENT OWNER creates the autopilot — allowed under MUL-3963 (workspace
 	// owner/admin no longer bypasses a private leader's invocation gate).
 	w := httptest.NewRecorder()
 	r := newRequestAs(ownerID, "POST", "/api/autopilots?workspace_id="+testWorkspaceID, map[string]any{
-		"title":          "owner creates private-leader squad ap",
-		"assignee_type":  "squad",
-		"assignee_id":    squadID,
+		"title":          "owner creates private-leader team ap",
+		"assignee_type":  "team",
+		"assignee_id":    teamID,
 		"execution_mode": "create_issue",
 	})
 	testHandler.CreateAutopilot(w, r)
@@ -146,10 +146,10 @@ func TestCreateAutopilot_SquadPrivateLeader_OwnerAllowed(t *testing.T) {
 	})
 }
 
-// TestTriggerAutopilot_SquadPrivateLeader_OwnerCanDispatch verifies that a
-// squad autopilot with private leader configured by an owner triggers
+// TestTriggerAutopilot_TeamPrivateLeader_OwnerCanDispatch verifies that a
+// team autopilot with private leader configured by an owner triggers
 // correctly at dispatch time.
-func TestTriggerAutopilot_SquadPrivateLeader_OwnerCanDispatch(t *testing.T) {
+func TestTriggerAutopilot_TeamPrivateLeader_OwnerCanDispatch(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
@@ -157,25 +157,25 @@ func TestTriggerAutopilot_SquadPrivateLeader_OwnerCanDispatch(t *testing.T) {
 
 	agentID, ownerID, _ := privateAgentTestFixture(t)
 
-	var squadID string
+	var teamID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		INSERT INTO team (workspace_id, name, description, leader_id, creator_id)
 		VALUES ($1, 'AP Private Leader Dispatch', '', $2, $3)
 		RETURNING id
-	`, testWorkspaceID, agentID, testUserID).Scan(&squadID); err != nil {
-		t.Fatalf("create squad: %v", err)
+	`, testWorkspaceID, agentID, testUserID).Scan(&teamID); err != nil {
+		t.Fatalf("create team: %v", err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1`, squadID)
+		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID)
 	})
 
 	// Create autopilot as the AGENT OWNER (MUL-3963: only owner/allow-listed
 	// may invoke the private leader; workspace admin no longer bypasses).
 	w := httptest.NewRecorder()
 	r := newRequestAs(ownerID, "POST", "/api/autopilots?workspace_id="+testWorkspaceID, map[string]any{
-		"title":          "dispatch test private leader squad",
-		"assignee_type":  "squad",
-		"assignee_id":    squadID,
+		"title":          "dispatch test private leader team",
+		"assignee_type":  "team",
+		"assignee_id":    teamID,
 		"execution_mode": "create_issue",
 	})
 	testHandler.CreateAutopilot(w, r)
@@ -188,15 +188,15 @@ func TestTriggerAutopilot_SquadPrivateLeader_OwnerCanDispatch(t *testing.T) {
 	}
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM autopilot_run WHERE autopilot_id = $1`, ap.ID)
-		testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id IN (SELECT id FROM issue WHERE workspace_id = $1 AND title LIKE 'dispatch test private leader squad%')`, testWorkspaceID)
-		testPool.Exec(context.Background(), `DELETE FROM issue WHERE workspace_id = $1 AND title LIKE 'dispatch test private leader squad%'`, testWorkspaceID)
+		testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id IN (SELECT id FROM issue WHERE workspace_id = $1 AND title LIKE 'dispatch test private leader team%')`, testWorkspaceID)
+		testPool.Exec(context.Background(), `DELETE FROM issue WHERE workspace_id = $1 AND title LIKE 'dispatch test private leader team%'`, testWorkspaceID)
 		testPool.Exec(context.Background(), `DELETE FROM autopilot WHERE id = $1`, ap.ID)
 	})
 
 	// Trigger AS THE OWNER — manual "run now" admits on the current clicker's
 	// invoke permission (MUL-4525), so the owner (who can invoke the private
 	// leader) must be the one clicking. A non-owner clicker is covered by
-	// TestTriggerAutopilot_SquadPrivateLeader_NonOwnerClicker_Blocked below.
+	// TestTriggerAutopilot_TeamPrivateLeader_NonOwnerClicker_Blocked below.
 	w = httptest.NewRecorder()
 	r = newRequestAs(ownerID, "POST", "/api/autopilots/"+ap.ID+"/trigger?workspace_id="+testWorkspaceID, nil)
 	r = withURLParam(r, "id", ap.ID)
@@ -213,7 +213,7 @@ func TestTriggerAutopilot_SquadPrivateLeader_OwnerCanDispatch(t *testing.T) {
 	}
 }
 
-// TestTriggerAutopilot_SquadPrivateLeader_NonOwnerClicker_Blocked pins the
+// TestTriggerAutopilot_TeamPrivateLeader_NonOwnerClicker_Blocked pins the
 // MUL-4525 fork fix: manual "run now" admits on the CURRENT clicker, not the
 // autopilot creator. Even for an autopilot the OWNER created (so the creator
 // could invoke), a different member clicking Run now who cannot invoke the
@@ -221,7 +221,7 @@ func TestTriggerAutopilot_SquadPrivateLeader_OwnerCanDispatch(t *testing.T) {
 // stable, enumeration-safe reason_code (not a silent success). This is the exact
 // case where the old creator-based admission and clicker-based attribution
 // forked.
-func TestTriggerAutopilot_SquadPrivateLeader_NonOwnerClicker_Blocked(t *testing.T) {
+func TestTriggerAutopilot_TeamPrivateLeader_NonOwnerClicker_Blocked(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
@@ -229,24 +229,24 @@ func TestTriggerAutopilot_SquadPrivateLeader_NonOwnerClicker_Blocked(t *testing.
 
 	agentID, ownerID, _ := privateAgentTestFixture(t)
 
-	var squadID string
+	var teamID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		INSERT INTO team (workspace_id, name, description, leader_id, creator_id)
 		VALUES ($1, 'AP Private Leader Clicker Fork', '', $2, $3)
 		RETURNING id
-	`, testWorkspaceID, agentID, testUserID).Scan(&squadID); err != nil {
-		t.Fatalf("create squad: %v", err)
+	`, testWorkspaceID, agentID, testUserID).Scan(&teamID); err != nil {
+		t.Fatalf("create team: %v", err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1`, squadID)
+		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID)
 	})
 
 	// Owner creates a legitimate autopilot (creator CAN invoke the leader).
 	w := httptest.NewRecorder()
 	r := newRequestAs(ownerID, "POST", "/api/autopilots?workspace_id="+testWorkspaceID, map[string]any{
-		"title":          "clicker fork private leader squad",
-		"assignee_type":  "squad",
-		"assignee_id":    squadID,
+		"title":          "clicker fork private leader team",
+		"assignee_type":  "team",
+		"assignee_id":    teamID,
 		"execution_mode": "create_issue",
 	})
 	testHandler.CreateAutopilot(w, r)
@@ -259,7 +259,7 @@ func TestTriggerAutopilot_SquadPrivateLeader_NonOwnerClicker_Blocked(t *testing.
 	}
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM autopilot_run WHERE autopilot_id = $1`, ap.ID)
-		testPool.Exec(context.Background(), `DELETE FROM issue WHERE workspace_id = $1 AND title LIKE 'clicker fork private leader squad%'`, testWorkspaceID)
+		testPool.Exec(context.Background(), `DELETE FROM issue WHERE workspace_id = $1 AND title LIKE 'clicker fork private leader team%'`, testWorkspaceID)
 		testPool.Exec(context.Background(), `DELETE FROM autopilot WHERE id = $1`, ap.ID)
 	})
 
@@ -289,10 +289,10 @@ func TestTriggerAutopilot_SquadPrivateLeader_NonOwnerClicker_Blocked(t *testing.
 	}
 }
 
-// TestTriggerAutopilot_SquadPrivateLeader_PlainMemberCreator_Blocked verifies
-// that if an autopilot pointing to a private-leader squad was somehow saved
+// TestTriggerAutopilot_TeamPrivateLeader_PlainMemberCreator_Blocked verifies
+// that if an autopilot pointing to a private-leader team was somehow saved
 // by a plain member (legacy data), dispatch is blocked at runtime.
-func TestTriggerAutopilot_SquadPrivateLeader_PlainMemberCreator_Blocked(t *testing.T) {
+func TestTriggerAutopilot_TeamPrivateLeader_PlainMemberCreator_Blocked(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
@@ -300,16 +300,16 @@ func TestTriggerAutopilot_SquadPrivateLeader_PlainMemberCreator_Blocked(t *testi
 
 	agentID, _, memberID := privateAgentTestFixture(t)
 
-	var squadID string
+	var teamID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		INSERT INTO team (workspace_id, name, description, leader_id, creator_id)
 		VALUES ($1, 'AP Private Leader Blocked Dispatch', '', $2, $3)
 		RETURNING id
-	`, testWorkspaceID, agentID, testUserID).Scan(&squadID); err != nil {
-		t.Fatalf("create squad: %v", err)
+	`, testWorkspaceID, agentID, testUserID).Scan(&teamID); err != nil {
+		t.Fatalf("create team: %v", err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1`, squadID)
+		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID)
 	})
 
 	// Directly insert an autopilot with the plain member as creator
@@ -318,9 +318,9 @@ func TestTriggerAutopilot_SquadPrivateLeader_PlainMemberCreator_Blocked(t *testi
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO autopilot (workspace_id, title, assignee_type, assignee_id,
 		                       execution_mode, created_by_type, created_by_id, status)
-		VALUES ($1, 'legacy illegal ap', 'squad', $2, 'create_issue', 'member', $3, 'active')
+		VALUES ($1, 'legacy illegal ap', 'team', $2, 'create_issue', 'member', $3, 'active')
 		RETURNING id
-	`, testWorkspaceID, squadID, memberID).Scan(&apID); err != nil {
+	`, testWorkspaceID, teamID, memberID).Scan(&apID); err != nil {
 		t.Fatalf("create autopilot: %v", err)
 	}
 	t.Cleanup(func() {
@@ -349,11 +349,11 @@ func TestTriggerAutopilot_SquadPrivateLeader_PlainMemberCreator_Blocked(t *testi
 	}
 }
 
-// TestTriggerAutopilot_RunOnly_SquadPrivateLeader_PlainMemberCreator_Blocked
+// TestTriggerAutopilot_RunOnly_TeamPrivateLeader_PlainMemberCreator_Blocked
 // mirrors the create_issue dispatch test above but exercises the run_only
 // dispatch path (dispatchRunOnly), ensuring both dispatch branches gate
 // private-leader access.
-func TestTriggerAutopilot_RunOnly_SquadPrivateLeader_PlainMemberCreator_Blocked(t *testing.T) {
+func TestTriggerAutopilot_RunOnly_TeamPrivateLeader_PlainMemberCreator_Blocked(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
@@ -361,26 +361,26 @@ func TestTriggerAutopilot_RunOnly_SquadPrivateLeader_PlainMemberCreator_Blocked(
 
 	agentID, _, memberID := privateAgentTestFixture(t)
 
-	var squadID string
+	var teamID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		INSERT INTO team (workspace_id, name, description, leader_id, creator_id)
 		VALUES ($1, 'AP RunOnly Private Leader Blocked', '', $2, $3)
 		RETURNING id
-	`, testWorkspaceID, agentID, testUserID).Scan(&squadID); err != nil {
-		t.Fatalf("create squad: %v", err)
+	`, testWorkspaceID, agentID, testUserID).Scan(&teamID); err != nil {
+		t.Fatalf("create team: %v", err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1`, squadID)
+		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID)
 	})
 
-	// Legacy autopilot: run_only mode, plain member creator, private-leader squad.
+	// Legacy autopilot: run_only mode, plain member creator, private-leader team.
 	var apID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO autopilot (workspace_id, title, assignee_type, assignee_id,
 		                       execution_mode, created_by_type, created_by_id, status)
-		VALUES ($1, 'legacy run_only illegal ap', 'squad', $2, 'run_only', 'member', $3, 'active')
+		VALUES ($1, 'legacy run_only illegal ap', 'team', $2, 'run_only', 'member', $3, 'active')
 		RETURNING id
-	`, testWorkspaceID, squadID, memberID).Scan(&apID); err != nil {
+	`, testWorkspaceID, teamID, memberID).Scan(&apID); err != nil {
 		t.Fatalf("create autopilot: %v", err)
 	}
 	t.Cleanup(func() {

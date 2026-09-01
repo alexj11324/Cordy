@@ -2129,7 +2129,7 @@ func TestWebhook_MergedPR_ChildWithParent_NotifiesParent(t *testing.T) {
 	// Parent has no assignee in this fixture, so the routing mentions stay
 	// absent. Behavior for assigned parents is covered in
 	// issue_child_done_test.go (MUL-2538 Option C).
-	for _, banned := range []string{"mention://agent/", "mention://member/", "mention://squad/"} {
+	for _, banned := range []string{"mention://agent/", "mention://member/", "mention://team/"} {
 		if strings.Contains(content, banned) {
 			t.Errorf("system comment must not include %q mention (parent unassigned), got: %s", banned, content)
 		}

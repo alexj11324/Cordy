@@ -110,7 +110,7 @@ func systemCommentOn(t *testing.T, issueID string) (content, authorIDStr string,
 // parent. The comment must reference the child by its workspace-specific
 // identifier (NOT a hardcoded `MUL-` prefix — that was the bug PR #2918
 // review called out). When the parent has no assignee, the body must NOT
-// carry any agent/member/squad mention either; the assignee-mention is the
+// carry any agent/member/team mention either; the assignee-mention is the
 // only mention we ever inject (see MUL-2538 Option C — covered separately
 // in TestChildDoneMentionsParentAssignee_* below).
 func TestChildDoneNotifiesParent(t *testing.T) {
@@ -147,7 +147,7 @@ func TestChildDoneNotifiesParent(t *testing.T) {
 	if !strings.Contains(content, "mention://issue/"+fx.child.ID) {
 		t.Errorf("expected mention://issue/<child-id> link in comment, got: %s", content)
 	}
-	for _, banned := range []string{"mention://agent/", "mention://member/", "mention://squad/"} {
+	for _, banned := range []string{"mention://agent/", "mention://member/", "mention://team/"} {
 		if strings.Contains(content, banned) {
 			t.Errorf("parent has no assignee but comment included %q mention, got: %s", banned, content)
 		}
@@ -378,15 +378,15 @@ func TestChildDoneSkippedWhenParentMember(t *testing.T) {
 	}
 }
 
-// TestChildDoneMentionsParentAssignee_Squad verifies the squad branch: the
-// system comment carries a `mention://squad/<id>` link and the squad
-// leader receives a leader-role task. Reuses the squad fixture helper from
-// squad_comment_trigger_test.go.
-func TestChildDoneMentionsParentAssignee_Squad(t *testing.T) {
+// TestChildDoneMentionsParentAssignee_Team verifies the team branch: the
+// system comment carries a `mention://team/<id>` link and the team
+// leader receives a leader-role task. Reuses the team fixture helper from
+// team_comment_trigger_test.go.
+func TestChildDoneMentionsParentAssignee_Team(t *testing.T) {
 	fx := newChildDoneFixture(t, "in_progress")
-	sq := newSquadCommentTriggerFixture(t)
+	sq := newTeamCommentTriggerFixture(t)
 
-	setIssueAssigneeDirect(t, fx.parent.ID, "squad", sq.SquadID)
+	setIssueAssigneeDirect(t, fx.parent.ID, "team", sq.TeamID)
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
 			`DELETE FROM agent_task_queue WHERE issue_id = $1`, fx.parent.ID)
@@ -395,12 +395,12 @@ func TestChildDoneMentionsParentAssignee_Squad(t *testing.T) {
 	updateChildStatus(t, fx.child.ID, "done")
 
 	content := parentSystemCommentContent(t, fx.parent.ID)
-	wantMention := "mention://squad/" + sq.SquadID
+	wantMention := "mention://team/" + sq.TeamID
 	if !strings.Contains(content, wantMention) {
 		t.Errorf("expected %q in system comment, got: %s", wantMention, content)
 	}
 	if got := countPendingTasksForAgent(t, fx.parent.ID, sq.LeaderID); got != 1 {
-		t.Errorf("expected 1 pending leader task for parent squad, got %d", got)
+		t.Errorf("expected 1 pending leader task for parent team, got %d", got)
 	}
 }
 
@@ -445,22 +445,22 @@ func TestChildDoneTriggersParentAgentWhenSameAgentOwnsChild(t *testing.T) {
 	}
 }
 
-// TestChildDoneTriggersParentAgentWhenChildSquadSharesLeader — parent is
-// assigned to agent A directly; the finished child is assigned to a squad
+// TestChildDoneTriggersParentAgentWhenChildTeamSharesLeader — parent is
+// assigned to agent A directly; the finished child is assigned to a team
 // whose leader is also agent A. Because the parent is an AGENT, dispatch
 // routes through the agent path, which (post-MUL-2808) has no self-trigger
 // guard: A coordinates the parent and must be woken to advance it when the
-// child completes, regardless of who executed the child. The squad path now
-// behaves identically: MUL-3969 removed its old same-squad / shared-leader
-// guards, so BOTH sides being squads that share a leader also wakes the leader
-// (see TestChildDoneWakesLeaderWhenParentAndChildSquadsShareLeader).
-func TestChildDoneTriggersParentAgentWhenChildSquadSharesLeader(t *testing.T) {
+// child completes, regardless of who executed the child. The team path now
+// behaves identically: MUL-3969 removed its old same-team / shared-leader
+// guards, so BOTH sides being teams that share a leader also wakes the leader
+// (see TestChildDoneWakesLeaderWhenParentAndChildTeamsShareLeader).
+func TestChildDoneTriggersParentAgentWhenChildTeamSharesLeader(t *testing.T) {
 	fx := newChildDoneFixture(t, "in_progress")
-	sq := newSquadCommentTriggerFixture(t)
+	sq := newTeamCommentTriggerFixture(t)
 
-	// Parent agent == squad leader, child assigned to the squad.
+	// Parent agent == team leader, child assigned to the team.
 	setIssueAssigneeDirect(t, fx.parent.ID, "agent", sq.LeaderID)
-	setIssueAssigneeDirect(t, fx.child.ID, "squad", sq.SquadID)
+	setIssueAssigneeDirect(t, fx.child.ID, "team", sq.TeamID)
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
 			`DELETE FROM agent_task_queue WHERE issue_id IN ($1, $2)`,
@@ -478,36 +478,36 @@ func TestChildDoneTriggersParentAgentWhenChildSquadSharesLeader(t *testing.T) {
 	}
 }
 
-// TestChildDoneWakesLeaderWhenParentAndChildSquadsShareLeader — cross-squad
-// shared-leader case. Parent is squad A, child is squad B, both squads have
-// the same leader agent. The squad path used to suppress the leader wake here
+// TestChildDoneWakesLeaderWhenParentAndChildTeamsShareLeader — cross-team
+// shared-leader case. Parent is team A, child is team B, both teams have
+// the same leader agent. The team path used to suppress the leader wake here
 // (effectiveChildAgentOwner reduced both sides to the shared leader), but that
 // guard was removed in MUL-3969: waking the leader on the PARENT is a serial
 // sub-task handoff across two DIFFERENT issues, not a self-loop, and it is the
 // only signal that carries the parent-level stage-barrier instruction. The
 // leader must now be woken exactly once; runaway re-triggering is bounded by
 // the HasPendingTaskForIssueAndAgent idempotency check.
-func TestChildDoneWakesLeaderWhenParentAndChildSquadsShareLeader(t *testing.T) {
+func TestChildDoneWakesLeaderWhenParentAndChildTeamsShareLeader(t *testing.T) {
 	fx := newChildDoneFixture(t, "in_progress")
-	parentSquad := newSquadCommentTriggerFixture(t)
+	parentTeam := newTeamCommentTriggerFixture(t)
 
-	// Spin up a SECOND squad that reuses the same leader as parentSquad.
+	// Spin up a SECOND team that reuses the same leader as parentTeam.
 	ctx := context.Background()
-	var childSquadID string
+	var childTeamID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		INSERT INTO team (workspace_id, name, description, leader_id, creator_id)
 		VALUES ($1, $2, '', $3, $4)
 		RETURNING id
-	`, testWorkspaceID, "Child Done Shared Leader Squad", parentSquad.LeaderID, testUserID).
-		Scan(&childSquadID); err != nil {
-		t.Fatalf("create second squad: %v", err)
+	`, testWorkspaceID, "Child Done Shared Leader Team", parentTeam.LeaderID, testUserID).
+		Scan(&childTeamID); err != nil {
+		t.Fatalf("create second team: %v", err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1`, childSquadID)
+		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, childTeamID)
 	})
 
-	setIssueAssigneeDirect(t, fx.parent.ID, "squad", parentSquad.SquadID)
-	setIssueAssigneeDirect(t, fx.child.ID, "squad", childSquadID)
+	setIssueAssigneeDirect(t, fx.parent.ID, "team", parentTeam.TeamID)
+	setIssueAssigneeDirect(t, fx.child.ID, "team", childTeamID)
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
 			`DELETE FROM agent_task_queue WHERE issue_id IN ($1, $2)`,
@@ -517,27 +517,27 @@ func TestChildDoneWakesLeaderWhenParentAndChildSquadsShareLeader(t *testing.T) {
 	updateChildStatus(t, fx.child.ID, "done")
 
 	content := parentSystemCommentContent(t, fx.parent.ID)
-	if !strings.Contains(content, "mention://squad/"+parentSquad.SquadID) {
-		t.Errorf("expected parent-squad mention in system comment, got: %s", content)
+	if !strings.Contains(content, "mention://team/"+parentTeam.TeamID) {
+		t.Errorf("expected parent-team mention in system comment, got: %s", content)
 	}
-	if got := countPendingTasksForAgent(t, fx.parent.ID, parentSquad.LeaderID); got != 1 {
+	if got := countPendingTasksForAgent(t, fx.parent.ID, parentTeam.LeaderID); got != 1 {
 		t.Errorf("expected 1 pending leader task on parent (shared-leader guard removed, MUL-3969), got %d", got)
 	}
 }
 
-// TestChildDoneWakesLeaderWhenChildIsSameSquad — the MUL-3969 repro. Parent
-// and the just-finished child are BOTH assigned to the same squad (the common
-// "a squad decomposes its parent into sub-issues it works itself" pattern).
-// The old same-squad guard suppressed the leader wake, so the stage-barrier
+// TestChildDoneWakesLeaderWhenChildIsSameTeam — the MUL-3969 repro. Parent
+// and the just-finished child are BOTH assigned to the same team (the common
+// "a team decomposes its parent into sub-issues it works itself" pattern).
+// The old same-team guard suppressed the leader wake, so the stage-barrier
 // system comment landed on the parent but the "wrap up / advance" instruction
 // was never delivered to the leader and the parent silently stalled in
 // in_progress. The leader must now be woken exactly once.
-func TestChildDoneWakesLeaderWhenChildIsSameSquad(t *testing.T) {
+func TestChildDoneWakesLeaderWhenChildIsSameTeam(t *testing.T) {
 	fx := newChildDoneFixture(t, "in_progress")
-	sq := newSquadCommentTriggerFixture(t)
+	sq := newTeamCommentTriggerFixture(t)
 
-	setIssueAssigneeDirect(t, fx.parent.ID, "squad", sq.SquadID)
-	setIssueAssigneeDirect(t, fx.child.ID, "squad", sq.SquadID)
+	setIssueAssigneeDirect(t, fx.parent.ID, "team", sq.TeamID)
+	setIssueAssigneeDirect(t, fx.child.ID, "team", sq.TeamID)
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(),
 			`DELETE FROM agent_task_queue WHERE issue_id IN ($1, $2)`,
@@ -547,18 +547,18 @@ func TestChildDoneWakesLeaderWhenChildIsSameSquad(t *testing.T) {
 	updateChildStatus(t, fx.child.ID, "done")
 
 	content := parentSystemCommentContent(t, fx.parent.ID)
-	if !strings.Contains(content, "mention://squad/"+sq.SquadID) {
-		t.Errorf("expected parent-squad mention in system comment, got: %s", content)
+	if !strings.Contains(content, "mention://team/"+sq.TeamID) {
+		t.Errorf("expected parent-team mention in system comment, got: %s", content)
 	}
 	if got := countPendingTasksForAgent(t, fx.parent.ID, sq.LeaderID); got != 1 {
-		t.Errorf("expected 1 pending leader task for same-squad child (MUL-3969), got %d", got)
+		t.Errorf("expected 1 pending leader task for same-team child (MUL-3969), got %d", got)
 	}
 }
 
 // TestStageLeaderPrepareTimeoutRetryCanAdvanceNextStage covers the full server
-// half of MUL-4923's recovery chain: a stage barrier wakes the squad leader,
+// half of MUL-4923's recovery chain: a stage barrier wakes the team leader,
 // the pre-start attempt fails with the daemon's timeout reason, the atomic
-// retry preserves leader/squad/trigger provenance, and that retry can promote
+// retry preserves leader/team/trigger provenance, and that retry can promote
 // the parked next stage as the leader actor.
 func TestStageLeaderPrepareTimeoutRetryCanAdvanceNextStage(t *testing.T) {
 	if testHandler == nil || testPool == nil {
@@ -566,9 +566,9 @@ func TestStageLeaderPrepareTimeoutRetryCanAdvanceNextStage(t *testing.T) {
 	}
 	ctx := context.Background()
 	fx := newChildDoneFixture(t, "in_progress")
-	sq := newSquadCommentTriggerFixture(t)
-	setIssueAssigneeDirect(t, fx.parent.ID, "squad", sq.SquadID)
-	setIssueAssigneeDirect(t, fx.child.ID, "squad", sq.SquadID)
+	sq := newTeamCommentTriggerFixture(t)
+	setIssueAssigneeDirect(t, fx.parent.ID, "team", sq.TeamID)
+	setIssueAssigneeDirect(t, fx.child.ID, "team", sq.TeamID)
 	if _, err := testPool.Exec(ctx, `UPDATE issue SET stage = 1 WHERE id = $1`, fx.child.ID); err != nil {
 		t.Fatalf("set stage 1: %v", err)
 	}
@@ -581,8 +581,8 @@ func TestStageLeaderPrepareTimeoutRetryCanAdvanceNextStage(t *testing.T) {
 		"status":          "backlog",
 		"parent_issue_id": fx.parent.ID,
 		"stage":           2,
-		"assignee_type":   "squad",
-		"assignee_id":     sq.SquadID,
+		"assignee_type":   "team",
+		"assignee_id":     sq.TeamID,
 	})
 	testHandler.CreateIssue(w, req)
 	if w.Code != http.StatusCreated {
@@ -603,19 +603,19 @@ func TestStageLeaderPrepareTimeoutRetryCanAdvanceNextStage(t *testing.T) {
 		t.Fatalf("stage barrier comment does not identify Stage 2: %s", content)
 	}
 
-	var originalID, originalSquadID, originalTriggerID string
+	var originalID, originalTeamID, originalTriggerID string
 	var originalLeader bool
 	if err := testPool.QueryRow(ctx, `
-		SELECT id::text, is_leader_task, squad_id::text, trigger_comment_id::text
+		SELECT id::text, is_leader_task, team_id::text, trigger_comment_id::text
 		FROM agent_task_queue
 		WHERE issue_id = $1 AND agent_id = $2 AND status = 'queued'
 		ORDER BY created_at DESC
 		LIMIT 1
-	`, fx.parent.ID, sq.LeaderID).Scan(&originalID, &originalLeader, &originalSquadID, &originalTriggerID); err != nil {
+	`, fx.parent.ID, sq.LeaderID).Scan(&originalID, &originalLeader, &originalTeamID, &originalTriggerID); err != nil {
 		t.Fatalf("load Stage 1 leader wake: %v", err)
 	}
-	if !originalLeader || originalSquadID != sq.SquadID || originalTriggerID == "" {
-		t.Fatalf("leader wake provenance = leader:%v squad:%q trigger:%q", originalLeader, originalSquadID, originalTriggerID)
+	if !originalLeader || originalTeamID != sq.TeamID || originalTriggerID == "" {
+		t.Fatalf("leader wake provenance = leader:%v team:%q trigger:%q", originalLeader, originalTeamID, originalTriggerID)
 	}
 	if _, err := testPool.Exec(ctx, `
 		UPDATE agent_task_queue
@@ -629,20 +629,20 @@ func TestStageLeaderPrepareTimeoutRetryCanAdvanceNextStage(t *testing.T) {
 		t.Fatalf("fail original leader task: %v", err)
 	}
 
-	var retryID, retryStatus, retrySquadID, retryTriggerID string
+	var retryID, retryStatus, retryTeamID, retryTriggerID string
 	var retryLeader bool
 	var retryAttempt int32
 	if err := testPool.QueryRow(ctx, `
-		SELECT id::text, status, is_leader_task, squad_id::text,
+		SELECT id::text, status, is_leader_task, team_id::text,
 		       trigger_comment_id::text, attempt
 		FROM agent_task_queue
 		WHERE parent_task_id = $1
-	`, originalID).Scan(&retryID, &retryStatus, &retryLeader, &retrySquadID, &retryTriggerID, &retryAttempt); err != nil {
+	`, originalID).Scan(&retryID, &retryStatus, &retryLeader, &retryTeamID, &retryTriggerID, &retryAttempt); err != nil {
 		t.Fatalf("load automatic retry: %v", err)
 	}
-	if retryStatus != "queued" || retryAttempt != 2 || !retryLeader || retrySquadID != originalSquadID || retryTriggerID != originalTriggerID {
-		t.Fatalf("retry provenance = status:%q attempt:%d leader:%v squad:%q trigger:%q; want queued attempt 2 with original leader context",
-			retryStatus, retryAttempt, retryLeader, retrySquadID, retryTriggerID)
+	if retryStatus != "queued" || retryAttempt != 2 || !retryLeader || retryTeamID != originalTeamID || retryTriggerID != originalTriggerID {
+		t.Fatalf("retry provenance = status:%q attempt:%d leader:%v team:%q trigger:%q; want queued attempt 2 with original leader context",
+			retryStatus, retryAttempt, retryLeader, retryTeamID, retryTriggerID)
 	}
 	if _, err := testPool.Exec(ctx, `
 		UPDATE agent_task_queue

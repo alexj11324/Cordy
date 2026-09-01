@@ -755,7 +755,7 @@ RETURNING id, workspace_id, patchbay_user_id, installation_id, channel_type, cha
 
 type CreateChannelUserBindingParams struct {
 	WorkspaceID    pgtype.UUID `json:"workspace_id"`
-	PatchbayUserID  pgtype.UUID `json:"patchbay_user_id"`
+	PatchbayUserID pgtype.UUID `json:"patchbay_user_id"`
 	InstallationID pgtype.UUID `json:"installation_id"`
 	ChannelType    string      `json:"channel_type"`
 	ChannelUserID  string      `json:"channel_user_id"`
@@ -1011,7 +1011,7 @@ WHERE workspace_id = $1 AND patchbay_user_id = $2
 `
 
 type DeleteChannelUserBindingsByWorkspaceMemberParams struct {
-	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
 	PatchbayUserID pgtype.UUID `json:"patchbay_user_id"`
 }
 
@@ -1035,9 +1035,9 @@ LIMIT 1
 `
 
 type FindChannelBindingForMemberParams struct {
-	WorkspaceID   pgtype.UUID `json:"workspace_id"`
+	WorkspaceID    pgtype.UUID `json:"workspace_id"`
 	PatchbayUserID pgtype.UUID `json:"patchbay_user_id"`
-	ChannelType   string      `json:"channel_type"`
+	ChannelType    string      `json:"channel_type"`
 }
 
 // Outbound notification lookup: given a Patchbay member and a channel_type,

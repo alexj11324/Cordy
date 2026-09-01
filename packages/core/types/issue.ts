@@ -32,7 +32,7 @@ export type IssueStatus = IssueStatusCategory | (string & {});
 
 export type IssuePriority = "urgent" | "high" | "medium" | "low" | "none";
 
-export type IssueAssigneeType = "member" | "agent" | "squad";
+export type IssueAssigneeType = "member" | "agent" | "team";
 
 export interface IssueReaction {
   id: string;

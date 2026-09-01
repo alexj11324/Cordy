@@ -29,7 +29,7 @@ const EmojiPicker = lazy(() =>
   })),
 );
 
-export type AvatarUploadVariant = "user" | "agent" | "squad" | "workspace";
+export type AvatarUploadVariant = "user" | "agent" | "team" | "workspace";
 
 interface AvatarUploadControlProps {
   /** Current avatar URL, raw (unresolved). `null` renders the empty state. */
@@ -44,7 +44,7 @@ interface AvatarUploadControlProps {
   /**
    * Fires with the uploaded file URL after a successful crop + upload. The
    * parent persists it (updateMe / updateWorkspace / updateAgent /
-   * updateSquad, or stashing it for a create call). The crop dialog stays in
+   * updateTeam, or stashing it for a create call). The crop dialog stays in
    * its busy state until this resolves, then closes.
    */
   onUploaded: (url: string) => void | Promise<unknown>;
@@ -87,7 +87,7 @@ function AvatarFallback({
   if (variant === "agent") {
     return <Bot style={{ width: size * 0.5, height: size * 0.5 }} />;
   }
-  if (variant === "squad") {
+  if (variant === "team") {
     return <Users style={{ width: size * 0.5, height: size * 0.5 }} />;
   }
   const text =

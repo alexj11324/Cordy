@@ -162,7 +162,7 @@ describe("Agent creation errors", () => {
       createElement(CreateAgentFooter, {
         canCreate: true,
         creating: false,
-        squad: false,
+        team: false,
         error: "Network request failed",
         onCreate: vi.fn(),
       }),

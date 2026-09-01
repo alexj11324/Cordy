@@ -331,7 +331,7 @@ LIMIT 5;
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, trigger_comment_id,
     coalesced_comment_ids, trigger_summary, force_fresh_session, is_leader_task, handoff_note,
-    squad_id, context, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps,
+    team_id, context, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps,
     originator_source, delegated_from_task_id, rule_version_id, rerun_of_task_id, trigger_evidence_kind, trigger_evidence_ref_id,
     id
 )
@@ -342,7 +342,7 @@ SELECT
     COALESCE(sqlc.narg('force_fresh_session')::boolean, FALSE),
     COALESCE(sqlc.narg('is_leader_task')::boolean, FALSE),
     sqlc.narg(handoff_note),
-    sqlc.narg(squad_id),
+    sqlc.narg(team_id),
     CASE
         WHEN COALESCE(sqlc.narg('head_sha')::text, '') <> ''
         THEN jsonb_build_object('head_sha', sqlc.narg('head_sha')::text)
@@ -373,7 +373,7 @@ RETURNING *;
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, trigger_comment_id,
     coalesced_comment_ids, trigger_summary, force_fresh_session, is_leader_task, handoff_note,
-    squad_id, context, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps,
+    team_id, context, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps,
     originator_source, delegated_from_task_id, rule_version_id, rerun_of_task_id,
     trigger_evidence_kind, trigger_evidence_ref_id, fire_at,
     id
@@ -385,7 +385,7 @@ SELECT
     COALESCE(sqlc.narg('force_fresh_session')::boolean, FALSE),
     COALESCE(sqlc.narg('is_leader_task')::boolean, FALSE),
     sqlc.narg(handoff_note),
-    sqlc.narg(squad_id),
+    sqlc.narg(team_id),
     jsonb_strip_nulls(jsonb_build_object(
         'head_sha', NULLIF(COALESCE(sqlc.narg('head_sha')::text, ''), ''),
         'channel_issue_media_pending', TRUE
@@ -470,7 +470,7 @@ RETURNING *;
 -- (MUL-4302 §2).
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, issue_id, status, priority, trigger_comment_id,
-    trigger_summary, is_leader_task, squad_id, escalation_for_task_id, fire_at,
+    trigger_summary, is_leader_task, team_id, escalation_for_task_id, fire_at,
     originator_user_id, accountable_user_id, originator_source,
     delegated_from_task_id, trigger_evidence_kind, trigger_evidence_ref_id,
     id
@@ -480,7 +480,7 @@ SELECT
     sqlc.narg(trigger_comment_id),
     sqlc.narg(trigger_summary),
     COALESCE(sqlc.narg('is_leader_task')::boolean, FALSE),
-    sqlc.narg(squad_id),
+    sqlc.narg(team_id),
     @escalation_for_task_id,
     @fire_at,
     sqlc.narg(originator_user_id),
@@ -536,8 +536,8 @@ WHERE id = $1 AND issue_id IS NULL
 -- conversation. Keep the CASE WHEN predicates in sync with
 -- resumeUnsafeFailureReason and the resume lookup blacklists. attempt is
 -- incremented; max_attempts, trigger_comment_id, coalesced_comment_ids,
--- is_leader_task, and squad_id are inherited so the retried task receives the
--- parent's complete planned comment batch and keeps the same squad-role
+-- is_leader_task, and team_id are inherited so the retried task receives the
+-- parent's complete planned comment batch and keeps the same team-role
 -- provenance. delivered_comment_ids intentionally stays at its '{}' default:
 -- the child must earn its own delivery receipt at claim time.
 --
@@ -587,7 +587,7 @@ INSERT INTO agent_task_queue (
     status, priority, trigger_comment_id, coalesced_comment_ids, trigger_summary, context,
     session_id, work_dir,
     attempt, max_attempts, parent_task_id, force_fresh_session, is_leader_task,
-    squad_id, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps,
+    team_id, originator_user_id, accountable_user_id, runtime_mcp_overlay, runtime_connected_apps,
     originator_source, delegated_from_task_id, rule_version_id,
     trigger_evidence_kind, trigger_evidence_ref_id, retry_of_task_id,
     chat_input_task_id, fire_at,
@@ -603,7 +603,7 @@ SELECT
     p.attempt + 1, COALESCE(sqlc.narg(max_attempts)::int, p.max_attempts), p.id,
     p.failure_reason IS NOT DISTINCT FROM 'codex_semantic_inactivity',
     p.is_leader_task,
-    p.squad_id,
+    p.team_id,
     p.originator_user_id,
     p.accountable_user_id,
     sqlc.narg(runtime_mcp_overlay),
@@ -634,14 +634,14 @@ RETURNING *;
 -- fence; a deleted workspace therefore yields pgx.ErrNoRows and no task.
 INSERT INTO agent_task_queue (
     agent_id, runtime_id, status, priority, context,
-    force_fresh_session, is_leader_task, squad_id,
+    force_fresh_session, is_leader_task, team_id,
     originator_user_id, accountable_user_id,
     runtime_mcp_overlay, runtime_connected_apps,
     originator_source, rerun_of_task_id, id
 )
 SELECT
     p.agent_id, p.runtime_id, 'queued', p.priority, p.context,
-    TRUE, p.is_leader_task, p.squad_id,
+    TRUE, p.is_leader_task, p.team_id,
     sqlc.arg(actor_user_id), sqlc.arg(actor_user_id),
     sqlc.narg(runtime_mcp_overlay), sqlc.narg(runtime_connected_apps),
     'direct_human', p.id, sqlc.arg(new_task_id)
@@ -2176,10 +2176,10 @@ WHERE issue_id = $1 AND agent_id = $2
 
 -- name: GetLatestTaskRoleForIssueAndAgent :one
 -- Returns the role markers from the agent's most recent task on this issue.
--- Used by the squad-leader self-trigger guard to tell apart leader tasks,
--- same-squad worker tasks, and generic agent tasks such as direct mentions or
+-- Used by the team-leader self-trigger guard to tell apart leader tasks,
+-- same-team worker tasks, and generic agent tasks such as direct mentions or
 -- thread-parent replies.
-SELECT is_leader_task, squad_id FROM agent_task_queue
+SELECT is_leader_task, team_id FROM agent_task_queue
 WHERE issue_id = $1 AND agent_id = $2
 ORDER BY created_at DESC
 LIMIT 1;
@@ -2463,7 +2463,7 @@ ORDER BY atq.agent_id, bucket;
 --   - All active tasks (queued / dispatched / running / waiting_local_directory)
 --     — the current workload: working signal + counts (see derive-presence.ts).
 --   - Each agent's most recent OUTCOME task (completed / failed) — NOT part of
---     presence since #1823; it is the "last activity" line the Squad hover card
+--     presence since #1823; it is the "last activity" line the Team hover card
 --     renders (agent-live-peek-card.tsx). Kept in this response because shipped
 --     desktop builds read it from here; see MUL-5436 for the plan to move it to
 --     a dedicated lazy endpoint.
@@ -2578,17 +2578,17 @@ WHERE a.workspace_id = $1
                 )
               )
               OR (
-                i.assignee_type = 'squad'
+                i.assignee_type = 'team'
                 AND EXISTS (
                   SELECT 1
-                  FROM squad s
+                  FROM team s
                   WHERE s.id = i.assignee_id
                     AND s.workspace_id = a.workspace_id
                     AND (
                       EXISTS (
                         SELECT 1
-                        FROM squad_member sm
-                        WHERE sm.squad_id = s.id
+                        FROM team_member sm
+                        WHERE sm.team_id = s.id
                           AND sm.member_type = 'member'
                           AND sm.member_id = @member_id::uuid
                       )
@@ -2601,9 +2601,9 @@ WHERE a.workspace_id = $1
                       )
                       OR EXISTS (
                         SELECT 1
-                        FROM squad_member sm
+                        FROM team_member sm
                         JOIN agent owned_member ON owned_member.id = sm.member_id
-                        WHERE sm.squad_id = s.id
+                        WHERE sm.team_id = s.id
                           AND sm.member_type = 'agent'
                           AND owned_member.workspace_id = a.workspace_id
                           AND owned_member.owner_id = @member_id::uuid

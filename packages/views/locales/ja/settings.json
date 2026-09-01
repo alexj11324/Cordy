@@ -231,9 +231,9 @@
         "label": "エージェントへ移動",
         "description": "エージェント一覧を開きます。"
       },
-      "goSquads": {
-        "label": "Squadsへ移動",
-        "description": "Squad一覧を開きます。"
+      "goTeams": {
+        "label": "Teamsへ移動",
+        "description": "Team一覧を開きます。"
       },
       "goUsage": {
         "label": "使用量へ移動",
@@ -575,7 +575,7 @@
       },
       "mentions": {
         "label": "メンション",
-        "description": "誰かがあなたを @メンションしたとき（@all と @squad を含む）"
+        "description": "誰かがあなたを @メンションしたとき（@all と @team を含む）"
       },
       "updates": {
         "label": "優先度と期限",

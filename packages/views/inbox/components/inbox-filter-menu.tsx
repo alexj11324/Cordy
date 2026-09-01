@@ -247,7 +247,7 @@ export function InboxFilterMenu({
                       initials={getActorInitials(option.type, option.id)}
                       avatarUrl={getActorAvatarUrl(option.type, option.id)}
                       isAgent={option.type === "agent"}
-                      isSquad={option.type === "squad"}
+                      isTeam={option.type === "team"}
                       isSystem={option.type === "system"}
                     />
                     <span className="flex-1">{option.name}</span>

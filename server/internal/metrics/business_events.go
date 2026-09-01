@@ -42,7 +42,7 @@ type businessEventMetrics struct {
 	issueCreated                    *prometheus.CounterVec
 	chatMessageSent                 *prometheus.CounterVec
 	agentCreated                    *prometheus.CounterVec
-	squadCreated                    *prometheus.CounterVec
+	teamCreated                    *prometheus.CounterVec
 	autopilotCreated                *prometheus.CounterVec
 	issueExecuted                   *prometheus.CounterVec
 	runtimeRegistered               *prometheus.CounterVec
@@ -117,10 +117,10 @@ func newBusinessEventMetrics() *businessEventMetrics {
 			Name: "patchbay_agent_created_total",
 			Help: "Total agents created.",
 		}, metricLabels("patchbay_agent_created_total")),
-		squadCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "patchbay_squad_created_total",
-			Help: "Total squads created.",
-		}, metricLabels("patchbay_squad_created_total")),
+		teamCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "patchbay_team_created_total",
+			Help: "Total teams created.",
+		}, metricLabels("patchbay_team_created_total")),
 		autopilotCreated: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "patchbay_autopilot_created_total",
 			Help: "Total autopilots created.",
@@ -232,7 +232,7 @@ func (e *businessEventMetrics) collectors() []prometheus.Collector {
 		e.issueCreated,
 		e.chatMessageSent,
 		e.agentCreated,
-		e.squadCreated,
+		e.teamCreated,
 		e.autopilotCreated,
 		e.issueExecuted,
 		e.runtimeRegistered,
@@ -320,8 +320,8 @@ func (m *BusinessMetrics) IncForEvent(ev analytics.Event) {
 			NormalizeRuntimeMode(stringProp(ev.Properties, "runtime_mode")),
 			NormalizeTaskSource(stringProp(ev.Properties, "source")),
 		).Inc()
-	case analytics.EventSquadCreated:
-		m.events.squadCreated.WithLabelValues().Inc()
+	case analytics.EventTeamCreated:
+		m.events.teamCreated.WithLabelValues().Inc()
 	case analytics.EventAutopilotCreated:
 		m.events.autopilotCreated.WithLabelValues(NormalizeAutopilotCadence(stringProp(ev.Properties, "cadence"))).Inc()
 	case analytics.EventIssueExecuted:

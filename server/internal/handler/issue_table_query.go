@@ -395,24 +395,24 @@ func appendIssueTableInvolvedPredicate(where []string, addArg func(any) string, 
         WHERE a.workspace_id = $1
           AND a.owner_id     = %[1]s::uuid
     ))
-    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
-       SELECT sm.squad_id
-         FROM squad_member sm
-         JOIN squad s ON s.id = sm.squad_id
+    OR (i.assignee_type = 'team' AND i.assignee_id IN (
+       SELECT sm.team_id
+         FROM team_member sm
+         JOIN team s ON s.id = sm.team_id
         WHERE s.workspace_id = $1
           AND sm.member_type = 'member'
           AND sm.member_id   = %[1]s::uuid
        UNION
        SELECT s.id
-         FROM squad s
+         FROM team s
          JOIN agent a ON a.id = s.leader_id
         WHERE s.workspace_id = $1
           AND a.workspace_id = $1
           AND a.owner_id     = %[1]s::uuid
        UNION
-       SELECT sm.squad_id
-         FROM squad_member sm
-         JOIN squad s ON s.id = sm.squad_id
+       SELECT sm.team_id
+         FROM team_member sm
+         JOIN team s ON s.id = sm.team_id
          JOIN agent a ON a.id = sm.member_id
         WHERE s.workspace_id = $1
           AND sm.member_type = 'agent'

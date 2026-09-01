@@ -40,7 +40,7 @@ export interface Comment {
   // keys off the id rather than a dedicated `type`, because `type` is
   // client-supplied on the generic comment endpoint and would be forgeable.
   quick_action_id?: string | null;
-  // Per-target result of every explicit @agent / @squad mention in this comment
+  // Per-target result of every explicit @agent / @team mention in this comment
   // (MUL-4525 §2). Present only on create/edit responses; older servers omit it.
   trigger_outcomes?: CommentTriggerOutcome[];
 }
@@ -55,7 +55,7 @@ export type CommentTriggerStatus =
   | "blocked";
 
 export interface CommentTriggerOutcome {
-  target_type: string; // "agent" | "squad"
+  target_type: string; // "agent" | "team"
   target_id: string;
   status: CommentTriggerStatus | string;
   reason_code: string;
@@ -64,7 +64,7 @@ export interface CommentTriggerOutcome {
 export type CommentTriggerSource =
   | "issue_assignee"
   | "mention_agent"
-  | "mention_squad_leader";
+  | "mention_team_leader";
 
 export interface CommentTriggerPreviewAgent {
   id: string;
@@ -76,7 +76,7 @@ export interface CommentTriggerPreviewAgent {
 
 export interface CommentTriggerPreview {
   agents: CommentTriggerPreviewAgent[];
-  // Explicit @agent / @squad mentions that will NOT trigger if posted as-is
+  // Explicit @agent / @team mentions that will NOT trigger if posted as-is
   // (MUL-4525 §2). Additive: older servers omit it.
   blocked?: CommentTriggerOutcome[];
 }

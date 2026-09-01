@@ -136,7 +136,7 @@ type AgentTaskQueue struct {
 	InitiatorUserID       pgtype.UUID        `json:"initiator_user_id"`
 	HandoffNote           pgtype.Text        `json:"handoff_note"`
 	PrepareLeaseExpiresAt pgtype.Timestamptz `json:"prepare_lease_expires_at"`
-	SquadID               pgtype.UUID        `json:"squad_id"`
+	TeamID                pgtype.UUID        `json:"team_id"`
 	// Per-task MCP servers computed at dispatch time, merged on top of agent.mcp_config. Currently used by Composio integration to inject the initiator user's session URL. Cleared after task completes via trg_clear_runtime_mcp_overlay.
 	RuntimeMcpOverlay   []byte             `json:"runtime_mcp_overlay"`
 	EscalationForTaskID pgtype.UUID        `json:"escalation_for_task_id"`
@@ -275,7 +275,7 @@ type AutopilotRun struct {
 	TriggerPayload     []byte             `json:"trigger_payload"`
 	Result             []byte             `json:"result"`
 	CreatedAt          pgtype.Timestamptz `json:"created_at"`
-	SquadID            pgtype.UUID        `json:"squad_id"`
+	TeamID             pgtype.UUID        `json:"team_id"`
 	PlannedAt          pgtype.Timestamptz `json:"planned_at"`
 	WebhookDeliveryID  pgtype.UUID        `json:"webhook_delivery_id"`
 	QuotaReservationID pgtype.UUID        `json:"quota_reservation_id"`
@@ -444,7 +444,7 @@ type ChannelTaskDelivery struct {
 type ChannelUserBinding struct {
 	ID             pgtype.UUID        `json:"id"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
-	PatchbayUserID  pgtype.UUID        `json:"patchbay_user_id"`
+	PatchbayUserID pgtype.UUID        `json:"patchbay_user_id"`
 	InstallationID pgtype.UUID        `json:"installation_id"`
 	ChannelType    string             `json:"channel_type"`
 	ChannelUserID  string             `json:"channel_user_id"`
@@ -1000,7 +1000,7 @@ type LarkOutboundCardMessage struct {
 type LarkUserBinding struct {
 	ID             pgtype.UUID        `json:"id"`
 	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
-	PatchbayUserID  pgtype.UUID        `json:"patchbay_user_id"`
+	PatchbayUserID pgtype.UUID        `json:"patchbay_user_id"`
 	InstallationID pgtype.UUID        `json:"installation_id"`
 	LarkOpenID     string             `json:"lark_open_id"`
 	UnionID        pgtype.Text        `json:"union_id"`
@@ -1255,30 +1255,6 @@ type SkillToLabel struct {
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
 }
 
-type Squad struct {
-	ID           pgtype.UUID        `json:"id"`
-	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
-	Name         string             `json:"name"`
-	Description  string             `json:"description"`
-	LeaderID     pgtype.UUID        `json:"leader_id"`
-	CreatorID    pgtype.UUID        `json:"creator_id"`
-	CreatedAt    pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
-	ArchivedAt   pgtype.Timestamptz `json:"archived_at"`
-	ArchivedBy   pgtype.UUID        `json:"archived_by"`
-	AvatarUrl    pgtype.Text        `json:"avatar_url"`
-	Instructions string             `json:"instructions"`
-}
-
-type SquadMember struct {
-	ID         pgtype.UUID        `json:"id"`
-	SquadID    pgtype.UUID        `json:"squad_id"`
-	MemberType string             `json:"member_type"`
-	MemberID   pgtype.UUID        `json:"member_id"`
-	Role       string             `json:"role"`
-	CreatedAt  pgtype.Timestamptz `json:"created_at"`
-}
-
 type SysCronExecution struct {
 	ID           pgtype.UUID        `json:"id"`
 	JobName      string             `json:"job_name"`
@@ -1384,6 +1360,30 @@ type TaskUsageHourlyRollupState struct {
 	LastRunFinishedAt pgtype.Timestamptz `json:"last_run_finished_at"`
 	LastRunRows       int64              `json:"last_run_rows"`
 	LastError         pgtype.Text        `json:"last_error"`
+}
+
+type Team struct {
+	ID           pgtype.UUID        `json:"id"`
+	WorkspaceID  pgtype.UUID        `json:"workspace_id"`
+	Name         string             `json:"name"`
+	Description  string             `json:"description"`
+	LeaderID     pgtype.UUID        `json:"leader_id"`
+	CreatorID    pgtype.UUID        `json:"creator_id"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	ArchivedAt   pgtype.Timestamptz `json:"archived_at"`
+	ArchivedBy   pgtype.UUID        `json:"archived_by"`
+	AvatarUrl    pgtype.Text        `json:"avatar_url"`
+	Instructions string             `json:"instructions"`
+}
+
+type TeamMember struct {
+	ID         pgtype.UUID        `json:"id"`
+	TeamID     pgtype.UUID        `json:"team_id"`
+	MemberType string             `json:"member_type"`
+	MemberID   pgtype.UUID        `json:"member_id"`
+	Role       string             `json:"role"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 }
 
 type User struct {

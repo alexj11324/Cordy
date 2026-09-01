@@ -13,7 +13,7 @@ describe("comment trigger outcomes", () => {
   it("parses valid outcomes and drops malformed entries individually", () => {
     const raw = [
       { target_type: "agent", target_id: "a1", status: "queued", reason_code: "queued" },
-      { target_type: "squad", target_id: "s1", status: "blocked", reason_code: "invocation_not_allowed" },
+      { target_type: "team", target_id: "s1", status: "blocked", reason_code: "invocation_not_allowed" },
       { status: "blocked" }, // missing target_id → dropped
       "not-an-object", // → dropped
     ];
@@ -32,7 +32,7 @@ describe("comment trigger outcomes", () => {
       { target_type: "agent", target_id: "a1", status: "queued", reason_code: "queued" },
       { target_type: "agent", target_id: "a2", status: "coalesced", reason_code: "coalesced" },
       { target_type: "agent", target_id: "a3", status: "deferred", reason_code: "deferred" },
-      { target_type: "squad", target_id: "s1", status: "blocked", reason_code: "invocation_not_allowed" },
+      { target_type: "team", target_id: "s1", status: "blocked", reason_code: "invocation_not_allowed" },
     ];
     const unhandled = unhandledCommentTriggerOutcomes(raw);
     expect(unhandled).toHaveLength(1);
@@ -43,7 +43,7 @@ describe("comment trigger outcomes", () => {
     const raw = [
       { target_type: "agent", target_id: "ok", status: "queued", reason_code: "queued" },
       { target_type: "agent", target_id: "future", status: "throttled", reason_code: "x" },
-      { target_type: "squad", target_id: "empty", status: "", reason_code: "" },
+      { target_type: "team", target_id: "empty", status: "", reason_code: "" },
     ];
     const unhandled = unhandledCommentTriggerOutcomes(raw);
     expect(unhandled.map((o) => o.target_id).sort()).toEqual(["empty", "future"]);
@@ -56,10 +56,10 @@ describe("comment trigger outcomes", () => {
 describe("mentionLabelsByTarget", () => {
   it("maps each mention target to the label the user typed (strips @)", () => {
     const content =
-      "[@Go](mention://agent/deadbeef-0001) and [Design Squad](mention://squad/cafef00d-0002) hi";
+      "[@Go](mention://agent/deadbeef-0001) and [Design Team](mention://team/cafef00d-0002) hi";
     const labels = mentionLabelsByTarget(content);
     expect(labels.get("agent:deadbeef-0001")).toBe("Go");
-    expect(labels.get("squad:cafef00d-0002")).toBe("Design Squad");
+    expect(labels.get("team:cafef00d-0002")).toBe("Design Team");
   });
 
   it("correlates a blocked outcome to its label, undefined when absent", () => {

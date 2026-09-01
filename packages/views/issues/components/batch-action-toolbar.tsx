@@ -117,7 +117,7 @@ export function BatchActionToolbar({
   // without an extra confirmation step (product decision on MUL-4155). The
   // status change was previously routed through the pre-trigger modal, which for
   // the common done/cancelled case only rendered a misleading "现在开始处理？ →
-  // 不会开始处理" box. Agent/squad assignment still confirms via
+  // 不会开始处理" box. Agent/team assignment still confirms via
   // handleBatchAssignee — that is the only batch action that should preview a
   // run fan-out.
   const handleBatchStatus = (updates: Partial<UpdateIssueRequest>) => {
@@ -126,7 +126,7 @@ export function BatchActionToolbar({
   };
 
   const handleBatchAssignee = (updates: Partial<UpdateIssueRequest>) => {
-    if ((updates.assignee_type === "agent" || updates.assignee_type === "squad") && updates.assignee_id) {
+    if ((updates.assignee_type === "agent" || updates.assignee_type === "team") && updates.assignee_id) {
       // Backlog never starts a run on assign (parking lot), so if every selected
       // issue is in backlog the confirm modal would only render an empty "won't
       // start" box — apply directly, matching handleBatchStatus's backlog short-

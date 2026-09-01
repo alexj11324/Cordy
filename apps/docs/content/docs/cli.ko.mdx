@@ -165,7 +165,7 @@ patchbay runtime activity <runtime-id>
 | `issue` | 태스크 생성, 업데이트, 할당, 검색. 댓글, 구독, 라벨, 속성, 실행 기록 관리 |
 | `project` | 프로젝트와 프로젝트 리소스 관리 |
 | `label`, `property` | 워크스페이스 라벨과 사용자 지정 속성 관리 |
-| `agent`, `skill`, `squad` | 에이전트, 스킬, 스쿼드 관리 |
+| `agent`, `skill`, `team` | 에이전트, 스킬, 스쿼드 관리 |
 | `autopilot` | 자동화, 트리거, 실행 기록 관리 |
 | `workspace` | 워크스페이스 생성, 확인, 전환 및 멤버 초대 |
 | `repo` | 워크스페이스 저장소 관리 및 로컬 checkout |
@@ -268,7 +268,7 @@ CLI 설정 파일에는 사용자를 대신해 Patchbay에 접근할 수 있는 
 | | `import` | URL 또는 로컬 파일에서 스킬 가져오기 | `--url` / `--file`, `--on-conflict`(`fail`, `overwrite`, `rename`, `skip`, 기본 `fail`) |
 | | `search <query>` | 스킬 검색 | |
 | | `files list/upsert/delete <skill-id>` | 스킬 내부 파일 관리 | |
-| `squad` | `list/get/create/update/delete` | 스쿼드 관리(`delete`는 보관) | |
+| `team` | `list/get/create/update/delete` | 스쿼드 관리(`delete`는 보관) | |
 | | `member list/add/set-role/remove` | 스쿼드 멤버 관리 | |
 | | `activity <issue-id> <outcome>` | 리더 평가 기록 | |
 | `chat` | `history`, `thread [id]` | 에이전트가 현재 처리 중인 외부 채팅 대화 읽기 | `--limit`, `--before` |

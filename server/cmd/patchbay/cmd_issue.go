@@ -212,7 +212,7 @@ var issueUpdateCmd = &cobra.Command{
 
 var issueAssignCmd = &cobra.Command{
 	Use:   "assign <id>",
-	Short: "Assign an issue to a member, agent, or squad",
+	Short: "Assign an issue to a member, agent, or team",
 	Args:  exactArgs(1),
 	RunE:  runIssueAssign,
 }
@@ -479,8 +479,8 @@ func init() {
 	issueListCmd.Flags().Bool("full-id", false, "Show full UUIDs in table output")
 	issueListCmd.Flags().String("status", "", "Filter by status")
 	issueListCmd.Flags().String("priority", "", "Filter by priority")
-	issueListCmd.Flags().String("assignee", "", "Filter by assignee name (member, agent, or squad; fuzzy match)")
-	issueListCmd.Flags().String("assignee-id", "", "Filter by assignee UUID — member, agent, or squad (mutually exclusive with --assignee)")
+	issueListCmd.Flags().String("assignee", "", "Filter by assignee name (member, agent, or team; fuzzy match)")
+	issueListCmd.Flags().String("assignee-id", "", "Filter by assignee UUID — member, agent, or team (mutually exclusive with --assignee)")
 	issueListCmd.Flags().String("project", "", "Filter by project ID")
 	issueListCmd.Flags().StringSlice("metadata", nil, "Filter by metadata key=value (repeatable; combined with AND). Value is JSON-parsed: 'true'/'false' → bool, numbers → number, otherwise string. Wrap as '\"42\"' to force a string when the value would otherwise sniff as a number.")
 	issueListCmd.Flags().Int("limit", 50, "Maximum number of issues to return in one page (the server caps a page at 100; use --offset to page through more)")
@@ -505,8 +505,8 @@ func init() {
 	issueCreateCmd.Flags().Bool("allow-external-file", false, "Allow --description-file / --attachment to read a path outside the current working directory. Off by default so a stale file from another run/environment can't be picked up (MUL-4252).")
 	issueCreateCmd.Flags().String("status", "", "Issue status")
 	issueCreateCmd.Flags().String("priority", "", "Issue priority")
-	issueCreateCmd.Flags().String("assignee", "", "Assignee name (member, agent, or squad; fuzzy match)")
-	issueCreateCmd.Flags().String("assignee-id", "", "Assignee UUID — member, agent, or squad (mutually exclusive with --assignee)")
+	issueCreateCmd.Flags().String("assignee", "", "Assignee name (member, agent, or team; fuzzy match)")
+	issueCreateCmd.Flags().String("assignee-id", "", "Assignee UUID — member, agent, or team (mutually exclusive with --assignee)")
 	issueCreateCmd.Flags().String("parent", "", "Parent issue ID")
 	issueCreateCmd.Flags().Int("stage", 0, "Stage ordinal (>=1) grouping this sub-issue into an ordered barrier group under its parent; omit for unstaged. The parent assignee is woken only when every sub-issue in a stage finishes.")
 	issueCreateCmd.Flags().String("project", "", "Project ID")
@@ -525,8 +525,8 @@ func init() {
 	issueUpdateCmd.Flags().Bool("allow-external-file", false, "Allow --description-file to read a path outside the current working directory. Off by default so a stale temp file from another run/environment can't be picked up (MUL-4252).")
 	issueUpdateCmd.Flags().String("status", "", "New status")
 	issueUpdateCmd.Flags().String("priority", "", "New priority")
-	issueUpdateCmd.Flags().String("assignee", "", "New assignee name (member, agent, or squad; fuzzy match)")
-	issueUpdateCmd.Flags().String("assignee-id", "", "New assignee UUID — member, agent, or squad (mutually exclusive with --assignee)")
+	issueUpdateCmd.Flags().String("assignee", "", "New assignee name (member, agent, or team; fuzzy match)")
+	issueUpdateCmd.Flags().String("assignee-id", "", "New assignee UUID — member, agent, or team (mutually exclusive with --assignee)")
 	issueUpdateCmd.Flags().String("project", "", "Project ID")
 	issueUpdateCmd.Flags().String("start-date", "", "New start date (calendar day, YYYY-MM-DD; pass empty string to clear)")
 	issueUpdateCmd.Flags().String("due-date", "", "New due date (calendar day, YYYY-MM-DD)")
@@ -544,8 +544,8 @@ func init() {
 	registerIssueReorderFlags(issueReorderCmd)
 
 	// issue assign
-	issueAssignCmd.Flags().String("to", "", "Assignee name (member, agent, or squad; fuzzy match)")
-	issueAssignCmd.Flags().String("to-id", "", "Assignee UUID — member, agent, or squad (mutually exclusive with --to)")
+	issueAssignCmd.Flags().String("to", "", "Assignee name (member, agent, or team; fuzzy match)")
+	issueAssignCmd.Flags().String("to-id", "", "Assignee UUID — member, agent, or team (mutually exclusive with --to)")
 	issueAssignCmd.Flags().Bool("unassign", false, "Remove current assignee")
 	issueAssignCmd.Flags().Bool("no-start", false, "Assign ownership without starting an agent run")
 	issueAssignCmd.Flags().String("output", "json", "Output format: table or json")
@@ -2534,8 +2534,8 @@ func runIssueSubscriberMutation(cmd *cobra.Command, issueID, action string) erro
 // ---------------------------------------------------------------------------
 
 type assigneeMatch struct {
-	Type string // "member", "agent", or "squad"
-	ID   string // user_id for members, agent id for agents, squad id for squads
+	Type string // "member", "agent", or "team"
+	ID   string // user_id for members, agent id for agents, team id for teams
 	Name string
 }
 
@@ -2543,15 +2543,15 @@ type assigneeMatch struct {
 // to. Issue assignees accept all three (`issueAssigneeKinds`), while
 // project lead and issue subscribers are member-or-agent only
 // (`memberOrAgentKinds`) — the DB CHECK on `project.lead_type` and the
-// `isWorkspaceEntity` switch in the subscriber handler both reject `squad`,
-// so resolving to (squad, ...) for those callers would surface as a 500 /
+// `isWorkspaceEntity` switch in the subscriber handler both reject `team`,
+// so resolving to (team, ...) for those callers would surface as a 500 /
 // 403 instead of a clean CLI-side resolution error (MUL-2165 follow-up).
 type assigneeKinds struct {
-	member, agent, squad bool
+	member, agent, team bool
 }
 
 var (
-	issueAssigneeKinds = assigneeKinds{member: true, agent: true, squad: true}
+	issueAssigneeKinds = assigneeKinds{member: true, agent: true, team: true}
 	memberOrAgentKinds = assigneeKinds{member: true, agent: true}
 	// Actor property values are members only (MUL-6286).
 	memberOnlyKinds = assigneeKinds{member: true}
@@ -2596,8 +2596,8 @@ func (k assigneeKinds) describe() string {
 	if k.agent {
 		parts = append(parts, "agent")
 	}
-	if k.squad {
-		parts = append(parts, "squad")
+	if k.team {
+		parts = append(parts, "team")
 	}
 	switch len(parts) {
 	case 0:
@@ -2684,24 +2684,24 @@ func resolveAssignee(ctx context.Context, client *cli.APIClient, name string, ki
 		}
 	}
 
-	// Search squads. The platform allows issues to be assigned to a squad
-	// (the leader agent then coordinates delegation), so squad names must
+	// Search teams. The platform allows issues to be assigned to a team
+	// (the leader agent then coordinates delegation), so team names must
 	// resolve here too for issue-assignee callers — otherwise a user saying
-	// "assign to <SquadName>" silently falls through and the autopilot
-	// prompt emits "Unrecognized assignee: <SquadName>" (MUL-2165). Callers
+	// "assign to <TeamName>" silently falls through and the autopilot
+	// prompt emits "Unrecognized assignee: <TeamName>" (MUL-2165). Callers
 	// whose target schema is member-or-agent only (project lead, subscriber)
-	// must opt out via `kinds.squad = false`.
-	if kinds.squad {
+	// must opt out via `kinds.team = false`.
+	if kinds.team {
 		fetchAttempts++
-		var squads []map[string]any
-		if err := getAssigneeJSON(ctx, client, "/api/squads", &squads); err != nil {
-			errs = append(errs, fmt.Errorf("fetch squads: %w", err))
+		var teams []map[string]any
+		if err := getAssigneeJSON(ctx, client, "/api/teams", &teams); err != nil {
+			errs = append(errs, fmt.Errorf("fetch teams: %w", err))
 		} else {
-			for _, s := range squads {
+			for _, s := range teams {
 				if strVal(s, "archived_at") != "" {
 					continue
 				}
-				classify("squad", strVal(s, "id"), strVal(s, "name"))
+				classify("team", strVal(s, "id"), strVal(s, "name"))
 			}
 		}
 	}
@@ -2732,7 +2732,7 @@ func normalizeAssigneeLookupInput(raw string) string {
 	input := strings.TrimSpace(raw)
 	if m := util.MentionRe.FindStringSubmatch(input); len(m) == 4 && m[0] == input {
 		switch m[2] {
-		case "member", "agent", "squad":
+		case "member", "agent", "team":
 			return m[3]
 		}
 	}
@@ -2752,7 +2752,7 @@ func ambiguousAssigneeError(input string, matches []assigneeMatch) error {
 
 // resolveAssigneeByID strictly resolves a canonical UUID to (assignee_type,
 // assignee_id) by looking it up against the workspace's members, agents, and
-// (when allowed) squads. It is the deterministic counterpart to
+// (when allowed) teams. It is the deterministic counterpart to
 // resolveAssignee: callers that already hold a UUID (e.g. agents reading IDs
 // from `patchbay workspace member list --output json`) should use this instead of
 // round-tripping through name matching, which can be ambiguous in workspaces
@@ -2779,10 +2779,10 @@ func resolveAssigneeByID(ctx context.Context, client *cli.APIClient, id string, 
 		agentErr = getAssigneeJSON(ctx, client, agentPath, &agents)
 	}
 
-	var squads []map[string]any
-	var squadErr error
-	if kinds.squad {
-		squadErr = getAssigneeJSON(ctx, client, "/api/squads", &squads)
+	var teams []map[string]any
+	var teamErr error
+	if kinds.team {
+		teamErr = getAssigneeJSON(ctx, client, "/api/teams", &teams)
 	}
 
 	allFailed := true
@@ -2790,7 +2790,7 @@ func resolveAssigneeByID(ctx context.Context, client *cli.APIClient, id string, 
 	for _, pair := range []struct {
 		enabled bool
 		err     error
-	}{{kinds.member, memberErr}, {kinds.agent, agentErr}, {kinds.squad, squadErr}} {
+	}{{kinds.member, memberErr}, {kinds.agent, agentErr}, {kinds.team, teamErr}} {
 		if !pair.enabled {
 			continue
 		}
@@ -2800,7 +2800,7 @@ func resolveAssigneeByID(ctx context.Context, client *cli.APIClient, id string, 
 		}
 	}
 	if hasFetch && allFailed {
-		return "", "", fmt.Errorf("failed to resolve assignee: %v; %v; %v", memberErr, agentErr, squadErr)
+		return "", "", fmt.Errorf("failed to resolve assignee: %v; %v; %v", memberErr, agentErr, teamErr)
 	}
 
 	for _, m := range members {
@@ -2813,9 +2813,9 @@ func resolveAssigneeByID(ctx context.Context, client *cli.APIClient, id string, 
 			return "agent", strVal(a, "id"), nil
 		}
 	}
-	for _, s := range squads {
+	for _, s := range teams {
 		if strings.EqualFold(strVal(s, "id"), input) {
-			return "squad", strVal(s, "id"), nil
+			return "team", strVal(s, "id"), nil
 		}
 	}
 

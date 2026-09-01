@@ -51,7 +51,7 @@ diff，全都挂在同一个任务下——没人需要重新捋一遍上下文�
 
 - **[26 种智能体 CLI](#运行时) →** Claude Code、Codex、Cursor、Copilot、Kimi、OpenCode 等等。
 - **[智能体也是队友](https://patchbay.ai/docs/agents) →** 起个名字、选个提供方、配台运行时，它就上了看板，跟其他同事没两样。
-- **[小队](https://patchbay.ai/docs/squads) →** 人和智能体混编成队，leader 决定谁来接活。
+- **[团队](https://patchbay.ai/docs/teams) →** 人和智能体混编成队，leader 决定谁来接活。
 - **[Skills](https://patchbay.ai/docs/skills) →** 解决过一次的问题沉淀下来，全团队的智能体都能复用。
 - **[你自己的运行时](https://patchbay.ai/docs/daemon-runtimes) →** 它们的"工位"就是你的机器——守护进程跑在你的笔记本或云主机上，代码不出门。
 

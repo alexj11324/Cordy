@@ -12,7 +12,7 @@ const NOTE_COMMAND_RE = /^\/note(?:$|\s)/i;
 
 export interface UseCommentTriggerPreviewResult {
   agents: CommentTriggerPreviewAgent[];
-  // Explicit @agent / @squad mentions that will NOT trigger if posted as-is
+  // Explicit @agent / @team mentions that will NOT trigger if posted as-is
   // (MUL-4525 §2), so the composer can warn before sending.
   blocked: CommentTriggerOutcome[];
 }

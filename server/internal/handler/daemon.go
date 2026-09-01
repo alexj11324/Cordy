@@ -2001,8 +2001,8 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	// Build response with fresh agent data (name + skills + custom_env + custom_args).
 	resp = taskToResponse(*task, runtimeWorkspaceID)
 	var issueNumber int32
-	// Claim-only capability: this server resolves the squad-leader role on the
-	// wire (is_leader_task / squad_id), so the daemon must not re-derive it
+	// Claim-only capability: this server resolves the team-leader role on the
+	// wire (is_leader_task / team_id), so the daemon must not re-derive it
 	// from the briefing text. Set unconditionally — on every claim, leader or
 	// not — because its absence is what tells an upgraded daemon it is talking
 	// to a server too old to have answered the question (MUL-5811).
@@ -2270,76 +2270,76 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 		resp.ThreadName = issue.Title
 		issueNumber = issue.Number
 
-		// Squad-leader briefing injection: keyed off the task being a
-		// leader-task (is_leader_task) carrying a squad_id — NOT off the
-		// issue being assigned to a squad. The task flag is stamped at
+		// Team-leader briefing injection: keyed off the task being a
+		// leader-task (is_leader_task) carrying a team_id — NOT off the
+		// issue being assigned to a team. The task flag is stamped at
 		// enqueue time and is true for every ISSUE-BOUND path that routes
-		// work to a squad leader: direct assign-to-squad, comment
-		// @squad-mention (even when the issue itself is assigned to a
+		// work to a team leader: direct assign-to-team, comment
+		// @team-mention (even when the issue itself is assigned to a
 		// plain agent — the MUL-3724 case), sub-issue done callback,
-		// autopilot squad-assignee, and retry-clone inheritance. The old
-		// issue.AssigneeType=="squad" gate missed the comment-mention
-		// path, so the leader booted with zero squad context and
+		// autopilot team-assignee, and retry-clone inheritance. The old
+		// issue.AssigneeType=="team" gate missed the comment-mention
+		// path, so the leader booted with zero team context and
 		// degraded into doing the work itself instead of orchestrating.
 		//
 		// NOTE: quick-create tasks do NOT reach this block — they have a
 		// NULL issue_id (so the enclosing `task.IssueID.Valid` is false)
-		// and do NOT carry is_leader_task / squad_id columns. They route
-		// their squad through the task CONTEXT JSON (QuickCreateContext.
-		// SquadID) and get their briefing from the separate quick-create
-		// branch further below (search `qc.SquadID`). Do not "unify" the
-		// two by deleting that branch: it also sets resp.SquadID /
-		// resp.SquadName so the new issue defaults to the squad assignee,
+		// and do NOT carry is_leader_task / team_id columns. They route
+		// their team through the task CONTEXT JSON (QuickCreateContext.
+		// TeamID) and get their briefing from the separate quick-create
+		// branch further below (search `qc.TeamID`). Do not "unify" the
+		// two by deleting that branch: it also sets resp.TeamID /
+		// resp.TeamName so the new issue defaults to the team assignee,
 		// and there is no issue row to hang this column-based path on.
 		//
-		// We resolve the squad directly from task.SquadID rather than
-		// reverse-looking-up "which squad is this agent the leader of",
-		// which is ambiguous when one agent leads multiple squads. The
-		// uuidToString(squad.LeaderID) == resp.Agent.ID re-check is kept
-		// as a defensive gate: if the squad's leader was swapped after the
+		// We resolve the team directly from task.TeamID rather than
+		// reverse-looking-up "which team is this agent the leader of",
+		// which is ambiguous when one agent leads multiple teams. The
+		// uuidToString(team.LeaderID) == resp.Agent.ID re-check is kept
+		// as a defensive gate: if the team's leader was swapped after the
 		// task was enqueued, we never feed a stale briefing to a
-		// non-leader. It also doubles as the dangling-squad_id guard: a
-		// squad hard-deleted after enqueue makes GetSquadInWorkspace
+		// non-leader. It also doubles as the dangling-team_id guard: a
+		// team hard-deleted after enqueue makes GetTeamInWorkspace
 		// return no row (err != nil) — we skip injection silently, which
 		// is exactly the same observable result as "condition not
 		// matched". Claim still succeeds; no stale briefing is emitted.
-		// (No FK on squad_id — see migration 127.) We append (not replace)
-		// so per-agent instructions stay authoritative; the squad briefing
-		// stacks on top as task-specific squad context.
+		// (No FK on team_id — see migration 127.) We append (not replace)
+		// so per-agent instructions stay authoritative; the team briefing
+		// stacks on top as task-specific team context.
 		if task.IsLeaderTask {
 			injected := false
-			if resp.Agent != nil && task.SquadID.Valid {
-				if squad, err := h.Queries.GetSquadInWorkspace(r.Context(), db.GetSquadInWorkspaceParams{
-					ID:          task.SquadID,
+			if resp.Agent != nil && task.TeamID.Valid {
+				if team, err := h.Queries.GetTeamInWorkspace(r.Context(), db.GetTeamInWorkspaceParams{
+					ID:          task.TeamID,
 					WorkspaceID: issue.WorkspaceID,
-				}); err == nil && uuidToString(squad.LeaderID) == resp.Agent.ID {
+				}); err == nil && uuidToString(team.LeaderID) == resp.Agent.ID {
 					// Parent-status authority is deliberately NARROWER than
 					// briefing injection. Injection is keyed off is_leader_task
 					// (see above) and therefore also fires on the MUL-3724 path,
-					// where the issue belongs to a plain agent and this squad was
+					// where the issue belongs to a plain agent and this team was
 					// only @mentioned for help. Granting status ownership there
-					// would let a guest squad push someone else's in-flight issue
+					// would let a guest team push someone else's in-flight issue
 					// to in_review, so we gate it on the issue actually being
-					// assigned to this squad.
+					// assigned to this team.
 					ownsIssueStatus := issue.AssigneeType.Valid &&
-						issue.AssigneeType.String == "squad" &&
-						uuidToString(issue.AssigneeID) == uuidToString(squad.ID)
-					briefing := buildSquadLeaderBriefing(r.Context(), h.Queries, squad, ownsIssueStatus)
+						issue.AssigneeType.String == "team" &&
+						uuidToString(issue.AssigneeID) == uuidToString(team.ID)
+					briefing := buildTeamLeaderBriefing(r.Context(), h.Queries, team, ownsIssueStatus)
 					if strings.TrimSpace(resp.Agent.Instructions) == "" {
 						resp.Agent.Instructions = briefing
 					} else {
 						resp.Agent.Instructions = resp.Agent.Instructions + "\n\n" + briefing
 					}
 					injected = true
-					slog.Debug("injected squad leader briefing",
-						"squad_id", uuidToString(squad.ID),
-						"squad_name", squad.Name,
+					slog.Debug("injected team leader briefing",
+						"team_id", uuidToString(team.ID),
+						"team_name", team.Name,
 						"leader_agent_id", resp.Agent.ID,
 						"owns_issue_status", ownsIssueStatus,
 					)
 				}
 			}
-			// Every skip above (NULL squad_id, squad hard-deleted, leader
+			// Every skip above (NULL team_id, team hard-deleted, leader
 			// swapped after enqueue) leaves a task the daemon must NOT run
 			// as a leader: it has no roster to delegate to and no protocol
 			// to follow. The daemon derives its leader role from this flag
@@ -2349,9 +2349,9 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 			// the daemon inferred the role from the briefing text itself.
 			if !injected {
 				resp.IsLeaderTask = false
-				slog.Warn("squad leader briefing not injected; claim delivered as a non-leader task",
+				slog.Warn("team leader briefing not injected; claim delivered as a non-leader task",
 					"task_id", uuidToString(task.ID),
-					"squad_id", uuidToString(task.SquadID),
+					"team_id", uuidToString(task.TeamID),
 					"agent_id", uuidToString(task.AgentID),
 				)
 			}
@@ -2993,38 +2993,38 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 				}
 			}
 
-			// Squad-leader briefing injection for quick-create tasks. When
-			// the user picked a squad in the modal, the task runs on the
-			// squad's leader agent (resolved by the handler). Surface the
+			// Team-leader briefing injection for quick-create tasks. When
+			// the user picked a team in the modal, the task runs on the
+			// team's leader agent (resolved by the handler). Surface the
 			// same Operating Protocol + Roster + user Instructions that
-			// issue-bound squad tasks see, so the leader can decide to
+			// issue-bound team tasks see, so the leader can decide to
 			// delegate before opening the issue.
-			if resp.Agent != nil && qc.SquadID != "" {
+			if resp.Agent != nil && qc.TeamID != "" {
 				wsUUID, wsErr := util.ParseUUID(qc.WorkspaceID)
-				squadUUID, sqErr := util.ParseUUID(qc.SquadID)
+				teamUUID, sqErr := util.ParseUUID(qc.TeamID)
 				if wsErr == nil && sqErr == nil {
-					if squad, err := h.Queries.GetSquadInWorkspace(r.Context(), db.GetSquadInWorkspaceParams{
-						ID:          squadUUID,
+					if team, err := h.Queries.GetTeamInWorkspace(r.Context(), db.GetTeamInWorkspaceParams{
+						ID:          teamUUID,
 						WorkspaceID: wsUUID,
-					}); err == nil && uuidToString(squad.LeaderID) == resp.Agent.ID {
+					}); err == nil && uuidToString(team.LeaderID) == resp.Agent.ID {
 						// Quick-create has no issue yet — there is no parent
 						// status to own on this turn. Once the leader opens the
-						// issue with the squad as assignee, the issue-bound
+						// issue with the team as assignee, the issue-bound
 						// claim path above grants ownership.
-						briefing := buildSquadLeaderBriefing(r.Context(), h.Queries, squad, false)
+						briefing := buildTeamLeaderBriefing(r.Context(), h.Queries, team, false)
 						if strings.TrimSpace(resp.Agent.Instructions) == "" {
 							resp.Agent.Instructions = briefing
 						} else {
 							resp.Agent.Instructions = resp.Agent.Instructions + "\n\n" + briefing
 						}
-						// Surface the squad identity to the daemon so the
+						// Surface the team identity to the daemon so the
 						// quick-create prompt defaults the new issue's
-						// assignee to the squad, not the leader agent.
-						resp.SquadID = uuidToString(squad.ID)
-						resp.SquadName = squad.Name
-						slog.Debug("injected squad leader briefing for quick-create",
-							"squad_id", uuidToString(squad.ID),
-							"squad_name", squad.Name,
+						// assignee to the team, not the leader agent.
+						resp.TeamID = uuidToString(team.ID)
+						resp.TeamName = team.Name
+						slog.Debug("injected team leader briefing for quick-create",
+							"team_id", uuidToString(team.ID),
+							"team_name", team.Name,
 							"leader_agent_id", resp.Agent.ID,
 						)
 					}
@@ -3893,9 +3893,9 @@ func (h *Handler) emitIssueExecutedOnFirstCompletion(r *http.Request, task *db.A
 //
 // Scope + loop safety:
 //   - MEMBER comments qualify as before, with their full routing. AGENT comments
-//     now also qualify, but ONLY through an explicit @agent/@squad mention
+//     now also qualify, but ONLY through an explicit @agent/@team mention
 //     (keepExplicitMentionTriggers). Every non-mention agent route — the
-//     assigned-squad-leader fallback, thread-parent / conversation continuation
+//     assigned-team-leader fallback, thread-parent / conversation continuation
 //     — is intentionally excluded, so a plain agent reply / acknowledgement
 //     earns no follow-up here regardless of issue assignment. That is the
 //     anti-loop boundary the old member-only filter protected.
@@ -4020,10 +4020,10 @@ func (h *Handler) reconcileCommentsOnCompletion(ctx context.Context, task *db.Ag
 			OriginatorUserID:                   originatorUserID,
 			AutopilotDelegationAuthorityUserID: delegationAuthority,
 		})
-		// For an AGENT author, compensate ONLY explicit @agent/@squad mentions.
-		// computeCommentAgentTriggers can also return the assigned-squad-leader
+		// For an AGENT author, compensate ONLY explicit @agent/@team mentions.
+		// computeCommentAgentTriggers can also return the assigned-team-leader
 		// fallback (Source = issue-assignee) for a plain worker-agent reply on a
-		// squad-assigned issue; that conversational routing is intentionally NOT
+		// team-assigned issue; that conversational routing is intentionally NOT
 		// replayed here. Restricting to the explicit-mention sources keeps the
 		// invariant unconditional — a plain agent reply / acknowledgement earns
 		// no follow-up regardless of issue assignment — which is the anti-loop
@@ -4078,9 +4078,9 @@ func (h *Handler) reconcileCommentsOnCompletion(ctx context.Context, task *db.Ag
 }
 
 // keepExplicitMentionTriggers filters a computed trigger set down to the ones
-// produced by an EXPLICIT @agent / @squad mention (MUL-4304). It is applied to
+// produced by an EXPLICIT @agent / @team mention (MUL-4304). It is applied to
 // agent-authored comments during completion reconcile so that only a
-// deliberately-targeted mention earns a replay — the assigned-squad-leader
+// deliberately-targeted mention earns a replay — the assigned-team-leader
 // fallback, thread-parent / conversation continuation, and issue-assignee
 // routing (all non-mention sources) are intentionally excluded, so a plain
 // agent reply or acknowledgement never earns a follow-up here. Member comments
@@ -4092,7 +4092,7 @@ func keepExplicitMentionTriggers(triggers []commentAgentTrigger) []commentAgentT
 	filtered := make([]commentAgentTrigger, 0, len(triggers))
 	for _, trigger := range triggers {
 		switch trigger.Source {
-		case commentTriggerSourceMentionAgent, commentTriggerSourceMentionSquadLeader:
+		case commentTriggerSourceMentionAgent, commentTriggerSourceMentionTeamLeader:
 			filtered = append(filtered, trigger)
 		}
 	}

@@ -105,7 +105,7 @@ function fakeQc(data: {
       target_id: string | null;
     }>;
   }>;
-  squads?: Array<{
+  teams?: Array<{
     id: string;
     name: string;
     archived_at: string | null;
@@ -133,7 +133,7 @@ function fakeQc(data: {
         : [{ target_type: "workspace" as const, target_id: null }]),
   }));
   map.set(JSON.stringify(workspaceKeys.agents("ws-1")), agentsWithPermissions);
-  map.set(JSON.stringify(workspaceKeys.squads("ws-1")), data.squads ?? []);
+  map.set(JSON.stringify(workspaceKeys.teams("ws-1")), data.teams ?? []);
   const byStatus: ListIssuesCache["byStatus"] = {};
   for (const status of PAGINATED_CATEGORIES) {
     const bucket = (data.issues ?? []).filter((i) => i.status === status);
@@ -710,13 +710,13 @@ describe("createMentionSuggestion", () => {
     expect(screen.getByText("Roadmap")).toBeInTheDocument();
   });
 
-  it("localizes agent and squad badges", () => {
+  it("localizes agent and team badges", () => {
     render(
       <ZhI18nWrapper>
         <MentionList
           items={[
             { id: "a1", label: "Aegis", type: "agent" },
-            { id: "s1", label: "Core team", type: "squad" },
+            { id: "s1", label: "Core team", type: "team" },
           ]}
           query=""
           command={vi.fn()}
@@ -727,10 +727,10 @@ describe("createMentionSuggestion", () => {
     expect(screen.getByText("智能体")).toBeInTheDocument();
     expect(screen.getByText("小队")).toBeInTheDocument();
     expect(screen.queryByText("Agent")).not.toBeInTheDocument();
-    expect(screen.queryByText("Squad")).not.toBeInTheDocument();
+    expect(screen.queryByText("Team")).not.toBeInTheDocument();
   });
 
-  it("includes squads with a runnable leader in the mention list", () => {
+  it("includes teams with a runnable leader in the mention list", () => {
     const qc = fakeQc({
       members: [{ user_id: "u1", name: "Alice", role: "member" }],
       agents: [
@@ -742,7 +742,7 @@ describe("createMentionSuggestion", () => {
           owner_id: null,
         },
       ],
-      squads: [
+      teams: [
         {
           id: "s1",
           name: "Jiayuan's Coding Team",
@@ -757,7 +757,7 @@ describe("createMentionSuggestion", () => {
         },
         {
           id: "s3",
-          name: "Archived Squad",
+          name: "Archived Team",
           archived_at: "2026-01-01T00:00:00Z",
           leader_id: "leader-1",
         },
@@ -769,13 +769,13 @@ describe("createMentionSuggestion", () => {
     const result = config.items!(itemArgs(""));
 
     const items = result as MentionItem[];
-    expect(items.filter((i) => i.type === "squad")).toHaveLength(2);
-    expect(items.some((i) => i.type === "squad" && i.label === "Jiayuan's Coding Team")).toBe(true);
-    expect(items.some((i) => i.type === "squad" && i.label === "独立团")).toBe(true);
-    expect(items.some((i) => i.type === "squad" && i.label === "Archived Squad")).toBe(false);
+    expect(items.filter((i) => i.type === "team")).toHaveLength(2);
+    expect(items.some((i) => i.type === "team" && i.label === "Jiayuan's Coding Team")).toBe(true);
+    expect(items.some((i) => i.type === "team" && i.label === "独立团")).toBe(true);
+    expect(items.some((i) => i.type === "team" && i.label === "Archived Team")).toBe(false);
   });
 
-  it("keeps a squad with an unbound leader discoverable but unselectable", () => {
+  it("keeps a team with an unbound leader discoverable but unselectable", () => {
     const qc = fakeQc({
       agents: [
         {
@@ -788,10 +788,10 @@ describe("createMentionSuggestion", () => {
           owner_id: null,
         },
       ],
-      squads: [
+      teams: [
         {
           id: "s1",
-          name: "Unrunnable Squad",
+          name: "Unrunnable Team",
           archived_at: null,
           leader_id: "leader-1",
         },
@@ -803,19 +803,19 @@ describe("createMentionSuggestion", () => {
 
     expect(items).toContainEqual(
       expect.objectContaining({
-        type: "squad",
+        type: "team",
         id: "s1",
         disabledReason: "agent_runtime_required",
       }),
     );
   });
 
-  it("keeps squads discoverable while the agents cache is not ready", () => {
+  it("keeps teams discoverable while the agents cache is not ready", () => {
     const qc = fakeQc({
-      squads: [
+      teams: [
         {
           id: "s1",
-          name: "Cold Cache Squad",
+          name: "Cold Cache Team",
           archived_at: null,
           leader_id: "leader-not-cached",
         },
@@ -824,13 +824,13 @@ describe("createMentionSuggestion", () => {
 
     const config = createMentionSuggestion(qc);
     const items = config.items!(itemArgs("")) as MentionItem[];
-    const squad = items.find((item) => item.type === "squad" && item.id === "s1");
+    const team = items.find((item) => item.type === "team" && item.id === "s1");
 
-    expect(squad).toBeDefined();
-    expect(squad?.disabledReason).toBeUndefined();
+    expect(team).toBeDefined();
+    expect(team?.disabledReason).toBeUndefined();
   });
 
-  it("keeps a squad with an archived leader discoverable", () => {
+  it("keeps a team with an archived leader discoverable", () => {
     const qc = fakeQc({
       agents: [
         {
@@ -841,10 +841,10 @@ describe("createMentionSuggestion", () => {
           owner_id: null,
         },
       ],
-      squads: [
+      teams: [
         {
           id: "s1",
-          name: "Archived Leader Squad",
+          name: "Archived Leader Team",
           archived_at: null,
           leader_id: "leader-1",
         },
@@ -853,16 +853,16 @@ describe("createMentionSuggestion", () => {
 
     const config = createMentionSuggestion(qc);
     const items = config.items!(itemArgs("")) as MentionItem[];
-    const squad = items.find((item) => item.type === "squad" && item.id === "s1");
+    const team = items.find((item) => item.type === "team" && item.id === "s1");
 
-    expect(squad).toBeDefined();
-    expect(squad?.disabledReason).toBeUndefined();
+    expect(team).toBeDefined();
+    expect(team?.disabledReason).toBeUndefined();
   });
 
-  it("returns no squads when the squads cache is empty (not yet fetched)", () => {
+  it("returns no teams when the teams cache is empty (not yet fetched)", () => {
     const qc = fakeQc({
       members: [{ user_id: "u1", name: "Alice", role: "member" }],
-      // squads not provided — simulates cache miss
+      // teams not provided — simulates cache miss
     });
     searchIssuesMock.mockReturnValue(new Promise(() => {}));
 
@@ -870,7 +870,7 @@ describe("createMentionSuggestion", () => {
     const result = config.items!(itemArgs(""));
 
     const items = result as MentionItem[];
-    expect(items.filter((i) => i.type === "squad")).toHaveLength(0);
+    expect(items.filter((i) => i.type === "team")).toHaveLength(0);
   });
 
   it("matches Chinese names by full pinyin", () => {

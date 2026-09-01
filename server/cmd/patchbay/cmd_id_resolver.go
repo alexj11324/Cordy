@@ -444,10 +444,10 @@ type actorDisplayLookup struct {
 type actorDisplayLookupState struct {
 	members       map[string]string
 	agents        map[string]string
-	squads        map[string]string
+	teams        map[string]string
 	membersLoaded bool
 	agentsLoaded  bool
-	squadsLoaded  bool
+	teamsLoaded  bool
 }
 
 func loadActorDisplayLookup(ctx context.Context, client *cli.APIClient) actorDisplayLookup {
@@ -497,20 +497,20 @@ func (l actorDisplayLookup) loadAgents() {
 	}
 }
 
-func (l actorDisplayLookup) loadSquads() {
-	if l.state == nil || l.state.squadsLoaded {
+func (l actorDisplayLookup) loadTeams() {
+	if l.state == nil || l.state.teamsLoaded {
 		return
 	}
-	l.state.squadsLoaded = true
-	l.state.squads = map[string]string{}
+	l.state.teamsLoaded = true
+	l.state.teams = map[string]string{}
 	if l.client == nil || l.client.WorkspaceID == "" {
 		return
 	}
-	var squads []map[string]any
-	if err := l.client.GetJSON(l.ctx, "/api/squads", &squads); err == nil {
-		for _, s := range squads {
+	var teams []map[string]any
+	if err := l.client.GetJSON(l.ctx, "/api/teams", &teams); err == nil {
+		for _, s := range teams {
 			if id := strVal(s, "id"); id != "" {
-				l.state.squads[id] = strVal(s, "name")
+				l.state.teams[id] = strVal(s, "name")
 			}
 		}
 	}
@@ -535,11 +535,11 @@ func (l actorDisplayLookup) actor(actorType, id string) string {
 				return "agent:" + name
 			}
 		}
-	case "squad":
-		l.loadSquads()
-		if l.state != nil && l.state.squads != nil {
-			if name := l.state.squads[id]; name != "" {
-				return "squad:" + name
+	case "team":
+		l.loadTeams()
+		if l.state != nil && l.state.teams != nil {
+			if name := l.state.teams[id]; name != "" {
+				return "team:" + name
 			}
 		}
 	}

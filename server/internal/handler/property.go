@@ -308,10 +308,10 @@ func selectOptionsHint(cfg PropertyConfig) string {
 // ---------------------------------------------------------------------------
 
 // actorPropertyKinds is the V1 value range for actor properties: workspace
-// members only. The issue assignee also accepts "agent" and "squad", but
+// members only. The issue assignee also accepts "agent" and "team", but
 // neither belongs in a passive reference yet — an agent reference drags in the
 // whole agent-visibility question (private / non-allow-listed agents must not
-// become discoverable by id) for no demonstrated use case, and a squad is a
+// become discoverable by id) for no demonstrated use case, and a team is a
 // routing target rather than a person.
 //
 // The stored form is "<kind>:<uuid>", so widening this list is a one-line

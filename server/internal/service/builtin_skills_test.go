@@ -416,28 +416,28 @@ func TestCreatingAgentsSkillCoversAgentCreationContracts(t *testing.T) {
 	}
 }
 
-func TestSquadsSkillCoversLeaderRoutingContract(t *testing.T) {
-	skill, ok := findSkill(t, "patchbay-squads")
+func TestTeamsSkillCoversLeaderRoutingContract(t *testing.T) {
+	skill, ok := findSkill(t, "patchbay-teams")
 	if !ok {
 		return
 	}
 	fm, body, _ := splitFrontmatter(skill.Content)
 
 	if got := strings.TrimSpace(fm["user-invocable"]); got != "false" {
-		t.Errorf("user-invocable = %q, want false (squad guidance triggers from context)", got)
+		t.Errorf("user-invocable = %q, want false (team guidance triggers from context)", got)
 	}
 	if got := strings.TrimSpace(fm["allowed-tools"]); !strings.Contains(got, "Bash(patchbay *)") {
 		t.Errorf("allowed-tools = %q, want access to the Patchbay CLI", got)
 	}
 
 	mustContain := []string{
-		"A squad is not an agent",
-		"squad's `leader_id` agent",
-		"squad members are not automatically fanned out",
-		"patchbay squad member set-role",
-		"mention://squad/<squad-id>",
-		"recording squad activity",
-		"references/squad-source-map.md",
+		"A team is not an agent",
+		"team's `leader_id` agent",
+		"team members are not automatically fanned out",
+		"patchbay team member set-role",
+		"mention://team/<team-id>",
+		"recording team activity",
+		"references/team-source-map.md",
 		// The debugging quick-start must stay a bounded two-step read
 		// (MUL-5442): a roots-only scan alone never returns reply bodies,
 		// where mention triggers and failure reasons usually live — and it
@@ -448,7 +448,7 @@ func TestSquadsSkillCoversLeaderRoutingContract(t *testing.T) {
 	}
 	for _, want := range mustContain {
 		if !strings.Contains(body, want) {
-			t.Errorf("squads skill missing %q", want)
+			t.Errorf("teams skill missing %q", want)
 		}
 	}
 
@@ -461,12 +461,12 @@ func TestSquadsSkillCoversLeaderRoutingContract(t *testing.T) {
 		"--recent 10",
 	} {
 		if strings.Contains(body, banned) {
-			t.Errorf("squads skill carries the unbounded comment read %q (MUL-5696)", banned)
+			t.Errorf("teams skill carries the unbounded comment read %q (MUL-5696)", banned)
 		}
 	}
 
-	if !skillHasFile(skill, "references/squad-source-map.md") {
-		t.Errorf("squads skill missing supporting file references/squad-source-map.md")
+	if !skillHasFile(skill, "references/team-source-map.md") {
+		t.Errorf("teams skill missing supporting file references/team-source-map.md")
 	}
 }
 
@@ -493,7 +493,7 @@ func TestAutopilotsSkillCoversDispatchAndSideEffects(t *testing.T) {
 		"Do not run `trigger`",
 		"webhook tokens",
 		"{{date}}",
-		"squad's leader agent",
+		"team's leader agent",
 		"references/autopilots-source-map.md",
 	}
 	for _, want := range mustContain {

@@ -27,7 +27,7 @@ import (
 // Avatar URLs (MUL-5393 / #6024)
 // ---------------------------------------------------------------------------
 //
-// `avatar_url` columns (user / agent / squad / workspace) store the raw
+// `avatar_url` columns (user / agent / team / workspace) store the raw
 // storage object URL the upload returned. On a deployment whose bucket is
 // public — S3/R2 behind a public CDN domain, or the LocalStorage backend
 // whose /uploads/* route is served publicly — that URL loads fine in an

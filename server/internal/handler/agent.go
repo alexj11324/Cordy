@@ -404,7 +404,7 @@ type AgentTaskResponse struct {
 	MaxAttempts          int32                  `json:"max_attempts"`
 	ParentTaskID         *string                `json:"parent_task_id,omitempty"`
 	IsLeaderTask         bool                   `json:"is_leader_task,omitempty"`
-	LeaderRoleResolved   bool                   `json:"leader_role_resolved,omitempty"` // claim-only capability, always true here: IsLeaderTask/SquadID authoritatively answer "is this a leader run", so the daemon must not infer the role from briefing text. Servers predating it make no such promise — before #4951 they sent no is_leader_task at all, after it they sent the flag without guaranteeing a briefing — so a daemon seeing no capability keeps the legacy inference. Never rendered into a prompt; see daemon.taskIsSquadLeader (MUL-5811). Mirror field: internal/daemon/types.go, same JSON name
+	LeaderRoleResolved   bool                   `json:"leader_role_resolved,omitempty"` // claim-only capability, always true here: IsLeaderTask/TeamID authoritatively answer "is this a leader run", so the daemon must not infer the role from briefing text. Servers predating it make no such promise — before #4951 they sent no is_leader_task at all, after it they sent the flag without guaranteeing a briefing — so a daemon seeing no capability keeps the legacy inference. Never rendered into a prompt; see daemon.taskIsTeamLeader (MUL-5811). Mirror field: internal/daemon/types.go, same JSON name
 	Agent                *TaskAgentData         `json:"agent,omitempty"`
 	ConnectedApps        []ConnectedAppData     `json:"connected_apps,omitempty"` // daemon-claim only: per-run app capabilities mounted through runtime MCP overlays
 	Repos                []RepoData             `json:"repos,omitempty"`
@@ -477,8 +477,8 @@ type AgentTaskResponse struct {
 	QuickCreateAttachmentIDs []string               `json:"quick_create_attachment_ids,omitempty"` // attachment ids uploaded in the quick-create prompt and bound on issue create
 	QuickCreateSourceContext json.RawMessage        `json:"quick_create_source_context,omitempty"` // immutable historical context for source-context quick-create
 	HandoffNote              string                 `json:"handoff_note,omitempty"`                // assignment handoff instruction; rendered into the run's opening prompt + issue_context.md (omitempty so old daemons ignore it)
-	SquadID                  string                 `json:"squad_id,omitempty"`                    // for quick-create tasks where the picker was a squad; Agent is still the resolved leader
-	SquadName                string                 `json:"squad_name,omitempty"`                  // display name for the picker squad
+	TeamID                  string                 `json:"team_id,omitempty"`                    // for quick-create tasks where the picker was a team; Agent is still the resolved leader
+	TeamName                string                 `json:"team_name,omitempty"`                  // display name for the picker team
 	ParentIssueID            string                 `json:"parent_issue_id,omitempty"`             // for quick-create tasks opened from "Add sub issue" — UUID of the parent issue the new issue should be filed under
 	ParentIssueIdentifier    string                 `json:"parent_issue_identifier,omitempty"`     // human-readable identifier (e.g. MUL-123) of the quick-create parent issue, resolved on claim for prompt context
 	// RequestingUserName + RequestingUserProfileDescription mirror the user
@@ -2718,7 +2718,7 @@ func (h *Handler) GetWorkspaceAgentActivity30d(w http.ResponseWriter, r *http.Re
 // (queued/dispatched/running/waiting_local_directory), which is the current
 // workload presence derives from, plus each agent's most recent OUTCOME task
 // (completed/failed only), which is no longer part of presence since #1823 and
-// only feeds the Squad hover card's "last activity" line. Cancelled tasks are
+// only feeds the Team hover card's "last activity" line. Cancelled tasks are
 // excluded from the outcome half by design — cancel is a procedural signal
 // ("attempt aborted"), not an outcome, so it must not mask a prior failure.
 // Per-agent filtering happens in the front-end against this snapshot.

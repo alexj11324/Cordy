@@ -338,23 +338,23 @@ function formatActivity(
       return t(($) => $.activity.task_completed, { count: entry.coalesced_count ?? 1 });
     case "task_failed":
       return t(($) => $.activity.task_failed, { count: entry.coalesced_count ?? 1 });
-    case "squad_leader_evaluated": {
+    case "team_leader_evaluated": {
       const reason = details.reason?.trim();
       switch (details.outcome) {
         case "action":
           return reason
-            ? t(($) => $.activity.squad_leader_action_reason, { reason })
-            : t(($) => $.activity.squad_leader_action);
+            ? t(($) => $.activity.team_leader_action_reason, { reason })
+            : t(($) => $.activity.team_leader_action);
         case "no_action":
           return reason
-            ? t(($) => $.activity.squad_leader_no_action_reason, { reason })
-            : t(($) => $.activity.squad_leader_no_action);
+            ? t(($) => $.activity.team_leader_no_action_reason, { reason })
+            : t(($) => $.activity.team_leader_no_action);
         case "failed":
           return reason
-            ? t(($) => $.activity.squad_leader_failed_reason, { reason })
-            : t(($) => $.activity.squad_leader_failed);
+            ? t(($) => $.activity.team_leader_failed_reason, { reason })
+            : t(($) => $.activity.team_leader_failed);
         default:
-          return t(($) => $.activity.squad_leader_evaluated);
+          return t(($) => $.activity.team_leader_evaluated);
       }
     }
     default:
@@ -1481,10 +1481,10 @@ export function IssueDetail({ issueId, onDelete, onDone, defaultSidebarOpen = tr
     // Coalesce consecutive activities from the same actor + action.
     // - task_completed / task_failed: no time limit (these repeat across runs)
     // - all other actions: within a 2-minute window
-    // - squad_leader_evaluated: never coalesce; outcome/reason are audit data
+    // - team_leader_evaluated: never coalesce; outcome/reason are audit data
     const COALESCE_MS = 2 * 60 * 1000;
     const NO_TIME_LIMIT_ACTIONS = new Set(["task_completed", "task_failed"]);
-    const NEVER_COALESCE_ACTIONS = new Set(["squad_leader_evaluated"]);
+    const NEVER_COALESCE_ACTIONS = new Set(["team_leader_evaluated"]);
     const coalesced: TimelineEntry[] = [];
     for (const entry of topLevel) {
       if (entry.type === "activity") {

@@ -196,7 +196,7 @@ type TaskContextForEnv struct {
 	AutopilotTriggerPayload string
 	QuickCreatePrompt       string // non-empty for quick-create tasks
 	HandoffNote             string // assignment handoff instruction; rendered into issue_context.md (MUL-3375)
-	IsSquadLeader           bool   // true when THIS TASK runs the agent in the squad-leader role (may exit silently on no_action); derived from the claim's is_leader_task / squad_id, never sniffed from instructions text (MUL-5811)
+	IsTeamLeader           bool   // true when THIS TASK runs the agent in the team-leader role (may exit silently on no_action); derived from the claim's is_leader_task / team_id, never sniffed from instructions text (MUL-5811)
 	// WorkspaceContext is the workspace-level system prompt (workspace.context
 	// in the DB). Rendered into the brief as `## Workspace Context` when
 	// non-empty so every agent in the workspace sees the same shared context,
@@ -1158,7 +1158,7 @@ const ManagedEnvProvenanceManagedBy = "patchbay-daemon-managed-env"
 // env root is a daemon-managed, non-local_directory resumable env owned by a
 // specific workspace, conversation scope, and agent.
 //
-// Its whole reason to exist is timing. A squad-leader follow-up on the same
+// Its whole reason to exist is timing. A team-leader follow-up on the same
 // issue can be claimed the instant the prior task completes — the server's
 // task-complete handler reconciles the follow-up and wakes the runtime before
 // the prior task's daemon handler writes .gc_meta.json. Keying reuse

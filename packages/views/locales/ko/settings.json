@@ -231,7 +231,7 @@
         "label": "에이전트로 이동",
         "description": "에이전트 목록을 엽니다."
       },
-      "goSquads": {
+      "goTeams": {
         "label": "스쿼드로 이동",
         "description": "스쿼드 목록을 엽니다."
       },
@@ -575,7 +575,7 @@
       },
       "mentions": {
         "label": "멘션",
-        "description": "누군가 나를 @멘션할 때(@all, @squad 포함)"
+        "description": "누군가 나를 @멘션할 때(@all, @team 포함)"
       },
       "updates": {
         "label": "우선순위 및 마감일",

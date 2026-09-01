@@ -66,7 +66,7 @@ const { mockActorNameResult } = vi.hoisted(() => ({
     getActorAvatarUrl: () => null,
     getMemberName: () => "Mock Member",
     getAgentName: () => "Mock Agent",
-    getSquadName: () => "Mock Squad",
+    getTeamName: () => "Mock Team",
   },
 }));
 vi.mock("@patchbay/core/workspace/hooks", () => ({

@@ -75,7 +75,7 @@ var businessMetricLabels = map[string][]string{
 	"patchbay_issue_created_total":                      {labelSource, labelPlatform},
 	"patchbay_chat_message_sent_total":                  {labelPlatform},
 	"patchbay_agent_created_total":                      {labelRuntimeMode, labelSource},
-	"patchbay_squad_created_total":                      {},
+	"patchbay_team_created_total":                      {},
 	"patchbay_autopilot_created_total":                  {labelCadence},
 	"patchbay_issue_executed_total":                     {labelSource},
 	"patchbay_runtime_registered_total":                 {labelRuntimeMode, labelProvider},

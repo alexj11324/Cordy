@@ -739,7 +739,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "내놓을 결과가 없는 에이전트가 임시로 채운 한 문장을 보내지 않습니다.",
             "내가 보낸 채팅 메시지가 다른 창과 기기에서도 안정적으로 보입니다.",
             "직접 멈춘 실행도 실행 시간과 태스크 수에 반영됩니다.",
-            "일반 에이전트가 Squad 리더로 잘못 인식되지 않습니다.",
+            "일반 에이전트가 Team 리더로 잘못 인식되지 않습니다.",
             "CodeBuddy가 설정한 MCP 서버와 함께 시작합니다.",
             "원격 MCP 서버가 일부 런타임에서 조용히 무시되지 않습니다.",
             "아무것도 만들지 못한 OpenCode 실행이 성공으로 보고되지 않습니다.",
@@ -1472,7 +1472,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "런타임이 오프라인이어도, Autopilot의 '태스크 생성' 실행이 실행 목록에 계속 표시됩니다.",
             "본문이 첨부·블록·rich_text에만 있는 Slack 알림 카드(Grafana, Incoming Webhook 등)를 폴백 문구 대신 첨부 본문에서 읽습니다.",
             "Codex 에이전트 작업이 작업 홈에서 데몬의 Codex 모델 카탈로그를 다시 볼 수 있습니다. (커뮤니티 보고)",
-            "레거시 `/squads/…`, `/usage` 웹 경로가 404 대신 현재 대응 페이지로 리다이렉트됩니다.",
+            "레거시 `/teams/…`, `/usage` 웹 경로가 404 대신 현재 대응 페이지로 리다이렉트됩니다.",
             "데스크톱 앱의 저장 대화상자가 `download.txt`로 폴백하지 않고 실제 첨부 파일명을 사용합니다. (커뮤니티 기여)",
             "스쿼드 협업: 리더가 mention으로 디스패치한 워커 에이전트가 완료 댓글을 HTTP API로 게시할 때, 프라이빗 스쿼드 리더가 정확히 깨어나며, 리더 → 워커 → 리더 루프가 첫 홉에서 멈추지 않습니다.",
             "호스트의 Claude CLI가 `--effort` 플래그 이전 버전이어도 작업이 하드 실패하지 않고, 데몬이 effort 플래그를 경고와 함께 제거하고 기본 실행으로 폴백합니다.",
@@ -2206,7 +2206,7 @@ export function createKoDict(allowSignup: boolean): LandingDict {
             "스쿼드 생성 흐름의 멤버 선택이 팀 조율에 더 적합해졌습니다.",
           ],
           improvements: [
-            "페이지 전환, 긴 태스크 활동 접기, Agents/Squads 목록 보기 기억, SSH 저장소 URL 처리, 스쿼드 handoff가 개선되었습니다.",
+            "페이지 전환, 긴 태스크 활동 접기, Agents/Teams 목록 보기 기억, SSH 저장소 URL 처리, 스쿼드 handoff가 개선되었습니다.",
           ],
           fixes: [
             "셀프 호스팅 파일 카드, 로컬 도구와 스킬 탐색, Claude 사용량, 워크스페이스 전환 후 실시간 업데이트, 좁은 화면 메뉴를 수정했습니다.",

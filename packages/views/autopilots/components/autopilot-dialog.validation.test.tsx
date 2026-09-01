@@ -30,8 +30,8 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
       },
     ],
   }),
-  squadListOptions: (wsId: string) => ({
-    queryKey: ["squads", wsId],
+  teamListOptions: (wsId: string) => ({
+    queryKey: ["teams", wsId],
     queryFn: async () => [],
   }),
 }));
@@ -118,7 +118,7 @@ function renderCreateDialog() {
 }
 
 const createButton = () => screen.getByRole("button", { name: "Create autopilot" });
-const assigneeTrigger = () => screen.getByRole("button", { name: /Select agent or squad/ });
+const assigneeTrigger = () => screen.getByRole("button", { name: /Select agent or team/ });
 
 describe("AutopilotDialog required-field feedback", () => {
   beforeEach(() => {
@@ -154,7 +154,7 @@ describe("AutopilotDialog required-field feedback", () => {
     await user.click(createButton());
 
     expect(
-      await screen.findByText("Choose the agent or squad that will run this autopilot."),
+      await screen.findByText("Choose the agent or team that will run this autopilot."),
     ).toBeInTheDocument();
     // The title error clears itself the moment the field is filled — no second
     // submit needed to retire an error the user has already fixed.
@@ -171,14 +171,14 @@ describe("AutopilotDialog required-field feedback", () => {
 
     await user.type(screen.getByLabelText("title"), "Daily digest");
     await user.click(createButton());
-    await screen.findByText("Choose the agent or squad that will run this autopilot.");
+    await screen.findByText("Choose the agent or team that will run this autopilot.");
 
     await user.click(assigneeTrigger());
     await user.click(await screen.findByRole("button", { name: /Scout/ }));
 
     await waitFor(() => {
       expect(
-        screen.queryByText("Choose the agent or squad that will run this autopilot."),
+        screen.queryByText("Choose the agent or team that will run this autopilot."),
       ).not.toBeInTheDocument();
     });
 

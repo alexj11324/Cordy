@@ -42,7 +42,7 @@ func TestPrepareManagedIssueEnvWritesProvenance(t *testing.T) {
 
 // TestPrepareLocalDirectoryWritesNoProvenance pins the local_directory branch:
 // a task bound to a user-supplied path must NOT get a managed-env provenance
-// marker, so a squad leader can never treat the user's directory as a reusable
+// marker, so a team leader can never treat the user's directory as a reusable
 // managed workdir. Absence of the marker is the fail-closed signal.
 func TestPrepareLocalDirectoryWritesNoProvenance(t *testing.T) {
 	root := t.TempDir()

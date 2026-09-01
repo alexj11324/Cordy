@@ -36,7 +36,7 @@ func assertDenialReason(t *testing.T, resp *testutil.Response, want string) {
 
 // TestAssignAgent_DenialReasonNamesPermissionNotMode pins the response BODY of
 // the assignment invoke gate across every principal that can be refused by it.
-// The sibling tests in agent_access_test.go / squad_private_leader_test.go pin
+// The sibling tests in agent_access_test.go / team_private_leader_test.go pin
 // the status code; a 403 alone does not stop the reason sentence from drifting
 // back into describing the target instead of the caller's missing permission.
 func TestAssignAgent_DenialReasonNamesPermissionNotMode(t *testing.T) {
@@ -114,17 +114,17 @@ func TestAssignAgent_DenialReasonNamesPermissionNotMode(t *testing.T) {
 		assertDenialReason(t, resp, wantAgentReason)
 	})
 
-	// The squad branch has its own sentence, and must not disclose the leader's
-	// mode either — "this squad" is all the caller gets.
-	t.Run("private-leader squad is refused without naming the leader's mode", func(t *testing.T) {
-		squadID := dbfx.Squad(t, "Assign Denial Private Leader", privateAgentID)
+	// The team branch has its own sentence, and must not disclose the leader's
+	// mode either — "this team" is all the caller gets.
+	t.Run("private-leader team is refused without naming the leader's mode", func(t *testing.T) {
+		teamID := dbfx.Team(t, "Assign Denial Private Leader", privateAgentID)
 		resp := testutil.Call(t, testHandler.CreateIssue,
 			newRequestAs(plainMemberID, "POST", "/api/issues?workspace_id="+testWorkspaceID, map[string]any{
-				"title":         "invoke-denial squad body test",
-				"assignee_type": "squad",
-				"assignee_id":   squadID,
+				"title":         "invoke-denial team body test",
+				"assignee_type": "team",
+				"assignee_id":   teamID,
 			}),
 		).Want(http.StatusForbidden)
-		assertDenialReason(t, resp, "you do not have permission to assign work to this squad")
+		assertDenialReason(t, resp, "you do not have permission to assign work to this team")
 	})
 }

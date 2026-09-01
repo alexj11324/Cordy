@@ -274,7 +274,7 @@ func autopilotRunFromTerminalRow(row db.UpdateAutopilotRunTerminalWithQuotaRow) 
 		Source: row.Source, Status: row.Status, IssueID: row.IssueID, TaskID: row.TaskID,
 		TriggeredAt: row.TriggeredAt, CompletedAt: row.CompletedAt,
 		FailureReason: row.FailureReason, TriggerPayload: row.TriggerPayload,
-		Result: row.Result, CreatedAt: row.CreatedAt, SquadID: row.SquadID,
+		Result: row.Result, CreatedAt: row.CreatedAt, TeamID: row.TeamID,
 		PlannedAt: row.PlannedAt, WebhookDeliveryID: row.WebhookDeliveryID,
 		QuotaReservationID: row.QuotaReservationID, ReasonCode: row.ReasonCode,
 	}

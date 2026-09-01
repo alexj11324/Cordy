@@ -571,7 +571,7 @@ func TestRunAutopilotUpdateAgentSwitchesAssigneeType(t *testing.T) {
 				t.Errorf("decode body: %v", err)
 			}
 			if body["assignee_type"] != "agent" {
-				http.Error(w, "squad not found", http.StatusBadRequest)
+				http.Error(w, "team not found", http.StatusBadRequest)
 				return
 			}
 			json.NewEncoder(w).Encode(map[string]any{

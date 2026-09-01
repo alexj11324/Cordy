@@ -17,7 +17,7 @@ import {
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@patchbay/ui/components/ui/button";
 import { useWorkspaceId } from "@patchbay/core/hooks";
-import { memberListOptions, agentListOptions, squadListOptions } from "@patchbay/core/workspace/queries";
+import { memberListOptions, agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
 import { projectListOptions } from "@patchbay/core/projects/queries";
 import { labelListOptions } from "@patchbay/core/labels/queries";
 import { propertyListOptions } from "@patchbay/core/properties";
@@ -90,12 +90,12 @@ function IconStack({ children }: { children: ReactNode[] }) {
 export function buildChipActorNames(
   members: readonly { user_id: string; name: string }[],
   agents: readonly { id: string; name: string }[],
-  squads: readonly { id: string; name: string }[],
+  teams: readonly { id: string; name: string }[],
 ): (actor: ActorFilterValue) => string | undefined {
   const byKey = new Map<string, string>();
   for (const m of members) byKey.set(`member:${m.user_id}`, m.name);
   for (const a of agents) byKey.set(`agent:${a.id}`, a.name);
-  for (const s of squads) byKey.set(`squad:${s.id}`, s.name);
+  for (const s of teams) byKey.set(`team:${s.id}`, s.name);
   return (actor: ActorFilterValue) => byKey.get(`${actor.type}:${actor.id}`);
 }
 
@@ -229,9 +229,9 @@ function useFilterChips(
     ...agentListOptions(wsId),
     enabled: enabled && (assigneeFilters.length > 0 || creatorFilters.length > 0),
   });
-  const { data: squads = [] } = useQuery({
-    ...squadListOptions(wsId),
-    enabled: enabled && assigneeFilters.some((f) => f.type === "squad"),
+  const { data: teams = [] } = useQuery({
+    ...teamListOptions(wsId),
+    enabled: enabled && assigneeFilters.some((f) => f.type === "team"),
   });
   const { data: projects = [] } = useQuery({
     ...projectListOptions(wsId),
@@ -242,8 +242,8 @@ function useFilterChips(
     enabled: enabled && labelFilters.length > 0,
   });
   const actorName = useMemo(
-    () => buildChipActorNames(members, agents, squads),
-    [members, agents, squads],
+    () => buildChipActorNames(members, agents, teams),
+    [members, agents, teams],
   );
 
   // Inside a saved view chips show only the user's additions ON TOP of the

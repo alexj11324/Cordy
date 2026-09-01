@@ -1,0 +1,148 @@
+{
+  "page": {
+    "title": "Teams",
+    "new_button": "New Team",
+    "empty_no_teams": "No teams yet. Create one to get started.",
+    "empty_no_match": "No teams match your filters.",
+    "table": {
+      "name": "Team",
+      "leader": "Leader",
+      "members": "Members",
+      "creator": "Created by",
+      "created": "Created"
+    },
+    "no_matches": "No teams match",
+    "row_menu": "Team actions",
+    "archive_action": "Archive"
+  },
+  "inspector": {
+    "details_section": "Details",
+    "archive_button": "Archive"
+  },
+  "member_type": {
+    "agent": "Agent",
+    "member": "Member"
+  },
+  "archive_dialog": {
+    "title": "Archive this team?",
+    "description": "\"{{name}}\" will be archived. Issues currently assigned to this team will be transferred to its leader. This can't be undone — create a new team if you need the routing back.",
+    "cancel": "Cancel",
+    "confirm": "Archive",
+    "archiving": "Archiving…",
+    "success": "Team archived"
+  },
+  "name_editor": {
+    "title": "Rename team",
+    "placeholder": "Team name",
+    "required": "Name is required",
+    "cancel": "Cancel",
+    "save": "Save",
+    "saved": "Saved",
+    "save_failed": "Failed to save"
+  },
+  "add_member_dialog": {
+    "title": "Add Member",
+    "description": "Add a workspace member or agent to this team.",
+    "label_member": "Member",
+    "label_role": "Role",
+    "label_optional": "(optional)",
+    "cancel": "Cancel",
+    "select_target": "Select a member or agent",
+    "search_placeholder": "Search members or agents...",
+    "members_section": "Members",
+    "agents_section": "Agents",
+    "role_placeholder": "e.g. Reviewer, Frontend Lead",
+    "add": "Add"
+  },
+  "role_editor": {
+    "empty": "Add role…",
+    "placeholder": "Role (e.g. Reviewer)"
+  },
+  "description_dialog": {
+    "title": "Edit description",
+    "placeholder_empty": "Add a description",
+    "cancel": "Cancel",
+    "responsibility_placeholder": "What is this team responsible for?",
+    "save": "Save"
+  },
+  "discard_changes_dialog": {
+    "title": "Discard unsaved changes?",
+    "description": "You have unsaved changes on this tab. Switching tabs will discard them.",
+    "keep_editing": "Keep editing",
+    "discard_button": "Discard"
+  },
+  "members_tab": {
+    "section_title": "Members",
+    "section_count_one": "{{count}} member in this team",
+    "section_count_other": "{{count}} members in this team",
+    "add_member_button": "Add Member",
+    "create_agent_button": "Create Agent",
+    "leader_chip": "Leader",
+    "view_agent_tooltip": "Open agent detail",
+    "make_leader_tooltip": "Make team leader",
+    "remove_member_tooltip": "Remove from team",
+    "status_working": "Working",
+    "status_idle": "Idle",
+    "status_offline": "Offline",
+    "status_unstable": "Unstable",
+    "status_archived": "Archived",
+    "issue_status_blocked": "blocked",
+    "active_issue_more": "and {{count}} more",
+    "last_active_label": "last active {{time}}"
+  },
+  "detail_tabs": {
+    "members": "Members",
+    "instructions": "Instructions"
+  },
+  "details": {
+    "leader": "Leader",
+    "members": "Members",
+    "created_by": "Created by",
+    "created": "Created",
+    "updated": "Updated"
+  },
+  "toasts": {
+    "member_added": "Member added",
+    "member_add_failed": "Failed to add member",
+    "member_removed": "Member removed",
+    "member_remove_failed": "Failed to remove member",
+    "role_updated": "Role updated",
+    "role_update_failed": "Failed to update role",
+    "leader_updated": "Leader updated",
+    "leader_update_failed": "Failed to update leader",
+    "archive_failed": "Failed to archive team",
+    "instructions_saved": "Instructions saved"
+  },
+  "profile_card": {
+    "unavailable": "Team unavailable",
+    "detail_link": "Detail →",
+    "archived": "Archived",
+    "member_count_one": "{{count}} member",
+    "member_count_other": "{{count}} members",
+    "members_section": "Members",
+    "more_members_one": "+{{count}} more",
+    "more_members_other": "+{{count}} more"
+  },
+  "instructions_tab": {
+    "description": "Team instructions are injected into the leader agent's prompt whenever it works on an issue assigned to this team. Use them to give the leader team-wide guidance, working agreements, or context the leader should follow on every task.",
+    "unsaved_changes": "Unsaved changes",
+    "save_button": "Save",
+    "placeholder": "e.g. Always start by writing a failing test. Prefer small, atomic commits."
+  },
+  "scope": {
+    "mine": "Mine",
+    "all": "All"
+  },
+  "toolbar": {
+    "display": "Display",
+    "sort_by": "Sort by",
+    "direction_asc": "Ascending",
+    "direction_desc": "Descending",
+    "section_columns": "Columns",
+    "result_count_title": "Matching teams / all teams",
+    "filter_label": "Filter",
+    "filter_active_count_one": "{{count}} filter",
+    "filter_active_count_other": "{{count}} filters",
+    "clear_filters": "Clear filters"
+  }
+}

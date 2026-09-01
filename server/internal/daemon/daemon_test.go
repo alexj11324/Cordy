@@ -1146,7 +1146,7 @@ func TestBuildPromptCommentTriggered(t *testing.T) {
 		"do NOT reuse --parent values from previous turns",
 		// MUL-5442 (2026-08-06): with the generic no-reply rule retired,
 		// the reply command is framed as a plain imperative again — the
-		// squad leader's `no_action` block states its own exception.
+		// team leader's `no_action` block states its own exception.
 		"Post your reply as a comment",
 	} {
 		if !strings.Contains(prompt, want) {
@@ -1166,9 +1166,9 @@ func TestBuildPromptCommentTriggered(t *testing.T) {
 // GH#1576). Retired by MUL-5442 owner decision (2026-08-06): an agent
 // comment cannot wake an ordinary agent without an explicit @mention
 // (computeCommentAgentTriggers routes agent-authored comments only via
-// mentions, plus the squad-leader wake), so loop prevention belongs to the
+// mentions, plus the team-leader wake), so loop prevention belongs to the
 // mention discipline in the brief's `## Mentions`, and recorded silence
-// stays squad-leader-only (`no_action`). Retired pins, now negative
+// stays team-leader-only (`no_action`). Retired pins, now negative
 // guards: "do not @mention the other agent as a sign-off", "Silence is
 // the preferred way".
 func TestBuildPromptCommentTriggeredByAgent(t *testing.T) {
@@ -1223,7 +1223,7 @@ func TestBuildPromptCommentTriggeredByMember(t *testing.T) {
 		t.Fatalf("member-triggered prompt should not claim the author was another agent")
 	}
 	// Must NOT use the old "You MUST respond" language: the reply command is
-	// shared across turn types, and a squad leader's `no_action` exit — the
+	// shared across turn types, and a team leader's `no_action` exit — the
 	// one silent path left after MUL-5442 retired the generic no-reply rule —
 	// must not be shouted over by the per-turn channel. The unconditional
 	// one-comment contract for ordinary agents lives in the brief.
@@ -1251,11 +1251,11 @@ func TestBuildPromptCommentTriggeredNoContent(t *testing.T) {
 	}
 }
 
-// TestBuildPromptSquadLeaderNoActionProhibition verifies that when a squad
+// TestBuildPromptTeamLeaderNoActionProhibition verifies that when a team
 // leader is triggered by another agent's comment, the per-turn prompt
 // explicitly forbids posting a comment whose only purpose is to announce
 // no_action or "exiting silently". This is the fix for MUL-2168.
-func TestBuildPromptSquadLeaderNoActionProhibition(t *testing.T) {
+func TestBuildPromptTeamLeaderNoActionProhibition(t *testing.T) {
 	t.Parallel()
 
 	prompt := BuildPrompt(Task{
@@ -1268,21 +1268,21 @@ func TestBuildPromptSquadLeaderNoActionProhibition(t *testing.T) {
 		LeaderRoleResolved:    true,
 		Agent: &AgentData{
 			Name:         "Leader",
-			Instructions: "You lead the team.\n\n## Squad Operating Protocol\n\nYou are the LEADER.",
+			Instructions: "You lead the team.\n\n## Team Operating Protocol\n\nYou are the LEADER.",
 		},
 	}, "claude")
 
 	for _, want := range []string{
-		"Squad leader no_action rule",
+		"Team leader no_action rule",
 		"DO NOT post any comment",
-		"patchbay squad activity",
+		"patchbay team activity",
 	} {
 		if !strings.Contains(prompt, want) {
-			t.Fatalf("squad leader prompt missing %q\n---\n%s", want, prompt)
+			t.Fatalf("team leader prompt missing %q\n---\n%s", want, prompt)
 		}
 	}
 
-	// Non-squad-leader agent should NOT get the squad leader rule.
+	// Non-team-leader agent should NOT get the team leader rule.
 	nonLeaderPrompt := BuildPrompt(Task{
 		IssueID:               "issue-1",
 		TriggerCommentID:      "comment-1",
@@ -1295,8 +1295,8 @@ func TestBuildPromptSquadLeaderNoActionProhibition(t *testing.T) {
 		},
 	}, "claude")
 
-	if strings.Contains(nonLeaderPrompt, "Squad leader no_action rule") {
-		t.Fatalf("non-squad-leader prompt should NOT contain squad leader rule\n---\n%s", nonLeaderPrompt)
+	if strings.Contains(nonLeaderPrompt, "Team leader no_action rule") {
+		t.Fatalf("non-team-leader prompt should NOT contain team leader rule\n---\n%s", nonLeaderPrompt)
 	}
 }
 
@@ -5640,13 +5640,13 @@ func TestFreshSessionMayHelp(t *testing.T) {
 	}
 }
 
-// TestBuildPromptSquadLeaderReplyCommandCarvesOutNoAction renders the COMPLETE
+// TestBuildPromptTeamLeaderReplyCommandCarvesOutNoAction renders the COMPLETE
 // leader prompt and pins the exception's scope relation (MUL-5442 #6493
 // review): the no_action rule and the reply imperative appear in the same
 // prompt, so the imperative must carry the carve-out itself — a bare
 // unconditional "Post your reply as a comment" anywhere in a leader prompt
 // re-opens the contradiction the carve-out exists to close.
-func TestBuildPromptSquadLeaderReplyCommandCarvesOutNoAction(t *testing.T) {
+func TestBuildPromptTeamLeaderReplyCommandCarvesOutNoAction(t *testing.T) {
 	t.Parallel()
 
 	prompt := BuildPrompt(Task{
@@ -5659,11 +5659,11 @@ func TestBuildPromptSquadLeaderReplyCommandCarvesOutNoAction(t *testing.T) {
 		LeaderRoleResolved:    true,
 		Agent: &AgentData{
 			Name:         "Lead",
-			Instructions: "Some instructions\n\n## Squad Operating Protocol\n\nYou are the LEADER...",
+			Instructions: "Some instructions\n\n## Team Operating Protocol\n\nYou are the LEADER...",
 		},
 	}, "claude")
 
-	if !strings.Contains(prompt, "Squad leader no_action rule") {
+	if !strings.Contains(prompt, "Team leader no_action rule") {
 		t.Fatalf("leader prompt missing the no_action rule\n---\n%s", prompt)
 	}
 	if !strings.Contains(prompt, "Unless your outcome is `no_action`, post your reply as a comment") {
@@ -5674,13 +5674,13 @@ func TestBuildPromptSquadLeaderReplyCommandCarvesOutNoAction(t *testing.T) {
 	}
 }
 
-// TestBuildPromptSquadLeaderMultiThreadCarvesOutNoAction renders the complete
+// TestBuildPromptTeamLeaderMultiThreadCarvesOutNoAction renders the complete
 // leader prompt on the cross-thread fan-out path (MUL-5442 #6493 review): the
 // fan-out imperative fires AFTER the no_action rule, so its scope sentence
 // must govern the ENTIRE block — assert it precedes every later obligation,
 // not just the first verb. The ordinary fan-out output keeps the
 // unconditional form byte-for-byte.
-func TestBuildPromptSquadLeaderMultiThreadCarvesOutNoAction(t *testing.T) {
+func TestBuildPromptTeamLeaderMultiThreadCarvesOutNoAction(t *testing.T) {
 	t.Parallel()
 
 	leaderTask := Task{
@@ -5697,11 +5697,11 @@ func TestBuildPromptSquadLeaderMultiThreadCarvesOutNoAction(t *testing.T) {
 		LeaderRoleResolved: true,
 		Agent: &AgentData{
 			Name:         "Lead",
-			Instructions: "Some instructions\n\n## Squad Operating Protocol\n\nYou are the LEADER...",
+			Instructions: "Some instructions\n\n## Team Operating Protocol\n\nYou are the LEADER...",
 		},
 	}
 	prompt := BuildPrompt(leaderTask, "claude")
-	if !strings.Contains(prompt, "Squad leader no_action rule") {
+	if !strings.Contains(prompt, "Team leader no_action rule") {
 		t.Fatalf("leader multi-thread prompt missing the no_action rule\n---\n%s", prompt)
 	}
 	scope := strings.Index(prompt, "skip this ENTIRE fan-out block")

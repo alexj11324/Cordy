@@ -225,12 +225,12 @@ const mockListAgents = vi.hoisted(() =>
     },
   ]),
 );
-const mockListSquads = vi.hoisted(() =>
+const mockListTeams = vi.hoisted(() =>
   vi.fn().mockResolvedValue([
     {
-      id: "squad-1",
+      id: "team-1",
       workspace_id: "ws-1",
-      name: "Squad One",
+      name: "Team One",
       description: "",
       instructions: "",
       avatar_url: null,
@@ -254,7 +254,7 @@ vi.mock("@patchbay/core/api", () => ({
     updateIssue: vi.fn(),
     listMembers: (...args: any[]) => mockListMembers(...args),
     listAgents: (...args: any[]) => mockListAgents(...args),
-    listSquads: (...args: any[]) => mockListSquads(...args),
+    listTeams: (...args: any[]) => mockListTeams(...args),
   },
   getApi: () => ({
     listIssues: (...args: any[]) => mockListIssues(...args),
@@ -265,7 +265,7 @@ vi.mock("@patchbay/core/api", () => ({
     updateIssue: vi.fn(),
     listMembers: (...args: any[]) => mockListMembers(...args),
     listAgents: (...args: any[]) => mockListAgents(...args),
-    listSquads: (...args: any[]) => mockListSquads(...args),
+    listTeams: (...args: any[]) => mockListTeams(...args),
   }),
   setApiInstance: vi.fn(),
 }));
@@ -586,12 +586,12 @@ const mockIssues: Issue[] = [
     workspace_id: "ws-1",
     number: 4,
     identifier: "TES-4",
-    title: "Squad task",
+    title: "Team task",
     description: null,
     status: "todo",
     priority: "medium",
-    assignee_type: "squad",
-    assignee_id: "squad-1",
+    assignee_type: "team",
+    assignee_id: "team-1",
     creator_type: "member",
     creator_id: "user-1",
     start_date: null,
@@ -741,7 +741,7 @@ describe("IssuesPage (shared)", () => {
     // match is not guaranteed.
     await screen.findAllByText("Test User");
     expect(screen.getAllByText("Agent One").length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText("Squad One").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Team One").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("No assignee")).toBeInTheDocument();
   });
 
@@ -816,30 +816,30 @@ describe("IssuesPage (shared)", () => {
     });
   }
 
-  it("agents scope includes squad-assigned issues", async () => {
+  it("agents scope includes team-assigned issues", async () => {
     mockScope = "agents";
     mockViewState.viewMode = "list";
     mockListIssuesHonoringAssigneeTypes();
     renderWithQuery(<IssuesPage />);
 
-    // Squad task and agent task should be visible
+    // Team task and agent task should be visible
     await screen.findByText("Design landing page");
-    expect(screen.getByText("Squad task")).toBeInTheDocument();
+    expect(screen.getByText("Team task")).toBeInTheDocument();
     // Member task should NOT be visible
     expect(screen.queryByText("Implement auth")).not.toBeInTheDocument();
     expect(mockListIssues).toHaveBeenCalledWith(
-      expect.objectContaining({ assignee_types: ["agent", "squad"] }),
+      expect.objectContaining({ assignee_types: ["agent", "team"] }),
     );
   });
 
-  it("members scope excludes squad-assigned issues", async () => {
+  it("members scope excludes team-assigned issues", async () => {
     mockScope = "members";
     mockViewState.viewMode = "list";
     mockListIssuesHonoringAssigneeTypes();
     renderWithQuery(<IssuesPage />);
 
     await screen.findByText("Implement auth");
-    expect(screen.queryByText("Squad task")).not.toBeInTheDocument();
+    expect(screen.queryByText("Team task")).not.toBeInTheDocument();
     expect(screen.queryByText("Design landing page")).not.toBeInTheDocument();
     expect(mockListIssues).toHaveBeenCalledWith(
       expect.objectContaining({ assignee_types: ["member"] }),

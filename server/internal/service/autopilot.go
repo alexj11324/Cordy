@@ -113,8 +113,8 @@ func RecordAutopilotRuleVersion(ctx context.Context, q *db.Queries, ap db.Autopi
 // dispatch still creates the issue and issue task so the work is visible and
 // can be claimed when the runtime returns.
 //
-// When assignee_type='squad' the gate runs against the squad leader (Path A
-// from MUL-2429: Autopilot-on-squad ≈ Autopilot-on-leader), with the same
+// When assignee_type='team' the gate runs against the team leader (Path A
+// from MUL-2429: Autopilot-on-team ≈ Autopilot-on-leader), with the same
 // create_issue audit-trail exception for a merely offline leader runtime.
 func (s *AutopilotService) DispatchAutopilot(
 	ctx context.Context,
@@ -223,7 +223,7 @@ func (s *AutopilotService) AdmitAutopilotWebhookDelivery(
 		Source:            "webhook",
 		Status:            initialStatus,
 		TriggerPayload:    payload,
-		SquadID:           autopilotSquadAttribution(autopilot),
+		TeamID:           autopilotTeamAttribution(autopilot),
 		WebhookDeliveryID: deliveryID,
 	})
 	if err != nil {
@@ -321,13 +321,13 @@ func (s *AutopilotService) ensureWebhookCreateIssueTask(ctx context.Context, aut
 	if effective := issuestatus.Effective(ctx, s.Queries, issue.WorkspaceID, issue.Status); effective != "todo" && effective != "in_progress" {
 		return nil
 	}
-	if autopilot.AssigneeType == "squad" {
+	if autopilot.AssigneeType == "team" {
 		leader, _, err := s.resolveAutopilotLeader(ctx, autopilot)
 		if err != nil {
-			return fmt.Errorf("dispatch for webhook delivery: resolve squad leader: %w", err)
+			return fmt.Errorf("dispatch for webhook delivery: resolve team leader: %w", err)
 		}
-		if _, err := s.TaskSvc.EnqueueTaskForSquadLeader(ctx, issue, leader.ID, autopilot.AssigneeID, pgtype.UUID{}); err != nil {
-			return fmt.Errorf("dispatch for webhook delivery: repair squad task: %w", err)
+		if _, err := s.TaskSvc.EnqueueTaskForTeamLeader(ctx, issue, leader.ID, autopilot.AssigneeID, pgtype.UUID{}); err != nil {
+			return fmt.Errorf("dispatch for webhook delivery: repair team task: %w", err)
 		}
 		return nil
 	}
@@ -540,7 +540,7 @@ func (s *AutopilotService) dispatchAutopilot(
 		Source:            source,
 		Status:            initialStatus,
 		TriggerPayload:    payload,
-		SquadID:           autopilotSquadAttribution(autopilot),
+		TeamID:           autopilotTeamAttribution(autopilot),
 		PlannedAt:         plannedAt,
 		WebhookDeliveryID: webhookDeliveryID,
 	})
@@ -629,14 +629,14 @@ func dispatchFailReasonCode(err error) dispatch.ReasonCode {
 
 // dispatchCreateIssue creates an issue and enqueues a task for the agent.
 //
-// When the autopilot is assigned to a squad (Path A from MUL-2429), the
-// created issue inherits assignee_type='squad' + assignee_id=squad. The
-// existing issue listener chain (shouldEnqueueSquadLeaderOnAssign →
-// enqueueSquadLeaderTask) then routes the work to the squad leader, exactly
-// as a human manually assigning the issue to that squad would.
+// When the autopilot is assigned to a team (Path A from MUL-2429), the
+// created issue inherits assignee_type='team' + assignee_id=team. The
+// existing issue listener chain (shouldEnqueueTeamLeaderOnAssign →
+// enqueueTeamLeaderTask) then routes the work to the team leader, exactly
+// as a human manually assigning the issue to that team would.
 //
 // Creator on the issue is always the agent that will actually do the work
-// (the resolved leader for a squad autopilot, otherwise the assignee agent
+// (the resolved leader for a team autopilot, otherwise the assignee agent
 // itself), so activity / mentions render with the right author identity.
 func (s *AutopilotService) dispatchCreateIssue(ctx context.Context, ap db.Autopilot, run *db.AutopilotRun, triggerTimezone string, actorUserID pgtype.UUID) error {
 	leader, _, err := s.resolveAutopilotLeader(ctx, ap)
@@ -704,7 +704,7 @@ func (s *AutopilotService) dispatchCreateIssue(ctx context.Context, ap db.Autopi
 		// The agent that the autopilot dispatches to is the issue's creator,
 		// not the human who originally configured the autopilot. The latter
 		// is captured separately via origin_type=autopilot + origin_id. For
-		// squad-assigned autopilots, the creator is the resolved leader —
+		// team-assigned autopilots, the creator is the resolved leader —
 		// the same agent the issue listener will end up enqueueing.
 		CreatorType:   "agent",
 		CreatorID:     leader.ID,
@@ -762,8 +762,8 @@ func (s *AutopilotService) dispatchCreateIssue(ctx context.Context, ap db.Autopi
 
 	// Publish issue:created so the existing event chain fires
 	// (subscriber listeners, activity listeners, notification listeners). For
-	// squad autopilots, this is what triggers shouldEnqueueSquadLeaderOnAssign
-	// → enqueueSquadLeaderTask — no separate squad-routing code needed here.
+	// team autopilots, this is what triggers shouldEnqueueTeamLeaderOnAssign
+	// → enqueueTeamLeaderTask — no separate team-routing code needed here.
 	prefix := s.getIssuePrefix(ap.WorkspaceID)
 	s.Bus.Publish(events.Event{
 		Type:        protocol.EventIssueCreated,
@@ -787,7 +787,7 @@ func (s *AutopilotService) dispatchCreateIssue(ctx context.Context, ap db.Autopi
 	// roll back the issue itself.
 	s.notifyAutopilotSubscribersOnCreate(ctx, ap, issue, leader.ID, templateSubs)
 
-	// Enqueue agent task via the existing flow. Squad-assigned autopilots
+	// Enqueue agent task via the existing flow. Team-assigned autopilots
 	// route to the resolved leader as the executing agent (Path A from
 	// MUL-2429); agent-assigned autopilots go through the standard issue
 	// path. Both code paths land in agent_task_queue with agent_id = leader.
@@ -797,20 +797,20 @@ func (s *AutopilotService) dispatchCreateIssue(ctx context.Context, ap db.Autopi
 	// webhook dispatch has no actor and takes the plain entry points, where the
 	// autopilot-origin issue resolves to rule_owner. The *WithHandoff variants are
 	// the existing actor-carrying enqueue methods; the handoff note is empty here.
-	if ap.AssigneeType == "squad" {
+	if ap.AssigneeType == "team" {
 		// Fail-closed invocation gate: verify the admission principal (manual
 		// clicker, else creator — see autopilotAdmitInvoke) may still invoke the
 		// leader. Catches configs that predate the save-time gate, and configs
 		// that no longer pass (MUL-3963 / MUL-4525).
 		if !s.autopilotAdmitInvoke(ctx, ap, leader, actorUserID) {
-			return fmt.Errorf("not allowed to invoke private squad leader")
+			return fmt.Errorf("not allowed to invoke private team leader")
 		}
 		if actorUserID.Valid {
-			if _, err := s.TaskSvc.EnqueueTaskForSquadLeaderWithHandoff(ctx, issue, leader.ID, ap.AssigneeID, "", actorUserID); err != nil {
-				return fmt.Errorf("enqueue squad leader task: %w", err)
+			if _, err := s.TaskSvc.EnqueueTaskForTeamLeaderWithHandoff(ctx, issue, leader.ID, ap.AssigneeID, "", actorUserID); err != nil {
+				return fmt.Errorf("enqueue team leader task: %w", err)
 			}
-		} else if _, err := s.TaskSvc.EnqueueTaskForSquadLeader(ctx, issue, leader.ID, ap.AssigneeID, pgtype.UUID{}); err != nil {
-			return fmt.Errorf("enqueue squad leader task: %w", err)
+		} else if _, err := s.TaskSvc.EnqueueTaskForTeamLeader(ctx, issue, leader.ID, ap.AssigneeID, pgtype.UUID{}); err != nil {
+			return fmt.Errorf("enqueue team leader task: %w", err)
 		}
 	} else if actorUserID.Valid {
 		if _, err := s.TaskSvc.EnqueueTaskForIssueWithHandoff(ctx, issue, "", actorUserID); err != nil {
@@ -932,7 +932,7 @@ func (e *errDispatchSkipped) Error() string { return e.reason }
 
 // dispatchRunOnly enqueues a direct agent task without creating an issue.
 //
-// For squad autopilots, the executing agent is the squad leader resolved at
+// For team autopilots, the executing agent is the team leader resolved at
 // trigger time (Path A from MUL-2429). The same archived / runtime-bound /
 // runtime-online gates that the upstream admission check (shouldSkipDispatch)
 // applies also run here as belt-and-braces: if the leader changed between
@@ -942,9 +942,9 @@ func (s *AutopilotService) dispatchRunOnly(ctx context.Context, ap db.Autopilot,
 	agent, _, err := s.resolveAutopilotLeader(ctx, ap)
 	if err != nil {
 		// Same admission-vs-failure classification as shouldSkipDispatch:
-		// if the row disappeared or the squad was archived between
+		// if the row disappeared or the team was archived between
 		// admission and dispatch, that is a skip, not a failure.
-		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, errSquadArchived) {
+		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, errTeamArchived) {
 			return &errDispatchSkipped{reason: formatAdmissionReason(ap, "assignee no longer resolvable"), code: dispatch.ReasonTargetUnavailable}
 		}
 		return fmt.Errorf("resolve leader: %w", err)
@@ -957,10 +957,10 @@ func (s *AutopilotService) dispatchRunOnly(ctx context.Context, ap db.Autopilot,
 		return &errDispatchSkipped{reason: formatAdmissionReason(ap, verdict.Detail), code: verdict.Reason}
 	}
 
-	// Fail-closed invocation gate for squad autopilots (admission principal =
+	// Fail-closed invocation gate for team autopilots (admission principal =
 	// manual clicker, else creator — see autopilotAdmitInvoke).
-	if ap.AssigneeType == "squad" && !s.autopilotAdmitInvoke(ctx, ap, agent, actorUserID) {
-		return &errDispatchSkipped{reason: formatAdmissionReason(ap, "not allowed to invoke private squad leader"), code: dispatch.ReasonInvocationNotAllowed}
+	if ap.AssigneeType == "team" && !s.autopilotAdmitInvoke(ctx, ap, agent, actorUserID) {
+		return &errDispatchSkipped{reason: formatAdmissionReason(ap, "not allowed to invoke private team leader"), code: dispatch.ReasonInvocationNotAllowed}
 	}
 
 	// Attribution splits on the trigger. A MANUAL trigger is a direct human action:
@@ -1262,12 +1262,12 @@ func (s *AutopilotService) failRun(ctx context.Context, runID pgtype.UUID, reaso
 
 // shouldSkipDispatch is the pre-flight admission check from MUL-1899.
 // Returns (reason, true) when dispatching now would only enqueue a doomed
-// task — i.e. the assignee (or, for squad autopilots, the squad leader) is
+// task — i.e. the assignee (or, for team autopilots, the team leader) is
 // gone, archived, has no runtime bound, or its runtime is not currently
 // online. Returns ("", false) on the happy path.
 //
 // Errors are split into two classes:
-//   - pgx.ErrNoRows / errSquadArchived (the row truly doesn't exist or is
+//   - pgx.ErrNoRows / errTeamArchived (the row truly doesn't exist or is
 //     archived) → hard skip. Retrying won't change anything; piling failed
 //     runs would pollute the failure-rate auto-pause monitor.
 //   - Anything else (connection drop, statement timeout, etc.) → fail-open:
@@ -1279,13 +1279,13 @@ func (s *AutopilotService) shouldSkipDispatch(ctx context.Context, ap db.Autopil
 	if !ap.AssigneeID.Valid {
 		return "autopilot has no assignee", dispatch.ReasonTargetUnavailable, true
 	}
-	agent, squadResolved, err := s.resolveAutopilotLeader(ctx, ap)
+	agent, teamResolved, err := s.resolveAutopilotLeader(ctx, ap)
 	if err != nil {
 		// Hard-skip the cases where another retry will produce the same
 		// outcome. Logging is unconditional so ops can still spot a run of
-		// dangling rows pointing at a deleted agent / archived squad.
+		// dangling rows pointing at a deleted agent / archived team.
 		missing := errors.Is(err, pgx.ErrNoRows)
-		archived := errors.Is(err, errSquadArchived)
+		archived := errors.Is(err, errTeamArchived)
 		slog.Warn("autopilot admission: failed to resolve leader",
 			"autopilot_id", util.UUIDToString(ap.ID),
 			"assignee_type", ap.AssigneeType,
@@ -1296,14 +1296,14 @@ func (s *AutopilotService) shouldSkipDispatch(ctx context.Context, ap db.Autopil
 		)
 		switch {
 		case archived:
-			// Squad row exists but is archived — DeleteSquad's transfer
+			// Team row exists but is archived — DeleteTeam's transfer
 			// should have rewritten this autopilot's assignee to the leader
 			// already; surfacing the case explicitly keeps the failure
 			// reason useful when something slipped past the transfer.
-			return "assignee squad is archived", dispatch.ReasonTargetUnavailable, true
-		case missing && squadResolved:
-			return "assignee squad cannot be resolved", dispatch.ReasonTargetUnavailable, true
-		case missing && !squadResolved:
+			return "assignee team is archived", dispatch.ReasonTargetUnavailable, true
+		case missing && teamResolved:
+			return "assignee team cannot be resolved", dispatch.ReasonTargetUnavailable, true
+		case missing && !teamResolved:
 			// Agent row gone. With migration 096 the FK is gone too, so
 			// this is the new "agent was hard-deleted under us" case. Skip
 			// rather than fail-open: we know retrying will not help.
@@ -1344,7 +1344,7 @@ func (s *AutopilotService) shouldSkipDispatch(ctx context.Context, ap db.Autopil
 	// attribution credit the same member and never fork. Automation (schedule /
 	// webhook / api, actorUserID invalid) has no human in the loop and falls
 	// back to the creator. Admins do NOT bypass a private agent they do not own;
-	// agent-created autopilots are judged as workspace principals. For squad
+	// agent-created autopilots are judged as workspace principals. For team
 	// autopilots the gate runs against the resolved leader.
 	if !s.autopilotAdmitInvoke(ctx, ap, agent, actorUserID) {
 		if actorUserID.Valid {
@@ -1360,13 +1360,13 @@ func (s *AutopilotService) shouldSkipDispatch(ctx context.Context, ap db.Autopil
 // for. Keeping the prefix stable matters: dashboards group skip reasons by
 // substring ("offline at dispatch time" is how the MUL-1899 alert fires).
 //
-// For squad autopilots the message names the squad so an operator looking at
-// the failure_reason field knows which squad's leader is down without
-// joining back to autopilot_run.squad_id.
+// For team autopilots the message names the team so an operator looking at
+// the failure_reason field knows which team's leader is down without
+// joining back to autopilot_run.team_id.
 func formatAdmissionReason(ap db.Autopilot, raw string) string {
 	prefix := "assignee "
-	if ap.AssigneeType == "squad" {
-		prefix = "squad leader "
+	if ap.AssigneeType == "team" {
+		prefix = "team leader "
 	}
 	switch raw {
 	case "agent is archived":
@@ -1381,46 +1381,46 @@ func formatAdmissionReason(ap db.Autopilot, raw string) string {
 	}
 }
 
-// errSquadArchived signals that an autopilot's squad assignee has been
-// archived. Distinct from a missing/loadable-but-failed squad so the
+// errTeamArchived signals that an autopilot's team assignee has been
+// archived. Distinct from a missing/loadable-but-failed team so the
 // admission gate can phrase the skip reason precisely and the failure
 // monitor does not see "cannot be resolved" wear noise for what is a
 // known, expected post-archive condition.
-var errSquadArchived = errors.New("squad is archived")
+var errTeamArchived = errors.New("team is archived")
 
 // resolveAutopilotLeader returns the agent that will actually execute the
 // autopilot's work. For assignee_type='agent' the agent is the assignee
-// itself; for assignee_type='squad' it is the squad's leader_id. The second
-// return is true when the resolver took the squad branch — callers use this
-// to distinguish "failed loading an agent" from "failed loading a squad", so
+// itself; for assignee_type='team' it is the team's leader_id. The second
+// return is true when the resolver took the team branch — callers use this
+// to distinguish "failed loading an agent" from "failed loading a team", so
 // the admission gate can choose between fail-open (transient DB error on a
-// known-good agent) and fail-closed (squad row gone, no point retrying).
+// known-good agent) and fail-closed (team row gone, no point retrying).
 //
-// Archived squads are rejected here too: TransferSquadAutopilotsToLeader
-// flips surviving autopilots to assignee_type='agent' on DeleteSquad, but
+// Archived teams are rejected here too: TransferTeamAutopilotsToLeader
+// flips surviving autopilots to assignee_type='agent' on DeleteTeam, but
 // the gate still has to fail closed for any row that slips through that
-// transfer (e.g. squad archived through a code path that bypasses the
-// handler) so an archived squad never produces work.
+// transfer (e.g. team archived through a code path that bypasses the
+// handler) so an archived team never produces work.
 //
 // Unknown assignee_type values return an error. assignee_type is gated by a
 // CHECK constraint at the DB layer, so this only fires if a future code path
 // inserts a row that bypasses the check.
-func (s *AutopilotService) resolveAutopilotLeader(ctx context.Context, ap db.Autopilot) (agent db.Agent, squadResolved bool, err error) {
+func (s *AutopilotService) resolveAutopilotLeader(ctx context.Context, ap db.Autopilot) (agent db.Agent, teamResolved bool, err error) {
 	switch ap.AssigneeType {
 	case "", "agent":
 		agent, err = s.Queries.GetAgent(ctx, ap.AssigneeID)
 		return agent, false, err
-	case "squad":
-		squad, err := s.Queries.GetSquad(ctx, ap.AssigneeID)
+	case "team":
+		team, err := s.Queries.GetTeam(ctx, ap.AssigneeID)
 		if err != nil {
-			return db.Agent{}, true, fmt.Errorf("load squad: %w", err)
+			return db.Agent{}, true, fmt.Errorf("load team: %w", err)
 		}
-		if squad.ArchivedAt.Valid {
-			return db.Agent{}, true, errSquadArchived
+		if team.ArchivedAt.Valid {
+			return db.Agent{}, true, errTeamArchived
 		}
-		agent, err = s.Queries.GetAgent(ctx, squad.LeaderID)
+		agent, err = s.Queries.GetAgent(ctx, team.LeaderID)
 		if err != nil {
-			return db.Agent{}, true, fmt.Errorf("load squad leader: %w", err)
+			return db.Agent{}, true, fmt.Errorf("load team leader: %w", err)
 		}
 		return agent, true, nil
 	default:
@@ -1428,12 +1428,12 @@ func (s *AutopilotService) resolveAutopilotLeader(ctx context.Context, ap db.Aut
 	}
 }
 
-// autopilotSquadAttribution returns the squad_id attribution hook for an
-// autopilot_run row. Only populated when assignee_type='squad'. First-version
-// reports do not consume this; it exists so a future squad-cost view does not
+// autopilotTeamAttribution returns the team_id attribution hook for an
+// autopilot_run row. Only populated when assignee_type='team'. First-version
+// reports do not consume this; it exists so a future team-cost view does not
 // need to backfill — see RFC §4.e (MUL-2429).
-func autopilotSquadAttribution(ap db.Autopilot) pgtype.UUID {
-	if ap.AssigneeType == "squad" && ap.AssigneeID.Valid {
+func autopilotTeamAttribution(ap db.Autopilot) pgtype.UUID {
+	if ap.AssigneeType == "team" && ap.AssigneeID.Valid {
 		return ap.AssigneeID
 	}
 	return pgtype.UUID{}
@@ -1465,7 +1465,7 @@ func (s *AutopilotService) recordSkippedRun(
 		Source:            source,
 		Status:            "skipped",
 		TriggerPayload:    payload,
-		SquadID:           autopilotSquadAttribution(autopilot),
+		TeamID:           autopilotTeamAttribution(autopilot),
 		PlannedAt:         plannedAt,
 		WebhookDeliveryID: webhookDeliveryID,
 		ReasonCode:        code,
@@ -1519,7 +1519,7 @@ func (s *AutopilotService) captureIssueCreatedFromAutopilot(ap db.Autopilot, run
 		return
 	}
 	// For PostHog the agent_id should be the agent that will actually run
-	// the work (the resolved leader for squad autopilots) so per-agent task
+	// the work (the resolved leader for team autopilots) so per-agent task
 	// counts line up with what daemons report.
 	obsmetrics.RecordEvent(s.TaskSvc.Analytics, s.TaskSvc.Metrics, analytics.IssueCreated(
 		autopilotActorID(ap),
@@ -1587,7 +1587,7 @@ func (s *AutopilotService) captureAutopilotRunFailed(ap db.Autopilot, run db.Aut
 }
 
 // autopilotAssigneeAnalytics builds the PostHog assignee descriptor for an
-// autopilot. For squad autopilots agent_id is best-effort the resolved
+// autopilot. For team autopilots agent_id is best-effort the resolved
 // leader (so per-agent funnels stay consistent); a resolve error degrades
 // to the raw assignee_id rather than dropping the event — incomplete data
 // in the dashboard is preferable to silent attribution gaps.
@@ -1595,8 +1595,8 @@ func (s *AutopilotService) autopilotAssigneeAnalytics(ap db.Autopilot) analytics
 	assignee := analytics.AutopilotAssignee{
 		AssigneeType: ap.AssigneeType,
 	}
-	if ap.AssigneeType == "squad" {
-		assignee.SquadID = util.UUIDToString(ap.AssigneeID)
+	if ap.AssigneeType == "team" {
+		assignee.TeamID = util.UUIDToString(ap.AssigneeID)
 		if leader, _, err := s.resolveAutopilotLeader(context.Background(), ap); err == nil {
 			assignee.AgentID = util.UUIDToString(leader.ID)
 		} else {

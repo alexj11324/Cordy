@@ -91,33 +91,33 @@ func TestCreateIssue_AutopilotLeaderAssignsPrivateWorker(t *testing.T) {
 		}
 	})
 
-	t.Run("verified lineage creates squad child and enqueues its private leader once", func(t *testing.T) {
+	t.Run("verified lineage creates team child and enqueues its private leader once", func(t *testing.T) {
 		workerID, ownerID, _ := privateAgentTestFixture(t)
 		fx := newAutopilotDelegationFixture(t, workerID, ownerID, "autopilot")
-		squadID := dbfx.Squad(t, "Autopilot Private Leader Squad", workerID)
+		teamID := dbfx.Team(t, "Autopilot Private Leader Team", workerID)
 
 		var created IssueResponse
 		testutil.Call(t, testHandler.CreateIssue,
-			autopilotChildIssueRequest(t, "squad", squadID, uuidToString(fx.Issue.ID), "todo", fx.LeaderAgentID, fx.LeaderTaskID),
+			autopilotChildIssueRequest(t, "team", teamID, uuidToString(fx.Issue.ID), "todo", fx.LeaderAgentID, fx.LeaderTaskID),
 		).Want(http.StatusCreated).JSON(&created)
 		cleanupAutopilotChildIssue(t, created.ID)
-		if created.AssigneeType == nil || *created.AssigneeType != "squad" || created.AssigneeID == nil || *created.AssigneeID != squadID {
-			t.Fatalf("created child assignee = (%v, %v), want (squad, %s)", created.AssigneeType, created.AssigneeID, squadID)
+		if created.AssigneeType == nil || *created.AssigneeType != "team" || created.AssigneeID == nil || *created.AssigneeID != teamID {
+			t.Fatalf("created child assignee = (%v, %v), want (team, %s)", created.AssigneeType, created.AssigneeID, teamID)
 		}
 
 		var taskCount int
 		var originatorCount int
-		var squadTaskCount int
+		var teamTaskCount int
 		dbfx.QueryRow(t, `
-			SELECT count(*), count(originator_user_id), count(*) FILTER (WHERE squad_id = $3)
+			SELECT count(*), count(originator_user_id), count(*) FILTER (WHERE team_id = $3)
 			FROM agent_task_queue
 			WHERE issue_id = $1 AND agent_id = $2
-		`, created.ID, workerID, squadID).Scan(&taskCount, &originatorCount, &squadTaskCount)
-		if taskCount != 1 || squadTaskCount != 1 {
-			t.Fatalf("active squad child must enqueue its private leader exactly once with squad lineage, got %d tasks (%d with squad_id)", taskCount, squadTaskCount)
+		`, created.ID, workerID, teamID).Scan(&taskCount, &originatorCount, &teamTaskCount)
+		if taskCount != 1 || teamTaskCount != 1 {
+			t.Fatalf("active team child must enqueue its private leader exactly once with team lineage, got %d tasks (%d with team_id)", taskCount, teamTaskCount)
 		}
 		if originatorCount != 0 {
-			t.Fatal("autopilot creator authority is authorization-only; squad leader task must remain unattributed")
+			t.Fatal("autopilot creator authority is authorization-only; team leader task must remain unattributed")
 		}
 	})
 
@@ -177,7 +177,7 @@ func TestCreateIssue_AutopilotLeaderAssignsPrivateWorker(t *testing.T) {
 	t.Run("cross-workspace parent is rejected before assignee authorization", func(t *testing.T) {
 		workerID, ownerID, _ := privateAgentTestFixture(t)
 		fx := newAutopilotDelegationFixture(t, workerID, ownerID, "autopilot")
-		squadID := dbfx.Squad(t, "Autopilot Cross-Workspace Squad", workerID)
+		teamID := dbfx.Team(t, "Autopilot Cross-Workspace Team", workerID)
 		foreignWorkspaceID := dbfx.Workspace(t, "Autopilot Foreign Parent", "autopilot-foreign-parent-"+workerID[:8])
 		foreignParentID := dbfx.Issue(t, "Autopilot foreign parent", testutil.Cols{
 			"workspace_id": foreignWorkspaceID,
@@ -188,7 +188,7 @@ func TestCreateIssue_AutopilotLeaderAssignsPrivateWorker(t *testing.T) {
 			name, assigneeType, assigneeID string
 		}{
 			{name: "agent", assigneeType: "agent", assigneeID: workerID},
-			{name: "squad", assigneeType: "squad", assigneeID: squadID},
+			{name: "team", assigneeType: "team", assigneeID: teamID},
 		} {
 			t.Run(target.name, func(t *testing.T) {
 				resp := testutil.Call(t, testHandler.CreateIssue,

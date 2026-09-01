@@ -305,7 +305,7 @@
     "cancel": "キャンセル",
     "create_failed_toast": "エージェントを作成できませんでした",
     "skill_attach_failed_toast": "エージェントは作成されましたが、スキルを追加できませんでした: {{error}}",
-    "squad_join_failed_toast": "エージェント \"{{name}}\" は作成されましたが、スクワッドに参加できませんでした: {{error}}。メンバーから手動で追加できます。",
+    "team_join_failed_toast": "エージェント \"{{name}}\" は作成されましたが、スクワッドに参加できませんでした: {{error}}。メンバーから手動で追加できます。",
     "instructions": {
       "label": "指示",
       "placeholder_blank": "クリックして指示を作成...",
@@ -847,7 +847,7 @@
   },
   "creation_studio": {
     "title": "エージェントを作成",
-    "squad_title": "このスクワッド用のエージェントを作成",
+    "team_title": "このスクワッド用のエージェントを作成",
     "duplicate_title": "{{name}} を複製",
     "back": "戻る",
     "eyebrow": "エージェント作成",

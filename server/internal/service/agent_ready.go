@@ -88,13 +88,13 @@ const runtimeOfflineCodeNotExecutable = "not_executable"
 //
 // err is non-nil only on DB lookup failure for the runtime row. Callers that
 // treat a transient DB error as "do not skip" (the autopilot admission gate)
-// should swallow it; callers that need a hard yes/no (the squad-leader
+// should swallow it; callers that need a hard yes/no (the team-leader
 // pre-enqueue check in the handler) should fail closed.
 //
 // This is the single source of truth shared by:
 //   - service.shouldSkipDispatch (autopilot admission gate)
-//   - service.dispatchRunOnly    (squad-leader runtime check, MUL-2429)
-//   - handler.isSquadLeaderReady (issue-assign / comment-trigger path)
+//   - service.dispatchRunOnly    (team-leader runtime check, MUL-2429)
+//   - handler.isTeamLeaderReady (issue-assign / comment-trigger path)
 //   - the direct-agent trigger paths, which consult it for the BLOCKED verdict
 //     only: an offline machine still queues, because that wait ends by itself.
 //

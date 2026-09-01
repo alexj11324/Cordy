@@ -178,7 +178,7 @@ function toFormState(action: QuickAction): FormState {
   return {
     name: action.name,
     description: action.description,
-    assigneeType: action.assignee_type === "squad" ? "squad" : "agent",
+    assigneeType: action.assignee_type === "team" ? "team" : "agent",
     assigneeId: action.assignee_id,
     prompt: action.prompt,
     visibility: action.visibility === "private" ? "private" : "public",

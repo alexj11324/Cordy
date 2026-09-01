@@ -27,7 +27,7 @@ import (
 // IssueService is the single service-layer entry point for creating issues.
 // Both the HTTP `POST /issues` handler and the future Lark `/issue` command
 // call into Create so that duplicate guard, issue numbering, attachment
-// linking, broadcast, analytics, and agent/squad enqueue stay aligned. The
+// linking, broadcast, analytics, and agent/team enqueue stay aligned. The
 // service deliberately does NOT depend on http.Request — callers parse
 // their own transport and pass a fully-resolved IssueCreateParams.
 type IssueService struct {
@@ -202,7 +202,7 @@ type IssueCreateResult struct {
 //     Ordinary creates keep their existing event-before-enqueue ordering.
 //  9. Publish EventIssueCreated to the bus (payload via opts.BroadcastPayload).
 //  10. Capture the IssueCreated analytics event.
-//  11. Enqueue the ordinary agent task or trigger the squad leader when the
+//  11. Enqueue the ordinary agent task or trigger the team leader when the
 //     issue is assigned and not in `backlog`.
 //
 // Validation that lives in the service (parent existence, project
@@ -491,11 +491,11 @@ func (s *IssueService) Create(ctx context.Context, p IssueCreateParams, opts Iss
 					"task_id", util.UUIDToString(assignedTask.ID),
 					"error", err)
 			}
-		} else if s.shouldEnqueueSquadLeaderOnAssign(ctx, issue) {
+		} else if s.shouldEnqueueTeamLeaderOnAssign(ctx, issue) {
 			// AssignedAgentRunFireAt currently belongs to channel /issue, which
-			// always resolves an agent assignee. Preserve the ordinary squad path
-			// for any future caller that supplies the option with a squad.
-			s.enqueueSquadLeaderTask(ctx, issue, pgtype.UUID{}, p.CreatorType, actorID)
+			// always resolves an agent assignee. Preserve the ordinary team path
+			// for any future caller that supplies the option with a team.
+			s.enqueueTeamLeaderTask(ctx, issue, pgtype.UUID{}, p.CreatorType, actorID)
 		}
 	}
 
@@ -756,8 +756,8 @@ func (s *IssueService) maybeEnqueueOnAssign(ctx context.Context, issue db.Issue,
 			return task.ID
 		}
 	}
-	if s.shouldEnqueueSquadLeaderOnAssign(ctx, issue) {
-		s.enqueueSquadLeaderTask(ctx, issue, pgtype.UUID{}, creatorType, actorID)
+	if s.shouldEnqueueTeamLeaderOnAssign(ctx, issue) {
+		s.enqueueTeamLeaderTask(ctx, issue, pgtype.UUID{}, creatorType, actorID)
 	}
 	return pgtype.UUID{}
 }
@@ -806,25 +806,25 @@ func agentAssigneeVerdict(ctx context.Context, lookup RuntimeLookup, issue db.Is
 	return verdict, !verdict.Blocked()
 }
 
-func (s *IssueService) shouldEnqueueSquadLeaderOnAssign(ctx context.Context, issue db.Issue) bool {
+func (s *IssueService) shouldEnqueueTeamLeaderOnAssign(ctx context.Context, issue db.Issue) bool {
 	if issuestatus.Effective(ctx, s.Queries, issue.WorkspaceID, issue.Status) == "backlog" {
 		return false
 	}
-	return s.isSquadLeaderReady(ctx, issue)
+	return s.isTeamLeaderReady(ctx, issue)
 }
 
-func (s *IssueService) isSquadLeaderReady(ctx context.Context, issue db.Issue) bool {
-	if !issue.AssigneeType.Valid || issue.AssigneeType.String != "squad" || !issue.AssigneeID.Valid {
+func (s *IssueService) isTeamLeaderReady(ctx context.Context, issue db.Issue) bool {
+	if !issue.AssigneeType.Valid || issue.AssigneeType.String != "team" || !issue.AssigneeID.Valid {
 		return false
 	}
-	squad, err := s.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{
+	team, err := s.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
 		ID:          issue.AssigneeID,
 		WorkspaceID: issue.WorkspaceID,
 	})
 	if err != nil {
 		return false
 	}
-	agent, err := s.Queries.GetAgent(ctx, squad.LeaderID)
+	agent, err := s.Queries.GetAgent(ctx, team.LeaderID)
 	if err != nil {
 		return false
 	}
@@ -835,8 +835,8 @@ func (s *IssueService) isSquadLeaderReady(ctx context.Context, issue db.Issue) b
 	return verdict.Ready()
 }
 
-func (s *IssueService) enqueueSquadLeaderTask(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, authorType, authorID string) {
-	squad, err := s.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{
+func (s *IssueService) enqueueTeamLeaderTask(ctx context.Context, issue db.Issue, triggerCommentID pgtype.UUID, authorType, authorID string) {
+	team, err := s.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
 		ID:          issue.AssigneeID,
 		WorkspaceID: issue.WorkspaceID,
 	})
@@ -845,18 +845,18 @@ func (s *IssueService) enqueueSquadLeaderTask(ctx context.Context, issue db.Issu
 	}
 	hasPending, err := s.Queries.HasPendingTaskForIssueAndAgent(ctx, db.HasPendingTaskForIssueAndAgentParams{
 		IssueID: issue.ID,
-		AgentID: squad.LeaderID,
+		AgentID: team.LeaderID,
 		// Key dedup on the reviewed head (TEN-356).
 		HeadSha: headShaText(s.TaskService.ResolveIssueReviewSHA(ctx, issue.ID)),
 	})
 	if err != nil || hasPending {
 		return
 	}
-	if _, err := s.TaskService.EnqueueTaskForSquadLeader(ctx, issue, squad.LeaderID, squad.ID, triggerCommentID); err != nil {
-		slog.Warn("enqueue squad leader task on create failed",
+	if _, err := s.TaskService.EnqueueTaskForTeamLeader(ctx, issue, team.LeaderID, team.ID, triggerCommentID); err != nil {
+		slog.Warn("enqueue team leader task on create failed",
 			"issue_id", util.UUIDToString(issue.ID),
-			"squad_id", util.UUIDToString(squad.ID),
-			"leader_id", util.UUIDToString(squad.LeaderID),
+			"team_id", util.UUIDToString(team.ID),
+			"leader_id", util.UUIDToString(team.LeaderID),
 			"error", err)
 	}
 }

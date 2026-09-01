@@ -33,7 +33,7 @@ var runOnlyFixtureSeq atomic.Int64
 
 // runOnlyAutopilotFixture is the run_only shape: a member-created autopilot with
 // a live run, and a dispatched leader task that carries autopilot attribution
-// (accountable set, originator NULL) and NO issue — the state the reported Squad
+// (accountable set, originator NULL) and NO issue — the state the reported Team
 // scan runs in.
 type runOnlyAutopilotFixture struct {
 	LeaderAgentID string
@@ -182,20 +182,20 @@ func TestCreateIssue_RunOnlyAutopilotLeaderAssignsPrivateWorker(t *testing.T) {
 		}
 	})
 
-	t.Run("top-level create accepts a private-leader squad", func(t *testing.T) {
+	t.Run("top-level create accepts a private-leader team", func(t *testing.T) {
 		workerID, ownerID, _ := privateAgentTestFixture(t)
 		fx := newRunOnlyAutopilotFixture(t, workerID, ownerID)
-		squadID := dbfx.Squad(t, "MUL-6691 Private Leader Squad", workerID)
+		teamID := dbfx.Team(t, "MUL-6691 Private Leader Team", workerID)
 
 		var created IssueResponse
 		testutil.Call(t, testHandler.CreateIssue,
-			topLevelIssueRequest(t, "squad", squadID, "todo", fx.LeaderAgentID, fx.LeaderTaskID),
+			topLevelIssueRequest(t, "team", teamID, "todo", fx.LeaderAgentID, fx.LeaderTaskID),
 		).Want(http.StatusCreated).JSON(&created)
 		cleanupAutopilotChildIssue(t, created.ID)
 
 		total, withOriginator := tasksFor(t, created.ID, workerID)
 		if total != 1 || withOriginator != 0 {
-			t.Fatalf("squad assignment must dispatch its private leader once and unattributed, got %d tasks (%d attributed)", total, withOriginator)
+			t.Fatalf("team assignment must dispatch its private leader once and unattributed, got %d tasks (%d attributed)", total, withOriginator)
 		}
 	})
 
@@ -361,16 +361,16 @@ func TestUpdateIssue_AutopilotLeaderAssignsPrivateWorker(t *testing.T) {
 		}
 	})
 
-	t.Run("run_only run assigns a private-leader squad on an issue it created", func(t *testing.T) {
+	t.Run("run_only run assigns a private-leader team on an issue it created", func(t *testing.T) {
 		workerID, ownerID, _ := privateAgentTestFixture(t)
 		fx := newRunOnlyAutopilotFixture(t, workerID, ownerID)
-		squadID := dbfx.Squad(t, "MUL-6691 Update Squad", workerID)
+		teamID := dbfx.Team(t, "MUL-6691 Update Team", workerID)
 		issueID := createUnassignedIssueAsRun(t, fx.LeaderAgentID, fx.LeaderTaskID)
 
 		testutil.Call(t, testHandler.UpdateIssue, testutil.WithURLParams(
 			asRun(newRequest(http.MethodPatch, "/api/issues/"+issueID, map[string]any{
-				"assignee_type": "squad",
-				"assignee_id":   squadID,
+				"assignee_type": "team",
+				"assignee_id":   teamID,
 			}), fx.LeaderAgentID, fx.LeaderTaskID),
 			"id", issueID,
 		)).Want(http.StatusOK)

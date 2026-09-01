@@ -36,10 +36,10 @@ var legacyDuplicateMigrationStems = map[string][]string{
 	"069": {"069_comment_resolved_at", "069_drop_task_last_heartbeat"},
 	"079": {"079_autopilot_run_skipped_status", "079_backfill_api_invalid_request", "079_github_integration"},
 	"083": {"083_attachment_chat_columns", "083_runtime_visibility"},
-	"084": {"084_squad", "084_task_usage_dashboard_rollup"},
+	"084": {"084_team", "084_task_usage_dashboard_rollup"},
 	"091": {"091_autopilot_webhook_triggers", "091_issue_start_date", "091_pr_ci_conflict"},
 	"095": {"095_agent_thinking_level", "095_backfill_starter_content_state"},
-	"096": {"096_autopilot_squad_assignee", "096_pending_check_suite", "096_user_profile_description"},
+	"096": {"096_autopilot_team_assignee", "096_pending_check_suite", "096_user_profile_description"},
 	"098": {"098_contact_sales_inquiries", "098_user_onboarding_runtime_choice"},
 	"109": {"109_agent_task_waiting_local_directory", "109_drop_agent_skills_local", "109_issue_pull_request_close_intent", "109_lark_integration"},
 	"111": {"111_issue_origin_lark_chat", "111_workspace_avatar"},
@@ -48,7 +48,7 @@ var legacyDuplicateMigrationStems = map[string][]string{
 	"120": {"120_autopilot_subscriber", "120_comment_source_task_id", "120_github_pending_installation", "120_runtime_profile"},
 	"122": {"122_lark_chat_session_binding_thread_reply", "122_task_handoff_note"},
 	"124": {"124_autopilot_run_planned_at", "124_channel_generalization", "124_task_prepare_lease"},
-	"127": {"127_issue_pull_request_reference_only", "127_task_squad_id", "127_user_composio_connection"},
+	"127": {"127_issue_pull_request_reference_only", "127_task_team_id", "127_user_composio_connection"},
 	"128": {"128_agent_task_queue_runtime_mcp_overlay", "128_autopilot_collaborator", "128_comment_routing_escalation"},
 }
 

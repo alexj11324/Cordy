@@ -1,0 +1,1398 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { api } from "@patchbay/core/api";
+import { useAuthStore } from "@patchbay/core/auth";
+import { useCurrentWorkspace, useWorkspacePaths } from "@patchbay/core/paths";
+import { useWorkspaceId } from "@patchbay/core/hooks";
+import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
+import { isImeComposing } from "@patchbay/core/utils";
+import { getShortcut, shortcutMatchesEvent } from "@patchbay/core/shortcuts";
+import { useTimeAgo } from "../../i18n";
+import { agentListOptions, memberListOptions, teamMemberStatusOptions, workspaceKeys } from "@patchbay/core/workspace/queries";
+import { useNavigation } from "../../navigation";
+import { AppLink } from "../../navigation";
+import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
+import { PageHeader } from "../../layout/page-header";
+import { Users, Plus, Trash2, ArrowUpRight, Crown, Loader2, Pencil, FileText, Save } from "lucide-react";
+import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@patchbay/ui/components/ui/input";
+import { Label } from "@patchbay/ui/components/ui/label";
+import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@patchbay/ui/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@patchbay/ui/components/ui/tooltip";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@patchbay/ui/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@patchbay/ui/components/ui/alert-dialog";
+import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
+import { ActorAvatar } from "../../common/actor-avatar";
+import { AvatarUploadControl } from "../../common/avatar-upload-control";
+import { ContentEditor } from "../../editor/content-editor";
+import {
+  PickerItem,
+  PickerSection,
+  PickerEmpty,
+} from "../../issues/components/pickers/property-picker";
+import { ChevronDown, UserPlus } from "lucide-react";
+import { toast } from "sonner";
+import type { Team, TeamMember, TeamMemberStatus, TeamMemberStatusValue, Agent, MemberWithUser } from "@patchbay/core/types";
+import { useT } from "../../i18n";
+import { matchesPinyin } from "../../editor/extensions/pinyin-match";
+
+export function TeamDetailPage() {
+  const { t } = useT("teams");
+  const workspace = useCurrentWorkspace();
+  const wsId = useWorkspaceId();
+  const p = useWorkspacePaths();
+  const { pathname, push } = useNavigation();
+  const queryClient = useQueryClient();
+  const teamId = pathname.split("/").pop() ?? "";
+
+  const { data: team, refetch: refetchTeam } = useQuery<Team>({
+    queryKey: [...workspaceKeys.teams(wsId), teamId],
+    queryFn: () => api.getTeam(teamId),
+    enabled: !!workspace?.id && !!teamId,
+  });
+
+  const { data: members = [], refetch: refetchMembers } = useQuery<TeamMember[]>({
+    queryKey: [...workspaceKeys.teams(wsId), teamId, "members"],
+    queryFn: () => api.listTeamMembers(teamId),
+    enabled: !!workspace?.id && !!teamId,
+  });
+
+  // Per-team working/idle/offline + active-issue snapshot. WS task / agent /
+  // daemon events invalidate this via use-realtime-sync; the staleTime is a
+  // tab-focus safety net. Indexed by member_id so TeamMembersTab can look up
+  // its row in O(1).
+  const { data: memberStatusResp } = useQuery({
+    ...teamMemberStatusOptions(wsId, teamId),
+    enabled: !!workspace?.id && !!teamId,
+  });
+  const memberStatusById = useMemo(() => {
+    const map = new Map<string, TeamMemberStatus>();
+    for (const s of memberStatusResp?.members ?? []) map.set(s.member_id, s);
+    return map;
+  }, [memberStatusResp]);
+
+  const { data: agents = [] } = useQuery(agentListOptions(wsId));
+  const { data: wsMembers = [] } = useQuery(memberListOptions(wsId));
+
+  const currentUser = useAuthStore((s) => s.user);
+  const myRole = useMemo(() => {
+    if (!currentUser) return null;
+    return wsMembers.find((m) => m.user_id === currentUser.id)?.role ?? null;
+  }, [wsMembers, currentUser]);
+  const isWorkspaceAdmin = myRole === "owner" || myRole === "admin";
+  // Per-team management gate: workspace owner/admin manage every team; the
+  // creator manages the teams they created. Mirrors canManageTeam in
+  // server/internal/handler/team.go so editable controls appear exactly when
+  // the API will accept the write, and everyone else gets a read-only view
+  // instead of controls that 403 (MUL-4223).
+  const canManage =
+    isWorkspaceAdmin || (!!currentUser && team?.creator_id === currentUser.id);
+
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [confirmArchive, setConfirmArchive] = useState(false);
+
+  const updateTeamMut = useMutation({
+    mutationFn: (data: { name?: string; description?: string; instructions?: string; avatar_url?: string; leader_id?: string }) => api.updateTeam(teamId, data),
+    onSuccess: () => {
+      refetchTeam();
+      refetchMembers();
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.teams(wsId) });
+    },
+  });
+
+  const addMemberMut = useMutation({
+    mutationFn: (input: { type: "agent" | "member"; id: string; role?: string }) =>
+      api.addTeamMember(teamId, {
+        member_type: input.type,
+        member_id: input.id,
+        role: input.role?.trim() || undefined,
+      }),
+    onSuccess: () => { refetchMembers(); toast.success(t(($) => $.toasts.member_added)); },
+    onError: (err) =>
+      toast.error(err instanceof Error && err.message ? err.message : t(($) => $.toasts.member_add_failed)),
+  });
+
+  const removeMemberMut = useMutation({
+    mutationFn: (m: TeamMember) => api.removeTeamMember(teamId, { member_type: m.member_type, member_id: m.member_id }),
+    onSuccess: () => { refetchMembers(); toast.success(t(($) => $.toasts.member_removed)); },
+    onError: (err) =>
+      toast.error(err instanceof Error && err.message ? err.message : t(($) => $.toasts.member_remove_failed)),
+  });
+
+  const updateRoleMut = useMutation({
+    mutationFn: (input: { member: TeamMember; role: string }) =>
+      api.updateTeamMemberRole(teamId, {
+        member_type: input.member.member_type,
+        member_id: input.member.member_id,
+        role: input.role,
+      }),
+    onSuccess: () => { refetchMembers(); toast.success(t(($) => $.toasts.role_updated)); },
+    onError: (err) =>
+      toast.error(err instanceof Error && err.message ? err.message : t(($) => $.toasts.role_update_failed)),
+  });
+
+  const setLeaderMut = useMutation({
+    mutationFn: (agentId: string) => api.updateTeam(teamId, { leader_id: agentId }),
+    onSuccess: () => {
+      refetchTeam();
+      refetchMembers();
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.teams(wsId) });
+      toast.success(t(($) => $.toasts.leader_updated));
+    },
+    onError: (err) =>
+      toast.error(err instanceof Error && err.message ? err.message : t(($) => $.toasts.leader_update_failed)),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: () => api.deleteTeam(teamId),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: workspaceKeys.teams(wsId) }); push(p.teams()); toast.success(t(($) => $.archive_dialog.success)); },
+    onError: (err) =>
+      toast.error(err instanceof Error && err.message ? err.message : t(($) => $.toasts.archive_failed)),
+  });
+
+  const getEntityName = (type: string, id: string) => {
+    if (type === "agent") return agents.find((a: Agent) => a.id === id)?.name ?? id.slice(0, 8);
+    return wsMembers.find((m) => m.user_id === id)?.name ?? id.slice(0, 8);
+  };
+
+  if (!team) {
+    return <TeamDetailSkeleton />;
+  }
+
+  const availableAgents = agents.filter((a: Agent) => !a.archived_at && !members.some((m) => m.member_type === "agent" && m.member_id === a.id));
+  const availableMembers = wsMembers.filter((m) => !members.some((sm) => sm.member_type === "member" && sm.member_id === m.user_id));
+  const isLeader = (m: TeamMember) => m.member_type === "agent" && team.leader_id === m.member_id;
+  const isArchived = (m: TeamMember) =>
+    m.member_type === "agent" && !!agents.find((a: Agent) => a.id === m.member_id)?.archived_at;
+
+  const initials = team.name
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+
+  return (
+    <div className="flex flex-1 min-h-0 flex-col">
+      <BreadcrumbHeader
+        segments={[{ href: p.teams(), label: t(($) => $.page.title) }]}
+        leaf={
+          <>
+            <TeamHeaderAvatar team={team} initials={initials} />
+            <h1 className="truncate text-body font-medium text-foreground">{team.name}</h1>
+          </>
+        }
+        actions={
+          canManage ? (
+            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setConfirmArchive(true)}>
+              <Trash2 className="size-3.5 mr-1" />
+              {t(($) => $.inspector.archive_button)}
+            </Button>
+          ) : null
+        }
+      />
+
+      {/* Two-column grid mirrors agent-detail-page: left inspector (identity +
+          properties + leader), right pane with tabs (Members | Instructions).
+          Mobile collapses to stacked single column. */}
+      <div className="flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto p-3 md:grid md:grid-cols-[280px_minmax(0,1fr)] md:gap-4 md:overflow-hidden md:p-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+        <TeamDetailInspector
+          team={team}
+          memberCount={members.length}
+          leaderName={getEntityName("agent", team.leader_id)}
+          creatorName={getEntityName("member", team.creator_id)}
+          canManage={canManage}
+          onUploadAvatar={(url) => updateTeamMut.mutateAsync({ avatar_url: url })}
+          onRename={async (next) => { await updateTeamMut.mutateAsync({ name: next.trim() }); }}
+          onUpdateDescription={async (next) => { await updateTeamMut.mutateAsync({ description: next }); }}
+        />
+
+        <TeamOverviewPane
+          team={team}
+          members={members}
+          memberStatusById={memberStatusById}
+          canManage={canManage}
+          isLeader={isLeader}
+          isArchived={isArchived}
+          getEntityName={getEntityName}
+          onAddMemberClick={() => setShowAddMember(true)}
+          createAgentHref={canManage ? `${p.newAgent()}?team=${encodeURIComponent(teamId)}` : undefined}
+          onSetLeader={(id) => setLeaderMut.mutate(id)}
+          onRemoveMember={(m) => removeMemberMut.mutate(m)}
+          onUpdateRole={async (m, role) => { await updateRoleMut.mutateAsync({ member: m, role }); }}
+          onSaveInstructions={async (next) => { await updateTeamMut.mutateAsync({ instructions: next }); toast.success(t(($) => $.toasts.instructions_saved)); }}
+          setLeaderPending={setLeaderMut.isPending}
+        />
+      </div>
+
+      {showAddMember && (
+        <AddMemberDialog
+          availableMembers={availableMembers}
+          availableAgents={availableAgents}
+          onClose={() => setShowAddMember(false)}
+          onSubmit={async (input) => { await addMemberMut.mutateAsync(input); }}
+        />
+      )}
+
+      {confirmArchive && (
+        <AlertDialog
+          open
+          onOpenChange={(v) => { if (!v && !deleteMut.isPending) setConfirmArchive(false); }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t(($) => $.archive_dialog.title)}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t(($) => $.archive_dialog.description, { name: team.name })}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={deleteMut.isPending}>
+                {t(($) => $.archive_dialog.cancel)}
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => deleteMut.mutate()}
+                disabled={deleteMut.isPending}
+                className="bg-destructive text-white hover:bg-destructive/90"
+              >
+                {deleteMut.isPending
+                  ? t(($) => $.archive_dialog.archiving)
+                  : t(($) => $.archive_dialog.confirm)}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+    </div>
+  );
+}
+
+// Initial-load skeleton — mirrors the two-column layout of the loaded page
+// (left inspector + right tabs panel) so the swap to real content doesn't
+// shift layout. Column widths match the md:/lg: breakpoints used below.
+function TeamDetailSkeleton() {
+  return (
+    <div className="flex flex-1 min-h-0 flex-col">
+      <PageHeader>
+        <Skeleton className="h-5 w-48" />
+      </PageHeader>
+      <div className="flex flex-1 min-h-0 flex-col gap-3 overflow-y-auto p-3 md:grid md:grid-cols-[280px_minmax(0,1fr)] md:gap-4 md:overflow-hidden md:p-6 lg:grid-cols-[320px_minmax(0,1fr)]">
+        <div className="flex flex-col gap-4 rounded-lg border p-5">
+          <Skeleton className="h-16 w-16 rounded-full" />
+          <Skeleton className="h-5 w-40" />
+          <Skeleton className="h-3 w-full" />
+          <div className="space-y-2">
+            <Skeleton className="h-3 w-3/4" />
+            <Skeleton className="h-3 w-2/3" />
+            <Skeleton className="h-3 w-1/2" />
+          </div>
+        </div>
+        <div className="flex flex-col gap-4 rounded-lg border p-6">
+          <div className="flex items-center gap-4">
+            <Skeleton className="h-4 w-20" />
+            <Skeleton className="h-4 w-24" />
+          </div>
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-5/6" />
+          <Skeleton className="h-4 w-4/6" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Compact 16px avatar shown next to the name in the page header. Falls back
+// to the Users icon when no custom avatar is set so the team still has a
+// recognisable glyph in the breadcrumb strip.
+function TeamHeaderAvatar({ team, initials }: { team: Team; initials: string }) {
+  if (!team.avatar_url) {
+    return <Users className="h-4 w-4 text-muted-foreground" />;
+  }
+  return (
+    <ActorAvatarBase
+      name={team.name}
+      initials={initials}
+      avatarUrl={resolvePublicFileUrl(team.avatar_url)}
+      size="sm"
+      className="shrink-0"
+    />
+  );
+}
+
+// Read-only 64px avatar for viewers who can't manage the team — same visual
+// as the editable control's resting state but without the click/upload
+// affordance.
+function TeamStaticAvatar({ team, initials }: { team: Team; initials: string }) {
+  return (
+    <div className="h-16 w-16 shrink-0 overflow-hidden rounded-full bg-muted">
+      {team.avatar_url ? (
+        <ActorAvatarBase
+          name={team.name}
+          initials={initials}
+          avatarUrl={resolvePublicFileUrl(team.avatar_url)}
+          size="2xl"
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center text-muted-foreground">
+          <Users className="h-7 w-7" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Inline name editor — reveals a Pencil affordance on hover, opens a small
+// popover with a single-line input. Mirrors the NameAndDescription editor
+// in the agent inspector.
+function TeamNameEditor({
+  value,
+  onSave,
+}: {
+  value: string;
+  onSave: (next: string) => Promise<void>;
+}) {
+  const { t } = useT("teams");
+  return (
+    <InlineEditPopover
+      value={value}
+      onSave={onSave}
+      title={t(($) => $.name_editor.title)}
+      placeholder={t(($) => $.name_editor.placeholder)}
+      validate={(v) =>
+        v.trim().length > 0 ? null : t(($) => $.name_editor.required)
+      }
+    >
+      {(triggerProps) => (
+        <button
+          type="button"
+          {...triggerProps}
+          className="group -mx-1 inline-flex items-center gap-1.5 self-start rounded px-1 text-left text-title font-semibold leading-tight transition-colors hover:bg-accent/50"
+        >
+          <span>{value}</span>
+          <Pencil className="h-3.5 w-3.5 shrink-0 text-transparent transition-colors group-hover:text-muted-foreground" />
+        </button>
+      )}
+    </InlineEditPopover>
+  );
+}
+
+function InlineEditPopover({
+  value,
+  onSave,
+  title,
+  placeholder,
+  validate,
+  children,
+}: {
+  value: string;
+  onSave: (next: string) => Promise<void>;
+  title: string;
+  placeholder?: string;
+  validate?: (v: string) => string | null;
+  children: (triggerProps: { onClick: (e: React.MouseEvent) => void }) => ReactNode;
+}) {
+  const { t } = useT("teams");
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open) {
+      setDraft(value);
+      setError(null);
+    }
+  }, [open, value]);
+
+  const commit = async () => {
+    const err = validate?.(draft) ?? null;
+    if (err) {
+      setError(err);
+      return;
+    }
+    if (draft === value) {
+      setOpen(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(draft);
+      setOpen(false);
+      toast.success(t(($) => $.name_editor.saved));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t(($) => $.name_editor.save_failed));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={children({ onClick: () => setOpen(true) }) as React.ReactElement}
+      />
+      <PopoverContent align="start" className="w-72 p-3">
+        <div className="space-y-2">
+          <p className="text-caption font-medium">{title}</p>
+          <Input
+            autoFocus
+            value={draft}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              if (error) setError(null);
+            }}
+            placeholder={placeholder}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                setOpen(false);
+                return;
+              }
+              if (isImeComposing(e)) return;
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void commit();
+              }
+            }}
+            className="h-8"
+          />
+          {error && <p className="text-caption text-destructive">{error}</p>}
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setOpen(false)} disabled={saving}>
+              {t(($) => $.name_editor.cancel)}
+            </Button>
+            <Button size="sm" onClick={() => void commit()} disabled={saving || draft === value}>
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t(($) => $.name_editor.save)}
+            </Button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+// Two-step add-member dialog (mirrors CreateAgentDialog's compact layout):
+// 1) pick a target — Members + Agents in one searchable popover, each row
+//    with an avatar so visual recognition matches the issue assignee picker;
+// 2) optionally describe the role they'll play in this team. Description
+//    lives here (not on the picker) because role is per-team context that
+//    only makes sense at the moment of joining.
+function AddMemberDialog({
+  availableMembers,
+  availableAgents,
+  onClose,
+  onSubmit,
+}: {
+  availableMembers: MemberWithUser[];
+  availableAgents: Agent[];
+  onClose: () => void;
+  onSubmit: (input: { type: "agent" | "member"; id: string; role?: string }) => Promise<void>;
+}) {
+  const { t } = useT("teams");
+  const [target, setTarget] = useState<{ type: "agent" | "member"; id: string; name: string } | null>(null);
+  const [role, setRole] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerFilter, setPickerFilter] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const query = pickerFilter.trim().toLowerCase();
+  const filteredMembers = availableMembers.filter((m) => m.name.toLowerCase().includes(query) || matchesPinyin(m.name, query));
+  const filteredAgents = availableAgents.filter((a) => a.name.toLowerCase().includes(query) || matchesPinyin(a.name, query));
+
+  const canSubmit = !!target && !submitting;
+
+  const handleSubmit = async () => {
+    if (!target) return;
+    setSubmitting(true);
+    try {
+      await onSubmit({ type: target.type, id: target.id, role });
+      onClose();
+    } catch {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{t(($) => $.add_member_dialog.title)}</DialogTitle>
+          <DialogDescription>{t(($) => $.add_member_dialog.description)}</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 min-w-0">
+          <div>
+            <Label className="text-caption text-muted-foreground">{t(($) => $.add_member_dialog.label_member)}</Label>
+            <Popover open={pickerOpen} onOpenChange={(v) => { setPickerOpen(v); if (!v) setPickerFilter(""); }}>
+              <PopoverTrigger className="flex w-full min-w-0 items-center gap-3 rounded-lg border border-border bg-background px-3 py-2.5 mt-1 text-left text-body transition-colors hover:bg-muted">
+                {target ? (
+                  <ActorAvatar actorType={target.type} actorId={target.id} size="sm" />
+                ) : (
+                  <UserPlus className="h-4 w-4 shrink-0 text-muted-foreground" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="truncate font-medium">
+                    {target?.name ?? t(($) => $.add_member_dialog.select_target)}
+                  </div>
+                  {target && (
+                    <div className="truncate text-caption text-muted-foreground">
+                      {t(($) => $.member_type[target.type])}
+                    </div>
+                  )}
+                </div>
+                <ChevronDown className={`h-4 w-4 shrink-0 text-muted-foreground transition-transform ${pickerOpen ? "rotate-180" : ""}`} />
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-[var(--anchor-width)] p-0">
+                <div className="px-2 py-1.5 border-b">
+                  <input
+                    autoFocus
+                    type="text"
+                    value={pickerFilter}
+                    onChange={(e) => setPickerFilter(e.target.value)}
+                    placeholder={t(($) => $.add_member_dialog.search_placeholder)}
+                    className="w-full bg-transparent text-body placeholder:text-muted-foreground outline-none"
+                  />
+                </div>
+                <div className="p-1 max-h-72 overflow-y-auto">
+                  {filteredMembers.length > 0 && (
+                    <PickerSection label={t(($) => $.add_member_dialog.members_section)}>
+                      {filteredMembers.map((m) => (
+                        <PickerItem
+                          key={m.user_id}
+                          selected={target?.type === "member" && target.id === m.user_id}
+                          onClick={() => {
+                            setTarget({ type: "member", id: m.user_id, name: m.name });
+                            setPickerOpen(false);
+                            setPickerFilter("");
+                          }}
+                        >
+                          <ActorAvatar actorType="member" actorId={m.user_id} size="sm" />
+                          <span>{m.name}</span>
+                        </PickerItem>
+                      ))}
+                    </PickerSection>
+                  )}
+                  {filteredAgents.length > 0 && (
+                    <PickerSection label={t(($) => $.add_member_dialog.agents_section)}>
+                      {filteredAgents.map((a) => (
+                        <PickerItem
+                          key={a.id}
+                          selected={target?.type === "agent" && target.id === a.id}
+                          onClick={() => {
+                            setTarget({ type: "agent", id: a.id, name: a.name });
+                            setPickerOpen(false);
+                            setPickerFilter("");
+                          }}
+                        >
+                          <ActorAvatar actorType="agent" actorId={a.id} size="sm" showStatusDot />
+                          <span>{a.name}</span>
+                        </PickerItem>
+                      ))}
+                    </PickerSection>
+                  )}
+                  {filteredMembers.length === 0 && filteredAgents.length === 0 && <PickerEmpty />}
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
+
+          <div>
+            <Label className="text-caption text-muted-foreground">
+              {t(($) => $.add_member_dialog.label_role)}{" "}
+              <span className="text-muted-foreground">{t(($) => $.add_member_dialog.label_optional)}</span>
+            </Label>
+            <Input
+              type="text"
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              placeholder={t(($) => $.add_member_dialog.role_placeholder)}
+              className="mt-1"
+              onKeyDown={(e) => {
+                if (isImeComposing(e)) return;
+                if (e.key === "Enter" && canSubmit) void handleSubmit();
+              }}
+            />
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>{t(($) => $.add_member_dialog.cancel)}</Button>
+          <Button onClick={() => void handleSubmit()} disabled={!canSubmit}>
+            {submitting ? <Loader2 className="size-3.5 animate-spin" /> : t(($) => $.add_member_dialog.add)}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// Inline click-to-edit role line. Renders the current role as muted text;
+// click (or click the placeholder when empty) to swap in an input that
+// commits on blur / Enter and cancels on Escape. Avoids opening a modal
+// for what is usually a one-word change.
+function RoleEditor({ value, onSave }: { value: string; onSave: (next: string) => Promise<void> }) {
+  const { t } = useT("teams");
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { if (!editing) setDraft(value); }, [value, editing]);
+
+  const commit = async () => {
+    const next = draft.trim();
+    if (next === value.trim()) { setEditing(false); return; }
+    setSaving(true);
+    try {
+      await onSave(next);
+      setEditing(false);
+    } catch {
+      // toast handled by mutation
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (editing) {
+    return (
+      <Input
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={() => void commit()}
+        onKeyDown={(e) => {
+          if (isImeComposing(e)) return;
+          if (e.key === "Enter") void commit();
+          else if (e.key === "Escape") { setDraft(value); setEditing(false); }
+        }}
+        disabled={saving}
+        placeholder={t(($) => $.role_editor.placeholder)}
+        className="h-6 mt-0.5 text-caption px-1.5"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      className="text-caption text-muted-foreground mt-0.5 text-left hover:text-foreground transition-colors"
+    >
+      {value || <span className="italic opacity-60">{t(($) => $.role_editor.empty)}</span>}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TeamDetailInspector — left 320px column, mirrors AgentDetailInspector.
+// Holds identity (avatar / name / description) + leader / member count /
+// timestamps. All inline-editable.
+// ---------------------------------------------------------------------------
+function TeamDetailInspector({
+  team,
+  memberCount,
+  leaderName,
+  creatorName,
+  canManage,
+  onUploadAvatar,
+  onRename,
+  onUpdateDescription,
+}: {
+  team: Team;
+  memberCount: number;
+  leaderName: string;
+  creatorName: string;
+  // When false the identity block renders as static text (no avatar upload,
+  // no rename/description popovers) — the viewer can read the team but not
+  // edit it. Mirrors the agent inspector's `canEdit` read-only treatment.
+  canManage: boolean;
+  onUploadAvatar: (url: string) => Promise<unknown>;
+  onRename: (next: string) => Promise<void>;
+  onUpdateDescription: (next: string) => Promise<void>;
+}) {
+  const { t } = useT("teams");
+  const timeAgo = useTimeAgo();
+  const initials = team.name
+    .split(" ")
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+
+  return (
+    <aside className="flex w-full flex-col rounded-lg border bg-background md:h-full md:min-h-0 md:overflow-y-auto">
+      {/* Identity */}
+      <div className="flex flex-col gap-3 border-b px-5 pb-5 pt-5">
+        {canManage ? (
+          <>
+            <AvatarUploadControl
+              variant="team"
+              value={team.avatar_url ?? null}
+              name={team.name}
+              size={64}
+              onUploaded={onUploadAvatar}
+            />
+            <div className="flex flex-col gap-1">
+              <TeamNameEditor value={team.name} onSave={onRename} />
+              <TeamDescriptionEditor
+                value={team.description ?? ""}
+                onSave={onUpdateDescription}
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            <TeamStaticAvatar team={team} initials={initials} />
+            <div className="flex flex-col gap-1">
+              <span className="text-title font-semibold leading-tight">{team.name}</span>
+              {team.description ? (
+                <span className="text-caption leading-relaxed text-muted-foreground">
+                  {team.description}
+                </span>
+              ) : (
+                <span className="text-caption italic leading-relaxed text-muted-foreground">
+                  {t(($) => $.description_dialog.placeholder_empty)}
+                </span>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Details — read-only */}
+      <div className="border-b px-5 py-4">
+        <div className="mb-1 -mx-2 px-2 text-micro font-medium uppercase tracking-wider text-muted-foreground">
+          {t(($) => $.inspector.details_section)}
+        </div>
+        <div className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5">
+          <InspectorRow label={t(($) => $.details.leader)}>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <ActorAvatar actorType="agent" actorId={team.leader_id} size="xs" />
+              <span className="truncate">{leaderName}</span>
+            </span>
+          </InspectorRow>
+          <InspectorRow label={t(($) => $.details.members)}>
+            <span className="text-muted-foreground tabular-nums">{memberCount}</span>
+          </InspectorRow>
+          <InspectorRow label={t(($) => $.details.created_by)}>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <ActorAvatar actorType="member" actorId={team.creator_id} size="xs" />
+              <span className="truncate">{creatorName}</span>
+            </span>
+          </InspectorRow>
+          <InspectorRow label={t(($) => $.details.created)}>
+            <span className="text-muted-foreground">{timeAgo(team.created_at)}</span>
+          </InspectorRow>
+          <InspectorRow label={t(($) => $.details.updated)}>
+            <span className="text-muted-foreground">{timeAgo(team.updated_at)}</span>
+          </InspectorRow>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function InspectorRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <>
+      <div className="px-2 py-1 text-caption text-muted-foreground">{label}</div>
+      <div className="min-w-0 px-2 py-1 text-caption">{children}</div>
+    </>
+  );
+}
+
+// Click-to-edit description editor for the inspector. Mirrors
+// agent-detail-inspector's DescriptionEditor: opens a modal with a textarea
+// (enough room for multi-paragraph descriptions); the inline trigger shows
+// the current value (or a placeholder) with a hover-revealed Pencil.
+function TeamDescriptionEditor({
+  value,
+  onSave,
+}: {
+  value: string;
+  onSave: (next: string) => Promise<void>;
+}) {
+  const { t } = useT("teams");
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="group -mx-1 inline-flex items-start gap-1.5 self-start rounded px-1 text-left text-caption leading-relaxed transition-colors hover:bg-accent/50"
+      >
+        {value ? (
+          <span className="text-muted-foreground">{value}</span>
+        ) : (
+          <span className="italic text-muted-foreground">{t(($) => $.description_dialog.placeholder_empty)}</span>
+        )}
+        <Pencil className="mt-0.5 h-3 w-3 shrink-0 text-transparent transition-colors group-hover:text-muted-foreground" />
+      </button>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-lg">
+          {open && (
+            <TeamDescriptionEditorBody
+              initialValue={value}
+              onSave={onSave}
+              onClose={() => setOpen(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function TeamDescriptionEditorBody({
+  initialValue,
+  onSave,
+  onClose,
+}: {
+  initialValue: string;
+  onSave: (next: string) => Promise<void>;
+  onClose: () => void;
+}) {
+  const { t } = useT("teams");
+  const [draft, setDraft] = useState(initialValue);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const dirty = draft !== initialValue;
+
+  const commit = async () => {
+    if (savingRef.current) return;
+    if (!dirty) { onClose(); return; }
+    savingRef.current = true;
+    setSaving(true);
+    try {
+      await onSave(draft);
+      onClose();
+    } catch {
+      // toast handled by parent's mutation
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>{t(($) => $.description_dialog.title)}</DialogTitle>
+      </DialogHeader>
+      <textarea
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder={t(($) => $.description_dialog.responsibility_placeholder)}
+        rows={6}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") { onClose(); return; }
+          if (e.defaultPrevented || e.repeat || isImeComposing(e)) return;
+          if (shortcutMatchesEvent(getShortcut("send"), e.nativeEvent)) {
+            e.preventDefault();
+            void commit();
+          }
+        }}
+        className="w-full resize-none rounded-md border bg-transparent px-3 py-2 text-body outline-none focus-visible:border-input"
+      />
+      <DialogFooter>
+        <Button variant="ghost" size="sm" onClick={onClose} disabled={saving}>{t(($) => $.description_dialog.cancel)}</Button>
+        <Button size="sm" onClick={() => void commit()} disabled={saving || !dirty}>
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t(($) => $.description_dialog.save)}
+        </Button>
+      </DialogFooter>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TeamOverviewPane — right column with two tabs (Members | Instructions).
+// Mirrors AgentOverviewPane: dirty-guard via AlertDialog when switching tabs
+// with unsaved Instructions.
+// ---------------------------------------------------------------------------
+type TeamDetailTab = "members" | "instructions";
+
+const teamDetailTabs: { id: TeamDetailTab; icon: typeof FileText }[] = [
+  { id: "members", icon: Users },
+  { id: "instructions", icon: FileText },
+];
+
+function TeamOverviewPane({
+  team,
+  members,
+  memberStatusById,
+  canManage,
+  isLeader,
+  isArchived,
+  getEntityName,
+  onAddMemberClick,
+  createAgentHref,
+  onSetLeader,
+  onRemoveMember,
+  onUpdateRole,
+  onSaveInstructions,
+  setLeaderPending,
+}: {
+  team: Team;
+  members: TeamMember[];
+  memberStatusById: Map<string, TeamMemberStatus>;
+  // Gates every mutating control in the Members and Instructions tabs. When
+  // false the tabs render read-only (no add/remove/leader/role edits, no
+  // Save). See canManageTeam in server/internal/handler/team.go.
+  canManage: boolean;
+  isLeader: (m: TeamMember) => boolean;
+  isArchived: (m: TeamMember) => boolean;
+  getEntityName: (type: string, id: string) => string;
+  onAddMemberClick: () => void;
+  // Optional — only passed when the current user can manage the team
+  // (workspace owner/admin or the creator). Hidden otherwise so viewers
+  // don't see a button they can't action.
+  createAgentHref?: string;
+  onSetLeader: (agentId: string) => void;
+  onRemoveMember: (m: TeamMember) => void;
+  onUpdateRole: (m: TeamMember, role: string) => Promise<void>;
+  onSaveInstructions: (next: string) => Promise<void>;
+  setLeaderPending: boolean;
+}) {
+  const { t } = useT("teams");
+  const [activeTab, setActiveTab] = useState<TeamDetailTab>("members");
+  const [activeDirty, setActiveDirty] = useState(false);
+  const [pendingTab, setPendingTab] = useState<TeamDetailTab | null>(null);
+
+  const requestTabChange = (next: TeamDetailTab) => {
+    if (next === activeTab) return;
+    if (activeDirty) { setPendingTab(next); return; }
+    setActiveTab(next);
+  };
+
+  const commitTabChange = () => {
+    if (pendingTab) {
+      setActiveTab(pendingTab);
+      setActiveDirty(false);
+      setPendingTab(null);
+    }
+  };
+
+  return (
+    <div className="flex min-h-[60vh] flex-col overflow-hidden rounded-lg border bg-background md:h-full md:min-h-0">
+      <div className="flex shrink-0 items-center gap-0 overflow-x-auto border-b px-2 md:px-4">
+        {teamDetailTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => requestTabChange(tab.id)}
+            className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-caption font-medium transition-colors ${
+              activeTab === tab.id
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <tab.icon className="h-3.5 w-3.5" />
+            {t(($) => $.detail_tabs[tab.id])}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {activeTab === "members" && (
+          <div className="flex h-full flex-col p-4 md:p-6">
+            <TeamMembersTab
+              members={members}
+              memberStatusById={memberStatusById}
+              canManage={canManage}
+              isLeader={isLeader}
+              isArchived={isArchived}
+              getEntityName={getEntityName}
+              onAddMemberClick={onAddMemberClick}
+              createAgentHref={createAgentHref}
+              onSetLeader={onSetLeader}
+              onRemoveMember={onRemoveMember}
+              onUpdateRole={onUpdateRole}
+              setLeaderPending={setLeaderPending}
+            />
+          </div>
+        )}
+        {activeTab === "instructions" && (
+          <div className="flex h-full flex-col p-4 md:p-6">
+            <TeamInstructionsTab
+              team={team}
+              canManage={canManage}
+              onSave={onSaveInstructions}
+              onDirtyChange={setActiveDirty}
+            />
+          </div>
+        )}
+      </div>
+
+      {pendingTab !== null && (
+        <AlertDialog open onOpenChange={(v) => { if (!v) setPendingTab(null); }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t(($) => $.discard_changes_dialog.title)}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t(($) => $.discard_changes_dialog.description)}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t(($) => $.discard_changes_dialog.keep_editing)}</AlertDialogCancel>
+              <AlertDialogAction variant="destructive" onClick={commitTabChange}>
+                {t(($) => $.discard_changes_dialog.discard_button)}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+    </div>
+  );
+}
+
+// Visual config for the five team member status buckets. Mirrors
+// availabilityConfig + workloadConfig in packages/views/agents/presence.ts —
+// same semantic tokens so a status dot here matches the agent page's dot.
+// Unknown / null statuses (human members, server-side enum drift) render as
+// a neutral muted pill; this is the "downgrade, don't crash" defense from
+// CLAUDE.md > API Response Compatibility.
+const TEAM_STATUS_DOT_CLASS: Record<TeamMemberStatusValue, string> = {
+  working: "bg-success",
+  idle: "bg-muted-foreground/40",
+  offline: "bg-muted-foreground/40",
+  unstable: "bg-warning",
+  archived: "bg-muted-foreground/40",
+};
+
+// Members tab body — re-uses the existing list/role editing patterns.
+function TeamMembersTab({
+  members,
+  memberStatusById,
+  canManage,
+  isLeader,
+  isArchived,
+  getEntityName,
+  onAddMemberClick,
+  createAgentHref,
+  onSetLeader,
+  onRemoveMember,
+  onUpdateRole,
+  setLeaderPending,
+}: {
+  members: TeamMember[];
+  memberStatusById: Map<string, TeamMemberStatus>;
+  // When false, add/create/leader/remove controls and role editing are hidden;
+  // the roster stays visible and read-only.
+  canManage: boolean;
+  isLeader: (m: TeamMember) => boolean;
+  isArchived: (m: TeamMember) => boolean;
+  getEntityName: (type: string, id: string) => string;
+  onAddMemberClick: () => void;
+  // Hidden for viewers who can't manage — see TeamOverviewPane.
+  createAgentHref?: string;
+  onSetLeader: (agentId: string) => void;
+  onRemoveMember: (m: TeamMember) => void;
+  onUpdateRole: (m: TeamMember, role: string) => Promise<void>;
+  setLeaderPending: boolean;
+}) {
+  const { t } = useT("teams");
+  const timeAgo = useTimeAgo();
+  const p = useWorkspacePaths();
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-body font-medium">{t(($) => $.members_tab.section_title)}</h3>
+          <p className="text-caption text-muted-foreground mt-0.5">
+            {t(($) => $.members_tab.section_count, { count: members.length })}
+          </p>
+        </div>
+        {canManage && (
+          <div className="flex items-center gap-2">
+            {createAgentHref && (
+              <Button
+                size="sm"
+                variant="outline"
+                render={<AppLink href={createAgentHref} />}
+                nativeButton={false}
+              >
+                <Plus className="size-3.5 mr-1.5" />
+                {t(($) => $.members_tab.create_agent_button)}
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={onAddMemberClick}>
+              <Plus className="size-3.5 mr-1.5" />
+              {t(($) => $.members_tab.add_member_button)}
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-2">
+        {members.map((m) => {
+          const status = memberStatusById.get(m.member_id);
+          const statusValue = status?.status ?? null;
+          const dotClass =
+            statusValue && statusValue in TEAM_STATUS_DOT_CLASS
+              ? TEAM_STATUS_DOT_CLASS[statusValue as keyof typeof TEAM_STATUS_DOT_CLASS]
+              : null;
+          const statusLabel =
+            statusValue === "working" ? t(($) => $.members_tab.status_working)
+              : statusValue === "idle" ? t(($) => $.members_tab.status_idle)
+              : statusValue === "offline" ? t(($) => $.members_tab.status_offline)
+              : statusValue === "unstable" ? t(($) => $.members_tab.status_unstable)
+              : statusValue === "archived" ? t(($) => $.members_tab.status_archived)
+              : null;
+          const activeIssues = status?.active_issues ?? [];
+          const primaryIssue = activeIssues[0];
+          const extraIssueCount = Math.max(0, activeIssues.length - 1);
+          // Show last_active only when the agent isn't currently working —
+          // a "working" pill already implies the agent is live, and a
+          // "last active 2s ago" line next to it is just noise.
+          const showLastActive =
+            m.member_type === "agent" && statusValue && statusValue !== "working" && status?.last_active_at;
+          return (
+            <div key={m.id} className="group flex items-start gap-3 rounded-lg border p-3">
+              <ActorAvatar
+                actorType={m.member_type}
+                actorId={m.member_id}
+                size="lg"
+                showStatusDot
+                enableHoverCard={m.member_type === "agent"}
+                hoverCardVariant="live"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-body font-medium">{getEntityName(m.member_type, m.member_id)}</span>
+                  <span className="text-caption text-muted-foreground">
+                    {t(($) => $.member_type[m.member_type])}
+                  </span>
+                  {isLeader(m) && (
+                    <span className="inline-flex items-center gap-0.5 text-caption bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded">
+                      <Crown className="size-3" />
+                      {t(($) => $.members_tab.leader_chip)}
+                    </span>
+                  )}
+                  {m.member_type === "agent" && statusLabel && (
+                    <span className="inline-flex items-center gap-1 text-caption text-muted-foreground">
+                      <span className={`h-1.5 w-1.5 rounded-full ${dotClass ?? "bg-muted-foreground/40"}`} />
+                      {statusLabel}
+                    </span>
+                  )}
+                </div>
+                {canManage ? (
+                  <RoleEditor
+                    value={m.role ?? ""}
+                    onSave={async (next) => { await onUpdateRole(m, next); }}
+                  />
+                ) : m.role ? (
+                  <div className="mt-0.5 text-caption text-muted-foreground">{m.role}</div>
+                ) : null}
+                {primaryIssue && (
+                  <div className="mt-1 flex items-center gap-1 text-caption text-muted-foreground min-w-0">
+                    <AppLink
+                      href={p.issueDetail(primaryIssue.issue_id)}
+                      className="inline-flex items-center gap-1 min-w-0 hover:text-foreground transition-colors"
+                    >
+                      <span className="font-mono text-micro uppercase shrink-0">{primaryIssue.identifier}</span>
+                      <span className="truncate">{primaryIssue.title}</span>
+                      {primaryIssue.issue_status === "blocked" && (
+                        <span className="shrink-0 inline-flex items-center text-micro uppercase tracking-wide text-warning">
+                          {t(($) => $.members_tab.issue_status_blocked)}
+                        </span>
+                      )}
+                    </AppLink>
+                    {extraIssueCount > 0 && (
+                      <span className="shrink-0">
+                        · {t(($) => $.members_tab.active_issue_more, { count: extraIssueCount })}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {showLastActive && (
+                  <div className="mt-0.5 text-caption text-muted-foreground">
+                    {t(($) => $.members_tab.last_active_label, {
+                      time: timeAgo(status!.last_active_at!),
+                    })}
+                  </div>
+                )}
+              </div>
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+              {m.member_type === "agent" && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <AppLink
+                        href={p.agentDetail(m.member_id)}
+                        className="inline-flex items-center justify-center h-8 w-8 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                        aria-label={t(($) => $.members_tab.view_agent_tooltip)}
+                      >
+                        <ArrowUpRight className="size-3.5" />
+                      </AppLink>
+                    }
+                  />
+                  <TooltipContent>
+                    {t(($) => $.members_tab.view_agent_tooltip)}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {canManage && m.member_type === "agent" && !isLeader(m) && !isArchived(m) && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground hover:text-amber-600 h-8 w-8 p-0"
+                        onClick={() => onSetLeader(m.member_id)}
+                        disabled={setLeaderPending}
+                        aria-label={t(($) => $.members_tab.make_leader_tooltip)}
+                      >
+                        <Crown className="size-3.5" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>
+                    {t(($) => $.members_tab.make_leader_tooltip)}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {canManage && !isLeader(m) && (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground hover:text-destructive h-8 w-8 p-0"
+                        onClick={() => onRemoveMember(m)}
+                        aria-label={t(($) => $.members_tab.remove_member_tooltip)}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>
+                    {t(($) => $.members_tab.remove_member_tooltip)}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+            </div>
+          </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Instructions tab body — mirrors agent's InstructionsTab. ContentEditor +
+// Save button. The team leader's prompt picks these up at task claim time
+// (server/internal/handler/daemon.go).
+function TeamInstructionsTab({
+  team,
+  canManage,
+  onSave,
+  onDirtyChange,
+}: {
+  team: Team;
+  canManage: boolean;
+  onSave: (instructions: string) => Promise<void>;
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
+  const { t } = useT("teams");
+  const [value, setValue] = useState(team.instructions ?? "");
+  const [saving, setSaving] = useState(false);
+  const isDirty = value !== (team.instructions ?? "");
+
+  useEffect(() => {
+    setValue(team.instructions ?? "");
+  }, [team.id, team.instructions]);
+
+  useEffect(() => {
+    // A read-only viewer never has unsaved changes to guard on tab-switch.
+    onDirtyChange?.(canManage && isDirty);
+  }, [canManage, isDirty, onDirtyChange]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onSave(value);
+    } catch {
+      // toast handled by parent
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full flex-col gap-4">
+      <p className="text-caption text-muted-foreground">
+        {t(($) => $.instructions_tab.description)}
+      </p>
+
+      {/* When the viewer can't manage the team, the editor is wrapped in a
+          pointer-events-none / aria-disabled shell — ContentEditor reads
+          `editable` at mount and can't be toggled, so this is the documented
+          way to present it read-only (see editor/content-editor.tsx). */}
+      <div
+        aria-disabled={!canManage}
+        className={`flex-1 min-h-0 overflow-y-auto rounded-md border bg-background px-4 py-3 transition-colors ${
+          canManage ? "focus-within:border-input" : "pointer-events-none"
+        }`}
+      >
+        <ContentEditor
+          key={team.id}
+          value={value}
+          onUpdate={canManage ? setValue : () => {}}
+          placeholder={
+            canManage
+              ? t(($) => $.instructions_tab.placeholder)
+              : ""
+          }
+          debounceMs={150}
+          disableMentions
+          className="min-h-full"
+        />
+      </div>
+
+      {canManage && (
+        <div className="flex items-center justify-end gap-3">
+          {isDirty && (
+            <span className="text-caption text-muted-foreground">{t(($) => $.instructions_tab.unsaved_changes)}</span>
+          )}
+          <Button size="sm" onClick={handleSave} disabled={!isDirty || saving}>
+            {saving ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Save className="h-3.5 w-3.5" />
+            )}
+            {t(($) => $.instructions_tab.save_button)}
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}

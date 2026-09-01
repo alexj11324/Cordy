@@ -371,7 +371,7 @@ func TestResolveOriginatorForIssueTask_QuickCreateIssueInheritsParentTask(t *tes
 // `issue create` path gets origin_type='agent_create' + origin_id=<acting
 // task>. The issue creator is the agent, but the top-of-chain human lives on
 // that acting task and must be inherited so downstream assignment /
-// squad-leader runs (and the A2A mentions they emit) keep the originator.
+// team-leader runs (and the A2A mentions they emit) keep the originator.
 func TestResolveOriginatorForIssueTask_AgentCreateIssueInheritsParentTask(t *testing.T) {
 	pool := newResolveOriginatorPool(t)
 	_, _, parentTaskID, userID, _ := seedOriginatorFanout(t, pool)
@@ -393,7 +393,7 @@ func TestResolveOriginatorForIssueTask_AgentCreateIssueInheritsParentTask(t *tes
 
 // TestOriginatorForIssueTask_MatchesResolverForAgentCreate pins the gate/enqueue
 // consistency guarantee from MUL-4305: the exported OriginatorForIssueTask
-// (used by the squad-leader access gate) must return the SAME human the
+// (used by the team-leader access gate) must return the SAME human the
 // unexported resolver persists on the task row. If these drift, an
 // agent-created issue could be attributed correctly on the task row yet denied
 // by a gate that computed a different (empty) originator.

@@ -1102,7 +1102,7 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 		projectFilter = id
 	}
 	// involves_user_id widens the assignee filter to surface issues where the
-	// user is the indirect assignee (their owned agent, or a squad they belong
+	// user is the indirect assignee (their owned agent, or a team they belong
 	// to / lead / have an agent inside). Direct member-assignment is excluded
 	// by design — that is the meaning of `assignee_id` (tab 1), and tab 3 must
 	// be disjoint from tab 1.
@@ -1222,7 +1222,7 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// assignee_types narrows the list to issues assigned to the given actor
-	// kinds (member / agent / squad). Mirrors the same param on
+	// kinds (member / agent / team). Mirrors the same param on
 	// ListGroupedIssues so the workspace Members/Agents tabs can filter
 	// server-side instead of post-filtering loaded pages on the client.
 	assigneeTypesFilter := splitCommaParam(r.URL.Query().Get("assignee_types"))
@@ -1447,24 +1447,24 @@ func (h *Handler) ListIssues(w http.ResponseWriter, r *http.Request) {
         WHERE a.workspace_id = $1
           AND a.owner_id     = %[1]s::uuid
     ))
-    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
-       SELECT sm.squad_id
-         FROM squad_member sm
-         JOIN squad s ON s.id = sm.squad_id
+    OR (i.assignee_type = 'team' AND i.assignee_id IN (
+       SELECT sm.team_id
+         FROM team_member sm
+         JOIN team s ON s.id = sm.team_id
         WHERE s.workspace_id = $1
           AND sm.member_type = 'member'
           AND sm.member_id   = %[1]s::uuid
        UNION
        SELECT s.id
-         FROM squad s
+         FROM team s
          JOIN agent a ON a.id = s.leader_id
         WHERE s.workspace_id = $1
           AND a.workspace_id = $1
           AND a.owner_id     = %[1]s::uuid
        UNION
-       SELECT sm.squad_id
-         FROM squad_member sm
-         JOIN squad s ON s.id = sm.squad_id
+       SELECT sm.team_id
+         FROM team_member sm
+         JOIN team s ON s.id = sm.team_id
          JOIN agent a ON a.id = sm.member_id
         WHERE s.workspace_id = $1
           AND sm.member_type = 'agent'
@@ -1700,7 +1700,7 @@ func splitCommaParam(raw string) []string {
 }
 
 func isIssueActorType(s string) bool {
-	return s == "member" || s == "agent" || s == "squad"
+	return s == "member" || s == "agent" || s == "team"
 }
 
 func parseUUIDParamList(w http.ResponseWriter, raw, fieldName string) ([]pgtype.UUID, bool) {
@@ -1890,24 +1890,24 @@ func (h *Handler) ListGroupedIssues(w http.ResponseWriter, r *http.Request) {
         WHERE a.workspace_id = $1
           AND a.owner_id     = %[1]s::uuid
     ))
-    OR (i.assignee_type = 'squad' AND i.assignee_id IN (
-       SELECT sm.squad_id
-         FROM squad_member sm
-         JOIN squad s ON s.id = sm.squad_id
+    OR (i.assignee_type = 'team' AND i.assignee_id IN (
+       SELECT sm.team_id
+         FROM team_member sm
+         JOIN team s ON s.id = sm.team_id
         WHERE s.workspace_id = $1
           AND sm.member_type = 'member'
           AND sm.member_id   = %[1]s::uuid
        UNION
        SELECT s.id
-         FROM squad s
+         FROM team s
          JOIN agent a ON a.id = s.leader_id
         WHERE s.workspace_id = $1
           AND a.workspace_id = $1
           AND a.owner_id     = %[1]s::uuid
        UNION
-       SELECT sm.squad_id
-         FROM squad_member sm
-         JOIN squad s ON s.id = sm.squad_id
+       SELECT sm.team_id
+         FROM team_member sm
+         JOIN team s ON s.id = sm.team_id
          JOIN agent a ON a.id = sm.member_id
         WHERE s.workspace_id = $1
           AND sm.member_type = 'agent'
@@ -2113,7 +2113,7 @@ ORDER BY
 	CASE assignee_type
 		WHEN 'member' THEN 0
 		WHEN 'agent' THEN 1
-		WHEN 'squad' THEN 2
+		WHEN 'team' THEN 2
 		ELSE 3
 	END,
 	assignee_type NULLS LAST,
@@ -2424,17 +2424,17 @@ func (h *Handler) ChildIssueProgress(w http.ResponseWriter, r *http.Request) {
 }
 
 // QuickCreateIssueRequest is the body for POST /api/issues/quick-create. The
-// user picks an actor (agent or squad) in the modal and types one line of
+// user picks an actor (agent or team) in the modal and types one line of
 // natural language; the server validates the actor's reachability up front,
 // queues a quick-create task, and returns 202 immediately. The agent
 // translates the prompt into a `patchbay issue create` invocation in the
 // background; success and failure both surface as inbox notifications to
 // the requester.
 //
-// Exactly one of AgentID / SquadID is required. When SquadID is set, the
-// task is enqueued against the squad's leader agent and the leader receives
+// Exactly one of AgentID / TeamID is required. When TeamID is set, the
+// task is enqueued against the team's leader agent and the leader receives
 // the same Operating Protocol briefing it would for an issue assigned to
-// the squad, so it can choose to delegate to a squad member as usual.
+// the team, so it can choose to delegate to a team member as usual.
 //
 // ProjectID is optional and lets the modal target a specific project so
 // the agent's `patchbay issue create` invocation passes `--project <uuid>`
@@ -2448,7 +2448,7 @@ func (h *Handler) ChildIssueProgress(w http.ResponseWriter, r *http.Request) {
 // the user submits via manual or agent mode.
 type QuickCreateIssueRequest struct {
 	AgentID       string   `json:"agent_id,omitempty"`
-	SquadID       string   `json:"squad_id,omitempty"`
+	TeamID       string   `json:"team_id,omitempty"`
 	Prompt        string   `json:"prompt"`
 	Priority      string   `json:"priority,omitempty"`
 	DueDate       string   `json:"due_date,omitempty"`
@@ -2490,9 +2490,9 @@ func (h *Handler) QuickCreateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hasAgent := strings.TrimSpace(req.AgentID) != ""
-	hasSquad := strings.TrimSpace(req.SquadID) != ""
-	if hasAgent == hasSquad {
-		writeError(w, http.StatusBadRequest, "exactly one of agent_id or squad_id is required")
+	hasTeam := strings.TrimSpace(req.TeamID) != ""
+	if hasAgent == hasTeam {
+		writeError(w, http.StatusBadRequest, "exactly one of agent_id or team_id is required")
 		return
 	}
 
@@ -2512,32 +2512,32 @@ func (h *Handler) QuickCreateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Resolve the actor to the agent that will actually run the task. For
-	// agent picks that's the agent itself; for squad picks it's the squad's
-	// leader agent. The leader receives a squad-leader briefing on dispatch
+	// agent picks that's the agent itself; for team picks it's the team's
+	// leader agent. The leader receives a team-leader briefing on dispatch
 	// (see daemon.go), matching the behavior of an issue assigned to the
-	// squad — picking a squad here is functionally "ask the squad leader to
-	// create this issue, on behalf of the squad".
+	// team — picking a team here is functionally "ask the team leader to
+	// create this issue, on behalf of the team".
 	var agentUUID pgtype.UUID
-	var squadUUID pgtype.UUID
-	if hasSquad {
+	var teamUUID pgtype.UUID
+	if hasTeam {
 		var ok bool
-		squadUUID, ok = parseUUIDOrBadRequest(w, req.SquadID, "squad_id")
+		teamUUID, ok = parseUUIDOrBadRequest(w, req.TeamID, "team_id")
 		if !ok {
 			return
 		}
-		squad, err := h.Queries.GetSquadInWorkspace(r.Context(), db.GetSquadInWorkspaceParams{
-			ID:          squadUUID,
+		team, err := h.Queries.GetTeamInWorkspace(r.Context(), db.GetTeamInWorkspaceParams{
+			ID:          teamUUID,
 			WorkspaceID: wsUUID,
 		})
 		if err != nil {
-			writeError(w, http.StatusNotFound, "squad not found")
+			writeError(w, http.StatusNotFound, "team not found")
 			return
 		}
-		if squad.ArchivedAt.Valid {
-			writeError(w, http.StatusBadRequest, "squad is archived")
+		if team.ArchivedAt.Valid {
+			writeError(w, http.StatusBadRequest, "team is archived")
 			return
 		}
-		agentUUID = squad.LeaderID
+		agentUUID = team.LeaderID
 	} else {
 		var ok bool
 		agentUUID, ok = parseUUIDOrBadRequest(w, req.AgentID, "agent_id")
@@ -2549,9 +2549,9 @@ func (h *Handler) QuickCreateIssue(w http.ResponseWriter, r *http.Request) {
 	// Reuse the same workspace-membership / archived / private-agent
 	// ownership rules as `validateAssigneePair` so a user can't POST a
 	// private agent_id they shouldn't be able to dispatch (the frontend
-	// filters them out, but the handler is the trust boundary). Squad
+	// filters them out, but the handler is the trust boundary). Team
 	// picks reach this with the resolved leader agent; the same rules
-	// apply — a private leader behind a squad the user can't reach
+	// apply — a private leader behind a team the user can't reach
 	// should still be rejected.
 	if status, msg := h.validateAssigneePair(
 		r.Context(), r, workspaceID,
@@ -2654,7 +2654,7 @@ func (h *Handler) QuickCreateIssue(w http.ResponseWriter, r *http.Request) {
 		parentIssueUUID = pid
 	}
 
-	task, err := h.TaskService.EnqueueQuickCreateTask(r.Context(), wsUUID, requesterUUID, agentUUID, squadUUID, prompt, priority, dueDate, projectUUID, parentIssueUUID, attachmentIDs)
+	task, err := h.TaskService.EnqueueQuickCreateTask(r.Context(), wsUUID, requesterUUID, agentUUID, teamUUID, prompt, priority, dueDate, projectUUID, parentIssueUUID, attachmentIDs)
 	if err != nil {
 		if writeIssueLimitReached(w, err) {
 			return
@@ -2862,7 +2862,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		parentIssueID = id
-		if assigneeType.Valid && (assigneeType.String == "agent" || assigneeType.String == "squad") {
+		if assigneeType.Valid && (assigneeType.String == "agent" || assigneeType.String == "team") {
 			parent, err := h.Queries.GetIssueInWorkspace(r.Context(), db.GetIssueInWorkspaceParams{
 				ID:          parentIssueID,
 				WorkspaceID: wsUUID,
@@ -2875,7 +2875,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// An agent/squad assignee on a PARENTLESS create has no issue to bind an
+	// An agent/team assignee on a PARENTLESS create has no issue to bind an
 	// autopilot authority to, so the scope names the create itself: only a
 	// verified, still-running run_only autopilot task may borrow there
 	// (MUL-6691 — the reported flow, where the leader creates DRA-109/DRA-110
@@ -2963,7 +2963,7 @@ func (h *Handler) CreateIssue(w http.ResponseWriter, r *http.Request) {
 		// MUL-4305: an agent creating an issue via the ordinary create path
 		// carries no explicit origin, which historically left the new issue
 		// unattributed. Any run later derived from it (agent assignment,
-		// squad-leader trigger) then lost the top-of-chain human originator,
+		// team-leader trigger) then lost the top-of-chain human originator,
 		// so A2A @-mentions from those runs failed the canInvokeAgent gate
 		// against private agents. Stamp the acting task as the issue's origin
 		// so resolveOriginatorForIssueTask can inherit its originator — the
@@ -3147,7 +3147,7 @@ type UpdateIssueRequest struct {
 	// false keeps today's behavior. Mirrors comment suppress_agent_ids.
 	SuppressRun bool `json:"suppress_run,omitempty"`
 	// HandoffNote is an optional free-text instruction injected into the run's
-	// opening context when this write starts an agent/squad run ("交接说明" —
+	// opening context when this write starts an agent/team run ("交接说明" —
 	// MUL-3375). Only consumed when a run actually starts: SuppressRun=true or
 	// a parked/non-triggering write drops it. Never fabricates a comment.
 	HandoffNote string `json:"handoff_note,omitempty"`
@@ -3641,14 +3641,14 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Reconcile the task queue. Whether this write starts an agent run — and
-	// for whom (agent assignee or squad leader) — is decided by the single
+	// for whom (agent assignee or team leader) — is decided by the single
 	// WillEnqueueRun predicate, shared verbatim with the preview endpoint so
 	// the two never drift (MUL-3375).
 	//
 	// A reassignment intentionally does NOT cancel existing tasks on the issue
 	// (#4963 / MUL-4113). The previous "cancel every active task on the issue"
 	// was too coarse: it silently dropped unrelated in-flight work (a
-	// mention-triggered run for another agent, a squad task) with no requeue,
+	// mention-triggered run for another agent, a team task) with no requeue,
 	// and it self-cancelled a run that reassigned the issue from inside itself.
 	// Ownership handoff no longer implies interruption; the new assignee's run,
 	// if any, is enqueued by WillEnqueueRun below and runs alongside whatever
@@ -3682,7 +3682,7 @@ func (h *Handler) UpdateIssue(w http.ResponseWriter, r *http.Request) {
 }
 
 // validateAssigneePair verifies the (assignee_type, assignee_id) pair refers
-// to an existing entity in the workspace. For agent and squad assignees it
+// to an existing entity in the workspace. For agent and team assignees it
 // also rejects archived targets and runs the INVOKE gate — canInvokeAgent, not
 // the softer canAccessPrivateAgent view gate: assigning an issue produces a
 // run, so it must clear the same predicate as chat / @-mention (MUL-3963).
@@ -3745,31 +3745,31 @@ func (h *Handler) validateAssigneePair(ctx context.Context, r *http.Request, wor
 			return http.StatusForbidden, "you do not have permission to assign work to this agent"
 		}
 		return 0, ""
-	case "squad":
-		squad, err := h.Queries.GetSquadInWorkspace(ctx, db.GetSquadInWorkspaceParams{
+	case "team":
+		team, err := h.Queries.GetTeamInWorkspace(ctx, db.GetTeamInWorkspaceParams{
 			ID:          assigneeID,
 			WorkspaceID: wsUUID,
 		})
 		if err != nil {
-			return http.StatusBadRequest, "assignee_id does not refer to a squad in this workspace"
+			return http.StatusBadRequest, "assignee_id does not refer to a team in this workspace"
 		}
-		if squad.ArchivedAt.Valid {
-			return http.StatusBadRequest, "cannot assign to an archived squad"
+		if team.ArchivedAt.Valid {
+			return http.StatusBadRequest, "cannot assign to an archived team"
 		}
-		leader, err := h.Queries.GetAgent(ctx, squad.LeaderID)
+		leader, err := h.Queries.GetAgent(ctx, team.LeaderID)
 		if err != nil || leader.ArchivedAt.Valid {
-			return http.StatusBadRequest, "squad leader is archived; cannot assign to this squad"
+			return http.StatusBadRequest, "team leader is archived; cannot assign to this team"
 		}
 		actorType, actorID := h.resolveActor(r, requestUserID(r), workspaceID)
 		effectiveInvoker := h.effectiveInvocationAuthorityFromRequest(r, scope, actorType, actorID, workspaceID)
 		if !h.canInvokeAgent(ctx, leader, actorType, actorID, effectiveInvoker, workspaceID) {
-			// Same wording rule as the agent branch above; "this squad"
+			// Same wording rule as the agent branch above; "this team"
 			// avoids disclosing the leader agent's permission mode.
-			return http.StatusForbidden, "you do not have permission to assign work to this squad"
+			return http.StatusForbidden, "you do not have permission to assign work to this team"
 		}
 		return 0, ""
 	default:
-		return http.StatusBadRequest, "assignee_type must be 'member', 'agent', or 'squad'"
+		return http.StatusBadRequest, "assignee_type must be 'member', 'agent', or 'team'"
 	}
 }
 

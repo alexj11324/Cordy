@@ -140,21 +140,21 @@ func countCommentTriggerTasksWithStatus(t *testing.T, issueID, agentID, status s
 	return n
 }
 
-func createCommentTriggerPreviewSquad(t *testing.T, name, leaderID string) string {
+func createCommentTriggerPreviewTeam(t *testing.T, name, leaderID string) string {
 	t.Helper()
 
-	var squadID string
+	var teamID string
 	if err := testPool.QueryRow(context.Background(), `
-		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		INSERT INTO team (workspace_id, name, description, leader_id, creator_id)
 		VALUES ($1, $2, '', $3, $4)
 		RETURNING id
-	`, testWorkspaceID, name, leaderID, testUserID).Scan(&squadID); err != nil {
-		t.Fatalf("create squad: %v", err)
+	`, testWorkspaceID, name, leaderID, testUserID).Scan(&teamID); err != nil {
+		t.Fatalf("create team: %v", err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1`, squadID)
+		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID)
 	})
-	return squadID
+	return teamID
 }
 
 func requirePreviewAgents(t *testing.T, preview CommentTriggerPreviewResponse, wantIDs ...string) {
@@ -180,7 +180,7 @@ func TestCommentTriggers_PlainReplyToUnownedMemberRootSkipsAssigneeFallback(t *t
 
 	assigneeID := createHandlerTestAgent(t, "Unowned Member Thread Assignee", nil)
 	leaderID := createHandlerTestAgent(t, "Unowned Member Thread Leader", nil)
-	squadID := createCommentTriggerPreviewSquad(t, "Unowned Member Thread Squad", leaderID)
+	teamID := createCommentTriggerPreviewTeam(t, "Unowned Member Thread Team", leaderID)
 
 	tests := []struct {
 		name          string
@@ -195,9 +195,9 @@ func TestCommentTriggers_PlainReplyToUnownedMemberRootSkipsAssigneeFallback(t *t
 			routedAgentID: assigneeID,
 		},
 		{
-			name:          "squad assignee",
-			assigneeType:  "squad",
-			assigneeID:    squadID,
+			name:          "team assignee",
+			assigneeType:  "team",
+			assigneeID:    teamID,
 			routedAgentID: leaderID,
 		},
 	}
@@ -338,27 +338,27 @@ func TestPreviewCommentTriggers_PlainReplyToMultiAgentRootRoutesFirstMentionedOw
 	}
 }
 
-// TestPreviewCommentTriggers_SquadAssigneePlainReplyKeepsRootMentionOwner is the
+// TestPreviewCommentTriggers_TeamAssigneePlainReplyKeepsRootMentionOwner is the
 // cascade replacement for the old MUL-3744 inherited-mention scenario:
 //
-//   - Issue is assigned to a SQUAD (leader L).
+//   - Issue is assigned to a TEAM (leader L).
 //   - Member root comment @mentions another agent (Kim).
 //   - Member posts a plain reply with no mention of its own ("hello").
 //
 // New cascade behavior: the root's explicit @agent establishes the thread
-// owner, so the plain reply returns to Kim instead of the squad assignee.
-func TestPreviewCommentTriggers_SquadAssigneePlainReplyKeepsRootMentionOwner(t *testing.T) {
+// owner, so the plain reply returns to Kim instead of the team assignee.
+func TestPreviewCommentTriggers_TeamAssigneePlainReplyKeepsRootMentionOwner(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
 	ctx := context.Background()
 
-	leaderID := createHandlerTestAgent(t, "Preview Squad Leader L", nil)
-	kimID := createHandlerTestAgent(t, "Preview Squad Mention Kim", nil)
-	squadID := createCommentTriggerPreviewSquad(t, "Preview Squad Reply Routing", leaderID)
-	issueID := createCommentTriggerPreviewIssue(t, "squad reply mention inheritance MUL-3744", "squad", squadID)
+	leaderID := createHandlerTestAgent(t, "Preview Team Leader L", nil)
+	kimID := createHandlerTestAgent(t, "Preview Team Mention Kim", nil)
+	teamID := createCommentTriggerPreviewTeam(t, "Preview Team Reply Routing", leaderID)
+	issueID := createCommentTriggerPreviewIssue(t, "team reply mention inheritance MUL-3744", "team", teamID)
 
-	// Sanity: a plain top-level "hello" by a member on this squad-assigned
+	// Sanity: a plain top-level "hello" by a member on this team-assigned
 	// issue wakes the leader (no @mention is routing the work).
 	topLevelPreview := previewCommentTriggersForTest(t, issueID, CommentTriggerPreviewRequest{
 		Content: "hello",
@@ -401,10 +401,10 @@ func TestPreviewCommentTriggers_SquadAssigneePlainReplyKeepsRootMentionOwner(t *
 	// Verify the create path matches the preview.
 	postCommentForTriggerPreviewTest(t, issueID, replyBody)
 	if got := countQueuedCommentTriggerTasks(t, issueID, leaderID); got != 0 {
-		t.Fatalf("after plain reply on squad issue: expected 0 leader tasks, got %d", got)
+		t.Fatalf("after plain reply on team issue: expected 0 leader tasks, got %d", got)
 	}
 	if got := countQueuedCommentTriggerTasks(t, issueID, kimID); got != 1 {
-		t.Fatalf("after plain reply on squad issue: expected 1 Kim task, got %d", got)
+		t.Fatalf("after plain reply on team issue: expected 1 Kim task, got %d", got)
 	}
 }
 
@@ -905,9 +905,9 @@ func TestPreviewCommentTriggers_EditExcludesSameCommentPendingTask(t *testing.T)
 		}
 	})
 
-	t.Run("squad assignee on-comment", func(t *testing.T) {
-		squadID := createCommentTriggerPreviewSquad(t, "Edit Preview Assignee Squad", agentID)
-		issueID := createCommentTriggerPreviewIssue(t, "edit preview squad assignee", "squad", squadID)
+	t.Run("team assignee on-comment", func(t *testing.T) {
+		teamID := createCommentTriggerPreviewTeam(t, "Edit Preview Assignee Team", agentID)
+		issueID := createCommentTriggerPreviewIssue(t, "edit preview team assignee", "team", teamID)
 		commentID := postCommentForTriggerPreviewTest(t, issueID, map[string]any{
 			"content": "please coordinate this",
 		})
@@ -945,10 +945,10 @@ func TestPreviewCommentTriggers_EditExcludesSameCommentPendingTask(t *testing.T)
 		}
 	})
 
-	t.Run("squad mention leader", func(t *testing.T) {
-		squadID := createCommentTriggerPreviewSquad(t, "Edit Preview Mention Squad", agentID)
-		issueID := createCommentTriggerPreviewIssue(t, "edit preview squad mention", "", "")
-		content := fmt.Sprintf("[@Squad](mention://squad/%s) inspect this", squadID)
+	t.Run("team mention leader", func(t *testing.T) {
+		teamID := createCommentTriggerPreviewTeam(t, "Edit Preview Mention Team", agentID)
+		issueID := createCommentTriggerPreviewIssue(t, "edit preview team mention", "", "")
+		content := fmt.Sprintf("[@Team](mention://team/%s) inspect this", teamID)
 		commentID := postCommentForTriggerPreviewTest(t, issueID, map[string]any{
 			"content": content,
 		})
@@ -961,8 +961,8 @@ func TestPreviewCommentTriggers_EditExcludesSameCommentPendingTask(t *testing.T)
 			"editing_comment_id": commentID,
 		})
 		requirePreviewAgents(t, preview, agentID)
-		if preview.Agents[0].Source != string(commentTriggerSourceMentionSquadLeader) {
-			t.Fatalf("preview source = %q, want %q", preview.Agents[0].Source, commentTriggerSourceMentionSquadLeader)
+		if preview.Agents[0].Source != string(commentTriggerSourceMentionTeamLeader) {
+			t.Fatalf("preview source = %q, want %q", preview.Agents[0].Source, commentTriggerSourceMentionTeamLeader)
 		}
 	})
 }
@@ -1133,34 +1133,34 @@ func TestPreviewCommentTriggers_AllPlusExplicitAgentMentionStillTriggers(t *test
 	}
 }
 
-// TestPreviewCommentTriggers_AllPlusExplicitSquadMentionStillTriggers is the
-// squad half of MUL-5411: an `@all` broadcast must not swallow an explicit
-// `@squad` mention either — the squad leader still wakes.
-func TestPreviewCommentTriggers_AllPlusExplicitSquadMentionStillTriggers(t *testing.T) {
+// TestPreviewCommentTriggers_AllPlusExplicitTeamMentionStillTriggers is the
+// team half of MUL-5411: an `@all` broadcast must not swallow an explicit
+// `@team` mention either — the team leader still wakes.
+func TestPreviewCommentTriggers_AllPlusExplicitTeamMentionStillTriggers(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
 
-	leaderID := createHandlerTestAgent(t, "Preview All Squad Leader", nil)
-	squadID := createCommentTriggerPreviewSquad(t, "Preview All Squad "+t.Name(), leaderID)
-	issueID := createCommentTriggerPreviewIssue(t, "comment trigger all plus squad mention", "", "")
-	content := fmt.Sprintf("[@all](mention://all/all) FYI — [@Squad](mention://squad/%s) please pick this up", squadID)
+	leaderID := createHandlerTestAgent(t, "Preview All Team Leader", nil)
+	teamID := createCommentTriggerPreviewTeam(t, "Preview All Team "+t.Name(), leaderID)
+	issueID := createCommentTriggerPreviewIssue(t, "comment trigger all plus team mention", "", "")
+	content := fmt.Sprintf("[@all](mention://all/all) FYI — [@Team](mention://team/%s) please pick this up", teamID)
 
 	preview := previewCommentTriggersForTest(t, issueID, map[string]any{"content": content})
 	requirePreviewAgents(t, preview, leaderID)
-	if preview.Agents[0].Source != string(commentTriggerSourceMentionSquadLeader) {
-		t.Fatalf("preview source = %q, want %q", preview.Agents[0].Source, commentTriggerSourceMentionSquadLeader)
+	if preview.Agents[0].Source != string(commentTriggerSourceMentionTeamLeader) {
+		t.Fatalf("preview source = %q, want %q", preview.Agents[0].Source, commentTriggerSourceMentionTeamLeader)
 	}
 
 	postCommentForTriggerPreviewTest(t, issueID, map[string]any{"content": content})
 	if got := countQueuedCommentTriggerTasks(t, issueID, leaderID); got != 1 {
-		t.Fatalf("squad leader queued tasks = %d, want 1", got)
+		t.Fatalf("team leader queued tasks = %d, want 1", got)
 	}
 }
 
 // TestPreviewCommentTriggers_AllPlusMemberMentionStaysSuppressed guards the
 // other side of the MUL-5411 reorder: `@all` alongside a `@member` mention (no
-// agent/squad named) still triggers nothing.
+// agent/team named) still triggers nothing.
 func TestPreviewCommentTriggers_AllPlusMemberMentionStaysSuppressed(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
@@ -1189,7 +1189,7 @@ func TestPreviewCommentTriggers_AllPlusMemberMentionStaysSuppressed(t *testing.T
 // was already committed before the panic. Malformed ids must be reported as
 // blocked mentions, never as an error response.
 //
-// The reason is target_unavailable on BOTH the agent and the squad path
+// The reason is target_unavailable on BOTH the agent and the team path
 // (MUL-5548): a string that is not a UUID cannot name an entity in any
 // workspace, so it conceals no existence and must not be blamed on invoke
 // permission. This is deliberately NOT the well-formed-but-unresolved case,
@@ -1226,9 +1226,9 @@ func TestPreviewCommentTriggers_MalformedMentionIDDoesNotPanic(t *testing.T) {
 			reason:     ReasonTargetUnavailable,
 		},
 		{
-			name:       "malformed squad id",
-			content:    "[@BrokenSquad](mention://squad/-) please look",
-			targetType: "squad",
+			name:       "malformed team id",
+			content:    "[@BrokenTeam](mention://team/-) please look",
+			targetType: "team",
 			targetID:   "-",
 			reason:     ReasonTargetUnavailable,
 		},
@@ -1240,9 +1240,9 @@ func TestPreviewCommentTriggers_MalformedMentionIDDoesNotPanic(t *testing.T) {
 			reason:     ReasonTargetUnavailable,
 		},
 		{
-			name:       "all plus malformed squad id",
-			content:    "[@all](mention://all/all) heads up [@BrokenSquad](mention://squad/-) please look",
-			targetType: "squad",
+			name:       "all plus malformed team id",
+			content:    "[@all](mention://all/all) heads up [@BrokenTeam](mention://team/-) please look",
+			targetType: "team",
 			targetID:   "-",
 			reason:     ReasonTargetUnavailable,
 		},
@@ -1316,31 +1316,31 @@ func TestPreviewCommentTriggers_AllSuppressesAssigneeAndPendingDedupes(t *testin
 	}
 }
 
-func TestPreviewCommentTriggers_AssignedSquadLeaderAndSuppress(t *testing.T) {
+func TestPreviewCommentTriggers_AssignedTeamLeaderAndSuppress(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
 
 	ctx := context.Background()
-	leaderID := createHandlerTestAgent(t, "Preview Squad Leader", nil)
+	leaderID := createHandlerTestAgent(t, "Preview Team Leader", nil)
 
-	var squadID string
+	var teamID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		INSERT INTO team (workspace_id, name, description, leader_id, creator_id)
 		VALUES ($1, $2, '', $3, $4)
 		RETURNING id
-	`, testWorkspaceID, "Preview Trigger Squad", leaderID, testUserID).Scan(&squadID); err != nil {
-		t.Fatalf("create squad: %v", err)
+	`, testWorkspaceID, "Preview Trigger Team", leaderID, testUserID).Scan(&teamID); err != nil {
+		t.Fatalf("create team: %v", err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1`, squadID)
+		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID)
 	})
 
-	issueID := createCommentTriggerPreviewIssue(t, "comment trigger squad assignee", "squad", squadID)
+	issueID := createCommentTriggerPreviewIssue(t, "comment trigger team assignee", "team", teamID)
 
 	preview := previewCommentTriggersForTest(t, issueID, map[string]any{"content": "please coordinate this"})
 	if got := len(preview.Agents); got != 1 {
-		t.Fatalf("expected 1 squad leader preview agent, got %d: %+v", got, preview.Agents)
+		t.Fatalf("expected 1 team leader preview agent, got %d: %+v", got, preview.Agents)
 	}
 	if preview.Agents[0].ID != leaderID {
 		t.Fatalf("preview leader id = %s, want %s", preview.Agents[0].ID, leaderID)
@@ -1354,42 +1354,42 @@ func TestPreviewCommentTriggers_AssignedSquadLeaderAndSuppress(t *testing.T) {
 		"suppress_agent_ids": []string{leaderID},
 	})
 	if got := countQueuedCommentTriggerTasks(t, issueID, leaderID); got != 0 {
-		t.Fatalf("suppressed squad leader queued tasks = %d, want 0", got)
+		t.Fatalf("suppressed team leader queued tasks = %d, want 0", got)
 	}
 }
 
-func TestPreviewCommentTriggers_MentionedSquadLeaderAndSuppress(t *testing.T) {
+func TestPreviewCommentTriggers_MentionedTeamLeaderAndSuppress(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
 
 	ctx := context.Background()
-	leaderID := createHandlerTestAgent(t, "Preview Mentioned Squad Leader", nil)
+	leaderID := createHandlerTestAgent(t, "Preview Mentioned Team Leader", nil)
 
-	var squadID string
+	var teamID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
+		INSERT INTO team (workspace_id, name, description, leader_id, creator_id)
 		VALUES ($1, $2, '', $3, $4)
 		RETURNING id
-	`, testWorkspaceID, "Preview Mentioned Trigger Squad", leaderID, testUserID).Scan(&squadID); err != nil {
-		t.Fatalf("create squad: %v", err)
+	`, testWorkspaceID, "Preview Mentioned Trigger Team", leaderID, testUserID).Scan(&teamID); err != nil {
+		t.Fatalf("create team: %v", err)
 	}
 	t.Cleanup(func() {
-		testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1`, squadID)
+		testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID)
 	})
 
-	issueID := createCommentTriggerPreviewIssue(t, "comment trigger mentioned squad", "", "")
-	content := fmt.Sprintf("[@Squad](mention://squad/%s) please take this", squadID)
+	issueID := createCommentTriggerPreviewIssue(t, "comment trigger mentioned team", "", "")
+	content := fmt.Sprintf("[@Team](mention://team/%s) please take this", teamID)
 
 	preview := previewCommentTriggersForTest(t, issueID, map[string]any{"content": content})
 	if got := len(preview.Agents); got != 1 {
-		t.Fatalf("expected 1 mentioned squad leader preview agent, got %d: %+v", got, preview.Agents)
+		t.Fatalf("expected 1 mentioned team leader preview agent, got %d: %+v", got, preview.Agents)
 	}
 	if preview.Agents[0].ID != leaderID {
 		t.Fatalf("preview leader id = %s, want %s", preview.Agents[0].ID, leaderID)
 	}
-	if preview.Agents[0].Source != string(commentTriggerSourceMentionSquadLeader) {
-		t.Fatalf("preview source = %q, want %q", preview.Agents[0].Source, commentTriggerSourceMentionSquadLeader)
+	if preview.Agents[0].Source != string(commentTriggerSourceMentionTeamLeader) {
+		t.Fatalf("preview source = %q, want %q", preview.Agents[0].Source, commentTriggerSourceMentionTeamLeader)
 	}
 
 	postCommentForTriggerPreviewTest(t, issueID, map[string]any{
@@ -1397,6 +1397,6 @@ func TestPreviewCommentTriggers_MentionedSquadLeaderAndSuppress(t *testing.T) {
 		"suppress_agent_ids": []string{leaderID},
 	})
 	if got := countQueuedCommentTriggerTasks(t, issueID, leaderID); got != 0 {
-		t.Fatalf("suppressed mentioned squad leader queued tasks = %d, want 0", got)
+		t.Fatalf("suppressed mentioned team leader queued tasks = %d, want 0", got)
 	}
 }

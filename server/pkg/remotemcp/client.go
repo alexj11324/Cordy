@@ -86,7 +86,7 @@ func hostAllowed(host string, policies []string) bool {
 }
 
 func isPublicAddress(address netip.Addr) bool {
-	if !address.IsValid() || address.IsPrivate() || address.IsLoopback() || address.IsLinkLocalUnicast() || address.IsLinkLocalPatchbayst() || address.IsPatchbayst() || address.IsUnspecified() {
+	if !address.IsValid() || address.IsPrivate() || address.IsLoopback() || address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast() || address.IsMulticast() || address.IsUnspecified() {
 		return false
 	}
 	// IANA special-purpose and metadata ranges not covered by netip's helpers.

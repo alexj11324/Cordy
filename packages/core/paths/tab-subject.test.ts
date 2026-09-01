@@ -13,7 +13,7 @@ describe("parseTabSubject", () => {
     ["/acme/projects", { kind: "page", page: "projects" }],
     ["/acme/autopilots", { kind: "page", page: "autopilots" }],
     ["/acme/agents", { kind: "page", page: "agents" }],
-    ["/acme/squads", { kind: "page", page: "squads" }],
+    ["/acme/teams", { kind: "page", page: "teams" }],
     ["/acme/usage", { kind: "page", page: "usage" }],
     ["/acme/runtimes", { kind: "page", page: "runtimes" }],
     ["/acme/skills", { kind: "page", page: "skills" }],
@@ -35,7 +35,7 @@ describe("parseTabSubject", () => {
     // Actors
     ["/acme/agents/ag1", { kind: "actor", actorType: "agent", id: "ag1" }],
     ["/acme/members/m1", { kind: "actor", actorType: "member", id: "m1" }],
-    ["/acme/squads/sq1", { kind: "actor", actorType: "squad", id: "sq1" }],
+    ["/acme/teams/tm1", { kind: "actor", actorType: "team", id: "tm1" }],
     // Flow — /new must win over the actor detail pattern
     ["/acme/agents/new", { kind: "flow", flow: "create-agent" }],
     // Runtime machine vs nested runtime

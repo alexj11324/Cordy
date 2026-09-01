@@ -41,7 +41,7 @@ describe("bucketDiagnosticPath", () => {
     expect(bucketDiagnosticPath("/acme/autopilots/ap-7")).toBe("/:slug/autopilots/:id");
     expect(bucketDiagnosticPath("/acme/agents/agt_9")).toBe("/:slug/agents/:id");
     expect(bucketDiagnosticPath("/acme/members/m-3")).toBe("/:slug/members/:id");
-    expect(bucketDiagnosticPath("/acme/squads/sq.4")).toBe("/:slug/squads/:id");
+    expect(bucketDiagnosticPath("/acme/teams/tm.4")).toBe("/:slug/teams/:id");
     expect(bucketDiagnosticPath("/acme/runtimes/machine-1")).toBe("/:slug/runtimes/:id");
     expect(bucketDiagnosticPath("/acme/skills/skl_123")).toBe("/:slug/skills/:id");
     expect(bucketDiagnosticPath("/acme/attachments/att-8/preview")).toBe(
@@ -59,7 +59,7 @@ describe("bucketDiagnosticPath", () => {
       ["/acme/projects/p1", "/:slug/projects/:id"],
       ["/acme/skills/skl_123", "/:slug/skills/:id"],
       ["/acme/agents/my-favourite-agent", "/:slug/agents/:id"],
-      ["/acme/squads/Platform Team", "/:slug/squads/:id"],
+      ["/acme/teams/Platform Team", "/:slug/teams/:id"],
       ["/acme/issues/new", "/:slug/issues/:id"],
     ] as const) {
       expect(bucketDiagnosticPath(path)).toBe(expected);

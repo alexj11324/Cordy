@@ -15,7 +15,7 @@ export const SOURCE_BACKFILL_MAX_DISMISSALS = 3;
 
 /**
  * Minimum number of issues completed by an AI assignee (agent or
- * squad) in the current workspace before the source prompt may open.
+ * team) in the current workspace before the source prompt may open.
  *
  * Source is not asked during onboarding at all — attribution is a
  * zero-payoff question for the user, so we wait until Patchbay has

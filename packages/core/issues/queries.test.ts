@@ -407,7 +407,7 @@ describe("projectGanttIssuesOptions", () => {
 
     const agentsTab = projectGanttIssuesOptions(WS_ID, PROJECT_ID, [
       "agent",
-      "squad",
+      "team",
     ]);
     await qc.fetchQuery(agentsTab);
 
@@ -415,7 +415,7 @@ describe("projectGanttIssuesOptions", () => {
       expect.objectContaining({
         project_id: PROJECT_ID,
         scheduled: true,
-        assignee_types: ["agent", "squad"],
+        assignee_types: ["agent", "team"],
       }),
     );
     // Distinct tabs must not share a cache entry.

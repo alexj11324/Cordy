@@ -13,7 +13,7 @@ An issue is Patchbay's basic unit for organizing work: a feature, a bug, an inve
 |---|---|
 | **Title and description** | Goal, background, requirements, and acceptance criteria. |
 | **Status and priority** | Where the work stands and what to handle first. |
-| **Assignee** | A workspace member, an agent, or a squad. |
+| **Assignee** | A workspace member, an agent, or a team. |
 | **Dates, labels, and custom properties** | Planning, categorization, and your team's own fields. |
 | **Project and parent-child relationships** | Fits into a larger body of work, or splits into sub-issues. |
 | **Activity and execution log** | Comments, status changes, tasks, and results returned by agents. |
@@ -32,11 +32,11 @@ Each issue has a number, such as `MUL-123`. The digits increment within the work
 |---|---|
 | **Member** | That member owns the follow-up; no task is created. |
 | **Agent** | A task is created for that agent. |
-| **Squad** | The squad leader receives it and decides who handles it. |
+| **Team** | The team leader receives it and decides who handles it. |
 
-When assigned to an agent or a squad, the issue enqueues immediately unless it is in `backlog`; if the runtime is offline, the task waits in the queue. Archived agents and squads cannot be assigned.
+When assigned to an agent or a team, the issue enqueues immediately unless it is in `backlog`; if the runtime is offline, the task waits in the queue. Archived agents and teams cannot be assigned.
 
-Assignment does not bypass an agent's Access; when assigning to a squad, the leader's Access is what gets checked. See [Assign issues to agents](/assigning-issues).
+Assignment does not bypass an agent's Access; when assigning to a team, the leader's Access is what gets checked. See [Assign issues to agents](/assigning-issues).
 
 ## Status
 

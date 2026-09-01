@@ -51,7 +51,7 @@ type fakeQuickCreate struct {
 	workspaceID pgtype.UUID
 	requesterID pgtype.UUID
 	agentID     pgtype.UUID
-	squadID     pgtype.UUID
+	teamID     pgtype.UUID
 	prompt      string
 }
 
@@ -77,12 +77,12 @@ func (f *fakeSlashControlStarter) ClearSlackDMContext(_ context.Context, _ engin
 	return f.err
 }
 
-func (f *fakeQuickCreate) EnqueueQuickCreateTask(_ context.Context, workspaceID, requesterID, agentID, squadID pgtype.UUID, prompt, _, _ string, _, _ pgtype.UUID, _ []pgtype.UUID) (db.AgentTaskQueue, error) {
+func (f *fakeQuickCreate) EnqueueQuickCreateTask(_ context.Context, workspaceID, requesterID, agentID, teamID pgtype.UUID, prompt, _, _ string, _, _ pgtype.UUID, _ []pgtype.UUID) (db.AgentTaskQueue, error) {
 	f.calls++
 	f.workspaceID = workspaceID
 	f.requesterID = requesterID
 	f.agentID = agentID
-	f.squadID = squadID
+	f.teamID = teamID
 	f.prompt = prompt
 	return f.task, f.err
 }
@@ -176,8 +176,8 @@ func TestSlashHandle_EnqueuesQuickCreateAndAcks(t *testing.T) {
 	if tasks.requesterID != slashTestUUID(9) {
 		t.Errorf("quick-create requester is not the bound member")
 	}
-	if tasks.squadID.Valid {
-		t.Errorf("slash-command quick-create must not carry a squad id")
+	if tasks.teamID.Valid {
+		t.Errorf("slash-command quick-create must not carry a team id")
 	}
 }
 

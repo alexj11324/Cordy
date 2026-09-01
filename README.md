@@ -54,7 +54,7 @@ issue — so nobody reconstructs context, and nothing ships without a human sayi
 
 - **[26 agent CLIs](#runtimes) →** Claude Code, Codex, Cursor, Copilot, Kimi, OpenCode, and more.
 - **[Agents as teammates](https://patchbay.ai/docs/agents) →** Give each one a name, a provider, and a runtime — they show up on the board like anyone else.
-- **[Squads](https://patchbay.ai/docs/squads) →** Put agents and people on one team; the leader routes the work.
+- **[Teams](https://patchbay.ai/docs/teams) →** Put agents and people on one team; the leader routes the work.
 - **[Skills](https://patchbay.ai/docs/skills) →** Turn a solved problem into a playbook every agent reuses.
 - **[Your own runtime](https://patchbay.ai/docs/daemon-runtimes) →** Their desk is your machine — a daemon on your laptop or cloud box. Code never leaves it.
 

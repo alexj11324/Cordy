@@ -532,19 +532,19 @@ func TestUpdateComment_AutopilotAuthorityReStampedToEditingTask(t *testing.T) {
 	})
 }
 
-// TestCreateComment_AutopilotWorkerResultWakesSquadLeader locks the review's
+// TestCreateComment_AutopilotWorkerResultWakesTeamLeader locks the review's
 // accepted behavior: effectiveInvoker() lets the autopilot-creator authority reach
-// the plain (non-@mention) assigned-squad-leader fallback too, so a worker's
-// result comment on the autopilot issue can still wake the private squad leader
+// the plain (non-@mention) assigned-team-leader fallback too, so a worker's
+// result comment on the autopilot issue can still wake the private team leader
 // and close the leader -> worker -> leader loop under the autopilot chain.
-func TestCreateComment_AutopilotWorkerResultWakesSquadLeader(t *testing.T) {
+func TestCreateComment_AutopilotWorkerResultWakesTeamLeader(t *testing.T) {
 	if testHandler == nil || testPool == nil {
 		t.Skip("database not available")
 	}
 	ctx := context.Background()
 	runtimeID := handlerTestRuntimeID(t)
 
-	// Private squad leader owned by the autopilot creator; the worker is a distinct
+	// Private team leader owned by the autopilot creator; the worker is a distinct
 	// seeded agent so the leader self-trigger guard does not apply.
 	leaderID, ownerID, _ := privateAgentTestFixture(t)
 	var workerID string
@@ -557,27 +557,27 @@ func TestCreateComment_AutopilotWorkerResultWakesSquadLeader(t *testing.T) {
 	var autopilotID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO autopilot (workspace_id, title, assignee_id, execution_mode, created_by_type, created_by_id)
-		VALUES ($1, 'MUL-4857 squad', $2, 'create_issue', 'member', $3) RETURNING id
+		VALUES ($1, 'MUL-4857 team', $2, 'create_issue', 'member', $3) RETURNING id
 	`, testWorkspaceID, leaderID, ownerID).Scan(&autopilotID); err != nil {
 		t.Fatalf("create autopilot: %v", err)
 	}
 	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM autopilot WHERE id = $1`, autopilotID) })
 
-	var squadID string
+	var teamID string
 	if err := testPool.QueryRow(ctx, `
-		INSERT INTO squad (workspace_id, name, description, leader_id, creator_id)
-		VALUES ($1, 'MUL-4857 Squad', '', $2, $3) RETURNING id
-	`, testWorkspaceID, leaderID, ownerID).Scan(&squadID); err != nil {
-		t.Fatalf("create squad: %v", err)
+		INSERT INTO team (workspace_id, name, description, leader_id, creator_id)
+		VALUES ($1, 'MUL-4857 Team', '', $2, $3) RETURNING id
+	`, testWorkspaceID, leaderID, ownerID).Scan(&teamID); err != nil {
+		t.Fatalf("create team: %v", err)
 	}
-	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM squad WHERE id = $1`, squadID) })
+	t.Cleanup(func() { testPool.Exec(context.Background(), `DELETE FROM team WHERE id = $1`, teamID) })
 
 	var issueID string
 	if err := testPool.QueryRow(ctx, `
 		INSERT INTO issue (workspace_id, creator_type, creator_id, title, assignee_type, assignee_id, number, origin_type, origin_id)
-		VALUES ($1, 'agent', $2, 'MUL-4857 squad issue', 'squad', $3, $4, 'autopilot', $5) RETURNING id
-	`, testWorkspaceID, leaderID, squadID, nextWorkspaceIssueNumber(t), autopilotID).Scan(&issueID); err != nil {
-		t.Fatalf("create squad issue: %v", err)
+		VALUES ($1, 'agent', $2, 'MUL-4857 team issue', 'team', $3, $4, 'autopilot', $5) RETURNING id
+	`, testWorkspaceID, leaderID, teamID, nextWorkspaceIssueNumber(t), autopilotID).Scan(&issueID); err != nil {
+		t.Fatalf("create team issue: %v", err)
 	}
 	t.Cleanup(func() {
 		testPool.Exec(context.Background(), `DELETE FROM agent_task_queue WHERE issue_id = $1`, issueID)
@@ -609,7 +609,7 @@ func TestCreateComment_AutopilotWorkerResultWakesSquadLeader(t *testing.T) {
 		t.Fatalf("count leader tasks: %v", err)
 	}
 	if leaderTasks != 1 {
-		t.Fatalf("expected the private squad leader to be woken once via autopilot-creator authority, got %d", leaderTasks)
+		t.Fatalf("expected the private team leader to be woken once via autopilot-creator authority, got %d", leaderTasks)
 	}
 }
 

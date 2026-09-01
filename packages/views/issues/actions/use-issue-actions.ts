@@ -174,7 +174,7 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
       parent_issue_id: issueId,
       parent_issue_identifier: issueIdentifier,
       ...(issueProjectId ? { project_id: issueProjectId } : {}),
-      // Inherit the parent's assignee (member/agent/squad) so a sub-issue
+      // Inherit the parent's assignee (member/agent/team) so a sub-issue
       // created from the "Add sub-issue" entry starts with the same owner
       // (discussion #1728). The modal keys off whether these fields are
       // present, not their value, so a seed overrides the sticky last-used

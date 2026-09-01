@@ -124,7 +124,7 @@ export function issueMatchesListFilter(
     else if (issue.project_id !== filter.project_id) return false;
   }
   if (filter.involves_user_id !== undefined) {
-    // Indirect-assignee predicate (owned agents / squads) — server-only.
+    // Indirect-assignee predicate (owned agents / teams) — server-only.
     unknown = true;
   }
 

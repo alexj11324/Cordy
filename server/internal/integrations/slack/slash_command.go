@@ -74,7 +74,7 @@ type slashQueries interface {
 // command needs to hand the invoker's prompt to the agent. *service.TaskService
 // satisfies it; tests supply a fake.
 type quickCreateEnqueuer interface {
-	EnqueueQuickCreateTask(ctx context.Context, workspaceID, requesterID, agentID, squadID pgtype.UUID, prompt, priority, dueDate string, projectID, parentIssueID pgtype.UUID, attachmentIDs []pgtype.UUID) (db.AgentTaskQueue, error)
+	EnqueueQuickCreateTask(ctx context.Context, workspaceID, requesterID, agentID, teamID pgtype.UUID, prompt, priority, dueDate string, projectID, parentIssueID pgtype.UUID, attachmentIDs []pgtype.UUID) (db.AgentTaskQueue, error)
 }
 
 type slashControlStarter interface {
@@ -269,14 +269,14 @@ func (p *SlashCommandProcessor) process(ctx context.Context, cmd slack.SlashComm
 	// Hand the raw natural-language prompt to the installation's agent as a
 	// quick-create task; the agent authors the well-formed issue in the
 	// background and attributes it to the bound member. No project / parent /
-	// attachments and no squad routing — the slash command targets the
+	// attachments and no team routing — the slash command targets the
 	// installation's own agent directly.
 	if _, err := p.tasks.EnqueueQuickCreateTask(
 		ctx,
 		inst.WorkspaceID,
 		userID,
 		inst.AgentID,
-		pgtype.UUID{}, // no squad — dispatch straight to the installation agent
+		pgtype.UUID{}, // no team — dispatch straight to the installation agent
 		prompt,
 		"",            // no explicit priority
 		"",            // no explicit due date

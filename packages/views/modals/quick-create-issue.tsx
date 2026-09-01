@@ -30,7 +30,7 @@ import { api, ApiError } from "@patchbay/core/api";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useCurrentWorkspace, useWorkspacePaths } from "@patchbay/core/paths";
 import { AppLink, resolveClickIntent } from "../navigation";
-import { agentListOptions, squadListOptions } from "@patchbay/core/workspace/queries";
+import { agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
 import { projectListOptions } from "@patchbay/core/projects/queries";
 import {
   useQuickCreateStore,
@@ -55,7 +55,7 @@ import {
   type Agent,
   type IssuePriority,
   type SourceContextPreview,
-  type Squad,
+  type Team,
 } from "@patchbay/core/types";
 import { ActorAvatar } from "../common/actor-avatar";
 import { ClearablePillButton, PillButton } from "../common/pill-button";
@@ -88,7 +88,7 @@ import { useIssueLimitUpgradePrompt } from "./use-issue-limit-upgrade-prompt";
 
 type ActorSelection =
   | { type: "agent"; id: string }
-  | { type: "squad"; id: string };
+  | { type: "team"; id: string };
 
 // AgentCreatePanel — agent-mode body of the create-issue dialog. Renders
 // only the inner content; the surrounding `<Dialog>` AND `<DialogContent>`
@@ -140,7 +140,7 @@ export function AgentCreatePanel({
   const userId = useAuthStore((s) => s.user?.id);
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
-  const { data: squads = [] } = useQuery(squadListOptions(wsId));
+  const { data: teams = [] } = useQuery(teamListOptions(wsId));
   // Pull `isSuccess` so the stale-id sweep below can distinguish "still
   // loading" from "loaded as empty". Reading length alone treats both as
   // empty and incorrectly clears a valid persisted preference on every open.
@@ -153,9 +153,9 @@ export function AgentCreatePanel({
     [members, userId],
   );
 
-  // Visible = not archived AND assignable by this user. Squads inherit
-  // their leader agent's reachability: the backend always routes a squad
-  // pick to the leader, so hiding squads whose leader isn't visible keeps
+  // Visible = not archived AND assignable by this user. Teams inherit
+  // their leader agent's reachability: the backend always routes a team
+  // pick to the leader, so hiding teams whose leader isn't visible keeps
   // the picker honest with what the server would actually accept.
   const visibleAgents = useMemo(
     () =>
@@ -171,12 +171,12 @@ export function AgentCreatePanel({
     () => new Set(visibleAgents.map((a) => a.id)),
     [visibleAgents],
   );
-  const visibleSquads = useMemo(
+  const visibleTeams = useMemo(
     () =>
-      squads.filter(
+      teams.filter(
         (s) => !s.archived_at && visibleAgentIds.has(s.leader_id),
       ),
-    [squads, visibleAgentIds],
+    [teams, visibleAgentIds],
   );
 
   const lastActorType = useQuickCreateStore((s) => s.lastActorType);
@@ -196,36 +196,36 @@ export function AgentCreatePanel({
   const setActiveMode = useIssueDraftStore((s) => s.setActiveMode);
   const clearDraft = useIssueDraftStore((s) => s.clearDraft);
 
-  // Resolve a candidate actor against the currently-visible agents / squads.
+  // Resolve a candidate actor against the currently-visible agents / teams.
   // Returns null when the candidate doesn't exist in this workspace right
   // now (deleted, archived, permission revoked, etc.) so callers can fall
   // through to the next seed in the chain.
   const resolveActor = useCallback(
     (
-      type: QuickCreateActorType | "agent" | "squad" | null | undefined,
+      type: QuickCreateActorType | "agent" | "team" | null | undefined,
       id: string | null | undefined,
     ): ActorSelection | null => {
       if (!type || !id) return null;
-      if (type === "squad" && visibleSquads.some((s) => s.id === id)) {
-        return { type: "squad", id };
+      if (type === "team" && visibleTeams.some((s) => s.id === id)) {
+        return { type: "team", id };
       }
       if (type === "agent" && visibleAgentIds.has(id)) {
         return { type: "agent", id };
       }
       return null;
     },
-    [visibleSquads, visibleAgentIds],
+    [visibleTeams, visibleAgentIds],
   );
 
   const seedActor = useCallback((): ActorSelection | null => {
     // Caller-provided seed wins (e.g. shell pre-seeds with `agent_id` /
-    // `squad_id`), then the persisted agent draft, the last successful pick,
+    // `team_id`), then the persisted agent draft, the last successful pick,
     // and finally the first visible agent.
     const dataAgent = data?.agent_id as string | undefined;
-    const dataSquad = data?.squad_id as string | undefined;
+    const dataTeam = data?.team_id as string | undefined;
     return (
       resolveActor("agent", dataAgent) ||
-      resolveActor("squad", dataSquad) ||
+      resolveActor("team", dataTeam) ||
       resolveActor(draft.agent.actorType, draft.agent.actorId) ||
       resolveActor(lastActorType, lastActorId) ||
       (visibleAgents[0]
@@ -235,7 +235,7 @@ export function AgentCreatePanel({
   }, [
     resolveActor,
     data?.agent_id,
-    data?.squad_id,
+    data?.team_id,
     draft.agent.actorType,
     draft.agent.actorId,
     lastActorType,
@@ -254,15 +254,15 @@ export function AgentCreatePanel({
   const selectedAgent = useMemo<Agent | undefined>(() => {
     if (!actor) return undefined;
     if (actor.type === "agent") return visibleAgents.find((a) => a.id === actor.id);
-    const squad = visibleSquads.find((s) => s.id === actor.id);
-    if (!squad) return undefined;
-    return visibleAgents.find((a) => a.id === squad.leader_id);
-  }, [actor, visibleAgents, visibleSquads]);
+    const team = visibleTeams.find((s) => s.id === actor.id);
+    if (!team) return undefined;
+    return visibleAgents.find((a) => a.id === team.leader_id);
+  }, [actor, visibleAgents, visibleTeams]);
 
-  const selectedSquad = useMemo<Squad | undefined>(() => {
-    if (actor?.type !== "squad") return undefined;
-    return visibleSquads.find((s) => s.id === actor.id);
-  }, [actor, visibleSquads]);
+  const selectedTeam = useMemo<Team | undefined>(() => {
+    if (actor?.type !== "team") return undefined;
+    return visibleTeams.find((s) => s.id === actor.id);
+  }, [actor, visibleTeams]);
 
   // Unfinished selections live in the shared issue-create draft. The
   // last-successful actor remains a separate fallback, so closing a draft
@@ -428,7 +428,7 @@ export function AgentCreatePanel({
             quick_create: {
               ...(actor.type === "agent"
                 ? { agent_id: actor.id }
-                : { squad_id: actor.id }),
+                : { team_id: actor.id }),
               prompt: md,
               project_id: projectId ?? undefined,
               ...(priority !== "none" ? { priority } : {}),
@@ -440,7 +440,7 @@ export function AgentCreatePanel({
           await api.quickCreateIssue({
             ...(actor.type === "agent"
               ? { agent_id: actor.id }
-              : { squad_id: actor.id }),
+              : { team_id: actor.id }),
             prompt: md,
             project_id: projectId ?? undefined,
             ...(priority !== "none" ? { priority } : {}),
@@ -636,17 +636,17 @@ export function AgentCreatePanel({
           </div>
         </div>
 
-        {/* Actor picker — agents and squads in one searchable list. Squads
+        {/* Actor picker — agents and teams in one searchable list. Teams
             route to their leader agent on the backend; the leader runs the
-            quick-create flow with the squad's Operating Protocol layered
-            on top, so a squad pick is "ask this squad to file the issue". */}
+            quick-create flow with the team's Operating Protocol layered
+            on top, so a team pick is "ask this team to file the issue". */}
         <div className="px-5 pt-1 pb-2 shrink-0">
           <ActorPicker
             actor={actor}
             visibleAgents={visibleAgents}
-            visibleSquads={visibleSquads}
+            visibleTeams={visibleTeams}
             selectedAgent={selectedAgent}
-            selectedSquad={selectedSquad}
+            selectedTeam={selectedTeam}
             onPick={(next) => {
               setActor(next);
               setAgent({ actorType: next.type, actorId: next.id });
@@ -922,24 +922,24 @@ export function AgentCreatePanel({
 }
 
 // ActorPicker — the "Created by" trigger + searchable popover listing
-// agents and squads. Lives in this file (not under issues/components/pickers)
+// agents and teams. Lives in this file (not under issues/components/pickers)
 // because it composes the generic PropertyPicker with a quick-create-shaped
 // trigger styled to match the modal header row — promoting it would invite
 // reuse pressure on a UI that's deliberately tuned for this one surface.
 function ActorPicker({
   actor,
   visibleAgents,
-  visibleSquads,
+  visibleTeams,
   selectedAgent,
-  selectedSquad,
+  selectedTeam,
   onPick,
   t,
 }: {
   actor: ActorSelection | null;
   visibleAgents: Agent[];
-  visibleSquads: Squad[];
+  visibleTeams: Team[];
   selectedAgent: Agent | undefined;
-  selectedSquad: Squad | undefined;
+  selectedTeam: Team | undefined;
   onPick: (next: ActorSelection) => void;
   t: ReturnType<typeof useT<"modals">>["t"];
 }) {
@@ -951,14 +951,14 @@ function ActorPicker({
     () => visibleAgents.filter((a) => a.name.toLowerCase().includes(query) || matchesPinyin(a.name, query)),
     [visibleAgents, query],
   );
-  const filteredSquads = useMemo(
-    () => visibleSquads.filter((s) => s.name.toLowerCase().includes(query) || matchesPinyin(s.name, query)),
-    [visibleSquads, query],
+  const filteredTeams = useMemo(
+    () => visibleTeams.filter((s) => s.name.toLowerCase().includes(query) || matchesPinyin(s.name, query)),
+    [visibleTeams, query],
   );
 
-  const displayLabel = selectedSquad?.name ?? selectedAgent?.name;
-  const displayActor: ActorSelection | null = selectedSquad
-    ? { type: "squad", id: selectedSquad.id }
+  const displayLabel = selectedTeam?.name ?? selectedAgent?.name;
+  const displayActor: ActorSelection | null = selectedTeam
+    ? { type: "team", id: selectedTeam.id }
     : selectedAgent
       ? { type: "agent", id: selectedAgent.id }
       : null;
@@ -993,7 +993,7 @@ function ActorPicker({
         </span>
       }
     >
-      {filteredAgents.length === 0 && filteredSquads.length === 0 ? (
+      {filteredAgents.length === 0 && filteredTeams.length === 0 ? (
         query ? (
           <PickerEmpty />
         ) : (
@@ -1020,18 +1020,18 @@ function ActorPicker({
               ))}
             </PickerSection>
           )}
-          {filteredSquads.length > 0 && (
-            <PickerSection label={t(($) => $.create_issue.agent.squads_group)}>
-              {filteredSquads.map((s) => (
+          {filteredTeams.length > 0 && (
+            <PickerSection label={t(($) => $.create_issue.agent.teams_group)}>
+              {filteredTeams.map((s) => (
                 <PickerItem
                   key={s.id}
-                  selected={actor?.type === "squad" && actor.id === s.id}
+                  selected={actor?.type === "team" && actor.id === s.id}
                   onClick={() => {
-                    onPick({ type: "squad", id: s.id });
+                    onPick({ type: "team", id: s.id });
                     setOpen(false);
                   }}
                 >
-                  <ActorAvatar actorType="squad" actorId={s.id} size="sm" />
+                  <ActorAvatar actorType="team" actorId={s.id} size="sm" />
                   <span className="truncate">{s.name}</span>
                 </PickerItem>
               ))}
