@@ -157,6 +157,7 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
   } | null>(null);
   const [status, setStatus] = useState("pending");
   const [verifyCode, setVerifyCode] = useState("");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const existing = data?.installations.find(
     (item) =>
       (agentId ? item.agent_id === agentId : item.agent_id === null) &&
@@ -170,6 +171,7 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
       .beginWeixinInstall(wsId, agentId)
       .then((value) => {
         if (!cancelled) {
+          setErrorMessage(null);
           setSession({
             id: value.session_id,
             qr: value.qr_code_content ?? value.qr_code_url,
@@ -180,12 +182,12 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
       .catch((error: unknown) => {
         if (!cancelled) {
           const detail = providerErrorDetail(error);
+          const message = detail
+            ? t(($) => $.weixin.connect_failed_detail, { details: detail })
+            : t(($) => $.weixin.connect_failed);
           setStatus("error");
-          toast.error(
-            detail
-              ? t(($) => $.weixin.connect_failed_detail, { details: detail })
-              : t(($) => $.weixin.connect_failed),
-          );
+          setErrorMessage(message);
+          toast.error(message);
         }
       });
     return () => {
@@ -222,7 +224,7 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
         if (!cancelled) {
           const detail = providerErrorDetail(error);
           setStatus("error");
-          toast.error(
+          setErrorMessage(
             detail
               ? t(($) => $.weixin.connect_failed_detail, { details: detail })
               : t(($) => $.weixin.connect_failed),
@@ -300,6 +302,7 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
           setSession(null);
           setStatus("pending");
           setVerifyCode("");
+          setErrorMessage(null);
           setOpen(true);
         }}
       >
@@ -334,6 +337,11 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
             <p className="text-caption text-muted-foreground">
               {t(($) => $.weixin.status, { status: statusLabel })}
             </p>
+            {errorMessage ? (
+              <p className="text-caption text-destructive" role="alert">
+                {errorMessage}
+              </p>
+            ) : null}
             {status === "need_verify_code" ? (
               <Input
                 value={verifyCode}

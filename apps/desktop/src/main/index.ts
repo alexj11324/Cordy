@@ -17,6 +17,7 @@ import {
   readDesktopCallbackProtocol,
   registerDesktopProtocolClients,
 } from "./protocol-registration";
+import { installContextMenu } from "./context-menu";
 import { handleAppShortcut } from "./keyboard-shortcuts";
 import { installNavigationGestures } from "./navigation-gestures";
 import { installNavigationGuard } from "./navigation-guard";
