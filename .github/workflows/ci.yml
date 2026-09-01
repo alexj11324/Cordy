@@ -191,15 +191,16 @@ jobs:
       - name: Decide
         id: decide
         # Frontend and installer workers run automatically for relevant PRs
-        # and for pushes. Rust workers are independent of paths and can be
-        # enabled only by explicitly selecting run_rust in workflow_dispatch.
+        # and for pushes. Rust workers run when a maintainer explicitly opts
+        # in on a manual run, and always run for version-tag pushes so a
+        # production release cannot pass through a partial validation path.
         # The stable frontend/backend aggregate checks distinguish intentional
         # path/manual skips from a failed classifier or missing worker.
         env:
           EVENT_NAME: ${{ github.event_name }}
           FRONTEND_CHANGED: ${{ steps.filter.outputs.frontend }}
           INSTALLER_CHANGED: ${{ steps.filter.outputs.installer }}
-          RUN_RUST: ${{ github.event_name == 'workflow_dispatch' && inputs.run_rust == true }}
+          RUN_RUST: ${{ (github.event_name == 'workflow_dispatch' && inputs.run_rust == true) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) }}
         run: |
           if [ "$EVENT_NAME" != "pull_request" ] || [ "$FRONTEND_CHANGED" = "true" ]; then
             echo "frontend=true" >> "$GITHUB_OUTPUT"
