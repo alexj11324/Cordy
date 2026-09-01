@@ -87,6 +87,12 @@ pub async fn delete_project(
                    SELECT id FROM linear_project_binding
                    WHERE patchbay_project_id = $1 AND workspace_id = $2
                )
+           ), deleted_linear_conflicts AS (
+               DELETE FROM linear_sync_conflict
+               WHERE binding_id IN (
+                   SELECT id FROM linear_project_binding
+                   WHERE patchbay_project_id = $1 AND workspace_id = $2
+               )
            ), deleted_linear_links AS (
                DELETE FROM linear_issue_link
                WHERE binding_id IN (
