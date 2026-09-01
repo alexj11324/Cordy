@@ -1395,9 +1395,7 @@ impl LinearSyncWorker {
                         },
                     )
                     .await
-                    .map_err(|error| {
-                        classify_external_error(error, "apply merged Linear Issue")
-                    })?,
+                    .map_err(|error| classify_external_error(error, "apply merged Linear Issue"))?,
             )
         } else {
             None
@@ -1461,7 +1459,10 @@ impl LinearSyncWorker {
             }
             transaction.commit().await.map_err(SyncError::retry)?;
             if let Some(applied) = &applied {
-                self.state.issues.publish_external_issue_apply(applied).await;
+                self.state
+                    .issues
+                    .publish_external_issue_apply(applied)
+                    .await;
             }
             return Ok(());
         }
@@ -1487,7 +1488,10 @@ impl LinearSyncWorker {
         }
         transaction.commit().await.map_err(SyncError::retry)?;
         if let Some(applied) = &applied {
-            self.state.issues.publish_external_issue_apply(applied).await;
+            self.state
+                .issues
+                .publish_external_issue_apply(applied)
+                .await;
         }
         Ok(())
     }
