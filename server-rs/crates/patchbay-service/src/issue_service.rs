@@ -317,6 +317,8 @@ impl IssueService {
         let workspace_id = updated.workspace_id;
         let source = applied.source;
         let source_event_id = &applied.source_event_id;
+        let executor_changed = previous.executor_type != updated.executor_type
+            || previous.executor_id != updated.executor_id;
         let prefix = get_workspace(&self.pool, workspace_id)
             .await
             .ok()
@@ -335,8 +337,7 @@ impl IssueService {
                 "source_event_id": source_event_id,
                 "owner_changed": previous.owner_type != updated.owner_type
                     || previous.owner_id != updated.owner_id,
-                "executor_changed": previous.executor_type != updated.executor_type
-                    || previous.executor_id != updated.executor_id,
+                "executor_changed": executor_changed,
                 "status_changed": previous.status != updated.status,
                 "priority_changed": previous.priority != updated.priority,
                 "project_changed": previous.project_id != updated.project_id,
@@ -364,7 +365,7 @@ impl IssueService {
                     issue: updated.clone(),
                     prev_status: previous.status.clone(),
                     is_create: false,
-                    executor_changed: false,
+                    executor_changed,
                     status_changed: previous.status != updated.status,
                 },
                 IssueTriggerProbe {

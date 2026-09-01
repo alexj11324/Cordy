@@ -120,7 +120,14 @@ pub async fn upsert_connection(
     connection: &LinearConnectionInput<'_>,
 ) -> anyhow::Result<LinearConnection> {
     Ok(sqlx::query_as::<_, LinearConnection>(
-        r#"WITH deleted_agent_sessions AS (
+        r#"WITH deleted_inbox AS (
+               DELETE FROM linear_sync_inbox
+               WHERE connection_id IN (
+                   SELECT id
+                   FROM linear_connection
+                   WHERE workspace_id = $2 AND organization_id <> $3
+               )
+           ), deleted_agent_sessions AS (
                DELETE FROM linear_agent_session
                WHERE workspace_id = $2
                  AND connection_id IN (

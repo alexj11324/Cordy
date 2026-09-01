@@ -381,6 +381,18 @@ fn agent_label_ids_for_issue(
         }
     }
 
+    if executor_type == Some("agent") && executor_id.is_some() && desired_label_id.is_none() {
+        let default_agent_id = mapping
+            .get("default_agent_id")
+            .and_then(Value::as_str)
+            .and_then(|value| value.parse::<Uuid>().ok());
+        if default_agent_id != executor_id {
+            return Err(SyncError::permanent(anyhow::anyhow!(
+                "Patchbay Agent has no label mapping for this Linear binding"
+            )));
+        }
+    }
+
     let mut label_ids = existing_labels
         .iter()
         .map(|label| label.id.clone())
@@ -557,11 +569,13 @@ impl LinearSyncWorker {
 
     async fn finish_inbox_row(&self, row: LinearSyncInbox, worker_id: &str) -> anyhow::Result<()> {
         let renew_cancel = CancellationToken::new();
+        let lease_lost = CancellationToken::new();
         let renew_task = {
             let pool = self.state.pool.clone();
             let inbox_id = row.id;
             let worker_id = worker_id.to_string();
             let cancel = renew_cancel.clone();
+            let lost = lease_lost.clone();
             tokio::spawn(async move {
                 let mut interval = tokio::time::interval(Duration::from_secs(20));
                 loop {
@@ -581,6 +595,7 @@ impl LinearSyncWorker {
                                         worker_id,
                                         "Linear Inbox lease renewal lost ownership"
                                     );
+                                    lost.cancel();
                                     return;
                                 }
                                 Err(error) => tracing::warn!(
@@ -595,7 +610,12 @@ impl LinearSyncWorker {
                 }
             })
         };
-        let result = self.process_row(&row).await;
+        let result = tokio::select! {
+            result = self.process_row(&row, worker_id) => result,
+            _ = lease_lost.cancelled() => Err(SyncError::retry(anyhow::anyhow!(
+                "Linear Inbox processing lost its lease"
+            ))),
+        };
         renew_cancel.cancel();
         let _ = renew_task.await;
 
@@ -1205,7 +1225,7 @@ impl LinearSyncWorker {
         Ok(())
     }
 
-    async fn process_row(&self, row: &LinearSyncInbox) -> Result<(), SyncError> {
+    async fn process_row(&self, row: &LinearSyncInbox, worker_id: &str) -> Result<(), SyncError> {
         let connection =
             linear_q::get_connection_by_id_unscoped(&self.state.pool, row.connection_id)
                 .await
@@ -1228,9 +1248,13 @@ impl LinearSyncWorker {
             if row.event_type == "linear.agentSession.terminal"
                 || row.payload.get("linearAgentSessionTerminal").is_some()
             {
-                return self.process_agent_session_terminal(row, &connection).await;
+                return self
+                    .process_agent_session_terminal(row, &connection, worker_id)
+                    .await;
             }
-            return self.process_agent_session_event(row, &connection).await;
+            return self
+                .process_agent_session_event(row, &connection, worker_id)
+                .await;
         }
         if !self
             .state
@@ -1317,6 +1341,7 @@ impl LinearSyncWorker {
         &self,
         row: &LinearSyncInbox,
         connection: &LinearConnection,
+        worker_id: &str,
     ) -> Result<(), SyncError> {
         let event = parse_agent_session_event(&row.payload)?;
         let event_timestamp_ms = extract_event_timestamp_ms(&row.payload);
@@ -1482,6 +1507,13 @@ impl LinearSyncWorker {
         let same_delivery_with_task = existing_session.as_ref().is_some_and(|session| {
             session.last_event_id == row.delivery_id && session.task_id.is_some()
         });
+        if same_delivery_with_task
+            && existing_session
+                .as_ref()
+                .is_some_and(|session| matches!(session.status.as_str(), "queued" | "prompted"))
+        {
+            return Ok(());
+        }
 
         // Atomically reserve this non-terminal delivery before creating or
         // continuing a task. Terminal Inbox work observes `dispatching` and
@@ -1502,6 +1534,7 @@ impl LinearSyncWorker {
             event.requester_user_id.as_deref(),
             &row.delivery_id,
             event_timestamp_ms,
+            worker_id,
         )
         .await
         .map_err(SyncError::retry)?
@@ -1531,6 +1564,7 @@ impl LinearSyncWorker {
             agent_q::get_agent_task_in_workspace(&self.state.pool, task_id, connection.workspace_id)
                 .await
                 .map_err(SyncError::retry)?
+                .filter(|task| task.agent_id == agent_id)
         } else {
             None
         };
@@ -1563,13 +1597,17 @@ impl LinearSyncWorker {
         }
 
         let mut continuation_task_id = None;
-        if event.action == "prompted" && !same_delivery_with_task {
+        let event_context = event
+            .prompt_body
+            .as_deref()
+            .or(event.prompt_context.as_deref())
+            .map(str::trim)
+            .filter(|context| !context.is_empty());
+        let should_continue_existing =
+            event.action == "prompted" || (event.action == "created" && event_context.is_some());
+        if should_continue_existing && !same_delivery_with_task {
             if let Some(parent_task) = task.as_ref() {
-                let handoff = event
-                    .prompt_body
-                    .as_deref()
-                    .or(event.prompt_context.as_deref())
-                    .unwrap_or("Linear Agent Session prompt");
+                let handoff = event_context.unwrap_or("Linear Agent Session prompt");
                 let idempotency_key = format!(
                     "linear-agent-session:{}:{}",
                     event.session_id, row.delivery_id
@@ -1596,13 +1634,7 @@ impl LinearSyncWorker {
             let mut agent_issue = issue.clone();
             agent_issue.executor_type = Some("agent".to_string());
             agent_issue.executor_id = Some(agent_id);
-            let handoff = match event
-                .prompt_body
-                .as_deref()
-                .or(event.prompt_context.as_deref())
-                .map(str::trim)
-                .filter(|context| !context.is_empty())
-            {
+            let handoff = match event_context {
                 Some(context) => format!("{session_marker}\n\n{context}"),
                 None => session_marker.clone(),
             };
@@ -1672,6 +1704,7 @@ impl LinearSyncWorker {
             &event.session_id,
             &row.delivery_id,
             task_id,
+            worker_id,
         )
         .await
         .map_err(SyncError::retry)?;
@@ -1773,6 +1806,7 @@ impl LinearSyncWorker {
         &self,
         row: &LinearSyncInbox,
         connection: &LinearConnection,
+        worker_id: &str,
     ) -> Result<(), SyncError> {
         let event = parse_agent_session_terminal_event(&row.payload)?;
         let existing = linear_agent_q::get_linear_agent_session(
@@ -1791,7 +1825,7 @@ impl LinearSyncWorker {
         if existing.status == event.status && existing.last_event_id == row.delivery_id {
             return Ok(());
         }
-        if existing.status == "dispatching" {
+        if existing.status.starts_with("dispatching") {
             return Err(SyncError::retry(anyhow::anyhow!(
                 "Linear Agent Session dispatch is still being correlated"
             )));
@@ -1813,6 +1847,7 @@ impl LinearSyncWorker {
             &event.session_id,
             &row.delivery_id,
             event_timestamp_ms,
+            worker_id,
         )
         .await
         .map_err(SyncError::retry)?;
@@ -2493,16 +2528,22 @@ impl LinearSyncWorker {
                 connection.workspace_id,
             )
             .await
-            .map_err(SyncError::retry)?
-            .ok_or_else(|| {
-                SyncError::permanent(anyhow::anyhow!(
-                    "Linear Agent label maps to an unknown Patchbay Agent"
-                ))
-            })?;
-            if agent.archived_at.is_some() {
-                return Err(SyncError::permanent(anyhow::anyhow!(
-                    "Linear Agent label maps to an archived Patchbay Agent"
-                )));
+            .map_err(SyncError::retry)?;
+            if agent
+                .as_ref()
+                .map(|agent| agent.archived_at.is_some())
+                .unwrap_or(true)
+            {
+                tracing::warn!(
+                    workspace_id = %connection.workspace_id,
+                    connection_id = %connection.id,
+                    agent_id = %agent_id,
+                    "Linear Agent label maps to an unavailable Patchbay Agent; treating it as unassigned"
+                );
+                return Ok(AgentLabelDecision {
+                    configured: true,
+                    agent_id: None,
+                });
             }
         }
         Ok(decision)
@@ -3639,6 +3680,24 @@ mod tests {
         );
         assert_eq!(
             agent_label_ids_for_issue(&binding, None, None, &existing).unwrap(),
+            Some(vec!["bug".to_string()])
+        );
+
+        let unmapped_agent = Uuid::now_v7();
+        assert!(agent_label_ids_for_issue(
+            &binding,
+            Some("agent"),
+            Some(unmapped_agent),
+            &existing,
+        )
+        .unwrap_err()
+        .message()
+        .contains("no label mapping"));
+
+        binding.agent_label_mapping["default_agent_id"] = Value::String(unmapped_agent.to_string());
+        assert_eq!(
+            agent_label_ids_for_issue(&binding, Some("agent"), Some(unmapped_agent), &existing,)
+                .unwrap(),
             Some(vec!["bug".to_string()])
         );
 
