@@ -7,11 +7,22 @@ import { chromium, expect } from "@playwright/test";
 import { clerk, setupClerkTestingToken } from "@clerk/testing/playwright";
 
 import {
+  buildProductionSmokeDependencyPlan,
+  buildProductionSmokeGraphIdempotencyKey,
   buildGoogleOAuthProbeUrl,
   decodeClerkFrontendApi,
+  findProductionSmokeGraph,
+  findProductionSmokeParentIssue,
+  isExpectedBrowserRequestCancellation,
+  PRODUCTION_SMOKE_DEPENDENT_ACCEPTANCE,
+  PRODUCTION_SMOKE_DEPENDENT_TASK_TITLE,
+  PRODUCTION_SMOKE_PARENT_TITLE,
   requiredString,
   requireBrowserReceipt,
   requireGoogleOAuthNavigation,
+  requireNoDefaultExecutionAgent,
+  requireProductionSmokeGraph,
+  requireProductionSmokeGraphContract,
   requireProtectedNavigation,
 } from "./verify-production-browser-contract.mjs";
 
@@ -83,9 +94,11 @@ function observeApplicationFailures(page) {
     failures.push(`page error: ${error.message}`),
   );
   page.on("requestfailed", (request) => {
+    const failure = request.failure();
+    if (isExpectedBrowserRequestCancellation(failure?.errorText)) return;
     if (isFirstPartyUrl(request.url())) {
       failures.push(
-        `request failed: ${request.method()} ${request.url()} (${request.failure()?.errorText ?? "unknown"})`,
+        `request failed: ${request.method()} ${request.url()} (${failure?.errorText ?? "unknown"})`,
       );
     }
   });
@@ -95,18 +108,99 @@ function observeApplicationFailures(page) {
     }
   });
   page.on("console", (message) => {
+    const text = message.text();
+    if (
+      message.type() === "warning" &&
+      text.includes("API response failed schema validation")
+    ) {
+      failures.push(`schema validation warning: ${text}`);
+      return;
+    }
     if (message.type() !== "error") return;
     const source = message.location().url;
     if (!source || isFirstPartyUrl(source))
-      failures.push(`console error: ${message.text()}`);
+      failures.push(`console error: ${text}`);
   });
   return failures;
+}
+
+async function visibleReactQueryErrors(page) {
+  return page.locator('[role="alert"]').evaluateAll((alerts) => {
+    const summaries = [];
+    const describeError = (error) => {
+      if (error == null) return "null";
+      if (typeof error === "string") return error;
+      return `${error.name ?? error.constructor?.name ?? "Object"}: ${
+        error.message ?? String(error)
+      }`;
+    };
+    for (const alert of alerts) {
+      const fiberKey = Object.keys(alert).find((key) =>
+        key.startsWith("__reactFiber$"),
+      );
+      let fiber = fiberKey ? alert[fiberKey] : null;
+      for (let fiberDepth = 0; fiber && fiberDepth < 100; fiberDepth += 1) {
+        for (const branch of [fiber, fiber.alternate]) {
+          const client = branch?.memoizedProps?.client;
+          if (typeof client?.getQueryCache !== "function") continue;
+          for (const cachedQuery of client.getQueryCache().getAll()) {
+            if (!JSON.stringify(cachedQuery.queryKey).includes("dependency-graphs")) {
+              continue;
+            }
+            const state = cachedQuery.state;
+            summaries.push(
+              `cache ${JSON.stringify(cachedQuery.queryKey)} status=${String(
+                state.status,
+              )} fetchStatus=${String(
+                state.fetchStatus,
+              )} error=${describeError(
+                state.error,
+              )} fetchFailureCount=${String(
+                state.fetchFailureCount,
+              )} fetchFailureReason=${describeError(state.fetchFailureReason)}`,
+            );
+          }
+        }
+        const component =
+          fiber.elementType?.name ?? fiber.type?.name ?? `tag-${fiber.tag}`;
+        for (const [branchName, branch] of [
+          ["fiber", fiber],
+          ["alternate", fiber.alternate],
+        ]) {
+          let hook = branch?.memoizedState;
+          for (let hookDepth = 0; hook && hookDepth < 60; hookDepth += 1) {
+            const value = hook.memoizedState;
+            if (
+              value &&
+              typeof value === "object" &&
+              Object.prototype.hasOwnProperty.call(value, "isError")
+            ) {
+              summaries.push(
+                `${component}.${branchName}[${hookDepth}] status=${String(
+                  value.status,
+                )} fetchStatus=${String(value.fetchStatus)} isError=${String(
+                  value.isError,
+                )} error=${describeError(
+                  value.error,
+                )} failureCount=${String(
+                  value.failureCount,
+                )} failureReason=${describeError(value.failureReason)}`,
+              );
+            }
+            hook = hook.next;
+          }
+        }
+        fiber = fiber.return;
+      }
+    }
+    return summaries;
+  });
 }
 
 async function verifyProtectedRoute(
   page,
   failures,
-  { path, heading, landmark, expectedBuild },
+  { path, heading, landmark, expectedBuild, verifyContent },
 ) {
   const failureStart = failures.length;
   const response = await page.goto(`${BASE_URL}${path}`, {
@@ -128,10 +222,33 @@ async function verifyProtectedRoute(
     timeout: 30_000,
   });
   if (landmark) {
-    await expect(page.getByLabel(landmark, { exact: true })).toBeVisible({
-      timeout: 30_000,
-    });
+    try {
+      await expect(page.getByLabel(landmark, { exact: true })).toBeVisible({
+        timeout: 30_000,
+      });
+    } catch (error) {
+      const routeFailures = failures.slice(failureStart);
+      const alerts = await page
+        .getByRole("alert")
+        .allTextContents()
+        .catch(() => []);
+      const queryErrors = await visibleReactQueryErrors(page).catch(() => []);
+      const details = [
+        ...routeFailures,
+        ...queryErrors.map((message) => `query error: ${message}`),
+        ...alerts
+          .map((alert) => alert.trim())
+          .filter(Boolean)
+          .map((alert) => `visible alert: ${alert}`),
+      ];
+      if (details.length === 0) throw error;
+      throw new Error(
+        `${path} did not render ${landmark}:\n${details.join("\n")}`,
+        { cause: error },
+      );
+    }
   }
+  if (verifyContent) await verifyContent();
   const routeFailures = failures.slice(failureStart);
   if (routeFailures.length > 0) {
     throw new Error(
@@ -236,6 +353,10 @@ export async function verifyProductionBrowser(sourceSha, receipt) {
     await clerk.loaded({ page });
     await waitForPatchbayExchange(page, () => ticketSignIn(page, signInTicket));
 
+    const workspace = await ensureSmokeWorkspace(page);
+    assert.equal(workspace.slug, SMOKE_WORKSPACE);
+    const smokeGraph = await ensureSmokeDependencyGraph(page, workspace);
+
     const failures = observeApplicationFailures(page);
     await verifyProtectedRoute(page, failures, {
       path: `/${SMOKE_WORKSPACE}/issues`,
@@ -247,6 +368,8 @@ export async function verifyProductionBrowser(sourceSha, receipt) {
       heading: "Task Graph",
       landmark: "Dependency graph canvas",
       expectedBuild,
+      verifyContent: () =>
+        verifyProductionSmokeTaskGraph(page, smokeGraph.graph),
     });
   } catch (error) {
     await page
@@ -346,9 +469,9 @@ async function createTestingToken(secretKey) {
   return requiredString(value?.token, "Clerk testing token");
 }
 
-async function ensureSmokeWorkspace(page) {
+async function authenticatedBrowserResponse(page, path, init = {}) {
   return page.evaluate(
-    async ({ workspaceSlug }) => {
+    async ({ requestPath, requestInit }) => {
       const csrfToken = document.cookie
         .split("; ")
         .find((entry) => entry.startsWith("patchbay_csrf="))
@@ -358,56 +481,199 @@ async function ensureSmokeWorkspace(page) {
       if (!csrfToken) {
         throw new Error("Patchbay session did not issue a readable CSRF token");
       }
-      const request = async (path, init) => {
-        const response = await fetch(path, {
-          ...init,
-          credentials: "include",
-          headers: {
-            "content-type": "application/json",
-            "x-csrf-token": csrfToken,
-            ...init?.headers,
-          },
-        });
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({}));
-          const detail =
-            typeof body.message === "string"
-              ? body.message
-              : typeof body.error === "string"
-                ? body.error
-                : "";
-          const message = detail ? `: ${detail}` : "";
-          throw new Error(`${path} returned HTTP ${response.status}${message}`);
-        }
-        return response.json();
-      };
-      const workspaces = await request("/api/workspaces");
-      let workspace = workspaces.find(
-        (candidate) => candidate.slug === workspaceSlug,
-      );
-      let created = false;
-      if (!workspace) {
-        workspace = await request("/api/workspaces", {
-          method: "POST",
-          body: JSON.stringify({
-            name: "Production Smoke",
-            slug: workspaceSlug,
-            issue_prefix: "SMOKE",
-          }),
-        });
-        created = true;
-      }
-      await request("/api/me/onboarding/complete", {
-        method: "POST",
-        body: JSON.stringify({
-          completion_path: "skip_existing",
-          workspace_id: workspace.id,
-        }),
+      const response = await fetch(requestPath, {
+        ...requestInit,
+        credentials: "include",
+        headers: {
+          "content-type": "application/json",
+          "x-csrf-token": csrfToken,
+          ...requestInit.headers,
+        },
       });
-      return { created, slug: workspace.slug };
+      return {
+        ok: response.ok,
+        status: response.status,
+        body: await response.json().catch(() => ({})),
+      };
     },
-    { workspaceSlug: SMOKE_WORKSPACE },
+    { requestPath: path, requestInit: init },
   );
+}
+
+function requireAuthenticatedBrowserResponse(path, response) {
+  if (response?.ok === true) return response.body;
+  const detail =
+    typeof response?.body?.message === "string"
+      ? response.body.message
+      : typeof response?.body?.error === "string"
+        ? response.body.error
+        : "";
+  const message = detail ? `: ${detail}` : "";
+  throw new Error(
+    `${path} returned HTTP ${response?.status ?? "unknown"}${message}`,
+  );
+}
+
+async function authenticatedBrowserRequest(page, path, init = {}) {
+  const response = await authenticatedBrowserResponse(page, path, init);
+  return requireAuthenticatedBrowserResponse(path, response);
+}
+
+async function ensureSmokeWorkspace(page) {
+  const workspaces = await authenticatedBrowserRequest(page, "/api/workspaces");
+  if (!Array.isArray(workspaces)) {
+    throw new Error("workspace API returned an invalid response");
+  }
+  let workspace = workspaces.find(
+    (candidate) => candidate?.slug === SMOKE_WORKSPACE,
+  );
+  let created = false;
+  if (!workspace) {
+    workspace = await authenticatedBrowserRequest(page, "/api/workspaces", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Production Smoke",
+        slug: SMOKE_WORKSPACE,
+        issue_prefix: "SMOKE",
+      }),
+    });
+    created = true;
+  }
+  const id = requiredString(workspace?.id, "production smoke workspace id");
+  const slug = requiredString(
+    workspace?.slug,
+    "production smoke workspace slug",
+  );
+  await authenticatedBrowserRequest(page, "/api/me/onboarding/complete", {
+    method: "POST",
+    body: JSON.stringify({
+      completion_path: "skip_existing",
+      workspace_id: id,
+    }),
+  });
+  return { created, id, slug };
+}
+
+async function ensureSmokeDependencyGraph(page, workspace) {
+  const workspaceHeaders = { "x-workspace-slug": workspace.slug };
+  const existing = await findProductionSmokeGraph(async (cursor) => {
+    const query = new URLSearchParams({ limit: "64" });
+    if (cursor) query.set("cursor", cursor);
+    return authenticatedBrowserRequest(
+      page,
+      `/api/dependency-graphs?${query}`,
+      { headers: workspaceHeaders },
+    );
+  });
+  if (existing) {
+    requireProductionSmokeGraphContract(existing);
+    return { created: false, graph: existing };
+  }
+
+  const policies = await authenticatedBrowserRequest(
+    page,
+    "/api/issue-category-policies",
+    { headers: workspaceHeaders },
+  );
+  requireNoDefaultExecutionAgent(policies);
+
+  const parent = await ensureSmokeGraphParentIssue(page, workspaceHeaders);
+  const parentIssueId = requiredString(
+    parent?.id,
+    "production smoke graph parent issue id",
+  );
+  const graph = await authenticatedBrowserRequest(
+    page,
+    `/api/issues/${encodeURIComponent(parentIssueId)}/dependency-graph/apply`,
+    {
+      method: "POST",
+      headers: {
+        ...workspaceHeaders,
+        "idempotency-key": buildProductionSmokeGraphIdempotencyKey(
+          parentIssueId,
+          randomBytes(16).toString("hex"),
+        ),
+      },
+      body: JSON.stringify(buildProductionSmokeDependencyPlan(parentIssueId)),
+    },
+  );
+  requireProductionSmokeGraphContract(graph);
+  return { created: true, graph };
+}
+
+async function findSmokeGraphParentIssue(page, workspaceHeaders) {
+  const query = new URLSearchParams({
+    q: PRODUCTION_SMOKE_PARENT_TITLE,
+    top_level_only: "true",
+    open_only: "true",
+    limit: "100",
+  });
+  const response = await authenticatedBrowserRequest(
+    page,
+    `/api/issues?${query}`,
+    { headers: workspaceHeaders },
+  );
+  return findProductionSmokeParentIssue(response);
+}
+
+async function ensureSmokeGraphParentIssue(page, workspaceHeaders) {
+  const existing = await findSmokeGraphParentIssue(page, workspaceHeaders);
+  if (existing) return existing;
+
+  const path = "/api/issues";
+  const response = await authenticatedBrowserResponse(page, path, {
+    method: "POST",
+    headers: workspaceHeaders,
+    body: JSON.stringify({
+      title: PRODUCTION_SMOKE_PARENT_TITLE,
+      description:
+        "Stable parent issue for automated production task graph acceptance.",
+      status: "todo",
+      priority: "none",
+    }),
+  });
+  if (response.ok) return response.body;
+  if (response.status === 409) {
+    const racedParent = await findSmokeGraphParentIssue(page, workspaceHeaders);
+    if (racedParent) return racedParent;
+  }
+  return requireAuthenticatedBrowserResponse(path, response);
+}
+
+async function verifyProductionSmokeTaskGraph(page, graph) {
+  const contract = requireProductionSmokeGraphContract(graph);
+  const nodes = page.locator("[data-graph-node]");
+  const edges = page.locator(
+    '[data-graph-edge][data-edge-state="blocked"], [data-graph-edge][data-edge-state="satisfied"]',
+  );
+  requireProductionSmokeGraph({
+    nodeCount: await nodes.count(),
+    edgeCount: await edges.count(),
+  });
+  for (const edge of contract.edges) {
+    const accessibleName = `Dependency from ${edge.fromIdentifier} to ${edge.toIdentifier} — ${edge.stateLabel}`;
+    const renderedEdge = page.getByRole("button", {
+      name: accessibleName,
+      exact: true,
+    });
+    await expect(renderedEdge).toHaveCount(1, { timeout: 30_000 });
+    await expect(renderedEdge).toHaveAttribute("data-edge-state", edge.state, {
+      timeout: 30_000,
+    });
+  }
+  const dependentNode = nodes.filter({
+    hasText: PRODUCTION_SMOKE_DEPENDENT_TASK_TITLE,
+  });
+  await expect(dependentNode).toHaveCount(1, { timeout: 30_000 });
+  await expect(dependentNode.first()).toBeVisible({ timeout: 30_000 });
+  await expect(dependentNode.first()).toHaveAttribute(
+    "href",
+    `/${SMOKE_WORKSPACE}/issues/${encodeURIComponent(contract.dependentIdentifier)}`,
+  );
+  await dependentNode.first().click();
+  await expect(
+    page.getByText(PRODUCTION_SMOKE_DEPENDENT_ACCEPTANCE, { exact: true }),
+  ).toBeVisible({ timeout: 30_000 });
 }
 
 async function provisionProductionSmokeFixture() {
@@ -450,9 +716,11 @@ async function provisionProductionSmokeFixture() {
     await waitForPatchbayExchange(page, () => ticketSignIn(page, signInTicket));
     const workspace = await ensureSmokeWorkspace(page);
     assert.equal(workspace.slug, SMOKE_WORKSPACE);
+    const graph = await ensureSmokeDependencyGraph(page, workspace);
     return {
       userState,
       workspaceState: workspace.created ? "created" : "existing",
+      graphState: graph.created ? "created" : "existing",
     };
   } finally {
     await browser.close();
@@ -464,7 +732,7 @@ async function main() {
   if (first === "--provision") {
     const result = await provisionProductionSmokeFixture();
     console.log(
-      `production browser fixture ready (user: ${result.userState}, workspace: ${result.workspaceState})`,
+      `production browser fixture ready (user: ${result.userState}, workspace: ${result.workspaceState}, graph: ${result.graphState})`,
     );
     return;
   }
