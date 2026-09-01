@@ -94,15 +94,7 @@ async fn refresh_due_installations(
     .await?;
     stream::iter(rows)
         .for_each_concurrent(HEALTH_PROBE_CONCURRENCY, |row| async move {
-            refresh_installation(
-                pool,
-                client,
-                secret_box,
-                client_id,
-                client_secret,
-                row,
-            )
-            .await;
+            refresh_installation(pool, client, secret_box, client_id, client_secret, row).await;
         })
         .await;
     Ok(())
@@ -116,14 +108,15 @@ async fn refresh_installation(
     client_secret: &str,
     row: patchbay_db::models::ChannelInstallation,
 ) {
-    let cfg: patchbay_slack::config::InstallConfig =
-        match serde_json::from_value(row.config.clone()) {
-            Ok(value) => value,
-            Err(error) => {
-                tracing::warn!(%error, installation_id = %row.id, "invalid Slack installation config during token rotation");
-                return;
-            }
-        };
+    let cfg: patchbay_slack::config::InstallConfig = match serde_json::from_value(
+        row.config.clone(),
+    ) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(%error, installation_id = %row.id, "invalid Slack installation config during token rotation");
+            return;
+        }
+    };
     if cfg.transport != "webhook" {
         return;
     }

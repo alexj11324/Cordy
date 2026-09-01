@@ -544,11 +544,7 @@ mod tests {
             .await
             .expect("health persistence task should start");
         release.notify_waiters();
-        assert!(
-            tasks
-                .shutdown(std::time::Duration::from_millis(50))
-                .await
-        );
+        assert!(tasks.shutdown(std::time::Duration::from_millis(50)).await);
     }
 
     #[test]
