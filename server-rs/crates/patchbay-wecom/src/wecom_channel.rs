@@ -120,6 +120,7 @@ pub struct WecomChannel {
     /// connect can register itself on entry and clear on exit.
     senders: Option<Arc<SendersRegistry>>,
     generation: Arc<LeaseGeneration>,
+    runtime_health: Option<patchbay_channel::RuntimeHealthReporter>,
     /// The health sink. Never called directly — go through `metrics`, which is
     /// always a safe-to-call sink.
     metrics: Arc<dyn Metrics>,
@@ -183,6 +184,9 @@ impl Channel for WecomChannel {
         // Subscribe — auth the connection. Any error here yields the loop back
         // to the Supervisor for backoff + retry.
         subscribe(self, &ctx, &conn, &sender).await?;
+        if let Some(reporter) = &self.runtime_health {
+            reporter.healthy().await;
+        }
         tracing::info!(
             installation_id = %self.installation_id,
             bot_id = %self.bot_id,
@@ -694,6 +698,7 @@ fn new_wecom_factory(deps: ChannelDeps) -> Factory {
                 ws_url: deps.ws_url.clone(),
                 senders: deps.senders.clone(),
                 generation: cfg.generation.unwrap_or_else(LeaseGeneration::standalone),
+                runtime_health: cfg.runtime_health,
                 metrics: or_nop_metrics(deps.metrics.clone()),
             }) as BuiltChannel)
         })
@@ -899,6 +904,7 @@ mod tests {
             ws_url: String::new(),
             senders: None,
             generation: LeaseGeneration::standalone(),
+            runtime_health: None,
             metrics: Arc::new(crate::metrics::NopMetrics),
         }
     }
@@ -1192,6 +1198,7 @@ mod tests {
             id: Some(Uuid::now_v7()),
             handler: Some(InboundHandler::new(|_ctx, _msg| Box::pin(async { Ok(()) }))),
             generation: None,
+            runtime_health: None,
         };
         let built = rt.block_on(factory(cfg)).unwrap();
         assert_eq!(built.r#type(), crate::type_wecom());
@@ -1210,6 +1217,7 @@ mod tests {
             id: None,
             handler: None,
             generation: None,
+            runtime_health: None,
         };
         assert!(factory(cfg).await.is_err());
 
@@ -1224,6 +1232,7 @@ mod tests {
             id: None,
             handler: None,
             generation: None,
+            runtime_health: None,
         };
         let err = match factory(cfg).await {
             Ok(_) => panic!("expected factory error"),

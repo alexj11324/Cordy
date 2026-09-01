@@ -45,6 +45,8 @@ struct ProductionApp {
     channel_runtime: channel_runtime::ChannelRuntime,
     failure_monitor: patchbay_service::automation_failure_monitor::FailureMonitorRuntime,
     quota_reconciler: patchbay_service::automation_quota_reconciler::QuotaReconcilerRuntime,
+    hosted_installation_reconciler:
+        patchbay_service::hosted_installation_reconciler::HostedInstallationReconcilerRuntime,
     webhook_delivery: patchbay_handler::webhook_delivery_worker::WebhookDeliveryRuntime,
     linear_sync: patchbay_handler::linear_sync_worker::LinearSyncRuntime,
     coordinator: patchbay_service::coordination::CoordinatorRuntime,
@@ -519,6 +521,13 @@ async fn build_production_router(
             quota_metrics,
         )
         .start(root_cancel.child_token());
+    let hosted_installation_reconciler =
+        patchbay_service::hosted_installation_reconciler::HostedInstallationReconciler::new(
+            state.pool.clone(),
+            state.tasks.clone(),
+            patchbay_handler::config::resolved_messaging_mode(cfg) == "managed",
+        )
+        .start(root_cancel.child_token());
     let webhook_delivery = webhook_worker.start(root_cancel.child_token());
     let linear_sync = linear_worker.start(root_cancel.child_token());
     let channel_runtime = channel_runtime::ChannelRuntime::start(
@@ -545,6 +554,7 @@ async fn build_production_router(
         channel_runtime,
         failure_monitor,
         quota_reconciler,
+        hosted_installation_reconciler,
         webhook_delivery,
         linear_sync,
         coordinator,
@@ -768,6 +778,7 @@ async fn main() -> anyhow::Result<()> {
         channel_runtime,
         failure_monitor,
         quota_reconciler,
+        hosted_installation_reconciler,
         webhook_delivery,
         linear_sync,
         coordinator,
@@ -829,6 +840,7 @@ async fn main() -> anyhow::Result<()> {
     let (
         failure_shutdown,
         quota_shutdown,
+        hosted_installation_shutdown,
         webhook_shutdown,
         linear_sync_shutdown,
         coordinator_shutdown,
@@ -842,6 +854,8 @@ async fn main() -> anyhow::Result<()> {
             .shutdown(patchbay_service::automation_failure_monitor::DEFAULT_SHUTDOWN_TIMEOUT),
         quota_reconciler
             .shutdown(patchbay_service::automation_quota_reconciler::DEFAULT_SHUTDOWN_TIMEOUT),
+        hosted_installation_reconciler
+            .shutdown(patchbay_service::hosted_installation_reconciler::DEFAULT_SHUTDOWN_TIMEOUT,),
         webhook_delivery
             .shutdown(patchbay_handler::webhook_delivery_worker::DEFAULT_SHUTDOWN_TIMEOUT),
         linear_sync.shutdown(patchbay_handler::linear_sync_worker::DEFAULT_SHUTDOWN_TIMEOUT),
@@ -892,6 +906,17 @@ async fn main() -> anyhow::Result<()> {
         }
         patchbay_service::automation_failure_monitor::ShutdownOutcome::Panicked => {
             tracing::error!("automation quota reconciler task panicked during shutdown");
+        }
+        _ => {}
+    }
+    match hosted_installation_shutdown {
+        patchbay_service::automation_failure_monitor::ShutdownOutcome::TimedOut => {
+            tracing::warn!(
+                "hosted installation reconciler exceeded shutdown deadline and was aborted"
+            );
+        }
+        patchbay_service::automation_failure_monitor::ShutdownOutcome::Panicked => {
+            tracing::error!("hosted installation reconciler task panicked during shutdown");
         }
         _ => {}
     }

@@ -40,6 +40,7 @@ pub trait EventConnector: Send + Sync {
         ctx: CancellationToken,
         inst: Installation,
         emit: EventEmitter,
+        runtime_health: Option<patchbay_channel::RuntimeHealthReporter>,
     ) -> anyhow::Result<()>;
 }
 

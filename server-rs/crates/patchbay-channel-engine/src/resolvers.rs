@@ -42,6 +42,9 @@ impl Outcome {
     pub fn quota_exceeded() -> Self {
         Self("quota_exceeded".to_string())
     }
+    pub fn quota_unavailable() -> Self {
+        Self("quota_unavailable".to_string())
+    }
     pub fn hub_command() -> Self {
         Self("hub_command".to_string())
     }

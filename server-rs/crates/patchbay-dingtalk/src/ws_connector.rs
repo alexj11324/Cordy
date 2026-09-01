@@ -80,6 +80,7 @@ pub struct WsConnector {
     pub app_secret: String,
 
     pub on_message: OnMessage,
+    pub runtime_health: Option<patchbay_channel::RuntimeHealthReporter>,
 
     /// TLS wiring for the wss dial. Tests dialing a plain-ws local server can
     /// leave it None.
@@ -104,6 +105,7 @@ impl WsConnector {
             app_key,
             app_secret,
             on_message,
+            runtime_health: None,
             tls: Some(TlsConnector::default()),
             ping_interval: STREAM_PING_INTERVAL,
             read_deadline: STREAM_READ_DEADLINE,
@@ -114,6 +116,14 @@ impl WsConnector {
     /// Overrides the TLS connector (test convenience).
     pub fn with_tls(mut self, tls: Option<TlsConnector>) -> Self {
         self.tls = tls;
+        self
+    }
+
+    pub fn with_runtime_health(
+        mut self,
+        runtime_health: Option<patchbay_channel::RuntimeHealthReporter>,
+    ) -> Self {
+        self.runtime_health = runtime_health;
         self
     }
 
@@ -148,6 +158,13 @@ impl WsConnector {
             Ok(Ok((stream, _resp))) => stream,
             Ok(Err(_)) => anyhow::bail!("dingtalk stream: dial failed"),
         };
+        let health_tasks = patchbay_channel::RuntimeTasks::new();
+        if let Some(reporter) = &self.runtime_health {
+            let reporter = reporter.clone();
+            health_tasks.spawn(async move {
+                reporter.healthy().await;
+            });
+        }
         let (sink, mut stream_rx) = stream.split();
         let sink = Arc::new(tokio::sync::Mutex::new(sink));
 
@@ -165,6 +182,9 @@ impl WsConnector {
 
         ping_ctx.cancel();
         let _ = ping_task.await;
+        if !health_tasks.shutdown(self.write_timeout).await {
+            tracing::warn!("dingtalk stream: runtime health persistence timed out");
+        }
         result
     }
 

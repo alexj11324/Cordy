@@ -1,0 +1,1 @@
+DROP INDEX CONCURRENTLY IF EXISTS channel_installation_runtime_observation_uidx;

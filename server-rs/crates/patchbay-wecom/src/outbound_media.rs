@@ -34,7 +34,7 @@ use patchbay_db::models::Attachment;
 use patchbay_db::queries::agent::get_agent_task;
 use patchbay_db::queries::attachment::list_attachments_by_chat_message;
 use patchbay_db::queries::channel::{
-    get_channel_chat_session_binding_by_session, get_channel_installation,
+    get_channel_chat_session_binding_by_session, get_channel_installation_for_runtime,
 };
 use patchbay_events::Event;
 
@@ -296,9 +296,12 @@ impl Outbound {
         {
             return Ok(());
         }
-        let Some(inst) =
-            get_channel_installation(&self.pool, binding.installation_id, crate::TYPE_WECOM)
-                .await?
+        let Some(inst) = get_channel_installation_for_runtime(
+            &self.pool,
+            binding.installation_id,
+            crate::TYPE_WECOM,
+        )
+        .await?
         else {
             anyhow::bail!("load wecom installation: no row");
         };

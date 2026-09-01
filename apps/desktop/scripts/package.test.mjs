@@ -186,7 +186,7 @@ describe("deriveVersion (real git describe)", () => {
     const run = (...args) =>
       execFileSync("git", args, { cwd: dir, encoding: "utf-8" });
     run("init", "-q");
-    run("config", "user.email", "test@patchbay.ai");
+    run("config", "user.email", "test@example.com");
     run("config", "user.name", "test");
     run("config", "commit.gpgsign", "false");
     run("commit", "-q", "--allow-empty", "-m", "root");

@@ -200,6 +200,7 @@ mod tests {
                 id: Some(uuid::Uuid::nil()),
                 handler: None,
                 generation: None,
+                runtime_health: None,
             })
             .await
             .unwrap();

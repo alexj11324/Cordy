@@ -30,6 +30,12 @@ const OAUTH_STATE_TTL: chrono::Duration = chrono::Duration::minutes(10);
 const SLACK_HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const SLACK_INGRESS_ACCEPT_TIMEOUT: Duration = Duration::from_millis(2500);
 const SLACK_SIGNATURE_MAX_AGE_SECS: i64 = 5 * 60;
+const MANAGED_SLACK_OBSERVER_TOKEN: &str = "managed:slack:webhook:v1";
+const SLACK_CREDENTIAL_ERROR_CODES: &[&str] = &[
+    "authentication_failed",
+    "credential_decryption_failed",
+    "credential_missing",
+];
 const SLACK_BOT_SCOPES: &str = "app_mentions:read,channels:history,chat:write,commands,files:read,groups:history,im:history,mpim:history,reactions:write,users:read";
 
 #[derive(Debug, Deserialize)]
@@ -444,8 +450,19 @@ async fn oauth_callback(
             return redirect_slack_error(&claimed.redirect_url, "slack_persist_failed");
         }
     };
+    let installation_limit =
+        match connectors::hosted_installation_limit(&state, claimed.workspace_id).await {
+            Ok(value) => value,
+            Err(_) => {
+                return redirect_result(
+                    &claimed.redirect_url,
+                    "error",
+                    "im_installation_quota_unavailable",
+                )
+            }
+        };
     let installation = patchbay_slack::install::InstallService::new(state.pool.clone())
-        .persist_install_with_limit(&persist, connectors::hosted_installation_limit(&state))
+        .persist_install_with_limit(&persist, installation_limit)
         .await;
     let row = match installation {
         Ok(value) => value,
@@ -463,6 +480,18 @@ async fn oauth_callback(
             return redirect_slack_error(&claimed.redirect_url, code);
         }
     };
+    if let Err(error) = patchbay_db::queries::channel::upsert_channel_runtime_observation(
+        &state.pool,
+        row.id,
+        MANAGED_SLACK_OBSERVER_TOKEN,
+        "starting",
+        None,
+        None,
+    )
+    .await
+    {
+        tracing::warn!(%error, installation_id = %row.id, "failed to initialize managed Slack runtime health");
+    }
     connectors::publish_created(&state, Provider::Slack, &row, claimed.installer_user_id);
     redirect_result(&claimed.redirect_url, "slack_connected", "1")
 }
@@ -560,20 +589,77 @@ async fn events_api(
             );
         }
     };
+    if let Err(error) =
+        patchbay_db::queries::channel::upsert_channel_runtime_observation_unless_error_codes(
+            &state.pool,
+            installation.id,
+            MANAGED_SLACK_OBSERVER_TOKEN,
+            "healthy",
+            None,
+            None,
+            SLACK_CREDENTIAL_ERROR_CODES,
+        )
+        .await
+    {
+        tracing::warn!(%error, installation_id = %installation.id, "failed to record managed Slack webhook health");
+    }
     let event_type = envelope
         .event
         .get("type")
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default();
     if event_type == "app_uninstalled" {
-        if let Err(error) = patchbay_db::queries::channel::set_channel_installation_status(
-            &state.pool,
+        let mut transaction = match state.pool.begin().await {
+            Ok(value) => value,
+            Err(error) => {
+                tracing::error!(%error, installation_id = %installation.id, "failed to begin Slack uninstall state update");
+                return error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Slack uninstall state unavailable",
+                );
+            }
+        };
+        let revoked = patchbay_db::queries::channel::set_channel_installation_status(
+            &mut *transaction,
             installation.id,
             "revoked",
         )
+        .await;
+        match revoked {
+            Ok(1) => {}
+            Ok(rows_affected) => {
+                tracing::error!(%rows_affected, installation_id = %installation.id, "Slack app uninstall updated an unexpected row count");
+                return error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Slack uninstall state unavailable",
+                );
+            }
+            Err(error) => {
+                tracing::error!(%error, installation_id = %installation.id, "failed to record Slack app uninstall");
+                return error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Slack uninstall state unavailable",
+                );
+            }
+        }
+        if let Err(error) = patchbay_db::queries::channel::upsert_channel_runtime_observation(
+            &mut *transaction,
+            installation.id,
+            "control:revoked",
+            "offline",
+            Some("installation_revoked"),
+            Some("Slack reported that the app was uninstalled."),
+        )
         .await
         {
-            tracing::error!(%error, installation_id = %installation.id, "failed to record Slack app uninstall");
+            tracing::error!(%error, installation_id = %installation.id, "failed to record Slack uninstall health");
+            return error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Slack uninstall state unavailable",
+            );
+        }
+        if let Err(error) = transaction.commit().await {
+            tracing::error!(%error, installation_id = %installation.id, "failed to commit Slack uninstall state");
             return error_response(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "Slack uninstall state unavailable",

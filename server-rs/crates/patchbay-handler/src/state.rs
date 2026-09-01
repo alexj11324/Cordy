@@ -814,11 +814,18 @@ impl HandlerState {
     }
 
     pub fn with_public_config(mut self, settings: crate::config::PublicConfigSettings) -> Self {
-        self.tasks.set_channel_quota_mode(
+        // A self-hosted server may expose the same managed setup surface for
+        // operator-provisioned credentials, but it does not consume
+        // Patchbay Cloud capacity. Only the official Cloud identity may turn
+        // the hosted quota gate on.
+        let quota_mode = if settings.official_cloud {
             patchbay_service::channel_quota::ChannelQuotaMode::for_messaging_mode(
                 &settings.messaging.mode,
-            ),
-        );
+            )
+        } else {
+            patchbay_service::channel_quota::ChannelQuotaMode::Disabled
+        };
+        self.tasks.set_channel_quota_mode(quota_mode);
         self.public_config = settings;
         self
     }
@@ -1425,6 +1432,7 @@ fn positive_env_i64(name: &str, default: i64) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
 
     const COMPOSIO_ENV: [&str; 8] = [
         "COMPOSIO_API_KEY",
@@ -1469,6 +1477,29 @@ mod tests {
             PatCache::disabled(),
             None,
         )
+    }
+
+    #[tokio::test]
+    async fn nonofficial_managed_mode_does_not_enable_hosted_capacity() {
+        let mut config = patchbay_config::Config::default();
+        config.urls.app_url = Some("https://self.example".into());
+        config.urls.public_url = Some("https://self.example".into());
+        config.integrations.messaging_mode = Some("managed".into());
+        let settings = crate::config::PublicConfigSettings::from_config(
+            &config,
+            String::new(),
+            false,
+            "v-test".into(),
+        );
+        assert_eq!(settings.messaging.mode, "managed");
+        let state = test_state().with_public_config(settings);
+        assert_eq!(
+            state
+                .tasks
+                .hosted_im_installation_capacity(Uuid::now_v7())
+                .await,
+            patchbay_service::task_service::HostedCapacityPolicy::Disabled
+        );
     }
 
     #[tokio::test]

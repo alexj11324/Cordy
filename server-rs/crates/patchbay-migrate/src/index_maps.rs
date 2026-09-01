@@ -715,6 +715,10 @@ pub(crate) const CONCURRENT_INDEX_CLEANUPS_UP: &[(&str, &str)] = &[
         "499_linear_sync_conflict_id_index",
         "uq_linear_sync_conflict_id",
     ),
+    (
+        "482_channel_installation_runtime_observation_index",
+        "channel_installation_runtime_observation_uidx",
+    ),
 ];
 
 pub(crate) const CONCURRENT_INDEX_CLEANUPS_DOWN: &[(&str, &str)] = &[

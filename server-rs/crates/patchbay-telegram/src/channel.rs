@@ -23,6 +23,7 @@ pub struct TelegramChannel {
     api: BotApi,
     handler: Option<InboundHandler>,
     media_enabled: bool,
+    runtime_health: Option<patchbay_channel::RuntimeHealthReporter>,
 }
 
 #[async_trait]
@@ -75,13 +76,23 @@ impl TelegramChannel {
         tasks: &patchbay_channel::RuntimeTasks,
     ) -> anyhow::Result<()> {
         let mut offset = 0_i64;
+        let mut health_reported = false;
         loop {
             let updates = tokio::select! {
                 _ = ctx.cancelled() => return Ok(()),
                 result = self.api.get_updates(offset) => result,
             };
             let updates = match updates {
-                Ok(updates) => updates,
+                Ok(updates) => {
+                    if !health_reported {
+                        if let Some(reporter) = &self.runtime_health {
+                            health_reported = reporter.healthy().await;
+                        } else {
+                            health_reported = true;
+                        }
+                    }
+                    updates
+                }
                 Err(_) if ctx.is_cancelled() => return Ok(()),
                 Err(error)
                     if error
@@ -286,6 +297,7 @@ pub fn new_telegram_factory(deps: ChannelDeps) -> Factory {
                 api: BotApi::new(&deps.api_base, &credentials.bot_token),
                 handler: cfg.handler,
                 media_enabled: deps.media_enabled,
+                runtime_health: cfg.runtime_health,
             }) as BuiltChannel)
         })
     })

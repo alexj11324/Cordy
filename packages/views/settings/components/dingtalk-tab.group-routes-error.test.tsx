@@ -380,7 +380,7 @@ describe("DingTalkTab group-route query failures", () => {
   it("stops group-route polling when the last active installation is revoked", async () => {
     vi.useFakeTimers();
     const listDingTalkGroupRoutes = vi.fn().mockResolvedValue(ACTIVE_GROUP_ROUTE_RESPONSE);
-    installApi({ listDingTalkGroupRoutes });
+    const { listDingTalkInstallations } = installApi({ listDingTalkGroupRoutes });
     const queryClient = renderTab();
 
     await act(async () => {
@@ -389,6 +389,7 @@ describe("DingTalkTab group-route query failures", () => {
     expect(listDingTalkGroupRoutes).toHaveBeenCalledTimes(1);
 
     await act(async () => {
+      listDingTalkInstallations.mockResolvedValue(REVOKED_INSTALLATION_RESPONSE);
       queryClient.setQueryData(
         dingtalkKeys.installations("workspace-1"),
         REVOKED_INSTALLATION_RESPONSE,

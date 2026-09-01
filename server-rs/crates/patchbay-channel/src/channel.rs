@@ -129,6 +129,11 @@ pub struct Config {
 
     /// Lease-owner generation fencing this build and every derived handle.
     pub generation: Option<std::sync::Arc<LeaseGeneration>>,
+
+    /// Token-fenced durable runtime observation sink. Long-lived adapters
+    /// report healthy only after their provider handshake or first successful
+    /// poll, never merely because the Supervisor owns a lease.
+    pub runtime_health: Option<crate::RuntimeHealthReporter>,
 }
 
 impl std::fmt::Debug for Config {
@@ -145,6 +150,7 @@ impl std::fmt::Debug for Config {
                     .as_ref()
                     .map(|generation| generation.epoch()),
             )
+            .field("runtime_health_set", &self.runtime_health.is_some())
             .finish_non_exhaustive()
     }
 }

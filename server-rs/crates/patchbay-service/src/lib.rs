@@ -19,6 +19,7 @@ pub mod email;
 pub mod empty_claim_cache;
 pub mod entitlement;
 pub mod feature_flags;
+pub mod hosted_installation_reconciler;
 pub mod issue_guard;
 pub mod issue_position;
 pub mod issue_service;

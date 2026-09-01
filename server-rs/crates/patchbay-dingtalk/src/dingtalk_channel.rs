@@ -196,6 +196,7 @@ pub struct DingTalkChannel {
     /// A normal gateway redial leaves it false so the queue survives and
     /// preserves per-conversation ordering across the reconnect.
     stop_dispatch: AtomicBool,
+    runtime_health: Option<patchbay_channel::RuntimeHealthReporter>,
 }
 
 #[async_trait]
@@ -325,7 +326,8 @@ impl DingTalkChannel {
             self.app_key.clone(),
             self.app_secret.clone(),
             on_message,
-        );
+        )
+        .with_runtime_health(self.runtime_health.clone());
         conn.run(ctx.clone()).await
     }
 }
@@ -452,6 +454,7 @@ async fn build_channel(
         dispatch: slot.queue().clone(),
         slot,
         stop_dispatch: AtomicBool::new(false),
+        runtime_health: cfg.runtime_health,
     });
     Ok(ch as BuiltChannel)
 }

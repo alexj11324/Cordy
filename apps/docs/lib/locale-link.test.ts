@@ -38,8 +38,8 @@ describe("prefixLocale", () => {
     expect(prefixLocale("https://patchbay.aspectlylabs.com/download", "zh")).toBe(
       "https://patchbay.aspectlylabs.com/download",
     );
-    expect(prefixLocale("mailto:hello@patchbay.ai", "zh")).toBe(
-      "mailto:hello@patchbay.ai",
+    expect(prefixLocale("mailto:hello@example.com", "zh")).toBe(
+      "mailto:hello@example.com",
     );
     expect(prefixLocale("tel:+1234567890", "zh")).toBe("tel:+1234567890");
   });

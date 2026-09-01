@@ -3439,6 +3439,7 @@ export const EMPTY_BEGIN_WEIXIN_INSTALL_RESPONSE: BeginWeixinInstallResponse = {
 export const WeixinInstallStatusResponseSchema = z.object({
   status: z.string(),
   installation_id: z.string().optional(),
+  errorCode: z.string().optional(),
 }).loose();
 export const EMPTY_WEIXIN_INSTALL_STATUS_RESPONSE: WeixinInstallStatusResponse = {
   status: "pending",

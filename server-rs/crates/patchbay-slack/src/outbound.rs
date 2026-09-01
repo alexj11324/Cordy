@@ -16,7 +16,7 @@ use patchbay_channel::{OutboundMessage, RuntimeTasks};
 use patchbay_channel_engine::provenance::task_input_is_channel_ingested;
 use patchbay_db::queries::agent::get_agent_task;
 use patchbay_db::queries::channel::{
-    get_channel_chat_session_binding_by_session, get_channel_installation,
+    get_channel_chat_session_binding_by_session, get_channel_installation_for_runtime,
 };
 use patchbay_events::{Bus, Event};
 use uuid::Uuid;
@@ -104,9 +104,10 @@ impl Outbound {
         if !deliver {
             return Ok(());
         }
-        let inst = get_channel_installation(&self.pool, binding.installation_id, TYPE_SLACK)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("load slack installation: row missing"))?;
+        let inst =
+            get_channel_installation_for_runtime(&self.pool, binding.installation_id, TYPE_SLACK)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("load slack installation: row missing"))?;
         if inst.status != "active" {
             return Ok(()); // revoked between trigger and reply
         }

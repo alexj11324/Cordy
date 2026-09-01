@@ -6,8 +6,278 @@
 
 use crate::models::*;
 use chrono::{DateTime, Utc};
-use sqlx::{PgConnection, Row};
+use sqlx::{PgConnection, PgPool, Row};
 use uuid::Uuid;
+
+const HOSTED_ENTITLEMENT_OBSERVER_TOKEN: &str = "managed:entitlement:v1";
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct HostedInstallationReconcileResult {
+    pub paused: Vec<Uuid>,
+    pub resumed: Vec<Uuid>,
+}
+
+pub async fn list_hosted_installation_workspaces(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+) -> anyhow::Result<Vec<Uuid>> {
+    Ok(sqlx::query_scalar::<_, Uuid>(
+        r#"SELECT DISTINCT workspace_id
+FROM channel_installation
+WHERE status = 'active'
+ORDER BY workspace_id"#,
+    )
+    .fetch_all(executor)
+    .await?)
+}
+
+/// Reconciles Patchbay-hosted installation capacity while holding the same
+/// workspace-row lock used by installation admission. Desired installation
+/// state remains `active`; hosted pause is an orthogonal, reversible runtime
+/// condition so subscription changes never delete credentials or bindings.
+pub async fn reconcile_hosted_installation_capacity(
+    pool: &PgPool,
+    workspace_id: Uuid,
+    limit: Option<i64>,
+) -> anyhow::Result<HostedInstallationReconcileResult> {
+    let mut tx = pool.begin().await?;
+    let workspace_exists =
+        sqlx::query_scalar::<_, Uuid>("SELECT id FROM workspace WHERE id = $1 FOR UPDATE")
+            .bind(workspace_id)
+            .fetch_optional(&mut *tx)
+            .await?;
+    if workspace_exists.is_none() {
+        tx.rollback().await?;
+        return Ok(HostedInstallationReconcileResult::default());
+    }
+    let installations = sqlx::query_as::<_, (Uuid, Option<DateTime<Utc>>)>(
+        r#"SELECT id, hosted_paused_at
+FROM channel_installation
+WHERE workspace_id = $1
+  AND status = 'active'
+ORDER BY created_at ASC, id ASC
+FOR UPDATE"#,
+    )
+    .bind(workspace_id)
+    .fetch_all(&mut *tx)
+    .await?;
+    let keep = limit
+        .map(|value| usize::try_from(value.max(0)).unwrap_or(usize::MAX))
+        .unwrap_or(usize::MAX);
+    let mut result = HostedInstallationReconcileResult::default();
+    for (index, (installation_id, paused_at)) in installations.iter().enumerate() {
+        if index < keep {
+            if paused_at.is_some() {
+                result.resumed.push(*installation_id);
+            }
+        } else if paused_at.is_none() {
+            result.paused.push(*installation_id);
+        }
+    }
+    if !result.paused.is_empty() {
+        sqlx::query(
+            r#"UPDATE channel_installation
+SET hosted_paused_at = now(),
+    ws_lease_token = NULL,
+    ws_lease_expires_at = NULL,
+    updated_at = now()
+WHERE id = ANY($1::uuid[])"#,
+        )
+        .bind(&result.paused)
+        .execute(&mut *tx)
+        .await?;
+    }
+    if !result.resumed.is_empty() {
+        sqlx::query(
+            r#"UPDATE channel_installation
+SET hosted_paused_at = NULL,
+    updated_at = now()
+WHERE id = ANY($1::uuid[])"#,
+        )
+        .bind(&result.resumed)
+        .execute(&mut *tx)
+        .await?;
+    }
+    for installation_id in installations
+        .iter()
+        .skip(keep)
+        .map(|(installation_id, _)| *installation_id)
+    {
+        upsert_channel_runtime_observation(
+            &mut *tx,
+            installation_id,
+            HOSTED_ENTITLEMENT_OBSERVER_TOKEN,
+            "offline",
+            Some("hosted_quota_paused"),
+            Some("This installation is paused by the hosted messaging quota."),
+        )
+        .await?;
+    }
+    for installation_id in &result.resumed {
+        upsert_channel_runtime_observation(
+            &mut *tx,
+            *installation_id,
+            HOSTED_ENTITLEMENT_OBSERVER_TOKEN,
+            "starting",
+            None,
+            None,
+        )
+        .await?;
+    }
+    tx.commit().await?;
+    Ok(result)
+}
+
+pub async fn claim_channel_runtime_observer(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    installation_id: Uuid,
+    observer_token: &str,
+) -> anyhow::Result<()> {
+    sqlx::query(
+        r#"INSERT INTO channel_installation_runtime_observation (
+    installation_id, state, observed_at, error_code, error_summary, observer_token
+) SELECT $1, 'starting', now(), NULL, NULL, $2
+FROM channel_installation
+WHERE id = $1
+ON CONFLICT (installation_id) DO UPDATE SET
+    state = 'starting',
+    observed_at = now(),
+    error_code = NULL,
+    error_summary = NULL,
+    observer_token = EXCLUDED.observer_token,
+    updated_at = now()"#,
+    )
+    .bind(installation_id)
+    .bind(observer_token)
+    .execute(executor)
+    .await?;
+    Ok(())
+}
+
+/// Writes an authoritative control-plane observation and transfers ownership
+/// of the row to `observer_token`. Use this for webhook ingress and explicit
+/// revoke/uninstall transitions; connection adapters use the token-fenced
+/// `observe_channel_runtime` path instead.
+pub async fn upsert_channel_runtime_observation(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    installation_id: Uuid,
+    observer_token: &str,
+    state: &str,
+    error_code: Option<&str>,
+    error_summary: Option<&str>,
+) -> anyhow::Result<()> {
+    upsert_channel_runtime_observation_unless_error_codes(
+        executor,
+        installation_id,
+        observer_token,
+        state,
+        error_code,
+        error_summary,
+        &[],
+    )
+    .await?;
+    Ok(())
+}
+
+/// Writes an authoritative observation only while the installation still
+/// exists. `preserved_error_codes` prevents a weaker signal (for example,
+/// webhook ingress) from erasing a stronger credential failure recorded by a
+/// provider probe. Returns whether the insert/update was applied.
+pub async fn upsert_channel_runtime_observation_unless_error_codes(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    installation_id: Uuid,
+    observer_token: &str,
+    state: &str,
+    error_code: Option<&str>,
+    error_summary: Option<&str>,
+    preserved_error_codes: &[&str],
+) -> anyhow::Result<bool> {
+    let preserved_error_codes = preserved_error_codes
+        .iter()
+        .map(|value| (*value).to_string())
+        .collect::<Vec<_>>();
+    let result = sqlx::query(
+        r#"INSERT INTO channel_installation_runtime_observation (
+    installation_id, state, observed_at, error_code, error_summary, observer_token
+) SELECT $1, $3, now(), $4, $5, $2
+FROM channel_installation
+WHERE id = $1
+ON CONFLICT (installation_id) DO UPDATE SET
+    state = EXCLUDED.state,
+    observed_at = EXCLUDED.observed_at,
+    error_code = EXCLUDED.error_code,
+    error_summary = EXCLUDED.error_summary,
+    observer_token = EXCLUDED.observer_token,
+    updated_at = now()
+WHERE channel_installation_runtime_observation.error_code IS NULL
+   OR NOT (channel_installation_runtime_observation.error_code = ANY($6::text[]))"#,
+    )
+    .bind(installation_id)
+    .bind(observer_token)
+    .bind(state)
+    .bind(error_code)
+    .bind(error_summary)
+    .bind(preserved_error_codes)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn observe_channel_runtime(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    installation_id: Uuid,
+    observer_token: &str,
+    state: &str,
+    error_code: Option<&str>,
+    error_summary: Option<&str>,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"UPDATE channel_installation_runtime_observation
+SET state = $3,
+    observed_at = now(),
+    error_code = $4,
+    error_summary = $5,
+    updated_at = now()
+WHERE installation_id = $1
+  AND observer_token = $2"#,
+    )
+    .bind(installation_id)
+    .bind(observer_token)
+    .bind(state)
+    .bind(error_code)
+    .bind(error_summary)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+pub async fn list_channel_runtime_observations(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    installation_ids: &[Uuid],
+) -> anyhow::Result<Vec<ChannelInstallationRuntimeObservation>> {
+    if installation_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(sqlx::query_as::<_, ChannelInstallationRuntimeObservation>(
+        r#"SELECT installation_id, state, observed_at, error_code, error_summary,
+       observer_token, updated_at
+FROM channel_installation_runtime_observation
+WHERE installation_id = ANY($1::uuid[])"#,
+    )
+    .bind(installation_ids)
+    .fetch_all(executor)
+    .await?)
+}
+
+pub async fn delete_channel_runtime_observation(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    installation_id: Uuid,
+) -> anyhow::Result<()> {
+    sqlx::query("DELETE FROM channel_installation_runtime_observation WHERE installation_id = $1")
+        .bind(installation_id)
+        .execute(executor)
+        .await?;
+    Ok(())
+}
 
 pub async fn acquire_channel_ws_lease(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
@@ -22,6 +292,7 @@ SET ws_lease_token       = $1,
     updated_at           = now()
 WHERE id = $3
   AND status = 'active'
+  AND hosted_paused_at IS NULL
   AND (
         ws_lease_token IS NULL
         OR ws_lease_expires_at < now()
@@ -632,6 +903,10 @@ cleared_inbound_dedup AS (
 cleared_receive_state AS (
     DELETE FROM channel_receive_state WHERE installation_id IN (SELECT id FROM doomed)
 ),
+cleared_runtime_observations AS (
+    DELETE FROM channel_installation_runtime_observation
+    WHERE installation_id IN (SELECT id FROM doomed)
+),
 cleared_audit AS (
     -- Hard delete: purge audit rows rather than detaching them into permanently
     -- unattributable NULL rows (channel_inbound_audit has no workspace_id / reaper).
@@ -972,6 +1247,43 @@ WHERE id = $1 AND channel_type = $2"#
     }))
 }
 
+/// Loads an installation for a live transport operation. Management callers
+/// intentionally use [`get_channel_installation`] so quota-paused rows remain
+/// visible, while credential and outbound paths must fail closed as soon as a
+/// hosted capacity reconciler marks the row paused.
+pub async fn get_channel_installation_for_runtime(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    id: Uuid,
+    channel_type: &str,
+) -> anyhow::Result<Option<ChannelInstallation>> {
+    let row = sqlx::query(
+        r#"SELECT id, workspace_id, agent_id, channel_type, config, status, ws_lease_token, ws_lease_expires_at, installer_user_id, installed_at, created_at, updated_at FROM channel_installation
+WHERE id = $1
+  AND channel_type = $2
+  AND status = 'active'
+  AND hosted_paused_at IS NULL"#,
+    )
+    .bind(id)
+    .bind(channel_type)
+    .fetch_optional(executor)
+    .await?;
+    let Some(row) = row else { return Ok(None) };
+    Ok(Some(ChannelInstallation {
+        id: row.try_get(0)?,
+        workspace_id: row.try_get(1)?,
+        agent_id: row.try_get(2)?,
+        channel_type: row.try_get(3)?,
+        config: row.try_get(4)?,
+        status: row.try_get(5)?,
+        ws_lease_token: row.try_get(6)?,
+        ws_lease_expires_at: row.try_get(7)?,
+        installer_user_id: row.try_get(8)?,
+        installed_at: row.try_get(9)?,
+        created_at: row.try_get(10)?,
+        updated_at: row.try_get(11)?,
+    }))
+}
+
 pub async fn get_channel_installation_by_app_id(
     executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
     channel_type: &str,
@@ -980,7 +1292,9 @@ pub async fn get_channel_installation_by_app_id(
     let row = sqlx::query(
         r#"SELECT id, workspace_id, agent_id, channel_type, config, status, ws_lease_token, ws_lease_expires_at, installer_user_id, installed_at, created_at, updated_at FROM channel_installation
 WHERE channel_type = $1
-  AND config ->> 'app_id' = $2::text"#
+  AND config ->> 'app_id' = $2::text
+  AND status = 'active'
+  AND hosted_paused_at IS NULL"#
     )
         .bind(channel_type)
         .bind(app_id)
@@ -1174,6 +1488,7 @@ pub async fn list_active_channel_installations(
 JOIN workspace w ON w.id = ci.workspace_id
 LEFT JOIN agent a ON a.id = ci.agent_id
 WHERE ci.status = 'active'
+  AND ci.hosted_paused_at IS NULL
   AND ci.channel_type = $1
   AND (ci.agent_id IS NULL OR a.id IS NOT NULL)
 ORDER BY ci.created_at ASC"#
@@ -1217,6 +1532,7 @@ FROM channel_installation ci
 JOIN workspace w ON w.id = ci.workspace_id
 LEFT JOIN agent a ON a.id = ci.agent_id
 WHERE ci.status = 'active'
+  AND ci.hosted_paused_at IS NULL
   AND ci.channel_type = $1
   AND (ci.agent_id IS NULL OR a.id IS NOT NULL)
   AND COALESCE(ci.config ->> 'bot_union_id', '') = ''
@@ -1258,6 +1574,7 @@ pub async fn list_all_active_channel_installations(
 JOIN workspace w ON w.id = ci.workspace_id
 LEFT JOIN agent a ON a.id = ci.agent_id
 WHERE ci.status = 'active'
+  AND ci.hosted_paused_at IS NULL
   AND (ci.agent_id IS NULL OR a.id IS NOT NULL)
 ORDER BY ci.created_at ASC"#
     )
@@ -1557,6 +1874,10 @@ cleared_receive_state AS (
     DELETE FROM channel_receive_state
     WHERE installation_id IN (SELECT id FROM dead)
 ),
+cleared_runtime_observations AS (
+    DELETE FROM channel_installation_runtime_observation
+    WHERE installation_id IN (SELECT id FROM dead)
+),
 detached_audit AS (
     -- Reclaim keeps the DETACH semantics: the workspace still exists, so a
     -- NULL-installation audit row stays meaningful for operator triage. The hard-
@@ -1614,6 +1935,10 @@ cleared_inbound_dedup AS (
 ),
 cleared_receive_state AS (
     DELETE FROM channel_receive_state
+    WHERE installation_id IN (SELECT id FROM doomed)
+),
+cleared_runtime_observations AS (
+    DELETE FROM channel_installation_runtime_observation
     WHERE installation_id IN (SELECT id FROM doomed)
 ),
 detached_audit AS (
@@ -1784,7 +2109,8 @@ SET ws_lease_token = $2,
     ws_lease_expires_at = $3,
     updated_at = now()
 WHERE id = $1
-  AND status = 'active'"#,
+  AND status = 'active'
+  AND hosted_paused_at IS NULL"#,
     )
     .bind(id)
     .bind(token)
@@ -2050,6 +2376,7 @@ ON CONFLICT (workspace_id, agent_id, channel_type) DO UPDATE SET
     config            = EXCLUDED.config,
     installer_user_id = EXCLUDED.installer_user_id,
     status            = 'active',
+    hosted_paused_at  = NULL,
     installed_at      = now(),
     updated_at        = now()
 RETURNING id, workspace_id, agent_id, channel_type, config, status, ws_lease_token, ws_lease_expires_at, installer_user_id, installed_at, created_at, updated_at"#
@@ -2097,6 +2424,7 @@ ON CONFLICT (workspace_id, channel_type) WHERE agent_id IS NULL DO UPDATE SET
     config            = EXCLUDED.config,
     installer_user_id = EXCLUDED.installer_user_id,
     status            = 'active',
+    hosted_paused_at  = NULL,
     installed_at      = now(),
     updated_at        = now()
 RETURNING id, workspace_id, agent_id, channel_type, config, status, ws_lease_token, ws_lease_expires_at, installer_user_id, installed_at, created_at, updated_at"#,
@@ -2143,6 +2471,7 @@ ON CONFLICT (channel_type, (config ->> 'app_id')) DO UPDATE SET
     config            = EXCLUDED.config,
     installer_user_id = EXCLUDED.installer_user_id,
     status            = 'active',
+    hosted_paused_at  = NULL,
     installed_at      = now(),
     updated_at        = now()
 WHERE channel_installation.workspace_id = EXCLUDED.workspace_id

@@ -17,4 +17,5 @@ export const wecomInstallationsOptions = (wsId: string) =>
     queryKey: wecomKeys.installations(wsId),
     queryFn: () => api.listWecomInstallations(wsId),
     enabled: !!wsId,
+    refetchInterval: (query) => (query.state.status === "error" ? false : 5_000),
   });

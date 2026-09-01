@@ -115,6 +115,10 @@ cleared_user_bindings AS (
 cleared_binding_tokens AS (
     DELETE FROM channel_binding_token WHERE workspace_id = $1
 ),
+cleared_runtime_observations AS (
+    DELETE FROM channel_installation_runtime_observation
+    WHERE installation_id IN (SELECT id FROM ws_installations)
+),
 cleared_installations AS (
     DELETE FROM channel_installation WHERE workspace_id = $1
 ),
