@@ -392,12 +392,21 @@ checksum-verified exact-commit CLI artifact produced by the release workflow.
 
 CI follows the same boundary. It caches pnpm's store, Cargo registry/git
 downloads, bounded sccache compiler objects, and Turbo outputs; it never uploads
-an entire `server-rs/target`. Release CLIs/installers are exact-commit workflow
-artifacts, not reusable caches. Cache keys remain OS/architecture/target aware,
-and Rust jobs print sccache statistics so restore/upload time and hit rate can
-be compared with cold compilation. Keep the repository within GitHub's default
-cache budget unless measured savings justify a paid increase; shrinking or
-removing a cache is correct when transfer time approaches rebuild time. See
+an entire `server-rs/target`. Pull-request sccache restores are read-only so a
+branch compile cannot evict `main`'s objects. Cargo incremental is disabled in
+those jobs because ephemeral runners cannot reuse `target/` and incremental
+fingerprints fight sccache. Debuginfo is `line-tables-only` so backtraces remain
+while skipping full DWARF. `rust-quality` runs `fmt`, Clippy, and a normal
+link of the shipping `patchbay-server` and `patchbay` binaries; it does not
+repeat `cargo check` or a workspace `cargo build`, because Clippy already
+typechecks every target and `rust-tests` already links `--all-targets` as
+libtest executables. Release CLIs/installers are exact-commit workflow
+artifacts, not reusable caches. Cache
+keys remain OS/architecture/target aware, and Rust jobs print sccache statistics
+so restore/upload time and hit rate can be compared with cold compilation. Keep
+the repository within GitHub's default cache budget unless measured savings
+justify a paid increase; shrinking or removing a cache is correct when transfer
+time approaches rebuild time. See
 [GitHub dependency caching](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)
 and [repository Actions settings](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository).
 

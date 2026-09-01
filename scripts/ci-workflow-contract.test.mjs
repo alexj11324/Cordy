@@ -49,6 +49,28 @@ test("Rust uses one workspace test invocation and PR compiler caches are read-on
   );
 });
 
+test("Rust quality uses clippy as the compile gate and CI compiles with line tables only", () => {
+  assert.match(ci, /cargo clippy --workspace --all-targets --locked -- -D warnings/u);
+  assert.match(
+    ci,
+    /cargo build --locked -p patchbay-server --bin patchbay-server -p patchbay-cli --bin patchbay/u,
+  );
+  assert.doesNotMatch(ci, /cargo check --workspace --all-targets --locked/u);
+  assert.doesNotMatch(ci, /cargo build --workspace --locked/u);
+  assert.equal(
+    [...ci.matchAll(/CARGO_INCREMENTAL: "0"/gu)].length,
+    3,
+  );
+  assert.equal(
+    [...ci.matchAll(/CARGO_PROFILE_DEV_DEBUG: "line-tables-only"/gu)].length,
+    3,
+  );
+  assert.equal(
+    [...ci.matchAll(/CARGO_PROFILE_TEST_DEBUG: "line-tables-only"/gu)].length,
+    3,
+  );
+});
+
 test("Actions caches never store a Cargo target directory", async () => {
   const names = (await readdir(workflowDirectory)).filter((name) => name.endsWith(".yml"));
   for (const name of names) {
