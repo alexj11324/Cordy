@@ -2349,6 +2349,12 @@ async fn delete_issue_and_collect_attachment_urls(
     issue_q::lock_issue_for_delete(&mut *tx, issue.id, issue.workspace_id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("issue not found while locking for delete"))?;
+    linear_agent_q::settle_pending_terminal_events_for_issue(
+        &mut *tx,
+        issue.workspace_id,
+        issue.id,
+    )
+    .await?;
     let child_issue_ids = dependency_graph_q::list_child_issue_ids_for_issue_delete(
         &mut *tx,
         issue.workspace_id,
@@ -2384,6 +2390,7 @@ async fn delete_issue_and_collect_attachment_urls(
             &json!({
                 "action": "terminal",
                 "linearAgentSessionTerminal": true,
+                "linearAgentSessionDeletion": true,
                 "status": "cancelled",
                 "taskId": task.id,
             }),

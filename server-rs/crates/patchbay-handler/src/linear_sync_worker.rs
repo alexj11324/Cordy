@@ -1649,12 +1649,13 @@ impl LinearSyncWorker {
         )
         .await
         .map_err(SyncError::retry)?;
-        if link.sync_status == "deleted"
-            || !binding.as_ref().is_some_and(|binding| {
-                binding.status == "active"
-                    && remote_project_id.as_deref() == Some(binding.linear_project_id.as_str())
-            })
-        {
+        if matches!(
+            link.sync_status.as_str(),
+            "deleted" | "agent_selection_required"
+        ) || !binding.as_ref().is_some_and(|binding| {
+            binding.status == "active"
+                && remote_project_id.as_deref() == Some(binding.linear_project_id.as_str())
+        }) {
             return Ok(());
         }
 
@@ -1857,12 +1858,52 @@ impl LinearSyncWorker {
                 .map_err(SyncError::retry)?;
             }
         }
+
+        if let Some(current) = task.as_ref() {
+            if let Some(latest_task_id) = agent_q::latest_retry_descendant_task_id(
+                &self.state.pool,
+                current.id,
+                connection.workspace_id,
+            )
+            .await
+            .map_err(SyncError::retry)?
+            .filter(|latest_task_id| *latest_task_id != current.id)
+            {
+                task = agent_q::get_agent_task_in_workspace(
+                    &self.state.pool,
+                    latest_task_id,
+                    connection.workspace_id,
+                )
+                .await
+                .map_err(SyncError::retry)?
+                .filter(|candidate| candidate.agent_id == agent_id);
+            }
+        }
         if task.is_none() {
             task = agent_q::list_active_tasks_by_issue(&self.state.pool, issue.id)
                 .await
                 .map_err(SyncError::retry)?
                 .into_iter()
                 .find(|candidate| candidate.agent_id == agent_id);
+        }
+        if let Some(parent_task) = task.as_ref() {
+            if claimed_session.task_id != Some(parent_task.id)
+                && !linear_agent_q::correlate_linear_agent_session_dispatch(
+                    &self.state.pool,
+                    connection.workspace_id,
+                    connection.id,
+                    &event.session_id,
+                    &row.delivery_id,
+                    parent_task.id,
+                    &claim_owner,
+                )
+                .await
+                .map_err(SyncError::retry)?
+            {
+                return Err(SyncError::retry(anyhow::anyhow!(
+                    "Linear Agent Session task correlation lost its reservation"
+                )));
+            }
         }
 
         let mut continuation_task_id = None;
@@ -1884,11 +1925,13 @@ impl LinearSyncWorker {
                 let receipt = self
                     .state
                     .tasks
-                    .continue_agent_thread(
+                    .continue_agent_thread_from_integration(
                         parent_task.id,
                         handoff,
                         &idempotency_key,
                         requester_user_id,
+                        connection.id,
+                        &event.session_id,
                     )
                     .await
                     .map_err(|error| {
@@ -2079,6 +2122,14 @@ impl LinearSyncWorker {
         .await
         .map_err(SyncError::retry)?;
         let Some(existing) = existing else {
+            if !row
+                .payload
+                .get("linearAgentSessionDeletion")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+            {
+                return Ok(());
+            }
             let manager = LinearTokenManager::from_state(&self.state)
                 .map_err(|error| classify_token_error(error, "create Linear token manager"))?;
             manager

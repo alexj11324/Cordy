@@ -102,6 +102,56 @@ pub async fn get_linear_agent_session(
         .await?)
 }
 
+/// Revalidates the complete durable authority chain for a Linear-originated
+/// continuation. A handler-level route decision is not sufficient on its
+/// own: the installation, binding, link, Issue executor, claimed session, and
+/// exact task correlation must all still agree at the service boundary.
+pub async fn linear_agent_continuation_authorized(
+    executor: impl Executor<'_, Database = Postgres>,
+    connection_id: Uuid,
+    linear_session_id: &str,
+    task_id: Uuid,
+) -> anyhow::Result<bool> {
+    Ok(sqlx::query_scalar::<_, bool>(
+        r#"SELECT EXISTS (
+               SELECT 1
+               FROM linear_agent_session session
+               JOIN linear_connection connection
+                 ON connection.id = session.connection_id
+                AND connection.workspace_id = session.workspace_id
+               JOIN linear_issue_link link
+                 ON link.workspace_id = session.workspace_id
+                AND link.linear_issue_id = session.linear_issue_id
+               JOIN linear_project_binding binding
+                 ON binding.id = link.binding_id
+                AND binding.workspace_id = session.workspace_id
+                AND binding.connection_id = session.connection_id
+               JOIN issue
+                 ON issue.id = session.patchbay_issue_id
+                AND issue.workspace_id = session.workspace_id
+               JOIN agent_task_queue task
+                 ON task.id = session.task_id
+                AND task.agent_id = session.agent_id
+                AND task.issue_id = session.patchbay_issue_id
+               WHERE session.connection_id = $1
+                 AND session.linear_session_id = $2
+                 AND session.task_id = $3
+                 AND session.status LIKE 'dispatching:%'
+                 AND connection.status = 'active'
+                 AND connection.actor_id <> ''
+                 AND binding.status = 'active'
+                 AND link.sync_status NOT IN ('deleted', 'agent_selection_required')
+                 AND issue.executor_type = 'agent'
+                 AND issue.executor_id = session.agent_id
+           )"#,
+    )
+    .bind(connection_id)
+    .bind(linear_session_id)
+    .bind(task_id)
+    .fetch_one(executor)
+    .await?)
+}
+
 /// Claims a non-terminal Agent Session delivery before any task or provider
 /// side effects run. A terminal Inbox worker treats `dispatching` as a short
 /// lived mutex; an idempotent retry of the same delivery may reclaim its own
@@ -417,6 +467,36 @@ pub async fn enqueue_linear_agent_terminal_event(
     .fetch_all(&mut *executor)
     .await?;
     Ok(!row.is_empty())
+}
+
+/// Settles terminal deliveries that were created for a session before its
+/// Issue is deleted. The deletion transaction can then enqueue one explicit
+/// cancellation per current task without an older result racing it after the
+/// session correlation is removed.
+pub async fn settle_pending_terminal_events_for_issue(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    patchbay_issue_id: Uuid,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"UPDATE linear_sync_inbox AS inbox
+           SET processed_at = now(),
+               locked_by = NULL,
+               locked_until = NULL,
+               last_error = 'superseded by Patchbay Issue deletion'
+           FROM linear_agent_session AS session
+           WHERE session.workspace_id = $1
+             AND session.patchbay_issue_id = $2
+             AND inbox.connection_id = session.connection_id
+             AND inbox.event_type = 'linear.agentSession.terminal'
+             AND inbox.payload->'agentSession'->>'id' = session.linear_session_id
+             AND inbox.processed_at IS NULL"#,
+    )
+    .bind(workspace_id)
+    .bind(patchbay_issue_id)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
 }
 
 /// A terminal event is current when its task is the session-correlated task

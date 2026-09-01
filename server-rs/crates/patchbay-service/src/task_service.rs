@@ -3219,6 +3219,49 @@ impl TaskService {
         idempotency_key: &str,
         requester_user_id: Uuid,
     ) -> Result<TaskMessageBusReceipt, TaskServiceError> {
+        self.continue_agent_thread_with_authority(
+            parent_task_id,
+            content,
+            idempotency_key,
+            requester_user_id,
+            None,
+            None,
+        )
+        .await
+    }
+
+    /// Queues a provider continuation only when the database still proves
+    /// that the active Linear installation, binding, Issue route, claimed
+    /// session, and exact parent task form one authorized chain.
+    pub async fn continue_agent_thread_from_integration(
+        &self,
+        parent_task_id: Uuid,
+        content: &str,
+        idempotency_key: &str,
+        requester_user_id: Uuid,
+        connection_id: Uuid,
+        linear_session_id: &str,
+    ) -> Result<TaskMessageBusReceipt, TaskServiceError> {
+        self.continue_agent_thread_with_authority(
+            parent_task_id,
+            content,
+            idempotency_key,
+            requester_user_id,
+            Some(connection_id),
+            Some(linear_session_id),
+        )
+        .await
+    }
+
+    async fn continue_agent_thread_with_authority(
+        &self,
+        parent_task_id: Uuid,
+        content: &str,
+        idempotency_key: &str,
+        requester_user_id: Uuid,
+        integration_connection_id: Option<Uuid>,
+        integration_session_id: Option<&str>,
+    ) -> Result<TaskMessageBusReceipt, TaskServiceError> {
         const MAX_MESSAGE_CHARS: usize = 12_000;
         let content = sanitize_text_for_postgres(content.trim());
         let idempotency_key = sanitize_text_for_postgres(idempotency_key.trim());
@@ -3250,6 +3293,23 @@ impl TaskService {
             .await
             .map_err(downcast_sqlx)?
             .ok_or_else(|| TaskServiceError::Internal("Agent binding not found".to_string()))?;
+        let integration_authorized = match (integration_connection_id, integration_session_id) {
+            (Some(connection_id), Some(session_id)) => {
+                linear_agent_q::linear_agent_continuation_authorized(
+                    &self.pool,
+                    connection_id,
+                    session_id,
+                    snapshot_parent.id,
+                )
+                .await
+                .map_err(downcast_sqlx)?
+            }
+            (None, None) => false,
+            _ => return Err(TaskServiceError::AgentThreadInvokeForbidden),
+        };
+        if integration_connection_id.is_some() && !integration_authorized {
+            return Err(TaskServiceError::AgentThreadInvokeForbidden);
+        }
         let snapshot_runtime_exists = match snapshot_agent.runtime_id {
             Some(runtime_id) => get_agent_runtime(&self.pool, runtime_id)
                 .await
@@ -3306,13 +3366,15 @@ impl TaskService {
         } else {
             Vec::new()
         };
-        if !member_invocation_allowed(
-            snapshot_agent.owner_id,
-            &snapshot_agent.permission_mode,
-            is_workspace_member,
-            &targets,
-            requester_user_id,
-        ) {
+        if !integration_authorized
+            && !member_invocation_allowed(
+                snapshot_agent.owner_id,
+                &snapshot_agent.permission_mode,
+                is_workspace_member,
+                &targets,
+                requester_user_id,
+            )
+        {
             return Err(TaskServiceError::AgentThreadInvokeForbidden);
         }
 
@@ -3390,28 +3452,46 @@ impl TaskService {
             return Err(TaskServiceError::AgentThreadUnavailable(reason));
         }
 
+        let integration_authorized = match (integration_connection_id, integration_session_id) {
+            (Some(connection_id), Some(session_id)) => {
+                linear_agent_q::linear_agent_continuation_authorized(
+                    &mut *tx,
+                    connection_id,
+                    session_id,
+                    parent.id,
+                )
+                .await
+                .map_err(downcast_sqlx)?
+            }
+            (None, None) => false,
+            _ => return Err(TaskServiceError::AgentThreadInvokeForbidden),
+        };
+        if integration_connection_id.is_some() && !integration_authorized {
+            return Err(TaskServiceError::AgentThreadInvokeForbidden);
+        }
+
         // Recheck the authenticated requester after taking the Agent and
         // parent-task locks. The handler performs the same admission check for
         // the HTTP path, but this service boundary must also fail closed for
         // direct callers and for permission changes racing the continuation
         // request. Locking the member row makes a concurrent role revocation
         // serialize with this final authorization decision.
-        let requester_member = match lock_member_by_user_and_workspace(
-            &mut *tx,
-            requester_user_id,
-            agent.workspace_id,
-        )
-        .await
-        {
-            Ok(member) => member,
-            Err(error) => {
-                tracing::warn!(
-                    %error,
-                    requester_user_id = %requester_user_id,
-                    agent_id = %agent.id,
-                    "failed to verify Agent thread requester membership"
-                );
-                None
+        let requester_member = if integration_authorized {
+            None
+        } else {
+            match lock_member_by_user_and_workspace(&mut *tx, requester_user_id, agent.workspace_id)
+                .await
+            {
+                Ok(member) => member,
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        requester_user_id = %requester_user_id,
+                        agent_id = %agent.id,
+                        "failed to verify Agent thread requester membership"
+                    );
+                    None
+                }
             }
         };
         let is_workspace_member = requester_member.is_some();
@@ -3436,30 +3516,36 @@ impl TaskService {
             .iter()
             .find_map(|task| task.automation_run_id)
             .or(parent.automation_run_id);
-        if let Some(automation_run_id) = automation_run_id {
-            let automation_allowed = match get_automation_run(&mut *tx, automation_run_id).await {
-                Ok(Some(run)) => match get_automation(&mut *tx, run.automation_id).await {
-                    Ok(Some(automation)) => {
-                        let collaborates =
-                            is_automation_collaborator(&mut *tx, automation.id, requester_user_id)
-                                .await
-                                .unwrap_or_default();
-                        automation_invocation_allowed(
-                            automation.workspace_id,
-                            agent.workspace_id,
-                            requester_member.as_ref().map(|member| member.role.as_str()),
-                            &automation.created_by_type,
-                            automation.created_by_id,
-                            requester_user_id,
-                            collaborates,
-                        )
-                    }
+        if !integration_authorized {
+            if let Some(automation_run_id) = automation_run_id {
+                let automation_allowed = match get_automation_run(&mut *tx, automation_run_id).await
+                {
+                    Ok(Some(run)) => match get_automation(&mut *tx, run.automation_id).await {
+                        Ok(Some(automation)) => {
+                            let collaborates = is_automation_collaborator(
+                                &mut *tx,
+                                automation.id,
+                                requester_user_id,
+                            )
+                            .await
+                            .unwrap_or_default();
+                            automation_invocation_allowed(
+                                automation.workspace_id,
+                                agent.workspace_id,
+                                requester_member.as_ref().map(|member| member.role.as_str()),
+                                &automation.created_by_type,
+                                automation.created_by_id,
+                                requester_user_id,
+                                collaborates,
+                            )
+                        }
+                        Ok(None) | Err(_) => false,
+                    },
                     Ok(None) | Err(_) => false,
-                },
-                Ok(None) | Err(_) => false,
-            };
-            if !automation_allowed {
-                return Err(TaskServiceError::AgentThreadInvokeForbidden);
+                };
+                if !automation_allowed {
+                    return Err(TaskServiceError::AgentThreadInvokeForbidden);
+                }
             }
         }
         let targets = if is_workspace_member
@@ -3481,13 +3567,15 @@ impl TaskService {
         } else {
             Vec::new()
         };
-        if !member_invocation_allowed(
-            agent.owner_id,
-            &agent.permission_mode,
-            is_workspace_member,
-            &targets,
-            requester_user_id,
-        ) {
+        if !integration_authorized
+            && !member_invocation_allowed(
+                agent.owner_id,
+                &agent.permission_mode,
+                is_workspace_member,
+                &targets,
+                requester_user_id,
+            )
+        {
             return Err(TaskServiceError::AgentThreadInvokeForbidden);
         }
 
