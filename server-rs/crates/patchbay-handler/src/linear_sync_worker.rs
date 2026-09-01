@@ -1482,12 +1482,79 @@ impl LinearSyncWorker {
         if binding.sync_mode == "import" {
             merge = remote_authoritative_merge(&base_snapshot, &local_snapshot, &remote_snapshot);
         }
+        if let Some(remote_status) = remote_snapshot.get("status").and_then(Value::as_str) {
+            let remote_category = patchbay_service::issue_status::effective(
+                &self.state.pool,
+                connection.workspace_id,
+                remote_status,
+            )
+            .await;
+            if base_snapshot.get("status") != remote_snapshot.get("status")
+                && import_status_is_inadmissible(&remote_category, Some(&issue))
+                && !merge
+                    .conflicts
+                    .iter()
+                    .any(|conflict| conflict.field == "status")
+            {
+                let base_value = base_snapshot.get("status").cloned().unwrap_or(Value::Null);
+                let local_value = local_snapshot.get("status").cloned().unwrap_or(Value::Null);
+                let remote_value = remote_snapshot
+                    .get("status")
+                    .cloned()
+                    .unwrap_or(Value::Null);
+                merge.conflicts.push(SyncConflictValue {
+                    field: "status".to_string(),
+                    base_value: base_value.clone(),
+                    local_value: local_value.clone(),
+                    remote_value,
+                });
+                merge.common["status"] = base_value;
+                merge.merged["status"] = local_value;
+                merge.remote_changed = SHARED_SYNC_FIELDS
+                    .iter()
+                    .any(|field| merge.merged.get(*field) != local_snapshot.get(*field));
+            }
+        }
         let last_event_at_ms = event_timestamp_ms.or(link.last_remote_event_at_ms);
         let last_event_id = event_timestamp_ms
             .map(|_| source_event_id)
             .or(link.last_remote_event_id.as_deref());
 
         let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
+        let locked_binding = linear_q::get_project_binding_for_update(
+            &mut *transaction,
+            connection.workspace_id,
+            binding.id,
+        )
+        .await
+        .map_err(SyncError::retry)?;
+        if locked_binding
+            .as_ref()
+            .is_none_or(|current| current.status != "active")
+        {
+            return Ok(());
+        }
+        let locked_link = linear_q::get_linear_issue_link_for_update(
+            &mut *transaction,
+            connection.workspace_id,
+            link.id,
+        )
+        .await
+        .map_err(SyncError::retry)?;
+        let Some(locked_link) = locked_link else {
+            return Ok(());
+        };
+        if locked_link.binding_id != binding.id || locked_link.sync_status == "deleted" {
+            return Ok(());
+        }
+        if locked_link.last_common_snapshot != link.last_common_snapshot
+            || locked_link.last_remote_event_at_ms != link.last_remote_event_at_ms
+            || locked_link.last_remote_event_id != link.last_remote_event_id
+        {
+            return Err(SyncError::retry(anyhow::anyhow!(
+                "Linear Issue Link advanced while preparing inbound merge"
+            )));
+        }
         let applied = if merge.remote_changed || destination_project_id.is_some() {
             let mut patch = external_patch_from_snapshot(&merge.merged)?;
             patch.project_id = destination_project_id.map(Some);
