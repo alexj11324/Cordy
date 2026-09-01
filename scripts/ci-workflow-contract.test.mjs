@@ -40,11 +40,22 @@ test("Rust and Mobile validation are automatic path-classified merge gates", () 
   assert.match(ci, /- 'scripts\/verify-release-tag\.sh'/u);
 });
 
+test("merge queue runs the same path-aware CI gate", () => {
+  assert.match(ci, /^  merge_group:\n/mu);
+  assert.match(ci, /^    types: \[checks_requested\]\n/mu);
+  assert.match(ci, /\$EVENT_NAME" = "merge_group"/u);
+  assert.equal(
+    [...ci.matchAll(/github\.event_name == 'pull_request' \|\| github\.event_name == 'merge_group'/gu)].length,
+    3,
+  );
+  assert.match(ci, /cancel-in-progress: true/u);
+});
+
 test("Rust uses one workspace test invocation and PR compiler caches are read-only", () => {
   assert.match(ci, /cargo test --workspace --all-targets --locked/u);
   assert.doesNotMatch(ci, /cargo metadata --locked --no-deps/u);
   assert.equal(
-    [...ci.matchAll(/SCCACHE_GHA_RW_MODE: \$\{\{ github\.event_name == 'pull_request' && 'READ_ONLY' \|\| 'READ_WRITE' \}\}/gu)].length,
+    [...ci.matchAll(/SCCACHE_GHA_RW_MODE: \$\{\{ \(github\.event_name == 'pull_request' \|\| github\.event_name == 'merge_group'\) && 'READ_ONLY' \|\| 'READ_WRITE' \}\}/gu)].length,
     3,
   );
 });
@@ -126,4 +137,13 @@ test("secure development auth bootstrap runs outside path-filtered jobs", () => 
 test("the obsolete fixed-commit Desktop artifact workflow is gone", async () => {
   const names = await readdir(workflowDirectory);
   assert.ok(!names.includes("aspectlylabs-desktop-artifact.yml"));
+});
+
+test("the Stack CI runbook keeps queue setup outside source-controlled gates", async () => {
+  const runbook = await readFile(new URL("../.github/STACK_CI.md", import.meta.url), "utf8");
+  assert.match(runbook, /gh stack merge .*--yes/u);
+  assert.match(runbook, /merge_group/u);
+  assert.match(runbook, /frontend.*backend.*mobile.*installer/su);
+  assert.match(runbook, /required checks/u);
+  assert.match(runbook, /cannot be enabled by a workflow commit/u);
 });

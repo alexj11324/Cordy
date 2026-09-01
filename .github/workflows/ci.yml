@@ -9,6 +9,11 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review, edited]
+  # Required checks must also run on the temporary merge-group ref when main
+  # is protected by GitHub's merge queue. Without this event, the queue cannot
+  # receive the same verdicts as an ordinary pull request.
+  merge_group:
+    types: [checks_requested]
   workflow_dispatch:
     inputs:
       base_ref:
@@ -256,7 +261,9 @@ jobs:
 
       - name: Decide
         id: decide
-        # Pull requests and pushes classify Rust and Mobile automatically.
+        # Pull requests and merge-group refs classify every surface by path.
+        # Pushes/tags and manual runs continue to validate their full release
+        # surface, while merge-group checks stay equivalent to PR checks.
         # A manual run remains an explicit full-Rust authorization path used by
         # release verification, while version tags always receive Rust checks.
         env:
@@ -268,10 +275,14 @@ jobs:
           RUN_RUST: ${{ github.event_name == 'workflow_dispatch' && inputs.run_rust == true }}
           REF_TYPE: ${{ github.ref_type }}
         run: |
-          if [ "$EVENT_NAME" != "pull_request" ] || [ "$FRONTEND_CHANGED" = "true" ]; then
-            echo "frontend=true" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "merge_group" ]; then
+            if [ "$FRONTEND_CHANGED" = "true" ]; then
+              echo "frontend=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "frontend=false" >> "$GITHUB_OUTPUT"
+            fi
           else
-            echo "frontend=false" >> "$GITHUB_OUTPUT"
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
           fi
           if [ "$RUN_RUST" = "true" ] || [ "$RUST_CHANGED" = "true" ] || [ "$REF_TYPE" = "tag" ]; then
             echo "rust=true" >> "$GITHUB_OUTPUT"
@@ -283,10 +294,14 @@ jobs:
           else
             echo "mobile=false" >> "$GITHUB_OUTPUT"
           fi
-          if [ "$EVENT_NAME" != "pull_request" ] || [ "$INSTALLER_CHANGED" = "true" ]; then
-            echo "installer=true" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "merge_group" ]; then
+            if [ "$INSTALLER_CHANGED" = "true" ]; then
+              echo "installer=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "installer=false" >> "$GITHUB_OUTPUT"
+            fi
           else
-            echo "installer=false" >> "$GITHUB_OUTPUT"
+            echo "installer=true" >> "$GITHUB_OUTPUT"
           fi
 
   # The frontend validation is split across four runners on purpose. A prior
@@ -716,7 +731,7 @@ jobs:
     env:
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "true"
-      SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'pull_request' && 'READ_ONLY' || 'READ_WRITE' }}
+      SCCACHE_GHA_RW_MODE: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'READ_ONLY' || 'READ_WRITE' }}
       # Ephemeral runners have no persisted target/. Cargo incremental cannot
       # survive across jobs, and it poisons sccache keys inside a job.
       # line-tables-only keeps panic backtraces without full DWARF codegen.
@@ -804,7 +819,7 @@ jobs:
       SQLX_OFFLINE: "false"
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "true"
-      SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'pull_request' && 'READ_ONLY' || 'READ_WRITE' }}
+      SCCACHE_GHA_RW_MODE: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'READ_ONLY' || 'READ_WRITE' }}
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
       CARGO_PROFILE_TEST_DEBUG: "line-tables-only"
@@ -929,7 +944,7 @@ jobs:
     env:
       RUSTC_WRAPPER: sccache
       SCCACHE_GHA_ENABLED: "true"
-      SCCACHE_GHA_RW_MODE: ${{ github.event_name == 'pull_request' && 'READ_ONLY' || 'READ_WRITE' }}
+      SCCACHE_GHA_RW_MODE: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'READ_ONLY' || 'READ_WRITE' }}
       CARGO_INCREMENTAL: "0"
       CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
       CARGO_PROFILE_TEST_DEBUG: "line-tables-only"
