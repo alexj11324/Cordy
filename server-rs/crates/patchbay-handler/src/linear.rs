@@ -778,6 +778,14 @@ fn conflict_patch(field: &str, value: &Value) -> Result<ExternalIssuePatch, &'st
     }
 }
 
+fn status_resolution_is_publishable(status_mapping: &Value, status: &str) -> bool {
+    status_mapping.as_object().is_some_and(|mapping| {
+        mapping
+            .values()
+            .any(|mapped_status| mapped_status.as_str() == Some(status))
+    })
+}
+
 fn current_issue_conflict_value(
     issue: &patchbay_db::models::Issue,
     field: &str,
@@ -988,6 +996,39 @@ async fn resolve_conflict(
         Ok(patch) => patch,
         Err(message) => return error_response(StatusCode::BAD_REQUEST, message),
     };
+    if let Some(status) = patch.status.as_deref() {
+        if !status_resolution_is_publishable(&binding.status_mapping, status) {
+            return error_response(
+                StatusCode::BAD_REQUEST,
+                "status resolution has no Linear state mapping",
+            );
+        }
+    }
+    if let Some(owner_id) = patch.owner_id.flatten() {
+        match linear_q::get_linear_member_binding(
+            &mut *transaction,
+            workspace_id,
+            binding.connection_id,
+            owner_id,
+        )
+        .await
+        {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "owner resolution has no Linear member mapping",
+                );
+            }
+            Err(error) => {
+                tracing::warn!(%error, "Linear conflict owner mapping lookup failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to validate owner resolution",
+                );
+            }
+        }
+    }
     let applied = match state
         .issues
         .apply_external_patch_in_transaction(
@@ -4130,6 +4171,16 @@ mod tests {
         assert_eq!(omitted.manual_value, None);
         assert_eq!(cleared.manual_value, Some(None));
         assert_eq!(supplied.manual_value, Some(Some(json!("kept"))));
+    }
+
+    #[test]
+    fn conflict_status_resolution_requires_reverse_mapping() {
+        let mapping = json!({
+            "linear-started": "in_progress",
+            "linear-done": "done"
+        });
+        assert!(status_resolution_is_publishable(&mapping, "done"));
+        assert!(!status_resolution_is_publishable(&mapping, "todo"));
     }
 
     #[test]

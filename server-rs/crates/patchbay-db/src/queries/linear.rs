@@ -120,7 +120,17 @@ pub async fn upsert_connection(
     connection: &LinearConnectionInput<'_>,
 ) -> anyhow::Result<LinearConnection> {
     Ok(sqlx::query_as::<_, LinearConnection>(
-        r#"WITH deleted_member_bindings AS (
+        r#"WITH deleted_conflicts AS (
+               DELETE FROM linear_sync_conflict
+               WHERE workspace_id = $2
+                 AND binding_id IN (
+                     SELECT binding.id
+                     FROM linear_project_binding AS binding
+                     JOIN linear_connection AS connection ON connection.id = binding.connection_id
+                     WHERE connection.workspace_id = $2
+                       AND connection.organization_id <> $3
+                 )
+           ), deleted_member_bindings AS (
                DELETE FROM linear_member_binding
                WHERE workspace_id = $2
                  AND connection_id IN (
