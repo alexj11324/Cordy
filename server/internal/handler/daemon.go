@@ -2183,8 +2183,8 @@ func (h *Handler) buildClaimedTaskResponse(r *http.Request, task *db.AgentTaskQu
 	//
 	// Composing here covers every task kind, because this is the single
 	// place a claimed task's agent payload is assembled.
-	if agent.SystemKey.String == service.MikaSystemKey {
-		resp.Agent.Instructions = service.ComposeMikaInstructions(agent.Name, agent.Instructions)
+	if agent.SystemKey.String == service.PatrickSystemKey {
+		resp.Agent.Instructions = service.ComposePatrickInstructions(agent.Name, agent.Instructions)
 	}
 	if useSkillRefs {
 		_, skillRefs, err := h.TaskService.LoadAgentSkillBundles(r.Context(), task.AgentID)

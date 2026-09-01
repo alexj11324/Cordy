@@ -68,7 +68,7 @@ type AgentResponse struct {
 	// ConversationStarters are optional, agent-specific first-turn suggestions. An
 	// empty list tells clients to render their localized fallback prompts.
 	ConversationStarters []AgentConversationStarter `json:"conversation_starters"`
-	// SystemKey identifies a product-defined agent (e.g. "mika"). Empty for
+	// SystemKey identifies a product-defined agent (e.g. "patrick"). Empty for
 	// every user- or template-created agent. The UI keys "this is maintained
 	// by Patchbay" off this rather than off the display name, which owners may
 	// change.

@@ -92,10 +92,10 @@ func TestAgentReadinessVerdict(t *testing.T) {
 // agent-authored mention is refused, so it has to carry the repair command when
 // there is one and stay actionable when there is not.
 func TestRuntimeUnusableNotice(t *testing.T) {
-	withRepair := RuntimeUnusableNotice("Mika", AgentVerdict{
+	withRepair := RuntimeUnusableNotice("Patrick", AgentVerdict{
 		Repair: &RuntimeRepair{Package: "@anthropic-ai/claude-code", Command: "cd '/pkg' && node install.cjs"},
 	})
-	if !strings.Contains(withRepair, "Mika") || !strings.Contains(withRepair, "cd '/pkg' && node install.cjs") {
+	if !strings.Contains(withRepair, "Patrick") || !strings.Contains(withRepair, "cd '/pkg' && node install.cjs") {
 		t.Errorf("notice must name the agent and the repair command:\n%s", withRepair)
 	}
 	// The fence is labelled with the shell the command was written for: a
@@ -104,14 +104,14 @@ func TestRuntimeUnusableNotice(t *testing.T) {
 	if !strings.Contains(withRepair, "```bash") {
 		t.Errorf("a bash repair must be fenced as bash:\n%s", withRepair)
 	}
-	windows := RuntimeUnusableNotice("Mika", AgentVerdict{
+	windows := RuntimeUnusableNotice("Patrick", AgentVerdict{
 		Repair: &RuntimeRepair{Command: "Set-Location 'C:\\pkg'\nnode install.cjs", Shell: "powershell"},
 	})
 	if !strings.Contains(windows, "```powershell") {
 		t.Errorf("a PowerShell repair must be fenced as powershell:\n%s", windows)
 	}
 
-	withoutRepair := RuntimeUnusableNotice("Mika", AgentVerdict{})
+	withoutRepair := RuntimeUnusableNotice("Patrick", AgentVerdict{})
 	if strings.Contains(withoutRepair, "```") {
 		t.Errorf("no repair command is known, so none may be shown:\n%s", withoutRepair)
 	}

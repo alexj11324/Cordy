@@ -19,9 +19,9 @@ import {
   StepHeading,
 } from "../components/step-shell";
 import {
-  MikaRuntimeChoice,
-  type MikaRuntimeSelection,
-} from "../../runtimes/components/mika-runtime-choice";
+  PatrickRuntimeChoice,
+  type PatrickRuntimeSelection,
+} from "../../runtimes/components/patrick-runtime-choice";
 import { useRuntimePicker } from "../components/use-runtime-picker";
 import { useT } from "../../i18n";
 
@@ -284,8 +284,8 @@ function CliInstallDialog({
   onClose: () => void;
   onConnect: () => void | Promise<void>;
   runtimes: AgentRuntime[];
-  choice: MikaRuntimeSelection;
-  onChoiceChange: (next: MikaRuntimeSelection) => void;
+  choice: PatrickRuntimeSelection;
+  onChoiceChange: (next: PatrickRuntimeSelection) => void;
   hasRuntimes: boolean;
   canConnect: boolean;
   selectedName: string | null;
@@ -317,7 +317,7 @@ function CliInstallDialog({
               {/* Cap the runtime list at ~4 rows visible, scroll the rest.
                   Keeps the commands above always reachable even when
                   a user has many machines registered. */}
-              <MikaRuntimeChoice
+              <PatrickRuntimeChoice
                 layout="list"
                 runtimes={runtimes}
                 value={choice}

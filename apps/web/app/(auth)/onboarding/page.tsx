@@ -16,7 +16,7 @@ import { CliInstallInstructions, OnboardingFlow } from "@patchbay/views/onboardi
  * web (matching `WindowOverlay` on desktop); content is the shared
  * `<OnboardingFlow />`. Kept minimal — guard on auth, render, exit.
  *
- * Runtime-connected onboarding opens the Mika session that the final step
+ * Runtime-connected onboarding opens the Patrick session that the final step
  * created and started. Other exits land on the workspace issues list, or root
  * when no workspace exists.
  *
@@ -52,7 +52,7 @@ export default function OnboardingPage() {
     // already onboarded. We deliberately don't bounce on `workspaces.length`
     // here — the flow creates a workspace mid-onboarding, and a
     // hasWorkspaces bounce here would kick the user out before runtime and
-    // Mika setup can run. The new entry-point
+    // Patrick setup can run. The new entry-point
     // judgment in callback / login handles "where should this user go on
     // login" so OnboardingPage no longer needs to second-guess it.
     if (hasOnboarded) {

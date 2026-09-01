@@ -2045,9 +2045,9 @@ describe("ApiClient explicit workspace targeting", () => {
     return (init.headers as Record<string, string>)["X-Workspace-Slug"];
   }
 
-  it("sends the given slug on Mika creation", async () => {
+  it("sends the given slug on Patrick creation", async () => {
     const fetchMock = stubOk({ id: "agent-1" });
-    await new ApiClient("https://api.example.test").createMikaAgent(
+    await new ApiClient("https://api.example.test").createPatrickAgent(
       { runtime_id: "runtime-1", language: "en" },
       "proxima-centauri",
     );
@@ -2221,7 +2221,7 @@ describe("ApiClient unsubscribe endpoints", () => {
   });
 });
 
-describe("ApiClient startMikaOnboarding", () => {
+describe("ApiClient startPatrickOnboarding", () => {
   it("returns the opening a well-formed response reports", async () => {
     vi.stubGlobal(
       "fetch",
@@ -2238,7 +2238,7 @@ describe("ApiClient startMikaOnboarding", () => {
     );
 
     await expect(
-      new ApiClient("https://api.example.test").startMikaOnboarding("session-1", {
+      new ApiClient("https://api.example.test").startPatrickOnboarding("session-1", {
         language: "en",
       }),
     ).resolves.toEqual({
@@ -2263,7 +2263,7 @@ describe("ApiClient startMikaOnboarding", () => {
     // already opened this conversation" and navigates, rather than acting on a
     // body it could not understand.
     await expect(
-      new ApiClient("https://api.example.test").startMikaOnboarding("session-1", {
+      new ApiClient("https://api.example.test").startPatrickOnboarding("session-1", {
         language: "en",
       }),
     ).resolves.toEqual({ started: false });
@@ -2281,7 +2281,7 @@ describe("ApiClient startMikaOnboarding", () => {
     );
 
     await expect(
-      new ApiClient("https://api.example.test").startMikaOnboarding("session-1", {
+      new ApiClient("https://api.example.test").startPatrickOnboarding("session-1", {
         language: "en",
       }),
     ).resolves.toEqual({ started: false });

@@ -8,8 +8,8 @@ import (
 	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
-func TestBuildMikaOnboardingKickoffSelectsSkillWithKnownContext(t *testing.T) {
-	prompt := buildMikaOnboardingKickoff(
+func TestBuildPatrickOnboardingKickoffSelectsSkillWithKnownContext(t *testing.T) {
+	prompt := buildPatrickOnboardingKickoff(
 		"Simplified Chinese",
 		"Venus",
 		"Asia/Shanghai",
@@ -44,12 +44,12 @@ func TestBuildMikaOnboardingKickoffSelectsSkillWithKnownContext(t *testing.T) {
 // The kickoff now rides into the member's first real turn, so it has two jobs
 // no other text can do: keep the model from answering it as if the member wrote
 // it (the per-turn chat prompt frames every task as "respond to their
-// message"), and stop Mika from introducing herself a second time. She has no
+// message"), and stop Patrick from introducing herself a second time. She has no
 // memory of the opening — the server wrote it — so it has to be quoted here to
 // be knowable at all (MUL-5827).
-func TestBuildMikaOnboardingKickoffCarriesTheOpeningAlreadySent(t *testing.T) {
-	opening := "Hi — welcome to Venus. I'm Mika, your Chief of Staff here."
-	prompt := buildMikaOnboardingKickoff("English", "Venus", "Asia/Shanghai", questionnaireAnswers{}, opening)
+func TestBuildPatrickOnboardingKickoffCarriesTheOpeningAlreadySent(t *testing.T) {
+	opening := "Hi — welcome to Venus. I'm Patrick, your Chief of Staff here."
+	prompt := buildPatrickOnboardingKickoff("English", "Venus", "Asia/Shanghai", questionnaireAnswers{}, opening)
 
 	for _, want := range []string{
 		"not a message from the member",
@@ -80,14 +80,14 @@ func TestBuildMikaOnboardingKickoffCarriesTheOpeningAlreadySent(t *testing.T) {
 	}
 }
 
-func TestBuildMikaOnboardingKickoffProfileVariants(t *testing.T) {
-	t.Run("skipped questionnaire tells Mika to stay neutral", func(t *testing.T) {
-		prompt := buildMikaOnboardingKickoff("English", "Venus", "Asia/Shanghai", questionnaireAnswers{
+func TestBuildPatrickOnboardingKickoffProfileVariants(t *testing.T) {
+	t.Run("skipped questionnaire tells Patrick to stay neutral", func(t *testing.T) {
+		prompt := buildPatrickOnboardingKickoff("English", "Venus", "Asia/Shanghai", questionnaireAnswers{
 			RoleSkipped:    true,
 			UseCaseSkipped: true,
 		}, "Hi — welcome to Venus.")
 		if !strings.Contains(prompt, "skipped the profile questions") {
-			t.Fatalf("kickoff must tell Mika the profile is empty:\n%s", prompt)
+			t.Fatalf("kickoff must tell Patrick the profile is empty:\n%s", prompt)
 		}
 		if strings.Contains(prompt, "Role:") {
 			t.Fatalf("kickoff must not emit an empty Role line:\n%s", prompt)
@@ -95,7 +95,7 @@ func TestBuildMikaOnboardingKickoffProfileVariants(t *testing.T) {
 	})
 
 	t.Run("other answers carry the member's own words", func(t *testing.T) {
-		prompt := buildMikaOnboardingKickoff("English", "Venus", "Asia/Shanghai", questionnaireAnswers{
+		prompt := buildPatrickOnboardingKickoff("English", "Venus", "Asia/Shanghai", questionnaireAnswers{
 			Role:         "other",
 			RoleOther:    "support lead",
 			UseCase:      stringOrSlice{"other"},
@@ -118,9 +118,9 @@ func TestBuildMikaOnboardingKickoffProfileVariants(t *testing.T) {
 // the model, and its absence has to be visible rather than silent — otherwise
 // the skill proposes "every morning at 09:00" and the member outside UTC gets
 // an afternoon digest (MUL-5765).
-func TestBuildMikaOnboardingKickoffCarriesMemberTimezone(t *testing.T) {
+func TestBuildPatrickOnboardingKickoffCarriesMemberTimezone(t *testing.T) {
 	t.Run("known zone travels with the profile", func(t *testing.T) {
-		prompt := buildMikaOnboardingKickoff("English", "Venus", "Asia/Shanghai", questionnaireAnswers{
+		prompt := buildPatrickOnboardingKickoff("English", "Venus", "Asia/Shanghai", questionnaireAnswers{
 			Role: "engineer",
 		}, "Hi — welcome to Venus.")
 		if !strings.Contains(prompt, `Member IANA timezone: "Asia/Shanghai"`) {
@@ -129,7 +129,7 @@ func TestBuildMikaOnboardingKickoffCarriesMemberTimezone(t *testing.T) {
 	})
 
 	t.Run("an unset zone is stated, not omitted", func(t *testing.T) {
-		prompt := buildMikaOnboardingKickoff("English", "Venus", "", questionnaireAnswers{
+		prompt := buildPatrickOnboardingKickoff("English", "Venus", "", questionnaireAnswers{
 			Role: "engineer",
 		}, "Hi — welcome to Venus.")
 		if !strings.Contains(prompt, "Member IANA timezone: unknown") {
@@ -140,7 +140,7 @@ func TestBuildMikaOnboardingKickoffCarriesMemberTimezone(t *testing.T) {
 	// The digest card is clickable whether or not the questionnaire was
 	// answered, so the zone must survive the skipped-profile early return.
 	t.Run("survives a skipped questionnaire", func(t *testing.T) {
-		prompt := buildMikaOnboardingKickoff("English", "Venus", "Europe/Berlin", questionnaireAnswers{
+		prompt := buildPatrickOnboardingKickoff("English", "Venus", "Europe/Berlin", questionnaireAnswers{
 			RoleSkipped:    true,
 			UseCaseSkipped: true,
 		}, "Hi — welcome to Venus.")
@@ -166,14 +166,14 @@ func TestVisibleChatMessagesHidesOnboardingKickoff(t *testing.T) {
 			MessageKind: protocol.ChatMessageKindOnboardingKickoff,
 		},
 		{
-			Content:     "Hi, I'm Mika.",
+			Content:     "Hi, I'm Patrick.",
 			MessageKind: protocol.ChatMessageKindMessage,
 		},
 	}
 
 	visible := visibleChatMessages(messages)
-	if len(visible) != 1 || visible[0].Content != "Hi, I'm Mika." {
-		t.Fatalf("visibleChatMessages() = %#v, want only Mika's visible reply", visible)
+	if len(visible) != 1 || visible[0].Content != "Hi, I'm Patrick." {
+		t.Fatalf("visibleChatMessages() = %#v, want only Patrick's visible reply", visible)
 	}
 }
 
@@ -181,8 +181,8 @@ func TestVisibleChatMessagesHidesOnboardingKickoff(t *testing.T) {
 // workspace's own inputs only — nothing about what the member did elsewhere
 // reaches the model, so no two workspaces can produce different openings for
 // the same profile.
-func TestBuildMikaOnboardingKickoffCarriesNoCrossWorkspaceHistory(t *testing.T) {
-	prompt := buildMikaOnboardingKickoff("English", "Venus", "Asia/Shanghai", questionnaireAnswers{}, "Hi — welcome to Venus.")
+func TestBuildPatrickOnboardingKickoffCarriesNoCrossWorkspaceHistory(t *testing.T) {
+	prompt := buildPatrickOnboardingKickoff("English", "Venus", "Asia/Shanghai", questionnaireAnswers{}, "Hi — welcome to Venus.")
 
 	for _, unwanted := range []string{
 		"another workspace",

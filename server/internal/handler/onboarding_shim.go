@@ -2,7 +2,7 @@
 //
 // Background: pre-v3 desktop builds call BootstrapOnboardingRuntime /
 // BootstrapOnboardingNoRuntime during their onboarding flow. Current
-// clients no longer use the runtime bootstrap path; they create only Mika
+// clients no longer use the runtime bootstrap path; they create only Patrick
 // and start the real interactive onboarding chat before completing setup.
 // Removing this endpoint would still break an old installed desktop
 // talking to a newer server.

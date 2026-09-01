@@ -2056,7 +2056,7 @@ func chatMessageToResponse(m db.ChatMessage, attachments []AttachmentResponse) C
 // visibleChatMessages removes product-authored context that is sent to the
 // agent runtime but is never part of the member-visible conversation. The
 // daemon reads its task-scoped input through ListChatInputMessages, so this
-// user-facing filter does not remove the kickoff from Mika's execution.
+// user-facing filter does not remove the kickoff from Patrick's execution.
 func visibleChatMessages(messages []db.ChatMessage) []db.ChatMessage {
 	visible := make([]db.ChatMessage, 0, len(messages))
 	for _, message := range messages {

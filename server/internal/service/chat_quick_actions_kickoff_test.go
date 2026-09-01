@@ -16,7 +16,7 @@ import (
 // TestAdoptOrphanOnboardingKickoff pins the handoff the instant opening depends
 // on: the kickoff row is written with no task, and the member's first real send
 // is what delivers it to a runtime. If this stops working the profile block and
-// the "you already greeted them" instruction never reach the model, and Mika
+// the "you already greeted them" instruction never reach the model, and Patrick
 // introduces herself a second time (MUL-5827).
 func TestAdoptOrphanOnboardingKickoff(t *testing.T) {
 	pool := newResolveOriginatorPool(t)
@@ -35,7 +35,7 @@ func TestAdoptOrphanOnboardingKickoff(t *testing.T) {
 		pool.Exec(context.Background(), `DELETE FROM chat_session WHERE id = $1`, chatSessionID)
 	})
 
-	// The kickoff as OpenMikaOnboardingChat writes it: a user row with no task.
+	// The kickoff as OpenPatrickOnboardingChat writes it: a user row with no task.
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO chat_message (chat_session_id, role, content, message_kind)
 		VALUES ($1, 'user', 'kickoff context', 'onboarding_kickoff')`, chatSessionID); err != nil {
@@ -63,7 +63,7 @@ func TestAdoptOrphanOnboardingKickoff(t *testing.T) {
 
 	// A second send must not steal it back: the batch is immutable once sealed,
 	// and re-delivering the "you already greeted them" context on every turn
-	// would have Mika re-reading the opening for the rest of the conversation.
+	// would have Patrick re-reading the opening for the rest of the conversation.
 	var secondTaskID string
 	if err := pool.QueryRow(ctx, `SELECT gen_random_uuid()::text`).Scan(&secondTaskID); err != nil {
 		t.Fatalf("new task id: %v", err)
@@ -185,7 +185,7 @@ func TestWriteChatCompletionOutcomeStampsAPreDeployKickoffTurn(t *testing.T) {
 	}
 
 	svc := &TaskService{Queries: q, TxStarter: pool}
-	result, _ := json.Marshal(protocol.TaskCompletedPayload{Output: "Hi, I'm Mika."})
+	result, _ := json.Marshal(protocol.TaskCompletedPayload{Output: "Hi, I'm Patrick."})
 	row, err := svc.writeChatCompletionOutcome(ctx, q, db.AgentTaskQueue{
 		ID:            util.MustParseUUID(taskID),
 		ChatSessionID: util.MustParseUUID(chatSessionID),
@@ -206,7 +206,7 @@ func TestWriteChatCompletionOutcomeStampsAPreDeployKickoffTurn(t *testing.T) {
 // TestOnboardingKickoffSurvivesCancelAndReanchor covers the two shared chat
 // mechanisms that a two-row input batch newly exposes. Both used to be safe by
 // assumption ("a direct send owns exactly one user row"), and both would fail
-// silently: the member would simply find Mika introducing herself again, or
+// silently: the member would simply find Patrick introducing herself again, or
 // reading their message before the product's context.
 func TestOnboardingKickoffSurvivesCancelAndReanchor(t *testing.T) {
 	pool := newResolveOriginatorPool(t)
@@ -284,7 +284,7 @@ func TestOnboardingKickoffSurvivesCancelAndReanchor(t *testing.T) {
 // TestFailedFirstTurnReleasesTheOnboardingKickoff covers the failure this was
 // caught by in a live environment: the member's first turn died in preparation,
 // the adopted kickoff stayed bound to that dead task, and their next message
-// reached Mika with no onboarding context — so she introduced herself a second
+// reached Patrick with no onboarding context — so she introduced herself a second
 // time, in a conversation she had already opened.
 func TestFailedFirstTurnReleasesTheOnboardingKickoff(t *testing.T) {
 	pool := newResolveOriginatorPool(t)
@@ -353,7 +353,7 @@ func TestFailedFirstTurnReleasesTheOnboardingKickoff(t *testing.T) {
 // first turn is still running, so that send finds nothing to adopt and never
 // gets another chance. If the dying turn only cleared the kickoff to NULL, the
 // already-sealed successor would execute with no onboarding skill, no profile
-// block, and no record that Mika had already greeted them — and a message sent
+// block, and no record that Patrick had already greeted them — and a message sent
 // later still could pick the kickoff up, delivering it to the wrong turn.
 func TestFailedFirstTurnHandsTheKickoffToAQueuedSuccessor(t *testing.T) {
 	pool := newResolveOriginatorPool(t)

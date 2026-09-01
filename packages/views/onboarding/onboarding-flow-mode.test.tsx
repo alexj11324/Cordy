@@ -48,7 +48,7 @@ vi.mock("@patchbay/core/onboarding", async () => {
   const actual = await vi.importActual<Record<string, unknown>>(
     "@patchbay/core/onboarding",
   );
-  return { ...actual, useBootstrapMika: () => ({ mutateAsync: vi.fn() }) };
+  return { ...actual, useBootstrapPatrick: () => ({ mutateAsync: vi.fn() }) };
 });
 
 import { OnboardingFlow } from "./onboarding-flow";

@@ -292,12 +292,12 @@ describe("IssueHoverCard", () => {
   it("shows a flattened description snippet clamped to two lines", async () => {
     mockIssue({
       ...BASE_ISSUE,
-      description: "**Set up** your first runtime so [Mika](/agents/mika) can pick up work",
+      description: "**Set up** your first runtime so [Patrick](/agents/patrick) can pick up work",
     });
 
     await openCard();
 
-    const snippet = screen.getByText("Set up your first runtime so Mika can pick up work");
+    const snippet = screen.getByText("Set up your first runtime so Patrick can pick up work");
     expect(snippet).toHaveClass("line-clamp-2");
   });
 

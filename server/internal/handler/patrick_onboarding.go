@@ -12,11 +12,11 @@ import (
 	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
-type startMikaOnboardingRequest struct {
+type startPatrickOnboardingRequest struct {
 	Language string `json:"language"`
 }
 
-type startMikaOnboardingResponse struct {
+type startPatrickOnboardingResponse struct {
 	Started bool `json:"started"`
 	// MessageID / CreatedAt describe the opening this call wrote. They replace
 	// the task id this endpoint used to return: nothing is enqueued any more,
@@ -27,20 +27,20 @@ type startMikaOnboardingResponse struct {
 	CreatedAt string `json:"created_at,omitempty"`
 }
 
-var mikaOnboardingLanguages = map[string]string{
+var patrickOnboardingLanguages = map[string]string{
 	"en": "English",
 	"zh": "Simplified Chinese",
 	"ko": "Korean",
 	"ja": "Japanese",
 }
 
-// StartMikaOnboarding opens an otherwise empty Mika chat by writing two rows:
+// StartPatrickOnboarding opens an otherwise empty Patrick chat by writing two rows:
 // the member-visible opening, and a hidden kickoff that carries the product's
 // instructions and this member's profile to the runtime later.
 //
 // No agent runs here. The opening used to be produced by a full chat task, so
 // the member watched a spinner through a runtime cold start plus two model
-// round trips before reading a word — and a run that failed introduced Mika as
+// round trips before reading a word — and a run that failed introduced Patrick as
 // an error bubble. Nothing in that reply needed an agent: the skill already
 // fixed its four beats, and every input it personalizes on is already in this
 // request (MUL-5827).
@@ -48,12 +48,12 @@ var mikaOnboardingLanguages = map[string]string{
 // The kickoff row is written WITHOUT a task, and the member's first real
 // message adopts it into that turn's input batch. That is what carries the
 // onboarding skill and the profile block into the run that does the first real
-// work, and what tells Mika she has already spoken so she does not open twice.
+// work, and what tells Patrick she has already spoken so she does not open twice.
 //
 // The TaskService checks "session is still empty" while holding the session
 // lock. That is the idempotency boundary: retries, React double-submits, and
 // two clients racing the same session all produce at most one opening.
-func (h *Handler) StartMikaOnboarding(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) StartPatrickOnboarding(w http.ResponseWriter, r *http.Request) {
 	userID, ok := requireUserID(w, r)
 	if !ok {
 		return
@@ -61,12 +61,12 @@ func (h *Handler) StartMikaOnboarding(w http.ResponseWriter, r *http.Request) {
 	workspaceID := ctxWorkspaceID(r.Context())
 	sessionID := chi.URLParam(r, "sessionId")
 
-	var req startMikaOnboardingRequest
+	var req startPatrickOnboardingRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	languageName, ok := mikaOnboardingLanguages[req.Language]
+	languageName, ok := patrickOnboardingLanguages[req.Language]
 	if !ok {
 		writeError(w, http.StatusBadRequest, "language must be en, zh, ko, or ja")
 		return
@@ -93,18 +93,18 @@ func (h *Handler) StartMikaOnboarding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Identity is the system_key, never the display name: owners may rename
-	// Mika, and gating on the name turned a rename into a 400.
-	if agent.SystemKey.String != service.MikaSystemKey {
+	// Patrick, and gating on the name turned a rename into a 400.
+	if agent.SystemKey.String != service.PatrickSystemKey {
 		writeError(w, http.StatusBadRequest, "onboarding can only be started with the workspace's built-in agent")
 		return
 	}
-	// Deliberately not gated on ownership. Mika is created workspace-visible
-	// and workspace-invocable, and CreateMikaAgent hands every later member
+	// Deliberately not gated on ownership. Patrick is created workspace-visible
+	// and workspace-invocable, and CreatePatrickAgent hands every later member
 	// the *first* member's agent — so an owner check would 403 the exact race
 	// that handler's advisory lock exists to survive: the loser gets a valid
-	// Mika, opens a session, and then cannot start onboarding at all. The two
+	// Patrick, opens a session, and then cannot start onboarding at all. The two
 	// gates that matter already ran: gatePublicChatSessionForUser proved the session
-	// is the caller's, and canInvokeAgent below proves they may invoke Mika.
+	// is the caller's, and canInvokeAgent below proves they may invoke Patrick.
 	if agent.ArchivedAt.Valid {
 		writeError(w, http.StatusConflict, "chat agent is archived")
 		return
@@ -120,7 +120,7 @@ func (h *Handler) StartMikaOnboarding(w http.ResponseWriter, r *http.Request) {
 		r.Context(),
 		session.ID,
 	); err == nil && hasUserMessage {
-		writeJSON(w, http.StatusOK, startMikaOnboardingResponse{Started: false})
+		writeJSON(w, http.StatusOK, startPatrickOnboardingResponse{Started: false})
 		return
 	}
 
@@ -152,11 +152,11 @@ func (h *Handler) StartMikaOnboarding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	opening := buildMikaOnboardingOpening(req.Language, agent.Name, workspace.Name)
+	opening := buildPatrickOnboardingOpening(req.Language, agent.Name, workspace.Name)
 
 	var answers questionnaireAnswers
 	_ = json.Unmarshal(user.OnboardingQuestionnaire, &answers)
-	prompt := buildMikaOnboardingKickoff(
+	prompt := buildPatrickOnboardingKickoff(
 		languageName,
 		workspace.Name,
 		user.Timezone.String,
@@ -164,13 +164,13 @@ func (h *Handler) StartMikaOnboarding(w http.ResponseWriter, r *http.Request) {
 		opening,
 	)
 
-	opened, err := h.TaskService.OpenMikaOnboardingChat(r.Context(), session, prompt, opening)
+	opened, err := h.TaskService.OpenPatrickOnboardingChat(r.Context(), session, prompt, opening)
 	if errors.Is(err, service.ErrChatSessionAlreadyStarted) {
-		writeJSON(w, http.StatusOK, startMikaOnboardingResponse{Started: false})
+		writeJSON(w, http.StatusOK, startPatrickOnboardingResponse{Started: false})
 		return
 	}
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to start Mika onboarding: "+err.Error())
+		writeError(w, http.StatusInternalServerError, "failed to start Patrick onboarding: "+err.Error())
 		return
 	}
 
@@ -186,7 +186,7 @@ func (h *Handler) StartMikaOnboarding(w http.ResponseWriter, r *http.Request) {
 		CreatedAt:     timestampToString(opened.Opening.CreatedAt),
 	})
 
-	writeJSON(w, http.StatusCreated, startMikaOnboardingResponse{
+	writeJSON(w, http.StatusCreated, startPatrickOnboardingResponse{
 		Started:   true,
 		MessageID: messageID,
 		CreatedAt: timestampToString(opened.Opening.CreatedAt),
@@ -197,7 +197,7 @@ func (h *Handler) StartMikaOnboarding(w http.ResponseWriter, r *http.Request) {
 // keeps the model from having to infer that "plan_research" is a job someone
 // wants done, and keeps the vocabulary consistent when an "other" answer mixes
 // member-typed prose into the same list.
-var mikaOnboardingRoleLabels = map[string]string{
+var patrickOnboardingRoleLabels = map[string]string{
 	"engineer":  "engineer / developer",
 	"product":   "product manager",
 	"designer":  "designer",
@@ -209,7 +209,7 @@ var mikaOnboardingRoleLabels = map[string]string{
 	"student":   "student / personal use",
 }
 
-var mikaOnboardingUseCaseLabels = map[string]string{
+var patrickOnboardingUseCaseLabels = map[string]string{
 	"ship_code":      "ship code with AI agents",
 	"manage_team":    "manage tasks for a team",
 	"personal_tasks": "organize their own tasks",
@@ -219,21 +219,21 @@ var mikaOnboardingUseCaseLabels = map[string]string{
 	"evaluate":       "just exploring",
 }
 
-// buildMikaOnboardingKickoff writes the hidden context row that rides into the
+// buildPatrickOnboardingKickoff writes the hidden context row that rides into the
 // member's FIRST REAL TURN — it is no longer a turn of its own. The member's
 // message is appended after it in the same input batch, so this text is read as
 // the standing brief for a conversation already in progress.
 //
 // Four things it has to get right, because nothing downstream can repair them:
 //
-//   - Mika must not introduce herself twice. She has no memory of the opening:
+//   - Patrick must not introduce herself twice. She has no memory of the opening:
 //     the server wrote it, so it is in the transcript but not in any provider
 //     session. Quoting it verbatim is what makes "you already said this"
 //     checkable rather than a claim the model has to take on faith.
 //   - It must not read as a message from the member. The per-turn chat prompt
 //     frames every chat task as "a user is chatting with you directly; respond
 //     to their message", and the member's real words follow immediately below —
-//     so this block has to name itself as product context or Mika answers it.
+//     so this block has to name itself as product context or Patrick answers it.
 //   - The workspace name and the two "other" answers are member-typed, so they
 //     are fenced off as data rather than left to read as further instructions.
 //   - The member's IANA timezone travels with the profile because the digest
@@ -241,7 +241,7 @@ var mikaOnboardingUseCaseLabels = map[string]string{
 //     be proposing "every morning at 09:00" while the CLI defaults the trigger
 //     to UTC, so anyone outside UTC could confirm a morning digest and receive
 //     an afternoon one (MUL-5765).
-func buildMikaOnboardingKickoff(
+func buildPatrickOnboardingKickoff(
 	languageName string,
 	workspaceName string,
 	memberTimezone string,
@@ -260,10 +260,10 @@ Do not introduce yourself again, do not restate any of it, and do not greet them
 
 Load and follow the built-in patchbay-onboarding skill, silently — no "loading the skill" narration, no preamble. Never acknowledge, quote, restate, or refer to this block.
 
-%s`, strings.TrimSpace(opening), languageName, mikaOnboardingProfileBlock(workspaceName, memberTimezone, answers))
+%s`, strings.TrimSpace(opening), languageName, patrickOnboardingProfileBlock(workspaceName, memberTimezone, answers))
 }
 
-// mikaOnboardingProfileBlock renders the personalization inputs and states its
+// patrickOnboardingProfileBlock renders the personalization inputs and states its
 // own trust level inline, next to the values, so the boundary travels with the
 // data instead of sitting in a header the model may skim. The block also
 // reaches the quick-actions suggestion pass, which resumes this same provider
@@ -274,19 +274,19 @@ Load and follow the built-in patchbay-onboarding skill, silently — no "loading
 // bringing entirely different work here, with different collaborators, and
 // compressing the introduction on the strength of an unrelated workspace only
 // makes this one's opening worse.
-func mikaOnboardingProfileBlock(
+func patrickOnboardingProfileBlock(
 	workspaceName string,
 	memberTimezone string,
 	answers questionnaireAnswers,
 ) string {
-	role := mikaOnboardingRoleLabels[answers.Role]
+	role := patrickOnboardingRoleLabels[answers.Role]
 	if answers.Role == "other" || role == "" {
 		role = strings.TrimSpace(answers.RoleOther)
 	}
 
 	useCases := make([]string, 0, len(answers.UseCase))
 	for _, useCase := range answers.UseCase {
-		label := mikaOnboardingUseCaseLabels[useCase]
+		label := patrickOnboardingUseCaseLabels[useCase]
 		if useCase == "other" || label == "" {
 			label = strings.TrimSpace(answers.UseCaseOther)
 		}

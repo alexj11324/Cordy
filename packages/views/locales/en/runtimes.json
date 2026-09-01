@@ -27,13 +27,13 @@
       "hint": "This usually takes a few seconds. Your daemon is registering with the workspace."
     }
   },
-  "mika_setup": {
-    "title": "Your runtime is ready. Start with Mika.",
-    "description": "Mika turns your goal into an issue, coordinates the right agent, and helps you add reusable specialists when your workflow needs them.",
-    "action": "Start with Mika",
-    "failed": "Couldn't start Mika",
-    "dialog_title": "Where should Mika run?",
-    "dialog_description": "Pick the runtime Mika will use. You can change it later in settings.",
+  "patrick_setup": {
+    "title": "Your runtime is ready. Start with Patrick.",
+    "description": "Patrick turns your goal into an issue, coordinates the right agent, and helps you add reusable specialists when your workflow needs them.",
+    "action": "Start with Patrick",
+    "failed": "Couldn't start Patrick",
+    "dialog_title": "Where should Patrick run?",
+    "dialog_description": "Pick the runtime Patrick will use. You can change it later in settings.",
     "cancel": "Cancel"
   },
   "machine": {

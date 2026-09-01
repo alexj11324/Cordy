@@ -12,34 +12,34 @@ import (
 	"github.com/patchbay-ai/patchbay/server/pkg/protocol"
 )
 
-// startMikaOnboarding drives the endpoint the way the router does: session id
+// startPatrickOnboarding drives the endpoint the way the router does: session id
 // as a chi URL param plus the workspace/member context the middleware sets.
-func startMikaOnboarding(t *testing.T, sessionID string, body any) *httptest.ResponseRecorder {
+func startPatrickOnboarding(t *testing.T, sessionID string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	req := newRequest("POST", "/api/chat/sessions/"+sessionID+"/onboarding", body)
 	req = withURLParam(req, "sessionId", sessionID)
 	req = withChatTestWorkspaceCtx(t, req)
 	w := httptest.NewRecorder()
-	testHandler.StartMikaOnboarding(w, req)
+	testHandler.StartPatrickOnboarding(w, req)
 	return w
 }
 
-// markAsMika stamps the system_key that identifies the workspace's built-in
+// markAsPatrick stamps the system_key that identifies the workspace's built-in
 // agent. The onboarding endpoint gates on this rather than the display name,
-// so a fixture merely named "Mika" is not enough.
-func markAsMika(t *testing.T, agentID string) string {
+// so a fixture merely named "Patrick" is not enough.
+func markAsPatrick(t *testing.T, agentID string) string {
 	t.Helper()
 	if _, err := testPool.Exec(context.Background(),
-		`UPDATE agent SET system_key = $2 WHERE id = $1`, agentID, service.MikaSystemKey,
+		`UPDATE agent SET system_key = $2 WHERE id = $1`, agentID, service.PatrickSystemKey,
 	); err != nil {
-		t.Fatalf("mark agent as mika: %v", err)
+		t.Fatalf("mark agent as patrick: %v", err)
 	}
 	return agentID
 }
 
-func decodeStartMikaOnboarding(t *testing.T, w *httptest.ResponseRecorder) startMikaOnboardingResponse {
+func decodeStartPatrickOnboarding(t *testing.T, w *httptest.ResponseRecorder) startPatrickOnboardingResponse {
 	t.Helper()
-	var resp startMikaOnboardingResponse
+	var resp startPatrickOnboardingResponse
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode start onboarding response: %v", err)
 	}
@@ -66,21 +66,21 @@ func cleanupSessionTasks(t *testing.T, sessionID string) {
 	})
 }
 
-// TestStartMikaOnboarding_WritesTheOpeningWithoutRunningAnAgent covers the
+// TestStartPatrickOnboarding_WritesTheOpeningWithoutRunningAnAgent covers the
 // endpoint's whole reason to exist after MUL-5827: the member's first message
-// from Mika is already final when this call returns, and no agent ran to
+// from Patrick is already final when this call returns, and no agent ran to
 // produce it. The hidden kickoff is written alongside it, unowned, waiting for
 // the member's first real send to adopt it.
-func TestStartMikaOnboarding_WritesTheOpeningWithoutRunningAnAgent(t *testing.T) {
-	agentID := markAsMika(t, createHandlerTestAgent(t, "Mika", nil))
+func TestStartPatrickOnboarding_WritesTheOpeningWithoutRunningAnAgent(t *testing.T) {
+	agentID := markAsPatrick(t, createHandlerTestAgent(t, "Patrick", nil))
 	sessionID := createHandlerTestChatSession(t, agentID)
 	cleanupSessionTasks(t, sessionID)
 
-	w := startMikaOnboarding(t, sessionID, map[string]any{"language": "en"})
+	w := startPatrickOnboarding(t, sessionID, map[string]any{"language": "en"})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
 	}
-	resp := decodeStartMikaOnboarding(t, w)
+	resp := decodeStartPatrickOnboarding(t, w)
 	if !resp.Started || resp.MessageID == "" {
 		t.Fatalf("expected a started opening with a message id, got %+v", resp)
 	}
@@ -138,7 +138,7 @@ func TestStartMikaOnboarding_WritesTheOpeningWithoutRunningAnAgent(t *testing.T)
 	if !strings.Contains(opening.content, "Patchbay") {
 		t.Errorf("the opening does not read like the product copy: %q", opening.content)
 	}
-	// The kickoff quotes the opening — that is what stops Mika greeting twice.
+	// The kickoff quotes the opening — that is what stops Patrick greeting twice.
 	if !strings.Contains(kickoff.content, opening.content) {
 		t.Errorf("the kickoff must quote the opening the member already read:\n%s", kickoff.content)
 	}
@@ -166,14 +166,14 @@ func TestStartMikaOnboarding_WritesTheOpeningWithoutRunningAnAgent(t *testing.T)
 	}
 }
 
-// TestStartMikaOnboarding_OpeningFollowsTheRequestedLanguage pins the one
+// TestStartPatrickOnboarding_OpeningFollowsTheRequestedLanguage pins the one
 // personalization the template does branch on.
-func TestStartMikaOnboarding_OpeningFollowsTheRequestedLanguage(t *testing.T) {
-	agentID := markAsMika(t, createHandlerTestAgent(t, "Mika", nil))
+func TestStartPatrickOnboarding_OpeningFollowsTheRequestedLanguage(t *testing.T) {
+	agentID := markAsPatrick(t, createHandlerTestAgent(t, "Patrick", nil))
 	sessionID := createHandlerTestChatSession(t, agentID)
 	cleanupSessionTasks(t, sessionID)
 
-	if w := startMikaOnboarding(t, sessionID, map[string]any{"language": "zh"}); w.Code != http.StatusCreated {
+	if w := startPatrickOnboarding(t, sessionID, map[string]any{"language": "zh"}); w.Code != http.StatusCreated {
 		t.Fatalf("expected 201, got %d: %s", w.Code, w.Body.String())
 	}
 
@@ -190,24 +190,24 @@ func TestStartMikaOnboarding_OpeningFollowsTheRequestedLanguage(t *testing.T) {
 	}
 }
 
-// TestStartMikaOnboarding_IsIdempotent is the retry / double-submit guarantee
+// TestStartPatrickOnboarding_IsIdempotent is the retry / double-submit guarantee
 // the handler documents: a second call must not write a second opening — which
 // would greet the member twice in their own transcript.
-func TestStartMikaOnboarding_IsIdempotent(t *testing.T) {
-	agentID := markAsMika(t, createHandlerTestAgent(t, "Mika", nil))
+func TestStartPatrickOnboarding_IsIdempotent(t *testing.T) {
+	agentID := markAsPatrick(t, createHandlerTestAgent(t, "Patrick", nil))
 	sessionID := createHandlerTestChatSession(t, agentID)
 	cleanupSessionTasks(t, sessionID)
 
-	first := startMikaOnboarding(t, sessionID, map[string]any{"language": "zh"})
+	first := startPatrickOnboarding(t, sessionID, map[string]any{"language": "zh"})
 	if first.Code != http.StatusCreated {
 		t.Fatalf("first call: expected 201, got %d: %s", first.Code, first.Body.String())
 	}
 
-	second := startMikaOnboarding(t, sessionID, map[string]any{"language": "zh"})
+	second := startPatrickOnboarding(t, sessionID, map[string]any{"language": "zh"})
 	if second.Code != http.StatusOK {
 		t.Fatalf("second call: expected 200, got %d: %s", second.Code, second.Body.String())
 	}
-	if resp := decodeStartMikaOnboarding(t, second); resp.Started {
+	if resp := decodeStartPatrickOnboarding(t, second); resp.Started {
 		t.Fatalf("second call must report started=false, got %+v", resp)
 	}
 	if tasks := countSessionTasks(t, sessionID); tasks != 0 {
@@ -225,12 +225,12 @@ func TestStartMikaOnboarding_IsIdempotent(t *testing.T) {
 	}
 }
 
-func TestStartMikaOnboarding_RejectsBadInput(t *testing.T) {
-	mikaID := markAsMika(t, createHandlerTestAgent(t, "Mika", nil))
-	mikaSession := createHandlerTestChatSession(t, mikaID)
-	cleanupSessionTasks(t, mikaSession)
+func TestStartPatrickOnboarding_RejectsBadInput(t *testing.T) {
+	patrickID := markAsPatrick(t, createHandlerTestAgent(t, "Patrick", nil))
+	patrickSession := createHandlerTestChatSession(t, patrickID)
+	cleanupSessionTasks(t, patrickSession)
 
-	otherID := createHandlerTestAgent(t, "Not Mika", nil)
+	otherID := createHandlerTestAgent(t, "Not Patrick", nil)
 	otherSession := createHandlerTestChatSession(t, otherID)
 	cleanupSessionTasks(t, otherSession)
 
@@ -239,20 +239,20 @@ func TestStartMikaOnboarding_RejectsBadInput(t *testing.T) {
 		sessionID string
 		body      any
 	}{
-		{"unsupported language", mikaSession, map[string]any{"language": "fr"}},
-		{"missing language", mikaSession, map[string]any{}},
-		{"agent without the mika system_key", otherSession, map[string]any{"language": "en"}},
+		{"unsupported language", patrickSession, map[string]any{"language": "fr"}},
+		{"missing language", patrickSession, map[string]any{}},
+		{"agent without the patrick system_key", otherSession, map[string]any{"language": "en"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			w := startMikaOnboarding(t, tc.sessionID, tc.body)
+			w := startPatrickOnboarding(t, tc.sessionID, tc.body)
 			if w.Code != http.StatusBadRequest {
 				t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
 			}
 		})
 	}
 
-	if tasks := countSessionTasks(t, mikaSession); tasks != 0 {
+	if tasks := countSessionTasks(t, patrickSession); tasks != 0 {
 		t.Fatalf("rejected requests must not enqueue work, got %d task(s)", tasks)
 	}
 	if tasks := countSessionTasks(t, otherSession); tasks != 0 {

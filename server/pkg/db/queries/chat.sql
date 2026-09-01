@@ -697,7 +697,7 @@ RETURNING task.*;
 -- first real turn owns two user rows — the member's message and the adopted
 -- kickoff — so an unqualified delete would take the kickoff with it. That row
 -- is the only copy of the onboarding context and of "you have already greeted
--- them", so losing it makes Mika introduce herself a second time, and the
+-- them", so losing it makes Patrick introduce herself a second time, and the
 -- RETURNING row would be an arbitrary one of the two: cancel could hand the
 -- member the product's internal prompt as their restored draft, and silently
 -- drop what they actually typed. Callers release the kickoff separately
@@ -718,7 +718,7 @@ RETURNING *;
 -- queued WHILE the kickoff's turn was still running found nothing to adopt and
 -- never gets another chance: clearing to NULL would leave that already-sealed
 -- turn to execute with no onboarding skill, no profile block, and no record
--- that Mika had already greeted the member — exactly the double-introduction
+-- that Patrick had already greeted the member — exactly the double-introduction
 -- this design exists to prevent — while a later message could pick the kickoff
 -- up instead, delivering the context to the wrong turn.
 --
@@ -1575,8 +1575,8 @@ SELECT
           AND typed.message_kind <> 'onboarding_kickoff'
     ) AS kickoff_only;
 
--- name: CreateMikaOnboardingOpening :one
--- Mika's opening reply, written by the server rather than produced by an agent
+-- name: CreatePatrickOnboardingOpening :one
+-- Patrick's opening reply, written by the server rather than produced by an agent
 -- run (MUL-5827). Paired with the hidden kickoff row in one transaction, which
 -- is why created_at is derived instead of defaulted: now() is the TRANSACTION
 -- timestamp, so both rows would land on the identical microsecond, and the
@@ -1584,7 +1584,7 @@ SELECT
 -- LIMIT 1` and no tiebreaker (ids are random UUIDs, not monotonic). A tie there
 -- can select the kickoff, whose kind makes buildChatLastMessage return nil — so
 -- a session that onboarded perfectly reports no last message and the "Start
--- with Mika" recovery card reappears. One microsecond makes the order total.
+-- with Patrick" recovery card reappears. One microsecond makes the order total.
 --
 -- task_id stays NULL: no agent run produced this row, and nothing may treat it
 -- as a turn to regenerate or resume.
@@ -1606,7 +1606,7 @@ RETURNING *;
 -- more), so it would never reach a runtime on its own. Adopting it into the
 -- first send's input batch is what carries the onboarding skill instruction and
 -- the profile block into the run that does the first real work — and, because
--- the kickoff quotes the opening the member already read, what stops Mika from
+-- the kickoff quotes the opening the member already read, what stops Patrick from
 -- introducing herself a second time.
 --
 -- Idempotent by construction: exactly one such row can exist per session, and
@@ -1641,7 +1641,7 @@ RETURNING *;
 
 -- name: GetOldestActiveChatSessionForCreatorAgent :one
 -- Identity for "this member's conversation with this agent", independent of
--- the session title. Mika's onboarding session used to be matched on its
+-- the session title. Patrick's onboarding session used to be matched on its
 -- localized title from the client, which made the lookup both racy and
 -- language-dependent. Oldest wins so the answer stays stable once a member
 -- has opened more than one session with the same agent.

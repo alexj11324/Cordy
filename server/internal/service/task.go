@@ -2340,12 +2340,12 @@ func (s *TaskService) SendDirectChatMessage(
 		out.Task = task
 
 		// Adopt the onboarding kickoff, if this session still has an unowned one.
-		// It is written by OpenMikaOnboardingChat with no task, so this is the
+		// It is written by OpenPatrickOnboardingChat with no task, so this is the
 		// only thing that ever delivers it to a runtime — and it must happen
 		// before the member's own row is written, so the batch reads as
 		// "context, then their message" once ordered by created_at.
 		//
-		// A no-op for every other session: only Mika onboarding writes that kind,
+		// A no-op for every other session: only Patrick onboarding writes that kind,
 		// and only the first send of one finds it unowned.
 		if err := qtx.AdoptOrphanOnboardingKickoff(ctx, db.AdoptOrphanOnboardingKickoffParams{
 			ChatSessionID: session.ID,
@@ -2444,8 +2444,8 @@ func (s *TaskService) SendDirectChatMessage(
 	return &out, nil
 }
 
-// MikaOnboardingOpenResult carries the two rows that open a Mika conversation.
-type MikaOnboardingOpenResult struct {
+// PatrickOnboardingOpenResult carries the two rows that open a Patrick conversation.
+type PatrickOnboardingOpenResult struct {
 	// Kickoff is the hidden product context. It is written WITHOUT a task —
 	// the member's first real send adopts it (AdoptOrphanOnboardingKickoff).
 	Kickoff db.ChatMessage
@@ -2454,7 +2454,7 @@ type MikaOnboardingOpenResult struct {
 	Opening db.ChatMessage
 }
 
-// OpenMikaOnboardingChat writes a Mika conversation's first two rows in one
+// OpenPatrickOnboardingChat writes a Patrick conversation's first two rows in one
 // transaction: the hidden kickoff and the product-authored opening the member
 // sees (MUL-5827). Nothing is enqueued — this used to be a full chat task, and
 // the member waited out a runtime cold start to read a reply the product had
@@ -2465,8 +2465,8 @@ type MikaOnboardingOpenResult struct {
 // at most one opening. The kickoff row is what makes that check work: it is a
 // role='user' row, so ChatSessionHasUserMessage sees it exactly as it saw the
 // old kickoff turn.
-func (s *TaskService) OpenMikaOnboardingChat(ctx context.Context, session db.ChatSession, kickoff, opening string) (*MikaOnboardingOpenResult, error) {
-	var out MikaOnboardingOpenResult
+func (s *TaskService) OpenPatrickOnboardingChat(ctx context.Context, session db.ChatSession, kickoff, opening string) (*PatrickOnboardingOpenResult, error) {
+	var out PatrickOnboardingOpenResult
 	if err := s.runInTx(ctx, func(qtx *db.Queries) error {
 		// Same lock and lock ORDER as the send path, so an opening racing a
 		// first send or a runtime rebind serializes instead of deadlocking.
@@ -2502,7 +2502,7 @@ func (s *TaskService) OpenMikaOnboardingChat(ctx context.Context, session db.Cha
 
 		// Ordered one microsecond after the kickoff — see the query comment for
 		// why a shared transaction timestamp is not good enough here.
-		openingRow, err := qtx.CreateMikaOnboardingOpening(ctx, db.CreateMikaOnboardingOpeningParams{
+		openingRow, err := qtx.CreatePatrickOnboardingOpening(ctx, db.CreatePatrickOnboardingOpeningParams{
 			ID:               dbid.NewV7(),
 			ChatSessionID:    session.ID,
 			KickoffCreatedAt: kickoffRow.CreatedAt,
@@ -2519,7 +2519,7 @@ func (s *TaskService) OpenMikaOnboardingChat(ctx context.Context, session db.Cha
 		return nil
 	}); err != nil {
 		if !errors.Is(err, ErrChatSessionAlreadyStarted) {
-			slog.Error("mika onboarding open failed",
+			slog.Error("patrick onboarding open failed",
 				"chat_session_id", util.UUIDToString(session.ID),
 				"agent_id", util.UUIDToString(session.AgentID),
 				"error", err)
@@ -4886,7 +4886,7 @@ func (s *TaskService) FailTask(ctx context.Context, taskID pgtype.UUID, errMsg, 
 		if t.ChatSessionID.Valid && retried == nil {
 			// This turn is dead, so anything it owned has to move on. An adopted
 			// onboarding kickoff would otherwise stay bound to a task that will
-			// never run again: the next turn would reach Mika with no onboarding
+			// never run again: the next turn would reach Patrick with no onboarding
 			// context and no record that she had already greeted the member, and
 			// she would introduce herself a second time (MUL-5827). The query
 			// hands it to the session's next queued turn — including one the

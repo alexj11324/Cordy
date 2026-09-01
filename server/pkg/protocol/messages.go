@@ -213,7 +213,7 @@ const (
 	// than a silently-dropped turn (MUL-4351).
 	ChatMessageKindNoResponse = "no_response"
 	// ChatMessageKindOnboardingKickoff is the server-authored, hidden first
-	// turn used to start Mika's onboarding conversation. It is persisted so
+	// turn used to start Patrick's onboarding conversation. It is persisted so
 	// the runtime receives a normal immutable chat input batch. User-facing
 	// APIs filter it out; clients also ignore the kind defensively.
 	ChatMessageKindOnboardingKickoff = "onboarding_kickoff"

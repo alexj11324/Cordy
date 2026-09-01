@@ -40,7 +40,7 @@ var v7Writes = []struct {
 	{"automation_run", "automation.sql", "CreateAutomationRun", "id", "ID"},
 	{"channel_inbound_audit", "channel.sql", "RecordChannelInboundDrop", "id", "ID"},
 	{"chat_message", "chat.sql", "CreateChatMessage", "id", "ID"},
-	{"chat_message", "chat.sql", "CreateMikaOnboardingOpening", "id", "ID"},
+	{"chat_message", "chat.sql", "CreatePatrickOnboardingOpening", "id", "ID"},
 	{"chat_session", "chat.sql", "CreateChatSession", "id", "ID"},
 	{"comment", "comment.sql", "CreateComment", "id", "ID"},
 	{"inbox_item", "inbox.sql", "CreateInboxItem", "id", "ID"},

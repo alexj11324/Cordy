@@ -709,7 +709,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "企业微信连不上时，页面会说清是被拒绝还是根本连不通。",
         ],
         improvements: [
-          "注册完就能直接看到 Mika 的开场消息。",
+          "注册完就能直接看到 Patrick 的开场消息。",
           "保存视图时可以选升序或降序。",
           "新建 Issue 上的项目标签可以一键清掉，也不再记住你上次选的项目。",
           "频道里只发一个 /new 或 /issue，现在会明确告诉你结果。",
@@ -766,11 +766,11 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         version: "0.4.20",
         date: "2026-08-06",
-        title: "钉钉机器人、Mika 带你上手、每次运行的 token 花费",
+        title: "钉钉机器人、Patrick 带你上手、每次运行的 token 花费",
         changes: [],
         features: [
           "智能体可以入驻钉钉，私聊或在群里 @ 它就能用。",
-          "注册完成后 Mika 已经在等你，还有卡片帮你开第一个任务。",
+          "注册完成后 Patrick 已经在等你，还有卡片帮你开第一个任务。",
           "执行记录里能看到每次运行的花费，以及整个任务的合计。",
           "静音评论通知后，@ 到你的消息依然会送达。",
           "手机上聊天以全屏打开，输入框会浮在键盘上方。",
@@ -2185,7 +2185,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         features: [
           "父任务会在子任务完成时自动收到更新，并通知对应负责人",
           "任务列表新增实时智能体工作状态，支持详情查看和工作中筛选",
-          "新用户完成设置后，会进入 Mika 的交互式引导，先完成一个真实任务，再按需添加 specialist",
+          "新用户完成设置后，会进入 Patrick 的交互式引导，先完成一个真实任务，再按需添加 specialist",
           "官网新增 Contact Sales 流程，支持商务邮箱提交和防滥用保护",
           "桌面端支持 macOS 触控板前进/后退手势",
         ],

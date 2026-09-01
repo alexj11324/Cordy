@@ -38,7 +38,7 @@ const (
 //
 // `workspace_id` is retained for analytics enrichment. The handler itself
 // does not create agents; current runtime-connected clients create their
-// Mika onboarding chat before calling this endpoint. The explicit no-runtime
+// Patrick onboarding chat before calling this endpoint. The explicit no-runtime
 // path still seeds one setup guide from the frontend.
 type completeOnboardingRequest struct {
 	CompletionPath string `json:"completion_path,omitempty"`
@@ -63,7 +63,7 @@ var validCompletionPaths = map[string]struct{}{
 // counts honest first-completion.
 //
 // Current clients have no in-handler agent-creation side effect. The
-// runtime-connected flow creates Mika and starts its onboarding chat first,
+// runtime-connected flow creates Patrick and starts its onboarding chat first,
 // while the explicit no-runtime path may create a setup-guide issue after
 // navigation. This handler itself does one thing: flip the field.
 func (h *Handler) CompleteOnboarding(w http.ResponseWriter, r *http.Request) {

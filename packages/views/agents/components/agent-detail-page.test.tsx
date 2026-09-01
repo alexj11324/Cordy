@@ -433,7 +433,7 @@ describe("AgentDetailPage DM button", () => {
     // so removing the `hasMoreActions` gate would render the empty shell and
     // fail this test.
     agentsRef.current = [
-      { ...baseAgent, system_key: "mika" },
+      { ...baseAgent, system_key: "patrick" },
     ];
     membersRef.current = [{ user_id: "user-1", role: "admin" }];
     renderPage();
