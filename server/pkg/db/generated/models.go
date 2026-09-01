@@ -1683,6 +1683,31 @@ type Workspace struct {
 	AttributionFailClosed bool `json:"attribution_fail_closed"`
 }
 
+type WorkspaceChannel struct {
+	ID          pgtype.UUID        `json:"id"`
+	WorkspaceID pgtype.UUID        `json:"workspace_id"`
+	Name        string             `json:"name"`
+	Slug        string             `json:"slug"`
+	Description string             `json:"description"`
+	CreatedBy   pgtype.UUID        `json:"created_by"`
+	ArchivedAt  pgtype.Timestamptz `json:"archived_at"`
+	CreatedAt   pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
+}
+
+type WorkspaceChannelMessage struct {
+	ID              pgtype.UUID        `json:"id"`
+	WorkspaceID     pgtype.UUID        `json:"workspace_id"`
+	ChannelID       pgtype.UUID        `json:"channel_id"`
+	AuthorType      string             `json:"author_type"`
+	AuthorID        pgtype.UUID        `json:"author_id"`
+	Content         string             `json:"content"`
+	ParentID        pgtype.UUID        `json:"parent_id"`
+	QuotedMessageID pgtype.UUID        `json:"quoted_message_id"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
 type WorkspaceInvitation struct {
 	ID            pgtype.UUID        `json:"id"`
 	WorkspaceID   pgtype.UUID        `json:"workspace_id"`
