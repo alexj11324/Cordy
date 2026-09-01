@@ -56,9 +56,21 @@ pub async fn upsert_linear_agent_session(
            END,\
            action = EXCLUDED.action,\
            status = EXCLUDED.status,\
-           prompt_context = COALESCE(EXCLUDED.prompt_context, linear_agent_session.prompt_context),\
-           prompt_body = COALESCE(EXCLUDED.prompt_body, linear_agent_session.prompt_body),\
-           requester_linear_user_id = COALESCE(EXCLUDED.requester_linear_user_id, linear_agent_session.requester_linear_user_id),\
+           prompt_context = CASE
+             WHEN EXCLUDED.last_event_id = linear_agent_session.last_event_id
+             THEN COALESCE(EXCLUDED.prompt_context, linear_agent_session.prompt_context)
+             ELSE EXCLUDED.prompt_context
+           END,\
+           prompt_body = CASE
+             WHEN EXCLUDED.last_event_id = linear_agent_session.last_event_id
+             THEN COALESCE(EXCLUDED.prompt_body, linear_agent_session.prompt_body)
+             ELSE EXCLUDED.prompt_body
+           END,\
+           requester_linear_user_id = CASE
+             WHEN EXCLUDED.last_event_id = linear_agent_session.last_event_id
+             THEN COALESCE(EXCLUDED.requester_linear_user_id, linear_agent_session.requester_linear_user_id)
+             ELSE EXCLUDED.requester_linear_user_id
+           END,\
            last_event_id = EXCLUDED.last_event_id,\
            last_event_at_ms = EXCLUDED.last_event_at_ms,\
            updated_at = now() \
@@ -715,6 +727,24 @@ pub async fn claim_revocation_cancellation(
     Ok(result.rows_affected() > 0)
 }
 
+pub async fn renew_revocation_cancellation(
+    executor: impl Executor<'_, Database = Postgres>,
+    connection_id: Uuid,
+    claim_owner: &str,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"UPDATE linear_agent_session
+           SET updated_at = now()
+           WHERE connection_id = $1
+             AND status = $2"#,
+    )
+    .bind(connection_id)
+    .bind(format!("revocation_cancellation_dispatching:{claim_owner}"))
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
 pub async fn list_revocation_cancelled_tasks(
     executor: impl Executor<'_, Database = Postgres>,
     connection_id: Uuid,
@@ -736,6 +766,12 @@ pub async fn list_revocation_cancelled_tasks(
            FROM agent_task_queue AS queue
            JOIN task_tree AS task ON task.id = queue.id
            WHERE queue.status = 'cancelled'
+             AND NOT EXISTS (
+                 SELECT 1
+                 FROM linear_revocation_cancellation_progress AS progress
+                 WHERE progress.connection_id = $1
+                   AND progress.task_id = queue.id
+             )
            ORDER BY queue.created_at, queue.id"#,
     )
     .bind(connection_id)
@@ -744,22 +780,64 @@ pub async fn list_revocation_cancelled_tasks(
     .await?)
 }
 
+pub async fn mark_revocation_task_published(
+    executor: impl Executor<'_, Database = Postgres>,
+    connection_id: Uuid,
+    task_id: Uuid,
+    claim_owner: &str,
+) -> anyhow::Result<bool> {
+    Ok(sqlx::query_scalar::<_, bool>(
+        r#"WITH inserted AS (
+               INSERT INTO linear_revocation_cancellation_progress
+                   (connection_id, task_id)
+               SELECT $1, $2
+               WHERE EXISTS (
+                   SELECT 1
+                   FROM linear_agent_session
+                   WHERE connection_id = $1
+                     AND status = $3
+               )
+               ON CONFLICT (connection_id, task_id) DO NOTHING
+               RETURNING task_id
+           )
+           SELECT EXISTS (SELECT 1 FROM inserted)
+               OR EXISTS (
+                   SELECT 1
+                   FROM linear_revocation_cancellation_progress
+                   WHERE connection_id = $1 AND task_id = $2
+               )"#,
+    )
+    .bind(connection_id)
+    .bind(task_id)
+    .bind(format!("revocation_cancellation_dispatching:{claim_owner}"))
+    .fetch_one(executor)
+    .await?)
+}
+
 pub async fn complete_revocation_cancellation(
     executor: impl Executor<'_, Database = Postgres>,
     connection_id: Uuid,
     claim_owner: &str,
 ) -> anyhow::Result<u64> {
-    let result = sqlx::query(
-        r#"UPDATE linear_agent_session
-           SET status = 'cancelled', updated_at = now()
-           WHERE connection_id = $1
-             AND status = $2"#,
+    let completed = sqlx::query_scalar::<_, i64>(
+        r#"WITH cancelled AS (
+               UPDATE linear_agent_session
+               SET status = 'cancelled', updated_at = now()
+               WHERE connection_id = $1
+                 AND status = $2
+               RETURNING id
+           ), deleted_progress AS (
+               DELETE FROM linear_revocation_cancellation_progress
+               WHERE connection_id = $1
+               RETURNING task_id
+           )
+           SELECT COUNT(*)::bigint FROM cancelled"#,
     )
     .bind(connection_id)
     .bind(format!("revocation_cancellation_dispatching:{claim_owner}"))
-    .execute(executor)
+    .fetch_one(executor)
     .await?;
-    Ok(result.rows_affected())
+    Ok(completed as u64)
 }
 
 pub async fn release_revocation_cancellation(

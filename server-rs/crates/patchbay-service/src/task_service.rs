@@ -1292,11 +1292,16 @@ impl TaskService {
     /// capability leases. Keep the rows for explain/audit; authentication
     /// rejects revoked leases and a separate retention policy may purge them.
     pub async fn capture_task_cancelled(&self, task: &AgentTaskQueue) {
-        if let Err(error) = self.capture_task_cancelled_required(task).await {
+        // Metrics are independent from token revocation. A transient token
+        // table failure must not erase the cancellation terminal metric on
+        // ordinary best-effort cancellation paths.
+        self.record_task_cancelled_metric(task).await;
+        if let Err(error) = revoke_task_tokens_by_task(&self.pool, task.id, "task_cancelled").await
+        {
             tracing::warn!(
                 task_id = %task.id,
                 %error,
-                "cancel task: required cancellation capture failed"
+                "cancel task: token revocation failed"
             );
         }
     }
@@ -1310,6 +1315,11 @@ impl TaskService {
             .map_err(|error| {
                 TaskServiceError::Internal(format!("revoke cancelled task tokens: {error}"))
             })?;
+        self.record_task_cancelled_metric(task).await;
+        Ok(())
+    }
+
+    async fn record_task_cancelled_metric(&self, task: &AgentTaskQueue) {
         if let Some(metrics) = &self.metrics {
             let (source, runtime_mode, _) = self.task_metrics_context(task).await;
             metrics.record_task_terminal(
@@ -1322,7 +1332,6 @@ impl TaskService {
                 task.attempt,
             );
         }
-        Ok(())
     }
 
     /// cost_usd_ticks is the provider's own price for this usage in 1e-10 USD,
@@ -4308,9 +4317,16 @@ impl TaskService {
     async fn publish_transactional_cancellations_required(
         &self,
         cancelled: &[AgentTaskQueue],
+        connection_id: Uuid,
+        claim_owner: &str,
+        lease_lost: &AtomicBool,
     ) -> Result<(), TaskServiceError> {
-        let mut agents = std::collections::HashSet::new();
         for task in cancelled {
+            if lease_lost.load(Ordering::Acquire) {
+                return Err(TaskServiceError::Internal(
+                    "Linear revocation cancellation lease was lost".to_string(),
+                ));
+            }
             self.flag_dependency_attention_for_cancelled_task_required(task)
                 .await?;
             self.capture_task_cancelled_required(task).await?;
@@ -4320,10 +4336,25 @@ impl TaskService {
                 Default::default(),
             )
             .await;
-            agents.insert(task.agent_id);
+            self.reconcile_agent_status_required(task.agent_id).await?;
+            let recorded = linear_agent_q::mark_revocation_task_published(
+                &self.pool,
+                connection_id,
+                task.id,
+                claim_owner,
+            )
+            .await
+            .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?;
+            if !recorded {
+                return Err(TaskServiceError::Internal(
+                    "Linear revocation cancellation progress lost its claim".to_string(),
+                ));
+            }
         }
-        for agent_id in agents {
-            self.reconcile_agent_status_required(agent_id).await?;
+        if lease_lost.load(Ordering::Acquire) {
+            return Err(TaskServiceError::Internal(
+                "Linear revocation cancellation lease was lost".to_string(),
+            ));
         }
         self.notify_tasks_finished(cancelled).await;
         Ok(())
@@ -4340,6 +4371,38 @@ impl TaskService {
         {
             return Ok(0);
         }
+        let lease_lost = Arc::new(AtomicBool::new(false));
+        let renewal_stop = tokio_util::sync::CancellationToken::new();
+        let renewal_stop_task = renewal_stop.clone();
+        let renewal_lease_lost = lease_lost.clone();
+        let renewal_pool = self.pool.clone();
+        let renewal_owner = claim_owner.clone();
+        let renewer = tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(Duration::from_secs(20));
+            loop {
+                tokio::select! {
+                    _ = renewal_stop_task.cancelled() => break,
+                    _ = ticker.tick() => {
+                        match linear_agent_q::renew_revocation_cancellation(
+                            &renewal_pool,
+                            connection_id,
+                            &renewal_owner,
+                        ).await {
+                            Ok(true) => {}
+                            Ok(false) => {
+                                renewal_lease_lost.store(true, Ordering::Release);
+                                break;
+                            }
+                            Err(error) => {
+                                tracing::warn!(%error, %connection_id, "renew Linear revocation cancellation lease failed");
+                                renewal_lease_lost.store(true, Ordering::Release);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
         let replay_result = async {
             let cancelled = linear_agent_q::list_revocation_cancelled_tasks(
                 &self.pool,
@@ -4348,8 +4411,18 @@ impl TaskService {
             )
             .await
             .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?;
-            self.publish_transactional_cancellations_required(&cancelled)
-                .await?;
+            self.publish_transactional_cancellations_required(
+                &cancelled,
+                connection_id,
+                &claim_owner,
+                lease_lost.as_ref(),
+            )
+            .await?;
+            if lease_lost.load(Ordering::Acquire) {
+                return Err(TaskServiceError::Internal(
+                    "Linear revocation cancellation lease was lost".to_string(),
+                ));
+            }
             linear_agent_q::complete_revocation_cancellation(
                 &self.pool,
                 connection_id,
@@ -4360,6 +4433,8 @@ impl TaskService {
             Ok::<_, TaskServiceError>(cancelled.len())
         }
         .await;
+        renewal_stop.cancel();
+        let _ = renewer.await;
         if replay_result.is_err() {
             if let Err(release_error) = linear_agent_q::release_revocation_cancellation(
                 &self.pool,
