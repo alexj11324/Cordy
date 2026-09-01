@@ -211,9 +211,12 @@ asks for analysis-only work, a local-only change, or no merge, agents must:
    logs, fix the earliest responsible cause on the same branch, push the fix,
    and wait for the replacement checks. Never treat a local build or test as a
    substitute for a required GitHub check.
-4. Read and address every valid review comment, then re-run the affected
-   checks. Do not leave unresolved review threads hidden behind a passing CI
-   run.
+4. Triage review comments and reported problems by severity, and address only
+   P0 and P1 findings. Ignore P2 and lower findings: do not fix, reply to, or
+   resolve those threads, and do not treat them as merge blockers. When a
+   finding has no explicit priority, classify it from its concrete current
+   impact before deciding whether to act. Re-run the affected checks after any
+   P0 or P1 repair.
 5. Perform the real runtime or deployment acceptance requested by the task
    before merging. A green CI run alone is not runtime evidence when the task
    includes a live service, callback, browser, desktop, or deployment path.
@@ -235,7 +238,7 @@ merged, CI/CD completed, or runtime verified when the evidence is absent.
   `chore`) and preserve the repository's required merge method.
 - Do not stop after a local edit or partial check. Push the correct PR branch,
   wait for all required GitHub Actions jobs, fix failures, and merge only after
-  valid review comments are handled and no real blocker remains.
+  all P0 and P1 review findings are handled and no real blocker remains.
 - A production release is created from a version tag on `main`; the release
   workflow publishes binaries, images, installers, charts, and the stable
   Homebrew formula after its required jobs succeed.
