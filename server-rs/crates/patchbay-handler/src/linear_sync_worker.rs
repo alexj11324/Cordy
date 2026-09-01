@@ -906,12 +906,41 @@ impl LinearSyncWorker {
                 .await?;
             let remote_snapshot =
                 remote_sync_snapshot(&remote, &remote_status, &remote_priority, remote_owner_id);
-            let base_snapshot = normalized_base_snapshot(&link.last_common_snapshot, &binding)?;
+            let base_snapshot = self
+                .normalized_base_snapshot(&connection, &link.last_common_snapshot, &binding)
+                .await?;
             let local_snapshot = local_sync_snapshot(&issue);
             let merge = merge_sync_snapshots(&base_snapshot, &local_snapshot, &remote_snapshot);
             if !merge.conflicts.is_empty() {
                 let source_event_id = format!("linear-outbox:{}", row.id);
                 let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
+                let applied = if merge.remote_changed {
+                    Some(
+                        self.state
+                            .issues
+                            .apply_external_patch_in_transaction(
+                                &mut transaction,
+                                row.workspace_id,
+                                issue.id,
+                                IssueCommand::ApplyExternalPatch {
+                                    source: ExternalSource::Linear,
+                                    source_event_id: source_event_id.clone(),
+                                    expected_revision: Some(issue.revision),
+                                    suppress_external_outbox: true,
+                                    patch: external_patch_from_snapshot(&merge.merged)?,
+                                },
+                            )
+                            .await
+                            .map_err(|error| {
+                                classify_external_error(
+                                    error,
+                                    "apply independent Linear fields before push conflict",
+                                )
+                            })?,
+                    )
+                } else {
+                    None
+                };
                 for conflict in &merge.conflicts {
                     linear_q::create_linear_sync_conflict(
                         &mut *transaction,
@@ -937,7 +966,7 @@ impl LinearSyncWorker {
                     &mut *transaction,
                     link.id,
                     row.workspace_id,
-                    &base_snapshot,
+                    &merge.common,
                     Some(remote_updated_at),
                     link.last_remote_event_at_ms,
                     link.last_remote_event_id.as_deref(),
@@ -951,6 +980,12 @@ impl LinearSyncWorker {
                     )));
                 }
                 transaction.commit().await.map_err(SyncError::retry)?;
+                if let Some(applied) = &applied {
+                    self.state
+                        .issues
+                        .publish_external_issue_apply(applied)
+                        .await;
+                }
                 return Err(SyncError::permanent(anyhow::anyhow!(
                     "remote Linear Issue changed before push; conflict recorded"
                 )));
@@ -2607,6 +2642,39 @@ impl LinearSyncWorker {
         Ok(decision)
     }
 
+    async fn normalized_base_snapshot(
+        &self,
+        connection: &LinearConnection,
+        snapshot: &Value,
+        binding: &LinearProjectBinding,
+    ) -> Result<Value, SyncError> {
+        let mut normalized = normalize_base_snapshot_fields(snapshot, binding)?;
+        if snapshot.get("owner_id").is_none() {
+            let Some(linear_user_id) = snapshot
+                .get("assignee")
+                .and_then(|value| value.get("id"))
+                .and_then(Value::as_str)
+            else {
+                return Ok(normalized);
+            };
+            let member = linear_q::get_linear_member_binding_by_linear_user(
+                &self.state.pool,
+                connection.workspace_id,
+                connection.id,
+                linear_user_id,
+            )
+            .await
+            .map_err(SyncError::retry)?
+            .ok_or_else(|| {
+                SyncError::permanent(anyhow::anyhow!(
+                    "legacy Linear assignee has no Patchbay member mapping"
+                ))
+            })?;
+            normalized["owner_id"] = Value::String(member.patchbay_user_id.to_string());
+        }
+        Ok(normalized)
+    }
+
     async fn apply_existing_remote_issue(
         &self,
         input: ExistingRemoteIssueInput<'_>,
@@ -2639,7 +2707,9 @@ impl LinearSyncWorker {
         .await
         .map_err(SyncError::retry)?
         .ok_or_else(|| SyncError::permanent(anyhow::anyhow!("Patchbay Issue not found")))?;
-        let base_snapshot = normalized_base_snapshot(&link.last_common_snapshot, &binding)?;
+        let base_snapshot = self
+            .normalized_base_snapshot(connection, &link.last_common_snapshot, &binding)
+            .await?;
         let local_snapshot = local_sync_snapshot(&issue);
         let merge = merge_sync_snapshots_with_updated_from(
             &base_snapshot,
@@ -2767,46 +2837,29 @@ impl LinearSyncWorker {
                 .await
                 .map_err(SyncError::retry)?;
             }
-            let updated = linear_q::update_linear_issue_link(
-                &mut *transaction,
-                &linear_q::LinearIssueLinkUpdate {
-                    link_id: link.id,
-                    workspace_id: connection.workspace_id,
-                    last_common_snapshot: &merge.common,
-                    remote_updated_at: Some(remote_updated_at),
-                    last_remote_event_at_ms: last_event_at_ms,
-                    last_remote_event_id: last_event_id,
-                    sync_status: "conflict",
-                },
-            )
-            .await
-            .map_err(SyncError::retry)?;
-            if !updated {
-                return Err(SyncError::retry(anyhow::anyhow!(
-                    "Linear Issue Link disappeared while recording conflict"
-                )));
-            }
-            transaction.commit().await.map_err(SyncError::retry)?;
-            if let Some(applied) = &applied {
-                self.state
-                    .issues
-                    .publish_external_issue_apply(applied)
-                    .await;
-            }
-            if !agent_selection_required {
-                if let Some(agent_id) = agent_decision.agent_id {
-                    self.resume_waiting_agent_sessions(
-                        connection,
-                        &issue,
-                        agent_id,
-                        source_event_id,
-                    )
-                    .await?;
-                }
-            }
-            return Ok(());
         }
 
+        let active_conflict_fields = merge
+            .conflicts
+            .iter()
+            .map(|conflict| conflict.field.clone())
+            .collect::<Vec<_>>();
+        linear_q::dismiss_stale_linear_sync_conflicts(
+            &mut *transaction,
+            connection.workspace_id,
+            link.id,
+            &active_conflict_fields,
+        )
+        .await
+        .map_err(SyncError::retry)?;
+
+        let sync_status = if !merge.conflicts.is_empty() {
+            "conflict"
+        } else if agent_selection_required {
+            "agent_selection_required"
+        } else {
+            "active"
+        };
         let updated = linear_q::update_linear_issue_link(
             &mut *transaction,
             &linear_q::LinearIssueLinkUpdate {
@@ -2816,11 +2869,7 @@ impl LinearSyncWorker {
                 remote_updated_at: Some(remote_updated_at),
                 last_remote_event_at_ms: last_event_at_ms,
                 last_remote_event_id: last_event_id,
-                sync_status: if agent_selection_required {
-                    "agent_selection_required"
-                } else {
-                    "active"
-                },
+                sync_status,
             },
         )
         .await
@@ -2830,6 +2879,29 @@ impl LinearSyncWorker {
                 "Linear Issue Link disappeared after merge"
             )));
         }
+        activity::create_activity(
+            &mut *transaction,
+            connection.workspace_id,
+            issue.id,
+            Some("system"),
+            None,
+            "linear_sync_applied",
+            &json!({
+                "source": "linear",
+                "source_event_id": source_event_id,
+                "connection_id": connection.id,
+                "binding_id": binding.id,
+                "linear_issue_id": remote.id,
+                "linear_identifier": remote.identifier,
+                "remote_updated_at": remote.updated_at,
+                "event_timestamp_ms": event_timestamp_ms,
+                "imported": false,
+                "conflicts": active_conflict_fields,
+            }),
+            linear_sync_activity_id(connection.id, issue.id, source_event_id, "applied"),
+        )
+        .await
+        .map_err(SyncError::retry)?;
         transaction.commit().await.map_err(SyncError::retry)?;
         if let Some(applied) = &applied {
             self.state
@@ -3017,7 +3089,7 @@ fn remote_sync_snapshot(
     })
 }
 
-fn normalized_base_snapshot(
+fn normalize_base_snapshot_fields(
     snapshot: &Value,
     binding: &LinearProjectBinding,
 ) -> Result<Value, SyncError> {
