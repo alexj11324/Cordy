@@ -433,6 +433,7 @@ export const LinearSyncConflictSchema = z.object({
   link_id: z.string(),
   patchbay_issue_id: z.string(),
   linear_issue_id: z.string(),
+  linear_identifier: z.string().nullable().default(null),
   field: z.string(),
   base_value: z.unknown(),
   local_value: z.unknown(),

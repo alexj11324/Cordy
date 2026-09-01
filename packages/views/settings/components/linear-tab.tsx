@@ -156,7 +156,9 @@ function ConflictCenter({
       await api.resolveLinearSyncConflict(workspaceId, conflict.id, {
         resolution,
         ...(resolution === "manual"
-          ? { manual_value: manualValues[conflict.id] ?? "" }
+          ? {
+              manual_value: (manualValues[conflict.id] ?? "").trim() || null,
+            }
           : {}),
       });
       await qc.invalidateQueries({ queryKey: linearKeys.conflicts(workspaceId) });
@@ -212,6 +214,9 @@ function ConflictCenter({
         <div className="space-y-3">
           {conflicts.map((conflict) => (
             <div className="space-y-3 rounded-lg border p-3" key={conflict.id}>
+              <div className="text-micro text-muted-foreground">
+                {conflict.linear_identifier ?? conflict.linear_issue_id}
+              </div>
               <div className="flex items-center justify-between gap-2">
                 <span className="font-medium">{fieldLabel(conflict.field)}</span>
                 <Badge variant="destructive">{statusLabel(conflict.status)}</Badge>
@@ -261,7 +266,11 @@ function ConflictCenter({
                     value={manualValues[conflict.id] ?? ""}
                   />
                   <Button
-                    disabled={pendingId === conflict.id || !(manualValues[conflict.id] ?? "").trim()}
+                    disabled={
+                      pendingId === conflict.id ||
+                      (!(manualValues[conflict.id] ?? "").trim() &&
+                        !["description", "due_date", "owner_id"].includes(conflict.field))
+                    }
                     onClick={() => void resolve(conflict, "manual")}
                     size="sm"
                     variant="outline"

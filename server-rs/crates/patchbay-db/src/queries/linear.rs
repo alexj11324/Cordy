@@ -1584,7 +1584,12 @@ pub async fn mark_linear_issue_link_deleted(
     workspace_id: Uuid,
 ) -> anyhow::Result<bool> {
     let result = sqlx::query(
-        r#"UPDATE linear_issue_link
+        r#"WITH dismissed_conflicts AS (
+               UPDATE linear_sync_conflict
+               SET status = 'dismissed', updated_at = now()
+               WHERE link_id = $1 AND workspace_id = $2 AND status = 'open'
+           )
+           UPDATE linear_issue_link
            SET sync_status = 'deleted', updated_at = now()
            WHERE id = $1 AND workspace_id = $2 AND sync_status <> 'deleted'"#,
     )

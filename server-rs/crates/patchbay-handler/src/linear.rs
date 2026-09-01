@@ -646,7 +646,23 @@ async fn list_conflicts(
         return error_response(StatusCode::BAD_REQUEST, "invalid Linear conflict status");
     }
     match linear_q::list_linear_sync_conflicts(&state.pool, workspace_id, status).await {
-        Ok(conflicts) => Json(json!({ "conflicts": conflicts })).into_response(),
+        Ok(conflicts) => {
+            let mut enriched = Vec::with_capacity(conflicts.len());
+            for conflict in conflicts {
+                let identifier =
+                    linear_q::get_linear_issue_link(&state.pool, workspace_id, conflict.link_id)
+                        .await
+                        .ok()
+                        .flatten()
+                        .map(|link| link.linear_identifier);
+                let mut value = serde_json::to_value(conflict).unwrap_or_else(|_| json!({}));
+                if let Some(object) = value.as_object_mut() {
+                    object.insert("linear_identifier".to_string(), json!(identifier));
+                }
+                enriched.push(value);
+            }
+            Json(json!({ "conflicts": enriched })).into_response()
+        }
         Err(error) => {
             tracing::warn!(%error, "Linear conflict lookup failed");
             error_response(
