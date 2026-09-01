@@ -3,46 +3,23 @@ name: CI
 on:
   push:
     branches: [main]
-    # Version-tag pushes must pass the same CI gate before the automatic
-    # macOS ARM64 release workflow is allowed to run.
-    tags: ["v*.*.*"]
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review, edited]
-  # Required checks must also run on the temporary merge-group ref when main
-  # is protected by GitHub's merge queue. Without this event, the queue cannot
-  # receive the same verdicts as an ordinary pull request.
-  merge_group:
-    types: [checks_requested]
-  workflow_dispatch:
-    inputs:
-      base_ref:
-        description: Base branch used for path and image-budget comparisons
-        required: true
-        default: main
-        type: string
-      pr_body:
-        description: Optional PR body, used only for an oversized-image exemption
-        required: false
-        type: string
-      run_rust:
-        description: Run the Rust validation suite for a manual validation
-        required: false
-        default: false
-        type: boolean
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  # Classify every product surface once so the stable aggregate checks below
-  # can distinguish an intentional path skip from a missing or failed worker.
+  # Decides whether the heavy frontend validation jobs, the backend Go jobs
+  # and sqlc verification have anything to do.
   # The frontend jobs validate the web/desktop apps, the shared packages,
   # the install graph, and the selfhost / reserved-slugs scripts it runs;
   # a pure backend-only or docs-only PR touches none of those and gains
-  # nothing from a full web build. The outputs are consumed by the focused
-  # jobs below.
+  # nothing from a full web build. Symmetrically, the backend jobs compile
+  # and test server/, so a frontend-only or docs-only PR gains nothing from
+  # a `go test -race` run. The outputs are consumed by the focused jobs
+  # below.
   changes:
     runs-on: ubuntu-latest
     permissions:
@@ -50,73 +27,17 @@ jobs:
       pull-requests: read
     outputs:
       frontend: ${{ steps.decide.outputs.frontend }}
-      rust: ${{ steps.decide.outputs.rust }}
-      rust_scope: ${{ steps.rust-scope.outputs.rust_scope }}
-      rust_packages: ${{ steps.rust-scope.outputs.rust_packages }}
-      rust_test_packages: ${{ steps.rust-scope.outputs.rust_test_packages }}
-      stack_intermediate: ${{ steps.stack.outputs.stack_intermediate }}
-      image_budget_exempt: ${{ steps.image-exemption.outputs.image_budget_exempt }}
-      mobile: ${{ steps.decide.outputs.mobile }}
-      installer: ${{ steps.decide.outputs.installer }}
+      backend: ${{ steps.decide.outputs.backend }}
+      sqlc: ${{ steps.decide.outputs.sqlc }}
       images: ${{ steps.filter.outputs.images }}
-      auth_broker_release: ${{ steps.auth-impact.outputs.auth_broker_release }}
-      full_google_oauth_e2e: ${{ steps.auth-impact.outputs.full_google_oauth_e2e }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version-file: .nvmrc
-
-      - name: Reject legacy product markers
-        run: bash scripts/check-legacy-brand-markers.sh
-
-      - name: Validate GitHub Actions workflows
-        uses: docker://rhysd/actionlint:1.7.7@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9 # 1.7.7
-        with:
-          args: -color
-
-      - name: Test CI workflow contracts
-        run: >-
-          node --test
-          scripts/assemble-production-manifest.test.mjs
-          scripts/ci-workflow-contract.test.mjs
-          scripts/classify-rust-scope.test.mjs
-          scripts/classify-image-budget-exemption.test.mjs
-          scripts/cleanup-actions-caches.test.mjs
-          scripts/github-actions-pinning-contract.test.mjs
-          scripts/dev-clerk-auth.test.mjs
-          scripts/dev-acceptance.test.mjs
-          scripts/release-dev-acceptance-port.test.mjs
-          apps/desktop/src/main/desktop-profile-helper.node-test.mjs
-          apps/desktop/src/main/private-profile-storage.node-test.mjs
-          scripts/production-deployment-contract.test.mjs
-          scripts/verify-production-browser.test.mjs
-          scripts/verify-production-deployment.test.mjs
-
-      - name: Test restricted production deployment gateway
-        run: python3 -m unittest deploy/origin/production_deploy_test.py
-
-      - name: Test development environment contract
-        run: bash scripts/dev-env.test.sh
-
-      - name: Test public URL contract
-        run: bash scripts/public-url-contract.test.sh
-
-      - name: Test accounts origin proxy contract
-        run: node --test deploy/cloudflare/accounts-origin-proxy/src/index.test.mjs
+        uses: actions/checkout@v6
 
       - name: Filter paths
         id: filter
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
+        uses: dorny/paths-filter@v3
         with:
-          # Pull requests use the GitHub API, where v4 intentionally ignores
-          # `base`; push and manual runs still compare against the chosen base.
-          base: ${{ github.event_name != 'pull_request' && (inputs.base_ref || 'main') || '' }}
           # apps/docs is excluded from the frontend turbo run, but knip does
           # analyze it, so a docs-only change still needs this job.
           # apps/mobile has its own mobile-verify workflow. Everything else
@@ -124,44 +45,27 @@ jobs:
           # over-matching since a missed path silently skips validation.
           filters: |
             frontend:
-              - 'apps/auth-broker/**'
               - 'apps/web/**'
               - 'apps/desktop/**'
               - 'apps/docs/**'
               - 'packages/**'
               - 'package.json'
-              - 'Makefile'
               - '.npmrc'
               - 'pnpm-lock.yaml'
               - 'pnpm-workspace.yaml'
               - 'turbo.json'
               - 'knip.jsonc'
-              - 'Dockerfile.web'
-              - 'Dockerfile.docs'
-              - 'Dockerfile.auth-broker'
-              - 'contracts/auth-broker/**'
-              - '.dockerignore'
-              - '.github/workflows/aspectlylabs-production-images.yml'
-              - '.github/workflows/release.yml'
+              - '.github/workflows/ci.yml'
               - 'scripts/generate-reserved-slugs.mjs'
-              - 'scripts/classify-auth-change.mjs'
-              - 'scripts/classify-auth-change.test.mjs'
-              - 'server-rs/crates/patchbay-handler/assets/reserved_slugs.json'
+              - 'server/internal/handler/reserved_slugs.json'
               - 'scripts/check-ui-wildcard-exports.mjs'
               - 'scripts/check-ui-wildcard-exports.test.sh'
               - 'scripts/selfhost-config.test.sh'
-              - 'scripts/messaging-self-host-check.sh'
-              - 'scripts/messaging-self-host-check.test.sh'
-              - 'scripts/messaging-self-host-setup.sh'
-              - 'scripts/messaging-self-host-setup.test.sh'
               - 'scripts/drop-database.sh'
-              - 'scripts/ensure-dev-integration-secrets.mjs'
-              - 'scripts/postgres-runtime.sh'
-              - 'scripts/postgres-runtime.test.sh'
               - 'scripts/remove-worktree.sh'
-              - 'scripts/reset-database.sh'
-              - 'scripts/run-rust.sh'
               - 'scripts/worktree-db.test.sh'
+              - 'scripts/dev-env.sh'
+              - 'scripts/dev-env.test.sh'
               - 'scripts/selfhost-wait.sh'
               # selfhost-config.test.sh asserts on the installers' side of
               # the port contract, so a change to either must run it.
@@ -169,60 +73,51 @@ jobs:
               - 'scripts/install.ps1'
               - 'scripts/check.sh'
               - 'scripts/dev.sh'
-              - 'scripts/dev.ps1'
-              - 'scripts/dev.ps1.test.ps1'
-              - 'scripts/dev-launcher.mjs'
-              - 'scripts/dev-process.mjs'
-              - 'scripts/dev-*.mjs'
-              - 'scripts/stop-dev.mjs'
               - 'scripts/local-env.sh'
-              - 'scripts/makefile-build.test.sh'
               - '.env.example'
               - 'docker-compose.selfhost.yml'
               - 'docker-compose.selfhost.build.yml'
-              - 'docker-compose.labs.yml'
-              - 'deploy/messaging/**'
-            rust:
-              - 'server-rs/**'
-              - 'rust-toolchain.toml'
-              - 'migrations/**'
-              - 'deploy/messaging/**'
-              - 'deploy/helm/**'
-              - 'Dockerfile'
               - 'Makefile'
-              - 'docker/entrypoint.sh'
-              - 'scripts/run-rust.sh'
-              - 'scripts/check.sh'
-              - 'scripts/makefile-build.test.sh'
-              - 'scripts/auth-broker-helm.test.sh'
+            # Everything the backend jobs (backend-tests,
+            # go-vulnerability-scan, windows-execenv) read, which is NOT the
+            # same thing as server/**: four Go tests reach out of the module
+            # to pin a contract against a file the other side owns, across
+            # three cross-module file dependencies. Each of those files has
+            # to be listed here or the PR that breaks the contract is exactly
+            # the PR that skips the test. Same bias as the frontend filter:
+            # over-match rather than silently skip validation.
+            backend:
+              - 'server/**'
+              - 'deploy/helm/**'
+              # pkg/agent/worktree_capability_contract_test.go reads this file
+              # and compares LOCAL_WORKTREE_CAPABILITY against the daemon's
+              # protocol constant. A typo on either side disables worktree
+              # mode for everyone with no error anywhere, so a change to the
+              # frontend half must run the backend suite.
+              - 'packages/core/runtimes/cli-version.ts'
+              # internal/daemon/agent_command_names_test.go reads both of
+              # these as test inputs; the guard script is additionally the
+              # entry point scripts/test-go.sh runs, and the names file is
+              # the data that guard consumes.
+              - 'scripts/agent-cli-command-names.txt'
+              - 'scripts/go-test-with-agent-cli-guard.sh'
               - 'scripts/helm-config.test.sh'
-              - 'scripts/macos-release-contract.test.sh'
-              - 'scripts/verify-release-tag.sh'
-              - 'scripts/verify-release-tag.test.sh'
-              - '.github/workflows/release.yml'
-              - '.github/workflows/macos-release.yml'
-            mobile:
-              - 'apps/mobile/**'
-              - 'packages/core/**'
-              - 'package.json'
-              - 'pnpm-lock.yaml'
-              - 'pnpm-workspace.yaml'
-              - 'turbo.json'
-              - '.npmrc'
-            installer:
-              - 'scripts/install.sh'
-              - 'scripts/install.ps1'
-              - 'scripts/install.test.sh'
-              - 'scripts/install.ps1.test.ps1'
-              - 'scripts/dev.ps1'
-              - 'scripts/dev.ps1.test.ps1'
-              - 'scripts/dev-launcher.mjs'
-              - 'scripts/dev-process.mjs'
-              - 'scripts/dev-*.mjs'
-              - 'scripts/stop-dev.mjs'
+              - 'scripts/entrypoint.test.sh'
               - 'docker/entrypoint.sh'
-              - 'docker-compose.selfhost.yml'
-              - '.env.example'
+              - 'scripts/test-go.sh'
+              - 'scripts/test-go.test.sh'
+              # makefile-build.test.sh asserts how `make build` names its
+              # output binaries, so a change to either side must run it.
+              - 'scripts/makefile-build.test.sh'
+              - 'Makefile'
+              - '.github/workflows/ci.yml'
+            sqlc:
+              - 'server/pkg/db/queries/**'
+              - 'server/pkg/db/generated/**'
+              - 'server/migrations/**'
+              - 'server/sqlc.yaml'
+              - 'Makefile'
+              - '.github/workflows/ci.yml'
             # Gates the image-budget job so the full-history checkout it
             # needs is only paid for on PRs that actually touch a bitmap.
             images:
@@ -237,240 +132,64 @@ jobs:
               - '**/*.avif'
               - 'scripts/check-image-budget.mjs'
 
-      - name: Detect open Stack child PR
-        id: stack
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          HEAD_REF: ${{ github.event.pull_request.head.ref }}
-          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          stack_intermediate=false
-          if [[ "$EVENT_NAME" = "pull_request" && "$HEAD_REPOSITORY" = "$GITHUB_REPOSITORY" ]]; then
-            if ! child_prs="$(gh api --method GET --paginate --slurp \
-              "repos/$GITHUB_REPOSITORY/pulls" \
-              -f state=open \
-              -f base="$HEAD_REF" \
-              -f per_page=100)"; then
-              echo "::error::unable to classify Stack children from the GitHub API"
-              exit 1
-            fi
-            if jq -e --arg ref "$HEAD_REF" 'any(.[][]; .base.ref == $ref)' <<<"$child_prs" >/dev/null; then
-              stack_intermediate=true
-            fi
-          fi
-          echo "stack_intermediate=$stack_intermediate" >> "$GITHUB_OUTPUT"
-
-      - name: Classify Rust validation scope
-        id: rust-scope
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          REF_TYPE: ${{ github.ref_type }}
-          RUN_RUST: ${{ github.event_name == 'workflow_dispatch' && inputs.run_rust == true }}
-          RUST_CHANGED: ${{ steps.filter.outputs.rust }}
-          STACK_INTERMEDIATE: ${{ steps.stack.outputs.stack_intermediate }}
-        run: |
-          if [[ "$RUN_RUST" = "true" || "$REF_TYPE" = "tag" ]]; then
-            {
-              echo "rust_scope=full"
-              echo "rust_packages="
-              echo "rust_test_packages="
-              echo "rust_scope_reason=manual or tag validation requires the full Rust suite"
-            } >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [[ "$RUST_CHANGED" != "true" ]]; then
-            {
-              echo "rust_scope=none"
-              echo "rust_packages="
-              echo "rust_test_packages="
-              echo "rust_scope_reason=no Rust paths changed"
-            } >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [[ "$STACK_INTERMEDIATE" != "true" ]]; then
-            {
-              echo "rust_scope=full"
-              echo "rust_packages="
-              echo "rust_test_packages="
-              echo "rust_scope_reason=top-level or non-Stack PR requires full Rust validation"
-            } >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          changed_files="$RUNNER_TEMP/rust-changed-files"
-          metadata="$RUNNER_TEMP/rust-metadata.json"
-          if [[ "$EVENT_NAME" != "pull_request" ]]; then
-            echo "::error::an intermediate Rust scope requires a pull_request event"
-            exit 1
-          fi
-          git diff --name-only "$PR_BASE_SHA" "$PR_HEAD_SHA" > "$changed_files"
-          cargo metadata \
-            --manifest-path server-rs/Cargo.toml \
-            --format-version=1 \
-            --no-deps \
-            --locked > "$metadata"
-          node scripts/classify-rust-scope.mjs \
-            --changed-files "$changed_files" \
-            --metadata "$metadata" \
-            --repo-root "$GITHUB_WORKSPACE" \
-            --stack-intermediate true >> "$GITHUB_OUTPUT"
-
-      - name: Summarize Stack and Rust validation scope
-        env:
-          RUST_SCOPE: ${{ steps.rust-scope.outputs.rust_scope }}
-          RUST_SCOPE_REASON: ${{ steps.rust-scope.outputs.rust_scope_reason }}
-          RUST_PACKAGES: ${{ steps.rust-scope.outputs.rust_packages }}
-          RUST_TEST_PACKAGES: ${{ steps.rust-scope.outputs.rust_test_packages }}
-          STACK_INTERMEDIATE: ${{ steps.stack.outputs.stack_intermediate }}
-        run: |
-          {
-            echo "### Stack and Rust validation scope"
-            echo "- Open child PR detected: \`$STACK_INTERMEDIATE\`"
-            echo "- Rust scope: \`$RUST_SCOPE\`"
-            echo "- Rust scope reason: $RUST_SCOPE_REASON"
-            echo "- Check packages (including reverse dependencies): \`${RUST_PACKAGES:-none}\`"
-            echo "- Targeted test packages: \`${RUST_TEST_PACKAGES:-none}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Classify authentication release impact
-        id: auth-impact
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
-          MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
-        run: |
-          case "$EVENT_NAME" in
-            pull_request)
-              base_sha="$PR_BASE_SHA"
-              head_sha="$PR_HEAD_SHA"
-              ;;
-            merge_group)
-              base_sha="$MERGE_GROUP_BASE_SHA"
-              head_sha="$MERGE_GROUP_HEAD_SHA"
-              ;;
-            *)
-              echo "auth_broker_release=false" >> "$GITHUB_OUTPUT"
-              echo "full_google_oauth_e2e=false" >> "$GITHUB_OUTPUT"
-              exit 0
-              ;;
-          esac
-          if [[ -z "$base_sha" || -z "$head_sha" ]]; then
-            echo "::error::authentication classification is missing the event base/head SHA"
-            exit 1
-          fi
-          node scripts/classify-auth-change.mjs "$base_sha" "$head_sha"
-
-      - name: Resolve merge-group image budget exemptions
-        id: image-exemption
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-          PR_BODY: ${{ github.event.pull_request.body }}
-          INPUT_PR_BODY: ${{ inputs.pr_body }}
-          MERGE_GROUP_PULL_REQUESTS: ${{ toJSON(github.event.merge_group.pull_requests) }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          body_dir="$RUNNER_TEMP/image-budget-bodies"
-          mkdir -p "$body_dir"
-          body_files=()
-
-          case "$EVENT_NAME" in
-            pull_request)
-              body_file="$body_dir/pull-request"
-              printf '%s' "${PR_BODY:-}" > "$body_file"
-              body_files+=(--body-file "$body_file")
-              ;;
-            workflow_dispatch)
-              body_file="$body_dir/workflow-dispatch"
-              printf '%s' "${INPUT_PR_BODY:-}" > "$body_file"
-              body_files+=(--body-file "$body_file")
-              ;;
-            merge_group)
-              if [[ -z "$MERGE_GROUP_PULL_REQUESTS" || "$MERGE_GROUP_PULL_REQUESTS" = "null" ]]; then
-                echo "::error::merge_group event is missing constituent pull-request metadata"
-                exit 1
-              fi
-              if ! pr_numbers="$(jq -r '.[].number // empty' <<<"$MERGE_GROUP_PULL_REQUESTS")" || [[ -z "$pr_numbers" ]]; then
-                echo "::error::merge_group constituent pull-request metadata has no numbers"
-                exit 1
-              fi
-              while IFS= read -r number; do
-                if [[ ! "$number" =~ ^[0-9]+$ ]]; then
-                  echo "::error::invalid merge_group pull-request number"
-                  exit 1
-                fi
-                body_file="$(mktemp "$body_dir/body.XXXXXX")"
-                if ! gh api "repos/$GITHUB_REPOSITORY/pulls/$number" --jq '.body // ""' > "$body_file"; then
-                  echo "::error::unable to read constituent pull-request metadata for image exemption"
-                  exit 1
-                fi
-                body_files+=(--body-file "$body_file")
-              done <<< "$pr_numbers"
-              ;;
-          esac
-
-          node scripts/classify-image-budget-exemption.mjs "${body_files[@]}" >> "$GITHUB_OUTPUT"
-
-      - name: Summarize authentication release impact
-        env:
-          AUTH_BROKER_RELEASE: ${{ steps.auth-impact.outputs.auth_broker_release }}
-          FULL_GOOGLE_OAUTH_E2E: ${{ steps.auth-impact.outputs.full_google_oauth_e2e }}
-          IMAGE_BUDGET_EXEMPT: ${{ steps.image-exemption.outputs.image_budget_exempt }}
-        run: |
-          {
-            echo "### Authentication release impact"
-            echo "- Independent broker release: \`$AUTH_BROKER_RELEASE\`"
-            echo "- Full Google OAuth E2E before auth traffic cutover: \`$FULL_GOOGLE_OAUTH_E2E\`"
-            echo "- Image-budget exemption from PR metadata: \`${IMAGE_BUDGET_EXEMPT:-false}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
       - name: Decide
         id: decide
-        # Pull requests and merge-group refs classify every surface by path.
-        # Pushes/tags and manual runs continue to validate their full release
-        # surface, while merge-group checks stay equivalent to PR checks.
-        # A manual run remains an explicit full-Rust authorization path used by
-        # release verification, while version tags always receive Rust checks.
+        # Always run everything on push to main (full validation); on
+        # pull_request, run only the areas whose paths changed.
+        # The gated jobs themselves always run and report success — their
+        # steps are gated on these outputs rather than the job being skipped
+        # — so the required "frontend" / "backend" status checks are
+        # satisfied with a genuine green instead of being left pending on
+        # filtered PRs. It also keeps the aggregate gates strict: a job that
+        # goes missing for any OTHER reason (a failed `changes`, a cancelled
+        # run) still reports non-success and fails the gate.
         env:
           EVENT_NAME: ${{ github.event_name }}
           FRONTEND_CHANGED: ${{ steps.filter.outputs.frontend }}
-          RUST_CHANGED: ${{ steps.filter.outputs.rust }}
-          MOBILE_CHANGED: ${{ steps.filter.outputs.mobile }}
-          INSTALLER_CHANGED: ${{ steps.filter.outputs.installer }}
-          RUN_RUST: ${{ github.event_name == 'workflow_dispatch' && inputs.run_rust == true }}
-          REF_TYPE: ${{ github.ref_type }}
+          BACKEND_CHANGED: ${{ steps.filter.outputs.backend }}
+          SQLC_CHANGED: ${{ steps.filter.outputs.sqlc }}
         run: |
-          if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "merge_group" ]; then
-            if [ "$FRONTEND_CHANGED" = "true" ]; then
-              echo "frontend=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "frontend=false" >> "$GITHUB_OUTPUT"
-            fi
-          else
+          if [ "$EVENT_NAME" != "pull_request" ] || [ "$FRONTEND_CHANGED" = "true" ]; then
             echo "frontend=true" >> "$GITHUB_OUTPUT"
-          fi
-          if [ "$RUN_RUST" = "true" ] || [ "$RUST_CHANGED" = "true" ] || [ "$REF_TYPE" = "tag" ]; then
-            echo "rust=true" >> "$GITHUB_OUTPUT"
           else
-            echo "rust=false" >> "$GITHUB_OUTPUT"
+            echo "frontend=false" >> "$GITHUB_OUTPUT"
           fi
-          if [ "$MOBILE_CHANGED" = "true" ]; then
-            echo "mobile=true" >> "$GITHUB_OUTPUT"
+          if [ "$EVENT_NAME" != "pull_request" ] || [ "$BACKEND_CHANGED" = "true" ]; then
+            echo "backend=true" >> "$GITHUB_OUTPUT"
           else
-            echo "mobile=false" >> "$GITHUB_OUTPUT"
+            echo "backend=false" >> "$GITHUB_OUTPUT"
           fi
-          if [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "merge_group" ]; then
-            if [ "$INSTALLER_CHANGED" = "true" ]; then
-              echo "installer=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "installer=false" >> "$GITHUB_OUTPUT"
-            fi
+          if [ "$EVENT_NAME" != "pull_request" ] || [ "$SQLC_CHANGED" = "true" ]; then
+            echo "sqlc=true" >> "$GITHUB_OUTPUT"
           else
-            echo "installer=true" >> "$GITHUB_OUTPUT"
+            echo "sqlc=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  sqlc-check:
+    needs: changes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        if: ${{ needs.changes.outputs.sqlc == 'true' }}
+        uses: actions/checkout@v6
+
+      - name: Setup Go
+        if: ${{ needs.changes.outputs.sqlc == 'true' }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.x"
+          check-latest: true
+          cache-dependency-path: server/go.sum
+
+      - name: Verify generated SQL is up to date
+        if: ${{ needs.changes.outputs.sqlc == 'true' }}
+        run: |
+          make sqlc
+          git diff --exit-code -- server/pkg/db/generated
+          untracked="$(git ls-files --others --exclude-standard -- server/pkg/db/generated)"
+          if [ -n "$untracked" ]; then
+            printf 'Untracked generated SQL files:\n%s\n' "$untracked"
+            exit 1
           fi
 
   # The frontend validation is split across four runners on purpose. A prior
@@ -483,23 +202,22 @@ jobs:
   # increases total runner-minutes but reduces wall-clock feedback time.
   frontend-build:
     needs: changes
-    if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.auth_broker_release == 'true' }}
     runs-on: ubuntu-latest
     env:
       # Pin turbo's filesystem cache somewhere actions/cache can address.
       TURBO_CACHE_DIR: .turbo/cache
     steps:
       - name: Checkout
-        if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.auth_broker_release == 'true' }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: ${{ needs.changes.outputs.frontend == 'true' }}
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        uses: pnpm/action-setup@v4
 
       - name: Setup Node.js
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -525,9 +243,8 @@ jobs:
       # GitHub scopes caches by branch: a PR reads main's entries (so unchanged
       # tasks hit on the first push) and writes its own (so re-pushes hit too).
       - name: Restore turbo cache
-        id: turbo-cache
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@v6
         with:
           path: .turbo/cache
           key: turbo-build-${{ runner.os }}-${{ runner.arch }}-${{ steps.runtime.outputs.node }}-${{ github.sha }}
@@ -538,41 +255,18 @@ jobs:
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         run: bash scripts/selfhost-config.test.sh
 
-      - name: Test self-host messaging deployment contract
-        if: ${{ needs.changes.outputs.frontend == 'true' }}
-        run: bash scripts/messaging-self-host-check.test.sh
-
-      - name: Test self-host messaging setup helper
-        if: ${{ needs.changes.outputs.frontend == 'true' }}
-        run: bash scripts/messaging-self-host-setup.test.sh
-
       - name: Test worktree database cleanup
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         run: bash scripts/worktree-db.test.sh
 
-      - name: Test native PostgreSQL development runtime
+      - name: Test development environment registry
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        run: bash scripts/postgres-runtime.test.sh
-
-      - name: Test Makefile development entrypoint contract
-        if: ${{ needs.changes.outputs.frontend == 'true' }}
-        run: bash scripts/makefile-build.test.sh
-
-      - name: Test authenticated development runtime boundaries
-        if: ${{ needs.changes.outputs.frontend == 'true' }}
-        run: >-
-          pnpm --filter @patchbay/desktop exec vitest run --root ../..
-          ../../scripts/dev-auth-command.test.mjs
-          ../../scripts/dev-runtime-command.test.mjs
-
-      - name: Test authentication release classification
-        if: ${{ needs.changes.outputs.frontend == 'true' }}
-        run: node --test scripts/classify-auth-change.test.mjs
+        run: bash scripts/dev-env.test.sh
 
       - name: Verify reserved-slugs.ts is up to date
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         # Re-runs the generator and fails on any drift from the
-        # checked-in TypeScript output. The Rust handler embeds the JSON
+        # checked-in TypeScript output. The Go side embeds the JSON
         # source directly, so a passing diff here proves both sides
         # share one source of truth.
         run: |
@@ -585,29 +279,8 @@ jobs:
         # to apps/mobile/** + packages/core/**) so it doesn't add
         # ~50s of expo-lint + tsc to every web/desktop PR. Keep this
         # filter in sync with the root package.json scripts, which also
-        # exclude @patchbay/mobile.
-        # @patchbay/web's build and typecheck both generate the same Fumadocs
-        # `.source` tree. Turbo may otherwise run them concurrently and one
-        # generator can remove the directory while the other is traversing it.
-        # Keep lint parallel with typecheck, but finish builds first.
-        run: |
-          pnpm exec turbo build --filter='!@patchbay/docs' --filter='!@patchbay/mobile'
-          pnpm exec turbo typecheck lint --filter='!@patchbay/docs' --filter='!@patchbay/mobile'
-
-      - name: Setup Docker Buildx for auth broker
-        if: ${{ needs.changes.outputs.auth_broker_release == 'true' }}
-        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
-
-      - name: Build independent auth broker image
-        if: ${{ needs.changes.outputs.auth_broker_release == 'true' }}
-        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
-        with:
-          context: .
-          file: Dockerfile.auth-broker
-          push: false
-          tags: patchbay-auth-broker:ci
-          cache-from: type=gha,scope=ci-auth-broker
-          cache-to: type=gha,mode=max,scope=ci-auth-broker
+        # exclude @multica/mobile.
+        run: pnpm exec turbo build typecheck lint --filter='!@multica/docs' --filter='!@multica/mobile'
 
       # Blocking from the start: it reports nothing today, and it covers the
       # one regression knip structurally cannot see. packages/ui exports four
@@ -632,42 +305,29 @@ jobs:
       # TO PROMOTE TO BLOCKING: once this step has run clean for a full cycle
       # on main, drop `continue-on-error`. The findings it reports today are
       # pre-existing dead code left out of the cleanup that introduced it
-      # (PB-6353) — clear those first, or the flip turns them into a red main.
+      # (MUL-6353) — clear those first, or the flip turns them into a red main.
       - name: Check for dead code and phantom dependencies (knip)
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         continue-on-error: true
         run: pnpm knip
 
-      - name: Report Turbo cache
-        if: ${{ always() && needs.changes.outputs.frontend == 'true' }}
-        env:
-          CACHE_HIT: ${{ steps.turbo-cache.outputs.cache-hit }}
-        run: |
-          bytes="$(du -sk .turbo/cache 2>/dev/null | awk '{print $1 * 1024}' || echo 0)"
-          {
-            echo "### Turbo cache: frontend-build"
-            echo "- Exact-key hit: \`${CACHE_HIT:-false}\`"
-            echo "- Local cache bytes: \`${bytes:-0}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
   frontend-test:
     needs: changes
-    if: ${{ needs.changes.outputs.frontend == 'true' }}
     runs-on: ubuntu-latest
     env:
       TURBO_CACHE_DIR: .turbo/cache
     steps:
       - name: Checkout
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        uses: pnpm/action-setup@v4
 
       - name: Setup Node.js
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -686,9 +346,8 @@ jobs:
       # logs rather than artifacts -- yet a hit still skips the whole suite,
       # which is the single most expensive task in the graph.
       - name: Restore turbo cache
-        id: turbo-cache
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@v6
         with:
           path: .turbo/cache
           key: turbo-test-${{ runner.os }}-${{ runner.arch }}-${{ steps.runtime.outputs.node }}-${{ github.sha }}
@@ -701,26 +360,13 @@ jobs:
         # job's responsibility -- frontend-build owns the `typecheck` task.
         # `test` reaches dependency sources through the hash-only
         # `^cache-inputs` edge (see turbo.json), so no `tsc` runs here.
-        run: pnpm exec turbo test --filter='!@patchbay/docs' --filter='!@patchbay/mobile' --filter='!@patchbay/views'
-
-      - name: Report Turbo cache
-        if: ${{ always() && needs.changes.outputs.frontend == 'true' }}
-        env:
-          CACHE_HIT: ${{ steps.turbo-cache.outputs.cache-hit }}
-        run: |
-          bytes="$(du -sk .turbo/cache 2>/dev/null | awk '{print $1 * 1024}' || echo 0)"
-          {
-            echo "### Turbo cache: frontend-test"
-            echo "- Exact-key hit: \`${CACHE_HIT:-false}\`"
-            echo "- Local cache bytes: \`${bytes:-0}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: pnpm exec turbo test --filter='!@multica/docs' --filter='!@multica/mobile' --filter='!@multica/views'
 
   # Split views across two runners. GitHub reports the matrix job's combined
   # result, so the aggregate gate can continue depending on this one job ID.
   frontend-views-test:
     name: frontend-views-test (${{ matrix.index }}/${{ matrix.total }})
     needs: changes
-    if: ${{ needs.changes.outputs.frontend == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -735,15 +381,15 @@ jobs:
     steps:
       - name: Checkout
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        uses: pnpm/action-setup@v4
 
       - name: Setup Node.js
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: pnpm
@@ -762,9 +408,8 @@ jobs:
       # argument in the task hash, while dependency sources still flow through
       # turbo.json's hash-only `^cache-inputs` edge.
       - name: Restore turbo cache
-        id: turbo-cache
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        uses: actions/cache@v6
         with:
           path: .turbo/cache
           key: turbo-views-test-${{ matrix.index }}-of-${{ matrix.total }}-${{ runner.os }}-${{ runner.arch }}-${{ steps.runtime.outputs.node }}-${{ github.sha }}
@@ -773,19 +418,7 @@ jobs:
 
       - name: Test views shard ${{ matrix.index }}/${{ matrix.total }}
         if: ${{ needs.changes.outputs.frontend == 'true' }}
-        run: pnpm exec turbo test --filter='@patchbay/views' -- --shard=${{ matrix.index }}/${{ matrix.total }}
-
-      - name: Report Turbo cache
-        if: ${{ always() && needs.changes.outputs.frontend == 'true' }}
-        env:
-          CACHE_HIT: ${{ steps.turbo-cache.outputs.cache-hit }}
-        run: |
-          bytes="$(du -sk .turbo/cache 2>/dev/null | awk '{print $1 * 1024}' || echo 0)"
-          {
-            echo "### Turbo cache: views ${{ matrix.index }}/${{ matrix.total }}"
-            echo "- Exact-key hit: \`${CACHE_HIT:-false}\`"
-            echo "- Local cache bytes: \`${bytes:-0}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+        run: pnpm exec turbo test --filter='@multica/views' -- --shard=${{ matrix.index }}/${{ matrix.total }}
 
   # Aggregate gate. `frontend` is the status-check name the repository's
   # branch rules refer to, so it has to survive the split above: this job
@@ -794,7 +427,7 @@ jobs:
   # staying pending) on PRs the path filter excluded — all workers succeed
   # trivially in that case because every step is gated off.
   frontend:
-    needs: [changes, frontend-build, frontend-test, frontend-views-test]
+    needs: [frontend-build, frontend-test, frontend-views-test]
     # `!cancelled()` rather than `always()`: a run superseded by a newer push
     # is cancelled by the concurrency group above, and there is no reason to
     # spend a runner reporting a verdict nobody will read.
@@ -806,498 +439,357 @@ jobs:
           BUILD_RESULT: ${{ needs.frontend-build.result }}
           TEST_RESULT: ${{ needs.frontend-test.result }}
           VIEWS_TEST_RESULT: ${{ needs.frontend-views-test.result }}
-          SHOULD_RUN: ${{ needs.changes.outputs.frontend }}
-          CHANGES_RESULT: ${{ needs.changes.result }}
         run: |
-          echo "changes:       $CHANGES_RESULT"
-          echo "should run:    $SHOULD_RUN"
           echo "frontend-build: $BUILD_RESULT"
           echo "frontend-test:  $TEST_RESULT"
           echo "frontend-views-test: $VIEWS_TEST_RESULT"
-          if [ "$CHANGES_RESULT" != "success" ]; then
-            echo "::error::change classification failed"
-            exit 1
-          fi
-          if [ "$SHOULD_RUN" != "true" ]; then
-            echo "Frontend validation intentionally skipped: no relevant paths changed."
-            exit 0
-          fi
           if [ "$BUILD_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ] || [ "$VIEWS_TEST_RESULT" != "success" ]; then
             echo "::error::frontend validation failed"
             exit 1
           fi
 
-  mobile-quality:
+  backend-tests:
     needs: changes
-    if: ${{ needs.changes.outputs.mobile == 'true' }}
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Type check, lint, and test Mobile
-        run: pnpm exec turbo typecheck lint test --filter=@patchbay/mobile
-
-  mobile:
-    needs: [changes, mobile-quality]
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check Mobile job result
-        env:
-          CHANGES_RESULT: ${{ needs.changes.result }}
-          SHOULD_RUN: ${{ needs.changes.outputs.mobile }}
-          MOBILE_RESULT: ${{ needs.mobile-quality.result }}
-        run: |
-          echo "changes:       $CHANGES_RESULT"
-          echo "should run:    $SHOULD_RUN"
-          echo "mobile-quality: $MOBILE_RESULT"
-          if [ "$CHANGES_RESULT" != "success" ]; then
-            echo "::error::change classification failed"
-            exit 1
-          fi
-          if [ "$SHOULD_RUN" != "true" ]; then
-            echo "Mobile validation intentionally skipped: no relevant paths changed."
-            exit 0
-          fi
-          if [ "$MOBILE_RESULT" != "success" ]; then
-            echo "::error::mobile validation failed"
-            exit 1
-          fi
-
-  # An intermediate Stack layer with only member source changes can use a
-  # bounded Rust gate. The classifier has already expanded the check set to
-  # include every reverse workspace dependent; broad files and top-level PRs
-  # select the complete jobs below instead.
-  rust-lightweight:
-    needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' && needs.changes.outputs.rust_scope == 'lightweight' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # `services` cannot be conditional, so the Postgres and Redis containers
+    # still start on a filtered PR. That is ~1 minute of runner time against
+    # the several minutes the gated steps below cost; job-level `if` would
+    # save it but report `skipped` to the aggregate gate, which then has to
+    # accept `skipped` as success and stops catching jobs that go missing for
+    # reasons other than the path filter.
     services:
       postgres:
         image: pgvector/pgvector:pg17
         env:
-          POSTGRES_DB: patchbay
-          POSTGRES_USER: patchbay
-          POSTGRES_PASSWORD: patchbay
+          POSTGRES_DB: multica
+          POSTGRES_USER: multica
+          POSTGRES_PASSWORD: multica
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U patchbay -d patchbay"
+          --health-cmd "pg_isready -U multica -d multica"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
-      DATABASE_URL: postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable
-      SQLX_OFFLINE: "false"
-      RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
-      SCCACHE_GHA_RW_MODE: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'READ_ONLY' || 'READ_WRITE' }}
-      RUST_PACKAGES: ${{ needs.changes.outputs.rust_packages }}
-      RUST_TEST_PACKAGES: ${{ needs.changes.outputs.rust_test_packages }}
+      DATABASE_URL: postgres://multica:multica@localhost:5432/multica?sslmode=disable
+      # Wires up the RedisLocalSkill*_test.go suite. Distinct from REDIS_URL
+      # (which would flip the server binary itself onto the Redis-backed
+      # realtime relay + request stores); the tests talk to this Redis
+      # directly so they run alongside the Postgres-backed suite.
+      REDIS_TEST_URL: redis://localhost:6379/1
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        uses: actions/checkout@v6
 
-      - name: Install Rust toolchain
-        run: rustup toolchain install stable --profile minimal --component rustfmt
-
-      - name: Use stable Rust
-        run: rustup default stable
-
-      - name: Restore Cargo registry and git downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      - name: Setup Go
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        uses: actions/setup-go@v5
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('server-rs/Cargo.lock') }}
-          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
-
-      - name: Enable bounded shared compiler cache
-        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-
-      - name: Report selected Rust packages
-        run: |
-          {
-            echo "### Lightweight Rust validation"
-            echo "- Check closure: \`${RUST_PACKAGES}\`"
-            echo "- Targeted tests: \`${RUST_TEST_PACKAGES}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Check workspace formatting
-        working-directory: server-rs
-        run: cargo fmt --all --check
-
-      - name: Apply database migrations with the Rust runner
-        working-directory: server-rs
-        run: cargo run --locked -p patchbay-migrate --bin patchbay-migrate -- up
-
-      - name: Check affected crates and reverse dependents
-        working-directory: server-rs
-        shell: bash
-        run: |
-          if [[ -z "${RUST_PACKAGES// }" ]]; then
-            echo "::error::lightweight Rust scope did not provide check packages"
-            exit 1
-          fi
-          read -r -a packages <<< "$RUST_PACKAGES"
-          cargo_args=()
-          for package in "${packages[@]}"; do
-            cargo_args+=(--package "$package")
-          done
-          cargo check --all-targets --locked "${cargo_args[@]}"
-
-      - name: Run targeted tests for changed crates
-        working-directory: server-rs
-        shell: bash
-        run: |
-          if [[ -z "${RUST_TEST_PACKAGES// }" ]]; then
-            echo "::error::lightweight Rust scope did not provide test packages"
-            exit 1
-          fi
-          read -r -a packages <<< "$RUST_TEST_PACKAGES"
-          cargo_args=()
-          for package in "${packages[@]}"; do
-            cargo_args+=(--package "$package")
-          done
-          cargo test --all-targets --locked "${cargo_args[@]}"
-
-      - name: Report compiler cache effectiveness
-        if: always()
-        shell: bash
-        run: |
-          stats="$(${SCCACHE_PATH} --show-stats 2>&1)"
-          printf '%s\n' "$stats"
-          {
-            echo "### sccache: rust-lightweight"
-            echo '```text'
-            printf '%s\n' "$stats"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  rust-deployment-contracts:
-    needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' && needs.changes.outputs.rust_scope == 'full' }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+          # Deliberately independent from the minimum patch in server/go.mod:
+          # CI follows the newest 1.26 patch available to setup-go.
+          go-version: "1.26.x"
+          check-latest: true
+          cache-dependency-path: server/go.sum
 
       - name: Setup Helm
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        uses: azure/setup-helm@v4
 
-      - name: Test Rust build and deployment contracts
-        run: |
-          bash scripts/auth-broker-helm.test.sh
-          bash scripts/helm-config.test.sh
-          bash scripts/makefile-build.test.sh
-          bash scripts/macos-release-contract.test.sh
-          bash scripts/verify-release-tag.test.sh
+      - name: Test Helm chart
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        run: bash scripts/helm-config.test.sh
 
-  rust-quality:
+      - name: Test backend entrypoint signals
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        run: bash scripts/entrypoint.test.sh
+
+      - name: Test build output naming
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        run: bash scripts/makefile-build.test.sh
+
+      - name: Build
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        run: cd server && go build ./...
+
+      - name: Run migrations
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        run: cd server && go run ./cmd/migrate up
+
+      - name: Verify Go test wrapper
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        run: bash scripts/test-go.test.sh
+
+      - name: Test
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        run: bash scripts/test-go.sh --race
+
+  # Keep the live vulnerability database from hiding build and test results.
+  # The aggregate backend job below still treats both jobs as one merge gate.
+  go-vulnerability-scan:
     needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' && needs.changes.outputs.rust_scope == 'full' }}
     runs-on: ubuntu-latest
-    env:
-      RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
-      SCCACHE_GHA_RW_MODE: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'READ_ONLY' || 'READ_WRITE' }}
-      # Ephemeral runners have no persisted target/. Cargo incremental cannot
-      # survive across jobs, and it poisons sccache keys inside a job.
-      # line-tables-only keeps panic backtraces without full DWARF codegen.
-      CARGO_INCREMENTAL: "0"
-      CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
-      CARGO_PROFILE_TEST_DEBUG: "line-tables-only"
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        uses: actions/checkout@v6
 
-      - name: Install Rust toolchain
-        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
-
-      - name: Use stable Rust
-        run: rustup default stable
-
-      - name: Restore Cargo registry and git downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      - name: Setup Go
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        uses: actions/setup-go@v5
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('server-rs/Cargo.lock') }}
-          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
+          # Deliberately independent from the minimum patch in server/go.mod:
+          # CI follows the newest 1.26 patch available to setup-go.
+          go-version: "1.26.x"
+          check-latest: true
+          cache-dependency-path: server/go.sum
 
-      - name: Enable bounded shared compiler cache
-        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - name: Scan Go vulnerabilities
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        working-directory: server
+        run: go tool govulncheck ./...
 
-      - name: Check formatting
-        working-directory: server-rs
-        run: cargo fmt --all --check
-
-      # Clippy typechecks every target. A preceding cargo check repeats rustc
-      # work without codegen, and a following workspace cargo build repeats
-      # codegen that rust-tests already performs with --all-targets (libs,
-      # bins, tests, examples, and benches). cargo test still compiles those
-      # bins with rustc --test, so cfg(not(test)) / linker-flag failures on
-      # the shipping executables would miss the PR gate. Link only those two
-      # binaries here instead of rebuilding the whole workspace.
-      - name: Run Clippy
-        working-directory: server-rs
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
-
-      - name: Link shipping binaries
-        working-directory: server-rs
-        run: cargo build --locked -p patchbay-server --bin patchbay-server -p patchbay-cli --bin patchbay
-
-      - name: Report compiler cache effectiveness
-        if: always()
-        shell: bash
-        run: |
-          stats="$(${SCCACHE_PATH} --show-stats 2>&1)"
-          printf '%s\n' "$stats"
-          {
-            echo "### sccache: rust-quality"
-            echo '```text'
-            printf '%s\n' "$stats"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  rust-tests:
-    needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' && needs.changes.outputs.rust_scope == 'full' }}
-    runs-on: ubuntu-latest
-    # The workspace suite normally completes in about ten minutes. Keep a
-    # bounded upper limit so a single hung test cannot hold the merge gate
-    # indefinitely while leaving enough room for a cold runner/cache.
-    timeout-minutes: 45
-    services:
-      postgres:
-        image: pgvector/pgvector:pg17
-        env:
-          POSTGRES_DB: patchbay
-          POSTGRES_USER: patchbay
-          POSTGRES_PASSWORD: patchbay
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U patchbay -d patchbay"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-    env:
-      DATABASE_URL: postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable
-      SQLX_OFFLINE: "false"
-      RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
-      SCCACHE_GHA_RW_MODE: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'READ_ONLY' || 'READ_WRITE' }}
-      CARGO_INCREMENTAL: "0"
-      CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
-      CARGO_PROFILE_TEST_DEBUG: "line-tables-only"
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Install Rust toolchain
-        run: rustup toolchain install stable --profile minimal
-
-      - name: Use stable Rust
-        run: rustup default stable
-
-      - name: Restore Cargo registry and git downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('server-rs/Cargo.lock') }}
-          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
-
-      - name: Enable bounded shared compiler cache
-        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-
-      - name: Apply database migrations with the Rust runner
-        working-directory: server-rs
-        run: cargo run --locked -p patchbay-migrate --bin patchbay-migrate -- up
-
-      - name: Run Rust workspace tests
-        working-directory: server-rs
-        run: cargo test --workspace --all-targets --locked
-
-      - name: Report compiler cache effectiveness
-        if: always()
-        shell: bash
-        run: |
-          stats="$(${SCCACHE_PATH} --show-stats 2>&1)"
-          printf '%s\n' "$stats"
-          {
-            echo "### sccache: rust-tests"
-            echo '```text'
-            printf '%s\n' "$stats"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  rust-audit:
-    needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' && needs.changes.outputs.rust_scope == 'full' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      checks: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - name: Scan Rust dependencies
-        uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          working-directory: server-rs
-          # SQLx 0.8 locks its optional MySQL driver for all-target resolution;
-          # the compiled Patchbay graph enables Postgres only. CloudFront signing
-          # no longer uses rsa and is implemented with ring/SHA-256.
-          ignore: RUSTSEC-2023-0071
-
-  # Preserve the required check name while the Rust checks stay split by
-  # concern so a failure points at the actual production boundary.
+  # Preserve the existing required-check name while allowing tests, generated
+  # SQL verification, and the vulnerability scan to run independently.
   backend:
-    needs:
-      [
-        changes,
-        rust-lightweight,
-        rust-deployment-contracts,
-        rust-quality,
-        rust-tests,
-        rust-platform,
-        rust-audit,
-      ]
+    needs: [backend-tests, sqlc-check, go-vulnerability-scan]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
-      - name: Check Rust backend job results
+      - name: Check backend job results
         env:
-          CHANGES_RESULT: ${{ needs.changes.result }}
-          RUN_RUST: ${{ needs.changes.outputs.rust }}
-          RUST_SCOPE: ${{ needs.changes.outputs.rust_scope }}
-          LIGHTWEIGHT_RESULT: ${{ needs.rust-lightweight.result }}
-          DEPLOYMENT_RESULT: ${{ needs.rust-deployment-contracts.result }}
-          QUALITY_RESULT: ${{ needs.rust-quality.result }}
-          TEST_RESULT: ${{ needs.rust-tests.result }}
-          PLATFORM_RESULT: ${{ needs.rust-platform.result }}
-          AUDIT_RESULT: ${{ needs.rust-audit.result }}
+          TEST_RESULT: ${{ needs.backend-tests.result }}
+          SQLC_RESULT: ${{ needs.sqlc-check.result }}
+          VULNERABILITY_RESULT: ${{ needs.go-vulnerability-scan.result }}
         run: |
-          echo "changes:       $CHANGES_RESULT"
-          echo "run Rust:      $RUN_RUST"
-          echo "rust scope:    $RUST_SCOPE"
-          echo "rust-lightweight: $LIGHTWEIGHT_RESULT"
-          echo "rust-deploy:   $DEPLOYMENT_RESULT"
-          echo "rust-quality:  $QUALITY_RESULT"
-          echo "rust-tests:    $TEST_RESULT"
-          echo "rust-platform: $PLATFORM_RESULT"
-          echo "rust-audit:    $AUDIT_RESULT"
-          if [ "$CHANGES_RESULT" != "success" ]; then
-            echo "::error::change classification failed"
-            exit 1
-          fi
-          if [ "$RUN_RUST" != "true" ]; then
-            echo "Rust validation intentionally skipped: no relevant paths changed."
-            exit 0
-          fi
-          if [ "$RUST_SCOPE" = "lightweight" ]; then
-            if [ "$LIGHTWEIGHT_RESULT" != "success" ]; then
-              echo "::error::lightweight Rust validation failed"
-              exit 1
-            fi
-            echo "Lightweight Rust validation passed for this intermediate Stack layer."
-            exit 0
-          fi
-          if [ "$RUST_SCOPE" != "full" ]; then
-            echo "::error::unknown Rust validation scope: $RUST_SCOPE"
-            exit 1
-          fi
-          if [ "$DEPLOYMENT_RESULT" != "success" ] || [ "$QUALITY_RESULT" != "success" ] || [ "$TEST_RESULT" != "success" ] || [ "$PLATFORM_RESULT" != "success" ] || [ "$AUDIT_RESULT" != "success" ]; then
+          echo "backend-tests:        $TEST_RESULT"
+          echo "sqlc-check:           $SQLC_RESULT"
+          echo "go-vulnerability-scan: $VULNERABILITY_RESULT"
+          if [ "$TEST_RESULT" != "success" ] || [ "$SQLC_RESULT" != "success" ] || [ "$VULNERABILITY_RESULT" != "success" ]; then
             echo "::error::backend validation failed"
             exit 1
           fi
 
-  rust-platform:
-    name: rust-platform (${{ matrix.os }})
+  windows-execenv:
+    # The environment-preparation deadline owns a process tree, not just a Go
+    # process. This Windows runtime test verifies Job Object cancellation kills
+    # a delayed descendant before an immediate retry can reuse the same root.
+    # Every step here is a Go test under server/, so it rides the same path
+    # filter as the backend jobs; steps are gated rather than the job so the
+    # check still reports green on a filtered PR.
     needs: changes
-    if: ${{ needs.changes.outputs.rust == 'true' && needs.changes.outputs.rust_scope == 'full' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    env:
-      RUSTC_WRAPPER: sccache
-      SCCACHE_GHA_ENABLED: "true"
-      SCCACHE_GHA_RW_MODE: ${{ (github.event_name == 'pull_request' || github.event_name == 'merge_group') && 'READ_ONLY' || 'READ_WRITE' }}
-      CARGO_INCREMENTAL: "0"
-      CARGO_PROFILE_DEV_DEBUG: "line-tables-only"
-      CARGO_PROFILE_TEST_DEBUG: "line-tables-only"
+    runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        uses: actions/checkout@v6
 
-      - name: Install Rust toolchain
-        run: rustup toolchain install stable --profile minimal
-
-      - name: Use stable Rust
-        run: rustup default stable
-
-      - name: Restore Cargo registry and git downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+      - name: Setup Go
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        uses: actions/setup-go@v5
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('server-rs/Cargo.lock') }}
-          restore-keys: cargo-downloads-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml') }}-
+          # Deliberately independent from the minimum patch in server/go.mod:
+          # CI follows the newest 1.26 patch available to setup-go.
+          go-version: "1.26.x"
+          check-latest: true
+          cache-dependency-path: server/go.sum
 
-      - name: Enable bounded shared compiler cache
-        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+      - name: Test Windows execution-environment isolation
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        working-directory: server
+        # Keep this job scoped to the runtime regression it exists to prove.
+        # The package's legacy OpenClaw HOME tests are not Windows-safe and are
+        # outside this PR; the normal backend job still runs the full package.
+        run: go test ./internal/daemon/execenv -run '^TestPrepareIsolated_WindowsKillsDescendantBeforeRetry$' -count=1 -timeout=5m
 
-      - name: Test native daemon behavior
-        working-directory: server-rs
-        run: cargo test -p patchbay-daemon --all-targets --locked
+      - name: Test Windows agent launcher argv/stdin handling
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        working-directory: server
+        # Agent prompts must never reach a Windows launcher through argv: the
+        # official cursor-agent.ps1, pi.ps1, and qwen.ps1 launch native children with
+        # `$args`, and PowerShell re-serialises them onto the child command
+        # line. Under
+        # Legacy native argument passing (powershell.exe 5.1, pwsh <= 7.2) a
+        # prompt holding embedded quotes is re-tokenised and fragments like
+        # `-X` become flags (#5649). Only a real PowerShell host proves this,
+        # so it cannot live in the ubuntu backend job. Scoped to the launcher
+        # tests, which are windows-tagged and therefore run nowhere else today;
+        # the backend job still runs the full package on Linux.
+        # -v so a silent skip (no PowerShell host resolved, or a -run pattern
+        # that stops matching) is visible in the log instead of passing as "ok".
+        run: go test ./pkg/agent -v -run '^(TestCursorExecutePromptSurvivesPowerShellShim|TestPiExecutePromptSurvivesPowerShellShim|TestQwenExecutePromptSurvivesPowerShellShim|TestPlatformCursorInvocation|TestPlatformCopilotInvocation|TestPlatformPiInvocation|TestPlatformQwenInvocation)' -count=1 -timeout=5m
 
-      - name: Report compiler cache effectiveness
-        if: always()
-        shell: bash
+      - name: Test Windows OpenCode oversized prompt reaches stdin
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        working-directory: server
+        # #6538: the daemon inlined the whole task prompt as an argv element,
+        # so every OpenCode task whose prompt cleared CreateProcess's 32,767
+        # character lpCommandLine limit failed to start at all, with Go
+        # reporting ERROR_FILENAME_EXCED_RANGE as the misleading "The filename
+        # or extension is too long". Only a real CreateProcess enforces that
+        # ceiling, so this cannot run in the ubuntu backend job. The test
+        # spawns a native .exe directly (a Chocolatey-installed opencode.exe is
+        # a real PE binary, not a .cmd shim) with an oversized prompt and pins
+        # that the process starts, argv stays free of the prompt, and the full
+        # payload arrives on stdin.
+        # -v so a silent skip or a -run pattern that stops matching is visible
+        # in the log instead of passing as "ok".
+        run: go test ./pkg/agent -v -run '^TestOpencodeExecuteOversizedPromptStartsOnWindows$' -count=1 -timeout=5m
+
+      - name: Test Windows agent process-tree ownership
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        working-directory: server
+        # A Job Object is the only way to prove whole-tree termination on
+        # Windows, and only a real Windows runner can exercise it: that a
+        # grandchild dies with the tree that owns it, that an unowned process
+        # still reports cleanup as unconfirmed, and that a descendant holding
+        # inherited stdout neither keeps Result blocked nor survives cleanup.
+        # -v makes RUN/PASS evidence explicit in CI logs.
+        run: go test ./pkg/agent -v -run '^(TestStartOwnedProcessTreeCapturesImmediateDescendants|TestStartOwnedProcessTreeLeavesNoSuspendedChild|TestWaitProcessGroupGoneWithoutOwnershipReportsUnconfirmed|TestCodexInitializeRetrySupportedWithOwnedProcessTree|TestCodexWindowsDescendantsDieWithTheOwnedProcessTree|TestCodeArtsWindowsCancellationTerminatesDescendants)$' -count=1 -timeout=5m
+
+      - name: Test bounded CLI output collection on Windows
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        working-directory: server
+        # MUL-5467: RunCollect / RunCollectQuiet own the pipes as well as the
+        # process tree on the OpenClaw CLI paths, which outputOwned cannot. A real
+        # Windows host proves its Job Object owns and
+        # terminates descendants, a CLI that prints its answer and then refuses
+        # to exit still yields that answer, a response still streaming at the
+        # deadline is NOT reported as success, and no collector goroutine
+        # outlives the call. Unix uses process groups, so it cannot exercise this
+        # platform lifecycle.
+        # -v so a skip (a -run pattern that stops matching) is visible in the log
+        # instead of passing as "ok".
+        run: go test ./pkg/agent -v -run '^TestWindowsRunCollect' -count=1 -timeout=5m
+
+      - name: Test Windows Pi session lock leaves the transcript readable
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        working-directory: server
+        # #7840: the session lock claimed the transcript itself, and Windows
+        # byte-range locks are mandatory. Pi's own read of the file we hand it
+        # through --session failed with EBUSY, so every Pi/omp task on Windows
+        # died ~0.5s after launch. Unix flock is advisory and never reproduces
+        # it, which is exactly how the regression shipped; the tests are
+        # windows-tagged and therefore run nowhere else today.
+        # -v so a skip (a -run pattern that stops matching) is visible in the
+        # log instead of passing as "ok".
+        run: go test ./pkg/agent -v -run '^TestPiSessionFileLock' -count=1 -timeout=5m
+
+      - name: Test Windows OpenClaw npm shim interpreter resolution
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        working-directory: server
+        # #6061: every OpenClaw task failed execenv prep on a Windows host with
+        # a bare `exit status 1` and no stderr. A batch shim resolves and runs
+        # fine while the `node` it re-execs is unreachable, and npm's real
+        # template prefers a co-located node.exe over PATH — none of which can
+        # be proven without a real cmd.exe host. These tests pin: the positive
+        # control (node on PATH → success), that a missing node surfaces
+        # cmd.exe's own stderr (the first run of this job disproved #6061's
+        # premise that it does not), that a genuinely silent shim DOES reach the
+        # new diagnostic, that a co-located interpreter is credited, that a
+        # context timeout is not misdiagnosed as a missing interpreter, and that
+        # TEMP/TMP are NOT load-bearing (the originally reported root cause,
+        # since retracted upstream).
+        # Scoped to the windows-tagged shim tests — the package's legacy
+        # OpenClaw HOME tests are not Windows-safe; the backend job still runs
+        # the full package plus the cross-platform half on Linux.
+        # -v so a skip (no node on the runner) is visible instead of passing
+        # silently as "ok".
+        run: go test ./internal/daemon/execenv -v -run '^TestWindowsOpenclawShim' -count=1 -timeout=5m
+
+      - name: Test Windows isolated repo checkout is committable
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        working-directory: server
+        # #6449: on Windows the daemon now hands Codex tasks a checkout whose
+        # .git lives inside the task workdir, because a linked worktree's
+        # external gitdir stays read-only under the native sandbox and breaks
+        # `git add` / `git commit` at the end of a task. Two of the guarantees
+        # are claims about Windows itself and cannot be made on ubuntu: that
+        # Git puts the gitdir inside the task directory, and that the clone's
+        # objects are private copies rather than NTFS hard links sharing one
+        # file and one security descriptor with the daemon-owned cache. The
+        # cross-volume test covers what a hard link cannot express at all.
+        # Scoped to the two windows-tagged tests by exact name. A prefix match
+        # also caught the package's cross-platform isolated-checkout test,
+        # which cannot run here: repocache derives a cache directory name from
+        # the full source repo path, so a t.TempDir() path that already embeds
+        # a long test name doubles and blows past MAX_PATH. That test belongs
+        # to the ubuntu backend job, which runs the whole package.
+        # -v so a skip (single-volume runner) is visible instead of passing
+        # silently as "ok".
+        run: go test ./internal/daemon/repocache -v -run '^(TestIsolatedCheckoutIsCommittableOnWindows|TestIsolatedCheckoutAcrossVolumesOnWindows)$' -count=1 -timeout=5m
+
+      - name: Test Windows directory-junction link safety
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        working-directory: server
+        # MUL-6000: the per-task codex-home links the user's real skills into
+        # the task directory instead of copying them. On Windows that link is a
+        # directory junction whenever os.Symlink is denied (no Developer Mode),
+        # and a junction is the one link shape a ModeSymlink check misses:
+        # since Go 1.23 os.Lstat reports it as ModeDir|ModeIrregular with no
+        # ModeSymlink bit, while its DirEntry still answers IsDir() == true, so
+        # filepath.WalkDir descends into the target. Two claims about Windows
+        # itself cannot be made on ubuntu: that the per-task skills wipe
+        # (os.RemoveAll) drops the junction rather than the user's files, and
+        # that the GC's artifact sweep and size accounting refuse to walk
+        # through one. The tests call mklink /J directly so the junction shape
+        # is exercised even on a runner where symlinks are permitted.
+        # -v so a skip is visible instead of passing silently as "ok".
         run: |
-          stats="$(${SCCACHE_PATH} --show-stats 2>&1)"
-          printf '%s\n' "$stats"
-          {
-            echo "### sccache: rust-platform (${{ matrix.os }})"
-            echo '```text'
-            printf '%s\n' "$stats"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          go test ./internal/daemon/execenv -v -run '^(TestSeedUserCodexSkills|TestHydrateCodexSkills)' -count=1 -timeout=5m
+          go test ./internal/daemon -v -run '^(TestCleanTaskArtifacts_DoesNotFollowDirectoryJunction|TestTaskSize_DoesNotCountDirectoryJunction)$' -count=1 -timeout=5m
+
+      - name: Test Windows task temp dir sweep survives a sharing violation
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        working-directory: server
+        # The GC's task temp sweep has to cope with a file it cannot delete: a
+        # leftover child process holding one open is what left 174 directories
+        # behind in #7364. Only a real Windows filesystem produces that sharing
+        # violation — on unix an open file unlinks fine — so this is the only
+        # place we can prove the two things that matter: the failed cleanup
+        # keeps .task_lock (without it the directory reads as a pre-lock
+        # leftover and stops being reclaimable on liveness), and the next cycle
+        # removes the directory once the handle closes.
+        # -v so a skip is visible instead of passing silently as "ok".
+        run: go test ./internal/daemon/execenv -v -run '^TestPruneTaskTempDirsSurvivesRealSharingViolation$' -count=1 -timeout=5m
+
+      - name: Test Windows agent executable junction resolution
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        working-directory: server
+        # The standalone Codex installer exposes bin as a directory junction.
+        # filepath.EvalSymlinks cannot traverse that reparse-point shape, so
+        # only a real Windows filesystem proves both PATH discovery and an
+        # explicitly configured path reach the release executable. The same job
+        # covers the npm shape, where the entry point is a `.cmd` shim that only
+        # the command interpreter can run.
+        run: go test ./internal/daemon -v -run '^(TestCanonicalExecutablePath|TestTrimExtendedLengthPrefix|TestResolveAgentExecutablePathKeeps|TestResolveAgentEntry(FollowsRetargetedInstallerJunction|CanonicalizesRediscoveredJunction|ForLaunchKeepsCmdShimLaunchable|ForLaunchRejectsUnverifiedInitialJunctionTarget|ForLaunchRejectsRediscoveredJunctionWhenFinalPathResolutionFails|DoesNotSharePreRetargetSingleflightResult|ForLaunchFailsWhenJunctionKeepsRetargeting)|TestHandleTaskReportsWindowsCodexProcessStartFailure)' -count=1 -timeout=5m
+
+      - name: Build Windows CLI helper entrypoint
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        working-directory: server
+        run: go build ./cmd/multica
 
   image-budget:
-    # A bitmap added or grown past 300KB fails until the PR description says
-    # why. Manual runs compare the selected branch against base_ref;
-    # maintainers can paste the PR body when an explicit exemption is needed.
+    # Soft gate against the 21.7MB of raw PNG/JPG that MUL-6352 cleared out:
+    # a bitmap added or grown past 300KB fails until the PR description says
+    # why. Pull requests only — a push to main has no description to read,
+    # and the branch it came from was already checked.
     needs: changes
-    if: ${{ needs.changes.outputs.images == 'true' }}
+    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.images == 'true' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v6
         with:
           # The check diffs against the base branch, which a shallow
           # clone does not contain.
@@ -1305,11 +797,10 @@ jobs:
 
       - name: Check image budget
         env:
-          PR_BODY: ${{ inputs.pr_body || github.event.pull_request.body }}
-          IMAGE_BUDGET_EXEMPT: ${{ needs.changes.outputs.image_budget_exempt }}
-        run: node scripts/check-image-budget.mjs --base "origin/${{ inputs.base_ref || github.base_ref || 'main' }}"
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: node scripts/check-image-budget.mjs --base "origin/${{ github.base_ref }}"
 
-  installer-check:
+  installer:
     # Stub-driven shell tests for scripts/install.sh and scripts/install.ps1.
     # Kept off the heavy backend job so installer regressions surface
     # independently, and exercised on macOS too because the installer targets
@@ -1317,8 +808,6 @@ jobs:
     # userlands. Windows runs the PowerShell installer's own suite: the two
     # installers share one port contract, and neither is covered by the
     # frontend job.
-    needs: changes
-    if: ${{ needs.changes.outputs.installer == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -1326,7 +815,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v6
 
       - name: Test shell installers
         if: runner.os != 'Windows'
@@ -1335,33 +824,4 @@ jobs:
       - name: Test PowerShell installer
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          ./scripts/install.ps1.test.ps1
-          ./scripts/dev.ps1.test.ps1
-
-  installer:
-    needs: [changes, installer-check]
-    if: ${{ !cancelled() }}
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check installer job result
-        env:
-          CHANGES_RESULT: ${{ needs.changes.result }}
-          SHOULD_RUN: ${{ needs.changes.outputs.installer }}
-          INSTALLER_RESULT: ${{ needs.installer-check.result }}
-        run: |
-          echo "changes:        $CHANGES_RESULT"
-          echo "should run:     $SHOULD_RUN"
-          echo "installer-check: $INSTALLER_RESULT"
-          if [ "$CHANGES_RESULT" != "success" ]; then
-            echo "::error::change classification failed"
-            exit 1
-          fi
-          if [ "$SHOULD_RUN" != "true" ]; then
-            echo "Installer validation intentionally skipped: no relevant paths changed."
-            exit 0
-          fi
-          if [ "$INSTALLER_RESULT" != "success" ]; then
-            echo "::error::installer validation failed"
-            exit 1
-          fi
+        run: ./scripts/install.ps1.test.ps1

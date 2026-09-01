@@ -12,46 +12,47 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
-import { CurrencyNumberFlow } from "@patchbay/ui/components/ui/number-flow";
+import { CurrencyNumberFlow } from "@multica/ui/components/ui/number-flow";
 import type {
   Agent,
   AgentRuntime,
   AgentTask,
   MemberWithUser,
   RuntimeProfile,
-} from "@patchbay/core/types";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+} from "@multica/core/types";
+import { useAuthStore } from "@multica/core/auth";
+import { useWorkspaceId } from "@multica/core/hooks";
 import {
   agentListOptions,
   memberListOptions,
-} from "@patchbay/core/workspace/queries";
-import { agentTaskSnapshotOptions } from "@patchbay/core/agents";
+} from "@multica/core/workspace/queries";
+import { agentTaskSnapshotOptions } from "@multica/core/agents";
 import {
   deriveRuntimeHealth,
+  isRuntimeUsableForUser,
   runtimeProfileListOptions,
   runtimeUsageOptions,
-} from "@patchbay/core/runtimes";
-import { useWorkspacePaths } from "@patchbay/core/paths";
+} from "@multica/core/runtimes";
+import { useWorkspacePaths } from "@multica/core/paths";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@multica/ui/components/ui/dropdown-menu";
 import {
   ListGrid,
   ListGridCell,
   ListGridHeader,
   ListGridHeaderCell,
   ListGridRow,
-} from "@patchbay/ui/components/ui/list-grid";
+} from "@multica/ui/components/ui/list-grid";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
+} from "@multica/ui/components/ui/tooltip";
 import { useIntentNavigate, useRowLink } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useViewingTimezone } from "../../common/use-viewing-timezone";
@@ -196,7 +197,7 @@ function RuntimeNameCell({
    * The containing machine's title. Lets a per-runtime alias surface here
    * while a machine-level rename (shared by every runtime on the daemon)
    * collapses to the provider base so it isn't repeated on every row
-   * (PB-5248). Omitted when the row has no machine context (orphan custom
+   * (MUL-5248). Omitted when the row has no machine context (orphan custom
    * runtime profiles), where any alias is shown verbatim.
    */
   machineTitle?: string;
@@ -342,7 +343,7 @@ function HealthCell({
   }
 
   const health = deriveRuntimeHealth(runtime, now);
-  const offline = health === "offline" || health === "about_to_gc";
+  const offline = health === "offline" || health === "long_offline";
   const lastSeen = runtime.last_seen_at ? timeAgo(runtime.last_seen_at) : null;
   const active = workload.runningCount + workload.queuedCount;
 
@@ -375,13 +376,27 @@ function HealthCell({
 // page are large.
 const COST_CELL_DAYS = 14;
 
-export function CostCell({ runtimeId }: { runtimeId: string }) {
+export function canReadRuntimeUsage(
+  runtime: AgentRuntime,
+  currentUserId: string | null,
+): boolean {
+  return isRuntimeUsableForUser(runtime, currentUserId);
+}
+
+export function CostCell({
+  runtimeId,
+  enabled,
+}: {
+  runtimeId: string;
+  enabled: boolean;
+}) {
   const { t, i18n } = useT("runtimes");
   const tz = useViewingTimezone();
   const locales = i18n.resolvedLanguage ?? i18n.language;
-  const { data: usage = [] } = useQuery(
-    runtimeUsageOptions(runtimeId, COST_CELL_DAYS, tz),
-  );
+  const { data: usage = [] } = useQuery({
+    ...runtimeUsageOptions(runtimeId, COST_CELL_DAYS, tz),
+    enabled,
+  });
   const cost7d = useMemo(() => computeCostInWindow(usage, 7, tz), [usage, tz]);
   const costPrev7d = useMemo(
     () => computeCostInWindow(usage, 7, tz, 7),
@@ -476,7 +491,7 @@ export function CliCell({ runtime }: { runtime: AgentRuntime }) {
   const meta = runtime.metadata as Record<string, unknown> | null;
   // `version` is the agent's own underlying CLI tool version — distinct per
   // provider (e.g. "2.1.5 (Claude Code)", "codex-cli 0.118.0", "0.42.0").
-  // The separate `cli_version` is the shared patchbay daemon CLI, identical
+  // The separate `cli_version` is the shared multica daemon CLI, identical
   // for every runtime on one machine; surfacing it here made all agents
   // show the same number (#3838). The daemon CLI version and its update
   // prompt belong to the machine — they live in the machine header, not on a
@@ -556,7 +571,7 @@ export function RuntimeRowMenu({
   // Delete is the row's only management action; if the row can't run it, drop
   // the kebab entirely so the column doesn't render a near-empty popover. We
   // used to also hide it for self-healing runtimes (live local daemon
-  // re-registers within seconds), but PB-3352 surfaced that owners read
+  // re-registers within seconds), but MUL-3352 surfaced that owners read
   // a missing kebab as "I lost my permission" rather than "the daemon
   // would undo this". The dialog now carries the self-heal warning and
   // the user gets to decide.
@@ -658,7 +673,7 @@ export function RuntimeList({
   /**
    * The containing machine's title, when this list renders the runtimes of a
    * single machine. Used so a machine-level alias doesn't repeat on every row
-   * while a per-runtime alias still shows (PB-5248).
+   * while a per-runtime alias still shows (MUL-5248).
    */
   machineTitle?: string;
 }) {
@@ -809,7 +824,10 @@ export function RuntimeList({
                     <span className="text-caption text-faint-foreground">—</span>
                   </div>
                 ) : (
-                  <CostCell runtimeId={row.runtime.id} />
+                  <CostCell
+                    runtimeId={row.runtime.id}
+                    enabled={canReadRuntimeUsage(row.runtime, user?.id ?? null)}
+                  />
                 )}
               </ListGridCell>
               <ListGridCell className="hidden @2xl:flex">

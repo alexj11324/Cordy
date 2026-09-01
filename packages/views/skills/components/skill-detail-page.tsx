@@ -26,28 +26,28 @@ import type {
   Skill,
   SkillFile,
   UpdateSkillRequest,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "@patchbay/core/api";
-import { useAuthStore } from "@patchbay/core/auth";
+import { api } from "@multica/core/api";
+import { useAuthStore } from "@multica/core/auth";
 import { useTimeAgo } from "../../i18n";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { useWorkspacePaths } from "@multica/core/paths";
 import {
   agentListOptions,
   memberListOptions,
   selectSkillAssignments,
   skillDetailOptions,
   workspaceKeys,
-} from "@patchbay/core/workspace/queries";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
+} from "@multica/core/workspace/queries";
+import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
 import {
   runtimeDisplayLabel,
   runtimeListOptions,
-} from "@patchbay/core/runtimes";
-import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
-import { Button, buttonVariants } from "@patchbay/ui/components/ui/button";
+} from "@multica/core/runtimes";
+import { ActorAvatar } from "@multica/ui/components/common/actor-avatar";
+import { Button, buttonVariants } from "@multica/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -55,21 +55,21 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
+} from "@multica/ui/components/ui/dialog";
+import { Input } from "@multica/ui/components/ui/input";
+import { Skeleton } from "@multica/ui/components/ui/skeleton";
+import { Textarea } from "@multica/ui/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@multica/ui/components/ui/tooltip";
+import { cn } from "@multica/ui/lib/utils";
 import { AppLink, useNavigation } from "../../navigation";
 import { BreadcrumbHeader } from "../../layout/breadcrumb-header";
 import { useCanEditSkill } from "../hooks/use-can-edit-skill";
-import { useSkillPermissions } from "@patchbay/core/permissions";
-import { CapabilityBanner } from "@patchbay/ui/components/common/capability-banner";
+import { useSkillPermissions } from "@multica/core/permissions";
+import { CapabilityBanner } from "@multica/ui/components/common/capability-banner";
 import {
   isRefreshableOrigin,
   originSourceUrl,
@@ -844,7 +844,7 @@ export function SkillDetailPage({ skillId }: { skillId: string }) {
    * same snapshot it pushes into state. `dirtySummary` is a `useMemo` keyed on
    * those state values, so every baseline write is paired with the state
    * change that recomputes it. Assigning this ref anywhere else breaks that
-   * pairing and silently re-opens PB-5645.
+   * pairing and silently re-opens MUL-5645.
    */
   const baselineRef = useRef<SkillDraft | null>(null);
 

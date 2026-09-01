@@ -2,14 +2,14 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enRuntimes from "../../locales/en/runtimes.json";
 import { UpdateSection } from "./update-section";
 
 const TEST_RESOURCES = { en: { common: enCommon, runtimes: enRuntimes } };
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: {
     initiateUpdate: vi.fn(),
     getUpdateResult: vi.fn(),
@@ -90,7 +90,7 @@ describe("UpdateSection read-only status", () => {
     expect(screen.getByText("Read-only")).toBeInTheDocument();
     expect(
       screen.getByTitle(
-        "Only device owners and workspace admins can update the CLI.",
+        "Only runtime owners and workspace admins can update the CLI.",
       ),
     ).toBeInTheDocument();
     expect(

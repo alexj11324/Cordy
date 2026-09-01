@@ -4,28 +4,28 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Globe, Info, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
-import { ApiError } from "@patchbay/core/api";
-import type { Agent, AgentRuntime, MemberWithUser } from "@patchbay/core/types";
-import { runtimeDisplayLabel } from "@patchbay/core/runtimes";
+import { ApiError } from "@multica/core/api";
+import type { Agent, AgentRuntime, MemberWithUser } from "@multica/core/types";
+import { runtimeDisplayLabel } from "@multica/core/runtimes";
 import {
   useDeleteRuntime,
   useUnbindAgentsAndDeleteRuntime,
-} from "@patchbay/core/runtimes/mutations";
+} from "@multica/core/runtimes/mutations";
 import {
   agentListOptions,
   memberListOptions,
-} from "@patchbay/core/workspace/queries";
+} from "@multica/core/workspace/queries";
 import {
   type AgentPresenceDetail,
   useWorkspacePresenceMap,
-} from "@patchbay/core/agents";
-import { useAuthStore } from "@patchbay/core/auth";
+} from "@multica/core/agents";
+import { useAuthStore } from "@multica/core/auth";
 import {
   AlertDialog,
   AlertDialogContent,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
+} from "@multica/ui/components/ui/alert-dialog";
+import { Button } from "@multica/ui/components/ui/button";
+import { Checkbox } from "@multica/ui/components/ui/checkbox";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { availabilityConfig, workloadConfig } from "../../agents/presence";
 import { useT } from "../../i18n";
@@ -37,7 +37,7 @@ import { isSelfHealingRuntime } from "../utils";
 // agents are bound (matches the legacy "are you sure" prompt) and
 // cascade when active agents would be unbound as part of the delete.
 //
-// "Unbound" is the load-bearing word (PB-5559): the agents are kept, with
+// "Unbound" is the load-bearing word (MUL-5559): the agents are kept, with
 // their instructions, chats and task history, and only lose their runtime —
 // they cannot run until bound to another one. The dialog used to say those
 // agents would be "archived" while the server hard-deleted them.
@@ -55,7 +55,7 @@ import { isSelfHealingRuntime } from "../utils";
 //
 // Self-healing local runtimes (online local daemons that re-register
 // themselves seconds after deletion — see isSelfHealingRuntime) are NOT
-// blocked at this layer (PB-3352). The trigger affordances let the
+// blocked at this layer (MUL-3352). The trigger affordances let the
 // owner click through, and this dialog raises a self_heal warning banner
 // so the user knows the daemon will re-register a fresh runtime row
 // unless they stop the daemon process first. Confirm proceeds.
@@ -326,7 +326,7 @@ function LightBody({
 // ---------------------------------------------------------------------------
 // Cascade mode — destructive warning, agent table, checkbox-confirmed
 // destructive button. Copy follows 赵刚's English text verbatim per the
-// team lead's directive.
+// squad lead's directive.
 // ---------------------------------------------------------------------------
 
 function CascadeBody({

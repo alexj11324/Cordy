@@ -55,11 +55,10 @@ type RoutePattern = readonly string[];
 const WORKSPACE_ROUTES: readonly RoutePattern[] = [
   ["issues"],
   ["issues", ":id"],
-  ["task-graph"],
   ["projects"],
   ["projects", ":id"],
-  ["automations"],
-  ["automations", ":id"],
+  ["autopilots"],
+  ["autopilots", ":id"],
   ["agents"],
   ["agents", "new"],
   ["agents", "new", "manual"],
@@ -67,11 +66,10 @@ const WORKSPACE_ROUTES: readonly RoutePattern[] = [
   ["agents", "new", "ai", ":sessionId"],
   ["agents", ":id"],
   ["members", ":id"],
-  ["teams"],
-  ["teams", ":id"],
+  ["squads"],
+  ["squads", ":id"],
   ["inbox"],
   ["chat"],
-  ["channels"],
   ["my-issues"],
   ["usage"],
   ["billing"],
@@ -80,7 +78,6 @@ const WORKSPACE_ROUTES: readonly RoutePattern[] = [
   ["runtimes", ":id", "runtime", ":runtimeId"],
   ["skills"],
   ["skills", ":id"],
-  ["integrations"],
   ["settings"],
   ["attachments", ":id", "preview"],
 ];
@@ -100,7 +97,7 @@ const WORKSPACE_SECTIONS = new Set(WORKSPACE_ROUTES.map((route) => route[0]!));
 const GLOBAL_SECTIONS = new Set(GLOBAL_ROUTES.map((route) => route[0]!));
 
 /**
- * Collapse a concrete path to its route template: `/acme/issues/PB-12` becomes
+ * Collapse a concrete path to its route template: `/acme/issues/MUL-12` becomes
  * `/:slug/issues/:id`. Diagnostics only need to know which screen the user was
  * on, and a template keeps workspace slugs and resource ids out of telemetry
  * while making the field groupable in one query.

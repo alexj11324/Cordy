@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * Import boundary guard (PB-4922, Howard's contract #3).
+ * Import boundary guard (MUL-4922, Howard's contract #3).
  *
  * The point of this sweep is that there is exactly ONE product-level readonly
  * renderer. That property is not self-enforcing: the cheapest way to add a
@@ -20,7 +20,7 @@ const VIEWS_ROOT = join(__dirname, "..");
 
 // Product surfaces that render user/agent-authored content. Any of these
 // reaching for a generic Markdown renderer is the regression.
-const PRODUCT_SURFACES = ["chat", "issues", "skills", "automations", "inbox"];
+const PRODUCT_SURFACES = ["chat", "issues", "skills", "autopilots", "inbox"];
 
 function walk(dir: string, out: string[] = []): string[] {
   let entries: string[];
@@ -61,7 +61,7 @@ describe("RichContent import boundary", () => {
   it("no product surface imports the generic ui Markdown renderer", () => {
     const offenders = sourceFiles(PRODUCT_SURFACES)
       .filter(({ text }) =>
-        /from\s+["']@patchbay\/ui\/markdown["']/.test(text) &&
+        /from\s+["']@multica\/ui\/markdown["']/.test(text) &&
         /\bMarkdown\b|\bMemoizedMarkdown\b|\bStreamingMarkdown\b/.test(text),
       )
       .map(({ path }) => path);
@@ -102,7 +102,7 @@ describe("RichContent import boundary", () => {
     // The Tiptap NodeView is the one sanctioned exception (constraint 6): the
     // EDITABLE code block owns its own preview-toggle lifecycle while the user
     // types, and reuses the same leaf components rather than the readonly
-    // renderer. Rewriting the editor is explicitly out of scope for PB-4922.
+    // renderer. Rewriting the editor is explicitly out of scope for MUL-4922.
     // Narrow, named, and justified — not a general loophole.
     const TIPTAP_NODEVIEW = "editor/extensions/code-block-view.tsx";
 
@@ -140,7 +140,7 @@ describe("RichContent import boundary", () => {
     const uiRoot = join(VIEWS_ROOT, "..", "ui");
     const offenders = walk(uiRoot)
       .map((path) => ({ path, text: stripComments(readFileSync(path, "utf8")) }))
-      .filter(({ text }) => /\bRichContent\b|from\s+["']@patchbay\/views/.test(text))
+      .filter(({ text }) => /\bRichContent\b|from\s+["']@multica\/views/.test(text))
       .map(({ path }) => relative(uiRoot, path));
 
     expect(offenders).toEqual([]);

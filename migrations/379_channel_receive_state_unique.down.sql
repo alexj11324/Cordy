@@ -1,1 +1,0 @@
-DROP INDEX CONCURRENTLY IF EXISTS idx_channel_receive_state_installation_type;

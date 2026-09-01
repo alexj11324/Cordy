@@ -1,5 +1,5 @@
 /**
- * Cross-type cancelled demotion for aggregated search results (PB-5824).
+ * Cross-type cancelled demotion for aggregated search results (MUL-5824).
  *
  * The search API already ranks cancelled work below live work — but only
  * *within one result set*. Every client that renders issues and projects
@@ -24,7 +24,7 @@ import { issueBehavesAs } from "../issues/status-category";
 
 /**
  * Mirrors the server's identifier pattern (parseQueryNumber in
- * the Rust issue handler): "PB-123" or a bare "123".
+ * server/internal/handler/issue.go): "MUL-123" or a bare "123".
  */
 const IDENTIFIER_NUMBER_RE = /^[a-z]+-(\d+)$/i;
 
@@ -155,7 +155,7 @@ export function partitionAggregatedSearchResults({
   const issueParts = partitionStable(
     issues,
     // By CATEGORY: a custom status in the cancelled category is cancelled
-    // work and has to sink the same way. (PB-6243)
+    // work and has to sink the same way. (MUL-6243)
     (issue) => issueBehavesAs(issue, "cancelled") && !isIssueDirectHit(issue, query),
   );
   const projectParts = partitionStable(

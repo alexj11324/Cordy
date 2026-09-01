@@ -39,29 +39,14 @@ const allowedDevOrigins = process.env.CORS_ALLOWED_ORIGINS
   : undefined;
 
 const nextConfig: NextConfig = {
-  ...(process.env.STANDALONE === "true"
-    ? { output: "standalone" as const }
-    : {}),
-  transpilePackages: ["@patchbay/core", "@patchbay/ui", "@patchbay/views"],
+  ...(process.env.STANDALONE === "true" ? { output: "standalone" as const } : {}),
+  transpilePackages: ["@multica/core", "@multica/ui", "@multica/views"],
   ...(allowedDevOrigins && allowedDevOrigins.length > 0
     ? { allowedDevOrigins }
     : {}),
   images: {
     formats: ["image/avif", "image/webp"],
     qualities: [75, 80, 85],
-  },
-  async headers() {
-    return [
-      {
-        source: "/:path*",
-        headers: [
-          {
-            key: "X-Patchbay-Build",
-            value: process.env.NEXT_PUBLIC_APP_VERSION || "dev",
-          },
-        ],
-      },
-    ];
   },
   async rewrites() {
     return {
@@ -82,12 +67,20 @@ const nextConfig: NextConfig = {
       afterFiles: remoteApiUrl
         ? [
             {
+              source: "/v1/:path*",
+              destination: `${remoteApiUrl}/v1/:path*`,
+            },
+            {
               source: "/api/:path*",
               destination: `${remoteApiUrl}/api/:path*`,
             },
             {
               source: "/ws",
               destination: `${remoteApiUrl}/ws`,
+            },
+            {
+              source: "/health",
+              destination: `${remoteApiUrl}/health`,
             },
             {
               source: "/auth/:path*",

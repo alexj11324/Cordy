@@ -1,18 +1,18 @@
 import { useEffect, useState } from "react";
 import { Outlet, useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { WorkspaceSlugProvider } from "@patchbay/core/paths";
+import { WorkspaceSlugProvider } from "@multica/core/paths";
 import {
   workspaceBySlugOptions,
   workspaceListOptions,
-} from "@patchbay/core/workspace";
-import { getCurrentSlug, setCurrentWorkspace } from "@patchbay/core/platform";
-import { isWorkspaceDeletePending } from "@patchbay/core/workspace/pending-delete";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceSeen } from "@patchbay/views/workspace/use-workspace-seen";
-import { WelcomeAfterOnboarding } from "@patchbay/views/workspace/welcome-after-onboarding";
-import { WorkspacePresencePrefetch } from "@patchbay/views/layout";
-import { SourceBackfillModal } from "@patchbay/views/onboarding";
+} from "@multica/core/workspace";
+import { getCurrentSlug, setCurrentWorkspace } from "@multica/core/platform";
+import { isWorkspaceDeletePending } from "@multica/core/workspace/pending-delete";
+import { useAuthStore } from "@multica/core/auth";
+import { useWorkspaceSeen } from "@multica/views/workspace/use-workspace-seen";
+import { WelcomeAfterOnboarding } from "@multica/views/workspace/welcome-after-onboarding";
+import { WorkspacePresencePrefetch } from "@multica/views/layout";
+import { SourceBackfillModal } from "@multica/views/onboarding";
 import { useTabStore } from "@/stores/tab-store";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 
@@ -20,7 +20,7 @@ import { useWindowOverlayStore } from "@/stores/window-overlay-store";
  * Which mounted layout instance currently owns the platform workspace
  * singleton. Claimed during render (next to the setCurrentWorkspace write it
  * guards) and read by the unmount cleanup, which must not release a singleton
- * a successor has already taken over (PB-6303 / #7086).
+ * a successor has already taken over (MUL-6303 / #7086).
  *
  * Module scope rather than context: the two instances that have to agree here
  * never share a React tree. Desktop mounts exactly one tab at a time and keys
@@ -68,7 +68,7 @@ export function WorkspaceRouteLayout() {
   // Workspace routes require auth. App.tsx renders <DesktopLoginPage>
   // instead of the shell whenever `user` is null, so this tree never mounts
   // unauthenticated — the old in-router bounce to /login was dead defensive
-  // code and violated PB-4741 invariant 1 (only the Coordinator navigates).
+  // code and violated MUL-4741 invariant 1 (only the Coordinator navigates).
   // The `!user` early return below keeps the defense without navigating.
 
   const { data: workspace } = useQuery({
@@ -93,7 +93,7 @@ export function WorkspaceRouteLayout() {
   // here would set the header AFTER the first child query already used it.
   //
   // The pending-delete guard exists because this write would otherwise undo
-  // the delete flow's own cleanup (PB-6231 / #7021). useDeleteWorkspace
+  // the delete flow's own cleanup (MUL-6231 / #7021). useDeleteWorkspace
   // clears the singleton and navigates away, but this layout is subscribed to
   // the overlay store, so opening the new-workspace overlay re-renders it
   // while the deleted workspace is STILL in the list cache (the invalidation
@@ -132,7 +132,7 @@ export function WorkspaceRouteLayout() {
   // resolving, and again when the layout unmounts. Nothing else owned that
   // lifecycle: the singleton used to keep pointing at a deleted workspace
   // indefinitely, which is how the shell ended up holding workspace-scoped
-  // chrome over a workspace that no longer existed (PB-6231 / #7021).
+  // chrome over a workspace that no longer existed (MUL-6231 / #7021).
   //
   // Both paths check `getCurrentSlug() === workspaceSlug` first. On a
   // workspace switch React renders the incoming layout — which sets the
@@ -146,7 +146,7 @@ export function WorkspaceRouteLayout() {
   }, [listReady, workspace, workspaceSlug]);
 
   // The ownership check is what keeps a same-workspace tab swap from wiping
-  // the workspace context (PB-6303 / #7086). The slug check alone cannot see
+  // the workspace context (MUL-6303 / #7086). The slug check alone cannot see
   // that swap: the "+" button opens /<slug>/issues in the ACTIVE workspace
   // (tab-bar.tsx), so the incoming layout carries the SAME slug, its render
   // write dedupes to a no-op inside setCurrentWorkspace, and the outgoing

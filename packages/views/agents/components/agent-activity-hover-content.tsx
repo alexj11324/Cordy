@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { runtimeListOptions } from "@patchbay/core/runtimes/queries";
-import { agentListOptions } from "@patchbay/core/workspace/queries";
-import { deriveAgentAvailability } from "@patchbay/core/agents";
-import type { AgentTask, Issue } from "@patchbay/core/types";
+import { ActorAvatar as ActorAvatarBase } from "@multica/ui/components/common/actor-avatar";
+import { useActorName } from "@multica/core/workspace/hooks";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { runtimeListOptions } from "@multica/core/runtimes/queries";
+import { agentListOptions } from "@multica/core/workspace/queries";
+import { deriveAgentAvailability } from "@multica/core/agents";
+import type { AgentTask, Issue } from "@multica/core/types";
 import { workloadConfig } from "../presence";
 import { useT } from "../../i18n";
 
@@ -173,14 +173,14 @@ interface WorkspaceAgentActivityHoverContentProps {
 }
 
 /**
- * Hover-card body for the workspace working chip (PB-4884).
+ * Hover-card body for the workspace working chip (MUL-4884).
  *
  * The chip says WHO is working ("N agents working"); this card says WHERE.
  * The header carries the two figures the chip does not — how many issues
  * that work lands on, and how many tasks it takes — and the rows group by
  * issue, mirroring what clicking the chip does to the list.
  *
- * It says nothing about work it excludes. Chat/automation runs have no
+ * It says nothing about work it excludes. Chat/autopilot runs have no
  * linked issue and leave no trace anywhere on this page: no row, no head,
  * no indicator. A footnote about them would explain an absence the user
  * never perceived — inventing a discrepancy rather than resolving one.

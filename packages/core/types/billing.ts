@@ -1,6 +1,6 @@
-// Mirrors the patchbay-cloud Billing module response shapes
-// (patchbay-cloud/docs/api/billing.md). These types are the contract our
-// frontend consumes via /api/cloud-billing/* — patchbay-api itself does
+// Mirrors the multica-cloud Billing module response shapes
+// (multica-cloud/docs/api/billing.md). These types are the contract our
+// frontend consumes via /api/cloud-billing/* — multica-api itself does
 // not own the schema, it just proxies bytes. Keep field names verbatim
 // with what the cloud sends.
 //
@@ -142,7 +142,7 @@ export interface BillingPriceTier {
   // When `bonus_expires_in` is omitted but `bonus_credits` is present,
   // the bonus credits never expire.
   bonus_credits?: number;
-  // Duration string, e.g. "720h0m0s" = 30 days.
+  // Go time.Duration string, e.g. "720h0m0s" = 30 days.
   bonus_expires_in?: string;
 }
 
@@ -185,14 +185,22 @@ export interface CreateBillingPortalSessionResponse {
 // Workspace subscriptions (`/api/cloud-subscriptions/*`)
 //
 // Workspace-scoped, unlike the account-level wallet types above. The server
-// injects the workspace from the authenticated request context, so no client
-// ever names a workspace, an amount, a Price ID, or a seat quantity.
+// injects the workspace from the authenticated request context. Clients never
+// name a workspace, amount, or Price ID. Seat purchases use additive counts;
+// Cloud validates and converts them to an absolute Stripe quantity.
 //
 // Every field the server may not know is nullable rather than defaulted. A
 // missing value has to stay visibly unknown: rendering an absent plan as Free
 // would turn an upstream outage into a silent downgrade of a paying workspace.
 
 export type WorkspaceSubscriptionInterval = "month" | "year";
+
+export type WorkspaceEntitlementLimit =
+  | { mode: "limited"; limit: number }
+  | { mode: "unlimited"; limit: null };
+
+export type WorkspaceEntitlementLimitMode =
+  WorkspaceEntitlementLimit["mode"];
 
 export interface WorkspaceSubscriptionEntitlements {
   workspaceId: string;
@@ -201,12 +209,10 @@ export interface WorkspaceSubscriptionEntitlements {
   plan: string;
   status: string;
   seats: number;
-  issueWindow: number | null;
-  automationRuns: number | null;
-  /** Hosted IM limits are optional while older Cloud snapshots roll forward. */
-  hostedWorkspaceLimit?: number | null;
-  imInstallationLimit?: number | null;
-  imAgentTurns?: number | null;
+  limits: {
+    issueCount: WorkspaceEntitlementLimit;
+    autopilotRuns: WorkspaceEntitlementLimit;
+  };
   currentPeriodEnd: string | null;
   snapshotExpiresAt: string | null;
   version: number;
@@ -221,19 +227,45 @@ export interface WorkspaceSubscriptionSummary {
   entitlement: WorkspaceSubscriptionEntitlements;
   billingInterval: WorkspaceSubscriptionInterval | null;
   /** Authoritative current human-member count. Agents never take a seat. */
-  actualSeats: number;
-  /** Persisted Stripe seat high-water; null when no subscription exists yet. */
-  billedSeats: number | null;
-  /** A lower quantity already scheduled for the next period, if any. */
-  pendingSeatQuantity: number | null;
+  humanMembers: number;
+  /** Null when the workspace has no currently effective purchased capacity. */
+  seatCapacity: WorkspaceSeatCapacity | null;
   cancelAtPeriodEnd: boolean;
   graceUntil: string | null;
-  /**
-   * Whether a local Stripe customer exists for this workspace. It is a fact,
-   * NOT a permission: Billing Portal still requires owner/admin, so a caller
-   * must gate that control on the member's role as well.
-   */
+  /** Whether a local Stripe customer exists; never use this as an action gate. */
   hasStripeCustomer: boolean;
+  /** Cloud-authorized actions for this exact caller and effective snapshot. */
+  availableActions: {
+    checkout: boolean;
+    portal: boolean;
+    purchaseSeats: boolean;
+  };
+}
+
+export interface IssueLimitUsage {
+  used: number;
+  limit: number;
+}
+
+export interface WorkspaceSeatCapacity {
+  purchased: number;
+  used: number;
+  reserved: number;
+  /** Server-computed purchased capacity not currently used or reserved. */
+  available: number;
+  /** Cloud-computed human-seat overcommit state. */
+  overcommitted: boolean;
+  version: number;
+  /** A lower quantity already scheduled for the next period, if any. */
+  pendingQuantity: number | null;
+  activePurchase: WorkspaceSeatPurchaseSummary | null;
+}
+
+export interface WorkspaceSeatPurchaseSummary {
+  requestId: string;
+  targetSeats: number;
+  status: "pending" | "processing" | "submitted";
+  expiresAt: string | null;
 }
 
 /** Display-safe subset of a configured Stripe Price. IDs stay server-side. */
@@ -253,7 +285,6 @@ export interface WorkspaceSubscriptionPrices {
 export interface CreateWorkspaceSubscriptionCheckoutRequest {
   interval: WorkspaceSubscriptionInterval;
   idempotencyKey: string;
-  customerEmail?: string;
 }
 
 export interface CreateWorkspaceSubscriptionCheckoutResponse {
@@ -262,11 +293,47 @@ export interface CreateWorkspaceSubscriptionCheckoutResponse {
   url: string;
 }
 
+export interface PreviewWorkspaceSeatPurchaseRequest {
+  additionalSeats: number;
+}
+
+export interface WorkspaceSeatPurchasePreview {
+  currentSeats: number;
+  additionalSeats: number;
+  resultingSeats: number;
+  purchaseVersion: number;
+  currency: string;
+  /** Estimated immediate proration in Stripe's minor currency unit. */
+  prorationAmount: number;
+  /** Estimated next full recurring invoice in minor currency units. */
+  nextInvoiceAmount: number;
+  quotedAt: string;
+}
+
+export interface PurchaseWorkspaceSeatsRequest {
+  additionalSeats: number;
+  expectedCurrentSeats: number;
+  expectedPurchaseVersion: number;
+  acceptedProrationAmount: number;
+  currency: string;
+  idempotencyKey: string;
+}
+
+export interface PurchaseWorkspaceSeatsResponse {
+  requestId: string;
+  currentSeats: number;
+  additionalSeats: number;
+  resultingSeats: number;
+  currency: string;
+  prorationAmount: number;
+  nextInvoiceAmount: number;
+  status: "pending" | "submitted" | "confirmed";
+}
+
 export interface WorkspaceSubscriptionSeatReconcileResult {
   workspaceId: string;
-  billedSeats: number;
-  actualSeats: number;
   action: string;
+  version: number;
 }
 
 export interface CreateWorkspaceSubscriptionPortalResponse {

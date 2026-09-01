@@ -7,14 +7,14 @@
  *
  * Detail and Resources are workspace-scoped via the `wsId` segment so
  * switching workspaces flips the cache without manual invalidate, per the
- * root AGENTS.md "Workspace-scoped queries must key on wsId" rule.
+ * root CLAUDE.md "Workspace-scoped queries must key on wsId" rule.
  *
  * Issues belonging to a project are NOT a project query — they live under
  * `issueKeys.list(wsId, { project_id })` and reuse the issues cache shape.
  * See `projectIssuesOptions` below for the binding helper.
  */
 import { queryOptions } from "@tanstack/react-query";
-import type { Project } from "@patchbay/core/types";
+import type { Project } from "@multica/core/types";
 import { api } from "@/data/api";
 import { issueKeys } from "@/data/queries/issue-keys";
 

@@ -3,13 +3,13 @@
 import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { api } from "@patchbay/core/api";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { useAuthStore } from "@patchbay/core/auth";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import type { ShareLinkInfo, Workspace } from "@patchbay/core/types";
+import { api, errorCode } from "@multica/core/api";
+import { Button } from "@multica/ui/components/ui/button";
+import { Card, CardContent } from "@multica/ui/components/ui/card";
+import { Badge } from "@multica/ui/components/ui/badge";
+import { useAuthStore } from "@multica/core/auth";
+import { workspaceKeys } from "@multica/core/workspace/queries";
+import type { ShareLinkInfo, Workspace } from "@multica/core/types";
 
 function JoinInner() {
   const router = useRouter();
@@ -65,6 +65,7 @@ function JoinInner() {
         }, 1200);
       })
       .catch(async (e) => {
+        const code = errorCode(e);
         const msg = e instanceof Error ? e.message : "";
         if (msg.includes("already a member")) {
           // Already joined: go straight to the workspace this invite points at
@@ -88,6 +89,14 @@ function JoinInner() {
           return;
         }
         setJoining(false);
+        if (code === "seat_capacity_full") {
+          setJoinError("All purchased member seats are in use. Ask a workspace admin to add a seat before trying again.");
+          return;
+        }
+        if (code === "seat_capacity_unavailable") {
+          setJoinError("Member capacity could not be verified. Please try again.");
+          return;
+        }
         setJoinError(msg || "Failed to join the workspace. The link may have expired.");
       });
   };

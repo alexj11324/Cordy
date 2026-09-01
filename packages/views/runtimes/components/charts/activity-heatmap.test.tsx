@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { screen } from "@testing-library/react";
-import type { RuntimeUsage } from "@patchbay/core/types";
+import type { RuntimeUsage } from "@multica/core/types";
 import { renderWithI18n } from "../../../test/i18n";
 
-vi.mock("@patchbay/core/runtimes/custom-pricing-store", () => {
+vi.mock("@multica/core/runtimes/custom-pricing-store", () => {
   const pricingState = { pricings: {} };
   const useCustomPricingStore = Object.assign(
     (selector?: (state: typeof pricingState) => unknown) =>

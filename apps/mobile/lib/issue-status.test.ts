@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { Issue, IssueStatusEntry } from "@patchbay/core/types";
+import type { Issue, IssueStatusEntry } from "@multica/core/types";
 import {
   BOARD_CATEGORIES,
   CLOSED_CATEGORIES,
@@ -54,7 +54,7 @@ describe("issueColumnCategory", () => {
 
   // An unresolvable custom key lands SOMEWHERE rather than nowhere: a row in a
   // possibly-wrong section is recoverable, a row in no section is invisible —
-  // which is the bug this file exists to prevent (PB-6457).
+  // which is the bug this file exists to prevent (MUL-6457).
   it("never leaves an unresolved custom status without a section", () => {
     expect(issueColumnCategory(issue({ status: "qa" }))).toBe("todo");
   });
@@ -192,7 +192,7 @@ describe("issueBehavesAs", () => {
   // The regression: the mention bar dimmed closed issues with
   // `status === "done"`, so an issue on a custom status in the done category
   // rendered at full opacity as though the work were still open. A custom
-  // status inherits its category's behavior in full. (PB-6243)
+  // status inherits its category's behavior in full. (MUL-6243)
   it("treats a custom status in the done category as done", () => {
     const shipped = issue({ status: "shipped", status_category: "done" });
     expect(issueBehavesAs(shipped, "done")).toBe(true);

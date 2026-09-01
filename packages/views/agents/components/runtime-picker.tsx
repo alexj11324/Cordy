@@ -7,14 +7,14 @@ import { ActorAvatar } from "../../common/actor-avatar";
 import {
   isRuntimeUsableForUser,
   runtimeDisplayName,
-} from "@patchbay/core/runtimes";
-import type { MemberWithUser, RuntimeDevice } from "@patchbay/core/types";
+} from "@multica/core/runtimes";
+import type { MemberWithUser, RuntimeDevice } from "@multica/core/types";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@patchbay/ui/components/ui/popover";
-import { Label } from "@patchbay/ui/components/ui/label";
+} from "@multica/ui/components/ui/popover";
+import { Label } from "@multica/ui/components/ui/label";
 import { useT } from "../../i18n";
 import {
   buildRuntimeMachines,

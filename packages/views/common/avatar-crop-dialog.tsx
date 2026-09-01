@@ -3,14 +3,14 @@
 import { useEffect, useState } from "react";
 import Cropper, { type Area, type Point } from "react-easy-crop";
 import { Loader2, Minus, Plus, RotateCw } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Slider } from "@patchbay/ui/components/ui/slider";
+import { Button } from "@multica/ui/components/ui/button";
+import { Slider } from "@multica/ui/components/ui/slider";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@multica/ui/components/ui/dialog";
 import { useT } from "../i18n";
 import {
   AVATAR_OUTPUT_SIZE,

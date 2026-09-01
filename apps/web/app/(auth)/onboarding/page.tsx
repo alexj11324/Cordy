@@ -2,21 +2,21 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useAuthStore } from "@patchbay/core/auth";
+import { useAuthStore } from "@multica/core/auth";
 import {
   paths,
   resolvePostAuthDestination,
   useHasOnboarded,
-} from "@patchbay/core/paths";
-import { useWorkspaceList } from "@patchbay/core/workspace";
-import { CliInstallInstructions, OnboardingFlow } from "@patchbay/views/onboarding";
+} from "@multica/core/paths";
+import { useWorkspaceList } from "@multica/core/workspace";
+import { CliInstallInstructions, OnboardingFlow } from "@multica/views/onboarding";
 
 /**
  * Web shell for the onboarding flow. The route is the platform chrome on
  * web (matching `WindowOverlay` on desktop); content is the shared
  * `<OnboardingFlow />`. Kept minimal — guard on auth, render, exit.
  *
- * Runtime-connected onboarding opens the Patrick session that the final step
+ * Runtime-connected onboarding opens the Mika session that the final step
  * created and started. Other exits land on the workspace issues list, or root
  * when no workspace exists.
  *
@@ -52,7 +52,7 @@ export default function OnboardingPage() {
     // already onboarded. We deliberately don't bounce on `workspaces.length`
     // here — the flow creates a workspace mid-onboarding, and a
     // hasWorkspaces bounce here would kick the user out before runtime and
-    // Patrick setup can run. The new entry-point
+    // Mika setup can run. The new entry-point
     // judgment in callback / login handles "where should this user go on
     // login" so OnboardingPage no longer needs to second-guess it.
     if (hasOnboarded) {
@@ -69,7 +69,6 @@ export default function OnboardingPage() {
   return (
     <div className="h-full overflow-y-auto bg-background">
       <OnboardingFlow
-        singlePane
         onComplete={(ws, destination) => {
           completingRef.current = true;
           if (ws && destination?.kind === "chat") {

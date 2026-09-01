@@ -4,17 +4,17 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Copy, GitBranch, RefreshCw, Trash2 } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
-import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
-import { Label } from "@patchbay/ui/components/ui/label";
+import { Button } from "@multica/ui/components/ui/button";
+import { Card, CardContent } from "@multica/ui/components/ui/card";
+import { Input } from "@multica/ui/components/ui/input";
+import { Label } from "@multica/ui/components/ui/label";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@patchbay/ui/components/ui/select";
+} from "@multica/ui/components/ui/select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,12 +24,11 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { githubKeys } from "@patchbay/core/github";
-import { vcsConnectionsOptions } from "@patchbay/core/vcs";
-import { api } from "@patchbay/core/api";
-import type { ConnectVCSResponse, VCSProvider } from "@patchbay/core/types";
+} from "@multica/ui/components/ui/alert-dialog";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { vcsConnectionsOptions } from "@multica/core/vcs";
+import { api } from "@multica/core/api";
+import type { ConnectVCSResponse, VCSProvider } from "@multica/core/types";
 import { useT } from "../../i18n";
 
 const PROVIDERS: VCSProvider[] = ["forgejo", "gitea", "gitlab"];
@@ -106,12 +105,7 @@ export function VCSTab() {
     setDeleting(true);
     try {
       await api.deleteVCSConnection(wsId, deleteTarget);
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["vcs", wsId] }),
-        qc.invalidateQueries({ queryKey: ["github", "pull-requests"] }),
-        qc.invalidateQueries({ queryKey: ["work-products", "issue"] }),
-        qc.invalidateQueries({ queryKey: githubKeys.unassociatedWorkProducts(wsId) }),
-      ]);
+      await qc.invalidateQueries({ queryKey: ["vcs", wsId] });
       if (justConnected?.id === deleteTarget) setJustConnected(null);
       toast.success(t(($) => $.vcs.toast_disconnected));
       setDeleteTarget(null);
@@ -212,7 +206,7 @@ export function VCSTab() {
               <p className="text-caption text-muted-foreground">
                 {t(($) => $.vcs.not_configured)}{" "}
                 <code className="rounded bg-muted px-1 py-0.5 text-micro">
-                  PATCHBAY_VCS_SECRET_KEY
+                  MULTICA_VCS_SECRET_KEY
                 </code>
                 .
               </p>

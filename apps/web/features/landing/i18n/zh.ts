@@ -6,7 +6,6 @@ export function createZhDict(allowSignup: boolean): LandingDict {
   header: {
     github: "GitHub",
     cta: "\u5f00\u59cb\u4f7f\u7528",
-    signIn: "\u767b\u5f55",
     dashboard: "\u8fdb\u5165\u5de5\u4f5c\u53f0",
     docs: "\u6587\u6863",
     changelog: "\u66f4\u65b0\u65e5\u5fd7",
@@ -20,12 +19,12 @@ export function createZhDict(allowSignup: boolean): LandingDict {
     headlineLine1: "\u4f60\u7684\u4e0b\u4e00\u6279\u5458\u5de5",
     headlineLine2: "\u4e0d\u662f\u4eba\u7c7b\u3002",
     subheading:
-      "Patchbay \u662f\u4e00\u4e2a\u5f00\u6e90\u5e73\u53f0\uff0c\u5c06\u7f16\u7801 智能体 \u53d8\u6210\u771f\u6b63\u7684\u961f\u53cb\u3002\u5206\u914d\u4efb\u52a1\u3001\u8ddf\u8e2a\u8fdb\u5ea6\u3001\u79ef\u7d2f\u6280\u80fd\u2014\u2014\u5728\u4e00\u4e2a\u5730\u65b9\u7ba1\u7406\u4f60\u7684\u4eba\u7c7b + 智能体 \u56e2\u961f\u3002",
+      "Multica \u662f\u4e00\u4e2a\u5f00\u6e90\u5e73\u53f0\uff0c\u5c06\u7f16\u7801 智能体 \u53d8\u6210\u771f\u6b63\u7684\u961f\u53cb\u3002\u5206\u914d\u4efb\u52a1\u3001\u8ddf\u8e2a\u8fdb\u5ea6\u3001\u79ef\u7d2f\u6280\u80fd\u2014\u2014\u5728\u4e00\u4e2a\u5730\u65b9\u7ba1\u7406\u4f60\u7684\u4eba\u7c7b + 智能体 \u56e2\u961f\u3002",
     cta: "免费开始",
     downloadDesktop: "下载桌面端",
     talkToSales: "联系商务",
     worksWith: "支持",
-    imageAlt: "Patchbay \u770b\u677f\u89c6\u56fe\u2014\u2014\u4eba\u7c7b\u548c 智能体 \u534f\u540c\u7ba1\u7406\u4efb\u52a1",
+    imageAlt: "Multica \u770b\u677f\u89c6\u56fe\u2014\u2014\u4eba\u7c7b\u548c 智能体 \u534f\u540c\u7ba1\u7406\u4efb\u52a1",
   },
 
   features: {
@@ -102,7 +101,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       label: "\u8fd0\u884c\u65f6",
       title: "\u4e00\u4e2a\u63a7\u5236\u53f0\u7ba1\u7406\u6240\u6709\u7b97\u529b",
       description:
-        "\u672c\u5730\u5b88\u62a4\u8fdb\u7a0b\u548c\u4e91\u7aef\u8fd0\u884c\u65f6\uff0c\u5728\u540c\u4e00\u4e2a\u9762\u677f\u4e2d\u7ba1\u7406\u3002\u5b9e\u65f6\u76d1\u63a7\u5728\u7ebf/\u79bb\u7ebf\u72b6\u6001\u3001\u4f7f\u7528\u91cf\u56fe\u8868\u548c\u6d3b\u52a8\u70ed\u529b\u56fe\u3002\u81ea\u52a8\u68c0\u6d4b\u672c\u673a\u5df2\u5b89\u88c5\u7684 23 \u6b3e\u652f\u6301\u7684 AI \u7f16\u7a0b\u5de5\u5177\u3002",
+        "\u672c\u5730\u5b88\u62a4\u8fdb\u7a0b\u548c\u4e91\u7aef\u8fd0\u884c\u65f6\uff0c\u5728\u540c\u4e00\u4e2a\u9762\u677f\u4e2d\u7ba1\u7406\u3002\u5b9e\u65f6\u76d1\u63a7\u5728\u7ebf/\u79bb\u7ebf\u72b6\u6001\u3001\u4f7f\u7528\u91cf\u56fe\u8868\u548c\u6d3b\u52a8\u70ed\u529b\u56fe\u3002\u81ea\u52a8\u68c0\u6d4b\u672c\u673a\u5df2\u5b89\u88c5\u7684 26 \u6b3e\u652f\u6301\u7684 AI \u7f16\u7a0b\u5de5\u5177\u3002",
       cards: [
         {
           title: "\u7edf\u4e00\u8fd0\u884c\u65f6\u9762\u677f",
@@ -117,7 +116,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         {
           title: "\u9996\u6b21\u542f\u52a8\u81ea\u52a8\u6ce8\u518c",
           description:
-            "Patchbay \u626b\u63cf\u672c\u673a\u7684 23 \u6b3e\u652f\u6301\u7684 AI \u7f16\u7a0b\u5de5\u5177\u2014\u2014Antigravity\u3001Claude Code\u3001CodeBuddy\u3001Codex\u3001Copilot\u3001Cursor\u3001DeepSeek Harness\u3001DevEco Code\u3001Dim\u3001Grok\u3001Hermes\u3001Kimi\u3001Kiro CLI\u3001Oh-My-Pi\u3001OpenClaw\u3001OpenCode\u3001Pi\u3001Qoder\u3001Qoder CN\u3001Qwen Code\u3001QwenPaw\u3001Reasonix\u3001Trae CLI\u2014\u2014\u5e76\u4e3a\u6bcf\u6b3e\u5df2\u5b89\u88c5\u7684\u5de5\u5177\u6ce8\u518c\u4e00\u4e2a\u8fd0\u884c\u65f6\u3002",
+            "Multica \u626b\u63cf\u672c\u673a\u7684 26 \u6b3e\u652f\u6301\u7684 AI \u7f16\u7a0b\u5de5\u5177\u2014\u2014Antigravity\u3001Claude Code\u3001CodeBuddy\u3001CodeArts\u3001Codex\u3001Copilot\u3001Cursor\u3001DeepSeek Harness\u3001DevEco Code\u3001Dim\u3001Grok\u3001Hermes\u3001Kimi\u3001Kiro CLI\u3001MiniMax Code\u3001Oh-My-Pi\u3001OpenClaw\u3001OpenCode\u3001Pi\u3001Qoder\u3001Qoder CN\u3001Qwen Code\u3001QwenPaw\u3001Reasonix\u3001Trae CLI\u3001ZeroClaw\u2014\u2014\u5e76\u4e3a\u6bcf\u6b3e\u5df2\u5b89\u88c5\u7684\u5de5\u5177\u6ce8\u518c\u4e00\u4e2a\u8fd0\u884c\u65f6\u3002",
         },
       ],
     },
@@ -137,7 +136,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         title: "\u5b89\u88c5 CLI \u5e76\u8fde\u63a5\u4f60\u7684\u673a\u5668",
         description:
-          "运行 patchbay setup——它会引导你完成 OAuth 登录、启动守护进程、并扫描 23 款支持的 AI 编程工具（Antigravity、Claude Code、CodeBuddy、Codex、Copilot、Cursor、DeepSeek Harness、DevEco Code、Dim、Grok、Hermes、Kimi、Kiro CLI、Oh-My-Pi、OpenClaw、OpenCode、Pi、Qoder、Qoder CN、Qwen Code、QwenPaw、Reasonix、Trae CLI）。本机已安装的工具会被自动注册成运行时。",
+          "运行 multica setup——它会引导你完成 OAuth 登录、启动守护进程、并扫描 26 款支持的 AI 编程工具（Antigravity、Claude Code、CodeBuddy、CodeArts、Codex、Copilot、Cursor、DeepSeek Harness、DevEco Code、Dim、Grok、Hermes、Kimi、Kiro CLI、MiniMax Code、Oh-My-Pi、OpenClaw、OpenCode、Pi、Qoder、Qoder CN、Qwen Code、QwenPaw、Reasonix、Trae CLI、ZeroClaw）。本机已安装的工具会被自动注册成运行时。",
       },
       {
         title: "\u521b\u5efa\u4f60\u7684\u7b2c\u4e00\u4e2a 智能体",
@@ -160,13 +159,13 @@ export function createZhDict(allowSignup: boolean): LandingDict {
     headlineLine1: "\u5f00\u6e90",
     headlineLine2: "\u4e3a\u6240\u6709\u4eba\u3002",
     description:
-      "Patchbay \u5b8c\u5168\u5f00\u6e90\u3002\u5ba1\u67e5\u6bcf\u4e00\u884c\u4ee3\u7801\uff0c\u6309\u4f60\u7684\u65b9\u5f0f\u81ea\u6258\u7ba1\uff0c\u5851\u9020\u4eba\u7c7b + 智能体 \u534f\u4f5c\u7684\u672a\u6765\u3002",
+      "Multica \u5b8c\u5168\u5f00\u6e90\u3002\u5ba1\u67e5\u6bcf\u4e00\u884c\u4ee3\u7801\uff0c\u6309\u4f60\u7684\u65b9\u5f0f\u81ea\u6258\u7ba1\uff0c\u5851\u9020\u4eba\u7c7b + 智能体 \u534f\u4f5c\u7684\u672a\u6765\u3002",
     cta: "\u5728 GitHub \u4e0a Star",
     highlights: [
       {
         title: "\u968f\u5904\u81ea\u6258\u7ba1",
         description:
-          "\u5728\u4f60\u81ea\u5df1\u7684\u57fa\u7840\u8bbe\u65bd\u4e0a\u8fd0\u884c Patchbay\u3002Docker Compose\u3001\u5355\u4e2a\u4e8c\u8fdb\u5236\u6216 Kubernetes\u2014\u2014\u4f60\u7684\u6570\u636e\u6c38\u8fdc\u4e0d\u4f1a\u79bb\u5f00\u4f60\u7684\u7f51\u7edc\u3002",
+          "\u5728\u4f60\u81ea\u5df1\u7684\u57fa\u7840\u8bbe\u65bd\u4e0a\u8fd0\u884c Multica\u3002Docker Compose\u3001\u5355\u4e2a\u4e8c\u8fdb\u5236\u6216 Kubernetes\u2014\u2014\u4f60\u7684\u6570\u636e\u6c38\u8fdc\u4e0d\u4f1a\u79bb\u5f00\u4f60\u7684\u7f51\u7edc\u3002",
       },
       {
         title: "\u65e0\u4f9b\u5e94\u5546\u9501\u5b9a",
@@ -191,30 +190,30 @@ export function createZhDict(allowSignup: boolean): LandingDict {
     headline: "\u95ee\u4e0e\u7b54\u3002",
     items: [
       {
-        question: "Patchbay \u652f\u6301\u54ea\u4e9b\u7f16\u7801 智能体\uff1f",
+        question: "Multica \u652f\u6301\u54ea\u4e9b\u7f16\u7801 智能体\uff1f",
         answer:
-          "Patchbay \u5f00\u7bb1\u5373\u7528\u652f\u6301 23 \u6b3e AI \u7f16\u7a0b\u5de5\u5177\uff1aAntigravity\u3001Claude Code\u3001CodeBuddy\u3001Codex\u3001Copilot\u3001Cursor\u3001DeepSeek Harness\u3001DevEco Code\u3001Dim\u3001Grok\u3001Hermes\u3001Kimi\u3001Kiro CLI\u3001Oh-My-Pi\u3001OpenClaw\u3001OpenCode\u3001Pi\u3001Qoder\u3001Qoder CN\u3001Qwen Code\u3001QwenPaw\u3001Reasonix\u3001Trae CLI\u3002\u5b88\u62a4\u8fdb\u7a0b\u4f1a\u81ea\u52a8\u68c0\u6d4b\u672c\u673a\u5df2\u5b89\u88c5\u7684 CLI \u5e76\u4e3a\u6bcf\u6b3e\u6ce8\u518c\u4e00\u4e2a\u8fd0\u884c\u65f6\u3002\u56e0\u4e3a\u5f00\u6e90\uff0c\u4f60\u4e5f\u53ef\u4ee5\u81ea\u5df1\u6dfb\u52a0\u540e\u7aef\u3002",
+          "Multica \u5f00\u7bb1\u5373\u7528\u652f\u6301 26 \u6b3e AI \u7f16\u7a0b\u5de5\u5177\uff1aAntigravity\u3001Claude Code\u3001CodeBuddy\u3001CodeArts\u3001Codex\u3001Copilot\u3001Cursor\u3001DeepSeek Harness\u3001DevEco Code\u3001Dim\u3001Grok\u3001Hermes\u3001Kimi\u3001Kiro CLI\u3001MiniMax Code\u3001Oh-My-Pi\u3001OpenClaw\u3001OpenCode\u3001Pi\u3001Qoder\u3001Qoder CN\u3001Qwen Code\u3001QwenPaw\u3001Reasonix\u3001Trae CLI\u3001ZeroClaw\u3002\u5b88\u62a4\u8fdb\u7a0b\u4f1a\u81ea\u52a8\u68c0\u6d4b\u672c\u673a\u5df2\u5b89\u88c5\u7684 CLI \u5e76\u4e3a\u6bcf\u6b3e\u6ce8\u518c\u4e00\u4e2a\u8fd0\u884c\u65f6\u3002\u56e0\u4e3a\u5f00\u6e90\uff0c\u4f60\u4e5f\u53ef\u4ee5\u81ea\u5df1\u6dfb\u52a0\u540e\u7aef\u3002",
       },
       {
         question: "\u9700\u8981\u81ea\u6258\u7ba1\u5417\uff0c\u8fd8\u662f\u6709\u4e91\u7248\u672c\uff1f",
         answer:
-          "\u4e24\u8005\u90fd\u6709\u3002\u4f60\u53ef\u4ee5\u7528 Docker Compose \u6216 Kubernetes \u5728\u81ea\u5df1\u7684\u57fa\u7840\u8bbe\u65bd\u4e0a\u81ea\u6258\u7ba1 Patchbay\uff0c\u4e5f\u53ef\u4ee5\u4f7f\u7528\u6211\u4eec\u7684\u6258\u7ba1\u4e91\u7248\u672c\u3002\u4f60\u7684\u6570\u636e\uff0c\u4f60\u9009\u62e9\u3002",
+          "\u4e24\u8005\u90fd\u6709\u3002\u4f60\u53ef\u4ee5\u7528 Docker Compose \u6216 Kubernetes \u5728\u81ea\u5df1\u7684\u57fa\u7840\u8bbe\u65bd\u4e0a\u81ea\u6258\u7ba1 Multica\uff0c\u4e5f\u53ef\u4ee5\u4f7f\u7528\u6211\u4eec\u7684\u6258\u7ba1\u4e91\u7248\u672c\u3002\u4f60\u7684\u6570\u636e\uff0c\u4f60\u9009\u62e9\u3002",
       },
       {
         question:
           "\u8fd9\u548c\u76f4\u63a5\u7528\u7f16\u7801 智能体 \u6709\u4ec0\u4e48\u533a\u522b\uff1f",
         answer:
-          "\u7f16\u7801 智能体 \u64c5\u957f\u6267\u884c\u3002Patchbay \u6dfb\u52a0\u7684\u662f\u7ba1\u7406\u5c42\uff1a\u4efb\u52a1\u961f\u5217\u3001\u56e2\u961f\u534f\u4f5c\u3001\u6280\u80fd\u590d\u7528\u3001\u8fd0\u884c\u65f6\u76d1\u63a7\uff0c\u4ee5\u53ca\u6bcf\u4e2a 智能体 \u5728\u505a\u4ec0\u4e48\u7684\u7edf\u4e00\u89c6\u56fe\u3002\u628a\u5b83\u60f3\u8c61\u6210\u4f60\u7684 智能体 \u7684\u9879\u76ee\u7ecf\u7406\u3002",
+          "\u7f16\u7801 智能体 \u64c5\u957f\u6267\u884c\u3002Multica \u6dfb\u52a0\u7684\u662f\u7ba1\u7406\u5c42\uff1a\u4efb\u52a1\u961f\u5217\u3001\u56e2\u961f\u534f\u4f5c\u3001\u6280\u80fd\u590d\u7528\u3001\u8fd0\u884c\u65f6\u76d1\u63a7\uff0c\u4ee5\u53ca\u6bcf\u4e2a 智能体 \u5728\u505a\u4ec0\u4e48\u7684\u7edf\u4e00\u89c6\u56fe\u3002\u628a\u5b83\u60f3\u8c61\u6210\u4f60\u7684 智能体 \u7684\u9879\u76ee\u7ecf\u7406\u3002",
       },
       {
         question: "智能体 \u80fd\u81ea\u4e3b\u5904\u7406\u957f\u65f6\u95f4\u4efb\u52a1\u5417\uff1f",
         answer:
-          "\u53ef\u4ee5\u3002Patchbay \u7ba1\u7406\u5b8c\u6574\u7684\u4efb\u52a1\u751f\u547d\u5468\u671f\u2014\u2014\u5165\u961f\u3001\u9886\u53d6\u3001\u6267\u884c\u3001\u5b8c\u6210\u6216\u5931\u8d25\u3002智能体 \u4e3b\u52a8\u62a5\u544a\u963b\u585e\u5e76\u5b9e\u65f6\u63a8\u9001\u8fdb\u5ea6\u3002\u4f60\u53ef\u4ee5\u968f\u65f6\u67e5\u770b\uff0c\u4e5f\u53ef\u4ee5\u8ba9\u5b83\u4eec\u8fd0\u884c\u6574\u665a\u3002",
+          "\u53ef\u4ee5\u3002Multica \u7ba1\u7406\u5b8c\u6574\u7684\u4efb\u52a1\u751f\u547d\u5468\u671f\u2014\u2014\u5165\u961f\u3001\u9886\u53d6\u3001\u6267\u884c\u3001\u5b8c\u6210\u6216\u5931\u8d25\u3002智能体 \u4e3b\u52a8\u62a5\u544a\u963b\u585e\u5e76\u5b9e\u65f6\u63a8\u9001\u8fdb\u5ea6\u3002\u4f60\u53ef\u4ee5\u968f\u65f6\u67e5\u770b\uff0c\u4e5f\u53ef\u4ee5\u8ba9\u5b83\u4eec\u8fd0\u884c\u6574\u665a\u3002",
       },
       {
         question: "\u6211\u7684\u4ee3\u7801\u5b89\u5168\u5417\uff1f智能体 \u5728\u54ea\u91cc\u6267\u884c\uff1f",
         answer:
-          "智能体 \u5728\u4f60\u7684\u673a\u5668\uff08\u672c\u5730\u5b88\u62a4\u8fdb\u7a0b\uff09\u6216\u4f60\u81ea\u5df1\u7684\u4e91\u57fa\u7840\u8bbe\u65bd\u4e0a\u6267\u884c\u3002\u4ee3\u7801\u6c38\u8fdc\u4e0d\u4f1a\u7ecf\u8fc7 Patchbay \u670d\u52a1\u5668\u3002\u5e73\u53f0\u53ea\u534f\u8c03\u4efb\u52a1\u72b6\u6001\u548c\u5e7f\u64ad\u4e8b\u4ef6\u3002",
+          "智能体 \u5728\u4f60\u7684\u673a\u5668\uff08\u672c\u5730\u5b88\u62a4\u8fdb\u7a0b\uff09\u6216\u4f60\u81ea\u5df1\u7684\u4e91\u57fa\u7840\u8bbe\u65bd\u4e0a\u6267\u884c\u3002\u4ee3\u7801\u6c38\u8fdc\u4e0d\u4f1a\u7ecf\u8fc7 Multica \u670d\u52a1\u5668\u3002\u5e73\u53f0\u53ea\u534f\u8c03\u4efb\u52a1\u72b6\u6001\u548c\u5e7f\u64ad\u4e8b\u4ef6\u3002",
       },
       {
         question: "\u6211\u53ef\u4ee5\u8fd0\u884c\u591a\u5c11\u4e2a 智能体\uff1f",
@@ -244,7 +243,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         links: [
           { label: "\u6587\u6863", href: "/docs/zh" },
           { label: "API", href: githubUrl },
-          { label: "X (Twitter)", href: "https://x.com/PatchbayAI" },
+          { label: "X (Twitter)", href: "https://x.com/MulticaAI" },
           { label: "Discord", href: discordUrl },
         ],
       },
@@ -258,17 +257,27 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         ],
       },
     },
-    copyright: "\u00a9 {year} Patchbay. \u4fdd\u7559\u6240\u6709\u6743\u5229\u3002",
+    copyright: "\u00a9 {year} Multica. \u4fdd\u7559\u6240\u6709\u6743\u5229\u3002",
   },
 
   about: {
-    title: "\u5173\u4e8e Patchbay",
-    nameLine: "Patchbay \u662f\u8fde\u63a5\u4eba\u7c7b\u4e0e AI \u5de5\u4f5c\u7684\u53ef\u89c6\u5316\u8def\u7531\u9762\u677f\u3002",
+    title: "\u5173\u4e8e Multica",
+    nameLine: {
+      prefix: "Multica\u2014\u2014",
+      mul: "Mul",
+      tiplexed: "tiplexed ",
+      i: "I",
+      nformationAnd: "nformation and ",
+      c: "C",
+      omputing: "omputing ",
+      a: "A",
+      gent: "gent\u3002",
+    },
     paragraphs: [
-      "\u540d\u5b57\u6765\u81ea\u73b0\u5b9e\u4e16\u754c\u7684\u63a5\u7ebf\u76d8\uff1a\u6bcf\u4e00\u6761\u8fde\u63a5\u90fd\u6e05\u6670\u53ef\u89c1\u3001\u6709\u660e\u786e\u610f\u56fe\uff0c\u4e5f\u53ef\u4ee5\u968f\u65f6\u91cd\u65b0\u8def\u7531\uff0c\u4e0d\u4f1a\u628a\u8f93\u5165\u4e0e\u8f93\u51fa\u4e4b\u95f4\u7684\u8def\u5f84\u85cf\u8d77\u6765\u3002",
-      "AI agents \u80fd\u591f\u5e76\u884c\u63a8\u8fdb\u8bb8\u591a\u4efb\u52a1\uff0c\u4f46\u53ea\u6709\u76ee\u6807\u3001\u4f9d\u8d56\u3001\u8d23\u4efb\u4e0e\u4ea4\u63a5\u59cb\u7ec8\u8fde\u5728\u4e00\u8d77\uff0c\u5e76\u884c\u624d\u771f\u6b63\u6709\u4ef7\u503c\u3002Patchbay \u628a\u8fd9\u4e9b\u8def\u7531\u653e\u5728\u540c\u4e00\u4e2a\u5171\u4eab\u5e73\u9762\u4e0a\u3002",
-      "\u5728 Patchbay \u4e2d\uff0cagents \u662f\u6b63\u5f0f\u7684\u56e2\u961f\u6210\u5458\u3002\u5b83\u4eec\u4e0e\u4eba\u7c7b\u540c\u4e8b\u4e00\u8d77\u63a5\u53d7\u4efb\u52a1\u3001\u6c47\u62a5\u8fdb\u5c55\u3001\u63d0\u51fa\u963b\u585e\u5e76\u4ea4\u4ed8\u4ee3\u7801\u3002\u4efb\u52a1\u5206\u914d\u3001\u6d3b\u52a8\u65f6\u95f4\u7ebf\u3001task \u751f\u547d\u5468\u671f\u4e0e\u8fd0\u884c\u65f6\u57fa\u7840\u8bbe\u65bd\u90fd\u56f4\u7ed5\u8fd9\u5957\u5171\u4eab\u5de5\u4f5c\u6d41\u7a0b\u8bbe\u8ba1\u3002",
-      "\u5c0f\u56e2\u961f\u53ef\u4ee5\u534f\u8c03\u4e00\u7ec4 agents\uff0c\u540c\u65f6\u4fdd\u6301\u53ef\u89c1\u6027\u4e0e\u4eba\u7684\u63a7\u5236\u3002\u4eba\u8d1f\u8d23\u5b9a\u65b9\u5411\u3001\u9a8c\u6536\u7ed3\u679c\uff1bagents \u8d1f\u8d23\u6301\u7eed\u63a8\u8fdb\u8fb9\u754c\u6e05\u695a\u7684\u5de5\u4f5c\u3002",
+      "\u8fd9\u4e2a\u540d\u5b57\u662f\u5728\u5411 20 \u4e16\u7eaa 60 \u5e74\u4ee3\u5177\u6709\u5f00\u521b\u610f\u4e49\u7684\u64cd\u4f5c\u7cfb\u7edf Multics \u81f4\u610f\u3002Multics \u9996\u521b\u4e86\u5206\u65f6\u7cfb\u7edf\uff0c\u8ba9\u591a\u4e2a\u7528\u6237\u80fd\u591f\u5171\u4eab\u540c\u4e00\u53f0\u673a\u5668\uff0c\u540c\u65f6\u53c8\u50cf\u5404\u81ea\u72ec\u5360\u5b83\u4e00\u6837\u4f7f\u7528\u3002Unix \u5219\u662f\u5728\u6709\u610f\u7b80\u5316 Multics \u7684\u57fa\u7840\u4e0a\u8bde\u751f\u7684\uff0c\u5f3a\u8c03\u4e00\u4e2a\u7528\u6237\u3001\u4e00\u4e2a\u4efb\u52a1\u3001\u4e00\u79cd\u4f18\u96c5\u7684\u54f2\u5b66\u3002",
+      "\u6211\u4eec\u8ba4\u4e3a\uff0c\u7c7b\u4f3c\u7684\u8f6c\u6298\u70b9\u6b63\u5728\u518d\u6b21\u51fa\u73b0\u3002\u51e0\u5341\u5e74\u6765\uff0c\u8f6f\u4ef6\u56e2\u961f\u4e00\u76f4\u5904\u4e8e\u4e00\u79cd\u5355\u7ebf\u7a0b\u7684\u5de5\u4f5c\u6a21\u5f0f\uff0c\u4e00\u4e2a\u5de5\u7a0b\u5e08\u5904\u7406\u4e00\u4e2a\u4efb\u52a1\uff0c\u4e00\u6b21\u53ea\u4e13\u6ce8\u4e8e\u4e00\u4e2a\u4e0a\u4e0b\u6587\u3002AI agents \u6539\u53d8\u4e86\u8fd9\u4e2a\u7b49\u5f0f\u3002Multica \u5c06\u201c\u5206\u65f6\u201d\u91cd\u65b0\u5e26\u56de\u8fd9\u4e2a\u65f6\u4ee3\uff0c\u53ea\u4e0d\u8fc7\u4eca\u5929\u5728\u7cfb\u7edf\u4e2d\u8fdb\u884c\u591a\u8def\u590d\u7528\u7684\u201c\u7528\u6237\u201d\uff0c\u65e2\u5305\u62ec\u4eba\u7c7b\uff0c\u4e5f\u5305\u62ec\u81ea\u4e3b\u4ee3\u7406\u3002",
+      "在 Multica 中，agents 是一级团队成员。它们会被分配任务，汇报进展，提出阻塞，并交付代码，就像人类同事一样。任务分配、活动时间线、task 生命周期，以及运行时基础设施，Multica 从第一天起就是围绕这一理念构建的。",
+      "\u548c\u5f53\u5e74\u7684 Multics \u4e00\u6837\uff0c\u8fd9\u4e00\u5224\u65ad\u5efa\u7acb\u5728\u201c\u591a\u8def\u590d\u7528\u201d\u4e4b\u4e0a\u3002\u4e00\u4e2a\u5c0f\u56e2\u961f\u4e0d\u8be5\u56e0\u4e3a\u4eba\u6570\u5c11\u5c31\u663e\u5f97\u80fd\u529b\u6709\u9650\u3002\u6709\u4e86\u5408\u9002\u7684\u7cfb\u7edf\uff0c\u4e24\u540d\u5de5\u7a0b\u5e08\u52a0\u4e0a\u4e00\u7ec4 agents\uff0c\u5c31\u80fd\u53d1\u6325\u51fa\u4e8c\u5341\u4eba\u56e2\u961f\u7684\u63a8\u8fdb\u901f\u5ea6\u3002",
       "\u8fd9\u4e2a\u5e73\u53f0\u662f\u5b8c\u5168\u5f00\u6e90\u5e76\u652f\u6301\u81ea\u6258\u7ba1\u7684\u3002\u4f60\u7684\u6570\u636e\u59cb\u7ec8\u4fdd\u7559\u5728\u81ea\u5df1\u7684\u57fa\u7840\u8bbe\u65bd\u4e2d\u3002\u4f60\u53ef\u4ee5\u5ba1\u67e5\u6bcf\u4e00\u884c\u4ee3\u7801\uff0c\u6269\u5c55 API\uff0c\u63a5\u5165\u81ea\u5df1\u7684 LLM providers\uff0c\u4e5f\u53ef\u4ee5\u5411\u793e\u533a\u8d21\u732e\u4ee3\u7801\u3002",
     ],
     cta: "\u5728 GitHub \u4e0a\u67e5\u770b",
@@ -276,7 +285,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
 
   changelog: {
     title: "\u66f4\u65b0\u65e5\u5fd7",
-    subtitle: "Patchbay \u7684\u6700\u65b0\u66f4\u65b0\u548c\u6539\u8fdb\u3002",
+    subtitle: "Multica \u7684\u6700\u65b0\u66f4\u65b0\u548c\u6539\u8fdb\u3002",
     toc: "\u5386\u53f2\u7248\u672c",
     categories: {
       features: "新功能",
@@ -284,6 +293,179 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       fixes: "问题修复",
     },
     entries: [
+      {
+        version: "0.4.37",
+        date: "2026-08-31",
+        title: "Issue 列表更快、长任务更稳、多语言文案更全",
+        changes: [],
+        features: [
+          "华为云 CodeArts 现已成为内置的智能体运行时。",
+          "可以选它的模型、续接之前的会话，并使用 MCP 和本地技能。",
+          "iPad 上可以原生安装 Multica，横屏竖屏都能用。",
+          "自托管部署在多台服务器上时，企业微信机器人的回复也能送达。",
+          "可以查看有多少条企业微信回复没有发出，以及原因。",
+        ],
+        improvements: [
+          "大工作区里的 Issue 列表打开更快。",
+          "技能很多时，智能体的启动也更快。",
+          "新手引导、小队、编辑器、状态和优先级在各语言下都更自然。",
+          "智能体输出会完整显示文件路径，不再被误遮挡。",
+          "自托管服务器的后台采集更轻，数据库负担更小。",
+          "有连接卡住时，自托管服务器依然正常响应。",
+        ],
+        fixes: [
+          "聊天会停在最新回复，输出过程中不再跳动或闪烁。",
+          "窄窗口下 Analytics 排行榜可以横向滑动，不再被裁掉。",
+          "Codex 会话启动更稳定，不会在初始化时中断。",
+          "本机守护进程空闲时，本地技能也能正常加载。",
+          "桌面端会自动恢复意外停止的守护进程。",
+          "手机上 Issue 顶部重新变得紧凑，头像和点击区域都还在。",
+          "从更早版本升级自托管实例不再需要手动修复。",
+          "工作目录变化后，Pi 和 Oh My Pi 的会话仍然接得上。",
+          "删除工作区时，提示只说明真正会被删除的内容。",
+          "长时间运行和排队中的任务不会仅因等待被取消。",
+        ],
+      },
+      {
+        version: "0.4.36",
+        date: "2026-08-28",
+        title: "自定义属性筛选、技能本地导入、Oh My Pi 的 MCP 支持",
+        changes: [],
+        features: [
+          "Issue 可以按文本、数字、日期和 URL 类型的自定义属性筛选。",
+          "也可以只看某个自定义属性还没有填值的 Issue。",
+          "筛选菜单、分组统计和保存的视图里都能用这些条件。",
+          "新建技能时可以直接导入本地文件夹、.skill 或 .zip 文件。",
+          "导入前可以预览内容，名称冲突也会提前提示。",
+          "Oh My Pi 智能体现在可以在智能体页面配置并使用 MCP。",
+        ],
+        improvements: [
+          "运行时只会在确实安全时被回收，不会在运行中途被收走。",
+          "长时间离线的运行时，现在只会如实说明当前状态。",
+          "智能体的长步骤最多可以空闲两小时，不会被提前中断。",
+          "CLI 现在写明了列出 Issue 的单页上限和翻页方式。",
+        ],
+        fixes: [
+          "桌面端复制或分享的链接，在任何浏览器和设备上都能打开。",
+          "即使启动目录已被删除，仓库拉取和更新也照样能用。",
+          "长上下文模型的运行费用计算正确，用量不会漏记。",
+          "不含英文字符的自定义 Issue 状态，各处都显示正确名称。",
+          "编辑冲突时，两个选项分别放在各自版本的内容下方。",
+          "飞书的回复不会再因为凭证过期而一直卡住。",
+          "Quick Create 恢复草稿时，高度会重新贴合内容。",
+          "OpenClaw 超时后会完全停止，不会留下残余进程。",
+          "配置 OpenClaw 时，不会再明明成功却提示失败。",
+        ],
+      },
+      {
+        version: "0.4.35",
+        date: "2026-08-26",
+        title: "全渠道 /new 与 /clear、智能体开场建议、收件箱筛选",
+        changes: [],
+        features: [
+          "用 /new 开新会话，用 /clear 清空当前会话。",
+          "钉钉、飞书、Slack、Telegram、企业微信都已支持。",
+          "可以给智能体设置最多 3 条开场建议，空白聊天里会直接显示。",
+          "点击开场建议只会填入输入框，你可以改完再发送。",
+          "收件箱通知可以按发起人筛选，也能只看未读。",
+        ],
+        improvements: [
+          "Qwen、Kimi、Ark 模型的运行成本显示更准确。",
+          "Autopilot 列表会显示订阅者和下次运行时间。",
+          "只需填一个 Cloud 地址，云端运行时、账单和席位管理会一起启用。",
+          "本地任务的目录名称清晰易读，找文件更方便。",
+        ],
+        fixes: [
+          "Autopilot 可以把任务交给你的私有智能体和小队了。",
+          "编辑 Autopilot 的其他设置时，不会再清空它的项目。",
+          "聊天输出很快时也会跟到最新内容，手动上滚不会被拉回。",
+          "其他成员不再看到你的私有运行时。",
+          "订阅 Pro 后，账单会立刻显示新的权益。",
+          "Codex 任务不再提前结束，不会漏掉内容或重复计费。",
+          "Autopilot 命令不再接受实际无效的优先级参数。",
+          "Issue 描述很长时，看板也不会变慢。",
+          "读取体积很大的技能更稳定，不会再中断。",
+        ],
+      },
+      {
+        version: "0.4.34",
+        date: "2026-08-25",
+        title: "基于评论快速创建子 Issue、正式开放自定义 Issue 状态创建",
+        changes: [],
+        features: [
+          "讨论到一半的评论，一键就能拆成子 Issue 继续推进。",
+          "拆出的子 Issue 自动带上原讨论内容，接手时不用再补背景。",
+          "自定义 Issue 状态正式开放，所有工作区都能直接创建。",
+        ],
+        improvements: [
+          "结账时自动填入你的账号邮箱，不用再手动输入。",
+          "仓库拉取失败时，会写明具体原因和对应的解决办法。",
+          "自托管指南补齐了健康检查、单一域名部署和版本选择说明。",
+        ],
+        fixes: [
+          "MiniMax Code 不再偶发启动失败。",
+          "成员离开工作区后，不再收到该工作区的 Autopilot 通知。",
+          "任务失败后的自动恢复回复，会回到原来的评论线程。",
+          "评论时间不再显示成错误的时区。",
+          "智能体用完整 ID 定位 Issue 更快、更稳定。",
+          "取消任务后，智能体进程会真正停止，不再在后台残留。",
+          "已取消订阅的席位不再出现在账单里。",
+          "任务被取消时，命令行不再误提示重新登录。",
+        ],
+      },
+      {
+        version: "0.4.33",
+        date: "2026-08-24",
+        title: "收件箱筛选、ZeroClaw 运行时、多语言失败说明",
+        changes: [],
+        features: [
+          "现在可以按 Issue 状态和优先级筛选收件箱通知。",
+          "ZeroClaw 现已成为内置智能体运行时。",
+          "自托管团队可将守护进程流量发送到独立服务器。",
+          "自托管团队可设置排队任务的保留时长。",
+        ],
+        improvements: [
+          "任务失败信息现在会按你选择的语言显示。",
+          "Grok 现在显示每个模型的推理级别。",
+          "技能下载失败时会显示已接收的数据量。",
+          "可用快捷键显示或隐藏右侧边栏。",
+          "iOS 应用现在使用更简洁的扁平图标。",
+          "自托管指南现在说明正确的 PostgreSQL 要求。",
+        ],
+        fixes: [
+          "Windows 上的 Qwen 和 Pi 运行现在能完整保留提示内容。",
+          "Antigravity 回复现在保留原有换行。",
+          "飞书卡片消息中的提及现在能正确送达。",
+          "智能体和 Issue 动态现在保持正确授权和排序。",
+          "新聊天和项目工作现在保持在正确工作区上下文中。",
+          "自托管健康检查和并发本地工作现在更可靠。",
+          "Hermes、Kimi 和 Pi 现在能更可靠地处理运行时失败。",
+          "购买报价和已归档收件箱计数现在能正确恢复。",
+        ],
+      },
+      {
+        version: "0.4.32",
+        date: "2026-08-21",
+        title: "钉钉群组、项目视图与更顺畅的协作",
+        changes: [],
+        features: [
+          "在群里提及钉钉机器人后，群组会显示在对应智能体下。",
+          "看板和列表可按项目分组，让相关 Issue 聚在一起。",
+        ],
+        improvements: [
+          "长时间运行的智能体任务现在更顺畅。",
+          "自托管服务器遇到短暂数据库故障后会自动恢复。",
+          "Telegram 的欢迎提示和回复现在使用英文。",
+        ],
+        fixes: [
+          "再次运行任务时，不会中断正在进行的工作。",
+          "同时运行的任务不会再覆盖彼此的工作空间。",
+          "OpenClaw、Pi 和 OpenCode 可正常使用你配置的自定义提供商。",
+          "切换工作区不会再中断实时更新或提及功能。",
+          "普通 CLI 输出不再暴露 Autopilot Webhook 凭据。",
+          "不用等无关编码任务结束，也能和智能体聊天。",
+        ],
+      },
       {
         version: "0.4.31",
         date: "2026-08-20",
@@ -375,7 +557,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "你可以生成一个分享链接，让别人直接加入工作区。",
           "运行记录改成按步骤看，配双轨时间线和结果概览。",
           "Slack 消息里发的文件现在会作为附件出现在对话里。",
-          "手机上可以把 Patchbay 添加到主屏幕，像应用一样打开。",
+          "手机上可以把 Multica 添加到主屏幕，像应用一样打开。",
           "浏览器标签页会显示你正打开的工作区页面名。",
           "导入的技能现在会显示它来自哪里。",
           "提到你正在看的这个 Issue 时，会显示成「本 Issue」。",
@@ -421,7 +603,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         fixes: [
           "跑不起来的智能体 CLI 会直接告诉你怎么修好。",
           "别人的私有运行时不会再被 API 或 CLI 拿去用。",
-          "任务残留不会再让整个目录里的 patchbay 命令失效。",
+          "任务残留不会再让整个目录里的 multica 命令失效。",
           "用 Volta 或 Vite Plus 装的智能体现在能被识别了。",
           "对话里最后一条回复和输入框之间的间距回来了。",
           "深色模式下当前标签页不再出现暗色方块，悬停圆角也完整了。",
@@ -443,7 +625,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "自托管时可以把任务临时文件放到更大的磁盘上。",
         ],
         improvements: [
-          "`patchbay daemon logs` 会直接告诉你日志文件在哪。",
+          "`multica daemon logs` 会直接告诉你日志文件在哪。",
           "Hermes 任务现在会说清读的是哪个 HERMES_HOME。",
         ],
         fixes: [
@@ -454,7 +636,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "看板卡片上点头像就能直接改负责人。",
           "运行时活跃度和甘特图的日期跟着界面语言显示。",
           "深色模式下，标签页与页面之间的描边不再变色。",
-          "内置的 Bug 分类 自动化 现在能正常跑起来。",
+          "内置的 Bug 分类 Autopilot 现在能正常跑起来。",
         ],
       },
       {
@@ -482,7 +664,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "中文、日文、韩文里紧贴标点的加粗又能正常显示了。",
           "安卓上发送或停止消息后，键盘不会再收起来。",
           "自托管的 Hermes 对话不会再每隔一条就报错。",
-          "残留的端口设置不会再让 `patchbay login` 失败。",
+          "残留的端口设置不会再让 `multica login` 失败。",
           "Cursor 任务现在能用上你配好的 MCP 服务。",
           "在 Slack 里建 Issue，标题里的链接不再被改写。",
           "PR 不会再关掉另一个工作区里编号相同的 Issue。",
@@ -533,11 +715,11 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Oh-My-Pi 现在也能跑你的智能体了。",
           "企业微信里的语音留言，智能体现在也听得懂。",
           "Kimi 和 Pi 的智能体现在可以选思考强度了。",
-          "Patchbay 里的任意链接，Cmd/Ctrl 或中键点击就能在新标签页打开。",
+          "Multica 里的任意链接，Cmd/Ctrl 或中键点击就能在新标签页打开。",
           "企业微信连不上时，页面会说清是被拒绝还是根本连不通。",
         ],
         improvements: [
-          "注册完就能直接看到 Patrick 的开场消息。",
+          "注册完就能直接看到 Mika 的开场消息。",
           "保存视图时可以选升序或降序。",
           "新建 Issue 上的项目标签可以一键清掉，也不再记住你上次选的项目。",
           "频道里只发一个 /new 或 /issue，现在会明确告诉你结果。",
@@ -582,7 +764,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "智能体没有产出时，不再回一句占位的空话。",
           "你自己发的聊天消息，在其他窗口和设备上也会稳定出现。",
           "你停掉的运行也会计入运行时长和任务数。",
-          "普通智能体不会再被误认成 Team 领队。",
+          "普通智能体不会再被误认成 Squad 领队。",
           "CodeBuddy 启动时会带上你配置的 MCP 服务。",
           "远程 MCP 服务不再在部分运行时里被悄悄忽略。",
           "OpenCode 空手而归的运行不再显示为成功。",
@@ -594,21 +776,21 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         version: "0.4.20",
         date: "2026-08-06",
-        title: "钉钉机器人、Patrick 带你上手、每次运行的 token 花费",
+        title: "钉钉机器人、Mika 带你上手、每次运行的 token 花费",
         changes: [],
         features: [
           "智能体可以入驻钉钉，私聊或在群里 @ 它就能用。",
-          "注册完成后 Patrick 已经在等你，还有卡片帮你开第一个任务。",
-          "Agent 事件里能看到每次运行的花费，以及整个任务的合计。",
+          "注册完成后 Mika 已经在等你，还有卡片帮你开第一个任务。",
+          "执行记录里能看到每次运行的花费，以及整个任务的合计。",
           "静音评论通知后，@ 到你的消息依然会送达。",
           "手机上聊天以全屏打开，输入框会浮在键盘上方。",
-          "手动替换 patchbay 或 Agent CLI 后自动生效，不用重启。",
+          "手动替换 multica 或 Agent CLI 后自动生效，不用重启。",
         ],
         improvements: [
           "智能体每次运行读取的说明更短，留给工作的空间更多。",
           "不支持推理强度的运行时会直接说明，而不是提示取值无效。",
           "手机上任务详情和讨论列表能用到更多屏幕空间。",
-          "Agent 事件的标题不再换行，始终保持一行。",
+          "执行记录的标题不再换行，始终保持一行。",
         ],
         fixes: [
           "在聊天里用 /issue 建任务，图片会作为附件一起带过去。",
@@ -647,7 +829,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         fixes: [
           "很长的 Codex 会话可以继续了，不再每次恢复都失败。",
           "上下文用满的运行会明确失败，不再返回空答案。",
-          "定时 自动化 会按时开始，不再等到下一次唤醒。",
+          "定时 Autopilot 会按时开始，不再等到下一次唤醒。",
           "在聊天里用 /issue 建任务，不再重复执行同一条命令。",
           "名称相近的 Skill 在 QwenPaw 上不再互相覆盖。",
           "空闲会话的第一条消息立即显示，不再排队等待。",
@@ -679,15 +861,15 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "点击 Skill 中的文件可以正常打开，不再只弹出菜单。",
           "任务里的「取消订阅」现在能够正常生效。",
           "在回复框中输入 / 同样能看到工作区的快捷操作。",
-          "从任务头部打开运行中的 Agent 对话，窗口不再立刻关闭。",
+          "从任务头部打开运行中的执行日志，窗口不再立刻关闭。",
           "OpenClaw 的回复在生成完成后立即送达，不再长时间等待。",
           "在 Slack、飞书中单独发送 /new，不再产生空消息和空运行。",
           "在新接入的聊天渠道里，智能体不再误报附件已发送。",
           "过长的项目名或标签名不再让属性标签占满一整行。",
           "清空属性的入口，现在统一位于选择弹层的第一行。",
-          "自动化 的 Runbook 过宽时，不再把设置面板挤出弹窗。",
+          "Autopilot 的 Runbook 过宽时，不再把设置面板挤出弹窗。",
           "中文侧栏中的 Discord 入口不再显示不全。",
-          "把任务指派给团队不再出错。",
+          "把任务指派给小队不再出错。",
         ],
       },
       {
@@ -704,14 +886,14 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         improvements: [
           "磁盘占用数字现在和文件管理器里看到的一致。",
           "命令行遇到冲突会直接告诉你怎么改，不再让你反复重试。",
-          "创建 自动化 时会明确指出还差哪个必填项。",
-          "任务侧栏先显示 Agent 对话，详情放到下面。",
+          "创建 Autopilot 时会明确指出还差哪个必填项。",
+          "任务侧栏先显示执行日志，详情放到下面。",
           "许可证里写明了：免费的公开托管同样需要商业授权。",
         ],
         fixes: [
           "Kimi 接着上次的对话回复时，不再把上一轮的回答重复一遍。",
           "自带 Codex 指令文件的智能体现在能正常开始 task。",
-          "给原本没有触发器的 自动化 选好定时，现在能保存下来了。",
+          "给原本没有触发器的 Autopilot 选好定时，现在能保存下来了。",
           "打开智能体导入的 Skill，不再显示你没做过的改动。",
           "在 Slack 和飞书里用 /new 都能开一段全新对话。",
           "在聊天里用 /issue 建的任务，现在会给你发通知。",
@@ -826,7 +1008,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "粘贴超长文本时，现在会自动变成文本附件。",
           "每个上传只显示一次，完成后才会写入草稿。",
           "Webhook URL 现在默认隐藏，可按需显示。",
-          "工作区很多时，Patchbay 启动不再反复检查智能体工具。",
+          "工作区很多时，Multica 启动不再反复检查智能体工具。",
           "用量排名现在先聚焦前十名，失败排序也更清楚。",
           "发送后，光标现在会停在各编辑器预期的位置。",
         ],
@@ -885,7 +1067,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         features: [
           "现在除了 GitHub，还能接入 Forgejo、Gitea、GitLab 等自托管 Git 服务。",
           "Chat 现在能用你的项目上下文，给出更贴合的回答。",
-          "Agent 对话现在更好读，运行再长也能流畅浏览。",
+          "执行日志现在更好读，运行再长也能流畅浏览。",
           "任务表格现在会直接显示哪些智能体正在处理。",
           "复制的记录现在会带上每条事件的时间戳。",
         ],
@@ -1001,7 +1183,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "重新打开设置面板后，你的设置现在能可靠保存。",
           "恢复的 Codex task 现在会准确报告用量。",
           "评论不再把不该变成链接的文字变成链接。",
-          "私聊的回复现在会留在 Patchbay 里。",
+          "私聊的回复现在会留在 Multica 里。",
           "AI 辅助创建现在始终可用。",
           "任务页面首次打开时不再卡顿。",
           "Linux 上的 Codex 智能体现在能正确保存 Git 信息。",
@@ -1024,7 +1206,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "现在可以在设置里选择创建任务时显示哪些字段。",
           "任务列表页现在能清楚看到当前有多少智能体在工作。",
           "本机后台现在会记住你的启动选项，不用每次重新输入。",
-          "团队队长在同一个任务上的后续跟进会接着之前的进度继续。",
+          "小队队长在同一个任务上的后续跟进会接着之前的进度继续。",
           "未登录就启动本机后台时，会直接告诉你该怎么做，不再卡住。",
         ],
         fixes: [
@@ -1068,7 +1250,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "创建任务时选择的标签，现在每次都会和任务一起保存。",
           "把带格式的文本粘贴进评论，不会再留下多余的 ++ 符号。",
           "鼠标只是从头像上划过时，不会再弹出悬浮卡片。",
-          "Linux 桌面应用现在会以 patchbay-desktop 的名字安装。",
+          "Linux 桌面应用现在会以 multica-desktop 的名字安装。",
         ],
       },
       {
@@ -1182,13 +1364,13 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "你现在可以让智能体运行在全新的 Codex gpt-5.6 模型上——Sol、Terra 和 Luna。",
-          "输入或粘贴像 PB-123 这样的任务编号，它会自动变成可点击的任务链接。",
+          "输入或粘贴像 MUL-123 这样的任务编号，它会自动变成可点击的任务链接。",
           "上传头像时，你现在可以先裁剪、缩放和旋转，再保存。",
           "当智能体最终没有文字回复时，聊天里会显示清晰的“无回复”提示，而不是一条空消息。",
           "在多个不同的评论会话里提到同一个繁忙的智能体，现在每个会话都会各自得到回复。",
         ],
         improvements: [
-          "智能体、团队和工作区的头像现在处处都是圆形，与成员头像保持一致。",
+          "智能体、小队和工作区的头像现在处处都是圆形，与成员头像保持一致。",
           "一次性修改多个子任务的状态时，现在会直接生效，不再多出一步让人困惑的确认。",
           "智能体还在回复时你发出的聊天消息，现在一定会被下一次回复接住，不会丢失。",
           "你机器上的本机后台会自动把自己的日志控制得很小，不会再撑满磁盘。",
@@ -1226,11 +1408,11 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         version: "0.3.41",
         date: "2026-07-08",
-        title: "机器命名、成员自建团队与命令行排序任务",
+        title: "机器命名、成员自建小队与命令行排序任务",
         changes: [],
         features: [
           "你现在可以给机器起名字，创建智能体时的运行时选择器支持搜索并按机器分组。",
-          "任何成员现在都能自己创建和管理团队，不再只有管理员可以。",
+          "任何成员现在都能自己创建和管理小队，不再只有管理员可以。",
           "智能体的拥有者现在可以直接连接和管理它的飞书机器人，不需要管理员权限。",
           "你现在可以在命令行里给任务排序，并指定精确位置。",
         ],
@@ -1272,7 +1454,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         version: "0.3.39",
         date: "2026-07-06",
-        title: "Qoder 与 TRAE CLI 加入自定义运行时基座，团队与稳定性修复",
+        title: "Qoder 与 TRAE CLI 加入自定义运行时基座，小队与稳定性修复",
         changes: [],
         features: [
           "你现在可以基于 Qoder 搭建自定义运行时了，Qoder CN 用户也能直接用。",
@@ -1282,9 +1464,9 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "运行时供应商页和公开文档更新到当前所有内置运行时的完整名单，包括 Qoder 与 TRAE CLI，四种语言同步。",
         ],
         fixes: [
-          "多阶段团队流程在私有 Leader + 子任务由智能体关闭的情况下，不再卡在第一阶段。",
-          "父任务的「子任务完成」提示不再把中间阶段错说成最终阶段，团队 Leader 可以自己选择继续下一阶段还是收尾。",
-          "团队 Leader 在收尾阶段不再占用本地仓库的锁，同一个仓库里的多个智能体可以继续并行工作。",
+          "多阶段小队流程在私有 Leader + 子任务由智能体关闭的情况下，不再卡在第一阶段。",
+          "父任务的「子任务完成」提示不再把中间阶段错说成最终阶段，小队 Leader 可以自己选择继续下一阶段还是收尾。",
+          "小队 Leader 在收尾阶段不再占用本地仓库的锁，同一个仓库里的多个智能体可以继续并行工作。",
           "多小时的智能体 task（研究、训练、代码生成）不再被服务端误杀，只要本机后台还活着就会跑完。",
           "自托管环境下的搜索不再卡死，大工作区里首次搜索也能秒回。",
           "在任务或评论编辑器里粘贴长报错堆栈或异常长的字符串时不再卡页面。",
@@ -1293,7 +1475,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Codex 智能体的 MCP 设置能被正确读取了。",
           "Pi 智能体的 task 结果只显示最终答案，不再夹带中间步骤。",
           "自动化不再在单次运行超时的时候重复派发同一个任务。",
-          "任务的 PR 列表现在只显示与本任务存在显式关系的 PR；PR 文本不会创建关联。",
+          "任务的 PR 列表只显示真正关联到本任务的 PR，仅在描述里顺带提到「Related to MUL-…」的 PR 不再露出。",
           "任务操作菜单里嵌套的「More」项改名为「Relations」，你不用点开也知道里面装的是关系类操作。",
           "所有附件上传按钮——对话输入、任务创建、任务描述、反馈——都支持在系统对话框里一次选多个文件。",
         ],
@@ -1304,8 +1486,8 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "task 日志偏好记忆、Helm 外部 PostgreSQL 支持，与稳定性修复",
         changes: [],
         features: [
-          "Agent 对话会记住你的过滤条件与展开状态，下次打开同一次运行时自动恢复。",
-          "自托管（Helm）：新增 `postgres.external.enabled` 开关，可将 Patchbay 指向外部托管的 PostgreSQL（RDS、CNPG、Cloud SQL、Neon 等），跳过内置数据库。",
+          "task 日志（Transcript）会记住你的过滤条件与展开状态，下次打开同一次运行时自动恢复。",
+          "自托管（Helm）：新增 `postgres.external.enabled` 开关，可将 Multica 指向外部托管的 PostgreSQL（RDS、CNPG、Cloud SQL、Neon 等），跳过内置数据库。",
         ],
         fixes: [
           "评论草稿里有空的 `1. ` 列表项时，重新加载后光标不再卡在下方块。",
@@ -1313,12 +1495,12 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "新提交推送后，PR 审查智能体会重新触发审查，不再复用旧提交的结论。",
           "实时事件在服务端 Pod 重启期间不再被静默丢失，新增有界 5 分钟回放窗口覆盖这段时间。",
           "Kiro ACP 运行时 task 的用量再次被正确记入使用日志。",
-          "运行时离线时，自动化（自动化）的「创建任务」运行仍然会出现在运行列表里。",
+          "运行时离线时，自动化（Autopilot）的「创建任务」运行仍然会出现在运行列表里。",
           "正文只在 Slack 附件里的告警卡片（Grafana、Webhook 等）现在会从附件读取正文，而不是回落文本。",
           "Codex 智能体 task 能在 task 主目录里看到守护进程的 Codex 模型目录。（社区反馈）",
-          "`/teams/…` 与 `/usage` 老路径不再 404，会重定向到当前对应页面。",
+          "`/squads/…` 与 `/usage` 老路径不再 404，会重定向到当前对应页面。",
           "桌面端「保存」对话框展示真实的附件文件名，不再默认成 `download.txt`。（社区贡献）",
-          "团队协作：Leader 通过 mention 派发的工作者智能体，在通过 HTTP API 发布完成评论时，能正确唤醒私有团队 Leader；Leader → Worker → Leader 协作链不再在第一跳后卡住。",
+          "小队协作：Leader 通过 mention 派发的工作者智能体，在通过 HTTP API 发布完成评论时，能正确唤醒私有小队 Leader；Leader → Worker → Leader 协作链不再在第一跳后卡住。",
           "如果宿主机 Claude CLI 版本早于 `--effort` 参数，task 不再硬失败——守护进程会丢弃 effort 标志并打印告警，回落到普通模式运行。",
         ],
       },
@@ -1338,7 +1520,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "对话实时时间线不再在每条流式 task 消息到来时重新挂载，长时间智能体运行不再卡渲染。",
         ],
         fixes: [
-          "同一团队里子任务完成时，父任务所属团队的 Leader 会被叫醒，父任务不再滞留处理中。",
+          "同一小队里子任务完成时，父任务所属小队的 Leader 会被叫醒，父任务不再滞留处理中。",
           "受守护进程托管的智能体 CLI 丢失 task token 时立刻失败，写操作不再冒充成工作区拥有者。（社区反馈）",
           "Slack 告警卡片（Grafana、Webhook 等）正文只在 Attachments / Blocks / rich_text 里时，也能被聊天智能体在历史阅读里读回。",
           "内联 base64 图片（二维码、截图、图表）在 Markdown 与只读任务评论中正常渲染。",
@@ -1359,42 +1541,42 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "Slack /issue 斜杠命令、字节跳动 TRAE CLI 智能体运行时、接入 Claude Sonnet 5",
         changes: [],
         features: [
-          "Slack 里可以直接用原生 /issue 斜杠命令创建 Patchbay 任务，机器人只会向你私发一条包含任务链接的确认消息。",
-          "同一 Slack 工作区里已经和某个 Patchbay 机器人绑定过的用户，遇到新加入的第二个机器人时无需再走一次绑定流程。",
+          "Slack 里可以直接用原生 /issue 斜杠命令创建 Multica 任务，机器人只会向你私发一条包含任务链接的确认消息。",
+          "同一 Slack 工作区里已经和某个 Multica 机器人绑定过的用户，遇到新加入的第二个机器人时无需再走一次绑定流程。",
           "Slack 频道场景的上下文阅读拆成两条命令：一条查看频道概览，一条精读单个线程。",
           "字节跳动 TRAE CLI（traecli）通过标准 ACP 协议接入为内置智能体运行时之一。",
           "Anthropic 模型清单接入 Claude Sonnet 5，并已挂上介绍期价格。",
           "每次 task 运行都会在用量日志里记录本次的 prompt cache 命中率。",
         ],
         improvements: [
-          "自动化 的「管理访问」入口从独立按钮改为编辑弹窗里的一个轻量气泡。",
+          "Autopilot 的「管理访问」入口从独立按钮改为编辑弹窗里的一个轻量气泡。",
           "任务与评论编辑器升级到 Tiptap 3.27.1，修复了输入行内 `code` 快捷方式时误吃前一个字符的问题。",
         ],
         fixes: [
           "Slack 聊天智能体不再逐句解说自己在读历史，改为静默阅读、直接给出正式回复。",
           "自托管的本地磁盘部署中，附件预览（PDF / HTML）恢复正常显示。（社区反馈）",
           "修复了 Cursor 与 Kiro 运行时结束时 task 结果不入库的问题，最终回复不再丢失。",
-          "自托管的 docker-compose.selfhost.yml 现在会把 PATCHBAY_SLACK_SECRET_KEY 透传到后端容器。（社区反馈）",
+          "自托管的 docker-compose.selfhost.yml 现在会把 MULTICA_SLACK_SECRET_KEY 透传到后端容器。（社区反馈）",
           "任务面板顶部「N 个任务正在处理中」的胶囊改为按任务数去重。",
-          "自托管匿名来源统计的上报地址恢复到正式的 Patchbay API。",
+          "自托管匿名来源统计的上报地址恢复到正式的 Multica API。",
           "评论的定位高亮改为纯背景色，根评论和回复的行为保持一致。",
         ],
       },
       {
         version: "0.3.33",
         date: "2026-06-30",
-        title: "自动化 协作权限、Slack 历史回灌、技能包归档导入",
+        title: "Autopilot 协作权限、Slack 历史回灌、技能包归档导入",
         changes: [],
         features: [
-          "自动化 新增清晰的写权限分层，详情页提供「管理协作者」入口，可把单个 自动化 的写权限授予指定成员。",
-          "Slack 频道可以把过往对话回灌到 Patchbay，智能体一进入频道即拥有完整上下文。",
+          "Autopilot 新增清晰的写权限分层，详情页提供「管理协作者」入口，可把单个 Autopilot 的写权限授予指定成员。",
+          "Slack 频道可以把过往对话回灌到 Multica，智能体一进入频道即拥有完整上下文。",
           "Slack 智能体处理消息期间会在用户消息上加 👀 反应表情，处理结束后稳定清除，不再出现卡死。",
           "技能包支持从本地 .skill / .zip 归档导入。",
-          "patchbay issue 命令不再接受短 UUID 前缀，请使用任务 Key（PB-123）或完整 UUID。",
+          "multica issue 命令不再接受短 UUID 前缀，请使用任务 Key（MUL-123）或完整 UUID。",
           "Agents 页面适配移动端。",
         ],
         improvements: [
-          "重写了评论路由级联：父链 @ 提及、智能体署名回复、团队 Leader 兜底，三条路径汇入同一条经过充分测试的流程。",
+          "重写了评论路由级联：父链 @ 提及、智能体署名回复、小队 Leader 兜底，三条路径汇入同一条经过充分测试的流程。",
           "语言包清理了 117 个事实上不渲染的 _one 复数键，并新增校验防止再次回归。",
           "内置运行时清单中失效的 Gemini 替换为实际使用的 CodeBuddy。",
           "自托管预检允许更新版的 Docker Compose CLI 插件，同时继续拦截 Docker Compose v1。",
@@ -1419,7 +1601,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "守护进程在探测各个智能体运行时版本时加上了独立超时，单个卡死的 CLI 不会再连累其他运行时。",
         ],
         fixes: [
-          "定时 自动化 调度后会立即推进下一次运行时间，避免慢节点造成重复触发。",
+          "定时 Autopilot 调度后会立即推进下一次运行时间，避免慢节点造成重复触发。",
           "附件预览在框架内重定向、同源资源、本地上传等场景下都能正常打开；有本地上传 URL 时会优先使用本地链接。",
           "失败 task 处理器解开卡住的任务时，前端视图会立即刷新，无需手动重新加载。",
           "任务评论吸顶头与高亮渐隐使用了同一套背景过渡，吸顶切换不再有错位感。",
@@ -1442,7 +1624,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         ],
         fixes: [
           "任务编辑器列表里按 Tab 现在能稳定缩进所选项，光标也不会跑出列表。",
-          "通过 @ 提及让团队 Leader 接手时，会带上完整的团队 Briefing；继承父级提及的回复也不会再次触发 Leader。",
+          "通过 @ 提及让小队 Leader 接手时，会带上完整的小队 Briefing；继承父级提及的回复也不会再次触发 Leader。",
           "任务和评论里代码块的选区，在页面其他位置刷新时不再丢失。",
           "把任务直接交给某个智能体时，运行确认弹窗会立刻展开 Handoff 备注。",
           "工作区切换器上的未读小圆点会和你看到的 Inbox 保持一致。",
@@ -1535,7 +1717,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "Lark 里的话题消息现在会回到原话题中，团队讨论更容易保持上下文",
-          "团队负责人现在可以在成员列表里看到成员技能，分配任务时更容易选对人",
+          "小队负责人现在可以在成员列表里看到成员技能，分配任务时更容易选对人",
           "Discord 入口已加入官网页脚、帮助菜单、README，以及可关闭的应用侧边栏卡片",
         ],
         improvements: [
@@ -1614,7 +1796,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "项目列表行、评论预览和评论编辑器体验更一致，导航和附件操作更顺手",
         ],
         fixes: [
-          "回复和编辑评论前，现在会更准确地预览哪些智能体或团队会开始运行",
+          "回复和编辑评论前，现在会更准确地预览哪些智能体或小队会开始运行",
           "评论里的普通任务编号会保持为普通文字，只有明确插入链接时才会变成链接",
           "通过命令行登录并选择 Google 登录时，浏览器认证完成后现在会正确回到命令行",
           "聊天上传文件会等到当前智能体准备好后再开放，避免加载过程中上传失败",
@@ -1628,10 +1810,10 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "更快的列表体验、更顺手的运行配置和更安全的任务编辑",
         changes: [],
         features: [
-          "智能体、自动任务、项目、运行环境、技能和团队的列表体验更快也更一致，行内容、筛选、选择和操作都更清楚",
+          "智能体、自动任务、项目、运行环境、技能和小队的列表体验更快也更一致，行内容、筛选、选择和操作都更清楚",
           "命令行现在可以管理工作区仓库，本地智能体更容易拿到项目仓库上下文",
-          "Cursor 和 OpenClaw 更容易配置：Cursor 连接设置可以由 Patchbay 托管，OpenClaw 也可以连接已有网关",
-          "编辑评论时，可以在保存前预览并控制哪些智能体或团队会开始运行",
+          "Cursor 和 OpenClaw 更容易配置：Cursor 连接设置可以由 Multica 托管，OpenClaw 也可以连接已有网关",
+          "编辑评论时，可以在保存前预览并控制哪些智能体或小队会开始运行",
         ],
         improvements: [
           "桌面端恢复提示会带上更多页面上下文，反馈卡住窗口时更容易说清发生位置",
@@ -1652,7 +1834,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "CodeBuddy Runtime",
         changes: [],
         features: [
-          "CodeBuddy 现在可以驱动本地 Patchbay 智能体，并会自动显示可用的模型和投入强度选项",
+          "CodeBuddy 现在可以驱动本地 Multica 智能体，并会自动显示可用的模型和投入强度选项",
           "快速创建任务时上传的文件现在会从草稿一直带到最终创建的任务里",
         ],
         improvements: [
@@ -1676,7 +1858,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "导入结果会清楚显示哪些技能已新增、已更新、已跳过、发生冲突或导入失败",
         ],
         improvements: [
-          "网页端和移动端的Agent 事件现在会优先显示最新的历史运行，更容易看清最近进展",
+          "网页端和移动端的执行记录现在会优先显示最新的历史运行，更容易看清最近进展",
           "更新日志内容已整理，最新发布内容会归在正确的版本下",
         ],
         fixes: [
@@ -1691,18 +1873,18 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "更安全的评论触发、更稳定的智能体和附件",
         changes: [],
         features: [
-          "评论输入框现在会在发送前显示哪些智能体或团队会开始工作，也可以避免误触发运行",
+          "评论输入框现在会在发送前显示哪些智能体或小队会开始工作，也可以避免误触发运行",
           "智能体运行记录现在会显示时间点，回看进度和交接信息更清楚",
           "自动任务详情页现在会显示创建人",
-          "Claude Fable 5 现在已加入 Patchbay 支持的模型和价格列表",
+          "Claude Fable 5 现在已加入 Multica 支持的模型和价格列表",
           "任务讨论可以把某一条回复设为解决结论，长讨论收起后也能直接看到最终答案",
-          "在 Lark 和飞书里和 Patchbay 对话时，会显示等待中的输入状态，回复发出后自动清除",
+          "在 Lark 和飞书里和 Multica 对话时，会显示等待中的输入状态，回复发出后自动清除",
           "每次智能体 task 都会带上真实发起人信息，交接、审计和权限判断更准确",
           "OpenClaw 可以从本地配置中读取自定义程序位置和数据目录",
         ],
         improvements: [
           "评论触发提示更安静、更清楚，遇到较长的智能体名称时也不容易拥挤",
-          "桌面端在守护进程由 Patchbay 之外的环境管理时，会禁用启动和停止控制，例如 WSL2 场景",
+          "桌面端在守护进程由 Multica 之外的环境管理时，会禁用启动和停止控制，例如 WSL2 场景",
           "任务顶部的智能体状态更容易区分：运行中才显示动效，等待中会明确显示排队状态",
           "命令行会直接说明常见错误、登录问题和项目配置问题的处理方式",
         ],
@@ -1726,7 +1908,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "网页版消息通知和 /note 指令",
         changes: [],
         features: [
-          "网页端现在可以显示浏览器原生通知横幅，即使 Patchbay 在后台，也更容易及时看到工作区动态",
+          "网页端现在可以显示浏览器原生通知横幅，即使 Multica 在后台，也更容易及时看到工作区动态",
           "以 /note 开头的评论现在可以记录上下文，但不会唤醒已分配的智能体，团队可以留下协作备注而不触发运行",
           "Antigravity 现在可以作为每个智能体单独选择的模型",
           "命令行现在会用更容易理解的语言解释常见请求失败，并提示下一步该怎么处理",
@@ -1742,7 +1924,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "看板泳道筛选现在可以正确生效",
           "移动端切换工作区时会更稳定地显示工作区图标，并使用更清晰的英文文案",
           "桌面端更新窗口和 task 记录弹窗不会再操作已经关闭的窗口或页面",
-          "删除运行时时，现在会在同一套清理流程里处理已归档团队并暂停自动任务",
+          "删除运行时时，现在会在同一套清理流程里处理已归档小队并暂停自动任务",
           "守护进程现在会明确显示自重启失败原因；从服务端结束终端 task 时会停止本地智能体；仓库维护时也会清理过期分支",
           "使用 X-Forwarded-Host 的代理后方，自托管 WebSocket 连接现在可以正常工作",
           "项目列表顶部在紧凑模式下会保持正确的模糊样式",
@@ -1784,10 +1966,10 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "Lark Bot 集成",
         changes: [],
         features: [
-          "支持 Lark 第三方集成，扫码就能把 Patchbay 智能体创建成一个 Lark Bot",
+          "支持 Lark 第三方集成，扫码就能把 Multica 智能体创建成一个 Lark Bot",
           "聊天现在支持可搜索的智能体选择器和明确的上下文选择器，更容易指定谁来回复、需要看哪些内容",
           "描述和评论现在支持勾选式待办清单，任务里的轻量计划更好整理",
-          "智能体现在内置 Patchbay 技能，可以更稳定地遵循工作区工作流",
+          "智能体现在内置 Multica 技能，可以更稳定地遵循工作区工作流",
         ],
         improvements: [
           "聊天上下文会以清晰的提及形式呈现，交接和后续回看更容易理解",
@@ -1831,7 +2013,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "日语支持和 /skill command",
         changes: [],
         features: [
-          "Patchbay 现在支持日语界面、官网和文档",
+          "Multica 现在支持日语界面、官网和文档",
           "聊天现在支持 /skill command，用来选择智能体技能",
           "工作区现在可以显示自定义 Logo",
           "可以给智能体追加技能，不会覆盖已有技能",
@@ -1840,11 +2022,11 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         improvements: [
           "早期用户如果没有填写入门来源问题，现在可以在之后补充，不需要重新走完整入门流程",
           "已停用的智能体现在会在各处显示为已归档，不再看起来像离线或仍在工作",
-          "聊天历史和任务Agent 事件的悬浮操作更清晰，减少文字截断和按钮重叠",
+          "聊天历史和任务执行记录的悬浮操作更清晰，减少文字截断和按钮重叠",
           "项目里的任务筛选现在会在列表、看板和时间线视图中一致应用智能体工作中筛选",
         ],
         fixes: [
-          "无权限用户不能再通过间接的任务或评论路径触发私有团队负责人",
+          "无权限用户不能再通过间接的任务或评论路径触发私有小队负责人",
           "项目进度统计和重新进入工作的智能体状态刷新更可靠",
           "桌面端和网页端在空白工作区、无访问权限页面、渲染错误和崩溃后恢复更稳定",
           "图片和文件卡片的名称包含 Markdown 字符时也能正常显示",
@@ -1861,7 +2043,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "命令行现在可以搜索 Skill，也可以列出某个任务关联的合并请求，发布检查和自动化排查更方便",
-          "团队可以直接在命令行调整团队成员角色，不用进入应用界面",
+          "团队可以直接在命令行调整小队成员角色，不用进入应用界面",
           "智能体列表可以按运行机器筛选，更快找到绑定到某台设备或本机运行服务的智能体",
           "邮件发送服务现在支持安全的 465 端口连接",
           "OpenCode 运行环境可以使用智能体里保存的 MCP 设置",
@@ -1877,7 +2059,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Claude task 发送提示词时更不容易卡住",
           "自托管本机运行服务的设置链接会指向正确地址",
           "MCP 设置说明和运行环境支持判断现在保持一致",
-          "Agent 对话在 task 结束后会正确清理活跃状态",
+          "执行日志在 task 结束后会正确清理活跃状态",
         ],
       },
       {
@@ -1887,13 +2069,13 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "智能体在任务评论区继续工作时，会接着之前的会话继续，不再新开会话，task 上下文可以保留下来",
-          "Patchbay 现在支持韩语界面、官网和文档，包含完整韩语文档与本地化日期显示",
+          "Multica 现在支持韩语界面、官网和文档，包含完整韩语文档与本地化日期显示",
           "任务页面会在标题附近固定显示正在工作的智能体，多智能体同时工作时也能更清楚地查看",
           "智能体读取任务讨论时可以先看到线程摘要、回复数量和最近活跃时间，更快找到需要跟进的上下文",
           "OpenClaw 运行环境现在可以使用智能体里保存的 MCP 设置，Claude Opus 4.8 也可用于模型选择和用量估算",
         ],
         improvements: [
-          "详情页统一了面包屑导航，任务、项目、运行环境、技能、智能体和团队的返回路径更清楚",
+          "详情页统一了面包屑导航，任务、项目、运行环境、技能、智能体和小队的返回路径更清楚",
           "恢复中的智能体 task 会少读重复评论，更快回到触发它的那条讨论",
           "任务提及说明和命令行片段更容易阅读，复制命令时不容易误读参数",
         ],
@@ -1943,7 +2125,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         improvements: [
           "中文界面文案在导航、设置、搜索和运行时页面里更一致",
           "常用界面做了无障碍和 React 清理，移动端检查也只在移动端代码变化时运行",
-          "命令行列表输出对自动化读取更安静，团队列表也会显示可用的成员数量",
+          "命令行列表输出对自动化读取更安静，小队列表也会显示可用的成员数量",
         ],
         fixes: [
           "泳道里超过第一页才加载到的嵌套任务不再显示为空",
@@ -1973,7 +2155,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "依赖检查更严格，前端包会更早发现缺失依赖，减少打包和桌面端运行时的意外",
         ],
         fixes: [
-          "GitHub PR 只有在显式关系包含关闭意图时才会自动完成对应任务",
+          "GitHub PR 只有写明关闭意图时才会自动完成关联任务，普通引用链接不会误关任务",
           "父子任务的自动推进更稳：依赖未满足时不会提前启动后续任务，智能体把待处理任务切到进行中时也会正确触发负责人",
           "任务讨论串和列表加载更多内容时会保持正确顺序，看板拖拽后的位置也更稳定",
           "聊天窗口放大、看板卡片负责人行和 XML 解析依赖都做了稳定性修复",
@@ -1985,14 +2167,14 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "iOS 客户端、Helm 自托管与更顺畅的协作体验",
         changes: [],
         features: [
-          "Patchbay iOS 客户端发布官方首个可用版本，覆盖登录、工作区、收件箱、任务、项目、聊天、评论、表情回应、在线状态和实时更新；目前暂未上架 App Store，需要用户自行打包安装",
-          "自托管团队现在可以通过 Helm 将 Patchbay 部署到 Kubernetes，Docker 安装也有更清晰的端口和 URL 配置",
+          "Multica iOS 客户端发布官方首个可用版本，覆盖登录、工作区、收件箱、任务、项目、聊天、评论、表情回应、在线状态和实时更新；目前暂未上架 App Store，需要用户自行打包安装",
+          "自托管团队现在可以通过 Helm 将 Multica 部署到 Kubernetes，Docker 安装也有更清晰的端口和 URL 配置",
           "项目资源选择器新增仓库搜索，工作区仓库设置也可以保存描述，帮助智能体理解每个代码库",
           "运行时用量现在可以更准确识别 DeepSeek、Kimi K2.6、Zhipu GLM 和长上下文 Claude Opus 的费用",
           "官网新增使用场景页面能力，并让文档、更新日志和开始使用入口更清晰",
         ],
         improvements: [
-          "团队头像和看板卡片会显示更完整的悬浮信息、成员状态和实时工作状态",
+          "小队头像和看板卡片会显示更完整的悬浮信息、成员状态和实时工作状态",
           "桌面端在长任务和聊天中切换标签页时，会更好地保留滚动位置，并避免重复的历史记录",
           "代码和富文本内容更容易阅读，命令文本会按原样显示，编辑器样式也拆分得更清晰",
           "工作区仓库描述会进入智能体的任务上下文，让分配的工作带上更有用的项目背景",
@@ -2013,7 +2195,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         features: [
           "父任务会在子任务完成时自动收到更新，并通知对应负责人",
           "任务列表新增实时智能体工作状态，支持详情查看和工作中筛选",
-          "新用户完成设置后，会进入 Patrick 的交互式引导，先完成一个真实任务，再按需添加 specialist",
+          "新用户完成设置后，会进入 Mika 的交互式引导，先完成一个真实任务，再按需添加 specialist",
           "官网新增 Contact Sales 流程，支持商务邮箱提交和防滥用保护",
           "桌面端支持 macOS 触控板前进/后退手势",
         ],
@@ -2029,7 +2211,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "在线本地运行环境不再显示会立刻失效的删除操作，并会说明原因",
           "Pi 回复中的工具调用标记不再泄露到可见消息或任务评论里",
           "SVG 上传和内联文件预览使用更安全的处理方式",
-          "团队负责人会看到更明确的提醒，避免重复触发同一个智能体",
+          "小队负责人会看到更明确的提醒，避免重复触发同一个智能体",
           "自托管部署默认不再暴露数据库端口，删除云端运行节点时也会发送正确信息",
           "桌面端更新设置、移动端技能页面和负责人选择器在不同语言与窄屏下更稳定",
         ],
@@ -2066,7 +2248,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "自动任务项目归属、智能体思考设置与更稳的桌面端",
         changes: [],
         features: [
-          "自动任务现在可以通过团队分配工作，并把创建的任务直接归入指定项目",
+          "自动任务现在可以通过小队分配工作，并把创建的任务直接归入指定项目",
           "智能体设置新增 Claude 和 Codex 的思考强度控制，并可在详情面板里直接调整",
           "桌面端标签页可以固定，重要页面会留在左侧，打开新内容时不打断原页面",
           "用户资料可以补充请求者背景，让代码智能体在处理任务时更理解上下文",
@@ -2077,13 +2259,13 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "运行环境页面减少重复信息，桌面端停止本机服务后仍能看到本机行并重新启动",
           "任务面包屑会显示所属项目，查看来源更清楚",
           "HTML 预览和附件预览拥有更合适的默认尺寸，查看内容更自然",
-          "团队列表加载状态更完整，归档团队时会使用更清晰的确认弹窗",
+          "小队列表加载状态更完整，归档小队时会使用更清晰的确认弹窗",
           "智能体运行前会收到父任务 / 子任务协作规则，完成子任务后的回传更稳定",
         ],
         fixes: [
           "在空的顶层列表项按 Enter 时，编辑器可以正常退出列表",
           "安装脚本在 Homebrew 失败时会自动改用发行版文件，并显示更清楚的诊断信息",
-          "从Agent 事件重试时，会重新唤起当时处理该记录的智能体",
+          "从执行记录重试时，会重新唤起当时处理该记录的智能体",
           "聊天和 task 消息加载会跳过临时 ID，避免访问无效 task",
           "OpenCode 运行环境不再进入看不见的交互提问流程",
           "Gemini 运行环境使用正确的官方图标",
@@ -2104,8 +2286,8 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "Onboarding 改为一次回答一个问题，并能用更少步骤引导 runtime 设置",
-          "我的任务会包含分配给团队的工作，相关标签也更容易理解",
-          "查看智能体 Agent 对话时可以切换排序方向，回看运行过程更方便",
+          "我的任务会包含分配给小队的工作，相关标签也更容易理解",
+          "查看智能体执行日志时可以切换排序方向，回看运行过程更方便",
         ],
         fixes: [
           "桌面端打开 HTML 预览更稳定，必要时会关闭全屏窗口，并支持页面内链接跳转",
@@ -2121,7 +2303,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "Webhook 自动任务、更清晰的工作看板与更稳的运行环境",
         changes: [],
         features: [
-          "自动化 现在可以由 webhook 事件触发，并能查看投递记录，在外部系统需要时重新投递一次",
+          "Autopilot 现在可以由 webhook 事件触发，并能查看投递记录，在外部系统需要时重新投递一次",
           "任务看板支持按负责人分组，展示关联 Pull Request 状态，并加入开始日期，排期更清楚",
           "Runtime 页面升级了机器视图，并在用量图表中加入时间和 task 趋势",
           "Skills 支持从本地 runtime 批量复制到 workspace，团队初始化更快",
@@ -2129,14 +2311,14 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "任务操作失败时会显示更明确的错误原因，团队不用翻日志也能理解发生了什么",
-          "关联 GitHub 的 Pull Request 会在 Patchbay 内展示 CI 和合并冲突状态",
+          "关联 GitHub 的 Pull Request 会在 Multica 内展示 CI 和合并冲突状态",
           "自托管部署获得更安全的默认配置，并补充反向代理、登录限制和本地服务的说明",
           "搜索结果排序更准确，也会展示更有帮助的摘要片段",
         ],
         fixes: [
-          "自动化 创建任务时可以稳定重复触发，并正确归属到负责的 assignee agent",
+          "Autopilot 创建任务时可以稳定重复触发，并正确归属到负责的 assignee agent",
           "Runtime 设置默认优先选择本地机器，机器列表中的名称也更清晰",
-          "Team 页面可以正常滚动，并能看到成员当前是否已经在处理工作",
+          "Squad 页面可以正常滚动，并能看到成员当前是否已经在处理工作",
           "桌面端缩放快捷键在常见组合下恢复正常",
           "登录、安全补丁和本地服务配置更新，让托管版和自托管部署都更安全",
         ],
@@ -2144,20 +2326,20 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         version: "0.3.1",
         date: "2026-05-15",
-        title: "更快的导航、后台更新与更可靠的团队协作",
+        title: "更快的导航、后台更新与更可靠的小队协作",
         changes: [],
         features: [
           "成员和 agent 详情页现在可以看到关联任务，方便回看每个人和每个 agent 正在推进的工作",
           "桌面端会在后台提前下载新版本，等你准备好时再安装更新",
           "自托管部署可以使用 SMTP 发送邮件，不再只依赖 Resend",
-          "创建 Team 的流程更清晰，成员选择和初始设置更适合团队协作",
+          "创建 Squad 的流程更清晰，成员选择和初始设置更适合团队协作",
         ],
         improvements: [
           "页面切换更快，任务页面会提前准备内容，并在加载时展示更自然的过渡状态",
           "任务时间线会把较长的活动记录收起，重点评论和结论更容易扫读",
-          "Agents 和 Teams 页会记住你上次选择的 Mine/All 视图，返回列表时不再重置",
+          "Agents 和 Squads 页会记住你上次选择的 Mine/All 视图，返回列表时不再重置",
           "仓库设置、项目资源和快速创建流程更好地支持 SSH 形式的仓库地址",
-          "团队分工更稳定，leader 能正确接续双角色 agent 的回复，也会更明确地把任务交给指定成员",
+          "小队分工更稳定，leader 能正确接续双角色 agent 的回复，也会更明确地把任务交给指定成员",
         ],
         fixes: [
           "自托管本地文件卡片可以正常展示和预览",
@@ -2170,23 +2352,23 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         version: "0.3.0",
         date: "2026-05-14",
-        title: "Teams 与附件预览",
+        title: "Squads 与附件预览",
         changes: [],
         features: [
-          "Teams 支持把任务交给一个小组，由 leader agent 负责协调下一步",
+          "Squads 支持把任务交给一个小组，由 leader agent 负责协调下一步",
           "附件可以直接预览，支持 PDF、音频、视频、Markdown、代码、日志和纯文本",
-          "中文姓名支持用拼音搜索，适用于 mention、负责人、订阅人、agents、projects 和 teams",
+          "中文姓名支持用拼音搜索，适用于 mention、负责人、订阅人、agents、projects 和 squads",
         ],
         improvements: [
-          "Team 页面补齐成员管理、从 team 内快速创建 agent、清晰的成员操作按钮，以及更宽的详情布局",
-          "快速创建和各类选择器更容易搜索，并能识别 team 相关的指派和提及",
+          "Squad 页面补齐成员管理、从 squad 内快速创建 agent、清晰的成员操作按钮，以及更宽的详情布局",
+          "快速创建和各类选择器更容易搜索，并能识别 squad 相关的指派和提及",
           "Usage 图表可以在费用和 token 视图之间切换，并复用 runtime 的时区控制",
-          "工作区管理员可以通过命令行管理 teams，并在必要时停止失控的 task",
+          "工作区管理员可以通过命令行管理 squads，并在必要时停止失控的 task",
           "共享界面文案的中英文翻译更完整",
         ],
         fixes: [
-          "当成员已经明确把讨论指向某个人或小组时，Team leader 不再重复发言",
-          "提及 team 时会正确唤起对应 leader，同时保留私有 agent 的访问限制",
+          "当成员已经明确把讨论指向某个人或小组时，Squad leader 不再重复发言",
+          "提及 squad 时会正确唤起对应 leader，同时保留私有 agent 的访问限制",
           "删除任务后列表刷新更准确，后续评论也不再触发过期的 Done 回复",
           "在撰写或编辑任务和评论时新增的附件，也可以稳定使用预览",
         ],
@@ -2221,7 +2403,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "GitHub 集成、聊天附件与任务定位优化",
         changes: [],
         features: [
-          "接入 GitHub 后，显式关联的 Pull Request 会显示在 Patchbay 任务中并同步状态；关闭 PR 后，带关闭意图的显式关系才会自动完成任务",
+          "接入 GitHub 后，关联的 Pull Request 会显示在 Multica 任务中，状态会同步到 Multica，关闭 PR 后会自动关闭对应任务",
           "聊天消息支持添加文件附件和图片预览",
           "Agent 和 runtime 可以设置公开或私有，方便控制团队可见范围",
           "停止单个 agent task 前会先弹出确认，避免误操作",
@@ -2232,7 +2414,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "很长的任务时间线滚动更顺畅",
           "反馈入口更明确地引导用户到 GitHub 参与讨论和反馈",
           "自托管 Caddy 配置文档补充实时连接要求",
-          "Linux 桌面端安装包恢复显示 Patchbay 应用图标",
+          "Linux 桌面端安装包恢复显示 Multica 应用图标",
         ],
         fixes: [
           "下载附件时保留原始文件名",
@@ -2270,7 +2452,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Daemon 抑制 Windows 上多余的 git 控制台弹窗",
           "Pi 插件工具不再被硬编码的 `--tools` allowlist 过滤掉",
           "Inbox 在任务加载完成后再滚动到目标评论",
-          "`automation create/update` 允许 `--mode run_only`",
+          "`autopilot create/update` 允许 `--mode run_only`",
           "Changelog header 链接样式对齐 GitHub ghost button",
           "OpenAI Codex / GPT 模型价格补齐，使用成本不再显示为 $0",
         ],
@@ -2284,13 +2466,13 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Quick Create 支持选择 project，并记住上一次的选项",
           "评论 thread 支持解决并折叠，长讨论看起来更清爽",
           "Issue Live Banner 显示 agent 队列中等待执行的 task",
-          "失败 / 取消的 task 可以在 Agent thread 一键重跑",
+          "失败 / 取消的 task 可以在 Execution Log 一键重跑",
           "Agent Create 弹窗新增放大按钮，长描述编辑更舒服",
         ],
         improvements: [
           "Issue Timeline 不再因每个 WS 事件做完整 re-render，长任务滚动更顺",
           "Editor 跳过对超大文本 / JSON 粘贴的解析，避免卡顿",
-          "自动化 在 assignee runtime 离线时跳过 dispatch，避免空跑",
+          "Autopilot 在 assignee runtime 离线时跳过 dispatch，避免空跑",
           "Inbox 自动归档处于终态的 `task_failed` 行",
           "Hermes 把 agent instructions 直接随请求内联传入",
           "Timeline / Comment 改为纯客户端虚拟化，去掉服务端分页",
@@ -2318,10 +2500,10 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "Daemon 磁盘占用 CLI、Timeline 打磨与 task 用量聚合提速",
         changes: [],
         features: [
-          "新增 `patchbay daemon disk-usage` CLI，按 task / workspace 维度查看磁盘占用",
+          "新增 `multica daemon disk-usage` CLI，按 task / workspace 维度查看磁盘占用",
           "Skill Picker 弹窗新增搜索框，Agent 设置里挑技能更快",
-          "Daemon GC 覆盖扩展到 chat、automation、quick-create task",
-          "任务详情页面包屑直接显示 PB-xxxx identifier",
+          "Daemon GC 覆盖扩展到 chat、autopilot、quick-create task",
+          "任务详情页面包屑直接显示 MUL-xxxx identifier",
         ],
         improvements: [
           "Timeline 分页 size 提到 50，评论与活动按池独立 keyset 游标，长任务翻页更顺",
@@ -2334,7 +2516,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Linux 上 daemon self-restart 改走 `brew prefix` 软链，Homebrew Cellar 删除后不再让 runtime 失联",
           "CLI 短 ID 现在可以正确路由，复制粘贴的短前缀不再 404",
           "Windows 上非 ASCII 字符评论 / 描述输入新增 `--content-file` / `--description-file`",
-          "Windows / Linux 桌面端用 Patchbay 应用图标替换 Electron 默认占位图标",
+          "Windows / Linux 桌面端用 Multica asterisk 替换 Electron 默认占位图标",
           "Timeline 中孤立的 reply 现在会被正确捞回展示",
           "Timeline 评论分页预算不再把 activity 算进去，避免活动多时挤掉真实评论",
         ],
@@ -2350,7 +2532,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         improvements: [
           "Chat 和 Inbox 更顺手，历史更清晰，复制回复更方便，归档后能更快处理下一项",
           "任务操作会保留更多上下文，例如更容易找到对应本地文件夹，子任务也会带上正确的项目和状态",
-          "自动化 连续失败后会自动暂停，异常自动化更容易发现和修复",
+          "Autopilot 连续失败后会自动暂停，异常自动化更容易发现和修复",
         ],
         fixes: [
           "中文输入、桌面端升级、长任务时间线和实时状态展示更稳定",
@@ -2402,8 +2584,8 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "Repo Checkout `--ref`、Hermes 历史回放修复与多副本 Model Picker",
         changes: [],
         features: [
-          "`patchbay repo checkout --ref` 支持按分支、tag 或指定 commit 拉取仓库",
-          "`patchbay agent avatar` 命令支持直接通过 CLI 上传 Agent 头像",
+          "`multica repo checkout --ref` 支持按分支、tag 或指定 commit 拉取仓库",
+          "`multica agent avatar` 命令支持直接通过 CLI 上传 Agent 头像",
           "Inbox 中已完成 task 新增 archive 按钮，移除冗余的 mark-as-done 悬浮按钮",
         ],
         improvements: [
@@ -2415,11 +2597,11 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "新创建的 Agent 立刻在各处可见 —— 创建时即 hydrate Agent 缓存",
           "Hermes 在新一轮对话开始时不再重放上一轮答案 —— 历史 chunk 受单轮门禁限制",
           "Codex runtime 模型选择器开放 GPT-5.5 系列",
-          "`patchbay login --token <PAT>` 正确接收 PAT 作为参数值",
+          "`multica login --token <PAT>` 正确接收 PAT 作为参数值",
           "CLI update 完成状态上报更可靠",
           "Session resume 按 runtime 正确守卫，避免跨 runtime 复用 session",
           "看板拖拽任务时显示设置不再丢失",
-          "自动化 列表在移动端 viewport 下响应式排版",
+          "Autopilot 列表在移动端 viewport 下响应式排版",
           "Quick Create 生成的描述更贴合用户输入",
           "Skill upsert 清理 null bytes，修复 PostgreSQL UTF8 错误",
           "Connect Remote 弹窗的安装脚本 URL 修正",
@@ -2438,7 +2620,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "Daemon `/tasks/claim` 轮询走 Redis 空认领 fast-path，空闲态 DB 压力下降，长期 open 的任务自动回收磁盘",
-          "Patchbay Agent 的 Git 提交自动追加 `Co-authored-by` trailer，归属更清晰",
+          "Multica Agent 的 Git 提交自动追加 `Co-authored-by` trailer，归属更清晰",
           "Desktop 拦截 Cmd+R / Ctrl+R / F5 防止意外刷新，开发模式与 Updates 设置中均展示真实版本号",
         ],
         fixes: [
@@ -2455,13 +2637,13 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "Create Issue by Agent —— 按 `c` 输入一句话并选 Agent，任务异步创建，结果回执送达 Inbox",
-          "Agent Presence v3 —— 可用性与最近 task 拆成两条更清晰的信号；任务详情右侧新增 Agent thread，可看到当前 active run 与历史 run",
+          "Agent Presence v3 —— 可用性与最近 task 拆成两条更清晰的信号；任务详情右侧新增 Execution Log，可看到当前 active run 与历史 run",
           "Daemon ↔ Server 心跳改走 WebSocket，HTTP 自动 fallback，task 起跑延迟更低",
           "Mention 选择器按本机最近使用排序",
         ],
         improvements: [
           "Server 用 Redis 缓存 PAT / Daemon Token 校验，大型团队不再让 DB 抗下每次请求",
-          "后端支持通过 `PATCHBAY_CLAUDE_ARGS` / `PATCHBAY_CODEX_ARGS` 配置 Agent CLI 默认参数",
+          "后端支持通过 `MULTICA_CLAUDE_ARGS` / `MULTICA_CODEX_ARGS` 配置 Agent CLI 默认参数",
           "Manual 与 Agent 创建任务共享同一个 Dialog 外壳，picker Agent 会被默认设为 assignee",
         ],
         fixes: [
@@ -2522,9 +2704,9 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "Agent 自定义环境变量、更清晰的失败信息与一系列稳定性修复",
         changes: [],
         features: [
-          "`patchbay agent create/update --custom-env KEY=VALUE` 支持为 Agent 注入自定义环境变量",
+          "`multica agent create/update --custom-env KEY=VALUE` 支持为 Agent 注入自定义环境变量",
           "Agent 失败信息会带上 Runtime CLI 的 stderr 末尾片段，排查 Runtime 报错更直接",
-          "CLI 更新下载超时支持配置，弱网下 `patchbay update` 不再被默认超时切断",
+          "CLI 更新下载超时支持配置，弱网下 `multica update` 不再被默认超时切断",
         ],
         improvements: [
           "Daemon 把取消的 task 上报为 `cancelled` 而非 `timeout`，并在按任务取消 task 时同步对齐 Agent 状态",
@@ -2534,7 +2716,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Server 在任务创建/更新时校验 `assignee_id` 真实存在；DeleteIssue 改用解析后的任务 ID",
           "Pi Runtime 改为读写 `.pi/skills`，不再使用旧的 `.pi/agent/skills` 路径",
           "Windows 下 Daemon 启动 Agent 改用 `CREATE_NEW_CONSOLE`，孙子进程不再弹出额外终端窗口",
-          "自动化 的 run-only 上下文正确传给被调起的 Agent",
+          "Autopilot 的 run-only 上下文正确传给被调起的 Agent",
         ],
       },
       {
@@ -2546,7 +2728,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Chat V2——侧边栏新增 Chat 入口，主区域提供完整的 AI 对话页面",
           "任务支持右键菜单，列表、看板和详情的操作入口统一收敛",
           "应用内反馈流程及全新的 Help 启动器，集中托管文档、支持和反馈入口",
-          "自动化 弹窗重设计——更简的字段配置，创建与编辑共享一致的排期界面",
+          "Autopilot 弹窗重设计——更简的字段配置，创建与编辑共享一致的排期界面",
           "Skills 页面重设计——列表+详情、卡片化布局、滚动渐隐和共享 PageHeader / 移动端导航",
           "文档站重写为双语扁平内容树——中英文章节共用一棵目录",
         ],
@@ -2601,7 +2783,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         changes: [],
         features: [
           "桌面应用跨平台打包——同一条发布流水线产出 macOS、Windows 和 Linux 安装包",
-          "新增 `patchbay update` 自更新命令——无需重装即可升级 CLI 和本地 Daemon",
+          "新增 `multica update` 自更新命令——无需重装即可升级 CLI 和本地 Daemon",
           "任务看板所有状态列都支持分页（不再只是 Done 列），大积压下依然流畅",
         ],
         fixes: [
@@ -2618,7 +2800,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "Agent 模型选择、Kimi Runtime 与自部署登录",
         changes: [],
         features: [
-          "Agent 新增 `model` 字段及按 Provider 聚合的模型下拉框——可在界面或通过 `patchbay agent create/update --model` 为每个 Agent 选择 LLM 模型，并从各 Runtime CLI 实时发现可用模型",
+          "Agent 新增 `model` 字段及按 Provider 聚合的模型下拉框——可在界面或通过 `multica agent create/update --model` 为每个 Agent 选择 LLM 模型，并从各 Runtime CLI 实时发现可用模型",
           "新增 Kimi CLI Agent Runtime（Moonshot AI 的 `kimi-cli`，基于 ACP），支持模型选择、自动授权工具权限以及流式工具调用渲染",
           "评论和回复编辑器新增放大按钮，便于撰写长文本",
         ],
@@ -2648,10 +2830,10 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         version: "0.2.5",
         date: "2026-04-17",
-        title: "CLI 自动化、Cmd+K 与 Daemon 身份",
+        title: "CLI Autopilot、Cmd+K 与 Daemon 身份",
         changes: [],
         features: [
-          "CLI `automation` 命令，管理定时和触发式自动化",
+          "CLI `autopilot` 命令，管理定时和触发式自动化",
           "CLI `issue subscriber` 订阅管理命令",
           "Cmd+K 命令面板扩展——主题切换、快速创建任务/项目、复制链接、切换工作区",
           "任务列表卡片可选显示项目和子任务进度",
@@ -2663,8 +2845,8 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Agent 现在在任意任务状态下都会响应评论触发",
           "修复 Codex 沙箱在 macOS 上的网络访问配置",
           "编辑器气泡菜单改用 @floating-ui/dom 重写，滚动时正确隐藏",
-          "自动化 创建者自动订阅其生成的任务",
-          "自动化 run-only task 正确解析工作区 ID",
+          "Autopilot 创建者自动订阅其生成的任务",
+          "Autopilot run-only task 正确解析工作区 ID",
           "桌面应用 `shell.openExternal` 限制仅允许 http/https 协议（安全）",
           "重名 Agent 创建返回 409 而非静默失败",
           "桌面应用新建标签页继承当前工作区",
@@ -2685,7 +2867,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "Codex 同一任务下跨 task 恢复会话线程",
           "Codex 回合错误正确抛出，不再报告空输出",
           "工作区用量按 task 完成时间正确分桶",
-          "自动化 运行历史行整行可点击",
+          "Autopilot 运行历史行整行可点击",
           "Daemon 和 GC 端点加强工作区隔离校验（安全）",
           "邀请邮件中的工作区和邀请人名称进行 HTML 转义",
           "桌面应用开发版和生产版现在可以同时运行",
@@ -2694,11 +2876,11 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       {
         version: "0.2.0",
         date: "2026-04-15",
-        title: "桌面应用、自动化 与邀请",
+        title: "桌面应用、Autopilot 与邀请",
         changes: [],
         features: [
           "macOS 桌面应用——原生 Electron 应用，支持标签页系统、内置 Daemon 管理、沉浸模式和自动更新",
-          "自动化——Agent 定时和触发式自动化任务",
+          "Autopilot——Agent 定时和触发式自动化任务",
           "工作区邀请，支持邮件通知和专用接受页面",
           "Agent 自定义 CLI 参数，支持高级运行时配置",
           "聊天界面重设计，新增未读追踪和会话管理优化",
@@ -2766,7 +2948,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         title: "一键安装、自部署与稳定性",
         changes: [],
         features: [
-          "一键安装与配置——`curl | bash` 安装 CLI，`--with-server` 完整自部署，`patchbay setup` 配置连接环境",
+          "一键安装与配置——`curl | bash` 安装 CLI，`--with-server` 完整自部署，`multica setup` 配置连接环境",
           "自部署存储——无 S3 时本地文件存储回退，支持自定义 S3 端点（MinIO）",
           "项目列表页支持行内编辑属性（优先级、状态、负责人）",
         ],
@@ -2843,7 +3025,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         ],
         improvements: [
           "侧边栏重新设计——个人/工作区分组、用户档案底栏、⌘K 搜索入口",
-          "搜索排序优化——大小写无关匹配、标识符搜索（PB-123）、多词匹配",
+          "搜索排序优化——大小写无关匹配、标识符搜索（MUL-123）、多词匹配",
           "搜索结果关键词高亮",
           "每日 Token 用量图表优化，Y 轴标签更清晰，新增分类 Tooltip",
           "Master Agent 支持多行输入",
@@ -2873,7 +3055,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "创建任务弹窗新增项目选择器，CLI 新增项目命令",
           "基于 pg_bigm 的任务全文搜索",
           "Monorepo 拆包——共享 core、UI、views 三个包（Turborepo）",
-          "全屏 Agent 对话视图",
+          "全屏 Agent 执行日志视图",
           "编辑器支持拖拽上传文件并展示文件卡片",
           "任务新增附件区域，支持图片网格和文件卡片展示",
           "运行时支持所有者追踪、筛选、头像展示和点对点更新通知",
@@ -2912,7 +3094,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "打开的任务不再分页限制全量加载，已关闭的任务滚动分页",
           "JWT 和 CloudFront Cookie 有效期从 72 小时延长至 30 天",
           "重新登录后记住上次选择的工作区",
-          "守护进程确保 Agent task 环境中 patchbay CLI 在 PATH 上",
+          "守护进程确保 Agent task 环境中 multica CLI 在 PATH 上",
           "新增 PR 模板和面向 Agent 的 CLI 安装指南",
         ],
       },
@@ -2956,7 +3138,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
           "收件箱通知点击后自动滚动到对应评论",
           "仓库管理独立为设置页单独标签页",
           "支持从网页端运行时页面更新 CLI，非 Homebrew 安装支持直接下载更新",
-          "新增 CLI 命令查看任务Agent 事件和运行消息",
+          "新增 CLI 命令查看任务执行记录和运行消息",
           "Agent 权限模型优化——所有者和管理员管理 Agent，成员可管理自己 Agent 的技能",
           "每个任务串行执行，防止并发 task 冲突",
           "文件上传支持所有文件类型",
@@ -3028,7 +3210,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
         date: "2026-03-22",
         title: "\u57fa\u7840\u67b6\u6784",
         changes: [
-          "Rust \u540e\u7aef\uff0c\u652f\u6301 REST API\u3001JWT \u8ba4\u8bc1\u548c\u5b9e\u65f6 WebSocket",
+          "Go \u540e\u7aef\uff0c\u652f\u6301 REST API\u3001JWT \u8ba4\u8bc1\u548c\u5b9e\u65f6 WebSocket",
           "Next.js \u524d\u7aef\uff0cLinear \u98ce\u683c UI",
           "\u4efb\u52a1\u652f\u6301\u770b\u677f\u548c\u5217\u8868\u89c6\u56fe\uff0c\u542b\u62d6\u62fd\u770b\u677f",
           "Agent\u3001\u6536\u4ef6\u7bb1\u548c\u8bbe\u7f6e\u9875\u9762",
@@ -3041,29 +3223,29 @@ export function createZhDict(allowSignup: boolean): LandingDict {
   download: {
     hero: {
       macArm64: {
-        title: "Patchbay for macOS",
+        title: "Multica for macOS",
         sub: "Apple Silicon · 内置 daemon，无需配置",
         primary: "下载 (.dmg)",
         altZip: "或下载 .zip",
       },
       macIntel: {
-        title: "Patchbay for macOS",
+        title: "Multica for macOS",
         sub: "Intel · 内置守护进程，无需配置",
         primary: "下载 (.dmg)",
         altZip: "或下载 .zip",
       },
       winX64: {
-        title: "Patchbay for Windows",
+        title: "Multica for Windows",
         sub: "内置 daemon，无需配置",
         primary: "下载 (.exe)",
       },
       winArm64: {
-        title: "Patchbay for Windows",
+        title: "Multica for Windows",
         sub: "ARM · 内置 daemon，无需配置",
         primary: "下载 (.exe)",
       },
       linux: {
-        title: "Patchbay for Linux",
+        title: "Multica for Linux",
         sub: "内置 daemon，无需配置",
         primary: "下载 AppImage",
         altFormats: "或 .deb / .rpm",
@@ -3114,7 +3296,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
   contactSales: {
     pageTitle: "联系商务",
     pageDescription:
-      "了解如何在你的团队中落地 Patchbay 的人类 + 智能体协作工作流。",
+      "了解如何在你的团队中落地 Multica 的人类 + 智能体协作工作流。",
     eyebrow: "联系商务",
     title: "先了解你的需求",
     subtitle: "在正式沟通之前，让我们为你定制最合适的方案。",
@@ -3131,10 +3313,10 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       companyName: "公司名称",
       companySize: "公司规模",
       countryRegion: "国家 / 地区",
-      useCase: "你打算如何使用 Patchbay 或与我们合作？",
+      useCase: "你打算如何使用 Multica 或与我们合作？",
       goals: "你的目标或挑战",
       goalsHint:
-        "告诉我们你希望借助 Patchbay 达成什么目标，或正在面临的挑战。信息越详细，我们越能给到合适的支持。",
+        "告诉我们你希望借助 Multica 达成什么目标，或正在面临的挑战。信息越详细，我们越能给到合适的支持。",
       selectPlaceholder: "请选择",
       submit: "提交",
       submitting: "正在提交…",
@@ -3148,7 +3330,7 @@ export function createZhDict(allowSignup: boolean): LandingDict {
       { value: "1000+", label: "1,000 人以上" },
     ],
     useCases: [
-      { value: "evaluate", label: "正在为团队评估 Patchbay" },
+      { value: "evaluate", label: "正在为团队评估 Multica" },
       { value: "adopt_team", label: "希望在团队 / 公司内推广使用" },
       { value: "self_host", label: "需要在自有基础设施上自托管" },
       { value: "integrate", label: "希望与现有工具集成" },
@@ -3200,22 +3382,22 @@ export function createZhDict(allowSignup: boolean): LandingDict {
     ],
     consent: {
       intro:
-        "Patchbay, Inc. 尊重你的隐私。我们仅会将你的个人信息用于管理账户，以及提供你所请求的产品或服务。我们偶尔也希望与你分享产品更新、最佳实践或行业洞察，如果你愿意接收，请在下方勾选。",
+        "Multica, Inc. 尊重你的隐私。我们仅会将你的个人信息用于管理账户，以及提供你所请求的产品或服务。我们偶尔也希望与你分享产品更新、最佳实践或行业洞察，如果你愿意接收，请在下方勾选。",
       outreach:
-        "我希望接收来自 Patchbay, Inc. 的一对一沟通，包括服务更新、支持咨询以及业务相关的跟进。",
+        "我希望接收来自 Multica, Inc. 的一对一沟通，包括服务更新、支持咨询以及业务相关的跟进。",
       updates:
-        "我希望接收 Patchbay 的产品更新、洞察以及活动邀请。",
+        "我希望接收 Multica 的产品更新、洞察以及活动邀请。",
       unsubscribe:
         "你可以随时取消订阅我们的邮件。关于我们如何处理你的数据以及隐私权利，请参阅",
       submitConsent:
-        "点击「提交」即表示你同意 Patchbay, Inc. 存储并处理你提交的信息，以便交付你请求的内容。",
+        "点击「提交」即表示你同意 Multica, Inc. 存储并处理你提交的信息，以便交付你请求的内容。",
       privacyLinkLabel: "隐私政策。",
       privacyLinkHref: "/about",
     },
     success: {
       title: "已收到，谢谢！",
       message:
-        "Patchbay 团队会在三个工作日内回复你。在此期间，欢迎查看我们的文档，或在 GitHub 上为我们点个 Star。",
+        "Multica 团队会在三个工作日内回复你。在此期间，欢迎查看我们的文档，或在 GitHub 上为我们点个 Star。",
       cta: "返回首页",
     },
     errors: {

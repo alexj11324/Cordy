@@ -1,4 +1,4 @@
-// Deploy Sentinel's own server. Patchbay never runs this — the plugin author does.
+// Deploy Sentinel's own server. Multica never runs this — the plugin author does.
 //
 // Everything a real hook backend has to get right is here and nowhere else:
 // verifying the signature, refusing a replay, applying the team's own rules, and
@@ -6,7 +6,7 @@
 //
 //   node server/handler.mjs
 //
-// Env: PATCHBAY_SIGNING_SECRET (the whsec_… shown once when the token was issued)
+// Env: MULTICA_SIGNING_SECRET (the whsec_… shown once when the token was issued)
 //      PORT (default 8788)
 
 import { createServer } from "node:https";
@@ -14,14 +14,14 @@ import { readFileSync } from "node:fs";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
 // HTTPS, not HTTP. A hook's transport URL must be an https:// URL or the
-// manifest will not install, and PATCHBAY_PLUGIN_DEV_CA only changes WHICH
-// certificate Patchbay trusts — it never turns verification off. Generate one:
+// manifest will not install, and MULTICA_PLUGIN_DEV_CA only changes WHICH
+// certificate Multica trusts — it never turns verification off. Generate one:
 //
 //   openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
 //     -keyout dev-key.pem -out dev-cert.pem \
 //     -subj "/CN=127.0.0.1" -addext "subjectAltName=IP:127.0.0.1"
 //
-// then point PATCHBAY_PLUGIN_DEV_CA at dev-cert.pem.
+// then point MULTICA_PLUGIN_DEV_CA at dev-cert.pem.
 function tlsOptions() {
   const cert = process.env.TLS_CERT ?? "dev-cert.pem";
   const key = process.env.TLS_KEY ?? "dev-key.pem";
@@ -35,7 +35,7 @@ function tlsOptions() {
 }
 
 const PORT = Number(process.env.PORT ?? 8788);
-const SIGNING_SECRET = process.env.PATCHBAY_SIGNING_SECRET ?? "";
+const SIGNING_SECRET = process.env.MULTICA_SIGNING_SECRET ?? "";
 const REPLAY_WINDOW_SECONDS = 300;
 
 // Stand-in for the deploy system this plugin would really talk to. Deploy ids
@@ -53,7 +53,7 @@ function verifySignature(rawBody, signature, timestamp) {
   if (!SIGNING_SECRET) return { ok: false, reason: "server has no signing secret configured" };
   if (!signature || !timestamp) return { ok: false, reason: "missing signature headers" };
 
-  // Reject a replay before spending time on the comparison. Patchbay signs
+  // Reject a replay before spending time on the comparison. Multica signs
   // timestamp + body precisely so an old, validly-signed request cannot be
   // resent later.
   const age = Math.abs(Math.floor(Date.now() / 1000) - Number(timestamp));
@@ -75,13 +75,13 @@ function verifySignature(rawBody, signature, timestamp) {
 // The callback token is scoped to THIS invocation and is revoked the moment the
 // hook returns, so anything the handler wants to write has to be written before
 // it replies. That constraint is the reason this is awaited, not fired off.
-async function commentOnIssue(callback, issueId, body) {
-  if (!callback?.token || !callback?.base_url || !issueId) return;
+async function commentOnIssue(callbackUrl, callbackToken, issueId, content) {
+  if (!callbackToken || !callbackUrl || !issueId) return;
   try {
-    const response = await fetch(`${callback.base_url}/api/v1/plugin/issues/${issueId}/comments`, {
+    const response = await fetch(`${callbackUrl}/issues/${encodeURIComponent(issueId)}/comments`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${callback.token}` },
-      body: JSON.stringify({ body }),
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${callbackToken}` },
+      body: JSON.stringify({ content }),
     });
     if (!response.ok) {
       console.warn(`callback comment failed: ${response.status} ${await response.text()}`);
@@ -163,8 +163,8 @@ const server = createServer(tlsOptions(), async (req, res) => {
 
   const verified = verifySignature(
     rawBody,
-    req.headers["x-patchbay-signature"],
-    req.headers["x-patchbay-timestamp"],
+    req.headers["x-multica-signature"],
+    req.headers["x-multica-timestamp"],
   );
   if (!verified.ok) {
     console.warn(`refused ${req.url}: ${verified.reason}`);
@@ -178,7 +178,15 @@ const server = createServer(tlsOptions(), async (req, res) => {
     return reply(400, { error: "body is not valid JSON" });
   }
 
-  const { hook_key: hookKey, trigger, input = {}, config = {}, callback, issue_id: issueId } = payload;
+  const {
+    hook_key: hookKey,
+    trigger,
+    input = {},
+    config = {},
+    callback_url: callbackUrl,
+    callback_token: callbackToken,
+    issue_id: issueId,
+  } = payload;
   console.log(`${hookKey} via ${trigger}`);
 
   switch (hookKey) {
@@ -188,7 +196,7 @@ const server = createServer(tlsOptions(), async (req, res) => {
       // their colleagues will see it. An agent call already returns to the
       // agent, which will write its own account of what it found.
       if (trigger === "ui" || trigger === "manual") {
-        await commentOnIssue(callback, issueId, `**Deploy Sentinel** — ${result.summary}`);
+        await commentOnIssue(callbackUrl, callbackToken, issueId, `**Deploy Sentinel** — ${result.summary}`);
       }
       return reply(200, result);
     }
@@ -197,7 +205,8 @@ const server = createServer(tlsOptions(), async (req, res) => {
       const result = requestRollback(input, config);
       if (result.status === "filed") {
         await commentOnIssue(
-          callback,
+          callbackUrl,
+          callbackToken,
           issueId,
           `**Deploy Sentinel** filed rollback ${result.change_id} for deploy ${result.deploy_id}.\n\n> ${input.reason}\n\nAwaiting human approval — nothing has been rolled back.`,
         );
@@ -208,7 +217,7 @@ const server = createServer(tlsOptions(), async (req, res) => {
     case "page_oncall": {
       // An event hook's response is discarded, so there is nothing to return
       // that anybody reads. Acknowledge fast and do the work; blocking here
-      // would hold a Patchbay worker for no benefit.
+      // would hold a Multica worker for no benefit.
       const issue = payload.event?.issue ?? {};
       console.log(`paging on-call for ${payload.event?.type}: ${issue.title ?? issueId}`);
       return reply(202, { acknowledged: true });
@@ -222,6 +231,6 @@ const server = createServer(tlsOptions(), async (req, res) => {
 server.listen(PORT, () => {
   console.log(`Deploy Sentinel listening on https://127.0.0.1:${PORT}`);
   if (!SIGNING_SECRET) {
-    console.warn("PATCHBAY_SIGNING_SECRET is not set — every request will be refused.");
+    console.warn("MULTICA_SIGNING_SECRET is not set — every request will be refused.");
   }
 });

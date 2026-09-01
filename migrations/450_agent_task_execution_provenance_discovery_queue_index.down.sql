@@ -1,1 +1,0 @@
-DROP INDEX CONCURRENTLY IF EXISTS agent_task_execution_provenance_discovery_queue_idx;

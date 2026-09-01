@@ -1,9 +1,9 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { AgentRuntime } from "@patchbay/core/types";
+import type { AgentRuntime } from "@multica/core/types";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enOnboarding from "../../locales/en/onboarding.json";
 
@@ -17,20 +17,12 @@ const mocks = vi.hoisted(() => ({
     setSelectedId: vi.fn<(id: string) => void>(),
     hasRuntimes: false,
   },
-  pickerOptions: vi.fn(),
 }));
 
 // Swap out the runtime picker so tests can drive runtimes / selection
 // without a real TanStack Query + WS stack.
 vi.mock("../components/use-runtime-picker", () => ({
-  useRuntimePicker: (
-    _wsId: string,
-    _wsSlug?: string,
-    options?: { enabled?: boolean },
-  ) => {
-    mocks.pickerOptions(options);
-    return mocks.pickerState;
-  },
+  useRuntimePicker: () => mocks.pickerState,
 }));
 
 import { StepPlatformFork } from "./step-platform-fork";
@@ -89,14 +81,7 @@ function resetPicker(patch: Partial<typeof mocks.pickerState> = {}) {
 describe("StepPlatformFork", () => {
   beforeEach(() => {
     resetPicker();
-    mocks.pickerOptions.mockReset();
     vi.restoreAllMocks();
-  });
-
-  it("does not poll runtime discovery in backend-free preview mode", () => {
-    renderFork({ backendFree: true });
-
-    expect(mocks.pickerOptions).toHaveBeenCalledWith({ enabled: false });
   });
 
   it("renders the three fork options at rest", () => {
@@ -172,9 +157,9 @@ describe("StepPlatformFork", () => {
     expect(
       within(dialog).getByText(/waiting for your computer/i),
     ).toBeInTheDocument();
-    // Starting with Patrick stays disabled while no runtime is selected.
+    // Starting with Mika stays disabled while no runtime is selected.
     expect(
-      within(dialog).getByRole("button", { name: /start with patrick/i }),
+      within(dialog).getByRole("button", { name: /start with mika/i }),
     ).toBeDisabled();
   });
 
@@ -198,7 +183,7 @@ describe("StepPlatformFork", () => {
     ).toBeInTheDocument();
 
     const connect = within(dialog).getByRole("button", {
-      name: /start with patrick/i,
+      name: /start with mika/i,
     });
     expect(connect).toBeEnabled();
     await user.click(connect);

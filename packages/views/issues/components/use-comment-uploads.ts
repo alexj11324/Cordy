@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Comment-composer binding for the coordinated-upload engine (PB-5181, L2).
+ * Comment-composer binding for the coordinated-upload engine (MUL-5181, L2).
  *
  * All upload mechanics — coordinator ownership, generation guards, the
  * confirmed write-back of a finished upload's link into the draft body, the
@@ -13,9 +13,9 @@
  */
 
 import { useMemo, type RefObject } from "react";
-import type { DraftUpload } from "@patchbay/core/drafts";
-import type { UploadContext } from "@patchbay/core/hooks/use-file-upload";
-import { useCommentDraftStore, type CommentDraftKey } from "@patchbay/core/issues/stores";
+import type { DraftUpload } from "@multica/core/drafts";
+import type { UploadContext } from "@multica/core/hooks/use-file-upload";
+import { useCommentDraftStore, type CommentDraftKey } from "@multica/core/issues/stores";
 import type { UploadGate } from "../../editor/use-upload-gate";
 import type { ContentEditorRef } from "../../editor/content-editor";
 import {

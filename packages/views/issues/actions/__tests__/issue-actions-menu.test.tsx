@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { AgentTask, Issue } from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { AgentTask, Issue } from "@multica/core/types";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enIssues from "../../../locales/en/issues.json";
 
@@ -12,12 +12,12 @@ const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
 // Mocks — same pattern as the issue-detail test suite.
 // ---------------------------------------------------------------------------
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
 const mockOpenModal = vi.fn();
-vi.mock("@patchbay/core/modals", () => ({
+vi.mock("@multica/core/modals", () => ({
   useModalStore: Object.assign(
     (selector?: any) => {
       const state = { open: mockOpenModal };
@@ -28,7 +28,7 @@ vi.mock("@patchbay/core/modals", () => ({
 }));
 
 const mockAuthState = { user: { id: "user-1" }, isAuthenticated: true };
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@multica/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => (selector ? selector(mockAuthState) : mockAuthState),
     { getState: () => mockAuthState },
@@ -36,7 +36,7 @@ vi.mock("@patchbay/core/auth", () => ({
   registerAuthStore: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@multica/core/workspace/queries", () => ({
   memberListOptions: () => ({
     queryKey: ["workspaces", "ws-1", "members"],
     queryFn: () =>
@@ -48,21 +48,21 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
     queryKey: ["workspaces", "ws-1", "agents"],
     queryFn: () => Promise.resolve([]),
   }),
-  teamListOptions: () => ({
-    queryKey: ["workspaces", "ws-1", "teams"],
+  squadListOptions: () => ({
+    queryKey: ["workspaces", "ws-1", "squads"],
     queryFn: () => Promise.resolve([]),
   }),
-  executorFrequencyOptions: () => ({
-    queryKey: ["workspaces", "ws-1", "executor-frequency"],
+  assigneeFrequencyOptions: () => ({
+    queryKey: ["workspaces", "ws-1", "assignee-frequency"],
     queryFn: () => Promise.resolve([]),
   }),
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@multica/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: (_t: string, _id: string) => "" }),
 }));
 
-vi.mock("@patchbay/core/pins", () => ({
+vi.mock("@multica/core/pins", () => ({
   pinListOptions: () => ({
     queryKey: ["pins", "ws-1", "user-1"],
     queryFn: () => Promise.resolve([]),
@@ -71,13 +71,13 @@ vi.mock("@patchbay/core/pins", () => ({
   useDeletePin: () => ({ mutate: vi.fn() }),
 }));
 
-vi.mock("@patchbay/core/issues/mutations", () => ({
+vi.mock("@multica/core/issues/mutations", () => ({
   useUpdateIssue: () => ({ mutate: vi.fn() }),
 }));
 
-vi.mock("@patchbay/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
-    "@patchbay/core/paths",
+vi.mock("@multica/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@multica/core/paths")>(
+    "@multica/core/paths",
   );
   return {
     ...actual,
@@ -99,6 +99,7 @@ vi.mock("../../../navigation", () => ({
     push: vi.fn(),
     pathname: "/test/issues/issue-1",
     searchParams: new URLSearchParams(),
+    hash: "",
     back: vi.fn(),
     replace: vi.fn(),
     ...(navState.hasOpenInNewTab ? { openInNewTab: openInNewTabMock } : {}),
@@ -121,11 +122,11 @@ const { apiMocks, copyTextMock } = vi.hoisted(() => ({
   copyTextMock: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: apiMocks,
 }));
 
-vi.mock("@patchbay/ui/lib/clipboard", () => ({
+vi.mock("@multica/ui/lib/clipboard", () => ({
   copyText: copyTextMock,
 }));
 
@@ -151,12 +152,8 @@ const mockIssue: Issue = {
   description: null,
   status: "todo",
   priority: "medium",
-  owner_type: null,
-  owner_id: null,
-  executor_type: null,
-  executor_id: null,
-  reviewer_type: null,
-  reviewer_id: null,
+  assignee_type: null,
+  assignee_id: null,
   creator_type: "member",
   creator_id: "user-1",
   parent_issue_id: null,
@@ -206,7 +203,7 @@ describe("IssueActionsDropdown", () => {
     // Base UI portals the popup; role=menu lands on the popup wrapper.
     expect(await screen.findByText("Status")).toBeInTheDocument();
     expect(screen.getByText("Priority")).toBeInTheDocument();
-    expect(screen.getByText("Executor")).toBeInTheDocument();
+    expect(screen.getByText("Assignee")).toBeInTheDocument();
     expect(screen.getByText("Due date")).toBeInTheDocument();
     expect(screen.getByText("Open in new tab")).toBeInTheDocument();
     expect(screen.getByText("Copy link")).toBeInTheDocument();
@@ -218,7 +215,7 @@ describe("IssueActionsDropdown", () => {
     expect(screen.queryByText("Add sub-issue...")).not.toBeInTheDocument();
   });
 
-  it("clicking the Executor item opens the shared ExecutorPicker popover", async () => {
+  it("clicking the Assignee item opens the shared AssigneePicker popover", async () => {
     render(
       wrap(
         <IssueActionsDropdown
@@ -229,15 +226,16 @@ describe("IssueActionsDropdown", () => {
     );
 
     fireEvent.click(screen.getByTestId("trigger"));
-    fireEvent.click(await screen.findByText("Executor"));
+    fireEvent.click(await screen.findByText("Assignee"));
 
-    // The shared executor picker exposes a search input. Human members are
-    // owners now, so they intentionally do not appear in the executor list.
+    // The shared picker exposes a search input and renders the workspace
+    // member under a "Members" group — both come from `AssigneePicker`, not
+    // the legacy submenu (which had neither).
     expect(
       await screen.findByPlaceholderText("Assign to..."),
     ).toBeInTheDocument();
-    expect(screen.queryByText("Members")).not.toBeInTheDocument();
-    expect(screen.queryByText("Test User")).not.toBeInTheDocument();
+    expect(await screen.findByText("Members")).toBeInTheDocument();
+    expect(await screen.findByText("Test User")).toBeInTheDocument();
   });
 
   it("shows 'Remove parent issue' in the Relations submenu only when the issue has a parent", async () => {

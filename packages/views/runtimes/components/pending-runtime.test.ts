@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { AgentRuntime, RuntimeProfile } from "@patchbay/core/types";
+import type { AgentRuntime, RuntimeProfile } from "@multica/core/types";
 import {
   PENDING_RUNTIME_WARNING_MS,
   isDisabledCustomRuntime,

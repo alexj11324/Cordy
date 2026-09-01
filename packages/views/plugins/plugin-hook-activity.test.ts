@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { PluginInvocation } from "@patchbay/core/types";
+import type { PluginInvocation } from "@multica/core/types";
 import { summarizeInvocations } from "./plugin-hook-activity";
 
 // Canonical matrix for the failure summary. The component suite covers

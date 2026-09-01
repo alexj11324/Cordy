@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   SIDEBAR_WRAPPER_FILL_CLASS,
   SidebarProvider,
-} from "@patchbay/ui/components/ui/sidebar";
+} from "@multica/ui/components/ui/sidebar";
 import { renderWithI18n } from "../test/i18n";
 
 // The wrapper's fill is conditional, and descendants that paint an opaque layer
@@ -15,10 +15,8 @@ import { renderWithI18n } from "../test/i18n";
 describe("sidebar wrapper fill contract", () => {
   const variable = /^bg-\((--[a-z-]+)\)$/.exec(SIDEBAR_WRAPPER_FILL_CLASS)?.[1];
 
-  function wrapperOf(className?: string, glass = false) {
-    const { container } = renderWithI18n(
-      <SidebarProvider className={className} glass={glass} />,
-    );
+  function wrapperOf(className?: string) {
+    const { container } = renderWithI18n(<SidebarProvider className={className} />);
     return container.querySelector<HTMLElement>("[data-slot='sidebar-wrapper']")!;
   }
 
@@ -55,17 +53,5 @@ describe("sidebar wrapper fill contract", () => {
         `has-data-[variant=inset]:[${variable}:var(--sidebar)]`,
       ]),
     );
-  });
-
-  it("publishes a transparent inset fill for an explicit glass shell", () => {
-    const wrapper = wrapperOf(undefined, true);
-    const classes = wrapper.className.split(/\s+/);
-
-    expect(wrapper).toHaveAttribute("data-sidebar-glass", "true");
-    expect(classes).toContain("has-data-[variant=inset]:bg-transparent");
-    expect(classes).toContain(
-      `has-data-[variant=inset]:[${variable}:var(--app-shell)]`,
-    );
-    expect(classes).not.toContain("has-data-[variant=inset]:bg-sidebar");
   });
 });

@@ -63,6 +63,14 @@ During creation you can pick one or more [skills](/skills) from the workspace.
 
 Skills suit methods and material reused across agents; long-lived requirements that belong only to this agent go in the instructions.
 
+## Conversation starters
+
+Add up to three **conversation starters** to show people what this agent is good at before they send a first chat message. They appear when someone opens a new chat with the agent, above the composer. Each starter has a short label and a complete prompt. Selecting one fills the composer so the user can review or edit it; it never starts a run automatically.
+
+The editor previews exactly what a new chat will show, and anyone who can edit the agent gets a **Customize starters** link in that empty state that deep-links back here.
+
+If you leave the list empty, Chat shows localized general-purpose defaults. Agent-specific examples are usually more useful because they can reflect the role and boundaries in the instructions.
+
 ## Runtime, model, and thinking level
 
 Each runtime already maps to one AI coding tool. After picking a runtime, you can pick a model and thinking level the tool supports; some tools (such as Codex) also offer a service tier:
@@ -108,12 +116,12 @@ Editing configuration does not change tasks already running. Later tasks use the
 Environment variables suit limited-privilege credentials the agent needs at run time, such as a read-only API key or a single-scope token.
 
 <Callout type="warning">
-**`custom_env` values are stored in plaintext in the Patchbay server database** — they are not "stays on this machine" data. Agent list and detail endpoints no longer return any env values, only an opaque count; only workspace `owner`s and `admin`s can unlock and modify values, and every read or change leaves an audit record. A running agent cannot call the admin endpoints to read another agent's variables.
+**`custom_env` values are stored in plaintext in the Multica server database** — they are not "stays on this machine" data. Agent list and detail endpoints no longer return any env values, only an opaque count; only workspace `owner`s and `admin`s can unlock and modify values, and every read or change leaves an audit record. A running agent cannot call the admin endpoints to read another agent's variables.
 </Callout>
 
 Do not use production database admin passwords or other high-value long-lived credentials.
 
-Critical runtime variables such as `PATH`, `HOME`, and `PATCHBAY_*` cannot be overridden here.
+Critical runtime variables such as `PATH`, `HOME`, and `MULTICA_*` cannot be overridden here.
 
 ## Custom arguments and MCP
 
@@ -127,14 +135,14 @@ MCP configuration may contain tokens; its storage and display rules match enviro
 
 ## Duplicating an agent
 
-Duplicating carries over most working configuration except the name, including instructions, skills, custom arguments, avatar, concurrency limit, and Access settings. The model, thinking level, and service tier come along too; if the original runtime is unavailable and the copy is forced onto another runtime, those three are cleared and must be re-selected.
+Duplicating carries over most working configuration except the name, including instructions, conversation starters, skills, custom arguments, avatar, concurrency limit, and Access settings. The model, thinking level, and service tier come along too; if the original runtime is unavailable and the copy is forced onto another runtime, those three are cleared and must be re-selected.
 
 Environment variable values and MCP configuration are never copied and must be set again on the new agent. Duplication keeps the original agent's runtime binding and Access settings.
 
 ## Creating with the CLI
 
 ```bash
-patchbay agent create \
+multica agent create \
   --name "Frontend Reviewer" \
   --runtime-id <runtime-id> \
   --description "Reviews frontend pull requests" \
@@ -146,7 +154,7 @@ Plaintext in command-line arguments ends up in shell history; stdin and permissi
 When a similarly configured agent already exists, copy it directly:
 
 ```bash
-patchbay agent copy <agent-id>
+multica agent copy <agent-id>
 ```
 
 By default the copy stays on the same runtime; add `--runtime-id` to move it to another runtime, which also requires `--model`. Environment variables, MCP configuration, and `runtime_config` are never copied; the runtime binding itself is kept. Full flags in [Using the CLI](/cli).

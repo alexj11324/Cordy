@@ -2,11 +2,11 @@ import type { ReactNode } from "react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { cleanup, render } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import { RESOURCES } from "@patchbay/views/locales";
+import { I18nProvider } from "@multica/core/i18n/react";
+import { RESOURCES } from "@multica/views/locales";
 
 /**
- * Regression guard for PB-6231 / #7021: deleting the last workspace blanked
+ * Regression guard for MUL-6231 / #7021: deleting the last workspace blanked
  * the desktop client.
  *
  * The shell used to decide whether to mount workspace-scoped chrome from the
@@ -44,7 +44,7 @@ vi.mock("@/platform/navigation", () => ({
   routeContentLinkPath: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/paths", () => ({
   WorkspaceSlugProvider: ({ children }: { children: ReactNode }) => (
     <>{children}</>
   ),
@@ -52,42 +52,42 @@ vi.mock("@patchbay/core/paths", () => ({
   useCurrentWorkspace: () => null,
 }));
 
-vi.mock("@patchbay/core/platform", () => ({
+vi.mock("@multica/core/platform", () => ({
   getCurrentSlug: () => state.currentSlug,
   subscribeToCurrentSlug: () => () => {},
 }));
 
-vi.mock("@patchbay/core/workspace", () => ({
+vi.mock("@multica/core/workspace", () => ({
   workspaceListOptions: () => ({
     queryKey: ["workspace-list"],
     queryFn: async () => state.wsList,
   }),
 }));
 
-vi.mock("@patchbay/views/navigation", () => ({
+vi.mock("@multica/views/navigation", () => ({
   useNavigation: () => ({ push: vi.fn() }),
 }));
 
-vi.mock("@patchbay/views/platform", () => ({
+vi.mock("@multica/views/platform", () => ({
   useDesktopUnreadBadge: () => {},
 }));
 
 // Each workspace-scoped component gets a marker so the assertions can tell
 // which of them the shell decided to mount.
-vi.mock("@patchbay/views/layout", () => ({
+vi.mock("@multica/views/layout", () => ({
   AppSidebar: () => <div data-testid="app-sidebar" />,
   GlobalShortcuts: () => <div data-testid="global-shortcuts" />,
   NavigationProgress: () => <div data-testid="navigation-progress" />,
 }));
 
-vi.mock("@patchbay/views/modals/registry", () => ({
+vi.mock("@multica/views/modals/registry", () => ({
   ModalRegistry: () => <div data-testid="modal-registry" />,
 }));
 
 // Stands in for the real SearchCommand, which calls useWorkspaceId() at the
 // top of its body. Mounting it without a resolvable workspace is precisely
 // the crash this gate prevents, so the stub throws the same way.
-vi.mock("@patchbay/views/search", () => ({
+vi.mock("@multica/views/search", () => ({
   SearchCommand: () => {
     const resolved = state.wsList.some((w) => w.slug === state.currentSlug);
     if (!resolved) {
@@ -100,7 +100,7 @@ vi.mock("@patchbay/views/search", () => ({
   SearchTrigger: () => null,
 }));
 
-vi.mock("@patchbay/views/chat", () => ({
+vi.mock("@multica/views/chat", () => ({
   FloatingChat: () => <div data-testid="floating-chat" />,
 }));
 
@@ -113,9 +113,9 @@ vi.mock("./tab-content", () => ({
 const { DesktopShell } = await import("./desktop-layout");
 
 function renderShell() {
-  (window as unknown as { desktopAPI: Record<string, unknown> }).desktopAPI = {
-    host: "electron",
-    appInfo: { version: "0.0.0-test", os: "macos" },
+  (
+    window as unknown as { desktopAPI: Record<string, unknown> }
+  ).desktopAPI = {
     onNavigationGesture: () => () => {},
     onInboxOpen: () => () => {},
   };
@@ -172,7 +172,7 @@ describe("DesktopShell workspace gating", () => {
     expect(queryByTestId("tab-content")).not.toBeNull();
   });
 
-  // The shell had no navigation feedback at all before PB-6404 — the bar
+  // The shell had no navigation feedback at all before MUL-6404 — the bar
   // only ever shipped inside web's DashboardLayout. It sits beside TabContent
   // in the canvas and, like it, is not workspace-gated: a cold workspace
   // resolve is exactly when the wait is longest.

@@ -1,41 +1,36 @@
 ---
 title: 参与开发
-description: 配置 Patchbay 本地开发环境，运行测试，并按仓库约定提交改动。
+description: 配置 Multica 本地开发环境，运行测试，并按仓库约定提交改动。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay 是 Rust backend 与 pnpm monorepo。最简单的本地启动方式是 `pnpm dev`；它会为当前 checkout 准备环境、源码匹配 runtime、数据库和 migration，再启动完整 Electron、API 与浏览器登录/分享服务。
+Multica 是 Go backend 与 pnpm monorepo。最简单的本地启动方式是 `make dev`；它会为当前 checkout 准备环境、数据库和 migration，再启动 Web 与 API。
 
 ## 环境要求
 
 - Node.js 22；
 - pnpm 10.28.2；
-- Rust stable 与 Cargo（dev runtime 缓存未命中时需要）；
-- Docker Engine/Desktop，或本机 PostgreSQL 15+；
-- Git；Make 只是 POSIX 环境的可选便捷入口。
+- Go 1.26.6；
+- Docker Engine 或 Docker Desktop；
+- Git 和 Make。
 
-`pnpm dev` 可跨平台使用。`PATCHBAY_POSTGRES_RUNTIME=auto` 只会在 Compose
-固定发布的 `localhost:5432` 上选择 Docker；若该地址存在歧义，请显式设置为
-`native` 或 `docker`。
-
-版本和依赖以根目录 `package.json`、`server-rs/Cargo.toml`、`server-rs/Cargo.lock` 和 CI workflow 为准。
+版本以根目录 `package.json`、`server/go.mod` 和 CI workflow 为准。
 
 ## 第一次启动
 
 ```bash
-git clone https://github.com/alexj11324/Cordy.git
-cd patchbay
-pnpm dev
+git clone https://github.com/multica-ai/multica.git
+cd multica
+make dev
 ```
 
-主 checkout 会使用 `.env`。文件不存在时，`pnpm dev` 会从 `.env.example` 创建；然后启动共享 PostgreSQL、安装依赖、执行 migration，并运行 API、浏览器登录/分享服务与 Electron。
+主 checkout 会使用 `.env`。文件不存在时，`make dev` 会从 `.env.example` 创建；然后启动共享 PostgreSQL、安装依赖、执行 migration，并运行 API 与 Web。
 
 默认地址：
 
 ```text
-Desktop：带 renderer 热更新的 Electron 窗口
-浏览器/分享/登录地址：http://localhost:3000
+Web: http://localhost:3000
 API: http://localhost:8080
 ```
 
@@ -46,29 +41,28 @@ API: http://localhost:8080
 仓库支持主 checkout 和多个 worktree 同时运行。它们共用一个 PostgreSQL 容器，但使用不同数据库和端口。
 
 ```bash
-git worktree add ../patchbay-feature -b feat/my-change main
-cd ../patchbay-feature
-pnpm dev
+git worktree add ../multica-feature -b feat/my-change main
+cd ../multica-feature
+make setup-worktree
+make start-worktree
 ```
 
-`pnpm dev` 会在需要时生成 `.env.worktree`、分配可用隔离端口、准备源码匹配 runtime 并启动完整开发栈。再次启动仍使用同一命令：
+`make setup-worktree` 会生成 `.env.worktree`，数据库名和端口根据路径确定。再次启动：
 
 ```bash
-pnpm dev
+make start-worktree
 ```
 
-停止当前 worktree 的 Desktop/Electron、Web 与 API：
+停止当前 worktree 的 Web 与 API：
 
 ```bash
-make stop
+make stop-worktree
 ```
 
 也可以直接运行 `make dev`，脚本会通过 `.git` 文件识别 worktree 并选择 `.env.worktree`。
 
 <Callout type="info">
-  不同 worktree 共用 PostgreSQL 容器，不共用数据库。不要为每个 worktree 启动新的
-  Compose project；先检查 `.env.worktree` 中的 `POSTGRES_DB`、`PORT` 和
-  `FRONTEND_PORT`。
+不同 worktree 共用 PostgreSQL 容器，不共用数据库。不要为每个 worktree 启动新的 Compose project；先检查 `.env.worktree` 中的 `POSTGRES_DB`、`PORT` 和 `FRONTEND_PORT`。
 </Callout>
 
 ## 常用命令
@@ -76,40 +70,26 @@ make stop
 ### 整体流程
 
 ```bash
-make dev              # 完整 Electron + dev CLI + 后端 + Web 服务 + 隔离数据库
-make stop             # 停止当前 checkout 记录的 Electron/后端/Web 进程树
-make check            # 完整本地验证流程
-make build            # 构建 server、CLI 和 migrate 二进制
+make dev # 准备并启动当前 checkout
+make start # 使用已有环境启动 API 与 Web
+make stop # 停止当前 checkout 的进程
+make check # 完整本地验证流程
+make build # 构建 server、CLI 和 migrate 二进制
 ```
 
 ### 前端
 
 ```bash
 pnpm install
-pnpm dev              # 完整 Desktop 开发，保留 renderer 热更新
-pnpm dev:doctor       # CLI/后端/数据库/智能体/集成诊断
-pnpm dev:web:next     # Next.js Web 客户端
+pnpm dev:web
+pnpm dev:desktop
 pnpm build
 pnpm typecheck
 pnpm lint
 pnpm test
 ```
 
-Desktop 只保留一条完整开发路径：
-
-| 场景                                                 | 命令                                      | 实际工作                                                                 |
-| ---------------------------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------ |
-| 日常本地产品开发                                     | `pnpm dev` 或 `make dev`                  | Electron、源码匹配 dev CLI、后端、Web 服务、隔离数据库、热更新和能力检查 |
-| 重新运行开发诊断                                     | `pnpm dev:doctor`                         | CLI/源码/版本、后端/数据库、智能体检测、Telegram/微信配置                |
-| 检查前端/Electron 是否能构建                         | `pnpm --filter @patchbay/desktop build`   | 生成生产 JS bundle，不编译 Rust                                          |
-| 验证安装包、签名/公证、自动更新、内置 CLI 或正式发布 | `pnpm --filter @patchbay/desktop package` | release Rust CLI 和安装包，可能耗时几十分钟                              |
-
-dev runtime 缓存包含匹配的 CLI、后端和迁移 runner，并按 Rust 源码、Cargo 元数据、
-toolchain、target、架构、profile 和构建变量分键。命中时不编译 Rust；未命中时
-一次性用增量 dev profile 构建三者，并使用可选的共享 sccache。worktree 之间绝不共享 `node_modules` 链接树、`server-rs/target`、
-数据库、端口、env 或进程。release/package 路径独立，绝不读取 dev cache。
-
-根命令默认排除 Mobile。移动端有独立脚本和 CI，修改前先阅读 `apps/mobile/AGENTS.md`。
+根命令默认排除 Mobile。移动端有独立脚本和 CI，修改前先阅读 `apps/mobile/CLAUDE.md`。
 
 ### Backend
 
@@ -119,7 +99,7 @@ make daemon
 make test
 make migrate-up
 make migrate-down
-make rust-build
+make sqlc
 ```
 
 从源码运行某条 CLI 命令：
@@ -138,37 +118,37 @@ Web 与 Desktop 都需要的功能按职责放置：
 4. Next.js、Electron 和路由适配留在对应 app；
 5. 共享页面需要同时接入 Web 与 Desktop。
 
-服务端数据由 TanStack Query 管理，筛选、草稿和布局等客户端状态由 Zustand 管理。具体边界见[项目架构](/developers/architecture)和根目录 `AGENTS.md`。
+服务端数据由 TanStack Query 管理，筛选、草稿和布局等客户端状态由 Zustand 管理。具体边界见[项目架构](/developers/architecture)和根目录 `CLAUDE.md`。
 
 新增或修改 API 时，要同步更新 `packages/core/api/` 中的 zod schema，并为缺失字段、未知枚举或格式错误增加解析测试。
 
 ## 修改数据库
 
-Migration 位于 `migrations/`；生产 query module 位于 `server-rs/crates/patchbay-db/src/queries/`。
+Migration 位于 `server/migrations/`，查询位于 `server/pkg/db/queries/`。
 
 1. 使用下一个未占用的数字前缀，同时创建 `.up.sql` 和 `.down.sql`；
 2. 不添加数据库 foreign key、级联删除或级联更新；关系检查和清理由应用层完成；
 3. 每个新索引都使用 `CREATE INDEX CONCURRENTLY` 或 `CREATE UNIQUE INDEX CONCURRENTLY`；
 4. 一个 concurrent index 单独放在只包含这一条语句的 migration 文件中；
-5. 直接修改对应的手写 SQLx query module；Rust 路径没有生成的 sqlc 层；
-6. 先运行最接近改动的 `patchbay-db` 测试，再用 `make test` 验证 locked Rust workspace。
+5. 修改查询后运行 `make sqlc`，提交生成的 `server/pkg/db/generated/` 变化；
+6. 不直接编辑 sqlc 生成文件。
 
 需要让多项写操作一起成功或回滚时，在 service 层使用应用事务。
 
 ## 测试位置
 
-| 改动                       | 测试位置                                                                   |
-| -------------------------- | -------------------------------------------------------------------------- |
-| 共享业务逻辑、query、store | `packages/core/*.test.ts`                                                  |
-| 共享页面和组件             | `packages/views/*.test.tsx`                                                |
-| Web 或 Desktop 平台 wiring | 对应 `apps/*` 目录                                                         |
-| 端到端流程                 | `e2e/*.spec.ts`                                                            |
-| Backend                    | 对应 `server-rs/crates/*` package 的 `#[cfg(test)]` module 或 `tests/*.rs` |
+| 改动 | 测试位置 |
+| --- | --- |
+| 共享业务逻辑、query、store | `packages/core/*.test.ts` |
+| 共享页面和组件 | `packages/views/*.test.tsx` |
+| Web 或 Desktop 平台 wiring | 对应 `apps/*` 目录 |
+| 端到端流程 | `e2e/*.spec.ts` |
+| Backend | 相关 Go package 的 `*_test.go` |
 
 先运行与改动最接近的检查，再扩大范围。例如只改 Docs：
 
 ```bash
-pnpm --filter @patchbay/docs typecheck
+pnpm --filter @multica/docs typecheck
 ```
 
 共享前端改动：
@@ -190,7 +170,7 @@ make test
 make check
 ```
 
-`make check` 会执行 TypeScript 检查、locked Rust workspace 测试和 Playwright E2E。CI 还会按改动范围构建、lint，并运行平台或安装器专项测试。
+`make check` 会执行 TypeScript typecheck 与单元测试、Go 测试和 Playwright E2E。CI 还会按改动范围构建、lint，并运行平台或安装器专项测试。
 
 ## 重置当前开发数据库
 
@@ -199,15 +179,15 @@ make check
 ```bash
 make stop
 make db-reset
-pnpm dev
+make start
 ```
 
 `make db-reset` 会删除并重建当前 `POSTGRES_DB`，且会拒绝连接远程数据库。操作前检查 `.env` 或 `.env.worktree`，确认目标数据库正确。
 
 ## 提交前检查
 
-- 阅读根目录 `AGENTS.md` 和相关子目录说明；
-- 只修改当前任务需要的范围；
+- 阅读根目录 `CLAUDE.md` 和相关子目录说明；
+- 只修改当前 task 需要的范围；
 - 代码注释使用英文；
 - 不提交 `.env`、令牌、构建产物或本机路径；
 - 使用 `feat(scope)`、`fix(scope)`、`docs` 等 conventional commit；

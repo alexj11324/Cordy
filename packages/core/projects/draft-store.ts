@@ -27,7 +27,7 @@ const EMPTY_DRAFT: ProjectDraft = {
 };
 
 export const useProjectDraftStore = createDraftStore<ProjectDraft>({
-  storageKey: "patchbay_project_draft",
+  storageKey: "multica_project_draft",
   emptyData: EMPTY_DRAFT,
   hasMeaningful: (d) => !!(d.title || d.description),
 });

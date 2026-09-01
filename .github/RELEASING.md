@@ -1,180 +1,21 @@
 # Release runbook
 
-## Build channels
-
-Keep the build channels separate. A normal development launch is not a
-release, and a Mac installer used for smoke testing must not create a public
-GitHub Release.
-
-### Daily development
-
-Use `pnpm dev` or `make dev`. This uses the development Rust profile and the
-source-matched per-user CLI cache. It is the fast feedback path and does not
-need Apple signing or notarization credentials.
-
-### Local packaged smoke test
-
-On a Mac, build an installer without publishing it:
-
-```bash
-CSC_IDENTITY_AUTO_DISCOVERY=false \
-  pnpm --filter @patchbay/desktop package -- --mac --arm64 --publish never
-```
-
-Use `--x64` on an Intel Mac. This validates Electron packaging, bundled CLI
-resources, and installation behavior, but it is not evidence that Gatekeeper
-will accept a customer download.
-
-### macOS candidate artifact
-
-Use **Actions → macOS Desktop Candidate → Run workflow** for a reviewed PR,
-branch, or commit that needs a real Mac package. Enter the source in `ref` and
-select `arm64`, `x64`, or `all`. The workflow resolves that ref to an immutable
-commit, builds a release-profile package, and uploads it as an Actions
-artifact for 14 days. It never receives production Apple credentials and never
-publishes a GitHub Release. Candidate artifacts are for internal smoke tests;
-they use the local/ad-hoc signing path.
-
-Do not grant production signing secrets to a workflow that executes arbitrary
-PR code. A candidate branch can change its own build scripts and would
-otherwise be able to read or exfiltrate those secrets.
-
-## Automatic macOS ARM release
+## Normal release
 
 Release from a reviewed commit on `main` by creating and pushing a new semantic
-version tag such as `v0.18.4`. The version-tag push first runs the complete CI
-workflow, including the Rust gate. Only after that CI run succeeds does
-`macos-release.yml` build the Apple Silicon (`arm64`) desktop release.
-Pull-request CI and ordinary `main` pushes never create a Release.
+version tag such as `v0.18.4`. The Release workflow intentionally has no manual
+trigger: a tag push is the only event that can publish binaries, Homebrew
+formulae, and container images.
 
-The version-tag path publishes no Rust CLI archive, Intel macOS package, Linux
-or Windows installer, versioned multi-architecture container image, or Helm
-chart. Those release assets remain manual-only. Production commit images are a
-separate continuous-delivery lane described below.
-
-## Automatic Aspectlylabs production delivery
-
-Every successful `CI` run for a push to `main` triggers **Aspectlylabs
-production**. The workflow always builds the complete native `linux/arm64`
-production set from the same full Git SHA: Backend, Web, Docs, and Auth Broker.
-There are no path filters or per-image choices. BuildKit, Cargo, and pnpm cache
-hits reduce work without changing that full-set contract.
-
-Each image is published under `sha-<full-git-sha>` and recorded by immutable
-digest. Deployment starts only after all four records have been assembled into
-one manifest and each digest is pullable. The `production` GitHub Environment
-holds the restricted SSH identity; repository and PR jobs cannot access it.
-The environment accepts only `main`, and the workflow concurrency group allows
-only one production deployment at a time.
-
-The server-side SSH key is forced to the audited
-`deploy/origin/production_deploy.py` gateway. The gateway accepts no shell
-command: it validates the current `origin/main` SHA, the four allow-listed GHCR
-repositories, and sha256 digests; updates the existing Compose projects; and
-keeps the prior manifest for rollback. Local runtime probes and public probes
-must confirm the exact Backend/Web/Auth build plus Login, Issues, Task Graph,
-Docs, and Google OAuth entry routes. Any failed probe restores the prior image
-set. See `docs/operations/production-deployment.md` for bootstrap, recovery,
-and acceptance details.
-
-### Required macOS release secrets
-
-A production release is fail-closed unless the canonical repository has all of
-these GitHub Actions secrets:
-
-- `CSC_LINK`: exported Developer ID Application certificate and private key
-  (`.p12`, or its base64-encoded contents)
-- `CSC_KEY_PASSWORD`: password protecting that export
-- `APPLE_ID`: Apple account used by `notarytool`
-- `APPLE_APP_SPECIFIC_PASSWORD`: app-specific password for that account
-- `APPLE_TEAM_ID`: Apple Developer team that owns the signing identity
-
-The automatic macOS ARM job builds the Apple Silicon DMG/ZIP assets without
-publishing them first, verifies the Developer ID signature and expected team,
-validates the stapled notarization ticket, and requires Gatekeeper to report
-`Notarized Developer ID`. The assets are staged as workflow artifacts and the
-GitHub Release remains a draft until the `macos-production` environment is
-approved. That approval should happen only after a maintainer installs and
-smoke-tests the exact staged artifact on a real Mac. The promotion job uploads
-and publishes those same artifacts; it does not rebuild them.
-
-Configure `macos-production` in repository settings with one or more required
-reviewers. The publish job also reads the environment rules and fails closed if
-the required-reviewer rule is missing or administrators can bypass it, so an
-accidentally unprotected environment cannot publish a release. The environment
-is the publication gate, not a substitute for the signature, notarization, or
-Gatekeeper checks performed by the packaging job.
-
-### Manual macOS-only release
-
-When a non-automatic macOS package is needed, run **Actions → macOS Desktop
-Release → Run workflow**, enter an existing semantic version tag, and choose
-`x64`, `arm64`, or `all`. This path is manual and applies the same Developer
-ID/notarization/Gatekeeper gates. It still requires the `macos-production`
-environment approval before it uploads or publishes assets. The ARM choice is
-also useful for rerunning the automatic artifact after a transient failure.
-
-## Manual publication for all other assets
-
-Rust CLI archives, non-ARM desktop installers, backend/Web container images,
-and the Helm chart are published only through a manual **Release** workflow
-run. In **Actions → Release → Run workflow**, enter an existing semantic
-version tag. The workflow checks out that exact tag and runs the full manually
-requested release path; it does not run from a tag push automatically.
-
-The manual Web image path also requires the repository Actions secret
-`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`. It is a public browser key, but it must be
-passed into `Dockerfile.web` at build time because Next.js embeds
-`NEXT_PUBLIC_*` values in the client bundle. The Helm
-`frontend.config.clerkPublishableKey` value must match that build-time key; the
-runtime environment variable alone cannot change an already-built bundle.
-The published Web image reads `NEXT_PUBLIC_DESKTOP_APP_ORIGIN` from the same
-named repository Actions variable at build time. Leave it unset until a real
-HTTPS app at `https://patchbay.aspectlylabs.com` serves `/auth/callback`; an
-unset value disables browser-hosted Desktop handoff instead of claiming that an
-unprovisioned host works. Once deployed, that exact origin is the only hosted
-browser destination accepted by the accounts app.
-
-The current compatibility deployment routes both Web entrypoints to the same
-frontend Service: `patchbay.aspectlylabs.com` is the primary frontend host and
-`accounts.aspectlylabs.com` is an additional host. Keep that route unchanged
-until the independent auth broker passes the staged and canonical browser gates
-in `docs/operations/auth-broker-migration.md` and an operator explicitly
-approves the traffic change.
-
-The versioned **Release** workflow intentionally excludes the auth broker. The
-continuous production workflow nevertheless builds and deploys a
-commit-addressed Auth Broker image as one member of the complete production
-set. Its publishable Clerk key and API/accounts origins are injected at
-runtime, so they are not embedded in the image. Building/deploying the broker
-container still does not change Cloudflare traffic or transfer its Rust API
-authority. The broker chart is separately versioned under
-`deploy/helm/patchbay-auth-broker` and renders no workload unless explicitly
-enabled with an immutable image digest. See
-`docs/architecture/auth-release-boundary.md` for the versioned protocol and the
-changes that require a complete Google OAuth E2E.
-
-The manual **Release** workflow first applies migrations with
-`patchbay-migrate`, runs every Rust workspace target, builds the server, CLI,
-migration runner, and all three backfill binaries, and runs RustSec before any
-publishing job starts. It then packages the requested non-macOS assets and
-publishes backend/Web container images and the Helm chart. The vulnerability
-scan is fail-closed by default.
-
-Backend/Web container images and the Helm chart build native `linux/amd64` and
-`linux/arm64` images, publish the versioned multi-architecture manifests, and
-can optionally promote stable images to `latest`.
-
-Select **promote_latest** only when the requested tag is a stable release and
-the versioned images have been intentionally chosen as the new self-hosted
-default. Pre-release tags are never promoted to `latest`.
+The verification job runs the Go tests and `govulncheck` before any publishing
+job starts. The vulnerability scan is fail-closed by default.
 
 ## Emergency vulnerability-scan bypass
 
-Use the bypass only when RustSec or its live advisory database is unavailable,
-or when maintainers have documented a confirmed false positive that blocks an
-urgent release. Never use it to publish a release with an unresolved
-vulnerability.
+Use the bypass only when `govulncheck` itself or its live vulnerability database
+is unavailable, or when maintainers have documented a confirmed false positive
+that blocks an urgent release. Never use it to publish a release with an
+unresolved reachable vulnerability.
 
 1. Record the reason and maintainer approval in the release issue or pull
    request, and confirm no other release is in progress.
@@ -189,7 +30,5 @@ vulnerability.
    completes. The tag-scoped value prevents a concurrent release with another
    tag from inheriting the bypass.
 
-The release and container assets are Rust binaries and the release workflow no
-longer installs or executes Go. Audit a downloaded CLI artifact with `patchbay
-version --output json`; it reports the release version, commit, build time,
-target OS, and target architecture.
+Every Go binary retains its compiler version in the standard Go build metadata;
+use `go version -m <binary>` when auditing a downloaded release artifact.

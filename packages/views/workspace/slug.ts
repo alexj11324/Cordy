@@ -1,5 +1,5 @@
 import { pinyin } from "pinyin-pro";
-import type { SupportedLocale } from "@patchbay/core/i18n";
+import type { SupportedLocale } from "@multica/core/i18n";
 import { CELESTIAL_WORKSPACE_NAMES } from "./celestial-workspace-names";
 
 export const WORKSPACE_SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -54,7 +54,7 @@ function romanizeHan(name: string): string {
  *
  * Chinese names are romanized first (蜘蛛侠 → "zhizhuxia"), so the create
  * form can fill in a URL — and, through it, an issue prefix — for a name
- * with no Latin characters at all (PB-6050). This is a derived default the
+ * with no Latin characters at all (MUL-6050). This is a derived default the
  * user can still edit before creating, not a hardcoded one: the objection to
  * a fixed fallback like "workspace" was that it picks a useless URL and
  * collides for the second such workspace on the instance, and neither is

@@ -2,7 +2,7 @@ import { ListTodo, Plus, Zap } from "lucide-react";
 import { within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { SidebarProvider } from "@patchbay/ui/components/ui/sidebar";
+import { SidebarProvider } from "@multica/ui/components/ui/sidebar";
 import { renderWithI18n } from "../test/i18n";
 import {
   CollectionPageHeader,
@@ -38,10 +38,10 @@ describe("PageHeader title alignment", () => {
     const header = renderHeader(
       <CollectionPageHeader
         icon={Zap}
-        title="Automation"
+        title="Autopilot"
         count={2}
         actions={
-          <CollectionPageHeaderAction icon={Plus} label="New automation" />
+          <CollectionPageHeaderAction icon={Plus} label="New autopilot" />
         }
       />,
     );
@@ -49,7 +49,7 @@ describe("PageHeader title alignment", () => {
     expectTitleLeftOfFreeSpace(header);
 
     const heading = within(header).getByRole("heading");
-    expect(heading.textContent).toBe("Automation");
+    expect(heading.textContent).toBe("Autopilot");
     expect(heading.parentElement).toHaveClass("flex-1");
   });
 
@@ -93,7 +93,7 @@ describe("PageHeader base chrome", () => {
 
   // A shell that keeps its own trigger on screen (the desktop window toolbar)
   // gets no fallback one: the header's copy is the same icon 50px below the
-  // shell's, and a list/detail surface stacked a third alongside it (PB-6218).
+  // shell's, and a list/detail surface stacked a third alongside it (MUL-6218).
   it("drops its trigger under a shell that keeps its own on screen", () => {
     const header = renderHeader(
       <PageHeader>
@@ -129,7 +129,7 @@ describe("PageHeader base chrome", () => {
   // spacing; both must resolve to the base gap and gutter.
   it("resolves the same gutter and gap for collection and issues headers", () => {
     const collection = renderHeader(
-      <CollectionPageHeader icon={Zap} title="Automation" count={2} />,
+      <CollectionPageHeader icon={Zap} title="Autopilot" count={2} />,
     );
     const issues = renderHeader(
       <PageHeader>

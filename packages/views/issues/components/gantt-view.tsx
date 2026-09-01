@@ -2,21 +2,21 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useViewStore, useViewStoreApi } from "@patchbay/core/issues/stores/view-store-context";
-import type { GanttZoom } from "@patchbay/core/issues/stores/view-store";
-import { projectListOptions } from "@patchbay/core/projects/queries";
-import type { Issue, IssueStatusCategory } from "@patchbay/core/types";
-import { issueStatusCategory } from "@patchbay/core/issues";
-import { dateOnlyToUTCDate } from "@patchbay/core/issues/date";
-import { cn } from "@patchbay/ui/lib/utils";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { useWorkspacePaths } from "@multica/core/paths";
+import { useViewStore, useViewStoreApi } from "@multica/core/issues/stores/view-store-context";
+import type { GanttZoom } from "@multica/core/issues/stores/view-store";
+import { projectListOptions } from "@multica/core/projects/queries";
+import type { Issue, IssueStatusCategory } from "@multica/core/types";
+import { issueStatusCategory } from "@multica/core/issues";
+import { dateOnlyToUTCDate } from "@multica/core/issues/date";
+import { cn } from "@multica/ui/lib/utils";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@patchbay/ui/components/ui/tooltip";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@multica/ui/components/ui/tooltip";
+import { Button } from "@multica/ui/components/ui/button";
 import { AppLink } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { ProjectIcon } from "../../projects/components/project-icon";
@@ -47,7 +47,7 @@ function daysBetween(a: Date, b: Date): number {
 
 // Issue dates arrive as date-only "YYYY-MM-DD" strings (calendar days). Anchor
 // each to UTC midnight so the bar lands on exactly that day, independent of the
-// viewer's timezone. See @patchbay/core/issues/date.
+// viewer's timezone. See @multica/core/issues/date.
 function parseDay(iso: string | null): Date | null {
   return dateOnlyToUTCDate(iso);
 }
@@ -294,7 +294,7 @@ function BackgroundLayer({
 // Keyed by CATEGORY, not by status key: an issue on a custom status draws in
 // the color of the category it behaves as. Keying this by IssueStatus made the
 // lookup `undefined` for every custom key, so the bar lost its color entirely.
-// (PB-6243)
+// (MUL-6243)
 const STATUS_BAR_BG: Record<IssueStatusCategory, string> = {
   backlog: "bg-muted-foreground/60",
   todo: "bg-muted-foreground/70",
@@ -387,10 +387,10 @@ function ScheduledRow({
           </span>
           <span className="truncate flex-1">{issue.title}</span>
           {project && <ProjectIcon project={project} size="sm" />}
-          {issue.executor_type && issue.executor_id && (
+          {issue.assignee_type && issue.assignee_id && (
             <ActorAvatar
-              actorType={issue.executor_type}
-              actorId={issue.executor_id}
+              actorType={issue.assignee_type}
+              actorId={issue.assignee_id}
               size="sm"
               enableHoverCard
             />
@@ -466,7 +466,7 @@ export function GanttView({ issues }: { issues: Issue[] }) {
   // filters, drops undated rows, and honours `ganttShowCompleted` before
   // handing it over (see `ganttCanvasRows` in use-issue-surface-data.ts).
   // Those rules used to live here, which meant the header chip could count
-  // rows this canvas would never draw (PB-4884). Keep this view a renderer:
+  // rows this canvas would never draw (MUL-4884). Keep this view a renderer:
   // it orders rows, it does not decide which ones exist.
   const scheduled = useMemo(() => {
     // "position" makes no sense on a gantt — default to start_date asc when

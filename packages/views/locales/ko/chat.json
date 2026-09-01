@@ -4,29 +4,16 @@
     "select_prompt": "대화를 선택하거나 +로 새로 시작하세요",
     "agent_link_no_access": "이 에이전트와 채팅할 권한이 없습니다."
   },
-  "navigation": {
-    "new_topic": "새 주제",
-    "search": "검색",
-    "topics": "주제",
-    "profile": "에이전트 프로필",
-    "tasks": "작업",
-    "history": "채팅 기록",
-    "history_search": "주제 검색...",
-    "switch_agent": "에이전트 전환",
-    "switch_workspace": "워크스페이스 전환",
-    "topic_actions": "주제 작업",
-    "topic_count": "주제 {{count}}개"
-  },
   "fab": {
-    "running": "Patchbay가 작업 중입니다...",
+    "running": "Multica가 작업 중입니다...",
     "unread_other": "읽지 않은 채팅 {{count}}개",
-    "default": "Patchbay에 묻기"
+    "default": "Multica에 묻기"
   },
   "input": {
     "placeholder_no_agent": "채팅을 시작하려면 에이전트를 만드세요",
     "placeholder_archived": "보관된 세션입니다",
     "placeholder_archived_agent": "보관된 에이전트입니다",
-    "placeholder_runtime_required": "기기를 연결한 후 계속하세요",
+    "placeholder_runtime_required": "런타임을 연결한 후 계속하세요",
     "placeholder_access_revoked": "이 에이전트를 실행할 권한이 없습니다",
     "placeholder_named": "{{name}}에게 메시지 보내기…",
     "placeholder_default": "메시지 입력…",
@@ -35,7 +22,7 @@
     "stop_tooltip": "중지",
     "send_failed_toast": "메시지를 보내지 못했습니다",
     "send_blocked_toast": "메시지가 전송되지 않았습니다 — 이 에이전트를 사용할 권한이 없습니다",
-    "runtime_required_toast": "메시지가 전송되지 않았습니다 — 먼저 이 에이전트에 기기를 연결하세요",
+    "runtime_required_toast": "메시지가 전송되지 않았습니다 — 먼저 이 에이전트에 런타임을 연결하세요",
     "attachment_bind_failed_toast": "메시지는 보냈지만 파일이 첨부되지 않았습니다. 잠시 후 다시 시도해 주세요.",
     "add_tooltip": "추가",
     "upload_file": "이미지 또는 파일",
@@ -44,14 +31,6 @@
     "remove_project_context": "프로젝트 컨텍스트 제거",
     "no_projects": "아직 프로젝트가 없습니다",
     "project_context_unsupported": "프로젝트 설명이 적용되지 않습니다 — 이 에이전트의 데몬 업그레이드가 필요합니다"
-  },
-  "follow_up": {
-    "title": "에이전트가 아직 작업 중입니다",
-    "wait": "기다리기",
-    "wait_hint": "현재 답변이 끝날 때까지 대기열에 넣습니다",
-    "steer": "지시",
-    "steer_hint": "현재 답변을 멈추고 지금 보냅니다",
-    "choose_tooltip": "후속 방법 선택"
   },
   "queue": {
     "title_other": "대기 중인 메시지 {{count}}개",
@@ -80,7 +59,7 @@
       "runtime_recovery": "완료 전에 에이전트가 다시 시작되었습니다. 다시 시도해 주세요.",
       "manual": "이 답변이 취소되었습니다.",
       "skill_bundle_unavailable": "에이전트의 skill을 내려받지 못해 답변을 시작하지 못했습니다. 대개 네트워크 연결 문제입니다. 다시 시도해 주세요.",
-      "runtime_cli_timeout": "로컬 OpenClaw CLI가 제한 시간 안에 응답하지 않아 이번 실행이 시작되지 못했습니다. 네트워크 문제가 아니라 로컬 실행 지연입니다. CLI가 빨라지거나 제한 시간(PATCHBAY_OPENCLAW_CLI_TIMEOUT)을 늘리기 전에는 다시 시도해도 실패합니다.",
+      "runtime_cli_timeout": "로컬 OpenClaw CLI가 제한 시간 안에 응답하지 않아 이번 실행이 시작되지 못했습니다. 네트워크 문제가 아니라 로컬 실행 지연입니다. CLI가 빨라지거나 제한 시간(MULTICA_OPENCLAW_CLI_TIMEOUT)을 늘리기 전에는 다시 시도해도 실패합니다.",
       "provider_network": "모델 서비스와의 연결이 끊겨 답변을 완료하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.",
       "provider_auth_or_access": "에이전트의 모델 계정 로그인이 만료되었습니다. 다시 로그인한 뒤 시도해 주세요.",
       "provider_quota_limit": "에이전트의 모델 계정 잔액이 부족합니다. 충전하거나 계정을 변경한 뒤 시도해 주세요.",
@@ -91,7 +70,6 @@
       "fallback": "문제가 발생하여 에이전트가 답변을 완료하지 못했습니다. 다시 시도해 주세요."
     },
     "tools_other": "도구 {{count}}개",
-    "tool_fallback": "도구",
     "tool_result_named": "{{tool}} 결과: ",
     "tool_result_unnamed": "결과: ",
     "process_steps_other": "단계 {{count}}개",
@@ -100,6 +78,7 @@
     "copy_failed_toast": "복사 실패",
     "loading_older": "이전 메시지를 불러오는 중…",
     "quick_actions_heading": "후속 질문",
+    "quick_actions_aria": "추천 후속 질문",
     "quick_actions_regenerate": "제안 다시 생성",
     "quick_actions_regenerate_failed": "제안을 다시 생성하지 못했습니다. 다시 시도해 주세요."
   },
@@ -154,8 +133,8 @@
     "no_agents": "에이전트 없음",
     "history_group": "채팅 기록",
     "agent_filter_placeholder": "에이전트 검색...",
-    "agent_needs_runtime": "기기 필요",
-    "agent_needs_runtime_hint": "이 에이전트와 채팅하기 전에 기기를 연결하세요"
+    "agent_needs_runtime": "런타임 필요",
+    "agent_needs_runtime_hint": "이 에이전트와 채팅하기 전에 런타임을 연결하세요"
   },
   "empty_state": {
     "first_time_title": "에이전트와 채팅하기",
@@ -164,14 +143,25 @@
     "first_time_pillars_suffix": ".",
     "first_time_actions": "요약을 요청하거나, 오늘 할 일을 계획하거나, 간단한 작업을 맡겨보세요.",
     "returning_title_named": "안녕하세요, 저는 {{name}}입니다",
-    "returning_title_default": "Patchbay에 오신 것을 환영합니다",
+    "returning_title_default": "Multica에 오신 것을 환영합니다",
     "returning_subtitle": "이렇게 요청해 보세요",
     "chat_with_named": "{{name}}와 채팅"
   },
-  "starter_prompts": {
-    "list_open": "열린 태스크를 우선순위별로 정리해 줘",
-    "summarize_today": "오늘 내가 한 일을 요약해 줘",
-    "plan_next": "다음에 할 일을 계획해 줘"
+  "conversation_starters": {
+    "aria_label": "대화 시작 예시",
+    "capabilities": {
+      "label": "어떤 일을 도와줄 수 있나요?",
+      "prompt": "가장 잘 도울 수 있는 일을 간단히 알려 주세요."
+    },
+    "first_task": {
+      "label": "첫 태스크 추천",
+      "prompt": "당신에게 맡길 수 있는 유용한 태스크 세 가지를 추천해 주세요."
+    },
+    "recommend": {
+      "label": "작업 추천",
+      "prompt": "내 워크스페이스에 대해 알고 있는 내용을 바탕으로 유용한 첫 작업을 추천해 주세요."
+    },
+    "customize": "시작 예시 편집"
   },
   "onboarding_cards": {
     "aria_label": "시작 방법",
@@ -198,8 +188,8 @@
   "agent_access_revoked_banner": "{{name}}을(를) 실행할 권한이 없습니다. 이 대화는 읽기 전용입니다.",
   "runtime_required_banner": {
     "fallback_name": "이 에이전트",
-    "message": "{{name}} 에이전트가 응답하려면 기기를 연결해야 합니다.",
-    "action": "기기 연결"
+    "message": "{{name}} 에이전트가 응답하려면 런타임을 연결해야 합니다.",
+    "action": "런타임 연결"
   },
   "offline_banner": {
     "fallback_name": "에이전트",
@@ -213,6 +203,7 @@
       "retrying": "재시도 중",
       "queued": "대기 중",
       "waiting_local_directory": "로컬 디렉터리 대기 중",
+      "waiting_local_directory_reason": "{{reason}} 대기 중",
       "starting_up": "시작 중",
       "thinking": "생각 중",
       "typing": "입력 중"
@@ -251,42 +242,5 @@
     "delete": "채팅 삭제",
     "archive": "채팅 보관",
     "unarchive": "채팅 보관 해제"
-  },
-  "channels": {
-    "title": "채널",
-    "subtitle": "팀과 에이전트가 한곳에서 협업합니다",
-    "new_channel": "새 채널",
-    "create_title": "채널 만들기",
-    "create_description": "팀과 에이전트가 함께 이야기할 공간을 만드세요.",
-    "name_label": "이름",
-    "name_placeholder": "예: product…",
-    "description_label": "설명(선택 사항)",
-    "description_placeholder": "이 채널에서는 무엇을 이야기하나요?…",
-    "create": "채널 만들기",
-    "cancel": "취소",
-    "empty_title": "첫 채널을 만들어 보세요",
-    "empty_description": "멤버와 에이전트를 하나의 집중된 대화로 모읍니다.",
-    "empty_message": "아직 메시지가 없습니다. 채널에 인사를 남겨 보세요.",
-    "message_placeholder": "#{{name}}에 메시지 보내기…",
-    "mention_hint": "@로 멤버 또는 에이전트를 멘션하세요",
-    "send": "보내기",
-    "reply": "답장",
-    "quote": "인용",
-    "clear_reference": "참조 지우기",
-    "quoted_prefix": "{{name}}의 메시지 인용",
-    "replying_to": "{{name}}에게 답장 중",
-    "agent_badge": "에이전트",
-    "member_badge": "멤버",
-    "participants": "참여자 {{count}}명",
-    "no_channels": "아직 채널이 없습니다",
-    "create_failed": "채널을 만들지 못했습니다",
-    "send_failed": "메시지를 보내지 못했습니다",
-    "loading": "채널을 불러오는 중…",
-    "load_older": "이전 메시지 불러오기",
-    "loading_older": "이전 메시지를 불러오는 중…",
-    "unknown_badge": "알 수 없는 작성자",
-    "copy": "복사",
-    "copied": "복사했습니다",
-    "copy_failed": "복사 실패"
   }
 }

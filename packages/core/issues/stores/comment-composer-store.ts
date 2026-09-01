@@ -22,7 +22,7 @@ export const useCommentComposerStore = create<CommentComposerStore>()(
       toggleSticky: () => set((s) => ({ sticky: !s.sticky })),
     }),
     {
-      name: "patchbay_comment_composer",
+      name: "multica_comment_composer",
       storage: createJSONStorage(() => defaultStorage),
     },
   ),

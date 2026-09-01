@@ -3,26 +3,26 @@
 import { useEffect, useState } from "react";
 import { CalendarDays, Check, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
-import type { Issue, IssueProperty, IssuePropertyValue } from "@patchbay/core/types";
-import { hasUnknownActorRef } from "@patchbay/core/types";
+import type { Issue, IssueProperty, IssuePropertyValue } from "@multica/core/types";
+import { hasUnknownActorRef } from "@multica/core/types";
 import {
   useSetIssueProperty,
   useUnsetIssueProperty,
-} from "@patchbay/core/properties";
+} from "@multica/core/properties";
 import {
   toDateOnly,
   dateOnlyToLocalDate,
   formatDateOnly,
-} from "@patchbay/core/issues/date";
-import { Calendar } from "@patchbay/ui/components/ui/calendar";
+} from "@multica/core/issues/date";
+import { Calendar } from "@multica/ui/components/ui/calendar";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@patchbay/ui/components/ui/popover";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { useT } from "../../../i18n";
+} from "@multica/ui/components/ui/popover";
+import { Button } from "@multica/ui/components/ui/button";
+import { Input } from "@multica/ui/components/ui/input";
+import { useLocale, useT } from "../../../i18n";
 import { PropertyPicker, PickerItem } from "./property-picker";
 import { ActorPropertyPicker, ActorPropertyDisplay } from "./actor-property-picker";
 
@@ -48,7 +48,7 @@ const EDITABLE_PROPERTY_TYPES = [
  *      would otherwise render as empty and the user, believing the field is
  *      unset, would overwrite a value they were never shown. `multi_actor` is
  *      exempt: its toggle round-trips unknown entries instead of replacing the
- *      whole value (PB-6286 review).
+ *      whole value (MUL-6286 review).
  */
 export function isCustomPropertyReadOnly(
   property: IssueProperty,
@@ -473,6 +473,7 @@ export function CustomPropertyValueDisplay({
   value: IssuePropertyValue | undefined;
 }) {
   const { t } = useT("issues");
+  const locale = useLocale();
   if (value === undefined) {
     return (
       <span className="text-muted-foreground">
@@ -539,7 +540,7 @@ export function CustomPropertyValueDisplay({
         <span className="flex items-center gap-1.5">
           <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
           {typeof value === "string"
-            ? formatDateOnly(value, { month: "short", day: "numeric" }, "en-US")
+            ? formatDateOnly(value, { month: "short", day: "numeric" }, locale)
             : String(value)}
         </span>
       );

@@ -1,7 +1,7 @@
 import type { CreateIssueRequest } from "../../types";
 import type { MyIssuesFilter } from "../queries";
 import {
-  roleFiltersForActorKind,
+  assigneeTypesForActorKind,
   issueScopeKey,
   UnsupportedIssueScopeError,
   type IssueScope,
@@ -33,10 +33,10 @@ function buildMyRelationPlan(
     case "assigned":
       return {
         scopeKey,
-        queryFilter: { owner_id: scope.userId },
+        queryFilter: { assignee_id: scope.userId },
         createDefaults: {
-          owner_type: "member",
-          owner_id: scope.userId,
+          assignee_type: "member",
+          assignee_id: scope.userId,
         },
       };
     case "created":
@@ -63,25 +63,20 @@ export function buildIssueSurfaceQueryPlan(
 
   switch (scope.type) {
     case "workspace": {
-      const { ownerTypes, executorTypes } = roleFiltersForActorKind(scope.actorKind);
+      const assigneeTypes = assigneeTypesForActorKind(scope.actorKind);
       return {
         scopeKey,
-        queryFilter: {
-          ...(ownerTypes ? { owner_types: ownerTypes } : {}),
-          ...(executorTypes ? { executor_types: executorTypes } : {}),
-        },
+        queryFilter: assigneeTypes ? { assignee_types: assigneeTypes } : {},
         createDefaults: {},
       };
     }
     case "project": {
-      const { ownerTypes, executorTypes } = roleFiltersForActorKind(scope.actorKind);
+      const assigneeTypes = assigneeTypesForActorKind(scope.actorKind);
       return {
         scopeKey,
-        queryFilter: {
-          project_id: scope.projectId,
-          ...(ownerTypes ? { owner_types: ownerTypes } : {}),
-          ...(executorTypes ? { executor_types: executorTypes } : {}),
-        },
+        queryFilter: assigneeTypes
+          ? { project_id: scope.projectId, assignee_types: assigneeTypes }
+          : { project_id: scope.projectId },
         createDefaults: { project_id: scope.projectId },
       };
     }
@@ -92,15 +87,14 @@ export function buildIssueSurfaceQueryPlan(
         scopeKey,
         queryFilter:
           scope.relation === "assigned"
-            ? scope.actorType === "member"
-              ? { owner_id: scope.actorId }
-              : { executor_id: scope.actorId }
+            ? { assignee_id: scope.actorId }
             : { creator_id: scope.actorId },
         createDefaults:
           scope.relation === "assigned"
-            ? scope.actorType === "member"
-              ? { owner_type: "member", owner_id: scope.actorId }
-              : { executor_type: "agent", executor_id: scope.actorId }
+            ? {
+                assignee_type: scope.actorType,
+                assignee_id: scope.actorId,
+              }
             : {},
       };
     case "team":

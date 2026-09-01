@@ -2,19 +2,19 @@
 
 import { useMemo, useState } from "react";
 import { TriangleAlert } from "lucide-react";
-import type { CommentTriggerPreviewAgent, CommentTriggerOutcome } from "@patchbay/core/types";
-import { useAgentPresenceDetail } from "@patchbay/core/agents";
-import { mentionLabelsByTarget } from "@patchbay/core/issues/comment-trigger-outcomes";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
-import { AVATAR_SIZE_PX } from "@patchbay/ui/lib/avatar-size";
+import type { CommentTriggerPreviewAgent, CommentTriggerOutcome } from "@multica/core/types";
+import { useAgentPresenceDetail } from "@multica/core/agents";
+import { mentionLabelsByTarget } from "@multica/core/issues/comment-trigger-outcomes";
+import { useCurrentWorkspace } from "@multica/core/paths";
+import { ActorAvatar as ActorAvatarBase } from "@multica/ui/components/common/actor-avatar";
+import { AVATAR_SIZE_PX } from "@multica/ui/lib/avatar-size";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@patchbay/ui/components/ui/tooltip";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@multica/ui/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@multica/ui/components/ui/tooltip";
+import { cn } from "@multica/ui/lib/utils";
 import { AgentStatusDot } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 import { blockedReasonLabel, blockedShortReasonLabel } from "../blocked-trigger-copy";
@@ -34,8 +34,8 @@ const MAX_STACK_HEADS = 4;
 
 interface CommentTriggerChipsProps {
   agents: CommentTriggerPreviewAgent[];
-  // Explicit @agent / @team mentions that will NOT trigger if posted as-is
-  // (PB-4525 §2). Each renders as a named warning chip so the user sees WHICH
+  // Explicit @agent / @squad mentions that will NOT trigger if posted as-is
+  // (MUL-4525 §2). Each renders as a named warning chip so the user sees WHICH
   // target won't run and why, not a silent no-op after sending.
   blocked?: CommentTriggerOutcome[];
   // The draft markdown, used only to label each blocked target with the name the
@@ -50,28 +50,28 @@ type IssuesT = ReturnType<typeof useT<"issues">>["t"];
 
 function sourceLabel(source: string, t: IssuesT): string {
   switch (source) {
-    case "issue_executor":
-      return t(($) => $.comment.trigger_source_issue_executor);
+    case "issue_assignee":
+      return t(($) => $.comment.trigger_source_issue_assignee);
     case "mention_agent":
       return t(($) => $.comment.trigger_source_mention_agent);
-    case "mention_team_leader":
-      return t(($) => $.comment.trigger_source_mention_team_leader);
+    case "mention_squad_leader":
+      return t(($) => $.comment.trigger_source_mention_squad_leader);
     default:
       return t(($) => $.comment.trigger_source_unknown);
   }
 }
 
-// Executor / @mention reasons are intentionally omitted: the header
+// Assignee / @mention reasons are intentionally omitted: the header
 // (name · source) already says why they fire, so a reason line there would
-// just restate it. Only the team-leader link (non-obvious) and the unknown
+// just restate it. Only the squad-leader link (non-obvious) and the unknown
 // fallback carry information the header doesn't.
 function sourceReason(agent: CommentTriggerPreviewAgent, t: IssuesT): string | null {
   switch (agent.source) {
-    case "issue_executor":
+    case "issue_assignee":
     case "mention_agent":
       return null;
-    case "mention_team_leader":
-      return t(($) => $.comment.trigger_reason_mention_team_leader);
+    case "mention_squad_leader":
+      return t(($) => $.comment.trigger_reason_mention_squad_leader);
     default:
       return agent.reason || t(($) => $.comment.trigger_reason_unknown);
   }
@@ -110,9 +110,6 @@ function TriggerAgentTooltipBody({
         <div>{t(($) => $.comment.trigger_click_to_restore)}</div>
       ) : (
         <>
-          {agent.active_task_id && (
-            <div>{t(($) => $.comment.trigger_opens_side_chat)}</div>
-          )}
           {(() => {
             // Reason (when present) and presence share one line; either may be
             // absent, so join only the parts that exist to avoid a stray space.
@@ -240,9 +237,7 @@ function SingleTriggerChip({
   // so it stays fixed-width and never truncates on long agent names.
   const sentence = suppressed
     ? t(($) => $.comment.trigger_wont_trigger)
-    : agent.active_task_id
-      ? t(($) => $.comment.trigger_will_side_chat)
-      : t(($) => $.comment.trigger_will_start);
+    : t(($) => $.comment.trigger_will_start);
 
   return (
     <Tooltip>
@@ -285,9 +280,6 @@ function MultiTriggerChip({
   const [open, setOpen] = useState(false);
   const [tooltipHover, setTooltipHover] = useState(false);
   const activeCount = agents.filter((a) => !suppressedAgentIds.has(a.id)).length;
-  const activeRunCount = agents.filter(
-    (agent) => agent.active_task_id && !suppressedAgentIds.has(agent.id),
-  ).length;
   const heads = agents.slice(0, MAX_STACK_HEADS);
   const overflow = agents.length - heads.length;
   // Mirror AgentAvatarStack: ~30% overlap reads as "stacked" without
@@ -299,16 +291,7 @@ function MultiTriggerChip({
   const sentence =
     activeCount === 0
       ? t(($) => $.comment.trigger_none_will_trigger)
-      : activeRunCount === activeCount
-        ? t(($) => $.comment.trigger_will_side_chat_count, {
-            count: activeCount,
-          })
-        : activeRunCount > 0
-          ? t(($) => $.comment.trigger_will_mixed_count, {
-              sideChatCount: activeRunCount,
-              startCount: activeCount - activeRunCount,
-            })
-        : t(($) => $.comment.trigger_will_start_count, { count: activeCount });
+      : t(($) => $.comment.trigger_will_start_count, { count: activeCount });
 
   const popoverTrigger = (
     <PopoverTrigger

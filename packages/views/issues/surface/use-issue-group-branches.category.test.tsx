@@ -5,14 +5,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { setApiInstance } from "@patchbay/core/api";
-import type { ApiClient } from "@patchbay/core/api/client";
+import { setApiInstance } from "@multica/core/api";
+import type { ApiClient } from "@multica/core/api/client";
 import type {
   Issue,
   IssueStatusCategory,
   IssueTableGroupsRequest,
   IssueTableRowsRequest,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import { useIssueGroupBranches } from "./use-issue-group-branches";
 
 /**
@@ -27,18 +27,14 @@ function makeIssue(id: string, status: string, category: IssueStatusCategory): I
     id,
     workspace_id: "ws-1",
     number: 1,
-    identifier: `PB-${id}`,
+    identifier: `MUL-${id}`,
     title: id,
     description: null,
     status,
     status_category: category,
     priority: "none",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "u-1",
     project_id: "p1",

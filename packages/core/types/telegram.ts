@@ -1,19 +1,13 @@
-import type {
-  MessagingInstallationRuntime,
-  MessagingInstallationSetup,
-} from "./messaging";
-
-/** A Telegram bot installation, optionally bound to a Patchbay agent.
+/** A Telegram bot installation bound to a single Multica agent.
  *
  * Wire shape mirrors `TelegramInstallationResponse` in
- * the Rust Telegram handler. New fields the backend adds in the
+ * `server/internal/handler/telegram.go`. New fields the backend adds in the
  * future MUST default to optional so older desktop builds keep parsing the
- * response — see AGENTS.md → API Compatibility. */
+ * response — see CLAUDE.md → API Compatibility. */
 export interface TelegramInstallation {
   id: string;
   workspace_id: string;
-  /** Null for a workspace Hub; the channel selects an Agent with /agents. */
-  agent_id: string | null;
+  agent_id: string;
   /** The bot's numeric Telegram id (the token prefix), as a string. */
   bot_id: string;
   /** The bot's Telegram username (without the @). */
@@ -23,8 +17,6 @@ export interface TelegramInstallation {
   installed_at: string;
   created_at: string;
   updated_at: string;
-  runtime?: MessagingInstallationRuntime;
-  setup?: MessagingInstallationSetup;
 }
 
 export interface ListTelegramInstallationsResponse {
@@ -46,7 +38,7 @@ export interface RegisterTelegramRequest {
 }
 
 /** Post-redemption echo: the Telegram user id the token carried is now bound
- * to the logged-in Patchbay user in this workspace/installation. */
+ * to the logged-in Multica user in this workspace/installation. */
 export interface RedeemTelegramBindingTokenResponse {
   workspace_id: string;
   installation_id: string;

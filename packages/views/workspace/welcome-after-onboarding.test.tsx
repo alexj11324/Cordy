@@ -2,8 +2,8 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import { useWelcomeStore } from "@patchbay/core/onboarding";
+import { I18nProvider } from "@multica/core/i18n/react";
+import { useWelcomeStore } from "@multica/core/onboarding";
 import enCommon from "../locales/en/common.json";
 import enOnboarding from "../locales/en/onboarding.json";
 import {
@@ -15,7 +15,7 @@ import { WelcomeAfterOnboarding } from "./welcome-after-onboarding";
 const mockUser = {
   id: "user-1",
   name: "Test",
-  email: "test@example.com",
+  email: "test@multica.ai",
   avatar_url: null,
   onboarded_at: "2026-01-01T00:00:00Z",
   onboarding_questionnaire: {},
@@ -26,7 +26,7 @@ const mockUser = {
   updated_at: "",
 };
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@multica/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: (state: { user: typeof mockUser }) => unknown) => {
       const state = { user: mockUser };
@@ -41,9 +41,9 @@ vi.mock("@patchbay/core/auth", () => ({
 const mockCreateIssue = vi.fn();
 const mockGetWorkspace = vi.fn();
 
-vi.mock("@patchbay/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
-    "@patchbay/core/paths",
+vi.mock("@multica/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@multica/core/paths")>(
+    "@multica/core/paths",
   );
   return {
     ...actual,
@@ -55,7 +55,7 @@ vi.mock("@patchbay/core/paths", async () => {
   };
 });
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: {
     createIssue: (...args: unknown[]) => mockCreateIssue(...args),
     getWorkspace: (...args: unknown[]) => mockGetWorkspace(...args),
@@ -69,6 +69,7 @@ const navigationAdapter: NavigationAdapter = {
   back: vi.fn(),
   pathname: "/test",
   searchParams: new URLSearchParams(),
+  hash: "",
   getShareableUrl: (path: string) => `https://test.local${path}`,
 };
 
@@ -129,7 +130,7 @@ describe("WelcomeAfterOnboarding", () => {
   it("provisions the no-runtime guide, then opens the completion modal", async () => {
     mockCreateIssue.mockResolvedValueOnce({
       id: "issue-install",
-      identifier: "PB-1",
+      identifier: "MUL-1",
       workspace_id: "ws-1",
     });
     useWelcomeStore.getState().set({
@@ -141,17 +142,18 @@ describe("WelcomeAfterOnboarding", () => {
 
     expect(screen.getByText(/Setting up your workspace/i)).toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByText(/Welcome to Patchbay/i)).toBeInTheDocument();
+      expect(screen.getByText(/Welcome to Multica/i)).toBeInTheDocument();
     });
 
     expect(mockCreateIssue).toHaveBeenCalledTimes(1);
     expect(mockCreateIssue.mock.calls[0]![0]).toMatchObject({
-      title: "Connect a device to start with Patrick",
+      title: "Connect a runtime to start with Mika",
       status: "in_progress",
-      owner_type: "member", owner_id: "user-1",
+      assignee_type: "member",
+      assignee_id: "user-1",
     });
     expect(mockCreateIssue.mock.calls[0]![0].description).toContain(
-      "Start with Patrick",
+      "Start with Mika",
     );
 
     fireEvent.click(screen.getByRole("button", { name: /got it/i }));
@@ -191,7 +193,7 @@ describe("WelcomeAfterOnboarding", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /try again/i }));
 
-    expect(await screen.findByText(/Welcome to Patchbay/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Welcome to Multica/i)).toBeInTheDocument();
     expect(mockCreateIssue).toHaveBeenCalledTimes(2);
   });
 

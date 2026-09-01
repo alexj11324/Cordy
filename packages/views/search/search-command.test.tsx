@@ -2,8 +2,8 @@ import { act, type ReactNode } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import { WORKSPACE_PAGES } from "@patchbay/core/paths";
+import { I18nProvider } from "@multica/core/i18n/react";
+import { WORKSPACE_PAGES } from "@multica/core/paths";
 import { SearchCommand } from "./search-command";
 import { useSearchStore } from "./search-store";
 import enCommon from "../locales/en/common.json";
@@ -13,6 +13,8 @@ import enSearch from "../locales/en/search.json";
 // The palette labels its Pages group from the sidebar's own nav strings, so
 // the layout namespace is part of its contract, not incidental setup.
 import enLayout from "../locales/en/layout.json";
+import enProjects from "../locales/en/projects.json";
+import zhHansProjects from "../locales/zh-Hans/projects.json";
 
 const TEST_RESOURCES = {
   en: {
@@ -21,6 +23,23 @@ const TEST_RESOURCES = {
     settings: enSettings,
     search: enSearch,
     layout: enLayout,
+    projects: enProjects,
+  },
+};
+
+// Deliberately NOT a full zh-Hans bundle: only `projects` is translated, and
+// every other namespace stays on its English bundle under the zh-Hans key.
+// The one thing under test is whether a project row names its status through
+// the projects namespace, and keeping the chrome in English lets these tests
+// go on addressing the palette by its English placeholder and group headings.
+const ZH_TEST_RESOURCES = {
+  "zh-Hans": {
+    common: enCommon,
+    auth: enAuth,
+    settings: enSettings,
+    search: enSearch,
+    layout: enLayout,
+    projects: zhHansProjects,
   },
 };
 
@@ -34,6 +53,17 @@ function I18nWrapper({ children }: { children: ReactNode }) {
 
 const renderSearch = () => render(<SearchCommand />, { wrapper: I18nWrapper });
 
+function ChineseI18nWrapper({ children }: { children: ReactNode }) {
+  return (
+    <I18nProvider locale="zh-Hans" resources={ZH_TEST_RESOURCES}>
+      {children}
+    </I18nProvider>
+  );
+}
+
+const renderSearchInChinese = () =>
+  render(<SearchCommand />, { wrapper: ChineseI18nWrapper });
+
 const {
   mockPush,
   mockSearchIssues,
@@ -46,7 +76,7 @@ const {
   mockGetShareableUrl,
   mockMembers,
   mockAgents,
-  mockTeams,
+  mockSquads,
   mockOpenModal,
   mockToastSuccess,
   mockClipboardWrite,
@@ -64,7 +94,7 @@ const {
   mockSetTheme: vi.fn(),
   mockTheme: { current: "system" as "light" | "dark" | "system" },
   mockPathname: { current: "/ws-test/issues" as string },
-  mockGetShareableUrl: vi.fn((p: string) => `https://app.patchbay/${p}`),
+  mockGetShareableUrl: vi.fn((p: string) => `https://app.multica/${p}`),
   mockMembers: {
     current: [] as Array<{
       id: string;
@@ -84,7 +114,7 @@ const {
       avatar_url: string | null;
     }>,
   },
-  mockTeams: {
+  mockSquads: {
     current: [] as Array<{
       id: string;
       name: string;
@@ -101,7 +131,7 @@ const {
   mockResolvedExpandAll: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: {
     getBaseUrl: () => "http://127.0.0.1:8080",
     searchIssues: mockSearchIssues,
@@ -122,19 +152,19 @@ vi.mock("../common/actor-avatar", () => ({
         ? mockMembers.current.find((m) => m.user_id === actorId)?.name
         : actorType === "agent"
           ? mockAgents.current.find((a) => a.id === actorId)?.name
-          : actorType === "team"
-            ? mockTeams.current.find((s) => s.id === actorId)?.name
+          : actorType === "squad"
+            ? mockSquads.current.find((s) => s.id === actorId)?.name
             : undefined;
     return (
       <span
-        data-testid="issue-executor-avatar"
+        data-testid="issue-assignee-avatar"
         title={name ?? `${actorType}:${actorId}`}
       />
     );
   },
 }));
 
-vi.mock("@patchbay/core/issues/stores", () => {
+vi.mock("@multica/core/issues/stores", () => {
   const EMPTY: Array<{ id: string; visitedAt: number }> = [];
   return {
     useRecentIssuesStore: (
@@ -166,39 +196,36 @@ vi.mock("@patchbay/core/issues/stores", () => {
   };
 });
 
-vi.mock("@patchbay/core", () => ({
+vi.mock("@multica/core", () => ({
   useWorkspaceId: () => "ws-test",
 }));
 
-vi.mock("@patchbay/core/paths", async (importOriginal) => ({
+vi.mock("@multica/core/paths", async (importOriginal) => ({
   // Spread the real module so pure helpers (resolveRouteIconName, used to
   // derive each nav page's icon from its href) stay intact.
-  ...(await importOriginal<typeof import("@patchbay/core/paths")>()),
+  ...(await importOriginal<typeof import("@multica/core/paths")>()),
   useWorkspacePaths: () => ({
     inbox: () => "/ws-test/inbox",
     chat: () => "/ws-test/chat",
-    channels: () => "/ws-test/channels",
     myIssues: () => "/ws-test/my-issues",
     issues: () => "/ws-test/issues",
-    taskGraph: () => "/ws-test/task-graph",
     projects: () => "/ws-test/projects",
-    automations: () => "/ws-test/automations",
+    autopilots: () => "/ws-test/autopilots",
     agents: () => "/ws-test/agents",
-    teams: () => "/ws-test/teams",
+    squads: () => "/ws-test/squads",
     usage: () => "/ws-test/usage",
     runtimes: () => "/ws-test/runtimes",
     skills: () => "/ws-test/skills",
-    integrations: () => "/ws-test/integrations",
     settings: () => "/ws-test/settings",
     issueDetail: (id: string) => `/ws-test/issues/${id}`,
     memberDetail: (id: string) => `/ws-test/members/${id}`,
     agentDetail: (id: string) => `/ws-test/agents/${id}`,
-    teamDetail: (id: string) => `/ws-test/teams/${id}`,
+    squadDetail: (id: string) => `/ws-test/squads/${id}`,
     projectDetail: (id: string) => `/ws-test/projects/${id}`,
   }),
 }));
 
-vi.mock("@patchbay/core/issues/queries", () => ({
+vi.mock("@multica/core/issues/queries", () => ({
   issueDetailOptions: (_wsId: string, id: string) => ({
     queryKey: ["issues", "ws-test", "detail", id],
   }),
@@ -207,13 +234,13 @@ vi.mock("@patchbay/core/issues/queries", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@multica/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["workspaces", "ws-test", "members"] }),
   agentListOptions: () => ({ queryKey: ["workspaces", "ws-test", "agents"] }),
-  teamListOptions: () => ({ queryKey: ["workspaces", "ws-test", "teams"] }),
+  squadListOptions: () => ({ queryKey: ["workspaces", "ws-test", "squads"] }),
 }));
 
-vi.mock("@patchbay/core/modals", () => ({
+vi.mock("@multica/core/modals", () => ({
   useModalStore: Object.assign(vi.fn(), {
     getState: () => ({ open: mockOpenModal }),
   }),
@@ -237,8 +264,8 @@ vi.mock("@tanstack/react-query", () => ({
     if (key[0] === "workspaces" && key[2] === "agents") {
       return { data: mockAgents.current };
     }
-    if (key[0] === "workspaces" && key[2] === "teams") {
-      return { data: mockTeams.current };
+    if (key[0] === "workspaces" && key[2] === "squads") {
+      return { data: mockSquads.current };
     }
     if (opts.enabled === false) return { data: undefined };
     return { data: resolveIssue(key) };
@@ -268,7 +295,7 @@ vi.mock("../navigation/context", () => {
   };
 });
 
-vi.mock("@patchbay/ui/components/common/theme-provider", () => ({
+vi.mock("@multica/ui/components/common/theme-provider", () => ({
   useTheme: () => ({ theme: mockTheme.current, setTheme: mockSetTheme }),
 }));
 
@@ -284,11 +311,11 @@ describe("SearchCommand", () => {
     mockRecentItems.current = [];
     mockAllIssues.current = [];
     mockAgents.current = [];
-    mockTeams.current = [];
+    mockSquads.current = [];
     mockSetTheme.mockReset();
     mockTheme.current = "system";
     mockPathname.current = "/ws-test/issues";
-    mockGetShareableUrl.mockReset().mockImplementation((p: string) => `https://app.patchbay/${p}`);
+    mockGetShareableUrl.mockReset().mockImplementation((p: string) => `https://app.multica/${p}`);
     mockMembers.current = [];
     mockOpenModal.mockReset();
     mockToastSuccess.mockReset();
@@ -363,7 +390,7 @@ describe("SearchCommand", () => {
     // The Pages group is generated from WORKSPACE_PAGES — the same registry
     // the sidebar and the desktop tab bar read — so searching a page by the
     // exact name the sidebar shows must always reach it. The hand-written
-    // list this replaced had gone stale by four pages (PB-6272).
+    // list this replaced had gone stale by four pages (MUL-6272).
     for (const page of Object.values(WORKSPACE_PAGES)) {
       const label = enLayout.nav[page.navKey];
       await user.clear(input);
@@ -435,7 +462,7 @@ describe("SearchCommand", () => {
     fireEvent.click(settingsItem, { metaKey: true });
 
     expect(open).toHaveBeenCalledWith(
-      "https://app.patchbay//ws-test/settings",
+      "https://app.multica//ws-test/settings",
       "_blank",
       "noopener,noreferrer",
     );
@@ -455,7 +482,7 @@ describe("SearchCommand", () => {
     fireEvent.keyDown(input, { key: "Enter", metaKey: true });
 
     expect(open).toHaveBeenCalledWith(
-      "https://app.patchbay//ws-test/settings",
+      "https://app.multica//ws-test/settings",
       "_blank",
       "noopener,noreferrer",
     );
@@ -537,17 +564,17 @@ describe("SearchCommand", () => {
       { id: "issue-2", visitedAt: 900 },
     ];
     mockAllIssues.current = [
-      { id: "issue-1", identifier: "PB-1", title: "First issue", status: "todo" },
-      { id: "issue-2", identifier: "PB-2", title: "Second issue", status: "done" },
+      { id: "issue-1", identifier: "MUL-1", title: "First issue", status: "todo" },
+      { id: "issue-2", identifier: "MUL-2", title: "Second issue", status: "done" },
     ];
 
     renderSearch();
 
     expect(screen.getByText("Recent")).toBeInTheDocument();
     expect(screen.getByText("First issue")).toBeInTheDocument();
-    expect(screen.getByText("PB-1")).toBeInTheDocument();
+    expect(screen.getByText("MUL-1")).toBeInTheDocument();
     expect(screen.getByText("Second issue")).toBeInTheDocument();
-    expect(screen.getByText("PB-2")).toBeInTheDocument();
+    expect(screen.getByText("MUL-2")).toBeInTheDocument();
   });
 
   it("shows New Issue / New Project under Commands and triggers the modal store", async () => {
@@ -597,7 +624,7 @@ describe("SearchCommand", () => {
       .mockImplementation(mockClipboardWrite);
     mockPathname.current = "/ws-test/issues/issue-1";
     mockAllIssues.current = [
-      { id: "issue-1", identifier: "PB-42", title: "Demo", status: "todo" },
+      { id: "issue-1", identifier: "MUL-42", title: "Demo", status: "todo" },
     ];
     renderSearch();
 
@@ -610,7 +637,7 @@ describe("SearchCommand", () => {
     await user.click(linkItem);
 
     expect(mockGetShareableUrl).toHaveBeenCalledWith("/ws-test/issues/issue-1");
-    expect(mockClipboardWrite).toHaveBeenCalledWith("https://app.patchbay//ws-test/issues/issue-1");
+    expect(mockClipboardWrite).toHaveBeenCalledWith("https://app.multica//ws-test/issues/issue-1");
     expect(mockToastSuccess).toHaveBeenCalledWith("Link copied");
 
     // Reopen palette and test identifier copy
@@ -621,11 +648,11 @@ describe("SearchCommand", () => {
     await user.type(input2, "copy");
     const idItem = await screen.findByText(
       (_, el) =>
-        el?.textContent === "Copy Identifier (PB-42)" && el?.tagName === "SPAN",
+        el?.textContent === "Copy Identifier (MUL-42)" && el?.tagName === "SPAN",
     );
     await user.click(idItem);
-    expect(mockClipboardWrite).toHaveBeenCalledWith("PB-42");
-    expect(mockToastSuccess).toHaveBeenCalledWith("Copied PB-42");
+    expect(mockClipboardWrite).toHaveBeenCalledWith("MUL-42");
+    expect(mockToastSuccess).toHaveBeenCalledWith("Copied MUL-42");
 
     writeSpy.mockRestore();
   });
@@ -646,7 +673,7 @@ describe("SearchCommand", () => {
     const user = userEvent.setup();
     mockPathname.current = "/ws-test/issues/issue-1";
     mockAllIssues.current = [
-      { id: "issue-1", identifier: "PB-42", title: "Demo", status: "todo" },
+      { id: "issue-1", identifier: "MUL-42", title: "Demo", status: "todo" },
     ];
     mockTimeline.current = [
       { type: "activity", id: "act-1", actor_type: "member", actor_id: "u1", created_at: "2026-01-01T00:00:00Z", action: "status_changed" },
@@ -677,7 +704,7 @@ describe("SearchCommand", () => {
     const user = userEvent.setup();
     mockPathname.current = "/ws-test/issues/issue-1";
     mockAllIssues.current = [
-      { id: "issue-1", identifier: "PB-42", title: "Demo", status: "todo" },
+      { id: "issue-1", identifier: "MUL-42", title: "Demo", status: "todo" },
     ];
     mockTimeline.current = [
       { type: "comment", id: "root-1", actor_type: "member", actor_id: "u1", created_at: "2026-01-01T01:00:00Z", parent_id: null },
@@ -767,7 +794,7 @@ describe("SearchCommand", () => {
       { id: "deleted-issue", visitedAt: 900 },
     ];
     mockAllIssues.current = [
-      { id: "issue-1", identifier: "PB-1", title: "Existing issue", status: "in_progress" },
+      { id: "issue-1", identifier: "MUL-1", title: "Existing issue", status: "in_progress" },
     ];
 
     renderSearch();
@@ -777,7 +804,7 @@ describe("SearchCommand", () => {
     expect(screen.queryByText("deleted-issue")).not.toBeInTheDocument();
   });
 
-  it("shows the executor avatar instead of status text for issue search results", async () => {
+  it("shows the assignee avatar instead of status text for issue search results", async () => {
     const user = userEvent.setup();
     mockMembers.current = [
       {
@@ -797,12 +824,13 @@ describe("SearchCommand", () => {
           id: "issue-assigned",
           workspace_id: "ws-test",
           number: 101,
-          identifier: "PB-101",
+          identifier: "MUL-101",
           title: "Assigned search result",
           description: null,
           status: "in_review",
           priority: "none",
-          owner_type: "member", owner_id: "user-1",
+          assignee_type: "member",
+          assignee_id: "user-1",
           creator_type: "member",
           creator_id: "user-1",
           parent_issue_id: null,
@@ -839,17 +867,17 @@ describe("SearchCommand", () => {
     expect(screen.queryByText("In Review")).not.toBeInTheDocument();
   });
 
-  it("shows the executor avatar instead of status text for recent issues", () => {
+  it("shows the assignee avatar instead of status text for recent issues", () => {
     mockRecentItems.current = [{ id: "issue-1", visitedAt: 1000 }];
     mockAgents.current = [{ id: "agent-1", name: "Niko", avatar_url: null }];
     mockAllIssues.current = [
       {
         id: "issue-1",
-        identifier: "PB-1",
+        identifier: "MUL-1",
         title: "Recent assigned issue",
         status: "done",
-        executor_type: "agent",
-        executor_id: "agent-1",
+        assignee_type: "agent",
+        assignee_id: "agent-1",
       },
     ];
 
@@ -868,17 +896,13 @@ describe("SearchCommand", () => {
           id: "issue-snippet",
           workspace_id: "ws-test",
           number: 99,
-          identifier: "PB-99",
+          identifier: "MUL-99",
           title: "HTML rendering pipeline",
           description: null,
           status: "todo",
           priority: "none",
-          owner_type: null,
-          owner_id: null,
-          executor_type: null,
-          executor_id: null,
-          reviewer_type: null,
-          reviewer_id: null,
+          assignee_type: null,
+          assignee_id: null,
           creator_type: "member",
           creator_id: "user-1",
           parent_issue_id: null,
@@ -971,7 +995,7 @@ describe("SearchCommand", () => {
     expect(selectedValue()).toBe(first);
   });
 
-  // PB-5824: the two searches are ranked independently server-side and the
+  // MUL-5824: the two searches are ranked independently server-side and the
   // palette renders the whole Projects group before the whole Issues group, so
   // per-type ranking let one cancelled project be the very first row. The
   // partition has to be cross-type and applied here, where results aggregate.
@@ -981,17 +1005,13 @@ describe("SearchCommand", () => {
     ) => ({
       workspace_id: "ws-test",
       number: 1,
-      identifier: "PB-1",
+      identifier: "MUL-1",
       title: "Untitled",
       description: null,
       status: "todo",
       priority: "none",
-      owner_type: null,
-      owner_id: null,
-      executor_type: null,
-      executor_id: null,
-      reviewer_type: null,
-      reviewer_id: null,
+      assignee_type: null,
+      assignee_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -1042,6 +1062,31 @@ describe("SearchCommand", () => {
         document.querySelectorAll<HTMLElement>("[cmdk-group-heading]"),
       ).map((el) => el.textContent ?? "");
 
+    it("renders project status in the selected UI language", async () => {
+      const user = userEvent.setup();
+      mockSearchProjects.mockResolvedValue({
+        projects: [
+          fixtureProject({
+            id: "proj-localized",
+            title: "localized project",
+            status: "in_progress",
+          }),
+        ],
+        total: 1,
+      });
+
+      renderSearchInChinese();
+      await user.type(
+        screen.getByPlaceholderText("Type a command or search..."),
+        "localized",
+      );
+
+      await waitFor(() => expect(screen.getByText("进行中")).toBeInTheDocument(), {
+        timeout: 2000,
+      });
+      expect(screen.queryByText("In Progress")).toBeNull();
+    });
+
     it("keeps a cancelled project below a live issue instead of first", async () => {
       const user = userEvent.setup();
       mockSearchIssues.mockResolvedValue({
@@ -1049,7 +1094,7 @@ describe("SearchCommand", () => {
           fixtureIssue({
             id: "issue-live",
             number: 10,
-            identifier: "PB-10",
+            identifier: "MUL-10",
             title: "search live issue",
             status: "in_progress",
           }),
@@ -1090,21 +1135,21 @@ describe("SearchCommand", () => {
           fixtureIssue({
             id: "issue-dead",
             number: 11,
-            identifier: "PB-11",
+            identifier: "MUL-11",
             title: "search a",
             status: "cancelled",
           }),
           fixtureIssue({
             id: "issue-live",
             number: 12,
-            identifier: "PB-12",
+            identifier: "MUL-12",
             title: "search b",
             status: "todo",
           }),
           fixtureIssue({
             id: "issue-done",
             number: 13,
-            identifier: "PB-13",
+            identifier: "MUL-13",
             title: "search c",
             status: "done",
           }),
@@ -1147,7 +1192,7 @@ describe("SearchCommand", () => {
           fixtureIssue({
             id: "issue-hit",
             number: 7,
-            identifier: "PB-7",
+            identifier: "MUL-7",
             title: "Direct hit",
             status: "cancelled",
           }),
@@ -1159,7 +1204,7 @@ describe("SearchCommand", () => {
       renderSearch();
       await user.type(
         screen.getByPlaceholderText("Type a command or search..."),
-        "PB-7",
+        "MUL-7",
       );
 
       await waitFor(
@@ -1182,17 +1227,13 @@ describe("SearchCommand", () => {
       id: "issue-alpha",
       workspace_id: "ws-test",
       number: 100,
-      identifier: "PB-100",
+      identifier: "MUL-100",
       title: "Alpha result",
       description: null,
       status: "todo",
       priority: "none",
-      owner_type: null,
-      owner_id: null,
-      executor_type: null,
-      executor_id: null,
-      reviewer_type: null,
-      reviewer_id: null,
+      assignee_type: null,
+      assignee_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,

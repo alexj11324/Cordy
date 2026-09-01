@@ -418,7 +418,7 @@ function repairFragmentedOrderedLists(slice: Slice): Slice {
  * "did this text arrive by paste?" therefore sees an unmarked transaction and
  * treats a paste as typing. `issueIdentifierAutolink` reads exactly that, and
  * without the mark it only ever inspects the token before the caret, so pasting
- * `See PB-2 now` autolinks nothing (PB-5429).
+ * `See MUL-2 now` autolinks nothing (MUL-5429).
  *
  * ProseMirror's author describes these metas as the contract third-party code
  * relies on to tell user events apart, so any custom `handlePaste` that

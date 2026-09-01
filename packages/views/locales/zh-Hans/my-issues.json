@@ -8,12 +8,12 @@
   "header": {
     "scope": {
       "all_label": "全部",
-      "all_description": "分给我的、我创建的、或我的智能体和团队相关的",
+      "all_description": "分给我的、我创建的、或我的智能体和小队相关的",
       "assigned_label": "已分配",
       "assigned_description": "分配给我的任务",
       "created_label": "我创建的",
       "created_description": "我创建的任务",
-      "agents_label": "我的智能体和团队",
+      "agents_label": "我的智能体和小队",
       "agents_description": "分配给我的智能体的任务"
     },
     "filter_button": "筛选",
@@ -24,7 +24,7 @@
     "display_settings": "显示设置",
     "grouping": "分组",
     "group_status": "状态",
-    "group_executor": "负责人",
+    "group_assignee": "负责人",
     "ordering": "排序",
     "ascending": "升序",
     "descending": "降序",

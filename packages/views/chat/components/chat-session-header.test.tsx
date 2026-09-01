@@ -1,22 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import type { ChatSession } from "@patchbay/core/types";
+import { I18nProvider } from "@multica/core/i18n/react";
+import type { ChatSession } from "@multica/core/types";
 import enChat from "../../locales/en/chat.json";
 
 const updateMutate = vi.hoisted(() => vi.fn());
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/paths", () => ({
   useWorkspacePaths: () => ({ agentDetail: (id: string) => `/agents/${id}` }),
 }));
 
-vi.mock("@patchbay/core/chat/mutations", () => ({
+vi.mock("@multica/core/chat/mutations", () => ({
   useUpdateChatSession: () => ({ mutate: updateMutate }),
   useDeleteChatSession: () => ({ mutate: vi.fn() }),
   useSetChatSessionArchived: () => ({ mutate: vi.fn() }),
 }));
 
-vi.mock("@patchbay/core/chat", () => ({
+vi.mock("@multica/core/chat", () => ({
   useChatStore: (selector: (state: { setActiveSession: () => void }) => unknown) =>
     selector({ setActiveSession: vi.fn() }),
 }));

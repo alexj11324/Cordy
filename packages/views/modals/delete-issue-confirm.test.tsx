@@ -5,7 +5,7 @@ import { NavigationProvider } from "../navigation";
 import type { NavigationAdapter } from "../navigation";
 
 const mockDelete = vi.fn().mockResolvedValue(undefined);
-vi.mock("@patchbay/core/issues/mutations", () => ({
+vi.mock("@multica/core/issues/mutations", () => ({
   useDeleteIssue: () => ({ mutateAsync: mockDelete }),
 }));
 
@@ -40,6 +40,7 @@ function makeAdapter(
     back: vi.fn(),
     pathname: "/acme/issues/issue-1",
     searchParams: new URLSearchParams(),
+    hash: "",
     getShareableUrl: (p) => p,
     ...overrides,
   };

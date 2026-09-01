@@ -1,5 +1,5 @@
-import { FAILURE_CLASSES, type FailureClass } from "@patchbay/core/dashboard";
-import type { ChartConfig } from "@patchbay/ui/components/ui/chart";
+import { FAILURE_CLASSES, type FailureClass } from "@multica/core/dashboard";
+import type { ChartConfig } from "@multica/ui/components/ui/chart";
 import { useT } from "../../../i18n";
 
 // The design system ships five `--chart-*` tokens and they are a single-hue

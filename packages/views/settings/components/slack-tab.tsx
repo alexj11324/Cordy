@@ -5,18 +5,18 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ChevronRight, ExternalLink, Trash2 } from "lucide-react";
 import { SlackMark } from "./slack-mark";
-import { cn } from "@patchbay/ui/lib/utils";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
+import { cn } from "@multica/ui/lib/utils";
+import { Button } from "@multica/ui/components/ui/button";
+import { Card, CardContent } from "@multica/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
-import { Label } from "@patchbay/ui/components/ui/label";
+} from "@multica/ui/components/ui/dialog";
+import { Input } from "@multica/ui/components/ui/input";
+import { Label } from "@multica/ui/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,30 +26,27 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { slackInstallationsOptions, slackKeys } from "@patchbay/core/slack";
-import { api } from "@patchbay/core/api";
-import {
-  isMessagingInstallationHealthy,
-  type SlackInstallation,
-} from "@patchbay/core/types";
+} from "@multica/ui/components/ui/alert-dialog";
+import { useAuthStore } from "@multica/core/auth";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { memberListOptions } from "@multica/core/workspace/queries";
+import { useActorName } from "@multica/core/workspace/hooks";
+import { slackInstallationsOptions, slackKeys } from "@multica/core/slack";
+import { api } from "@multica/core/api";
+import type { SlackInstallation } from "@multica/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { openExternal } from "../../platform";
-import { useT } from "../../i18n";
-import { slackDocsUrl } from "./slack-docs-url";
+import { useLocale, useT } from "../../i18n";
 
 // SlackTab is the workspace settings panel for Slack bot installations.
 // Listing is member-visible; the disconnect action is admin-only (the backend
 // enforces it; the UI hides the button for non-admins to match).
 //
-// The settings page connects one workspace-scoped Slack Hub. The channel
-// chooses the active Agent with `/agents`; the optional per-Agent form below
-// remains available for legacy deep links and existing installations.
-export function SlackTab({ installationId }: { installationId?: string } = {}) {
+// Adding a new installation flows through the Agent detail page: the install
+// path is per-agent (each Multica agent gets exactly one bot — the
+// (workspace_id, agent_id, channel_type) UNIQUE in channel_installation), so
+// asking the user to pick an agent here would re-create that page's picker.
+export function SlackTab() {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -64,36 +61,16 @@ export function SlackTab({ installationId }: { installationId?: string } = {}) {
     ...slackInstallationsOptions(wsId),
     enabled: !!wsId,
   });
-  const installations = (data?.installations ?? []).filter(
-    (installation) => !installationId || installation.id === installationId,
-  );
+  const installations = data?.installations ?? [];
   const configured = data?.configured === true;
   // install_supported tracks whether the OAuth client credentials are wired on
   // the server. When false, "Connect Slack" would 503, so we hide the connect
   // entry points and surface a "coming soon" notice. Already-installed bots
   // still appear below and remain manageable.
   const installSupported = data?.install_supported === true;
-  const setupWritable = data?.setup_mode !== "server_configured";
 
   const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
-  const [connecting, setConnecting] = useState(false);
-
-  async function handleManagedConnect() {
-    if (connecting || data?.setup_mode !== "managed_oauth") return;
-    setConnecting(true);
-    try {
-      const begun = await api.beginSlackOAuth(wsId, {
-        redirect_url: currentSettingsRedirect(),
-      });
-      openExternal(begun.authorization_url, { webTarget: "same-tab" });
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : t(($) => $.slack.connect_failed_toast),
-      );
-      setConnecting(false);
-    }
-  }
 
   async function handleDisconnect() {
     if (!disconnectTarget || disconnecting) return;
@@ -121,7 +98,7 @@ export function SlackTab({ installationId }: { installationId?: string } = {}) {
             <p className="text-caption text-muted-foreground">
               {t(($) => $.slack.not_enabled_description_prefix)}{" "}
               <code className="rounded bg-muted px-1 py-0.5 text-micro">
-                PATCHBAY_SLACK_SECRET_KEY
+                MULTICA_SLACK_SECRET_KEY
               </code>{" "}
               {t(($) => $.slack.not_enabled_description_suffix)}{" "}
               {t(($) => $.slack.not_enabled_self_host_hint)}
@@ -151,18 +128,10 @@ export function SlackTab({ installationId }: { installationId?: string } = {}) {
               <CardContent className="space-y-2">
                 <p className="text-body font-medium">{t(($) => $.slack.empty_title)}</p>
                 <p className="text-caption text-muted-foreground">
-                  {data?.setup_mode === "managed_oauth"
-                    ? t(($) => $.slack.managed_empty_description)
-                    : `${t(($) => $.slack.empty_description_prefix)} ${t(($) => $.slack.empty_description_cta)} ${t(($) => $.slack.empty_description_suffix)}`}
+                  {t(($) => $.slack.empty_description_prefix)}{" "}
+                  <strong>{t(($) => $.slack.empty_description_cta)}</strong>{" "}
+                  {t(($) => $.slack.empty_description_suffix)}
                 </p>
-                {canManage && data?.setup_mode === "managed_oauth" ? (
-                  <Button onClick={handleManagedConnect} disabled={connecting}>
-                    <SlackMark className="h-3 w-3" />
-                    {connecting
-                      ? t(($) => $.slack.connecting)
-                      : t(($) => $.slack.connect_workspace)}
-                  </Button>
-                ) : null}
               </CardContent>
             </Card>
           ) : (
@@ -172,7 +141,7 @@ export function SlackTab({ installationId }: { installationId?: string } = {}) {
                   <InstallationRow
                     key={inst.id}
                     installation={inst}
-                    canManage={canManage && setupWritable}
+                    canManage={canManage}
                     onDisconnect={() => setDisconnectTarget(inst.id)}
                   />
                 ))}
@@ -223,44 +192,32 @@ function InstallationRow({
   onDisconnect: () => void;
 }) {
   const { t } = useT("settings");
+  const locale = useLocale();
   const { getAgentName } = useActorName();
   const isActive = installation.status === "active";
-  const isHealthy = isMessagingInstallationHealthy(installation);
-  const agentName = installation.agent_id
-    ? getAgentName(installation.agent_id)
-    : t(($) => $.page.integrations_workspace_hub);
+  const agentName = getAgentName(installation.agent_id);
   return (
     <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
       <div className="flex items-start gap-3">
-        {installation.agent_id ? (
-          <ActorAvatar
-            actorType="agent"
-            actorId={installation.agent_id}
-            size="lg"
-            enableHoverCard
-            profileLink
-          />
-        ) : (
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#611f69]/10">
-            <SlackMark className="h-5 w-5" />
-          </span>
-        )}
+        <ActorAvatar
+          actorType="agent"
+          actorId={installation.agent_id}
+          size="lg"
+          enableHoverCard
+          profileLink
+        />
         <div className="space-y-1">
           <p className="text-body font-medium">
             {agentName}
-            {!isActive ? (
+            {!isActive && (
               <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
                 {t(($) => $.slack.revoked_badge)}
               </span>
-            ) : !isHealthy ? (
-              <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
-                {t(($) => $.page.integrations_status)}
-              </span>
-            ) : null}
+            )}
           </p>
           <p className="text-micro text-muted-foreground">
             {t(($) => $.slack.installed_at_label, {
-              when: new Date(installation.installed_at).toLocaleString(),
+              when: new Date(installation.installed_at).toLocaleString(locale),
             })}
           </p>
         </div>
@@ -280,6 +237,21 @@ function InstallationRow({
 // shows how to create the Slack app + copy its two tokens is recorded.
 const SLACK_BYO_VIDEO_URL = "";
 
+// slackDocsUrl points at the Slack integration guide on the docs site,
+// localized to the viewer's language. The docs site uses /<lang>/ path
+// prefixes (English has none), matching the convention used elsewhere in the
+// app for doc links (e.g. the autopilots webhook docs link).
+function slackDocsUrl(lang: string | undefined): string {
+  const prefix = lang?.startsWith("zh")
+    ? "/zh"
+    : lang?.startsWith("ja")
+      ? "/ja"
+      : lang?.startsWith("ko")
+        ? "/ko"
+        : "";
+  return `https://multica.ai/docs${prefix}/slack-bot-integration`;
+}
+
 // SlackAgentBindButton is the per-agent CTA exposed from the agent detail page.
 // Slack uses the bring-your-own-app model: the button opens a dialog where the
 // admin pastes the bot token (xoxb-) + app-level token (xapp-) of the Slack app
@@ -294,7 +266,7 @@ export function SlackAgentBindButton({
   className,
   onShowConnectedDetails,
 }: {
-  agentId?: string;
+  agentId: string;
   agentName?: string;
   className?: string;
   /**
@@ -320,7 +292,6 @@ export function SlackAgentBindButton({
     enabled: !!wsId,
   });
   const installSupported = listing?.install_supported === true;
-  const managedOAuth = listing?.setup_mode === "managed_oauth";
 
   const { data: members = [] } = useQuery({
     ...memberListOptions(wsId),
@@ -333,49 +304,20 @@ export function SlackAgentBindButton({
   if (!canManage) return null;
 
   const existing = listing?.installations.find(
-    (inst) =>
-      (managedOAuth
-        ? inst.agent_id === null
-        : agentId
-          ? inst.agent_id === agentId
-          : inst.agent_id === null) &&
-      inst.status === "active",
+    (inst) => inst.agent_id === agentId && inst.status === "active",
   );
   if (existing) {
-    const healthy = isMessagingInstallationHealthy(existing);
     return onShowConnectedDetails ? (
       <SlackAgentBotStatusRow
         onClick={onShowConnectedDetails}
-        healthy={healthy}
         className={className}
       />
     ) : (
-      <SlackAgentBotConnectedBadge
-        installation={existing}
-        healthy={healthy}
-        canDisconnect={listing?.setup_mode !== "server_configured"}
-        className={className}
-      />
+      <SlackAgentBotConnectedBadge installation={existing} className={className} />
     );
   }
 
   if (!installSupported) return null;
-
-  async function handleManagedConnect() {
-    if (submitting) return;
-    setSubmitting(true);
-    try {
-      const begun = await api.beginSlackOAuth(wsId, {
-        redirect_url: currentSettingsRedirect(),
-      });
-      openExternal(begun.authorization_url, { webTarget: "same-tab" });
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : t(($) => $.slack.connect_failed_toast),
-      );
-      setSubmitting(false);
-    }
-  }
 
   function closeDialog() {
     if (submitting) return;
@@ -387,7 +329,7 @@ export function SlackAgentBindButton({
   async function handleSubmit() {
     const bot_token = botToken.trim();
     const app_token = appToken.trim();
-    if (submitting || !bot_token || !app_token) return;
+    if (submitting || !agentId || !bot_token || !app_token) return;
     setSubmitting(true);
     try {
       await api.registerSlackBYO(wsId, agentId, { bot_token, app_token });
@@ -418,8 +360,8 @@ export function SlackAgentBindButton({
       <Button
         variant="outline"
         size="sm"
-        onClick={() => (managedOAuth ? void handleManagedConnect() : setDialogOpen(true))}
-        disabled={submitting}
+        onClick={() => setDialogOpen(true)}
+        disabled={!agentId}
         title={
           agentName
             ? t(($) => $.slack.bind_button_title, { agent: agentName })
@@ -428,12 +370,10 @@ export function SlackAgentBindButton({
         data-testid="slack-agent-connect"
       >
         <SlackMark className="h-3 w-3" />
-        {submitting && managedOAuth
-          ? t(($) => $.slack.connecting)
-          : t(($) => $.slack.bind_button)}
+        {t(($) => $.slack.bind_button)}
       </Button>
 
-      {!managedOAuth ? <Dialog
+      <Dialog
         open={dialogOpen}
         onOpenChange={(v) => (v ? setDialogOpen(true) : closeDialog())}
       >
@@ -473,6 +413,8 @@ export function SlackAgentBindButton({
                 data-testid="slack-byo-bot-token"
                 value={botToken}
                 onChange={(e) => setBotToken(e.target.value)}
+                // Slack token prefix: a format hint, not copy.
+                // eslint-disable-next-line no-restricted-syntax
                 placeholder="xoxb-…"
                 autoComplete="off"
                 spellCheck={false}
@@ -489,6 +431,8 @@ export function SlackAgentBindButton({
                 data-testid="slack-byo-app-token"
                 value={appToken}
                 onChange={(e) => setAppToken(e.target.value)}
+                // Slack token prefix: a format hint, not copy.
+                // eslint-disable-next-line no-restricted-syntax
                 placeholder="xapp-…"
                 autoComplete="off"
                 spellCheck={false}
@@ -518,14 +462,9 @@ export function SlackAgentBindButton({
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog> : null}
+      </Dialog>
     </div>
   );
-}
-
-function currentSettingsRedirect(): string {
-  if (typeof window === "undefined") return "/";
-  return `${window.location.pathname}${window.location.search}`;
 }
 
 // SlackAgentBotStatusRow is the compact, read-only connected affordance the
@@ -533,11 +472,9 @@ function currentSettingsRedirect(): string {
 // Integrations tab where Manage / Disconnect live.
 function SlackAgentBotStatusRow({
   onClick,
-  healthy,
   className,
 }: {
   onClick: () => void;
-  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -551,17 +488,8 @@ function SlackAgentBotStatusRow({
       )}
       data-testid="slack-agent-bot-status"
     >
-      <span
-        className={cn(
-          "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-          healthy ? "bg-emerald-500" : "bg-amber-500",
-        )}
-      />
-      <span className="truncate">
-        {healthy
-          ? t(($) => $.slack.agent_bot_connected_label)
-          : t(($) => $.page.integrations_status)}
-      </span>
+      <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+      <span className="truncate">{t(($) => $.slack.agent_bot_connected_label)}</span>
       <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0" />
     </button>
   );
@@ -573,13 +501,9 @@ function SlackAgentBotStatusRow({
 // installed workspace. Only owners/admins ever reach this component.
 function SlackAgentBotConnectedBadge({
   installation,
-  healthy,
-  canDisconnect,
   className,
 }: {
   installation: SlackInstallation;
-  healthy: boolean;
-  canDisconnect: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -613,19 +537,10 @@ function SlackAgentBotConnectedBadge({
     >
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
-          <span
-            className={cn(
-              "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-              healthy ? "bg-emerald-500" : "bg-amber-500",
-            )}
-          />
-          <span className="truncate">
-            {healthy
-              ? t(($) => $.slack.agent_bot_connected_label)
-              : t(($) => $.page.integrations_status)}
-          </span>
+          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+          <span className="truncate">{t(($) => $.slack.agent_bot_connected_label)}</span>
         </span>
-        {canDisconnect ? <Button
+        <Button
           variant="destructive"
           size="sm"
           onClick={() => setConfirmOpen(true)}
@@ -638,7 +553,7 @@ function SlackAgentBotConnectedBadge({
           {disconnecting
             ? t(($) => $.slack.disconnecting)
             : t(($) => $.slack.disconnect)}
-        </Button> : null}
+        </Button>
       </div>
 
       {installation.team_id && (
@@ -656,7 +571,7 @@ function SlackAgentBotConnectedBadge({
       )}
 
       <AlertDialog
-        open={canDisconnect && confirmOpen}
+        open={confirmOpen}
         onOpenChange={(v) => {
           if (!v && !disconnecting) setConfirmOpen(false);
         }}

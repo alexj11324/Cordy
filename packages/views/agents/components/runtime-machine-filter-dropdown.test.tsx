@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
 import type { RuntimeMachine } from "../../runtimes/components/runtime-machines";
@@ -57,7 +57,7 @@ function renderDropdown(
           agentCountByMachine={agentCountByMachine}
           // Default to the sum of per-machine counts so existing tests
           // keep their original assertion semantics; new tests can
-          // override to verify the "All devices" badge matches an
+          // override to verify the "All runtimes" badge matches an
           // external in-scope total even when agents are missing from
           // the machine map.
           totalAgentCount={
@@ -77,7 +77,7 @@ describe("RuntimeMachineFilterDropdown", () => {
   beforeEach(() => vi.clearAllMocks());
   // Base UI DropdownMenu renders the menu content into a portal on
   // document.body, so leftover portals from a prior test would surface
-  // duplicate "All devices" / "LOCAL" labels. Wipe body between tests.
+  // duplicate "All runtimes" / "LOCAL" labels. Wipe body between tests.
   afterEach(() => {
     cleanup();
     document.body.innerHTML = "";
@@ -100,9 +100,9 @@ describe("RuntimeMachineFilterDropdown", () => {
 
     renderDropdown(machines, null, vi.fn(), counts);
 
-    // Trigger button uses the "All devices" label.
+    // Trigger button uses the "All runtimes" label.
     const trigger = screen.getByTestId("agents-runtime-filter");
-    expect(trigger.textContent).toContain("All devices");
+    expect(trigger.textContent).toContain("All runtimes");
     // Sum across machines surfaces as the trigger count.
     expect(trigger.textContent).toContain("7");
   });
@@ -129,7 +129,7 @@ describe("RuntimeMachineFilterDropdown", () => {
       }),
       makeMachine({
         id: "m-cloud",
-        title: "Patchbay cloud",
+        title: "Multica cloud",
         section: "cloud",
         isCurrent: false,
         mode: "cloud",
@@ -152,7 +152,7 @@ describe("RuntimeMachineFilterDropdown", () => {
     // The menu items themselves also render.
     expect(screen.getByText("dev.local")).toBeTruthy();
     expect(screen.getByText("build-server")).toBeTruthy();
-    expect(screen.getByText("Patchbay cloud")).toBeTruthy();
+    expect(screen.getByText("Multica cloud")).toBeTruthy();
   });
 
   it("fires onChange(null) when the All-runtimes row is clicked", () => {
@@ -160,7 +160,7 @@ describe("RuntimeMachineFilterDropdown", () => {
     const counts = new Map([["m-local", 1]]);
     const onChange = vi.fn();
 
-    // Pre-select a machine so the "All devices" row is the one that
+    // Pre-select a machine so the "All runtimes" row is the one that
     // gets the data-testid="agents-runtime-filter-active" marker.
     renderDropdown(machines, "m-local", onChange, counts);
     fireEvent.click(screen.getByTestId("agents-runtime-filter"));
@@ -169,8 +169,8 @@ describe("RuntimeMachineFilterDropdown", () => {
     // raw <button>.
     const activeRow = screen.getByTestId("agents-runtime-filter-active");
     expect(activeRow.getAttribute("role")).toBe("menuitem");
-    // Click the explicit "All devices" menu item by its accessible name.
-    fireEvent.click(screen.getByRole("menuitem", { name: /All devices/ }));
+    // Click the explicit "All runtimes" menu item by its accessible name.
+    fireEvent.click(screen.getByRole("menuitem", { name: /All runtimes/ }));
     expect(onChange).toHaveBeenCalledWith(null);
   });
 
@@ -209,7 +209,7 @@ describe("RuntimeMachineFilterDropdown", () => {
 
     const menu = screen.getByRole("menu");
     expect(menu).toBeTruthy();
-    // Both the "All devices" row and the per-machine row are items.
+    // Both the "All runtimes" row and the per-machine row are items.
     const items = screen.getAllByRole("menuitem");
     expect(items.length).toBeGreaterThanOrEqual(2);
     expect(items.every((item) => item.getAttribute("role") === "menuitem")).toBe(true);

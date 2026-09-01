@@ -58,7 +58,7 @@ describe("aggregateDailyCost", () => {
     expect(result[1]).toMatchObject({ input: 3, output: 7.5, cacheWrite: 0, total: 10.5 });
   });
 
-  it("bills cache reads into the stack and its total (PB-6334)", () => {
+  it("bills cache reads into the stack and its total (MUL-6334)", () => {
     // The dashboard feeds the same DailyCostChart the runtime page does, so it
     // has to bill the same categories. Before the fix this aggregator summed
     // input + output + cacheWrite only, hiding cache-read spend from the bar,
@@ -283,7 +283,7 @@ describe("bucketUnknownAgentRows", () => {
 
   it("keeps the bucket total reconciled with the top-line spend", () => {
     // The KPI total counts deleted-agent spend; sum(visible rows) must match it
-    // so the breakdown reconciles (PB-3776).
+    // so the breakdown reconciles (MUL-3776).
     const out = bucketUnknownAgentRows(
       [live, deletedA, deletedB],
       new Set(["live"]),
@@ -317,7 +317,7 @@ describe("bucketUnknownAgentRows", () => {
     expect(out.map((r) => r.agentId)).toEqual(["live", "deleted-a"]);
   });
 
-  // PB-5409: the server folds agents the viewer may not see onto its own
+  // MUL-5409: the server folds agents the viewer may not see onto its own
   // sentinel. That row is not in `knownAgentIds` either, and sweeping it into
   // the "Deleted agents" bucket is exactly the lie the issue was filed for —
   // those agents are alive.
@@ -415,7 +415,7 @@ describe("aggregateWeeklyTime", () => {
   });
 
   it("drops rows that fall outside the trailing window and keeps empty buckets", () => {
-    // Same PB-2382 sparse-data regression we caught on the runtimes side:
+    // Same MUL-2382 sparse-data regression we caught on the runtimes side:
     // an old populated week must not surface when the requested window
     // doesn't include it; in-range empty weeks must remain as zero buckets.
     vi.setSystemTime(new Date("2026-05-19T12:00:00Z"));

@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * PB-5108 regression coverage: an open cell editor popup must survive the
+ * MUL-5108 regression coverage: an open cell editor popup must survive the
  * data refreshes that constantly hit an active workspace (realtime refetches
  * rebuilding childProgressMap / issue arrays, window pages arriving, the
  * end-of-load hierarchy assembly). Before the fix, refreshed lookups rebuilt
@@ -20,17 +20,17 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { setApiInstance } from "@patchbay/core/api";
-import { useModalStore } from "@patchbay/core/modals";
-import type { ApiClient } from "@patchbay/core/api/client";
-import { issueKeys } from "@patchbay/core/issues/queries";
-import { ViewStoreProvider } from "@patchbay/core/issues/stores/view-store-context";
-import { getIssueSurfaceViewStore } from "@patchbay/core/issues/stores/surface-view-store";
+import { setApiInstance } from "@multica/core/api";
+import { useModalStore } from "@multica/core/modals";
+import type { ApiClient } from "@multica/core/api/client";
+import { issueKeys } from "@multica/core/issues/queries";
+import { ViewStoreProvider } from "@multica/core/issues/stores/view-store-context";
+import { getIssueSurfaceViewStore } from "@multica/core/issues/stores/surface-view-store";
 import type {
   Issue,
   IssueTableQuerySpec,
   IssueTableRowsResponse,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { IssueSurfaceSelectionProvider } from "../surface/selection-context";
 import type { IssueSurfaceSelection } from "../surface/selection-context";
@@ -38,7 +38,7 @@ import type { IssueCreateDefaults } from "../surface/types";
 import type { ChildProgress } from "./list-row";
 import { TableView, useReleaseEditingCellOnUnmount } from "./table-view";
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
@@ -64,12 +64,12 @@ vi.mock("@tanstack/react-virtual", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@multica/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "Someone" }),
   buildActorNameResolver: () => () => "Someone",
 }));
 
-// The executor cell's avatar only renders for a row that HAS an executor (the
+// The assignee cell's avatar only renders for a row that HAS an assignee (the
 // run-confirm case below) and pulls in presence, images and the rest of the
 // workspace-hooks surface. None of that is under test here.
 vi.mock("../../common/actor-avatar", () => ({
@@ -77,7 +77,7 @@ vi.mock("../../common/actor-avatar", () => ({
 }));
 
 const mockAuthUser = { id: "user-1", email: "t@t.co", name: "Tester" };
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@multica/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: (state: unknown) => unknown) => {
       const state = { user: mockAuthUser, isAuthenticated: true };
@@ -138,9 +138,9 @@ vi.mock("../../navigation", async () => {
   };
 });
 
-vi.mock("@patchbay/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
-    "@patchbay/core/paths",
+vi.mock("@multica/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@multica/core/paths")>(
+    "@multica/core/paths",
   );
   return {
     ...actual,
@@ -162,17 +162,13 @@ function makeIssue(id: string, title: string, status: Issue["status"]): Issue {
     id,
     workspace_id: "ws-1",
     number: 1,
-    identifier: `PB-${id}`,
+    identifier: `MUL-${id}`,
     title,
     description: null,
     status,
     priority: "none",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "member-1",
     parent_issue_id: null,
@@ -240,7 +236,7 @@ function Harness({
 describe("TableView cell editors under data refresh", () => {
   // The table's inline pickers are single-issue writes like the issue detail's,
   // so they route on the same run-confirm gate: promoting an agent-owned issue
-  // into In Progress starts a run and must confirm first (PB-6463). The gate's
+  // out of backlog starts a run and must confirm first (MUL-6463). The gate's
   // own matrix lives in ../actions/run-confirm-gate.test.ts; this only proves
   // the table asks it instead of writing straight through.
   it("confirms a status change that would start an agent run instead of applying it", async () => {
@@ -248,8 +244,8 @@ describe("TableView cell editors under data refresh", () => {
     serverIssues = [
       {
         ...makeIssue("c", "Parked task", "backlog"),
-        executor_type: "agent",
-        executor_id: "agent-1",
+        assignee_type: "agent",
+        assignee_id: "agent-1",
       },
     ];
     useModalStore.getState().close();
@@ -263,18 +259,18 @@ describe("TableView cell editors under data refresh", () => {
       </QueryClientProvider>,
     );
 
-    await screen.findByText("PB-c");
-    const row = screen.getByText("PB-c").closest("tr")!;
+    await screen.findByText("MUL-c");
+    const row = screen.getByText("MUL-c").closest("tr")!;
     await user.click(within(row).getByRole("button", { name: /Backlog/ }));
-    await user.click(screen.getByRole("button", { name: /^In Progress$/ }));
+    await user.click(screen.getByRole("button", { name: /^Todo$/ }));
 
     const { modal, data } = useModalStore.getState();
     expect(modal).toBe("issue-run-confirm");
     expect(data).toMatchObject({
       mode: "promote",
-      status: "in_progress",
-      executorType: "agent",
-      executorId: "agent-1",
+      status: "todo",
+      assigneeType: "agent",
+      assigneeId: "agent-1",
     });
     useModalStore.getState().close();
   });
@@ -298,8 +294,8 @@ describe("TableView cell editors under data refresh", () => {
       listProperties: async () => ({ properties: [] }),
       listMembers: async () => [],
       listAgents: async () => [],
-      listTeams: async () => [],
-      getExecutorFrequency: async () => [],
+      listSquads: async () => [],
+      getAssigneeFrequency: async () => [],
       listIssueStatuses: async () => ({ statuses: [] }),
       listIssueTableRows: async () => ({
         query_fingerprint: "test",
@@ -324,12 +320,12 @@ describe("TableView cell editors under data refresh", () => {
   // Explicit timeout: this mounts the full TableView with every picker + a
   // QueryClient and drives three realistic userEvent click gestures, each
   // re-rendering the whole table — far heavier than a unit test. `delay: null`
-  // strips the default real-timer gaps between events (PB-5108 review R1#1).
+  // strips the default real-timer gaps between events (MUL-5108 review R1#1).
   // Even so, the frontend CI job runs the entire `turbo build typecheck lint
   // test` pipeline on a 2-core runner, so builds/lints/typechecks and 258
   // vitest files all oversubscribe both cores at once; at the worst-case
   // scheduling peak this test's wall clock blew past the earlier 20s cap
-  // (PB-5326). It runs in ~1s in isolation, so the generous 60s ceiling
+  // (MUL-5326). It runs in ~1s in isolation, so the generous 60s ceiling
   // (matching the repo's heaviest FE tests) only absorbs CI CPU starvation —
   // it never masks a real hang.
   it("keeps the status picker open and the row order frozen across a refresh, then catches up on close", async () => {
@@ -350,12 +346,12 @@ describe("TableView cell editors under data refresh", () => {
     );
 
     const identifiers = () =>
-      screen.getAllByText(/^PB-/).map((node) => node.textContent);
-    await screen.findByText("PB-a");
-    expect(identifiers()).toEqual(["PB-a", "PB-b"]);
+      screen.getAllByText(/^MUL-/).map((node) => node.textContent);
+    await screen.findByText("MUL-a");
+    expect(identifiers()).toEqual(["MUL-a", "MUL-b"]);
 
     // Open the status picker on row A: its cell trigger shows "Todo".
-    const rowA = screen.getByText("PB-a").closest("tr")!;
+    const rowA = screen.getByText("MUL-a").closest("tr")!;
     await user.click(within(rowA).getByRole("button", { name: /Todo/ }));
     // Base UI portals the popup; "Backlog" only exists while it is open.
     expect(screen.getByRole("button", { name: /Backlog/ })).toBeTruthy();
@@ -393,7 +389,7 @@ describe("TableView cell editors under data refresh", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: /Backlog/ })).toBeTruthy();
-      expect(identifiers()).toEqual(["PB-a", "PB-b"]);
+      expect(identifiers()).toEqual(["MUL-a", "MUL-b"]);
       // …while the VALUES inside the frozen rows keep tracking live data.
       expect(screen.getByText("Alpha task (updated)")).toBeTruthy();
     });
@@ -401,7 +397,7 @@ describe("TableView cell editors under data refresh", () => {
     // Selecting a value closes the editor; the deferred live order applies.
     await user.click(screen.getByRole("button", { name: /Backlog/ }));
     expect(screen.queryByRole("button", { name: /Backlog/ })).toBeNull();
-    expect(identifiers()).toEqual(["PB-b", "PB-a"]);
+    expect(identifiers()).toEqual(["MUL-b", "MUL-a"]);
   }, 60_000);
 
   it("opens creation with the row as parent and inherits its project", async () => {
@@ -423,14 +419,14 @@ describe("TableView cell editors under data refresh", () => {
       </QueryClientProvider>,
     );
 
-    const row = (await screen.findByText("PB-a")).closest("tr")!;
+    const row = (await screen.findByText("MUL-a")).closest("tr")!;
     await user.click(
       within(row).getByRole("button", { name: "Create sub-issue" }),
     );
 
     expect(onCreateIssue).toHaveBeenCalledWith({
       parent_issue_id: "a",
-      parent_issue_identifier: "PB-a",
+      parent_issue_identifier: "MUL-a",
       project_id: "project-1",
     });
   });
@@ -448,7 +444,7 @@ describe("TableView cell editors under data refresh", () => {
       </QueryClientProvider>,
     );
 
-    const row = (await screen.findByText("PB-a")).closest("tr")!;
+    const row = (await screen.findByText("MUL-a")).closest("tr")!;
     const title = within(row).getByRole("button", { name: "Alpha task" });
 
     await user.click(title);
@@ -464,14 +460,14 @@ describe("TableView cell editors under data refresh", () => {
     fireEvent.click(title, { metaKey: true });
     expect(navigationMocks.openInNewTab).toHaveBeenCalledWith(
       "/test/issues/a",
-      "PB-a",
+      "MUL-a",
     );
 
     navigationMocks.openInNewTab.mockClear();
     fireEvent.click(row, { metaKey: true, shiftKey: true });
     expect(navigationMocks.openInNewTab).toHaveBeenCalledWith(
       "/test/issues/a",
-      "PB-a",
+      "MUL-a",
       { activate: true },
     );
     expect(navigationMocks.push).not.toHaveBeenCalled();
@@ -489,7 +485,7 @@ describe("TableView cell editors under data refresh", () => {
       </QueryClientProvider>,
     );
 
-    const row = (await screen.findByText("PB-a")).closest("tr")!;
+    const row = (await screen.findByText("MUL-a")).closest("tr")!;
     const auxClick = (el: HTMLElement) =>
       el.dispatchEvent(
         new MouseEvent("auxclick", { bubbles: true, button: 1, cancelable: true }),
@@ -508,7 +504,7 @@ describe("TableView cell editors under data refresh", () => {
     auxClick(row);
     expect(navigationMocks.openInNewTab).toHaveBeenCalledWith(
       "/test/issues/a",
-      "PB-a",
+      "MUL-a",
     );
   });
 
@@ -528,7 +524,7 @@ describe("TableView cell editors under data refresh", () => {
       </QueryClientProvider>,
     );
 
-    const row = (await screen.findByText("PB-a")).closest("tr")!;
+    const row = (await screen.findByText("MUL-a")).closest("tr")!;
     const title = within(row).getByRole("button", { name: "Alpha task" });
 
     await user.click(title);
@@ -550,7 +546,7 @@ describe("TableView cell editors under data refresh", () => {
 // Row virtualization unmounts a cell when its row scrolls out of the window
 // (data-table.tsx). Base UI does not fire onOpenChange(false) on unmount, so
 // the hoisted editing key — and the frozen structure it holds — needs an
-// explicit release when the owning cell leaves the DOM (PB-5108 review R1#3).
+// explicit release when the owning cell leaves the DOM (MUL-5108 review R1#3).
 // A cell unmounting is exactly what a virtual-window change does; probing the
 // hook directly keeps the assertion deterministic (jsdom has no layout for a
 // real virtualizer to react to).

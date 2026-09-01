@@ -7,7 +7,7 @@ const { getAttachmentTextContentMock } = vi.hoisted(() => ({
   getAttachmentTextContentMock: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: {
     getAttachmentTextContent: getAttachmentTextContentMock,
     getAttachment: vi.fn(),
@@ -27,13 +27,14 @@ vi.mock("../../navigation", () => ({
     back: vi.fn(),
     pathname: "/acme/issues",
     searchParams: new URLSearchParams(),
+    hash: "",
     openInNewTab: vi.fn(),
     getShareableUrl: (p: string) => `https://app.example${p}`,
   }),
 }));
 
-vi.mock("@patchbay/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@patchbay/core/paths")>();
+vi.mock("@multica/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@multica/core/paths")>();
   return {
     ...actual,
     useWorkspaceSlug: () => "acme",
@@ -54,7 +55,7 @@ afterEach(() => vi.restoreAllMocks());
 
 describe("AttachmentList — standalone HTML attachment routes through AttachmentBlock", () => {
   // Regression pin for comment-card.tsx:152. This is the entry point
-  // PB-2330 originally regressed on: standalone HTML attachments (not
+  // MUL-2330 originally regressed on: standalone HTML attachments (not
   // referenced inline in the markdown body) MUST render through
   // <AttachmentBlock> so the html+attachmentId dispatch fires. Reverting to
   // <AttachmentCard> here re-introduces the "report.html shows as a bare

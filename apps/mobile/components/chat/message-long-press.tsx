@@ -3,7 +3,7 @@
  * (drives a native iOS ActionSheetIOS) and `isPressed` (drives the
  * caller's highlight ring while the sheet is on screen).
  *
- * iOS-native first per apps/mobile/AGENTS.md §UI components → waterfall
+ * iOS-native first per apps/mobile/CLAUDE.md §UI components → waterfall
  * step 1: `ActionSheetIOS.showActionSheetWithOptions`. Zero custom
  * layout, zero animation, zero overflow math, zero new deps.
  *
@@ -13,13 +13,13 @@
  * Mirrors `useCommentLongPress` in `components/issue/comment-context-
  * menu.tsx` — kept as a sibling rather than a shared primitive because
  * we have only 2 callers (chat + comments). Below the "3 callers + no
- * native alternative" threshold in apps/mobile/AGENTS.md.
+ * native alternative" threshold in apps/mobile/CLAUDE.md.
  */
 import { useCallback, useState } from "react";
 import { ActionSheetIOS } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
-import type { ChatMessage } from "@patchbay/core/types";
+import type { ChatMessage } from "@multica/core/types";
 import { useChatSelectStore } from "@/data/chat-select-store";
 
 export function useChatMessageLongPress(

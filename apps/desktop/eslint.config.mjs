@@ -1,5 +1,5 @@
 import globals from "globals";
-import reactConfig from "@patchbay/eslint-config/react";
+import reactConfig from "@multica/eslint-config/react";
 
 export default [
   ...reactConfig,
@@ -41,11 +41,11 @@ export default [
       "no-restricted-syntax": "off",
     },
   },
-  // Navigation boundary (PB-4741): the tab Coordinator must be the only
+  // Navigation boundary (MUL-4741): the tab Coordinator must be the only
   // navigation initiator — a Router location change without a Coordinator
   // token is a protocol error. Application code must not navigate directly;
   // it goes through the navigation adapter / Coordinator in src/platform.
-  // Remaining legacy sites carry an inline eslint-disable tagged PB-4741;
+  // Remaining legacy sites carry an inline eslint-disable tagged MUL-4741;
   // the Phase 2 migration removes them one by one, and this rule holding
   // with zero disables is the machine check that the migration is complete.
   {
@@ -60,7 +60,7 @@ export default [
               name: "react-router-dom",
               importNames: ["useNavigate", "Navigate"],
               message:
-                "Direct navigation from application code breaks the Coordinator protocol (PB-4741). Use the navigation adapter from src/platform instead.",
+                "Direct navigation from application code breaks the Coordinator protocol (MUL-4741). Use the navigation adapter from src/platform instead.",
             },
           ],
         },
@@ -71,7 +71,7 @@ export default [
           selector:
             "CallExpression[callee.object.name='router'][callee.property.name='navigate']",
           message:
-            "Direct router.navigate from application code breaks the Coordinator protocol (PB-4741). Route it through the navigation adapter in src/platform.",
+            "Direct router.navigate from application code breaks the Coordinator protocol (MUL-4741). Route it through the navigation adapter in src/platform.",
         },
       ],
     },

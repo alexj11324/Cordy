@@ -1,4 +1,4 @@
-import type { IssueStatus } from "./issue";
+import type { IssuePriority, IssueStatus } from "./issue";
 
 export type InboxSeverity = "action_required" | "attention" | "info";
 
@@ -6,7 +6,7 @@ export type InboxItemType =
   | "issue_assigned"
   | "issue_subscribed"
   | "unassigned"
-  | "executor_changed"
+  | "assignee_changed"
   | "status_changed"
   | "priority_changed"
   | "start_date_changed"
@@ -50,6 +50,12 @@ export interface InboxItem {
   title: string;
   body: string | null;
   issue_status: IssueStatus | null;
+  /**
+   * Current priority of the linked issue. Optional so an installed Desktop
+   * client remains compatible with an older backend that predates this Inbox
+   * projection; null also covers notifications without a linked issue.
+   */
+  issue_priority?: IssuePriority | null;
   read: boolean;
   archived: boolean;
   created_at: string;

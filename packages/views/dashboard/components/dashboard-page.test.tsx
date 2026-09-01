@@ -21,7 +21,7 @@ const dashboardDataRef = vi.hoisted(() => ({ current: false }));
 const manyAgentsRef = vi.hoisted(() => ({ current: false }));
 // Appends the server's `__restricted_agents__` bucket to the per-agent rollups
 // — what a plain member actually receives once the backend folds the agents
-// they may not view (PB-5409).
+// they may not view (MUL-5409).
 const restrictedBucketRef = vi.hoisted(() => ({ current: false }));
 
 // Kept out of the fixture ternary so the sentinel's shape reads at a glance.
@@ -208,17 +208,17 @@ vi.mock("@tanstack/react-query", async () => {
   };
 });
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
 // The leaderboard renders ActorAvatar, which resolves avatar URLs through
 // the api singleton. Only the base-URL read is exercised here.
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: { getBaseUrl: () => "https://example.test" },
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/paths", () => ({
   useWorkspacePaths: () => ({
     agentDetail: (id: string) => `/acme/agents/${id}`,
   }),
@@ -226,7 +226,7 @@ vi.mock("@patchbay/core/paths", () => ({
 
 const tzRef = vi.hoisted(() => ({ current: "UTC" as string | null }));
 
-vi.mock("@patchbay/core/auth", () => {
+vi.mock("@multica/core/auth", () => {
   type AuthState = { user: { timezone: string | null } | null };
   const state = (): AuthState => ({ user: { timezone: tzRef.current } });
   const useAuthStore = Object.assign(
@@ -236,7 +236,7 @@ vi.mock("@patchbay/core/auth", () => {
   return { useAuthStore };
 });
 
-vi.mock("@patchbay/core/runtimes/custom-pricing-store", () => {
+vi.mock("@multica/core/runtimes/custom-pricing-store", () => {
   const state = () => ({ pricings: {} });
   const useCustomPricingStore = Object.assign(
     (sel?: (s: ReturnType<typeof state>) => unknown) =>
@@ -274,6 +274,7 @@ function DashboardHarness({ initialSearch = "" }: { initialSearch?: string }) {
       back: vi.fn(),
       pathname: "/acme/usage",
       searchParams: new URLSearchParams(search),
+      hash: "",
       getShareableUrl: (path: string) => `https://example.test${path}`,
     }),
     [search],
@@ -319,7 +320,7 @@ describe("DashboardPage — viewing timezone drives the query key", () => {
   });
 
   // The `tz` segment is the last element of every dashboard key
-  // (see dashboardKeys in @patchbay/core/dashboard/queries).
+  // (see dashboardKeys in @multica/core/dashboard/queries).
   function tzSegments(): unknown[] {
     return queryKeys
       .filter((k) => k[0] === "dashboard")
@@ -566,7 +567,7 @@ describe("DashboardPage — the Errors list never exposes an agent the viewer ca
 
 // The page answers two questions — "what did this cost" and "what broke" —
 // and used to answer both on one scroll, where the failure breakdown sat
-// below a leaderboard that can itself run to thirty rows (PB-5759).
+// below a leaderboard that can itself run to thirty rows (MUL-5759).
 describe("DashboardPage — the two questions are separate tabs", () => {
   beforeEach(() => {
     queryKeys.length = 0;
@@ -651,7 +652,7 @@ describe("DashboardPage — the two questions are separate tabs", () => {
   });
 });
 
-// PB-5409. The server folds every agent it won't name — those the viewer may
+// MUL-5409. The server folds every agent it won't name — those the viewer may
 // not see, plus the hidden system carriers behind agent-builder sessions — onto
 // one sentinel row. The leaderboard used to have a single synthetic row,
 // labelled "Deleted agents" with a bin icon and dashed-out Time/Tasks, so the
@@ -721,7 +722,7 @@ describe("DashboardPage — leaderboard density", () => {
 
     const list = () => within(screen.getByRole("list", { name: "Leaderboard" }));
     // 12 agents have usage. Flattening all of them is what pushed the Errors
-    // card a full screen below the fold (PB-5388).
+    // card a full screen below the fold (MUL-5388).
     expect(list().getAllByRole("listitem")).toHaveLength(10);
     // Ranked by tokens desc, so the two smallest spenders are the ones cut.
     expect(list().getByText("Bulk Agent 0")).toBeInTheDocument();
@@ -741,13 +742,12 @@ describe("DashboardPage — leaderboard density", () => {
     const user = userEvent.setup();
     renderDashboard();
 
-    // Scoped to the leaderboard card — the trend chart's metric toggle owns
-    // a "Time" button too.
-    const card = screen.getByRole("list", { name: "Leaderboard" })
-      .parentElement as HTMLElement;
     // Re-ranking must not quietly reveal the tail: the cap belongs to the
     // list, not to one metric.
-    await user.click(within(card).getByRole("button", { name: "Time" }));
+    const sortControls = within(
+      screen.getByRole("group", { name: "Rank agents by" }),
+    );
+    await user.click(sortControls.getByRole("button", { name: "Time" }));
 
     const list = within(screen.getByRole("list", { name: "Leaderboard" }));
     expect(list.getAllByRole("listitem")).toHaveLength(10);
@@ -761,5 +761,27 @@ describe("DashboardPage — leaderboard density", () => {
     expect(
       screen.queryByRole("button", { name: "Show all" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("exposes wide columns through a named keyboard-focusable local scroller", () => {
+    renderDashboard();
+
+    const scroller = screen.getByRole("region", { name: "Leaderboard" });
+    const list = within(scroller).getByRole("list", { name: "Leaderboard" });
+    const row = within(list).getByRole("listitem");
+
+    expect(scroller).toHaveAttribute("tabindex", "0");
+    scroller.focus();
+    expect(scroller).toHaveFocus();
+    expect(scroller).toHaveClass(
+      "overflow-x-auto",
+      "overscroll-x-contain",
+      "[-webkit-overflow-scrolling:touch]",
+    );
+    expect(row).toHaveStyle({
+      minWidth: "fit-content",
+      gridTemplateColumns:
+        "minmax(10rem, 1.6fr) minmax(6rem, 1fr) 5rem 5rem 5rem 4rem",
+    });
   });
 });

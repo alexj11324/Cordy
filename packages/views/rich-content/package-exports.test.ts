@@ -8,7 +8,7 @@
  * tree) but throws at bundle time in whichever app imports it — so it survives
  * typecheck and unit tests and only shows up in a consuming app's build.
  *
- * This regressed once already in PB-4922: `./common/markdown` was deleted when
+ * This regressed once already in MUL-4922: `./common/markdown` was deleted when
  * Chat moved onto RichContent, but its export entry stayed behind.
  *
  * Scoped to the whole monorepo rather than just `views`: the failure mode is a

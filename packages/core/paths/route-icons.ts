@@ -12,28 +12,26 @@
  * this registry for the page case.
  *
  * Icon values are *names*, not React components, so this module stays
- * React-free and safe inside `@patchbay/core`. The name → component registry
- * lives in `packages/views/layout/route-icon-components.tsx`; its total
- * `Record<RouteIconName, ...>` type makes a missing component a compile error.
+ * React-free and safe inside `@multica/core`. The name → component registry
+ * lives in `packages/views/layout/route-icon-components.tsx`; its
+ * `Record<RouteIconName, LucideIcon>` type makes a missing component a compile
+ * error.
  */
 
 /** Every icon name a nav page or a tab type-icon can resolve to. */
 export type RouteIconName =
   | "Inbox"
   | "MessageSquare"
-  | "Hash"
   | "CircleUser"
   | "ListTodo"
-  | "Network"
   | "FolderKanban"
-  | "AlarmClockCheck"
+  | "Zap"
   | "Bot"
-  | "PeopleGroup"
+  | "Users"
   | "BarChart3"
   | "Monitor"
   | "Server"
   | "BookOpenText"
-  | "Plug"
   | "Settings"
   | "File"
   | "FileText"
@@ -48,36 +46,30 @@ export type RouteIconName =
 export type NavLabelKey =
   | "inbox"
   | "chat"
-  | "channels"
   | "my_issues"
   | "issues"
-  | "task_graph"
   | "projects"
-  | "automations"
+  | "autopilots"
   | "agents"
-  | "teams"
+  | "squads"
   | "usage"
   | "runtimes"
   | "skills"
-  | "integrations"
   | "settings";
 
 /** Stable identifier for each workspace navigation page. */
 export type WorkspacePageKey =
   | "inbox"
   | "chat"
-  | "channels"
   | "myIssues"
   | "issues"
-  | "taskGraph"
   | "projects"
-  | "automations"
+  | "autopilots"
   | "agents"
-  | "teams"
+  | "squads"
   | "usage"
   | "runtimes"
   | "skills"
-  | "integrations"
   | "settings";
 
 export interface WorkspacePage {
@@ -96,18 +88,15 @@ export interface WorkspacePage {
 export const WORKSPACE_PAGES: Record<WorkspacePageKey, WorkspacePage> = {
   inbox: { segment: "inbox", icon: "Inbox", navKey: "inbox" },
   chat: { segment: "chat", icon: "MessageSquare", navKey: "chat" },
-  channels: { segment: "channels", icon: "Hash", navKey: "channels" },
   myIssues: { segment: "my-issues", icon: "CircleUser", navKey: "my_issues" },
   issues: { segment: "issues", icon: "ListTodo", navKey: "issues" },
-  taskGraph: { segment: "task-graph", icon: "Network", navKey: "task_graph" },
   projects: { segment: "projects", icon: "FolderKanban", navKey: "projects" },
-  automations: { segment: "automations", icon: "AlarmClockCheck", navKey: "automations" },
+  autopilots: { segment: "autopilots", icon: "Zap", navKey: "autopilots" },
   agents: { segment: "agents", icon: "Bot", navKey: "agents" },
-  teams: { segment: "teams", icon: "PeopleGroup", navKey: "teams" },
+  squads: { segment: "squads", icon: "Users", navKey: "squads" },
   usage: { segment: "usage", icon: "BarChart3", navKey: "usage" },
   runtimes: { segment: "runtimes", icon: "Monitor", navKey: "runtimes" },
   skills: { segment: "skills", icon: "BookOpenText", navKey: "skills" },
-  integrations: { segment: "integrations", icon: "Plug", navKey: "integrations" },
   settings: { segment: "settings", icon: "Settings", navKey: "settings" },
 };
 

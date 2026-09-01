@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Issue } from "@patchbay/core/types";
+import type { Issue } from "@multica/core/types";
 import {
   buildIssueTableCsv,
   calculateIssueTableColumn,
@@ -14,17 +14,13 @@ function makeIssue(id: string, overrides: Partial<Issue> = {}): Issue {
     id,
     workspace_id: "ws-1",
     number,
-    identifier: `PB-${number}`,
+    identifier: `MUL-${number}`,
     title: `Issue ${id}`,
     description: null,
     status: "todo",
     priority: "none",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -162,9 +158,9 @@ describe("table calculations and CSV", () => {
     expect(
       buildIssueTableCsv(
         ["Identifier", "Title"],
-        [["PB-1", 'Ship, "verify"\nnext']],
+        [["MUL-1", 'Ship, "verify"\nnext']],
       ),
-    ).toBe('Identifier,Title\r\nPB-1,"Ship, ""verify""\nnext"');
+    ).toBe('Identifier,Title\r\nMUL-1,"Ship, ""verify""\nnext"');
   });
 
   it("neutralizes spreadsheet formulas in headers and string cells", () => {

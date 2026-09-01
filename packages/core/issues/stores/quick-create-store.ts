@@ -6,9 +6,9 @@ import { createWorkspaceAwareStorage, registerForWorkspaceRehydration } from "..
 import { defaultStorage } from "../../platform/storage";
 import { registerDraftCleanup } from "../../drafts/cleanup-registry";
 
-export type QuickCreateActorType = "agent" | "team";
+export type QuickCreateActorType = "agent" | "squad";
 
-// Per-workspace memory of the last actor (agent or team) the user picked in
+// Per-workspace memory of the last actor (agent or squad) the user picked in
 // the Quick Create modal. Defaulted on next open so frequent users skip the
 // picker entirely. Persisted with the workspace-aware StateStorage so
 // switching workspaces shows the right default automatically. Per-user
@@ -16,7 +16,7 @@ export type QuickCreateActorType = "agent" | "team";
 // matches how draft-store / issues-scope-store / comment-collapse-store
 // already namespace themselves.
 //
-// The last project is deliberately NOT remembered (PB-5862). Actor and
+// The last project is deliberately NOT remembered (MUL-5862). Actor and
 // project look symmetrical but aren't: an issue's target project is a
 // property of the issue being filed, not a standing preference, so carrying
 // the previous one forward guesses wrong as soon as the user moves on — and
@@ -25,13 +25,13 @@ export type QuickCreateActorType = "agent" | "team";
 // page they opened the modal from, and their own unfinished draft.
 //
 // lastActorType + lastActorId replace the prior `lastAgentId` field once
-// teams became selectable. Users who had a persisted agent preference
+// squads became selectable. Users who had a persisted agent preference
 // land back on whatever the picker shows first; a one-time re-pick is
 // preferable to the type-tag ambiguity of overloading a single UUID.
 //
 // The in-progress agent prompt no longer lives here — it moved into the
 // unified issue-create draft's `agent` slot (draft-store) so it shares one
-// lifecycle with the manual draft (PB-5181). This store keeps only the
+// lifecycle with the manual draft (MUL-5181). This store keeps only the
 // last-successful actor and the shared keep-open toggle.
 interface QuickCreateState {
   lastActorType: QuickCreateActorType | null;
@@ -51,7 +51,7 @@ export const useQuickCreateStore = create<QuickCreateState>()(
       setKeepOpen: (v) => set({ keepOpen: v }),
     }),
     {
-      name: "patchbay_quick_create",
+      name: "multica_quick_create",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
     },
   ),
@@ -60,7 +60,7 @@ export const useQuickCreateStore = create<QuickCreateState>()(
 registerForWorkspaceRehydration(() => useQuickCreateStore.persist.rehydrate());
 
 registerDraftCleanup({
-  storageKey: "patchbay_quick_create",
+  storageKey: "multica_quick_create",
   workspaceScoped: true,
   // Reset the per-user picker memory so it does not survive into the next
   // login on the same tab. (The prompt draft lives in draft-store now.)

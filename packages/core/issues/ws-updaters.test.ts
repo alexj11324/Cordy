@@ -64,17 +64,13 @@ const baseIssue: Issue = {
   id: ISSUE_ID,
   workspace_id: WS_ID,
   number: 1,
-  identifier: "PB-1",
+  identifier: "MUL-1",
   title: "Test",
   description: null,
   status: "todo",
   priority: "none",
-  owner_type: null,
-  owner_id: null,
-  executor_type: null,
-  executor_id: null,
-  reviewer_type: null,
-  reviewer_id: null,
+  assignee_type: null,
+  assignee_id: null,
   creator_type: "member",
   creator_id: "user-1",
   parent_issue_id: null,
@@ -98,7 +94,7 @@ const parentedIssue: Issue = {
 const otherIssue: Issue = {
   ...baseIssue,
   id: OTHER_ISSUE_ID,
-  identifier: "PB-2",
+  identifier: "MUL-2",
   title: "Other",
 };
 
@@ -357,7 +353,7 @@ describe("onIssueMetadataChanged", () => {
   });
 
   it("re-sorts an updated_at-sorted board but not a position-sorted one", () => {
-    // A metadata write bumps updated_at server-side (PB-5016), so a board
+    // A metadata write bumps updated_at server-side (MUL-5016), so a board
     // sorted by "Updated date" must refetch; a position-sorted board must not.
     const boardUpdatedKey = issueKeys.listSorted(WS_ID, {
       sort_by: "updated_at",
@@ -451,7 +447,7 @@ describe("issue property snapshots", () => {
   });
 
   it("re-sorts an updated_at-sorted board but not a position-sorted one after commit", () => {
-    // A property write also bumps updated_at server-side (PB-5016), so a board
+    // A property write also bumps updated_at server-side (MUL-5016), so a board
     // sorted by "Updated date" (no property param) must refetch on commit while
     // a position-sorted board stays put.
     const qc = new QueryClient();
@@ -558,6 +554,36 @@ describe("onIssueCreated — carries the label snapshot into list cache", () => 
   });
 });
 
+describe("onIssueUpdated — source deletion detaches sub-issues", () => {
+  it("patches the detached child and invalidates the former parent's hierarchy caches", () => {
+    const qc = new QueryClient();
+    const child: Issue = { ...parentedIssue, stage: 2, revision: 1 };
+    const oldChildrenKey = issueKeys.children(WS_ID, PARENT_ISSUE_ID);
+    const batchedChildrenKey = issueKeys.childrenByParents(WS_ID, [PARENT_ISSUE_ID]);
+    qc.setQueryData(issueKeys.detail(WS_ID, ISSUE_ID), child);
+    qc.setQueryData<ListIssuesCache>(issueKeys.list(WS_ID), makeListCache(child));
+    qc.setQueryData<Issue[]>(oldChildrenKey, [child]);
+    qc.setQueryData(batchedChildrenKey, new Map([[PARENT_ISSUE_ID, [child]]]));
+    qc.setQueryData(issueKeys.childProgress(WS_ID), []);
+
+    onIssueUpdated(qc, WS_ID, {
+      ...child,
+      parent_issue_id: null,
+      stage: null,
+      revision: 2,
+    });
+
+    expect(qc.getQueryData<Issue>(issueKeys.detail(WS_ID, ISSUE_ID))).toMatchObject({
+      parent_issue_id: null,
+      stage: null,
+      revision: 2,
+    });
+    expectInvalidated(qc, oldChildrenKey);
+    expectInvalidated(qc, batchedChildrenKey);
+    expectInvalidated(qc, issueKeys.childProgress(WS_ID));
+  });
+});
+
 describe("onIssueUpdated — position move is surgical, not a list refetch", () => {
   let qc: QueryClient;
 
@@ -596,21 +622,21 @@ describe("onIssueUpdated — position move is surgical, not a list refetch", () 
     expect(qc.getQueryState(issueKeys.myAll(WS_ID))?.isInvalidated).toBe(false);
   });
 
-  it("removes the card from an owner-filtered list when the owner changes", () => {
+  it("removes the card from an assignee-filtered list when the assignee changes (membership-aware, no blanket refetch)", () => {
     const assignedKey = issueKeys.myListSorted(
       WS_ID,
       "assigned",
-      { owner_id: "user-1" },
+      { assignee_id: "user-1" },
       undefined,
     );
-    const mine: Issue = { ...issueA, owner_type: "member", owner_id: "user-1" };
+    const mine: Issue = { ...issueA, assignee_type: "member", assignee_id: "user-1" };
     qc.setQueryData<ListIssuesCache>(assignedKey, makeListCache(mine));
 
     onIssueUpdated(
       qc,
       WS_ID,
-      { ...mine, owner_type: "member", owner_id: "user-2" },
-      { ownerChanged: true },
+      { ...mine, assignee_type: "member", assignee_id: "user-2" },
+      { assigneeChanged: true },
     );
 
     // The card LEAVES the loaded list surgically — the fix for the residue
@@ -621,22 +647,22 @@ describe("onIssueUpdated — position move is surgical, not a list refetch", () 
     expect(qc.getQueryState(assignedKey)?.isInvalidated).toBe(false);
   });
 
-  it("flags union-scope (my:all) lists stale on an owner change", () => {
+  it("flags union-scope (my:all) lists stale on an assignee change instead of guessing membership", () => {
     const myAllListKey = issueKeys.myListSorted(WS_ID, "all", {}, undefined);
-    const mine: Issue = { ...issueA, owner_type: "member", owner_id: "user-1" };
+    const mine: Issue = { ...issueA, assignee_type: "member", assignee_id: "user-1" };
     qc.setQueryData<ListIssuesCache>(myAllListKey, makeListCache(mine));
 
     onIssueUpdated(
       qc,
       WS_ID,
-      { ...mine, owner_type: "member", owner_id: "user-2" },
-      { ownerChanged: true },
+      { ...mine, assignee_type: "member", assignee_id: "user-2" },
+      { assigneeChanged: true },
     );
 
     // Union membership (assigned ∪ created ∪ involved) is server knowledge:
     // the card is patched in place and the list refetches to reconcile.
     const list = qc.getQueryData<ListIssuesCache>(myAllListKey);
-    expect(list?.byStatus.todo?.issues[0]?.owner_id).toBe("user-2");
+    expect(list?.byStatus.todo?.issues[0]?.assignee_id).toBe("user-2");
     expectInvalidated(qc, myAllListKey);
   });
 
@@ -663,7 +689,7 @@ describe("onIssueUpdated — position move is surgical, not a list refetch", () 
   });
 
   it("drops the card from the old project's list on a server project_changed flag even when the cached project_id already matches", () => {
-    // Reproduces the drift state behind PB-3669: the detail cache already
+    // Reproduces the drift state behind MUL-3669: the detail cache already
     // carries the NEW project (e.g. a local optimistic write), so a cache
     // diff would compute projectChanged=false — the authoritative server
     // flag must still drive the membership reconcile for any list where the
@@ -922,7 +948,7 @@ describe("onIssueDeleted", () => {
   });
 
   it("removes the deleted issue from workspace and my-issues list caches immediately", () => {
-    const myFilter = { executor_id: AGENT_ID };
+    const myFilter = { assignee_id: AGENT_ID };
     qc.setQueryData<ListIssuesCache>(
       issueKeys.list(WS_ID),
       makeListCache(baseIssue, otherIssue),
@@ -989,7 +1015,7 @@ describe("onIssueDeleted", () => {
   });
 
   it("invalidates parent progress when the parent id only exists in a my-issues cache", () => {
-    const myFilter = { executor_id: AGENT_ID };
+    const myFilter = { assignee_id: AGENT_ID };
     qc.setQueryData<ListIssuesCache>(
       issueKeys.myList(WS_ID, "assigned", myFilter),
       makeListCache(parentedIssue, otherIssue),

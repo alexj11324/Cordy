@@ -8,7 +8,7 @@ import { defaultStorage } from "../../platform/storage";
 export type IssuesScope = "all" | "members" | "agents";
 
 /**
- * Page identity for the executor-type tab. Every surface remembers its own
+ * Page identity for the assignee-type tab. Every surface remembers its own
  * tab — the Issues page under "issues", each project page under
  * `project:<id>` — so switching tabs inside one project never drags the
  * Issues page (or another project) along with it.
@@ -28,7 +28,7 @@ export const useIssuesScopeStore = create<IssuesScopeState>()(
         set((state) => ({ scopes: { ...state.scopes, [page]: scope } })),
     }),
     {
-      name: "patchbay_issues_scope",
+      name: "multica_issues_scope",
       version: 1,
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
       migrate: (persisted, version) => {

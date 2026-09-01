@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 
 export default function robots(): MetadataRoute.Robots {
-  const baseUrl = "https://patchbay.aspectlylabs.com";
+  const baseUrl = "https://www.multica.ai";
 
   return {
     rules: [

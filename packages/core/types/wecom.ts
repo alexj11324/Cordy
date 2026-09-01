@@ -1,34 +1,23 @@
-import type {
-  MessagingInstallationRuntime,
-  MessagingInstallationSetup,
-} from "./messaging";
-
 /**
- * A WeCom smart-bot ("智能机器人" / aibot) installation, optionally bound to
- * a Patchbay agent. Wire shape mirrors `WecomInstallationResponse` in
- * the Rust WeCom handler. Any new field the backend adds MUST
+ * A WeCom smart-bot ("智能机器人" / aibot) installation bound to a single
+ * Multica agent. Wire shape mirrors `WecomInstallationResponse` in
+ * `server/internal/handler/wecom_web.go`. Any new field the backend adds MUST
  * default to optional so older desktop builds keep parsing the response — see
- * AGENTS.md → API Compatibility.
+ * CLAUDE.md → API Compatibility.
  */
 export interface WecomInstallation {
   id: string;
   workspace_id: string;
-  /** Null for a workspace Hub; the channel selects an Agent with /agents. */
-  agent_id: string | null;
+  agent_id: string;
   /** The smart-bot identifier assigned by the WeCom admin console. */
   bot_id: string;
   installer_user_id: string;
   status: "active" | "revoked" | string;
-  installed_at?: string;
-  created_at?: string;
-  updated_at?: string;
-  runtime?: MessagingInstallationRuntime;
-  setup?: MessagingInstallationSetup;
 }
 
 export interface ListWecomInstallationsResponse {
   installations: WecomInstallation[];
-  /** Whether PATCHBAY_WECOM_SECRET_KEY is set on this deployment. When false the
+  /** Whether MULTICA_WECOM_SECRET_KEY is set on this deployment. When false the
    * BYO Connect button is hidden and the panel renders an "ask the operator"
    * state. */
   configured: boolean;
@@ -41,7 +30,7 @@ export interface ListWecomInstallationsResponse {
 /** Request body for the Web UI's BYO Connect dialog. The first two fields are
  * copied from the WeCom admin console's smart-bot page: the bot's stable
  * identifier and its long-connection secret. The backend seals the secret
- * with the deployment's PATCHBAY_WECOM_SECRET_KEY before writing it, so
+ * with the deployment's MULTICA_WECOM_SECRET_KEY before writing it, so
  * plaintext never lands in the DB. */
 export interface RegisterWecomBYORequest {
   bot_id: string;
@@ -49,14 +38,14 @@ export interface RegisterWecomBYORequest {
   /** The bot's name as it appears in a chat. Optional, and used for one
    * thing: recognising the bot's own @-mention in a group. WeCom delivers a
    * mention as literal text with no structured mention list, so a name
-   * containing a space ("Patchbay Bot") otherwise swallows the slash command
+   * containing a space ("Multica Bot") otherwise swallows the slash command
    * typed after it. Omitting it on a re-install of the same bot keeps the
    * name already stored. */
   bot_name?: string;
 }
 
 /** Post-redemption echo: the WeCom aibot userid the token carried is now
- * bound to the logged-in Patchbay user in this workspace/installation. */
+ * bound to the logged-in Multica user in this workspace/installation. */
 export interface RedeemWecomBindingTokenResponse {
   workspace_id: string;
   installation_id: string;

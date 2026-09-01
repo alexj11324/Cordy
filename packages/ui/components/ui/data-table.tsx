@@ -23,9 +23,9 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@patchbay/ui/components/ui/table";
-import { columnSizeVar, getCellStyle } from "@patchbay/ui/lib/data-table";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@multica/ui/components/ui/table";
+import { columnSizeVar, getCellStyle } from "@multica/ui/lib/data-table";
+import { cn } from "@multica/ui/lib/utils";
 
 // Pointer travel that turns a press on the resize handle into a drag. Matches
 // the column-reorder sensor's activation distance so both gestures on the same

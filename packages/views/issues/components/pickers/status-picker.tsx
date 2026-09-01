@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { IssueStatus, UpdateIssueRequest } from "@patchbay/core/types";
-import { STATUS_CONFIG } from "@patchbay/core/issues/config";
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+import type { IssueStatus, UpdateIssueRequest } from "@multica/core/types";
+import { STATUS_CONFIG } from "@multica/core/issues/config";
+import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
+import { useWorkspaceId } from "@multica/core/hooks";
 import { StatusIcon } from "../status-icon";
 import { PropertyPicker, PickerItem } from "./property-picker";
 import { useT } from "../../../i18n";
@@ -55,7 +55,7 @@ export function StatusPicker({
    * Archived statuses are excluded: archiving retires a status from future
    * assignment while leaving the issues already on it untouched. Falls back to
    * the 7 built-ins until the catalog lands, so a cold render offers exactly
-   * what it always did instead of an empty popover. (PB-6243)
+   * what it always did instead of an empty popover. (MUL-6243)
    */
   const allOptions = useStatusOptions(wsId);
 

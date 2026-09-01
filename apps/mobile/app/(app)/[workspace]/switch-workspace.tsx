@@ -11,7 +11,7 @@
  *   The previous flow ("popover → tap row → instant switch") had no friction
  *   against fat-finger taps in the cramped popover, and the user lost their
  *   entire navigation context (tabs, scroll position) with one accidental
- *   tap. iOS Alert is the platform-correct gate (mobile/AGENTS.md Principle
+ *   tap. iOS Alert is the platform-correct gate (mobile/CLAUDE.md Principle
  *   3 — iOS native > RNR > discuss).
  *
  * Switching itself stays minimal: `router.dismiss()` to close this sheet,
@@ -28,7 +28,7 @@ import {
 import { Image as ExpoImage } from "expo-image";
 import { router } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import type { Workspace } from "@patchbay/core/types";
+import type { Workspace } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
 import { WorkspaceAvatar } from "@/components/workspace/workspace-avatar";
 import { workspaceListOptions } from "@/data/queries/workspaces";

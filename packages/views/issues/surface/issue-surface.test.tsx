@@ -11,19 +11,19 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { setApiInstance } from "@patchbay/core/api";
-import type { ApiClient } from "@patchbay/core/api/client";
+import { setApiInstance } from "@multica/core/api";
+import type { ApiClient } from "@multica/core/api/client";
 import {
   getIssueSurfaceViewStore,
   pruneIssueSurfaceViewStates,
-} from "@patchbay/core/issues/stores/surface-view-store";
+} from "@multica/core/issues/stores/surface-view-store";
 import type {
   AgentTask,
   Issue,
   IssueTableRowsRequest,
   ListIssuesParams,
   ListIssuesResponse,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import { IssueSurface } from "./issue-surface";
 import { statusTableMethodsFromLegacy } from "./status-table-test-api";
 
@@ -32,7 +32,7 @@ import { statusTableMethodsFromLegacy } from "./status-table-test-api";
 // wsId change itself.
 const mockWsId = vi.hoisted(() => ({ current: "ws-1" }));
 const mockTranslate = vi.hoisted(() => vi.fn(() => "translated"));
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => mockWsId.current,
 }));
 
@@ -64,7 +64,7 @@ vi.mock("@tanstack/react-virtual", () => ({
 }));
 
 const mockAuthUser = { id: "user-1", email: "test@test.com", name: "Test User" };
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@multica/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: (state: unknown) => unknown) => {
       const state = { user: mockAuthUser, isAuthenticated: true };
@@ -77,6 +77,7 @@ vi.mock("@patchbay/core/auth", () => ({
 }));
 
 vi.mock("../../i18n", () => ({
+  useLocale: () => "en",
   // TableView also reads `i18n.language` for its date formatting.
   useT: () => ({ t: mockTranslate, i18n: { language: "en" } }),
   useTimeAgo: () => () => "now",
@@ -93,9 +94,9 @@ vi.mock("../../navigation", () => ({
   useIntentNavigate: () => () => {},
 }));
 
-vi.mock("@patchbay/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
-    "@patchbay/core/paths",
+vi.mock("@multica/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@multica/core/paths")>(
+    "@multica/core/paths",
   );
   return {
     ...actual,
@@ -109,17 +110,13 @@ function makeIssue(id: string, title: string, projectId: string): Issue {
     id,
     workspace_id: "ws-1",
     number: 1,
-    identifier: `PB-${id}`,
+    identifier: `MUL-${id}`,
     title,
     description: null,
     status: "todo",
     priority: "none",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -169,7 +166,7 @@ describe("IssueSurface — scope switch loading semantics", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (PB-6243)
+      // a built-in key IS its own category. (MUL-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       ...statusTableMethodsFromLegacy(listIssues),
@@ -260,7 +257,7 @@ describe("IssueSurface — scope switch loading semantics", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (PB-6243)
+      // a built-in key IS its own category. (MUL-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       ...statusTableMethodsFromLegacy(listIssues),
@@ -323,7 +320,7 @@ describe("IssueSurface — table pagination ownership", () => {
 
   it("does not materialize the legacy offset window and starts one cursor root branch", async () => {
     const { getIssueSurfaceViewStore } = await import(
-      "@patchbay/core/issues/stores/surface-view-store"
+      "@multica/core/issues/stores/surface-view-store"
     );
     const store = getIssueSurfaceViewStore("project:pt");
     store.getState().setViewMode("table");
@@ -339,7 +336,7 @@ describe("IssueSurface — table pagination ownership", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (PB-6243)
+      // a built-in key IS its own category. (MUL-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       listIssueTableRows,
@@ -371,7 +368,7 @@ describe("IssueSurface — table pagination ownership", () => {
       listProperties: vi.fn(() => never()),
       listMembers: vi.fn(() => never()),
       listAgents: vi.fn(() => never()),
-      listTeams: vi.fn(() => never()),
+      listSquads: vi.fn(() => never()),
     } as unknown as ApiClient);
 
     render(
@@ -408,7 +405,7 @@ describe("IssueSurface — table pagination ownership", () => {
 
   it("keeps loaded rows when a continuation page reports zero", async () => {
     const { getIssueSurfaceViewStore } = await import(
-      "@patchbay/core/issues/stores/surface-view-store"
+      "@multica/core/issues/stores/surface-view-store"
     );
     const store = getIssueSurfaceViewStore("project:pt-pages");
     store.getState().setViewMode("table");
@@ -440,7 +437,7 @@ describe("IssueSurface — table pagination ownership", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (PB-6243)
+      // a built-in key IS its own category. (MUL-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       listIssueTableRows,
@@ -452,7 +449,7 @@ describe("IssueSurface — table pagination ownership", () => {
       listProperties: vi.fn(() => Promise.resolve({ properties: [] })),
       listMembers: vi.fn(() => Promise.resolve([])),
       listAgents: vi.fn(() => Promise.resolve([])),
-      listTeams: vi.fn(() => Promise.resolve([])),
+      listSquads: vi.fn(() => Promise.resolve([])),
     } as unknown as ApiClient);
 
     // Continuation is driven by the shared footer's sentinel, the same one
@@ -503,7 +500,7 @@ describe("IssueSurface — table pagination ownership", () => {
 
   it("feeds loaded Table rows to the shared batch toolbar", async () => {
     const { getIssueSurfaceViewStore } = await import(
-      "@patchbay/core/issues/stores/surface-view-store"
+      "@multica/core/issues/stores/surface-view-store"
     );
     const store = getIssueSurfaceViewStore("project:pt-batch");
     store.getState().setViewMode("table");
@@ -512,7 +509,7 @@ describe("IssueSurface — table pagination ownership", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (PB-6243)
+      // a built-in key IS its own category. (MUL-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       listIssueTableRows: vi.fn(() =>
@@ -534,7 +531,7 @@ describe("IssueSurface — table pagination ownership", () => {
       listProperties: vi.fn(() => Promise.resolve({ properties: [] })),
       listMembers: vi.fn(() => Promise.resolve([])),
       listAgents: vi.fn(() => Promise.resolve([])),
-      listTeams: vi.fn(() => Promise.resolve([])),
+      listSquads: vi.fn(() => Promise.resolve([])),
     } as unknown as ApiClient);
 
     const { container } = render(
@@ -559,7 +556,7 @@ describe("IssueSurface — table pagination ownership", () => {
 
   it("keeps the previous Table rows painted while a new sort is loading", async () => {
     const { getIssueSurfaceViewStore } = await import(
-      "@patchbay/core/issues/stores/surface-view-store"
+      "@multica/core/issues/stores/surface-view-store"
     );
     const store = getIssueSurfaceViewStore("project:pt-sort-transition");
     store.getState().setViewMode("table");
@@ -584,7 +581,7 @@ describe("IssueSurface — table pagination ownership", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (PB-6243)
+      // a built-in key IS its own category. (MUL-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       listIssueTableRows,
@@ -596,7 +593,7 @@ describe("IssueSurface — table pagination ownership", () => {
       listProperties: vi.fn(() => Promise.resolve({ properties: [] })),
       listMembers: vi.fn(() => Promise.resolve([])),
       listAgents: vi.fn(() => Promise.resolve([])),
-      listTeams: vi.fn(() => Promise.resolve([])),
+      listSquads: vi.fn(() => Promise.resolve([])),
     } as unknown as ApiClient);
 
     render(
@@ -618,7 +615,7 @@ describe("IssueSurface — table pagination ownership", () => {
 
   it("keeps selected Table rows in the batch universe after their group collapses", async () => {
     const { getIssueSurfaceViewStore } = await import(
-      "@patchbay/core/issues/stores/surface-view-store"
+      "@multica/core/issues/stores/surface-view-store"
     );
     const store = getIssueSurfaceViewStore("project:pt-collapsed-batch");
     store.getState().setViewMode("table");
@@ -656,7 +653,7 @@ describe("IssueSurface — table pagination ownership", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (PB-6243)
+      // a built-in key IS its own category. (MUL-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       listIssueTableGroups: vi.fn(() =>
@@ -692,7 +689,7 @@ describe("IssueSurface — table pagination ownership", () => {
       listProperties: vi.fn(() => Promise.resolve({ properties: [] })),
       listMembers: vi.fn(() => Promise.resolve([])),
       listAgents: vi.fn(() => Promise.resolve([])),
-      listTeams: vi.fn(() => Promise.resolve([])),
+      listSquads: vi.fn(() => Promise.resolve([])),
     } as unknown as ApiClient);
 
     const { container } = render(
@@ -720,7 +717,7 @@ describe("IssueSurface — table pagination ownership", () => {
   });
 });
 
-// PB-5525. A surface whose filters match nothing is not an empty surface.
+// MUL-5525. A surface whose filters match nothing is not an empty surface.
 // Every caller's own empty copy ("No issues linked — create one") describes the
 // UNFILTERED case, so the shared filtered state has to win before `renderEmpty`
 // runs. The agents-working chip is the most common way into this state.
@@ -749,7 +746,7 @@ describe("IssueSurface — filtered empty state", () => {
     setApiInstance({
       // The board pages by category, so every surface stub answers the catalog
       // read. Empty is the real shape for a workspace with no custom statuses:
-      // a built-in key IS its own category. (PB-6243)
+      // a built-in key IS its own category. (MUL-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
       listIssues,
       ...statusTableMethodsFromLegacy(listIssues),

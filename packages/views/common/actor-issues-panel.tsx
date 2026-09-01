@@ -7,14 +7,14 @@ import type {
   Issue,
   IssueTableFacetSpec,
   IssueTableFacetsResponse,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import {
   actorIssuesViewStore,
   type ActorIssuesScope,
-} from "@patchbay/core/issues/stores/actor-issues-view-store";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@patchbay/ui/components/ui/tooltip";
+} from "@multica/core/issues/stores/actor-issues-view-store";
+import { Button } from "@multica/ui/components/ui/button";
+import { Input } from "@multica/ui/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@multica/ui/components/ui/tooltip";
 import {
   IssueDisplayControls,
   ViewRefreshIndicator,

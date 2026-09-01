@@ -4,9 +4,9 @@ import { screen } from "@testing-library/react";
 import {
   type IssueViewState,
   viewStoreSlice,
-} from "@patchbay/core/issues/stores/view-store";
-import { ViewStoreProvider } from "@patchbay/core/issues/stores/view-store-context";
-import type { Issue } from "@patchbay/core/types";
+} from "@multica/core/issues/stores/view-store";
+import { ViewStoreProvider } from "@multica/core/issues/stores/view-store-context";
+import type { Issue } from "@multica/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { IssueContextMenuProvider } from "../actions";
 
@@ -15,13 +15,13 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
   useQuery: () => ({ data: [] }),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
 // The row's start / due range lives in a tooltip. This test is about how the
 // dates are formatted, not about hover timing, so render the content inline.
-vi.mock("@patchbay/ui/components/ui/tooltip", () => ({
+vi.mock("@multica/ui/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => children,
   TooltipTrigger: ({ render }: { render: React.ReactNode }) => render,
   TooltipContent: ({ children }: { children: React.ReactNode }) => children,
@@ -41,8 +41,8 @@ vi.mock("../../navigation", () => ({
   NavigationProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-vi.mock("@patchbay/core/paths", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@patchbay/core/paths")>();
+vi.mock("@multica/core/paths", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@multica/core/paths")>();
   return {
     ...actual,
     useWorkspaceSlug: () => "acme",
@@ -55,7 +55,7 @@ import { GanttView } from "./gantt-view";
 
 const ISSUE = {
   id: "issue-1",
-  identifier: "PB-1",
+  identifier: "MUL-1",
   number: 1,
   title: "Ship the thing",
   description: "",
@@ -64,8 +64,8 @@ const ISSUE = {
   workspace_id: "workspace-1",
   project_id: null,
   parent_issue_id: null,
-  executor_id: null,
-  executor_type: null,
+  assignee_id: null,
+  assignee_type: null,
   creator_id: "user-1",
   creator_type: "member",
   labels: [],

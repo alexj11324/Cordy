@@ -1,27 +1,27 @@
 {
-  "name": "@patchbay/desktop",
-  "productName": "Patchbay",
+  "name": "@multica/desktop",
+  "productName": "Multica",
   "version": "0.1.0",
   "private": true,
-  "description": "Patchbay Desktop — native desktop client for the Patchbay platform.",
-  "homepage": "https://patchbay.aspectlylabs.com",
+  "description": "Multica Desktop — native desktop client for the Multica platform.",
+  "homepage": "https://multica.ai",
   "repository": {
     "type": "git",
-    "url": "https://github.com/alexj11324/Cordy.git",
+    "url": "https://github.com/multica-ai/multica.git",
     "directory": "apps/desktop"
   },
   "author": {
-    "name": "Patchbay",
-    "email": "support@patchbay.ai"
+    "name": "Multica",
+    "email": "support@multica.ai"
   },
   "license": "SEE LICENSE IN ../../LICENSE",
   "main": "./out/main/index.js",
   "scripts": {
+    "bundle-cli": "node scripts/bundle-cli.mjs",
     "brand-dev-electron": "node scripts/brand-dev-electron.mjs",
-    "dev": "node ../../scripts/dev-launcher.mjs",
-    "dev:doctor": "node scripts/dev-environment-doctor.mjs",
-    "dev:acceptance": "node ../../scripts/dev-acceptance.mjs",
-    "build": "electron-vite build",
+    "dev": "node scripts/dev.mjs",
+    "dev:staging": "node scripts/dev.mjs --mode staging",
+    "build": "pnpm run bundle-cli && electron-vite build",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web",
@@ -42,9 +42,9 @@
     "@fontsource-variable/geist-mono": "^5.3.0",
     "@fontsource-variable/inter": "^5.2.5",
     "@fontsource-variable/source-serif-4": "^5.2.9",
-    "@patchbay/core": "workspace:*",
-    "@patchbay/ui": "workspace:*",
-    "@patchbay/views": "workspace:*",
+    "@multica/core": "workspace:*",
+    "@multica/ui": "workspace:*",
+    "@multica/views": "workspace:*",
     "@tanstack/react-query": "catalog:",
     "electron-updater": "^6.8.3",
     "fix-path": "^5.0.0",
@@ -59,15 +59,16 @@
     "zustand": "catalog:"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "^4",
     "@electron-toolkit/tsconfig": "^2.0.0",
-    "@patchbay/eslint-config": "workspace:*",
-    "@patchbay/tsconfig": "workspace:*",
+    "@multica/eslint-config": "workspace:*",
+    "@multica/tsconfig": "workspace:*",
+    "@tailwindcss/vite": "^4",
     "@testing-library/jest-dom": "catalog:",
     "@testing-library/react": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "^5.1.1",
     "electron": "^39.2.6",
     "electron-builder": "^26.0.12",
     "electron-vite": "^5.0.0",
@@ -75,8 +76,6 @@
     "jsdom": "catalog:",
     "tailwindcss": "^4",
     "typescript": "catalog:",
-    "vitest": "catalog:",
-    "@vitejs/plugin-react": "^5.1.1",
-    "vite": "^8.0.1"
+    "vitest": "catalog:"
   }
 }

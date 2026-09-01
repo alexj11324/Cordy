@@ -1,15 +1,15 @@
 "use client";
 
 import { Loader2 } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { cn } from "@patchbay/ui/lib/utils";
+import { Button } from "@multica/ui/components/ui/button";
+import { cn } from "@multica/ui/lib/utils";
 import { useT } from "../../i18n";
 
 /**
  * Where the flow ends. Both exits live here — commit the agent, or abandon the
  * attempt — because they are the two answers to one question, and reading them
  * side by side is what makes the destructive one legible. A discard control
- * parked elsewhere (say, a trash icon over the Agent event history) reads as "clear this
+ * parked elsewhere (say, a trash icon over the transcript) reads as "clear this
  * chat" rather than "throw away what I am building".
  *
  * `onDiscard` is optional: the manual route has nothing to abandon, its form is
@@ -18,7 +18,7 @@ import { useT } from "../../i18n";
 export function CreateAgentFooter({
   canCreate,
   creating,
-  team,
+  squad,
   error,
   onCreate,
   onDiscard,
@@ -26,7 +26,7 @@ export function CreateAgentFooter({
 }: {
   canCreate: boolean;
   creating: boolean;
-  team: boolean;
+  squad: boolean;
   error: string | null;
   onCreate: () => void;
   onDiscard?: () => void;
@@ -63,7 +63,7 @@ export function CreateAgentFooter({
         {creating && <Loader2 className="size-4 animate-spin" />}
         {creating
           ? t(($) => $.creation_studio.creating)
-          : team
+          : squad
             ? t(($) => $.creation_studio.create_and_add)
             : t(($) => $.creation_studio.create_and_open)}
       </Button>

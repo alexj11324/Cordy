@@ -1,17 +1,13 @@
 {
-  "name": "patchbay",
+  "name": "multica",
   "version": "0.2.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node scripts/dev-launcher.mjs",
-    "dev:hosted": "node scripts/dev-launcher.mjs --hosted",
-    "dev:web:next": "node scripts/dev-web.mjs",
-    "dev:docs": "turbo dev --filter=@patchbay/docs",
-    "dev:desktop": "node scripts/dev-launcher.mjs",
-    "dev:doctor": "node apps/desktop/scripts/dev-environment-doctor.mjs",
-    "dev:acceptance": "node scripts/dev-acceptance.mjs",
-    "dev:cache:prune": "node apps/desktop/scripts/prune-dev-runtime-cache.mjs",
+    "dev:web": "turbo dev --filter=@multica/web",
+    "dev:docs": "turbo dev --filter=@multica/docs",
+    "dev:desktop": "turbo dev --filter=@multica/desktop",
+    "dev:desktop:staging": "turbo dev:staging --filter=@multica/desktop",
     "dev:mobile": "pnpm -C apps/mobile dev",
     "dev:mobile:staging": "pnpm -C apps/mobile dev:staging",
     "dev:mobile:prod": "pnpm -C apps/mobile dev:prod",
@@ -23,10 +19,10 @@
     "ios:mobile:device:staging:release": "pnpm -C apps/mobile ios:device:staging:release",
     "ios:mobile:device:prod": "pnpm -C apps/mobile ios:device:prod",
     "ios:mobile:device:prod:release": "pnpm -C apps/mobile ios:device:prod:release",
-    "build": "turbo build --filter=!@patchbay/mobile",
-    "typecheck": "turbo typecheck --filter=!@patchbay/mobile",
-    "test": "turbo test --filter=!@patchbay/mobile",
-    "lint": "turbo lint --filter=!@patchbay/mobile",
+    "build": "turbo build --filter=!@multica/mobile",
+    "typecheck": "turbo typecheck --filter=!@multica/mobile",
+    "test": "turbo test --filter=!@multica/mobile",
+    "lint": "turbo lint --filter=!@multica/mobile",
     "knip": "knip",
     "check:ui-exports": "node scripts/check-ui-wildcard-exports.mjs",
     "clean": "turbo clean && rm -rf node_modules",
@@ -34,14 +30,7 @@
     "generate:reserved-slugs": "node scripts/generate-reserved-slugs.mjs"
   },
   "engines": {
-    "node": ">=22 <23"
-  },
-  "devEngines": {
-    "runtime": {
-      "name": "node",
-      "version": "^22.0.0",
-      "onFail": "download"
-    }
+    "node": ">=22"
   },
   "packageManager": "pnpm@10.28.2",
   "pnpm": {
@@ -64,7 +53,6 @@
     }
   },
   "devDependencies": {
-    "@clerk/testing": "2.2.31",
     "@playwright/test": "^1.58.2",
     "@types/node": "catalog:",
     "@types/pg": "^8.20.0",

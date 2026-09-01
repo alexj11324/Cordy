@@ -40,9 +40,8 @@ tmp_env="$(mktemp)"
 tmp_dir="$(mktemp -d)"
 trap 'rm -f "$tmp_env"; rm -rf "$tmp_dir"' EXIT
 sed 's/^FRONTEND_PORT=.*/FRONTEND_PORT=3100/' .env.example >"$tmp_env"
-printf '\nBACKEND_PORT=9100\nSMTP_FROM_EMAIL=patchbay@example.com\n' >>"$tmp_env"
-printf 'PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN=%064d\n' 0 >>"$tmp_env"
-printf 'PATCHBAY_LLM_API_KEY=llm-key-from-env\nPATCHBAY_LLM_BASE_URL=http://gateway.example/v1\nPATCHBAY_LLM_DEFAULT_MODEL=model-from-env\nPATCHBAY_LLM_MAX_RETRIES=3\n' >>"$tmp_env"
+printf '\nBACKEND_PORT=9100\nSMTP_FROM_EMAIL=multica@example.com\n' >>"$tmp_env"
+printf 'MULTICA_LLM_API_KEY=llm-key-from-env\nMULTICA_LLM_BASE_URL=http://gateway.example/v1\nMULTICA_LLM_DEFAULT_MODEL=model-from-env\nMULTICA_LLM_MAX_RETRIES=3\n' >>"$tmp_env"
 
 config="$(
   docker compose \
@@ -54,57 +53,21 @@ config="$(
 require_config "$config" 'published: "3100"'
 require_config "$config" 'published: "9100"'
 require_config "$config" 'FRONTEND_ORIGIN: http://localhost:3100'
-require_config "$config" 'PATCHBAY_APP_URL: http://localhost:3100'
-require_config "$config" 'SMTP_FROM_EMAIL: patchbay@example.com'
-require_config "$config" 'PATCHBAY_DESKTOP_BROKER_AUTH_TOKEN: "0000000000000000000000000000000000000000000000000000000000000000"'
+require_config "$config" 'GOOGLE_REDIRECT_URI: http://localhost:3100/auth/callback'
+require_config "$config" 'MULTICA_APP_URL: http://localhost:3100'
+require_config "$config" 'SMTP_FROM_EMAIL: multica@example.com'
+require_config "$config" 'MULTICA_DATABASE_STARTUP_TIMEOUT: 3m'
+require_config "$config" 'MULTICA_DATABASE_CONNECT_TIMEOUT: 5s'
 
 # The backend environment is an explicit allowlist, so a variable documented in
 # .env.example but missing here silently never reaches the container: the
 # operator configures it, the server never sees it, and nothing reports the gap.
 # Assert the values actually land, then assert the allowlist has not drifted
 # behind the documentation the next time an LLM knob is added.
-require_config "$config" 'PATCHBAY_LLM_API_KEY: llm-key-from-env'
-require_config "$config" 'PATCHBAY_LLM_BASE_URL: http://gateway.example/v1'
-require_config "$config" 'PATCHBAY_LLM_DEFAULT_MODEL: model-from-env'
-require_config "$config" 'PATCHBAY_LLM_MAX_RETRIES: "3"'
-
-# NEXT_PUBLIC values are compiled into the Web client. Every supported local
-# image build must pass the exact desktop callback origin through BuildKit;
-# setting it only on the running container is too late for Next.js.
-for compose_file in docker-compose.selfhost.build.yml docker-compose.labs.yml; do
-  if ! grep -Fq \
-    'NEXT_PUBLIC_DESKTOP_APP_ORIGIN: ${NEXT_PUBLIC_DESKTOP_APP_ORIGIN:-}' \
-    "$compose_file"; then
-    echo "$compose_file does not pass NEXT_PUBLIC_DESKTOP_APP_ORIGIN to Dockerfile.web"
-    exit 1
-  fi
-done
-
-# Hosted images use a repository variable so the callback stays disabled until
-# the approved HTTPS app origin is actually deployed. Never bake a speculative
-# production hostname into a public image.
-for workflow_file in .github/workflows/aspectlylabs-production-images.yml .github/workflows/release.yml; do
-  if ! grep -Fq \
-    'NEXT_PUBLIC_DESKTOP_APP_ORIGIN=${{ vars.NEXT_PUBLIC_DESKTOP_APP_ORIGIN }}' \
-    "$workflow_file"; then
-    echo "$workflow_file does not source the Desktop callback origin from repository configuration"
-    exit 1
-  fi
-done
-
-# Those hosted workflow contracts must run when either workflow changes.
-# Keep this scoped to the frontend filter; release.yml also appears in the
-# backend filter and would otherwise make a broad grep pass accidentally.
-frontend_filter="$(
-  sed -n "/^            frontend:/,/^            backend:/p" \
-    .github/workflows/ci.yml
-)"
-for workflow_file in .github/workflows/aspectlylabs-production-images.yml .github/workflows/release.yml; do
-  if ! grep -Fq -- "- '${workflow_file}'" <<<"$frontend_filter"; then
-    echo "$workflow_file must trigger the frontend deployment contract tests"
-    exit 1
-  fi
-done
+require_config "$config" 'MULTICA_LLM_API_KEY: llm-key-from-env'
+require_config "$config" 'MULTICA_LLM_BASE_URL: http://gateway.example/v1'
+require_config "$config" 'MULTICA_LLM_DEFAULT_MODEL: model-from-env'
+require_config "$config" 'MULTICA_LLM_MAX_RETRIES: "3"'
 
 while IFS= read -r llm_var; do
   if ! grep -Eq "^[[:space:]]+${llm_var}: \\\$\{${llm_var}:-" docker-compose.selfhost.yml; then
@@ -112,7 +75,7 @@ while IFS= read -r llm_var; do
     echo "service in docker-compose.selfhost.yml, so self-hosted deployments cannot set it."
     exit 1
   fi
-done < <(grep -oE '^PATCHBAY_LLM_[A-Z_]+' .env.example)
+done < <(grep -oE '^MULTICA_LLM_[A-Z_]+' .env.example)
 
 for script in scripts/dev.sh scripts/check.sh; do
   if ! grep -Fq '. scripts/local-env.sh' "$script"; then
@@ -135,8 +98,9 @@ local_env="$(
       "PORT=${PORT}" \
       "FRONTEND_PORT=${FRONTEND_PORT}" \
       "FRONTEND_ORIGIN=${FRONTEND_ORIGIN}" \
-      "PATCHBAY_APP_URL=${PATCHBAY_APP_URL}" \
-      "PATCHBAY_SERVER_URL=${PATCHBAY_SERVER_URL}" \
+      "MULTICA_APP_URL=${MULTICA_APP_URL}" \
+      "GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI}" \
+      "MULTICA_SERVER_URL=${MULTICA_SERVER_URL}" \
       "LOCAL_UPLOAD_BASE_URL=${LOCAL_UPLOAD_BASE_URL}" \
       "PLAYWRIGHT_BASE_URL=${PLAYWRIGHT_BASE_URL}"
   ' _ "$tmp_env"
@@ -145,15 +109,16 @@ local_env="$(
 require_env "$local_env" 'PORT=9100'
 require_env "$local_env" 'FRONTEND_PORT=3100'
 require_env "$local_env" 'FRONTEND_ORIGIN=http://localhost:3100'
-require_env "$local_env" 'PATCHBAY_APP_URL=http://localhost:3100'
-require_env "$local_env" 'PATCHBAY_SERVER_URL=ws://localhost:9100/ws'
+require_env "$local_env" 'MULTICA_APP_URL=http://localhost:3100'
+require_env "$local_env" 'GOOGLE_REDIRECT_URI=http://localhost:3100/auth/callback'
+require_env "$local_env" 'MULTICA_SERVER_URL=ws://localhost:9100/ws'
 require_env "$local_env" 'LOCAL_UPLOAD_BASE_URL=http://localhost:9100'
 require_env "$local_env" 'PLAYWRIGHT_BASE_URL=http://localhost:3100'
 
 worktree_env="$tmp_dir/.env.worktree"
 WORKTREE_NAME=selfhost-config-test bash scripts/init-worktree-env.sh "$worktree_env" >/dev/null
 worktree_backend_port="$(sed -n 's/^PORT=//p' "$worktree_env")"
-require_env "$(cat "$worktree_env")" "PATCHBAY_PUBLIC_URL=http://localhost:${worktree_backend_port}"
+require_env "$(cat "$worktree_env")" "MULTICA_PUBLIC_URL=http://localhost:${worktree_backend_port}"
 
 resolve_local_public_url() {
   env -i PATH="$PATH" bash -c '
@@ -165,7 +130,7 @@ resolve_local_public_url() {
     set +a
     # shellcheck disable=SC1091
     . scripts/local-env.sh
-    printf "%s\n" "$PATCHBAY_PUBLIC_URL"
+    printf "%s\n" "$MULTICA_PUBLIC_URL"
   ' _ "$1"
 }
 
@@ -173,7 +138,7 @@ make_env_probe="$tmp_dir/print-public-url.mk"
 printf '%s\n' \
   '.PHONY: print-public-url' \
   'print-public-url:' \
-  '	@printf "%s\n" "$$PATCHBAY_PUBLIC_URL"' \
+  '	@printf "%s\n" "$$MULTICA_PUBLIC_URL"' \
   >"$make_env_probe"
 
 resolve_make_public_url() {
@@ -187,7 +152,7 @@ resolve_make_public_url() {
 }
 
 old_worktree_env="$tmp_dir/.env.worktree.old"
-grep -v '^PATCHBAY_PUBLIC_URL=' "$worktree_env" >"$old_worktree_env"
+grep -v '^MULTICA_PUBLIC_URL=' "$worktree_env" >"$old_worktree_env"
 require_env \
   "$(resolve_local_public_url "$old_worktree_env")" \
   "http://localhost:${worktree_backend_port}"
@@ -197,7 +162,7 @@ require_env \
 
 explicit_worktree_env="$tmp_dir/.env.worktree.explicit"
 cp "$old_worktree_env" "$explicit_worktree_env"
-printf '\nPATCHBAY_PUBLIC_URL=https://api.explicit.example\n' >>"$explicit_worktree_env"
+printf '\nMULTICA_PUBLIC_URL=https://api.explicit.example\n' >>"$explicit_worktree_env"
 require_env \
   "$(resolve_local_public_url "$explicit_worktree_env")" \
   "https://api.explicit.example"

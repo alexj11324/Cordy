@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Static contract checks for source-matched development runtime entrypoints. This script
-# intentionally uses dry runs and never invokes a compiler or test runner.
+# `make build` has to name its outputs the way the *target* platform expects.
+# Windows refuses to execute an extensionless file, so a Windows source build
+# whose artifacts are named `multica` produces a CLI that cannot re-exec itself
+# as a daemon (#7255) — the build succeeds and the failure surfaces later as a
+# misleading "not found" at startup.
+#
+# The suffix is derived from GOOS, which reaches a build two ways: as an
+# environment variable and as a Make variable on the command line. `go build`
+# honors both, so a suffix that honors only one silently rebuilds the original
+# bug. Nothing else covers this: the Go test suite never runs the Makefile, and
+# CI's own build steps call `go build` directly.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
@@ -12,78 +21,65 @@ fail() {
   exit 1
 }
 
-for target in cli patchbay; do
-  output="$(make -n "$target" PATCHBAY_ARGS=version)"
-  grep -Fq -- "node scripts/dev-runtime-command.mjs cli version" <<<"$output" ||
-    fail "$target: expected the source-matched CLI entrypoint, got:\n$output"
-done
+# The recipe reads `-o bin/server$(EXE) ./cmd/server`, so the trailing space is
+# what keeps an expected `bin/server` from matching an emitted `bin/server.exe`.
+require_outputs() {
+  local label=$1 suffix=$2 output=$3 binary
 
-quoted_output="$(make -n cli 'PATCHBAY_ARGS=issue create --title "hello world"')"
-grep -Fq -- 'node scripts/dev-runtime-command.mjs cli issue create --title "hello world"' <<<"$quoted_output" ||
-  fail "cli: embedded argument quoting was not preserved:\n$quoted_output"
-
-for target in server rust-server; do
-  output="$(make -n "$target")"
-  grep -Fq -- "node scripts/dev-runtime-command.mjs backend" <<<"$output" ||
-    fail "$target: expected the source-matched backend entrypoint, got:\n$output"
-done
-
-for target in migrate-up rust-migrate-up migrate-down rust-migrate-down; do
-  output="$(make -n "$target")"
-  case "$target" in
-    migrate-up|rust-migrate-up)
-      grep -Fq -- "node scripts/dev-runtime-command.mjs migrations up" <<<"$output" ||
-        fail "$target: expected the source-matched up migration runner, got:\n$output"
-      ;;
-    migrate-down|rust-migrate-down)
-      grep -Fq -- "node scripts/dev-runtime-command.mjs migrations down" <<<"$output" ||
-        fail "$target: expected the source-matched down migration runner, got:\n$output"
-      ;;
-  esac
-done
-
-for target in build rust-build; do
-  output="$(make -n "$target")"
-  grep -Fq -- "./scripts/run-rust.sh build --release --locked -p patchbay-server -p patchbay-cli -p patchbay-migrate --bins" <<<"$output" ||
-    fail "$target: expected the Rust release build, got:\n$output"
-  for artifact in server patchbay migrate backfill_task_usage_hourly backfill_issue_last_activity backfill_codex_usage_cache; do
-    grep -Eq -- "cp .* \"bin/${artifact}(\.exe)?\"" <<<"$output" ||
-      fail "$target: expected bin/${artifact} output, got:\n$output"
+  for binary in server multica migrate; do
+    grep -Fq -- "-o bin/${binary}${suffix} " <<<"$output" ||
+      fail "$label: expected 'go build ... -o bin/${binary}${suffix}', got:
+$output"
   done
-done
+}
 
-dev_output="$(make -n dev)"
-[[ "$dev_output" == "pnpm dev" ]] ||
-  fail "dev: expected the single complete launcher entrypoint, got:\n$dev_output"
-if grep -Fq -- 'ENV_FILE=' <<<"$dev_output"; then
-  fail "dev: legacy Make-level ENV_FILE manipulation remains:\n$dev_output"
+# A `go` shim that records every invocation, so the assertions below can tell
+# "the Makefile probed the toolchain" from "the Makefile did not" without
+# depending on how the host PATH is laid out.
+probe_dir="$(mktemp -d)"
+trap 'rm -rf "$probe_dir"' EXIT
+real_go="$(command -v go || true)"
+cat >"$probe_dir/go" <<EOF
+#!/usr/bin/env bash
+echo "\$@" >>"$probe_dir/invocations"
+[ -n "$real_go" ] || exit 1
+exec "$real_go" "\$@"
+EOF
+chmod +x "$probe_dir/go"
+
+probe_count() {
+  [ -f "$probe_dir/invocations" ] || { echo 0; return; }
+  wc -l <"$probe_dir/invocations" | tr -d ' '
+}
+
+require_outputs "GOOS=windows in the environment" .exe \
+  "$(GOOS=windows make -n build)"
+require_outputs "GOOS=windows as a Make variable" .exe \
+  "$(make -n build GOOS=windows)"
+require_outputs "GOOS=linux in the environment" "" \
+  "$(GOOS=linux make -n build)"
+require_outputs "GOOS=darwin as a Make variable" "" \
+  "$(make -n build GOOS=darwin)"
+
+# Non-build targets must not reach for a Go toolchain: `make help` and
+# `make clean` are the first thing a frontend-only contributor runs, and a
+# global suffix assignment makes every one of them print `go: Command not
+# found` on a checkout with no Go installed.
+PATH="$probe_dir:$PATH" make -n clean >/dev/null
+PATH="$probe_dir:$PATH" make help >/dev/null
+[ "$(probe_count)" = 0 ] ||
+  fail "non-build targets invoked go $(probe_count) time(s): $(cat "$probe_dir/invocations")"
+
+# With no GOOS given, the suffix has to follow the toolchain's own default.
+if [ -n "$real_go" ]; then
+  host_suffix=""
+  [ "$("$real_go" env GOOS)" = windows ] && host_suffix=.exe
+  require_outputs "no GOOS set" "$host_suffix" \
+    "$(PATH="$probe_dir:$PATH" make -n build)"
+  [ "$(probe_count)" != 0 ] ||
+    fail "no GOOS set: expected the build target to resolve GOOS via go env"
+else
+  echo "skipping the host-default case: no go toolchain on PATH"
 fi
 
-# Make parses and exports its env file before recipes run. Source-development
-# targets must therefore select the checkout-isolated file at parse time, while
-# the Docker self-host family intentionally retains the operator-facing .env.
-probe_makefile="$(mktemp)"
-trap 'rm -f "$probe_makefile"' EXIT
-{
-  echo 'include Makefile'
-  echo 'dev:'
-  printf '\t%s\n' '@echo $(ENV_FILE)'
-  echo 'selfhost:'
-  printf '\t%s\n' '@echo $(ENV_FILE)'
-} >"$probe_makefile"
-
-dev_env_file="$(make --no-print-directory -s -f "$probe_makefile" dev 2>/dev/null)"
-[[ "$dev_env_file" == ".env.worktree" ]] ||
-  fail "dev: expected .env.worktree at Make parse time, got: $dev_env_file"
-
-selfhost_env_file="$(make --no-print-directory -s -f "$probe_makefile" selfhost 2>/dev/null)"
-[[ "$selfhost_env_file" == ".env" ]] ||
-  fail "selfhost: expected .env at Make parse time, got: $selfhost_env_file"
-
-for removed in setup start setup-main start-main setup-worktree start-worktree check-main check-worktree; do
-  if make -n "$removed" >/dev/null 2>&1; then
-    fail "$removed: legacy development target still exists"
-  fi
-done
-
-echo "✓ Makefile development entrypoints use source-matched runtime artifacts"
+echo "✓ make build names its outputs for the target platform"

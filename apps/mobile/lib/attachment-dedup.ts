@@ -1,5 +1,5 @@
-import type { Attachment } from "@patchbay/core/types";
-import { contentReferencesAttachment } from "@patchbay/core/types";
+import type { Attachment } from "@multica/core/types";
+import { contentReferencesAttachment } from "@multica/core/types";
 
 /**
  * The attachments to render as standalone cards below a message / comment

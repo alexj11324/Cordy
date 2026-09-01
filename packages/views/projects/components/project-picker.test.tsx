@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enProjects from "../../locales/en/projects.json";
 import enIssues from "../../locales/en/issues.json";
 import { ProjectPicker } from "./project-picker";
@@ -16,11 +16,11 @@ vi.mock("@tanstack/react-query", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@patchbay/core/projects/queries", () => ({
+vi.mock("@multica/core/projects/queries", () => ({
   projectListOptions: () => ({ queryKey: ["projects"] }),
 }));
 
@@ -58,7 +58,7 @@ describe("ProjectPicker", () => {
     // Regression: the clear × used to be an absolutely-positioned sibling
     // overlaying the trigger, and only the picker's own default trigger
     // reserved right padding for it. Every caller passing `triggerRender`
-    // (create dialog pill, table cell, automation card) had the × painted on
+    // (create dialog pill, table cell, autopilot card) had the × painted on
     // top of the project name. Clearing belongs in the popover instead, which
     // is also where the other property pickers put it.
     renderPicker();
@@ -111,7 +111,7 @@ describe("ProjectPicker", () => {
   });
 
   it("locks every mutation path when disabled", async () => {
-    // Regression (PB-5150): a keyboard user could Tab to the inline clear
+    // Regression (MUL-5150): a keyboard user could Tab to the inline clear
     // button and detach the project while a chat send was in flight,
     // retargeting the lazily-created session. With clearing moved into the
     // popover, `disabled` has a single path to close — the popover.

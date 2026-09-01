@@ -3,7 +3,7 @@
  * filters). Mirrors the field shape of web's
  * `packages/core/issues/stores/my-issues-view-store.ts` so the same filter
  * input produces the same visible issue set on both clients (the "same N
- * rule" in apps/mobile/AGENTS.md). Mobile cannot import core's runtime, so
+ * rule" in apps/mobile/CLAUDE.md). Mobile cannot import core's runtime, so
  * this is re-implemented locally.
  *
  * Empty filter array = "show all" (matches web's predicate semantics in
@@ -15,7 +15,7 @@
  * AsyncStorage persistence if cross-restart filter survival is desired.
  */
 import { create } from "zustand";
-import type { IssuePriority, IssueStatus } from "@patchbay/core/types";
+import type { IssuePriority, IssueStatus } from "@multica/core/types";
 import type { MyIssuesScope } from "@/data/queries/issue-keys";
 
 interface MyIssuesViewState {

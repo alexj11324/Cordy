@@ -1,11 +1,11 @@
 ---
 title: Desktop app
-description: Install Patchbay Desktop, use desktop tabs and the built-in daemon, and connect to a self-hosted instance.
+description: Install Multica Desktop, use desktop tabs and the built-in daemon, and connect to a self-hosted instance.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay Desktop is available for macOS, Windows, and Linux. It uses the same account and workspace data as the web app, but it manages the daemon on your machine automatically and keeps a separate set of tabs for each workspace.
+Multica Desktop is available for macOS, Windows, and Linux. It uses the same account and workspace data as the web app, but it manages the daemon on your machine automatically and keeps a separate set of tabs for each workspace.
 
 ## Desktop and web
 
@@ -18,11 +18,11 @@ Patchbay Desktop is available for macOS, Windows, and Linux. It uses the same ac
 
 Web is more convenient for a quick look or on a shared computer.
 
-You can be signed in to both at the same time. As long as they connect to the same Patchbay service, the data they show is shared.
+You can be signed in to both at the same time. As long as they connect to the same Multica service, the data they show is shared.
 
 ## Installation
 
-Pick the installer that matches your OS and CPU architecture from the [Patchbay downloads page](https://patchbay.aspectlylabs.com/download):
+Pick the installer that matches your OS and CPU architecture from the [Multica downloads page](https://multica.ai/download):
 
 | Platform | Installer |
 | --- | --- |
@@ -30,10 +30,10 @@ Pick the installer that matches your OS and CPU architecture from the [Patchbay 
 | Windows | `.exe` |
 | Linux | `.AppImage`, `.deb`, or `.rpm` |
 
-After installing, sign in with the same email you use on the web. Once signed in, Desktop starts its own bundled Patchbay CLI and detects the AI coding tools already installed on the machine.
+After installing, sign in with the same email you use on the web. Once signed in, Desktop starts its own bundled Multica CLI and detects the AI coding tools already installed on the machine.
 
 <Callout type="info">
-The CLI bundled with Desktop only serves the app's managed runtime. If you also want to run commands like `patchbay issue` in a terminal, install the CLI separately following [step 2 of the quickstart](/cloud-quickstart#2-connect-a-computer).
+The CLI bundled with Desktop only serves the app's managed runtime. If you also want to run commands like `multica issue` in a terminal, install the CLI separately following [step 2 of the quickstart](/cloud-quickstart#2-connect-a-computer).
 </Callout>
 
 ## Desktop tabs
@@ -46,13 +46,13 @@ Logging out clears every tab saved on the machine, so the next person to sign in
 
 ## Built-in daemon
 
-After sign-in, Desktop creates a dedicated CLI profile for the current Patchbay service and uses it to start the daemon. The profile lives at:
+After sign-in, Desktop creates a dedicated CLI profile for the current Multica service and uses it to start the daemon. The profile lives at:
 
 ```text
-~/.patchbay/profiles/desktop-<host>/
+~/.multica/profiles/desktop-<host>/
 ```
 
-It never reads or overwrites the default profile you use in the terminal. If you also start another daemon manually, Patchbay shows them as separate runtimes.
+It never reads or overwrites the default profile you use in the terminal. If you also start another daemon manually, Multica shows them as separate runtimes.
 
 You can check runtime status and logs in Desktop's settings. If a tool isn't detected, first confirm it runs in a regular terminal and is logged in, then restart Desktop's daemon.
 
@@ -70,13 +70,13 @@ Updates are distributed per OS and CPU architecture:
 
 ## Connecting to a self-hosted instance
 
-Desktop connects to Patchbay Cloud by default. To connect to a self-hosted instance, create `desktop.json` inside the `.patchbay` directory of your home directory:
+Desktop connects to Multica Cloud by default. To connect to a self-hosted instance, create `desktop.json` inside the `.multica` directory of your home directory:
 
 | Platform | Path |
 | --- | --- |
-| macOS | `/Users/<you>/.patchbay/desktop.json` |
-| Linux | `/home/<you>/.patchbay/desktop.json` |
-| Windows | `C:\Users\<you>\.patchbay\desktop.json` |
+| macOS | `/Users/<you>/.multica/desktop.json` |
+| Linux | `/home/<you>/.multica/desktop.json` |
+| Windows | `C:\Users\<you>\.multica\desktop.json` |
 
 These are the default locations — if your home directory has been moved or redirected, use its actual path.
 
@@ -88,48 +88,17 @@ These are the default locations — if your home directory has been moved or red
 ```
 
 <Callout type="warning">
-This is **not** the CLI's `~/.patchbay/config.json`, and the key names differ: the CLI uses `server_url`, Desktop uses `apiUrl`. Desktop never reads the CLI's config — it manages a separate daemon profile under `~/.patchbay/profiles/desktop-<host>/`. Editing `config.json` does not change which server Desktop connects to.
+This is **not** the CLI's `~/.multica/config.json`, and the key names differ: the CLI uses `server_url`, Desktop uses `apiUrl`. Desktop never reads the CLI's config — it manages a separate daemon profile under `~/.multica/profiles/desktop-<host>/`. Editing `config.json` does not change which server Desktop connects to.
 </Callout>
 
-`apiUrl` is the backend's public address; it is required and must use `http` or `https`. The other three URLs can be omitted — Desktop derives them automatically:
+`apiUrl` is the backend's public address; it is required and must use `http` or `https`. The other two URLs can be omitted — Desktop derives them automatically:
 
 - `wsUrl`: swaps the `apiUrl` scheme to `ws` or `wss` and appends `/ws` to the path;
 - `appUrl`: strips the `api.` prefix when the host starts with `api.` and has at least three labels (`api.example.com` → `example.com`); otherwise it stays the same as `apiUrl`.
-- `accountsUrl`: reuses `appUrl` unless authentication is deployed on a separate origin.
 
-### Desktop local development and hosted login
-
-For normal local development, use:
-
-```bash
-pnpm dev
-```
-
-This uses the checkout's isolated local API, database, and
-`http://localhost:<port>` login origin. To run local Electron/Vite while
-testing the hosted Google login and API, use the explicit hosted profile:
-
-```bash
-pnpm dev:hosted
-```
-
-That profile uses the complete hosted tuple:
-
-- `https://accounts.aspectlylabs.com` for the Google/Clerk login broker;
-- `https://api.aspectlylabs.com` for the API and WebSocket;
-- `https://patchbay.aspectlylabs.com` for the public app URL.
-
-The Electron renderer still hot-reloads locally, but the OAuth flow never
-passes through localhost. Hosted mode can read and change shared hosted data,
-so it is opt-in, does not silently fall back to local services, and keeps its
-Electron session storage separate from the local profile. Use
-`pnpm dev:doctor --hosted` to recheck the hosted API and accounts broker from a
-separate terminal.
-
-Usually `apiUrl` alone is enough. Override explicitly only when the derivation doesn't match your deployment; the four common cases:
+Usually `apiUrl` alone is enough. Override explicitly only when the derivation doesn't match your deployment; the three common cases:
 
 - the web app and the API are on different domains;
-- the authentication broker is on a separate domain;
 - WebSocket is deployed separately;
 - the host doesn't fit the prefix-stripping convention (two-label hosts like `api.local` keep their prefix).
 
@@ -138,14 +107,11 @@ Usually `apiUrl` alone is enough. Override explicitly only when the derivation d
   "schemaVersion": 1,
   "apiUrl": "https://api.example.com",
   "appUrl": "https://app.example.com",
-  "accountsUrl": "https://accounts.example.com",
   "wsUrl": "wss://ws.example.com/socket"
 }
 ```
 
 Restart Desktop after saving — the file is read once at startup. The two failure modes look different, which is the fastest way to tell them apart:
-
-The packaged app ignores the built-in Vite development tuple (`http://localhost:8080`, `ws://localhost:8080/ws`, and `http://localhost:3000`) if it is left behind in `desktop.json`, and returns to the cloud defaults. Other explicit self-hosted URLs remain supported.
 
 - **File not found** (wrong directory, or a filename that isn't exactly `desktop.json`) — Desktop uses the default Cloud configuration and shows no error. So if Desktop still reports a Cloud address and no configuration error, the file is not where Desktop is looking.
 - **File found but invalid** JSON, version, or URLs — Desktop shows a configuration error and does not fall back to Cloud.
@@ -160,13 +126,13 @@ Desktop can only connect to addresses reachable from both the browser and the ex
 
 Two Windows editor defaults silently produce a file Desktop can't use:
 
-- **Notepad appends `.txt`.** Saving as `desktop.json` can produce `desktop.json.txt`, which Desktop treats as not found. Turn on file name extensions in Explorer, or pick *All files* in the save dialog. To see the real filename, run `Get-ChildItem "$env:USERPROFILE\.patchbay" -Filter "desktop.json*"` in PowerShell — the `Name` column must read exactly `desktop.json`.
+- **Notepad appends `.txt`.** Saving as `desktop.json` can produce `desktop.json.txt`, which Desktop treats as not found. Turn on file name extensions in Explorer, or pick *All files* in the save dialog. To see the real filename, run `Get-ChildItem "$env:USERPROFILE\.multica" -Filter "desktop.json*"` in PowerShell — the `Name` column must read exactly `desktop.json`.
 - **PowerShell redirection writes UTF-16 or a BOM.** `> desktop.json` and `Out-File` can produce an encoding that fails to parse, which surfaces as a configuration error.
 
 To avoid both, create the file from PowerShell in one step:
 
 ```powershell
-$dir = "$env:USERPROFILE\.patchbay"
+$dir = "$env:USERPROFILE\.multica"
 New-Item -ItemType Directory -Force $dir | Out-Null
 $json = @'
 {
@@ -177,36 +143,36 @@ $json = @'
 [System.IO.File]::WriteAllText("$dir\desktop.json", $json)
 ```
 
-## Windows Defender flags Patchbay as a virus
+## Windows Defender flags Multica as a virus
 
 **Symptom**: Windows Security reports a threat such as `Trojan:Script/Wacatac.B!ml` and quarantines a file inside the Desktop installation. The affected item is normally the bundled CLI, not the app executable:
 
 ```text
-C:\Users\<you>\AppData\Local\Programs\@patchbaydesktop\resources\app.asar.unpacked\resources\bin\patchbay.exe
+C:\Users\<you>\AppData\Local\Programs\@multicadesktop\resources\app.asar.unpacked\resources\bin\multica.exe
 ```
 
-**This is a false positive.** The `!ml` suffix means the verdict came from Defender's machine-learning heuristics rather than a malware signature. Patchbay's Windows builds are not Authenticode code-signed yet, and a freshly published unsigned binary that starts background processes and opens network connections is exactly the profile those heuristics score as suspicious. Every Windows artifact is built by GitHub Actions from the public source in this repository.
+**This is a false positive.** The `!ml` suffix means the verdict came from Defender's machine-learning heuristics rather than a malware signature. Multica's Windows builds are not Authenticode code-signed yet, and a freshly published unsigned binary that starts background processes and opens network connections is exactly the profile those heuristics score as suspicious. Every Windows artifact is built by GitHub Actions from the public source in this repository.
 
 **Verify it yourself** — each GitHub release publishes a `checksums.txt` covering every CLI archive:
 
 ```powershell
-Get-FileHash .\patchbay-cli-<version>-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\multica-cli-<version>-windows-amd64.zip -Algorithm SHA256
 ```
 
-Compare the hash with the matching line in `checksums.txt` on the [latest release](https://github.com/alexj11324/Cordy/releases/latest).
+Compare the hash with the matching line in `checksums.txt` on the [latest release](https://github.com/multica-ai/multica/releases/latest).
 
 **How to fix**:
 
-1. **Restore the quarantined file** — Windows Security → *Virus & threat protection* → *Protection history* → select the Patchbay item → *Actions* → *Restore*.
+1. **Restore the quarantined file** — Windows Security → *Virus & threat protection* → *Protection history* → select the Multica item → *Actions* → *Restore*.
 2. **Add an exclusion** so it isn't quarantined again — *Virus & threat protection* → *Manage settings* → *Exclusions* → *Add an exclusion* → *Folder*, and add both:
-   - `%LOCALAPPDATA%\Programs\@patchbaydesktop`
-   - `%APPDATA%\Patchbay`
+   - `%LOCALAPPDATA%\Programs\@multicadesktop`
+   - `%APPDATA%\Multica`
 
-   Both paths matter: when the bundled CLI goes missing, Desktop downloads a replacement into `%APPDATA%\Patchbay\bin`, so excluding only the install folder leaves you in a loop where the replacement gets quarantined too.
+   Both paths matter: when the bundled CLI goes missing, Desktop downloads a replacement into `%APPDATA%\Multica\bin`, so excluding only the install folder leaves you in a loop where the replacement gets quarantined too.
 3. **Report the false positive to Microsoft** at [Microsoft Security Intelligence — submit a file](https://www.microsoft.com/en-us/wdsi/filesubmission), choosing *Software developer* and *Incorrectly detected as malware*. That is what gets the detection withdrawn for every user, usually within a few days.
 
 <Callout type="warning">
-Only add these exclusions if you installed Patchbay from the [downloads page](https://patchbay.aspectlylabs.com/download) or [GitHub releases](https://github.com/alexj11324/Cordy/releases) and the checksum matches. An exclusion disables real-time protection for everything in that folder.
+Only add these exclusions if you installed Multica from the [downloads page](https://multica.ai/download) or [GitHub releases](https://github.com/multica-ai/multica/releases) and the checksum matches. An exclusion disables real-time protection for everything in that folder.
 </Callout>
 
 ## Next steps

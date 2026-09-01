@@ -4,9 +4,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Agent, AgentRuntime } from "@patchbay/core/types";
-import { ApiError } from "@patchbay/core/api";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { Agent, AgentRuntime } from "@multica/core/types";
+import { ApiError } from "@multica/core/api";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
 import { McpConfigTab } from "./mcp-config-tab";
@@ -27,7 +27,7 @@ const workspaceMcp = vi.hoisted(() => ({
 // The workspace section reads the agent's assignments plus the library.
 // Stubbing the query options keeps this a pure render test — the real ones
 // would hit fetch.
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@multica/core/workspace/queries", () => ({
   agentMcpServersOptions: (agentId: string) => ({
     queryKey: ["agents", agentId, "mcp-servers"],
     queryFn: () => Promise.resolve(workspaceMcp.assigned),
@@ -40,7 +40,7 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/workspace/mutations", () => ({
+vi.mock("@multica/core/workspace/mutations", () => ({
   useAddAgentMcpServer: () => ({ mutateAsync: mockAddServer, isPending: false }),
   useSetAgentMcpServerEnabled: () => ({ mutateAsync: mockSetEnabled, isPending: false }),
   useRemoveAgentMcpServer: () => ({ mutateAsync: mockRemoveServer, isPending: false }),
@@ -58,10 +58,10 @@ const wsServer = (over: Record<string, unknown>) => ({
 
 // The tab reads discovery through runtimeCapabilitiesOptions; existing tests
 // render with runtime={null} so the query stays disabled and never fires.
-vi.mock("@patchbay/core/runtimes", async () => {
+vi.mock("@multica/core/runtimes", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/runtimes")>(
-      "@patchbay/core/runtimes",
+    await vi.importActual<typeof import("@multica/core/runtimes")>(
+      "@multica/core/runtimes",
     );
   return {
     ...actual,
@@ -121,12 +121,14 @@ function renderTab(
   overrides: Partial<Agent> = {},
   onSave = vi.fn().mockResolvedValue(undefined),
   runtime: AgentRuntime | null = null,
+  currentUserId: string | null = "user-1",
 ) {
   const result = render(
     <TestShell>
       <McpConfigTab
         agent={{ ...baseAgent, ...overrides }}
         runtime={runtime}
+        currentUserId={currentUserId}
         onSave={onSave}
       />
     </TestShell>,
@@ -183,8 +185,8 @@ describe("McpConfigTab", () => {
 
     expect(screen.getByText("fetch")).toBeInTheDocument();
     expect(screen.getByText("docs")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /managed by patchbay/i })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: /inherited from device/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /managed by multica/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /inherited from runtime/i })).toBeInTheDocument();
     expect(screen.queryByLabelText(/MCP config JSON editor/i)).not.toBeInTheDocument();
   });
 
@@ -281,7 +283,7 @@ describe("McpConfigTab", () => {
     await user.click(
       screen.getByRole("button", { name: /delete mcp server fetch/i }),
     );
-    expect(screen.getByText(/device servers are not affected/i)).toBeInTheDocument();
+    expect(screen.getByText(/runtime servers are not affected/i)).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /delete server/i }));
 
     expect(onSave).toHaveBeenCalledWith({ mcp_config: null });
@@ -327,9 +329,20 @@ describe("McpConfigTab", () => {
 
     expect(
       await screen.findByText(
-        "You don't have permission to view this device's MCP servers.",
+        "You don't have permission to view this runtime's MCP servers.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("does not discover MCP servers for another member's private runtime", async () => {
+    renderTab({}, undefined, { ...onlineRuntime, owner_id: "user-2" }, "admin-1");
+
+    expect(
+      await screen.findByText(
+        "You don't have permission to view this runtime's MCP servers.",
+      ),
+    ).toBeInTheDocument();
+    expect(mockRuntimeCapabilities).not.toHaveBeenCalled();
   });
 
   it("shows a retry notice when capability discovery fails", async () => {
@@ -341,7 +354,7 @@ describe("McpConfigTab", () => {
 
     expect(
       await screen.findByText(
-        "Couldn't discover device MCP servers. Try again.",
+        "Couldn't discover runtime MCP servers. Try again.",
       ),
     ).toBeInTheDocument();
   });
@@ -499,7 +512,7 @@ describe("McpConfigTab effective set", () => {
     renderTab({ mcp_config: null }, vi.fn(), onlineRuntime);
 
     expect(
-      await screen.findByText("Overridden by Patchbay"),
+      await screen.findByText("Overridden by Multica"),
     ).toBeInTheDocument();
   });
 
@@ -515,7 +528,7 @@ describe("McpConfigTab effective set", () => {
     // "fetch" renders twice — once as the (disabled) assignment, once as the
     // runtime's own server — which is exactly the state under test.
     await waitFor(() => expect(screen.getAllByText("fetch")).toHaveLength(2));
-    expect(screen.queryByText("Overridden by Patchbay")).toBeNull();
+    expect(screen.queryByText("Overridden by Multica")).toBeNull();
   });
 
   // Same transport hazard as before, reached through the SAVED config: the

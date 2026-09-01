@@ -5,6 +5,16 @@ export interface NavigationAdapter {
   pathname: string;
   searchParams: URLSearchParams;
   /**
+   * Current fragment, including its leading `#`, or `""` when the location has
+   * none. Part of "where am I" alongside `pathname` / `searchParams`: shared
+   * views that rebuild the current URL (copy link, feedback) must keep a deep
+   * link such as `#comment-…` intact, and only the platform can report it —
+   * the desktop renderer runs a MemoryRouter over a `file://` page, so its
+   * `window.location.hash` is always empty. Compose the three with
+   * `currentPath()` rather than concatenating them at each call site.
+   */
+  hash: string;
+  /**
    * Desktop only: open a path in a new tab. Optional `title` overrides the
    * default tab label. `opts.activate` controls focus:
    *   - `false` / omitted → background tab (browser cmd+click semantics; what
@@ -28,7 +38,7 @@ export interface NavigationAdapter {
   prefetch?: (path: string) => void;
   /**
    * Optional: is there an in-app page behind the current one, so that `back()`
-   * lands somewhere inside Patchbay rather than stepping off the app? Only the
+   * lands somewhere inside Multica rather than stepping off the app? Only the
    * platform can answer — web reads the browser's session history, desktop the
    * active tab's virtual history. Adapters that cannot answer leave this
    * undefined and callers must treat that as `false`.

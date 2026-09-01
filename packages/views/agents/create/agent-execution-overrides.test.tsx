@@ -13,8 +13,8 @@ import type {
   RuntimeDevice,
   RuntimeModel,
   RuntimeModelListRequest,
-} from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+} from "@multica/core/types";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enAgents from "../../locales/en/agents.json";
 import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
@@ -22,7 +22,7 @@ import enIssues from "../../locales/en/issues.json";
 const mockInitiateListModels = vi.hoisted(() => vi.fn());
 const mockGetListModelsResult = vi.hoisted(() => vi.fn());
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: {
     initiateListModels: (...args: unknown[]) => mockInitiateListModels(...args),
     getListModelsResult: (...args: unknown[]) =>
@@ -31,7 +31,7 @@ vi.mock("@patchbay/core/api", () => ({
   ApiError: class ApiError extends Error {},
 }));
 
-import type { AgentDraft } from "@patchbay/core/agents";
+import type { AgentDraft } from "@multica/core/agents";
 import { AgentExecutionOverrides } from "./agent-configuration-panel";
 
 const FAST_MODEL: RuntimeModel = {
@@ -71,6 +71,7 @@ const baseDraft: AgentDraft = {
   name: "Fast Codex",
   description: "",
   instructions: "",
+  conversationStarters: [],
   avatarUrl: null,
   runtimeId: "runtime-1",
   model: "gpt-5.6-sol",
@@ -109,7 +110,7 @@ function renderOverrides(
   return { onChange };
 }
 
-// PB-5390: the create flow never offered these two, so a Fast Codex agent had
+// MUL-5390: the create flow never offered these two, so a Fast Codex agent had
 // to be created first and fixed afterwards in settings.
 describe("AgentExecutionOverrides", () => {
   beforeEach(() => {

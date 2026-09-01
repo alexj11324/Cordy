@@ -5,7 +5,7 @@ import {
   type ColumnDef,
 } from "@tanstack/react-table";
 import { describe, expect, it, vi } from "vitest";
-import { DataTable } from "@patchbay/ui/components/ui/data-table";
+import { DataTable } from "@multica/ui/components/ui/data-table";
 
 // jsdom has no layout, so the real virtualizer sees a zero-height viewport and
 // renders nothing. The stand-in keeps measureElement pointed at a spy, which is

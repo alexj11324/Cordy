@@ -5,23 +5,23 @@ import { AppLink } from "../../navigation";
 import { useSortable, defaultAnimateLayoutChanges } from "@dnd-kit/sortable";
 import type { AnimateLayoutChanges } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { Issue, IssueProperty, Project, UpdateIssueRequest } from "@patchbay/core/types";
+import type { Issue, IssueProperty, Project, UpdateIssueRequest } from "@multica/core/types";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { propertyListOptions } from "@patchbay/core/properties";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { propertyListOptions } from "@multica/core/properties";
 import { CustomPropertyValueDisplay } from "./pickers/custom-property-picker";
 import { descriptionPreview } from "./description-preview";
-import { formatDateOnly, isPastDateOnly } from "@patchbay/core/issues/date";
+import { formatDateOnly, isPastDateOnly } from "@multica/core/issues/date";
 import { CalendarClock, CalendarDays } from "lucide-react";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PropertyIcon } from "../../common/property-icon";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { useTimeAgo } from "../../i18n";
+import { useWorkspacePaths } from "@multica/core/paths";
+import { useActorName } from "@multica/core/workspace/hooks";
+import { useLocale, useT, useTimeAgo } from "../../i18n";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { PriorityIcon } from "./priority-icon";
-import { PriorityPicker, ExecutorPicker, StartDatePicker, DueDatePicker } from "./pickers";
-import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
+import { PriorityPicker, AssigneePicker, StartDatePicker, DueDatePicker } from "./pickers";
+import { useViewStore } from "@multica/core/issues/stores/view-store-context";
 import { ProgressRing } from "./progress-ring";
 import type { ChildProgress } from "./list-row";
 import { IssueActionsContextMenu } from "../actions";
@@ -29,11 +29,8 @@ import { LabelChip } from "../../labels/label-chip";
 import { IssueAgentActivityIndicator } from "./issue-agent-activity-indicator";
 import { CustomStatusChip, useIsCustomStatus } from "./custom-status-chip";
 import { useIssueSurfaceActionsOptional } from "../surface/actions-context";
-import { useT } from "../../i18n";
-import { DependencyBlockerBadge } from "./dependency-blocker-badge";
-
-function formatDate(date: string): string {
-  return formatDateOnly(date, { month: "short", day: "numeric" }, "en-US");
+function formatDate(date: string, locale: string): string {
+  return formatDateOnly(date, { month: "short", day: "numeric" }, locale);
 }
 
 /** Stops event from bubbling to Link/drag handlers */
@@ -61,6 +58,7 @@ export const BoardCardContent = memo(function BoardCardContent({
   project?: Project;
 }) {
   const { t } = useT("issues");
+  const locale = useLocale();
   const timeAgo = useTimeAgo();
   const storeProperties = useViewStore((s) => s.cardProperties);
   const cardPropertyIds = useViewStore((s) => s.cardPropertyIds);
@@ -86,8 +84,8 @@ export const BoardCardContent = memo(function BoardCardContent({
 
   const showPriority = storeProperties.priority;
   const showDescription = storeProperties.description && issue.description;
-  const showExecutorSection = storeProperties.executor;
-  const hasExecutor = !!issue.executor_type && !!issue.executor_id;
+  const showAssigneeSection = storeProperties.assignee;
+  const hasAssignee = !!issue.assignee_type && !!issue.assignee_id;
   const showStartDate = storeProperties.startDate && issue.start_date;
   const showDueDate = storeProperties.dueDate && issue.due_date;
   const showProject = storeProperties.project && project;
@@ -97,12 +95,12 @@ export const BoardCardContent = memo(function BoardCardContent({
   // chip is the only thing in it and it decides to render nothing.
   const showCustomStatus = useIsCustomStatus(issue.status);
 
-  const showExecutorName = showExecutorSection && hasExecutor && !showStartDate && !showDueDate;
-  const showUpdatedHint = showExecutorName && !showChildProgress;
+  const showAssigneeName = showAssigneeSection && hasAssignee && !showStartDate && !showDueDate;
+  const showUpdatedHint = showAssigneeName && !showChildProgress;
   const { getActorName } = useActorName();
-  const executorName =
-    showExecutorName && issue.executor_type && issue.executor_id
-      ? getActorName(issue.executor_type, issue.executor_id)
+  const assigneeName =
+    showAssigneeName && issue.assignee_type && issue.assignee_id
+      ? getActorName(issue.assignee_type, issue.assignee_id)
       : null;
 
   const priorityLabel = t(($) => $.priority[issue.priority]);
@@ -135,49 +133,49 @@ export const BoardCardContent = memo(function BoardCardContent({
 
   // The parent row gives this container the leftover space; min-w-0 and
   // max-w-full make the nested picker trigger respect that limit.
-  const executorContainerClass = executorName
+  const assigneeContainerClass = assigneeName
     ? "flex min-w-0 max-w-full items-center"
     : "inline-flex items-center";
 
-  const executorInner = hasExecutor ? (
+  const assigneeInner = hasAssignee ? (
     <span className="flex min-w-0 max-w-full items-center gap-1.5">
       <ActorAvatar
-        actorType={issue.executor_type!}
-        actorId={issue.executor_id!}
+        actorType={issue.assignee_type!}
+        actorId={issue.assignee_id!}
         size="sm"
         enableHoverCard
         profileLink={false}
         className="shrink-0"
       />
-      {executorName && (
-        <span className="min-w-0 truncate text-caption text-foreground">{executorName}</span>
+      {assigneeName && (
+        <span className="min-w-0 truncate text-caption text-foreground">{assigneeName}</span>
       )}
     </span>
   ) : (
-    <span className="text-caption text-muted-foreground">{t(($) => $.pickers.executor.trigger_unassigned)}</span>
+    <span className="text-caption text-muted-foreground">{t(($) => $.pickers.assignee.trigger_unassigned)}</span>
   );
 
-  const executorNode = showExecutorSection ? (
+  const assigneeNode = showAssigneeSection ? (
     canEdit ? (
-      <PickerWrapper className={executorContainerClass}>
-        <ExecutorPicker
-          executorType={issue.executor_type}
-          executorId={issue.executor_id}
+      <PickerWrapper className={assigneeContainerClass}>
+        <AssigneePicker
+          assigneeType={issue.assignee_type}
+          assigneeId={issue.assignee_id}
           onUpdate={handleUpdate}
-          trigger={executorInner}
+          trigger={assigneeInner}
         />
       </PickerWrapper>
     ) : (
-      <span className={executorContainerClass}>{executorInner}</span>
+      <span className={assigneeContainerClass}>{assigneeInner}</span>
     )
   ) : null;
 
-  const showMetaRow = showExecutorSection || showStartDate || showDueDate || showChildProgress;
+  const showMetaRow = showAssigneeSection || showStartDate || showDueDate || showChildProgress;
   const showRightMeta = !!showStartDate || !!showDueDate || !!showChildProgress || showUpdatedHint;
 
   return (
-    <div className="running-task-card border-beam rounded-lg border-[0.5px] border-surface-border bg-surface py-3 px-2.5 shadow-[var(--surface-shadow)] transition-colors group-hover/card:border-foreground/15 group-hover/card:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
-      {/* Row 1: priority + identifier (left), agent activity + executor (right) */}
+    <div className="rounded-lg border-[0.5px] border-surface-border bg-surface py-3 px-2.5 shadow-[var(--surface-shadow)] transition-colors group-hover/card:border-foreground/15 group-hover/card:bg-surface-hover group-data-[popup-open]/card:border-foreground/15 group-data-[popup-open]/card:bg-surface-hover">
+      {/* Row 1: priority + identifier (left), agent activity + assignee (right) */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5 min-w-0">
           {priorityIconNode}
@@ -203,7 +201,7 @@ export const BoardCardContent = memo(function BoardCardContent({
 
       {/* Chip row: status + project + labels + custom property values.
           The status chip renders only for a CUSTOM status — the column header
-          already names the category. (PB-6243) */}
+          already names the category. (MUL-6243) */}
       {(showCustomStatus || showProject || showLabels || cardCustomProperties.length > 0) && (
         <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
           <CustomStatusChip status={issue.status} />
@@ -228,14 +226,12 @@ export const BoardCardContent = memo(function BoardCardContent({
         </div>
       )}
 
-      <DependencyBlockerBadge issueId={issue.id} className="mt-1.5" />
-
-      {/* Meta row: executor (left), start date, due date, child progress (right) */}
+      {/* Meta row: assignee (left), start date, due date, child progress (right) */}
       {showMetaRow && (
         <div className="mt-2 flex items-center justify-between gap-2">
-          {showExecutorSection && (
+          {showAssigneeSection && (
             <div className="min-w-0 flex-1">
-              {executorNode}
+              {assigneeNode}
             </div>
           )}
           {showRightMeta && (
@@ -249,7 +245,7 @@ export const BoardCardContent = memo(function BoardCardContent({
                       trigger={
                         <span className="flex items-center gap-1 text-caption text-muted-foreground">
                           <CalendarClock className="size-3" />
-                          {formatDate(issue.start_date!)}
+                          {formatDate(issue.start_date!, locale)}
                         </span>
                       }
                     />
@@ -257,7 +253,7 @@ export const BoardCardContent = memo(function BoardCardContent({
                 ) : (
                   <span className="flex shrink-0 items-center gap-1 text-caption text-muted-foreground">
                     <CalendarClock className="size-3" />
-                    {formatDate(issue.start_date!)}
+                    {formatDate(issue.start_date!, locale)}
                   </span>
                 )
               )}
@@ -276,7 +272,7 @@ export const BoardCardContent = memo(function BoardCardContent({
                           }`}
                         >
                           <CalendarDays className="size-3" />
-                          {formatDate(issue.due_date!)}
+                          {formatDate(issue.due_date!, locale)}
                         </span>
                       }
                     />
@@ -290,7 +286,7 @@ export const BoardCardContent = memo(function BoardCardContent({
                     }`}
                   >
                     <CalendarDays className="size-3" />
-                    {formatDate(issue.due_date!)}
+                    {formatDate(issue.due_date!, locale)}
                   </span>
                 )
               )}

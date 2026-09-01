@@ -6,8 +6,8 @@ import {
   VISIBILITY_DESCRIPTION,
   VISIBILITY_LABEL,
   VISIBILITY_TOOLTIP,
-} from "@patchbay/core/agents";
-import type { AgentVisibility } from "@patchbay/core/types";
+} from "@multica/core/agents";
+import type { AgentVisibility } from "@multica/core/types";
 import {
   PickerItem,
   PropertyPicker,

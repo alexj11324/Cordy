@@ -14,19 +14,19 @@ import {
   Square,
   Trash2,
 } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { paths, useWorkspaceSlug } from "@patchbay/core/paths";
-import { useWorkspacePresenceMap } from "@patchbay/core/agents";
-import { api } from "@patchbay/core/api";
-import { pendingChatTasksOptions, chatKeys, sortChatSessions } from "@patchbay/core/chat/queries";
+import { cn } from "@multica/ui/lib/utils";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { paths, useWorkspaceSlug } from "@multica/core/paths";
+import { useWorkspacePresenceMap } from "@multica/core/agents";
+import { api } from "@multica/core/api";
+import { pendingChatTasksOptions, chatKeys, sortChatSessions } from "@multica/core/chat/queries";
 import {
   useDeleteChatSession,
   useSetChatSessionArchived,
   useSetChatSessionPinned,
-} from "@patchbay/core/chat/mutations";
-import { useChatStore } from "@patchbay/core/chat";
-import type { Agent, ChatSession, PendingChatTasksResponse } from "@patchbay/core/types";
+} from "@multica/core/chat/mutations";
+import { useChatStore } from "@multica/core/chat";
+import type { Agent, ChatSession, PendingChatTasksResponse } from "@multica/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import {
   RowActionsMenu,
@@ -34,23 +34,23 @@ import {
   type RowActionItem,
 } from "../../common/row-actions-menu";
 import { resolveClickIntent, useOptionalNavigation } from "../../navigation";
-import { createLogger } from "@patchbay/core/logger";
-import { removeChatMessageFromCaches } from "@patchbay/core/realtime";
-import { useT } from "../../i18n";
+import { createLogger } from "@multica/core/logger";
+import { removeChatMessageFromCaches } from "@multica/core/realtime";
+import { useLocale, useT } from "../../i18n";
 
 const apiLogger = createLogger("chat.api");
 
 // IM-style timestamp: today → clock, this year → M/D, else full date.
-function formatChatTime(dateStr: string): string {
+function formatChatTime(dateStr: string, locale: string): string {
   const d = new Date(dateStr);
   const now = new Date();
   if (d.toDateString() === now.toDateString()) {
-    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
   }
   if (d.getFullYear() === now.getFullYear()) {
-    return d.toLocaleDateString([], { month: "numeric", day: "numeric" });
+    return d.toLocaleDateString(locale, { month: "numeric", day: "numeric" });
   }
-  return d.toLocaleDateString();
+  return d.toLocaleDateString(locale);
 }
 
 // Collapse a (possibly markdown / multi-line) message into a one-line preview.
@@ -95,6 +95,7 @@ export function ChatThreadList({
   onArchive: (session: ChatSession) => void;
 }) {
   const { t } = useT("chat");
+  const locale = useLocale();
   const wsId = useWorkspaceId();
   // Null-safe slug (not useWorkspacePaths, which throws): the list renders in
   // tests outside a workspace route; without a slug the web modifier-click
@@ -220,7 +221,9 @@ export function ChatThreadList({
     const isConfirmingAction = isConfirmingDelete || isConfirmingStop;
     const titleText = session.title?.trim() || t(($) => $.window.untitled);
     const last = session.last_message ?? null;
-    const timeText = last ? formatChatTime(last.created_at) : formatChatTime(session.updated_at);
+    const timeText = last
+      ? formatChatTime(last.created_at, locale)
+      : formatChatTime(session.updated_at, locale);
 
     // The second line: typing/waiting → failed → preview.
     let previewNode: React.ReactNode;
@@ -245,7 +248,7 @@ export function ChatThreadList({
     } else if (last?.message_kind === "no_response") {
       // A no_response turn stores a non-empty English fallback as its content,
       // so the preview is never blank even on older clients; new clients show a
-      // localized, italic hint instead of that fallback text (PB-4351).
+      // localized, italic hint instead of that fallback text (MUL-4351).
       previewNode = (
         <span className="block truncate italic text-muted-foreground">
           {t(($) => $.list.no_response_preview)}

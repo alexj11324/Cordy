@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -54,22 +54,22 @@ vi.mock("@tanstack/react-query", () => ({
   queryOptions: <T,>(opts: T) => opts,
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/paths", () => ({
   useCurrentWorkspace: () => workspaceRef.current,
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@multica/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
   workspaceKeys: { list: () => ["workspaces"] },
 }));
 
-vi.mock("@patchbay/core/github", async () => {
+vi.mock("@multica/core/github", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/github")>("@patchbay/core/github");
+    await vi.importActual<typeof import("@multica/core/github")>("@multica/core/github");
   return {
     ...actual,
     githubInstallationsOptions: () => ({
@@ -79,7 +79,7 @@ vi.mock("@patchbay/core/github", async () => {
   };
 });
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: {
     updateWorkspace: mockUpdateWorkspace,
     deleteGitHubInstallation: mockDeleteInstallation,
@@ -87,7 +87,7 @@ vi.mock("@patchbay/core/api", () => ({
   },
 }));
 
-vi.mock("@patchbay/core/auth", () => {
+vi.mock("@multica/core/auth", () => {
   const useAuthStore = Object.assign(
     (sel?: (s: { user: { id: string } }) => unknown) =>
       sel ? sel({ user: { id: "user-1" } }) : { user: { id: "user-1" } },
@@ -105,6 +105,7 @@ vi.mock("../../navigation/context", () => ({
     back: vi.fn(),
     pathname: "/acme/settings",
     searchParams: new URLSearchParams("tab=github"),
+    hash: "",
     getShareableUrl: (p: string) => `https://app.example${p}`,
   }),
 }));
@@ -208,7 +209,7 @@ describe("GitHubTab", () => {
     render(<GitHubTab />, { wrapper: I18nWrapper });
 
     await user.click(screen.getByRole("button", { name: /^Disconnect$/ }));
-    expect(screen.getByText(/Patchbay will stop receiving webhooks/i)).toBeTruthy();
+    expect(screen.getByText(/Multica will stop receiving webhooks/i)).toBeTruthy();
     expect(mockDeleteInstallation).not.toHaveBeenCalled();
 
     const dialogConfirm = screen

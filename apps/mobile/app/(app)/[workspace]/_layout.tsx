@@ -90,7 +90,7 @@ function RealtimeSubscriptions() {
 
 /**
  * Workspace context layout. Reads the slug from the URL (the route is the
- * source of truth — see apps/mobile/AGENTS.md "Behavioral parity"), validates
+ * source of truth — see apps/mobile/CLAUDE.md "Behavioral parity"), validates
  * membership against the workspaces list, then syncs id+slug into the
  * Zustand store so ApiClient.fetch can read the slug synchronously when
  * injecting the X-Workspace-Slug header.
@@ -113,7 +113,7 @@ export default function WorkspaceLayout() {
   }, [matched, setCurrentWorkspace]);
 
   // Wipe cross-route Zustand draft stores whenever the active workspace
-  // changes — a draft picked under workspace A (executor id, draft
+  // changes — a draft picked under workspace A (assignee id, draft
   // session id, etc.) is invalid in workspace B and must not leak.
   useNewIssueDraftResetOnWorkspaceChange(matched?.id ?? null);
   useNewProjectDraftResetOnWorkspaceChange(matched?.id ?? null);
@@ -183,35 +183,19 @@ export default function WorkspaceLayout() {
           name="issue/[id]/picker/priority"
           options={SHEET_OPTIONS}
         />
-        {/* Experiment: executor uses iOS-native nav header + UISearchController
+        {/* Experiment: assignee uses iOS-native nav header + UISearchController
             instead of the body-rendered header pattern in SHEET_OPTIONS.
             Eliminates the #3634 overlap class of bugs and the focus-loss
             footgun of a custom TextInput inside ListHeaderComponent. The
             route file wires `headerSearchBarOptions` via setOptions. If this
             proves out, propagate to label / project / other search pickers
-            and update AGENTS.md Lesson 6 with a carve-out. */}
+            and update CLAUDE.md Lesson 6 with a carve-out. */}
         <Stack.Screen
-          name="issue/[id]/picker/executor"
+          name="issue/[id]/picker/assignee"
           options={{
             ...SHEET_OPTIONS,
             headerShown: true,
-            title: "Executor",
-          }}
-        />
-        <Stack.Screen
-          name="issue/[id]/picker/owner"
-          options={{
-            ...SHEET_OPTIONS,
-            headerShown: true,
-            title: "Owner",
-          }}
-        />
-        <Stack.Screen
-          name="issue/[id]/picker/reviewer"
-          options={{
-            ...SHEET_OPTIONS,
-            headerShown: true,
-            title: "Reviewer",
+            title: "Assignee",
           }}
         />
         <Stack.Screen
@@ -235,10 +219,6 @@ export default function WorkspaceLayout() {
           options={SHEET_OPTIONS}
         />
         <Stack.Screen name="issue/[id]/runs" options={SHEET_OPTIONS} />
-        <Stack.Screen
-          name="issue/[id]/runs/[taskId]"
-          options={SHEET_OPTIONS}
-        />
         {/* Full emoji picker for a comment reaction. Pushed from the "+"
             button inside the comment long-press tapback row — see
             components/issue/comment-context-menu.tsx. */}
@@ -276,27 +256,11 @@ export default function WorkspaceLayout() {
           options={SHEET_OPTIONS}
         />
         <Stack.Screen
-          name="new-issue-picker/executor"
+          name="new-issue-picker/assignee"
           options={{
             ...SHEET_OPTIONS,
             headerShown: true,
-            title: "Executor",
-          }}
-        />
-        <Stack.Screen
-          name="new-issue-picker/owner"
-          options={{
-            ...SHEET_OPTIONS,
-            headerShown: true,
-            title: "Owner",
-          }}
-        />
-        <Stack.Screen
-          name="new-issue-picker/reviewer"
-          options={{
-            ...SHEET_OPTIONS,
-            headerShown: true,
-            title: "Reviewer",
+            title: "Assignee",
           }}
         />
         <Stack.Screen

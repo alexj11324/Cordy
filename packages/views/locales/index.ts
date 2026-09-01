@@ -1,4 +1,4 @@
-import type { LocaleResources, SupportedLocale } from "@patchbay/core/i18n";
+import type { LocaleResources, SupportedLocale } from "@multica/core/i18n";
 import enCommon from "./en/common.json";
 import enAuth from "./en/auth.json";
 import enSettings from "./en/settings.json";
@@ -14,7 +14,7 @@ import enSearch from "./en/search.json";
 import enInbox from "./en/inbox.json";
 import enWorkspace from "./en/workspace.json";
 import enProjects from "./en/projects.json";
-import enAutomations from "./en/automations.json";
+import enAutopilots from "./en/autopilots.json";
 import enSkills from "./en/skills.json";
 import enChat from "./en/chat.json";
 import enModals from "./en/modals.json";
@@ -22,7 +22,7 @@ import enRuntimes from "./en/runtimes.json";
 import enLayout from "./en/layout.json";
 import enUsage from "./en/usage.json";
 import enUi from "./en/ui.json";
-import enTeams from "./en/teams.json";
+import enSquads from "./en/squads.json";
 import enBilling from "./en/billing.json";
 import zhHansCommon from "./zh-Hans/common.json";
 import zhHansAuth from "./zh-Hans/auth.json";
@@ -39,7 +39,7 @@ import zhHansSearch from "./zh-Hans/search.json";
 import zhHansInbox from "./zh-Hans/inbox.json";
 import zhHansWorkspace from "./zh-Hans/workspace.json";
 import zhHansProjects from "./zh-Hans/projects.json";
-import zhHansAutomations from "./zh-Hans/automations.json";
+import zhHansAutopilots from "./zh-Hans/autopilots.json";
 import zhHansSkills from "./zh-Hans/skills.json";
 import zhHansChat from "./zh-Hans/chat.json";
 import zhHansModals from "./zh-Hans/modals.json";
@@ -47,7 +47,7 @@ import zhHansRuntimes from "./zh-Hans/runtimes.json";
 import zhHansLayout from "./zh-Hans/layout.json";
 import zhHansUsage from "./zh-Hans/usage.json";
 import zhHansUi from "./zh-Hans/ui.json";
-import zhHansTeams from "./zh-Hans/teams.json";
+import zhHansSquads from "./zh-Hans/squads.json";
 import zhHansBilling from "./zh-Hans/billing.json";
 import koCommon from "./ko/common.json";
 import koAuth from "./ko/auth.json";
@@ -64,7 +64,7 @@ import koSearch from "./ko/search.json";
 import koInbox from "./ko/inbox.json";
 import koWorkspace from "./ko/workspace.json";
 import koProjects from "./ko/projects.json";
-import koAutomations from "./ko/automations.json";
+import koAutopilots from "./ko/autopilots.json";
 import koSkills from "./ko/skills.json";
 import koChat from "./ko/chat.json";
 import koModals from "./ko/modals.json";
@@ -72,7 +72,7 @@ import koRuntimes from "./ko/runtimes.json";
 import koLayout from "./ko/layout.json";
 import koUsage from "./ko/usage.json";
 import koUi from "./ko/ui.json";
-import koTeams from "./ko/teams.json";
+import koSquads from "./ko/squads.json";
 import koBilling from "./ko/billing.json";
 import jaCommon from "./ja/common.json";
 import jaAuth from "./ja/auth.json";
@@ -89,7 +89,7 @@ import jaSearch from "./ja/search.json";
 import jaInbox from "./ja/inbox.json";
 import jaWorkspace from "./ja/workspace.json";
 import jaProjects from "./ja/projects.json";
-import jaAutomations from "./ja/automations.json";
+import jaAutopilots from "./ja/autopilots.json";
 import jaSkills from "./ja/skills.json";
 import jaChat from "./ja/chat.json";
 import jaModals from "./ja/modals.json";
@@ -97,7 +97,7 @@ import jaRuntimes from "./ja/runtimes.json";
 import jaLayout from "./ja/layout.json";
 import jaUsage from "./ja/usage.json";
 import jaUi from "./ja/ui.json";
-import jaTeams from "./ja/teams.json";
+import jaSquads from "./ja/squads.json";
 import jaBilling from "./ja/billing.json";
 
 // Single source of truth for the resource bundle. Both apps (web layout +
@@ -120,7 +120,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     inbox: enInbox,
     workspace: enWorkspace,
     projects: enProjects,
-    automations: enAutomations,
+    autopilots: enAutopilots,
     skills: enSkills,
     chat: enChat,
     modals: enModals,
@@ -128,7 +128,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     layout: enLayout,
     usage: enUsage,
     ui: enUi,
-    teams: enTeams,
+    squads: enSquads,
     billing: enBilling,
   },
   "zh-Hans": {
@@ -147,7 +147,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     inbox: zhHansInbox,
     workspace: zhHansWorkspace,
     projects: zhHansProjects,
-    automations: zhHansAutomations,
+    autopilots: zhHansAutopilots,
     skills: zhHansSkills,
     chat: zhHansChat,
     modals: zhHansModals,
@@ -155,7 +155,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     layout: zhHansLayout,
     usage: zhHansUsage,
     ui: zhHansUi,
-    teams: zhHansTeams,
+    squads: zhHansSquads,
     billing: zhHansBilling,
   },
   ko: {
@@ -174,7 +174,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     inbox: koInbox,
     workspace: koWorkspace,
     projects: koProjects,
-    automations: koAutomations,
+    autopilots: koAutopilots,
     skills: koSkills,
     chat: koChat,
     modals: koModals,
@@ -182,7 +182,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     layout: koLayout,
     usage: koUsage,
     ui: koUi,
-    teams: koTeams,
+    squads: koSquads,
     billing: koBilling,
   },
   ja: {
@@ -201,7 +201,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     inbox: jaInbox,
     workspace: jaWorkspace,
     projects: jaProjects,
-    automations: jaAutomations,
+    autopilots: jaAutopilots,
     skills: jaSkills,
     chat: jaChat,
     modals: jaModals,
@@ -209,7 +209,7 @@ export const RESOURCES: Record<SupportedLocale, LocaleResources> = {
     layout: jaLayout,
     usage: jaUsage,
     ui: jaUi,
-    teams: jaTeams,
+    squads: jaSquads,
     billing: jaBilling,
   },
 };

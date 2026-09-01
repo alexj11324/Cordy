@@ -1,2 +1,0 @@
-CREATE UNIQUE INDEX CONCURRENTLY channel_installation_runtime_observation_uidx
-    ON channel_installation_runtime_observation(installation_id);

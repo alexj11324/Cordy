@@ -12,7 +12,7 @@ import type { FreezeBreadcrumb } from "../shared/freeze-breadcrumb";
 // most: a deterministic freeze, where the user reopens the app and hits the
 // same content again within seconds. The event is still sitting in a JS batch
 // timer that the second hang kills, the process is force-quit, and the file is
-// already gone (PB-4115: three hangs, zero events). Now the renderer reports
+// already gone (MUL-4115: three hangs, zero events). Now the renderer reports
 // first and acknowledges after, so a failed attempt is simply retried on the
 // next boot.
 

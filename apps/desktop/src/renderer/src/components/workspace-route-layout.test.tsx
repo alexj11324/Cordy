@@ -20,7 +20,7 @@ const state = vi.hoisted(() => ({
   childQuerySlugs: [] as (string | null)[],
 }));
 
-vi.mock("@patchbay/core/auth", () => {
+vi.mock("@multica/core/auth", () => {
   const useAuthStore = (selector: (s: typeof state) => unknown) => {
     if (selector.toString().includes("isLoading"))
       return state.isAuthLoading;
@@ -37,7 +37,7 @@ vi.mock("@patchbay/core/auth", () => {
 // tab-swap case below: the incoming layout of a same-workspace swap writes the
 // slug that is already there, so its write is a no-op and cannot be what stops
 // the outgoing cleanup from clearing it.
-vi.mock("@patchbay/core/platform", () => ({
+vi.mock("@multica/core/platform", () => ({
   setCurrentWorkspace: vi.fn((slug: string | null) => {
     if (state.currentSlug === slug) return;
     state.currentSlug = slug;
@@ -45,13 +45,13 @@ vi.mock("@patchbay/core/platform", () => ({
   getCurrentSlug: () => state.currentSlug,
 }));
 
-vi.mock("@patchbay/core/workspace/pending-delete", () => ({
+vi.mock("@multica/core/workspace/pending-delete", () => ({
   isWorkspaceDeletePending: (id: string) => state.pendingDeletes.has(id),
 }));
 
-vi.mock("@patchbay/core/workspace", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/workspace")>(
-    "@patchbay/core/workspace",
+vi.mock("@multica/core/workspace", async () => {
+  const actual = await vi.importActual<typeof import("@multica/core/workspace")>(
+    "@multica/core/workspace",
   );
   return {
     ...actual,
@@ -69,9 +69,9 @@ vi.mock("@patchbay/core/workspace", async () => {
   };
 });
 
-vi.mock("@patchbay/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
-    "@patchbay/core/paths",
+vi.mock("@multica/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@multica/core/paths")>(
+    "@multica/core/paths",
   );
   return {
     ...actual,
@@ -85,15 +85,15 @@ vi.mock("@patchbay/core/paths", async () => {
   };
 });
 
-vi.mock("@patchbay/views/workspace/use-workspace-seen", () => ({
+vi.mock("@multica/views/workspace/use-workspace-seen", () => ({
   useWorkspaceSeen: () => state.workspaceSeen,
 }));
 
-vi.mock("@patchbay/views/workspace/welcome-after-onboarding", () => ({
+vi.mock("@multica/views/workspace/welcome-after-onboarding", () => ({
   WelcomeAfterOnboarding: () => null,
 }));
 
-vi.mock("@patchbay/views/layout", () => ({
+vi.mock("@multica/views/layout", () => ({
   WorkspacePresencePrefetch: () => null,
 }));
 
@@ -101,7 +101,7 @@ vi.mock("@patchbay/views/layout", () => ({
 // SourceBackfillModal. We stub the real component with a marker that
 // renders only when the layout actually rendered it (and not e.g.
 // suppressed by overlayActive).
-vi.mock("@patchbay/views/onboarding", () => ({
+vi.mock("@multica/views/onboarding", () => ({
   SourceBackfillModal: () => {
     state.modalRenders += 1;
     return <div data-testid={state.modalAriaLabel} />;
@@ -197,7 +197,7 @@ describe("WorkspaceRouteLayout", () => {
 });
 
 /**
- * PB-6231 / #7021. This layout is the only owner of the platform workspace
+ * MUL-6231 / #7021. This layout is the only owner of the platform workspace
  * singleton, and it used to only ever SET it. Deleting the active workspace
  * therefore left the singleton pointing at a workspace that no longer existed,
  * which is what kept the desktop shell mounting workspace-scoped chrome over
@@ -255,7 +255,7 @@ describe("WorkspaceRouteLayout workspace singleton lifecycle", () => {
 });
 
 /**
- * PB-6303 / #7086. Desktop mounts exactly one tab at a time and keys the host
+ * MUL-6303 / #7086. Desktop mounts exactly one tab at a time and keys the host
  * on the active tab id (tab-content.tsx), so opening or switching a tab
  * unmounts the whole router subtree and builds a new one beside it. React
  * renders the incoming tree first and only then runs the outgoing tree's

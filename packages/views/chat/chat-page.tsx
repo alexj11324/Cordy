@@ -1,24 +1,29 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, MoreHorizontal } from "lucide-react";
+import { useDefaultLayout } from "react-resizable-panels";
+import { ArrowLeft, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { useIsCompact } from "@patchbay/ui/hooks/use-mobile";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useChatStore } from "@patchbay/core/chat";
-import { chatQuickActionsPendingOptions } from "@patchbay/core/chat/queries";
-import { useRegenerateChatQuickActions } from "@patchbay/core/chat/mutations";
-import { useQuickActionsPendingTimeout } from "@patchbay/core/chat/use-quick-actions-pending-timeout";
+import { Button } from "@multica/ui/components/ui/button";
+import {
+  ResizablePanelGroup,
+  ResizablePanel,
+  ResizableHandle,
+} from "@multica/ui/components/ui/resizable";
+import { useIsCompact } from "@multica/ui/hooks/use-mobile";
+import { useWorkspacePaths } from "@multica/core/paths";
+import { useChatStore } from "@multica/core/chat";
+import { chatQuickActionsPendingOptions } from "@multica/core/chat/queries";
+import { useRegenerateChatQuickActions } from "@multica/core/chat/mutations";
+import { useQuickActionsPendingTimeout } from "@multica/core/chat/use-quick-actions-pending-timeout";
 import { useQuickActionsFailureToast } from "./components/use-quick-actions-failure-toast";
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, ChatSession } from "@patchbay/core/types";
+import type { Agent, ChatSession } from "@multica/core/types";
 import { PageHeader } from "../layout/page-header";
 import { useNavigation } from "../navigation";
 import { useT } from "../i18n";
-import { ActorAvatar } from "../common/actor-avatar";
 import { ChatMessageList, ChatMessageSkeleton } from "./components/chat-message-list";
-import { MainChatInput } from "./main-chat-input";
+import { ChatInput } from "./components/chat-input";
 import { ChatQueue } from "./components/chat-queue";
 import { ChatThreadList } from "./components/chat-thread-list";
 import { ChatSessionHeader } from "./components/chat-session-header";
@@ -32,10 +37,10 @@ import { AgentAccessRevokedBanner } from "./components/agent-access-revoked-bann
 import { RuntimeRequiredBanner } from "./components/runtime-required-banner";
 
 /**
- * Chat tab — the first-class Agent conversation workspace. Desktop keeps the
- * topic history in the global Agent sidebar while compact layouts retain the
- * list/conversation toggle. All conversation logic is shared with the
- * floating FAB via `useChatController`.
+ * Chat tab — the first-class two-pane surface (thread list on the left,
+ * conversation on the right), mirroring the Inbox page layout. Shares all
+ * conversation logic with the floating FAB via `useChatController`; the
+ * left rail reuses `ChatThreadList`.
  *
  * Selection is URL-addressable via `?session=<id>` so a thread can be
  * deep-linked, opened from a notification, and survive refresh. The chat
@@ -61,15 +66,13 @@ export function ChatPage() {
     chatQuickActionsPendingOptions(c.activeSessionId ?? ""),
   );
   // Drop a stuck pending marker (dead daemon / failed supplement) so the pill
-  // spinner stops and a later refresh starts clean (PB-5149).
+  // spinner stops and a later refresh starts clean (MUL-5149).
   useQuickActionsPendingTimeout(c.activeSessionId ?? null, quickActionsPending);
   // Toast when an accepted refresh later fails in the daemon (async half).
   useQuickActionsFailureToast(c.activeSessionId ?? null);
   const regenerateQuickActions = useRegenerateChatQuickActions();
   const urlSession = searchParams.get("session") || null;
   const urlAgent = searchParams.get("agent") || null;
-  const topicsViewRequest = useChatStore((s) => s.topicsViewRequest);
-  const agentIntentRevision = useChatStore((s) => s.agentIntentRevision);
 
   // "Composing a brand-new chat" — the user hit ⊕ but hasn't sent yet, so no
   // session exists. At compact widths this decides list-vs-conversation; on desktop the
@@ -84,13 +87,6 @@ export function ChatPage() {
     // composingNew=true that the later `?agent=` intent effect just set.
     if (useChatStore.getState().activeSessionId) setComposingNew(false);
   }, [c.activeSessionId]);
-
-  // The desktop sidebar and compact thread list are sibling surfaces. A
-  // sidebar click must be able to leave compact compose mode even though its
-  // local `composingNew` state belongs to this page.
-  useEffect(() => {
-    setComposingNew(false);
-  }, [topicsViewRequest]);
 
   // Two-way sync between the URL (`?session=`) and the chat store's
   // activeSessionId. Both effects read the LIVE store value via
@@ -121,6 +117,10 @@ export function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- react to store only
   }, [c.activeSessionId]);
 
+  const { defaultLayout, onLayoutChanged } = useDefaultLayout({
+    id: "multica_chat_layout",
+  });
+
   // `?agent=` intent bookkeeping. The ref holds the param value already
   // consumed (or superseded) so the effect below fires at most once per deep
   // link — it also bridges the async window between replace() and the
@@ -129,9 +129,8 @@ export function ChatPage() {
   // and a deferred intent firing after the user picked a thread (or started
   // another chat) would clobber that choice.
   const consumedAgentIntent = useRef<string | null>(null);
-  const observedAgentIntentRevision = useRef(agentIntentRevision);
   const supersedeAgentIntent = () => {
-    useChatStore.getState().supersedeAgentIntent();
+    if (urlAgent) consumedAgentIntent.current = urlAgent;
   };
 
   const handleSelect = (session: ChatSession) => {
@@ -190,34 +189,23 @@ export function ChatPage() {
   useEffect(() => {
     if (!urlAgent) {
       consumedAgentIntent.current = null;
-      observedAgentIntentRevision.current = agentIntentRevision;
       return;
     }
     if (consumedAgentIntent.current === urlAgent) return;
-    if (agentIntentRevision !== observedAgentIntentRevision.current) {
-      // A sibling surface (currently the Lobe-style Agent sidebar) made an
-      // explicit selection while this deep link was still pending. Consume
-      // the stale intent without starting a different chat.
-      consumedAgentIntent.current = urlAgent;
-      observedAgentIntentRevision.current = agentIntentRevision;
-      return;
-    }
     const agent = c.availableAgents.find((a) => a.id === urlAgent);
     if (agent) {
       consumedAgentIntent.current = urlAgent;
-      observedAgentIntentRevision.current = agentIntentRevision;
       startNewChat(agent);
       replace(wsPaths.chat());
       return;
     }
     if (c.agentsSettled) {
       consumedAgentIntent.current = urlAgent;
-      observedAgentIntentRevision.current = agentIntentRevision;
       toast.error(t(($) => $.page.agent_link_no_access));
       replace(wsPaths.chat());
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- consume when the URL param or the resolving agent list changes
-  }, [urlAgent, agentIntentRevision, c.availableAgents, c.agentsSettled]);
+  }, [urlAgent, c.availableAgents, c.agentsSettled]);
 
   const newChatButton = (
     <NewChatButton
@@ -250,29 +238,18 @@ export function ChatPage() {
   // The conversation pane: message list / skeleton / empty above a persistent
   // banner + input. Identical composition to the floating window's body, so a
   // brand-new chat (no active session) shows the agent-aware empty state + input.
-  // The composer shows the bound agent's avatar; switching agents still starts
-  // from ⊕. `@container`: the conversation column's gutter (CHAT_GUTTER) widens
-  // with THIS pane, which the user resizes independently of the browser window.
+  // No compose-box agent selector — the agent is fixed when the chat starts.
+  // `@container`: the conversation column's gutter (CHAT_GUTTER) widens with
+  // THIS pane, which the user resizes independently of the browser window.
   const queuedTasks = c.pendingTask?.queued_tasks ?? [];
   const conversation = (
     <div className="flex flex-1 flex-col min-h-0 @container">
-      {c.currentSession ? (
+      {c.currentSession && (
         <ChatSessionHeader
           session={c.currentSession}
           agent={c.activeAgent}
           onArchive={handleArchive}
         />
-      ) : (
-        <div className="flex h-12 shrink-0 items-center gap-1 border-b border-border/70 px-6">
-          <h1 className="text-body font-semibold">{t(($) => $.navigation.new_topic)}</h1>
-          <button
-            type="button"
-            aria-label={t(($) => $.navigation.topic_actions)}
-            className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            <MoreHorizontal className="size-4" />
-          </button>
-        </div>
       )}
       {c.showSkeleton ? (
         <ChatMessageSkeleton />
@@ -280,10 +257,6 @@ export function ChatPage() {
         <ChatMessageList
           key={c.activeSessionId}
           messages={c.messages}
-          agentId={c.activeAgent?.id}
-          agentName={c.activeAgent?.name}
-          userId={c.user?.id}
-          userName={c.user?.name}
           pendingTask={c.pendingTask}
           availability={c.availability}
           firstItemIndex={c.firstItemIndex}
@@ -310,7 +283,12 @@ export function ChatPage() {
           quickActionsPendingMessageId={quickActionsPending?.message_id ?? null}
         />
       ) : (
-        <EmptyState agent={c.activeAgent} />
+        <EmptyState
+          agent={c.activeAgent}
+          hasSessions={c.sessions.length > 0}
+          onPickPrompt={c.prefillConversationStarter}
+          customizeHref={c.customizeConversationStartersHref}
+        />
       )}
 
       {c.isAgentAccessRevoked ? (
@@ -328,25 +306,26 @@ export function ChatPage() {
         <OfflineBanner agentName={c.activeAgent?.name} availability={c.availability} />
       )}
 
-      <MainChatInput
+      <ChatQueue
+        tasks={queuedTasks}
+        headStatus={c.pendingTask?.status}
+        onSendNow={c.handleSendQueuedTaskNow}
+        sendNowDisabled={c.isAgentAccessRevoked}
+        onEdit={c.handleEditQueuedTask}
+        onRemove={c.handleRemoveQueuedTask}
+        onClear={c.handleClearQueuedTasks}
+      />
+
+      <ChatInput
         onSend={c.handleSend}
         restoreDraftRequest={c.restoreDraftRequest}
+        conversationStarterRequest={c.conversationStarterRequest}
+        onConversationStarterApplied={c.handleConversationStarterApplied}
         onRestoreDraftApplied={c.handleRestoreDraftApplied}
         uploadEnabled={c.uploadEnabled && !c.isAgentAccessRevoked}
         onStop={c.handleStop}
         isRunning={!!c.pendingTaskId}
         allowSubmitWhileRunning={c.pendingTask?.supports_queue === true}
-        queueSlot={
-          <ChatQueue
-            tasks={queuedTasks}
-            headStatus={c.pendingTask?.status}
-            onSendNow={c.handleSendQueuedTaskNow}
-            sendNowDisabled={c.isAgentAccessRevoked}
-            onEdit={c.handleEditQueuedTask}
-            onRemove={c.handleRemoveQueuedTask}
-            onClear={c.handleClearQueuedTasks}
-          />
-        }
         disabled={
           c.isSessionArchived ||
           c.isAgentArchived ||
@@ -358,17 +337,6 @@ export function ChatPage() {
         agentAccessRevoked={c.isAgentAccessRevoked}
         agentRuntimeRequired={!c.isAgentRuntimeBound}
         agentName={c.activeAgent?.name}
-        leftAdornment={
-          c.activeAgent ? (
-            <ActorAvatar
-              actorType="agent"
-              actorId={c.activeAgent.id}
-              size="lg"
-              profileLink={false}
-              showStatusDot
-            />
-          ) : null
-        }
         projects={c.projects}
         projectId={c.activeProjectId}
         projectContextUnsupported={c.projectContextUnsupported}
@@ -410,9 +378,43 @@ export function ChatPage() {
     );
   }
 
-  // -- Desktop: the global sidebar owns agent selection and topic history, so
-  // the conversation is a single LobeHub-style workspace canvas here. This is
-  // what lets the empty state remain useful on first load instead of showing
-  // a blank detail pane waiting for a second click.
-  return <div className="flex flex-1 min-h-0">{conversation}</div>;
+  // -- Desktop: resizable two-panel. The conversation pane appears only once
+  // there is a chat target — an open thread or a new chat whose agent was just
+  // picked via ⊕. With nothing selected there is no agent, so we show a neutral
+  // prompt instead of an orphaned compose box. -------------------------------
+  const hasTarget = !!c.activeSessionId || composingNew;
+  return (
+    <ResizablePanelGroup
+      orientation="horizontal"
+      className="flex-1 min-h-0"
+      defaultLayout={defaultLayout}
+      onLayoutChanged={onLayoutChanged}
+    >
+      <ResizablePanel
+        id="list"
+        defaultSize={320}
+        minSize={240}
+        maxSize={480}
+        groupResizeBehavior="preserve-pixel-size"
+      >
+        <div className="flex flex-col border-r h-full">
+          {listHeader}
+          <div className="flex-1 min-h-0 overflow-y-auto">{listBody}</div>
+        </div>
+      </ResizablePanel>
+      <ResizableHandle />
+      <ResizablePanel id="detail" minSize="40%">
+        <div className="flex flex-col min-h-0 h-full">
+          {hasTarget ? (
+            conversation
+          ) : (
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
+              <MessageSquare className="h-10 w-10 text-faint-foreground" />
+              <p className="text-body">{t(($) => $.page.select_prompt)}</p>
+            </div>
+          )}
+        </div>
+      </ResizablePanel>
+    </ResizablePanelGroup>
+  );
 }

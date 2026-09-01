@@ -8,6 +8,7 @@ import { useLocale } from "../i18n";
 
 export function AboutPageClient() {
   const { t } = useLocale();
+  const n = t.about.nameLine;
 
   return (
     <>
@@ -18,7 +19,25 @@ export function AboutPageClient() {
             {t.about.title}
           </h1>
           <div className="mt-8 space-y-6 text-body-lg leading-[1.8] text-[#0a0d12]/70 sm:text-title-sm">
-            <p>{t.about.nameLine}</p>
+            <p>
+              {n.prefix}
+              <strong className="font-semibold text-[#0a0d12]">
+                {n.mul}
+              </strong>
+              {n.tiplexed}
+              <strong className="font-semibold text-[#0a0d12]">
+                {n.i}
+              </strong>
+              {n.nformationAnd}
+              <strong className="font-semibold text-[#0a0d12]">
+                {n.c}
+              </strong>
+              {n.omputing}
+              <strong className="font-semibold text-[#0a0d12]">
+                {n.a}
+              </strong>
+              {n.gent}
+            </p>
             {t.about.paragraphs.map((p, i) => (
               <p key={i}>{p}</p>
             ))}

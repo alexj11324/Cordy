@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { runtimeDisplayLabel } from "@patchbay/core/runtimes";
-import { agentListOptions } from "@patchbay/core/workspace/queries";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { useWorkspacePaths } from "@multica/core/paths";
+import { runtimeDisplayLabel } from "@multica/core/runtimes";
+import { agentListOptions } from "@multica/core/workspace/queries";
 import { useBackOrReplace, useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { AgentConfigurationPanel } from "./agent-configuration-panel";
@@ -33,7 +33,7 @@ export function ManualCreateAgentPage() {
   const navigation = useNavigation();
   const backOrReplace = useBackOrReplace();
   const duplicateId = navigation.searchParams.get("duplicate");
-  const teamId = navigation.searchParams.get("team");
+  const squadId = navigation.searchParams.get("squad");
 
   const form = useCreateAgentForm();
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
@@ -81,7 +81,7 @@ export function ManualCreateAgentPage() {
   const submit = useCreateAgentSubmit({
     draft: form.draft,
     runtimeId: form.selectedRuntime?.id ?? null,
-    teamId,
+    squadId,
     duplicateSource: duplicateAgent,
     // The work is committed; leaving it stored would hand the finished agent's
     // fields to whoever opens this form next. Only this flow's slot — another
@@ -99,8 +99,8 @@ export function ManualCreateAgentPage() {
           ? t(($) => $.creation_studio.duplicate_title, {
               name: duplicateAgent.name,
             })
-          : teamId
-            ? t(($) => $.creation_studio.team_title)
+          : squadId
+            ? t(($) => $.creation_studio.squad_title)
             : t(($) => $.creation_studio.title)
       }
       step={t(($) => $.creation_studio.step_configure)}
@@ -151,7 +151,7 @@ export function ManualCreateAgentPage() {
         <CreateAgentFooter
           canCreate={canCreate}
           creating={submit.creating}
-          team={!!teamId}
+          squad={!!squadId}
           error={submit.formError}
           onCreate={() => void submit.create()}
         />

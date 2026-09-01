@@ -7,7 +7,7 @@ import type { ApiClient } from "../api/client";
 import type { Attachment } from "../types";
 import { useFileUpload, type UploadResult } from "./use-file-upload";
 
-// PB-3192 — verifies that the URL chosen for markdown persistence is
+// MUL-3192 — verifies that the URL chosen for markdown persistence is
 // a durable, server-supplied absolute URL when available, and falls
 // through to the legacy site-relative shape only when the server didn't
 // populate `markdown_url` (older deployments) or when there's no
@@ -26,7 +26,7 @@ function makeAttachment(overrides: Partial<Attachment> = {}): Attachment {
     filename: "shot.png",
     url: "/uploads/ws-1/shot.png",
     download_url: "/api/attachments/att-1/download",
-    markdown_url: "https://api.patchbay.test/api/attachments/att-1/download",
+    markdown_url: "https://api.multica.test/api/attachments/att-1/download",
     content_type: "image/png",
     size_bytes: 1,
     created_at: "2026-06-10T00:00:00Z",
@@ -54,10 +54,10 @@ async function runUpload(api: ApiClient): Promise<UploadResult | null> {
 describe("useFileUpload — markdownLink picks the durable URL with three-layer fallback", () => {
   it("prefers att.markdown_url when the server populates it (modern deployment)", async () => {
     const att = makeAttachment({
-      markdown_url: "https://cdn.patchbay.test/uploads/abc.png",
+      markdown_url: "https://cdn.multica.test/uploads/abc.png",
     });
     const upload = await runUpload(makeApi(att));
-    expect(upload?.markdownLink).toBe("https://cdn.patchbay.test/uploads/abc.png");
+    expect(upload?.markdownLink).toBe("https://cdn.multica.test/uploads/abc.png");
     // `link` keeps its legacy semantics — same as att.url, used by avatar /
     // logo callers that persist into long-lived fields.
     expect(upload?.link).toBe(att.url);
@@ -76,11 +76,11 @@ describe("useFileUpload — markdownLink picks the durable URL with three-layer 
     const att = makeAttachment({
       id: "",
       markdown_url: "",
-      url: "https://cdn.patchbay.test/avatars/u-1.png",
+      url: "https://cdn.multica.test/avatars/u-1.png",
     });
     const upload = await runUpload(makeApi(att));
-    expect(upload?.markdownLink).toBe("https://cdn.patchbay.test/avatars/u-1.png");
-    expect(upload?.link).toBe("https://cdn.patchbay.test/avatars/u-1.png");
+    expect(upload?.markdownLink).toBe("https://cdn.multica.test/avatars/u-1.png");
+    expect(upload?.link).toBe("https://cdn.multica.test/avatars/u-1.png");
   });
 
   it("rejects oversize files before hitting the network", async () => {
@@ -101,7 +101,7 @@ describe("useFileUpload — markdownLink picks the durable URL with three-layer 
   });
 });
 
-// PB-3339 — `uploading` is an in-flight counter, not a single boolean.
+// MUL-3339 — `uploading` is an in-flight counter, not a single boolean.
 // The single-boolean shape silently regressed the quick-create multi-image
 // attach flow: callers fire N concurrent uploads (drag-drop, multi-image
 // paste), the first upload's `finally` would flip `uploading` back to false
@@ -111,7 +111,7 @@ describe("useFileUpload — markdownLink picks the durable URL with three-layer 
 // server. The fix tracks an in-flight counter and exposes
 // `uploading = count > 0`, so callers see "uploading" as long as ANY upload
 // is in flight.
-describe("useFileUpload — concurrent uploads (PB-3339 regression)", () => {
+describe("useFileUpload — concurrent uploads (MUL-3339 regression)", () => {
   it("keeps uploading=true until ALL concurrent uploads resolve", async () => {
     // Hand-rolled deferreds so the test controls resolve order.
     const att1 = makeAttachment({ id: "att-1" });

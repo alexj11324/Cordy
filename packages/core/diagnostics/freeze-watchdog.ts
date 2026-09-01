@@ -27,7 +27,7 @@ const FREEZE_THRESHOLD_MS = 2000;
 
 // A single sustained freeze is delivered by the browser as several separate
 // long-task entries, so emitting per entry makes client_unresponsive volume
-// grow without bound with the freeze length (PB-3331). A global cooldown caps
+// grow without bound with the freeze length (MUL-3331). A global cooldown caps
 // it to at most one event per window. Module-level (page-lifetime) state is the
 // right scope here — it matches the `installed` singleton and resets on a full
 // reload, which is rare and itself a distinct signal. No route bucketing: a

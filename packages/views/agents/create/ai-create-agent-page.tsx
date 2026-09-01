@@ -2,16 +2,16 @@
 
 import { useCallback, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { agentBuilderSessionListOptions } from "@patchbay/core/agents";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { runtimeDisplayLabel } from "@patchbay/core/runtimes";
-import type { RuntimeDevice } from "@patchbay/core/types";
+import { agentBuilderSessionListOptions } from "@multica/core/agents";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { useWorkspacePaths } from "@multica/core/paths";
+import { runtimeDisplayLabel } from "@multica/core/runtimes";
+import type { RuntimeDevice } from "@multica/core/types";
 import { useBackOrReplace, useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { BuilderSetupPanel } from "./builder-setup-panel";
 import { AgentCreateChip, AgentCreateShell } from "./create-shell";
-import { createPathWithParams } from "./team-param";
+import { createPathWithParams } from "./squad-param";
 
 /**
  * Starting a conversational agent creation: pick where it will run.
@@ -34,7 +34,7 @@ export function AiCreateAgentPage() {
   const paths = useWorkspacePaths();
   const navigation = useNavigation();
   const backOrReplace = useBackOrReplace();
-  const teamId = navigation.searchParams.get("team");
+  const squadId = navigation.searchParams.get("squad");
 
   const builderSessions = useQuery(agentBuilderSessionListOptions(wsId));
   const sessions = builderSessions.data ?? [];
@@ -51,18 +51,18 @@ export function AiCreateAgentPage() {
     (sessionId: string, runtimeId: string | null) =>
       navigation.replace(
         createPathWithParams(paths.newAgentAiSession(sessionId), {
-          team: teamId,
+          squad: squadId,
           runtime: runtimeId,
         }),
       ),
-    [navigation, paths, teamId],
+    [navigation, paths, squadId],
   );
 
   return (
     <AgentCreateShell
       title={
-        teamId
-          ? t(($) => $.creation_studio.team_title)
+        squadId
+          ? t(($) => $.creation_studio.squad_title)
           : t(($) => $.creation_studio.title)
       }
       step={t(($) => $.creation_studio.step_ai)}

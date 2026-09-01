@@ -1,6 +1,6 @@
 /**
  * Notification preferences query — mirrors packages/core/notification-preferences/queries.ts
- * but binds to mobile's api client + key shape (per mobile AGENTS.md
+ * but binds to mobile's api client + key shape (per mobile CLAUDE.md
  * "Mobile-owned updaters" rule: don't import web queries, copy the design).
  *
  * The cache key includes wsId so workspace switching auto-invalidates.

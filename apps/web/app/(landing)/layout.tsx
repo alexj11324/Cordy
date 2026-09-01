@@ -19,13 +19,13 @@ const jsonLd = {
   "@graph": [
     {
       "@type": "Organization",
-      name: "Patchbay",
-      url: "https://patchbay.aspectlylabs.com",
-      sameAs: ["https://github.com/alexj11324/Cordy"],
+      name: "Multica",
+      url: "https://www.multica.ai",
+      sameAs: ["https://github.com/multica-ai/multica"],
     },
     {
       "@type": "SoftwareApplication",
-      name: "Patchbay",
+      name: "Multica",
       applicationCategory: "ProjectManagement",
       operatingSystem: "Web",
       description:

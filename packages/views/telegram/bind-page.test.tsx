@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { StrictMode, type ReactNode } from "react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 
 const TEST_RESOURCES = { en: { common: enCommon } };
@@ -13,7 +13,7 @@ const mockAuthState = vi.hoisted(() => ({
 const mockNavigatePush = vi.hoisted(() => vi.fn());
 const mockRedeemToken = vi.hoisted(() => vi.fn());
 
-vi.mock("@patchbay/core/auth", () => {
+vi.mock("@multica/core/auth", () => {
   const useAuthStore = Object.assign(
     (selector?: (state: typeof mockAuthState) => unknown) =>
       selector ? selector(mockAuthState) : mockAuthState,
@@ -27,7 +27,7 @@ vi.mock("../navigation/context", () => ({
   useOptionalNavigation: () => ({ push: mockNavigatePush }),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: { redeemTelegramBindingToken: mockRedeemToken },
 }));
 
@@ -137,8 +137,8 @@ describe("TelegramBindPage", () => {
   it.each([
     ["410", /invalid or expired/i],
     ["expired", /invalid or expired/i],
-    ["409", /already linked to a different Patchbay user/i],
-    ["already bound", /already linked to a different Patchbay user/i],
+    ["409", /already linked to a different Multica user/i],
+    ["already bound", /already linked to a different Multica user/i],
     ["403", /isn't a member of this workspace/i],
     ["workspace member", /isn't a member of this workspace/i],
     ["unexpected failure", /something went wrong/i],

@@ -1,11 +1,18 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { Archive, ChevronRight, Inbox } from "lucide-react";
-import { isEditableShortcutTarget } from "@patchbay/core/shortcuts";
-import { isImeComposing } from "@patchbay/core/utils";
-import type { InboxItem } from "@patchbay/core/types";
+import { isEditableShortcutTarget } from "@multica/core/shortcuts";
+import { isImeComposing } from "@multica/core/utils";
+import type { InboxItem } from "@multica/core/types";
 import type { InboxView } from "./inbox-view";
 import { InboxListItem } from "./inbox-list-item";
 import { VirtuosoSeed, VIRTUOSO_SEED_COUNT } from "../../common/virtuoso-seed";
@@ -25,7 +32,7 @@ const INBOX_ROW_ESTIMATED_HEIGHT = 58;
  * identical scroller. Rows are virtualized via react-virtuoso so only the
  * visible window (plus a small overscan) is mounted — the notification list
  * can grow long and every row otherwise carries an avatar + hover card, so
- * mounting all of them inflates the tab-switch commit (PB-4474).
+ * mounting all of them inflates the tab-switch commit (MUL-4474).
  *
  * Virtualization changes exactly one thing: whether an off-screen row is in
  * the DOM. Selection, hover, archive, and scroll semantics are unchanged —
@@ -47,6 +54,8 @@ export function InboxList({
   onSelect,
   onAction,
   onOpenArchived,
+  emptyLabel,
+  emptyAction,
 }: {
   items: InboxItem[];
   view: InboxView;
@@ -57,13 +66,15 @@ export function InboxList({
   onSelect: (item: InboxItem) => void;
   onAction: (id: string) => void;
   onOpenArchived: () => void;
+  emptyLabel?: string;
+  emptyAction?: ReactNode;
 }) {
   const { t } = useT("inbox");
   // Virtuoso's `customScrollParent` wants the actual HTMLElement, not a ref.
   // A callback ref into state hands the element over once it mounts and
   // triggers the re-render that lets Virtuoso attach to it.
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
-  // Pull-based scroll restoration (PB-4741): assign the saved offset at
+  // Pull-based scroll restoration (MUL-4741): assign the saved offset at
   // ref-attach (the seed's estimate spacer gives the container a truthful
   // height on the first commit, so the assignment sticks pre-paint) and feed
   // the same offset into the Virtuoso as its initial position.
@@ -100,7 +111,7 @@ export function InboxList({
   );
 
   // Arrow keys move the selection instead of scrolling the container — what
-  // every mail-style list does (PB-5622). Bound to the scroll container
+  // every mail-style list does (MUL-5622). Bound to the scroll container
   // rather than the document so it only fires while focus is inside the list:
   // pressing Down while reading the issue detail must not swap the row out
   // from under the reader.
@@ -176,10 +187,12 @@ export function InboxList({
         <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
           <Inbox className="mb-3 h-8 w-8 text-faint-foreground" />
           <p className="text-body">
-            {isArchivedView
-              ? t(($) => $.list.archived_empty)
-              : t(($) => $.list.empty)}
+            {emptyLabel ??
+              (isArchivedView
+                ? t(($) => $.list.archived_empty)
+                : t(($) => $.list.empty))}
           </p>
+          {emptyAction && <div className="mt-3">{emptyAction}</div>}
         </div>
         {/* Still offer the archive when the main list is empty — that is
             exactly when a user goes looking for what they filed away. */}
@@ -202,7 +215,7 @@ export function InboxList({
   // While the callback ref hasn't handed the scroll element over yet (the first
   // render after a remount), seed a bounded slice of real rows so the list
   // never paints blank; once it's set, mount the Virtuoso with a matching
-  // `initialItemCount` so the measurement frame keeps those rows (PB-4750).
+  // `initialItemCount` so the measurement frame keeps those rows (MUL-4750).
   return (
     <div
       ref={attachScrollEl}

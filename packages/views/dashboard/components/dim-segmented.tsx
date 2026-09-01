@@ -9,7 +9,7 @@ import { Segmented, type Dim } from "./dashboard-shared";
  * Renders only the dimensions the page's current range allows, which is what
  * removed the hidden coupling this control used to carry: it lived in the page
  * header next to the range, and picking a dimension the range disallowed
- * silently rewrote the range — moving every KPI on the page (PB-5759). With
+ * silently rewrote the range — moving every KPI on the page (MUL-5759). With
  * the illegal options simply absent there is nothing to reset.
  *
  * A single allowed dimension renders nothing at all: a one-option toggle is a

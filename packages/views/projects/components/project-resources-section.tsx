@@ -18,32 +18,32 @@ import {
   useCreateProjectResource,
   useDeleteProjectResource,
   useUpdateProjectResource,
-} from "@patchbay/core/projects";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
+} from "@multica/core/projects";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { useCurrentWorkspace } from "@multica/core/paths";
 import type {
   GithubRepoResourceRef,
   LocalDirectoryExecutionMode,
   LocalDirectoryResourceRef,
   ProjectResource,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import {
   runtimeAdvertisesLocalWorktree,
   runtimeListOptions,
-} from "@patchbay/core/runtimes";
-import { useConfigStore } from "@patchbay/core/config";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@multica/core/runtimes";
+import { useConfigStore } from "@multica/core/config";
+import { Badge } from "@multica/ui/components/ui/badge";
+import { Button } from "@multica/ui/components/ui/button";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
+} from "@multica/ui/components/ui/popover";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@patchbay/ui/components/ui/tooltip";
+} from "@multica/ui/components/ui/tooltip";
 import {
   isDesktopShell,
   pickDirectory,
@@ -63,7 +63,7 @@ import { githubShortLabel } from "../../common/github-url";
 //
 // Type-dispatched at the row + add-flow level. Add a new resource_type by:
 //   (1) extending the server validator
-//   (2) extending ProjectResourceType in @patchbay/core/types
+//   (2) extending ProjectResourceType in @multica/core/types
 //   (3) adding a render case in ResourceRow and an add-control here
 function isGithubRef(r: ProjectResource): r is ProjectResource & {
   resource_ref: GithubRepoResourceRef;

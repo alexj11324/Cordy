@@ -27,13 +27,13 @@ vi.mock("../i18n", async () => {
   };
 });
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: { getAttachmentTextContent: getAttachmentTextContentMock },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/paths", () => ({
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/test/issues/${id}`,
   }),
@@ -267,42 +267,42 @@ describe("ReadonlyContent highlight Markdown", () => {
 describe("ReadonlyContent issue mention Markdown", () => {
   it("renders an issue mention inside a task list as an issue mention card", () => {
     const { container, getByTestId } = render(
-      <ReadonlyContent content="- [ ] [PB-123](mention://issue/issue-123)" />,
+      <ReadonlyContent content="- [ ] [MUL-123](mention://issue/issue-123)" />,
     );
 
     expect(container.querySelector('input[type="checkbox"]')).not.toBeNull();
-    expect(getByTestId("issue-mention-card").textContent).toBe("PB-123");
+    expect(getByTestId("issue-mention-card").textContent).toBe("MUL-123");
   });
 
   it("autolinks a resolved bare identifier as an issue mention card", () => {
     resolveIssueIdentifierMock.mockImplementation((id: string) =>
-      id === "PB-7" ? { id: "issue-7", identifier: "PB-7" } : null,
+      id === "MUL-7" ? { id: "issue-7", identifier: "MUL-7" } : null,
     );
 
     const { getByTestId } = render(
-      <ReadonlyContent content="See PB-7 for context" />,
+      <ReadonlyContent content="See MUL-7 for context" />,
     );
 
-    expect(getByTestId("issue-mention-card").textContent).toBe("PB-7");
-    expect(resolveIssueIdentifierMock).toHaveBeenCalledWith("PB-7");
+    expect(getByTestId("issue-mention-card").textContent).toBe("MUL-7");
+    expect(resolveIssueIdentifierMock).toHaveBeenCalledWith("MUL-7");
   });
 
   it("leaves an unresolved bare identifier as plain text", () => {
     resolveIssueIdentifierMock.mockReturnValue(null);
 
     const { container, queryByTestId } = render(
-      <ReadonlyContent content="See PB-999 for context" />,
+      <ReadonlyContent content="See MUL-999 for context" />,
     );
 
     expect(queryByTestId("issue-mention-card")).toBeNull();
-    expect(container.textContent).toContain("PB-999");
+    expect(container.textContent).toContain("MUL-999");
   });
 
   it("does not autolink a bare identifier inside inline code", () => {
     resolveIssueIdentifierMock.mockReturnValue(null);
 
     const { queryByTestId } = render(
-      <ReadonlyContent content={"use `PB-7` here"} />,
+      <ReadonlyContent content={"use `MUL-7` here"} />,
     );
 
     expect(resolveIssueIdentifierMock).not.toHaveBeenCalled();
@@ -328,13 +328,13 @@ describe("ReadonlyContent CJK emphasis", () => {
 
   it("repairs a trailing space before a CJK strong closing delimiter", () => {
     const { container } = render(
-      <ReadonlyContent content="**为什么做，收益是什么。 **Patchbay 的能力边界" />,
+      <ReadonlyContent content="**为什么做，收益是什么。 **Multica 的能力边界" />,
     );
 
     expect(container.querySelector("strong")?.textContent).toBe(
       "为什么做，收益是什么。",
     );
-    expect(container.textContent).toBe("为什么做，收益是什么。 Patchbay 的能力边界");
+    expect(container.textContent).toBe("为什么做，收益是什么。 Multica 的能力边界");
   });
 
   it.each([
@@ -606,7 +606,7 @@ describe("ReadonlyContent file-card → AttachmentBlock HTML routing", () => {
   // branch must render through <AttachmentBlock>, not the older
   // <AttachmentCard>. Reverting that line would skip the html+attachmentId
   // dispatcher branch and surface the bare file-card chrome (filename row)
-  // instead of the rendered iframe — the exact regression PB-2330 fixed.
+  // instead of the rendered iframe — the exact regression MUL-2330 fixed.
   function renderWithQuery(ui: ReactElement) {
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false, gcTime: 0 } },
@@ -699,7 +699,7 @@ describe("ReadonlyContent inline data-URI images", () => {
   // Issue comments render through ReadonlyContent, which has its own sanitize
   // schema + urlTransform separate from the base Markdown component. Agents
   // inline auth QR codes as `![](data:image/png;base64,...)`; both gates used
-  // to strip the src and surface a broken image (PB-3961).
+  // to strip the src and surface a broken image (MUL-3961).
   const PNG_1X1 =
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
@@ -750,14 +750,14 @@ describe("ReadonlyContent slash command rendering", () => {
   });
 });
 
-describe("ReadonlyContent bare URL autolinking (PB-4242)", () => {
+describe("ReadonlyContent bare URL autolinking (MUL-4242)", () => {
   // A bare URL wrapped in bold used to be linkified into [url**](url**), which
   // swallowed the closing `**`: the bold never closed (leading `**` showed as
   // literal asterisks) and the href was corrupted with a trailing `**`. The
   // shared linkify now drops a trailing markdown-delimiter run from the URL, so
   // the closing `**` stays as emphasis outside a clean [url](url).
   it("renders a bold-wrapped bare URL as bold plus a clean link", () => {
-    const url = "https://github.com/alexj11324/Cordy/pull/5081";
+    const url = "https://github.com/multica-ai/multica/pull/5081";
     const { container } = render(<ReadonlyContent content={`**PR：${url}**`} />);
 
     const strong = container.querySelector("strong");
@@ -770,18 +770,18 @@ describe("ReadonlyContent bare URL autolinking (PB-4242)", () => {
   });
 
   it("bolds a bare URL even when a CJK punctuation immediately follows (variant B)", () => {
-    // `**url**（PB）` — the closing `**` is glued to a fullwidth paren. gfm
+    // `**url**（MUL）` — the closing `**` is glued to a fullwidth paren. gfm
     // autolink swallowed the `**` here; the shared string linkify does not.
-    const url = "https://github.com/alexj11324/Cordy/pull/5133";
+    const url = "https://github.com/multica-ai/multica/pull/5133";
     const { container } = render(
-      <ReadonlyContent content={`PR：**${url}**（PB-4277）。`} />,
+      <ReadonlyContent content={`PR：**${url}**（MUL-4277）。`} />,
     );
 
     const strong = container.querySelector("strong");
     expect(strong).not.toBeNull();
     expect(strong!.querySelector("a")?.getAttribute("href")).toBe(url);
     expect(container.textContent).not.toContain("**");
-    expect(container.textContent).toContain("（PB-4277）");
+    expect(container.textContent).toContain("（MUL-4277）");
   });
 
   it("still autolinks a plain bare URL", () => {

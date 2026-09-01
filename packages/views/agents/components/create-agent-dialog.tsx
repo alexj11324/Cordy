@@ -5,15 +5,15 @@ import { Globe, Lock, Users } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { ModelDropdown } from "./model-dropdown";
 import { RuntimePicker } from "./runtime-picker";
-import { isRuntimeUsableForUser } from "@patchbay/core/runtimes";
+import { isRuntimeUsableForUser } from "@multica/core/runtimes";
 import { InstructionsEditor } from "./instructions-editor";
 import { SkillMultiSelect } from "./skill-multi-select";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
-import { api } from "@patchbay/core/api";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useFeatureEnabled } from "@patchbay/core/config";
-import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
+import { api } from "@multica/core/api";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { useFeatureEnabled } from "@multica/core/config";
+import { COMPOSIO_MCP_APPS_FLAG } from "@multica/core/feature-flags";
+import { workspaceKeys } from "@multica/core/workspace/queries";
 import type {
   Agent,
   AgentInvocationTargetInput,
@@ -22,25 +22,25 @@ import type {
   RuntimeDevice,
   MemberWithUser,
   CreateAgentRequest,
-} from "@patchbay/core/types";
-import { isImeComposing } from "@patchbay/core/utils";
+} from "@multica/core/types";
+import { isImeComposing } from "@multica/core/utils";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@patchbay/ui/components/ui/dialog";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
+} from "@multica/ui/components/ui/dialog";
+import { Button } from "@multica/ui/components/ui/button";
+import { Checkbox } from "@multica/ui/components/ui/checkbox";
+import { Input } from "@multica/ui/components/ui/input";
+import { Label } from "@multica/ui/components/ui/label";
 import { toast } from "sonner";
 import {
   AGENT_DESCRIPTION_MAX_LENGTH,
   VISIBILITY_DESCRIPTION,
   VISIBILITY_LABEL,
-} from "@patchbay/core/agents";
+} from "@multica/core/agents";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { CharCounter } from "./char-counter";
 import { useT } from "../../i18n";
@@ -51,7 +51,7 @@ export function CreateAgentDialog({
   members,
   currentUserId,
   template,
-  teamId,
+  squadId,
   onClose,
   onCreate,
 }: {
@@ -68,11 +68,11 @@ export function CreateAgentDialog({
   // succeeds — they're not part of CreateAgentRequest.
   template?: Agent | null;
   // When set, every successful create is followed by
-  // addTeamMember(teamId, agent) so the new agent joins this team.
-  // If the team-join call fails the agent still exists and the dialog
+  // addSquadMember(squadId, agent) so the new agent joins this squad.
+  // If the squad-join call fails the agent still exists and the dialog
   // surfaces a warning toast — the user can add it manually from the
   // Members tab.
-  teamId?: string;
+  squadId?: string;
   onClose: () => void;
   // Returns the created Agent so the dialog can run a follow-up
   // setAgentSkills with the IDs the user picked in the form. Pre-skill-
@@ -84,9 +84,9 @@ export function CreateAgentDialog({
   const isDuplicate = !!template;
   const queryClient = useQueryClient();
   const wsId = useWorkspaceId();
-  // PB-4010: rolls out the private / public_to access model in the create
+  // MUL-4010: rolls out the private / public_to access model in the create
   // flow to match the AccessPicker on the agent detail page. Shares the
-  // `composio_mcp_apps` switch with the Composio rollout — the PB-3963
+  // `composio_mcp_apps` switch with the Composio rollout — the MUL-3963
   // permission model exists to gate Composio sharing, so both surfaces flip
   // together. Defaults OFF so production stays on the legacy Workspace /
   // Personal toggle until Composio is greenlit.
@@ -104,7 +104,7 @@ export function CreateAgentDialog({
     template?.visibility ?? "workspace",
   );
 
-  // New access state (PB-3963 aligned). When duplicating, seed from the
+  // New access state (MUL-3963 aligned). When duplicating, seed from the
   // template so the clone lands with the source agent's grants; otherwise
   // default to public_to + workspace, matching the legacy "Workspace" default
   // so a plain "click Create" produces the same result as before.
@@ -178,29 +178,29 @@ export function CreateAgentDialog({
     selectedMemberIds.size === 0 &&
     templateTeamTargets.length === 0;
 
-  // Shared team-join follow-up. Returns nothing — the caller has
+  // Shared squad-join follow-up. Returns nothing — the caller has
   // already shown its create-success toast; we only need to surface a
-  // warning when the agent landed but the team-join failed. Cache
-  // invalidation for the team's members list rides along so the
+  // warning when the agent landed but the squad-join failed. Cache
+  // invalidation for the squad's members list rides along so the
   // Members tab re-renders without a manual refetch.
-  const attachToTeam = async (agentId: string, displayName: string) => {
-    if (!teamId) return;
+  const attachToSquad = async (agentId: string, displayName: string) => {
+    if (!squadId) return;
     try {
-      await api.addTeamMember(teamId, {
+      await api.addSquadMember(squadId, {
         member_type: "agent",
         member_id: agentId,
       });
       if (wsId) {
         queryClient.invalidateQueries({
-          queryKey: [...workspaceKeys.teams(wsId), teamId, "members"],
+          queryKey: [...workspaceKeys.squads(wsId), squadId, "members"],
         });
         queryClient.invalidateQueries({
-          queryKey: [...workspaceKeys.teams(wsId), teamId],
+          queryKey: [...workspaceKeys.squads(wsId), squadId],
         });
       }
     } catch (err) {
       toast.warning(
-        t(($) => $.create_dialog.team_join_failed_toast, {
+        t(($) => $.create_dialog.squad_join_failed_toast, {
           name: displayName,
           error: err instanceof Error ? err.message : "unknown error",
         }),
@@ -231,7 +231,7 @@ export function CreateAgentDialog({
         skill_ids: [...selectedSkillIds],
       };
       if (accessPickerEnabled) {
-        // New PB-3963 shape: send the authoritative permission fields and
+        // New MUL-3963 shape: send the authoritative permission fields and
         // let the backend derive the legacy `visibility` field. Mirror the
         // AccessPicker `emit` normalisation — a public_to with zero targets
         // collapses to private as defense in depth so the backend never sees
@@ -262,7 +262,7 @@ export function CreateAgentDialog({
         // Duplicate path: forward the hidden config fields the source
         // agent had so the clone is functional out of the box (args /
         // concurrency). Skills flow through the dialog form. As of
-        // PB-2600 the agent resource shape no longer carries
+        // MUL-2600 the agent resource shape no longer carries
         // custom_env values, so duplication cannot copy env at all —
         // the user has to re-set env on the clone via the env tab
         // (which now goes through the audited `/env` endpoint). The
@@ -274,13 +274,13 @@ export function CreateAgentDialog({
         }
       }
       const createdAgent = await onCreate(data);
-      // Team context: attach the agent after skills land so the
-      // team's Members tab shows the agent with its skills already
+      // Squad context: attach the agent after skills land so the
+      // squad's Members tab shows the agent with its skills already
       // in place. Atomicity is best-effort by design (see plan in
-      // PB-2178) — a partial failure surfaces a warning toast and
+      // MUL-2178) — a partial failure surfaces a warning toast and
       // the user can retry from the Add Member dialog.
-      if (createdAgent && teamId) {
-        await attachToTeam(createdAgent.id, createdAgent.name);
+      if (createdAgent && squadId) {
+        await attachToSquad(createdAgent.id, createdAgent.name);
       }
       onClose();
     } catch (err) {
@@ -494,7 +494,7 @@ export function CreateAgentDialog({
  * AccessSection — inline access editor for the create/duplicate flow, gated
  * on `COMPOSIO_MCP_APPS_FLAG`. Mirrors the semantics of
  * `AccessPicker` on the agent detail page: the underlying model is
- * `permission_mode` + `invocation_targets` (PB-3963), not the legacy
+ * `permission_mode` + `invocation_targets` (MUL-3963), not the legacy
  * `visibility`.
  *
  * The three mutually exclusive scopes mirror AccessPicker on the detail page.

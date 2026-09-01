@@ -5,25 +5,21 @@ description: Understand browser sign-in sessions, personal access tokens, and th
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-In day-to-day use of Patchbay you mainly deal with two kinds of credentials: browser sign-in sessions and personal access tokens. Browser sessions serve web and Desktop; personal access tokens serve the CLI, the daemon, scripts, and the API.
+In day-to-day use of Multica you mainly deal with two kinds of credentials: browser sign-in sessions and personal access tokens. Browser sessions serve web and Desktop; personal access tokens serve the CLI, the daemon, scripts, and the API.
 
 ## Browser sign-in sessions
 
-After signing in with an email verification code or Google, Patchbay stores a JWT in an HttpOnly cookie named `patchbay_auth`. The browser sends it automatically; JavaScript cannot read it directly.
+After signing in with an email verification code or Google, Multica stores a JWT in an HttpOnly cookie named `multica_auth`. The browser sends it automatically; JavaScript cannot read it directly.
 
 Sessions last 30 days by default. Self-hosting admins can adjust the lifetime of sessions issued from then on with `AUTH_TOKEN_TTL`; see [Sign-in and signup configuration](/auth-setup#session-lifetime). Logging out clears the auth and CSRF cookies in the current browser.
 
-Browser cookies are not meant to be copied into scripts or the CLI; use a personal access token to access Patchbay from a terminal.
+Browser cookies are not meant to be copied into scripts or the CLI; use a personal access token to access Multica from a terminal.
 
 ## Personal access tokens
 
-A personal access token (PAT) starts with `pby_` and represents your account. It can access every workspace and API you have access to, so guard it like a password.
+A personal access token (PAT) starts with `mul_` and represents your account. It can access every workspace and API you have access to, so guard it like a password.
 
-<Callout type="info">
-If you upgraded from a release before the Patchbay rename, sign in again and replace any saved PATs. Tokens that use the former product prefix are no longer accepted.
-</Callout>
-
-When creating a token under **Settings → API Token**, you provide a name and pick an expiry of 30 days, 90 days, 1 year, or never; 90 days is preselected. The full token is shown exactly once; after the dialog closes, Patchbay keeps only:
+When creating a token under **Settings → API Token**, you provide a name and pick an expiry of 30 days, 90 days, 1 year, or never; 90 days is preselected. The full token is shown exactly once; after the dialog closes, Multica keeps only:
 
 - the token's hash;
 - the first few characters, for identification;
@@ -37,19 +33,19 @@ Don't put a PAT in repositories, issues, comments, screenshots, or logs, and don
 
 ## The CLI and PATs
 
-When you run `patchbay login`, the CLI completes sign-in through the browser, then creates a PAT valid for 90 days and saves it to the current profile's config file:
+When you run `multica login`, the CLI completes sign-in through the browser, then creates a PAT valid for 90 days and saves it to the current profile's config file:
 
 ```text
-~/.patchbay/config.json
-~/.patchbay/profiles/<name>/config.json
+~/.multica/config.json
+~/.multica/profiles/<name>/config.json
 ```
 
-The daemon connects to Patchbay with the same PAT. A `pby_` PAT with an expiry renews automatically when less than 7 days remain, extending it to 90 days from that moment. A failed renewal leaves the token unchanged; once a token has expired or been revoked, run `patchbay login` again.
+The daemon connects to Multica with the same PAT. A `mul_` PAT with an expiry renews automatically when less than 7 days remain, extending it to 90 days from that moment. A failed renewal leaves the token unchanged; once a token has expired or been revoked, run `multica login` again.
 
 On a machine without a browser, create a PAT on the web first and let the CLI prompt for it safely:
 
 ```bash
-patchbay login --token
+multica login --token
 ```
 
 ## Using a PAT in API requests
@@ -57,25 +53,25 @@ patchbay login --token
 Put the PAT in the `Authorization` header:
 
 ```bash
-export PATCHBAY_TOKEN='pby_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+export MULTICA_TOKEN='mul_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 
-curl https://api.aspectlylabs.com/api/me \
-  -H "Authorization: Bearer $PATCHBAY_TOKEN"
+curl https://api.multica.ai/api/me \
+  -H "Authorization: Bearer $MULTICA_TOKEN"
 ```
 
 Workspace-level API calls also need the workspace, as required by the endpoint:
 
 ```bash
-curl https://api.aspectlylabs.com/api/issues \
-  -H "Authorization: Bearer $PATCHBAY_TOKEN" \
-  -H "X-Workspace-ID: $PATCHBAY_WORKSPACE_ID"
+curl https://api.multica.ai/api/issues \
+  -H "Authorization: Bearer $MULTICA_TOKEN" \
+  -H "X-Workspace-ID: $MULTICA_WORKSPACE_ID"
 ```
 
 In scripts, take the token from a secret manager or a protected environment variable — never hardcode it. On self-hosted instances, replace the domain with your own public API address.
 
 ## Logging out and revocation
 
-`patchbay auth logout` only deletes the PAT saved in the current CLI profile; logging out on the web only deletes the current browser's cookies. Neither revokes the personal access token on the server.
+`multica auth logout` only deletes the PAT saved in the current CLI profile; logging out on the web only deletes the current browser's cookies. Neither revokes the personal access token on the server.
 
 If a token may have leaked, revoke it immediately under **Settings → API Token**. Once revoked, the PAT can never be used again, and any other machines and scripts that saved it lose access too.
 
@@ -93,10 +89,10 @@ The server also recognizes two credentials used in internal or managed scenarios
 
 | Prefix | Purpose | Managed by |
 | --- | --- | --- |
-| `mcn_` | Patchbay Cloud Node connections | Patchbay Cloud Fleet |
+| `mcn_` | Multica Cloud Node connections | Multica Cloud Fleet |
 | `mdt_` | Workspace-scoped daemon authentication protocol | Internal server flows |
 
-Regular Cloud, self-hosted, and Desktop installations never need to create them manually. The user-side CLI and daemon always use `pby_` PATs; don't construct tokens with other prefixes yourself.
+Regular Cloud, self-hosted, and Desktop installations never need to create them manually. The user-side CLI and daemon always use `mul_` PATs; don't construct tokens with other prefixes yourself.
 
 ## Next steps
 

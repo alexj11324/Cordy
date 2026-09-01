@@ -7,7 +7,7 @@ import {
 import { api, ApiError } from "../api";
 import type {
   Issue,
-  IssueExecutorType,
+  IssueAssigneeType,
   IssueStatusCategory,
   IssueTableFacetsRequest,
   IssueTableGroupSpec,
@@ -77,10 +77,10 @@ export const issueKeys = {
     groupKey,
     { hierarchy, parentId },
   ] as const,
-  executorGroupsAll: (wsId: string) =>
-    [...issueKeys.all(wsId), "executor-groups"] as const,
-  executorGroups: (wsId: string, filter: ExecutorGroupedIssuesFilter) =>
-    [...issueKeys.executorGroupsAll(wsId), filter] as const,
+  assigneeGroupsAll: (wsId: string) =>
+    [...issueKeys.all(wsId), "assignee-groups"] as const,
+  assigneeGroups: (wsId: string, filter: AssigneeGroupedIssuesFilter) =>
+    [...issueKeys.assigneeGroupsAll(wsId), filter] as const,
   /** All "my issues" queries — use for bulk invalidation. */
   myAll: (wsId: string) => [...issueKeys.all(wsId), "my"] as const,
   /** PREFIX for per-scope invalidation — no sort. */
@@ -89,13 +89,13 @@ export const issueKeys = {
   /** FULL KEY for queryOptions — includes sort. */
   myListSorted: (wsId: string, scope: string, filter: MyIssuesFilter, sort?: IssueSortParam) =>
     [...issueKeys.myList(wsId, scope, filter), sort ?? {}] as const,
-  myExecutorGroupsAll: (wsId: string) =>
-    [...issueKeys.myAll(wsId), "executor-groups"] as const,
-  myExecutorGroups: (
+  myAssigneeGroupsAll: (wsId: string) =>
+    [...issueKeys.myAll(wsId), "assignee-groups"] as const,
+  myAssigneeGroups: (
     wsId: string,
     scope: string,
-    filter: ExecutorGroupedIssuesFilter,
-  ) => [...issueKeys.myExecutorGroupsAll(wsId), scope, filter] as const,
+    filter: AssigneeGroupedIssuesFilter,
+  ) => [...issueKeys.myAssigneeGroupsAll(wsId), scope, filter] as const,
   /** All Project Gantt queries — prefix-match key for cross-project invalidation. */
   projectGanttAll: (wsId: string) =>
     [...issueKeys.all(wsId), "project-gantt"] as const,
@@ -108,16 +108,16 @@ export const issueKeys = {
   projectGantt: (
     wsId: string,
     projectId: string,
-    executorTypes?: IssueExecutorType[],
+    assigneeTypes?: IssueAssigneeType[],
   ) =>
     [
       ...issueKeys.projectGanttAll(wsId),
       projectId,
-      executorTypes ?? null,
+      assigneeTypes ?? null,
     ] as const,
   detail: (wsId: string, id: string) =>
     [...issueKeys.all(wsId), "detail", id] as const,
-  /** Resolve a bare issue identifier (e.g. "PB-123") to an issue. */
+  /** Resolve a bare issue identifier (e.g. "MUL-123") to an issue. */
   identifier: (wsId: string, identifier: string) =>
     [...issueKeys.all(wsId), "identifier", identifier] as const,
   /** Prefix for every per-parent children query in a workspace. */
@@ -175,18 +175,29 @@ export const issueKeys = {
    *  the global WS task: prefix path so any task lifecycle event refreshes
    *  every per-issue list, regardless of which issue is currently mounted. */
   tasksAll: () => ["issues", "tasks"] as const,
-  /** Per-issue task list (issue-detail Agent thread section). */
+  /** Per-issue task list (issue-detail Execution log section). */
   tasks: (issueId: string) => [...issueKeys.tasksAll(), issueId] as const,
+  sourceContextPreview: (wsId: string, anchorCommentId: string) =>
+    ["source-context", "preview", wsId, anchorCommentId] as const,
 };
+
+export function sourceContextPreviewOptions(
+  wsId: string,
+  anchorCommentId: string | null | undefined,
+) {
+  return queryOptions({
+    queryKey: issueKeys.sourceContextPreview(wsId, anchorCommentId ?? ""),
+    queryFn: () => api.getCommentSubIssuePreview(anchorCommentId!),
+    enabled: !!anchorCommentId,
+    staleTime: 0,
+  });
+}
 
 export type MyIssuesFilter = Pick<
   ListIssuesParams,
-  | "owner_id"
-  | "owner_ids"
-  | "owner_types"
-  | "executor_id"
-  | "executor_ids"
-  | "executor_types"
+  | "assignee_id"
+  | "assignee_ids"
+  | "assignee_types"
   | "creator_id"
   | "project_id"
   | "involves_user_id"
@@ -201,10 +212,8 @@ export type IssueFlatFilter = MyIssuesFilter &
     | "q"
     | "statuses"
     | "priorities"
-    | "owner_filters"
-    | "include_no_owner"
-    | "executor_filters"
-    | "include_no_executor"
+    | "assignee_filters"
+    | "include_no_assignee"
     | "creator_filters"
     | "project_ids"
     | "include_no_project"
@@ -213,9 +222,9 @@ export type IssueFlatFilter = MyIssuesFilter &
     | "ids"
   >;
 
-export type ExecutorGroupedIssuesFilter = Omit<
+export type AssigneeGroupedIssuesFilter = Omit<
   ListGroupedIssuesParams,
-  "group_by" | "limit" | "offset" | "group_executor_type" | "group_executor_id"
+  "group_by" | "limit" | "offset" | "group_assignee_type" | "group_assignee_id"
 >;
 
 /** Page size per status column. */
@@ -223,11 +232,11 @@ export const ISSUE_PAGE_SIZE = 50;
 
 /**
  * CATEGORIES fetched and paginated into the list/board cache — all 7,
- * `cancelled` included. `cancelled` is a first-class default (PB-4290), so it
+ * `cancelled` included. `cancelled` is a first-class default (MUL-4290), so it
  * lives in the cache and renders like any other column; there is no separate
  * "visible board" subset. This constant governs fetch/cache membership.
  *
- * Keyed on category, not on status key (PB-6243). A workspace can define any
+ * Keyed on category, not on status key (MUL-6243). A workspace can define any
  * number of custom statuses, and bucketing by status would mean one more
  * parallel `listIssues` request on every board load per status added. Bucketing
  * by category keeps the fan-out fixed at 7 forever; a custom status appears in
@@ -368,7 +377,7 @@ export const PROJECT_GANTT_MAX_ISSUES = 10_000;
 
 async function fetchProjectGanttIssues(
   projectId: string,
-  executorTypes?: IssueExecutorType[],
+  assigneeTypes?: IssueAssigneeType[],
 ) {
   const issues = [];
   let offset = 0;
@@ -376,7 +385,7 @@ async function fetchProjectGanttIssues(
     const res = await api.listIssues({
       project_id: projectId,
       scheduled: true,
-      ...(executorTypes?.length ? { executor_types: executorTypes } : {}),
+      ...(assigneeTypes?.length ? { assignee_types: assigneeTypes } : {}),
       limit: PROJECT_GANTT_PAGE_LIMIT,
       offset,
     });
@@ -404,13 +413,13 @@ async function fetchProjectGanttIssues(
 export function projectGanttIssuesOptions(
   wsId: string,
   projectId: string,
-  // The page's executor-type tab narrows the Gantt exactly like every
+  // The page's assignee-type tab narrows the Gantt exactly like every
   // other mode — same scope, same single mapping upstream.
-  executorTypes?: IssueExecutorType[],
+  assigneeTypes?: IssueAssigneeType[],
 ) {
   return queryOptions({
-    queryKey: issueKeys.projectGantt(wsId, projectId, executorTypes),
-    queryFn: () => fetchProjectGanttIssues(projectId, executorTypes),
+    queryKey: issueKeys.projectGantt(wsId, projectId, assigneeTypes),
+    queryFn: () => fetchProjectGanttIssues(projectId, assigneeTypes),
   });
 }
 
@@ -422,7 +431,7 @@ export function issueDetailOptions(wsId: string, id: string) {
 }
 
 /**
- * Resolve a bare issue identifier ("PB-123") to its issue, or `null`.
+ * Resolve a bare issue identifier ("MUL-123") to its issue, or `null`.
  *
  * Backs the Linear-style autolink. This is an EXACT lookup, so it goes to
  * `GET /api/issues/{identifier}` — the server parses `PREFIX-NUMBER`, checks
@@ -435,7 +444,7 @@ export function issueDetailOptions(wsId: string, id: string) {
  * workspace-wide full-text query (title/description/comment `LIKE`, ranking,
  * snippet subquery, `COUNT(*) OVER()`) which is orders of magnitude more
  * expensive than a point read, and autolink resolution was the dominant
- * caller of it (PB-6268).
+ * caller of it (MUL-6268).
  *
  * Server state → TanStack Query; the key includes `wsId` and the identifier,
  * so identical identifiers across the app share one request. Caller gates
@@ -490,7 +499,7 @@ export function childIssuesOptions(wsId: string, id: string) {
 
 /**
  * Server cap on parent_ids per `GET /api/issues/children` request — must
- * match `list_children_by_parents` in the Rust issue query layer.
+ * match `listChildrenByParentsLimit` in server/internal/handler/issue.go.
  * Exceeding it returns 400, so the client chunks larger requests.
  */
 export const CHILDREN_BY_PARENTS_CHUNK_SIZE = 200;

@@ -1,7 +1,7 @@
 /**
  * Overlapping avatar stack — mobile equivalent of web's
  * `packages/ui/components/ui/avatar.tsx` `AvatarGroup`. Mobile cannot import
- * the web component (sharing rules in apps/mobile/AGENTS.md), so this is a
+ * the web component (sharing rules in apps/mobile/CLAUDE.md), so this is a
  * native re-implementation built on top of ActorAvatar.
  *
  * Dedupes input by `${type}:${id}` before slicing — multiple active tasks

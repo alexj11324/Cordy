@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { QueryClient, type InfiniteData } from "@tanstack/react-query";
-import { chatKeys } from "@patchbay/core/chat/queries";
-import type { ChatMessage, ChatMessagesPage, ChatPendingTask } from "@patchbay/core/types";
+import { chatKeys } from "@multica/core/chat/queries";
+import type { ChatMessage, ChatMessagesPage, ChatPendingTask } from "@multica/core/types";
 import {
   hasInFlightPendingTask,
   isStillOnComposeTarget,
@@ -11,7 +11,7 @@ import {
 
 // hasInFlightPendingTask is the discriminator the stale-session self-heal uses
 // to EXEMPT a just-created session (awaiting the list refetch) from being
-// dropped as dangling. Post-PB-5181 the send is await-then-render, so the
+// dropped as dangling. Post-MUL-5181 the send is await-then-render, so the
 // exemption keys purely on the pending task `handleSend` seeds from the send
 // response — NOT on "has cached messages": a session deleted elsewhere can still
 // hold real cached history and must remain eligible for self-heal.
@@ -135,7 +135,7 @@ describe("seedAcceptedPendingTask", () => {
 
 // The post-send "scrub the composer?" rule, shared by BOTH send chains (the
 // chat tab's controller and the floating ChatWindow) so they cannot drift.
-// PB-4864: the new-chat composer is one box per workspace, so the selected
+// MUL-4864: the new-chat composer is one box per workspace, so the selected
 // agent is NOT part of compose-target identity — only the session is.
 describe("isStillOnComposeTarget", () => {
   it("is true when the user never left the session they sent from", () => {
@@ -159,7 +159,7 @@ describe("isStillOnComposeTarget", () => {
 
 // The project-switch decision, shared by BOTH chat surfaces (the chat tab's
 // controller and the floating ChatWindow) so the stale-agent rule cannot drift.
-// Regression (PB-5150 review): switching an existing session to another
+// Regression (MUL-5150 review): switching an existing session to another
 // project opens a fresh chat, and that chat MUST bind to the open session's
 // agent — not the stored `selectedAgentId`, which can be a stale preference for
 // a different agent (open session belongs to agent B while the persisted pick

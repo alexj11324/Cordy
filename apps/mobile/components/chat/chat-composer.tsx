@@ -10,7 +10,7 @@
  *     with a Stop affordance (filled foreground bg + stop glyph). Tap →
  *     `onStop()` cancels the in-flight task.
  *   - **Mention picker mode=chat**: chat is user ↔ single agent so
- *     @member / @agent / @team / @all are noise + would notify the
+ *     @member / @agent / @squad / @all are noise + would notify the
  *     wrong people. Picker route honors `?mode=chat` and surfaces only
  *     Issues (useful for "reference this ticket for context").
  *   - **No reply target**: chat is a flat conversation; passes no
@@ -48,20 +48,15 @@ interface Props {
   /** Cancel the in-flight agent task. Only callable while `sending===true`. */
   onStop: () => void;
   /** True while an agent task is running for the active session. The
-   *  composer shows Stop; queue-capable callers may also keep Send visible. */
+   *  composer swaps Send for Stop. */
   sending: boolean;
   /** Queued tasks remain busy, but do not expose Stop without draft restore. */
   allowStop?: boolean;
-  /** Keep Send available while the provider executes the current turn. */
-  allowSubmitWhileRunning?: boolean;
   /** Hard-disable typing + send. Used when there's no usable agent in the
    *  workspace or the session is archived (legacy). */
   disabled?: boolean;
   /** When `disabled`, replaces the pill label with the reason. */
   disabledReason?: string;
-  /** File/image controls are disabled for endpoints without attachment
-   *  binding support, such as a task-session continuation. */
-  allowAttachments?: boolean;
 }
 
 const IS_IOS = process.env.EXPO_OS === "ios";
@@ -73,10 +68,8 @@ export function ChatComposer({
   onStop,
   sending,
   allowStop = true,
-  allowSubmitWhileRunning = false,
   disabled = false,
   disabledReason,
-  allowAttachments = true,
 }: Props) {
   const wsSlug = useWorkspaceStore((s) => s.currentWorkspaceSlug);
 
@@ -122,12 +115,8 @@ export function ChatComposer({
       pillIcon="chatbubble-ellipses-outline"
       disabled={disabled}
       disabledReason={disabledReason}
-      showAttachments={allowAttachments}
       isSending={sending}
-      allowSubmitWhileSending={allowSubmitWhileRunning}
-      renderStop={
-        allowStop ? () => <StopButton onPress={handleStop} /> : undefined
-      }
+      renderStop={allowStop ? () => <StopButton onPress={handleStop} /> : undefined}
       manageKeyboard={false}
     />
   );

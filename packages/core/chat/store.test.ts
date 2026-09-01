@@ -36,14 +36,14 @@ function makeAttachment(id: string): Attachment {
   };
 }
 
-// The pre-PB-4864 scheme kept one new-chat draft per agent, in `__new__:<id>`
+// The pre-MUL-4864 scheme kept one new-chat draft per agent, in `__new__:<id>`
 // slots. Those slots have no timestamp, so on upgrade only one can survive:
 // the one for the agent the workspace has selected — the draft the user would
 // have been shown. The rest were the invisible multi-draft state, and go.
 describe("chat store — legacy per-agent new-chat draft migration", () => {
-  const DRAFTS_KEY = "patchbay:chat:drafts";
-  const ATTACHMENTS_KEY = "patchbay:chat:draft-attachments";
-  const AGENT_KEY = "patchbay:chat:selectedAgentId";
+  const DRAFTS_KEY = "multica:chat:drafts";
+  const ATTACHMENTS_KEY = "multica:chat:draft-attachments";
+  const AGENT_KEY = "multica:chat:selectedAgentId";
 
   it("adopts the selected agent's legacy draft into the single new-chat slot", () => {
     const storage = memStorage();
@@ -72,7 +72,7 @@ describe("chat store — legacy per-agent new-chat draft migration", () => {
 
     const store = createChatStore({ storage });
 
-    // Legacy bare Attachment rows load as `uploaded` entries (PB-5181 L2).
+    // Legacy bare Attachment rows load as `uploaded` entries (MUL-5181 L2).
     expect(
       store
         .getState()
@@ -158,7 +158,7 @@ describe("chat store — open/closed default", () => {
 
   it("honours an explicit stored 'open' preference", () => {
     const storage = memStorage();
-    storage.setItem("patchbay:chat:isOpen", "true");
+    storage.setItem("multica:chat:isOpen", "true");
     const store = createChatStore({ storage });
     expect(store.getState().isOpen).toBe(true);
   });
@@ -167,7 +167,7 @@ describe("chat store — open/closed default", () => {
     const storage = memStorage();
     const store = createChatStore({ storage });
     store.getState().setOpen(true);
-    expect(storage.getItem("patchbay:chat:isOpen")).toBe("true");
+    expect(storage.getItem("multica:chat:isOpen")).toBe("true");
 
     const reloaded = createChatStore({ storage });
     expect(reloaded.getState().isOpen).toBe(true);
@@ -180,29 +180,11 @@ describe("chat store — selected project", () => {
     const store = createChatStore({ storage });
 
     store.getState().setSelectedProjectId("project-1");
-    expect(storage.getItem("patchbay:chat:selectedProjectId")).toBe("project-1");
+    expect(storage.getItem("multica:chat:selectedProjectId")).toBe("project-1");
     expect(createChatStore({ storage }).getState().selectedProjectId).toBe("project-1");
 
     store.getState().setSelectedProjectId(null);
-    expect(storage.getItem("patchbay:chat:selectedProjectId")).toBeNull();
-  });
-});
-
-describe("chat store — cross-surface navigation signals", () => {
-  it("increments intent and topics signals without persisting them", () => {
-    const storage = memStorage();
-    const store = createChatStore({ storage });
-
-    expect(store.getState().agentIntentRevision).toBe(0);
-    expect(store.getState().topicsViewRequest).toBe(0);
-
-    store.getState().supersedeAgentIntent();
-    store.getState().requestTopicsView();
-
-    expect(store.getState().agentIntentRevision).toBe(1);
-    expect(store.getState().topicsViewRequest).toBe(1);
-    expect(storage.getItem("patchbay:chat:agentIntentRevision")).toBeNull();
-    expect(storage.getItem("patchbay:chat:topicsViewRequest")).toBeNull();
+    expect(storage.getItem("multica:chat:selectedProjectId")).toBeNull();
   });
 });
 
@@ -243,22 +225,22 @@ describe("chat store — floating window preference", () => {
 
   it("honours an explicit stored 'false' preference (opt-out)", () => {
     const storage = memStorage();
-    storage.setItem("patchbay:chat:floatingChatEnabled", "false");
+    storage.setItem("multica:chat:floatingChatEnabled", "false");
     const store = createChatStore({ storage });
     expect(store.getState().floatingChatEnabled).toBe(false);
   });
 
   it("honours an explicit stored 'true' preference", () => {
     const storage = memStorage();
-    storage.setItem("patchbay:chat:floatingChatEnabled", "true");
+    storage.setItem("multica:chat:floatingChatEnabled", "true");
     const store = createChatStore({ storage });
     expect(store.getState().floatingChatEnabled).toBe(true);
   });
 
   it("persists an enable, then collapses an open overlay when disabled again", () => {
     const storage = memStorage();
-    storage.setItem("patchbay:chat:floatingChatEnabled", "true");
-    storage.setItem("patchbay:chat:isOpen", "true");
+    storage.setItem("multica:chat:floatingChatEnabled", "true");
+    storage.setItem("multica:chat:isOpen", "true");
     const store = createChatStore({ storage });
     expect(store.getState().floatingChatEnabled).toBe(true);
     expect(store.getState().isOpen).toBe(true);
@@ -266,7 +248,7 @@ describe("chat store — floating window preference", () => {
     store.getState().setFloatingChatEnabled(false);
     expect(store.getState().floatingChatEnabled).toBe(false);
     expect(store.getState().isOpen).toBe(false);
-    expect(storage.getItem("patchbay:chat:floatingChatEnabled")).toBe("false");
+    expect(storage.getItem("multica:chat:floatingChatEnabled")).toBe("false");
 
     // A fresh store rehydrates the persisted preference.
     const reopened = createChatStore({ storage });
@@ -274,7 +256,7 @@ describe("chat store — floating window preference", () => {
 
     store.getState().setFloatingChatEnabled(true);
     expect(store.getState().floatingChatEnabled).toBe(true);
-    expect(storage.getItem("patchbay:chat:floatingChatEnabled")).toBe("true");
+    expect(storage.getItem("multica:chat:floatingChatEnabled")).toBe("true");
   });
 });
 
@@ -326,9 +308,9 @@ describe("chat store — applied draft-restore ledger", () => {
   });
 });
 
-// Coordinator-owned upload lifecycle in the draft slots (PB-5181 L2).
+// Coordinator-owned upload lifecycle in the draft slots (MUL-5181 L2).
 describe("chat store — draft upload ops", () => {
-  const ATTACHMENTS_KEY = "patchbay:chat:draft-attachments";
+  const ATTACHMENTS_KEY = "multica:chat:draft-attachments";
 
   function freshStore() {
     const storage = memStorage();

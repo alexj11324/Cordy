@@ -4,18 +4,18 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { MoreHorizontal, Pencil, Plus, Search, Tag, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useWorkspaceId } from "@multica/core/hooks";
 import {
   labelListOptions,
   useCreateLabel,
   useDeleteLabel,
   useUpdateLabel,
-} from "@patchbay/core/labels";
-import type { Label, LabelResourceType } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { Label as FieldLabel } from "@patchbay/ui/components/ui/label";
+} from "@multica/core/labels";
+import type { Label, LabelResourceType } from "@multica/core/types";
+import { Button } from "@multica/ui/components/ui/button";
+import { Input } from "@multica/ui/components/ui/input";
+import { Textarea } from "@multica/ui/components/ui/textarea";
+import { Label as FieldLabel } from "@multica/ui/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -23,7 +23,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@multica/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,16 +33,16 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@multica/ui/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@multica/ui/components/ui/dropdown-menu";
+import { cn } from "@multica/ui/lib/utils";
 import { ColorPicker, COLOR_PICKER_PRESETS } from "../../common/color-picker";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 import { SettingsTab } from "./settings-layout";
 
 /**
@@ -68,6 +68,7 @@ const EMPTY_DRAFT: LabelDraft = {
 
 export function LabelsTab() {
   const { t } = useT("settings");
+  const locale = useLocale();
   const wsId = useWorkspaceId();
 
   const [resourceType, setResourceType] = useState<LabelScope>("issue");
@@ -181,7 +182,7 @@ export function LabelsTab() {
                     {t(($) => $.labels.usage_count, { count: label.usage_count ?? 0 })}
                   </span>
                   <span className="text-caption text-muted-foreground">
-                    {new Date(label.updated_at).toLocaleDateString()}
+                    {new Date(label.updated_at).toLocaleDateString(locale)}
                   </span>
                   <DropdownMenu>
                     <DropdownMenuTrigger

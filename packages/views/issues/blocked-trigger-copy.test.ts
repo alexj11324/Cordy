@@ -7,7 +7,7 @@ import en from "../locales/en/issues.json";
 // A blocked mention's copy has to name the fix the user actually has. An unbound
 // agent (agent_runtime_required) and an agent whose machine is offline
 // (runtime_offline) need opposite actions — bind a runtime vs. bring the machine
-// back — so they must never collapse onto the same label. Before PB-5559 the
+// back — so they must never collapse onto the same label. Before MUL-5559 the
 // server reported unbound agents as runtime_offline, which told people to
 // reconnect a computer that no longer existed.
 type Leaf = string | Record<string, unknown>;
@@ -42,7 +42,7 @@ describe("blocked trigger copy", () => {
     expect(unbound).toBe(en.comment.trigger_blocked_short_agent_runtime_required);
   });
 
-  // PB-6164 adds the third member of the family: the machine is reachable and
+  // MUL-6164 adds the third member of the family: the machine is reachable and
   // its CLI cannot run there. "Offline" copy would send the user to reconnect
   // something that is already connected.
   it("distinguishes an unusable runtime from an offline one", () => {

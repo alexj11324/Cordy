@@ -1,5 +1,4 @@
 import { app, BrowserWindow, dialog, ipcMain, nativeImage, Notification, screen } from "electron";
-import { existsSync, renameSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { pathToFileURL } from "url";
@@ -9,14 +8,6 @@ import { setupAutoUpdater } from "./updater";
 import { setupDaemonManager } from "./daemon-manager";
 import { setupLocalDirectory } from "./local-directory";
 import { openExternalSafely, downloadURLSafely } from "./external-url";
-import {
-  LEGACY_PROTOCOL,
-  PROTOCOL,
-  findDesktopProtocolUrl,
-  readDesktopAppSuffix,
-  readDesktopCallbackProtocol,
-  registerDesktopProtocolClients,
-} from "./protocol-registration";
 import { installContextMenu } from "./context-menu";
 import { handleAppShortcut } from "./keyboard-shortcuts";
 import { installNavigationGestures } from "./navigation-gestures";
@@ -49,7 +40,6 @@ import {
   snapshotWindowState,
   windowStateFilePath,
 } from "./window-state";
-import { resolveMainWindowAppearance } from "./window-appearance";
 import {
   encodeIssueWindowArgument,
   parseIssueWindowRequest,
@@ -61,9 +51,7 @@ import {
 } from "../shared/auth-session";
 import {
   MAIN_RENDERER_CHANNEL_STATE_CHANNEL,
-  MAIN_RENDERER_MESSAGE_ACK_CHANNEL,
   MainRendererMessageQueue,
-  parseMainRendererMessageAcknowledgement,
   parseMainRendererChannelState,
   type MainRendererMessageChannel,
 } from "../shared/main-renderer-messages";
@@ -72,21 +60,11 @@ import {
   NotificationGate,
   parseNativeNotificationPayload,
 } from "./notification-gate";
-import { resolveDevAcceptanceCdpPort } from "./dev-acceptance-cdp";
 
 // Guards against registering the will-download handler more than once on the
 // same session. window.webContents.session is shared, and createWindow() can
 // be called again on macOS (app "activate" after all windows are closed).
 const downloadDialogSessions = new WeakSet<Electron.Session>();
-const authCallbackProtocol = process.defaultApp
-  ? (process.env.DESKTOP_AUTH_CALLBACK_PROTOCOL ??
-    readDesktopCallbackProtocol(process.argv) ??
-    "patchbay-canary")
-  : PROTOCOL;
-if (process.defaultApp && !process.env.DESKTOP_APP_SUFFIX) {
-  const recoveredSuffix = readDesktopAppSuffix(process.argv);
-  if (recoveredSuffix) process.env.DESKTOP_APP_SUFFIX = recoveredSuffix;
-}
 
 function installDownloadSaveDialogHandler(window: BrowserWindow): void {
   const { session } = window.webContents;
@@ -122,7 +100,7 @@ const BUNDLED_ICON_PATH = join(__dirname, "../../resources/icon.png").replace(
 // macOS/Linux GUI launches inherit a minimal PATH from launchd that omits
 // the user's shell config (~/.zshrc, Homebrew, nvm, ~/.local/bin, etc.).
 // Run the user's login shell once to recover the real PATH so the bundled
-// patchbay CLI can find agent binaries like claude/codex/opencode. Must run
+// multica CLI can find agent binaries like claude/codex/opencode. Must run
 // before any child_process.spawn / execFile call in the main process —
 // ES module imports are hoisted, so this block executes before createWindow
 // or any daemon-manager spawn.
@@ -139,42 +117,7 @@ if (process.platform !== "win32") {
   process.env.PATH = `${fallbackPaths.join(":")}:${process.env.PATH ?? ""}`;
 }
 
-// The complete development acceptance runner needs a narrow control plane so
-// it can drive the *real* Electron renderer after a normal user login. Keep
-// this opt-in and loopback-only: ordinary `pnpm dev`, packaged builds, and
-// release builds never expose Chromium's remote debugging endpoint. Chromium's
-// CDP listener has no application-level authentication, so the acceptance
-// command is only safe on a trusted local machine and must never be forwarded.
-const devAcceptanceCdpPort = resolveDevAcceptanceCdpPort({
-  isDev: is.dev,
-  isPackaged: app.isPackaged,
-  enabled: process.env.VITE_PATCHBAY_DEV_ACCEPTANCE,
-  port:
-    process.env.VITE_PATCHBAY_DEV_ACCEPTANCE_CDP_PORT ??
-    process.env.PATCHBAY_DEV_ACCEPTANCE_CDP_PORT,
-});
-if (devAcceptanceCdpPort !== null) {
-  app.commandLine.appendSwitch("remote-debugging-address", "127.0.0.1");
-  app.commandLine.appendSwitch(
-    "remote-debugging-port",
-    String(devAcceptanceCdpPort),
-  );
-  console.info(
-    `[dev:acceptance] Electron CDP enabled on 127.0.0.1:${devAcceptanceCdpPort}`,
-  );
-}
-
-function migrateDataDirectory(source: string, destination: string): void {
-  if (!existsSync(source) || existsSync(destination)) return;
-  try {
-    renameSync(source, destination);
-  } catch (error) {
-    console.warn(
-      `[brand-migration] could not move ${source} to ${destination}:`,
-      error,
-    );
-  }
-}
+const PROTOCOL = "multica";
 const devLog = is.dev ? createBestEffortDevLog() : undefined;
 
 // Where the main process parks a freeze/crash breadcrumb until the next
@@ -241,25 +184,16 @@ function dispatchToMainRenderer(
 function handleDeepLink(url: string): void {
   try {
     const parsed = new URL(url);
-    if (
-      parsed.protocol !== `${PROTOCOL}:` &&
-      parsed.protocol !== `${LEGACY_PROTOCOL}:` &&
-      parsed.protocol !== `${authCallbackProtocol}:`
-    ) {
-      return;
-    }
+    if (parsed.protocol !== `${PROTOCOL}:`) return;
 
-    // patchbay://auth/callback?code=<one-time-code>&state=<request-state>
+    // multica://auth/callback?token=<jwt>
     if (parsed.hostname === "auth" && parsed.pathname === "/callback") {
-      const code = parsed.searchParams.get("code");
-      const state = parsed.searchParams.get("state");
-      if (code && state) {
-        dispatchToMainRenderer("auth:handoff", { code, state });
-      }
+      const token = parsed.searchParams.get("token");
+      if (token) dispatchToMainRenderer("auth:token", token);
       return;
     }
 
-    // patchbay://invite/<invitationId>
+    // multica://invite/<invitationId>
     // Dispatched from the web invite page when the user chooses "Open in
     // desktop app". The renderer opens the invite overlay — no tab, no
     // route persistence, so deep-linking the same invite twice stays safe.
@@ -307,7 +241,7 @@ function loadRenderer(window: BrowserWindow): void {
 }
 
 function installLocaleRefresh(window: BrowserWindow): void {
-  // Electron has no dedicated OS-language event. Check whenever any Patchbay
+  // Electron has no dedicated OS-language event. Check whenever any Multica
   // window regains focus, then broadcast so all open windows remain aligned.
   window.on("focus", () => {
     const current = getSystemLocale();
@@ -329,7 +263,7 @@ function installWindowShortcutHandler(window: BrowserWindow): void {
       window.webContents.send("tab:close-active");
     } else if (result === "open-settings") {
       event.preventDefault();
-      // Settings is a first-class page owned by the main app window.
+      // Settings is a tab, so it can only live in the tabbed main window.
       // Routing through the queue means the chord also works from a
       // dedicated issue window — and from one that outlived the main window,
       // which is recreated and only then handed the request.
@@ -370,7 +304,6 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     titleBarStyle: "hiddenInset",
     trafficLightPosition: { x: 16, y: 17 },
-    ...resolveMainWindowAppearance(process.platform),
     show: false,
     autoHideMenuBar: true,
     // Windows/Linux pick up the window/taskbar icon from this option.
@@ -613,50 +546,34 @@ function createIssueWindow(context: IssueWindowContext): void {
 // without fighting for the shared single-instance lock. The suffix is
 // appended to the app name + userData path, so each worktree gets its own
 // lock file. Default (no env var) keeps behavior unchanged — the common
-// single-worktree case still lands at "Patchbay Canary".
+// single-worktree case still lands at "Multica Canary".
 const DEV_APP_NAME = process.env.DESKTOP_APP_SUFFIX
-  ? `Patchbay Canary ${process.env.DESKTOP_APP_SUFFIX}`
-  : "Patchbay Canary";
+  ? `Multica Canary ${process.env.DESKTOP_APP_SUFFIX}`
+  : "Multica Canary";
 
 if (is.dev) {
-  if (!process.env.DESKTOP_APP_SUFFIX) {
-    migrateDataDirectory(
-      join(app.getPath("appData"), "Cordy Canary"), // legacy-brand-compat
-      join(app.getPath("appData"), DEV_APP_NAME),
-    );
-  }
   app.setName(DEV_APP_NAME);
   app.setPath("userData", join(app.getPath("appData"), DEV_APP_NAME));
 } else {
-  const patchbayUserData = join(app.getPath("appData"), "Patchbay");
-  migrateDataDirectory(
-    join(app.getPath("appData"), "Cordy"), // legacy-brand-compat
-    patchbayUserData,
-  );
   // Pin the production app name in code. Electron's Linux WM_CLASS is set
   // from app.getName() when the first BrowserWindow is realized; the
   // packaged ASAR's package.json `productName` already steers app.getName()
-  // to "Patchbay", but anchoring it here makes WM_CLASS ↔ StartupWMClass
+  // to "Multica", but anchoring it here makes WM_CLASS ↔ StartupWMClass
   // (declared in electron-builder.yml) survive a regression in
   // productName / the build pipeline. Must run before requestSingleInstanceLock().
-  app.setName("Patchbay");
-  app.setPath("userData", patchbayUserData);
+  app.setName("Multica");
 }
-
-migrateDataDirectory(
-  join(homedir(), ".cordy"), // legacy-brand-compat
-  join(homedir(), ".patchbay"),
-);
 
 // --- Protocol registration -----------------------------------------------
 
-registerDesktopProtocolClients(app, {
-  isDefaultApp: Boolean(process.defaultApp),
-  platform: process.platform,
-  execPath: process.execPath,
-  authCallbackProtocol,
-  desktopAppSuffix: process.env.DESKTOP_APP_SUFFIX,
-});
+if (process.defaultApp) {
+  // In dev, register with the path to the electron binary + app path
+  app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [
+    app.getAppPath(),
+  ]);
+} else {
+  app.setAsDefaultProtocolClient(PROTOCOL);
+}
 
 // --- Single instance lock ------------------------------------------------
 
@@ -679,16 +596,15 @@ if (!gotTheLock) {
     if (window) focusMainWindow(window);
 
     // On Windows the deep link URL is the last argv entry
-    const deepLinkUrl = findDesktopProtocolUrl(argv, authCallbackProtocol);
+    const deepLinkUrl = argv.find((arg) => arg.startsWith(`${PROTOCOL}://`));
     if (deepLinkUrl) handleDeepLink(deepLinkUrl);
   });
 
   // Windows/Linux cold-start deep links are safe to parse now. Delivery is
   // queued because desktopInitialized remains false until runtime config and
   // IPC handlers are ready.
-  const coldStartDeepLink = findDesktopProtocolUrl(
-    process.argv,
-    authCallbackProtocol,
+  const coldStartDeepLink = process.argv.find((arg) =>
+    arg.startsWith(`${PROTOCOL}://`),
   );
   if (coldStartDeepLink) handleDeepLink(coldStartDeepLink);
 
@@ -697,7 +613,6 @@ if (!gotTheLock) {
       readonly VITE_API_URL?: string;
       readonly VITE_WS_URL?: string;
       readonly VITE_APP_URL?: string;
-      readonly VITE_ACCOUNTS_URL?: string;
     };
 
     runtimeConfigResult = await loadRuntimeConfig({
@@ -709,12 +624,11 @@ if (!gotTheLock) {
         apiUrl: viteEnv.VITE_API_URL,
         wsUrl: viteEnv.VITE_WS_URL,
         appUrl: viteEnv.VITE_APP_URL,
-        accountsUrl: viteEnv.VITE_ACCOUNTS_URL,
       },
     });
 
     electronApp.setAppUserModelId(
-      is.dev ? "ai.patchbay.desktop.dev" : "ai.patchbay.desktop",
+      is.dev ? "ai.multica.desktop.dev" : "ai.multica.desktop",
     );
 
     // macOS: replace the default Electron dock icon with the bundled logo
@@ -772,11 +686,7 @@ if (!gotTheLock) {
     ipcMain.on("app:get-info", (event) => {
       const p = process.platform;
       const os = p === "darwin" ? "macos" : p === "win32" ? "windows" : p === "linux" ? "linux" : "unknown";
-      event.returnValue = {
-        version: getAppVersion(),
-        os,
-        authCallbackProtocol,
-      };
+      event.returnValue = { version: getAppVersion(), os };
     });
 
     // Sync IPC: read + clear any freeze/crash breadcrumb left by a previous
@@ -823,24 +733,6 @@ if (!gotTheLock) {
           parsed.channel,
           parsed.ready,
           sendMainRendererMessage,
-        );
-      },
-    );
-
-    // A native auth handoff stays in the main-process queue until the renderer
-    // has redeemed it. This lets a recreated BrowserWindow receive the same
-    // one-time payload after a transient renderer failure without exposing any
-    // bearer token to main or to the acknowledgement channel.
-    ipcMain.on(
-      MAIN_RENDERER_MESSAGE_ACK_CHANNEL,
-      (event, value: unknown) => {
-        if (!mainWindow || event.sender !== mainWindow.webContents) return;
-        const acknowledgement =
-          parseMainRendererMessageAcknowledgement(value);
-        if (!acknowledgement) return;
-        mainRendererMessages.acknowledge(
-          acknowledgement.channel,
-          acknowledgement.payload,
         );
       },
     );

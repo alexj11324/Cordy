@@ -3,7 +3,7 @@
 import {
   NumberFlow,
   NumberFlowGroup,
-} from "@patchbay/ui/components/ui/number-flow";
+} from "@multica/ui/components/ui/number-flow";
 import { formatDuration } from "../utils";
 
 // Period selector — mirrors the runtime detail page so users see the same
@@ -34,7 +34,7 @@ export type Dim = "daily" | "weekly";
  * The range is now the page-scoped filter and the dimension is card-scoped, so
  * the dependency runs one way only — a card offers whichever dimensions its
  * range allows, and nothing resets. A card-scoped control must never reach up
- * and change a page-scoped one (PB-5759).
+ * and change a page-scoped one (MUL-5759).
  */
 export function dimsForDays(days: TimeRange): readonly Dim[] {
   return (

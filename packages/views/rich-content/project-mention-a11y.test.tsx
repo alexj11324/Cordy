@@ -1,5 +1,5 @@
 /**
- * Project mention accessibility (PB-4922).
+ * Project mention accessibility (MUL-4922).
  *
  * A mention is a link. It must be reachable by Tab, activatable by Enter, and
  * carry a real URL — not a `<span onClick>` that only answers to a mouse.
@@ -33,13 +33,13 @@ vi.mock("../i18n", async () => {
   };
 });
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: { getAttachmentTextContent: vi.fn() },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/paths", () => ({
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/acme/issues/${id}`,
     projectDetail: (id: string) => `/acme/projects/${id}`,
@@ -74,6 +74,7 @@ function makeAdapter(overrides: Partial<NavigationAdapter> = {}): NavigationAdap
     back: vi.fn(),
     pathname: "/",
     searchParams: new URLSearchParams(),
+    hash: "",
     getShareableUrl: (p) => p,
     ...overrides,
   };

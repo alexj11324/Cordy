@@ -1,13 +1,13 @@
 "use client";
 
 import { useCallback } from "react";
-import { isIssueStatusCategory } from "@patchbay/core/issue-statuses";
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
-import type { IssueStatusCategory } from "@patchbay/core/types";
+import { isIssueStatusCategory } from "@multica/core/issue-statuses";
+import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
+import type { IssueStatusCategory } from "@multica/core/types";
 import { useT } from "../../i18n";
 
 /**
- * Resolves a status KEY to the label the UI should show (PB-6243).
+ * Resolves a status KEY to the label the UI should show (MUL-6243).
  *
  * The catalog carries a `name` for every status including the 7 built-ins, but
  * those built-in names are seeded in English by the server. Rendering them

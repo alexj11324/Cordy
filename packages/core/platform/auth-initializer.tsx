@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getApi } from "../api";
 import { ApiError } from "../api/client";
-import { useAuthStore, type AuthLogoutHandler } from "../auth";
+import { useAuthStore } from "../auth";
 import {
   captureSignupSource,
   identify as identifyAnalytics,
@@ -36,15 +36,13 @@ export function AuthInitializer({
   onLogout,
   storage = defaultStorage,
   cookieAuth,
-  clerkAuth,
   identity,
 }: {
   children: ReactNode;
   onLogin?: () => void;
-  onLogout?: AuthLogoutHandler;
+  onLogout?: () => void;
   storage?: StorageAdapter;
   cookieAuth?: boolean;
-  clerkAuth?: boolean;
   identity?: ClientIdentity;
 }) {
   const qc = useQueryClient();
@@ -70,6 +68,7 @@ export function AuthInitializer({
         }
         configStore.getState().setAuthConfig({
           allowSignup: cfg.allow_signup,
+          googleClientId: cfg.google_client_id,
           // Old servers omit this field — treat that as "creation allowed"
           // (the managed-cloud default) rather than blocking the UI.
           workspaceCreationDisabled: cfg.workspace_creation_disabled === true,
@@ -87,7 +86,14 @@ export function AuthInitializer({
         configStore
           .getState()
           .setLocalWorktreeSupported(cfg.local_worktree_supported === true);
-        configStore.getState().setMessagingConfig(cfg.messaging);
+        // Older agent handlers returned success while silently dropping this
+        // additive field, so writes stay disabled unless the server declares
+        // the persistence contract explicitly.
+        configStore
+          .getState()
+          .setAgentConversationStartersSupported(
+            cfg.agent_conversation_starters_supported === true,
+          );
         if (cfg.posthog_key) {
           initAnalytics({
             key: cfg.posthog_key,
@@ -210,7 +216,7 @@ export function AuthInitializer({
     };
 
     const onAuthFailure = () => {
-      void onLogout?.();
+      onLogout?.();
       resetAnalytics();
       useAuthStore.setState({
         user: null,
@@ -315,22 +321,11 @@ export function AuthInitializer({
       void attempt();
     };
 
-    if (clerkAuth) {
-      // ClerkAuthAdapter owns the one-time Clerk -> Patchbay session exchange.
-      // Starting /api/me here races that exchange and produces a false 401.
-      useAuthStore.setState({
-        user: null,
-        isLoading: true,
-        status: "authenticating",
-      });
-    } else if (cookieAuth) {
-      window.addEventListener("online", retryNow);
-      void attempt();
-    } else {
-      const token = storage.getItem("patchbay_token");
+    if (!cookieAuth) {
+      const token = storage.getItem("multica_token");
       if (!token) {
         settled = true;
-        void onLogout?.();
+        onLogout?.();
         useAuthStore.setState({
           user: null,
           isLoading: false,
@@ -341,6 +336,9 @@ export function AuthInitializer({
         window.addEventListener("online", retryNow);
         void attempt();
       }
+    } else {
+      window.addEventListener("online", retryNow);
+      void attempt();
     }
 
     return () => {

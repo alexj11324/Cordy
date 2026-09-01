@@ -8,18 +8,18 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@patchbay/ui/components/ui/select";
-import { SettingsSwitch as Switch } from "@patchbay/ui/components/common/lobe-settings";
-import { useTheme } from "@patchbay/ui/components/common/theme-provider";
+} from "@multica/ui/components/ui/select";
+import { Switch } from "@multica/ui/components/ui/switch";
+import { useTheme } from "@multica/ui/components/common/theme-provider";
 import {
   DEFAULT_LOCALE,
   SUPPORTED_LOCALES,
   type SupportedLocale,
-} from "@patchbay/core/i18n";
-import { useLocaleAdapter } from "@patchbay/core/i18n/react";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useCommentComposerStore } from "@patchbay/core/issues/stores";
-import { api } from "@patchbay/core/api";
+} from "@multica/core/i18n";
+import { useLocaleAdapter } from "@multica/core/i18n/react";
+import { useAuthStore } from "@multica/core/auth";
+import { useCommentComposerStore } from "@multica/core/issues/stores";
+import { api } from "@multica/core/api";
 import { browserTimezone, timezoneOptions } from "../../common/timezone-select";
 import { useT } from "../../i18n";
 import {

@@ -9,11 +9,11 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
+vi.mock("@multica/core/issue-statuses/hooks", () => ({
   // This suite replaces useQuery wholesale, so the catalog hook is stubbed
   // rather than left to fall through the shared useQuery mock.
   useIssueStatuses: () => ({
@@ -27,7 +27,7 @@ vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/issues/queries", () => ({
+vi.mock("@multica/core/issues/queries", () => ({
   issueDetailOptions: (_workspaceId: string, issueId: string) => ({
     queryKey: ["issue", issueId],
   }),
@@ -61,11 +61,11 @@ vi.mock("../../common/actor-avatar", () => ({
 }));
 
 // A spy, not a stub: `useActorName` subscribes to the workspace member list,
-// so "was this hook mounted at all" is the assertion that keeps the executor
+// so "was this hook mounted at all" is the assertion that keeps the assignee
 // row from being inlined back into the card body.
 const mockUseActorName = vi.hoisted(() => vi.fn(() => ({ getActorName: () => "zain" })));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@multica/core/workspace/hooks", () => ({
   useActorName: mockUseActorName,
 }));
 
@@ -88,13 +88,13 @@ type Issue = {
   status: string;
   priority: string;
   description?: string | null;
-  executor_type?: string | null;
-  executor_id?: string | null;
+  assignee_type?: string | null;
+  assignee_id?: string | null;
 };
 
 const BASE_ISSUE: Issue = {
   id: "issue-1",
-  identifier: "PB-3405",
+  identifier: "MUL-3405",
   title: "A very long issue title that the inline chip never shows",
   status: "todo",
   priority: "none",
@@ -147,7 +147,7 @@ function mockIssue(
 function renderCard(fallbackLabel?: string): void {
   renderWithI18n(
     <IssueHoverCard issueId="issue-1" delay={0} fallbackLabel={fallbackLabel}>
-      <span>PB-3405</span>
+      <span>MUL-3405</span>
     </IssueHoverCard>,
   );
 }
@@ -155,15 +155,15 @@ function renderCard(fallbackLabel?: string): void {
 async function openCard(): Promise<void> {
   const user = userEvent.setup();
   renderCard();
-  await user.hover(screen.getByText("PB-3405"));
+  await user.hover(screen.getByText("MUL-3405"));
   await screen.findByTestId("status-icon");
 }
 
 /** Opens a card whose detail query never resolves into an issue. */
-async function openFailedCard(fallbackLabel = "PB-7"): Promise<void> {
+async function openFailedCard(fallbackLabel = "MUL-7"): Promise<void> {
   const user = userEvent.setup();
   renderCard(fallbackLabel);
-  await user.hover(screen.getByText("PB-3405"));
+  await user.hover(screen.getByText("MUL-3405"));
   await screen.findByText(NOT_FOUND_TEXT);
 }
 
@@ -186,7 +186,7 @@ describe("IssueHoverCard", () => {
     // Assert the trigger actually rendered BEFORE asserting the absent fetch.
     // Without this, a component that throws or renders nothing would satisfy
     // the deferred-fetch assertion and the guarantee would be untested.
-    expect(screen.getByText("PB-3405")).toBeInTheDocument();
+    expect(screen.getByText("MUL-3405")).toBeInTheDocument();
     expect(mockUseQuery).not.toHaveBeenCalled();
   });
 
@@ -194,7 +194,7 @@ describe("IssueHoverCard", () => {
     const user = userEvent.setup();
     renderCard();
 
-    await user.hover(screen.getByText("PB-3405"));
+    await user.hover(screen.getByText("MUL-3405"));
 
     expect(
       await screen.findByText("A very long issue title that the inline chip never shows"),
@@ -240,22 +240,22 @@ describe("IssueHoverCard", () => {
     expect(screen.queryByTestId("priority-icon")).not.toBeInTheDocument();
   });
 
-  it("shows the executor avatar and name, without nesting another hover card", async () => {
-    mockIssue({ ...BASE_ISSUE, executor_type: "agent", executor_id: "agent-9" });
+  it("shows the assignee avatar and name, without nesting another hover card", async () => {
+    mockIssue({ ...BASE_ISSUE, assignee_type: "member", assignee_id: "user-9" });
 
     await openCard();
 
     const avatar = screen.getByTestId("actor-avatar");
-    expect(avatar).toHaveAttribute("data-actor-type", "agent");
-    expect(avatar).toHaveAttribute("data-actor-id", "agent-9");
+    expect(avatar).toHaveAttribute("data-actor-type", "member");
+    expect(avatar).toHaveAttribute("data-actor-id", "user-9");
     expect(avatar).toHaveAttribute("data-hover-card", "false");
     expect(avatar).toHaveAttribute("data-profile-link", "false");
     expect(screen.getByText("zain")).toBeInTheDocument();
     expect(mockUseActorName).toHaveBeenCalled();
   });
 
-  it("omits the executor when the issue is unassigned", async () => {
-    mockIssue({ ...BASE_ISSUE, executor_type: null, executor_id: null });
+  it("omits the assignee when the issue is unassigned", async () => {
+    mockIssue({ ...BASE_ISSUE, assignee_type: null, assignee_id: null });
 
     await openCard();
 
@@ -292,12 +292,12 @@ describe("IssueHoverCard", () => {
   it("shows a flattened description snippet clamped to two lines", async () => {
     mockIssue({
       ...BASE_ISSUE,
-      description: "**Set up** your first runtime so [Patrick](/agents/patrick) can pick up work",
+      description: "**Set up** your first runtime so [Mika](/agents/mika) can pick up work",
     });
 
     await openCard();
 
-    const snippet = screen.getByText("Set up your first runtime so Patrick can pick up work");
+    const snippet = screen.getByText("Set up your first runtime so Mika can pick up work");
     expect(snippet).toHaveClass("line-clamp-2");
   });
 
@@ -341,9 +341,9 @@ describe("IssueHoverCard", () => {
   it("keeps the skeleton while the detail query is pending", async () => {
     mockQueries({ phase: "pending" });
     const user = userEvent.setup();
-    renderCard("PB-7");
+    renderCard("MUL-7");
 
-    await user.hover(screen.getByText("PB-3405"));
+    await user.hover(screen.getByText("MUL-3405"));
 
     expect(await screen.findByTestId("issue-hover-card-skeleton")).toBeInTheDocument();
     expect(screen.queryByText(NOT_FOUND_TEXT)).not.toBeInTheDocument();
@@ -355,7 +355,7 @@ describe("IssueHoverCard", () => {
     await openFailedCard();
 
     expect(screen.queryByTestId("issue-hover-card-skeleton")).not.toBeInTheDocument();
-    expect(screen.getByText("PB-7")).toBeInTheDocument();
+    expect(screen.getByText("MUL-7")).toBeInTheDocument();
   });
 
   it("replaces the skeleton with the not-found state when the query settles with no issue", async () => {
@@ -364,6 +364,6 @@ describe("IssueHoverCard", () => {
     await openFailedCard();
 
     expect(screen.queryByTestId("issue-hover-card-skeleton")).not.toBeInTheDocument();
-    expect(screen.getByText("PB-7")).toBeInTheDocument();
+    expect(screen.getByText("MUL-7")).toBeInTheDocument();
   });
 });

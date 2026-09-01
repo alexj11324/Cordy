@@ -1,11 +1,11 @@
 ---
 title: 데스크톱 앱
-description: Patchbay Desktop을 설치하고 데스크톱 탭과 내장 데몬을 사용하며 자체 호스팅 인스턴스에 연결합니다.
+description: Multica Desktop을 설치하고 데스크톱 탭과 내장 데몬을 사용하며 자체 호스팅 인스턴스에 연결합니다.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay Desktop은 macOS, Windows, Linux에서 사용할 수 있습니다. Web 버전과 같은 계정 및 워크스페이스 데이터를 사용하지만 로컬 데몬을 자동으로 관리하고 워크스페이스별 탭을 따로 유지합니다.
+Multica Desktop은 macOS, Windows, Linux에서 사용할 수 있습니다. Web 버전과 같은 계정 및 워크스페이스 데이터를 사용하지만 로컬 데몬을 자동으로 관리하고 워크스페이스별 탭을 따로 유지합니다.
 
 ## Desktop과 Web
 
@@ -18,11 +18,11 @@ Patchbay Desktop은 macOS, Windows, Linux에서 사용할 수 있습니다. Web 
 
 잠시 확인하거나 공용 컴퓨터에서 사용할 때는 Web이 더 편리합니다.
 
-둘 다 동시에 로그인할 수 있습니다. 같은 Patchbay 서비스에 연결되어 있으면 표시되는 데이터가 공유됩니다.
+둘 다 동시에 로그인할 수 있습니다. 같은 Multica 서비스에 연결되어 있으면 표시되는 데이터가 공유됩니다.
 
 ## 설치
 
-[Patchbay 다운로드 페이지](https://patchbay.aspectlylabs.com/download)에서 운영체제와 프로세서 아키텍처에 맞는 설치 패키지를 선택합니다.
+[Multica 다운로드 페이지](https://multica.ai/download)에서 운영체제와 프로세서 아키텍처에 맞는 설치 패키지를 선택합니다.
 
 | 플랫폼 | 설치 패키지 |
 | --- | --- |
@@ -30,15 +30,15 @@ Patchbay Desktop은 macOS, Windows, Linux에서 사용할 수 있습니다. Web 
 | Windows | `.exe` |
 | Linux | `.AppImage`, `.deb`, `.rpm` |
 
-설치 후 Web 버전과 같은 이메일로 로그인합니다. 로그인하면 Desktop이 내장 Patchbay CLI를 시작하고 로컬에 설치된 AI 코딩 도구를 감지합니다.
+설치 후 Web 버전과 같은 이메일로 로그인합니다. 로그인하면 Desktop이 내장 Multica CLI를 시작하고 로컬에 설치된 AI 코딩 도구를 감지합니다.
 
 <Callout type="info">
-Desktop 내장 CLI는 앱이 런타임을 관리할 때만 사용합니다. 터미널에서 `patchbay issue` 같은 명령도 실행하려면 [빠른 시작 2단계](/cloud-quickstart#2-컴퓨터-연결)에 따라 CLI를 별도로 설치하세요.
+Desktop 내장 CLI는 앱이 런타임을 관리할 때만 사용합니다. 터미널에서 `multica issue` 같은 명령도 실행하려면 [빠른 시작 2단계](/cloud-quickstart#2-컴퓨터-연결)에 따라 CLI를 별도로 설치하세요.
 </Callout>
 
 ## 데스크톱 탭
 
-Desktop은 워크스페이스마다 탭을 따로 저장합니다. 예를 들어 워크스페이스 A에서 이슈 세 개를 연 뒤 워크스페이스 B로 전환하면 B의 탭이 표시됩니다. A로 돌아오면 이전 세 탭이 그대로 남아 있습니다.
+Desktop은 워크스페이스마다 탭을 따로 저장합니다. 예를 들어 워크스페이스 A에서 태스크 세 개를 연 뒤 워크스페이스 B로 전환하면 B의 탭이 표시됩니다. A로 돌아오면 이전 세 탭이 그대로 남아 있습니다.
 
 같은 리소스는 현재 워크스페이스에서 한 번만 열립니다. 탭은 순서를 바꾸고, 고정하고, 닫을 수 있으며 각각의 앞으로 가기, 뒤로 가기, 스크롤 위치도 유지됩니다. 현재 배포 환경의 앱 링크를 클릭하거나 붙여 넣으면 브라우저로 이동하지 않고 탭에서 바로 열립니다.
 
@@ -46,13 +46,13 @@ Desktop은 워크스페이스마다 탭을 따로 저장합니다. 예를 들어
 
 ## 내장 데몬
 
-로그인하면 Desktop이 현재 Patchbay 서비스 전용 CLI profile을 만들고 이 profile로 데몬을 시작합니다. profile은 다음 위치에 있습니다.
+로그인하면 Desktop이 현재 Multica 서비스 전용 CLI profile을 만들고 이 profile로 데몬을 시작합니다. profile은 다음 위치에 있습니다.
 
 ```text
-~/.patchbay/profiles/desktop-<host>/
+~/.multica/profiles/desktop-<host>/
 ```
 
-터미널에서 사용하는 기본 profile을 읽거나 덮어쓰지 않습니다. 다른 데몬을 직접 동시에 시작하면 Patchbay에는 각각 별도 런타임으로 표시됩니다.
+터미널에서 사용하는 기본 profile을 읽거나 덮어쓰지 않습니다. 다른 데몬을 직접 동시에 시작하면 Multica에는 각각 별도 런타임으로 표시됩니다.
 
 Desktop 설정에서 실행 상태와 로그를 확인할 수 있습니다. 도구가 감지되지 않으면 먼저 일반 터미널에서 실행되고 로그인되어 있는지 확인한 뒤 Desktop 데몬을 다시 시작하세요.
 
@@ -70,13 +70,13 @@ Desktop 설정에서 실행 상태와 로그를 확인할 수 있습니다. 도�
 
 ## 자체 호스팅 인스턴스 연결
 
-Desktop은 기본적으로 Patchbay Cloud에 연결됩니다. 자체 호스팅 인스턴스에 연결하려면 사용자 디렉터리의 `.patchbay` 안에 `desktop.json`을 만듭니다.
+Desktop은 기본적으로 Multica Cloud에 연결됩니다. 자체 호스팅 인스턴스에 연결하려면 사용자 디렉터리의 `.multica` 안에 `desktop.json`을 만듭니다.
 
 | 플랫폼 | 경로 |
 | --- | --- |
-| macOS | `/Users/<사용자>/.patchbay/desktop.json` |
-| Linux | `/home/<사용자>/.patchbay/desktop.json` |
-| Windows | `C:\Users\<사용자>\.patchbay\desktop.json` |
+| macOS | `/Users/<사용자>/.multica/desktop.json` |
+| Linux | `/home/<사용자>/.multica/desktop.json` |
+| Windows | `C:\Users\<사용자>\.multica\desktop.json` |
 
 위 경로는 기본 위치입니다. 홈 디렉터리를 옮겼거나 리디렉션한 경우에는 실제 경로를 사용하세요.
 
@@ -88,47 +88,17 @@ Desktop은 기본적으로 Patchbay Cloud에 연결됩니다. 자체 호스팅 �
 ```
 
 <Callout type="warning">
-이 파일은 CLI의 `~/.patchbay/config.json`과 **다른 파일**이며 키 이름도 다릅니다. CLI는 `server_url`을, Desktop은 `apiUrl`을 사용합니다. Desktop은 CLI 설정을 읽지 않고 `~/.patchbay/profiles/desktop-<host>/` 아래에 별도의 daemon 프로필을 관리합니다. `config.json`을 수정해도 Desktop이 연결하는 서버는 바뀌지 않습니다.
+이 파일은 CLI의 `~/.multica/config.json`과 **다른 파일**이며 키 이름도 다릅니다. CLI는 `server_url`을, Desktop은 `apiUrl`을 사용합니다. Desktop은 CLI 설정을 읽지 않고 `~/.multica/profiles/desktop-<host>/` 아래에 별도의 daemon 프로필을 관리합니다. `config.json`을 수정해도 Desktop이 연결하는 서버는 바뀌지 않습니다.
 </Callout>
 
-`apiUrl`은 backend의 공개 주소로 필수이며 `http` 또는 `https`를 사용해야 합니다. 다음 세 주소는 생략할 수 있으며 Desktop이 자동으로 추론합니다.
+`apiUrl`은 backend의 공개 주소로 필수이며 `http` 또는 `https`를 사용해야 합니다. 다음 두 주소는 생략할 수 있으며 Desktop이 자동으로 추론합니다.
 
 - `wsUrl`: `apiUrl`의 프로토콜을 `ws` 또는 `wss`로 바꾸고 경로 뒤에 `/ws`를 추가합니다.
 - `appUrl`: 도메인이 `api.`로 시작하고 세 구간 이상이면 `api.` 접두사를 제거합니다(`api.example.com` → `example.com`). 그렇지 않으면 `apiUrl`과 동일하게 유지합니다.
-- `accountsUrl`: 인증 브로커가 별도 origin에 배포되지 않았다면 `appUrl`을 재사용합니다.
 
-### Desktop 로컬 개발 및 hosted 로그인
-
-일반적인 로컬 개발에는 다음 명령을 사용합니다.
-
-```bash
-pnpm dev
-```
-
-체크아웃별로 격리된 로컬 API, 데이터베이스, `http://localhost:<port>` 로그인
-origin을 사용합니다. 로컬 Electron/Vite를 실행하면서 hosted Google 로그인과
-API를 테스트하려면 명시적인 hosted 프로필을 사용하세요.
-
-```bash
-pnpm dev:hosted
-```
-
-이 프로필은 다음 hosted 구성을 사용합니다.
-
-- Google/Clerk 로그인 브로커: `https://accounts.aspectlylabs.com`
-- API 및 WebSocket: `https://api.aspectlylabs.com`
-- 공개 앱 URL: `https://patchbay.aspectlylabs.com`
-
-Electron 렌더러는 로컬에서 hot reload되지만 OAuth 흐름은 localhost를 거치지
-않습니다. hosted 프로필은 공유 hosted 데이터를 읽고 변경할 수 있으므로 명시적으로
-선택해야 하며, 로컬 서비스로 조용히 대체되지 않고 Electron 세션 저장소도 로컬
-프로필과 분리됩니다. 별도 터미널에서 hosted API와 로그인 브로커를 다시 확인하려면
-`pnpm dev:doctor --hosted`를 실행하세요.
-
-보통 `apiUrl`만 작성하면 됩니다. 추론 결과가 맞지 않을 때 명시적으로 덮어쓰면 됩니다. 일반적인 경우는 네 가지입니다.
+보통 `apiUrl`만 작성하면 됩니다. 추론 결과가 맞지 않을 때 명시적으로 덮어쓰면 됩니다. 일반적인 경우는 세 가지입니다.
 
 - Web과 API가 서로 다른 도메인을 사용
-- 인증 브로커가 별도 도메인을 사용
 - WebSocket을 별도로 배포
 - 도메인이 접두사 제거 규칙을 만족하지 않음(`api.local` 같은 두 구간 도메인은 접두사를 제거하지 않음)
 
@@ -137,7 +107,6 @@ Electron 렌더러는 로컬에서 hot reload되지만 OAuth 흐름은 localhost
   "schemaVersion": 1,
   "apiUrl": "https://api.example.com",
   "appUrl": "https://app.example.com",
-  "accountsUrl": "https://accounts.example.com",
   "wsUrl": "wss://ws.example.com/socket"
 }
 ```
@@ -157,13 +126,13 @@ Desktop은 브라우저와 실행 컴퓨터에서 모두 접근할 수 있는 �
 
 Windows에서는 편집기의 두 가지 기본 동작 때문에 Desktop이 사용할 수 없는 파일이 조용히 만들어집니다.
 
-- **메모장이 `.txt`를 덧붙입니다.** `desktop.json`으로 저장해도 실제로는 `desktop.json.txt`가 될 수 있으며, Desktop은 이를 파일이 없는 것으로 처리합니다. 파일 탐색기에서 파일 확장명 표시를 켜거나 저장 대화 상자에서 *모든 파일*을 선택하세요. 실제 파일 이름을 확인하려면 PowerShell에서 `Get-ChildItem "$env:USERPROFILE\.patchbay" -Filter "desktop.json*"`를 실행하세요. `Name` 열이 정확히 `desktop.json`이어야 합니다.
+- **메모장이 `.txt`를 덧붙입니다.** `desktop.json`으로 저장해도 실제로는 `desktop.json.txt`가 될 수 있으며, Desktop은 이를 파일이 없는 것으로 처리합니다. 파일 탐색기에서 파일 확장명 표시를 켜거나 저장 대화 상자에서 *모든 파일*을 선택하세요. 실제 파일 이름을 확인하려면 PowerShell에서 `Get-ChildItem "$env:USERPROFILE\.multica" -Filter "desktop.json*"`를 실행하세요. `Name` 열이 정확히 `desktop.json`이어야 합니다.
 - **PowerShell 리디렉션은 UTF-16이나 BOM을 씁니다.** `> desktop.json`과 `Out-File`은 파싱할 수 없는 인코딩을 만들 수 있으며, 설정 오류로 나타납니다.
 
 두 가지를 모두 피하려면 PowerShell에서 한 번에 파일을 만듭니다.
 
 ```powershell
-$dir = "$env:USERPROFILE\.patchbay"
+$dir = "$env:USERPROFILE\.multica"
 New-Item -ItemType Directory -Force $dir | Out-Null
 $json = @'
 {
@@ -174,36 +143,36 @@ $json = @'
 [System.IO.File]::WriteAllText("$dir\desktop.json", $json)
 ```
 
-## Windows Defender가 Patchbay를 바이러스로 탐지하는 경우
+## Windows Defender가 Multica를 바이러스로 탐지하는 경우
 
 **증상**: Windows 보안이 `Trojan:Script/Wacatac.B!ml` 같은 위협을 보고하고 Desktop 설치 경로 안의 파일을 격리합니다. 격리되는 대상은 보통 앱 실행 파일이 아니라 함께 포함된 CLI입니다.
 
 ```text
-C:\Users\<사용자>\AppData\Local\Programs\@patchbaydesktop\resources\app.asar.unpacked\resources\bin\patchbay.exe
+C:\Users\<사용자>\AppData\Local\Programs\@multicadesktop\resources\app.asar.unpacked\resources\bin\multica.exe
 ```
 
-**오탐입니다.** `!ml` 접미사는 이 판정이 악성코드 시그니처 일치가 아니라 Defender의 머신러닝 휴리스틱에서 나왔다는 뜻입니다. Patchbay의 Windows 빌드는 아직 Authenticode 코드 서명을 하지 않았고, 갓 배포된 서명 없는 바이너리가 백그라운드 프로세스를 띄우고 네트워크 연결을 여는 형태는 이런 휴리스틱이 가장 의심스럽게 평가하는 프로필입니다. 모든 Windows 산출물은 이 저장소의 공개 소스에서 GitHub Actions로 빌드됩니다.
+**오탐입니다.** `!ml` 접미사는 이 판정이 악성코드 시그니처 일치가 아니라 Defender의 머신러닝 휴리스틱에서 나왔다는 뜻입니다. Multica의 Windows 빌드는 아직 Authenticode 코드 서명을 하지 않았고, 갓 배포된 서명 없는 바이너리가 백그라운드 프로세스를 띄우고 네트워크 연결을 여는 형태는 이런 휴리스틱이 가장 의심스럽게 평가하는 프로필입니다. 모든 Windows 산출물은 이 저장소의 공개 소스에서 GitHub Actions로 빌드됩니다.
 
 **직접 검증할 수 있습니다** — 모든 GitHub 릴리스에는 CLI 아카이브 전체를 포함한 `checksums.txt`가 함께 게시됩니다.
 
 ```powershell
-Get-FileHash .\patchbay-cli-<version>-windows-amd64.zip -Algorithm SHA256
+Get-FileHash .\multica-cli-<version>-windows-amd64.zip -Algorithm SHA256
 ```
 
-출력된 해시를 [최신 릴리스](https://github.com/alexj11324/Cordy/releases/latest)의 `checksums.txt` 해당 줄과 비교하세요.
+출력된 해시를 [최신 릴리스](https://github.com/multica-ai/multica/releases/latest)의 `checksums.txt` 해당 줄과 비교하세요.
 
 **해결 방법**:
 
-1. **격리된 파일 복원** — Windows 보안 → *바이러스 및 위협 방지* → *보호 기록* → Patchbay 항목 선택 → *작업* → *복원*.
+1. **격리된 파일 복원** — Windows 보안 → *바이러스 및 위협 방지* → *보호 기록* → Multica 항목 선택 → *작업* → *복원*.
 2. **제외 항목 추가** (다시 격리되지 않도록) — *바이러스 및 위협 방지* → *설정 관리* → *제외* → *제외 추가 또는 제거* → *폴더*에서 다음 두 경로를 모두 추가합니다.
-   - `%LOCALAPPDATA%\Programs\@patchbaydesktop`
-   - `%APPDATA%\Patchbay`
+   - `%LOCALAPPDATA%\Programs\@multicadesktop`
+   - `%APPDATA%\Multica`
 
-   두 경로 모두 필요합니다. 포함된 CLI가 사라지면 Desktop이 대체 바이너리를 `%APPDATA%\Patchbay\bin`에 내려받기 때문에, 설치 폴더만 제외하면 새로 받은 파일이 다시 격리되는 상황이 반복됩니다.
+   두 경로 모두 필요합니다. 포함된 CLI가 사라지면 Desktop이 대체 바이너리를 `%APPDATA%\Multica\bin`에 내려받기 때문에, 설치 폴더만 제외하면 새로 받은 파일이 다시 격리되는 상황이 반복됩니다.
 3. **오탐을 Microsoft에 신고** — [Microsoft Security Intelligence 파일 제출 페이지](https://www.microsoft.com/en-us/wdsi/filesubmission)에서 *Software developer*와 *Incorrectly detected as malware*를 선택하세요. 모든 사용자에 대해 탐지를 철회시키는 방법은 이것이며, 보통 며칠 안에 반영됩니다.
 
 <Callout type="warning">
-이 제외 항목은 [다운로드 페이지](https://patchbay.aspectlylabs.com/download) 또는 [GitHub 릴리스](https://github.com/alexj11324/Cordy/releases)에서 설치했고 체크섬이 일치하는 경우에만 추가하세요. 제외를 설정하면 해당 폴더 안의 모든 파일에 대해 실시간 보호가 꺼집니다.
+이 제외 항목은 [다운로드 페이지](https://multica.ai/download) 또는 [GitHub 릴리스](https://github.com/multica-ai/multica/releases)에서 설치했고 체크섬이 일치하는 경우에만 추가하세요. 제외를 설정하면 해당 폴더 안의 모든 파일에 대해 실시간 보호가 꺼집니다.
 </Callout>
 
 ## 다음 단계

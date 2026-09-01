@@ -1,18 +1,18 @@
 ---
-title: Manage issue roles
-description: Set an issue's owner, executor, and reviewer, then decide whether execution starts right away.
+title: Assign issues to agents
+description: Put an agent in charge of an issue and decide whether it starts working right away.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-When a piece of work needs an agent or team to execute it over time, set the issue's executor. The executor reads the issue's description and discussion, does the work with its own configuration and skills, and writes progress and results back to the same issue. Set a workspace member as the owner when a human is accountable, and optionally choose a reviewer for the handoff.
+When a piece of work needs an agent to own it over time, assign the issue to it. The agent reads the issue's description and discussion, does the work with its own configuration and skills, and writes progress and results back to the same issue.
 
 When you only need the agent to handle one specific request without changing ownership, use an [@-mention in a comment](/mentioning-agents) instead.
 
-## Set roles and start a run
+## Assign and start a run
 
-1. Open an issue and choose **Executor**, **Owner**, or **Reviewer**.
-2. Pick the actor for that role.
+1. Open an issue and click **Assignee**.
+2. Pick an agent or a squad.
 3. Review the agent about to start in the confirmation dialog.
 4. Add a handoff note if needed, then choose **Start**.
 
@@ -20,11 +20,11 @@ When you only need the agent to handle one specific request without changing own
 
 The handoff note applies to this run only — use it for scope, ordering, or what to focus on this time. Requirements that should hold long term belong in the issue, the project description, or the agent instructions.
 
-When you choose a team as executor, the team becomes the issue's executor and the team leader starts first. It decides whether to hand work to other members, following how the team operates.
+When you assign to a squad, the squad becomes the issue's assignee and the squad leader starts first. It decides whether to hand work to other members, following how the squad operates.
 
-## Execution after setting an executor
+## Execution after assignment
 
-Patchbay creates a [task](/tasks) for the agent. Once an online runtime claims the task, it invokes the AI coding tool on that machine; progress, comments, and results then appear in the issue.
+Multica creates a [task](/tasks) for the agent. Once an online runtime claims the task, it invokes the AI coding tool on that machine; progress, comments, and results then appear in the issue.
 
 If the runtime is temporarily offline, the task waits in the queue; a task is bound to its runtime and never moves to another machine.
 
@@ -39,19 +39,19 @@ What it can actually do is still limited by the agent's configuration, the runti
 
 During the run, the agent manages the issue's status by judging what its work changes: starting on the issue's own ask moves it to `in_progress` right away, delivery moves it to `in_review`, work continuing beyond the turn keeps it `in_progress`, and consultation or discussion leaves the status untouched — these actions appear under the agent's identity in the timeline. Task lifecycle and issue status are separate: a task completing does not by itself change the issue status.
 
-When the executor is a [team](/teams), the same rule applies: Patchbay enqueues the leader, and dispatching members is not delivery — a dispatch turn leaves the parent issue `in_progress`, and the leader only moves it to `in_review` once the overall goal is met.
+When the assignee is a [squad](/squads), the same rule applies: Multica enqueues the leader, and dispatching members is not delivery — a dispatch turn leaves the parent issue `in_progress`, and the leader only moves it to `in_review` once the overall goal is met.
 
 ## Assign without starting
 
-**Don't start yet** in the confirmation dialog saves the roles without creating a task for this run. Use it to settle ownership first and start once the background or dependencies are ready.
+**Don't start yet** in the confirmation dialog saves the assignee without creating a task for this run. Use it to settle ownership first and start once the background or dependencies are ready.
 
 `backlog` doesn't start a run on assignment either. Execution only follows after you move the issue out of `backlog`, or ask the assignee for something in a follow-up comment.
 
-When the issue already has an executor, moving it out of `backlog` opens the same dialog: that status change is what starts the run, so it offers the same handoff note and the same **Don't start yet**, which moves the issue without waking the executor. The dialog appears for every target outside the `backlog`, `done`, and `cancelled` categories.
+When the issue already has an agent or squad owner, moving it out of `backlog` opens the same dialog: that status change is what starts the run, so it offers the same handoff note and the same **Don't start yet**, which moves the issue without waking the agent. The dialog appears for every target outside the `backlog`, `done`, and `cancelled` categories.
 
 Only the `backlog` category works this way, and a [custom status](/issues#custom-statuses) in that category behaves identically. Issues already in `done` or `cancelled` still start a run immediately when assigned or reassigned to an agent.
 
-## Executor permissions
+## Assignment permissions
 
 Whether you can assign an agent is decided by its Access:
 
@@ -59,32 +59,31 @@ Whether you can assign an agent is decided by its Access:
 - **Specific people**: the owner and the listed members can run it;
 - **Entire workspace**: every workspace member can run it.
 
-Workspace owners and admins can manage agents, but being able to see one doesn't mean being able to run it. The executor picker disables agents you can't run. See [Agents](/agents#permissions-and-access) for the full rules.
+Workspace owners and admins can manage agents, but being able to see one doesn't mean being able to run it. The assignee picker disables agents you can't run. See [Agents](/agents#permissions-and-access) for the full rules.
 
-## Change or remove roles
+## Change or remove the assignee
 
-Switching the executor to another agent starts a new run for the new executor; changing the owner or reviewer only changes that role and doesn't invoke an AI coding tool. Removing a role doesn't create a task either.
+Switching the assignee to another agent starts a new run for the new assignee; picking a member only changes the assignee and doesn't invoke any AI coding tool. Removing the assignee doesn't create a task either.
 
 <Callout type="warning">
-Changing a role, clearing a role, or changing the issue status doesn't stop a run that has already started. To interrupt it, stop the corresponding task from the shared Agent thread.
+Changing the assignee, unassigning, or changing the issue status doesn't stop a run that has already started. To interrupt it, stop the corresponding task in the execution log.
 </Callout>
 
 ## Use the CLI
 
 ```bash
-patchbay issue update PB-42 --executor "Agent name"
-patchbay issue update PB-42 --executor-id <agent-uuid> --no-start
-patchbay issue update PB-42 --owner-id <member-uuid> --no-start
-patchbay issue update PB-42 --reviewer-id <actor-uuid> --no-start
-patchbay issue status PB-42 in_progress --no-start
+multica issue assign MUL-42 --to "Agent name"
+multica issue assign MUL-42 --to-id <agent-uuid> --no-start
+multica issue status MUL-42 in_progress --no-start
+multica issue assign MUL-42 --unassign
 ```
 
-In scripts, use the role-specific UUID flags to avoid matching the wrong object with the same name. Look up UUIDs with `patchbay agent list --output json` or `patchbay workspace member list --output json`.
+In scripts, use `--to-id <uuid>` to avoid matching the wrong object with the same name. Look up UUIDs with `multica agent list --output json` or `multica workspace member list --output json`.
 
-Use `--no-start` when a role change should record ownership without creating a new task — for example, when the same agent is already handling the issue from another run. The same flag is available on `issue update` and `issue status`. If an ownership-only flow changes both a role and status, pass it to both commands; suppressing the role update does not suppress a later status-triggered run.
+Use `--no-start` when the assignment should record ownership without creating a new task — for example, when the same agent is already handling the issue from another run. The same flag is available on `issue update` and `issue status`. If an ownership-only flow changes both assignment and status, pass it to both commands; suppressing the assignment does not suppress a later status-triggered run.
 
 ## Next steps
 
 - [@-mention agents in comments](/mentioning-agents) — handle a new question without changing the assignee.
 - [Tasks](/tasks) — queueing, retry, and stop rules.
-- [Teams](/teams) — have a leader coordinate multiple agents.
+- [Squads](/squads) — have a leader coordinate multiple agents.

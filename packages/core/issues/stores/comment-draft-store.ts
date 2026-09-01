@@ -20,7 +20,7 @@ import type { Attachment } from "../../types";
  *  - reload
  *
  * A draft holds both the in-progress text AND the uploads started in the same
- * composer session (PB-5181). Uploads used to live in component `useState`,
+ * composer session (MUL-5181). Uploads used to live in component `useState`,
  * so closing or scrolling the composer away dropped in-flight and already-
  * uploaded files; persisting them here keeps them recoverable exactly like the
  * text. Each upload is a {@link DraftUpload} that carries its status — an
@@ -55,7 +55,7 @@ interface CommentDraftStore {
   setDraft: (key: CommentDraftKey, content: string) => void;
   /**
    * Append a markdown fragment to the draft body (upload write-back,
-   * PB-5181): an upload that finished after its composer unmounted has no
+   * MUL-5181): an upload that finished after its composer unmounted has no
    * live editor to insert its link, so the settle handler lands it here —
    * the draft body stays the single source of truth for what gets bound.
    */
@@ -237,7 +237,7 @@ export const useCommentDraftStore = create<CommentDraftStore>()(
         }),
     }),
     {
-      name: "patchbay_comment_drafts",
+      name: "multica_comment_drafts",
       storage: createJSONStorage(() => createWorkspaceAwareStorage(defaultStorage)),
       onRehydrateStorage: () => (state) => {
         if (state) {
@@ -251,7 +251,7 @@ export const useCommentDraftStore = create<CommentDraftStore>()(
 registerForWorkspaceRehydration(() => useCommentDraftStore.persist.rehydrate());
 
 registerDraftCleanup({
-  storageKey: "patchbay_comment_drafts",
+  storageKey: "multica_comment_drafts",
   workspaceScoped: true,
   resetInMemory: () => useCommentDraftStore.setState({ drafts: {} }),
 });

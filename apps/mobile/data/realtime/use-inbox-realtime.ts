@@ -48,7 +48,7 @@ export function useInboxRealtime() {
         // disagree across clients.
         ws.on("inbox:unread", invalidate),
         ws.on("inbox:archived", invalidate),
-        // Mobile has no archived view yet (web/desktop only, PB-3736), but an
+        // Mobile has no archived view yet (web/desktop only, MUL-3736), but an
         // unarchive there restores the item to THIS list — without refetching,
         // mobile keeps showing the pre-restore list.
         ws.on("inbox:unarchived", invalidate),

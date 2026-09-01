@@ -2,7 +2,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enOnboarding from "../locales/en/onboarding.json";
 
@@ -19,10 +19,10 @@ const { mockUser, mockSaveQuestionnaire, mockWorkspace, mockAgentDoneTotal, mock
     mockListIssues: vi.fn(),
   }));
 
-vi.mock("@patchbay/core/auth", async () => {
+vi.mock("@multica/core/auth", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/auth")>(
-      "@patchbay/core/auth",
+    await vi.importActual<typeof import("@multica/core/auth")>(
+      "@multica/core/auth",
     );
   const useAuthStore = Object.assign(
     (selector: (s: { user: unknown }) => unknown) =>
@@ -32,26 +32,26 @@ vi.mock("@patchbay/core/auth", async () => {
   return { ...actual, useAuthStore };
 });
 
-vi.mock("@patchbay/core/onboarding", async () => {
+vi.mock("@multica/core/onboarding", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/onboarding")>(
-      "@patchbay/core/onboarding",
+    await vi.importActual<typeof import("@multica/core/onboarding")>(
+      "@multica/core/onboarding",
     );
   return { ...actual, saveQuestionnaire: mockSaveQuestionnaire };
 });
 
-vi.mock("@patchbay/core/paths", async () => {
+vi.mock("@multica/core/paths", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/paths")>(
-      "@patchbay/core/paths",
+    await vi.importActual<typeof import("@multica/core/paths")>(
+      "@multica/core/paths",
     );
   return { ...actual, useCurrentWorkspace: () => mockWorkspace.value };
 });
 
-vi.mock("@patchbay/core/api", async () => {
+vi.mock("@multica/core/api", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/api")>(
-      "@patchbay/core/api",
+    await vi.importActual<typeof import("@multica/core/api")>(
+      "@multica/core/api",
     );
   return {
     ...actual,
@@ -71,7 +71,7 @@ function setUser(partial: Record<string, unknown> | null) {
 function wipeDismissCounters() {
   for (let i = window.localStorage.length - 1; i >= 0; i--) {
     const k = window.localStorage.key(i);
-    if (k && k.startsWith("patchbay.source_backfill.dismiss.")) {
+    if (k && k.startsWith("multica.source_backfill.dismiss.")) {
       window.localStorage.removeItem(k);
     }
   }
@@ -140,7 +140,7 @@ describe("SourceBackfillModal", () => {
   // Which users need the backfill is needsSourceBackfill's contract — no user,
   // not yet onboarded, empty/missing/legacy-string/malformed source, the skip
   // flag and the dismiss cap all have their matrix in
-  // @patchbay/core/onboarding/needs-backfill.test.ts. What belongs here is the
+  // @multica/core/onboarding/needs-backfill.test.ts. What belongs here is the
   // modal's own reaction to the verdict, so one settled user stands for the
   // whole "predicate says no" family.
   it("does not render when the user already recorded a source", () => {
@@ -151,7 +151,7 @@ describe("SourceBackfillModal", () => {
     });
     renderModal();
     expect(
-      screen.queryByText(/How did you hear about Patchbay/i),
+      screen.queryByText(/How did you hear about Multica/i),
     ).not.toBeInTheDocument();
     // A settled user must not even pay for the count query.
     expect(mockListIssues).not.toHaveBeenCalled();
@@ -166,7 +166,7 @@ describe("SourceBackfillModal", () => {
     renderModal();
     await waitFor(() => {
       expect(
-        screen.getByText(/How did you hear about Patchbay/i),
+        screen.getByText(/How did you hear about Multica/i),
       ).toBeInTheDocument();
     });
   });
@@ -184,7 +184,7 @@ describe("SourceBackfillModal", () => {
       expect(mockListIssues).toHaveBeenCalled();
     });
     expect(
-      screen.queryByText(/How did you hear about Patchbay/i),
+      screen.queryByText(/How did you hear about Multica/i),
     ).not.toBeInTheDocument();
   });
 
@@ -197,12 +197,12 @@ describe("SourceBackfillModal", () => {
     });
     renderModal();
     expect(
-      screen.queryByText(/How did you hear about Patchbay/i),
+      screen.queryByText(/How did you hear about Multica/i),
     ).not.toBeInTheDocument();
     expect(mockListIssues).not.toHaveBeenCalled();
   });
 
-  it("counts done issues assigned to agents or teams in the current workspace", async () => {
+  it("counts done issues assigned to agents or squads in the current workspace", async () => {
     setUser({
       id: "u1",
       onboarded_at: "2026-01-01T00:00:00Z",
@@ -213,7 +213,7 @@ describe("SourceBackfillModal", () => {
       expect(mockListIssues).toHaveBeenCalledWith({
         workspace_id: "ws-1",
         statuses: ["done"],
-        executor_types: ["agent", "team"],
+        assignee_types: ["agent", "squad"],
         limit: 1,
       });
     });
@@ -330,19 +330,19 @@ describe("SourceBackfillModal", () => {
         await vi.advanceTimersByTimeAsync(0);
       });
       expect(
-        screen.queryByText(/How did you hear about Patchbay/i),
+        screen.queryByText(/How did you hear about Multica/i),
       ).not.toBeInTheDocument();
       await act(async () => {
         await vi.advanceTimersByTimeAsync(699);
       });
       expect(
-        screen.queryByText(/How did you hear about Patchbay/i),
+        screen.queryByText(/How did you hear about Multica/i),
       ).not.toBeInTheDocument();
       await act(async () => {
         await vi.advanceTimersByTimeAsync(50);
       });
       expect(
-        screen.getByText(/How did you hear about Patchbay/i),
+        screen.getByText(/How did you hear about Multica/i),
       ).toBeInTheDocument();
     } finally {
       vi.useRealTimers();
@@ -350,7 +350,7 @@ describe("SourceBackfillModal", () => {
   });
 
   it("does not open once the per-user dismiss cap is reached on this browser", () => {
-    window.localStorage.setItem("patchbay.source_backfill.dismiss.u1", "3");
+    window.localStorage.setItem("multica.source_backfill.dismiss.u1", "3");
     setUser({
       id: "u1",
       onboarded_at: "2026-01-01T00:00:00Z",
@@ -358,7 +358,7 @@ describe("SourceBackfillModal", () => {
     });
     renderModal();
     expect(
-      screen.queryByText(/How did you hear about Patchbay/i),
+      screen.queryByText(/How did you hear about Multica/i),
     ).not.toBeInTheDocument();
     expect(mockListIssues).not.toHaveBeenCalled();
   });

@@ -2,8 +2,8 @@
 
 import { cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildIssueStatusCatalog } from "@patchbay/core/issue-statuses";
-import type { IssueStatusEntry } from "@patchbay/core/types";
+import { buildIssueStatusCatalog } from "@multica/core/issue-statuses";
+import type { IssueStatusEntry } from "@multica/core/types";
 import { renderWithI18n } from "../../../test/i18n";
 import { StatusPicker } from "./status-picker";
 
@@ -13,11 +13,11 @@ import { StatusPicker } from "./status-picker";
 // the trigger and the list read it from the same place.
 let catalogEntries: IssueStatusEntry[] | undefined;
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
+vi.mock("@multica/core/issue-statuses/hooks", () => ({
   useIssueStatuses: () => buildIssueStatusCatalog(catalogEntries),
 }));
 
@@ -77,7 +77,7 @@ describe("StatusPicker trigger color", () => {
   // The bug: the trigger read the catalog entry's raw color while the list read
   // the resolved one, so a built-in rendered as the server's seeded #22c55e in
   // one and as the `text-success` token in the other — the same status in two
-  // visibly different greens, side by side. (PB-6440)
+  // visibly different greens, side by side. (MUL-6440)
   it("paints a built-in from the token, exactly like its row in the list", () => {
     catalogEntries = [IN_REVIEW, QA];
     const { container } = renderWithI18n(

@@ -33,7 +33,7 @@ import type {
   Label,
   Reaction,
   TimelineEntry,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import { issueKeys } from "@/data/queries/issue-keys";
 
 type TimelinePredicate = (entry: TimelineEntry) => boolean;
@@ -296,7 +296,7 @@ export function removeTimelineEntry(
 
 /**
  * Cascade-delete a comment and every descendant reply (reply-to-reply
- * chains included). Mirrors the server's comment-delete cascade
+ * chains included). Mirrors the server's cascade in `comment.go:DeleteComment`
  * and web's `comment:deleted` handler at
  * `packages/views/issues/hooks/use-issue-timeline.ts:164-194`.
  *

@@ -24,7 +24,7 @@
 import { useMemo } from "react";
 import { Linking, Pressable, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import type { Attachment } from "@patchbay/core/types";
+import type { Attachment } from "@multica/core/types";
 import { standaloneAttachments } from "@/lib/attachment-dedup";
 import { MarkdownImage } from "@/lib/markdown/markdown-image";
 import { resolveAttachmentUrl } from "@/lib/attachment-url";
@@ -101,7 +101,7 @@ function FileCard({
         //
         // The backend may return a server-relative URL like
         // `/api/attachments/{id}/download` when no CloudFront signer is
-        // configured (PB-2976). RN's `Linking.openURL` requires an
+        // configured (MUL-2976). RN's `Linking.openURL` requires an
         // absolute http(s) URL — it returns "Cannot open URL" otherwise —
         // so resolve against `EXPO_PUBLIC_API_URL` first.
         const target = resolveAttachmentUrl(attachment.download_url);

@@ -3,7 +3,7 @@
 
 services:
   backend:
-    image: patchbay-backend:dev
+    image: multica-backend:dev
     build:
       context: .
       dockerfile: Dockerfile
@@ -13,11 +13,9 @@ services:
         DATE: ${DATE:-unknown}
 
   frontend:
-    image: patchbay-web:dev
+    image: multica-web:dev
     build:
       context: .
       dockerfile: Dockerfile.web
       args:
-        NEXT_PUBLIC_APP_VERSION: ${NEXT_PUBLIC_APP_VERSION:-dev}
-        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:-}
-        NEXT_PUBLIC_DESKTOP_APP_ORIGIN: ${NEXT_PUBLIC_DESKTOP_APP_ORIGIN:-}
+        NEXT_PUBLIC_APP_VERSION: dev

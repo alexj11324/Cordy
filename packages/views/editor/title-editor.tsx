@@ -11,8 +11,8 @@ import {
   getShortcut,
   isPlainShortcut,
   type ShortcutChord,
-} from "@patchbay/core/shortcuts";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@multica/core/shortcuts";
+import { cn } from "@multica/ui/lib/utils";
 import { useT } from "../i18n";
 import { createSubmitShortcutExtension } from "./extensions/submit-shortcut";
 import "./title-editor.css";
@@ -30,7 +30,7 @@ interface TitleEditorProps {
   /**
    * Fires on the configured `send` chord, independent of `onSubmit`'s plain
    * Enter path. Hosts that submit on plain Enter pass `onSubmit`; hosts that
-   * want an explicit chord (create-issue, PB-4931) pass this instead.
+   * want an explicit chord (create-issue, MUL-4931) pass this instead.
    *
    * Plain Enter is deliberately never a trigger here even when `send` is
    * configured as plain Enter: the keymap below already owns that key for

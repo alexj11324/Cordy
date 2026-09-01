@@ -46,7 +46,7 @@ export async function saveQuestionnaire(
  * hard gate that redirects un-onboarded users back to /onboarding.
  *
  * This is the only frontend mechanism that flips `onboarded_at`.
- * Runtime-connected onboarding creates Patrick and enqueues the hidden opening
+ * Runtime-connected onboarding creates Mika and enqueues the hidden opening
  * turn before calling this function. The explicit no-runtime path may seed
  * one setup-guide issue after navigation.
  *

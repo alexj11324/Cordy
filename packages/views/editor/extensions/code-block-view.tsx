@@ -4,8 +4,8 @@ import { useState } from "react";
 import { NodeViewWrapper, NodeViewContent } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
 import { Code as CodeIcon, Copy, Check, Eye } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+import { cn } from "@multica/ui/lib/utils";
+import { copyText } from "@multica/ui/lib/clipboard";
 import { useDebouncedValue } from "../../common/use-debounced-value";
 import { useT } from "../../i18n";
 import { MermaidDiagram } from "../mermaid-diagram";
@@ -73,7 +73,7 @@ function CodeBlockView({ node }: NodeViewProps) {
         <div contentEditable={false} className="mb-1">
           <CodeBlockIframe
             html={debouncedHtml}
-            title="HTML preview"
+            title={t(($) => $.code_block.html_preview)}
             heightClassName={HTML_PREVIEW_HEIGHT}
           />
         </div>

@@ -4,9 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AlertTriangle, Check, Loader2, Plug, RefreshCw, Trash2 } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
-import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
+import { Button } from "@multica/ui/components/ui/button";
+import { Card, CardContent } from "@multica/ui/components/ui/card";
+import { Input } from "@multica/ui/components/ui/input";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,14 +16,14 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { api } from "@patchbay/core/api";
+} from "@multica/ui/components/ui/alert-dialog";
+import { api } from "@multica/core/api";
 import {
   composioConnectionsOptions,
   composioKeys,
   composioToolkitsOptions,
-} from "@patchbay/core/composio";
-import type { ComposioToolkit } from "@patchbay/core/types";
+} from "@multica/core/composio";
+import type { ComposioToolkit } from "@multica/core/types";
 import { ComposioToolkitLogo } from "../../common/composio-toolkit-logo";
 import { useT, useTimeAgo } from "../../i18n";
 import { useNavigation } from "../../navigation";
@@ -31,7 +31,7 @@ import { useNavigation } from "../../navigation";
 // ComposioTab renders the connectable Composio toolkit catalog and lets the
 // user connect / disconnect the apps their agents can act on.
 //
-// Key UX rule (PB-4009): the backend only returns toolkits with an enabled
+// Key UX rule (MUL-4009): the backend only returns toolkits with an enabled
 // auth config in the Composio project, so every card here is connectable —
 // toolkits with no auth config are filtered out server-side rather than shown
 // with a dead "not configured" hint. The `toolkit.connectable` guard on the
@@ -57,7 +57,7 @@ export function ComposioTab() {
   // The hosted Composio consent flow is a full-page redirect that lands back
   // on the settings page carrying either `?connected=<slug>` (success) or
   // `?error=composio_connect_failed` (any backend-side failure — see
-  // Service.CallbackRedirect, PB-3720). Consume it exactly once: fire a toast,
+  // Service.CallbackRedirect, MUL-3720). Consume it exactly once: fire a toast,
   // refresh the connections list so the freshly-linked card flips to Connected
   // without a manual reload, then strip the one-shot params via `replace` so a
   // browser refresh doesn't re-toast.
@@ -107,7 +107,7 @@ export function ComposioTab() {
 
   // Toolkits whose latest connection is expired render a Reconnect affordance
   // instead of Connected/Connect. Backend only emits `expired` once Stage 4
-  // (PB-3719) lands, but the branch is wired up now so it lights up for free.
+  // (MUL-3719) lands, but the branch is wired up now so it lights up for free.
   const expiredBySlug = useMemo(() => {
     const m = new Set<string>();
     for (const c of connectionsQuery.data ?? []) {
@@ -118,7 +118,7 @@ export function ComposioTab() {
 
   // Last-used timestamp per active connection, for the "Last used …" line on a
   // connected card. Backend leaves this null until tool-call dispatch starts
-  // stamping it (Stage 3, PB-3721); the card shows a "never used" placeholder
+  // stamping it (Stage 3, MUL-3721); the card shows a "never used" placeholder
   // until then.
   const lastUsedBySlug = useMemo(() => {
     const m = new Map<string, string | null>();

@@ -19,7 +19,7 @@
  * none of them subtract from it. packages/views is unaffected — 44 of its 45
  * exports name a specific file — which is why knip does flag dead files there.
  *
- * That blind spot is exactly where the 16 dead components removed in PB-6353
+ * That blind spot is exactly where the 16 dead components removed in MUL-6353
  * lived, so without this check the cleanup has no regression guard at all.
  *
  * Specifiers are resolved against the importing file's own directory, never
@@ -48,7 +48,7 @@ import ts from "typescript";
 
 const repoRoot = resolve(import.meta.dirname, "..");
 const uiRoot = join(repoRoot, "packages", "ui");
-const pkgName = "@patchbay/ui";
+const pkgName = "@multica/ui";
 
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"];
 const SKIP_DIRS = new Set(["node_modules", ".git", ".next", ".turbo", "out", "dist", "build"]);

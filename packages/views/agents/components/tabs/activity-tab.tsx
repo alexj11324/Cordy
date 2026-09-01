@@ -15,25 +15,24 @@ import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
-import { NumberFlow } from "@patchbay/ui/components/ui/number-flow";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+} from "@multica/ui/components/ui/tooltip";
+import { NumberFlow } from "@multica/ui/components/ui/number-flow";
+import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { isAgentTaskActive } from "@patchbay/core/agent-thread";
-import type { Agent, AgentTask, Issue } from "@patchbay/core/types";
+import type { Agent, AgentTask, Issue } from "@multica/core/types";
 import {
   type AgentActivity,
   agentTaskSnapshotOptions,
   agentTasksOptions,
   summarizeActivityWindow,
   useWorkspaceActivityMap,
-} from "@patchbay/core/agents";
-import { api } from "@patchbay/core/api";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { issueDetailOptions } from "@patchbay/core/issues/queries";
+} from "@multica/core/agents";
+import { api } from "@multica/core/api";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { useWorkspacePaths } from "@multica/core/paths";
+import { issueDetailOptions } from "@multica/core/issues/queries";
 import { AppLink } from "../../../navigation";
-import { TaskAgentThreadDialog } from "../../../agent-thread";
+import { TranscriptButton } from "../../../common/task-transcript";
 import { AttributionBadge } from "../../../issues/components/attribution-badge";
 import { taskStatusConfig } from "../../config";
 import { cancelReasonLabel, failureReasonLabel } from "./task-failure";
@@ -70,10 +69,7 @@ interface ActivityTabProps {
  * the workspace 7d activity buckets for the trend), so opening this tab
  * adds no extra fetches once the page is hydrated.
  */
-export function ActivityTab({
-  agent,
-  showPerformance = true,
-}: ActivityTabProps) {
+export function ActivityTab({ agent, showPerformance = true }: ActivityTabProps) {
   const wsId = useWorkspaceId();
 
   const { data: snapshot = [] } = useQuery(agentTaskSnapshotOptions(wsId));
@@ -100,12 +96,16 @@ export function ActivityTab({
       dispatched: 1,
       waiting_local_directory: 2,
       queued: 3,
-      deferred: 4,
     };
     return snapshot
       .filter(
         (t) =>
-          t.agent_id === agent.id && isWorkflowTask(t) && isAgentTaskActive(t),
+          t.agent_id === agent.id &&
+          isWorkflowTask(t) &&
+          (t.status === "running" ||
+            t.status === "queued" ||
+            t.status === "dispatched" ||
+            t.status === "waiting_local_directory"),
       )
       .sort(
         (a, b) =>
@@ -120,7 +120,12 @@ export function ActivityTab({
   const recentTasksAll = useMemo(() => {
     return [...agentTasks]
       .filter(
-        (t) => isWorkflowTask(t) && !!t.completed_at && !isAgentTaskActive(t),
+        (t) =>
+          isWorkflowTask(t) &&
+          !!t.completed_at &&
+          (t.status === "completed" ||
+            t.status === "failed" ||
+            t.status === "cancelled"),
       )
       .sort(
         (a, b) =>
@@ -150,9 +155,7 @@ export function ActivityTab({
   const issueIds = useMemo(
     () =>
       Array.from(
-        new Set(
-          displayedTasks.map((t) => t.issue_id).filter((id) => id !== ""),
-        ),
+        new Set(displayedTasks.map((t) => t.issue_id).filter((id) => id !== "")),
       ),
     [displayedTasks],
   );
@@ -170,7 +173,7 @@ export function ActivityTab({
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
-      <NowSection tasks={activeTasks} issueMap={issueMap} />
+      <NowSection tasks={activeTasks} issueMap={issueMap} agent={agent} />
       {showPerformance && (
         <Last30dSection activity={activity} avgDurationMs={avgDurationMs} />
       )}
@@ -179,8 +182,11 @@ export function ActivityTab({
         totalCount={recentTasksAll.length}
         hasMore={hasMoreRecent}
         loading={isLoadingRecent}
-        onShowMore={() => setRecentDisplayLimit((n) => n + RECENT_PAGE)}
+        onShowMore={() =>
+          setRecentDisplayLimit((n) => n + RECENT_PAGE)
+        }
         issueMap={issueMap}
+        agent={agent}
       />
     </div>
   );
@@ -191,7 +197,9 @@ export function ActivityTab({
 export function AgentPerformanceSummary({ agent }: { agent: Agent }) {
   const { t } = useT("agents");
   const wsId = useWorkspaceId();
-  const { data: agentTasks = [] } = useQuery(agentTasksOptions(wsId, agent.id));
+  const { data: agentTasks = [] } = useQuery(
+    agentTasksOptions(wsId, agent.id),
+  );
   const { byAgent: activityMap } = useWorkspaceActivityMap(wsId);
   const activity = activityMap.get(agent.id);
   const summary = summarizeActivityWindow(activity, 30);
@@ -202,7 +210,8 @@ export function AgentPerformanceSummary({ agent }: { agent: Agent }) {
   const successPct =
     summary.totalRuns > 0
       ? Math.round(
-          ((summary.totalRuns - summary.totalFailed) / summary.totalRuns) * 100,
+          ((summary.totalRuns - summary.totalFailed) / summary.totalRuns) *
+            100,
         )
       : 100;
 
@@ -276,9 +285,11 @@ function Metric({
 function NowSection({
   tasks,
   issueMap,
+  agent,
 }: {
   tasks: AgentTask[];
   issueMap: Map<string, Issue>;
+  agent: Agent;
 }) {
   const { t } = useT("agents");
   return (
@@ -287,15 +298,18 @@ function NowSection({
       subtitle={
         tasks.length === 0
           ? t(($) => $.tab_body.activity.subtitle_no_active)
-          : t(($) => $.tab_body.activity.subtitle_active, {
-              count: tasks.length,
-            })
+          : t(($) => $.tab_body.activity.subtitle_active, { count: tasks.length })
       }
     >
       {tasks.length === 0 ? (
         <EmptyText>{t(($) => $.tab_body.activity.empty_now)}</EmptyText>
       ) : (
-        <TaskList tasks={tasks} issueMap={issueMap} timeMode="active" />
+        <TaskList
+          tasks={tasks}
+          issueMap={issueMap}
+          timeMode="active"
+          agent={agent}
+        />
       )}
     </Section>
   );
@@ -318,10 +332,7 @@ function Last30dSection({
       : 100;
 
   return (
-    <Section
-      title={t(($) => $.tab_body.activity.section_last_30d)}
-      subtitle={t(($) => $.tab_body.activity.subtitle_performance)}
-    >
+    <Section title={t(($) => $.tab_body.activity.section_last_30d)} subtitle={t(($) => $.tab_body.activity.subtitle_performance)}>
       {totalRuns === 0 ? (
         <EmptyText>{t(($) => $.tab_body.activity.empty_30d)}</EmptyText>
       ) : (
@@ -340,26 +351,18 @@ function Last30dSection({
               </span>
             </div>
             <div className="text-caption text-muted-foreground">
-              {t(($) => $.tab_body.activity.success_pct, {
-                percent: successPct,
-              })}
+              {t(($) => $.tab_body.activity.success_pct, { percent: successPct })}
               {avgDurationMs > 0 && (
                 <>
                   <Sep />
-                  <span>
-                    {t(($) => $.tab_body.activity.avg_duration, {
-                      value: formatDurationMs(avgDurationMs),
-                    })}
-                  </span>
+                  <span>{t(($) => $.tab_body.activity.avg_duration, { value: formatDurationMs(avgDurationMs) })}</span>
                 </>
               )}
               {totalFailed > 0 && (
                 <>
                   <Sep />
                   <span className="text-destructive">
-                    {t(($) => $.tab_body.activity.failed_count, {
-                      count: totalFailed,
-                    })}
+                    {t(($) => $.tab_body.activity.failed_count, { count: totalFailed })}
                   </span>
                 </>
               )}
@@ -388,6 +391,7 @@ function RecentWorkSection({
   loading,
   onShowMore,
   issueMap,
+  agent,
 }: {
   tasks: AgentTask[];
   totalCount: number;
@@ -395,6 +399,7 @@ function RecentWorkSection({
   loading: boolean;
   onShowMore: () => void;
   issueMap: Map<string, Issue>;
+  agent: Agent;
 }) {
   const { t } = useT("agents");
   // While the first fetch is in flight we have no counts to summarise, so
@@ -404,25 +409,22 @@ function RecentWorkSection({
     : tasks.length === 0
       ? t(($) => $.tab_body.activity.subtitle_no_recent)
       : totalCount > tasks.length
-        ? t(($) => $.tab_body.activity.subtitle_recent_progress, {
-            shown: tasks.length,
-            total: totalCount,
-          })
-        : t(($) => $.tab_body.activity.subtitle_recent_latest, {
-            count: tasks.length,
-          });
+        ? t(($) => $.tab_body.activity.subtitle_recent_progress, { shown: tasks.length, total: totalCount })
+        : t(($) => $.tab_body.activity.subtitle_recent_latest, { count: tasks.length });
   return (
-    <Section
-      title={t(($) => $.tab_body.activity.section_recent)}
-      subtitle={subtitle}
-    >
+    <Section title={t(($) => $.tab_body.activity.section_recent)} subtitle={subtitle}>
       {loading ? (
         <RecentWorkSkeleton />
       ) : tasks.length === 0 ? (
         <EmptyText>{t(($) => $.tab_body.activity.empty_recent)}</EmptyText>
       ) : (
         <>
-          <TaskList tasks={tasks} issueMap={issueMap} timeMode="completed" />
+          <TaskList
+            tasks={tasks}
+            issueMap={issueMap}
+            timeMode="completed"
+            agent={agent}
+          />
           {hasMore && (
             <button
               type="button"
@@ -457,9 +459,7 @@ function RecentWorkSkeleton() {
         <div key={i} className="flex items-center gap-3 px-3 py-3">
           <Skeleton className="h-4 w-4 shrink-0 rounded-full" />
           <div className="min-w-0 flex-1 space-y-2">
-            <Skeleton
-              className={`h-3.5 ${titleWidths[i % titleWidths.length]}`}
-            />
+            <Skeleton className={`h-3.5 ${titleWidths[i % titleWidths.length]}`} />
             <Skeleton className={`h-3 ${metaWidths[i % metaWidths.length]}`} />
           </div>
         </div>
@@ -472,10 +472,12 @@ function TaskList({
   tasks,
   issueMap,
   timeMode,
+  agent,
 }: {
   tasks: AgentTask[];
   issueMap: Map<string, Issue>;
   timeMode: "active" | "completed";
+  agent: Agent;
 }) {
   return (
     <div
@@ -491,6 +493,7 @@ function TaskList({
           task={task}
           issueMap={issueMap}
           timeMode={timeMode}
+          agent={agent}
         />
       ))}
     </div>
@@ -501,26 +504,32 @@ function TaskRow({
   task,
   issueMap,
   timeMode,
+  agent,
 }: {
   task: AgentTask;
   issueMap: Map<string, Issue>;
   timeMode: "active" | "completed";
+  agent: Agent;
 }) {
   const { t } = useT("agents");
   const timeAgo = useTimeAgo();
   const paths = useWorkspacePaths();
   const [cancelling, setCancelling] = useState(false);
-  const [conversationOpen, setConversationOpen] = useState(false);
   const cfg = taskStatusConfig[task.status] ?? taskStatusConfig.queued!;
   const Icon = cfg.icon;
   const hasIssue = task.issue_id !== "";
   const issue = hasIssue ? issueMap.get(task.issue_id) : undefined;
   const isRunning = task.status === "running";
-  const chatSessionId = task.chat_session_id;
-  const showChat = !hasIssue && Boolean(chatSessionId);
-  // Cancel only makes sense for active states. Terminal rows hide the button
-  // entirely, while a future server state remains fail-closed.
-  const showCancel = timeMode === "active" && isAgentTaskActive(task);
+  // Queued tasks have no messages yet — hiding the transcript button avoids
+  // a guaranteed "No execution data recorded." dialog open.
+  const showTranscript = task.status !== "queued";
+  // Cancel only makes sense for the three active states. Terminal rows
+  // (completed / failed / cancelled) hide the button entirely.
+  const showCancel =
+    timeMode === "active" &&
+    (task.status === "queued" ||
+      task.status === "dispatched" ||
+      task.status === "running");
 
   const handleCancel = async () => {
     if (cancelling) return;
@@ -531,11 +540,7 @@ function TaskRow({
       // through useRealtimeSync's `task:` prefix path which already
       // invalidates snapshot + per-agent + per-issue task lists.
     } catch (e) {
-      toast.error(
-        e instanceof Error
-          ? e.message
-          : t(($) => $.tab_body.activity.cancel_failed_toast),
-      );
+      toast.error(e instanceof Error ? e.message : t(($) => $.tab_body.activity.cancel_failed_toast));
       setCancelling(false);
     }
   };
@@ -551,8 +556,8 @@ function TaskRow({
         : t(($) => $.tab_body.activity.source_creating_issue)
       : task.chat_session_id
         ? t(($) => $.tab_body.activity.source_chat_session)
-        : task.automation_run_id
-          ? t(($) => $.tab_body.activity.source_automation_run)
+        : task.autopilot_run_id
+          ? t(($) => $.tab_body.activity.source_autopilot_run)
           : t(($) => $.tab_body.activity.source_untracked)
     : null;
 
@@ -560,15 +565,15 @@ function TaskRow({
     ? Hash
     : task.chat_session_id
       ? MessageSquare
-      : task.automation_run_id
+      : task.autopilot_run_id
         ? Workflow
         : CircleHelp;
   const sourceLabel = hasIssue
     ? t(($) => $.tab_body.activity.source_issue)
     : task.chat_session_id
       ? t(($) => $.tab_body.activity.source_chat)
-      : task.automation_run_id
-        ? t(($) => $.tab_body.activity.source_automation)
+      : task.autopilot_run_id
+        ? t(($) => $.tab_body.activity.source_autopilot)
         : t(($) => $.tab_body.activity.source_untracked);
 
   const timeText =
@@ -580,15 +585,15 @@ function TaskRow({
 
   // Failure reason. The back-end emits "" on non-failed tasks (omitempty
   // strips it on the wire) so the truthy guard is the right shape.
-  // failureReasonLabel takes the raw open string — the taxonomy has 21
-  // values and grows, so there is no enum to cast to. Cancelled rows get a
+  // failureReasonLabel takes the raw open string because the taxonomy grows,
+  // so there is no enum to cast to. Cancelled rows get a
   // label only when the SERVER cancelled them for a persisted reason
   // (worktree claim gate, preserved-work delivery); a user's own cancel
   // stays a plain "Cancelled".
   const failureLabel =
     task.status === "failed"
-      ? failureReasonLabel(task.failure_reason)
-      : cancelReasonLabel(task);
+      ? failureReasonLabel(task.failure_reason, t)
+      : cancelReasonLabel(task, t);
 
   // Only show duration for terminal rows. An active row's duration is
   // inferred from the timeText already ("Started 2m ago") and adding a
@@ -639,11 +644,8 @@ function TaskRow({
                   <span className="truncate text-body">
                     {issue?.title ??
                       (hasIssue
-                        ? t(($) => $.tab_body.activity.issue_short_fallback, {
-                            prefix: task.issue_id.slice(0, 8),
-                          })
-                        : (sourceFallback ??
-                          t(($) => $.tab_body.activity.source_untracked)))}
+                        ? t(($) => $.tab_body.activity.issue_short_fallback, { prefix: task.issue_id.slice(0, 8) })
+                        : (sourceFallback ?? t(($) => $.tab_body.activity.source_untracked)))}
                   </span>
                 }
               />
@@ -660,16 +662,15 @@ function TaskRow({
             <span className="truncate text-body">
               {issue?.title ??
                 (hasIssue
-                  ? t(($) => $.tab_body.activity.issue_short_fallback, {
-                      prefix: task.issue_id.slice(0, 8),
-                    })
-                  : (sourceFallback ??
-                    t(($) => $.tab_body.activity.source_untracked)))}
+                  ? t(($) => $.tab_body.activity.issue_short_fallback, { prefix: task.issue_id.slice(0, 8) })
+                  : (sourceFallback ?? t(($) => $.tab_body.activity.source_untracked)))}
             </span>
           )}
         </div>
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-caption text-muted-foreground">
-          <span className={cfg.color}>{taskStatusLabel(task.status, t)}</span>
+          <span className={cfg.color}>
+            {taskStatusLabel(task.status, t)}
+          </span>
           <Sep />
           <span>{timeText}</span>
           {durationText && (
@@ -681,17 +682,16 @@ function TaskRow({
           {failureLabel && (
             <>
               <Sep />
-              {/* Hover reveals the actionable text ("upgrade the daemon on
-                  that machine", "work preserved at …"), not just the bucket. */}
-              <span
-                className="text-destructive"
-                title={task.error ?? undefined}
-              >
-                {failureLabel}
-              </span>
+              {/* The localized reason is the whole user-facing explanation
+                  here. The raw `task.error` used to ride along as this
+                  element's `title`, which put untranslated English (and
+                  absolute paths) in front of every non-English workspace
+                  (#7411); the full diagnostic lives in the transcript's Run
+                  details instead. */}
+              <span className="text-destructive">{failureLabel}</span>
             </>
           )}
-          {/* Accountable member (PB-4302 §9): whose behalf this run is on.
+          {/* Accountable member (MUL-4302 §9): whose behalf this run is on.
               A leading separator keeps the avatar on the same middot rhythm as
               the rest of the meta line instead of glued to the duration. The
               guard mirrors the badge's own render condition (avatar-only needs
@@ -709,8 +709,10 @@ function TaskRow({
         </div>
       </div>
 
-      {/* Secondary destinations stay beside the canonical Agent thread opener.
-          focus-within keeps the slot reachable for keyboard users. */}
+      {/* Hover-only actions. The row is intentionally non-clickable so
+          neither destination is privileged — issue detail and transcript
+          are equally valid follow-ups. focus-within keeps the slot
+          reachable for keyboard users. */}
       <div className="ml-2 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-100 group-hover:opacity-100 group-focus-within:opacity-100">
         {hasIssue && (
           <Tooltip>
@@ -721,48 +723,16 @@ function TaskRow({
             >
               <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
             </TooltipTrigger>
-            <TooltipContent>
-              {t(($) => $.tab_body.activity.open_issue_tooltip)}
-            </TooltipContent>
+            <TooltipContent>{t(($) => $.tab_body.activity.open_issue_tooltip)}</TooltipContent>
           </Tooltip>
         )}
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <button
-                type="button"
-                onClick={() => setConversationOpen(true)}
-                aria-label={t(($) => $.tab_body.activity.open_thread_aria)}
-              />
-            }
-            className="flex items-center justify-center rounded p-1 text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors"
-          >
-            <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
-          </TooltipTrigger>
-          <TooltipContent>
-            {t(($) => $.tab_body.activity.open_thread_tooltip)}
-          </TooltipContent>
-        </Tooltip>
-        {conversationOpen && (
-          <TaskAgentThreadDialog
-            taskId={task.id}
-            open
-            onOpenChange={setConversationOpen}
+        {showTranscript && (
+          <TranscriptButton
+            task={task}
+            agentName={agent.name}
+            isLive={isRunning}
+            title={t(($) => $.tab_body.activity.transcript_tooltip)}
           />
-        )}
-        {showChat && chatSessionId && (
-          <Tooltip>
-            <TooltipTrigger
-              render={<AppLink href={paths.chatSession(chatSessionId)} />}
-              aria-label={t(($) => $.tab_body.activity.open_chat_aria)}
-              className="flex items-center justify-center rounded p-1 text-muted-foreground hover:text-foreground hover:bg-accent/50 transition-colors"
-            >
-              <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
-            </TooltipTrigger>
-            <TooltipContent>
-              {t(($) => $.tab_body.activity.open_chat_tooltip)}
-            </TooltipContent>
-          </Tooltip>
         )}
         {showCancel && (
           <Tooltip>
@@ -780,9 +750,7 @@ function TaskRow({
               <X className="h-3.5 w-3.5" aria-hidden="true" />
             </TooltipTrigger>
             <TooltipContent>
-              {cancelling
-                ? t(($) => $.tab_body.activity.cancelling_tooltip)
-                : t(($) => $.tab_body.activity.cancel_task_tooltip)}
+              {cancelling ? t(($) => $.tab_body.activity.cancelling_tooltip) : t(($) => $.tab_body.activity.cancel_task_tooltip)}
             </TooltipContent>
           </Tooltip>
         )}
@@ -803,7 +771,9 @@ function Section({
   return (
     <section className="flex flex-col gap-3 border-b pb-6 last:border-b-0 last:pb-0">
       <div className="flex items-baseline gap-2">
-        <h2 className="text-body font-semibold text-foreground">{title}</h2>
+        <h2 className="text-body font-semibold text-foreground">
+          {title}
+        </h2>
         <span className="text-micro text-muted-foreground">{subtitle}</span>
       </div>
       {children}
@@ -812,9 +782,7 @@ function Section({
 }
 
 function EmptyText({ children }: { children: ReactNode }) {
-  return (
-    <p className="text-caption italic text-muted-foreground">{children}</p>
-  );
+  return <p className="text-caption italic text-muted-foreground">{children}</p>;
 }
 
 function Sep() {
@@ -831,8 +799,6 @@ function taskStatusLabel(status: AgentTask["status"], t: AgentsT): string {
   switch (status) {
     case "queued":
       return t(($) => $.tab_body.activity.status.queued);
-    case "deferred":
-      return t(($) => $.tab_body.activity.status.deferred);
     case "dispatched":
       return t(($) => $.tab_body.activity.status.dispatched);
     case "waiting_local_directory":
@@ -845,31 +811,17 @@ function taskStatusLabel(status: AgentTask["status"], t: AgentsT): string {
       return t(($) => $.tab_body.activity.status.failed);
     case "cancelled":
       return t(($) => $.tab_body.activity.status.cancelled);
-    default:
-      // Preserve a future server state instead of making it look queued or
-      // dropping the activity row entirely.
-      return status;
   }
 }
 
-function activeTaskTimeText(
-  task: AgentTask,
-  t: AgentsT,
-  timeAgo: TimeAgoFn,
-): string {
+function activeTaskTimeText(task: AgentTask, t: AgentsT, timeAgo: TimeAgoFn): string {
   if (task.status === "running" && task.started_at) {
-    return t(($) => $.tab_body.activity.started_prefix, {
-      when: timeAgo(task.started_at),
-    });
+    return t(($) => $.tab_body.activity.started_prefix, { when: timeAgo(task.started_at) });
   }
   if (task.status === "dispatched" && task.dispatched_at) {
-    return t(($) => $.tab_body.activity.dispatched_prefix, {
-      when: timeAgo(task.dispatched_at),
-    });
+    return t(($) => $.tab_body.activity.dispatched_prefix, { when: timeAgo(task.dispatched_at) });
   }
-  return t(($) => $.tab_body.activity.queued_prefix, {
-    when: timeAgo(task.created_at),
-  });
+  return t(($) => $.tab_body.activity.queued_prefix, { when: timeAgo(task.created_at) });
 }
 
 /**

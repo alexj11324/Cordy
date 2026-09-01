@@ -2,27 +2,27 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Trash2, Copy, Check, Info } from "lucide-react";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@patchbay/ui/components/ui/tooltip";
-import type { PersonalAccessToken } from "@patchbay/core/types";
-import { Alert, AlertDescription } from "@patchbay/ui/components/ui/alert";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
+import type { PersonalAccessToken } from "@multica/core/types";
+import { Alert, AlertDescription } from "@multica/ui/components/ui/alert";
+import { Checkbox } from "@multica/ui/components/ui/checkbox";
+import { Input } from "@multica/ui/components/ui/input";
+import { Button } from "@multica/ui/components/ui/button";
+import { Card, CardContent } from "@multica/ui/components/ui/card";
 import {
   Select,
   SelectTrigger,
   SelectValue,
   SelectContent,
   SelectItem,
-} from "@patchbay/ui/components/ui/select";
+} from "@multica/ui/components/ui/select";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogFooter,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@multica/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -32,18 +32,19 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+} from "@multica/ui/components/ui/alert-dialog";
+import { Skeleton } from "@multica/ui/components/ui/skeleton";
+import { copyText } from "@multica/ui/lib/clipboard";
 import { toast } from "sonner";
-import { api } from "@patchbay/core/api";
-import { useT } from "../../i18n";
+import { api } from "@multica/core/api";
+import { useLocale, useT } from "../../i18n";
 import { SettingsSection, SettingsTab } from "./settings-layout";
 
 const EXPIRY_KEYS = ["30", "90", "365", "never"] as const;
 
 export function TokensTab() {
   const { t } = useT("settings");
+  const locale = useLocale();
   const expiryItems = EXPIRY_KEYS.map((value) => ({
     value,
     label: t(($) => $.tokens.expiry[value]),
@@ -115,7 +116,7 @@ export function TokensTab() {
 
   const handleCopyCommand = async () => {
     if (!newToken) return;
-    if (await copyText(`patchbay login --token ${newToken}`)) {
+    if (await copyText(`multica login --token ${newToken}`)) {
       setCommandCopied(true);
       setTimeout(() => setCommandCopied(false), 2000);
     }
@@ -205,15 +206,15 @@ export function TokensTab() {
                     <div className="text-caption text-muted-foreground">
                       {t(($) => $.tokens.metadata_prefix, {
                         prefix: token.token_prefix,
-                        created: new Date(token.created_at).toLocaleDateString(),
+                        created: new Date(token.created_at).toLocaleDateString(locale),
                         lastUsed: token.last_used_at
                           ? t(($) => $.tokens.last_used_with_date, {
-                              date: new Date(token.last_used_at!).toLocaleDateString(),
+                              date: new Date(token.last_used_at!).toLocaleDateString(locale),
                             })
                           : t(($) => $.tokens.last_used_never),
                       })}
                       {token.expires_at && t(($) => $.tokens.expires_with_date, {
-                        date: new Date(token.expires_at!).toLocaleDateString(),
+                        date: new Date(token.expires_at!).toLocaleDateString(locale),
                       })}
                     </div>
                   </div>
@@ -300,7 +301,7 @@ export function TokensTab() {
             <p className="text-caption text-muted-foreground">{t(($) => $.tokens.created_dialog.cli_hint)}</p>
             <div className="flex min-w-0 items-center gap-2">
               <code className="min-w-0 flex-1 truncate rounded-md border bg-muted/50 px-3 py-2 text-body select-all">
-                {`patchbay login --token ${newToken}`}
+                {`multica login --token ${newToken}`}
               </code>
               <Tooltip>
                 <TooltipTrigger

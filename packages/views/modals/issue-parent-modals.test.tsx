@@ -9,11 +9,11 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("sonner", () => ({ toast: mocks.toast }));
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
-vi.mock("@patchbay/core/issues/mutations", () => ({
+vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@multica/core/issues/mutations", () => ({
   useUpdateIssue: () => ({ mutate: mocks.mutate }),
 }));
-vi.mock("@patchbay/core/issues/queries", () => ({
+vi.mock("@multica/core/issues/queries", () => ({
   issueDetailOptions: (_wsId: string, issueId: string) => ({
     queryKey: ["issues", "detail", issueId],
   }),
@@ -36,7 +36,7 @@ vi.mock("./issue-picker-modal", () => ({
     <button
       type="button"
       onClick={() =>
-        onSelect({ id: "selected-1", identifier: "PB-2", revision: 5 })
+        onSelect({ id: "selected-1", identifier: "MUL-2", revision: 5 })
       }
     >
       Select issue

@@ -5,16 +5,16 @@
  *
  * The filter lists every offerable status flat, in canonical category order,
  * with no category heading — the icon already carries the category, and a
- * heading per category doubled the menu's height (PB-6399).
+ * heading per category doubled the menu's height (MUL-6399).
  *
  * That is also what keeps the menu from crashing. `DropdownMenuLabel` renders
  * Base UI's `Menu.GroupLabel`, whose `useMenuGroupRootContext()` THROWS
  * without a `Menu.Group` ancestor; the heading only rendered once a workspace
  * held a custom status, so the missing group stayed invisible until the first
  * one was created — and then opening the filter took the whole app down, since
- * no error boundary sits above the issues surface (PB-6393, PB-4819).
+ * no error boundary sits above the issues surface (MUL-6393, MUL-4819).
  *
- * These tests therefore must NOT mock `@patchbay/ui/components/ui/dropdown-menu`:
+ * These tests therefore must NOT mock `@multica/ui/components/ui/dropdown-menu`:
  * a flattened mock renders a heading outside a group perfectly happily, which
  * is exactly how that bug shipped.
  */
@@ -23,19 +23,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createStore } from "zustand/vanilla";
-import { setApiInstance } from "@patchbay/core/api";
-import type { ApiClient } from "@patchbay/core/api/client";
-import { STATUS_ORDER } from "@patchbay/core/issues/config";
+import { setApiInstance } from "@multica/core/api";
+import type { ApiClient } from "@multica/core/api/client";
+import { STATUS_ORDER } from "@multica/core/issues/config";
 import {
   type IssueViewState,
   viewStoreSlice,
-} from "@patchbay/core/issues/stores/view-store";
-import { ViewStoreProvider } from "@patchbay/core/issues/stores/view-store-context";
-import type { IssueStatusEntry } from "@patchbay/core/types";
+} from "@multica/core/issues/stores/view-store";
+import { ViewStoreProvider } from "@multica/core/issues/stores/view-store-context";
+import type { IssueStatusEntry } from "@multica/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { IssueFilterMenu } from "./issues-header";
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
@@ -117,7 +117,7 @@ describe("IssueFilterMenu status section", () => {
   it("lists a custom status inline, with no category heading", async () => {
     renderFilterMenu([...BUILT_INS, HUMAN_REVIEW]);
 
-    // Opening at all is the PB-6393 regression: the heading this list no
+    // Opening at all is the MUL-6393 regression: the heading this list no
     // longer renders used to throw out of Base UI's Menu.GroupLabel and
     // unmount the app.
     await openStatusSubmenu();

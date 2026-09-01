@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, screen } from "@testing-library/react";
-import type { CommentTriggerPreviewAgent } from "@patchbay/core/types";
+import type { CommentTriggerPreviewAgent } from "@multica/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { CommentTriggerChips } from "./comment-trigger-chips";
 
-vi.mock("@patchbay/core/agents", () => ({
+vi.mock("@multica/core/agents", () => ({
   useAgentPresenceDetail: () => ({ availability: "online", workload: "idle" }),
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/paths", () => ({
   useCurrentWorkspace: () => ({ id: "ws-1" }),
 }));
 
@@ -19,7 +19,7 @@ vi.mock("../../common/actor-avatar", () => ({
 const walt: CommentTriggerPreviewAgent = {
   id: "agent-1",
   name: "Walt",
-  source: "issue_executor",
+  source: "issue_assignee",
   reason: "",
 };
 
@@ -140,7 +140,7 @@ describe("CommentTriggerChips", () => {
 
     // The name the user typed (not a "1 mention won't trigger" count) plus the
     // short reason, which must not assert a permission cause the server never
-    // gave: invocation_not_allowed also covers an unresolved id (PB-5548).
+    // gave: invocation_not_allowed also covers an unresolved id (MUL-5548).
     expect(screen.getByText("Go")).toBeInTheDocument();
     expect(screen.getByText("Not found or no permission")).toBeInTheDocument();
     expect(screen.queryByText(/won't trigger/i)).not.toBeInTheDocument();
@@ -175,9 +175,9 @@ describe("CommentTriggerChips", () => {
         agents={[]}
         blocked={[
           { target_type: "agent", target_id: "deadbeef-0001", status: "blocked", reason_code: "invocation_not_allowed" },
-          { target_type: "team", target_id: "cafef00d-0002", status: "blocked", reason_code: "runtime_offline" },
+          { target_type: "squad", target_id: "cafef00d-0002", status: "blocked", reason_code: "runtime_offline" },
         ]}
-        draftContent="[@Go](mention://agent/deadbeef-0001) [@Ops](mention://team/cafef00d-0002)"
+        draftContent="[@Go](mention://agent/deadbeef-0001) [@Ops](mention://squad/cafef00d-0002)"
         suppressedAgentIds={new Set()}
         onToggle={vi.fn()}
       />,
@@ -186,6 +186,6 @@ describe("CommentTriggerChips", () => {
     expect(screen.getByText("Go")).toBeInTheDocument();
     expect(screen.getByText("Not found or no permission")).toBeInTheDocument();
     expect(screen.getByText("Ops")).toBeInTheDocument();
-    expect(screen.getByText("Device offline")).toBeInTheDocument();
+    expect(screen.getByText("Runtime offline")).toBeInTheDocument();
   });
 });

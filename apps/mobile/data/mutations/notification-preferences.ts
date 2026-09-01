@@ -5,7 +5,7 @@
  * independent and may drift).
  *
  * Optimistic policy: patch cache → fire PATCH → rollback on error → invalidate
- * on settle (mirrors mobile inbox mutations + AGENTS.md "Mutations are
+ * on settle (mirrors mobile inbox mutations + CLAUDE.md "Mutations are
  * optimistic by default"). Toggle latency on cellular is real — the Switch
  * snapping back if the request hangs would look broken.
  */
@@ -18,12 +18,12 @@ import { useCallback, useRef } from "react";
 import type {
   NotificationPreferenceResponse,
   NotificationPreferences,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import {
   applyNotificationPreferencePatch,
   deriveNotificationPreferencePatch,
   rollbackNotificationPreferencePatch,
-} from "@patchbay/core/notification-preferences/patch";
+} from "@multica/core/notification-preferences/patch";
 import { api } from "@/data/api";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { notificationPreferenceKeys } from "@/data/queries/notification-preferences";

@@ -54,7 +54,7 @@ function makeEditor(): Editor {
       // `handlePaste` that dispatches its own transaction, so it — not
       // ProseMirror — decides whether this extension can tell a paste from
       // typing. Leaving it out is what let the paste cases below pass against a
-      // hand-stamped meta the product never produced (PB-5429).
+      // hand-stamped meta the product never produced (MUL-5429).
       createMarkdownPasteExtension(),
     ],
   });
@@ -100,17 +100,17 @@ afterEach(() => {
 
 describe("createIssueIdentifierAutolinkExtension", () => {
   it("converts a completed identifier into a canonical issue mention", async () => {
-    resolveMock.mockResolvedValue({ id: "uuid-1", identifier: "PB-1" });
+    resolveMock.mockResolvedValue({ id: "uuid-1", identifier: "MUL-1" });
     editor = makeEditor();
 
-    // Typing "PB-1 " leaves the caret right after the boundary space, which
+    // Typing "MUL-1 " leaves the caret right after the boundary space, which
     // completes the previous token.
-    typeAt1(editor, "PB-1 ");
+    typeAt1(editor, "MUL-1 ");
     await flush();
 
-    expect(resolveMock).toHaveBeenCalledWith("PB-1");
+    expect(resolveMock).toHaveBeenCalledWith("MUL-1");
     expect(editor.getMarkdown().trim()).toBe(
-      "[PB-1](mention://issue/uuid-1)",
+      "[MUL-1](mention://issue/uuid-1)",
     );
   });
 
@@ -118,53 +118,53 @@ describe("createIssueIdentifierAutolinkExtension", () => {
     resolveMock.mockResolvedValue(null);
     editor = makeEditor();
 
-    typeAt1(editor, "PB-9 ");
+    typeAt1(editor, "MUL-9 ");
     await flush();
 
-    expect(resolveMock).toHaveBeenCalledWith("PB-9");
+    expect(resolveMock).toHaveBeenCalledWith("MUL-9");
     const md = editor.getMarkdown();
-    expect(md).toContain("PB-9");
+    expect(md).toContain("MUL-9");
     expect(md).not.toContain("mention://issue");
   });
 
   it("converts identifiers found inside pasted text", async () => {
-    resolveMock.mockResolvedValue({ id: "uuid-2", identifier: "PB-2" });
+    resolveMock.mockResolvedValue({ id: "uuid-2", identifier: "MUL-2" });
     editor = makeEditor();
 
-    paste(editor, "See PB-2 now");
+    paste(editor, "See MUL-2 now");
     await flush();
 
-    expect(resolveMock).toHaveBeenCalledWith("PB-2");
+    expect(resolveMock).toHaveBeenCalledWith("MUL-2");
     expect(editor.getMarkdown().trim()).toBe(
-      "See [PB-2](mention://issue/uuid-2) now",
+      "See [MUL-2](mention://issue/uuid-2) now",
     );
   });
 
   it("does not convert content set programmatically (open ≠ rewrite)", async () => {
-    resolveMock.mockResolvedValue({ id: "uuid-3", identifier: "PB-3" });
+    resolveMock.mockResolvedValue({ id: "uuid-3", identifier: "MUL-3" });
     editor = makeEditor();
 
     // setContent uses emitUpdate:false (preventUpdate) — the same path the real
     // editor uses on mount and WS-driven resets.
-    editor.commands.setContent("PB-3 stays", {
+    editor.commands.setContent("MUL-3 stays", {
       emitUpdate: false,
       contentType: "markdown",
     });
     await flush();
 
     expect(resolveMock).not.toHaveBeenCalled();
-    expect(editor.getMarkdown()).toContain("PB-3");
+    expect(editor.getMarkdown()).toContain("MUL-3");
     expect(editor.getMarkdown()).not.toContain("mention://issue");
   });
 
   it("does not convert an identifier inside inline code", async () => {
-    resolveMock.mockResolvedValue({ id: "uuid-4", identifier: "PB-4" });
+    resolveMock.mockResolvedValue({ id: "uuid-4", identifier: "MUL-4" });
     editor = makeEditor();
 
     const codeMark = editor.schema.marks.code!.create();
     const tr = editor.state.tr.insert(
       1,
-      editor.schema.text("PB-4 ", [codeMark]),
+      editor.schema.text("MUL-4 ", [codeMark]),
     );
     editor.view.dispatch(tr);
     await flush();
@@ -174,10 +174,10 @@ describe("createIssueIdentifierAutolinkExtension", () => {
   });
 
   it("does not fire while the identifier is still being typed (no boundary yet)", async () => {
-    resolveMock.mockResolvedValue({ id: "uuid-5", identifier: "PB-5" });
+    resolveMock.mockResolvedValue({ id: "uuid-5", identifier: "MUL-5" });
     editor = makeEditor();
 
-    typeAt1(editor, "PB-5");
+    typeAt1(editor, "MUL-5");
     await flush();
 
     expect(resolveMock).not.toHaveBeenCalled();
@@ -187,71 +187,71 @@ describe("createIssueIdentifierAutolinkExtension", () => {
   // --- blocker regressions: replace ONLY the captured range ---------------
 
   it("converts only the newly-typed occurrence, not a pre-existing identical one", async () => {
-    resolveMock.mockResolvedValue({ id: "uuid-1", identifier: "PB-1" });
+    resolveMock.mockResolvedValue({ id: "uuid-1", identifier: "MUL-1" });
     editor = makeEditor();
 
-    // Pre-existing PB-1 arrives via a programmatic (preventUpdate) set — the
+    // Pre-existing MUL-1 arrives via a programmatic (preventUpdate) set — the
     // path the real editor uses on mount / WS resets — so it is not captured.
-    editor.commands.setContent("old PB-1 here", {
+    editor.commands.setContent("old MUL-1 here", {
       emitUpdate: false,
       contentType: "markdown",
     });
     await flush();
     expect(resolveMock).not.toHaveBeenCalled();
 
-    // User now types a brand-new PB-1 at the end of the paragraph.
+    // User now types a brand-new MUL-1 at the end of the paragraph.
     const endOfPara = editor.state.doc.content.size - 1;
-    editor.view.dispatch(editor.state.tr.insertText(" PB-1 ", endOfPara));
+    editor.view.dispatch(editor.state.tr.insertText(" MUL-1 ", endOfPara));
     await flush();
 
     const md = editor.getMarkdown();
     // Exactly the new occurrence became a mention; the old one stays text.
     expect(mentionCount(md)).toBe(1);
-    expect(md).toContain("old PB-1 here");
+    expect(md).toContain("old MUL-1 here");
     expect(md).toContain("mention://issue/uuid-1");
   });
 
   it("paste converts identifiers inside the paste range but not identical ones outside it", async () => {
     resolveMock.mockImplementation(async (identifier) => {
       const map: Record<string, string> = {
-        "PB-2": "uuid-2",
-        "PB-3": "uuid-3",
-        "PB-9": "uuid-9",
+        "MUL-2": "uuid-2",
+        "MUL-3": "uuid-3",
+        "MUL-9": "uuid-9",
       };
       const id = map[identifier];
       return id ? { id, identifier } : null;
     });
     editor = makeEditor();
 
-    // Pre-existing (programmatic) PB-9 outside any future paste range.
-    editor.commands.setContent("keep PB-9 outside", {
+    // Pre-existing (programmatic) MUL-9 outside any future paste range.
+    editor.commands.setContent("keep MUL-9 outside", {
       emitUpdate: false,
       contentType: "markdown",
     });
     await flush();
 
     // Paste two identifiers at the very start of the doc.
-    paste(editor, "PB-2 plus PB-3 x ");
+    paste(editor, "MUL-2 plus MUL-3 x ");
     await flush();
 
     const md = editor.getMarkdown();
-    // Both pasted identifiers converted; the outside PB-9 did NOT.
+    // Both pasted identifiers converted; the outside MUL-9 did NOT.
     expect(md).toContain("mention://issue/uuid-2");
     expect(md).toContain("mention://issue/uuid-3");
     expect(md).not.toContain("mention://issue/uuid-9");
-    expect(md).toContain("PB-9");
+    expect(md).toContain("MUL-9");
     expect(mentionCount(md)).toBe(2);
-    expect(resolveMock).not.toHaveBeenCalledWith("PB-9");
+    expect(resolveMock).not.toHaveBeenCalledWith("MUL-9");
   });
 
   it("does not replace an identifier that already carries an explicit link mark", async () => {
-    resolveMock.mockResolvedValue({ id: "uuid-1", identifier: "PB-1" });
+    resolveMock.mockResolvedValue({ id: "uuid-1", identifier: "MUL-1" });
     editor = makeEditor();
 
-    // A link-marked "PB-1" (e.g. an existing markdown link label) followed by
+    // A link-marked "MUL-1" (e.g. an existing markdown link label) followed by
     // plain text, then the user types a boundary after it.
     const linkMark = editor.schema.marks.link!.create({ href: "https://x.test" });
-    const linked = editor.schema.text("PB-1", [linkMark]);
+    const linked = editor.schema.text("MUL-1", [linkMark]);
     const trailing = editor.schema.text(" ");
     const paragraph = editor.schema.nodes.paragraph!.create(null, [
       linked,

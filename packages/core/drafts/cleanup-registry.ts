@@ -7,8 +7,8 @@ import { abortAll as abortAllUploads } from "./upload-coordinator";
  *
  * The old model required every new draft store to remember to append its
  * persist key to a list living in a different file; that list drifted and
- * left `patchbay_comment_drafts`, `patchbay_quick_create`, `patchbay_project_draft`,
- * `patchbay_feedback_draft`, and the chat draft-attachment / restore keys
+ * left `multica_comment_drafts`, `multica_quick_create`, `multica_project_draft`,
+ * `multica_feedback_draft`, and the chat draft-attachment / restore keys
  * uncleared on logout and workspace deletion (persistence-layer leak), while
  * the in-memory Zustand singletons kept a previous user's draft after a
  * client-side logout navigation (memory-layer leak, cross-user on a shared
@@ -70,7 +70,7 @@ export function clearRegisteredWorkspaceDrafts(
 export function resetAllRegisteredDrafts(): void {
   // Abort in-flight uploads BEFORE clearing drafts: an upload that settles
   // after the draft is wiped must not resurrect a placeholder, and its bytes
-  // must never bind an attachment under the next session (PB-5181).
+  // must never bind an attachment under the next session (MUL-5181).
   abortAllUploads();
   for (const entry of entries.values()) {
     entry.resetInMemory();

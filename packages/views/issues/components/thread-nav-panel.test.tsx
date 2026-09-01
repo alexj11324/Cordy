@@ -3,11 +3,11 @@
 import { useState, type ReactElement, type ReactNode } from "react";
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { TimelineEntry } from "@patchbay/core/types";
+import type { TimelineEntry } from "@multica/core/types";
 import {
   createShortcutChord,
   useShortcutStore,
-} from "@patchbay/core/shortcuts";
+} from "@multica/core/shortcuts";
 import { renderWithI18n } from "../../test/i18n";
 import {
   ThreadNavPanel,
@@ -36,7 +36,7 @@ vi.mock("../../common/actor-avatar", () => ({
   ),
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@multica/core/workspace/hooks", () => ({
   useActorName: () => ({
     getActorName: (_type: string, id: string) =>
       ({ "user-1": "Jiayuan", "agent-1": "Lambda" })[id] ?? "Unknown",
@@ -49,7 +49,7 @@ vi.mock("@patchbay/core/workspace/hooks", () => ({
 // The mock keeps the parts this component actually drives — the controlled
 // `open` prop, the reason-carrying `onOpenChange`, and the content's keyboard
 // and focus handlers — so the open/pin state machine is what gets exercised.
-vi.mock("@patchbay/ui/components/ui/tooltip", () => ({
+vi.mock("@multica/ui/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ render }: { render: ReactElement }) => render,
   TooltipContent: ({ children }: { children: ReactNode }) => (
@@ -57,7 +57,7 @@ vi.mock("@patchbay/ui/components/ui/tooltip", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/components/ui/popover", async () => {
+vi.mock("@multica/ui/components/ui/popover", async () => {
   const React = await vi.importActual<typeof import("react")>("react");
   return {
     Popover: ({
@@ -208,19 +208,25 @@ describe("formatStamp", () => {
   const at = (iso: string) => new Date(iso).toISOString();
 
   it("shows a clock time under today and yesterday", () => {
-    expect(formatStamp(at("2026-08-05T14:20:00"), "today")).toMatch(/\d/);
-    expect(formatStamp(at("2026-08-05T14:20:00"), "today")).not.toMatch(/[A-Za-z]{3}/);
-    expect(formatStamp(at("2026-08-04T14:20:00"), "yesterday")).not.toMatch(/[A-Za-z]{3}/);
+    expect(formatStamp(at("2026-08-05T14:20:00"), "today", "en")).toMatch(/\d/);
+    expect(formatStamp(at("2026-08-05T14:20:00"), "today", "en")).not.toMatch(/[A-Za-z]{3}/);
+    expect(formatStamp(at("2026-08-04T14:20:00"), "yesterday", "en")).not.toMatch(/[A-Za-z]{3}/);
   });
 
   it("always shows a date under earlier, even when it is under 48 hours old", () => {
     // The regression: 23:41 the day before yesterday is < 48h but groups as
     // "earlier", and used to render as a bare clock time.
-    expect(formatStamp(at("2026-08-03T23:41:00"), "earlier")).toMatch(/[A-Za-z]{3}|\d+\/\d+|月/);
+    expect(formatStamp(at("2026-08-03T23:41:00"), "earlier", "en")).toMatch(/[A-Za-z]{3}|\d+\/\d+|月/);
+  });
+
+  it("formats earlier entries with the selected UI language", () => {
+    expect(
+      formatStamp(at("2026-08-03T23:41:00"), "earlier", "zh-Hans"),
+    ).toContain("月");
   });
 
   it("returns an empty string for an unparseable timestamp", () => {
-    expect(formatStamp("not-a-date", "today")).toBe("");
+    expect(formatStamp("not-a-date", "today", "en")).toBe("");
   });
 });
 

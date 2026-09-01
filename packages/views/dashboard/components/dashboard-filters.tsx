@@ -1,14 +1,14 @@
 "use client";
 
 import { CalendarDays, ChevronDown, FolderKanban } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Button } from "@multica/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@multica/ui/components/ui/dropdown-menu";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { useT } from "../../i18n";
 import { ALL_PROJECTS, TIME_RANGES, type TimeRange } from "./dashboard-shared";

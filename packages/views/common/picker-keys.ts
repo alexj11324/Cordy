@@ -14,7 +14,7 @@
  *
  * `Enter` is the canonical accept (WAI-ARIA combobox guidance). Plain `Tab` is
  * an additive convenience that matches terminal / CLI / editor completion
- * muscle memory (PB-3685). `Shift+Tab` and any `Ctrl/Cmd/Alt + Tab` are
+ * muscle memory (MUL-3685). `Shift+Tab` and any `Ctrl/Cmd/Alt + Tab` are
  * deliberately NOT accept keys: they stay reverse focus navigation / OS window
  * switching, so standard keyboard accessibility is preserved.
  *
@@ -47,12 +47,12 @@ export type PickerNavigationDirection = "next" | "prev";
  * bar already accepts for free: it is built on cmdk, whose `vimBindings` option
  * (on by default) maps exactly this set. Mirroring it here means the pickers
  * stop being the one place in the product where that muscle memory dies
- * (PB-5495).
+ * (MUL-5495).
  *
  * `Cmd`-based aliases are deliberately absent. cmdk does not bind them either,
  * so the command bar never supported them, and `Cmd+P`/`Cmd+N` are browser and
  * OS accelerators (print, new window) that a web page cannot own — the same
- * rule `isReservedShortcut` in `@patchbay/core/shortcuts` already encodes.
+ * rule `isReservedShortcut` in `@multica/core/shortcuts` already encodes.
  *
  * The letter aliases require Ctrl *alone*. With another modifier the chord
  * belongs to the browser or OS (`Ctrl+Shift+N` opens an incognito window), so

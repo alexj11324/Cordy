@@ -1,7 +1,7 @@
 /**
- * Bare in-app entity URLs render as chips (PB-5499).
+ * Bare in-app entity URLs render as chips (MUL-5499).
  *
- * A project has no `PB-123` shorthand — only a UUID and a free-text title — so
+ * A project has no `MUL-123` shorthand — only a UUID and a free-text title — so
  * the link copied out of the app IS how people reference one. This fixture pins
  * the three conditions that decide whether such a link becomes a chip, because
  * each of them fails silently: an over-eager rule eats an author's link label,
@@ -16,7 +16,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "@testing-library/react";
 import { NavigationProvider } from "../navigation/context";
 import type { NavigationAdapter } from "../navigation/types";
-import type { Issue } from "@patchbay/core/types";
+import type { Issue } from "@multica/core/types";
 
 // Identifier → issue lookup, set per test. `null` is the honest default: a
 // miss, a still-loading query and a cross-workspace identifier all look the
@@ -41,7 +41,7 @@ vi.mock("../i18n", async () => {
   };
 });
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: { getAttachmentTextContent: vi.fn() },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
@@ -51,8 +51,8 @@ vi.mock("@patchbay/core/api", () => ({
 // helpers (isReservedSlug / isGlobalPath) stay real — the URL parser under test
 // depends on the same reserved-slug list the backend enforces, and stubbing it
 // would make the assertions meaningless.
-vi.mock("@patchbay/core/paths", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@patchbay/core/paths")>()),
+vi.mock("@multica/core/paths", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@multica/core/paths")>()),
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/acme/issues/${id}`,
     projectDetail: (id: string) => `/acme/projects/${id}`,
@@ -79,7 +79,7 @@ vi.mock("../editor/link-hover-card", () => ({
 
 import { RichContent } from "./rich-content";
 
-const APP_ORIGIN = "https://patchbay.aspectlylabs.com";
+const APP_ORIGIN = "https://app.multica.ai";
 const PROJECT_ID = "8f14e45f-ceea-4d0e-a1a2-9b1c0d3e4f5a";
 const ISSUE_ID = "1b9d6bcd-bbfd-4b2d-9b5d-ab8dfbbd4bed";
 
@@ -90,6 +90,7 @@ function adapter(): NavigationAdapter {
     back: vi.fn(),
     pathname: "/",
     searchParams: new URLSearchParams(),
+    hash: "",
     // The real platform adapters return an absolute URL; useAppOrigin derives
     // the deployment origin from it, and without that nothing is "in-app".
     getShareableUrl: (p) => `${APP_ORIGIN}${p}`,
@@ -129,10 +130,10 @@ describe("bare entity URLs in readonly content", () => {
   // and the issue route rewrites a UUID URL back to the identifier, so this is
   // the shape in the address bar too.
   it("renders a pasted identifier-form issue URL as an issue chip", () => {
-    resolvedIssue = { id: ISSUE_ID, identifier: "PB-1" } as Issue;
+    resolvedIssue = { id: ISSUE_ID, identifier: "MUL-1" } as Issue;
 
     const { getByTestId } = renderContent(
-      `Blocked by ${APP_ORIGIN}/acme/issues/PB-1 for now.`,
+      `Blocked by ${APP_ORIGIN}/acme/issues/MUL-1 for now.`,
     );
 
     expect(getByTestId("issue-chip").textContent).toBe(ISSUE_ID);
@@ -143,12 +144,12 @@ describe("bare entity URLs in readonly content", () => {
     // see. The autolink path degrades to plain text there; a URL must not —
     // the author wrote a link, and dropping it would strip the only pointer.
     const { container, queryByTestId } = renderContent(
-      `${APP_ORIGIN}/acme/issues/PB-404`,
+      `${APP_ORIGIN}/acme/issues/MUL-404`,
     );
 
     expect(queryByTestId("issue-chip")).toBeNull();
     expect(
-      container.querySelector(`a[href="${APP_ORIGIN}/acme/issues/PB-404"]`),
+      container.querySelector(`a[href="${APP_ORIGIN}/acme/issues/MUL-404"]`),
     ).not.toBeNull();
   });
 
@@ -186,7 +187,7 @@ describe("bare entity URLs in readonly content", () => {
 
   it("leaves an external URL as a plain link", () => {
     const { queryByTestId, container } = renderContent(
-      `https://github.com/alexj11324/Cordy/pull/1`,
+      `https://github.com/multica-ai/multica/pull/1`,
     );
     expect(queryByTestId("project-chip")).toBeNull();
     expect(queryByTestId("issue-chip")).toBeNull();

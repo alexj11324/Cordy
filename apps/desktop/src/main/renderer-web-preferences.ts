@@ -57,7 +57,7 @@ export function createRendererWebPreferences(
     // keeping the main renderer plugin-free.
     plugins: true,
     additionalArguments: [
-      `--patchbay-locale=${systemLocale}`,
+      `--multica-locale=${systemLocale}`,
       ...additionalArguments,
     ],
   };

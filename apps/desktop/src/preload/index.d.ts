@@ -14,18 +14,14 @@ import type {
 import type {
   DaemonStatus,
   DaemonPrefs,
-  DaemonAutoStartResult,
   LocalRuntimeProbe,
 } from "../shared/daemon-types";
 
 interface DesktopAPI {
-  /** Host runtime for gating capabilities that only Electron can provide. */
-  host: "electron" | "browser";
   /** App version + normalized OS, captured synchronously at preload time. */
   appInfo: {
     version: string;
     os: "macos" | "windows" | "linux" | "unknown";
-    authCallbackProtocol: string;
   };
   /** OS-preferred locale (BCP 47) injected by main via additionalArguments. */
   systemLocale: string;
@@ -44,13 +40,8 @@ interface DesktopAPI {
   ackFreeze: (ts: number) => void;
   /** Report the resolved account identity so stale issue windows can close. */
   reportAuthSession: (userId: string | null) => void;
-  /** Listen for a PKCE-bound, one-time desktop login code delivered via deep link. */
-  onAuthHandoff: (
-    callback: (payload: {
-      code: string;
-      state: string;
-    }) => boolean | Promise<boolean>,
-  ) => () => void;
+  /** Listen for auth token delivered via deep link. Returns an unsubscribe function. */
+  onAuthToken: (callback: (token: string) => void) => () => void;
   /** Listen for invitation IDs delivered via deep link. Returns an unsubscribe function. */
   onInviteOpen: (callback: (invitationId: string) => void) => () => void;
   /** Open a URL in the default browser. */
@@ -90,20 +81,6 @@ interface DesktopAPI {
     ok: boolean;
     path?: string;
     basename?: string;
-    reason?: "cancelled" | "no_window" | "error";
-    error?: string;
-  }>;
-  /** Open the OS folder picker with multi-select. Used by onboarding
-   *  to bind several local git repos as projects at once. */
-  pickDirectories: (
-    defaultPath?: string,
-  ) => Promise<{
-    ok: boolean;
-    folders?: Array<{
-      path: string;
-      basename: string;
-      originUrl: string | null;
-    }>;
     reason?: "cancelled" | "no_window" | "error";
     error?: string;
   }>;
@@ -162,12 +139,11 @@ interface DaemonAPI {
   isCliInstalled: () => Promise<boolean>;
   getPrefs: () => Promise<DaemonPrefs>;
   setPrefs: (prefs: Partial<DaemonPrefs>) => Promise<DaemonPrefs>;
-  autoStart: () => Promise<DaemonAutoStartResult>;
+  autoStart: () => Promise<void>;
   retryInstall: () => Promise<void>;
   startLogStream: () => void;
   stopLogStream: () => void;
   onLogLine: (callback: (line: string) => void) => () => void;
-  onLogReset: (callback: () => void) => () => void;
   openLogFile: () => Promise<{ success: boolean; error?: string }>;
 }
 

@@ -1,8 +1,8 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@patchbay/ui/styles/tokens.css";
-@import "@patchbay/ui/styles/base.css";
+@import "@multica/ui/styles/tokens.css";
+@import "@multica/ui/styles/base.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -73,11 +73,4 @@ html[lang|="ja"] {
 /* Desktop-specific: override sidebar container padding for traffic light layout */
 [data-slot="sidebar-container"] {
   padding: 0 !important;
-}
-
-/* Let the native macOS material show through only after a glass dashboard
-   mounts. Login, onboarding, and issue windows keep the normal body fill. */
-html[data-platform="desktop"]:has([data-native-vibrancy="true"]),
-html[data-platform="desktop"]:has([data-native-vibrancy="true"]) body {
-  background: transparent;
 }

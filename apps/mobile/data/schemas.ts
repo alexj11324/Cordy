@@ -1,25 +1,23 @@
 /**
  * Mobile-local zod schemas + fallbacks for endpoints whose responses aren't
- * yet schematised in @patchbay/core/api/schemas. Lenient by design — see the
+ * yet schematised in @multica/core/api/schemas. Lenient by design — see the
  * leniency rationale at the top of the core file (string enums tolerated,
  * loose() so unknown server fields pass through, defaults so a missing
  * array doesn't take the page down).
  *
  * If web/desktop later need these same schemas, promote them to core; until
  * then they live here so mobile satisfies its "Parse, don't cast" rule
- * (root AGENTS.md "API Response Compatibility") for these endpoints.
+ * (root CLAUDE.md "API Response Compatibility") for these endpoints.
  */
 import { z } from "zod";
 import type {
   Agent,
   AgentInvocationTarget,
   AgentTask,
-  AgentThreadResponse,
   Attachment,
   ChatMessage,
   ChatPendingTask,
   ChatSession,
-  ContinueAgentThreadResponse,
   Comment,
   InboxItem,
   IssueLabelsResponse,
@@ -35,12 +33,12 @@ import type {
   SearchIssuesResponse,
   SearchProjectsResponse,
   SendChatMessageResponse,
-  Team,
+  Squad,
   TaskMessagePayload,
   User,
   Workspace,
-} from "@patchbay/core/types";
-import { IssueSchema } from "@patchbay/core/api/schemas";
+} from "@multica/core/types";
+import { IssueSchema } from "@multica/core/api/schemas";
 
 /** Upload response. Only fields mobile actually consumes — `url` to put
  *  into the markdown link, `filename` for the `[📎 name](url)` form, `id`
@@ -118,7 +116,7 @@ export const EMPTY_COMMENT: Comment = {
  *  Value type is z.string() (not z.enum) so a future server-side value like
  *  "snoozed" downgrades gracefully (read sites treat unknown as enabled)
  *  instead of failing schema parse and dropping the entire preferences map.
- *  Per AGENTS.md "Enum drift downgrades, not crashes". */
+ *  Per CLAUDE.md "Enum drift downgrades, not crashes". */
 export const NotificationPreferenceResponseSchema = z.object({
   workspace_id: z.string().default(""),
   preferences: z.record(z.string(), z.string()).default({}),
@@ -250,7 +248,7 @@ export const ChatSessionSchema: z.ZodType<ChatSession> = z.object({
   agent_id: z.string().default(""),
   creator_id: z.string().default(""),
   title: z.string().default(""),
-  // Enum drift defense (root AGENTS.md "Enum drift downgrades, not crashes"):
+  // Enum drift defense (root CLAUDE.md "Enum drift downgrades, not crashes"):
   // unknown server values fall back to "active" so the row still renders.
   status: z.enum(["active", "archived"]).catch("active"),
   has_unread: z.boolean().default(false),
@@ -343,7 +341,7 @@ export const TaskMessagePayloadSchema: z.ZodType<TaskMessagePayload> = z.object(
   seq: z.number().default(0),
   // Enum drift defense: unknown server-side types fall back to "text" so
   // the row still renders (as a plain markdown chunk) instead of crashing
-  // the timeline. Matches root AGENTS.md "Enum drift downgrades, not crashes".
+  // the timeline. Matches root CLAUDE.md "Enum drift downgrades, not crashes".
   type: z
     .enum(["text", "thinking", "tool_use", "tool_result", "error"])
     .catch("text"),
@@ -367,7 +365,7 @@ export const EMPTY_TASK_MESSAGE_LIST: TaskMessagePayload[] = [];
 // defense.
 //
 // match_source is the server's hint of which field matched. Enum-drift defense
-// (root AGENTS.md "Enum drift downgrades, not crashes"): unknown values fall
+// (root CLAUDE.md "Enum drift downgrades, not crashes"): unknown values fall
 // back to "title" so the row still renders without a snippet line.
 
 const SearchIssueResultSchema = IssueSchema.safeExtend({
@@ -406,80 +404,45 @@ export const EMPTY_SEARCH_PROJECTS_RESPONSE: SearchProjectsResponse = {
 // Mirrors AgentTask in packages/core/types/agent.ts. Backend handlers:
 //   GET  /api/issues/{id}/active-task → { tasks: AgentTask[] } (may be empty)
 //   GET  /api/issues/{id}/task-runs   → AgentTask[]
-// Lenient on every field — status stays open and only malformed/missing input
-// falls back to an explicit unknown value, while
-// failure_reason remains an open string so a future server-side value renders
-// without crashing the row (root AGENTS.md "Enum drift downgrades, not crashes").
+// Lenient on every field — status / kind / failure_reason all use `.catch()`
+// so a future server-side enum value renders a generic fallback rather than
+// crashing the row (root CLAUDE.md "Enum drift downgrades, not crashes").
 
 export const AgentTaskSchema: z.ZodType<AgentTask> = z.object({
   id: z.string(),
   agent_id: z.string().default(""),
   runtime_id: z.string().default(""),
   issue_id: z.string().default(""),
-  status: z.string().catch("unknown"),
+  status: z
+    .enum(["queued", "dispatched", "running", "completed", "failed", "cancelled"])
+    .catch("queued"),
   priority: z.number().default(0),
   dispatched_at: z.string().nullable().default(null),
   started_at: z.string().nullable().default(null),
   completed_at: z.string().nullable().default(null),
   result: z.unknown().default(null),
   error: z.string().nullable().default(null),
-  // Keep provider-specific failure reasons forward-compatible. The server
-  // may add a refined `agent_error.*` value without making mobile discard the
-  // whole task record.
+  // Backend uses empty string ("") as the "not failed" sentinel (Go
+  // `omitempty` on a custom string-typed enum). Normalize that to `undefined`
+  // so downstream truthy checks (`if (task.failure_reason)`) don't have to
+  // special-case both null/undefined AND "".
   failure_reason: z
-    .string()
-    .nullable()
+    .enum(["agent_error", "timeout", "runtime_offline", "runtime_recovery", "manual", ""])
     .optional()
-    .transform((value) => value ?? undefined),
+    .catch("")
+    .transform((v) => (v === "" ? undefined : v)),
   created_at: z.string().default(""),
   chat_session_id: z.string().optional(),
-  automation_run_id: z.string().optional(),
+  autopilot_run_id: z.string().optional(),
   parent_task_id: z.string().optional(),
   attempt: z.number().optional(),
   trigger_comment_id: z.string().optional(),
-  agent_thread_message: z.string().optional(),
   trigger_summary: z.string().optional(),
-  kind: z
-    .enum(["comment", "automation", "chat", "quick_create", "direct", "message_bus"])
-    .optional()
-    .catch("direct"),
+  kind: z.enum(["comment", "autopilot", "chat", "quick_create", "direct"]).optional().catch("direct"),
   work_dir: z.string().optional(),
 }).loose();
 
 export const AgentTaskListSchema = z.array(AgentTaskSchema).default([]);
-
-const AgentThreadAvailabilitySchema = z.object({
-  // Preserve the thread envelope when a newer server adds an availability
-  // state. Unknown states are terminal from this client's perspective.
-  state: z
-    .unknown()
-    .transform((state) => (state === "available" ? "available" : "unavailable"))
-    .default("unavailable"),
-  reason_code: z.string().optional(),
-  reason: z.string().optional(),
-}).loose();
-
-const AgentThreadAgentSchema = z.object({
-  id: z.string().default(""),
-  name: z.string().default(""),
-  avatar_url: z.string().nullable().default(null),
-}).loose();
-
-/** Canonical task-to-thread envelope shared with web and desktop. */
-export const AgentThreadResponseSchema: z.ZodType<AgentThreadResponse> = z.object({
-  task: AgentTaskSchema,
-  thread_tasks: z.array(AgentTaskSchema).default([]),
-  current_task_id: z.string().default(""),
-  agent: AgentThreadAgentSchema,
-  events: z.array(TaskMessagePayloadSchema).default([]),
-  availability: AgentThreadAvailabilitySchema,
-  can_continue: z.boolean().default(false),
-}).loose() as unknown as z.ZodType<AgentThreadResponse>;
-
-export const ContinueAgentThreadResponseSchema: z.ZodType<ContinueAgentThreadResponse> = z.object({
-  continuation_task_id: z.string().default(""),
-  status: z.enum(["queued", "coalesced"]).default("queued"),
-}).loose();
 
 export const ActiveTasksResponseSchema = z.object({
   tasks: z.array(AgentTaskSchema).default([]),
@@ -638,7 +601,7 @@ const AgentInvocationTargetSchema: z.ZodType<AgentInvocationTarget> = z
 
 // Agent schema is loose on every enum / structural field — the agent table is
 // where new modes/visibilities/statuses get added most often. We need only id,
-// name, avatar_url, and a couple of flags for the role picker + chat
+// name, avatar_url, and a couple of flags for the assignee picker + chat
 // header; everything else is informational and safe to default.
 export const AgentSchema: z.ZodType<Agent> = z.object({
   id: z.string(),
@@ -648,13 +611,24 @@ export const AgentSchema: z.ZodType<Agent> = z.object({
   name: z.string().default(""),
   description: z.string().default(""),
   instructions: z.string().default(""),
+  conversation_starters: z
+    .array(
+      z
+        .object({
+          label: z.string().default(""),
+          prompt: z.string().default(""),
+        })
+        .loose(),
+    )
+    .catch([])
+    .default([]),
   avatar_url: z.string().nullable().default(null),
   runtime_mode: z.string().catch("daemon") as unknown as z.ZodType<
     Agent["runtime_mode"]
   >,
   runtime_config: z.record(z.string(), z.unknown()).default({}),
   custom_args: z.array(z.string()).default([]),
-  // PB-2600: agent resource shape no longer carries custom_env or
+  // MUL-2600: agent resource shape no longer carries custom_env or
   // custom_env_redacted. Mobile keeps only the coarse metadata that
   // mirrors web's expectations. Real env values are reachable via the
   // dedicated /env endpoint and we don't expose env editing on mobile.
@@ -683,7 +657,7 @@ export const EMPTY_AGENT_LIST: Agent[] = [];
 
 // Runtime device — the daemon (local or cloud) an agent binds to. Mobile reads
 // it for the presence dot: `status` + `last_seen_at` drive the three-state
-// availability derivation in @patchbay/core/agents/derive-presence. All other
+// availability derivation in @multica/core/agents/derive-presence. All other
 // fields default safely so a backend that adds optional new metadata
 // (timezone, visibility flags, etc.) doesn't break the parse.
 export const RuntimeSchema: z.ZodType<RuntimeDevice> = z.object({
@@ -715,11 +689,11 @@ export const RuntimeSchema: z.ZodType<RuntimeDevice> = z.object({
 export const RuntimeListSchema = z.array(RuntimeSchema).default([]);
 export const EMPTY_RUNTIME_LIST: RuntimeDevice[] = [];
 
-// Team schema — fields mobile actually consumes for the @mention suggestion
+// Squad schema — fields mobile actually consumes for the @mention suggestion
 // bar (id, name, archived_at filter) plus identity/timestamp fields that are
-// safe to default. `.loose()` so the server can add team fields without
+// safe to default. `.loose()` so the server can add squad fields without
 // breaking the parser.
-export const TeamSchema: z.ZodType<Team> = z.object({
+export const SquadSchema: z.ZodType<Squad> = z.object({
   id: z.string(),
   workspace_id: z.string().default(""),
   name: z.string().default(""),
@@ -734,14 +708,14 @@ export const TeamSchema: z.ZodType<Team> = z.object({
   archived_by: z.string().nullable().default(null),
 }).loose();
 
-export const TeamListSchema = z.array(TeamSchema).default([]);
-export const EMPTY_TEAM_LIST: Team[] = [];
+export const SquadListSchema = z.array(SquadSchema).default([]);
+export const EMPTY_SQUAD_LIST: Squad[] = [];
 
 // Single-issue fallback used by getIssue. Mobile reuses IssueSchema from core
 // for parsing; this sentinel lets parseWithFallback yield a structurally-
 // valid Issue when the response drifts. `id: ""` flags drift downstream — the
 // detail screen treats it as "issue not found" and shows the empty state.
-export const EMPTY_ISSUE_FALLBACK: import("@patchbay/core/types").Issue = {
+export const EMPTY_ISSUE_FALLBACK: import("@multica/core/types").Issue = {
   id: "",
   workspace_id: "",
   number: 0,
@@ -750,12 +724,8 @@ export const EMPTY_ISSUE_FALLBACK: import("@patchbay/core/types").Issue = {
   description: null,
   status: "backlog",
   priority: "none",
-  owner_type: null,
-  owner_id: null,
-  executor_type: null,
-  executor_id: null,
-  reviewer_type: null,
-  reviewer_id: null,
+  assignee_type: null,
+  assignee_id: null,
   creator_type: "member",
   creator_id: "",
   parent_issue_id: null,

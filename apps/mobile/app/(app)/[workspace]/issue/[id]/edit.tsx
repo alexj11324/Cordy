@@ -14,7 +14,7 @@
  * pass through unchanged. New @-mentions added during the edit get serialized
  * normally via the marker pipeline.
  *
- * Properties (status / priority / executor / labels / project / due_date)
+ * Properties (status / priority / assignee / labels / project / due_date)
  * are NOT edited here — they have dedicated chip pickers on the detail page.
  * This screen only owns the two free-text fields.
  */
@@ -30,7 +30,7 @@ import {
 } from "react-native";
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { stripChannelMediaMarkers } from "@patchbay/core/types";
+import { stripChannelMediaMarkers } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
 import { DescriptionField } from "@/components/issue/description-field";
 import { MentionSuggestionBar } from "@/components/issue/mention-suggestion-bar";

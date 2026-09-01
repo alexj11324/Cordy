@@ -2,7 +2,7 @@ import React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { Project } from "@patchbay/core/types";
+import type { Project } from "@multica/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 import { ProjectsPage } from "./projects-page";
@@ -52,7 +52,7 @@ vi.mock("@tanstack/react-query", () => ({
   },
 }));
 
-vi.mock("@patchbay/core/projects", () => ({
+vi.mock("@multica/core/projects", () => ({
   projectListOptions: () => ({ queryKey: ["projects"] }),
   useUpdateProject: () => ({ mutate: mocks.updateProject }),
   useDeleteProject: () => ({ mutate: mocks.deleteProject }),
@@ -60,17 +60,17 @@ vi.mock("@patchbay/core/projects", () => ({
     selector(mocks.projectViewState),
 }));
 
-vi.mock("@patchbay/core/pins", () => ({
+vi.mock("@multica/core/pins", () => ({
   pinListOptions: () => ({ queryKey: ["pins"] }),
   useCreatePin: () => ({ mutate: mocks.createPin }),
   useDeletePin: () => ({ mutate: mocks.deletePin }),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/paths", () => ({
   useWorkspacePaths: () => ({
     projectDetail: (id: string) => `/test-workspace/projects/${id}`,
     memberDetail: (id: string) => `/test-workspace/members/${id}`,
@@ -78,17 +78,17 @@ vi.mock("@patchbay/core/paths", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@multica/core/auth", () => ({
   useAuthStore: (selector: (state: unknown) => unknown) =>
     selector({ user: { id: "user-1" } }),
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@multica/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"] }),
   agentListOptions: () => ({ queryKey: ["agents"] }),
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@multica/core/workspace/hooks", () => ({
   useActorName: () => ({
     getActorName: () => "Test Lead",
     getActorInitials: () => "TL",
@@ -96,13 +96,13 @@ vi.mock("@patchbay/core/workspace/hooks", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/modals", () => ({
+vi.mock("@multica/core/modals", () => ({
   useModalStore: {
     getState: () => ({ open: mocks.openModal }),
   },
 }));
 
-vi.mock("@patchbay/ui/components/ui/dropdown-menu", () => ({
+vi.mock("@multica/ui/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: React.ReactNode }) => (
     <>{children}</>
   ),
@@ -166,7 +166,7 @@ vi.mock("@patchbay/ui/components/ui/dropdown-menu", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/components/ui/popover", () => ({
+vi.mock("@multica/ui/components/ui/popover", () => ({
   Popover: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   PopoverTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   PopoverContent: ({ children }: { children: React.ReactNode }) => (
@@ -174,7 +174,7 @@ vi.mock("@patchbay/ui/components/ui/popover", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/components/ui/tooltip", () => ({
+vi.mock("@multica/ui/components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   TooltipTrigger: ({ render }: { render: React.ReactNode }) => <>{render}</>,
   TooltipContent: ({ children }: { children: React.ReactNode }) => (
@@ -210,6 +210,7 @@ function makeAdapter(
     back: vi.fn(),
     pathname: "/test-workspace/projects",
     searchParams: new URLSearchParams(),
+    hash: "",
     getShareableUrl: (p) => p,
     ...overrides,
   };
@@ -311,7 +312,7 @@ describe("ProjectsPage compact row navigation", () => {
 
   // Web (no adapter): the row is a <div>, so nothing native catches a
   // modifier or middle click — rowLink opens the browser tab itself instead
-  // of navigating in place (PB-5456).
+  // of navigating in place (MUL-5456).
   it("has a single rowLink path for modifier and middle clicks without openInNewTab", () => {
     const push = vi.fn();
     const open = vi.spyOn(window, "open").mockReturnValue(null);

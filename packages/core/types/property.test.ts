@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import {
   actorRefsFromValue,
@@ -5,7 +6,9 @@ import {
   hasUnknownActorRef,
   formatActorRef,
   isActorPropertyType,
+  isFilterablePropertyType,
   isKnownPropertyType,
+  isScalarPropertyType,
   parseActorRef,
 } from "./property";
 
@@ -33,15 +36,48 @@ describe("isActorPropertyType", () => {
   });
 });
 
+describe("isFilterablePropertyType", () => {
+  it("admits every type the filter menu supports", () => {
+    for (const type of [
+      "select",
+      "multi_select",
+      "checkbox",
+      "text",
+      "number",
+      "date",
+      "url",
+      "actor",
+      "multi_actor",
+    ]) {
+      expect(isFilterablePropertyType(type)).toBe(true);
+    }
+  });
+
+  it("rejects unknown types", () => {
+    expect(isFilterablePropertyType("relation")).toBe(false);
+  });
+});
+
+describe("isScalarPropertyType", () => {
+  it("covers the four single-valued types and nothing else", () => {
+    for (const type of ["text", "number", "date", "url"]) {
+      expect(isScalarPropertyType(type)).toBe(true);
+    }
+    expect(isScalarPropertyType("select")).toBe(false);
+    expect(isScalarPropertyType("checkbox")).toBe(false);
+    expect(isScalarPropertyType("actor")).toBe(false);
+  });
+});
+
 describe("parseActorRef", () => {
   it("parses member references", () => {
     expect(parseActorRef(`member:${MEMBER}`)).toEqual({ kind: "member", id: MEMBER });
   });
 
   it("rejects kinds outside the V1 range", () => {
-    // Agents and teams are assignable but deliberately not referenceable.
+    // Agents and squads are assignable but deliberately not referenceable.
     expect(parseActorRef(`agent:${AGENT}`)).toBeNull();
-    expect(parseActorRef(`team:${AGENT}`)).toBeNull();
+    expect(parseActorRef(`squad:${AGENT}`)).toBeNull();
     expect(parseActorRef(`user:${MEMBER}`)).toBeNull();
   });
 

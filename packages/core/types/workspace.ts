@@ -50,8 +50,6 @@ export interface Member {
 
 export interface User {
   id: string;
-  /** True when this is a persisted server-backed guest account. */
-  is_guest?: boolean;
   name: string;
   email: string;
   avatar_url: string | null;

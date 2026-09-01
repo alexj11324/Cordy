@@ -1,7 +1,7 @@
 "use client";
 
 import { X as XIcon } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@multica/ui/lib/utils";
 
 // Shared pill chrome. `PillButton` puts it on the button itself; the clearable
 // variant puts it on the shell that holds the trigger and the clear button, so
@@ -49,7 +49,7 @@ export function PillButton({
  * button, and never the overlay × this replaces: that one was an absolutely
  * positioned sibling of the trigger, so every caller had to reserve right
  * padding for it and three of five didn't, painting the × over the value
- * (PB-5666).
+ * (MUL-5666).
  *
  * The root stays a `<span>` whether or not `onClear` is set. Presence of the
  * clear action tracks "the field has a value", which flips in the same commit

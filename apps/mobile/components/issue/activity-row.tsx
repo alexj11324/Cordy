@@ -21,7 +21,7 @@
  */
 import { View } from "react-native";
 import Svg, { Line, Rect } from "react-native-svg";
-import type { IssuePriority, TimelineEntry } from "@patchbay/core/types";
+import type { IssuePriority, TimelineEntry } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { PriorityIcon } from "@/components/ui/priority-icon";
@@ -87,7 +87,7 @@ function LeadIcon({
   const details = (entry.details ?? {}) as Record<string, string>;
   if (entry.action === "status_changed" && details.to) {
     // `details.to` is a status KEY: the glyph comes from its category and the
-    // colour from the catalog, so a custom status is recognizable. (PB-6243)
+    // colour from the catalog, so a custom status is recognizable. (MUL-6243)
     return (
       <StatusIcon
         status={details.to}

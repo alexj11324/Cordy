@@ -1,247 +1,257 @@
 "use client";
 
+import { Suspense, useEffect, useRef, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { sanitizeNextUrl, useAuthStore } from "@multica/core/auth";
+import { useConfigStore } from "@multica/core/config";
 import {
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { SignIn, useAuth } from "@clerk/nextjs";
-import { useAuthStore } from "@patchbay/core/auth";
-import { api, ApiError } from "@patchbay/core/api";
+  workspaceKeys,
+  workspaceListOptions,
+} from "@multica/core/workspace/queries";
 import {
-  redirectToCliCallback,
-  redirectToDesktopApp,
-  validateCliCallback,
-} from "@patchbay/views/auth";
-import { useT } from "@patchbay/views/i18n";
-import { ClerkAuthShell } from "@/components/clerk-auth-shell";
+  paths,
+  resolvePostAuthDestination,
+  useHasOnboarded,
+} from "@multica/core/paths";
+import { api } from "@multica/core/api";
+import type { Workspace } from "@multica/core/types";
 import {
-  authRouteWithRedirect,
-  resolveSafeRedirectUrl,
-} from "@/features/auth/safe-redirect";
-import { useClerkSessionExchangeReady } from "@/components/clerk-auth-adapter";
-import { useWebSearchParams } from "@/platform/client-navigation";
-import { buildBrokerRoute } from "@/features/auth/broker-path";
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "@multica/ui/components/ui/card";
+import { Button } from "@multica/ui/components/ui/button";
+import { Loader2 } from "lucide-react";
+import { setLoggedInCookie } from "@/features/auth/auth-cookie";
+import Link from "next/link";
+import { LoginPage, validateCliCallback } from "@multica/views/auth";
+import { useT } from "@multica/views/i18n";
 
-function desktopHandoffQuery(codeChallenge: string, state: string): string {
-  const params = new URLSearchParams({ platform: "desktop" });
-  if (codeChallenge) params.set("code_challenge", codeChallenge);
-  if (state) params.set("state", state);
-  return params.toString();
-}
-
-export default function LoginPage() {
-  return (
-    <Suspense>
-      <LoginContent />
-    </Suspense>
-  );
-}
-
-function LoginContent() {
-  const searchParams = useWebSearchParams();
-  const { isLoaded, isSignedIn } = useAuth();
-  const { t } = useT("auth");
-  const clerkSessionExchangeReady = useClerkSessionExchangeReady();
-  const patchbayAuthStatus = useAuthStore((state) => state.status);
-  const [error, setError] = useState("");
-  const cliCallback = searchParams.get("cli_callback") ?? "";
-  const cliState = searchParams.get("cli_state") ?? "";
-  const desktopHandoff = searchParams.get("platform") === "desktop";
-  const desktopCodeChallenge = searchParams.get("code_challenge") ?? "";
-  const desktopState = searchParams.get("state") ?? "";
-  const requestedRedirectUrl = searchParams.get("redirect_url");
-  const validCliCallback =
-    cliCallback !== "" && validateCliCallback(cliCallback);
-  const returnUrl = useMemo(() => {
-    if (desktopHandoff) {
-      return `/login?${desktopHandoffQuery(
-        desktopCodeChallenge,
-        desktopState,
-      )}`;
-    }
-    if (!validCliCallback) return resolveSafeRedirectUrl(requestedRedirectUrl);
-    const params = new URLSearchParams({
-      cli_callback: cliCallback,
-      cli_state: cliState,
-    });
-    return `/login?${params.toString()}`;
-  }, [
-    cliCallback,
-    cliState,
-    desktopCodeChallenge,
-    desktopHandoff,
-    desktopState,
-    requestedRedirectUrl,
-    validCliCallback,
-  ]);
-
-  if (cliCallback && !validCliCallback) {
-    return (
-      <ClerkAuthShell>
-        <p role="alert">{t(($) => $.web.cli_authorization.invalid_callback)}</p>
-      </ClerkAuthShell>
-    );
-  }
-
-  if (
-    validCliCallback &&
-    isLoaded &&
-    isSignedIn &&
-    patchbayAuthStatus === "authenticated"
-  ) {
-    const authorize = async () => {
-      setError("");
-      try {
-        // The managed web identity boundary authenticates the Clerk session
-        // supplied by the ApiClient. The backend then exchanges that identity
-        // for the native Patchbay bearer understood by the CLI and Rust API.
-        const { token } = await api.issueCliToken();
-        if (!token) throw new Error("Patchbay CLI token unavailable");
-        redirectToCliCallback(cliCallback, token, cliState);
-      } catch {
-        setError(t(($) => $.web.cli_authorization.failed));
-      }
-    };
-
-    return (
-      <ClerkAuthShell>
-        <div className="flex flex-col items-center gap-3">
-          <p>{t(($) => $.web.cli_authorization.prompt)}</p>
-          <button
-            type="button"
-            onClick={authorize}
-            className="rounded bg-primary px-4 py-2 text-primary-foreground"
-          >
-            {t(($) => $.web.cli_authorization.authorize_button)}
-          </button>
-          {error && <p role="alert">{error}</p>}
-        </div>
-      </ClerkAuthShell>
-    );
-  }
-
-  if (desktopHandoff && isLoaded && isSignedIn) {
-    return (
-      <DesktopHandoff
-        codeChallenge={desktopCodeChallenge}
-        state={desktopState}
-        clerkSessionExchangeReady={clerkSessionExchangeReady}
-      />
-    );
-  }
-
-  return (
-    <ClerkAuthShell>
-      <SignIn
-        routing="path"
-        path="/login"
-        signUpUrl={
-          desktopHandoff
-            ? `/signup?${desktopHandoffQuery(
-                desktopCodeChallenge,
-                desktopState,
-              )}`
-            : authRouteWithRedirect("/signup", returnUrl)
-        }
-        forceRedirectUrl={returnUrl}
-      />
-    </ClerkAuthShell>
-  );
-}
-
-function DesktopHandoff({
-  codeChallenge,
-  state,
-  clerkSessionExchangeReady,
-}: {
-  codeChallenge: string;
-  state: string;
-  clerkSessionExchangeReady: boolean;
-}) {
-  const { getToken } = useAuth();
-  const { t } = useT("auth");
-  const authStatus = useAuthStore((state) => state.status);
-  const backendSessionReady =
-    clerkSessionExchangeReady && authStatus === "authenticated";
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const automaticAttempted = useRef(false);
-
-  const openDesktopApp = useCallback(async () => {
-    setLoading(true);
-    setError("");
+/**
+ * Pick where a logged-in user with no explicit `?next=` should land.
+ * Un-onboarded users with pending invitations on their email get routed to
+ * the batch /invitations page; everyone else falls through to the standard
+ * resolver. A network blip on listMyInvitations is non-fatal — we fall
+ * through rather than trap the user on an error screen.
+ */
+async function resolveLoggedInDestination(
+  qc: QueryClient,
+  hasOnboarded: boolean,
+  workspaces: Workspace[],
+): Promise<string> {
+  if (!hasOnboarded) {
     try {
-      if (!codeChallenge || !state) {
-        throw new Error("Patchbay desktop handoff is missing its binding");
+      const invites = await api.listMyInvitations();
+      if (invites.length > 0) {
+        qc.setQueryData(workspaceKeys.myInvitations(), invites);
+        return paths.invitations();
       }
-      const sessionToken = await getToken();
-      if (!sessionToken) throw new Error("Clerk session token unavailable");
-      const { callback_protocol: callbackProtocol, code } =
-        await api.completeDesktopGoogleAttempt(
-          sessionToken,
-          state,
-          codeChallenge,
-        );
-      if (!code) throw new Error("Patchbay desktop handoff code unavailable");
-      redirectToDesktopApp(code, state, callbackProtocol);
-      setLoading(false);
-    } catch (error) {
-      if (
-        error instanceof ApiError &&
-        (error.status === 401 || error.status === 409)
-      ) {
-        const startPath = buildBrokerRoute(
-          window.location.pathname,
-          "/login",
-          "/oauth/google",
-        );
-        window.location.replace(
-          `${startPath}?${desktopHandoffQuery(codeChallenge, state)}`,
-        );
-        return;
-      }
-      setError(t(($) => $.web.desktop_handoff.prepare_failed));
-      setLoading(false);
+    } catch {
+      // fall through
     }
-  }, [codeChallenge, getToken, state, t]);
+  }
+  return resolvePostAuthDestination(workspaces, hasOnboarded);
+}
 
+function LoginPageContent() {
+  const router = useRouter();
+  const qc = useQueryClient();
+  const { t } = useT("auth");
+  const googleClientId = useConfigStore((state) => state.googleClientId);
+  const user = useAuthStore((s) => s.user);
+  const isLoading = useAuthStore((s) => s.isLoading);
+  const searchParams = useSearchParams();
+
+  const cliCallbackRaw = searchParams.get("cli_callback");
+  const cliState = searchParams.get("cli_state") || "";
+  const platform = searchParams.get("platform");
+  const isDesktopHandoff = platform === "desktop" && !cliCallbackRaw;
+  // `next` carries a protected URL the user was originally headed to
+  // (e.g. /invite/{id}). With URL-driven workspaces there is no legacy
+  // "/issues" default — if `next` is absent we decide after login based on
+  // the user's workspace list. Sanitize first so a crafted `?next=https://evil`
+  // cannot bounce the user off-origin after a successful login.
+  const nextUrl = sanitizeNextUrl(searchParams.get("next"));
+
+  const [desktopToken, setDesktopToken] = useState<string | null>(null);
+  const [desktopError, setDesktopError] = useState("");
+  const hasOnboarded = useHasOnboarded();
+
+  // Latched once auth has been observed settled as logged-out on this page.
+  // Any `user` that appears afterwards came from the login form in this
+  // session — not from an existing session found on arrival.
+  const settledLoggedOutRef = useRef(false);
+
+  // Already authenticated ON ARRIVAL — honor ?next= or fall back to first
+  // workspace (or /onboarding if the user has none). Skip this entire path
+  // when the user arrived to authorize the CLI.
   useEffect(() => {
-    if (!backendSessionReady || automaticAttempted.current) return;
-    automaticAttempted.current = true;
-    void openDesktopApp();
-  }, [backendSessionReady, openDesktopApp]);
+    if (isLoading) return;
+    if (!user) {
+      settledLoggedOutRef.current = true;
+      return;
+    }
+    if (cliCallbackRaw) return;
+    if (isDesktopHandoff) {
+      // Desktop opened the browser for login but the web session is already
+      // authenticated — mint a bearer token from the cookie session and hand
+      // it off via deep link instead of silently redirecting to the workspace.
+      api
+        .issueCliToken()
+        .then(({ token }) => {
+          setDesktopToken(token);
+          window.location.href = `multica://auth/callback?token=${encodeURIComponent(token)}`;
+        })
+        .catch((err) => {
+          setDesktopError(
+            err instanceof Error
+              ? err.message
+              : t(($) => $.web.desktop_handoff.prepare_failed),
+          );
+        });
+      return;
+    }
+    // Fresh form login (issue #5009): `user` was written by verifyCode while
+    // handleVerify was still fetching the workspace list, so this effect used
+    // to read the not-yet-seeded list cache and race handleSuccess with a
+    // replace to /workspaces/new. handleSuccess owns post-login navigation;
+    // this effect only serves visitors who arrived already authenticated.
+    if (settledLoggedOutRef.current) return;
+    if (nextUrl) {
+      router.replace(nextUrl);
+      return;
+    }
+    // Fetch instead of reading the cache: on a fresh page load the cache is
+    // cold, and `getQueryData() ?? []` would misroute a user who does have
+    // workspaces to /workspaces/new. On fetch failure fall back to [] —
+    // same destination the cold-cache read produced, rather than trapping
+    // the user on the login page.
+    void qc
+      .ensureQueryData(workspaceListOptions())
+      .catch(() => [] as Workspace[])
+      .then((list) => resolveLoggedInDestination(qc, hasOnboarded, list))
+      .then((dest) => router.replace(dest));
+  }, [isLoading, user, router, nextUrl, cliCallbackRaw, isDesktopHandoff, hasOnboarded, qc]);
+
+  const handleSuccess = async () => {
+    // Read the latest user snapshot directly — the closure's `hasOnboarded`
+    // was captured before login completed and would be stale here.
+    const currentUser = useAuthStore.getState().user;
+    const onboarded = currentUser?.onboarded_at != null;
+    if (nextUrl) {
+      router.push(nextUrl);
+      return;
+    }
+    const list = qc.getQueryData<Workspace[]>(workspaceKeys.list()) ?? [];
+    router.push(await resolveLoggedInDestination(qc, onboarded, list));
+  };
+
+  // Build Google OAuth state: encode platform, next URL, and CLI callback
+  // params so the callback can redirect to the right place after login.
+  // CLI callback/state must survive the Google OAuth round-trip so the
+  // post-login callback page can redirect the JWT back to the CLI's local
+  // HTTP listener (critical for headless / WSL2 environments).
+  const googleState = [
+    platform === "desktop" ? "platform:desktop" : "",
+    nextUrl ? `next:${nextUrl}` : "",
+    cliCallbackRaw && validateCliCallback(cliCallbackRaw)
+      ? `cli_callback:${encodeURIComponent(cliCallbackRaw)}`
+      : "",
+    cliState ? `cli_state:${encodeURIComponent(cliState)}` : "",
+  ]
+    .filter(Boolean)
+    .join(",") || undefined;
+
+  // While the desktop handoff is in progress (or has produced a token/error),
+  // render a dedicated screen instead of flashing the login form or redirecting
+  // away to a workspace page.
+  if (isDesktopHandoff && user) {
+    if (desktopError) {
+      return (
+        <div className="flex min-h-screen items-center justify-center">
+          <Card className="w-full max-w-sm">
+            <CardHeader className="text-center">
+              <CardTitle className="text-display-sm">
+                {t(($) => $.web.desktop_handoff.failed_title)}
+              </CardTitle>
+              <CardDescription>{desktopError}</CardDescription>
+            </CardHeader>
+          </Card>
+        </div>
+      );
+    }
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Card className="w-full max-w-sm">
+          <CardHeader className="text-center">
+            <CardTitle className="text-display-sm">
+              {t(($) => $.web.desktop_handoff.opening_title)}
+            </CardTitle>
+            <CardDescription>
+              {desktopToken
+                ? t(($) => $.web.desktop_handoff.opening_description)
+                : t(($) => $.web.desktop_handoff.preparing)}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex justify-center">
+            {desktopToken ? (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  window.location.href = `multica://auth/callback?token=${encodeURIComponent(desktopToken)}`;
+                }}
+              >
+                {t(($) => $.web.desktop_handoff.open_button)}
+              </Button>
+            ) : (
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
-    <ClerkAuthShell>
-      <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl border border-border bg-card p-6 text-center shadow-sm">
-        <h1 className="text-title-sm font-semibold">
-          {t(($) => $.web.desktop_handoff.opening_title)}
-        </h1>
-        <p aria-live="polite" className="text-body text-muted-foreground">
-          {!backendSessionReady || loading
-            ? t(($) => $.web.desktop_handoff.preparing)
-            : t(($) => $.web.desktop_handoff.opening_description)}
-        </p>
-        <button
-          type="button"
-          onClick={openDesktopApp}
-          disabled={loading || !backendSessionReady}
-          className="inline-flex min-h-10 items-center justify-center rounded-md bg-primary px-4 py-2 text-body font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:pointer-events-none disabled:opacity-60"
-        >
-          {loading || !backendSessionReady
-            ? t(($) => $.web.desktop_handoff.preparing)
-            : t(($) => $.web.desktop_handoff.open_button)}
-        </button>
-        {error && (
-          <p role="alert" className="text-body text-destructive">
-            {error}
-          </p>
-        )}
-      </div>
-    </ClerkAuthShell>
+    <LoginPage
+      onSuccess={handleSuccess}
+      google={
+        googleClientId
+          ? {
+              clientId: googleClientId,
+              redirectUri: `${window.location.origin}/auth/callback`,
+              state: googleState,
+            }
+          : undefined
+      }
+      cliCallback={
+        cliCallbackRaw && validateCliCallback(cliCallbackRaw)
+          ? { url: cliCallbackRaw, state: cliState }
+          : undefined
+      }
+      onTokenObtained={setLoggedInCookie}
+      extra={
+        <span className="text-caption text-muted-foreground">
+          {t(($) => $.web.prefer_desktop)}{" "}
+          <Link
+            href="/download"
+            className="font-medium text-foreground underline decoration-foreground/30 underline-offset-4 hover:decoration-foreground/70"
+          >
+            {t(($) => $.web.download)}
+          </Link>
+        </span>
+      }
+    />
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <LoginPageContent />
+    </Suspense>
   );
 }

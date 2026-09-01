@@ -11,7 +11,7 @@
  * mount.
  */
 import { useQuery } from "@tanstack/react-query";
-import { canAssignAgentToIssue } from "@patchbay/core/permissions";
+import { canAssignAgentToIssue } from "@multica/core/permissions";
 import { useAuthStore } from "@/data/auth-store";
 import { useWorkspaceStore } from "@/data/workspace-store";
 import { agentListOptions } from "@/data/queries/agents";

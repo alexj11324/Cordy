@@ -19,28 +19,28 @@ import type {
   RuntimeLocalSkillImportConflict,
   RuntimeLocalSkillSummary,
   Skill,
-} from "@patchbay/core/types";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+} from "@multica/core/types";
+import { useAuthStore } from "@multica/core/auth";
+import { useWorkspaceId } from "@multica/core/hooks";
 import {
   runtimeDisplayLabel,
   runtimeListOptions,
   runtimeLocalSkillsKeys,
   runtimeLocalSkillsOptions,
   resolveRuntimeLocalSkillImport,
-} from "@patchbay/core/runtimes";
+} from "@multica/core/runtimes";
 import {
   memberListOptions,
   skillDetailOptions,
   workspaceKeys,
-} from "@patchbay/core/workspace/queries";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
-import { Progress } from "@patchbay/ui/components/ui/progress";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
+} from "@multica/core/workspace/queries";
+import { Button } from "@multica/ui/components/ui/button";
+import { Badge } from "@multica/ui/components/ui/badge";
+import { Checkbox } from "@multica/ui/components/ui/checkbox";
+import { Input } from "@multica/ui/components/ui/input";
+import { Label } from "@multica/ui/components/ui/label";
+import { Progress } from "@multica/ui/components/ui/progress";
+import { Textarea } from "@multica/ui/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -49,13 +49,13 @@ import {
   SelectLabel,
   SelectTrigger,
   SelectValue,
-} from "@patchbay/ui/components/ui/select";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
+} from "@multica/ui/components/ui/select";
+import { Skeleton } from "@multica/ui/components/ui/skeleton";
+import { useScrollFade } from "@multica/ui/hooks/use-scroll-fade";
 import {
   UI_EASE_OUT,
   UI_MOTION_DURATION,
-} from "@patchbay/ui/lib/motion";
+} from "@multica/ui/lib/motion";
 import { useT } from "../../i18n";
 import { HighlightText } from "../../search/highlight-text";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";
@@ -110,9 +110,9 @@ const INITIAL_BULK_STATE: BulkImportState = {
  * Max concurrent imports. Higher = faster but more daemon/network pressure.
  *
  * Timeout invariant: IMPORT_CONCURRENCY × heartbeat period (~15s) must stay
- * within runtimeLocalSkillPendingTimeout in the Rust runtime-local-skills handler
+ * within runtimeLocalSkillPendingTimeout (server/internal/handler/runtime_local_skills.go)
  * and IMPORT_POLL_TIMEOUT_MS (packages/core/runtimes/local-skills.ts).
- * See also the backend's maximum local-skill import batch.
+ * See also maxLocalSkillImportBatch in server/internal/handler/daemon.go.
  */
 const IMPORT_CONCURRENCY = 10;
 
@@ -529,7 +529,7 @@ export function RuntimeLocalSkillImportPanel({
 
   // Group the local runtimes by machine so the picker reads as
   // "machine → provider/runtime" (alias-aware) instead of a flat list of
-  // raw daemon names (PB-5248). Reuses the same source of truth as the
+  // raw daemon names (MUL-5248). Reuses the same source of truth as the
   // agent runtime picker.
   const runtimeMachines = useMemo(
     () =>

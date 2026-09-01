@@ -1,8 +1,8 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { WorkspaceSlugProvider } from "@patchbay/core/paths";
-import { buildIssueStatusCatalog } from "@patchbay/core/issue-statuses";
-import type { InboxItem, IssueStatusEntry } from "@patchbay/core/types";
+import { WorkspaceSlugProvider } from "@multica/core/paths";
+import { buildIssueStatusCatalog } from "@multica/core/issue-statuses";
+import type { InboxItem, IssueStatusEntry } from "@multica/core/types";
 import { NavigationProvider } from "../../navigation";
 import type { NavigationAdapter } from "../../navigation";
 import { InboxListItem } from "./inbox-list-item";
@@ -15,7 +15,7 @@ import { InboxListItem } from "./inbox-list-item";
 // exercises.
 let catalogEntries: IssueStatusEntry[] | undefined;
 
-vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
+vi.mock("@multica/core/issue-statuses/hooks", () => ({
   useIssueStatuses: () => buildIssueStatusCatalog(catalogEntries),
 }));
 
@@ -104,6 +104,7 @@ function makeAdapter(
     back: vi.fn(),
     pathname: "/",
     searchParams: new URLSearchParams(),
+    hash: "",
     getShareableUrl: (p) => p,
     ...overrides,
   };
@@ -329,7 +330,7 @@ describe("InboxListItem link semantics", () => {
 
 
 // ---------------------------------------------------------------------------
-// PB-6395 — the row's only status affordance is one glyph, and the glyph set
+// MUL-6395 — the row's only status affordance is one glyph, and the glyph set
 // is per CATEGORY. Without the status's own colour, switching an issue between
 // two statuses that share a category (built-in "In Review" → custom "Human
 // Review") repainted the row identically, so the inbox looked like it had

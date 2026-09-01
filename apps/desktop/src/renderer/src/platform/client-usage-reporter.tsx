@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef } from "react";
-import { api } from "@patchbay/core/api";
-import { useAuthStore } from "@patchbay/core/auth";
-import { getOrCreateInstallId, utcDay } from "@patchbay/core/client-usage";
-import { defaultStorage } from "@patchbay/core/platform";
+import { api } from "@multica/core/api";
+import { useAuthStore } from "@multica/core/auth";
+import { getOrCreateInstallId, utcDay } from "@multica/core/client-usage";
+import { defaultStorage } from "@multica/core/platform";
 import type { LocalRuntimeProbe } from "../../../shared/daemon-types";
 
-const LAST_RUNTIME_PREFIX = "patchbay_runtime_probe_last_reported";
+const LAST_RUNTIME_PREFIX = "multica_runtime_probe_last_reported";
 
 export function runtimeProbeSignature(probe: LocalRuntimeProbe): string {
   if (probe.probeResult === "error") return "error";
@@ -83,7 +83,8 @@ export function DesktopClientUsageReporter({ apiUrl }: { apiUrl: string }) {
         status.state === "running" ||
         status.state === "stopped" ||
         status.state === "auth_expired" ||
-        status.state === "cli_not_found"
+        status.state === "cli_not_found" ||
+        status.state === "recovery_paused"
       ) {
         const signal = `${status.state}:${[...(status.agents ?? [])].sort().join(",")}`;
         if (lastStatusSignal.current === signal) return;

@@ -1,5 +1,5 @@
 /**
- * Issue Quick Actions (PB-5465) — workspace-level presets for "who to call
+ * Issue Quick Actions (MUL-5465) — workspace-level presets for "who to call
  * and what to say" on an existing issue.
  *
  * Running one is not a separate dispatch path: the server renders the prompt,
@@ -21,7 +21,7 @@
  */
 export type QuickActionVisibility = "private" | "public";
 
-export type QuickActionExecutorType = "agent" | "team";
+export type QuickActionAssigneeType = "agent" | "squad";
 
 export type QuickActionStatus = "active" | "archived";
 
@@ -30,8 +30,8 @@ export interface QuickAction {
   workspace_id: string;
   name: string;
   description: string;
-  executor_type: QuickActionExecutorType | string;
-  executor_id: string;
+  assignee_type: QuickActionAssigneeType | string;
+  assignee_id: string;
   /** Sent verbatim — there is no interpolation step. */
   prompt: string;
   visibility: QuickActionVisibility | string;
@@ -41,7 +41,7 @@ export interface QuickAction {
   created_by_id: string;
   created_at: string;
   updated_at: string;
-  /** Display name of the bound agent or team. Absent when it no longer resolves. */
+  /** Display name of the bound agent or squad. Absent when it no longer resolves. */
   target_name?: string;
   /**
    * Whether the bound target is currently invocable by every workspace member.
@@ -49,15 +49,15 @@ export interface QuickAction {
    * `public` action pointing at a now-private agent reads as visibly wrong.
    */
   target_public: boolean;
-  /** The bound agent or team was archived or deleted. */
+  /** The bound agent or squad was archived or deleted. */
   target_missing: boolean;
 }
 
 export interface CreateQuickActionRequest {
   name: string;
   description?: string;
-  executor_type: QuickActionExecutorType;
-  executor_id: string;
+  assignee_type: QuickActionAssigneeType;
+  assignee_id: string;
   prompt: string;
   visibility?: QuickActionVisibility;
 }
@@ -65,8 +65,8 @@ export interface CreateQuickActionRequest {
 export interface UpdateQuickActionRequest {
   name?: string;
   description?: string;
-  executor_type?: QuickActionExecutorType;
-  executor_id?: string;
+  assignee_type?: QuickActionAssigneeType;
+  assignee_id?: string;
   prompt?: string;
   visibility?: QuickActionVisibility;
   status?: QuickActionStatus;

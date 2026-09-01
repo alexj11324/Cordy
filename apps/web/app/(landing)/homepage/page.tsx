@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import { PatchbayLanding } from "@/features/landing/components/patchbay-landing";
+import { MulticaLanding } from "@/features/landing/components/multica-landing";
 
 export const metadata: Metadata = {
   title: "Homepage",
   description:
-    "Patchbay — open-source platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills.",
+    "Multica — open-source platform that turns coding agents into real teammates. Assign tasks, track progress, compound skills.",
   openGraph: {
-    title: "Patchbay — Project Management for Human + Agent Teams",
+    title: "Multica — Project Management for Human + Agent Teams",
     description:
       "Manage your human + agent workforce in one place.",
     url: "/homepage",
@@ -17,5 +17,5 @@ export const metadata: Metadata = {
 };
 
 export default function HomepagePage() {
-  return <PatchbayLanding />;
+  return <MulticaLanding />;
 }

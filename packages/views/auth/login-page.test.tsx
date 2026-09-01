@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactElement, ReactNode } from "react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enAuth from "../locales/en/auth.json";
 import enSettings from "../locales/en/settings.json";
@@ -43,7 +43,7 @@ vi.mock("@tanstack/react-query", async () => {
   return { ...actual, useQueryClient: () => ({ setQueryData: mockSetQueryData }) };
 });
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@multica/core/auth", () => ({
   useAuthStore: Object.assign(
     // Zustand hook form — component may call useAuthStore(selector)
     (selector?: (s: unknown) => unknown) => {
@@ -59,7 +59,7 @@ vi.mock("@patchbay/core/auth", () => ({
   ),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: {
     listWorkspaces: mockApiListWorkspaces,
     verifyCode: mockApiVerifyCode,
@@ -69,17 +69,13 @@ vi.mock("@patchbay/core/api", () => ({
   },
 }));
 
-vi.mock("@patchbay/core/types", () => ({}));
+vi.mock("@multica/core/types", () => ({}));
 
 // ---------------------------------------------------------------------------
 // Import after mocks
 // ---------------------------------------------------------------------------
 
-import {
-  LoginPage,
-  redirectToDesktopApp,
-  validateCliCallback,
-} from "./login-page";
+import { LoginPage, validateCliCallback } from "./login-page";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -114,26 +110,14 @@ describe("LoginPage", () => {
     vi.useRealTimers();
   });
 
-  it("returns a handoff to the callback protocol selected by the initiating app", () => {
-    redirectToDesktopApp(
-      "desktop-code",
-      "opaque-state",
-      "patchbay-canary-login-fix-123",
-    );
-
-    expect(window.location.href).toBe(
-      "patchbay-canary-login-fix-123://auth/callback?code=desktop-code&state=opaque-state",
-    );
-  });
-
   // -------------------------------------------------------------------------
   // Email step rendering
   // -------------------------------------------------------------------------
 
-  it("renders email form with 'Sign in to Patchbay' title", () => {
+  it("renders email form with 'Sign in to Multica' title", () => {
     renderWithI18n(<LoginPage onSuccess={onSuccess} />);
     expect(
-      screen.getByText(/sign in to patchbay/i),
+      screen.getByText(/sign in to multica/i),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/enter your email to get a login code/i),
@@ -403,46 +387,15 @@ describe("LoginPage", () => {
   // Google OAuth
   // -------------------------------------------------------------------------
 
-  it("matches the authentication example structure when embedded", () => {
-    const onGoogleLogin = vi.fn();
-    const { container } = renderWithI18n(
+  it("renders Google OAuth button when google prop provided", () => {
+    render(
       <LoginPage
-        embedded
-        showGoogleSeparator
-        onGoogleLogin={onGoogleLogin}
         onSuccess={onSuccess}
-        extra={<button type="button">Continue as guest</button>}
+        google={{ clientId: "goog-123", redirectUri: "http://localhost/cb" }}
       />,
     );
-
-    expect(container.querySelector('[data-slot="card"]')).not.toBeInTheDocument();
-    expect(container.querySelector(".sm\\:w-\\[350px\\]")).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", {
-        name: "Create or sign in to your account",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Enter your email below to create an account or sign in",
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Email")).toHaveClass("sr-only");
-    const fieldGroup = container.querySelector('[data-slot="field-group"]');
-    expect(fieldGroup).toBeInTheDocument();
-    expect(fieldGroup).toHaveClass("flex", "w-full", "flex-col", "gap-5");
-    const fields = fieldGroup?.querySelectorAll('[data-slot="field"]');
-    expect(fields).toHaveLength(2);
-    expect(fields?.[0]).toHaveClass("flex", "w-full", "flex-col");
-    expect(fields?.[1]).toHaveClass("flex", "w-full", "flex-col");
-    const separator = container.querySelector('[data-slot="field-separator"]');
-    expect(separator).toHaveClass("relative", "-my-2", "h-5", "text-body");
-    expect(screen.getByText("Or continue with")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /continue with google/i }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /continue as guest/i }),
     ).toBeInTheDocument();
   });
 
@@ -458,7 +411,7 @@ describe("LoginPage", () => {
   // -------------------------------------------------------------------------
 
   it("shows cli_confirm step when existing session + cliCallback", async () => {
-    localStorage.setItem("patchbay_token", "existing-jwt");
+    localStorage.setItem("multica_token", "existing-jwt");
     // Cookie attempt fails first, then localStorage fallback succeeds
     mockApiGetMe
       .mockRejectedValueOnce(new Error("no cookie"))
@@ -490,7 +443,7 @@ describe("LoginPage", () => {
   });
 
   it("CLI authorize button redirects to callback URL", async () => {
-    localStorage.setItem("patchbay_token", "existing-jwt");
+    localStorage.setItem("multica_token", "existing-jwt");
     // Cookie attempt fails, localStorage fallback succeeds
     mockApiGetMe
       .mockRejectedValueOnce(new Error("no cookie"))
@@ -525,7 +478,7 @@ describe("LoginPage", () => {
   });
 
   it("'Use a different account' returns to email step", async () => {
-    localStorage.setItem("patchbay_token", "existing-jwt");
+    localStorage.setItem("multica_token", "existing-jwt");
     // Cookie attempt fails, localStorage fallback succeeds
     mockApiGetMe
       .mockRejectedValueOnce(new Error("no cookie"))
@@ -554,7 +507,7 @@ describe("LoginPage", () => {
     );
 
     expect(
-      screen.getByText(/sign in to patchbay/i),
+      screen.getByText(/sign in to multica/i),
     ).toBeInTheDocument();
   });
 
@@ -740,7 +693,7 @@ describe("LoginPage", () => {
     await user.click(screen.getByRole("button", { name: /back/i }));
 
     expect(
-      screen.getByText(/sign in to patchbay/i),
+      screen.getByText(/sign in to multica/i),
     ).toBeInTheDocument();
   });
 

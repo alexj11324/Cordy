@@ -3,26 +3,26 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Plug } from "lucide-react";
-import { useFeatureEnabled } from "@patchbay/core/config";
-import { PLUGINS_V1_FLAG } from "@patchbay/core/feature-flags";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { pluginInstallationsOptions } from "@patchbay/core/plugins";
-import type { PluginInstallation, PluginSurface } from "@patchbay/core/types";
+import { useFeatureEnabled } from "@multica/core/config";
+import { PLUGINS_V1_FLAG } from "@multica/core/feature-flags";
+import { useCurrentWorkspace } from "@multica/core/paths";
+import { pluginInstallationsOptions } from "@multica/core/plugins";
+import type { PluginInstallation, PluginSurface } from "@multica/core/types";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@multica/ui/components/ui/dialog";
 import { PluginSurfaceFrame } from "./plugin-surface-frame";
 
 /**
  * The mount point for `modal` surfaces.
  *
- * A modal is the same sandboxed iframe as a panel — `allow-scripts` without
- * `allow-same-origin`, host-generated srcdoc, CSP derived from the granted
- * `net:` scopes — differing only in where it appears. What it is NOT is a way
+ * A modal is the same hosted, opaque inner iframe as a panel — with a CSP
+ * derived from the granted `net:` scopes — differing only in where it appears.
+ * What it is NOT is a way
  * for a plugin to interrupt somebody: it opens because a person picked it from
  * the issue menu, never on the plugin's own initiative.
  */
@@ -76,6 +76,9 @@ interface PluginModalSurfaceProps {
 }
 
 export function PluginModalSurface({ target, issueId, onOpenChange }: PluginModalSurfaceProps) {
+  // Same source as usePluginModalSurfaces above: a modal only ever opens from
+  // the issue menu, which is inside the workspace route.
+  const workspace = useCurrentWorkspace();
   if (!target) return null;
   return (
     <Dialog open onOpenChange={onOpenChange}>
@@ -95,6 +98,7 @@ export function PluginModalSurface({ target, issueId, onOpenChange }: PluginModa
           // issue into its context call, and an unchanged document would not
           // reload for a different one.
           key={`${pluginModalKey(target)}:${issueId ?? ""}`}
+          wsId={workspace?.id ?? ""}
           installation={target.installation}
           surface={target.surface}
           issueId={issueId}

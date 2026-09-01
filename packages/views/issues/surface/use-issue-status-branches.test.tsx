@@ -5,14 +5,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { setApiInstance } from "@patchbay/core/api";
-import type { ApiClient } from "@patchbay/core/api/client";
+import { setApiInstance } from "@multica/core/api";
+import type { ApiClient } from "@multica/core/api/client";
 import type {
   Issue,
   IssueStatusCategory,
   IssueTableQuerySpec,
   IssueTableRowsRequest,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import { useIssueStatusBranches } from "./use-issue-status-branches";
 
 function makeIssue(id: string): Issue {
@@ -20,17 +20,13 @@ function makeIssue(id: string): Issue {
     id,
     workspace_id: "ws-1",
     number: id === "issue-1" ? 1 : 2,
-    identifier: id === "issue-1" ? "PB-1" : "PB-2",
+    identifier: id === "issue-1" ? "MUL-1" : "MUL-2",
     title: id,
     description: null,
     status: "todo",
     priority: "none",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -86,7 +82,7 @@ describe("useIssueStatusBranches", () => {
     setApiInstance({
       listIssueTableRows,
       // The hook pages by category, so it reads the catalog. Empty is the real
-      // shape for a workspace with no custom statuses. (PB-6243)
+      // shape for a workspace with no custom statuses. (MUL-6243)
       listIssueStatuses: async () => ({ statuses: [], categories: [], total: 0 }),
     } as unknown as ApiClient);
     // Mirror the production client (createQueryClient): row pages stay fresh
@@ -144,7 +140,7 @@ describe("useIssueStatusBranches", () => {
       expect.objectContaining({
         // No custom statuses in this fixture, so the hook keeps the
         // pre-feature contract. See use-issue-status-branches.category.test.tsx
-        // for the category contract. (PB-6243)
+        // for the category contract. (MUL-6243)
         group_key: "status:todo",
         page: { limit: 50, cursor: "cursor-2" },
       }),

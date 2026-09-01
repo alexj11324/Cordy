@@ -1,5 +1,5 @@
 /**
- * Cached reserved height must not reach the first frame (PB-4922).
+ * Cached reserved height must not reach the first frame (MUL-4922).
  *
  * The Mermaid layout cache lives in sessionStorage, which a server does not
  * have. Reading it during render yields the skeleton default on the server and
@@ -50,7 +50,7 @@ function cacheKey(chart: string): string {
   for (let i = 0; i < chart.length; i++) {
     hash = ((hash << 5) + hash) ^ chart.charCodeAt(i);
   }
-  return `patchbay:mermaid:layout:${(hash >>> 0).toString(36)}`;
+  return `multica:mermaid:layout:${(hash >>> 0).toString(36)}`;
 }
 
 beforeEach(() => {

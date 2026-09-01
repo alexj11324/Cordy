@@ -1,13 +1,13 @@
 "use client";
 
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
+import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
 import { StatusIcon } from "../../issues/components";
 import {
   IssueAgentActivityIndicator,
 } from "../../issues/components/issue-agent-activity-indicator";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { Archive, ArchiveRestore } from "lucide-react";
-import type { InboxItem } from "@patchbay/core/types";
+import type { InboxItem } from "@multica/core/types";
 import type { InboxView } from "./inbox-view";
 import { InboxDetailLabel } from "./inbox-detail-label";
 import { getInboxDisplayTitle } from "./inbox-display";
@@ -16,7 +16,7 @@ import { useStatusLabel } from "../../issues/utils/status-label";
 import { InboxRowMenu } from "./inbox-row-menu";
 import { handleRowActivationKey } from "../../common/row-actions-menu";
 import { useT } from "../../i18n";
-import { paths, useWorkspaceSlug } from "@patchbay/core/paths";
+import { paths, useWorkspaceSlug } from "@multica/core/paths";
 import { resolveClickIntent, useIntentNavigate } from "../../navigation";
 
 // Hook returning a localized relative-time formatter — the i18n equivalent
@@ -54,7 +54,7 @@ export function InboxListItem({
   const { t } = useT("inbox");
   const timeAgo = useTimeAgo();
   // Inbox is a cross-workspace surface, so the catalog is read against the
-  // item's OWN workspace rather than the route's. (PB-6243)
+  // item's OWN workspace rather than the route's. (MUL-6243)
   const { categoryOf: statusCategoryOf, colorOf: statusColorOf } =
     useIssueStatuses(item.workspace_id);
   const statusLabelOf = useStatusLabel(item.workspace_id);
@@ -82,7 +82,7 @@ export function InboxListItem({
   // The glyph is per CATEGORY, so it alone cannot tell "In Review" from a
   // custom "Human Review" — moving between two statuses of the same category
   // left this row pixel-identical and read as "the inbox never updated"
-  // (PB-6395). Colour is what carries a custom status's own identity, exactly
+  // (MUL-6395). Colour is what carries a custom status's own identity, exactly
   // as the status-changed detail label already renders it. `colorOf` returns
   // null for a built-in, which keeps it on its semantic token.
   const statusColor = item.issue_status ? statusColorOf(item.issue_status) : null;
@@ -185,7 +185,7 @@ export function InboxListItem({
             <InboxDetailLabel item={item} />
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
-            {/* Badge only, no hover card (PB-5189). "An agent is on this"
+            {/* Badge only, no hover card (MUL-5189). "An agent is on this"
                 is worth showing while triaging; the card behind it adds only
                 elapsed time, which does not change whether you open the row.
                 The row already carries the ActorAvatar hover card on the

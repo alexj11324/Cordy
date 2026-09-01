@@ -1,23 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import type { GitHubPullRequest, WorkProduct } from "@patchbay/core/types";
+import { I18nProvider } from "@multica/core/i18n/react";
+import type { GitHubPullRequest } from "@multica/core/types";
 import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
 
 const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
 
-const hookMocks = vi.hoisted(() => ({
-  attachIssuePullRequest: vi.fn(),
-  attachIssueWorkProduct: vi.fn(),
-  detachIssueWorkProduct: vi.fn(),
-  listUnassociatedWorkProducts: vi.fn(),
-}));
-
-vi.mock("@patchbay/core/github/queries", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/github/queries")>(
-    "@patchbay/core/github/queries",
+vi.mock("@multica/core/github/queries", async () => {
+  const actual = await vi.importActual<typeof import("@multica/core/github/queries")>(
+    "@multica/core/github/queries",
   );
   return {
     ...actual,
@@ -26,58 +19,12 @@ vi.mock("@patchbay/core/github/queries", async () => {
       queryFn: async () => ({ pull_requests: mockPRs }),
       enabled: !!issueId,
     }),
-    issueWorkProductsOptions: (issueId: string) => ({
-      queryKey: ["work-products", "issue", issueId],
-      queryFn: async () => ({ work_products: mockWorkProducts }),
-      enabled: !!issueId,
-    }),
-    unassociatedWorkProductsOptions: (workspaceId: string, query: string, enabled: boolean) => ({
-      queryKey: ["work-products", workspaceId, "unassociated", { query }],
-      queryFn: async ({ pageParam }: { pageParam: number }) => {
-        hookMocks.listUnassociatedWorkProducts(query, pageParam);
-        return { work_products: mockUnassociatedWorkProducts, next_page: null };
-      },
-      initialPageParam: 1,
-      getNextPageParam: (lastPage: { next_page: number | null }) =>
-        lastPage.next_page ?? undefined,
-      enabled,
-    }),
-  };
-});
-
-vi.mock("@patchbay/core/github", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/github")>(
-    "@patchbay/core/github",
-  );
-  return {
-    ...actual,
-    useAttachIssuePullRequest: () => ({
-      mutate: hookMocks.attachIssuePullRequest,
-      isPending: false,
-    }),
-    useAttachIssueWorkProduct: () => ({
-      mutate: hookMocks.attachIssueWorkProduct,
-      isPending: false,
-    }),
-    useDetachIssueWorkProduct: () => ({
-      mutate: hookMocks.detachIssueWorkProduct,
-      isPending: false,
-    }),
   };
 });
 
 import { PullRequestList } from "./pull-request-list";
 
 let mockPRs: GitHubPullRequest[] = [];
-
-let mockWorkProducts: Array<{
-  id: string;
-  kind: string;
-  provider: string;
-  provider_record_id: string | null;
-}> = [];
-
-let mockUnassociatedWorkProducts: WorkProduct[] = [];
 
 function makePR(overrides: Partial<GitHubPullRequest> = {}): GitHubPullRequest {
   return {
@@ -120,7 +67,7 @@ function renderList() {
   return render(
     <QueryClientProvider client={qc}>
       <I18nProvider resources={TEST_RESOURCES} locale="en">
-        <PullRequestList issueId="issue-1" workspaceId="ws-1" />
+        <PullRequestList issueId="issue-1" />
       </I18nProvider>
     </QueryClientProvider>,
   );
@@ -131,36 +78,6 @@ async function waitForRender() {
 }
 
 describe("PullRequestList sidebar rows", () => {
-  it("keeps PR text from creating an association and offers explicit Attach", async () => {
-    mockPRs = [];
-    renderList();
-    expect(await screen.findByTestId("attach-pull-request-form")).toBeInTheDocument();
-    expect(screen.getByTestId("attach-pull-request-input")).toHaveAttribute(
-      "placeholder",
-      "https://github.com/org/repo/pull/123",
-    );
-    expect(screen.getByText(/does not create a link/)).toBeInTheDocument();
-    expect(screen.queryByText(/auto-link/i)).not.toBeInTheDocument();
-  });
-
-  it("sends close intent only when the user explicitly selects it", async () => {
-    hookMocks.attachIssuePullRequest.mockClear();
-    mockPRs = [];
-    renderList();
-    await screen.findByTestId("attach-pull-request-form");
-
-    fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.change(screen.getByTestId("attach-pull-request-input"), {
-      target: { value: "https://github.com/acme/widget/pull/1" },
-    });
-    fireEvent.submit(screen.getByTestId("attach-pull-request-form"));
-
-    expect(hookMocks.attachIssuePullRequest).toHaveBeenCalledWith(
-      { url: "https://github.com/acme/widget/pull/1", close_intent: true },
-      expect.any(Object),
-    );
-  });
-
   it("uses the sidebar list-row surface instead of a card surface", async () => {
     mockPRs = [makePR({ title: "Visual row" })];
     renderList();
@@ -168,63 +85,6 @@ describe("PullRequestList sidebar rows", () => {
     const row = screen.getByTestId("pull-request-row");
     expect(row).toHaveClass("rounded-md", "-mx-2", "hover:bg-accent/50");
     expect(row).not.toHaveClass("rounded-lg", "border", "bg-card");
-  });
-
-  it("offers explicit detach only for a PR with a canonical Work Product relation", async () => {
-    hookMocks.detachIssueWorkProduct.mockClear();
-    mockPRs = [makePR({ id: "github-pr-1" })];
-    mockWorkProducts = [
-      {
-        id: "work-product-1",
-        kind: "pull_request",
-        provider: "github",
-        provider_record_id: "github-pr-1",
-      },
-    ];
-    renderList();
-    await waitForRender();
-
-    fireEvent.click(screen.getByRole("button", { name: "Detach this PR" }));
-
-    expect(hookMocks.detachIssueWorkProduct).toHaveBeenCalledWith(
-      "work-product-1",
-      expect.any(Object),
-    );
-  });
-
-  it("loads and searches the unassociated PR picker only after the member opens it", async () => {
-    hookMocks.listUnassociatedWorkProducts.mockClear();
-    mockPRs = [];
-    mockUnassociatedWorkProducts = [
-      {
-        id: "work-product-unassociated-1",
-        workspace_id: "ws-1",
-        kind: "pull_request",
-        provider: "github",
-        external_identity: "github:acme/widget#7",
-        external_url: "https://github.com/acme/widget/pull/7",
-        provider_record_type: "github_pull_request",
-        provider_record_id: "github-pr-7",
-        created_at: "2026-01-01T00:00:00Z",
-        updated_at: "2026-01-01T00:00:00Z",
-        association_state: "unassociated",
-        relation: null,
-      },
-    ];
-    renderList();
-    await screen.findByTestId("attach-pull-request-form");
-
-    expect(hookMocks.listUnassociatedWorkProducts).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole("button", { name: "Browse unassociated PRs" }));
-
-    expect(await screen.findByText("github:acme/widget#7")).toBeInTheDocument();
-    expect(hookMocks.listUnassociatedWorkProducts).toHaveBeenCalledWith("", 1);
-
-    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "acme/widget" } });
-    fireEvent.click(screen.getByRole("button", { name: "Search" }));
-    await waitFor(() =>
-      expect(hookMocks.listUnassociatedWorkProducts).toHaveBeenCalledWith("acme/widget", 1),
-    );
   });
 
   // --- CI status element ---------------------------------------------------

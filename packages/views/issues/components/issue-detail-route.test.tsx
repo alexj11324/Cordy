@@ -2,19 +2,23 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { setApiInstance } from "@patchbay/core/api";
-import type { ApiClient } from "@patchbay/core/api/client";
+import { setApiInstance } from "@multica/core/api";
+import type { ApiClient } from "@multica/core/api/client";
 import { NavigationProvider } from "../../navigation";
 import type { NavigationAdapter } from "../../navigation";
-import { IssueDetailRoute, useCanonicalIssueUrl } from "./issue-detail-route";
+import {
+  IssueDetailRoute,
+  parseCommentHighlightHash,
+  useCanonicalIssueUrl,
+} from "./issue-detail-route";
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@patchbay/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
-    "@patchbay/core/paths",
+vi.mock("@multica/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@multica/core/paths")>(
+    "@multica/core/paths",
   );
   return {
     ...actual,
@@ -33,7 +37,8 @@ function wrapper({ children }: { children: ReactNode }) {
     back: vi.fn(),
     pathname: "/acme/issues/x",
     searchParams: new URLSearchParams(),
-    getShareableUrl: (p: string) => `https://app.patchbay.com${p}`,
+    hash: "",
+    getShareableUrl: (p: string) => `https://app.multica.com${p}`,
   };
   return <NavigationProvider value={adapter}>{children}</NavigationProvider>;
 }
@@ -84,6 +89,30 @@ describe("useCanonicalIssueUrl", () => {
     renderHook(() => useCanonicalIssueUrl("trs-134", "TRS-134"), { wrapper });
     expect(replace).toHaveBeenCalledWith("/acme/issues/TRS-134");
   });
+
+  it("preserves a source-comment deep link while canonicalizing a UUID", () => {
+    renderHook(
+      () => useCanonicalIssueUrl(
+        "cb240efb-154c-42a8-ae92-42b02676feca",
+        "TRS-134",
+        "#comment-comment-7",
+      ),
+      { wrapper },
+    );
+    expect(replace).toHaveBeenCalledWith("/acme/issues/TRS-134#comment-comment-7");
+  });
+});
+
+describe("parseCommentHighlightHash", () => {
+  it.each([
+    ["#comment-01a02814-f098-7309-8286-0b249c66884d", "01a02814-f098-7309-8286-0b249c66884d"],
+    ["#comment-comment_7", "comment_7"],
+    ["#activity", undefined],
+    ["#comment-", undefined],
+    ["#comment-unsafe/value", undefined],
+  ])("maps %s to %s", (hash, expected) => {
+    expect(parseCommentHighlightHash(hash)).toBe(expected);
+  });
 });
 
 describe("IssueDetailRoute with an identifier that names no issue", () => {
@@ -111,7 +140,8 @@ describe("IssueDetailRoute with an identifier that names no issue", () => {
             back: vi.fn(),
             pathname: "/acme/issues/ZZZ-134",
             searchParams: new URLSearchParams(),
-            getShareableUrl: (p: string) => `https://app.patchbay.com${p}`,
+            hash: "",
+            getShareableUrl: (p: string) => `https://app.multica.com${p}`,
           }}
         >
           <IssueDetailRoute routeId="ZZZ-134" />
@@ -132,7 +162,8 @@ describe("IssueDetailRoute with an identifier that names no issue", () => {
             back: vi.fn(),
             pathname: "/acme/issues/ZZZ-134",
             searchParams: new URLSearchParams(),
-            getShareableUrl: (p: string) => `https://app.patchbay.com${p}`,
+            hash: "",
+            getShareableUrl: (p: string) => `https://app.multica.com${p}`,
           }}
         >
           <IssueDetailRoute routeId="ZZZ-134" />

@@ -57,7 +57,7 @@
       "rate_limit": "Rate limit",
       "timeout": "Timeout",
       "provider": "Provider",
-      "runtime": "Device",
+      "runtime": "Runtime",
       "agent": "Agent",
       "other": "Other"
     },

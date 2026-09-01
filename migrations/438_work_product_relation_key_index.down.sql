@@ -1,1 +1,0 @@
-DROP INDEX CONCURRENTLY IF EXISTS work_product_relation_active_key_uidx;

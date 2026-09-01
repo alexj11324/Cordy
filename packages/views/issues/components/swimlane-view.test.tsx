@@ -7,16 +7,16 @@ import { ScrollRestorationProvider } from "../../platform";
 import type {
   Issue,
   IssueTableGroupDescriptor,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import type { IssueGroupBranches } from "../surface/use-issue-group-branches";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
 
 const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
 
 // Mock hooks
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
@@ -28,7 +28,7 @@ const mockListChildrenByParents = vi.hoisted(() =>
 const mockGetAgentTaskSnapshot = vi.hoisted(() =>
   vi.fn().mockResolvedValue([]),
 );
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: {
     listChildrenByParents: mockListChildrenByParents,
     getAgentTaskSnapshot: mockGetAgentTaskSnapshot,
@@ -41,9 +41,9 @@ vi.mock("@patchbay/core/api", () => ({
 }));
 
 // Mock paths
-vi.mock("@patchbay/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
-    "@patchbay/core/paths",
+vi.mock("@multica/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@multica/core/paths")>(
+    "@multica/core/paths",
   );
   return {
     ...actual,
@@ -53,7 +53,7 @@ vi.mock("@patchbay/core/paths", async () => {
   };
 });
 
-// Stub backend-bound hooks that the swimlane invokes for executor groupings.
+// Stub backend-bound hooks that the swimlane invokes for assignee groupings.
 // The hook MUST return a stable reference each call
 // — production `useActorName` wraps its returns in `useMemo`, and the
 // swimlane feeds the result into a `useMemo(..., [getActorName, ...])`
@@ -66,16 +66,16 @@ const { mockActorNameResult } = vi.hoisted(() => ({
     getActorAvatarUrl: () => null,
     getMemberName: () => "Mock Member",
     getAgentName: () => "Mock Agent",
-    getTeamName: () => "Mock Team",
+    getSquadName: () => "Mock Squad",
   },
 }));
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@multica/core/workspace/hooks", () => ({
   useActorName: () => mockActorNameResult,
 }));
 
-// Mock @patchbay/core/auth
+// Mock @multica/core/auth
 const mockAuthUser = { id: "user-1", email: "test@test.com", name: "Test User" };
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@multica/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => {
       const state = { user: mockAuthUser, isAuthenticated: true };
@@ -101,7 +101,7 @@ vi.mock("../../navigation", () => ({
 }));
 
 // Mock issue config
-vi.mock("@patchbay/core/issues/config", () => ({
+vi.mock("@multica/core/issues/config", () => ({
   ALL_STATUSES: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_ORDER: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_CONFIG: {
@@ -124,7 +124,7 @@ vi.mock("@patchbay/core/issues/config", () => ({
   },
 }));
 
-type SwimlaneGroupingMock = "parent" | "project" | "executor";
+type SwimlaneGroupingMock = "parent" | "project" | "assignee";
 
 // Mock view store. The lane order and collapsed-lane fields are mutable
 // records on the captured object so tests can simulate persisted state
@@ -145,8 +145,8 @@ const mockViewState: {
   hideStatus: (s: string) => void;
   showStatus: (s: string) => void;
   priorityFilters?: string[];
-  executorFilters?: any[];
-  includeNoExecutor?: boolean;
+  assigneeFilters?: any[];
+  includeNoAssignee?: boolean;
   creatorFilters?: any[];
   projectFilters?: string[];
   includeNoProject?: boolean;
@@ -157,18 +157,18 @@ const mockViewState: {
 } = {
   sortBy: "position",
   sortDirection: "asc",
-  cardProperties: { priority: true, description: true, executor: true, dueDate: true, project: true, childProgress: true, labels: true },
+  cardProperties: { priority: true, description: true, assignee: true, dueDate: true, project: true, childProgress: true, labels: true },
   swimlaneGrouping: "parent",
-  swimlaneOrders: { parent: [], project: [], executor: [] },
-  collapsedSwimlanes: { parent: [], project: [], executor: [] },
+  swimlaneOrders: { parent: [], project: [], assignee: [] },
+  collapsedSwimlanes: { parent: [], project: [], assignee: [] },
   setSwimlaneGrouping: vi.fn(),
   setSwimlaneOrder: vi.fn(),
   toggleSwimlaneCollapsed: vi.fn(),
   hideStatus: vi.fn(),
   showStatus: vi.fn(),
   priorityFilters: [],
-  executorFilters: [],
-  includeNoExecutor: false,
+  assigneeFilters: [],
+  includeNoAssignee: false,
   creatorFilters: [],
   projectFilters: [],
   includeNoProject: false,
@@ -180,7 +180,7 @@ const mockViewState: {
 const mockSetSwimlaneOrder = mockViewState.setSwimlaneOrder as ReturnType<typeof vi.fn>;
 const mockToggleSwimlaneCollapsed = mockViewState.toggleSwimlaneCollapsed as ReturnType<typeof vi.fn>;
 
-vi.mock("@patchbay/core/issues/stores/view-store-context", () => ({
+vi.mock("@multica/core/issues/stores/view-store-context", () => ({
   ViewStoreProvider: ({ children }: { children: React.ReactNode }) => children,
   useViewStore: (selector?: any) => (selector ? selector(mockViewState) : mockViewState),
   useViewStoreApi: () => ({ getState: () => mockViewState, setState: vi.fn(), subscribe: vi.fn() }),
@@ -188,7 +188,7 @@ vi.mock("@patchbay/core/issues/stores/view-store-context", () => ({
 
 // Mock modal store
 const mockOpenModal = vi.fn();
-vi.mock("@patchbay/core/modals", () => ({
+vi.mock("@multica/core/modals", () => ({
   useModalStore: Object.assign(
     () => ({ open: mockOpenModal }),
     { getState: () => ({ open: mockOpenModal }) },
@@ -265,12 +265,8 @@ const mockIssues: Issue[] = [
     description: "Parent description",
     status: "todo",
     priority: "high",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -293,11 +289,8 @@ const mockIssues: Issue[] = [
     description: "Child description",
     status: "in_progress",
     priority: "medium",
-    owner_type: "member", owner_id: "user-1",
-    executor_type: "agent",
-    executor_id: "agent-1",
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: "member",
+    assignee_id: "user-1",
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: "parent-1",
@@ -320,12 +313,8 @@ const mockIssues: Issue[] = [
     description: "No parent",
     status: "backlog",
     priority: "low",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -401,11 +390,11 @@ describe("SwimLaneView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockViewState.swimlaneGrouping = "parent";
-    mockViewState.swimlaneOrders = { parent: [], project: [], executor: [] };
-    mockViewState.collapsedSwimlanes = { parent: [], project: [], executor: [] };
+    mockViewState.swimlaneOrders = { parent: [], project: [], assignee: [] };
+    mockViewState.collapsedSwimlanes = { parent: [], project: [], assignee: [] };
     mockViewState.priorityFilters = [];
-    mockViewState.executorFilters = [];
-    mockViewState.includeNoExecutor = false;
+    mockViewState.assigneeFilters = [];
+    mockViewState.includeNoAssignee = false;
     mockViewState.creatorFilters = [];
     mockViewState.projectFilters = [];
     mockViewState.includeNoProject = false;
@@ -428,7 +417,7 @@ describe("SwimLaneView", () => {
     expect(screen.getByText("In Progress")).toBeInTheDocument();
   });
 
-  // PB-4290: `cancelled` is a first-class default status. Status columns come
+  // MUL-4290: `cancelled` is a first-class default status. Status columns come
   // from `visibleStatuses` in ALL_STATUSES order, so the Cancelled column
   // renders by default (ordered last) and is only dropped when the status
   // filter narrows to a subset that excludes it.
@@ -441,12 +430,8 @@ describe("SwimLaneView", () => {
     description: "A cancelled orphan",
     status: "cancelled",
     priority: "none",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -476,7 +461,7 @@ describe("SwimLaneView", () => {
 
   // Cells are CATEGORIES, cards carry concrete status KEYS. Keying the cell by
   // the raw key gave a custom status a cell that does not exist, and the card
-  // fell out of the grid entirely (PB-6409).
+  // fell out of the grid entirely (MUL-6409).
   const customStatusOrphan: Issue = {
     ...cancelledOrphan,
     id: "custom-orphan",
@@ -617,11 +602,8 @@ describe("SwimLaneView", () => {
     description: null,
     status: "todo",
     priority: "medium",
-    owner_type: "member", owner_id: "user-1",
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: "member",
+    assignee_id: "user-1",
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: "missing-parent",
@@ -910,7 +892,7 @@ describe("SwimLaneView", () => {
         before_id: null,
         after_id: null,
       },
-      expect.objectContaining({ onSettled: expect.any(Function) }),
+      expect.any(Function),
     );
   });
 
@@ -930,10 +912,9 @@ describe("SwimLaneView", () => {
 
     // The move carries a settle callback (held from drop until the mutation
     // settles); invoking it releases the lock and re-syncs from the cache.
-    const callbacks = mockOnMoveIssue.mock.calls[0]?.[2] as
-      | { onSettled?: () => void }
+    const onSettled = mockOnMoveIssue.mock.calls[0]?.[2] as
+      | (() => void)
       | undefined;
-    const onSettled = callbacks?.onSettled;
     expect(typeof onSettled).toBe("function");
     expect(() => act(() => onSettled?.())).not.toThrow();
   });
@@ -980,7 +961,7 @@ describe("SwimLaneView", () => {
         parent_issue_id: "parent-1",
         status: "todo",
       }),
-      expect.objectContaining({ onSettled: expect.any(Function) }),
+      expect.any(Function),
     );
   });
 
@@ -1041,12 +1022,8 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "high",
-      owner_type: null,
-      owner_id: null,
-      executor_type: null,
-      executor_id: null,
-      reviewer_type: null,
-      reviewer_id: null,
+      assignee_type: null,
+      assignee_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -1069,12 +1046,8 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "high",
-      owner_type: null,
-      owner_id: null,
-      executor_type: null,
-      executor_id: null,
-      reviewer_type: null,
-      reviewer_id: null,
+      assignee_type: null,
+      assignee_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -1097,12 +1070,8 @@ describe("SwimLaneView", () => {
       description: null,
       status: "in_progress",
       priority: "medium",
-      owner_type: null,
-      owner_id: null,
-      executor_type: null,
-      executor_id: null,
-      reviewer_type: null,
-      reviewer_id: null,
+      assignee_type: null,
+      assignee_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: "parent-1",
@@ -1125,12 +1094,8 @@ describe("SwimLaneView", () => {
       description: null,
       status: "in_progress",
       priority: "medium",
-      owner_type: null,
-      owner_id: null,
-      executor_type: null,
-      executor_id: null,
-      reviewer_type: null,
-      reviewer_id: null,
+      assignee_type: null,
+      assignee_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: "parent-2",
@@ -1403,7 +1368,7 @@ describe("SwimLaneView", () => {
     expect(mockOnMoveIssue).toHaveBeenCalledWith(
       "issue-c",
       expect.objectContaining({ project_id: "proj-1", status: "todo" }),
-      expect.objectContaining({ onSettled: expect.any(Function) }),
+      expect.any(Function),
     );
   });
 
@@ -1426,21 +1391,22 @@ describe("SwimLaneView", () => {
     expect(mockOnMoveIssue).toHaveBeenCalledWith(
       "issue-a",
       expect.objectContaining({ project_id: null, status: "in_review" }),
-      expect.objectContaining({ onSettled: expect.any(Function) }),
+      expect.any(Function),
     );
   });
 
   // ------------------------------------------------------------------
-  // Executor grouping
+  // Assignee grouping
   // ------------------------------------------------------------------
 
-  const executorIssues: Issue[] = [
+  const assigneeIssues: Issue[] = [
     {
       ...mockIssues[0]!,
       id: "issue-x",
       identifier: "PROJ-200",
       title: "Issue X",
-      owner_type: "member", owner_id: "user-1",
+      assignee_type: "member",
+      assignee_id: "user-1",
       parent_issue_id: null,
       project_id: null,
       status: "todo",
@@ -1450,8 +1416,8 @@ describe("SwimLaneView", () => {
       id: "issue-y",
       identifier: "PROJ-201",
       title: "Issue Y",
-      executor_type: "agent",
-      executor_id: "agent-1",
+      assignee_type: "agent",
+      assignee_id: "agent-1",
       parent_issue_id: null,
       project_id: null,
       status: "in_progress",
@@ -1461,19 +1427,19 @@ describe("SwimLaneView", () => {
       id: "issue-z",
       identifier: "PROJ-202",
       title: "Issue Z",
-      executor_type: null,
-      executor_id: null,
+      assignee_type: null,
+      assignee_id: null,
       parent_issue_id: null,
       project_id: null,
       status: "todo",
     },
   ];
 
-  it("groups by executor when swimlaneGrouping is 'executor'", () => {
-    mockViewState.swimlaneGrouping = "executor";
+  it("groups by assignee when swimlaneGrouping is 'assignee'", () => {
+    mockViewState.swimlaneGrouping = "assignee";
 
     renderWithI18n(
-      <SwimLaneView issues={executorIssues} onMoveIssue={vi.fn()} />,
+      <SwimLaneView issues={assigneeIssues} onMoveIssue={vi.fn()} />,
     );
 
     // Unassigned pinned lane is always rendered.
@@ -1485,15 +1451,15 @@ describe("SwimLaneView", () => {
     expect(screen.getByText("Issue Z")).toBeInTheDocument();
   });
 
-  it("emits executor_type + executor_id when a card is dropped into an agent lane", () => {
-    mockViewState.swimlaneGrouping = "executor";
+  it("emits assignee_type + assignee_id when a card is dropped into an actor lane", () => {
+    mockViewState.swimlaneGrouping = "assignee";
     const mockOnMoveIssue = vi.fn();
 
     renderWithI18n(
-      <SwimLaneView issues={executorIssues} onMoveIssue={mockOnMoveIssue} />,
+      <SwimLaneView issues={assigneeIssues} onMoveIssue={mockOnMoveIssue} />,
     );
 
-    const target = "swim:executor:agent:agent-1:in_review";
+    const target = "swim:assignee:member:user-1:in_review";
     act(() => {
       lastOnDragOver({ active: { id: "issue-z" }, over: { id: target } });
     });
@@ -1504,22 +1470,23 @@ describe("SwimLaneView", () => {
     expect(mockOnMoveIssue).toHaveBeenCalledWith(
       "issue-z",
       expect.objectContaining({
-        executor_type: "agent", executor_id: "agent-1",
+        assignee_type: "member",
+        assignee_id: "user-1",
         status: "in_review",
       }),
-      expect.objectContaining({ onSettled: expect.any(Function) }),
+      expect.any(Function),
     );
   });
 
-  it("emits null executor when a card is dropped into the 'Unassigned' lane", () => {
-    mockViewState.swimlaneGrouping = "executor";
+  it("emits null assignee when a card is dropped into the 'Unassigned' lane", () => {
+    mockViewState.swimlaneGrouping = "assignee";
     const mockOnMoveIssue = vi.fn();
 
     renderWithI18n(
-      <SwimLaneView issues={executorIssues} onMoveIssue={mockOnMoveIssue} />,
+      <SwimLaneView issues={assigneeIssues} onMoveIssue={mockOnMoveIssue} />,
     );
 
-    const target = "swim:executor:none:done";
+    const target = "swim:assignee:none:done";
     act(() => {
       lastOnDragOver({ active: { id: "issue-x" }, over: { id: target } });
     });
@@ -1530,11 +1497,11 @@ describe("SwimLaneView", () => {
     expect(mockOnMoveIssue).toHaveBeenCalledWith(
       "issue-x",
       expect.objectContaining({
-        executor_type: null,
-        executor_id: null,
+        assignee_type: null,
+        assignee_id: null,
         status: "done",
       }),
-      expect.objectContaining({ onSettled: expect.any(Function) }),
+      expect.any(Function),
     );
   });
 
@@ -1584,12 +1551,8 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "none",
-      owner_type: null,
-      owner_id: null,
-      executor_type: null,
-      executor_id: null,
-      reviewer_type: null,
-      reviewer_id: null,
+      assignee_type: null,
+      assignee_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -1663,12 +1626,8 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "none",
-      owner_type: null,
-      owner_id: null,
-      executor_type: null,
-      executor_id: null,
-      reviewer_type: null,
-      reviewer_id: null,
+      assignee_type: null,
+      assignee_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -1749,12 +1708,8 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "high",
-      owner_type: null,
-      owner_id: null,
-      executor_type: null,
-      executor_id: null,
-      reviewer_type: null,
-      reviewer_id: null,
+      assignee_type: null,
+      assignee_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -1813,8 +1768,8 @@ describe("SwimLaneView", () => {
         issues={[grandparent, parent]}
         activeFilters={{
           priorityFilters: ["high"],
-          executorFilters: [],
-          includeNoExecutor: false,
+          assigneeFilters: [],
+          includeNoAssignee: false,
           creatorFilters: [],
           projectFilters: [],
           includeNoProject: false,
@@ -1847,12 +1802,8 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "medium",
-      owner_type: null,
-      owner_id: null,
-      executor_type: null,
-      executor_id: null,
-      reviewer_type: null,
-      reviewer_id: null,
+      assignee_type: null,
+      assignee_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -1882,8 +1833,8 @@ describe("SwimLaneView", () => {
       identifier: "PROJ-32",
       title: "Running Child",
       status: "in_progress",
-      executor_type: "agent",
-      executor_id: "idle-agent",
+      assignee_type: "agent",
+      assignee_id: "idle-agent",
       parent_issue_id: "p-3",
       position: 12,
     };
@@ -1894,8 +1845,8 @@ describe("SwimLaneView", () => {
       identifier: "PROJ-33",
       title: "Non-running Child",
       status: "in_progress",
-      executor_type: "agent",
-      executor_id: "working-agent",
+      assignee_type: "agent",
+      assignee_id: "working-agent",
       parent_issue_id: "p-3",
       position: 13,
     };
@@ -1913,8 +1864,8 @@ describe("SwimLaneView", () => {
         issues={[grandparent, parent]}
         activeFilters={{
           priorityFilters: [],
-          executorFilters: [],
-          includeNoExecutor: false,
+          assigneeFilters: [],
+          includeNoAssignee: false,
           agentRunningFilter: true,
           runningIssueIds: new Set(["gc-running"]),
           creatorFilters: [],
@@ -1956,8 +1907,8 @@ describe("SwimLaneView", () => {
         issues={[parent]}
         activeFilters={{
           priorityFilters: [],
-          executorFilters: [],
-          includeNoExecutor: false,
+          assigneeFilters: [],
+          includeNoAssignee: false,
           agentRunningFilter: true,
           runningIssueIds: new Set(),
           creatorFilters: [],
@@ -1991,12 +1942,8 @@ describe("SwimLaneView", () => {
       description: null,
       status: "todo",
       priority: "medium",
-      owner_type: null,
-      owner_id: null,
-      executor_type: null,
-      executor_id: null,
-      reviewer_type: null,
-      reviewer_id: null,
+      assignee_type: null,
+      assignee_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -2043,8 +1990,8 @@ describe("SwimLaneView", () => {
         issues={[grandparent, parent]}
         activeFilters={{
           priorityFilters: [],
-          executorFilters: [],
-          includeNoExecutor: false,
+          assigneeFilters: [],
+          includeNoAssignee: false,
           creatorFilters: [],
           projectFilters: [],
           includeNoProject: false,
@@ -2070,7 +2017,7 @@ describe("SwimLaneView", () => {
   });
 });
 
-describe("SwimLaneView tab-session scroll restoration (PB-4741)", () => {
+describe("SwimLaneView tab-session scroll restoration (MUL-4741)", () => {
   it("registers the outer scroller for memento capture and restores the saved offset at attach", () => {
     const adapter = {
       get: (key: string) =>

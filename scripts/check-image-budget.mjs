@@ -2,7 +2,8 @@
 // Fails a pull request that adds a bitmap over IMAGE_BUDGET_BYTES, or grows an
 // existing one past it, unless the PR description carries an exemption line.
 //
-// Every committed bitmap is paid for on every clone, every Docker build
+// MUL-6352 took the repo from 21.7MB of PNG/JPG to ~4MB of WebP; this keeps it
+// there. Every committed bitmap is paid for on every clone, every Docker build
 // context, and every deploy upload — costs a runtime image optimizer like
 // `next/image` never touches, because it optimizes what visitors download, not
 // what the repo carries.
@@ -45,11 +46,6 @@ for (const { file, bytes, was } of offenders) {
   const from = was === 0 ? "new file" : `up from ${kb(was)}`;
   const message = `${file} is ${kb(bytes)} (${from}), over the ${kb(IMAGE_BUDGET_BYTES)} image budget`;
   console.log(process.env.GITHUB_ACTIONS ? `::error file=${file}::${message}` : `  ${message}`);
-}
-
-if (process.env.IMAGE_BUDGET_EXEMPT === "true") {
-  console.log("\nA constituent PR description carries an exemption line — allowing.");
-  process.exit(0);
 }
 
 if (EXEMPTION_PATTERN.test(process.env.PR_BODY ?? "")) {

@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
+import { Input } from "@multica/ui/components/ui/input";
+import { Textarea } from "@multica/ui/components/ui/textarea";
 import { toast } from "sonner";
-import { useAuthStore } from "@patchbay/core/auth";
-import { api } from "@patchbay/core/api";
+import { useAuthStore } from "@multica/core/auth";
+import { api } from "@multica/core/api";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { useT } from "../../i18n";
 import {
@@ -17,7 +17,7 @@ import {
 } from "./settings-layout";
 import { useAutoSave } from "./use-auto-save";
 
-// Mirror the Rust auth handler's profile-description limit. Counted in
+// Mirror server/internal/handler/auth.go:MaxProfileDescriptionLen. Counted in
 // JS String.length (UTF-16 code units) here while the server counts runes,
 // so a profile full of supplementary-plane emoji will trip the client cap
 // before the server's — which is the safer direction of drift.

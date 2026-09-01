@@ -72,7 +72,7 @@ function cached(qc: QueryClient, taskId: string) {
   return qc.getQueryData<TaskMessagePayload[]>(chatKeys.taskMessages(taskId));
 }
 
-describe("useRealtimeSync — task:message fanout guards (PB-6396)", () => {
+describe("useRealtimeSync — task:message fanout guards (MUL-6396)", () => {
   let qc: QueryClient;
   let handlers: Handlers;
   let listTaskMessages: ReturnType<typeof vi.fn>;
@@ -196,7 +196,7 @@ describe("useRealtimeSync — task:message fanout guards (PB-6396)", () => {
     // Production shape: app-wide staleTime Infinity, and a gcTime short enough
     // to land inside the 100ms batching window. Writes do NOT postpone the GC
     // timer (query-core arms it when the last observer leaves), so a run that
-    // keeps streaming after its Agent event history is closed reaches this every time.
+    // keeps streaming after its transcript is closed reaches this every time.
     qc = new QueryClient({
       defaultOptions: { queries: { retry: false, staleTime: Infinity, gcTime: 50 } },
     });

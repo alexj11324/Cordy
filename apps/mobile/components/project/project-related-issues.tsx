@@ -10,7 +10,7 @@
  *     ship kanban either — list with status grouping is the established
  *     small-screen pattern for the same data.
  *   - This is a UI divergence, NOT semantic divergence (per
- *     mobile/AGENTS.md "Behavioral parity"): same issues, same status
+ *     mobile/CLAUDE.md "Behavioral parity"): same issues, same status
  *     categories, same 6 visible groups as web — only the layout
  *     differs. UI may diverge when semantics agree.
  *
@@ -18,7 +18,7 @@
  * match web `packages/views/projects/components/project-detail.tsx`, NOT status
  * keys: a workspace's custom statuses live inside their category's group rather
  * than adding one of their own, and grouping by key dropped them from the list
- * entirely (PB-6457). The earlier mobile-only "Open / Done" two-bucket layout
+ * entirely (MUL-6457). The earlier mobile-only "Open / Done" two-bucket layout
  * was a parity violation: the same status would appear in different visible
  * groups on mobile vs web. Cancelled is omitted on both clients.
  */
@@ -26,7 +26,7 @@ import { useMemo } from "react";
 import { View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { router } from "expo-router";
-import type { Issue, IssueStatusCategory } from "@patchbay/core/types";
+import type { Issue, IssueStatusCategory } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { StatusIcon } from "@/components/ui/status-icon";

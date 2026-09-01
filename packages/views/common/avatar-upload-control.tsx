@@ -1,36 +1,35 @@
 "use client";
 
 import { Suspense, lazy, useRef, useState } from "react";
-import { Bot, Camera, ImagePlus, Loader2, X } from "lucide-react";
+import { Bot, Camera, ImagePlus, Loader2, Users, X } from "lucide-react";
 import { toast } from "sonner";
-import { api } from "@patchbay/core/api";
-import { PeopleGroupIcon } from "@patchbay/ui/components/common/people-group-icon";
-import { useFileUpload } from "@patchbay/core/hooks/use-file-upload";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
+import { api } from "@multica/core/api";
+import { useFileUpload } from "@multica/core/hooks/use-file-upload";
+import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
 import {
   AVATAR_EMOJI_SUGGESTIONS,
   formatAvatarEmoji,
   parseAvatarEmoji,
-} from "@patchbay/ui/lib/avatar-emoji";
+} from "@multica/ui/lib/avatar-emoji";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
-import { Separator } from "@patchbay/ui/components/ui/separator";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@multica/ui/components/ui/popover";
+import { Separator } from "@multica/ui/components/ui/separator";
+import { cn } from "@multica/ui/lib/utils";
 import { useT } from "../i18n";
 import { AvatarCropDialog } from "./avatar-crop-dialog";
 
 // The full emoji-mart picker is ~1MB of emoji data. Only the handful of
 // suggestions render eagerly; the searchable set loads when asked for.
 const EmojiPicker = lazy(() =>
-  import("@patchbay/ui/components/common/emoji-picker").then((m) => ({
+  import("@multica/ui/components/common/emoji-picker").then((m) => ({
     default: m.EmojiPicker,
   })),
 );
 
-export type AvatarUploadVariant = "user" | "agent" | "team" | "workspace";
+export type AvatarUploadVariant = "user" | "agent" | "squad" | "workspace";
 
 interface AvatarUploadControlProps {
   /** Current avatar URL, raw (unresolved). `null` renders the empty state. */
@@ -45,7 +44,7 @@ interface AvatarUploadControlProps {
   /**
    * Fires with the uploaded file URL after a successful crop + upload. The
    * parent persists it (updateMe / updateWorkspace / updateAgent /
-   * updateTeam, or stashing it for a create call). The crop dialog stays in
+   * updateSquad, or stashing it for a create call). The crop dialog stays in
    * its busy state until this resolves, then closes.
    */
   onUploaded: (url: string) => void | Promise<unknown>;
@@ -88,8 +87,8 @@ function AvatarFallback({
   if (variant === "agent") {
     return <Bot style={{ width: size * 0.5, height: size * 0.5 }} />;
   }
-  if (variant === "team") {
-    return <PeopleGroupIcon style={{ width: size * 0.5, height: size * 0.5 }} />;
+  if (variant === "squad") {
+    return <Users style={{ width: size * 0.5, height: size * 0.5 }} />;
   }
   const text =
     variant === "workspace"

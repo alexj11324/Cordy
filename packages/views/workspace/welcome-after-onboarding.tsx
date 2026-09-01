@@ -3,20 +3,20 @@
 import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { api } from "@patchbay/core/api";
-import { useAuthStore } from "@patchbay/core/auth";
-import { issueKeys } from "@patchbay/core/issues/queries";
-import { useWelcomeStore } from "@patchbay/core/onboarding";
-import { paths, useCurrentWorkspace } from "@patchbay/core/paths";
-import type { CreateIssueRequest, Issue } from "@patchbay/core/types";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { api } from "@multica/core/api";
+import { useAuthStore } from "@multica/core/auth";
+import { issueKeys } from "@multica/core/issues/queries";
+import { useWelcomeStore } from "@multica/core/onboarding";
+import { paths, useCurrentWorkspace } from "@multica/core/paths";
+import type { CreateIssueRequest, Issue } from "@multica/core/types";
+import { workspaceKeys } from "@multica/core/workspace/queries";
+import { Button } from "@multica/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@multica/ui/components/ui/dialog";
 import { useT } from "../i18n";
 import { useNavigation } from "../navigation";
 import {
@@ -29,7 +29,7 @@ import {
  * One-shot welcome experience for users who explicitly skipped runtime
  * setup during onboarding.
  *
- * Runtime-connected onboarding creates Patrick before entering the workspace
+ * Runtime-connected onboarding creates Mika before entering the workspace
  * and therefore never writes this no-runtime signal.
  */
 export function WelcomeAfterOnboarding() {
@@ -95,7 +95,7 @@ interface SkipWelcomeProps {
 
 /**
  * Provision one focused runtime guide before showing the completion modal.
- * Once a runtime appears, the Runtimes page offers "Start with Patrick" and
+ * Once a runtime appears, the Runtimes page offers "Start with Mika" and
  * runs the same real bootstrap used by connected onboarding.
  */
 function SkipWelcome({ workspaceId, onDismiss }: SkipWelcomeProps) {
@@ -121,8 +121,8 @@ function SkipWelcome({ workspaceId, onDismiss }: SkipWelcomeProps) {
             description: INSTALL_RUNTIME_ISSUE_BODY[lang],
             status: "in_progress",
             priority: "high",
-            owner_type: "member",
-            owner_id: me.id,
+            assignee_type: "member",
+            assignee_id: me.id,
           },
         );
         void queryClient.invalidateQueries({

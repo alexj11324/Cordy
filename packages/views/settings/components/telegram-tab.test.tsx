@@ -4,7 +4,7 @@ import { type ReactNode } from "react";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -28,12 +28,6 @@ const mockToastError = vi.hoisted(() => vi.fn());
 const telegramQueryErrorRef = vi.hoisted(() => ({ current: false }));
 const telegramQueryLoadingRef = vi.hoisted(() => ({ current: false }));
 
-const healthyRuntime = {
-  state: "healthy",
-  observedAt: null,
-  errorCode: null,
-} as const;
-
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
     if (opts.enabled === false) return { data: undefined, isLoading: false };
@@ -52,17 +46,17 @@ vi.mock("@tanstack/react-query", () => ({
   queryOptions: <T,>(opts: T) => opts,
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
+vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@multica/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@multica/core/workspace/hooks", () => ({
   useActorName: () => ({
     getAgentName: (agentId: string) => `Agent ${agentId}`,
     getMemberName: () => "Unknown",
-    getTeamName: () => "Unknown Team",
+    getSquadName: () => "Unknown Squad",
     getActorName: () => "Unknown",
     getActorInitials: () => "??",
     getActorAvatarUrl: () => null,
@@ -75,7 +69,7 @@ vi.mock("../../common/actor-avatar", () => ({
   ),
 }));
 
-vi.mock("@patchbay/core/telegram", () => ({
+vi.mock("@multica/core/telegram", () => ({
   telegramInstallationsOptions: () => ({
     queryKey: ["telegram", "installations"],
     queryFn: vi.fn(),
@@ -83,14 +77,14 @@ vi.mock("@patchbay/core/telegram", () => ({
   telegramKeys: { installations: (wsId: string) => ["telegram", "installations", wsId] },
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: {
     registerTelegramBot: mockRegister,
     deleteTelegramInstallation: mockDeleteInstallation,
   },
 }));
 
-vi.mock("@patchbay/core/auth", () => {
+vi.mock("@multica/core/auth", () => {
   const useAuthStore = Object.assign(
     (sel?: (s: { user: { id: string } }) => unknown) =>
       sel ? sel({ user: { id: "user-1" } }) : { user: { id: "user-1" } },
@@ -129,16 +123,7 @@ describe("TelegramAgentBindButton", () => {
   beforeEach(resetFixtures);
 
   it("opens the connect dialog and submits the pasted bot token", async () => {
-    mockRegister.mockResolvedValue({
-      id: "i1",
-      agent_id: "agent-1",
-      status: "active",
-      runtime: {
-        state: "starting",
-        observedAt: null,
-        errorCode: null,
-      },
-    });
+    mockRegister.mockResolvedValue({ id: "i1", agent_id: "agent-1", status: "active" });
     renderUI(<TelegramAgentBindButton agentId="agent-1" agentName="Bot" />);
     await userEvent.click(screen.getByTestId("telegram-agent-connect"));
     const tokenInput = await screen.findByTestId("telegram-bot-token");
@@ -151,8 +136,6 @@ describe("TelegramAgentBindButton", () => {
       }),
     );
     expect(mockOpenExternal).not.toHaveBeenCalled();
-    expect(mockInvalidate).toHaveBeenCalled();
-    expect(mockToastError).not.toHaveBeenCalled();
   });
 
   it("opens the localized Telegram setup guide", async () => {
@@ -160,7 +143,7 @@ describe("TelegramAgentBindButton", () => {
     await userEvent.click(screen.getByTestId("telegram-agent-connect"));
     await userEvent.click(await screen.findByTestId("telegram-docs-link"));
     expect(mockOpenExternal).toHaveBeenCalledWith(
-      "https://patchbay.aspectlylabs.com/docs/telegram-bot-integration",
+      "https://multica.ai/docs/telegram-bot-integration",
     );
   });
 
@@ -177,7 +160,7 @@ describe("TelegramAgentBindButton", () => {
   it("shows the connected badge (not the CTA) when the agent already has an active install", () => {
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
+        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot" },
       ],
       configured: true,
       install_supported: true,
@@ -191,7 +174,7 @@ describe("TelegramAgentBindButton", () => {
   it("opens the connected bot in Telegram", async () => {
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
+        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot" },
       ],
       configured: true,
       install_supported: true,
@@ -207,7 +190,7 @@ describe("TelegramAgentBindButton", () => {
     mockDeleteInstallation.mockResolvedValue(undefined);
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
+        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot" },
       ],
       configured: true,
       install_supported: true,
@@ -229,7 +212,7 @@ describe("TelegramAgentBindButton", () => {
     mockDeleteInstallation.mockRejectedValue(new Error("network failed"));
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
+        { id: "i1", agent_id: "agent-1", status: "active", bot_username: "my_bot" },
       ],
       configured: true,
       install_supported: true,
@@ -282,7 +265,7 @@ describe("TelegramTab", () => {
   it("lists a connected installation with its agent name and a disconnect control", () => {
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-7", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
+        { id: "i1", agent_id: "agent-7", status: "active", bot_username: "my_bot" },
       ],
       configured: true,
       install_supported: true,
@@ -297,7 +280,7 @@ describe("TelegramTab", () => {
     mockDeleteInstallation.mockResolvedValue(undefined);
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-7", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
+        { id: "i1", agent_id: "agent-7", status: "active", bot_username: "my_bot" },
       ],
       configured: true,
       install_supported: true,
@@ -317,7 +300,7 @@ describe("TelegramTab", () => {
     mockDeleteInstallation.mockRejectedValue(new Error("network failed"));
     installationsRef.current = {
       installations: [
-        { id: "i1", agent_id: "agent-7", status: "active", bot_username: "my_bot", runtime: healthyRuntime },
+        { id: "i1", agent_id: "agent-7", status: "active", bot_username: "my_bot" },
       ],
       configured: true,
       install_supported: true,
@@ -331,7 +314,7 @@ describe("TelegramTab", () => {
     expect(mockInvalidate).not.toHaveBeenCalled();
   });
 
-  // Malformed-response defense (AGENTS.md → API Compatibility): a response
+  // Malformed-response defense (CLAUDE.md → API Compatibility): a response
   // missing `installations` must not crash the panel.
   it("tolerates a malformed installations response", () => {
     installationsRef.current = { configured: true } as never;

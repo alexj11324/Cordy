@@ -2,30 +2,31 @@
 
 import { memo, useCallback, useMemo, useState, type ReactNode } from "react";
 import { Virtuoso } from "react-virtuoso";
-import { EyeOff, MoreHorizontal, Plus, UserMinus } from "lucide-react";
+import { EyeOff, FolderMinus, MoreHorizontal, Plus, UserMinus } from "lucide-react";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import type {
   Issue,
-  IssueExecutorType,
+  IssueAssigneeType,
   IssueStatusCategory,
   Project,
-} from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@multica/core/types";
+import { Button } from "@multica/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { STATUS_CONFIG } from "@patchbay/core/issues/config";
-import { useViewStoreApi } from "@patchbay/core/issues/stores/view-store-context";
+} from "@multica/ui/components/ui/dropdown-menu";
+import { STATUS_CONFIG } from "@multica/core/issues/config";
+import { useViewStoreApi } from "@multica/core/issues/stores/view-store-context";
 import { useViewBaseline } from "../surface/view-baseline-context";
 import { StatusHeading } from "./status-heading";
 import { DraggableBoardCard } from "./board-card";
 import type { ChildProgress } from "./list-row";
 import { useT } from "../../i18n";
 import { ActorAvatar } from "../../common/actor-avatar";
+import { ProjectIcon } from "../../projects/components/project-icon";
 import { useRestoredScrollOffset, useRestoredScrollRef } from "../../platform";
 import { DeferredPopup } from "../../common/deferred-popup";
 import { DeferredTooltip } from "../../common/deferred-tooltip";
@@ -68,16 +69,22 @@ const BOARD_VIRTUALIZE_THRESHOLD = 30;
 // Passed to <Virtuoso components> when the column has no footer. Must be a
 // STABLE object, never `undefined`: an explicit `undefined` prop overwrites
 // react-virtuoso's internal `{}` default and its startup destructure of
-// `EmptyPlaceholder`/`Footer` throws (PB-4474).
+// `EmptyPlaceholder`/`Footer` throws (MUL-4474).
 const EMPTY_VIRTUOSO_COMPONENTS = {};
 
 export interface BoardColumnGroup {
   id: string;
   title: string;
-  /** Board columns are CATEGORIES, never raw status keys. (PB-6243) */
+  /** Board columns are CATEGORIES, never raw status keys. (MUL-6243) */
   status?: IssueStatusCategory;
-  executorType?: IssueExecutorType | null;
-  executorId?: string | null;
+  assigneeType?: IssueAssigneeType | null;
+  assigneeId?: string | null;
+  /** Project id for this column; null = the "No project" column. Set only
+   *  when the board is grouped by project. */
+  projectId?: string | null;
+  /** Display-only, for the column's leading icon. Null on the "No project"
+   *  column and on a project the projects query cannot resolve. */
+  project?: Pick<Project, "icon"> | null;
   /** Set when the board is grouped by a select-type custom property. */
   propertyId?: string;
   /** Option id for this column; null = the "No value" column. */
@@ -138,7 +145,7 @@ export const BoardColumn = memo(function BoardColumn({
   // lets cross-column drops survive virtualization — only the cards inside
   // window in/out of the DOM.
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
-  // Pull-based scroll restoration (PB-4741): assign the saved offset at
+  // Pull-based scroll restoration (MUL-4741): assign the saved offset at
   // ref-attach (the seed + estimate spacer give the column a truthful height
   // on its first commit, so the assignment sticks pre-paint) and feed the
   // same offset into the Virtuoso as its initial position.
@@ -179,11 +186,7 @@ export const BoardColumn = memo(function BoardColumn({
   );
 
   return (
-    <div
-      data-board-column={group.id}
-      style={{ width: BOARD_COL_WIDTH }}
-      className={`flex shrink-0 flex-col rounded-xl ${cfg?.columnBg ?? "bg-muted/40"} p-2`}
-    >
+    <div style={{ width: BOARD_COL_WIDTH }} className={`flex shrink-0 flex-col rounded-xl ${cfg?.columnBg ?? "bg-muted/40"} p-2`}>
       <div className="mb-2 flex items-center justify-between px-1.5">
         <BoardGroupHeading group={group} count={totalCount ?? issueIds.length} />
 
@@ -259,7 +262,7 @@ export const BoardColumn = memo(function BoardColumn({
         <div
           ref={mergedRef}
           // Per-column scroll registration for the tab session memento
-          // (PB-4741): the group id is the stable memento key, so every
+          // (MUL-4741): the group id is the stable memento key, so every
           // column's offset survives tab switches/reloads independently.
           data-tab-scroll-root={scrollMementoKey}
           className={`absolute inset-0 overflow-y-auto rounded-lg p-1 transition-colors ${
@@ -306,7 +309,7 @@ export const BoardColumn = memo(function BoardColumn({
                    remount: seed a bounded slice of real cards so the column
                    never paints blank; once the ref lands, mount the Virtuoso
                    with a matching `initialItemCount` to survive the
-                   measurement frame (PB-4750). */
+                   measurement frame (MUL-4750). */
                 <VirtuosoSeed
                   data={resolvedIssues}
                   itemContent={itemContent}
@@ -360,13 +363,33 @@ function BoardGroupHeading({
     );
   }
 
+  if (group.projectId !== undefined) {
+    return (
+      <div className="flex min-w-0 items-center gap-2">
+        {group.project ? (
+          <ProjectIcon project={group.project} size="sm" />
+        ) : (
+          <span className="flex size-[18px] shrink-0 items-center justify-center rounded-full bg-background text-muted-foreground">
+            <FolderMinus className="size-3.5" />
+          </span>
+        )}
+        <span className="truncate text-body font-medium" title={group.title}>
+          {group.title}
+        </span>
+        <span className="shrink-0 rounded-full bg-background px-1.5 py-0.5 text-micro font-medium tabular-nums text-muted-foreground">
+          {count}
+        </span>
+      </div>
+    );
+  }
+
   const actorIcon =
-    group.executorType && group.executorId ? (
+    group.assigneeType && group.assigneeId ? (
       <ActorAvatar
-        actorType={group.executorType}
-        actorId={group.executorId}
+        actorType={group.assigneeType}
+        actorId={group.assigneeId}
         size="sm"
-        showStatusDot={group.executorType === "agent"}
+        showStatusDot={group.assigneeType === "agent"}
       />
     ) : (
       <span className="flex size-[18px] shrink-0 items-center justify-center rounded-full bg-background text-muted-foreground">

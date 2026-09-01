@@ -1,6 +1,6 @@
-import { cn } from "@patchbay/ui/lib/utils";
-import type { AgentRuntime } from "@patchbay/core/types";
-import { runtimeDisplayName } from "@patchbay/core/runtimes";
+import { cn } from "@multica/ui/lib/utils";
+import type { AgentRuntime } from "@multica/core/types";
+import { runtimeDisplayName } from "@multica/core/runtimes";
 import { ProviderLogo } from "./provider-logo";
 import { useT } from "../../i18n";
 
@@ -29,7 +29,7 @@ export function CompactRuntimeRow({
     // A real button rather than role="button": it brings disabled, focus, and
     // Enter/Space for free. The hand-rolled keydown branch this replaces did
     // not honour disabled at all, so a member could switch runtimes mid-submit
-    // and end up with Patrick on a machine they no longer had selected.
+    // and end up with Mika on a machine they no longer had selected.
     <button
       type="button"
       onClick={onSelect}

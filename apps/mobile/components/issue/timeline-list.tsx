@@ -88,7 +88,7 @@ import {
 import { FlashList, type FlashListRef } from "@shopify/flash-list";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
-import type { Issue, TimelineEntry } from "@patchbay/core/types";
+import type { Issue, TimelineEntry } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
 import { IssueHeaderCard } from "./issue-header-card";
 import { IssueDescription } from "./issue-description";
@@ -101,7 +101,7 @@ import { buildTimelineRows, type TimelineRow } from "@/lib/timeline-thread";
 import { ImageSequenceProvider } from "@/lib/markdown/image-sequence";
 import { issueAttachmentsOptions } from "@/data/queries/issues";
 import { useWorkspaceStore } from "@/data/workspace-store";
-import type { ImageSequenceBlock } from "@patchbay/core/attachments/image-sequence";
+import type { ImageSequenceBlock } from "@multica/core/attachments/image-sequence";
 import { useColorScheme } from "@/lib/use-color-scheme";
 import { THEME } from "@/lib/theme";
 import { useCommentSelectStore } from "@/data/comment-select-store";
@@ -165,7 +165,7 @@ export function TimelineList({
   }, [entries]);
 
   // Every image on this screen, in render order: the description first, then
-  // each comment row with its replies (PB-5752). Tapping any of them opens
+  // each comment row with its replies (MUL-5752). Tapping any of them opens
   // the lightbox at its real position so a swipe walks to the next.
   //
   // The description's attachments come from the same query IssueDescription

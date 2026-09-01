@@ -2,20 +2,20 @@ import { describe, expect, it } from "vitest";
 import { preprocessMobileMarkdown } from "./preprocess";
 
 const UUID = "019f49e2-5b07-7970-beef-c0d537fb8c1d";
-const ABS_URL = `https://patchbay-app.copilothub.ai/api/attachments/${UUID}/download`;
+const ABS_URL = `https://multica-app.copilothub.ai/api/attachments/${UUID}/download`;
 const REL_URL = `/api/attachments/${UUID}/download`;
 
 describe("preprocessMobileMarkdown — !file file cards", () => {
   it("keeps channel images visible while hiding their provenance marker", () => {
     const image = `![](${REL_URL})`;
-    const marker = `<!-- patchbay:channel-media:${UUID} -->`;
+    const marker = `<!-- multica:channel-media:${UUID} -->`;
 
     expect(preprocessMobileMarkdown(`${image}\n\n${marker}`)).toBe(`${image}\n\n`);
   });
 
   it("matches the CLI's escaped-bracket label and keeps it markdown-safe", () => {
-    // CLI emits `a]b.pdf` escaped as `a\]b.pdf`. The old regex stopped at the
-    // first `]` and left the
+    // CLI emits `a]b.pdf` escaped as `a\]b.pdf` (cmd_attachment.go
+    // escapeMarkdownLabel). The old regex stopped at the first `]` and left the
     // line literal; now it is captured whole and re-emitted as a tappable link
     // whose label stays escaped so the `]` doesn't truncate the link text.
     const out = preprocessMobileMarkdown(`!file[a\\]b.pdf](${ABS_URL})`);

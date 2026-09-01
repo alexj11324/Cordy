@@ -1,18 +1,18 @@
 "use client";
 
 import { Lock } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@multica/ui/lib/utils";
 import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
 import { useT } from "../../i18n";
 
 // Sibling of ArchivedAgentBanner / OfflineBanner / NoAgentBanner, in the same
 // banner slot above the chat input. Shown when the OPEN session's agent can no
 // longer be invoked by this user — the agent was flipped to personal, its
-// ownership moved, or the allow-list dropped them (PB-6380).
+// ownership moved, or the allow-list dropped them (MUL-6380).
 //
-// The Agent event history stays readable, because reading is gated by the softer view
+// The transcript stays readable, because reading is gated by the softer view
 // predicate; only running is gated by the invoke predicate the server re-checks
-// on every send (PB-4525). Without this banner the input looked live and the
+// on every send (MUL-4525). Without this banner the input looked live and the
 // user learned about the change from a 403 after typing a message.
 export function AgentAccessRevokedBanner({ agentName }: { agentName?: string }) {
   const { t } = useT("chat");

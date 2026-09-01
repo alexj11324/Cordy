@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, cleanup } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
 
@@ -10,19 +10,19 @@ const TEST_RESOURCES = { en: { common: enCommon, agents: enAgents } };
 
 // useWorkspaceId is a Context-backed hook in core; stub it to a static id so
 // the card runs outside a WorkspaceIdProvider in tests.
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
 // Paths only needs issueDetail for the "Now on" link. A simple stub keeps the
 // test free of WorkspaceSlugProvider wiring.
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/paths", () => ({
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/test/issues/${id}`,
   }),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: {
     getBaseUrl: () => "http://127.0.0.1:8080",
   },
@@ -89,10 +89,10 @@ vi.mock("@tanstack/react-query", async () => {
   };
 });
 
-vi.mock("@patchbay/core/agents", async () => {
+vi.mock("@multica/core/agents", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/agents")>(
-      "@patchbay/core/agents",
+    await vi.importActual<typeof import("@multica/core/agents")>(
+      "@multica/core/agents",
     );
   return {
     ...actual,
@@ -181,7 +181,7 @@ describe("AgentLivePeekCard", () => {
     ];
     mockIssue.current = {
       id: "issue-42",
-      identifier: "PB-42",
+      identifier: "MUL-42",
       title: "Wire up live peek",
     };
     mockPresence.current = {
@@ -196,7 +196,7 @@ describe("AgentLivePeekCard", () => {
 
     expect(screen.getByText("Working")).toBeInTheDocument();
     // identifier + title both render under the same link.
-    const link = screen.getByRole("link", { name: /PB-42/ });
+    const link = screen.getByRole("link", { name: /MUL-42/ });
     expect(link).toHaveAttribute("href", "/test/issues/issue-42");
     expect(link.textContent).toContain("Wire up live peek");
   });

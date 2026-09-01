@@ -15,17 +15,17 @@
  *   - **Orphan rescue (web #1857):** a reply whose parent is NOT in the
  *     loaded timeline gets promoted to top-level instead of disappearing.
  *     Without this the entire reply subtree would silently vanish and break
- *     the "Counts must agree" parity rule from apps/mobile/AGENTS.md.
+ *     the "Counts must agree" parity rule from apps/mobile/CLAUDE.md.
  *   - **Reply-to-reply still belongs to the same bundle.** A nested chain
  *     (A → B → C) gets flattened into A's row with `replies: [B, C]`. Mobile
- *     is a flat list (AGENTS.md), so we don't preserve depth — just keep
+ *     is a flat list (CLAUDE.md), so we don't preserve depth — just keep
  *     them all inside the same bubble in chronological order.
  *
  * Total comment+activity count emitted is identical to the input (just
  * fewer rows because replies are folded into parents). That preserves the
  * "Counts must agree" parity rule against web.
  */
-import type { TimelineEntry } from "@patchbay/core/types";
+import type { TimelineEntry } from "@multica/core/types";
 
 export interface TimelineRow {
   entry: TimelineEntry;

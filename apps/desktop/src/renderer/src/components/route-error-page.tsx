@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 import { isRouteErrorResponse, useLocation, useRouteError } from "react-router-dom";
 import { AlertTriangle, Compass, RotateCw, Send, X } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import type { DesktopRouteErrorFeedbackContext } from "@patchbay/core/feedback";
-import { useModalStore } from "@patchbay/core/modals";
+import { Button } from "@multica/ui/components/ui/button";
+import type { DesktopRouteErrorFeedbackContext } from "@multica/core/feedback";
+import { useModalStore } from "@multica/core/modals";
 import { useTabStore } from "@/stores/tab-store";
 
 export function createRouteErrorFeedbackContext({
@@ -28,7 +28,7 @@ export function createRouteErrorFeedbackContext({
  * rather than the failed URL. This is load-bearing, not stylistic: the routes
  * that land here most often are the ones whose first segment is not a workspace
  * at all. Deriving a slug from `/Users/me/shot.png` yields "Users" and a
- * "recovery" button pointing at `/Users/issues`, i.e. a second 404 (PB-4899).
+ * "recovery" button pointing at `/Users/issues`, i.e. a second 404 (MUL-4899).
  * A pathname we already failed to route cannot be a source of truth about where
  * the user belongs.
  *
@@ -47,7 +47,7 @@ export function DesktopRouteErrorPage() {
   // and fully recoverable product state. It reaches this boundary because React
   // Router routes "no route matched" to the nearest errorElement, the same place
   // a thrown render error lands. Splitting them here is the whole point of
-  // PB-4899: 8 of 18 desktop_route_error reports were users clicking an agent's
+  // MUL-4899: 8 of 18 desktop_route_error reports were users clicking an agent's
   // `/Users/...` link and being told the app broke and to report a bug.
   if (isRouteErrorResponse(error) && error.status === 404) {
     return <DesktopNotFoundPage />;
@@ -70,7 +70,7 @@ function DesktopNotFoundPage() {
       <div className="space-y-2">
         <h2 className="text-title font-semibold">This page doesn&apos;t exist</h2>
         <p className="max-w-lg text-body text-muted-foreground">
-          Nothing in Patchbay matches this address. If you got here from a link,
+          Nothing in Multica matches this address. If you got here from a link,
           it probably points at a file on someone else&apos;s computer rather
           than a page.
         </p>
@@ -84,7 +84,7 @@ function DesktopNotFoundPage() {
             type="button"
             variant="outline"
             // Session mutation, not a router call: the Coordinator projects
-            // the new session URL into the router (PB-4741 invariant 1).
+            // the new session URL into the router (MUL-4741 invariant 1).
             onClick={() =>
               useTabStore
                 .getState()
@@ -148,7 +148,7 @@ function DesktopUnexpectedErrorPage({ error }: { error: unknown }) {
             type="button"
             variant="outline"
             // Session mutation, not a router call: the Coordinator projects
-            // the new session URL into the router (PB-4741 invariant 1).
+            // the new session URL into the router (MUL-4741 invariant 1).
             onClick={() =>
               useTabStore
                 .getState()

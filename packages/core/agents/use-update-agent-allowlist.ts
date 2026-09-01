@@ -7,7 +7,7 @@ import { workspaceKeys } from "../workspace/queries";
 /**
  * Mutation hook for the creator-only MCP tab: writes an agent's Composio
  * toolkit allowlist via `PUT /api/agents/:id` ({ composio_toolkit_allowlist })
- * — no dedicated endpoint, the existing agent PATCH path carries it (PB-3870).
+ * — no dedicated endpoint, the existing agent PATCH path carries it (MUL-3870).
  *
  * The hook is optimistic: it patches the matching agent in the cached
  * workspace list before the round-trip so the checkbox flips instantly, then

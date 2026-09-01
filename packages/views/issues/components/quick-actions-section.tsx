@@ -4,11 +4,11 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Loader2, Zap } from "lucide-react";
 import { toast } from "sonner";
-import { dispatchReasonCode } from "@patchbay/core/api";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { quickActionListOptions, useRunQuickAction } from "@patchbay/core/quick-actions";
-import type { Comment, CommentTriggerOutcome, QuickAction } from "@patchbay/core/types";
-import { QUICK_ACTION_SIDEBAR_LIMIT } from "@patchbay/core/types";
+import { dispatchReasonCode } from "@multica/core/api";
+import { useCurrentWorkspace } from "@multica/core/paths";
+import { quickActionListOptions, useRunQuickAction } from "@multica/core/quick-actions";
+import type { Comment, CommentTriggerOutcome, QuickAction } from "@multica/core/types";
+import { QUICK_ACTION_SIDEBAR_LIMIT } from "@multica/core/types";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -17,13 +17,13 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@patchbay/ui/components/ui/tooltip";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@multica/ui/components/ui/alert-dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@multica/ui/components/ui/tooltip";
+import { cn } from "@multica/ui/lib/utils";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 
-// Quick Actions sidebar section (PB-5465).
+// Quick Actions sidebar section (MUL-5465).
 //
 // The list is NOT filtered by invoke permission. An earlier version hid
 // actions the viewer could not run, which meant two people on one issue saw
@@ -212,11 +212,11 @@ function QuickActionRow({
         <span className="min-w-0 flex-1 truncate">{action.name}</span>
         {action.target_name ? (
           <ActorAvatar
-            actorType={action.executor_type === "team" ? "team" : "agent"}
-            actorId={action.executor_id}
+            actorType={action.assignee_type === "squad" ? "squad" : "agent"}
+            actorId={action.assignee_id}
             size="xs"
             className="shrink-0"
-            showStatusDot={action.executor_type === "agent"}
+            showStatusDot={action.assignee_type === "agent"}
           />
         ) : null}
       </button>

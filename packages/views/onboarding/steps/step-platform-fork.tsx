@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { ArrowRight, Download, Loader2 } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Button } from "@multica/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -10,18 +10,18 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { cn } from "@patchbay/ui/lib/utils";
-import type { AgentRuntime } from "@patchbay/core/types";
-import { runtimeDisplayLabel } from "@patchbay/core/runtimes";
+} from "@multica/ui/components/ui/dialog";
+import { cn } from "@multica/ui/lib/utils";
+import type { AgentRuntime } from "@multica/core/types";
+import { runtimeDisplayLabel } from "@multica/core/runtimes";
 import {
   StepFooter,
   StepHeading,
 } from "../components/step-shell";
 import {
-  PatrickRuntimeChoice,
-  type PatrickRuntimeSelection,
-} from "../../runtimes/components/patrick-runtime-choice";
+  MikaRuntimeChoice,
+  type MikaRuntimeSelection,
+} from "../../runtimes/components/mika-runtime-choice";
 import { useRuntimePicker } from "../components/use-runtime-picker";
 import { useT } from "../../i18n";
 
@@ -59,7 +59,6 @@ export function StepPlatformFork({
   wsSlug,
   onNext,
   cliInstructions,
-  backendFree = false,
 }: {
   wsId: string;
   /** Slug of the target workspace. Sent explicitly so the runtime list reads
@@ -69,8 +68,6 @@ export function StepPlatformFork({
   onNext: (runtime: AgentRuntime | null, model?: string) => void | Promise<void>;
   /** Platform-specific CLI install card, rendered inside the CLI dialog. */
   cliInstructions?: ReactNode;
-  /** Disable runtime discovery for local UI previews. */
-  backendFree?: boolean;
 }) {
   const { t } = useT("onboarding");
 
@@ -78,7 +75,7 @@ export function StepPlatformFork({
   const [connecting, setConnecting] = useState(false);
   const [model, setModel] = useState("");
 
-  const picker = useRuntimePicker(wsId, wsSlug, { enabled: !backendFree });
+  const picker = useRuntimePicker(wsId, wsSlug);
 
   const pickDesktop = () => {
     // No post-click state. `noopener` makes window.open return null by spec
@@ -287,8 +284,8 @@ function CliInstallDialog({
   onClose: () => void;
   onConnect: () => void | Promise<void>;
   runtimes: AgentRuntime[];
-  choice: PatrickRuntimeSelection;
-  onChoiceChange: (next: PatrickRuntimeSelection) => void;
+  choice: MikaRuntimeSelection;
+  onChoiceChange: (next: MikaRuntimeSelection) => void;
   hasRuntimes: boolean;
   canConnect: boolean;
   selectedName: string | null;
@@ -320,7 +317,7 @@ function CliInstallDialog({
               {/* Cap the runtime list at ~4 rows visible, scroll the rest.
                   Keeps the commands above always reachable even when
                   a user has many machines registered. */}
-              <PatrickRuntimeChoice
+              <MikaRuntimeChoice
                 layout="list"
                 runtimes={runtimes}
                 value={choice}
@@ -407,7 +404,7 @@ function CliWaitingStatus({ dialogOpen }: { dialogOpen: boolean }) {
     return () => window.clearInterval(id);
   }, [dialogOpen]);
 
-  // Stage thresholds are rough — `patchbay setup` typical flow is
+  // Stage thresholds are rough — `multica setup` typical flow is
   //   ~1s save config → browser-tab auth (user-driven, 5–30s) →
   //   ~2s daemon boot → immediate WS register. So under 15s means
   //   "still normal", 15–45s means "probably stuck on browser auth",
@@ -449,21 +446,21 @@ function CliWaitingStatus({ dialogOpen }: { dialogOpen: boolean }) {
         {stage === "normal" && (
           <>
             {t(($) => $.step_platform.stage_normal_prefix)}
-            <span className="font-mono">{"patchbay setup"}</span>
+            <span className="font-mono">{"multica setup"}</span>
             {t(($) => $.step_platform.stage_normal_suffix)}
           </>
         )}
         {stage === "midway" && (
           <>
             {t(($) => $.step_platform.stage_midway_prefix)}
-            <span className="font-mono">{"patchbay setup"}</span>
+            <span className="font-mono">{"multica setup"}</span>
             {t(($) => $.step_platform.stage_midway_suffix)}
           </>
         )}
         {stage === "slow" && (
           <>
             {t(($) => $.step_platform.stage_slow_prefix)}
-            <span className="font-mono">{"patchbay setup"}</span>
+            <span className="font-mono">{"multica setup"}</span>
             {t(($) => $.step_platform.stage_slow_suffix)}
           </>
         )}

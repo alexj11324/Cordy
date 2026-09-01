@@ -1,18 +1,18 @@
 "use client";
 
 import { useState, type ReactElement } from "react";
-import type { Issue } from "@patchbay/core/types";
+import type { Issue } from "@multica/core/types";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@multica/ui/components/ui/dropdown-menu";
 import { useIssueActions } from "./use-issue-actions";
 import {
   IssueActionsMenuItems,
   dropdownPrimitives,
 } from "./issue-actions-menu-items";
-import { ExecutorPicker } from "../components/pickers";
+import { AssigneePicker } from "../components/pickers";
 
 interface IssueActionsDropdownProps {
   issue: Issue;
@@ -31,7 +31,7 @@ export function IssueActionsDropdown({
   onDeletedFallbackPath,
 }: IssueActionsDropdownProps) {
   const actions = useIssueActions(issue);
-  const [executorOpen, setExecutorOpen] = useState(false);
+  const [assigneeOpen, setAssigneeOpen] = useState(false);
 
   // The outer `relative inline-flex` is the picker's anchor box: the
   // absolute, pointer-events-none span inside `triggerRender` fills it, so
@@ -46,21 +46,21 @@ export function IssueActionsDropdown({
             issue={issue}
             actions={actions}
             primitives={dropdownPrimitives}
-            onOpenExecutor={() => setExecutorOpen(true)}
+            onOpenAssignee={() => setAssigneeOpen(true)}
             onDeletedFallbackPath={onDeletedFallbackPath}
           />
         </DropdownMenuContent>
       </DropdownMenu>
       {/* Mount the picker only once the user actually opens it. Otherwise
-          every row in a list/board would subscribe to members/agents/teams
+          every row in a list/board would subscribe to members/agents/squads
           /frequency queries on mount, multiplying memory + render cost. */}
-      {executorOpen && (
-        <ExecutorPicker
-          executorType={issue.executor_type}
-          executorId={issue.executor_id}
+      {assigneeOpen && (
+        <AssigneePicker
+          assigneeType={issue.assignee_type}
+          assigneeId={issue.assignee_id}
           onUpdate={actions.updateField}
-          open={executorOpen}
-          onOpenChange={setExecutorOpen}
+          open={assigneeOpen}
+          onOpenChange={setAssigneeOpen}
           triggerRender={
             <span
               aria-hidden

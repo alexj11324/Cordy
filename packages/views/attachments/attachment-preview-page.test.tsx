@@ -54,7 +54,7 @@ describe("AttachmentPreviewPage", () => {
       </ScrollRestorationProvider>,
     );
     const iframe = container.querySelector("iframe")!;
-    expect(iframe.getAttribute("srcdoc")).not.toContain("__patchbay");
+    expect(iframe.getAttribute("srcdoc")).not.toContain("__multica");
     expect(iframe.getAttribute("srcdoc")).not.toContain(buildScrollBridge("x"));
     // Still applies the fragment-nav shim on both surfaces.
     expect(iframe.getAttribute("srcdoc")).toContain("scrollIntoView");

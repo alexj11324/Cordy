@@ -11,21 +11,22 @@ import {
   Trash2,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import type { Agent, AgentRuntime, WorkspaceMcpServer } from "@patchbay/core/types";
-import { ApiError } from "@patchbay/core/api";
+import type { Agent, AgentRuntime, WorkspaceMcpServer } from "@multica/core/types";
+import { ApiError } from "@multica/core/api";
 import {
+  isRuntimeUsableForUser,
   runtimeCapabilitiesOptions,
   runtimeDisplayLabel,
-} from "@patchbay/core/runtimes";
+} from "@multica/core/runtimes";
 import {
   agentMcpServersOptions,
   workspaceMcpServersOptions,
-} from "@patchbay/core/workspace/queries";
+} from "@multica/core/workspace/queries";
 import {
   useAddAgentMcpServer,
   useRemoveAgentMcpServer,
   useSetAgentMcpServerEnabled,
-} from "@patchbay/core/workspace/mutations";
+} from "@multica/core/workspace/mutations";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,16 +36,16 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@multica/ui/components/ui/alert-dialog";
+import { Badge } from "@multica/ui/components/ui/badge";
+import { Button } from "@multica/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+} from "@multica/ui/components/ui/dropdown-menu";
+import { Switch } from "@multica/ui/components/ui/switch";
 import { toast } from "sonner";
 import { useT } from "../../../i18n";
 import {
@@ -58,12 +59,14 @@ import { McpServerDialog } from "./mcp-server-dialog";
 export function McpConfigTab({
   agent,
   runtime,
+  currentUserId,
   canEdit = true,
   onSave,
   onDirtyChange,
 }: {
   agent: Agent;
   runtime: AgentRuntime | null;
+  currentUserId?: string | null;
   /**
    * Whether this viewer may change the agent. A member without it can still
    * read the inventory — it carries no credential material — but every write
@@ -74,8 +77,12 @@ export function McpConfigTab({
   onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { t } = useT("agents");
+  const canReadRuntime =
+    runtime != null && isRuntimeUsableForUser(runtime, currentUserId ?? null);
   const runtimeId =
-    runtime?.runtime_mode === "local" && runtime.status === "online"
+    runtime?.runtime_mode === "local" &&
+    runtime.status === "online" &&
+    canReadRuntime
       ? runtime.id
       : null;
   const runtimeQuery = useQuery(runtimeCapabilitiesOptions(runtimeId));
@@ -339,6 +346,8 @@ export function McpConfigTab({
         </div>
         {!runtime ? (
           <McpNotice text={t(($) => $.tab_body.mcp_config.runtime_missing)} />
+        ) : !canReadRuntime ? (
+          <McpNotice text={t(($) => $.tab_body.mcp_config.runtime_forbidden)} />
         ) : runtime.status !== "online" ? (
           <McpNotice text={t(($) => $.tab_body.mcp_config.runtime_offline)} />
         ) : runtimeQuery.isLoading ? (

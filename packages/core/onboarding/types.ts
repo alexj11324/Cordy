@@ -1,5 +1,6 @@
 export type OnboardingStep =
   | "welcome"
+  | "about_you"
   | "workspace"
   | "runtime";
 
@@ -7,7 +8,7 @@ export type OnboardingStep =
  * Exit path from the onboarding flow. Sent to
  * POST /api/me/onboarding/complete and mirrored on the PostHog
  * `onboarding_completed` event. Must stay in sync with the
- * the onboarding-path catalog in the Rust analytics backend.
+ * `OnboardingPath*` constants in `server/internal/analytics/events.go`.
  */
 export type OnboardingCompletionPath =
   | "full"
@@ -55,18 +56,19 @@ export type UseCase =
 
 /**
  * Questionnaire shape. `use_case` allows multiple values (users hire
- * Patchbay for several jobs at once); `source` and `role` are single-
+ * Multica for several jobs at once); `source` and `role` are single-
  * select — for `source` we capture the primary acquisition channel
  * for clean self-reported-attribution math (the array shape is
  * preserved for back-compat with v2 multi-select rows; the client
  * now always commits a one-element array), and `role` stays single
  * because downstream personalization wants a primary identity.
  *
- * `source` is collected after the user has seen agents complete work,
- * via the workspace source-backfill prompt (see `needs-backfill.ts`).
- * `role` / `use_case` are no longer asked during onboarding; the slots
- * stay in this one shape because they share the same JSONB column and
- * PATCH endpoint.
+ * `role` / `use_case` are collected in-flow on the About-you step;
+ * `source` is no longer asked during onboarding — it is collected
+ * after the user has seen agents complete work, via the workspace
+ * source-backfill prompt (see `needs-backfill.ts`). The slots stay in
+ * this one shape because they share the same JSONB column and PATCH
+ * endpoint.
  *
  * `*_skipped: true` distinguishes an explicit Skip / decline from a
  * slot the user never reached. Both states are "unknown" for

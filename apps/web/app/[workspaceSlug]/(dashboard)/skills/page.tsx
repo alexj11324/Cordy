@@ -1,1 +1,1 @@
-export { SkillsPage as default } from "@patchbay/views/skills";
+export { SkillsPage as default } from "@multica/views/skills";

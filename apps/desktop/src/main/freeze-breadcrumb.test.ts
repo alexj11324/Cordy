@@ -65,7 +65,7 @@ describe("freeze breadcrumb round-trip", () => {
 // The whole point of splitting read from delete: a deterministic freeze means
 // the user reopens the app and hits the same content again seconds later. If
 // reading consumed the breadcrumb, that second hang would take the still-queued
-// event with it and the failure would never be reported (PB-4115).
+// event with it and the failure would never be reported (MUL-4115).
 describe("freeze breadcrumb survives an undelivered report", () => {
   it("reading does not consume the breadcrumb", () => {
     const file = tempFile();

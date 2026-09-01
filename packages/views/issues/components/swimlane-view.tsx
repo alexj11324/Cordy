@@ -1,6 +1,6 @@
 "use client";
 
-import { issueColumnCategory, issueStatusCategory, statusCategoryOfKey } from "@patchbay/core/issues";
+import { issueColumnCategory, issueStatusCategory, statusCategoryOfKey } from "@multica/core/issues";
 import { memo, useState, useCallback, useMemo, useEffect, useRef } from "react";
 import {
   DndContext,
@@ -23,34 +23,34 @@ import { ChevronRight, EyeOff, GripVertical, MoreHorizontal, Pencil, Plus } from
 import { useQuery, useQueries, useQueryClient } from "@tanstack/react-query";
 import type {
   Issue,
-  IssueExecutorType,
+  IssueAssigneeType,
   IssueStatus,
   IssueStatusCategory,
   IssueTableGroupDescriptor,
   Project,
   UpdateIssueRequest,
-} from "@patchbay/core/types";
-import { useViewStore, useViewStoreApi } from "@patchbay/core/issues/stores/view-store-context";
+} from "@multica/core/types";
+import { useViewStore, useViewStoreApi } from "@multica/core/issues/stores/view-store-context";
 import { useViewBaseline } from "../surface/view-baseline-context";
 import { filterIssues, type IssueFilters } from "../utils/filter";
 import { getMoveAnchors } from "../utils/drag-utils";
-import type { SwimlaneGrouping } from "@patchbay/core/issues/stores/view-store";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { childrenByParentsOptions, issueKeys } from "@patchbay/core/issues/queries";
+import type { SwimlaneGrouping } from "@multica/core/issues/stores/view-store";
+import { useWorkspacePaths } from "@multica/core/paths";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
+import { useActorName } from "@multica/core/workspace/hooks";
+import { childrenByParentsOptions, issueKeys } from "@multica/core/issues/queries";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@multica/ui/components/ui/dropdown-menu";
 import { sortIssues } from "../utils/sort";
-import { ALL_STATUSES, STATUS_CONFIG } from "@patchbay/core/issues/config";
+import { ALL_STATUSES, STATUS_CONFIG } from "@multica/core/issues/config";
 import { DraggableBoardCard, BoardCardContent } from "./board-card";
 import { StatusIcon } from "./status-icon";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Button } from "@multica/ui/components/ui/button";
 import { StatusHeading } from "./status-heading";
 import { HiddenColumnsPanel, HiddenColumnRow } from "./hidden-columns-panel";
 import { InfiniteScrollSentinel } from "./infinite-scroll-sentinel";
@@ -70,7 +70,6 @@ import type {
   IssueGroupBranches,
   IssueGroupPageState,
 } from "../surface/use-issue-group-branches";
-import type { MoveIssueCallbacks } from "../surface/use-issue-surface-actions";
 
 const COLUMN_WIDTH = 280;
 const COLUMN_GAP = 16;
@@ -94,8 +93,8 @@ type SwimLaneMoveTargetUpdates = Pick<
   UpdateIssueRequest,
   | "parent_issue_id"
   | "project_id"
-  | "executor_type"
-  | "executor_id"
+  | "assignee_type"
+  | "assignee_id"
   | "status"
   | "position"
 >;
@@ -209,7 +208,7 @@ function computePosition(ids: string[], activeId: string, issueMap: Map<string, 
 
 /**
  * One swimlane row. Lanes are produced by a per-grouping builder
- * (`buildParentLanes` / `buildProjectLanes` / `buildExecutorLanes`) and then
+ * (`buildParentLanes` / `buildProjectLanes` / `buildAssigneeLanes`) and then
  * consumed uniformly by the renderer. The matcher/move-updates closures hide
  * the grouping-specific details behind a single interface so the drag-end
  * handler doesn't need to branch on grouping.
@@ -233,8 +232,8 @@ interface LaneGroup {
   parentIssue: Pick<Issue, "id" | "status"> | null;
   /** Project metadata (project grouping only) — drives the icon in the header. */
   project: Project | null;
-  /** Actor (executor grouping only) — drives the avatar in the header. */
-  actor: { type: IssueExecutorType; id: string } | null;
+  /** Actor (assignee grouping only) — drives the avatar in the header. */
+  actor: { type: IssueAssigneeType; id: string } | null;
   /** Whether this lane owns `issue`. */
   matches: (issue: Issue) => boolean;
   /**
@@ -404,43 +403,43 @@ function buildProjectLanes(
   ];
 }
 
-function buildExecutorLanes(
+function buildAssigneeLanes(
   visibleIssues: Issue[],
   getActorName: (type: string, id: string) => string,
   storedOrder: string[],
-  labels: { noExecutor: string },
+  labels: { noAssignee: string },
 ): LaneGroup[] {
   const seen = new Map<string, LaneGroup>();
   for (const issue of visibleIssues) {
-    if (issue.executor_type === null || issue.executor_id === null) continue;
-    const executorType: IssueExecutorType = issue.executor_type;
-    const executorId = issue.executor_id;
-    const rawId = `${executorType}:${executorId}`;
-    const key = `executor:${rawId}`;
+    if (issue.assignee_type === null || issue.assignee_id === null) continue;
+    const assigneeType: IssueAssigneeType = issue.assignee_type;
+    const assigneeId = issue.assignee_id;
+    const rawId = `${assigneeType}:${assigneeId}`;
+    const key = `assignee:${rawId}`;
     if (seen.has(key)) continue;
     seen.set(key, {
       key,
       rawId,
       isPinned: false,
       isOrphan: false,
-      title: getActorName(executorType, executorId),
+      title: getActorName(assigneeType, assigneeId),
       identifier: "",
       parentIssue: null,
       project: null,
-      actor: { type: executorType, id: executorId },
+      actor: { type: assigneeType, id: assigneeId },
       matches: (i) =>
-        i.executor_type === executorType && i.executor_id === executorId,
+        i.assignee_type === assigneeType && i.assignee_id === assigneeId,
       moveUpdates: {
-        executor_type: executorType,
-        executor_id: executorId,
+        assignee_type: assigneeType,
+        assignee_id: assigneeId,
       },
     });
   }
 
-  // Sort by actor type (members before agents before teams) then by name.
-  const typeOrder: Record<string, number> = { member: 0, agent: 1, team: 2 };
+  // Sort by actor type (members before agents before squads) then by name.
+  const typeOrder: Record<string, number> = { member: 0, agent: 1, squad: 2 };
   const orderIndex = new Map<string, number>();
-  storedOrder.forEach((id, idx) => orderIndex.set(`executor:${id}`, idx));
+  storedOrder.forEach((id, idx) => orderIndex.set(`assignee:${id}`, idx));
   const ordered = Array.from(seen.values()).sort((a, b) => {
     const ai = orderIndex.get(a.key);
     const bi = orderIndex.get(b.key);
@@ -455,17 +454,17 @@ function buildExecutorLanes(
 
   return [
     {
-      key: `executor:${NONE_LANE_ID}`,
+      key: `assignee:${NONE_LANE_ID}`,
       rawId: NONE_LANE_ID,
       isPinned: true,
       isOrphan: false,
-      title: labels.noExecutor,
+      title: labels.noAssignee,
       identifier: "",
       parentIssue: null,
       project: null,
       actor: null,
-      matches: (i) => i.executor_id === null,
-      moveUpdates: { executor_type: null, executor_id: null },
+      matches: (i) => i.assignee_id === null,
+      moveUpdates: { assignee_type: null, assignee_id: null },
     },
     ...ordered,
   ];
@@ -482,7 +481,7 @@ function buildServerLanes(
     noParent: string;
     otherParents: string;
     noProject: string;
-    noExecutor: string;
+    noAssignee: string;
   },
 ): LaneGroup[] {
   const visibleStatusSet = new Set(visibleStatuses);
@@ -505,34 +504,36 @@ function buildServerLanes(
       ),
     ) as Partial<Record<IssueStatus, string>>;
     const value = descriptor.value;
-    if (grouping === "executor" && value.kind === "executor") {
+    if (grouping === "assignee" && value.kind === "assignee") {
       const actorRef = value.actor;
-      const actor: { type: IssueExecutorType; id: string } | null =
+      const actor: { type: IssueAssigneeType; id: string } | null =
         actorRef &&
-        (actorRef.type === "agent" || actorRef.type === "team")
+        (actorRef.type === "member" ||
+          actorRef.type === "agent" ||
+          actorRef.type === "squad")
           ? { type: actorRef.type, id: actorRef.id }
           : null;
       const rawId = actor ? `${actor.type}:${actor.id}` : NONE_LANE_ID;
       return [{
-        key: `executor:${rawId}`,
+        key: `assignee:${rawId}`,
         rawId,
         isPinned: actor === null,
         isOrphan: false,
         title: actor
           ? getActorName(actor.type, actor.id)
-          : labels.noExecutor,
+          : labels.noAssignee,
         identifier: "",
         parentIssue: null,
         project: null,
         actor,
         matches: (issue) =>
           actor
-            ? issue.executor_type === actor.type &&
-              issue.executor_id === actor.id
-            : issue.executor_type === null && issue.executor_id === null,
+            ? issue.assignee_type === actor.type &&
+              issue.assignee_id === actor.id
+            : issue.assignee_type === null && issue.assignee_id === null,
         moveUpdates: actor
-          ? { executor_type: actor.type, executor_id: actor.id }
-          : { executor_type: null, executor_id: null },
+          ? { assignee_type: actor.type, assignee_id: actor.id }
+          : { assignee_type: null, assignee_id: null },
         total: descriptor.count,
         serverCellKeys,
       }];
@@ -631,8 +632,8 @@ function SwimLaneViewImpl({
   onMoveIssue: (
     issueId: string,
     updates: SwimLaneMoveUpdates,
-    callbacks?: MoveIssueCallbacks,
-  ) => boolean | void;
+    onSettled?: () => void,
+  ) => void;
   childProgressMap?: Map<string, ChildProgress>;
   projectMap?: Map<string, Project>;
   /** Pre-fills `project_id` on the create form for the in-cell "+" button. */
@@ -657,9 +658,9 @@ function SwimLaneViewImpl({
     // Status is enforced by visible-column rendering, not by filterIssues
     statusFilters: [],
     priorityFilters: activeFiltersProp?.priorityFilters ?? [],
-    executorFilters: activeFiltersProp?.executorFilters ?? [],
-    includeNoExecutor: activeFiltersProp?.includeNoExecutor ?? false,
-    executorFilterActive: activeFiltersProp?.executorFilterActive ?? false,
+    assigneeFilters: activeFiltersProp?.assigneeFilters ?? [],
+    includeNoAssignee: activeFiltersProp?.includeNoAssignee ?? false,
+    assigneeFilterActive: activeFiltersProp?.assigneeFilterActive ?? false,
     // Extra children are not part of the server-grouped page yet, so apply
     // the same running-task issue ids returned by `/api/working-agents`.
     agentRunningFilter: activeFiltersProp?.agentRunningFilter ?? false,
@@ -697,7 +698,7 @@ function SwimLaneViewImpl({
       noParent: t(($) => $.swimlane.no_parent),
       otherParents: t(($) => $.swimlane.other_parents),
       noProject: t(($) => $.swimlane.no_project),
-      noExecutor: t(($) => $.swimlane.no_executor),
+      noAssignee: t(($) => $.swimlane.no_assignee),
     }),
     [t],
   );
@@ -815,8 +816,8 @@ function SwimLaneViewImpl({
     if (swimlaneGrouping === "project") {
       return buildProjectLanes(issues, projects, swimlaneOrder, laneLabels);
     }
-    if (swimlaneGrouping === "executor") {
-      return buildExecutorLanes(issues, getActorName, swimlaneOrder, laneLabels);
+    if (swimlaneGrouping === "assignee") {
+      return buildAssigneeLanes(issues, getActorName, swimlaneOrder, laneLabels);
     }
     // Discovery uses `mergedIssues` so batch-fetched grandchildren can
     // promote their parents to lane headers. Metadata uses `laneSourceIssues`
@@ -853,7 +854,7 @@ function SwimLaneViewImpl({
 
   // Map of issue id → owning lane key. Used by orphan detection for parent
   // grouping (a child whose canonical parent isn't a lane header here lands
-  // in the fallback) and as the matcher hot-path for project/executor.
+  // in the fallback) and as the matcher hot-path for project/assignee.
   const cells = useMemo(() => {
     const result: Record<string, Record<string, string[]>> = {};
     for (const lane of laneGroups) {
@@ -887,7 +888,7 @@ function SwimLaneViewImpl({
           }
           // Cells are CATEGORIES: a custom status belongs to the column it
           // behaves as, and keying the cell by the raw status key dropped
-          // those cards out of the grid entirely (PB-6409).
+          // those cards out of the grid entirely (MUL-6409).
           const status = issueColumnCategory(issue);
           if (result[lane.key]?.[status]) {
             result[lane.key]![status]!.push(issue.id);
@@ -979,7 +980,7 @@ function SwimLaneViewImpl({
   const [activeIssue, setActiveIssue] = useState<Issue | null>(null);
   // The outer scroll box is the customScrollParent for the lane Virtuoso.
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
-  // Pull-based scroll restoration (PB-4741): same wiring as board/list/
+  // Pull-based scroll restoration (MUL-4741): same wiring as board/list/
   // issue-detail — ref-attach assigns the saved offset pre-paint, and the
   // lane Virtuoso is born at it via initialScrollTop.
   const restoredScrollTop = useRestoredScrollOffset("swimlane");
@@ -1275,7 +1276,7 @@ function SwimLaneViewImpl({
         issueColumnCategory(currentIssue) === finalOverCell.status;
       // ...and a card already here on a CUSTOM status keeps it: writing the
       // cell's canonical key would rewrite `awaiting_response` to `in_review`
-      // — a real status change, which starts an agent run (PB-6409).
+      // — a real status change, which starts an agent run (MUL-6409).
       const keepsStatus =
         staysInCell && currentIssue?.status !== finalOverCell.status;
       if (
@@ -1288,7 +1289,7 @@ function SwimLaneViewImpl({
       }
 
       isSettlingRef.current = true;
-      const committed = onMoveIssue(
+      onMoveIssue(
         activeId,
         {
           ...targetLane.moveUpdates,
@@ -1296,17 +1297,11 @@ function SwimLaneViewImpl({
           position: newPosition,
           ...getMoveAnchors(finalIds, activeId),
         },
-        {
-          onSettled: () => {
-            isSettlingRef.current = false;
-            setSettleVersion((v) => v + 1);
-          },
+        () => {
+          isSettlingRef.current = false;
+          setSettleVersion((v) => v + 1);
         },
       );
-      if (committed === false) {
-        isSettlingRef.current = false;
-        setSettleVersion((v) => v + 1);
-      }
     },
     [cells, cellSet, laneByKey, laneGroups, onMoveIssue, swimlaneGrouping, viewStoreApi],
   );
@@ -1366,7 +1361,7 @@ function SwimLaneViewImpl({
   // An aborted drag (pointercancel, window resize, tab hide, Escape) fires
   // onDragCancel instead of onDragEnd. Releasing the drag lock here keeps
   // localCells resyncing with the cache afterwards — see the same handler in
-  // list-view for the touch path that makes this routine (PB-6240).
+  // list-view for the touch path that makes this routine (MUL-6240).
   const handleDragCancel = useCallback(() => {
     isDraggingRef.current = false;
     setActiveIssue(null);
@@ -1493,7 +1488,7 @@ function SwimLaneViewImpl({
           {/* Seed a bounded slice of real lanes while the scroll ref hasn't
               settled after a remount, so the lane area never paints blank; once
               it's set, mount the Virtuoso with a matching `initialItemCount` to
-              survive the measurement frame (PB-4750). */}
+              survive the measurement frame (MUL-4750). */}
           {scrollEl ? (
             <Virtuoso
               customScrollParent={scrollEl}

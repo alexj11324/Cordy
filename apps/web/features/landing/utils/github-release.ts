@@ -5,14 +5,16 @@ import {
 } from "./parse-release-assets";
 
 /**
- * Server-side fetcher for the latest downloadable Patchbay release,
+ * Server-side fetcher for the latest downloadable Multica release,
  * designed to run inside a Next.js server component. Response is cached
  * by the Next.js fetch cache for 5 minutes (Vercel ISR) so hitting
  * /download costs at most one GitHub API call per region per 5 minutes.
  *
- * Desktop assets don't all land at the same time because the release uses a
- * platform/architecture matrix. A packaging job can also fail outright and
- * leave a release permanently short of some platforms. Either way the newest
+ * Desktop assets don't all land at the same time: CI uploads Linux and
+ * Windows within a minute of each other, but macOS is packaged manually
+ * (notarization credentials aren't wired into CI yet) and lands tens of
+ * minutes later. A packaging job can also fail outright and leave a
+ * release permanently short of some platforms. Either way the newest
  * release is not always the newest *downloadable* one, so we pull a
  * short window of recent releases and show the newest whose desktop
  * asset set is complete — every button on the page then resolves to a
@@ -35,7 +37,7 @@ export interface LatestRelease {
 // ship roughly daily, so that is days of head room — while staying one
 // cheap request.
 const GITHUB_RELEASES_URL =
-  "https://api.github.com/repos/alexj11324/Cordy/releases?per_page=5";
+  "https://api.github.com/repos/multica-ai/multica/releases?per_page=5";
 
 const REVALIDATE_SECONDS = 300;
 
@@ -74,7 +76,7 @@ export async function fetchLatestRelease(): Promise<LatestRelease> {
     }
     const data = (await res.json()) as GitHubReleasePayload[];
 
-    // Defensive filter — Patchbay doesn't publish prereleases or drafts
+    // Defensive filter — Multica doesn't publish prereleases or drafts
     // today, but the endpoint returns them if that ever changes. A
     // prerelease shadowing a stable version on /download would be a
     // regression.

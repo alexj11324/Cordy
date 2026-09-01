@@ -218,7 +218,7 @@ describe("createSuggestionPopupRender", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Escape containment (PB-5429): Escape while a picker is open must close ONLY
+// Escape containment (MUL-5429): Escape while a picker is open must close ONLY
 // the picker. ProseMirror calls preventDefault() for a handled key but never
 // stops propagation, and Base UI's dismiss layer listens for Escape on
 // `document` in the BUBBLE phase without consulting defaultPrevented — so
@@ -273,7 +273,7 @@ describe("Escape containment while a picker is open", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Plugin-order guard (PB-3685): when a suggestion is open inside a list item,
+// Plugin-order guard (MUL-3685): when a suggestion is open inside a list item,
 // the suggestion layer's Tab handling must outrank PatchedListItem's
 // Tab -> sinkListItem keymap. This replicates the real extension ordering and
 // fires Tab through ProseMirror's actual handleKeyDown dispatch, so a future
@@ -353,7 +353,7 @@ function makeListEditor() {
 
 // Build a two-item bullet list with the caret in the SECOND item. sinkListItem
 // can only indent an item that has a PRECEDING sibling, so the cursor must be
-// in item 2 for Tab -> sinkListItem to actually fire (Howard, PB-3685 review):
+// in item 2 for Tab -> sinkListItem to actually fire (Howard, MUL-3685 review):
 // in the first item sink is a no-op, and the guard would pass even if the
 // suggestion layer did nothing. Built from empty so `@` lands at the start of
 // item 2's paragraph (a valid suggestion boundary) without HTML-parse quirks.

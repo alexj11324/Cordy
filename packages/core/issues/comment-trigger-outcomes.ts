@@ -6,7 +6,7 @@ import type { CommentTriggerOutcome } from "../types/comment";
 // Kept as a string so every parse builds its OWN global RegExp — sharing one
 // global instance across `matchAll` calls leaks `lastIndex` and drops matches.
 const MENTION_MARKUP_SOURCE =
-  "\\[@?(.+?)\\]\\(mention:\\/\\/(member|agent|team|issue|all)\\/([0-9a-fA-F-]+|all)\\)";
+  "\\[@?(.+?)\\]\\(mention:\\/\\/(member|agent|squad|issue|all)\\/([0-9a-fA-F-]+|all)\\)";
 
 export interface ParsedMention {
   label: string;
@@ -53,7 +53,7 @@ export function blockedTriggerLabel(
 }
 
 // Validates the `trigger_outcomes` off a create/edit comment response
-// (PB-4525 §2). The create/edit responses are not fully schema-parsed, so the
+// (MUL-4525 §2). The create/edit responses are not fully schema-parsed, so the
 // one field the UI branches on is validated here: a non-array yields [], and a
 // malformed entry is dropped individually rather than failing the whole set.
 export function parseCommentTriggerOutcomes(raw: unknown): CommentTriggerOutcome[] {
@@ -72,10 +72,10 @@ export function parseCommentTriggerOutcomes(raw: unknown): CommentTriggerOutcome
 // queued, coalesced into an existing run, or intentionally deferred). Success is
 // a WHITELIST, not "anything that isn't blocked", so an unknown/future status —
 // or the empty status the schema defaults for a malformed entry — never passes
-// as success (PB-4525; mirrors the Run now whitelist).
-const HANDLED_TRIGGER_STATUSES = new Set(["queued", "coalesced", "deferred", "side_chat"]);
+// as success (MUL-4525; mirrors the Run now whitelist).
+const HANDLED_TRIGGER_STATUSES = new Set(["queued", "coalesced", "deferred"]);
 
-// The explicit @agent / @team mentions that did NOT clearly trigger, so the
+// The explicit @agent / @squad mentions that did NOT clearly trigger, so the
 // "posted, but N not triggered" warning must cover them: `blocked` plus any
 // unknown/future/empty status. Never assume an unrecognized status succeeded.
 export function unhandledCommentTriggerOutcomes(raw: unknown): CommentTriggerOutcome[] {

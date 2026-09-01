@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
-import { bucketDiagnosticPath, setDiagnosticRoute } from "@patchbay/core/diagnostics";
-import { useAuthStore } from "@patchbay/core/auth";
+import { bucketDiagnosticPath, setDiagnosticRoute } from "@multica/core/diagnostics";
+import { useAuthStore } from "@multica/core/auth";
 import { useActiveTabIdentity, useActiveTabUrl } from "@/stores/tab-store";
 import {
   useWindowOverlayStore,
@@ -103,7 +103,5 @@ function overlayPath(overlay: WindowOverlay): string {
       return `/invite/${overlay.invitationId}`;
     case "invitations":
       return "/invitations";
-    case "settings":
-      return overlay.path;
   }
 }

@@ -6,7 +6,7 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@patchbay/ui/components/ui/select";
+} from "@multica/ui/components/ui/select";
 
 // Curated fallback list used when the runtime lacks `Intl.supportedValuesOf`.
 // Exported so every timezone picker draws from one source instead of

@@ -5,7 +5,7 @@ description: A workspace is the boundary that keeps teams, work, and agent confi
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-A workspace is Patchbay's top-level boundary. Members, issues, projects, agents, skills, and task history all belong to one workspace and are fully isolated from every other.
+A workspace is Multica's top-level boundary. Members, issues, projects, agents, skills, and task history all belong to one workspace and are fully isolated from every other.
 
 ## What a workspace contains
 
@@ -23,8 +23,8 @@ A workspace is Patchbay's top-level boundary. Members, issues, projects, agents,
 Creating a workspace asks for three things:
 
 - **Name**: shown to members; can be changed later.
-- **Workspace URL**: the slug in the address — the `my-team` in `patchbay.aspectlylabs.com/my-team`. Lowercase letters, digits, and hyphens only; it cannot collide with an existing workspace or a reserved address, and it cannot be changed after creation.
-- **Issue prefix**: pre-filled from the workspace URL and editable before you create — with the prefix `PB`, issue numbers appear as `PB-1`, `PB-2`, counting up independently within the workspace. Uppercase letters and digits, up to 10 characters; it can be changed later in settings.
+- **Workspace URL**: the slug in the address — the `my-team` in `multica.ai/my-team`. Lowercase letters, digits, and hyphens only; it cannot collide with an existing workspace or a reserved address, and it cannot be changed after creation.
+- **Issue prefix**: pre-filled from the workspace URL and editable before you create — with the prefix `MUL`, issue numbers appear as `MUL-1`, `MUL-2`, counting up independently within the workspace. Uppercase letters and digits, up to 10 characters; it can be changed later in settings.
 
 The creator automatically becomes an `owner`.
 
@@ -35,7 +35,7 @@ The creator automatically becomes an `owner`.
 ![Workspace settings: name, context, slug, issue prefix, and the danger zone](/images/docs/workspace-settings.webp)
 
 <Callout type="warning">
-After the issue prefix changes, every issue immediately switches to the new number (`PB-5` becomes `NEW-5`), but the old numbers in PRs, branch names, and chat history do not update.
+After the issue prefix changes, every issue immediately switches to the new number (`MUL-5` becomes `NEW-5`), but the old numbers in PRs, branch names, and chat history do not update.
 </Callout>
 
 ## Switch and leave

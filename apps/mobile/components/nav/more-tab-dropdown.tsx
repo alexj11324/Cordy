@@ -22,7 +22,7 @@
  * the More cell and stripping the label. The Option B pattern here
  * leaves the real tab button entirely alone.
  *
- * Visual conventions inside the popover (apps/mobile/AGENTS.md):
+ * Visual conventions inside the popover (apps/mobile/CLAUDE.md):
  *   - All glyphs are SF Symbols rendered via expo-image (`sf:` source),
  *     so they share the visual language of the bottom tab bar icons.
  *   - All colours route through THEME tokens (foreground /
@@ -41,7 +41,7 @@ import { router, usePathname } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { TriggerRef } from "@rn-primitives/dropdown-menu";
-import type { User, Workspace } from "@patchbay/core/types";
+import type { User, Workspace } from "@multica/core/types";
 import {
   DropdownMenu,
   DropdownMenuTrigger,

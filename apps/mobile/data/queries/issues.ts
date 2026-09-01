@@ -14,7 +14,7 @@ export { issueKeys } from "./issue-keys";
 
 /**
  * Workspace-wide issue list. Backend filters by `X-Workspace-Slug` header
- * (root AGENTS.md "All queries filter by workspace_id"), so we pass an
+ * (root CLAUDE.md "All queries filter by workspace_id"), so we pass an
  * empty params object — server returns every issue the user is allowed to
  * see in the current workspace.
  *
@@ -54,7 +54,7 @@ export const issueTimelineOptions = (wsId: string | null, id: string) =>
   });
 
 /**
- * Active and deferred tasks for an issue. WS events (task:queued/dispatch/
+ * Currently-running tasks for an issue. WS events (task:queued/dispatch/
  * progress/completed/failed/cancelled) patch this cache directly via
  * `issue-ws-updaters.ts`, so refetches are rare in practice. The fetch is
  * still wired so the initial open + reconnect-invalidate path works.

@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import postcss from "postcss";
 import tailwind from "@tailwindcss/postcss";
-import { cn } from "@patchbay/ui/lib/utils";
-import { buttonVariants } from "@patchbay/ui/components/ui/button";
+import { cn } from "@multica/ui/lib/utils";
+import { buttonVariants } from "@multica/ui/components/ui/button";
 import { beforeAll, describe, expect, it } from "vitest";
 
 /**
@@ -17,7 +17,7 @@ import { beforeAll, describe, expect, it } from "vitest";
  * font-fallback-order.test.ts, which also asserts on the app's CSS.
  *
  * Why simulate a cascade instead of asserting class names: a class name in
- * the DOM proves nothing about the pixel. Twice on PB-4884 the brand colour
+ * the DOM proves nothing about the pixel. Twice on MUL-4884 the brand colour
  * was present as a class and still lost:
  *
  *   1. Brand classes layered over the `outline` variant. tailwind-merge keeps

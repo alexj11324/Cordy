@@ -1,19 +1,19 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import { configStore } from "@patchbay/core/config";
+import { I18nProvider } from "@multica/core/i18n/react";
+import { configStore } from "@multica/core/config";
 import enCommon from "../../locales/en/common.json";
 import enRuntimes from "../../locales/en/runtimes.json";
 import { ConnectRemoteDialog } from "./connect-remote-dialog";
 
 const TEST_RESOURCES = { en: { common: enCommon, runtimes: enRuntimes } };
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-test",
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/paths", () => ({
   paths: {
     workspace: () => ({
       agents: () => "/agents",
@@ -27,7 +27,7 @@ const wsEventState = vi.hoisted(() => ({
   handler: null as ((payload: unknown) => void) | null,
 }));
 
-vi.mock("@patchbay/core/realtime", () => ({
+vi.mock("@multica/core/realtime", () => ({
   useWSEvent: (_event: string, handler: (payload: unknown) => void) => {
     wsEventState.handler = handler;
   },
@@ -41,6 +41,7 @@ function resetConfigStore() {
   configStore.setState({
     cdnDomain: "",
     allowSignup: true,
+    googleClientId: "",
     daemonServerUrl: "",
     daemonAppUrl: "",
     workspaceCreationDisabled: false,
@@ -78,13 +79,13 @@ describe("ConnectRemoteDialog", () => {
   it("uses cloud setup commands by default", () => {
     const { baseElement } = renderDialog();
 
-    expect(baseElement).toHaveTextContent("patchbay setup");
-    expect(baseElement).not.toHaveTextContent("patchbay setup self-host");
+    expect(baseElement).toHaveTextContent("multica setup");
+    expect(baseElement).not.toHaveTextContent("multica setup self-host");
     expect(baseElement).toHaveTextContent(
-      "patchbay config set server_url https://api.aspectlylabs.com",
+      "multica config set server_url https://api.multica.ai",
     );
     expect(baseElement).toHaveTextContent(
-      "patchbay config set app_url https://patchbay.aspectlylabs.com",
+      "multica config set app_url https://multica.ai",
     );
   });
 
@@ -95,13 +96,13 @@ describe("ConnectRemoteDialog", () => {
     });
 
     expect(baseElement).toHaveTextContent(
-      "patchbay setup self-host --server-url https://api.example.com --app-url https://app.example.com",
+      "multica setup self-host --server-url https://api.example.com --app-url https://app.example.com",
     );
     expect(baseElement).toHaveTextContent(
-      "patchbay config set server_url https://api.example.com",
+      "multica config set server_url https://api.example.com",
     );
     expect(baseElement).toHaveTextContent(
-      "patchbay config set app_url https://app.example.com",
+      "multica config set app_url https://app.example.com",
     );
   });
 
@@ -109,7 +110,7 @@ describe("ConnectRemoteDialog", () => {
     const { baseElement } = renderDialog();
 
     const setupCode = Array.from(baseElement.querySelectorAll("code")).find((node) =>
-      node.textContent?.includes("patchbay setup"),
+      node.textContent?.includes("multica setup"),
     );
 
     expect(setupCode).toHaveClass(...ligatureClasses);
@@ -119,7 +120,7 @@ describe("ConnectRemoteDialog", () => {
     const { baseElement } = renderDialog();
 
     const tokenCode = Array.from(baseElement.querySelectorAll("code")).find((node) =>
-      node.textContent?.includes("patchbay login --token <YOUR_TOKEN>"),
+      node.textContent?.includes("multica login --token <YOUR_TOKEN>"),
     );
 
     expect(tokenCode).toHaveClass(...ligatureClasses);
@@ -128,7 +129,7 @@ describe("ConnectRemoteDialog", () => {
   it("transitions from setup instructions to the connected state", async () => {
     const { baseElement } = renderDialog();
 
-    expect(baseElement).toHaveTextContent("patchbay setup");
+    expect(baseElement).toHaveTextContent("multica setup");
     act(() => {
       wsEventState.handler?.({ runtime_id: "rt-test" });
     });
@@ -139,6 +140,6 @@ describe("ConnectRemoteDialog", () => {
         screen.getByRole("button", { name: "Create an agent" }),
       ).toBeInTheDocument();
     });
-    expect(baseElement).not.toHaveTextContent("patchbay setup");
+    expect(baseElement).not.toHaveTextContent("multica setup");
   });
 });

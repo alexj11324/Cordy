@@ -10,7 +10,7 @@
  *   - Tap dispatches into the global LightboxProvider for fullscreen
  *     viewing with pinch-zoom + swipe-down-to-dismiss.
  *
- * URI resolution: markdown content authored in Patchbay stores image
+ * URI resolution: markdown content authored in Multica stores image
  * references using the internal `mc://file/<id>` scheme rather than
  * baking signed HTTPS URLs into the content (signed URLs expire). iOS
  * doesn't understand `mc://`, so we look the URI up in the supplied
@@ -27,8 +27,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Image as RNImage, Pressable, View } from "react-native";
 import { Image as ExpoImage } from "expo-image";
-import type { Attachment } from "@patchbay/core/types";
-import { matchAttachmentByURL } from "@patchbay/core/attachments/image-sequence";
+import type { Attachment } from "@multica/core/types";
+import { matchAttachmentByURL } from "@multica/core/attachments/image-sequence";
 import { resolveAttachmentUrl } from "@/lib/attachment-url";
 import { useLightbox } from "./lightbox-provider";
 import { useImageSequence } from "./image-sequence";
@@ -59,7 +59,7 @@ export function MarkdownImage({ uri, attachments }: Props) {
       : uri;
     // The backend may return a server-relative `download_url` (e.g.
     // `/api/attachments/{id}/download`) when no CloudFront signer is
-    // configured — see PB-2976. RN's image loader has no document
+    // configured — see MUL-2976. RN's image loader has no document
     // origin to resolve against, so prepend `EXPO_PUBLIC_API_URL` for
     // server-relative paths and let absolute URLs / external links pass
     // through unchanged.

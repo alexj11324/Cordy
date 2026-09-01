@@ -19,18 +19,18 @@ import {
   Unlink,
   UserMinus,
 } from "lucide-react";
-import type { Issue } from "@patchbay/core/types";
-import { resolveWorkdirCopyTarget } from "@patchbay/core/issues";
-import { todayDateOnly, addDaysDateOnly } from "@patchbay/core/issues/date";
-import { api } from "@patchbay/core/api";
+import type { Issue } from "@multica/core/types";
+import { resolveWorkdirCopyTarget } from "@multica/core/issues";
+import { todayDateOnly, addDaysDateOnly } from "@multica/core/issues/date";
+import { api } from "@multica/core/api";
 import {
   PRIORITY_DISPLAY_ORDER,
   PRIORITY_CONFIG,
-} from "@patchbay/core/issues/config";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
+} from "@multica/core/issues/config";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
 import { useStatusOptions } from "../utils/status-options";
-import { issueKeys } from "@patchbay/core/issues/queries";
+import { issueKeys } from "@multica/core/issues/queries";
 import { StatusIcon } from "../components/status-icon";
 import { PriorityIcon } from "../components/priority-icon";
 import {
@@ -39,15 +39,15 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
   DropdownMenuSeparator,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@multica/ui/components/ui/dropdown-menu";
 import {
   ContextMenuItem,
   ContextMenuSub,
   ContextMenuSubTrigger,
   ContextMenuSubContent,
   ContextMenuSeparator,
-} from "@patchbay/ui/components/ui/context-menu";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+} from "@multica/ui/components/ui/context-menu";
+import { copyText } from "@multica/ui/lib/clipboard";
 import type { UseIssueActionsResult } from "./use-issue-actions";
 import { PluginHookMenuItems, PluginModalMenuItems } from "../../plugins";
 import { useT } from "../../i18n";
@@ -86,11 +86,11 @@ interface IssueActionsMenuItemsProps {
   issue: Issue;
   actions: UseIssueActionsResult;
   primitives: MenuPrimitives;
-  /** Called when the user clicks the Executor menu item. The parent should
-   *  close the surrounding menu and open the shared `ExecutorPicker` popover.
+  /** Called when the user clicks the Assignee menu item. The parent should
+   *  close the surrounding menu and open the shared `AssigneePicker` popover.
    *  Decoupled this way so the same item can drive both the dropdown
    *  (3-dot button) and the context menu (right-click) wrappers. */
-  onOpenExecutor: () => void;
+  onOpenAssignee: () => void;
   /** If set, leave the page after the issue is deleted (used by the detail
    *  page, which renders the issue being deleted). The delete modal goes back
    *  to the list the user came from and only falls back to this path when
@@ -102,7 +102,7 @@ export function IssueActionsMenuItems({
   issue,
   actions,
   primitives: P,
-  onOpenExecutor,
+  onOpenAssignee,
   onDeletedFallbackPath,
 }: IssueActionsMenuItemsProps) {
   const { t } = useT("issues");
@@ -128,8 +128,8 @@ export function IssueActionsMenuItems({
   // that wrap every row in IssueActionsContextMenu pay nothing until the
   // menu actually opens.
   //
-  // The query shares its key with the issue-detail Agent surfaces, so
-  // navigating from the issue detail page is a free cache hit.
+  // The query shares its key with ExecutionLogSection, so navigating from
+  // the issue detail page is a free cache hit.
   const { data: tasks } = useQuery({
     queryKey: issueKeys.tasks(issue.id),
     queryFn: () => api.listTasksByIssue(issue.id),
@@ -186,7 +186,7 @@ export function IssueActionsMenuItems({
           {/* Catalog-driven, like the picker and the filter: every entry point
               that can change a status must offer the same set, or a custom
               status is unreachable from the board's right-click menu. One flat
-              list in canonical category order. (PB-6243) */}
+              list in canonical category order. (MUL-6243) */}
           {statusOptions.map((option) => (
             <P.Item
               key={option.key}
@@ -230,14 +230,14 @@ export function IssueActionsMenuItems({
         </P.SubContent>
       </P.Sub>
 
-      {/* Executor — closes this menu and hands off to the shared
-          ExecutorPicker (members + agents + teams, with search and
+      {/* Assignee — closes this menu and hands off to the shared
+          AssigneePicker (members + agents + squads, with search and
           permission checks). Keeps a single source of truth for the
-          executor UX across detail sidebar, board cards, and right-click /
+          assignee UX across detail sidebar, board cards, and right-click /
           3-dot menus. */}
-      <P.Item onClick={onOpenExecutor}>
+      <P.Item onClick={onOpenAssignee}>
         <UserMinus className="h-3.5 w-3.5" />
-        {t(($) => $.actions.executor)}
+        {t(($) => $.actions.assignee)}
       </P.Item>
 
       {/* Start date */}

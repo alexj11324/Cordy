@@ -12,12 +12,12 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@multica/ui/components/ui/alert-dialog";
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
-} from "@patchbay/ui/components/ui/resizable";
+} from "@multica/ui/components/ui/resizable";
 import {
   applyDraftRuntimeChange,
   decodeBuilderInput,
@@ -25,12 +25,12 @@ import {
   mergeBuilderDraft,
   parseBuilderDraft,
   stripBuilderDraft,
-} from "@patchbay/core/agents";
+} from "@multica/core/agents";
 import {
   runtimeDisplayLabel,
   runtimeModelsOptions,
-} from "@patchbay/core/runtimes";
-import type { AgentBuilderSessionSummary } from "@patchbay/core/types";
+} from "@multica/core/runtimes";
+import type { AgentBuilderSessionSummary } from "@multica/core/types";
 import { AgentConfigurationPanel } from "./agent-configuration-panel";
 import { BuilderConversation } from "./builder-conversation";
 import { CreateAgentFooter } from "./create-agent-footer";
@@ -52,7 +52,7 @@ import { useT } from "../../i18n";
  */
 export function BuilderWorkspace({
   sessionId,
-  teamId,
+  squadId,
   session,
   sessionSettled,
   fallbackRuntimeId,
@@ -60,7 +60,7 @@ export function BuilderWorkspace({
   onRuntimeLabel,
 }: {
   sessionId: string;
-  teamId: string | null;
+  squadId: string | null;
   /** This conversation's row from the list, once it has arrived. */
   session: AgentBuilderSessionSummary | undefined;
   /** The list query answered — either data or an error. */
@@ -76,13 +76,13 @@ export function BuilderWorkspace({
 }) {
   const { t } = useT("agents");
   const { defaultLayout, onLayoutChanged } = useDefaultLayout({
-    id: "patchbay_agent_builder_layout",
+    id: "multica_agent_builder_layout",
   });
 
   // Resuming: the conversation already runs somewhere, and only the server
   // knows where. Until it answers, the form seeds no runtime at all — falling
   // back to the first usable one would put the picker on a runtime that
-  // executes nothing (PB-5163).
+  // executes nothing (MUL-5163).
   const runtimeSeed = useMemo(
     () => ({
       ready: sessionSettled,
@@ -162,7 +162,7 @@ export function BuilderWorkspace({
   const submit = useCreateAgentSubmit({
     draft,
     runtimeId: selectedRuntime?.id ?? null,
-    teamId,
+    squadId,
     template: "agent_builder",
     // The agent is already committed here, so builder cleanup must never turn
     // a successful create into a retryable create error.
@@ -361,7 +361,7 @@ export function BuilderWorkspace({
             <CreateAgentFooter
               canCreate={canCreate}
               creating={submit.creating}
-              team={!!teamId}
+              squad={!!squadId}
               error={submit.formError}
               onCreate={() => void submit.create()}
               onDiscard={() => setConfirmingDiscard(true)}

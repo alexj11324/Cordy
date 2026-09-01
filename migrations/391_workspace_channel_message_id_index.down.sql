@@ -1,1 +1,0 @@
-DROP INDEX CONCURRENTLY IF EXISTS workspace_channel_message_id_uidx;

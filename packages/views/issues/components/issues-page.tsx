@@ -6,9 +6,9 @@ import type {
   IssueTableFacetSpec,
   IssueTableFacetsResponse,
   WorkingAgentSummary,
-} from "@patchbay/core/types";
-import { useIssuesScope } from "@patchbay/core/issues/stores/issues-scope-store";
-import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
+} from "@multica/core/types";
+import { useIssuesScope } from "@multica/core/issues/stores/issues-scope-store";
+import { useViewStore } from "@multica/core/issues/stores/view-store-context";
 import { PageHeader } from "../../layout/page-header";
 import { useT } from "../../i18n";
 import { IssueSurface } from "../surface/issue-surface";
@@ -39,7 +39,6 @@ function IssuesSurfaceHeader({
       dateFilter={dateFilter}
       onDateFilterChange={setDateFilter}
       isRefreshing={isRefreshing}
-      allowGraph
       facetCountsExact={facetCountsExact}
       tableFacetCounts={tableFacetCounts}
       onTableFacetChange={onTableFacetChange}
@@ -60,7 +59,7 @@ export function IssuesPage() {
 
       <IssueSurface
         scope={{ type: "workspace", actorKind: scope }}
-        modes={["board", "list", "table", "swimlane", "graph"]}
+        modes={["board", "list", "table", "swimlane"]}
         batchToolbar="list"
         renderHeader={({ controller }) => (
           <IssuesSurfaceHeader

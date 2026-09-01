@@ -13,13 +13,13 @@ import { createLogger } from "../logger";
 
 const logger = createLogger("chat.store");
 
-const AGENT_STORAGE_KEY = "patchbay:chat:selectedAgentId";
-const PROJECT_STORAGE_KEY = "patchbay:chat:selectedProjectId";
-const SESSION_STORAGE_KEY = "patchbay:chat:activeSessionId";
+const AGENT_STORAGE_KEY = "multica:chat:selectedAgentId";
+const PROJECT_STORAGE_KEY = "multica:chat:selectedProjectId";
+const SESSION_STORAGE_KEY = "multica:chat:activeSessionId";
 /** Drafts are stored as one JSON blob per workspace: { [sessionId]: text }. */
-const DRAFTS_KEY = "patchbay:chat:drafts";
+const DRAFTS_KEY = "multica:chat:drafts";
 /** Draft attachment records per workspace: { [sessionId]: Attachment[] }. */
-const DRAFT_ATTACHMENTS_KEY = "patchbay:chat:draft-attachments";
+const DRAFT_ATTACHMENTS_KEY = "multica:chat:draft-attachments";
 /**
  * Ids of durable draft restores (#5219) this client has already written into a
  * composer. Persisted, because the server-side consume that follows can be lost
@@ -28,7 +28,7 @@ const DRAFT_ATTACHMENTS_KEY = "patchbay:chat:draft-attachments";
  * The ledger makes the hand-off at-most-once regardless: an id in here is never
  * offered again, only reconciled (consumed again) until the row is gone.
  */
-const APPLIED_RESTORES_KEY = "patchbay:chat:applied-draft-restores";
+const APPLIED_RESTORES_KEY = "multica:chat:applied-draft-restores";
 /**
  * Local restore requests waiting to reach a composer, queued per session (#5219).
  *
@@ -42,21 +42,21 @@ const APPLIED_RESTORES_KEY = "patchbay:chat:applied-draft-restores";
  * Durable restores (which have a server row) deliberately do NOT go in here —
  * they are refetchable, so dropping one loses nothing.
  */
-const PENDING_SEND_RESTORES_KEY = "patchbay:chat:pending-send-restores";
+const PENDING_SEND_RESTORES_KEY = "multica:chat:pending-send-restores";
 /**
  * Draft slot for a chat that hasn't been created yet. There is exactly one per
  * workspace: the new-chat composer's identity is "the chat I have not created",
  * not "the chat I have not created with agent X". `selectedAgentId` is the send
  * target, not draft ownership, so switching agent mid-compose keeps the text
- * (PB-4864). Created sessions keep their own slot, keyed by session id.
+ * (MUL-4864). Created sessions keep their own slot, keyed by session id.
  */
 export const DRAFT_NEW_SESSION = "__new__";
 
-/** Pre-PB-4864 per-agent new-chat slots, shaped `__new__:<agentId>`. */
+/** Pre-MUL-4864 per-agent new-chat slots, shaped `__new__:<agentId>`. */
 const LEGACY_NEW_SESSION_PREFIX = `${DRAFT_NEW_SESSION}:`;
-const CHAT_WIDTH_KEY = "patchbay:chat:width";
-const CHAT_HEIGHT_KEY = "patchbay:chat:height";
-const CHAT_EXPANDED_KEY = "patchbay:chat:expanded";
+const CHAT_WIDTH_KEY = "multica:chat:width";
+const CHAT_HEIGHT_KEY = "multica:chat:height";
+const CHAT_EXPANDED_KEY = "multica:chat:expanded";
 /**
  * Open/closed preference, persisted globally (not per-workspace) — most users
  * have one habitual chat-panel preference across workspaces. Missing key =
@@ -65,7 +65,7 @@ const CHAT_EXPANDED_KEY = "patchbay:chat:expanded";
  * Once the user toggles even once, their explicit choice is respected on
  * every subsequent reload.
  */
-const OPEN_KEY = "patchbay:chat:isOpen";
+const OPEN_KEY = "multica:chat:isOpen";
 /**
  * Whether the floating chat window (FAB + overlay) is available at all,
  * persisted globally like OPEN_KEY. This is the Settings → Chat preference:
@@ -73,7 +73,7 @@ const OPEN_KEY = "patchbay:chat:isOpen";
  * Missing key = default ON — the floating window is on by default and can
  * be turned off from the Settings → Chat tab.
  */
-const FLOATING_KEY = "patchbay:chat:floatingChatEnabled";
+const FLOATING_KEY = "multica:chat:floatingChatEnabled";
 
 function readDrafts(storage: StorageAdapter, key: string): Record<string, string> {
   const raw = storage.getItem(key);
@@ -118,7 +118,7 @@ function readDraftAttachments(storage: StorageAdapter, key: string): Record<stri
     const out: Record<string, DraftUpload[]> = {};
     for (const [draftKey, value] of Object.entries(parsed)) {
       if (!Array.isArray(value)) continue;
-      // Normalize on every load (PB-5181 L2): bare Attachment rows persisted
+      // Normalize on every load (MUL-5181 L2): bare Attachment rows persisted
       // by pre-L2 builds become `uploaded` placeholders, and an upload still
       // `uploading` at load time is dropped (bytes are gone, and nothing in the
       // body references it).
@@ -306,10 +306,6 @@ export interface ChatState {
   floatingChatEnabled: boolean;
   activeSessionId: string | null;
   selectedAgentId: string | null;
-  /** Monotonic signal for sibling chat surfaces to supersede a pending URL intent. */
-  agentIntentRevision: number;
-  /** Monotonic signal for the sidebar to return compact chat to the topic list. */
-  topicsViewRequest: number;
   /** Project context for the next session. Existing sessions remain bound to
    *  their server-persisted project_id. */
   selectedProjectId: string | null;
@@ -331,8 +327,6 @@ export interface ChatState {
   setFloatingChatEnabled: (enabled: boolean) => void;
   setActiveSession: (id: string | null) => void;
   setSelectedAgentId: (id: string) => void;
-  supersedeAgentIntent: () => void;
-  requestTopicsView: () => void;
   setSelectedProjectId: (id: string | null) => void;
   /** sessionId accepts a real session UUID or DRAFT_NEW_SESSION. */
   setInputDraft: (sessionId: string, draft: string) => void;
@@ -399,8 +393,6 @@ export function createChatStore(options: ChatStoreOptions) {
     floatingChatEnabled: initialFloatingEnabled,
     activeSessionId: storage.getItem(wsKey(SESSION_STORAGE_KEY)),
     selectedAgentId: initialAgentId,
-    agentIntentRevision: 0,
-    topicsViewRequest: 0,
     selectedProjectId: storage.getItem(wsKey(PROJECT_STORAGE_KEY)),
     inputDrafts: initialDraftSlots.inputDrafts,
     inputDraftAttachments: initialDraftSlots.inputDraftAttachments,
@@ -441,12 +433,6 @@ export function createChatStore(options: ChatStoreOptions) {
       logger.info("setSelectedAgentId", { from: get().selectedAgentId, to: id });
       storage.setItem(wsKey(AGENT_STORAGE_KEY), id);
       set({ selectedAgentId: id });
-    },
-    supersedeAgentIntent: () => {
-      set((state) => ({ agentIntentRevision: state.agentIntentRevision + 1 }));
-    },
-    requestTopicsView: () => {
-      set((state) => ({ topicsViewRequest: state.topicsViewRequest + 1 }));
     },
     setSelectedProjectId: (id) => {
       logger.info("setSelectedProjectId", { from: get().selectedProjectId, to: id });

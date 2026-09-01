@@ -30,7 +30,7 @@ describe("sanitizeRendererRouteContext", () => {
         path: "/:slug/issues",
         workspaceSlug: "acme",
         tabId: "tab-1",
-        issueId: "PB-5345",
+        issueId: "MUL-5345",
       },
       reportedAt,
     );

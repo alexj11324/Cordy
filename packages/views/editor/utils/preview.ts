@@ -5,12 +5,12 @@
  *   1. Add a new branch returning a new PreviewKind literal.
  *   2. Add the corresponding renderer in attachment-preview-modal.tsx's dispatch.
  *   3. If the renderer needs the file body as text, also extend isTextPreviewable
- *      in the Rust file handler so the proxy endpoint accepts it.
+ *      in server/internal/handler/file.go so the proxy endpoint accepts it.
  *   4. If the renderer fetches a binary, decide whether to use download_url
  *      (CloudFront, no auth on the client side) or a new authenticated proxy.
  */
 
-import { isImageAttachment } from "@patchbay/core/attachments/image-sequence";
+import { isImageAttachment } from "@multica/core/attachments/image-sequence";
 
 export type PreviewKind =
   | "image"
@@ -89,12 +89,12 @@ const BASENAME_LANGUAGE_MAP: Record<string, string> = {
 };
 
 // IMPORTANT — KEEP IN SYNC with isTextPreviewable() in
-// the Rust file handler. If an extension lands here but the proxy
+// server/internal/handler/file.go. If an extension lands here but the proxy
 // rejects it, the user sees a 415 fallback in the modal. If the proxy accepts
 // but this set doesn't, the Eye button doesn't appear at all.
 //
 // TODO(follow-up): extract to a JSON single-source-of-truth + generator
-// (mirror the backend's reserved-slugs pattern).
+// (mirror reserved-slugs pattern in server/internal/handler/reserved_slugs.json).
 const TEXT_EXTENSIONS = new Set<string>([
   "md", "markdown", "txt", "log", "csv", "tsv",
   "html", "htm", "json", "xml",
@@ -136,7 +136,7 @@ const VIDEO_EXTS = new Set<string>([
 const AUDIO_EXTS = new Set<string>([
   "mp3", "wav", "m4a", "ogg", "oga", "flac", "aac", "opus",
 ]);
-// Image detection lives in @patchbay/core/attachments/image-sequence — the
+// Image detection lives in @multica/core/attachments/image-sequence — the
 // gallery sequence builder needs the same answer and is shared with mobile,
 // which cannot import from packages/views.
 

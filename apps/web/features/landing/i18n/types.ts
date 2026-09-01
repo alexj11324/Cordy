@@ -1,4 +1,4 @@
-import type { SupportedLocale } from "@patchbay/core/i18n";
+import type { SupportedLocale } from "@multica/core/i18n";
 export { docsHrefForLocale } from "@/lib/docs-href";
 
 export type Locale = SupportedLocale;
@@ -43,7 +43,6 @@ export type LandingDict = {
   header: {
     github: string;
     cta: string;
-    signIn: string;
     dashboard: string;
     docs: string;
     changelog: string;
@@ -102,7 +101,17 @@ export type LandingDict = {
   };
   about: {
     title: string;
-    nameLine: string;
+    nameLine: {
+      prefix: string;
+      mul: string;
+      tiplexed: string;
+      i: string;
+      nformationAnd: string;
+      c: string;
+      omputing: string;
+      a: string;
+      gent: string;
+    };
     paragraphs: string[];
     cta: string;
   };

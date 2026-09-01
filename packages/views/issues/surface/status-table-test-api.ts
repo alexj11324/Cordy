@@ -1,4 +1,4 @@
-import { ALL_STATUSES } from "@patchbay/core/issues/config";
+import { ALL_STATUSES } from "@multica/core/issues/config";
 import type {
   Issue,
   IssueTableGroupDescriptor,
@@ -9,7 +9,7 @@ import type {
   IssueTableRowsRequest,
   ListIssuesParams,
   ListIssuesResponse,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 
 type LegacyListIssues = (
   params?: ListIssuesParams,
@@ -17,7 +17,7 @@ type LegacyListIssues = (
 
 /** One agent holding running issue tasks, as the working-agents projection
  *  reports it. `issue_ids` may name issues outside the queried surface — the
- *  facet is expected to drop those, which is the whole point of PB-5525. */
+ *  facet is expected to drop those, which is the whole point of MUL-5525. */
 export interface WorkingTaskFixture {
   id: string;
   issue_ids: readonly string[];
@@ -39,7 +39,7 @@ export interface WorkingAgentsFixture {
  * CATEGORY (`status_category:<category>`); the table still groups by concrete
  * status key. This fixture holds only built-in statuses, where a key IS its own
  * category, so the two axes select the same rows — only the key shape differs.
- * (PB-6243)
+ * (MUL-6243)
  */
 function statusAxis(group: { kind: string }): string {
   return group.kind === "status_category" ? "status_category" : "status";
@@ -59,10 +59,10 @@ function legacyParamsForStatus(
     limit: 50,
     offset: 0,
     ...(scope.kind === "project" ? { project_id: scope.project_id } : {}),
-    ...(scope.kind === "executor" && scope.actor
+    ...(scope.kind === "assignee" && scope.actor
       ? {
-          executor_type: scope.actor.type,
-          executor_id: scope.actor.id,
+          assignee_type: scope.actor.type,
+          assignee_id: scope.actor.id,
         }
       : {}),
     ...(scope.kind === "creator" && scope.actor
@@ -140,19 +140,19 @@ function workingAgentFacetValues(
 
 function primaryDescriptor(
   issue: Issue,
-  primary: "executor" | "project" | "parent",
+  primary: "assignee" | "project" | "parent",
   issueById: ReadonlyMap<string, Issue>,
 ): Omit<IssueTableGroupDescriptor, "count" | "secondary_groups"> {
-  if (primary === "executor") {
+  if (primary === "assignee") {
     const actor =
-      issue.executor_type && issue.executor_id
-        ? { type: issue.executor_type, id: issue.executor_id }
+      issue.assignee_type && issue.assignee_id
+        ? { type: issue.assignee_type, id: issue.assignee_id }
         : null;
     return {
       key: actor
-        ? `executor:${actor.type}:${actor.id}`
-        : "executor:unassigned",
-      value: { kind: "executor", actor },
+        ? `assignee:${actor.type}:${actor.id}`
+        : "assignee:unassigned",
+      value: { kind: "assignee", actor },
     };
   }
   if (primary === "project") {

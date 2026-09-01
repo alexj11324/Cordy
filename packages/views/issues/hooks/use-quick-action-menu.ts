@@ -3,13 +3,13 @@
 import { useCallback, useMemo, useRef } from "react";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "@patchbay/core/api";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { quickActionListOptions } from "@patchbay/core/quick-actions";
+import { api } from "@multica/core/api";
+import { useCurrentWorkspace } from "@multica/core/paths";
+import { quickActionListOptions } from "@multica/core/quick-actions";
 
 /**
  * Supplies the comment composer's `/` menu with this workspace's quick actions
- * (PB-5465).
+ * (MUL-5465).
  *
  * Picking one INSERTS the rendered body rather than running it — the composer
  * path exists precisely for the "this time is different" case, so the user

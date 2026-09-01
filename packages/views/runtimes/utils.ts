@@ -2,8 +2,8 @@ import type {
   AgentRuntime,
   RuntimeUsage,
   RuntimeUsageByAgent,
-} from "@patchbay/core/types";
-import { getCustomPricing } from "@patchbay/core/runtimes/custom-pricing-store";
+} from "@multica/core/types";
+import { getCustomPricing } from "@multica/core/runtimes/custom-pricing-store";
 
 // A live local daemon re-registers itself within seconds of a server-side
 // delete (daemon self-heal, #2404), so deleting an online local runtime from
@@ -46,7 +46,7 @@ export function formatLastSeen(lastSeenAt: string | null): string {
 // Turns the back-end's `device_info` string ("MacBook-Pro · darwin-amd64",
 // "some-host · linux-amd64") into something humans recognise. We don't have
 // hardware model or geo data on the wire today, so we settle for an OS-aware
-// rewrite of the daemon OS/architecture suffix while preserving the hostname.
+// rewrite of the GOOS/GOARCH suffix while preserving the hostname.
 export function formatDeviceInfo(raw: string | null): string | null {
   if (!raw) return null;
   const trimmed = raw.trim();
@@ -178,7 +178,7 @@ export function formatUsd(n: number): string {
 // variants (`gpt-5.5-mini`, hypothetical `gpt-5.4-foo`) from silently
 // inheriting the price of a near-named relative; they surface in the
 // unmapped diagnostic instead. Mirror new entries in
-// the Rust agent model catalog so the catalog and pricing stay in sync.
+// `server/pkg/agent/models.go` so the catalog and pricing stay in sync.
 //
 // Provider-qualified keys: a model id that is NOT vendor-prefixed
 // (`claude-*`, `gpt-*`, `o3*`/`o4*`, `glm-*`, `deepseek-*`, `kimi-*`,
@@ -220,7 +220,7 @@ const MODEL_PRICING: Record<
 
   // -- OpenAI: dotted-minor Codex catalog SKUs. Each generation is priced
   //    independently — no fallback to `gpt-5`. Entries track
-  //    the Rust Codex provider model list.
+  //    `server/pkg/agent/models.go` (Codex provider list).
   //    gpt-5.6 (sol/terra/luna) uses OpenAI's official announcement rates.
   //    5.6+ is the first OpenAI generation to bill cache writes separately:
   //    cacheRead = 0.1x input (90% cached-input discount), cacheWrite = 1.25x
@@ -267,6 +267,13 @@ const MODEL_PRICING: Record<
   //    Only K2.6 is on the official price sheet today; earlier K2 variants
   //    are intentionally omitted until Moonshot publishes their rates. --
   "kimi-k2.6":          { input: 0.95, output: 4.00, cacheRead: 0.16,   cacheWrite: 0.95 },
+  // Kimi K3 (platform.kimi.ai/docs/pricing/chat-k3 via models.dev
+  // providers/moonshotai/models/kimi-k3.toml). Moonshot bills no separate
+  // cache write, so cacheWrite mirrors input (same convention as kimi-k2.6).
+  "kimi-k3":            { input: 3.0,  output: 15.0,  cacheRead: 0.30,   cacheWrite: 3.0 },
+  // Kimi Code CLI reports the same model as `kimi-code/k3`; provider-qualified
+  // because `k3` is a generic id (see the provider-qualified keys note above).
+  "kimi/k3":            { input: 3.0,  output: 15.0,  cacheRead: 0.30,   cacheWrite: 3.0 },
 
   // -- Zhipu z.ai (docs.z.ai/guides/overview/pricing). Free flash tiers
   //    are priced at 0 so they resolve cleanly instead of falling through
@@ -284,6 +291,36 @@ const MODEL_PRICING: Record<
   "glm-4.5-airx":       { input: 1.1,  output: 4.5,  cacheRead: 0.22,   cacheWrite: 1.1 },
   "glm-4.5-flash":      { input: 0,    output: 0,    cacheRead: 0,      cacheWrite: 0 },
 
+  // -- Alibaba Qwen (International ≤256K tier; official sources:
+  //    alibabacloud.com/help/model-studio pricing sheet and
+  //    qwencloud.com/models/<model> pages, accessed 2026-08-12).
+  //    qwen3.7-plus: input $0.40 / output $1.60; qwen3.6-flash: input
+  //    $0.25 / output $1.50. Cache prices: Explicit Cache Creation = 1.25×
+  //    input (qwen3.7-plus $0.50, qwen3.6-flash $0.3125); Explicit Cache
+  //    Read = 10% of input (qwen3.7-plus $0.04, qwen3.6-flash $0.025).
+  // qwen3.8-max is priced at the published pay-as-you-go rate
+  // (qwencloud.com/models/qwen3.8-max: Input $2, Output $6, Implicit
+  // Cache $0.25, Creation $2.5, Explicit Cache Read $0.17; also listed on
+  // alibabacloud.com/help model-pricing) so the dashboard shows the
+  // absolute cost even though the runtime reaches it through an Alibaba
+  // Token/Coding Plan subscription. qwen3.8-max-preview stays at 0:
+  //    it is only served through the subscription (token-plan.cn-beijing.
+  //    maas.aliyuncs.com), which does not bill per token — 0 resolves
+  //    cleanly instead of tripping the unmapped diagnostic (same convention
+  //    as the free GLM flash tiers below). --
+  "qwen3.7-plus":       { input: 0.40,  output: 1.60,  cacheRead: 0.04,   cacheWrite: 0.50 },
+  "qwen3.6-flash":      { input: 0.25,  output: 1.50,  cacheRead: 0.025,  cacheWrite: 0.3125 },
+  "qwen3.8-max":        { input: 2.00,  output: 6.00,  cacheRead: 0.17,   cacheWrite: 2.5 },
+  "qwen3.8-max-preview":{ input: 0,      output: 0,     cacheRead: 0,      cacheWrite: 0 },
+
+  // -- Volcengine Ark (ark.cn-beijing.volces.com). `ark-code-latest` is a
+  //    rolling alias whose target the Volcengine console can switch between
+  //    model families, so it is not a stable model identity. Daemons report
+  //    the alias itself, not the resolved model, so there is no reliable
+  //    rate to attach — it deliberately stays unmapped (same philosophy as
+  //    xAI's `grok-composer-*`, see below), surfacing in the pricing dialog
+  //    instead of inheriting a guessed rate. --
+
   // -- xAI Grok (docs.x.ai/developers/pricing). Rates below are the
   //    short-context tier, and are now only a FALLBACK for Grok: xAI reports
   //    its own price per turn and `estimateCost` prefers it. That matters
@@ -300,8 +337,9 @@ const MODEL_PRICING: Record<
   //    them resolve at all, since the daemon tags the rows with the runtime
   //    provider `grok`, not `xai`.
   //    `grok-composer-*` ships in the Grok Build catalog
-  //    but is absent from the price sheet; it
+  //    (server/pkg/agent/models.go) but is absent from the price sheet; it
   //    deliberately stays unmapped rather than inheriting a guessed rate. --
+  "grok-4.6":                     { input: 2,    output: 6,    cacheRead: 0.50, cacheWrite: 2 },
   "grok-4.5":                     { input: 2,    output: 6,    cacheRead: 0.30, cacheWrite: 2 },
   "grok-4.3":                     { input: 1.25, output: 2.50, cacheRead: 0.20, cacheWrite: 1.25 },
   "grok-build-0.1":               { input: 1,    output: 2,    cacheRead: 0.20, cacheWrite: 1 },
@@ -461,8 +499,25 @@ function canonicalCandidates(model: string): string[] {
   const stripDate = (s: string) =>
     s.replace(/-(20\d{2}-\d{2}-\d{2}|20\d{6}|latest)$/, "");
   const stripProvider = (s: string) => {
-    const i = s.indexOf("/");
-    return i > 0 && /^[a-z][a-z0-9_-]*$/i.test(s.slice(0, i)) ? s.slice(i + 1) : s;
+    // Routing prefixes come in two flavours: `vendor/model` (opencode-style)
+    // and `provider:model` (Hermes custom providers), and can nest
+    // (`custom:anthropic/claude-opus-4.7` is a provider-prefixed id whose
+    // model segment is itself provider-prefixed). Iteratively strip the
+    // earliest `/` or `:` separator while the preceding segment looks like a
+    // routing layer (`^[a-z][a-z0-9_-]*$`), until nothing valid remains to
+    // strip. The raw string is always the first candidate (see `push(raw)`
+    // below), so provider-qualified table keys like `cursor/composer-2.5`
+    // still resolve before any stripping happens — iterative peeling only
+    // ever adds previously-missed nested forms.
+    let out = s;
+    for (;;) {
+      const i = out.indexOf("/");
+      const j = out.indexOf(":");
+      const sep = i === -1 ? j : j === -1 ? i : Math.min(i, j);
+      if (sep <= 0 || !/^[a-z][a-z0-9_-]*$/i.test(out.slice(0, sep))) break;
+      out = out.slice(sep + 1);
+    }
+    return out;
   };
   // Only Anthropic IDs are dot↔dash equivalent. OpenAI separators are
   // semantic, so we leave `gpt-5.4` etc. alone.
@@ -736,7 +791,7 @@ export function summarizeTaskUsage(
 
 /**
  * Sum many runs' usage into one figure — the issue-level total shown on the
- * unified Agent thread. Runs with no recorded usage contribute nothing and do
+ * execution-log header. Runs with no recorded usage contribute nothing and do
  * not make the total null; the total is null only when NO run has usage, i.e.
  * when there is genuinely nothing to show.
  */
@@ -785,7 +840,7 @@ export interface DailyCostData {
 // to see. It isn't: across the current rate table cached input is ~10x cheaper
 // than uncached, not ~100x, and agent sessions routinely read tens of times
 // more cached tokens than uncached ones — so cache read is often the LARGEST
-// segment, and dropping it understated some buckets by >50% (PB-6334).
+// segment, and dropping it understated some buckets by >50% (MUL-6334).
 //
 // Cache *savings* — a reconstruction of what the discount avoided — is a
 // separate KPI and deliberately not part of this stack; savings is not spend.
@@ -947,7 +1002,7 @@ export function aggregateByDate(usage: RuntimeUsage[]): {
 // rather than disappearing. Rows whose week falls outside the window are
 // dropped; without this guard `.slice(-weekCount)` on a sparse 180-day
 // aggregate would surface old populated weeks instead of the empty
-// in-range buckets the user asked for (PB-2382 weekly window scoping).
+// in-range buckets the user asked for (MUL-2382 weekly window scoping).
 // Accepts any row carrying `date` + token counts + the model needed for
 // pricing. Both `RuntimeUsage` (runtime detail) and `DashboardUsageDaily`
 // (workspace dashboard) match this shape — there's no behavioural difference,
@@ -1067,7 +1122,7 @@ export function aggregateByWeek(
 // immediately prior window of equal length. "Today" is read in the runtime's
 // timezone so the cutoff lands on the same calendar boundary the backend
 // used when bucketing rows — without this the browser/runtime tz gap could
-// shift the boundary by a day at the edges (#PB-2382 sliceWindow tz bug).
+// shift the boundary by a day at the edges (#MUL-2382 sliceWindow tz bug).
 export function sliceWindow(
   usage: readonly RuntimeUsage[],
   days: number,

@@ -4,7 +4,7 @@ import { cleanup, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithI18n } from "../../../test/i18n";
 import { PillButton } from "../../../common/pill-button";
-import { ExecutorPicker } from "./executor-picker";
+import { AssigneePicker } from "./assignee-picker";
 import { PriorityPicker } from "./priority-picker";
 
 vi.mock("@tanstack/react-query", async (importOriginal) => ({
@@ -12,16 +12,16 @@ vi.mock("@tanstack/react-query", async (importOriginal) => ({
   useQuery: () => ({ data: [] }),
 }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@multica/core/auth", () => ({
   useAuthStore: (selector: (state: { user: null }) => unknown) =>
     selector({ user: null }),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@multica/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "Unknown" }),
 }));
 
@@ -36,9 +36,9 @@ describe("deferred picker triggers", () => {
           onUpdate={() => {}}
           triggerRender={<PillButton />}
         />
-        <ExecutorPicker
-          executorType={null}
-          executorId={null}
+        <AssigneePicker
+          assigneeType={null}
+          assigneeId={null}
           onUpdate={() => {}}
           triggerRender={<PillButton />}
         />

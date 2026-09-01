@@ -1,6 +1,6 @@
 // Display grouping for `agent_task_queue.failure_reason`.
 //
-// The backend taxonomy (`patchbay-task-failure`) has 22 reasons, which is far
+// The backend taxonomy (server/pkg/taskfailure) has 22 reasons, which is far
 // too many series for a stacked chart or a scannable breakdown list. These
 // seven classes are the granularity an operator actually acts on: an auth
 // spike means "go re-auth", a rate-limit spike means "back off or raise the
@@ -26,7 +26,7 @@ export type FailureClass = (typeof FAILURE_CLASSES)[number];
 // Reason → class. Keys are the wire values written by the backend: the 22
 // canonical `taskfailure.Reason` strings, the `"unclassified"` sentinel the
 // failure rollups substitute for a failed row with an empty column, and the
-// pre-PB-1949 coarse values that still sit in historical rows.
+// pre-MUL-1949 coarse values that still sit in historical rows.
 //
 // Anything absent from this map falls through to "other" — including a new
 // reason from a backend newer than this client, which is the case that makes
@@ -53,7 +53,7 @@ const REASON_CLASS: Record<string, FailureClass> = {
   "agent_error.model_not_found_or_unavailable": "provider",
   api_invalid_request: "provider",
 
-  // Patchbay-side execution substrate: daemon offline / restarted, task never
+  // Multica-side execution substrate: daemon offline / restarted, task never
   // got picked up, runner binary missing or too old.
   runtime_offline: "runtime",
   runtime_recovery: "runtime",
@@ -62,7 +62,7 @@ const REASON_CLASS: Record<string, FailureClass> = {
   "agent_error.runtime_version_unsupported": "runtime",
   // The daemon could not fetch the agent's skills from the control plane, so
   // the run never started. Grouped with runtime rather than provider: the
-  // operator response is "check the daemon's link to Patchbay", the same as a
+  // operator response is "check the daemon's link to Multica", the same as a
   // daemon that went offline — the model provider is not involved.
   skill_bundle_unavailable: "runtime",
   // The local runtime CLI (OpenClaw config discovery today) missed its

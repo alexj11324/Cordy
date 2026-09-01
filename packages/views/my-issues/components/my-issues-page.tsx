@@ -2,11 +2,11 @@
 
 import { useStore } from "zustand";
 import { ListTodo } from "lucide-react";
-import { useAuthStore } from "@patchbay/core/auth";
+import { useAuthStore } from "@multica/core/auth";
 import {
   myIssuesRelationFromScope,
   myIssuesViewStore,
-} from "@patchbay/core/issues/stores/my-issues-view-store";
+} from "@multica/core/issues/stores/my-issues-view-store";
 import { PageHeader } from "../../layout/page-header";
 import { IssueSurface } from "../../issues/surface/issue-surface";
 import { useT } from "../../i18n";

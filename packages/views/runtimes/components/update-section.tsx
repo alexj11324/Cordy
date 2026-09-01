@@ -7,13 +7,13 @@ import {
   Check,
   Lock,
 } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { api } from "@patchbay/core/api";
-import type { RuntimeUpdateStatus } from "@patchbay/core/types";
+import { Button } from "@multica/ui/components/ui/button";
+import { api } from "@multica/core/api";
+import type { RuntimeUpdateStatus } from "@multica/core/types";
 import { useT } from "../../i18n";
 
 const GITHUB_RELEASES_URL =
-  "https://api.github.com/repos/alexj11324/Cordy/releases/latest";
+  "https://api.github.com/repos/multica-ai/multica/releases/latest";
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
 let cachedLatestVersion: string | null = null;
@@ -44,7 +44,7 @@ async function fetchLatestVersion(): Promise<string | null> {
  * A daemon built from source reports a `git describe` string
  * ("v0.4.17-12-gabc1234") or the ldflags default ("dev"), and neither can be
  * ordered against a release tag. This mirrors `IsReleaseVersion` in
- * the Rust CLI update command, which is how the daemon's own auto-update
+ * server/internal/cli/update.go, which is how the daemon's own auto-update
  * loop decides the same question.
  */
 function parseReleaseVersion(v: string): number[] | null {

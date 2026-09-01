@@ -15,6 +15,7 @@ const draft = (): AgentDraft => ({
   name: "Old name",
   description: "Old description",
   instructions: "Old instructions",
+  conversationStarters: [],
   avatarUrl: null,
   runtimeId: "runtime-1",
   model: "model-1",
@@ -102,7 +103,55 @@ describe("duplicate access", () => {
   });
 });
 
-// PB-5390: thinking_level / service_tier are runtime + model scoped. The create
+describe("agent conversation starters", () => {
+  it("copies starters into a duplicate and the create request", () => {
+    const conversationStarters = [
+      { label: "Review a PR", prompt: "Review the open pull request." },
+    ];
+    const duplicate = buildDuplicateDraft(
+      sourceAgent({ conversation_starters: conversationStarters }),
+      {
+        runtimes: [CODEX_RUNTIME],
+        currentUserId: "user-1",
+        fallbackRuntimeId: "runtime-2",
+        nameSuffix: " (Copy)",
+      },
+    );
+
+    expect(duplicate.conversationStarters).toEqual(conversationStarters);
+    expect(
+      buildCreateAgentRequest({ draft: duplicate, runtimeId: "runtime-1" })
+        .conversation_starters,
+    ).toEqual(conversationStarters);
+  });
+
+  it("trims prompt fields before submission", () => {
+    const request = buildCreateAgentRequest({
+      draft: {
+        ...draft(),
+        conversationStarters: [
+          { label: "  Plan a release  ", prompt: "  Plan the next release.  " },
+        ],
+      },
+      runtimeId: "runtime-1",
+    });
+
+    expect(request.conversation_starters).toEqual([
+      { label: "Plan a release", prompt: "Plan the next release." },
+    ]);
+  });
+
+  it("omits the field when there are no starters", () => {
+    const request = buildCreateAgentRequest({
+      draft: draft(),
+      runtimeId: "runtime-1",
+    });
+
+    expect(request).not.toHaveProperty("conversation_starters");
+  });
+});
+
+// MUL-5390: thinking_level / service_tier are runtime + model scoped. The create
 // flow never exposed them, so a Fast Codex agent could only be configured after
 // the fact and a Duplicate silently dropped the setting.
 describe("agent draft execution overrides", () => {
@@ -222,7 +271,7 @@ describe("agent draft execution overrides", () => {
   it("drops the execution config when the duplicate falls back to another runtime", () => {
     // Source runtime is gone from the list (deleted, or private to someone
     // else), so the draft lands on the fallback. Keeping the source model here
-    // is what persisted a cross-provider model before PB-5390.
+    // is what persisted a cross-provider model before MUL-5390.
     const duplicate = buildDuplicateDraft(sourceAgent(), {
       runtimes: [OTHER_RUNTIME],
       currentUserId: "user-1",

@@ -2,10 +2,10 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { pluginInstallationsOptions } from "@patchbay/core/plugins";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { useFeatureEnabled } from "@patchbay/core/config";
-import { PLUGINS_V1_FLAG } from "@patchbay/core/feature-flags";
+import { pluginInstallationsOptions } from "@multica/core/plugins";
+import { useCurrentWorkspace } from "@multica/core/paths";
+import { useFeatureEnabled } from "@multica/core/config";
+import { PLUGINS_V1_FLAG } from "@multica/core/feature-flags";
 import { useT } from "../i18n";
 import { isDesktopShell } from "../platform/local-directory";
 import { PluginSurfaceFrame } from "./plugin-surface-frame";
@@ -49,6 +49,7 @@ export function PluginPanelSection({ issueId }: { issueId: string }) {
       {panels.map(({ installation, surface }) => (
         <PluginSurfaceFrame
           key={`${installation.id}:${surface.key}`}
+          wsId={wsId}
           installation={installation}
           surface={surface}
           issueId={issueId}

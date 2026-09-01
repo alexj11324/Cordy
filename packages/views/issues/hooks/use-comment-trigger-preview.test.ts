@@ -2,15 +2,15 @@ import { createElement, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { api } from "@patchbay/core/api";
-import type { CommentTriggerPreviewAgent } from "@patchbay/core/types";
+import { api } from "@multica/core/api";
+import type { CommentTriggerPreviewAgent } from "@multica/core/types";
 import {
   commentTriggerPreviewSignature,
   isNoteCommentDraft,
   useCommentTriggerPreview,
 } from "./use-comment-trigger-preview";
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: {
     previewCommentTriggers: vi.fn(),
   },
@@ -20,7 +20,7 @@ const previewCommentTriggers = vi.mocked(api.previewCommentTriggers);
 const waltAgent: CommentTriggerPreviewAgent = {
   id: "00000000-0000-0000-0000-000000000001",
   name: "Walt",
-  source: "issue_executor",
+  source: "issue_assignee",
   reason: "",
 };
 const kimAgent: CommentTriggerPreviewAgent = {
@@ -275,7 +275,7 @@ describe("commentTriggerPreviewSignature", () => {
   it("tracks @all but ignores issue cross-references", () => {
     const issueID = "00000000-0000-0000-0000-000000000003";
 
-    expect(commentTriggerPreviewSignature(`See [PB-1](mention://issue/${issueID})`)).toBe(
+    expect(commentTriggerPreviewSignature(`See [MUL-1](mention://issue/${issueID})`)).toBe(
       commentTriggerPreviewSignature("plain text"),
     );
     expect(commentTriggerPreviewSignature("[@all](mention://all/all)")).not.toBe(

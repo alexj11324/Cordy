@@ -41,14 +41,14 @@ import {
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
-import { cn } from "@patchbay/ui/lib/utils";
-import type { UploadResult } from "@patchbay/core/hooks/use-file-upload";
-import { useWorkspaceSlug } from "@patchbay/core/paths";
+import { cn } from "@multica/ui/lib/utils";
+import type { UploadResult } from "@multica/core/hooks/use-file-upload";
+import { useWorkspaceSlug } from "@multica/core/paths";
 import { useQueryClient } from "@tanstack/react-query";
-import { issueIdentifierOptions } from "@patchbay/core/issues/queries";
-import { workspaceListOptions } from "@patchbay/core/workspace/queries";
-import { isIssueIdentifier } from "@patchbay/ui/markdown";
-import type { Attachment } from "@patchbay/core/types";
+import { issueIdentifierOptions } from "@multica/core/issues/queries";
+import { workspaceListOptions } from "@multica/core/workspace/queries";
+import { isIssueIdentifier } from "@multica/ui/markdown";
+import type { Attachment } from "@multica/core/types";
 import {
   parseMarkdownChunked,
   MARKDOWN_CHUNK_THRESHOLD,
@@ -63,7 +63,7 @@ import {
   insertUploadPlaceholder,
   settleUploadNode,
 } from "./extensions/file-upload";
-import { configStore } from "@patchbay/core/config";
+import { configStore } from "@multica/core/config";
 import { preprocessMarkdown } from "./utils/preprocess";
 import { repairEmptyListItems } from "./utils/repair-list-items";
 import { resolveClickIntent, useAppOrigin } from "../navigation";
@@ -180,7 +180,7 @@ interface ContentEditorBaseProps {
   /**
    * When true, the `@` suggestion picker is disabled but the mention node
    * type remains in the schema, so existing mentions pasted in from other
-   * Patchbay editors still render as the normal pill. Use for editors where
+   * Multica editors still render as the normal pill. Use for editors where
    * *creating* a new mention has no business meaning (e.g. agent system
    * prompts) but *preserving* an existing one still matters.
    */
@@ -198,7 +198,7 @@ interface ContentEditorBaseProps {
   slashCommandMode?: "skill" | "command";
   /**
    * Quick actions to offer in the "command" `/` menu, plus the resolver that
-   * turns a pick into the text it would post (PB-5465). Read through
+   * turns a pick into the text it would post (MUL-5465). Read through
    * functions so a newly created action appears without remounting the editor.
    */
   quickActionMenu?: BuiltinCommandSuggestionOptions;
@@ -281,7 +281,7 @@ interface ContentEditorRef {
   /**
    * Append a markdown fragment to the end of the document (parsed, not raw
    * text), firing the normal `onUpdate` pipeline. For the upload write-back
-   * path (PB-5181): an upload that outlived the mount that started it settles
+   * path (MUL-5181): an upload that outlived the mount that started it settles
    * while a NEW editor instance is showing the same draft — that editor never
    * owned the upload's promise, so this is how the finished attachment's link
    * lands in the visible document instead of only in the persisted draft.
@@ -430,7 +430,7 @@ const ContentEditor = forwardRef<ContentEditorRef, ContentEditorProps>(
     // Attachment.normalize() can't swap the persisted /api/attachments/<id>/
     // download URL to a freshly-loadable one, and the <img> renders broken in
     // any environment where the renderer's origin doesn't proxy /api to the
-    // API host (PB-3192, Desktop/Electron).
+    // API host (MUL-3192, Desktop/Electron).
     const [sessionUploads, setSessionUploads] = useState<Attachment[]>([]);
     // Wrap the caller-supplied uploader so we can stash each successful result
     // in `sessionUploads`. The wrapper is rebuilt only when the underlying

@@ -11,9 +11,9 @@ import {
   Search,
   X,
 } from "lucide-react";
-import type { Agent, MemberWithUser } from "@patchbay/core/types";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
-import { Button } from "@patchbay/ui/components/ui/button";
+import type { Agent, MemberWithUser } from "@multica/core/types";
+import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
+import { Button } from "@multica/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -24,20 +24,20 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { Input } from "@patchbay/ui/components/ui/input";
+} from "@multica/ui/components/ui/dropdown-menu";
+import { Input } from "@multica/ui/components/ui/input";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+} from "@multica/ui/components/ui/popover";
+import { Switch } from "@multica/ui/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
-import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
+} from "@multica/ui/components/ui/tooltip";
+import { ActorAvatar } from "@multica/ui/components/common/actor-avatar";
 import { FILTER_ITEM_CLASS, HoverCheck } from "../../common/hover-check";
 import {
   type SkillColumnKey,
@@ -45,7 +45,7 @@ import {
   type SkillOriginType,
   type SkillSortDirection,
   type SkillSortField,
-} from "@patchbay/core/skills/stores";
+} from "@multica/core/skills/stores";
 import { useT } from "../../i18n";
 import type { SkillRow } from "./skills-page";
 import { PAGE_TOOLBAR } from "../../layout/page-header";

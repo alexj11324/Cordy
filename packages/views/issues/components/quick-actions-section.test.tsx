@@ -1,10 +1,10 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import type { QuickAction } from "@patchbay/core/types";
+import type { QuickAction } from "@multica/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { QuickActionsSection } from "./quick-actions-section";
 
-// The section's contract (PB-5465) is mostly about being HONEST with the
+// The section's contract (MUL-5465) is mostly about being HONEST with the
 // user, so these tests target exactly that: what gets offered, and what the
 // result claims happened.
 //
@@ -23,17 +23,17 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: listData, isLoading: false }),
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/paths", () => ({
   useCurrentWorkspace: () => ({ id: "ws-1" }),
 }));
 
-vi.mock("@patchbay/core/quick-actions", () => ({
+vi.mock("@multica/core/quick-actions", () => ({
   quickActionListOptions: () => ({ queryKey: ["quick-actions"], queryFn: vi.fn() }),
   useRunQuickAction: () => ({ mutateAsync: runMock, isPending: false }),
 }));
 
 let reasonCode: string | undefined;
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   dispatchReasonCode: () => reasonCode,
 }));
 
@@ -56,8 +56,8 @@ function action(overrides: Partial<QuickAction> = {}): QuickAction {
     workspace_id: "ws-1",
     name: "Code Review",
     description: "",
-    executor_type: "agent",
-    executor_id: "agent-1",
+    assignee_type: "agent",
+    assignee_id: "agent-1",
     prompt: "review it",
     visibility: "public",
     status: "active",

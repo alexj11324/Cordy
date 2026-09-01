@@ -5,11 +5,11 @@ import { ArrowLeft, Check } from "lucide-react";
 import {
   ONBOARDING_STEP_ORDER,
   type OnboardingStep,
-} from "@patchbay/core/onboarding";
-import { cn } from "@patchbay/ui/lib/utils";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
-import { DotSphere } from "@patchbay/ui/components/ui/dot-sphere";
+} from "@multica/core/onboarding";
+import { cn } from "@multica/ui/lib/utils";
+import { Button } from "@multica/ui/components/ui/button";
+import { MulticaIcon } from "@multica/ui/components/common/multica-icon";
+import { DotSphere } from "@multica/ui/components/ui/dot-sphere";
 import {
   Stepper,
   StepperDescription,
@@ -18,7 +18,7 @@ import {
   StepperNav,
   StepperSeparator,
   StepperTitle,
-} from "@patchbay/ui/components/ui/stepper";
+} from "@multica/ui/components/ui/stepper";
 import { useT } from "../../i18n";
 
 /**
@@ -96,7 +96,10 @@ export function StepProgressBar({
           <ArrowLeft />
         </Button>
       ) : null}
-      <span aria-hidden className="flex flex-1 items-center gap-1.5">
+      <span
+        aria-hidden
+        className="flex flex-1 items-center gap-1.5"
+      >
         {ONBOARDING_STEP_ORDER.map((stepId, index) => (
           <span
             key={stepId}
@@ -143,13 +146,8 @@ export function StepSidebar({
     // was left with ~87px of form. StepProgressBar carries the same
     // information — and the Back button that lives in this header — at those
     // widths.
-    <aside className="hidden w-[15rem] shrink-0 p-2 pt-0 md:block md:w-[19rem] md:p-3 md:pt-0 lg:w-[22rem] lg:p-4 lg:pt-0">
+    <aside className="hidden w-[15rem] shrink-0 p-2 md:block md:w-[19rem] md:p-3 lg:w-[22rem] lg:p-4">
       <div className="dark relative isolate flex h-full w-full flex-col overflow-hidden rounded-2xl bg-background px-5 pb-5 text-foreground ring-1 ring-border">
-        <div
-          aria-hidden
-          className="absolute inset-x-0 top-0 z-10 h-12"
-          style={{ WebkitAppRegion: "drag" } as CSSProperties}
-        />
         <div
           aria-hidden
           className="pointer-events-none absolute inset-0 bg-background"
@@ -164,13 +162,10 @@ export function StepSidebar({
           />
         </div>
 
-        <div className="relative flex min-h-0 flex-1 flex-col pt-14">
+        <div className="relative flex min-h-0 flex-1 flex-col pt-5">
           <header className="flex min-h-9 shrink-0 items-center justify-between gap-3">
             <span className="flex min-w-0 items-center gap-2">
-              <PatchbayIcon
-                className="size-5 shrink-0 text-foreground"
-                noSpin
-              />
+              <MulticaIcon className="size-5 shrink-0 text-foreground" noSpin />
               <span className="truncate text-label font-medium text-foreground">
                 {t(($) => $.step_nav.wordmark)}
               </span>

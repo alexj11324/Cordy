@@ -5,7 +5,7 @@ description: An agent is a reusable set of identity, capabilities, and execution
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-An agent is a collaborator in a [Patchbay workspace](/workspaces). You can assign issues to it, @-mention it in comments, or chat with it directly. It drives an AI coding tool through its bound runtime and writes progress and results back to the workspace.
+An agent is a collaborator in a [Multica workspace](/workspaces). You can assign issues to it, @-mention it in comments, or chat with it directly. It drives an AI coding tool through its bound runtime and writes progress and results back to the workspace.
 
 An agent is not a continuously running process. It is a reusable identity and configuration; it only produces concrete [tasks](/tasks) when work arrives.
 
@@ -15,6 +15,7 @@ An agent is not a continuously running process. It is a reusable identity and co
 |---|---|
 | **Name, avatar, and description** | Tell the team who the agent is and what it is good at. The description is display-only and never enters the execution prompt. |
 | **Instructions** | Define its responsibilities, working style, boundaries, and delivery requirements. Used on every run. |
+| **Conversation starters** | Give people up to three agent-specific examples, shown when they open a new chat with the agent. Selecting one fills the composer without sending. |
 | **Skills** | Provide reusable methods, reference material, and supporting files. |
 | **Runtime, model, and thinking level** | Decide which runtime, AI coding tool, and model it runs on; some tools (such as Codex) also offer a service tier. |
 | **Access** | Decides which members can run it. |
@@ -38,7 +39,7 @@ One runtime can host multiple agents, and one agent can complete many tasks over
 - **Handle a comment** — @-mention the agent in a comment without changing the issue's assignee.
 - **Continue a discussion** — reply to the agent's comment; the new information feeds into subsequent runs.
 - **Chat directly** — start a conversation that isn't attached to an issue.
-- **Join projects and teams** — an agent can be a project lead, a team leader, or a team member.
+- **Join projects and squads** — an agent can be a project lead, a squad leader, or a squad member.
 - **Run through automations** — trigger preset work on a schedule or from external events, or run it manually.
 
 Agents can create issues, post comments, and change work status, but they have no inbox and don't receive `@all`. An @-mention of an agent is an execution trigger, not a notification.
@@ -86,5 +87,5 @@ The agent owner and workspace `owner`s and `admin`s can archive or restore an ag
 
 - [Create and configure an agent](/agents-create) — start blank, or build with AI.
 - [Skills](/skills) — add reusable methods and material to an agent.
-- [Teams](/teams) — let a leader pick the right member for the work.
+- [Squads](/squads) — let a leader pick the right member for the work.
 - [Daemon and runtimes](/daemon-runtimes) — where agents actually execute.

@@ -1,5 +1,0 @@
-self-hosted-runner:
-  # GitHub-hosted labels added after actionlint 1.7.7's bundled label list.
-  labels:
-    - macos-15-intel
-    - windows-11-arm

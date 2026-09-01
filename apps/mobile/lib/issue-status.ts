@@ -1,5 +1,5 @@
 /**
- * Issue status resolution for mobile (PB-6243).
+ * Issue status resolution for mobile (MUL-6243).
  *
  * A workspace always has the 7 built-in statuses and may define custom ones.
  * Every status — built-in or custom — belongs to exactly one of the 7
@@ -12,7 +12,7 @@
  * `packages/core/issue-statuses/queries.ts` rather than imported: those modules
  * reach `../issue-statuses/index`, which pulls web's API client and React Query
  * key factories into the graph — not on mobile's import whitelist
- * (apps/mobile/AGENTS.md). The TYPES are shared, so the two sides cannot drift
+ * (apps/mobile/CLAUDE.md). The TYPES are shared, so the two sides cannot drift
  * on shape; the fallback rules below are restated verbatim so they cannot drift
  * on behavior either.
  */
@@ -22,7 +22,7 @@ import type {
   IssueStatus,
   IssueStatusCategory,
   IssueStatusEntry,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 
 /**
  * The 7 categories in canonical display order. Mirrors `ALL_STATUSES` in
@@ -45,7 +45,7 @@ export const STATUS_CATEGORIES: IssueStatusCategory[] = [
  *
  * These are CATEGORIES, not status keys: a workspace's custom statuses live
  * inside their category's section rather than adding one of their own. Grouping
- * by key is what made custom-status issues vanish from these lists (PB-6457) —
+ * by key is what made custom-status issues vanish from these lists (MUL-6457) —
  * the bucket existed but no section ever read it.
  */
 export const BOARD_CATEGORIES: IssueStatusCategory[] = STATUS_CATEGORIES.filter(
@@ -117,7 +117,7 @@ export function issueStatusCategory(
  * The unresolved fallback lands in `todo` rather than nowhere: a row in a
  * possibly-wrong section is recoverable, a row in no section is invisible, and
  * invisible is the bug this exists to prevent ("counts and visibility must
- * agree", apps/mobile/AGENTS.md). Unreachable in practice — the server sends a
+ * agree", apps/mobile/CLAUDE.md). Unreachable in practice — the server sends a
  * category on every issue payload, and a built-in key is its own category.
  */
 export function issueColumnCategory(
@@ -127,7 +127,7 @@ export function issueColumnCategory(
 }
 
 /**
- * Whether an issue BEHAVES as a given category (PB-6243).
+ * Whether an issue BEHAVES as a given category (MUL-6243).
  *
  * The one question every status-coupled product rule actually asks. Comparing
  * `issue.status` to a built-in key answers it only for a workspace with no
@@ -165,7 +165,7 @@ export const CLOSED_CATEGORIES: readonly IssueStatusCategory[] = ["done", "cance
  * let anyone edit, and every surface draws them from their category token so
  * they follow the theme into dark mode. Reading the seed instead paints the
  * same status in two different greens depending on which control you look at
- * (PB-6440).
+ * (MUL-6440).
  */
 export function issueStatusColor(entry: IssueStatusEntry | undefined): string | null {
   if (!entry || entry.is_system === true) return null;
@@ -236,7 +236,7 @@ export function buildIssueStatusCatalog(
 
 /**
  * Whether a status key names a CUSTOM status — i.e. whether a surface that
- * already shows the CATEGORY still has something left to say (PB-6243).
+ * already shows the CATEGORY still has something left to say (MUL-6243).
  *
  * Pure, and takes the catalog the caller already holds, so a row does not open
  * a second observer to answer the same question it just asked for a colour.

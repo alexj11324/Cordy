@@ -1,6 +1,6 @@
 /**
  * Names an issue's status when the surface around it only shows the CATEGORY
- * (PB-6243).
+ * (MUL-6243).
  *
  * List sections are categories, so two issues sitting in the same "In Review"
  * section can be on different statuses — "Code Review" and "QA" — with nothing
@@ -17,7 +17,7 @@
  * free on the network (React Query dedupes) but not on re-renders.
  */
 import { View } from "react-native";
-import type { IssueStatus } from "@patchbay/core/types";
+import type { IssueStatus } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { isCustomStatus, type IssueStatusCatalog } from "@/lib/issue-status";

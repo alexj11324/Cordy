@@ -14,18 +14,25 @@
 
 const encode = (id: string) => encodeURIComponent(id);
 
+/**
+ * `?focus=` token that scrolls the agent's Instructions tab to its
+ * conversation-starters editor and flashes it. Lives here because it is URL
+ * vocabulary: `agentConversationStarters()` writes it and the tab reads it,
+ * and a shared constant is what stops the two from drifting apart.
+ */
+export const AGENT_FOCUS_CONVERSATION_STARTERS = "conversation_starters";
+
 function workspaceScoped(slug: string) {
   const ws = `/${encode(slug)}`;
   return {
     root: () => `${ws}/issues`,
     usage: () => `${ws}/usage`,
     issues: () => `${ws}/issues`,
-    taskGraph: () => `${ws}/task-graph`,
     issueDetail: (id: string) => `${ws}/issues/${encode(id)}`,
     projects: () => `${ws}/projects`,
     projectDetail: (id: string) => `${ws}/projects/${encode(id)}`,
-    automations: () => `${ws}/automations`,
-    automationDetail: (id: string) => `${ws}/automations/${encode(id)}`,
+    autopilots: () => `${ws}/autopilots`,
+    autopilotDetail: (id: string) => `${ws}/autopilots/${encode(id)}`,
     agents: () => `${ws}/agents`,
     newAgent: () => `${ws}/agents/new`,
     // The two creation methods behind the chooser. Each is a real route so a
@@ -38,12 +45,16 @@ function workspaceScoped(slug: string) {
     newAgentAiSession: (sessionId: string) =>
       `${ws}/agents/new/ai/${encode(sessionId)}`,
     agentDetail: (id: string) => `${ws}/agents/${encode(id)}`,
+    // Deep link behind "customize" in a chat's empty state: the agent's
+    // Instructions tab, scrolled to the conversation starters that produced
+    // the buttons the viewer just looked at.
+    agentConversationStarters: (id: string) =>
+      `${ws}/agents/${encode(id)}?view=instructions&focus=${AGENT_FOCUS_CONVERSATION_STARTERS}`,
     memberDetail: (id: string) => `${ws}/members/${encode(id)}`,
-    teams: () => `${ws}/teams`,
-    teamDetail: (id: string) => `${ws}/teams/${encode(id)}`,
+    squads: () => `${ws}/squads`,
+    squadDetail: (id: string) => `${ws}/squads/${encode(id)}`,
     inbox: () => `${ws}/inbox`,
     chat: () => `${ws}/chat`,
-    channels: () => `${ws}/channels`,
     chatWithAgent: (agentId: string) =>
       `${ws}/chat?agent=${encode(agentId)}`,
     chatSession: (sessionId: string) =>
@@ -55,7 +66,6 @@ function workspaceScoped(slug: string) {
       `${ws}/runtimes/${encode(machineId)}/runtime/${encode(runtimeId)}`,
     skills: () => `${ws}/skills`,
     skillDetail: (id: string) => `${ws}/skills/${encode(id)}`,
-    integrations: () => `${ws}/integrations`,
     settings: () => `${ws}/settings`,
     attachmentPreview: (id: string) => `${ws}/attachments/${encode(id)}/preview`,
   };

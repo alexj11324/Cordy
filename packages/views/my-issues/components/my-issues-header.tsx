@@ -2,38 +2,38 @@
 
 import { useEffect, useState } from "react";
 import { ChevronDown } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Button } from "@multica/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@multica/ui/components/ui/dropdown-menu";
 import type {
   Issue,
   IssueTableFacetSpec,
   IssueTableFacetsResponse,
   WorkingAgentSummary,
-} from "@patchbay/core/types";
-import { type MyIssuesScope } from "@patchbay/core/issues/stores/my-issues-view-store";
-import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
+} from "@multica/core/types";
+import { type MyIssuesScope } from "@multica/core/issues/stores/my-issues-view-store";
+import { useViewStore } from "@multica/core/issues/stores/view-store-context";
 import { useT } from "../../i18n";
 import { WorkspaceAgentWorkingChip } from "../../issues/components/workspace-agent-working-chip";
 import {
   IssueDisplayControls,
   ViewRefreshIndicator,
 } from "../../issues/components/issues-header";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@multica/ui/lib/utils";
 import { PAGE_GUTTER } from "../../layout/page-header";
 import { FilterChipsBar } from "../../issues/components/filter-chips-bar";
 import { toast } from "sonner";
 import { SaveViewDialog, type SaveViewScope } from "../../issues/components/save-view-dialog";
-import { useActiveIssueView } from "@patchbay/core/issue-views/use-active-view";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { baselineFromQuery } from "@patchbay/core/issue-views/baseline";
+import { useActiveIssueView } from "@multica/core/issue-views/use-active-view";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { baselineFromQuery } from "@multica/core/issue-views/baseline";
 import { ViewBar } from "../../issues/components/view-bar";
-import type { IssueView } from "@patchbay/core/api/schemas";
+import type { IssueView } from "@multica/core/api/schemas";
 
 /** My Issues tab → saved-view scope_variant (API vocabulary). */
 const SAVE_VARIANT: Record<MyIssuesScope, Extract<SaveViewScope, { kind: "my" }>["variant"]> = {

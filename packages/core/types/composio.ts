@@ -1,16 +1,16 @@
 /** A Composio toolkit as surfaced by GET /api/integrations/composio/toolkits.
  *
  * Wire shape mirrors `ComposioToolkitResponse` in
- * the Rust Composio handler. New fields the backend
+ * `server/internal/handler/integrations_composio.go`. New fields the backend
  * adds later MUST stay optional so older desktop builds keep parsing — see
- * AGENTS.md → API Response Compatibility. */
+ * CLAUDE.md → API Response Compatibility. */
 export interface ComposioToolkit {
   slug: string;
   name: string;
   logo?: string;
   category?: string;
   /** Whether the project has an enabled auth config for this toolkit. Since
-   * PB-4009 the backend only returns connectable toolkits, so this is always
+   * MUL-4009 the backend only returns connectable toolkits, so this is always
    * true on the wire; the field is kept for backward compatibility with older
    * desktop builds that branch on it. The UI still guards the Connect button on
    * it as a client-side backstop. */
@@ -25,7 +25,7 @@ export interface ComposioConnection {
   toolkit_slug: string;
   /** Connection lifecycle state. `expired` surfaces a Reconnect affordance in
    * the UI; the backend only starts emitting it once Stage 4 webhook handling
-   * lands (PB-3719), but the client renders the branch ahead of that. */
+   * lands (MUL-3719), but the client renders the branch ahead of that. */
   status: "active" | "expired" | "revoked" | string;
   connected_at: string;
   last_used_at?: string | null;

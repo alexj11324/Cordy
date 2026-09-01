@@ -1,4 +1,4 @@
-import type { TimelineEntry } from "@patchbay/core/types";
+import type { TimelineEntry } from "@multica/core/types";
 
 /**
  * Stable-ascending sort for flat TimelineEntry[] caches.

@@ -1,27 +1,26 @@
-import { useLayoutEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { InvitePage } from "@patchbay/views/invite";
-import { InvitationsPage } from "@patchbay/views/invitations";
-import { OnboardingFlow } from "@patchbay/views/onboarding";
-import { useNavigation } from "@patchbay/views/navigation";
-import { paths } from "@patchbay/core/paths";
-import { workspaceListOptions } from "@patchbay/core/workspace/queries";
+import { InvitePage } from "@multica/views/invite";
+import { InvitationsPage } from "@multica/views/invitations";
+import { OnboardingFlow } from "@multica/views/onboarding";
+import { useNavigation } from "@multica/views/navigation";
+import { paths } from "@multica/core/paths";
+import { workspaceListOptions } from "@multica/core/workspace/queries";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 import { useLocalRuntimesPending } from "../platform/use-local-runtimes-pending";
-import { DesktopSettingsPage } from "./desktop-settings-page";
 
 /**
- * Window-level destination overlay: renders above the tab system for
- * first-class pages such as Settings and for pre-workspace flows (onboarding,
- * create workspace, accept invite).
+ * Window-level transition overlay: renders above the tab system when the
+ * user is in a pre-workspace flow (onboarding, create workspace, accept
+ * invite).
  *
  * This component is intentionally thin — just a fixed positioning shell
  * that covers the tab system. It does NOT hide traffic lights or provide
- * a drag strip: each contained view owns either a native-only fixed
- * `<DragStrip />` overlay or an integrated titlebar surface. Neither reserves
- * a blank layout row, so native macOS traffic lights sit on the view itself.
- * This keeps platform chrome consistent across every "not-in-dashboard"
- * surface.
+ * a drag strip: each contained view (OnboardingFlow, NewWorkspacePage,
+ * InvitePage) renders its own `<DragStrip />` as a flex-child at top so
+ * native macOS traffic lights stay visible and the page content can fill
+ * the window edge-to-edge. This matches the Linear/Notion/Arc pattern for
+ * pre-dashboard flows and keeps platform chrome consistent across every
+ * "not-in-dashboard" surface.
  *
  * All UX affordances (Back button, Log out button, welcome copy, invite
  * card) live inside the shared view components under `packages/views/`,
@@ -30,44 +29,7 @@ import { DesktopSettingsPage } from "./desktop-settings-page";
 export function WindowOverlay() {
   const overlay = useWindowOverlayStore((s) => s.overlay);
   if (!overlay) return null;
-  if (overlay.type === "settings") return <SettingsWindow />;
   return <WindowOverlayInner />;
-}
-
-function SettingsWindow() {
-  const close = useWindowOverlayStore((s) => s.close);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const previousFocusRef = useRef(
-    document.activeElement instanceof HTMLElement
-      ? document.activeElement
-      : null,
-  );
-
-  useLayoutEffect(() => {
-    containerRef.current
-      ?.querySelector<HTMLElement>("[data-settings-initial-focus]")
-      ?.focus();
-    const previousFocus = previousFocusRef.current;
-    return () => {
-      queueMicrotask(() => {
-        if (previousFocus?.isConnected) previousFocus.focus();
-      });
-    };
-  }, []);
-
-  return (
-    <div
-      ref={containerRef}
-      className="fixed inset-0 z-50 flex min-h-0 bg-background"
-    >
-      <div
-        aria-hidden
-        className="fixed inset-x-0 top-0 z-10 h-10"
-        style={{ WebkitAppRegion: "drag" } as React.CSSProperties}
-      />
-      <DesktopSettingsPage onBack={close} />
-    </div>
-  );
 }
 
 function WindowOverlayInner() {
@@ -98,7 +60,7 @@ function WindowOverlayInner() {
     <div className="fixed inset-0 z-50 flex flex-col overflow-auto bg-background">
       {/* Creating a workspace is the onboarding flow entered at the
           workspace step: a second workspace still needs its own runtime and
-          its own Patrick, so running one flow keeps the two from drifting. */}
+          its own Mika, so running one flow keeps the two from drifting. */}
       {overlay.type === "new-workspace" && (
         <OnboardingFlow
           mode="new_workspace"
@@ -118,7 +80,10 @@ function WindowOverlayInner() {
         />
       )}
       {overlay.type === "invite" && (
-        <InvitePage invitationId={overlay.invitationId} onBack={onBack} />
+        <InvitePage
+          invitationId={overlay.invitationId}
+          onBack={onBack}
+        />
       )}
       {overlay.type === "invitations" && <InvitationsPage />}
       {overlay.type === "onboarding" && (
@@ -126,9 +91,13 @@ function WindowOverlayInner() {
           onComplete={(ws, destination) => {
             close();
             if (ws && destination?.kind === "chat") {
-              push(paths.workspace(ws.slug).chatSession(destination.sessionId));
+              push(
+                paths.workspace(ws.slug).chatSession(destination.sessionId),
+              );
             } else if (ws && destination?.kind === "issue") {
-              push(paths.workspace(ws.slug).issueDetail(destination.issueId));
+              push(
+                paths.workspace(ws.slug).issueDetail(destination.issueId),
+              );
             } else if (ws) {
               push(paths.workspace(ws.slug).issues());
             } else {

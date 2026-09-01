@@ -9,9 +9,9 @@
  *      prefix or is empty)
  *   2. Members — sorted alphabetically
  *   3. Agents — sorted alphabetically
- *   4. Teams — sorted alphabetically (archived hidden). Selecting a team
- *      emits `mention://team/<uuid>`; the Rust backend wakes the team's
- *      leader agent.
+ *   4. Squads — sorted alphabetically (archived hidden). Selecting a squad
+ *      emits `mention://squad/<uuid>`; backend wakes the squad's leader
+ *      agent (server/internal/handler/comment.go:444).
  *
  * `chat` sections (chat is user ↔ single agent — `@member`/`@agent` are
  * noise; `@` here means "reference a resource for the agent"):
@@ -25,8 +25,8 @@
 import { useMemo } from "react";
 import { FlatList, Pressable, View } from "react-native";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import type { Agent, Issue, MemberWithUser, Team } from "@patchbay/core/types";
-import { canAssignAgentToIssue } from "@patchbay/core/permissions";
+import type { Agent, Issue, MemberWithUser, Squad } from "@multica/core/types";
+import { canAssignAgentToIssue } from "@multica/core/permissions";
 import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { StatusIcon } from "@/components/ui/status-icon";
@@ -38,7 +38,7 @@ import {
 import { useIssueStatuses } from "@/lib/use-issue-statuses";
 import { memberListOptions } from "@/data/queries/members";
 import { agentListOptions } from "@/data/queries/agents";
-import { teamListOptions } from "@/data/queries/teams";
+import { squadListOptions } from "@/data/queries/squads";
 import { issueDetailOptions } from "@/data/queries/issues";
 import { myIssueListOptions } from "@/data/queries/my-issues";
 import { useAuthStore } from "@/data/auth-store";
@@ -58,7 +58,7 @@ type Row =
   | { kind: "section"; label: string }
   | { kind: "member"; member: MemberWithUser }
   | { kind: "agent"; agent: Agent }
-  | { kind: "team"; team: Team }
+  | { kind: "squad"; squad: Squad }
   | { kind: "issue"; issue: Issue }
   | { kind: "empty" };
 
@@ -83,7 +83,7 @@ export function MentionSuggestionBar({
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
   const isChat = mode === "chat";
   // Rows are icon-only, so colour is the only thing that can carry a custom
-  // status's identity here. (PB-6243)
+  // status's identity here. (MUL-6243)
   const catalog = useIssueStatuses();
 
   // Comment-mode data — disabled in chat mode to avoid wasted fetches.
@@ -95,8 +95,8 @@ export function MentionSuggestionBar({
     ...agentListOptions(wsId),
     enabled: !isChat && !!wsId,
   });
-  const { data: teams = [] } = useQuery({
-    ...teamListOptions(wsId),
+  const { data: squads = [] } = useQuery({
+    ...squadListOptions(wsId),
     enabled: !isChat && !!wsId,
   });
 
@@ -122,7 +122,7 @@ export function MentionSuggestionBar({
   );
 
   const myFilter = useMemo(
-    () => (userId ? { owner_id: userId } : { owner_id: "" }),
+    () => (userId ? { assignee_id: userId } : { assignee_id: "" }),
     [userId],
   );
   const { data: myIssuesAll = [] } = useQuery({
@@ -166,7 +166,7 @@ export function MentionSuggestionBar({
     // Agents: filter archived + drop ones the current user can't assign —
     // mirrors web (packages/views/editor/extensions/mention-suggestion.tsx:418-424).
     // A private agent shown in the suggestion list would create a mention the
-    // executor can never act on; web hides them, mobile must too.
+    // assignee can never act on; web hides them, mobile must too.
     const myRole =
       members.find((m) => m.user_id === userId)?.role ?? null;
     const runnableAgentIds = new Set(
@@ -186,9 +186,9 @@ export function MentionSuggestionBar({
           canAssignAgentToIssue(a, { userId, role: myRole }).allowed,
       )
       .sort((a, b) => a.name.localeCompare(b.name));
-    // Archived teams are filtered out — matching web (mention-suggestion.tsx:428).
-    // A re-activated team re-appears on the next list refetch.
-    const matchedTeams = [...teams]
+    // Archived squads are filtered out — matching web (mention-suggestion.tsx:428).
+    // A re-activated squad re-appears on the next list refetch.
+    const matchedSquads = [...squads]
       .filter(
         (s) =>
           !s.archived_at &&
@@ -207,13 +207,13 @@ export function MentionSuggestionBar({
       out.push({ kind: "section", label: "Agents" });
       for (const a of matchedAgents) out.push({ kind: "agent", agent: a });
     }
-    if (matchedTeams.length > 0) {
-      out.push({ kind: "section", label: "Teams" });
-      for (const s of matchedTeams) out.push({ kind: "team", team: s });
+    if (matchedSquads.length > 0) {
+      out.push({ kind: "section", label: "Squads" });
+      for (const s of matchedSquads) out.push({ kind: "squad", squad: s });
     }
     if (out.length === 0) out.push({ kind: "empty" });
     return out;
-  }, [isChat, query, recentIssues, myIssuesAll, members, agents, teams, userId]);
+  }, [isChat, query, recentIssues, myIssuesAll, members, agents, squads, userId]);
 
   if (!visible) return null;
 
@@ -338,23 +338,23 @@ export function MentionSuggestionBar({
               </Pressable>
             );
           }
-          if (item.kind === "team") {
+          if (item.kind === "squad") {
             return (
               <Pressable
                 onPress={() =>
                   onSelect({
-                    type: "team",
-                    id: item.team.id,
-                    name: item.team.name,
+                    type: "squad",
+                    id: item.squad.id,
+                    name: item.squad.name,
                   })
                 }
                 className="flex-row items-center gap-3 px-3 py-2 active:bg-secondary"
               >
-                <ActorAvatar type="team" id={item.team.id} size={28} />
+                <ActorAvatar type="squad" id={item.squad.id} size={28} />
                 <Text className="flex-1 text-sm text-foreground">
-                  {item.team.name}
+                  {item.squad.name}
                 </Text>
-                <Badge label="Team" tone="outline" />
+                <Badge label="Squad" tone="outline" />
               </Pressable>
             );
           }
@@ -362,7 +362,7 @@ export function MentionSuggestionBar({
           // By CATEGORY, not by key: a custom status in the done category IS
           // done, and `status === "done"` silently disagrees — the row would
           // render at full opacity as though the work were still open.
-          // (PB-6243)
+          // (MUL-6243)
           const closed = issueBehavesAsAny(item.issue, CLOSED_CATEGORIES);
           return (
             <Pressable

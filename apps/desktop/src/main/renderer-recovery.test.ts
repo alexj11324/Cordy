@@ -86,7 +86,7 @@ describe("installRendererRecoveryHandlers", () => {
     const showReloadPrompt = vi.fn(async () => "dismiss" as const);
     const desktopRoute = {
       surface: "tab",
-      path: "/acme/issues/PB-3239",
+      path: "/acme/issues/MUL-3239",
       workspaceSlug: "acme",
       tabId: "tab-1",
       reportedAt: "2026-06-15T00:00:00.000Z",
@@ -97,7 +97,7 @@ describe("installRendererRecoveryHandlers", () => {
       showReloadPrompt,
       getDiagnosticContext: () => ({
         windowUrl:
-          "file:///Applications/Patchbay.app/Contents/Resources/app.asar/index.html",
+          "file:///Applications/Multica.app/Contents/Resources/app.asar/index.html",
         desktopRoute,
       }),
       unresponsivePromptDelayMs: 100,
@@ -110,7 +110,7 @@ describe("installRendererRecoveryHandlers", () => {
       kind: "unresponsive",
       context: {
         windowUrl:
-          "file:///Applications/Patchbay.app/Contents/Resources/app.asar/index.html",
+          "file:///Applications/Multica.app/Contents/Resources/app.asar/index.html",
         desktopRoute,
       },
     });
@@ -164,10 +164,10 @@ describe("installRendererRecoveryHandlers", () => {
 
     expect(showMessageBox).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: "Patchbay needs to reload",
+        title: "Multica needs to reload",
         message: "The desktop window has been stuck for a few seconds.",
         detail: expect.stringContaining(
-          "Click Reload to refresh this window and keep using Patchbay.",
+          "Click Reload to refresh this window and keep using Multica.",
         ),
       }),
     );

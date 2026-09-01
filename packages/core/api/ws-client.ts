@@ -118,7 +118,7 @@ export class WSClient {
       // dispatcher and every ws.on subscriber) runs against a bad shape;
       // `msg.type.split(...)` in the realtime sync threw an uncaught TypeError
       // out of onmessage and surfaced as a flood of global `$exception` events
-      // (PB-3418). Validate once at the boundary, trust the shape downstream.
+      // (MUL-3418). Validate once at the boundary, trust the shape downstream.
       if (!msg || typeof (msg as { type?: unknown }).type !== "string") {
         if (!this.badFrameLogged) {
           this.badFrameLogged = true;

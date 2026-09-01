@@ -10,9 +10,7 @@
  * numeric detents):
  *   status    →  issue/[id]/picker/status
  *   priority  →  issue/[id]/picker/priority
- *   owner     →  issue/[id]/picker/owner
- *   executor  →  issue/[id]/picker/executor
- *   reviewer  →  issue/[id]/picker/reviewer
+ *   assignee  →  issue/[id]/picker/assignee
  *   labels    →  issue/[id]/picker/label   (multi-select, stays open)
  *   project   →  issue/[id]/picker/project
  *   due_date  →  issue/[id]/picker/due-date
@@ -24,8 +22,8 @@ import { useQuery } from "@tanstack/react-query";
 import type {
   Issue,
   IssuePriority,
-} from "@patchbay/core/types";
-import { formatDateOnly } from "@patchbay/core/issues/date";
+} from "@multica/core/types";
+import { formatDateOnly } from "@multica/core/issues/date";
 import { Text } from "@/components/ui/text";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { PriorityIcon } from "@/components/ui/priority-icon";
@@ -54,9 +52,7 @@ const PRIORITY_CHIP_LABEL: Record<IssuePriority, string> = {
 type IssuePickerField =
   | "status"
   | "priority"
-  | "owner"
-  | "executor"
-  | "reviewer"
+  | "assignee"
   | "label"
   | "project"
   | "due-date";
@@ -64,9 +60,7 @@ type IssuePickerField =
 const ISSUE_PICKER_PATHNAMES = {
   status: "/[workspace]/issue/[id]/picker/status",
   priority: "/[workspace]/issue/[id]/picker/priority",
-  owner: "/[workspace]/issue/[id]/picker/owner",
-  executor: "/[workspace]/issue/[id]/picker/executor",
-  reviewer: "/[workspace]/issue/[id]/picker/reviewer",
+  assignee: "/[workspace]/issue/[id]/picker/assignee",
   label: "/[workspace]/issue/[id]/picker/label",
   project: "/[workspace]/issue/[id]/picker/project",
   "due-date": "/[workspace]/issue/[id]/picker/due-date",
@@ -85,7 +79,7 @@ export function AttributeRow({ issue }: { issue: Issue }) {
   const { getName } = useActorLookup();
   // The chip shows the issue's own status, which may be a custom one — name
   // and colour come from the workspace catalog, the glyph from its category.
-  // (PB-6243)
+  // (MUL-6243)
   const { categoryOf, colorOf, labelOf } = useIssueStatuses();
 
   // Project read-only — fetch list to look up the title + icon. Cheap
@@ -98,25 +92,13 @@ export function AttributeRow({ issue }: { issue: Issue }) {
 
   const labels = issue.labels ?? [];
 
-  const executorValue =
-    issue.executor_type && issue.executor_id
-      ? { type: issue.executor_type, id: issue.executor_id }
-      : null;
-  const ownerValue =
-    issue.owner_type === "member" && issue.owner_id
-      ? { type: "member" as const, id: issue.owner_id }
-      : null;
-  const reviewerValue =
-    issue.reviewer_type && issue.reviewer_id
-      ? { type: issue.reviewer_type, id: issue.reviewer_id }
+  const assigneeValue =
+    issue.assignee_type && issue.assignee_id
+      ? { type: issue.assignee_type, id: issue.assignee_id }
       : null;
 
-  const ownerName = ownerValue ? getName(ownerValue.type, ownerValue.id) : null;
-  const executorName = executorValue
-    ? getName(executorValue.type, executorValue.id)
-    : null;
-  const reviewerName = reviewerValue
-    ? getName(reviewerValue.type, reviewerValue.id)
+  const assigneeName = assigneeValue
+    ? getName(assigneeValue.type, assigneeValue.id)
     : null;
   const dueLabel = formatDueDate(issue.due_date);
 
@@ -153,63 +135,31 @@ export function AttributeRow({ issue }: { issue: Issue }) {
         onPress={() => openPicker("priority")}
       />
 
-      {/* Owner — the human accountable for the issue. */}
-      <AttributeChip
-        icon={
-          ownerValue ? (
-            <ActorAvatar type="member" id={ownerValue.id} size={16} />
-          ) : (
-            <View className="size-4 rounded-full border border-dashed border-muted-foreground/40" />
-          )
-        }
-        label={ownerName ?? "Owner"}
-        variant={ownerValue ? "filled" : "dimmed"}
-        onPress={() => openPicker("owner")}
-      />
-
-      {/* Executor */}
-      {executorValue ? (
+      {/* Assignee */}
+      {assigneeValue ? (
         <AttributeChip
           icon={
             <ActorAvatar
-              type={executorValue.type}
-              id={executorValue.id}
+              type={assigneeValue.type}
+              id={assigneeValue.id}
               size={16}
               showPresence
             />
           }
-          label={executorName ?? "Unknown"}
+          label={assigneeName ?? "Unknown"}
           variant="filled"
-          onPress={() => openPicker("executor")}
+          onPress={() => openPicker("assignee")}
         />
       ) : (
         <AttributeChip
           icon={
             <View className="size-4 rounded-full border border-dashed border-muted-foreground/40" />
           }
-          label="Executor"
+          label="Assignee"
           variant="dimmed"
-          onPress={() => openPicker("executor")}
+          onPress={() => openPicker("assignee")}
         />
       )}
-
-      {/* Reviewer — independent from the implementation executor. */}
-      <AttributeChip
-        icon={
-          reviewerValue ? (
-            <ActorAvatar
-              type={reviewerValue.type}
-              id={reviewerValue.id}
-              size={16}
-            />
-          ) : (
-            <View className="size-4 rounded-full border border-dashed border-muted-foreground/40" />
-          )
-        }
-        label={reviewerName ?? "Reviewer"}
-        variant={reviewerValue ? "filled" : "dimmed"}
-        onPress={() => openPicker("reviewer")}
-      />
 
       {/* Each existing label renders as its own chip. Tap opens the
           label picker (multi-select toggle). No quick-detach gesture

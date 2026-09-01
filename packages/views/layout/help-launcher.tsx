@@ -16,26 +16,22 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { useModalStore } from "@patchbay/core/modals";
-import { useConfigStore } from "@patchbay/core/config";
+} from "@multica/ui/components/ui/dropdown-menu";
+import { useModalStore } from "@multica/core/modals";
+import { useConfigStore } from "@multica/core/config";
 import { isDesktopShell } from "../platform/local-directory";
 import { DISCORD_URL, DiscordIcon } from "./discord";
 import { useT } from "../i18n";
 
-const DOCS_URL = "https://patchbay.aspectlylabs.com/docs";
-const CHANGELOG_URL = "https://patchbay.aspectlylabs.com/changelog";
+const DOCS_URL = "https://multica.ai/docs";
+const CHANGELOG_URL = "https://multica.ai/changelog";
 // Absolute, including on self-hosted deployments: the installers we ship are
 // the same binaries either way, and the desktop client can point at a
 // self-hosted backend once installed. A self-host-relative /download would
 // only serve a copy of this page that still has to reach our release assets.
-const DOWNLOAD_URL = "https://patchbay.aspectlylabs.com/download";
+const DOWNLOAD_URL = "https://multica.ai/download";
 
-export function HelpLauncher({
-  onOpenChange,
-}: {
-  onOpenChange?: (open: boolean) => void;
-} = {}) {
+export function HelpLauncher() {
   const { t } = useT("layout");
   const serverVersion = useConfigStore((state) => state.serverVersion);
   // Web-only: offering "download the desktop app" inside the desktop app is
@@ -49,11 +45,11 @@ export function HelpLauncher({
   // of popping in a frame late.
   const desktop = isDesktopShell();
   return (
-    <DropdownMenu onOpenChange={onOpenChange}>
+    <DropdownMenu>
       <DropdownMenuTrigger
         aria-label={t(($) => $.help.trigger)}
         title={t(($) => $.help.trigger)}
-        className="inline-flex size-7 items-center justify-center rounded-full text-sidebar-icon-secondary transition-colors cursor-pointer hover:bg-sidebar-item-hover hover:text-sidebar-text-primary data-popup-open:bg-sidebar-item-active data-popup-open:text-sidebar-item-active-foreground focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+        className="inline-flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors cursor-pointer hover:bg-accent hover:text-foreground data-popup-open:bg-accent data-popup-open:text-foreground"
       >
         <CircleHelp className="size-4" />
       </DropdownMenuTrigger>

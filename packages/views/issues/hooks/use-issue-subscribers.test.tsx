@@ -5,10 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { setApiInstance } from "@patchbay/core/api";
-import { issueKeys } from "@patchbay/core/issues/queries";
-import { ApiError } from "@patchbay/core/api/client";
-import type { ApiClient } from "@patchbay/core/api/client";
+import { setApiInstance } from "@multica/core/api";
+import { issueKeys } from "@multica/core/issues/queries";
+import { ApiError } from "@multica/core/api/client";
+import type { ApiClient } from "@multica/core/api/client";
 
 const toastError = vi.fn();
 const toastSuccess = vi.fn();
@@ -39,7 +39,7 @@ vi.mock("../../i18n", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/realtime", () => ({
+vi.mock("@multica/core/realtime", () => ({
   useWSEvent: () => undefined,
   useWSReconnect: () => undefined,
 }));
@@ -72,7 +72,7 @@ function renderSubscribers() {
  * dead button. The 404 case specifically means the backend predates the
  * feature (web/desktop staging deploys on merge, backend by hand), which the
  * user can only wait out, so it must not read as a generic error
- * (PB-5483 review round 7).
+ * (MUL-5483 review round 7).
  */
 describe("useIssueSubscribers subtree unsubscribe failures", () => {
   afterEach(() => {
@@ -137,7 +137,7 @@ describe("useIssueSubscribers subtree unsubscribe failures", () => {
   // Unlike the direct toggle, this mutation is not optimistic — no label or
   // avatar flips to confirm the click landed, and the descendants it retired
   // are not on screen at all. Silence here is indistinguishable from a dead
-  // button, which is the PB-5710 complaint (PB-5714).
+  // button, which is the MUL-5710 complaint (MUL-5714).
   it("confirms a successful subtree unsubscribe", async () => {
     setApiInstance({
       listIssueSubscribers: async () => [],
@@ -170,7 +170,7 @@ const SUBSCRIBED_AS_MEMBER = [
  * useToggleIssueSubscriber patches the cache optimistically and rolls that
  * patch back when the request fails, which restores the exact row the user
  * started from. Without a message that is pixel-identical to a button that
- * never fired — the same symptom PB-5710 was reported as (PB-5714).
+ * never fired — the same symptom MUL-5710 was reported as (MUL-5714).
  */
 describe("useIssueSubscribers direct toggle feedback", () => {
   afterEach(() => {
@@ -238,7 +238,7 @@ describe("useIssueSubscribers direct toggle feedback", () => {
 /**
  * `isSubscribed` is derived from `data ?? []`, so it reads false for everyone
  * until the query resolves. `subscriptionKnown` is what lets the UI tell that
- * default apart from a real answer (PB-5714).
+ * default apart from a real answer (MUL-5714).
  */
 describe("useIssueSubscribers subscriptionKnown", () => {
   afterEach(() => {

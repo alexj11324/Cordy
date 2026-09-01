@@ -9,9 +9,9 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ApiError } from "@patchbay/core/api";
-import type { Agent } from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { ApiError } from "@multica/core/api";
+import type { Agent } from "@multica/core/types";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
 import {
@@ -60,15 +60,15 @@ const mockModalOpen = vi.hoisted(() => vi.fn());
 const mockGetAgent = vi.hoisted(() => vi.fn());
 const mockUpdateAgent = vi.hoisted(() => vi.fn());
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
-vi.mock("@patchbay/core/agents", () => ({
+vi.mock("@multica/core/agents", () => ({
   isAgentRuntimeBound: (agent: { runtime_id: string; runtime_bound?: boolean }) =>
     agent.runtime_bound !== false && agent.runtime_id.length > 0,
   useWorkspacePresenceMap: () => ({ byAgent: new Map() }),
 }));
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@multica/core/workspace/queries", () => ({
   agentListOptions: (wsId: string) => ({
     queryKey: ["agents", wsId],
     queryFn: () => Promise.resolve(agentsRef.current),
@@ -113,13 +113,13 @@ vi.mock("@patchbay/core/workspace/queries", () => ({
     ],
   },
 }));
-vi.mock("@patchbay/core/runtimes", () => ({
+vi.mock("@multica/core/runtimes", () => ({
   runtimeListOptions: (wsId: string) => ({
     queryKey: ["runtimes", wsId],
     queryFn: () => Promise.resolve([]),
   }),
 }));
-vi.mock("@patchbay/core/auth", () => {
+vi.mock("@multica/core/auth", () => {
   type AuthState = { user: { id: string } | null };
   const state = (): AuthState => ({ user: currentUserRef.current });
   const useAuthStore = Object.assign(
@@ -129,18 +129,18 @@ vi.mock("@patchbay/core/auth", () => {
   );
   return { useAuthStore };
 });
-vi.mock("@patchbay/core/modals", () => ({
+vi.mock("@multica/core/modals", () => ({
   useModalStore: Object.assign(vi.fn(), {
     getState: () => ({ open: mockModalOpen }),
   }),
 }));
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/paths", () => ({
   useWorkspacePaths: () => ({
     agents: () => "/acme/agents",
     chat: () => "/acme/chat",
   }),
 }));
-vi.mock("@patchbay/core/api", () => {
+vi.mock("@multica/core/api", () => {
   class ApiError extends Error {
     status: number;
     constructor(message: string, status: number) {
@@ -195,6 +195,7 @@ function renderPage() {
     back: vi.fn(),
     pathname: "/acme/agents/agent-1",
     searchParams: new URLSearchParams(),
+    hash: "",
     getShareableUrl: (path) => path,
   };
   const view = render(
@@ -383,7 +384,7 @@ describe("AgentDetailPage DM button", () => {
   });
 
   it("shows a toast instead of navigating when the user lacks chat access", async () => {
-    // Post-PB-3963 a workspace admin can VIEW another member's private agent
+    // Post-MUL-3963 a workspace admin can VIEW another member's private agent
     // but can no longer invoke (chat with) it — the exact case where the DM
     // button must explain itself rather than navigate.
     agentsRef.current = [
@@ -432,7 +433,7 @@ describe("AgentDetailPage DM button", () => {
     // so removing the `hasMoreActions` gate would render the empty shell and
     // fail this test.
     agentsRef.current = [
-      { ...baseAgent, system_key: "patrick" },
+      { ...baseAgent, system_key: "mika" },
     ];
     membersRef.current = [{ user_id: "user-1", role: "admin" }];
     renderPage();
@@ -469,15 +470,15 @@ describe("AgentDetailPage DM button", () => {
     renderPage();
 
     expect(
-      await screen.findByText(/needs a device before it can run/i),
+      await screen.findByText(/needs a runtime before it can run/i),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Bind device" }),
+      screen.getByRole("button", { name: "Bind runtime" }),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "DM" }));
     expect(mockToastError).toHaveBeenCalledWith(
-      "Bind a device before running this agent.",
+      "Bind a runtime before running this agent.",
     );
     expect(mockModalOpen).not.toHaveBeenCalled();
   });

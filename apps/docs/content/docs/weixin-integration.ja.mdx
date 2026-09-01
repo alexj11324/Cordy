@@ -1,8 +1,0 @@
----
-title: 個人 WeChat 連携
-description: Tencent iLink の公式 QR 認証で Patchbay Agent を個人 WeChat に接続します。
----
-
-個人 WeChat アカウントだけで利用でき、会社、WeCom 組織、公式アカウント、AppID は不要です。ワークスペースの owner/admin または対象エージェントの所有者が **Agents → Integrations → Connect WeChat** を開き、WeChat で QR コードをスキャンして確認します。
-
-セルフホストでは `openssl rand -base64 32` で生成した `PATCHBAY_WEIXIN_SECRET_KEY` が必要です。iLink Bot token と会話 context token は暗号化して保存されます。現在サポートするのはテキストのダイレクトメッセージのみです。

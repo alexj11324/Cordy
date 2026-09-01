@@ -5,8 +5,8 @@ import type {
   Agent,
   AgentRuntime,
   MemberWithUser,
-} from "@patchbay/core/types";
-import { runtimeDisplayLabel } from "@patchbay/core/runtimes";
+} from "@multica/core/types";
+import { runtimeDisplayLabel } from "@multica/core/runtimes";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
 import { VisibilityBadge } from "./visibility-badge";

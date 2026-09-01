@@ -5,11 +5,11 @@ description: メール認証コード、Google ログイン、新規登録の範
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay はデフォルトでメール認証コードによるログインを使い、Google OAuth を追加することもできます。既存のユーザーはいつでも再ログインできます。サインアップ制限は、新しいアカウントを作成できるかどうかだけを決めます。
+Multica はデフォルトでメール認証コードによるログインを使い、Google OAuth を追加することもできます。既存のユーザーはいつでも再ログインできます。サインアップ制限は、新しいアカウントを作成できるかどうかだけを決めます。
 
 ## メール認証コード
 
-ユーザーがメールアドレスを入力すると、Patchbay は 6 桁の認証コードを送信します。コードは 10 分間有効で、検証に成功するとブラウザにログイン cookie が発行されます。
+ユーザーがメールアドレスを入力すると、Multica は 6 桁の認証コードを送信します。コードは 10 分間有効で、検証に成功するとブラウザにログイン cookie が発行されます。
 
 メールは Resend または SMTP で送信できます。両方を設定した場合は `SMTP_HOST` が優先されます。
 
@@ -34,7 +34,7 @@ Patchbay はデフォルトでメール認証コードによるログインを�
 ```dotenv
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
-SMTP_USERNAME=patchbay
+SMTP_USERNAME=multica
 SMTP_PASSWORD=<password>
 SMTP_FROM_EMAIL=noreply@example.com
 ```
@@ -67,28 +67,35 @@ SMTP_EHLO_NAME=mail.example.com
 
 ```dotenv
 APP_ENV=development
-PATCHBAY_DEV_VERIFICATION_CODE=888888
+MULTICA_DEV_VERIFICATION_CODE=888888
 ```
 
 認証コードは 6 桁の数字である必要があります。`APP_ENV=production` のときは固定コードは無視されます。
 
 <Callout type="warning">
-公開インスタンスで固定認証コードを有効にしないでください。プロダクションの組み合わせは `APP_ENV=production` と空の `PATCHBAY_DEV_VERIFICATION_CODE` です。
+公開インスタンスで固定認証コードを有効にしないでください。プロダクションの組み合わせは `APP_ENV=production` と空の `MULTICA_DEV_VERIFICATION_CODE` です。
 </Callout>
 
 ## Google ログイン
 
-1. 管理対象の `accounts` サービスで Google provider を設定します。
-2. broker のコールバックアドレスを **Authorized redirect URIs** に追加します:
+1. [Google Cloud Console](https://console.cloud.google.com/) で OAuth 2.0 client を作成します。
+2. Multica フロントエンドのコールバックアドレスを **Authorized redirect URIs** に追加します:
 
    ```text
-   https://accounts.example.com/oauth/google/callback
+   https://multica.example.com/auth/callback
    ```
 
-3. Desktop ログインは broker の `/oauth/google` と
-   `/oauth/google/callback` だけを使用します。broker は
-   `patchbay://auth/callback` を通じて一度だけ使える PKCE code を返し、
-   Rust API が `/api/desktop-handoff/redeem` で交換します。
+3. 次を設定します:
+
+   ```dotenv
+   GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxxxxx
+   GOOGLE_REDIRECT_URI=https://multica.example.com/auth/callback
+   ```
+
+4. API サービスを再起動します。
+
+Google Console と `GOOGLE_REDIRECT_URI` のアドレスは、プロトコル、ポート、末尾のスラッシュを含めて完全に一致している必要があります。設定が反映されると、ログインページに Google ログインボタンが表示されます。フロントエンドイメージの再ビルドは不要です。
 
 ## サインアップ制限
 
@@ -127,14 +134,14 @@ ALLOWED_EMAILS=partner@example.net
 
 招待はサインアップ制限を自動的には迂回しません:
 
-- 相手がすでに Patchbay アカウントを持っている場合は、ログインして招待を受諾できます。
+- 相手がすでに Multica アカウントを持っている場合は、ログインして招待を受諾できます。
 - まだアカウントがない場合は、そのメールアドレスが上記のサインアップルールを満たす必要があります。
 
 オープンなサインアップを無効にしたインスタンスで新しいメンバーを招待するときは、先に相手のメールアドレスを `ALLOWED_EMAILS` に追加してください。アカウントが作成され、招待が受諾されたら、エントリを削除して構いません。
 
 ## セッション有効期間
 
-ブラウザのログインは、デフォルトで 30 日間保持されます。`AUTH_TOKEN_TTL` で調整でき、duration または正の整数秒を受け付けます:
+ブラウザのログインは、デフォルトで 30 日間保持されます。`AUTH_TOKEN_TTL` で調整でき、Go duration または正の整数秒を受け付けます:
 
 ```dotenv
 AUTH_TOKEN_TTL=720h

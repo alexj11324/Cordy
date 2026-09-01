@@ -156,7 +156,7 @@ function makeWindowWithThrowingSend(error: Error) {
 describe("setupAutoUpdater", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    ctx.userDataPath = mkdtempSync(join(tmpdir(), "patchbay-updater-test-"));
+    ctx.userDataPath = mkdtempSync(join(tmpdir(), "multica-updater-test-"));
     ctx.handlers.clear();
     ctx.ipcHandlers.clear();
     ctx.ipcHandle.mockClear();

@@ -1,6 +1,6 @@
 "use client";
 
-import { issueStatusCategory } from "@patchbay/core/issues";
+import { issueStatusCategory } from "@multica/core/issues";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Check,
@@ -26,42 +26,43 @@ import type {
   MemberWithUser,
   SearchIssueResult,
   SearchProjectResult,
-} from "@patchbay/core/types";
-import { api } from "@patchbay/core/api";
-import { partitionAggregatedSearchResults } from "@patchbay/core/search/cancelled-rank";
+} from "@multica/core/types";
+import { api } from "@multica/core/api";
+import { partitionAggregatedSearchResults } from "@multica/core/search/cancelled-rank";
 import {
   openCreateIssueWithPreference,
   selectRecentIssues,
   useCommentCollapseStore,
   useRecentIssuesStore,
   useResolvedExpandStore,
-} from "@patchbay/core/issues/stores";
-import { issueDetailOptions, issueTimelineOptions } from "@patchbay/core/issues/queries";
-import { useWorkspaceId } from "@patchbay/core";
-import { useWorkspacePaths, WORKSPACE_PAGES } from "@patchbay/core/paths";
-import type { WorkspacePageKey, WorkspacePaths } from "@patchbay/core/paths";
-import { useModalStore } from "@patchbay/core/modals";
-import { createShortcutChord } from "@patchbay/core/shortcuts";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
+} from "@multica/core/issues/stores";
+import { issueDetailOptions, issueTimelineOptions } from "@multica/core/issues/queries";
+import { useWorkspaceId } from "@multica/core";
+import { useWorkspacePaths, WORKSPACE_PAGES } from "@multica/core/paths";
+import type { WorkspacePageKey, WorkspacePaths } from "@multica/core/paths";
+import { useModalStore } from "@multica/core/modals";
+import { createShortcutChord } from "@multica/core/shortcuts";
+import { memberListOptions } from "@multica/core/workspace/queries";
+import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
 import { StatusIcon } from "../issues/components";
 import { resolvedThreadRootIds, rootCommentIds } from "../issues/components/thread-utils";
 import { ProjectIcon } from "../projects/components/project-icon";
+import { useProjectStatusLabels } from "../projects/components/labels";
 import { routeIconForPath } from "../layout/route-icon-components";
-import { PROJECT_STATUS_CONFIG } from "@patchbay/core/projects/config";
-import type { ProjectStatus } from "@patchbay/core/types";
+import { PROJECT_STATUS_CONFIG } from "@multica/core/projects/config";
+import type { ProjectStatus } from "@multica/core/types";
 import { ActorAvatar } from "../common/actor-avatar";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
-import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
+import { ActorAvatar as ActorAvatarBase } from "@multica/ui/components/common/actor-avatar";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
-} from "@patchbay/ui/components/ui/dialog";
-import { useTheme } from "@patchbay/ui/components/common/theme-provider";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+} from "@multica/ui/components/ui/dialog";
+import { useTheme } from "@multica/ui/components/common/theme-provider";
+import { copyText } from "@multica/ui/lib/clipboard";
 import {
   resolveClickIntent,
   useIntentNavigate,
@@ -76,8 +77,8 @@ import { useSearchStore } from "./search-store";
 // The palette's Pages group is generated from WORKSPACE_PAGES, the same
 // registry the sidebar nav and the desktop tab bar read. It used to be a
 // hand-written list, which silently went stale every time a page was added:
-// Chat, Automation, Teams and Analytics shipped in the sidebar but were
-// unreachable from the palette (PB-6272). Deriving the list means a new
+// Chat, Autopilot, Squads and Analytics shipped in the sidebar but were
+// unreachable from the palette (MUL-6272). Deriving the list means a new
 // workspace page is in the palette the moment it is in the registry.
 //
 // Page keys double as WorkspacePaths method names, so `p[key]()` resolves the
@@ -90,18 +91,15 @@ import { useSearchStore } from "./search-store";
 const PAGE_KEYWORDS: Record<WorkspacePageKey, string[]> = {
   inbox: ["inbox", "notifications", "收件箱", "通知"],
   chat: ["chat", "messages", "conversation", "聊天", "消息", "对话"],
-  channels: ["channels", "channel", "rooms", "频道", "群聊"],
   myIssues: ["my", "issues", "assigned", "mine", "我的", "任务"],
   issues: ["issues", "tasks", "bugs", "任务"],
-  taskGraph: ["task graph", "dependency graph", "graph", "任务图", "依赖图"],
   projects: ["projects", "kanban", "项目"],
-  automations: ["automation", "automations", "automation", "schedule", "cron", "webhook", "自动化", "定时"],
+  autopilots: ["autopilot", "autopilots", "automation", "schedule", "cron", "webhook", "自动化", "定时"],
   agents: ["agents", "bots", "ai", "智能体"],
-  teams: ["teams", "team", "团队"],
+  squads: ["squads", "teams", "小队", "团队"],
   usage: ["usage", "analytics", "stats", "metrics", "统计", "分析", "用量"],
-  runtimes: ["runtimes", "environments", "machines", "devices", "device", "运行时", "设备"],
+  runtimes: ["runtimes", "environments", "machines", "运行时"],
   skills: ["skills", "library", "技能"],
-  integrations: ["integrations", "connectors", "messaging", "集成", "连接"],
   settings: ["settings", "config", "preferences", "设置", "配置"],
 };
 
@@ -154,27 +152,18 @@ function matchesMember(member: MemberWithUser, query: string) {
   );
 }
 
-function IssueExecutorAvatar({
-  executorType,
-  executorId,
-  ownerType,
-  ownerId,
+function IssueAssigneeAvatar({
+  assigneeType,
+  assigneeId,
 }: {
-  executorType?: string | null;
-  executorId?: string | null;
-  ownerType?: string | null;
-  ownerId?: string | null;
+  assigneeType?: string | null;
+  assigneeId?: string | null;
 }) {
-  // Search has one compact actor slot. Prefer the runnable executor when one
-  // exists, then fall back to the human owner so owner-only issues remain
-  // visible in the compact result row.
-  const actorType = executorType ?? ownerType;
-  const actorId = executorId ?? ownerId;
-  if (!actorType || !actorId) return null;
+  if (!assigneeType || !assigneeId) return null;
   return (
     <ActorAvatar
-      actorType={actorType}
-      actorId={actorId}
+      actorType={assigneeType}
+      actorId={assigneeId}
       size="sm"
       profileLink={false}
       className="shrink-0"
@@ -196,6 +185,9 @@ function ProjectResultRow({
   disabled?: boolean;
   onSelect: (value: string) => void;
 }) {
+  const projectStatusLabels = useProjectStatusLabels();
+  const status = project.status as ProjectStatus;
+
   return (
     <CommandPrimitive.Item
       key={`project:${project.id}`}
@@ -210,9 +202,9 @@ function ProjectResultRow({
           <HighlightText text={project.title} query={query} />
         </span>
         <span
-          className={`ml-auto text-caption shrink-0 ${PROJECT_STATUS_CONFIG[project.status as ProjectStatus]?.color ?? "text-muted-foreground"}`}
+          className={`ml-auto text-caption shrink-0 ${PROJECT_STATUS_CONFIG[status]?.color ?? "text-muted-foreground"}`}
         >
-          {PROJECT_STATUS_CONFIG[project.status as ProjectStatus]?.label ?? project.status}
+          {projectStatusLabels[status] ?? project.status}
         </span>
       </div>
       {project.match_source === "description" && project.matched_snippet && (
@@ -257,11 +249,9 @@ function IssueResultRow({
         <span className="min-w-0 flex-1 truncate">
           <HighlightText text={issue.title} query={query} />
         </span>
-        <IssueExecutorAvatar
-          executorType={issue.executor_type}
-          executorId={issue.executor_id}
-          ownerType={issue.owner_type}
-          ownerId={issue.owner_id}
+        <IssueAssigneeAvatar
+          assigneeType={issue.assignee_type}
+          assigneeId={issue.assignee_id}
         />
       </div>
       {issue.matched_description_snippet && (
@@ -578,7 +568,7 @@ export function SearchCommand() {
   // Enter into a jump to a result the user has already typed past.
   const resultsAreStale = results.query !== query.trim();
 
-  // Cross-type cancelled demotion (PB-5824). The two searches are ranked
+  // Cross-type cancelled demotion (MUL-5824). The two searches are ranked
   // independently server-side, so the partition has to happen here, where they
   // are aggregated for display. See the render note on the results list.
   const partitionedResults = useMemo(
@@ -866,7 +856,7 @@ export function SearchCommand() {
               )}
 
             {/*
-              Render order is the cross-type cancelled partition (PB-5824):
+              Render order is the cross-type cancelled partition (MUL-5824):
               live projects → live issues → one trailing Cancelled section
               holding cancelled projects then cancelled issues. Projects and
               issues arrive as two independently ranked responses, so per-type
@@ -963,9 +953,9 @@ export function SearchCommand() {
                       {item.identifier}
                     </span>
                     <span className="min-w-0 flex-1 truncate">{item.title}</span>
-                    <IssueExecutorAvatar
-                      executorType={item.executor_type}
-                      executorId={item.executor_id}
+                    <IssueAssigneeAvatar
+                      assigneeType={item.assignee_type}
+                      assigneeId={item.assignee_id}
                     />
                   </CommandPrimitive.Item>
                 ))}

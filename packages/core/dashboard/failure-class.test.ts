@@ -15,17 +15,17 @@ describe("failureClassOf", () => {
     expect(failureClassOf("agent_error.provider_server_error")).toBe("provider");
     expect(failureClassOf("runtime_offline")).toBe("runtime");
     expect(failureClassOf("queued_expired")).toBe("runtime");
-    // PB-5370: the run never reached the model provider, so this belongs
+    // MUL-5370: the run never reached the model provider, so this belongs
     // with the substrate failures an operator fixes by checking the daemon.
     expect(failureClassOf("skill_bundle_unavailable")).toBe("runtime");
     expect(failureClassOf("agent_error.process_failure")).toBe("agent");
-    // PB-5722: the daemon and the provider are both healthy — codex could
+    // MUL-5722: the daemon and the provider are both healthy — codex could
     // not hand its own stored thread back — so this reads as an agent-side
     // failure, not a runtime one.
     expect(failureClassOf("codex_resume_oversized")).toBe("agent");
   });
 
-  it("keeps pre-PB-1949 coarse reasons countable", () => {
+  it("keeps pre-MUL-1949 coarse reasons countable", () => {
     // Historical rows still carry the old coarse taxonomy; they must land in
     // a bucket rather than vanish from the class totals.
     expect(failureClassOf("agent_error")).toBe("other");

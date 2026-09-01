@@ -11,28 +11,23 @@ import {
   profileConfigPath,
   profileDir,
   profileLogPath,
+  profilePidPath,
   profileUserIdPath,
 } from "./daemon-profile";
 
-const PATCHBAY_DIR = join(homedir(), ".patchbay");
-const DEFAULT_CLI_CONFIG = join(PATCHBAY_DIR, "config.json");
+const MULTICA_DIR = join(homedir(), ".multica");
+const DEFAULT_CLI_CONFIG = join(MULTICA_DIR, "config.json");
 
 describe("deriveProfileName", () => {
   it("names the profile after the target host", () => {
-    expect(deriveProfileName("https://api.aspectlylabs.com")).toBe(
-      "desktop-api.aspectlylabs.com",
+    expect(deriveProfileName("https://api.multica.ai")).toBe(
+      "desktop-api.multica.ai",
     );
   });
 
   it("replaces the port colon so the name is path-safe", () => {
     expect(deriveProfileName("http://localhost:8080")).toBe(
       "desktop-localhost-8080",
-    );
-  });
-
-  it("keeps IPv6 literals within the Rust profile-name grammar", () => {
-    expect(deriveProfileName("http://[::1]:8080")).toBe(
-      "desktop----1--8080",
     );
   });
 
@@ -43,30 +38,34 @@ describe("deriveProfileName", () => {
 
 describe("profile paths", () => {
   it("always resolves under profiles/<name>", () => {
-    const dir = join(PATCHBAY_DIR, "profiles", "desktop-api.aspectlylabs.com");
-    expect(profileDir("desktop-api.aspectlylabs.com")).toBe(dir);
-    expect(profileConfigPath("desktop-api.aspectlylabs.com")).toBe(
+    const dir = join(MULTICA_DIR, "profiles", "desktop-api.multica.ai");
+    expect(profileDir("desktop-api.multica.ai")).toBe(dir);
+    expect(profileConfigPath("desktop-api.multica.ai")).toBe(
       join(dir, "config.json"),
     );
-    expect(profileLogPath("desktop-api.aspectlylabs.com")).toBe(
+    expect(profileLogPath("desktop-api.multica.ai")).toBe(
       join(dir, "daemon.log"),
     );
-    expect(profileUserIdPath("desktop-api.aspectlylabs.com")).toBe(
+    expect(profilePidPath("desktop-api.multica.ai")).toBe(
+      join(dir, "daemon.pid"),
+    );
+    expect(profileUserIdPath("desktop-api.multica.ai")).toBe(
       join(dir, ".desktop-user-id"),
     );
   });
 
-  // Regression: an unresolved profile used to resolve to ~/.patchbay, so Desktop
+  // Regression: an unresolved profile used to resolve to ~/.multica, so Desktop
   // could overwrite server_url and token in the user's own CLI config. #6399.
   it("refuses to build a path for an unresolved profile", () => {
     expect(() => profileDir("")).toThrow(/unresolved/);
     expect(() => profileConfigPath("")).toThrow(/unresolved/);
     expect(() => profileLogPath("")).toThrow(/unresolved/);
+    expect(() => profilePidPath("")).toThrow(/unresolved/);
     expect(() => profileUserIdPath("")).toThrow(/unresolved/);
   });
 
   it("never yields the default CLI config path for any input", () => {
-    for (const name of ["desktop-api.aspectlylabs.com", "desktop", "x"]) {
+    for (const name of ["desktop-api.multica.ai", "desktop", "x"]) {
       expect(profileConfigPath(name)).not.toBe(DEFAULT_CLI_CONFIG);
     }
     expect(() => profileConfigPath("")).toThrow();
@@ -75,9 +74,9 @@ describe("profile paths", () => {
 
 describe("profileArgs", () => {
   it("selects the Desktop-owned profile", () => {
-    expect(profileArgs("desktop-api.aspectlylabs.com")).toEqual([
+    expect(profileArgs("desktop-api.multica.ai")).toEqual([
       "--profile",
-      "desktop-api.aspectlylabs.com",
+      "desktop-api.multica.ai",
     ]);
   });
 
@@ -97,14 +96,14 @@ describe("healthPortForProfile", () => {
   });
 
   it("never derives the default profile's port", () => {
-    for (const name of ["desktop-api.aspectlylabs.com", "desktop", "x", "a".repeat(50)]) {
+    for (const name of ["desktop-api.multica.ai", "desktop", "x", "a".repeat(50)]) {
       expect(healthPortForProfile(name)).not.toBe(DEFAULT_HEALTH_PORT);
     }
   });
 
   it("derives a stable per-profile port above the default", () => {
-    const port = healthPortForProfile("desktop-api.aspectlylabs.com");
+    const port = healthPortForProfile("desktop-api.multica.ai");
     expect(port).toBeGreaterThan(DEFAULT_HEALTH_PORT);
-    expect(port).toBe(healthPortForProfile("desktop-api.aspectlylabs.com"));
+    expect(port).toBe(healthPortForProfile("desktop-api.multica.ai"));
   });
 });

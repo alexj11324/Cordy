@@ -7,17 +7,13 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
     id: "issue-1",
     workspace_id: "ws-1",
     number: 1,
-    identifier: "PB-1",
+    identifier: "MUL-1",
     title: "Issue 1",
     description: null,
     status: "todo",
     priority: "none",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -39,27 +35,21 @@ describe("commonIssueFields", () => {
     expect(commonIssueFields([])).toEqual({
       status: null,
       priority: null,
-      owner: null,
-      executor: null,
+      assignee: null,
     });
   });
 
   it("reflects a single issue's own fields", () => {
     const common = commonIssueFields([
-      makeIssue({
-        status: "in_progress",
-        priority: "high",
-        owner_type: "member",
-        owner_id: "u-1",
-      }),
+      makeIssue({ status: "in_progress", priority: "high", assignee_type: "member", assignee_id: "u-1" }),
     ]);
     expect(common.status).toBe("in_progress");
     expect(common.priority).toBe("high");
-    expect(common.owner).toEqual({ type: "member", id: "u-1" });
+    expect(common.assignee).toEqual({ type: "member", id: "u-1" });
   });
 
   it("returns the shared status when every issue agrees, not a hardcoded default", () => {
-    // Regression for PB-3510: the batch picker used to assert "todo"
+    // Regression for MUL-3510: the batch picker used to assert "todo"
     // regardless of the selection.
     const common = commonIssueFields([
       makeIssue({ id: "a", status: "in_review" }),
@@ -87,41 +77,41 @@ describe("commonIssueFields", () => {
 
   it("treats an all-unassigned selection as a real shared value, not mixed", () => {
     const common = commonIssueFields([
-      makeIssue({ id: "a", executor_type: null, executor_id: null }),
-      makeIssue({ id: "b", executor_type: null, executor_id: null }),
+      makeIssue({ id: "a", assignee_type: null, assignee_id: null }),
+      makeIssue({ id: "b", assignee_type: null, assignee_id: null }),
     ]);
-    expect(common.executor).toEqual({ type: null, id: null });
+    expect(common.assignee).toEqual({ type: null, id: null });
   });
 
-  it("returns the shared executor when every issue points at the same actor", () => {
+  it("returns the shared assignee when every issue points at the same actor", () => {
     const common = commonIssueFields([
-      makeIssue({ id: "a", executor_type: "agent", executor_id: "agent-1" }),
-      makeIssue({ id: "b", executor_type: "agent", executor_id: "agent-1" }),
+      makeIssue({ id: "a", assignee_type: "agent", assignee_id: "agent-1" }),
+      makeIssue({ id: "b", assignee_type: "agent", assignee_id: "agent-1" }),
     ]);
-    expect(common.executor).toEqual({ type: "agent", id: "agent-1" });
+    expect(common.assignee).toEqual({ type: "agent", id: "agent-1" });
   });
 
-  it("returns null executor when actors differ", () => {
+  it("returns null assignee when actors differ", () => {
     const common = commonIssueFields([
-      makeIssue({ id: "a", executor_type: "agent", executor_id: "agent-1" }),
-      makeIssue({ id: "b", executor_type: "agent", executor_id: "agent-2" }),
+      makeIssue({ id: "a", assignee_type: "member", assignee_id: "u-1" }),
+      makeIssue({ id: "b", assignee_type: "member", assignee_id: "u-2" }),
     ]);
-    expect(common.executor).toBeNull();
+    expect(common.assignee).toBeNull();
   });
 
-  it("returns null executor when some are assigned and some are unassigned", () => {
+  it("returns null assignee when some are assigned and some are unassigned", () => {
     const common = commonIssueFields([
-      makeIssue({ id: "a", executor_type: "agent", executor_id: "agent-1" }),
-      makeIssue({ id: "b", executor_type: null, executor_id: null }),
+      makeIssue({ id: "a", assignee_type: "member", assignee_id: "u-1" }),
+      makeIssue({ id: "b", assignee_type: null, assignee_id: null }),
     ]);
-    expect(common.executor).toBeNull();
+    expect(common.assignee).toBeNull();
   });
 
-  it("distinguishes executors of the same id but different type", () => {
+  it("distinguishes assignees of the same id but different type", () => {
     const common = commonIssueFields([
-      makeIssue({ id: "a", executor_type: "team", executor_id: "x" }),
-      makeIssue({ id: "b", executor_type: "agent", executor_id: "x" }),
+      makeIssue({ id: "a", assignee_type: "member", assignee_id: "x" }),
+      makeIssue({ id: "b", assignee_type: "agent", assignee_id: "x" }),
     ]);
-    expect(common.executor).toBeNull();
+    expect(common.assignee).toBeNull();
   });
 });

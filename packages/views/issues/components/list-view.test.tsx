@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import type { Issue, IssueStatus, IssueStatusCategory } from "@patchbay/core/types";
+import { I18nProvider } from "@multica/core/i18n/react";
+import type { Issue, IssueStatus, IssueStatusCategory } from "@multica/core/types";
 import { ListView } from "./list-view";
 import { IssueContextMenuProvider } from "../actions";
 import { ScrollRestorationProvider } from "../../platform";
@@ -13,20 +13,20 @@ import enIssues from "../../locales/en/issues.json";
 
 const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
 const mockGetAgentTaskSnapshot = vi.hoisted(() => vi.fn().mockResolvedValue([]));
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: { getAgentTaskSnapshot: mockGetAgentTaskSnapshot },
   getApi: () => ({ getAgentTaskSnapshot: mockGetAgentTaskSnapshot }),
   setApiInstance: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/paths", async () => {
+vi.mock("@multica/core/paths", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/paths")>("@patchbay/core/paths");
+    await vi.importActual<typeof import("@multica/core/paths")>("@multica/core/paths");
   return {
     ...actual,
     useWorkspaceSlug: () => "acme",
@@ -48,7 +48,7 @@ vi.mock("../../navigation", () => ({
 }));
 
 const mockAuthUser = { id: "user-1", email: "test@test.com", name: "Test User" };
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@multica/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => {
       const state = { user: mockAuthUser, isAuthenticated: true };
@@ -83,7 +83,7 @@ const mockViewState: {
   }),
 };
 
-vi.mock("@patchbay/core/issues/stores/view-store-context", () => ({
+vi.mock("@multica/core/issues/stores/view-store-context", () => ({
   ViewStoreProvider: ({ children }: { children: React.ReactNode }) => children,
   useViewStore: (selector?: any) => (selector ? selector(mockViewState) : mockViewState),
   useViewStoreApi: () => ({
@@ -93,7 +93,7 @@ vi.mock("@patchbay/core/issues/stores/view-store-context", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/modals", () => ({
+vi.mock("@multica/core/modals", () => ({
   useModalStore: Object.assign(
     () => ({ open: vi.fn() }),
     { getState: () => ({ open: vi.fn() }) },
@@ -154,7 +154,7 @@ vi.mock("react-virtuoso", () => ({
 const ISSUES: Issue[] = [
   {
     id: "issue-1",
-    identifier: "PB-1",
+    identifier: "MUL-1",
     title: "First todo issue",
     status: "todo",
     priority: "none",
@@ -165,7 +165,7 @@ const ISSUES: Issue[] = [
   } as Issue,
   {
     id: "issue-2",
-    identifier: "PB-2",
+    identifier: "MUL-2",
     title: "Second todo issue",
     status: "todo",
     priority: "none",
@@ -241,7 +241,7 @@ describe("ListView status header collapse", () => {
     // that starts on a row: the drag activates past the 5px threshold, then
     // the browser takes the gesture over and fires pointercancel. A cancel
     // that leaves the drag lock engaged makes the header's collapse toggle a
-    // permanent no-op (PB-6240).
+    // permanent no-op (MUL-6240).
     expect(lastOnDragCancel).toBeTypeOf("function");
     act(() => {
       lastOnDragStart({ active: { id: "issue-1" } });
@@ -258,14 +258,14 @@ describe("ListView status header collapse", () => {
 // Sections are CATEGORIES, cards carry concrete status KEYS. Bucketing a card
 // by its key gave a custom status a section id no section has, so the card was
 // dropped: filtering the surface down to that status left the section rendering
-// "no issues" beside a non-zero header count (PB-6409). The category mapping
+// "no issues" beside a non-zero header count (MUL-6409). The category mapping
 // itself is covered in utils/drag-utils.test.ts.
 describe("ListView custom statuses", () => {
   it("renders a custom-status issue in its category's section", () => {
     const custom = {
       ...ISSUES[0]!,
       id: "issue-custom",
-      identifier: "PB-3",
+      identifier: "MUL-3",
       title: "Waiting on the reporter",
       status: "awaiting_response",
       status_category: "in_review",

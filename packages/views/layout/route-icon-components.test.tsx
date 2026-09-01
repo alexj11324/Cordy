@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { paths, WORKSPACE_PAGES, DEFAULT_ROUTE_ICON_NAME } from "@patchbay/core/paths";
+import { paths, WORKSPACE_PAGES, DEFAULT_ROUTE_ICON_NAME } from "@multica/core/paths";
 import { ROUTE_ICON_COMPONENTS, routeIconForPath } from "./route-icon-components";
 
 describe("ROUTE_ICON_COMPONENTS", () => {
@@ -12,12 +12,12 @@ describe("ROUTE_ICON_COMPONENTS", () => {
 });
 
 describe("routeIconForPath", () => {
-  // The invariant this whole contract exists for (PB-4370): the sidebar and
+  // The invariant this whole contract exists for (MUL-4370): the sidebar and
   // the desktop tab bar both resolve from a path, so the same route can never
   // render two different icons.
   it("gives a route the same component wherever it is rendered", () => {
     const p = paths.workspace("acme");
-    for (const href of [p.projects(), p.automations(), p.chat(), p.teams(), p.usage(), p.taskGraph()]) {
+    for (const href of [p.projects(), p.autopilots(), p.chat(), p.squads(), p.usage()]) {
       // Sidebar passes the bare nav href; a tab passes its own url, which for
       // a sub-route carries extra segments.
       expect(routeIconForPath(`${href}/some-id`)).toBe(routeIconForPath(href));
@@ -27,7 +27,7 @@ describe("routeIconForPath", () => {
   it("resolves distinct components for distinct routes", () => {
     const p = paths.workspace("acme");
     expect(routeIconForPath(p.projects())).not.toBe(routeIconForPath(p.issues()));
-    expect(routeIconForPath(p.automations())).not.toBe(routeIconForPath(p.issues()));
+    expect(routeIconForPath(p.autopilots())).not.toBe(routeIconForPath(p.issues()));
   });
 
   it("returns the default component instead of undefined for an unknown route", () => {

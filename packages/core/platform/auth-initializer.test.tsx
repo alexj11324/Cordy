@@ -71,15 +71,13 @@ function makeApi(overrides: Partial<ApiClient> = {}): ApiClient {
 
 function renderInitializer({
   api,
-  storage = makeStorage({ patchbay_token: "token-1" }),
+  storage = makeStorage({ multica_token: "token-1" }),
   cookieAuth = false,
-  clerkAuth = false,
   platform = "desktop",
 }: {
   api: ApiClient;
   storage?: StorageAdapter;
   cookieAuth?: boolean;
-  clerkAuth?: boolean;
   platform?: "desktop" | "web";
 }) {
   const onLogin = vi.fn();
@@ -96,7 +94,6 @@ function renderInitializer({
     <QueryClientProvider client={queryClient}>
       <AuthInitializer
         cookieAuth={cookieAuth}
-        clerkAuth={clerkAuth}
         identity={{ platform }}
         onLogin={onLogin}
         onLogout={onLogout}
@@ -119,24 +116,8 @@ afterEach(() => {
 });
 
 describe("AuthInitializer recovery", () => {
-  it("leaves Clerk session bootstrap to the Clerk adapter", async () => {
-    const getMe = vi.fn().mockResolvedValue(fakeUser);
-    const api = makeApi({ getMe });
-    renderInitializer({
-      api,
-      cookieAuth: true,
-      clerkAuth: true,
-      platform: "web",
-    });
-
-    await waitFor(() => {
-      expect(useAuthStore.getState().status).toBe("authenticating");
-    });
-    expect(getMe).not.toHaveBeenCalled();
-  });
-
   it("keeps the token and recovers on the online event after a network failure", async () => {
-    const storage = makeStorage({ patchbay_token: "token-1" });
+    const storage = makeStorage({ multica_token: "token-1" });
     const getMe = vi
       .fn()
       .mockRejectedValueOnce(new TypeError("fetch failed"))
@@ -147,7 +128,7 @@ describe("AuthInitializer recovery", () => {
     await waitFor(() => {
       expect(useAuthStore.getState().status).toBe("recovering");
     });
-    expect(storage.snapshot().patchbay_token).toBe("token-1");
+    expect(storage.snapshot().multica_token).toBe("token-1");
     expect(onLogout).not.toHaveBeenCalled();
 
     act(() => window.dispatchEvent(new Event("online")));
@@ -291,9 +272,9 @@ describe("AuthInitializer recovery", () => {
   });
 
   it("publishes a definitive logout for a genuine 401", async () => {
-    const storage = makeStorage({ patchbay_token: "token-1" });
+    const storage = makeStorage({ multica_token: "token-1" });
     const getMe = vi.fn().mockImplementation(() => {
-      storage.removeItem("patchbay_token");
+      storage.removeItem("multica_token");
       return Promise.reject(new ApiError("unauthorized", 401, "Unauthorized"));
     });
     const api = makeApi({ getMe });
@@ -302,7 +283,7 @@ describe("AuthInitializer recovery", () => {
     await waitFor(() => {
       expect(useAuthStore.getState().status).toBe("unauthenticated");
     });
-    expect(storage.snapshot().patchbay_token).toBeUndefined();
+    expect(storage.snapshot().multica_token).toBeUndefined();
     expect(onLogout).toHaveBeenCalledOnce();
   });
 });

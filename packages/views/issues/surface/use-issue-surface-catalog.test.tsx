@@ -5,14 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { setApiInstance } from "@patchbay/core/api";
-import type { ApiClient } from "@patchbay/core/api/client";
+import { setApiInstance } from "@multica/core/api";
+import type { ApiClient } from "@multica/core/api/client";
 import {
   getIssueSurfaceViewStore,
   pruneIssueSurfaceViewStates,
-} from "@patchbay/core/issues/stores/surface-view-store";
-import { ViewStoreProvider } from "@patchbay/core/issues/stores/view-store-context";
-import type { IssueStatusEntry, IssueTableGroupsRequest, IssueTableRowsRequest } from "@patchbay/core/types";
+} from "@multica/core/issues/stores/surface-view-store";
+import { ViewStoreProvider } from "@multica/core/issues/stores/view-store-context";
+import type { IssueStatusEntry, IssueTableGroupsRequest, IssueTableRowsRequest } from "@multica/core/types";
 import { useIssueSurfaceController } from "./use-issue-surface-controller";
 
 /**
@@ -26,7 +26,7 @@ import { useIssueSurfaceController } from "./use-issue-surface-controller";
  *   not be sent until the catalog proves this workspace has a custom status.
  */
 
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
 
 const QA_ENTRY: IssueStatusEntry = {
   id: "s-qa",

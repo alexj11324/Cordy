@@ -6,12 +6,12 @@
  *
  * Visual structure mirrors web's InboxListItem
  * (packages/views/inbox/components/inbox-list-item.tsx). Per
- * apps/mobile/AGENTS.md "Visual alignment is baseline":
+ * apps/mobile/CLAUDE.md "Visual alignment is baseline":
  *   - Right column stacks vertically: status icon on top row, time on bottom.
  *   - Secondary line uses the type-aware `InboxDetailLabel`, not raw body.
  */
 import { Pressable, View } from "react-native";
-import type { InboxItem } from "@patchbay/core/types";
+import type { InboxItem } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { StatusIcon } from "@/components/ui/status-icon";
@@ -59,7 +59,7 @@ export function InboxRow({ item, onPress }: Props) {
             {/* The glyph is per category, so it alone cannot tell "In Review"
                 from a custom "Human Review" — a move between two statuses of
                 one category would leave this row pixel-identical and read as
-                "the inbox never updated" (PB-6395). Colour is what carries a
+                "the inbox never updated" (MUL-6395). Colour is what carries a
                 custom status's identity; `colorOf` is null for a built-in,
                 which keeps it on its category token. */}
             {item.issue_status ? (

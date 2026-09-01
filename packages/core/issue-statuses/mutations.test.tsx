@@ -95,7 +95,7 @@ describe("issue status catalog mutations", () => {
   // The realtime `issue_status:changed` event refreshes this catalog in every
   // tab, the writing one included. A second invalidate here would make the
   // admin who did the writing the only client that reads the catalog twice.
-  // (PB-6458)
+  // (MUL-6458)
   it("leaves the catalog refresh to the realtime event on a successful write", async () => {
     const qc = createClient();
     qc.setQueryData(issueStatusKeys.list("ws-1"), catalog([builtInReview]));
@@ -168,7 +168,7 @@ describe("issue status catalog mutations", () => {
 
   // A rename changes a label the boards resolve from THIS catalog at render
   // time, so nothing cached under the issues scope can be stale. Refetching it
-  // meant one word cost a workspace-wide board/list/table refetch. (PB-6458)
+  // meant one word cost a workspace-wide board/list/table refetch. (MUL-6458)
   it("does not refetch the issue caches when a status is renamed", async () => {
     const qc = createClient();
     const qa = entry({ id: "qa", key: "qa", name: "QA" });
@@ -211,7 +211,7 @@ describe("issue status catalog mutations", () => {
   // "someone else's later write is already in the cache when my response lands"
   // is a legal ordering — not a rare interleaving. Installing the response body
   // here would roll the catalog back to a state no further event corrects, in
-  // exactly the concurrent-editing scenario this feature exists for. (PB-6458)
+  // exactly the concurrent-editing scenario this feature exists for. (MUL-6458)
   it("does not let a slow rename response overwrite a newer catalog", async () => {
     const qc = createClient();
     const qa = entry({ id: "qa", key: "qa", name: "QA" });

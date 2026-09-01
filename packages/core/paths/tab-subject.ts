@@ -6,7 +6,7 @@
  * unrecognized — is what decides how it should look (icon + title). This module
  * turns a URL into that semantic {@link TabSubject}. It is pure: no React, no
  * Lucide, no query — only URL parsing. The visual/title mapping lives in
- * `tab-presentation.ts`; the React glue lives in `@patchbay/views`.
+ * `tab-presentation.ts`; the React glue lives in `@multica/views`.
  *
  * Workspace URLs are `/{slug}/{segment}/...`. The slug is index 0, the route
  * segment index 1, and any resource id index 2. Container selection (Inbox,
@@ -15,7 +15,7 @@
  */
 import { pageForSegment, type WorkspacePageKey } from "./route-icons";
 
-export type TabActorType = "agent" | "member" | "team";
+export type TabActorType = "agent" | "member" | "squad";
 
 export type TabSubject =
   /** A collection or tool page with no specific resource. */
@@ -24,9 +24,9 @@ export type TabSubject =
   | { kind: "issue"; id: string }
   /** A single project detail. */
   | { kind: "project"; id: string }
-  /** A single automation detail. */
-  | { kind: "automation"; id: string }
-  /** An agent / member / team detail (has an avatar identity). */
+  /** A single autopilot detail. */
+  | { kind: "autopilot"; id: string }
+  /** An agent / member / squad detail (has an avatar identity). */
   | { kind: "actor"; actorType: TabActorType; id: string }
   /** A single skill detail. */
   | { kind: "skill"; id: string }
@@ -82,8 +82,8 @@ export function parseTabSubject(url: string): TabSubject {
       return { kind: "page", page: "myIssues" };
     case "projects":
       return id ? { kind: "project", id } : { kind: "page", page: "projects" };
-    case "automations":
-      return id ? { kind: "automation", id } : { kind: "page", page: "automations" };
+    case "autopilots":
+      return id ? { kind: "autopilot", id } : { kind: "page", page: "autopilots" };
     case "agents":
       if (id === "new") return { kind: "flow", flow: "create-agent" };
       return id
@@ -92,10 +92,10 @@ export function parseTabSubject(url: string): TabSubject {
     case "members":
       // No members collection route exists; only `/members/:id`.
       return id ? { kind: "actor", actorType: "member", id } : { kind: "unknown" };
-    case "teams":
+    case "squads":
       return id
-        ? { kind: "actor", actorType: "team", id }
-        : { kind: "page", page: "teams" };
+        ? { kind: "actor", actorType: "squad", id }
+        : { kind: "page", page: "squads" };
     case "usage":
       return { kind: "page", page: "usage" };
     case "inbox":
@@ -145,8 +145,8 @@ export function tabSubjectKey(subject: TabSubject): string {
       return `issue:${subject.id}`;
     case "project":
       return `project:${subject.id}`;
-    case "automation":
-      return `automation:${subject.id}`;
+    case "autopilot":
+      return `autopilot:${subject.id}`;
     case "actor":
       return `actor:${subject.actorType}:${subject.id}`;
     case "skill":

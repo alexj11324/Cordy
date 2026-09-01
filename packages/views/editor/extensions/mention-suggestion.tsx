@@ -11,40 +11,40 @@ import {
   type ReactNode,
 } from "react";
 import type { QueryClient } from "@tanstack/react-query";
-import { getCurrentWsId } from "@patchbay/core/platform";
-import { flattenIssueBuckets, issueKeys } from "@patchbay/core/issues/queries";
-import { issueStatusCategory } from "@patchbay/core/issues";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import { useAuthStore } from "@patchbay/core/auth";
-import { canAssignAgentToIssue } from "@patchbay/core/permissions";
-import { isAgentRuntimeBound } from "@patchbay/core/agents";
-import { api } from "@patchbay/core/api";
+import { getCurrentWsId } from "@multica/core/platform";
+import { flattenIssueBuckets, issueKeys } from "@multica/core/issues/queries";
+import { issueStatusCategory } from "@multica/core/issues";
+import { workspaceKeys } from "@multica/core/workspace/queries";
+import { useAuthStore } from "@multica/core/auth";
+import { canAssignAgentToIssue } from "@multica/core/permissions";
+import { isAgentRuntimeBound } from "@multica/core/agents";
+import { api } from "@multica/core/api";
 import {
   isIssueDirectHit,
   isProjectDirectHit,
-} from "@patchbay/core/search/cancelled-rank";
-import { isImeComposing } from "@patchbay/core/utils";
+} from "@multica/core/search/cancelled-rank";
+import { isImeComposing } from "@multica/core/utils";
 import type {
   Issue,
   ListIssuesCache,
   MemberWithUser,
   Agent,
-  Team,
-} from "@patchbay/core/types";
+  Squad,
+} from "@multica/core/types";
 import { ListTodo } from "lucide-react";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { StatusIcon } from "../../issues/components/status-icon";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { useT } from "../../i18n";
-import { Badge } from "@patchbay/ui/components/ui/badge";
+import { Badge } from "@multica/ui/components/ui/badge";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
-import { cn } from "@patchbay/ui/lib/utils";
-import type { IssueStatus, IssueStatusCategory, ProjectStatus } from "@patchbay/core/types";
-import { PROJECT_STATUS_CONFIG } from "@patchbay/core/projects/config";
+} from "@multica/ui/components/ui/tooltip";
+import { cn } from "@multica/ui/lib/utils";
+import type { IssueStatus, IssueStatusCategory, ProjectStatus } from "@multica/core/types";
+import { PROJECT_STATUS_CONFIG } from "@multica/core/projects/config";
 import type { SuggestionOptions } from "@tiptap/suggestion";
 import { PluginKey } from "@tiptap/pm/state";
 import {
@@ -70,7 +70,7 @@ import { blockedReasonLabel } from "../../issues/blocked-trigger-copy";
 export interface MentionItem {
   id: string;
   label: string;
-  type: "member" | "agent" | "team" | "issue" | "project" | "all";
+  type: "member" | "agent" | "squad" | "issue" | "project" | "all";
   /** Optional grouping hint for injected context items. */
   group?: "current" | "recent" | "search";
   /** Secondary text shown beside the label (e.g. issue title) */
@@ -81,7 +81,7 @@ export interface MentionItem {
    * The category that status behaves as, carried from the issue payload so the
    * list never has to resolve a custom key itself. Both the glyph and the
    * "closed / demoted" rules read this — comparing the raw key left a custom
-   * done status looking and ranking like active work. (PB-6243)
+   * done status looking and ranking like active work. (MUL-6243)
    */
   statusCategory?: IssueStatusCategory;
   /** Project emoji/icon snapshot for ProjectIcon rendering */
@@ -624,14 +624,14 @@ function MentionRow({
         {item.type === "all" ? t(($) => $.mention.all_members) : item.label}
       </span>
       {item.type === "agent" && (
-        // "Agent" is a glossary-protected product term — kept un-translated.
-        // eslint-disable-next-line i18next/no-literal-string
-        <Badge variant="outline" className="ml-auto text-micro h-4 px-1.5">Agent</Badge>
+        <Badge variant="outline" className="ml-auto text-micro h-4 px-1.5">
+          {t(($) => $.mention.agent_badge)}
+        </Badge>
       )}
-      {item.type === "team" && (
-        // "Team" is a glossary-protected product term — kept un-translated.
-        // eslint-disable-next-line i18next/no-literal-string
-        <Badge variant="outline" className="ml-auto text-micro h-4 px-1.5">Team</Badge>
+      {item.type === "squad" && (
+        <Badge variant="outline" className="ml-auto text-micro h-4 px-1.5">
+          {t(($) => $.mention.squad_badge)}
+        </Badge>
       )}
     </button>
   );
@@ -712,7 +712,7 @@ export function createMentionSuggestion(
 
     const members: MemberWithUser[] = qc.getQueryData(workspaceKeys.members(wsId)) ?? [];
     const agents: Agent[] = qc.getQueryData(workspaceKeys.agents(wsId)) ?? [];
-    const teams: Team[] = qc.getQueryData(workspaceKeys.teams(wsId)) ?? [];
+    const squads: Squad[] = qc.getQueryData(workspaceKeys.squads(wsId)) ?? [];
     const listQueries = qc.getQueriesData<ListIssuesCache>({ queryKey: issueKeys.list(wsId) });
     const cachedResponse = listQueries[0]?.[1];
     const cachedIssues: Issue[] = cachedResponse ? flattenIssueBuckets(cachedResponse) : [];
@@ -762,7 +762,7 @@ export function createMentionSuggestion(
         .map((agent) => [agent.id, isAgentRuntimeBound(agent)]),
     );
 
-    const teamItems: MentionItem[] = teams
+    const squadItems: MentionItem[] = squads
       .filter(
         (s) =>
           !s.archived_at &&
@@ -771,7 +771,7 @@ export function createMentionSuggestion(
       .map((s) => ({
         id: s.id,
         label: s.name,
-        type: "team" as const,
+        type: "squad" as const,
         disabledReason:
           activeAgentRuntimeBinding.get(s.leader_id) === false
             ? ("agent_runtime_required" as const)
@@ -783,7 +783,7 @@ export function createMentionSuggestion(
     // for everyone the user hasn't mentioned yet on this device.
     const recency = getRecencyMap(wsId);
     const userItems = sortUserItemsByRecency(
-      [...memberItems, ...agentItems, ...teamItems],
+      [...memberItems, ...agentItems, ...squadItems],
       recency,
     );
 
@@ -805,7 +805,7 @@ export function createMentionSuggestion(
     allowSpaces: true,
     // Only open over an `@` the user actually typed. Tiptap matches on document
     // content alone, so without this a pasted, dropped, undone or server-loaded
-    // `@` opens the picker just as readily (PB-5429).
+    // `@` opens the picker just as readily (MUL-5429).
     shouldShow: ({ editor, range }) => isTriggerArmedAt(editor, range.from),
     items: ({ query }) => {
       if (options.mode === "context") {

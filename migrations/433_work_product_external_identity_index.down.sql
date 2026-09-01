@@ -1,1 +1,0 @@
-DROP INDEX CONCURRENTLY IF EXISTS work_product_external_identity_uidx;

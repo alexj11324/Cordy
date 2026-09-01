@@ -2,7 +2,7 @@
 
 import { useRef } from "react";
 import { Check, FolderKanban, Image as ImageIcon, Plus, X } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Button } from "@multica/ui/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -12,8 +12,8 @@ import {
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import type { Project } from "@patchbay/core/types";
+} from "@multica/ui/components/ui/dropdown-menu";
+import type { Project } from "@multica/core/types";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { useT } from "../../i18n";
 

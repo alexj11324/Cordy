@@ -2,13 +2,13 @@
 
 import { useEffect, useMemo } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { parseTabSubject } from "@patchbay/core/paths";
-import { useTabPresentation } from "@patchbay/views/layout";
+import { parseTabSubject } from "@multica/core/paths";
+import { useTabPresentation } from "@multica/views/layout";
 import { SITE_TITLE, formatDocumentTitle } from "./document-title";
 
 /**
  * Names the browser tab after whatever the workspace route has open, e.g.
- * `PB-123: Fix login | Patchbay` (PB-6222). Without it every open dashboard
+ * `MUL-123: Fix login | Multica` (MUL-6222). Without it every open dashboard
  * tab renders the root metadata title, so several issues side by side are
  * indistinguishable until you click into each one.
  *

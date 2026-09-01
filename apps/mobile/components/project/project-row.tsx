@@ -1,7 +1,7 @@
 /**
  * Project list row. Mirrors the IssueRow layout shape from
  * `(tabs)/my-issues.tsx` (left icon + flex title + right column for
- * counts + time), per apps/mobile/AGENTS.md "Visual alignment is baseline
+ * counts + time), per apps/mobile/CLAUDE.md "Visual alignment is baseline
  * → row's right-side elements stack vertically into a column".
  *
  * Layout:
@@ -9,7 +9,7 @@
  *              [● in progress] [▍▍ high]   2d ago
  */
 import { Pressable, View } from "react-native";
-import type { Project } from "@patchbay/core/types";
+import type { Project } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
 import { ProjectIcon } from "@/components/ui/project-icon";
 import { ProjectStatusIcon } from "@/components/ui/project-status-icon";

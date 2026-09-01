@@ -6,16 +6,16 @@ import type {
   Agent,
   AgentRuntime,
   MemberWithUser,
-} from "@patchbay/core/types";
-import { providerSupportsMcpConfig } from "@patchbay/core/agents";
-import { useFeatureEnabled } from "@patchbay/core/config";
-import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { larkInstallationsOptions } from "@patchbay/core/lark";
-import { slackInstallationsOptions } from "@patchbay/core/slack";
-import { dingtalkInstallationsOptions } from "@patchbay/core/dingtalk";
-import { wecomInstallationsOptions } from "@patchbay/core/wecom";
-import { telegramInstallationsOptions } from "@patchbay/core/telegram";
+} from "@multica/core/types";
+import { providerSupportsMcpConfig } from "@multica/core/agents";
+import { useFeatureEnabled } from "@multica/core/config";
+import { COMPOSIO_MCP_APPS_FLAG } from "@multica/core/feature-flags";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { larkInstallationsOptions } from "@multica/core/lark";
+import { slackInstallationsOptions } from "@multica/core/slack";
+import { dingtalkInstallationsOptions } from "@multica/core/dingtalk";
+import { wecomInstallationsOptions } from "@multica/core/wecom";
+import { telegramInstallationsOptions } from "@multica/core/telegram";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,8 +25,8 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@multica/ui/components/ui/alert-dialog";
+import { cn } from "@multica/ui/lib/utils";
 import { ActivityTab } from "./tabs/activity-tab";
 import { InstructionsTab } from "./tabs/instructions-tab";
 import { SkillsTab } from "./tabs/skills-tab";
@@ -222,7 +222,7 @@ export function AgentOverviewPane({
       SETTINGS_TABS.filter((tab) => {
         // Env is the only settings tab backed by a secret-bearing endpoint.
         // GET/PUT /api/agents/{id}/env admits the agent owner or a workspace
-        // owner/admin (PB-5438) — the same rule `canEdit` encodes — so
+        // owner/admin (MUL-5438) — the same rule `canEdit` encodes — so
         // showing the tab to anyone else guarantees a 403 on "Reveal & edit".
         // The server stays the boundary; this only removes a dead entry point.
         if (tab.id === "env") return canEdit;
@@ -383,7 +383,7 @@ export function AgentOverviewPane({
         {secondaryTabs.length > 0 && activeSecondaryTab && (
           <div className="flex min-h-full flex-col md:h-full md:flex-row">
             {/* Content-surface color, no shell tint — same rule as the settings
-                nav: in-card panels must not break the desktop tab merge (PB-4439). */}
+                nav: in-card panels must not break the desktop tab merge (MUL-4439). */}
             <aside className="shrink-0 overflow-x-auto border-b border-surface-border p-2 md:w-52 md:overflow-y-auto md:border-b-0 md:border-r md:p-4">
               <div
                 className="flex w-max min-w-full items-center gap-1 md:w-full md:flex-col md:items-stretch"
@@ -426,9 +426,7 @@ export function AgentOverviewPane({
                   {effectiveView === "instructions" && (
                     <InstructionsTab
                       agent={agent}
-                      onSave={(instructions) =>
-                        onUpdate(agent.id, { instructions })
-                      }
+                      onSave={(updates) => onUpdate(agent.id, updates)}
                       onDirtyChange={setActiveDirty}
                     />
                   )}
@@ -436,6 +434,7 @@ export function AgentOverviewPane({
                     <SkillsTab
                       agent={agent}
                       runtime={runtime}
+                      currentUserId={currentUserId}
                       canEdit={canEdit}
                     />
                   )}
@@ -443,6 +442,7 @@ export function AgentOverviewPane({
                     <McpConfigTab
                       agent={agent}
                       runtime={runtime}
+                      currentUserId={currentUserId}
                       canEdit={canEdit}
                       onSave={(updates) => onUpdate(agent.id, updates)}
                       onDirtyChange={setActiveDirty}

@@ -7,11 +7,11 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
-vi.mock("@patchbay/core/issues/queries", () => ({
+vi.mock("@multica/core/issues/queries", () => ({
   issueListOptions: () => ({ queryKey: ["issues"] }),
   issueDetailOptions: (_workspaceId: string, issueId: string) => ({
     queryKey: ["issue", issueId],
@@ -34,7 +34,7 @@ describe("IssueChip", () => {
           data: [
             {
               id: "issue-1",
-              identifier: "PB-3405",
+              identifier: "MUL-3405",
               title: "A very long issue title that should stay inside a narrow chat bubble",
               status: "todo",
             },
@@ -48,7 +48,7 @@ describe("IssueChip", () => {
   it("caps the chip against both its content and its container, and truncates the title", () => {
     render(<IssueChip issueId="issue-1" />);
 
-    const chip = screen.getByText("PB-3405").closest(".issue-mention");
+    const chip = screen.getByText("MUL-3405").closest(".issue-mention");
     // 18rem bounds the chip against a long title so it cannot dominate a line
     // of prose (#6732); 100% keeps it inside a narrow parent such as a chat
     // bubble. ProjectChip carries the identical cap — see its own test.
@@ -62,11 +62,11 @@ describe("IssueChip", () => {
     render(
       <IssueChip
         issueId="missing-issue"
-        fallbackLabel="PB-999999999999999999999999999999999"
+        fallbackLabel="MUL-999999999999999999999999999999999"
       />,
     );
 
-    expect(screen.getByText("PB-999999999999999999999999999999999"))
+    expect(screen.getByText("MUL-999999999999999999999999999999999"))
       .toHaveClass("min-w-0", "truncate");
   });
 });

@@ -11,17 +11,17 @@ import {
   type ReactElement,
   type ReactNode,
 } from "react";
-import type { Issue } from "@patchbay/core/types";
+import type { Issue } from "@multica/core/types";
 import {
   ContextMenu,
   ContextMenuContent,
-} from "@patchbay/ui/components/ui/context-menu";
+} from "@multica/ui/components/ui/context-menu";
 import { useIssueActions } from "./use-issue-actions";
 import {
   IssueActionsMenuItems,
   contextPrimitives,
 } from "./issue-actions-menu-items";
-import { ExecutorPicker } from "../components/pickers";
+import { AssigneePicker } from "../components/pickers";
 
 /**
  * One shared context menu per surface instead of one Base UI ContextMenu
@@ -107,7 +107,7 @@ function IssueContextMenuSingleton({
   onOpenChange: (v: boolean) => void;
 }) {
   const actions = useIssueActions(issue);
-  const [executorOpen, setExecutorOpen] = useState(false);
+  const [assigneeOpen, setAssigneeOpen] = useState(false);
 
   // Point-sized virtual anchor at the right-click position — replaces the
   // cursor anchor Base UI's own trigger would have registered.
@@ -132,20 +132,20 @@ function IssueContextMenuSingleton({
             issue={issue}
             actions={actions}
             primitives={contextPrimitives}
-            onOpenExecutor={() => setExecutorOpen(true)}
+            onOpenAssignee={() => setAssigneeOpen(true)}
           />
         </ContextMenuContent>
       </ContextMenu>
       {/* Mount the picker only once the user actually opens it, anchored at
           the right-click position so it opens where the context menu just
           was instead of jumping to the row's top-left corner. */}
-      {executorOpen && (
-        <ExecutorPicker
-          executorType={issue.executor_type}
-          executorId={issue.executor_id}
+      {assigneeOpen && (
+        <AssigneePicker
+          assigneeType={issue.assignee_type}
+          assigneeId={issue.assignee_id}
           onUpdate={actions.updateField}
-          open={executorOpen}
-          onOpenChange={setExecutorOpen}
+          open={assigneeOpen}
+          onOpenChange={setAssigneeOpen}
           triggerRender={
             <span
               aria-hidden

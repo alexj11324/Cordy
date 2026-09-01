@@ -11,24 +11,24 @@ import {
   type TabTitleSpec,
   type TabEntityData,
   type TabLabelKey,
-} from "@patchbay/core/paths";
-import { issueDetailOptions } from "@patchbay/core/issues/queries";
-import { projectDetailOptions } from "@patchbay/core/projects/queries";
-import { automationDetailOptions } from "@patchbay/core/automations/queries";
+} from "@multica/core/paths";
+import { issueDetailOptions } from "@multica/core/issues/queries";
+import { projectDetailOptions } from "@multica/core/projects/queries";
+import { autopilotDetailOptions } from "@multica/core/autopilots/queries";
 import {
   skillDetailOptions,
   agentListOptions,
   memberListOptions,
-  teamListOptions,
-} from "@patchbay/core/workspace/queries";
-import { runtimeListOptions } from "@patchbay/core/runtimes/queries";
-import { runtimeDisplayName } from "@patchbay/core/runtimes";
-import { chatSessionsOptions } from "@patchbay/core/chat/queries";
+  squadListOptions,
+} from "@multica/core/workspace/queries";
+import { runtimeListOptions } from "@multica/core/runtimes/queries";
+import { runtimeDisplayName } from "@multica/core/runtimes";
+import { chatSessionsOptions } from "@multica/core/chat/queries";
 import {
   inboxListOptions,
   archivedInboxListOptions,
-} from "@patchbay/core/inbox/queries";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@multica/core/inbox/queries";
+import { cn } from "@multica/ui/lib/utils";
 import { StatusIcon } from "../issues/components";
 import { ProjectIcon } from "../projects/components/project-icon";
 import { ActorAvatar } from "../common/actor-avatar";
@@ -39,7 +39,7 @@ import { ROUTE_ICON_COMPONENTS } from "./route-icon-components";
 /**
  * Desktop tab presentation: turn a tab URL into a leading visual and a title,
  * live from the query cache. This is the view half of the contract whose pure
- * core is `@patchbay/core/paths` (`parseTabSubject` + `resolveTabPresentation`).
+ * core is `@multica/core/paths` (`parseTabSubject` + `resolveTabPresentation`).
  *
  * Cache-only reads: every query in `useTabEntityData` is `enabled: false`. It
  * observes whatever the pages/directory already loaded and re-renders when that
@@ -50,7 +50,7 @@ import { ROUTE_ICON_COMPONENTS } from "./route-icon-components";
  *
  * The one exception is an actor tab's avatar: `ResourceLeadingVisual` renders
  * `ActorAvatar`, which loads the (workspace-global, sidebar-warmed) member /
- * agent / team directories itself. That is intentional — it resolves the
+ * agent / squad directories itself. That is intentional — it resolves the
  * avatar and, in turn, the name this hook reads from the same lists.
  */
 
@@ -63,10 +63,10 @@ const NONE = "__tab_presentation_none__";
 const PENDING_RESOURCE_KEYS: ReadonlySet<TabLabelKey> = new Set<TabLabelKey>([
   "issue",
   "project",
-  "automation",
+  "autopilot",
   "agent",
   "member",
-  "team",
+  "squad",
   "skill",
   "machine",
   "runtime",
@@ -98,7 +98,7 @@ function useTabEntityData(subject: TabSubject, wsId: string): TabEntityData {
     subject.kind === "issue"
       ? subject.id
       : (inboxItem?.issue_id ?? "");
-  // An issue tab's URL segment may be a human-readable identifier (`PB-123`).
+  // An issue tab's URL segment may be a human-readable identifier (`MUL-123`).
   // The route seeds that entry when it resolves, but only the UUID-keyed entry
   // receives realtime patches — so hop through it, or a tab opened by
   // identifier would freeze on the title and status it had when first opened.
@@ -117,10 +117,10 @@ function useTabEntityData(subject: TabSubject, wsId: string): TabEntityData {
     ...projectDetailOptions(wsId, subject.kind === "project" ? subject.id : NONE),
     enabled: false,
   }).data;
-  const automation = useQuery({
-    ...automationDetailOptions(
+  const autopilot = useQuery({
+    ...autopilotDetailOptions(
       wsId,
-      subject.kind === "automation" ? subject.id : NONE,
+      subject.kind === "autopilot" ? subject.id : NONE,
     ),
     enabled: false,
   }).data;
@@ -131,7 +131,7 @@ function useTabEntityData(subject: TabSubject, wsId: string): TabEntityData {
 
   const agents = useQuery({ ...agentListOptions(wsId), enabled: false }).data;
   const members = useQuery({ ...memberListOptions(wsId), enabled: false }).data;
-  const teams = useQuery({ ...teamListOptions(wsId), enabled: false }).data;
+  const squads = useQuery({ ...squadListOptions(wsId), enabled: false }).data;
   const runtimes = useQuery({ ...runtimeListOptions(wsId), enabled: false }).data;
   const sessions = useQuery({ ...chatSessionsOptions(wsId), enabled: false }).data;
 
@@ -149,8 +149,8 @@ function useTabEntityData(subject: TabSubject, wsId: string): TabEntityData {
     case "project":
       if (project) data.project = { icon: project.icon, title: project.title };
       break;
-    case "automation":
-      if (automation) data.automation = { title: automation.automation.title };
+    case "autopilot":
+      if (autopilot) data.autopilot = { title: autopilot.autopilot.title };
       break;
     case "skill":
       if (skill) data.skill = { name: skill.name };
@@ -161,7 +161,7 @@ function useTabEntityData(subject: TabSubject, wsId: string): TabEntityData {
           ? agents?.find((a) => a.id === subject.id)?.name
           : subject.actorType === "member"
             ? members?.find((m) => m.user_id === subject.id)?.name
-            : teams?.find((s) => s.id === subject.id)?.name;
+            : squads?.find((s) => s.id === subject.id)?.name;
       if (name) data.actorName = name;
       break;
     }
@@ -249,8 +249,8 @@ export function useTabPresentation(
       ? {
           kind: "icon",
           icon:
-            visual.actorType === "team"
-              ? "PeopleGroup"
+            visual.actorType === "squad"
+              ? "Users"
               : visual.actorType === "member"
                 ? "CircleUser"
                 : "Bot",

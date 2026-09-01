@@ -2,15 +2,15 @@
  * Row model for the workspace search screen's single FlatList.
  *
  * Extracted from app/(app)/[workspace]/search.tsx so the ordering rules — in
- * particular the cross-type cancelled demotion (PB-5824) — are unit-testable
+ * particular the cross-type cancelled demotion (MUL-5824) — are unit-testable
  * without mounting the screen.
  */
 import type {
   Issue,
   SearchIssueResult,
   SearchProjectResult,
-} from "@patchbay/core/types";
-import { partitionAggregatedSearchResults } from "@patchbay/core/search/cancelled-rank";
+} from "@multica/core/types";
+import { partitionAggregatedSearchResults } from "@multica/core/search/cancelled-rank";
 
 export type RowItem =
   | { kind: "header"; key: string; title: string }

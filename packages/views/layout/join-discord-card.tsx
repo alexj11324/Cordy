@@ -1,7 +1,7 @@
 "use client";
 
 import { X } from "lucide-react";
-import { useAuthStore } from "@patchbay/core/auth";
+import { useAuthStore } from "@multica/core/auth";
 import { DISCORD_URL, DiscordIcon } from "./discord";
 import { useDiscordCardDismissed } from "./use-discord-card-dismissed";
 import { useT } from "../i18n";
@@ -29,7 +29,7 @@ import { useT } from "../i18n";
  * user-resizable down to 200px — every 1px of drag takes 1px from the label.
  * So a title that merely fits at 256px still truncates for anyone who has
  * narrowed their sidebar; keep every locale's title comfortably under budget,
- * not just under it (PB-5704).
+ * not just under it (MUL-5704).
  */
 export function JoinDiscordCard() {
   const { t } = useT("layout");
@@ -46,7 +46,7 @@ export function JoinDiscordCard() {
         rel="noopener noreferrer"
         className="flex h-8 items-center gap-2 rounded-md px-2 pr-8 text-body text-muted-foreground ring-sidebar-ring outline-hidden transition-colors hover:bg-sidebar-accent/70 hover:text-sidebar-accent-foreground focus-visible:ring-2"
       >
-        <DiscordIcon className="size-4 shrink-0 text-faint-foreground" />
+        <DiscordIcon className="size-4 shrink-0" />
         <span className="truncate">
           {t(($) => $.sidebar.discord_card.title)}
         </span>

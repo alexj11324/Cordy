@@ -7,160 +7,40 @@ permissions:
   contents: read
 
 jobs:
-  cli-build:
-    name: Build smoke CLI (${{ matrix.target }}-${{ matrix.arch }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: linux
-            arch: x64
-            rust_target: x86_64-unknown-linux-musl
-            runtime_platform: linux
-          - os: ubuntu-24.04-arm
-            target: linux
-            arch: arm64
-            rust_target: aarch64-unknown-linux-musl
-            runtime_platform: linux
-          - os: windows-latest
-            target: win
-            arch: x64
-            msvc_arch: amd64
-            rust_target: x86_64-pc-windows-msvc
-            runtime_platform: win32
-          - os: windows-latest
-            target: win
-            arch: arm64
-            msvc_arch: amd64_arm64
-            rust_target: aarch64-pc-windows-msvc
-            runtime_platform: win32
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-
-      - name: Install rpmbuild (Linux)
-        if: matrix.target == 'linux'
-        run: sudo apt-get update && sudo apt-get install -y rpm
-
-      - name: Install musl toolchain (Linux)
-        if: matrix.target == 'linux'
-        run: sudo apt-get install -y musl-tools
-
-      - name: Setup MSVC linker (Windows)
-        if: matrix.target == 'win'
-        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
-        with:
-          # The x64-hosted ARM64 cross compiler is required by the
-          # aarch64-pc-windows-msvc Rust target.
-          arch: ${{ matrix.msvc_arch }}
-
-      - name: Setup Rust toolchain
-        shell: bash
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-          if [[ "${{ matrix.target }}" == "linux" && "${{ matrix.arch }}" == "arm64" ]]; then
-            rustup target add aarch64-unknown-linux-musl
-            echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
-            echo "CC_AARCH64_UNKNOWN_LINUX_MUSL=musl-gcc" >> "$GITHUB_ENV"
-          elif [[ "${{ matrix.target }}" == "linux" ]]; then
-            rustup target add x86_64-unknown-linux-musl
-            echo "CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc" >> "$GITHUB_ENV"
-            echo "CC_X86_64_UNKNOWN_LINUX_MUSL=musl-gcc" >> "$GITHUB_ENV"
-          elif [[ "${{ matrix.arch }}" == "arm64" ]]; then
-            rustup target add aarch64-pc-windows-msvc
-          else
-            rustup target add x86_64-pc-windows-msvc
-          fi
-
-      - name: Restore Cargo registry and git downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: desktop-smoke-cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.rust_target }}-${{ hashFiles('rust-toolchain.toml') }}-${{ hashFiles('server-rs/Cargo.lock') }}
-          restore-keys: desktop-smoke-cargo-${{ runner.os }}-${{ runner.arch }}-${{ matrix.rust_target }}-${{ hashFiles('rust-toolchain.toml') }}-
-
-      - name: Enable bounded compiler cache
-        uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
-
-      - name: Build exact-commit smoke CLI
-        working-directory: server-rs
-        shell: bash
-        env:
-          RUSTC_WRAPPER: sccache
-          SCCACHE_GHA_ENABLED: "true"
-          PATCHBAY_BUILD_VERSION: smoke-${{ github.sha }}
-          PATCHBAY_BUILD_COMMIT: ${{ github.sha }}
-          RUST_TARGET: ${{ matrix.rust_target }}
-        run: |
-          PATCHBAY_BUILD_DATE="$(git show -s --format=%cI "$PATCHBAY_BUILD_COMMIT")"
-          export PATCHBAY_BUILD_DATE
-          cargo build --locked --release --target "$RUST_TARGET" -p patchbay-cli
-          binary="target/$RUST_TARGET/release/patchbay"
-          if [ "${{ matrix.runtime_platform }}" = "win32" ]; then binary="${binary}.exe"; fi
-          node ../apps/desktop/scripts/write-cli-artifact-manifest.mjs \
-            --binary "$binary" \
-            --output "$RUNNER_TEMP/patchbay-cli-bin" \
-            --target "$RUST_TARGET" \
-            --platform "${{ matrix.runtime_platform }}" \
-            --arch "${{ matrix.arch }}" \
-            --version "smoke-${{ github.sha }}"
-
-      - name: Upload exact-commit smoke CLI
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: desktop-smoke-cli-${{ matrix.target }}-${{ matrix.arch }}
-          path: ${{ runner.temp }}/patchbay-cli-bin/*
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Report compiler cache effectiveness
-        if: always()
-        shell: bash
-        run: ${SCCACHE_PATH} --show-stats
-
   desktop:
-    needs: cli-build
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             target: linux
-            arch: x64
-          - os: ubuntu-24.04-arm
-            target: linux
-            arch: arm64
           - os: windows-latest
             target: win
-            arch: x64
-            msvc_arch: amd64
-          - os: windows-latest
-            target: win
-            arch: arm64
-            msvc_arch: amd64_arm64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Install rpmbuild (Linux)
         if: matrix.target == 'linux'
         run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          # Deliberately independent from the minimum patch in server/go.mod:
+          # CI follows the newest 1.26 patch available to setup-go.
+          go-version: "1.26.x"
+          check-latest: true
+          cache-dependency-path: server/go.sum
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        uses: pnpm/action-setup@v4
 
       - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
@@ -168,23 +48,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Download exact-commit smoke CLI
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: desktop-smoke-cli-${{ matrix.target }}-${{ matrix.arch }}
-          path: ${{ runner.temp }}/patchbay-cli-bin
-
       - name: Package Desktop installers (${{ matrix.target }})
         working-directory: apps/desktop
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
-          PATCHBAY_PREBUILT_CLI_DIR: ${{ runner.temp }}/patchbay-cli-bin
-        run: node scripts/package.mjs --${{ matrix.target }} --${{ matrix.arch }} --publish never
+        run: node scripts/package.mjs --${{ matrix.target }} --x64 --arm64 --publish never
 
-      - name: Upload Desktop artifacts (${{ matrix.target }} ${{ matrix.arch }})
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - name: Upload Desktop artifacts (${{ matrix.target }})
+        uses: actions/upload-artifact@v4
         with:
-          name: desktop-${{ matrix.target }}-${{ matrix.arch }}
+          name: desktop-${{ matrix.target }}
           path: apps/desktop/dist
           if-no-files-found: error
-          retention-days: 1

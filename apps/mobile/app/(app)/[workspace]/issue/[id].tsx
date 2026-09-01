@@ -8,7 +8,7 @@
  *
  * Header note: the parent _layout.tsx already declares the `issue/[id]`
  * Stack.Screen with title "Issue". We override that here once the data
- * lands so the navigation bar shows `PB-123` (Linear-style).
+ * lands so the navigation bar shows `MUL-123` (Linear-style).
  */
 import { useCallback, useEffect } from "react";
 import {
@@ -21,7 +21,7 @@ import {
 import { Stack, router, useLocalSearchParams } from "expo-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import * as Clipboard from "expo-clipboard";
-import type { Issue } from "@patchbay/core/types";
+import type { Issue } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
 import { Button } from "@/components/ui/button";
 import { IconButton } from "@/components/ui/icon-button";
@@ -60,7 +60,7 @@ export default function IssueDetail() {
   const detail = useQuery(issueDetailOptions(wsId, id));
   const timeline = useQuery(issueTimelineOptions(wsId, id));
 
-  // Subscribe to per-issue WS events: status/priority/executor/label
+  // Subscribe to per-issue WS events: status/priority/assignee/label
   // changes, comments, activity, reactions, agent task progress.
   // Mounted with `id` — cleans up automatically on navigate-away.
   // If another client deletes the issue we're viewing, pop back so the
@@ -68,7 +68,7 @@ export default function IssueDetail() {
   useIssueRealtime(id, () => router.back());
 
   // Track viewed issues so the chat composer's `@` suggestion bar can
-  // surface "Recent" — the user just looked at PB-123, likely wants to
+  // surface "Recent" — the user just looked at MUL-123, likely wants to
   // ask the agent about it next. Workspace-scoped + in-memory; see
   // data/viewed-issues-store.ts.
   useEffect(() => {
@@ -108,7 +108,7 @@ export default function IssueDetail() {
   // Three-dot menu: Pin/Unpin / Copy link / Open on web (if web URL set) /
   // Delete. Mirrors apps/mobile/app/(app)/[workspace]/project/[id].tsx — same
   // ActionSheetIOS + Alert.alert confirm pattern. Property edits (status,
-  // priority, executor, due_date) live on the IssueHeaderCard chips inside
+  // priority, assignee, due_date) live on the IssueHeaderCard chips inside
   // the timeline list, not in this menu — one entry per action.
   const onPressMore = useCallback(() => {
     if (!issue || !wsSlug) return;

@@ -4,11 +4,11 @@
  * and the chat composer).
  *
  * `?mode=` controls which sections render:
- *   - "comment" (default) — @all + People + Agents + Teams + Issues.
+ *   - "comment" (default) — @all + People + Agents + Squads + Issues.
  *     The comment composer offers the full surface; mentions notify the
  *     mentioned actor.
  *   - "chat" — Issues only. Chat is user ↔ single agent, so member /
- *     agent / team / @all mentions are noise (and would generate
+ *     agent / squad / @all mentions are noise (and would generate
  *     unintended notifications). Issues remain useful as "reference this
  *     ticket for the agent's context".
  *

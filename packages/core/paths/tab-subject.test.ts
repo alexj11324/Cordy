@@ -11,9 +11,9 @@ describe("parseTabSubject", () => {
     ["/acme/issues", { kind: "page", page: "issues" }],
     ["/acme/my-issues", { kind: "page", page: "myIssues" }],
     ["/acme/projects", { kind: "page", page: "projects" }],
-    ["/acme/automations", { kind: "page", page: "automations" }],
+    ["/acme/autopilots", { kind: "page", page: "autopilots" }],
     ["/acme/agents", { kind: "page", page: "agents" }],
-    ["/acme/teams", { kind: "page", page: "teams" }],
+    ["/acme/squads", { kind: "page", page: "squads" }],
     ["/acme/usage", { kind: "page", page: "usage" }],
     ["/acme/runtimes", { kind: "page", page: "runtimes" }],
     ["/acme/skills", { kind: "page", page: "skills" }],
@@ -21,7 +21,7 @@ describe("parseTabSubject", () => {
     // Resource details
     ["/acme/issues/bug-1", { kind: "issue", id: "bug-1" }],
     ["/acme/projects/p1", { kind: "project", id: "p1" }],
-    ["/acme/automations/a1", { kind: "automation", id: "a1" }],
+    ["/acme/autopilots/a1", { kind: "autopilot", id: "a1" }],
     ["/acme/skills/s1", { kind: "skill", id: "s1" }],
     ["/acme/attachments/att1/preview", { kind: "attachment", id: "att1", filename: null }],
     [
@@ -35,7 +35,7 @@ describe("parseTabSubject", () => {
     // Actors
     ["/acme/agents/ag1", { kind: "actor", actorType: "agent", id: "ag1" }],
     ["/acme/members/m1", { kind: "actor", actorType: "member", id: "m1" }],
-    ["/acme/teams/team1", { kind: "actor", actorType: "team", id: "team1" }],
+    ["/acme/squads/sq1", { kind: "actor", actorType: "squad", id: "sq1" }],
     // Flow — /new must win over the actor detail pattern
     ["/acme/agents/new", { kind: "flow", flow: "create-agent" }],
     // Runtime machine vs nested runtime
@@ -46,11 +46,11 @@ describe("parseTabSubject", () => {
     ],
     // Containers — selection (and archived sub-list) live in the query string
     ["/acme/inbox", { kind: "inbox", selectedKey: null, archived: false }],
-    ["/acme/inbox?issue=PB-9", { kind: "inbox", selectedKey: "PB-9", archived: false }],
+    ["/acme/inbox?issue=MUL-9", { kind: "inbox", selectedKey: "MUL-9", archived: false }],
     ["/acme/inbox?view=archived", { kind: "inbox", selectedKey: null, archived: true }],
     [
-      "/acme/inbox?view=archived&issue=PB-9",
-      { kind: "inbox", selectedKey: "PB-9", archived: true },
+      "/acme/inbox?view=archived&issue=MUL-9",
+      { kind: "inbox", selectedKey: "MUL-9", archived: true },
     ],
     ["/acme/chat", { kind: "chat", sessionId: null }],
     ["/acme/chat?session=sess-1", { kind: "chat", sessionId: "sess-1" }],

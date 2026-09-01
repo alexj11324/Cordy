@@ -65,7 +65,7 @@
 }
 
 /* h4–h6: Markdown allows six levels and both renderers now emit all of them
-   (PB-6060), but a compact 14px body leaves little room to keep stepping the
+   (MUL-6060), but a compact 14px body leaves little room to keep stepping the
    size down. Below h3 the hierarchy continues on weight first, then the small
    steps the scale still has — body (14) bold, label (13), caption (12) muted —
    so a deep heading stays legible without competing with h1–h3. */

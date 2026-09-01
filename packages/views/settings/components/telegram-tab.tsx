@@ -5,18 +5,18 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { ChevronRight, ExternalLink, Trash2 } from "lucide-react";
 import { TelegramMark } from "./telegram-mark";
-import { cn } from "@patchbay/ui/lib/utils";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Card, CardContent } from "@patchbay/ui/components/ui/card";
+import { cn } from "@multica/ui/lib/utils";
+import { Button } from "@multica/ui/components/ui/button";
+import { Card, CardContent } from "@multica/ui/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
-import { Label } from "@patchbay/ui/components/ui/label";
+} from "@multica/ui/components/ui/dialog";
+import { Input } from "@multica/ui/components/ui/input";
+import { Label } from "@multica/ui/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,27 +26,25 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { telegramInstallationsOptions, telegramKeys } from "@patchbay/core/telegram";
-import { api } from "@patchbay/core/api";
-import {
-  isMessagingInstallationHealthy,
-  type TelegramInstallation,
-} from "@patchbay/core/types";
+} from "@multica/ui/components/ui/alert-dialog";
+import { useAuthStore } from "@multica/core/auth";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { memberListOptions } from "@multica/core/workspace/queries";
+import { useActorName } from "@multica/core/workspace/hooks";
+import { telegramInstallationsOptions, telegramKeys } from "@multica/core/telegram";
+import { api } from "@multica/core/api";
+import type { TelegramInstallation } from "@multica/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { openExternal } from "../../platform";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 
 // TelegramTab is the workspace settings panel for Telegram bot installations,
 // mirroring SlackTab: listing is member-visible; the disconnect action is
-// admin-only (backend-enforced; the UI hides the button to match). The settings
-// page connects a workspace Hub, and the channel selects the active Agent with
-// `/agents`; the optional per-Agent form remains available for legacy links.
-export function TelegramTab({ installationId }: { installationId?: string } = {}) {
+// admin-only (backend-enforced; the UI hides the button to match). Adding a
+// new installation flows through the Agent detail page — the install path is
+// per-agent (one bot per agent, the (workspace_id, agent_id, channel_type)
+// UNIQUE in channel_installation).
+export function TelegramTab() {
   const { t } = useT("settings");
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
@@ -61,9 +59,7 @@ export function TelegramTab({ installationId }: { installationId?: string } = {}
     ...telegramInstallationsOptions(wsId),
     enabled: !!wsId,
   });
-  const installations = (data?.installations ?? []).filter(
-    (installation) => !installationId || installation.id === installationId,
-  );
+  const installations = data?.installations ?? [];
   const configured = data?.configured === true;
 
   const [disconnectTarget, setDisconnectTarget] = useState<string | null>(null);
@@ -111,7 +107,7 @@ export function TelegramTab({ installationId }: { installationId?: string } = {}
             <p className="text-caption text-muted-foreground">
               {t(($) => $.telegram.not_enabled_description_prefix)}{" "}
               <code className="rounded bg-muted px-1 py-0.5 text-micro">
-                PATCHBAY_TELEGRAM_SECRET_KEY
+                MULTICA_TELEGRAM_SECRET_KEY
               </code>{" "}
               {t(($) => $.telegram.not_enabled_description_suffix)}{" "}
               {t(($) => $.telegram.not_enabled_self_host_hint)}
@@ -190,28 +186,20 @@ function InstallationRow({
   onDisconnect: () => void;
 }) {
   const { t } = useT("settings");
+  const locale = useLocale();
   const { getAgentName } = useActorName();
   const isActive = installation.status === "active";
-  const isHealthy = isMessagingInstallationHealthy(installation);
-  const agentName = installation.agent_id
-    ? getAgentName(installation.agent_id)
-    : t(($) => $.page.integrations_workspace_hub);
+  const agentName = getAgentName(installation.agent_id);
   return (
     <div className="flex items-start justify-between gap-4 py-3 first:pt-0 last:pb-0">
       <div className="flex items-start gap-3">
-        {installation.agent_id ? (
-          <ActorAvatar
-            actorType="agent"
-            actorId={installation.agent_id}
-            size="lg"
-            enableHoverCard
-            profileLink
-          />
-        ) : (
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#2AABEE]/10">
-            <TelegramMark className="h-5 w-5" />
-          </span>
-        )}
+        <ActorAvatar
+          actorType="agent"
+          actorId={installation.agent_id}
+          size="lg"
+          enableHoverCard
+          profileLink
+        />
         <div className="space-y-1">
           <p className="text-body font-medium">
             {agentName}
@@ -220,19 +208,15 @@ function InstallationRow({
                 @{installation.bot_username}
               </span>
             ) : null}
-            {!isActive ? (
+            {!isActive && (
               <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
                 {t(($) => $.telegram.revoked_badge)}
               </span>
-            ) : !isHealthy ? (
-              <span className="ml-2 rounded bg-muted px-1.5 py-0.5 text-micro text-muted-foreground">
-                {t(($) => $.page.integrations_status)}
-              </span>
-            ) : null}
+            )}
           </p>
           <p className="text-micro text-muted-foreground">
             {t(($) => $.telegram.installed_at_label, {
-              when: new Date(installation.installed_at).toLocaleString(),
+              when: new Date(installation.installed_at).toLocaleString(locale),
             })}
           </p>
         </div>
@@ -257,7 +241,7 @@ function telegramDocsUrl(lang: string | undefined): string {
       : lang?.startsWith("ko")
         ? "/ko"
         : "";
-  return `https://patchbay.aspectlylabs.com/docs${prefix}/telegram-bot-integration`;
+  return `https://multica.ai/docs${prefix}/telegram-bot-integration`;
 }
 
 // TelegramAgentBindButton is the per-agent CTA on the agent detail page.
@@ -270,7 +254,7 @@ export function TelegramAgentBindButton({
   className,
   onShowConnectedDetails,
 }: {
-  agentId?: string;
+  agentId: string;
   agentName?: string;
   className?: string;
   /** Compact read-only connected row that invokes this instead of the full
@@ -304,24 +288,16 @@ export function TelegramAgentBindButton({
   if (!canManage) return null;
 
   const existing = listing?.installations.find(
-    (inst) =>
-      (agentId ? inst.agent_id === agentId : inst.agent_id === null) &&
-      inst.status === "active",
+    (inst) => inst.agent_id === agentId && inst.status === "active",
   );
   if (existing) {
-    const healthy = isMessagingInstallationHealthy(existing);
     return onShowConnectedDetails ? (
       <TelegramAgentBotStatusRow
         onClick={onShowConnectedDetails}
-        healthy={healthy}
         className={className}
       />
     ) : (
-      <TelegramAgentBotConnectedBadge
-        installation={existing}
-        healthy={healthy}
-        className={className}
-      />
+      <TelegramAgentBotConnectedBadge installation={existing} className={className} />
     );
   }
 
@@ -335,14 +311,10 @@ export function TelegramAgentBindButton({
 
   async function handleSubmit() {
     const bot_token = botToken.trim();
-    if (submitting || !bot_token) return;
+    if (submitting || !agentId || !bot_token) return;
     setSubmitting(true);
     try {
       const installation = await api.registerTelegramBot(wsId, agentId, { bot_token });
-      // A newly persisted installation is expected to be `starting` until the
-      // Supervisor completes its first getUpdates round trip. Treat the
-      // durable active installation as success here; the runtime badge below
-      // reports the handshake independently and will turn healthy afterward.
       if (!installation.id || installation.status !== "active") {
         throw new Error("Telegram connection returned an invalid installation");
       }
@@ -372,6 +344,7 @@ export function TelegramAgentBindButton({
         variant="outline"
         size="sm"
         onClick={() => setDialogOpen(true)}
+        disabled={!agentId}
         title={
           agentName
             ? t(($) => $.telegram.bind_button_title, { agent: agentName })
@@ -416,6 +389,8 @@ export function TelegramAgentBindButton({
               type="password"
               value={botToken}
               onChange={(e) => setBotToken(e.target.value)}
+              // Telegram token shape: a format hint, not copy.
+              // eslint-disable-next-line no-restricted-syntax
               placeholder="123456789:AA…"
               autoComplete="off"
               spellCheck={false}
@@ -453,11 +428,9 @@ export function TelegramAgentBindButton({
 // agent inspector renders; it deep-links into the Integrations tab.
 function TelegramAgentBotStatusRow({
   onClick,
-  healthy,
   className,
 }: {
   onClick: () => void;
-  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -471,17 +444,8 @@ function TelegramAgentBotStatusRow({
       )}
       data-testid="telegram-agent-bot-status"
     >
-      <span
-        className={cn(
-          "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-          healthy ? "bg-emerald-500" : "bg-amber-500",
-        )}
-      />
-      <span className="truncate">
-        {healthy
-          ? t(($) => $.telegram.agent_bot_connected_label)
-          : t(($) => $.page.integrations_status)}
-      </span>
+      <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
+      <span className="truncate">{t(($) => $.telegram.agent_bot_connected_label)}</span>
       <ChevronRight className="ml-auto h-3.5 w-3.5 shrink-0" />
     </button>
   );
@@ -491,11 +455,9 @@ function TelegramAgentBotStatusRow({
 // status + Disconnect, then an "Open in Telegram" deep link to the bot.
 function TelegramAgentBotConnectedBadge({
   installation,
-  healthy,
   className,
 }: {
   installation: TelegramInstallation;
-  healthy: boolean;
   className?: string;
 }) {
   const { t } = useT("settings");
@@ -529,16 +491,9 @@ function TelegramAgentBotConnectedBadge({
     >
       <div className="flex items-center justify-between gap-3">
         <span className="inline-flex min-w-0 items-center gap-2 text-caption text-muted-foreground">
-          <span
-            className={cn(
-              "inline-block h-1.5 w-1.5 shrink-0 rounded-full",
-              healthy ? "bg-emerald-500" : "bg-amber-500",
-            )}
-          />
+          <span className="inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
           <span className="truncate">
-            {healthy
-              ? t(($) => $.telegram.agent_bot_connected_label)
-              : t(($) => $.page.integrations_status)}
+            {t(($) => $.telegram.agent_bot_connected_label)}
             {installation.bot_username ? ` · @${installation.bot_username}` : ""}
           </span>
         </span>

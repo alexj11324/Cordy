@@ -2,24 +2,12 @@ import { ipcMain, dialog, BrowserWindow } from "electron";
 import { access, stat } from "fs/promises";
 import { constants as fsConstants } from "fs";
 import { basename, dirname, isAbsolute, join } from "path";
-import { readOriginUrlFromDirectory } from "./git-origin";
 
 export interface PickDirectoryResult {
   ok: boolean;
   path?: string;
   basename?: string;
   /** Set when ok=false. "cancelled" = user dismissed; otherwise an error blurb. */
-  reason?: "cancelled" | "no_window" | "error";
-  error?: string;
-}
-
-export interface PickDirectoriesResult {
-  ok: boolean;
-  folders?: Array<{
-    path: string;
-    basename: string;
-    originUrl: string | null;
-  }>;
   reason?: "cancelled" | "no_window" | "error";
   error?: string;
 }
@@ -126,34 +114,6 @@ export function setupLocalDirectory(
         const picked = result.filePaths[0];
         if (!picked) return { ok: false, reason: "cancelled" };
         return { ok: true, path: picked, basename: basename(picked) };
-      } catch (err) {
-        return { ok: false, reason: "error", error: errorMessage(err) };
-      }
-    },
-  );
-
-  ipcMain.handle(
-    "local-directory:pick-many",
-    async (event, defaultPath?: string): Promise<PickDirectoriesResult> => {
-      const win =
-        BrowserWindow.fromWebContents(event.sender) ?? windowGetter();
-      if (!win) return { ok: false, reason: "no_window" };
-      try {
-        const result = await dialog.showOpenDialog(win, {
-          properties: ["openDirectory", "createDirectory", "multiSelections"],
-          ...(defaultPath ? { defaultPath } : {}),
-        });
-        if (result.canceled || result.filePaths.length === 0) {
-          return { ok: false, reason: "cancelled" };
-        }
-        const folders = await Promise.all(
-          result.filePaths.map(async (picked) => ({
-            path: picked,
-            basename: basename(picked),
-            originUrl: await readOriginUrlFromDirectory(picked),
-          })),
-        );
-        return { ok: true, folders };
       } catch (err) {
         return { ok: false, reason: "error", error: errorMessage(err) };
       }

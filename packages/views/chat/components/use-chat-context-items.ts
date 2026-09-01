@@ -1,12 +1,12 @@
 "use client";
 
-import { issueStatusCategory } from "@patchbay/core/issues";
+import { issueStatusCategory } from "@multica/core/issues";
 import { useMemo } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { selectRecentContexts, useRecentContextStore, type RecentContextEntry } from "@patchbay/core/chat";
-import { issueDetailOptions } from "@patchbay/core/issues/queries";
-import { projectDetailOptions } from "@patchbay/core/projects/queries";
-import type { Issue, Project } from "@patchbay/core/types";
+import { selectRecentContexts, useRecentContextStore, type RecentContextEntry } from "@multica/core/chat";
+import { issueDetailOptions } from "@multica/core/issues/queries";
+import { projectDetailOptions } from "@multica/core/projects/queries";
+import type { Issue, Project } from "@multica/core/types";
 import type { MentionItem } from "../../editor/extensions/mention-suggestion";
 import { useNavigation } from "../../navigation";
 
@@ -28,7 +28,7 @@ function issueToMentionItem(
     status: issue.status,
     // Carried, not dropped: the list picks its glyph and its dimming from the
     // category, so losing it here made a custom done status in Current/Recent
-    // render as an active Todo. (PB-6243)
+    // render as an active Todo. (MUL-6243)
     statusCategory: issueStatusCategory(issue) ?? undefined,
     group,
   };

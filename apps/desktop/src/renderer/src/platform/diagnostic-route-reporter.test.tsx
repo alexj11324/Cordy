@@ -1,8 +1,8 @@
 /**
- * PB-5345 — the main window must publish which page it is showing.
+ * MUL-5345 — the main window must publish which page it is showing.
  *
  * This reporting existed once and was deleted with the PostHog $pageview
- * cleanup (PB-4127), which left the main process reading a route it was never
+ * cleanup (MUL-4127), which left the main process reading a route it was never
  * sent: every field hang report came back with only the asar `index.html` URL.
  * Nothing failed loudly, so these tests pin both consumers — the IPC push to
  * main (the only party alive during a true hang) and the in-renderer
@@ -12,16 +12,14 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render } from "@testing-library/react";
 
 const authState = { user: null as { id: string } | null };
-const overlayState = {
-  overlay: null as { type: string; path?: string } | null,
-};
+const overlayState = { overlay: null as { type: string } | null };
 const tabState = {
   slug: null as string | null,
   tabId: null as string | null,
   url: null as string | null,
 };
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@multica/core/auth", () => ({
   useAuthStore: (selector: (s: typeof authState) => unknown) => selector(authState),
 }));
 
@@ -36,7 +34,7 @@ vi.mock("@/stores/tab-store", () => ({
 }));
 
 import { DiagnosticRouteReporter } from "./diagnostic-route-reporter";
-import { getDiagnosticRoute, resetDiagnosticContext } from "@patchbay/core/diagnostics";
+import { getDiagnosticRoute, resetDiagnosticContext } from "@multica/core/diagnostics";
 
 const setRendererRouteContext = vi.fn();
 
@@ -108,20 +106,6 @@ describe("DiagnosticRouteReporter", () => {
     expect(setRendererRouteContext).toHaveBeenCalledWith({
       surface: "overlay",
       path: "/onboarding",
-    });
-  });
-
-  it("reports Settings as a window-level surface without leaking the workspace slug", () => {
-    overlayState.overlay = {
-      type: "settings",
-      path: "/acme/settings?tab=tokens",
-    };
-
-    render(<DiagnosticRouteReporter />);
-
-    expect(setRendererRouteContext).toHaveBeenCalledWith({
-      surface: "overlay",
-      path: "/:slug/settings",
     });
   });
 

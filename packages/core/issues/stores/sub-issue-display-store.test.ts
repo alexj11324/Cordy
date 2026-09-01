@@ -39,7 +39,7 @@ describe("sub-issue display store", () => {
       labels: true,
       childProgress: true,
       dueDate: true,
-      executor: true,
+      assignee: true,
     });
     expect(s.rowPropertyIds).toEqual([]);
   });

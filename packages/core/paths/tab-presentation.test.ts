@@ -34,13 +34,13 @@ describe("resolveTabPresentation — direct resources", () => {
     });
     expect(
       present("/acme/issues/i1", {
-        issue: { identifier: "PB-1", title: "Fix", status: "in_progress" },
+        issue: { identifier: "MUL-1", title: "Fix", status: "in_progress" },
       }),
     ).toEqual({
       // `category` travels with the visual so the tab strip never has to guess
-      // the glyph for a custom status key. (PB-6243)
+      // the glyph for a custom status key. (MUL-6243)
       visual: { kind: "issue-status", status: "in_progress", category: "in_progress" },
-      title: { kind: "text", text: "PB-1: Fix" },
+      title: { kind: "text", text: "MUL-1: Fix" },
     });
   });
 
@@ -66,15 +66,15 @@ describe("resolveTabPresentation — direct resources", () => {
       visual: { kind: "actor", actorType: "member", id: "m1" },
       title: { kind: "text", text: "Ada" },
     });
-    expect(present("/acme/teams/team1")).toEqual({
-      visual: { kind: "actor", actorType: "team", id: "team1" },
-      title: { kind: "tab", tabKey: "team" },
+    expect(present("/acme/squads/sq1")).toEqual({
+      visual: { kind: "actor", actorType: "squad", id: "sq1" },
+      title: { kind: "tab", tabKey: "squad" },
     });
   });
 
-  it("automation / skill / machine / runtime use a type icon + name", () => {
-    expect(present("/acme/automations/a1", { automation: { title: "Nightly" } })).toEqual({
-      visual: { kind: "icon", icon: "AlarmClockCheck" },
+  it("autopilot / skill / machine / runtime use a type icon + name", () => {
+    expect(present("/acme/autopilots/a1", { autopilot: { title: "Nightly" } })).toEqual({
+      visual: { kind: "icon", icon: "Zap" },
       title: { kind: "text", text: "Nightly" },
     });
     expect(present("/acme/skills/s1", { skill: { name: "Deploy" } })).toEqual({
@@ -140,19 +140,19 @@ describe("resolveTabPresentation — containers keep their icon, title tracks se
       title: { kind: "nav", navKey: "inbox" },
     });
     // Selected but not yet resolved → still Inbox, never a stale title.
-    expect(present("/acme/inbox?issue=PB-9")).toEqual({
+    expect(present("/acme/inbox?issue=MUL-9")).toEqual({
       visual: { kind: "icon", icon: "Inbox" },
       title: { kind: "nav", navKey: "inbox" },
     });
     // Selected issue → Inbox icon + issue title (distinct from a direct issue,
     // which would show a status icon).
     expect(
-      present("/acme/inbox?issue=PB-9", {
-        inboxSelection: { kind: "issue", identifier: "PB-9", title: "Bug" },
+      present("/acme/inbox?issue=MUL-9", {
+        inboxSelection: { kind: "issue", identifier: "MUL-9", title: "Bug" },
       }),
     ).toEqual({
       visual: { kind: "icon", icon: "Inbox" },
-      title: { kind: "text", text: "PB-9: Bug" },
+      title: { kind: "text", text: "MUL-9: Bug" },
     });
     // Selected non-issue notification → its display title.
     expect(

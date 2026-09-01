@@ -384,7 +384,7 @@ export function onIssueCreated(
   // A custom status this client cannot resolve to a category has no bucket to
   // go in. Inserting nowhere would silently hide an issue that exists on the
   // server, so invalidate the list instead and let the refetch place it.
-  // (PB-6243)
+  // (MUL-6243)
   const bucketable = issueStatusCategory(issue) !== null;
   for (const [key, data] of qc.getQueriesData<ListIssuesCache>({ queryKey: issueKeys.list(wsId) })) {
     if (!data) continue;
@@ -397,8 +397,8 @@ export function onIssueCreated(
   qc.invalidateQueries({ queryKey: issueKeys.myAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.flatAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.tableAll(wsId) });
-  qc.invalidateQueries({ queryKey: issueKeys.executorGroupsAll(wsId) });
-  qc.invalidateQueries({ queryKey: issueKeys.myExecutorGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.assigneeGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.myAssigneeGroupsAll(wsId) });
   if (issue.project_id) {
     qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
   }
@@ -417,14 +417,13 @@ export function onIssueUpdated(
   qc: QueryClient,
   wsId: string,
   issue: Partial<Issue> & { id: string },
-  // ownerChanged / executorChanged / statusChanged / projectChanged come from the server's
+  // assigneeChanged / statusChanged / projectChanged come from the server's
   // issue:updated flags — authoritative "did this write move a membership
   // dimension" signals. They feed the coordinator's changed-dims input so a
   // non-membership change (title / position / priority / label) keeps every
   // loaded list in place instead of refetching.
   meta: {
-    ownerChanged?: boolean;
-    executorChanged?: boolean;
+    assigneeChanged?: boolean;
     statusChanged?: boolean;
     projectChanged?: boolean;
   } = {},
@@ -460,24 +459,18 @@ export function onIssueUpdated(
   // diffing the payload against the cached copy only when a flag is absent
   // (older backend): the diff is unreliable once a local optimistic move has
   // overwritten the cached value, but it still covers remote/agent changes
-  // and keeps a new frontend on an old backend from regressing (PB-3669 /
+  // and keeps a new frontend on an old backend from regressing (MUL-3669 /
   // #4548). The local move itself is covered by useUpdateIssue's own
   // coordinator pass, which never depends on these flags.
   const oldProjectId = detailData?.project_id ?? cachedIssue?.project_id ?? null;
   const changed = {
-    owner:
-      meta.ownerChanged ??
+    assignee:
+      meta.assigneeChanged ??
       (cachedIssue !== undefined &&
-        ((issue.owner_id !== undefined && issue.owner_id !== cachedIssue.owner_id) ||
-          (issue.owner_type !== undefined &&
-            issue.owner_type !== cachedIssue.owner_type))),
-    executor:
-      meta.executorChanged ??
-      (cachedIssue !== undefined &&
-        ((issue.executor_id !== undefined &&
-          issue.executor_id !== cachedIssue.executor_id) ||
-          (issue.executor_type !== undefined &&
-            issue.executor_type !== cachedIssue.executor_type))),
+        ((issue.assignee_id !== undefined &&
+          issue.assignee_id !== cachedIssue.assignee_id) ||
+          (issue.assignee_type !== undefined &&
+            issue.assignee_type !== cachedIssue.assignee_type))),
     project:
       meta.projectChanged ??
       (issue.project_id !== undefined && (issue.project_id ?? null) !== oldProjectId),
@@ -615,8 +608,8 @@ export function invalidateIssueLabelDerivatives(qc: QueryClient, wsId: string) {
   // child lanes pick up the new label set.
   qc.invalidateQueries({ queryKey: issueKeys.childrenByParentsAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.myAll(wsId) });
-  qc.invalidateQueries({ queryKey: issueKeys.executorGroupsAll(wsId) });
-  qc.invalidateQueries({ queryKey: issueKeys.myExecutorGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.assigneeGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.myAssigneeGroupsAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.tableAll(wsId) });
   qc.invalidateQueries({
     queryKey: issueKeys.flatAll(wsId),
@@ -664,7 +657,7 @@ export function onIssueMetadataChanged(
   // A metadata write bumps issue.updated_at server-side (SetIssueMetadataKey /
   // DeleteIssueMetadataKey), but the patches above keep each card's slot, so a
   // board/table sorted by "Updated date" would stay in the old order. This
-  // event is server-committed, so refetch those keys to re-sort (PB-5016).
+  // event is server-committed, so refetch those keys to re-sort (MUL-5016).
   invalidateUpdatedAtSortedIssueLists(qc, wsId);
   // Server-backed Table counts, membership and cursor boundaries may also
   // depend on metadata-driven timestamps, so refresh its query graph too.
@@ -692,11 +685,11 @@ export function onIssuePropertiesChanged(
   qc.invalidateQueries({ queryKey: issueKeys.childrenAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.childrenByParentsAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.myAll(wsId) });
-  // Plain executor-group caches are never patched in place (their bucket
+  // Plain assignee-group caches are never patched in place (their bucket
   // shape differs) and would otherwise hold stale chips forever under
   // staleTime:Infinity (clean-room review F2).
-  qc.invalidateQueries({ queryKey: issueKeys.executorGroupsAll(wsId) });
-  qc.invalidateQueries({ queryKey: issueKeys.myExecutorGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.assigneeGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.myAssigneeGroupsAll(wsId) });
   qc.invalidateQueries({ queryKey: issueKeys.tableAll(wsId) });
   invalidatePropertyWindowQueries(qc, wsId);
   // A property write also bumps issue.updated_at server-side
@@ -704,7 +697,7 @@ export function onIssuePropertiesChanged(
   // Queries only refetches property-filtered/-sorted windows, so a status board
   // or flat table sorted by "Updated date" (no property param) would keep the
   // old order. Refetch those too. Only committed callers reach here (WS event +
-  // mutation onSuccess); the optimistic leg uses patchIssueProperties (PB-5016).
+  // mutation onSuccess); the optimistic leg uses patchIssueProperties (MUL-5016).
   invalidateUpdatedAtSortedIssueLists(qc, wsId);
 }
 
@@ -766,7 +759,7 @@ export function onIssueDeleted(
   issueId: string,
 ) {
   cleanupDeletedIssueCaches(qc, wsId, issueId);
-  qc.invalidateQueries({ queryKey: issueKeys.executorGroupsAll(wsId) });
-  qc.invalidateQueries({ queryKey: issueKeys.myExecutorGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.assigneeGroupsAll(wsId) });
+  qc.invalidateQueries({ queryKey: issueKeys.myAssigneeGroupsAll(wsId) });
   qc.invalidateQueries({ queryKey: projectKeys.all(wsId) });
 }

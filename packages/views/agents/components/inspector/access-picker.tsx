@@ -8,10 +8,10 @@ import type {
   AgentPermissionMode,
   AgentVisibility,
   MemberWithUser,
-} from "@patchbay/core/types";
-import { effectiveAccessScope } from "@patchbay/core/agents";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
+} from "@multica/core/types";
+import { effectiveAccessScope } from "@multica/core/agents";
+import { Button } from "@multica/ui/components/ui/button";
+import { Checkbox } from "@multica/ui/components/ui/checkbox";
 import { ActorAvatar } from "../../../common/actor-avatar";
 import { useT } from "../../../i18n";
 
@@ -72,7 +72,7 @@ export function AccessPicker({
 }) {
   const { t } = useT("agents");
   const { t: tc } = useT("common");
-  // Centralized derivation (PB-3963): map canonical scope to picker's
+  // Centralized derivation (MUL-3963): map canonical scope to picker's
   // local draft key (private / workspace / members).
   const canonical = effectiveAccessScope(permissionMode, invocationTargets);
   const persistedPrivate = permissionMode === "private";

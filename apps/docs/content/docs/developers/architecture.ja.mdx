@@ -1,30 +1,29 @@
 ---
 title: プロジェクトアーキテクチャ
-description: Patchbay のクライアント、Rust サービス、実行デーモン、共有フロントエンドパッケージがどのように連携するかを説明します。
+description: Multica のクライアント、Go サービス、実行デーモン、共有フロントエンドパッケージがどのように連携するかを説明します。
 ---
 
-Patchbay は Rust バックエンド、複数のクライアント、実行用コンピューター上で動作するデーモンで構成されています。PostgreSQL がコラボレーションデータを保存し、デーモンがタスクを取得してローカルの AI コーディングツールを呼び出します。
+Multica は Go バックエンド、複数のクライアント、実行用コンピューター上で動作するデーモンで構成されています。PostgreSQL がコラボレーションデータを保存し、デーモンが作業を取得してローカルの AI コーディングツールを呼び出します。
 
 ```text
 Web / Desktop / Mobile / CLI
              │
        HTTP + WebSocket
              │
-     Rust API ──────── PostgreSQL
+      Go API ───────── PostgreSQL
              │
       daemon WebSocket
              │
   ローカルデーモン ─── AI コーディングツール
 ```
 
-プロダクト利用者向けの説明は [Patchbay の仕組み](/how-patchbay-works)を参照してください。このページではコードの階層構造に焦点を当てます。
+プロダクト利用者向けの説明は [Multica の仕組み](/how-multica-works)を参照してください。このページではコードの階層構造に焦点を当てます。
 
 ## リポジトリ構成
 
 | ディレクトリ | 責務 | 主な技術 |
 | --- | --- | --- |
-| `server-rs/` | 本番 API、認証、タスクスケジューリング、インテグレーション、CLI、migration runner、デーモン | Rust、Axum、Tokio、SQLx |
-| `migrations/` | Rust migration runner が実行する共有 SQL migration | SQL |
+| `server/` | API、認証、作業スケジューリング、インテグレーション、CLI、デーモン | Go、Chi、sqlc、gorilla/websocket |
 | `apps/web/` | ブラウザクライアントとランディングページ | Next.js App Router |
 | `apps/desktop/` | デスクトップクライアントとローカルプロセス管理 | Electron、electron-vite |
 | `apps/mobile/` | 独立した iOS クライアント | Expo、React Native |
@@ -46,7 +45,7 @@ Web と Desktop は次の 3 層を共有します。
 
 ルーティング、cookie、Electron IPC などのプラットフォーム機能はアプリケーション層に残します。共有ページは `NavigationAdapter` を通じて遷移し、`next/*` や `react-router-dom` を直接インポートしません。
 
-たとえば Web と Desktop の両方で必要なイシュー機能は、通常次の場所にまたがります。
+たとえば Web と Desktop の両方で必要なタスク機能は、通常次の場所にまたがります。
 
 ```text
 packages/core/issues/      クエリ、mutation、キャッシュ更新
@@ -55,13 +54,13 @@ apps/web/platform/         Next.js ルーティングアダプター
 apps/desktop/.../platform/ Electron ルーティングアダプター
 ```
 
-Mobile はこれらの React ページを再利用しません。`@patchbay/core` の型や純粋関数をインポートできますが、UI、query key、状態、リアルタイム購読、リリースフローは独自に持ちます。
+Mobile はこれらの React ページを再利用しません。`@multica/core` の型や純粋関数をインポートできますが、UI、query key、状態、リアルタイム購読、リリースフローは独自に持ちます。
 
 ## フロントエンドの状態
 
 サーバーデータとクライアント状態は分けて管理します。
 
-- **TanStack Query** はイシュー、エージェント、メンバー、受信トレイなどのサーバーデータを保持します。
+- **TanStack Query** はタスク、エージェント、メンバー、受信トレイなどのサーバーデータを保持します。
 - **Zustand** はフィルター、下書き、ダイアログ、レイアウトなどのクライアント状態を保持します。
 - 現在のワークスペースはルートで決まり、リクエスト、永続化 namespace、再接続に必要な範囲だけプラットフォーム層へ反映します。
 - React Context はワークスペース ID やナビゲーションアダプターなど、プラットフォームの plumbing だけを渡します。
@@ -72,48 +71,49 @@ API レスポンスは `packages/core/api/` の境界で zod schema により解
 
 ## バックエンドの階層
 
-本番エントリーポイントは `server-rs/crates/` の Cargo package です。
+主なエントリーポイントは `server/cmd/` にあります。
 
 | エントリーポイント | 役割 |
 | --- | --- |
-| `server-rs/crates/patchbay-server` | HTTP API、WebSocket、スケジューラー、インテグレーション worker を起動 |
-| `server-rs/crates/patchbay-cli`（`patchbay`） | CLI とローカルデーモン |
-| `server-rs/crates/patchbay-migrate` | `migrations/` のデータベース migration を実行 |
-| `patchbay-migrate` の `backfill_*` バイナリ | 特定バージョン向けのデータ backfill ツール |
+| `server` | HTTP API、WebSocket、スケジューラー、インテグレーション worker を起動 |
+| `multica` | CLI とローカルデーモン |
+| `migrate` | データベース migration を実行 |
+| `backfill_*` | 特定バージョン向けのデータ backfill ツール |
 
 リクエストは通常、次の方向に流れます。
 
 ```text
-patchbay-server router → patchbay-middleware → patchbay-handler → patchbay-service → patchbay-db query module → PostgreSQL
+router → middleware → handler → service → sqlc query → PostgreSQL
 ```
 
-- `patchbay-middleware` は認証、ワークスペース、リクエスト境界を扱います。
-- `patchbay-handler` は HTTP/WebSocket 入力を解析し、レスポンスと添付ストレージの接続を担当します。
-- `patchbay-service` は複数クエリにまたがるビジネスフローとトランザクションを担当します。
-- `patchbay-db/src/queries/` には手書きの SQLx query module を置きます。Rust 経路に生成された sqlc 層はありません。
-- `patchbay-lark`、`patchbay-wecom`、`patchbay-dingtalk`、`patchbay-slack`、`patchbay-telegram`、`patchbay-composio`、`patchbay-vcs`、`patchbay-ghsnapshot` などの integration crate が外部境界を担当します。
-- `patchbay-realtime`、`patchbay-redis`、`patchbay-daemon` が realtime fanout、任意の Redis 調整、ローカル実行ライフサイクルを担当します。
+- `internal/middleware/` は認証、ワークスペース、リクエスト境界を扱います。
+- `internal/handler/` は HTTP 入力を解析し、レスポンスを生成します。
+- `internal/service/` は複数クエリにまたがるビジネスフローとトランザクションを担当します。
+- `pkg/db/queries/` には手書きの SQL を置きます。
+- `pkg/db/generated/` は sqlc により生成されるため、直接編集できません。
+- `internal/integrations/` は GitHub、Slack、飛書などの外部イベントを扱います。
+- `internal/storage/` はローカルまたは S3 の添付ファイルを扱います。
 
 PostgreSQL がビジネスデータの信頼できる情報源です。Redis は任意のコンポーネントで、複数インスタンス間のリアルタイムイベント、キャッシュ、一時的な調整に使います。未設定の場合、単一インスタンスの開発環境ではプロセス内実装を使用します。
 
 ## リアルタイム接続
 
-Patchbay には異なる 2 つの WebSocket パスがあります。
+Multica には異なる 2 つの WebSocket パスがあります。
 
-- `patchbay-realtime` と `server-rs/crates/patchbay-server/src/realtime_runtime.rs` はイシュー、コメント、受信トレイなどの変更をユーザークライアントへ配信します。
-- `patchbay-handler` の daemon WebSocket route と `patchbay-daemon` は実行用コンピューターを接続し、ランタイムの起動通知と daemon RPC に使います。
+- `internal/realtime/` はタスク、コメント、受信トレイなどの変更をユーザークライアントへ配信します。
+- `internal/daemonws/` はデーモンを接続し、ランタイムの起動通知と daemon RPC に使います。
 
-WebSocket は遅延を減らしますが、最終的な状態はデータベースにあります。クライアントは再接続後にクエリで再同期する必要があります。デーモンも polling 経路を保持し、1 回の切断で queued タスクが永久に止まらないようにします。
+WebSocket は遅延を減らしますが、最終的な状態はデータベースにあります。クライアントは再接続後にクエリで再同期する必要があります。デーモンも polling 経路を保持し、1 回の切断で queued 作業が永久に止まらないようにします。
 
 ## 1 回の実行におけるコードパス
 
-1. ユーザーがイシューを割り当てる、エージェントをメンションする、または自動化がトリガーされます。
-2. `TaskService` が queued タスクを作成し、対応するランタイムへ通知します。
-3. デーモンが daemon API を通じてタスクを取得します。
-4. サーバーがタスクとエージェントに紐づく一時的な認証情報を発行します。
-5. デーモンがローカルディレクトリを準備し、`patchbay-agent` と production provider adapter を通じて対応する provider backend を呼び出します。
+1. ユーザーがタスクを割り当てる、エージェントをメンションする、または自動化がトリガーされます。
+2. `TaskService` が queued 作業を作成し、対応するランタイムへ通知します。
+3. デーモンが daemon API を通じて作業を取得します。
+4. サーバーが作業とエージェントに紐づく一時的な認証情報を発行します。
+5. デーモンがローカルディレクトリを準備し、`pkg/agent` の対応する provider backend を呼び出します。
 6. ツールがローカルで動作し、デーモンが進捗、メッセージ、最終状態をアップロードします。
-7. サーバーがタスクとイシューを更新し、リアルタイムイベントでクライアントを更新します。
+7. サーバーが作業とタスクを更新し、リアルタイムイベントでクライアントを更新します。
 
 provider アダプター層は AI コーディングツールごとの起動、ストリーミングイベント、キャンセル、使用量データを統一しますが、ローカルディレクトリとセッションは引き続きデーモンが管理します。
 
@@ -121,7 +121,7 @@ provider アダプター層は AI コーディングツールごとの起動、�
 
 ビジネスクエリは必ず `workspace_id` で限定し、リクエストがワークスペースルートへ入る前にメンバーシップを確認します。`X-Workspace-ID` は現在のワークスペースを選択しますが、権限確認の代わりにはなりません。
 
-イシューの担当者は多態的な関係であり、メンバー、エージェント、チームのいずれかを指します。クエリ、キャッシュ key、リアルタイムイベントを追加するときは、リソース ID だけでグローバルに一意なコンテキストだと仮定せず、ワークスペースと担当者の型を保持する必要があります。
+タスクの担当者は多態的な関係であり、メンバー、エージェント、スクワッドのいずれかを指します。クエリ、キャッシュ key、リアルタイムイベントを追加するときは、リソース ID だけでグローバルに一意なコンテキストだと仮定せず、ワークスペースと担当者の型を保持する必要があります。
 
 ## 次のステップ
 

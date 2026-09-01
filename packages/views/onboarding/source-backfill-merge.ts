@@ -2,12 +2,12 @@ import type {
   QuestionnaireAnswers,
   Role,
   UseCase,
-} from "@patchbay/core/onboarding";
+} from "@multica/core/onboarding";
 
 /**
  * `PATCH /api/me/onboarding` overwrites the JSONB column wholesale —
  * it does NOT JSONB-merge (see `PatchUserOnboarding` in
- * the Rust onboarding handler). For the backfill flow the
+ * `server/internal/handler/onboarding.go`). For the backfill flow the
  * user's stored questionnaire already contains role / use_case /
  * version, so we must read those, overlay only the source-related
  * fields, and send the whole shape back. Otherwise the very users we

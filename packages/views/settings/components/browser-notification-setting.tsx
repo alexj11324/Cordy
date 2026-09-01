@@ -6,8 +6,8 @@ import {
   isWebNotificationSupported,
   requestWebNotificationPermission,
   type WebNotificationPermission,
-} from "@patchbay/core/platform";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@multica/core/platform";
+import { Button } from "@multica/ui/components/ui/button";
 import { isDesktopShell } from "../../platform";
 import { useT } from "../../i18n";
 import { SettingsCard, SettingsRow } from "./settings-layout";

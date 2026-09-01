@@ -3,18 +3,18 @@
 import { useMemo, useState } from "react";
 import { BarChart3, RefreshCw } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@patchbay/ui/components/ui/tabs";
+import { Button } from "@multica/ui/components/ui/button";
+import { Skeleton } from "@multica/ui/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@multica/ui/components/ui/tabs";
 import {
   CompactNumberFlow,
   CurrencyNumberFlow,
   NumberFlow,
-} from "@patchbay/ui/components/ui/number-flow";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import type { Agent } from "@patchbay/core/types";
-import { agentListOptions } from "@patchbay/core/workspace/queries";
-import { projectListOptions } from "@patchbay/core/projects/queries";
+} from "@multica/ui/components/ui/number-flow";
+import { useWorkspaceId } from "@multica/core/hooks";
+import type { Agent } from "@multica/core/types";
+import { agentListOptions } from "@multica/core/workspace/queries";
+import { projectListOptions } from "@multica/core/projects/queries";
 import {
   dashboardKeys,
   dashboardUsageDailyOptions,
@@ -23,8 +23,8 @@ import {
   dashboardRunTimeDailyOptions,
   dashboardFailuresDailyOptions,
   dashboardFailuresByAgentOptions,
-} from "@patchbay/core/dashboard";
-import { useCustomPricingStore } from "@patchbay/core/runtimes/custom-pricing-store";
+} from "@multica/core/dashboard";
+import { useCustomPricingStore } from "@multica/core/runtimes/custom-pricing-store";
 import { useViewingTimezone } from "../../common/use-viewing-timezone";
 import { PAGE_GUTTER } from "../../layout/page-header";
 import { CollectionPageHeader } from "../../layout/collection-page";
@@ -67,17 +67,17 @@ import { ProjectFilter, TimeRangeFilter } from "./dashboard-filters";
 import { UsageTrendCard } from "./usage-trend-card";
 import { Leaderboard } from "./leaderboard";
 import { ErrorsTab } from "./errors-tab";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@multica/ui/lib/utils";
 
 // Stable references — `data ?? []` would create a new empty array on
 // every render while the query is loading, which breaks useMemo's
 // reference-equality dep check and trips the exhaustive-deps lint rule.
-const EMPTY_DAILY: import("@patchbay/core/types").DashboardUsageDaily[] = [];
-const EMPTY_BY_AGENT: import("@patchbay/core/types").DashboardUsageByAgent[] = [];
-const EMPTY_RUNTIME: import("@patchbay/core/types").DashboardAgentRunTime[] = [];
-const EMPTY_RUNTIME_DAILY: import("@patchbay/core/types").DashboardRunTimeDaily[] = [];
-const EMPTY_FAILURE_DAILY: import("@patchbay/core/types").DashboardFailureDaily[] = [];
-const EMPTY_FAILURE_BY_AGENT: import("@patchbay/core/types").DashboardFailureByAgent[] =
+const EMPTY_DAILY: import("@multica/core/types").DashboardUsageDaily[] = [];
+const EMPTY_BY_AGENT: import("@multica/core/types").DashboardUsageByAgent[] = [];
+const EMPTY_RUNTIME: import("@multica/core/types").DashboardAgentRunTime[] = [];
+const EMPTY_RUNTIME_DAILY: import("@multica/core/types").DashboardRunTimeDaily[] = [];
+const EMPTY_FAILURE_DAILY: import("@multica/core/types").DashboardFailureDaily[] = [];
+const EMPTY_FAILURE_BY_AGENT: import("@multica/core/types").DashboardFailureByAgent[] =
   [];
 const EMPTY_AGENTS: Agent[] = [];
 
@@ -214,7 +214,7 @@ export function DashboardPage() {
   // three is therefore already on the same span as the trimmed daily series;
   // do NOT put a per-agent rollup back on the N+1 cutoff, or the leaderboard
   // and the Run time / Tasks KPIs silently widen by one day while the chart
-  // and the Cost / Tokens KPIs beside them do not (PB-5551).
+  // and the Cost / Tokens KPIs beside them do not (MUL-5551).
   const byAgentQuery = useQuery(
     dashboardUsageByAgentOptions(wsId, days, projectId, viewTZ),
   );
@@ -338,7 +338,7 @@ export function DashboardPage() {
   // Totals / classes / reasons are derived from the DATE-BUCKETED rollup after
   // the same `dailyCutoffIso` trim the charts use, not from the per-agent one.
   // `parseSinceParamInTZ` deliberately returns N+1 calendar days of headroom
-  // (see the Rust runtime handler's day-window calculation), and only a
+  // (see sinceFromDays in server/internal/handler/runtime.go), and only a
   // series carrying a date can trim that back client-side. Reading these off
   // the per-agent rollup put the summary one calendar day wider than the chart
   // beside it — at 1D the chart could show no failures while the tile counted
@@ -383,7 +383,7 @@ export function DashboardPage() {
   // leftmost trailing week always has data even when the user-selected `days`
   // (e.g. 30D) is shorter than the chart's `weekCount * 7` span. Buckets are
   // pre-zeroed inside the helpers, so sparse weeks render as empty bars
-  // instead of being dropped (PB-2382 weekly window scoping). Week
+  // instead of being dropped (MUL-2382 weekly window scoping). Week
   // boundaries follow the viewer's timezone.
   const weekly = useMemo(
     () => aggregateByWeek(dailyUsage, viewTZ, weekCount),
@@ -427,9 +427,9 @@ export function DashboardPage() {
   );
 
   // Fold rollup rows for hard-deleted agents into one aggregated "Deleted
-  // agents" row instead of showing them as a bare UUID (PB-3771) or dropping
+  // agents" row instead of showing them as a bare UUID (MUL-3771) or dropping
   // them outright — dropping made the per-agent breakdown stop reconciling
-  // with the top-line Cost/Tokens KPIs, which still count that spend (PB-3776,
+  // with the top-line Cost/Tokens KPIs, which still count that spend (MUL-3776,
   // #4640). Archived agents stay as themselves (the agent list is fetched with
   // archived included); only truly-removed agents collapse into the bucket.
   // Skip bucketing until the agent list has loaded so a slow agents fetch
@@ -442,7 +442,7 @@ export function DashboardPage() {
   // "· N deleted" suffix (the bucket itself is a single row). The server's
   // restricted bucket is not in `knownAgentIds` either but is not a deletion,
   // so it must not inflate this count — that mislabelling is exactly the bug
-  // PB-5409 came with.
+  // MUL-5409 came with.
   const deletedAgentCount = useMemo(
     () =>
       knownAgentIds

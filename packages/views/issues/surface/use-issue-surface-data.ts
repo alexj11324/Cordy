@@ -2,15 +2,15 @@
 
 import { useCallback, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { Issue, Project } from "@patchbay/core/types";
-import { ALL_STATUSES } from "@patchbay/core/issues/config";
-import { projectListOptions } from "@patchbay/core/projects/queries";
-import { childIssueProgressOptions } from "@patchbay/core/issues/queries";
-import { issueSurfaceGanttOptions } from "@patchbay/core/issues/surface/repository";
-import type { IssueSurfaceQueryPlan } from "@patchbay/core/issues/surface/query-plan";
-import type { IssueStatus, IssueStatusCategory } from "@patchbay/core/types";
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
-import { issueBehavesAsAny, statusFilterColumns } from "@patchbay/core/issues";
+import type { Issue, Project } from "@multica/core/types";
+import { ALL_STATUSES } from "@multica/core/issues/config";
+import { projectListOptions } from "@multica/core/projects/queries";
+import { childIssueProgressOptions } from "@multica/core/issues/queries";
+import { issueSurfaceGanttOptions } from "@multica/core/issues/surface/repository";
+import type { IssueSurfaceQueryPlan } from "@multica/core/issues/surface/query-plan";
+import type { IssueStatus, IssueStatusCategory, PropertyFilterValue } from "@multica/core/types";
+import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
+import { issueBehavesAsAny, statusFilterColumns } from "@multica/core/issues";
 import {
   applyIssueFilters,
   type IssueFilterState,
@@ -40,14 +40,14 @@ const EMPTY_PROJECTS: Project[] = [];
  * These rules live HERE rather than privately inside GanttView so the header
  * chip can narrow the same set the canvas draws. A view that filters its own
  * rows in secret is exactly how the chip's count drifted from the list in the
- * first place (PB-4884); duplicating the rules in both places would just
+ * first place (MUL-4884); duplicating the rules in both places would just
  * reintroduce the drift with extra steps.
  */
 function ganttCanvasRows(issues: Issue[], showCompleted: boolean): Issue[] {
   const dated = issues.filter((i) => i.start_date || i.due_date);
   if (showCompleted) return dated;
   // By CATEGORY: a custom status in done/cancelled is completed work, and
-  // "show completed" has to hide it too. (PB-6243)
+  // "show completed" has to hide it too. (MUL-6243)
   return dated.filter((i) => !issueBehavesAsAny(i, ["done", "cancelled"]));
 }
 
@@ -79,7 +79,7 @@ export interface IssueSurfaceData {
   /**
    * The catalog request a CUSTOM status filter depends on failed. The filter
    * cannot be honoured without it, so the surface shows a retryable error
-   * rather than an unexplained empty board. (PB-6243)
+   * rather than an unexplained empty board. (MUL-6243)
    */
   isStatusCatalogError: boolean;
   /** The window's data is being revalidated while the previous snapshot is
@@ -104,8 +104,8 @@ export function useIssueSurfaceData({
   statusFilterPending,
   statusFilterError,
   priorityFilters,
-  executorFilters,
-  includeNoExecutor,
+  assigneeFilters,
+  includeNoAssignee,
   agentRunningFilter,
   creatorFilters,
   projectFilters,
@@ -133,14 +133,14 @@ export function useIssueSurfaceData({
   /** The catalog failed, so a custom status filter cannot be honoured. */
   statusFilterError: boolean;
   priorityFilters: IssueFilterState["priorityFilters"];
-  executorFilters: IssueFilterState["executorFilters"];
-  includeNoExecutor: boolean;
+  assigneeFilters: IssueFilterState["assigneeFilters"];
+  includeNoAssignee: boolean;
   agentRunningFilter: boolean;
   creatorFilters: IssueFilterState["creatorFilters"];
   projectFilters: string[];
   includeNoProject: boolean;
   labelFilters: string[];
-  propertyFilters: Record<string, string[]>;
+  propertyFilters: Record<string, PropertyFilterValue[]>;
   /** Distinct running-task issue ids projected by `/api/working-agents`. */
   workingIssueIDs: ReadonlySet<string>;
   showSubIssues: boolean;
@@ -160,7 +160,7 @@ export function useIssueSurfaceData({
       ? serverGroupBranches.issues
       : EMPTY_ISSUES;
 
-  // `cancelled` is a first-class default status (PB-4290): it is fetched into
+  // `cancelled` is a first-class default status (MUL-4290): it is fetched into
   // the cache like every other status and flows straight through to list /
   // board / swimlane columns, header facet counts, batch selection, and the
   // isEmpty check. The status filter narrows this set like any other status —
@@ -176,8 +176,8 @@ export function useIssueSurfaceData({
     () => ({
       statusFilters,
       priorityFilters,
-      executorFilters,
-      includeNoExecutor,
+      assigneeFilters,
+      includeNoAssignee,
       creatorFilters,
       projectFilters,
       includeNoProject,
@@ -187,10 +187,10 @@ export function useIssueSurfaceData({
       showSubIssues,
     }),
     [
-      executorFilters,
+      assigneeFilters,
       agentRunningFilter,
       creatorFilters,
-      includeNoExecutor,
+      includeNoAssignee,
       includeNoProject,
       labelFilters,
       priorityFilters,
@@ -342,7 +342,7 @@ export function useIssueSurfaceData({
     // columns (display state) and the status filter, which is expressed in
     // concrete KEYS and so has to be mapped back to the columns those keys land
     // in. Default view shows every category, `cancelled` last (its canonical
-    // position in ALL_STATUSES). (PB-6243)
+    // position in ALL_STATUSES). (MUL-6243)
     const resolved =
       statusFilters.length > 0 ? statusFilterColumns(statusFilters, catalog) : null;
     // Pending/error contribute no narrowing here; the surface's loading and
@@ -367,8 +367,8 @@ export function useIssueSurfaceData({
   const activeFilters = useMemo(
     () => ({
       priorityFilters,
-      executorFilters,
-      includeNoExecutor,
+      assigneeFilters,
+      includeNoAssignee,
       agentRunningFilter,
       runningIssueIds: workingIssueIDs,
       creatorFilters,
@@ -379,10 +379,10 @@ export function useIssueSurfaceData({
       showSubIssues,
     }),
     [
-      executorFilters,
+      assigneeFilters,
       agentRunningFilter,
       creatorFilters,
-      includeNoExecutor,
+      includeNoAssignee,
       includeNoProject,
       labelFilters,
       propertyFilters,
@@ -396,7 +396,7 @@ export function useIssueSurfaceData({
   // `statusFilterPending` holds the surface in loading while a CUSTOM status
   // filter waits for the catalog to say which column it belongs to. Without it
   // the surface reported "loaded, zero results" — an empty board with no
-  // spinner — for the whole cold-load window. (PB-6243)
+  // spinner — for the whole cold-load window. (MUL-6243)
   const isLoading =
     statusFilterPending ||
     (serverGroupBranches.enabled

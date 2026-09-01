@@ -43,7 +43,7 @@ export const useCustomPricingStore = create<CustomPricingState>()(
         }),
     }),
     {
-      name: "patchbay_runtime_custom_pricing",
+      name: "multica_runtime_custom_pricing",
       storage: createJSONStorage(() => stateStorage),
     },
   ),

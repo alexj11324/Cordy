@@ -1,9 +1,9 @@
 import type { CommentAuthorType, Reaction } from "./comment";
 import type { Attachment } from "./attachment";
 
-export interface ExecutorFrequencyEntry {
-  executor_type: string;
-  executor_id: string;
+export interface AssigneeFrequencyEntry {
+  assignee_type: string;
+  assignee_id: string;
   frequency: number;
 }
 
@@ -22,7 +22,7 @@ export interface TimelineEntry {
   updated_at?: string;
   revision?: number;
   comment_type?: string;
-  /** Set only on comments a quick action produced (PB-5465). Unforgeable. */
+  /** Set only on comments a quick action produced (MUL-5465). Unforgeable. */
   quick_action_id?: string | null;
   reactions?: Reaction[];
   attachments?: Attachment[];

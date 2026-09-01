@@ -7,8 +7,6 @@ export const githubKeys = {
   repositories: (wsId: string, installationId: string) =>
     [...githubKeys.all(wsId), "installations", installationId, "repositories"] as const,
   pullRequests: (issueId: string) => ["github", "pull-requests", issueId] as const,
-  workProducts: (issueId: string) => ["work-products", "issue", issueId] as const,
-  unassociatedWorkProducts: (wsId: string) => ["work-products", wsId, "unassociated"] as const,
 };
 
 export const githubInstallationsOptions = (wsId: string) =>
@@ -39,25 +37,4 @@ export const issuePullRequestsOptions = (issueId: string) =>
     queryKey: githubKeys.pullRequests(issueId),
     queryFn: () => api.listIssuePullRequests(issueId),
     enabled: !!issueId,
-  });
-
-export const issueWorkProductsOptions = (issueId: string) =>
-  queryOptions({
-    queryKey: githubKeys.workProducts(issueId),
-    queryFn: () => api.listIssueWorkProducts(issueId),
-    enabled: !!issueId,
-  });
-
-export const unassociatedWorkProductsOptions = (
-  wsId: string,
-  query: string,
-  enabled: boolean,
-) =>
-  infiniteQueryOptions({
-    queryKey: [...githubKeys.unassociatedWorkProducts(wsId), { query }] as const,
-    queryFn: ({ pageParam }) =>
-      api.listUnassociatedWorkProducts({ page: pageParam, per_page: 20, query }),
-    initialPageParam: 1,
-    getNextPageParam: (lastPage) => lastPage.next_page ?? undefined,
-    enabled: enabled && !!wsId,
   });

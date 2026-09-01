@@ -60,7 +60,7 @@ export function useDeleteQuickAction() {
  * pretending it did.
  *
  * Invalidates the issue's comments and task runs so the new card and the
- * agent-thread-events entry appear without waiting for a websocket round-trip.
+ * execution-log entry appear without waiting for a websocket round-trip.
  */
 export function useRunQuickAction(issueId: string) {
   const qc = useQueryClient();

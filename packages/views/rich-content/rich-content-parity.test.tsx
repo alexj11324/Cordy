@@ -1,5 +1,5 @@
 /**
- * Five-surface RichContent parity (PB-4922).
+ * Five-surface RichContent parity (MUL-4922).
  *
  * The acceptance naiyuan set: ONE completed Markdown fixture must produce the
  * SAME semantic blocks in Chat (user message, live assistant, persisted
@@ -34,18 +34,17 @@ vi.mock("../i18n", async () => {
       t: (select: (bundle: Record<string, unknown>) => string) =>
         select((ns === "chat" ? chat : editor) as Record<string, unknown>),
     }),
-    useLocale: () => "en",
     useTimeAgo: () => "just now",
   };
 });
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: { getAttachmentTextContent: vi.fn() },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/paths", () => ({
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/test/issues/${id}`,
     projectDetail: (id: string) => `/test/projects/${id}`,
@@ -85,13 +84,6 @@ vi.mock("mermaid", () => ({
     initialize: vi.fn(),
     render: mermaidRenderMock,
   },
-}));
-
-// Live Chat rows mount thinking-orbs; jsdom's canvas cannot run that animation.
-vi.mock("thinking-orbs", () => ({
-  ThinkingOrb: ({ "aria-label": label }: { "aria-label"?: string }) => (
-    <span data-testid="thinking-orb" aria-label={label} />
-  ),
 }));
 
 // react-virtuoso does not virtualize under jsdom's zero-height viewport, so
@@ -135,7 +127,7 @@ Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
 
 import { ReadonlyContent } from "../editor/readonly-content";
 import { ChatMessageList } from "../chat/components/chat-message-list";
-import { taskMessagesOptions } from "@patchbay/core/chat/queries";
+import { taskMessagesOptions } from "@multica/core/chat/queries";
 
 // naiyuan's fixture, corrected to a single closed fence.
 const MERMAID_FIXTURE = [
@@ -429,7 +421,7 @@ describe("live → persisted row identity", () => {
 
 describe("semantic parity beyond Mermaid", () => {
   const FIXTURE = [
-    "A [link](https://example.com) and a mention [PB-7](mention://issue/PB-7).",
+    "A [link](https://example.com) and a mention [MUL-7](mention://issue/MUL-7).",
     "",
     "```html",
     "<b>preview</b>",
@@ -462,7 +454,7 @@ describe("semantic parity beyond Mermaid", () => {
 
   it("produces the same block set in Issue/Comment and Chat", async () => {
     resolveIssueIdentifierMock.mockImplementation((id: string) =>
-      id === "PB-7" ? { id: "issue-7", identifier: "PB-7" } : null,
+      id === "MUL-7" ? { id: "issue-7", identifier: "MUL-7" } : null,
     );
 
     const readonly = renderReadonly();

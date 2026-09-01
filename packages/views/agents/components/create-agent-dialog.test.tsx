@@ -3,11 +3,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import type { Agent, MemberWithUser, RuntimeDevice } from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
-import { WorkspaceSlugProvider } from "@patchbay/core/paths";
-import { configStore } from "@patchbay/core/config";
-import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
+import type { Agent, MemberWithUser, RuntimeDevice } from "@multica/core/types";
+import { I18nProvider } from "@multica/core/i18n/react";
+import { WorkspaceSlugProvider } from "@multica/core/paths";
+import { configStore } from "@multica/core/config";
+import { COMPOSIO_MCP_APPS_FLAG } from "@multica/core/feature-flags";
 import { NavigationProvider, type NavigationAdapter } from "../../navigation";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
@@ -18,12 +18,13 @@ const navigationStub: NavigationAdapter = {
   back: vi.fn(),
   pathname: "/",
   searchParams: new URLSearchParams(),
+  hash: "",
   getShareableUrl: (path: string) => path,
 };
 
 const TEST_RESOURCES = { en: { common: enCommon, agents: enAgents } };
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
@@ -184,7 +185,7 @@ describe("CreateAgentDialog runtime visibility gate", () => {
       .closest("button") as HTMLButtonElement;
     expect(disabledRow).not.toBeNull();
     expect(disabledRow.disabled).toBe(true);
-    expect(disabledRow.title).toMatch(/Private device/i);
+    expect(disabledRow.title).toMatch(/Private runtime/i);
   });
 
   it("lets a plain member pick another member's public runtime", () => {
@@ -290,7 +291,7 @@ describe("CreateAgentDialog runtime visibility gate", () => {
   });
 });
 
-describe("CreateAgentDialog access picker (PB-4010, feature-flag gated)", () => {
+describe("CreateAgentDialog access picker (MUL-4010, feature-flag gated)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     // The dialog's default (workspace) still needs to be usable by ME:
@@ -345,7 +346,7 @@ describe("CreateAgentDialog access picker (PB-4010, feature-flag gated)", () => 
 
     const payload = onCreate.mock.calls[0]?.[0];
     expect(payload).toBeDefined();
-    // PB-3963 payload shape.
+    // MUL-3963 payload shape.
     expect(payload.visibility).toBeUndefined();
     expect(payload.permission_mode).toBe("public_to");
     expect(payload.invocation_targets).toEqual([

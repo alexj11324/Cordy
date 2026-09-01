@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useIssueSelectionStore } from "@patchbay/core/issues/stores/selection-store";
+import { useIssueSelectionStore } from "@multica/core/issues/stores/selection-store";
 
 export interface IssueSurfaceSelection {
   selectedIds: Set<string>;

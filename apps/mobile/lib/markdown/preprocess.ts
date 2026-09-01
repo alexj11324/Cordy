@@ -6,7 +6,7 @@
  *      mention link `[@Label](mention://member/id)`. Old DB rows from before
  *      the April 2026 migration use the shortcode form; the modern form is
  *      what marked.js can naturally tokenize as a markdown link. Calls into
- *      `@patchbay/core/markdown` (single source of truth — same regex web/
+ *      `@multica/core/markdown` (single source of truth — same regex web/
  *      desktop run).
  *
  *   2. File card lines `!file[name](url)` → standard link `[📎 name](url)`.
@@ -21,14 +21,14 @@
  * the cdnDomain config. Old comments using the legacy form render as plain
  * hyperlinks — same tap behavior, just no 📎 prefix. Acceptable degradation.
  */
-import { preprocessMentionShortcodes } from "@patchbay/core/markdown";
+import { preprocessMentionShortcodes } from "@multica/core/markdown";
 
 // File-card line matcher, kept in sync with web's parser in
 // `packages/ui/markdown/file-cards.ts` (NEW_FILE_CARD_RE + FILE_CARD_URL_PATTERN):
 //
 //   - Label allows backslash-escaped metacharacters (`\[ \] \\ \( \)`) so a
 //     filename like `a]b.pdf` — which the CLI escapes to `a\]b.pdf` in its
-//     `!file[...]` output — is
+//     `!file[...]` output (see cmd_attachment.go escapeMarkdownLabel) — is
 //     captured whole. Backslash is excluded from the negated class so
 //     overlapping alternatives can't backtrack (ReDoS, web #4881).
 //   - URL is restricted to the same allowlist web accepts: site-relative

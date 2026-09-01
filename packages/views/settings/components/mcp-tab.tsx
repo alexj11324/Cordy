@@ -13,18 +13,18 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { useCurrentMember } from "@patchbay/core/permissions";
-import { workspaceMcpServersOptions } from "@patchbay/core/workspace/queries";
+} from "@multica/ui/components/ui/alert-dialog";
+import { Badge } from "@multica/ui/components/ui/badge";
+import { Button } from "@multica/ui/components/ui/button";
+import { useCurrentWorkspace } from "@multica/core/paths";
+import { useCurrentMember } from "@multica/core/permissions";
+import { workspaceMcpServersOptions } from "@multica/core/workspace/queries";
 import {
   useCreateWorkspaceMcpServer,
   useDeleteWorkspaceMcpServer,
   useUpdateWorkspaceMcpServer,
-} from "@patchbay/core/workspace/mutations";
-import type { WorkspaceMcpServer } from "@patchbay/core/types";
+} from "@multica/core/workspace/mutations";
+import type { WorkspaceMcpServer } from "@multica/core/types";
 import { McpServerDialog } from "../../agents/components/tabs/mcp-server-dialog";
 import type { ManagedMcpServer } from "../../agents/components/tabs/mcp-config-model";
 import { useT } from "../../i18n";

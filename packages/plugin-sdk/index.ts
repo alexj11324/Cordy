@@ -1,21 +1,19 @@
 /**
- * @patchbay/plugin-sdk — what a plugin surface imports.
+ * @multica/plugin-sdk — what a plugin surface imports.
  *
  * A surface is an ordinary script running in a sandboxed iframe. It holds no
- * credential and cannot reach Patchbay's API directly: every call here becomes a
+ * credential and cannot reach Multica's API directly: every call here becomes a
  * message to the host page, which performs the call on the signed-in user's own
  * session and sends the result back. That indirection is the whole security
  * story — a plugin can never do more than the person looking at it, and there
  * is no token in the frame to leak.
  *
- * Zero runtime dependencies, and deliberately no import of `@patchbay/core` or
- * `@patchbay/ui`: this ships to third parties.
+ * Zero runtime dependencies, and deliberately no import of `@multica/core` or
+ * `@multica/ui`: this ships to third parties.
  */
 
 import {
-  BRIDGE_INIT_MESSAGE,
-  BRIDGE_PROTOCOL_VERSION,
-  BRIDGE_READY_MESSAGE,
+  BRIDGE_PORT_GLOBAL,
   isBridgeEvent,
   isBridgeResponse,
   type BridgeMethod,
@@ -72,20 +70,17 @@ export interface StorageKey {
 }
 
 /** Thrown when the host refuses or the call fails. `status` mirrors HTTP. */
-export class PatchbayPluginError extends Error {
+export class MulticaPluginError extends Error {
   readonly status: number;
 
   constructor(status: number, message: string) {
     super(message);
-    this.name = "PatchbayPluginError";
+    this.name = "MulticaPluginError";
     this.status = status;
   }
 }
 
 const DEFAULT_TIMEOUT_MS = 15_000;
-const ANNOUNCE_INTERVAL_MS = 120;
-const ANNOUNCE_ATTEMPTS = 50;
-
 type Pending = {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
@@ -106,65 +101,19 @@ class Bridge {
     this.ready = new Promise((resolve) => {
       this.markReady = resolve;
     });
-    if (typeof window !== "undefined") {
-      window.addEventListener("message", this.onWindowMessage);
-      this.announce();
+    const guestPort = (globalThis as Record<string, unknown>)[BRIDGE_PORT_GLOBAL];
+    if (guestPort && typeof (guestPort as MessagePort).postMessage === "function" &&
+        typeof (guestPort as MessagePort).close === "function") {
+      // First reader wins. The port is not a credential, but leaving a second
+      // global reference around makes accidental competing SDK instances much
+      // harder to diagnose and weakens the one-channel invariant.
+      delete (globalThis as Record<string, unknown>)[BRIDGE_PORT_GLOBAL];
+      this.port = guestPort as MessagePort;
+      this.port.onmessage = this.onPortMessage;
+      this.port.start?.();
+      this.markReady();
     }
   }
-
-  /**
-   * Announces until the host answers with a port.
-   *
-   * One announcement is not enough in either direction: a srcdoc frame can
-   * finish executing before the embedder's effect attaches its listener, and a
-   * host that waits on the iframe load event can miss it entirely. Repeating
-   * until the port arrives makes the handshake independent of who is ready
-   * first, which is the only ordering nobody controls.
-   */
-  private announce() {
-    if (typeof window === "undefined" || !window.parent) return;
-    let attempts = 0;
-    const beat = () => {
-      if (this.port || attempts++ > ANNOUNCE_ATTEMPTS) return;
-      // targetOrigin "*" because this frame has an opaque origin and cannot
-      // know the embedder's. The message carries nothing but the signal.
-      window.parent.postMessage({ type: BRIDGE_READY_MESSAGE }, "*");
-      setTimeout(beat, ANNOUNCE_INTERVAL_MS);
-    };
-    beat();
-  }
-
-  private onWindowMessage = (event: MessageEvent) => {
-    const data = event.data as { type?: string; version?: number; theme?: ThemeTokens } | null;
-    if (!data || data.type !== BRIDGE_INIT_MESSAGE) return;
-    const port = event.ports?.[0];
-    if (!port) return;
-    // Only the embedder may hand this frame a port.
-    //
-    // Sibling frames are mutually opaque, but `parent.frames[i]` is an indexed
-    // cross-origin access the spec allows, so another plugin on the same page
-    // can postMessage into this one. Without this check it could deliver its own
-    // MessagePort and become this surface's "host": feed it fabricated issue
-    // data and read everything the surface writes, including whatever it puts in
-    // storage:user. Origin cannot be compared — a sandboxed frame sees "null" —
-    // so the embedder is identified by window reference, mirroring the host's
-    // own check on the readiness signal.
-    if (event.source !== window.parent) return;
-    // First init wins. A hijacker that lost the race could otherwise send a
-    // second init and take the channel over afterwards.
-    if (this.port) return;
-    if (data.version !== BRIDGE_PROTOCOL_VERSION) {
-      // A host newer or older than this SDK: fail loudly rather than guess at a
-      // shape neither side agreed on.
-      return;
-    }
-    this.port = port;
-    port.onmessage = this.onPortMessage;
-    port.start?.();
-    if (data.theme) this.applyTheme(data.theme);
-    for (const request of this.queued.splice(0)) port.postMessage(request);
-    this.markReady();
-  };
 
   private onPortMessage = (event: MessageEvent) => {
     const message = event.data;
@@ -178,7 +127,7 @@ class Bridge {
     this.pending.delete(message.id);
     clearTimeout(pending.timer);
     if (message.ok) pending.resolve(message.data);
-    else pending.reject(new PatchbayPluginError(message.status, message.error));
+    else pending.reject(new MulticaPluginError(message.status, message.error));
   };
 
   private applyTheme(theme: ThemeTokens) {
@@ -210,7 +159,7 @@ class Bridge {
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new PatchbayPluginError(408, `Patchbay did not answer ${method} ${path} in time`));
+        reject(new MulticaPluginError(408, `Multica did not answer ${method} ${path} in time`));
       }, DEFAULT_TIMEOUT_MS);
       this.pending.set(id, { resolve: resolve as (value: unknown) => void, reject, timer });
       this.port?.postMessage(request);
@@ -232,7 +181,7 @@ function storageApi(scope: "workspace" | "user") {
         return result.value;
       } catch (error) {
         // A missing key is an ordinary outcome, not an error to handle.
-        if (error instanceof PatchbayPluginError && error.status === 404) return null;
+        if (error instanceof MulticaPluginError && error.status === 404) return null;
         throw error;
       }
     },
@@ -247,7 +196,7 @@ function storageApi(scope: "workspace" | "user") {
 
 let cachedContext: PluginContext | null = null;
 
-export const patchbay = {
+export const multica = {
   context: {
     /** Who is looking, where, and which issue this surface is mounted on. */
     async get(force = false): Promise<PluginContext> {
@@ -300,7 +249,7 @@ export const patchbay = {
      * `ui` trigger.
      */
     async invoke(hookKey: string, input?: unknown): Promise<HookResult> {
-      const issue = (await patchbay.context.get()).issue;
+      const issue = (await multica.context.get()).issue;
       return bridge.request<HookResult>("POST", `/hooks/${encodeURIComponent(hookKey)}`, {
         trigger: "ui",
         issue_id: issue?.id,
@@ -322,11 +271,11 @@ export const patchbay = {
 };
 
 async function requireIssueId(): Promise<string> {
-  const context = await patchbay.context.get();
+  const context = await multica.context.get();
   if (!context.issue) {
-    throw new PatchbayPluginError(400, "This surface is not mounted on an issue; pass an issue id explicitly.");
+    throw new MulticaPluginError(400, "This surface is not mounted on an issue; pass an issue id explicitly.");
   }
   return context.issue.id;
 }
 
-export default patchbay;
+export default multica;

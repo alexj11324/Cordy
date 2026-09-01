@@ -14,33 +14,33 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { useAuthStore } from "@multica/core/auth";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { memberListOptions } from "@multica/core/workspace/queries";
 import {
   propertyListOptions,
   useCreateProperty,
   useUpdateProperty,
-} from "@patchbay/core/properties";
+} from "@multica/core/properties";
 import type {
   IssueProperty,
   IssuePropertyOption,
   IssuePropertyType,
-} from "@patchbay/core/types";
-import { ISSUE_PROPERTY_TYPES } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { Label as FieldLabel } from "@patchbay/ui/components/ui/label";
-import { SettingsSwitch as Switch } from "@patchbay/ui/components/common/lobe-settings";
+} from "@multica/core/types";
+import { ISSUE_PROPERTY_TYPES } from "@multica/core/types";
+import { Button } from "@multica/ui/components/ui/button";
+import { Badge } from "@multica/ui/components/ui/badge";
+import { Input } from "@multica/ui/components/ui/input";
+import { Textarea } from "@multica/ui/components/ui/textarea";
+import { Label as FieldLabel } from "@multica/ui/components/ui/label";
+import { Switch } from "@multica/ui/components/ui/switch";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@patchbay/ui/components/ui/select";
+} from "@multica/ui/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -48,7 +48,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@multica/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -58,25 +58,25 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@multica/ui/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@multica/ui/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@patchbay/ui/components/ui/popover";
+} from "@multica/ui/components/ui/popover";
 import { ColorPicker, COLOR_PICKER_PRESETS } from "../../common/color-picker";
 import {
   PropertyIcon,
   PropertyIconGlyph,
   PropertyIconPicker,
 } from "../../common/property-icon";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 import { SettingsTab } from "./settings-layout";
 
 const MAX_ACTIVE_PROPERTIES = 20;
@@ -109,6 +109,7 @@ function typeHasOptions(type: string): boolean {
 
 export function PropertiesTab() {
   const { t } = useT("settings");
+  const locale = useLocale();
   const wsId = useWorkspaceId();
   const user = useAuthStore((s) => s.user);
 
@@ -255,7 +256,7 @@ export function PropertiesTab() {
                     {t(($) => $.properties.usage_count, { count: property.usage_count ?? 0 })}
                   </span>
                   <span className="text-caption text-muted-foreground">
-                    {new Date(property.updated_at).toLocaleDateString()}
+                    {new Date(property.updated_at).toLocaleDateString(locale)}
                   </span>
                   {canManage ? (
                     <DropdownMenu>

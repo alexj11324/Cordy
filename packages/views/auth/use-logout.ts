@@ -2,12 +2,12 @@
 
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "@patchbay/core/auth";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import { clearWorkspaceStorage, defaultStorage } from "@patchbay/core/platform";
-import { resetAllRegisteredDrafts } from "@patchbay/core/drafts/cleanup-registry";
-import { paths } from "@patchbay/core/paths";
-import type { Workspace } from "@patchbay/core/types";
+import { useAuthStore } from "@multica/core/auth";
+import { workspaceKeys } from "@multica/core/workspace/queries";
+import { clearWorkspaceStorage, defaultStorage } from "@multica/core/platform";
+import { resetAllRegisteredDrafts } from "@multica/core/drafts/cleanup-registry";
+import { paths } from "@multica/core/paths";
+import type { Workspace } from "@multica/core/types";
 import { useNavigation } from "../navigation";
 
 /**
@@ -28,7 +28,7 @@ export function useLogout() {
   const authLogout = useAuthStore((s) => s.logout);
   const { push } = useNavigation();
 
-  return useCallback(async () => {
+  return useCallback(() => {
     // Reset draft stores' in-memory state FIRST, before removing persisted
     // keys. Each reset is a Zustand setState, and persist middleware writes
     // the new (empty) state straight back to storage under the still-active
@@ -60,13 +60,12 @@ export function useLogout() {
     // Clear desktop tab state. Tab paths can contain workspace slugs and
     // issue UUIDs that must not survive across user sessions on a shared
     // machine. No-op on web (web doesn't write this key).
-    defaultStorage.removeItem("patchbay_tabs");
+    defaultStorage.removeItem("multica_tabs");
 
     queryClient.clear();
-    await authLogout();
+    authLogout();
 
-    // Navigate to /login explicitly only after every platform session has
-    // been revoked. authLogout() clears state but doesn't
+    // Navigate to /login explicitly. authLogout() clears state but doesn't
     // move the URL — without this the caller might be on a workspace URL
     // which renders null (layout gates on user) and leaves the user
     // stuck on a blank page.

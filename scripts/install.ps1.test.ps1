@@ -112,46 +112,7 @@ if ($null -ne $failureResult) {
 }
 
 # ---------------------------------------------------------------------------
-# 3. Legacy brand identifiers migrate without overwriting custom repositories
-# ---------------------------------------------------------------------------
-$migrationDir = Join-Path ([System.IO.Path]::GetTempPath()) ("patchbay-ps1-migration-" + [guid]::NewGuid().ToString("N"))
-New-Item -ItemType Directory -Path $migrationDir -Force | Out-Null
-try {
-    $migrationEnv = Join-Path $migrationDir ".env"
-    @(
-        "CORDY_BACKEND_IMAGE=ghcr.io/cordy-ai/cordy-backend" # legacy-brand-compat
-        "CORDY_WEB_IMAGE=ghcr.io/cordy-ai/cordy-web" # legacy-brand-compat
-    ) | Set-Content $migrationEnv
-
-    & {
-        Invoke-Expression $definitions
-        Update-LegacySelfHostImageRepositories -EnvPath $migrationEnv
-    } | Out-Null
-    $migrated = @(Get-Content $migrationEnv)
-    if ($migrated -notcontains "PATCHBAY_BACKEND_IMAGE=ghcr.io/alexj11324/patchbay-backend" -or
-        $migrated -notcontains "PATCHBAY_WEB_IMAGE=ghcr.io/alexj11324/patchbay-web") {
-        Fail-Test "install.ps1 did not migrate the exact legacy image repositories"
-    }
-
-    @(
-        "CORDY_BACKEND_IMAGE=registry.example/custom-backend" # legacy-brand-compat
-        "CORDY_WEB_IMAGE=registry.example/custom-web" # legacy-brand-compat
-    ) | Set-Content $migrationEnv
-    & {
-        Invoke-Expression $definitions
-        Update-LegacySelfHostImageRepositories -EnvPath $migrationEnv
-    } | Out-Null
-    $custom = @(Get-Content $migrationEnv)
-    if ($custom -notcontains "PATCHBAY_BACKEND_IMAGE=registry.example/custom-backend" -or
-        $custom -notcontains "PATCHBAY_WEB_IMAGE=registry.example/custom-web") {
-        Fail-Test "install.ps1 overwrote an operator-customized image repository"
-    }
-} finally {
-    Remove-Item $migrationDir -Recurse -Force -ErrorAction SilentlyContinue
-}
-
-# ---------------------------------------------------------------------------
-# 4. End to end: the probed URL and the printed URLs are the published ports
+# 3. End to end: the probed URL and the printed URLs are the published ports
 # ---------------------------------------------------------------------------
 $cases = @(
     @{ Label = "defaults"; Env = @{}; Mutation = $null; Backend = "8080"; Frontend = "3000" }
@@ -172,7 +133,7 @@ $cases = @(
     @{ Label = "env-file empty BACKEND_PORT falls back"; Env = @{}; Mutation = @{ BACKEND_PORT = ""; PORT = "9100" }; Backend = "9100"; Frontend = "3000" }
 )
 
-$runnerScript = Join-Path ([System.IO.Path]::GetTempPath()) "patchbay-install-ps1-case.ps1"
+$runnerScript = Join-Path ([System.IO.Path]::GetTempPath()) "multica-install-ps1-case.ps1"
 
 # Each case runs in its own pwsh process: install.ps1 uses `exit` on failure, and
 # a child process is also the only way to control the ambient environment
@@ -188,8 +149,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 if (-not $env:USERPROFILE) { $env:USERPROFILE = [System.IO.Path]::GetTempPath() }
-$env:PATCHBAY_INSTALL_DIR = $WorkDir
-$env:PATCHBAY_SELFHOST_REF = "main"
+$env:MULTICA_INSTALL_DIR = $WorkDir
+$env:MULTICA_SELFHOST_REF = "main"
 
 $source = Get-Content -Raw -Path $InstallerPath
 $index = $source.IndexOf("# Entry point")
@@ -266,7 +227,7 @@ Start-LocalInstall
 '@ | Set-Content -Path $runnerScript -Encoding UTF8
 
 foreach ($case in $cases) {
-    $workDir = Join-Path ([System.IO.Path]::GetTempPath()) ("patchbay-ps1-" + [guid]::NewGuid().ToString("N"))
+    $workDir = Join-Path ([System.IO.Path]::GetTempPath()) ("multica-ps1-" + [guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path (Join-Path $workDir ".git") -Force | Out-Null
 
     $envLines = @(
@@ -276,7 +237,7 @@ foreach ($case in $cases) {
         "# SERVER_PORT=8080"
         "FRONTEND_PORT=3000"
         "JWT_SECRET=change-me-in-production"
-        "POSTGRES_PASSWORD=patchbay"
+        "POSTGRES_PASSWORD=multica"
     )
     if ($case.Mutation) {
         foreach ($key in $case.Mutation.Keys) {

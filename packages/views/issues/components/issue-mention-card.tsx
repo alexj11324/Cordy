@@ -1,7 +1,7 @@
 "use client";
 
 import { AppLink } from "../../navigation";
-import { useWorkspacePaths } from "@patchbay/core/paths";
+import { useWorkspacePaths } from "@multica/core/paths";
 import { IssueChip } from "./issue-chip";
 import { IssueHoverCard } from "./issue-hover-card";
 import { useT } from "../../i18n";
@@ -9,7 +9,7 @@ import { useCurrentIssueRenderContext } from "../current-issue-render-context";
 
 interface IssueMentionCardProps {
   issueId: string;
-  /** Fallback text when issue is not in store (e.g. "PB-7") */
+  /** Fallback text when issue is not in store (e.g. "MUL-7") */
   fallbackLabel?: string;
 }
 

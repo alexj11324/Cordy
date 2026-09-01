@@ -57,7 +57,7 @@
       "rate_limit": "限流",
       "timeout": "超时",
       "provider": "模型服务",
-      "runtime": "设备",
+      "runtime": "运行时",
       "agent": "智能体",
       "other": "其他"
     },

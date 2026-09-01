@@ -12,13 +12,15 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 
 const mockQuickCreateIssue = vi.hoisted(() => vi.fn());
+const mockCreateCommentSubIssue = vi.hoisted(() => vi.fn());
 const mockSetLastActor = vi.hoisted(() => vi.fn());
 const mockSetQuickCreateFieldVisible = vi.hoisted(() => vi.fn());
 const mockSetKeepOpen = vi.hoisted(() => vi.fn());
 const mockSetLastMode = vi.hoisted(() => vi.fn());
 const mockToastSuccess = vi.hoisted(() => vi.fn());
+const mockShowIssueLimitUpgradePrompt = vi.hoisted(() => vi.fn());
 // Uploads flow through the module-level coordinator, which calls
-// `api.uploadFile(file, ctx, signal)` (PB-5181 L2).
+// `api.uploadFile(file, ctx, signal)` (MUL-5181 L2).
 const mockApiUploadFile = vi.hoisted(() => vi.fn());
 const mockNavigationPush = vi.hoisted(() => vi.fn());
 const mockSetShared = vi.hoisted(() => vi.fn());
@@ -26,6 +28,37 @@ const mockSetManual = vi.hoisted(() => vi.fn());
 const mockSetAgent = vi.hoisted(() => vi.fn());
 const mockSetActiveMode = vi.hoisted(() => vi.fn());
 const mockClearDraft = vi.hoisted(() => vi.fn());
+
+const sourceContextPanelData = {
+  anchor_comment_id: "comment-source",
+  source_context_preview: {
+    source_issue: {
+      id: "issue-source",
+      identifier: "MUL-9",
+      number: 9,
+      title: "Source",
+      description: "Historical body",
+      created_at: "2026-08-20T00:00:00Z",
+      updated_at: "2026-08-21T00:00:00Z",
+      revision: 1,
+      attachments: [],
+    },
+    comment_thread: [{
+      id: "comment-source",
+      parent_id: null,
+      type: "comment",
+      content: "Historical comment",
+      author: { type: "member", id: "user-1", name: "Alice" },
+      created_at: "2026-08-21T00:00:00Z",
+      updated_at: "2026-08-21T00:00:00Z",
+      revision: 1,
+      attachments: [],
+    }],
+    anchor_comment_id: "comment-source",
+    capture_token: "sha256:preview-token",
+    limits: { comment_count: 1, text_bytes: 100, attachment_count: 0, attachment_bytes: 0 },
+  },
+};
 
 const emptyIssueDraft = () => ({
   shared: {
@@ -39,14 +72,14 @@ const emptyIssueDraft = () => ({
     description: "",
     status: "todo" as const,
     startDate: null as string | null,
-    executorType: undefined as "agent" | "team" | undefined,
-    executorId: undefined as string | undefined,
+    assigneeType: undefined as "agent" | "squad" | "member" | undefined,
+    assigneeId: undefined as string | undefined,
     labelIds: [] as string[],
     propertyValues: {} as Record<string, string | number | boolean | string[]>,
   },
   agent: {
     prompt: "",
-    actorType: undefined as "agent" | "team" | undefined,
+    actorType: undefined as "agent" | "squad" | undefined,
     actorId: undefined as string | undefined,
   },
   activeMode: "agent" as "agent" | "manual",
@@ -62,12 +95,12 @@ const mockIssueDraftStore = {
 };
 
 const mockQuickCreateStore = {
-  lastActorType: null as "agent" | "team" | null,
+  lastActorType: null as "agent" | "squad" | null,
   lastActorId: null as string | null,
   setLastActor: mockSetLastActor,
   keepOpen: false,
   setKeepOpen: mockSetKeepOpen,
-  // Not part of the store's interface any more (PB-5862), but an older
+  // Not part of the store's interface any more (MUL-5862), but an older
   // build persisted it and localStorage still hands it back on rehydrate.
   // Kept here so the tests can prove the panel ignores it.
   lastProjectId: null as string | null,
@@ -86,10 +119,10 @@ const mockProjectsQuery = vi.hoisted(() => ({
   isSuccess: true,
 }));
 
-// Per-test override for the teams list so we can flip between "teams
-// exist and one's leader is reachable" and "no teams" cases without
+// Per-test override for the squads list so we can flip between "squads
+// exist and one's leader is reachable" and "no squads" cases without
 // re-mocking the whole module.
-const mockTeamsData = vi.hoisted(
+const mockSquadsData = vi.hoisted(
   () => ({ list: [] as Array<{ id: string; name: string; leader_id: string; archived_at: string | null }> }),
 );
 
@@ -101,9 +134,9 @@ let mockUploadIdSeq = 0;
 vi.mock("@tanstack/react-query", () => ({
   useQuery: ({ queryKey }: { queryKey: string[] }) => {
     // Workspace-scoped query keys carry the wsId as `queryKey[1]`; the
-    // discriminator is at `queryKey[2]` (e.g. ["workspaces", wsId, "teams"]).
-    if (queryKey[0] === "workspaces" && queryKey[2] === "teams") {
-      return { data: mockTeamsData.list };
+    // discriminator is at `queryKey[2]` (e.g. ["workspaces", wsId, "squads"]).
+    if (queryKey[0] === "workspaces" && queryKey[2] === "squads") {
+      return { data: mockSquadsData.list };
     }
     switch (queryKey[0]) {
       case "members":
@@ -122,21 +155,40 @@ vi.mock("@tanstack/react-query", () => ({
   },
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+const { ApiError } = vi.hoisted(() => {
+  class ApiErrorImpl extends Error {
+    readonly status: number;
+    readonly statusText: string;
+    readonly body?: unknown;
+    constructor(message: string, status: number, statusText: string, body?: unknown) {
+      super(message);
+      this.name = "ApiError";
+      this.status = status;
+      this.statusText = statusText;
+      this.body = body;
+    }
+  }
+  return { ApiError: ApiErrorImpl };
+});
+
+vi.mock("@multica/core/api", () => ({
   api: {
+    createCommentSubIssue: mockCreateCommentSubIssue,
     quickCreateIssue: mockQuickCreateIssue,
     uploadFile: mockApiUploadFile,
   },
-  ApiError: class ApiError extends Error {
-    body?: unknown;
-  },
+  ApiError,
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-test",
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("./use-issue-limit-upgrade-prompt", () => ({
+  useIssueLimitUpgradePrompt: () => mockShowIssueLimitUpgradePrompt,
+}));
+
+vi.mock("@multica/core/paths", () => ({
   useCurrentWorkspace: () => ({ name: "Test Workspace" }),
   useWorkspacePaths: () => ({
     settings: () => "/ws-test/settings",
@@ -149,24 +201,24 @@ vi.mock("../navigation/context", () => ({
   useNavigation: () => ({ push: mockNavigationPush }),
 }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@multica/core/workspace/queries", () => ({
   agentListOptions: () => ({ queryKey: ["agents"] }),
   memberListOptions: () => ({ queryKey: ["members"] }),
-  teamListOptions: (wsId: string) => ({
-    queryKey: ["workspaces", wsId, "teams"],
+  squadListOptions: (wsId: string) => ({
+    queryKey: ["workspaces", wsId, "squads"],
   }),
 }));
 
-vi.mock("@patchbay/core/projects/queries", () => ({
+vi.mock("@multica/core/projects/queries", () => ({
   projectListOptions: () => ({ queryKey: ["projects"] }),
 }));
 
-vi.mock("@patchbay/core/issues/stores/quick-create-store", () => ({
+vi.mock("@multica/core/issues/stores/quick-create-store", () => ({
   useQuickCreateStore: (selector?: (state: typeof mockQuickCreateStore) => unknown) =>
     (selector ? selector(mockQuickCreateStore) : mockQuickCreateStore),
 }));
 
-vi.mock("@patchbay/core/issues/stores/draft-store", () => ({
+vi.mock("@multica/core/issues/stores/draft-store", () => ({
   useIssueDraftStore: Object.assign(
     (selector?: (state: typeof mockIssueDraftStore) => unknown) =>
       (selector ? selector(mockIssueDraftStore) : mockIssueDraftStore),
@@ -174,23 +226,23 @@ vi.mock("@patchbay/core/issues/stores/draft-store", () => ({
   ),
 }));
 
-vi.mock("@patchbay/core/issues/stores/issue-create-settings-store", () => ({
+vi.mock("@multica/core/issues/stores/issue-create-settings-store", () => ({
   useIssueCreateSettingsStore: (
     selector?: (state: typeof mockCreateSettingsStore) => unknown,
   ) => (selector ? selector(mockCreateSettingsStore) : mockCreateSettingsStore),
 }));
 
-vi.mock("@patchbay/core/issues/stores/create-mode-store", () => ({
+vi.mock("@multica/core/issues/stores/create-mode-store", () => ({
   useCreateModeStore: (selector?: (state: { setLastMode: typeof mockSetLastMode }) => unknown) =>
     (selector ? selector({ setLastMode: mockSetLastMode }) : { setLastMode: mockSetLastMode }),
 }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@multica/core/auth", () => ({
   useAuthStore: (selector?: (state: { user: { id: string } }) => unknown) =>
     (selector ? selector({ user: { id: "user-1" } }) : { user: { id: "user-1" } }),
 }));
 
-vi.mock("@patchbay/core/runtimes", () => ({
+vi.mock("@multica/core/runtimes", () => ({
   runtimeListOptions: () => ({ queryKey: ["runtimes"] }),
   checkQuickCreateCliVersion: () => ({ state: "ok", min: "1.0.0" }),
   checkQuickCreateFieldsCliVersion: () => ({ state: "ok", min: "1.0.0" }),
@@ -199,7 +251,7 @@ vi.mock("@patchbay/core/runtimes", () => ({
 }));
 
 
-vi.mock("../issues/components/pickers/executor-picker", () => ({
+vi.mock("../issues/components/pickers/assignee-picker", () => ({
   canAssignAgent: () => true,
 }));
 
@@ -234,7 +286,7 @@ vi.mock("../projects/components/project-picker", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/components/ui/dropdown-menu", () => ({
+vi.mock("@multica/ui/components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: ReactNode }) => <>{children}</>,
   DropdownMenuTrigger: ({ render }: { render: ReactNode }) => <>{render}</>,
   DropdownMenuContent: ({ children }: { children: ReactNode }) => <>{children}</>,
@@ -257,7 +309,7 @@ vi.mock("@patchbay/ui/components/ui/dropdown-menu", () => ({
   DropdownMenuSeparator: () => null,
 }));
 
-vi.mock("@patchbay/ui/lib/utils", () => ({
+vi.mock("@multica/ui/lib/utils", () => ({
   cn: (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(" "),
 }));
 
@@ -342,7 +394,7 @@ vi.mock("../editor", async () => {
   };
 });
 
-vi.mock("@patchbay/ui/components/ui/dialog", () => ({
+vi.mock("@multica/ui/components/ui/dialog", () => ({
   DialogTitle: ({ children, className }: { children: ReactNode; className?: string }) => (
     <div className={className}>{children}</div>
   ),
@@ -392,7 +444,7 @@ vi.mock("../issues/components/pickers/property-picker", () => ({
   PickerEmpty: () => <div data-testid="picker-empty" />,
 }));
 
-vi.mock("@patchbay/ui/components/ui/button", () => ({
+vi.mock("@multica/ui/components/ui/button", () => ({
   Button: ({ children, disabled, onClick }: { children: ReactNode; disabled?: boolean; onClick?: () => void }) => (
     <button type="button" disabled={disabled} onClick={onClick}>
       {children}
@@ -400,7 +452,7 @@ vi.mock("@patchbay/ui/components/ui/button", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/components/ui/switch", () => ({
+vi.mock("@multica/ui/components/ui/switch", () => ({
   Switch: ({ checked, onCheckedChange }: { checked: boolean; onCheckedChange: (v: boolean) => void }) => (
     <input
       type="checkbox"
@@ -410,11 +462,11 @@ vi.mock("@patchbay/ui/components/ui/switch", () => ({
   ),
 }));
 
-vi.mock("@patchbay/ui/components/common/file-upload-button", () => ({
+vi.mock("@multica/ui/components/common/file-upload-button", () => ({
   // `disabled` is forwarded so the "can still queue another file mid-upload"
-  // guarantee is actually assertable here (PB-4808).
-  FileUploadButton: ({ disabled }: { disabled?: boolean }) => (
-    <button type="button" disabled={disabled}>Upload file</button>
+  // guarantee is actually assertable here (MUL-4808).
+  FileUploadButton: ({ disabled, size }: { disabled?: boolean; size?: string }) => (
+    <button type="button" disabled={disabled} data-size={size}>Upload file</button>
   ),
 }));
 
@@ -424,15 +476,16 @@ vi.mock("sonner", () => ({
   },
 }));
 
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enModals from "../locales/en/modals.json";
 import enEditor from "../locales/en/editor.json";
 import enProjects from "../locales/en/projects.json";
+import enIssues from "../locales/en/issues.json";
 import { AgentCreatePanel } from "./quick-create-issue";
 
 const TEST_RESOURCES = {
-  en: { common: enCommon, modals: enModals, editor: enEditor, projects: enProjects },
+  en: { common: enCommon, modals: enModals, editor: enEditor, projects: enProjects, issues: enIssues },
 };
 
 function renderPanel(props: React.ComponentProps<typeof AgentCreatePanel>) {
@@ -468,8 +521,9 @@ describe("AgentCreatePanel", () => {
     });
     mockProjectsQuery.data = [];
     mockProjectsQuery.isSuccess = true;
-    mockTeamsData.list = [];
+    mockSquadsData.list = [];
     mockQuickCreateIssue.mockResolvedValue(undefined);
+    mockCreateCommentSubIssue.mockResolvedValue({ task_id: "task-source-child" });
     mockApiUploadFile.mockResolvedValue({
       id: "019ec09d-6222-722b-bdfa-427b105d80be",
       workspace_id: "ws-test",
@@ -503,8 +557,8 @@ describe("AgentCreatePanel", () => {
   });
 
   it("restores unfinished actor, project, priority, and due-date selections after remount", async () => {
-    mockTeamsData.list = [
-      { id: "team-1", name: "Frontend Team", leader_id: "agent-1", archived_at: null },
+    mockSquadsData.list = [
+      { id: "squad-1", name: "Frontend Squad", leader_id: "agent-1", archived_at: null },
     ];
     mockProjectsQuery.data = [{ id: "proj-1", title: "Web", icon: null }];
     mockCreateSettingsStore.quickCreateFields = ["project", "priority", "due_date"];
@@ -516,13 +570,13 @@ describe("AgentCreatePanel", () => {
       setIsExpanded: vi.fn(),
     });
 
-    await user.click(screen.getByRole("button", { name: /Frontend Team/ }));
+    await user.click(screen.getByRole("button", { name: /Frontend Squad/ }));
     await user.click(screen.getByTestId("project-picker"));
     await user.click(screen.getByTestId("priority-picker"));
     await user.click(screen.getByTestId("due-date-picker"));
 
     expect(mockIssueDraftStore.draft.agent).toEqual(
-      expect.objectContaining({ actorType: "team", actorId: "team-1" }),
+      expect.objectContaining({ actorType: "squad", actorId: "squad-1" }),
     );
     expect(mockIssueDraftStore.draft.shared).toEqual(
       expect.objectContaining({
@@ -535,7 +589,7 @@ describe("AgentCreatePanel", () => {
     firstOpen.unmount();
     renderPanel({ onClose: vi.fn(), isExpanded: false, setIsExpanded: vi.fn() });
 
-    expect(screen.getByRole("button", { name: /Frontend Team/ })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: /Frontend Squad/ })).toHaveAttribute(
       "data-selected",
       "true",
     );
@@ -573,6 +627,28 @@ describe("AgentCreatePanel", () => {
     expect(mockClearDraft).toHaveBeenCalled();
     expect(mockSetLastMode).toHaveBeenCalledWith("agent");
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("shows the upgrade recovery immediately when quick create is rejected by the issue preflight", async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    mockQuickCreateIssue.mockRejectedValue(
+      new ApiError("workspace has reached its issue limit", 402, "Payment Required", {
+        code: "issue_limit_reached",
+        limit: 1000,
+        policy_revision: 1,
+      }),
+    );
+
+    renderPanel({ onClose, isExpanded: false, setIsExpanded: vi.fn() });
+    await user.click(screen.getByRole("button", { name: /^Create$/i }));
+
+    await waitFor(() => {
+      expect(mockShowIssueLimitUpgradePrompt).toHaveBeenCalledTimes(1);
+    });
+    expect(mockToastSuccess).not.toHaveBeenCalled();
+    expect(mockClearDraft).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
   });
 
   it("reveals optional fields from the overflow and submits their values", async () => {
@@ -644,7 +720,7 @@ describe("AgentCreatePanel", () => {
     });
   });
 
-  // PB-5181 P0: success may only consume the draft it submitted — the editor
+  // MUL-5181 P0: success may only consume the draft it submitted — the editor
   // stays interactive during the request, so mid-flight edits must survive.
   it("typing draft B while draft A's quick-create is pending survives the success (mounted)", async () => {
     let resolveCreate!: (v: unknown) => void;
@@ -676,7 +752,7 @@ describe("AgentCreatePanel", () => {
     expect(mockIssueDraftStore.draft.agent.prompt).toBe("Draft B prompt");
   });
 
-  // PB-5181 P0: a submit that outlives its dialog may only consume the draft
+  // MUL-5181 P0: a submit that outlives its dialog may only consume the draft
   // it submitted — never one typed after closing and reopening.
   it("a late quick-create success does NOT clear a draft replaced after close", async () => {
     let resolveCreate!: (v: unknown) => void;
@@ -760,13 +836,13 @@ describe("AgentCreatePanel", () => {
     });
   });
 
-  // Picking a team routes the submission through `team_id` (not
-  // `agent_id`) so the backend can resolve the team's leader agent and
-  // inject the team-leader briefing on dispatch. The persisted preference
-  // remembers the actor type so the next open defaults back to the team.
-  it("submits team_id when the user picks a team in the actor picker", async () => {
-    mockTeamsData.list = [
-      { id: "team-1", name: "Frontend Team", leader_id: "agent-1", archived_at: null },
+  // Picking a squad routes the submission through `squad_id` (not
+  // `agent_id`) so the backend can resolve the squad's leader agent and
+  // inject the squad-leader briefing on dispatch. The persisted preference
+  // remembers the actor type so the next open defaults back to the squad.
+  it("submits squad_id when the user picks a squad in the actor picker", async () => {
+    mockSquadsData.list = [
+      { id: "squad-1", name: "Frontend Squad", leader_id: "agent-1", archived_at: null },
     ];
     const user = userEvent.setup();
     const onClose = vi.fn();
@@ -774,8 +850,8 @@ describe("AgentCreatePanel", () => {
     renderPanel({ onClose, isExpanded: false, setIsExpanded: vi.fn() });
 
     // The picker mock renders both sections inline as buttons; click the
-    // team row directly.
-    await user.click(screen.getByRole("button", { name: /Frontend Team/ }));
+    // squad row directly.
+    await user.click(screen.getByRole("button", { name: /Frontend Squad/ }));
 
     const editor = screen.getByPlaceholderText(
       'Tell the agent what to do, e.g. "let Bohan fix the inbox loading slowness in the Web project"',
@@ -787,32 +863,32 @@ describe("AgentCreatePanel", () => {
 
     await waitFor(() => {
       expect(mockQuickCreateIssue).toHaveBeenCalledWith({
-        team_id: "team-1",
+        squad_id: "squad-1",
         prompt: "Investigate the regression",
         project_id: undefined,
       });
     });
-    expect(mockSetLastActor).toHaveBeenCalledWith("team", "team-1");
+    expect(mockSetLastActor).toHaveBeenCalledWith("squad", "squad-1");
   });
 
-  // Teams whose leader agent isn't visible (archived, private, etc.) must
+  // Squads whose leader agent isn't visible (archived, private, etc.) must
   // not appear in the picker — the backend would reject the pick on
-  // validateExecutorPair, and showing them invites a confusing dead path.
-  it("hides teams whose leader agent is not in the visible-agents list", () => {
-    mockTeamsData.list = [
-      { id: "team-orphan", name: "Orphan Team", leader_id: "agent-missing", archived_at: null },
+  // validateAssigneePair, and showing them invites a confusing dead path.
+  it("hides squads whose leader agent is not in the visible-agents list", () => {
+    mockSquadsData.list = [
+      { id: "squad-orphan", name: "Orphan Squad", leader_id: "agent-missing", archived_at: null },
     ];
 
     renderPanel({ onClose: vi.fn(), isExpanded: false, setIsExpanded: vi.fn() });
 
-    expect(screen.queryByRole("button", { name: /Orphan Team/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Orphan Squad/ })).toBeNull();
   });
 
   // A successful create used to persist its project, so the NEXT open
   // re-seeded the pill with it and quietly filed the following issue into the
   // same place. The target project belongs to the issue being filed, not to
   // the user as a standing preference — the actor is the only thing that
-  // carries over now (PB-5862).
+  // carries over now (MUL-5862).
   describe("project is not remembered across creates", () => {
     it("ignores a lastProjectId left behind by an older build", () => {
       mockQuickCreateStore.lastProjectId = "proj-1";
@@ -862,7 +938,7 @@ describe("AgentCreatePanel", () => {
   // BOTH local state and the draft; dropping only local state would leave the
   // next open re-seeding the same dead value and trigger the server's
   // `project not found` rejection. The draft is now the only persisted copy —
-  // the last-create memory is gone (PB-5862).
+  // the last-create memory is gone (MUL-5862).
   it("clears a stale drafted project once the projects list resolves without it", async () => {
     mockIssueDraftStore.draft.shared.projectId = "deleted-proj";
     mockProjectsQuery.data = [];
@@ -878,7 +954,7 @@ describe("AgentCreatePanel", () => {
 
   // Dropping a project used to cost two clicks — open the popover, hit
   // "No project" — because the pill had no clear affordance of its own
-  // (PB-5862). The × is part of the pill, so it only exists once the field
+  // (MUL-5862). The × is part of the pill, so it only exists once the field
   // has a value to drop.
   describe("project pill quick-clear", () => {
     it("has no × while no project is selected", () => {
@@ -935,7 +1011,7 @@ describe("AgentCreatePanel", () => {
       setIsExpanded: vi.fn(),
       data: {
         parent_issue_id: "parent-uuid-1",
-        parent_issue_identifier: "PB-2534",
+        parent_issue_identifier: "MUL-2534",
       },
     });
 
@@ -970,7 +1046,61 @@ describe("AgentCreatePanel", () => {
     expect(screen.queryByTestId("agent-sub-issue-chip")).toBeNull();
   });
 
-  // PB-4808 — Quick Create already gated Create; these pin the two gaps:
+  it("keeps captured context separate from the upstream prompt scroller", () => {
+    renderPanel({
+      onClose: vi.fn(),
+      isExpanded: false,
+      setIsExpanded: vi.fn(),
+      data: sourceContextPanelData,
+    });
+
+    const prompt = screen.getByPlaceholderText(
+      'Tell the agent what to do with this context, e.g. "continue investigating and fix the issue described here"',
+    ).parentElement;
+    const sourceContext = document.querySelector<HTMLElement>('[data-slot="source-context-preview"]');
+
+    expect(prompt).toHaveClass("flex-1", "min-h-[140px]", "overflow-y-auto");
+    expect(sourceContext).toHaveClass("shrink-0");
+    expect(prompt?.parentElement).toBe(sourceContext?.parentElement);
+    expect(prompt?.nextElementSibling).toBe(sourceContext);
+    expect(prompt).not.toContainElement(sourceContext);
+  });
+
+  it("submits source-context agent create through the dedicated endpoint", async () => {
+    const user = userEvent.setup();
+    renderPanel({
+      onClose: vi.fn(),
+      isExpanded: false,
+      setIsExpanded: vi.fn(),
+      data: {
+        ...sourceContextPanelData,
+        parent_issue_id: "parent-uuid-1",
+        parent_issue_identifier: "MUL-9",
+      },
+    });
+
+    const editor = screen.getByPlaceholderText(
+      'Tell the agent what to do with this context, e.g. "continue investigating and fix the issue described here"',
+    );
+    await user.clear(editor);
+    await user.type(editor, "Investigate with captured context");
+    await user.click(screen.getByRole("button", { name: /^Create$/i }));
+
+    await waitFor(() => expect(mockCreateCommentSubIssue).toHaveBeenCalledWith(
+      "comment-source",
+      {
+        mode: "agent",
+        capture_token: "sha256:preview-token",
+        quick_create: expect.objectContaining({
+          agent_id: "agent-1",
+          prompt: "Investigate with captured context",
+        }),
+      },
+    ));
+    expect(mockQuickCreateIssue).not.toHaveBeenCalled();
+  });
+
+  // MUL-4808 — Quick Create already gated Create; these pin the two gaps:
   // the mode switch (which re-serializes the prompt into the manual draft)
   // and the file button that used to lock during an upload for no reason.
   describe("upload submit gate", () => {
@@ -1011,7 +1141,7 @@ describe("AgentCreatePanel", () => {
     });
   });
 
-  // PB-4931 — this path files a real issue, so a double-fire is a duplicate
+  // MUL-4931 — this path files a real issue, so a double-fire is a duplicate
   // issue, not a cosmetic glitch. `submitting` is state: two chords landing in
   // one tick both read the pre-update value, so only a synchronously-flipped
   // ref can gate it. Mirrors the manual-create regression.
@@ -1047,7 +1177,7 @@ describe("AgentCreatePanel", () => {
     });
   });
 
-  // PB-6236 — the footer reflows to a 2x2 grid on phones. jsdom has no
+  // MUL-6236 — the footer reflows to a 2x2 grid on phones. jsdom has no
   // layout, so these pin the two structural preconditions the grid depends
   // on rather than the rendered geometry.
   describe("phone footer layout", () => {
@@ -1073,6 +1203,7 @@ describe("AgentCreatePanel", () => {
       expect(create.parentElement).toBe(footer);
       expect(keepOpen.parentElement?.parentElement).toBe(footer);
       expect(attach.parentElement?.parentElement).toBe(footer);
+      expect(attach).toHaveAttribute("data-size", "sm");
     });
 
     it("hides the send keycaps below the sm breakpoint", () => {

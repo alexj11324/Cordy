@@ -1,21 +1,22 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ActorAvatar as ActorAvatarBase } from "@patchbay/ui/components/common/actor-avatar";
-import { AVATAR_SIZE_PX, type AvatarSize } from "@patchbay/ui/lib/avatar-size";
+import { ActorAvatar as ActorAvatarBase } from "@multica/ui/components/common/actor-avatar";
+import { AVATAR_SIZE_PX, type AvatarSize } from "@multica/ui/lib/avatar-size";
 import {
   HoverCard,
   HoverCardTrigger,
   HoverCardContent,
-} from "@patchbay/ui/components/ui/hover-card";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { useAgentPresenceDetail } from "@patchbay/core/agents";
-import { useCurrentWorkspace, useWorkspacePaths } from "@patchbay/core/paths";
+} from "@multica/ui/components/ui/hover-card";
+import { useActorName } from "@multica/core/workspace/hooks";
+import { useAgentPresenceDetail } from "@multica/core/agents";
+import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
 import { AgentProfileCard } from "../agents/components/agent-profile-card";
 import { AgentLivePeekCard } from "../agents/components/agent-live-peek-card";
 import { MemberProfileCard } from "../members/member-profile-card";
-import { TeamProfileCard } from "../teams/components/team-profile-card";
+import { SquadProfileCard } from "../squads/components/squad-profile-card";
 import { availabilityConfig } from "../agents/presence";
+import { useT } from "../i18n";
 import {
   resolveClickIntent,
   useIntentNavigate,
@@ -30,7 +31,7 @@ import {
  *   pickers, list rows).
  * - `"live"` — live activity peek (workload, current issue, last activity).
  *   Used where the user already knows the identity and wants the live state,
- *   e.g. the team members tab.
+ *   e.g. the squad members tab.
  *
  * Has no effect for non-agent actors (members always render the member card).
  */
@@ -92,7 +93,7 @@ export function ActorAvatar({
       avatarUrl={getActorAvatarUrl(actorType, actorId)}
       isAgent={actorType === "agent"}
       isSystem={actorType === "system"}
-      isTeam={actorType === "team"}
+      isSquad={actorType === "squad"}
       size={size}
       className={className}
     />
@@ -113,14 +114,14 @@ export function ActorAvatar({
   );
   const shouldLinkToProfile =
     profileLink ??
-    (actorType === "member" || actorType === "agent" || actorType === "team");
+    (actorType === "member" || actorType === "agent" || actorType === "squad");
   const profileHref = shouldLinkToProfile
     ? actorType === "member"
       ? paths.memberDetail(actorId)
       : actorType === "agent"
         ? paths.agentDetail(actorId)
-        : actorType === "team"
-          ? paths.teamDetail(actorId)
+        : actorType === "squad"
+          ? paths.squadDetail(actorId)
           : null
     : null;
   const content = profileHref ? (
@@ -142,8 +143,8 @@ export function ActorAvatar({
   if (actorType === "member") {
     return <MemberAvatarHoverCard userId={actorId}>{content}</MemberAvatarHoverCard>;
   }
-  if (actorType === "team") {
-    return <TeamAvatarHoverCard teamId={actorId}>{content}</TeamAvatarHoverCard>;
+  if (actorType === "squad") {
+    return <SquadAvatarHoverCard squadId={actorId}>{content}</SquadAvatarHoverCard>;
   }
   return content;
 }
@@ -217,15 +218,22 @@ function ActorAvatarProfileLink({
 export function AgentStatusDot({ agentId, size }: { agentId: string; size?: AvatarSize }) {
   const ws = useCurrentWorkspace();
   const detail = useAgentPresenceDetail(ws?.id, agentId);
+  const { t } = useT("agents");
   if (detail === "loading") return null;
 
-  const { dotClass, label } = availabilityConfig[detail.availability];
+  const { dotClass } = availabilityConfig[detail.availability];
   const px = size ? AVATAR_SIZE_PX[size] : 24;
   const dotSize = px >= 24 ? "h-1.5 w-1.5" : "h-1 w-1";
 
   return (
     <span
-      aria-label={`Status: ${label}`}
+      // The dot is the only presence signal on this avatar, so the aria-label
+      // is the whole accessible payload — it has to be translated, prefix
+      // included. It used to read `Status: ${availabilityConfig[...].label}`,
+      // which was English in every locale (#7411).
+      aria-label={t(($) => $.presence_status_aria, {
+        status: t(($) => $.availability[detail.availability]),
+      })}
       className={`absolute bottom-0 right-0 rounded-full ring-1 ring-background ${dotClass} ${dotSize}`}
     />
   );
@@ -273,15 +281,15 @@ function MemberAvatarHoverCard({
   );
 }
 
-function TeamAvatarHoverCard({
-  teamId,
+function SquadAvatarHoverCard({
+  squadId,
   children,
 }: {
-  teamId: string;
+  squadId: string;
   children: React.ReactNode;
 }) {
   return (
-    <ActorAvatarHoverCardShell content={<TeamProfileCard teamId={teamId} />}>
+    <ActorAvatarHoverCardShell content={<SquadProfileCard squadId={squadId} />}>
       {children}
     </ActorAvatarHoverCardShell>
   );
@@ -292,7 +300,7 @@ function TeamAvatarHoverCard({
 // parallel — content varies, frame doesn't.
 //
 // Do NOT defer-mount the HoverCard on pointerenter to save per-avatar mount
-// cost (PB-4827). Base UI drives hover through native mouseenter/mouseleave
+// cost (MUL-4827). Base UI drives hover through native mouseenter/mouseleave
 // listeners on the trigger element, and installs its close path *inside* the
 // mouseleave handler — so a trigger that never received a real mouseenter can
 // neither cancel a pending open nor ever hover-close. Warming on pointerenter

@@ -2,9 +2,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { forwardRef, useEffect, useImperativeHandle, useRef, type ReactNode, type Ref } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Attachment, TimelineEntry } from "@patchbay/core/types";
-import type { UploadResult } from "@patchbay/core/hooks/use-file-upload";
-import { useCommentDraftStore } from "@patchbay/core/issues/stores";
+import type { Attachment, TimelineEntry } from "@multica/core/types";
+import type { UploadResult } from "@multica/core/hooks/use-file-upload";
+import { useCommentDraftStore } from "@multica/core/issues/stores";
 import { renderWithI18n } from "../../test/i18n";
 
 const apiUploadFile = vi.hoisted(() => vi.fn());
@@ -18,8 +18,8 @@ const editorDefaultValues = vi.hoisted(() => ({
 // the same or the two records drift apart only in tests.
 let mockUploadIdSeq = 0;
 
-vi.mock("@patchbay/core/api", () => ({
-  // Uploads flow through the coordinator, which calls api.uploadFile (PB-5181).
+vi.mock("@multica/core/api", () => ({
+  // Uploads flow through the coordinator, which calls api.uploadFile (MUL-5181).
   api: { uploadFile: apiUploadFile },
   dispatchReasonCode: () => undefined,
   errorCode: (error: unknown) =>
@@ -36,7 +36,7 @@ vi.mock("../../navigation", () => ({
   }),
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@multica/core/workspace/hooks", () => ({
   useActorName: () => ({ getActorName: () => "Ada" }),
 }));
 
@@ -288,7 +288,7 @@ describe("comment edit — content conflict", () => {
   });
 });
 
-// PB-4808 — comment edit had no upload gate: saving mid-upload persisted the
+// MUL-4808 — comment edit had no upload gate: saving mid-upload persisted the
 // edit with the pending image stripped out of the body and its id unbound.
 describe("comment edit — upload submit gate", () => {
   function startPendingUpload(container: HTMLElement) {

@@ -7,19 +7,19 @@ import {
   Loader2,
   RefreshCw,
 } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { cn } from "@patchbay/ui/lib/utils";
-import { runtimeKeys } from "@patchbay/core/runtimes/queries";
+import { Button } from "@multica/ui/components/ui/button";
+import { cn } from "@multica/ui/lib/utils";
+import { runtimeKeys } from "@multica/core/runtimes/queries";
 import {
   runtimeDisplayLabel,
-} from "@patchbay/core/runtimes";
-import type { AgentRuntime } from "@patchbay/core/types";
-import { PatrickIntro } from "../components/patrick-intro";
+} from "@multica/core/runtimes";
+import type { AgentRuntime } from "@multica/core/types";
+import { MikaIntro } from "../components/mika-intro";
 import {
   StepFooter,
 } from "../components/step-shell";
 import { useRuntimePicker } from "../components/use-runtime-picker";
-import { PatrickRuntimeChoice } from "../../runtimes/components/patrick-runtime-choice";
+import { MikaRuntimeChoice } from "../../runtimes/components/mika-runtime-choice";
 import { useT } from "../../i18n";
 
 /**
@@ -61,7 +61,7 @@ export function StepRuntimeConnect({
    *  have agent CLIs on this host that haven't finished registering yet.
    *  While true, the step keeps showing the scanning skeleton past the normal
    *  timeout instead of flashing the "no runtime found" empty state — that
-   *  empty state is a false negative when the daemon is mid-probe (PB-5119).
+   *  empty state is a false negative when the daemon is mid-probe (MUL-5119).
    *  Web omits it and keeps the plain wall-clock timeout. */
   runtimesPending?: boolean;
 }) {
@@ -131,7 +131,7 @@ function FancyView({
   //     empty UNLESS `runtimesPending` says the platform (desktop daemon) is
   //     still booting or mid-probe — registration on a host with several CLIs
   //     can outlast the soft budget, and flashing "no runtime found" while the
-  //     daemon is still working is a false negative (PB-5119).
+  //     daemon is still working is a false negative (MUL-5119).
   //   - hard (EMPTY_HARD_TIMEOUT_MS): an absolute ceiling so a wedged probe
   //     that never resolves `runtimesPending` back to false can't pin the step
   //     on the scanning skeleton forever.
@@ -199,7 +199,7 @@ function FancyView({
       setSubmitting(false);
     }
   };
-  // Starting with Patrick only makes sense when a runtime is selected.
+  // Starting with Mika only makes sense when a runtime is selected.
   const canContinue = phase === "found" && selected !== null;
   const handleContinue = async () => {
     if (!canContinue || submitting) return;
@@ -232,7 +232,7 @@ function FancyView({
         key={phase}
         className="animate-onboarding-enter flex flex-col gap-8 pt-2 sm:pt-6"
       >
-        <PatrickIntro />
+        <MikaIntro />
 
         {phase === "scanning" && <ScanningView />}
         {phase === "found" && (
@@ -384,7 +384,7 @@ function FoundView({
       </div>
 
       <div className="mt-6 flex flex-col gap-4">
-        <PatrickRuntimeChoice
+        <MikaRuntimeChoice
           runtimes={runtimes}
           currentUserId={currentUserId}
           value={{ runtimeId: selectedId ?? "", model }}

@@ -30,35 +30,29 @@ import { DescriptionField } from "@/components/issue/description-field";
 import { MOBILE_PLACEHOLDER_COLOR } from "@/components/ui/input-tokens";
 import { useCreateIssue } from "@/data/mutations/issues";
 import { useNewIssueDraftStore } from "@/data/stores/new-issue-draft-store";
-import { useAuthStore } from "@/data/auth-store";
 import { useMentionInput } from "@/lib/use-mention-input";
 
 export default function NewIssueModal() {
   const [title, setTitle] = useState("");
   const description = useMentionInput();
-  // Attribute chips (status / priority / executor / due date / project)
+  // Attribute chips (status / priority / assignee / due date / project)
   // live in `useNewIssueDraftStore` so the new-issue-picker/* formSheet
   // routes can read and write the same values without a parent-child
   // React relationship. The store is reset on mount + on unmount so
   // re-opening the new-issue modal starts clean.
   const status = useNewIssueDraftStore((s) => s.status);
   const priority = useNewIssueDraftStore((s) => s.priority);
-  const owner = useNewIssueDraftStore((s) => s.owner);
-  const setOwner = useNewIssueDraftStore((s) => s.setOwner);
-  const executor = useNewIssueDraftStore((s) => s.executor);
-  const reviewer = useNewIssueDraftStore((s) => s.reviewer);
+  const assignee = useNewIssueDraftStore((s) => s.assignee);
   const dueDate = useNewIssueDraftStore((s) => s.dueDate);
   const project = useNewIssueDraftStore((s) => s.project);
   const resetDraft = useNewIssueDraftStore((s) => s.reset);
-  const userId = useAuthStore((s) => s.user?.id ?? null);
 
   useEffect(() => {
     resetDraft();
-    if (userId) setOwner({ type: "member", id: userId });
     return () => {
       resetDraft();
     };
-  }, [resetDraft, setOwner, userId]);
+  }, [resetDraft]);
 
   const createIssue = useCreateIssue();
   const isSubmitting = createIssue.isPending;
@@ -75,14 +69,8 @@ export default function NewIssueModal() {
         description: finalDescription || undefined,
         status,
         priority,
-        ...(owner?.type === "member"
-          ? { owner_type: "member" as const, owner_id: owner.id }
-          : {}),
-        ...(executor
-          ? { executor_type: executor.type, executor_id: executor.id }
-          : {}),
-        ...(reviewer
-          ? { reviewer_type: reviewer.type, reviewer_id: reviewer.id }
+        ...(assignee
+          ? { assignee_type: assignee.type, assignee_id: assignee.id }
           : {}),
         ...(dueDate ? { due_date: dueDate } : {}),
         ...(project ? { project_id: project.id } : {}),
@@ -99,9 +87,7 @@ export default function NewIssueModal() {
     description,
     status,
     priority,
-    owner,
-    executor,
-    reviewer,
+    assignee,
     dueDate,
     project,
     createIssue,

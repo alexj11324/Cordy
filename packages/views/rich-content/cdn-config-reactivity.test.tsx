@@ -1,5 +1,5 @@
 /**
- * Late CDN config must reprocess already-rendered content (PB-4922).
+ * Late CDN config must reprocess already-rendered content (MUL-4922).
  *
  * The CDN domain is fetched asynchronously after auth. File-card detection
  * happens in the markdown preprocess step, which used to read the domain once,
@@ -12,7 +12,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { act, render } from "@testing-library/react";
-import { configStore } from "@patchbay/core/config";
+import { configStore } from "@multica/core/config";
 
 vi.mock("../issues/hooks", () => ({
   useResolveIssueIdentifier: () => null,
@@ -28,13 +28,13 @@ vi.mock("../i18n", async () => {
   };
 });
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: { getAttachmentTextContent: vi.fn() },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/paths", () => ({
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/acme/issues/${id}`,
     projectDetail: (id: string) => `/acme/projects/${id}`,
@@ -77,7 +77,7 @@ vi.mock("../editor/attachment", () => ({
 
 import { RichContent } from "./rich-content";
 
-const CDN_DOMAIN = "patchbay-static.example.com";
+const CDN_DOMAIN = "multica-static.example.com";
 const FILE_URL = `https://${CDN_DOMAIN}/workspaces/w1/files/report.pdf`;
 // Legacy file-card syntax is a link ON ITS OWN LINE (FILE_LINK_LINE is
 // anchored); an inline link is deliberately not a card.

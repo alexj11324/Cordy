@@ -2,21 +2,21 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { ReactNode } from "react";
 import { render, renderHook } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { issueDetailOptions } from "@patchbay/core/issues/queries";
-import { projectDetailOptions } from "@patchbay/core/projects/queries";
-import { chatSessionsOptions } from "@patchbay/core/chat/queries";
+import { issueDetailOptions } from "@multica/core/issues/queries";
+import { projectDetailOptions } from "@multica/core/projects/queries";
+import { chatSessionsOptions } from "@multica/core/chat/queries";
 import {
   inboxListOptions,
   archivedInboxListOptions,
-} from "@patchbay/core/inbox/queries";
-import { agentListOptions } from "@patchbay/core/workspace/queries";
-import { runtimeListOptions } from "@patchbay/core/runtimes/queries";
+} from "@multica/core/inbox/queries";
+import { agentListOptions } from "@multica/core/workspace/queries";
+import { runtimeListOptions } from "@multica/core/runtimes/queries";
 
 // Mutable workspace stub so a test can simulate "workspace not resolved yet".
 const ws = vi.hoisted(() => ({ current: { id: "ws1", slug: "acme" } as { id: string; slug: string } | null }));
 
-vi.mock("@patchbay/core/paths", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@patchbay/core/paths")>()),
+vi.mock("@multica/core/paths", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@multica/core/paths")>()),
   useCurrentWorkspace: () => ws.current,
 }));
 
@@ -49,13 +49,13 @@ function makeClient() {
 function seed(qc: QueryClient) {
   qc.setQueryData(issueDetailOptions("ws1", "i1").queryKey, {
     id: "i1",
-    identifier: "PB-1",
+    identifier: "MUL-1",
     title: "Fix login",
     status: "in_progress",
   } as never);
   qc.setQueryData(issueDetailOptions("ws1", "i9").queryKey, {
     id: "i9",
-    identifier: "PB-9",
+    identifier: "MUL-9",
     title: "Crash",
     status: "todo",
   } as never);
@@ -110,9 +110,9 @@ describe("useTabPresentation — live from cache", () => {
   it("issue: live status glyph + identifier:title", () => {
     expect(presentationOf("/acme/issues/i1")).toEqual({
       // `category` travels with the visual so the tab strip never resolves a
-      // custom status key itself. (PB-6243)
+      // custom status key itself. (MUL-6243)
       visual: { kind: "issue-status", status: "in_progress", category: "in_progress" },
-      title: "PB-1: Fix login",
+      title: "MUL-1: Fix login",
     });
   });
 
@@ -159,7 +159,7 @@ describe("useTabPresentation — live from cache", () => {
     // Selection key is issue_id ?? id — n1 links issue i9.
     expect(presentationOf("/acme/inbox?issue=i9")).toEqual({
       visual: { kind: "icon", icon: "Inbox" },
-      title: "PB-9: Crash",
+      title: "MUL-9: Crash",
     });
   });
 
@@ -176,7 +176,7 @@ describe("useTabPresentation — live from cache", () => {
     expect(presentationOf("/acme/inbox?issue=i1").title).toBe("Inbox");
     expect(presentationOf("/acme/inbox?view=archived&issue=i1")).toEqual({
       visual: { kind: "icon", icon: "Inbox" },
-      title: "PB-1: Fix login",
+      title: "MUL-1: Fix login",
     });
   });
 
@@ -202,9 +202,9 @@ describe("useTabPresentation — live from cache", () => {
 
 describe("useTabPresentation — pending / fallback", () => {
   it("pending issue keeps the issue-status slot and uses the persisted fallback", () => {
-    expect(presentationOf("/acme/issues/unloaded", "PB-7: Prior")).toEqual({
+    expect(presentationOf("/acme/issues/unloaded", "MUL-7: Prior")).toEqual({
       visual: { kind: "issue-status", status: null },
-      title: "PB-7: Prior",
+      title: "MUL-7: Prior",
     });
   });
 

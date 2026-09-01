@@ -6,9 +6,9 @@ import {
   HoverCard,
   HoverCardTrigger,
   HoverCardContent,
-} from "@patchbay/ui/components/ui/hover-card";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { workspaceWorkingAgentsOptions } from "@patchbay/core/agents";
+} from "@multica/ui/components/ui/hover-card";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { workspaceWorkingAgentsOptions } from "@multica/core/agents";
 import { AgentAvatarStack } from "../../agents/components/agent-avatar-stack";
 import { WorkingAgentsHoverContent } from "./workspace-agent-working-chip";
 import { useT } from "../../i18n";
@@ -20,7 +20,7 @@ interface SubIssuesAgentWorkingChipProps {
 
 /**
  * Aggregate "N agents working" chip for the sub-issues header in issue
- * detail (patchbay#5825). The per-row IssueAgentActivityIndicator answers
+ * detail (multica#5825). The per-row IssueAgentActivityIndicator answers
  * "which sub-issue is being worked on"; this chip answers "how many agents
  * are on this parent's children right now" without scanning the rows — and
  * keeps that signal visible while the list is collapsed.

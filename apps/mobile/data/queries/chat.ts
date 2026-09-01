@@ -8,7 +8,7 @@
  *                             in flight; refreshed on terminal task events
  *
  * Same shape as web's `chatKeys` in packages/core/chat/queries.ts (mobile
- * owns its own copy per the "mirror, don't import" rule in apps/mobile/AGENTS.md).
+ * owns its own copy per the "mirror, don't import" rule in apps/mobile/CLAUDE.md).
  *
  * `staleTime: Infinity` everywhere — caches are kept fresh by WS event
  * handlers, not by background refetch. Foreground / reconnect invalidates

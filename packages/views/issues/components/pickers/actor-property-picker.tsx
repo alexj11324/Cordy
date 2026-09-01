@@ -2,16 +2,16 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import type { IssueProperty, IssuePropertyValue } from "@patchbay/core/types";
+import type { IssueProperty, IssuePropertyValue } from "@multica/core/types";
 import {
   actorRefsFromValue,
   actorRefValuesFromValue,
   formatActorRef,
   MAX_ISSUE_PROPERTY_ACTOR_VALUES,
-} from "@patchbay/core/types";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
-import { useActorName } from "@patchbay/core/workspace/hooks";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+} from "@multica/core/types";
+import { memberListOptions } from "@multica/core/workspace/queries";
+import { useActorName } from "@multica/core/workspace/hooks";
+import { useWorkspaceId } from "@multica/core/hooks";
 import { ActorAvatar } from "../../../common/actor-avatar";
 import { useT } from "../../../i18n";
 import { matchesPinyin } from "../../../editor/extensions/pinyin-match";
@@ -40,13 +40,13 @@ export function toggleActorRefValue(current: string[], key: string): string[] | 
 }
 
 /**
- * Value editor for `actor` / `multi_actor` custom properties (PB-6286).
+ * Value editor for `actor` / `multi_actor` custom properties (MUL-6286).
  *
- * Shaped like ExecutorPicker's members section — same rows, same avatars — but
- * members are the only kind an actor property accepts. Agents and teams are
+ * Shaped like AssigneePicker's members section — same rows, same avatars — but
+ * members are the only kind an actor property accepts. Agents and squads are
  * assignable but not referenceable: an agent would need the picker to answer
  * visibility and invoke-permission questions that a passive reference has no
- * business asking, and a team is a routing target rather than a person.
+ * business asking, and a squad is a routing target rather than a person.
  *
  * `multi_actor` toggles in place and keeps the popover open (mirroring
  * multi_select); `actor` commits and closes.
@@ -117,7 +117,7 @@ export function ActorPropertyPicker({
       {emptyRow}
 
       {filteredMembers.length > 0 && (
-        <PickerSection label={t(($) => $.pickers.executor.members_group)}>
+        <PickerSection label={t(($) => $.pickers.assignee.members_group)}>
           {filteredMembers.map((m) => {
             const key = formatActorRef("member", m.user_id);
             const isSelected = selectedKeys.has(key);

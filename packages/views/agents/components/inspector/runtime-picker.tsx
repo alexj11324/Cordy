@@ -9,8 +9,8 @@ import {
   Lock,
   Monitor,
 } from "lucide-react";
-import { isRuntimeUsableForUser } from "@patchbay/core/runtimes";
-import type { AgentRuntime, MemberWithUser } from "@patchbay/core/types";
+import { isRuntimeUsableForUser } from "@multica/core/runtimes";
+import type { AgentRuntime, MemberWithUser } from "@multica/core/types";
 import { ActorAvatar } from "../../../common/actor-avatar";
 import {
   PickerItem,
@@ -22,7 +22,7 @@ import {
   runtimeRowLabel,
   type RuntimeMachine,
 } from "../../../runtimes/components/runtime-machines";
-import { Label } from "@patchbay/ui/components/ui/label";
+import { Label } from "@multica/ui/components/ui/label";
 import { CHIP_CLASS } from "./chip";
 import { useT } from "../../../i18n";
 
@@ -34,7 +34,7 @@ const MACHINE_PROVIDER_PREVIEW = 4;
 /**
  * Two-level runtime picker for the agent settings form. A machine-level
  * rename stamps the same custom name on every runtime of a daemon
- * (PB-4217), so the previous flat list rendered N indistinguishable
+ * (MUL-4217), so the previous flat list rendered N indistinguishable
  * "Jiayuan's MacBook Pro" rows. Level 1 lists machines; drilling in lists
  * that machine's runtimes labelled by what actually differs — the runtime
  * itself. Opening lands inside the selected runtime's machine so the common
@@ -72,7 +72,7 @@ export function RuntimePicker({
 
   // Same predicate the create / duplicate / builder surfaces use, so a
   // runtime this picker locks is exactly the one the API and CLI refuse
-  // (PB-6126) — no workspace-role exception on either side.
+  // (MUL-6126) — no workspace-role exception on either side.
   const isDisabled = (r: AgentRuntime): boolean =>
     !isRuntimeUsableForUser(r, currentUserId);
 

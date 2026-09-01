@@ -11,7 +11,7 @@ import type { AccessScope } from "../effective-access";
 
 // View preferences for the agents list page: scope, sort, column visibility,
 // and filters. Persisted per workspace, per user/device. Row selection is
-// session-scoped on purpose (same rationale as the skills/automations view
+// session-scoped on purpose (same rationale as the skills/autopilots view
 // stores).
 
 // Scope mixes the ownership lens (mine/all) with the archived lifecycle
@@ -52,7 +52,7 @@ export interface AgentListFilters {
   owners: string[];
   /** Runtime-native model identifiers (e.g. claude / codex / gpt-…). */
   models: string[];
-  /** Effective access-scope values (PB-3963): workspace | specific-people | owner-only. */
+  /** Effective access-scope values (MUL-3963): workspace | specific-people | owner-only. */
   access: AccessScope[];
 }
 
@@ -162,7 +162,7 @@ export const useAgentsViewStore = create<AgentsViewState>()(
       clearFilters: () => set({ filters: EMPTY_AGENT_FILTERS }),
     }),
     {
-      name: "patchbay_agents_view",
+      name: "multica_agents_view",
       storage: createJSONStorage(() =>
         createWorkspaceAwareStorage(defaultStorage),
       ),

@@ -13,14 +13,14 @@ import {
   PencilLine,
   Trash2,
 } from "lucide-react";
-import { Input } from "@patchbay/ui/components/ui/input";
+import { Input } from "@multica/ui/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@multica/ui/components/ui/dropdown-menu";
+import { cn } from "@multica/ui/lib/utils";
 import { useT } from "../../i18n";
 
 /**
@@ -240,7 +240,7 @@ function TreeNodeItem({
                 // whole row and — being absolutely positioned, hence painted
                 // above the in-flow name button — swallowed every click on the
                 // file name. Selecting a supporting file opened this menu
-                // instead (PB-5654). opacity-0 does not opt out of hit
+                // instead (MUL-5654). opacity-0 does not opt out of hit
                 // testing, so the row was unclickable even before hover.
                 className="relative mr-1 shrink-0 rounded p-0.5 text-faint-foreground opacity-0 transition-opacity after:absolute after:-inset-1 hover:text-foreground group-hover/row:opacity-100 focus-visible:opacity-100 aria-expanded:opacity-100"
                 onClick={(event) => event.stopPropagation()}

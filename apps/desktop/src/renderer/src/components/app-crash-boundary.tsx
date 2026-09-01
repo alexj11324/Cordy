@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
-import { ErrorBoundary } from "@patchbay/ui/components/common/error-boundary";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { captureException } from "@patchbay/core/analytics";
-import { DragStrip } from "@patchbay/views/platform";
+import { ErrorBoundary } from "@multica/ui/components/common/error-boundary";
+import { Button } from "@multica/ui/components/ui/button";
+import { captureException } from "@multica/core/analytics";
+import { DragStrip } from "@multica/views/platform";
 
 /**
  * Last-resort boundary around the entire desktop renderer.
@@ -13,7 +13,7 @@ import { DragStrip } from "@patchbay/views/platform";
  * window overlay are siblings of the router, outside its reach. A render-time
  * throw in any of them unmounted the whole React tree and left an empty,
  * unresponsive window with no way back except force-quitting the app. That is
- * exactly what #7021 reported after deleting the last workspace (PB-6231).
+ * exactly what #7021 reported after deleting the last workspace (MUL-6231).
  *
  * The specific throw behind that report is fixed at its source, but "one
  * component throws" must not stay a whole-app kill switch on desktop, where
@@ -47,9 +47,10 @@ export function AppCrashBoundary({ children }: { children: ReactNode }) {
 
 /**
  * Full-window view outside the dashboard shell, so it owes the same window
- * chrome every other one does: a native-only `<DragStrip />` overlay, or the
+ * chrome every other one does: `<DragStrip />` as the first flex child, or the
  * user loses the draggable top edge exactly when the app is least usable. The
- * Reload button sits inside the centred region, well clear of the top 48px.
+ * Reload button sits inside the centred `flex-1` region, well clear of the top
+ * 48px, so it needs no `WebkitAppRegion: "no-drag"` opt-out.
  *
  * Everything rendered here has to be safe under a broken tree: an error thrown
  * while rendering a fallback is NOT caught by its own boundary and would blank
@@ -67,7 +68,7 @@ function CrashFallback({ error }: { error: Error }) {
         <div className="max-w-xl rounded-lg border bg-card p-6 shadow-sm">
           <h1 className="text-title font-semibold">Something went wrong</h1>
           <p className="mt-3 text-body text-muted-foreground">
-            Patchbay Desktop hit an unexpected error and could not keep
+            Multica Desktop hit an unexpected error and could not keep
             rendering. Reloading usually recovers — your work is stored on the
             server.
           </p>

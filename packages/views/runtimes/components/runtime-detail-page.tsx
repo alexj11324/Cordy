@@ -3,19 +3,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, Cloud, Monitor, Pencil, Plus, Server } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { agentTaskSnapshotOptions } from "@patchbay/core/agents";
-import { runtimeProfileListOptions } from "@patchbay/core/runtimes";
-import { runtimeKeys, runtimeListOptions } from "@patchbay/core/runtimes/queries";
-import { useWSEvent } from "@patchbay/core/realtime";
+import { useAuthStore } from "@multica/core/auth";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { useWorkspacePaths } from "@multica/core/paths";
+import { agentTaskSnapshotOptions } from "@multica/core/agents";
+import { runtimeProfileListOptions } from "@multica/core/runtimes";
+import { runtimeKeys, runtimeListOptions } from "@multica/core/runtimes/queries";
+import { useWSEvent } from "@multica/core/realtime";
 import {
   agentListOptions,
   memberListOptions,
-} from "@patchbay/core/workspace/queries";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+} from "@multica/core/workspace/queries";
+import { Button } from "@multica/ui/components/ui/button";
+import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { AppLink } from "../../navigation";
 import { buildWorkloadIndex, RuntimeList } from "./runtime-list";
 import {
@@ -264,7 +264,7 @@ export function RuntimeDetailPage({
                   <MachineCliSection
                     machine={machine}
                     currentUserId={currentUserId}
-                    canManageAnyRuntime={isAdmin}
+                    canManagePublicRuntimes={isAdmin}
                   />
                   {machine.lastSeenAt && (
                     <span>{timeAgo(machine.lastSeenAt)}</span>

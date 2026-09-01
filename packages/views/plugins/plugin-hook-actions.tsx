@@ -4,11 +4,11 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2, Plug } from "lucide-react";
 import { toast } from "sonner";
-import { useFeatureEnabled } from "@patchbay/core/config";
-import { PLUGINS_V1_FLAG } from "@patchbay/core/feature-flags";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { pluginInstallationsOptions, useInvokePluginHook } from "@patchbay/core/plugins";
-import type { PluginHook, PluginInstallation } from "@patchbay/core/types";
+import { useFeatureEnabled } from "@multica/core/config";
+import { PLUGINS_V1_FLAG } from "@multica/core/feature-flags";
+import { useCurrentWorkspace } from "@multica/core/paths";
+import { pluginInstallationsOptions, useInvokePluginHook } from "@multica/core/plugins";
+import type { PluginHook, PluginInstallation } from "@multica/core/types";
 import { useT } from "../i18n";
 
 /**

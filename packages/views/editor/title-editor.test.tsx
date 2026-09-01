@@ -39,7 +39,7 @@ vi.mock("@tiptap/react", () => ({
   EditorContent: () => <div data-testid="editor-content" />,
 }));
 
-import { createShortcutChord } from "@patchbay/core/shortcuts";
+import { createShortcutChord } from "@multica/core/shortcuts";
 import { TitleEditor, titleShortcutSubmitAllowed } from "./title-editor";
 
 describe("TitleEditor", () => {
@@ -138,7 +138,7 @@ describe("TitleEditor", () => {
   });
 });
 
-// PB-4931 — which `send` bindings the title's shortcut-submit path honors.
+// MUL-4931 — which `send` bindings the title's shortcut-submit path honors.
 describe("titleShortcutSubmitAllowed", () => {
   it("allows the default Mod+Enter chord", () => {
     expect(

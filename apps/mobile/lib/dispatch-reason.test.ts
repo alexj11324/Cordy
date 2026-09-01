@@ -32,7 +32,7 @@ describe("dispatchReasonCode", () => {
 
 describe("sendFailureMessage", () => {
   // The point of the helper: a revoked permission must not read as a transient
-  // failure the user should retry (PB-6380).
+  // failure the user should retry (MUL-6380).
   it("names revoked permission instead of suggesting a retry", () => {
     const message = sendFailureMessage(
       apiError({ reason_code: "invocation_not_allowed" }),

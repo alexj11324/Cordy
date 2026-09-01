@@ -1,13 +1,13 @@
 import type { IssueStatusCategory } from "./issue";
 
 /**
- * A workspace's issue status catalog (PB-6243).
+ * A workspace's issue status catalog (MUL-6243).
  *
  * The 7 categories map one-to-one onto the 7 built-in statuses: a category's
  * value IS its canonical status key. A custom status names a category and
  * inherits that canonical status's platform behavior in full — a custom status
  * in the `todo` category starts an agent exactly like Todo does, one in the
- * `in_review` category finalizes an automation run exactly like In Review does.
+ * `in_review` category finalizes an autopilot run exactly like In Review does.
  *
  * That is why there is no separate "behavior" field here: the category is the
  * behavior.
@@ -16,7 +16,7 @@ import type { IssueStatusCategory } from "./issue";
 // IssueStatusCategory is defined in ./issue, next to IssueStatus, because the
 // two only make sense read together: a category is one of the 7 built-in keys,
 // and a status key is a category or a workspace's custom key. Re-exported here
-// so catalog consumers can import both from one place. (PB-6243)
+// so catalog consumers can import both from one place. (MUL-6243)
 export type { IssueStatusCategory } from "./issue";
 
 export interface IssueStatusEntry {
@@ -24,7 +24,7 @@ export interface IssueStatusEntry {
   workspace_id: string;
   /**
    * Stable machine handle, immutable after creation. This is the value stored
-   * in `issue.status`, accepted by `patchbay issue status`, and referenced in
+   * in `issue.status`, accepted by `multica issue status`, and referenced in
    * agent instructions — so it does NOT track renames of `name`.
    */
   key: string;

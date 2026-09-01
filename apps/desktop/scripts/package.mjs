@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 // Wrapper around `electron-builder` that keeps the Desktop version in
 // lockstep with the CLI. Both are derived from `git describe --tags
-// --match 'v[0-9]*' --always --dirty` — the same source the Rust CLI release
-// workflow uses for its asset version — so a single `vX.Y.Z` tag push produces
-// matching CLI and Desktop versions.
+// --match 'v[0-9]*' --always --dirty` — the same source GoReleaser reads
+// for the CLI
+// binary via the `main.version` ldflag — so a single `vX.Y.Z` tag push
+// produces matching CLI and Desktop versions.
 //
 // Builds the Electron bundles once, then for each requested target
-// (platform + arch) compiles the matching Rust CLI into resources/bin/ and
+// (platform + arch) compiles the matching Go CLI into resources/bin/ and
 // invokes electron-builder with `-c.extraMetadata.version=<derived>` so
 // the override applies at build time without mutating the tracked
 // package.json.
@@ -26,18 +27,9 @@
 // real `git describe` invocation against a throwaway repo.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
-import {
-  chmodSync,
-  copyFileSync,
-  mkdirSync,
-  readFileSync,
-  rmSync,
-} from "node:fs";
-import { basename, delimiter, dirname, join, resolve } from "node:path";
+import { rmSync } from "node:fs";
+import { delimiter, dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-
-import { rustTargetFor } from "./bundle-cli.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktopRoot = resolve(here, "..");
@@ -73,6 +65,15 @@ const ARCH_FLAGS = new Map([
 ]);
 
 const SUPPORTED_CLI_ARCHS = new Set(["x64", "arm64"]);
+const MAC_ALL_PLATFORM_TARGETS = [
+  { platform: "mac", arch: "arm64" },
+  { platform: "mac", arch: "x64" },
+  { platform: "win", arch: "x64" },
+  { platform: "win", arch: "arm64" },
+  { platform: "linux", arch: "x64" },
+  { platform: "linux", arch: "arm64" },
+];
+
 // Run a git subcommand with its arguments handed straight to the binary,
 // never through a shell. A match pattern like `v[0-9]*` must reach git as a
 // single literal argument on every platform. Passing the whole command as a
@@ -170,7 +171,9 @@ export function envWithLocalBins(env = process.env, root = desktopRoot) {
   ]);
   const mergedPath = uniqueOrdered([
     ...localBins,
-    ...String(existingPath).split(delimiter).filter(Boolean),
+    ...String(existingPath)
+      .split(delimiter)
+      .filter(Boolean),
   ]).join(delimiter);
   return { ...env, [pathKey]: mergedPath };
 }
@@ -259,47 +262,35 @@ export function parsePackageArgs(argv) {
   };
 }
 
-export function resolveBuildMatrix(
-  parsed,
-  platform = process.platform,
-  arch = process.arch,
-) {
+export function resolveBuildMatrix(parsed, platform = process.platform, arch = process.arch) {
   if (parsed.allPlatforms) {
-    if (
-      parsed.requestedPlatforms.length > 0 ||
-      parsed.requestedArchs.length > 0
-    ) {
+    if (parsed.requestedPlatforms.length > 0 || parsed.requestedArchs.length > 0) {
       throw new Error(
         "[package] --all-platforms cannot be combined with explicit platform or arch flags",
       );
     }
-    throw new Error(
-      "[package] --all-platforms cannot build Rust CLIs across operating systems. " +
-        "Package each target on its native CI runner (Linux, Windows, or macOS).",
-    );
+    if (platform !== "darwin") {
+      throw new Error(
+        `[package] --all-platforms is only supported on macOS hosts (current: ${platform})`,
+      );
+    }
+    return MAC_ALL_PLATFORM_TARGETS.map((target) => ({ ...target }));
   }
 
-  const hostPlatform = hostPlatformKey(platform);
   const platforms =
     parsed.requestedPlatforms.length > 0
       ? parsed.requestedPlatforms
-      : [hostPlatform];
+      : [hostPlatformKey(platform)];
   const archs =
     parsed.requestedArchs.length > 0
       ? parsed.requestedArchs
       : [hostArchKey(arch)];
+
   const unsupported = archs.filter((value) => !SUPPORTED_CLI_ARCHS.has(value));
   if (unsupported.length > 0) {
     throw new Error(
       `[package] unsupported Desktop CLI architecture(s): ${unsupported.join(", ")}. ` +
         "Use --x64 or --arm64.",
-    );
-  }
-  const crossPlatforms = platforms.filter((target) => target !== hostPlatform);
-  if (crossPlatforms.length > 0) {
-    throw new Error(
-      `[package] cannot build Rust CLI for ${crossPlatforms.join(", ")} on ${hostPlatform}. ` +
-        "Package each operating system on its native CI runner.",
     );
   }
 
@@ -365,67 +356,6 @@ export function builderArgsForTarget(
     builderArgs.push("-c.publish.channel=latest-x64");
   }
   return builderArgs;
-}
-
-export function bundleCliArgsForTarget(target) {
-  return [
-    bundleCliScript,
-    "--profile",
-    "release",
-    "--target-platform",
-    PLATFORM_CONFIG[target.platform].runtimePlatform,
-    "--target-arch",
-    target.arch,
-  ];
-}
-
-function sha256File(path) {
-  return createHash("sha256").update(readFileSync(path)).digest("hex");
-}
-
-export function installPrebuiltCliForTarget(
-  target,
-  artifactDir,
-  {
-    desktopDirectory = desktopRoot,
-    expectedCommit = git(["rev-parse", "HEAD"], desktopRoot),
-  } = {},
-) {
-  const manifestPath = join(artifactDir, "manifest.json");
-  const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  const expectedPlatform = PLATFORM_CONFIG[target.platform].runtimePlatform;
-  const expectedRustTarget = rustTargetFor(expectedPlatform, target.arch);
-  const expectedBinaryName =
-    expectedPlatform === "win32" ? "patchbay.exe" : "patchbay";
-  if (
-    manifest.schemaVersion !== 1 ||
-    manifest.commit !== expectedCommit ||
-    manifest.rustTarget !== expectedRustTarget ||
-    manifest.runtimePlatform !== expectedPlatform ||
-    manifest.runtimeArch !== target.arch ||
-    manifest.binaryName !== expectedBinaryName
-  ) {
-    throw new Error(
-      `[package] prebuilt CLI manifest does not match commit/target ${expectedCommit} ${expectedPlatform}/${target.arch}`,
-    );
-  }
-
-  const sourceBinary = join(artifactDir, manifest.binaryName);
-  if (sha256File(sourceBinary) !== manifest.sha256) {
-    throw new Error("[package] prebuilt CLI checksum mismatch");
-  }
-
-  const destinationDir = join(desktopDirectory, "resources", "bin");
-  const destinationBinary = join(destinationDir, expectedBinaryName);
-  rmSync(destinationDir, { recursive: true, force: true });
-  mkdirSync(destinationDir, { recursive: true });
-  copyFileSync(sourceBinary, destinationBinary);
-  copyFileSync(manifestPath, join(destinationDir, "release-cli-manifest.json"));
-  if (expectedPlatform !== "win32") chmodSync(destinationBinary, 0o755);
-  console.log(
-    `[package] staged exact-commit CLI artifact ${basename(artifactDir)} → ${destinationBinary}`,
-  );
-  return destinationBinary;
 }
 
 function main() {
@@ -501,16 +431,21 @@ function main() {
   // Step 3: for each requested target, build the matching CLI into
   // resources/bin/ and package that target in isolation.
   for (const target of buildMatrix) {
-    const prebuiltCliDir = process.env.PATCHBAY_PREBUILT_CLI_DIR;
-    if (prebuiltCliDir) {
-      installPrebuiltCliForTarget(target, resolve(prebuiltCliDir));
-    } else {
-      console.log(`[package] bundling CLI → ${formatTarget(target)}`);
-      execFileSync("node", bundleCliArgsForTarget(target), {
+    console.log(`[package] bundling CLI → ${formatTarget(target)}`);
+    execFileSync(
+      "node",
+      [
+        bundleCliScript,
+        "--target-platform",
+        PLATFORM_CONFIG[target.platform].runtimePlatform,
+        "--target-arch",
+        target.arch,
+      ],
+      {
         stdio: "inherit",
         cwd: desktopRoot,
-      });
-    }
+      },
+    );
 
     const builderArgs = builderArgsForTarget(target, parsed, version, {
       disableMacNotarize,

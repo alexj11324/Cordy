@@ -2,16 +2,16 @@
 
 import { useState } from "react";
 import { ChevronRight, MessageSquare } from "lucide-react";
-import { decodeBuilderInput, stripBuilderDraft } from "@patchbay/core/agents";
-import type { AgentBuilderSessionSummary } from "@patchbay/core/types";
+import { decodeBuilderInput, stripBuilderDraft } from "@multica/core/agents";
+import type { AgentBuilderSessionSummary } from "@multica/core/types";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@multica/ui/components/ui/dialog";
+import { cn } from "@multica/ui/lib/utils";
 import { useT, useTimeAgo } from "../../i18n";
 
 /**

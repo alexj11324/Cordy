@@ -105,7 +105,7 @@ describe("issue surface view store registry", () => {
       "title",
       "status",
       "priority",
-      "executor",
+      "assignee",
       "due_date",
       "labels",
       "property:estimate",

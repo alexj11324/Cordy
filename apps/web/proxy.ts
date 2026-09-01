@@ -1,35 +1,11 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { NextResponse, type NextRequest } from "next/server";
+import { LOCALE_COOKIE } from "@multica/core/i18n";
 import {
-  NextResponse,
-  type NextFetchEvent,
-  type NextRequest,
-} from "next/server";
-import { LOCALE_COOKIE } from "@patchbay/core/i18n";
-import {
-  PATCHBAY_LOCALE_HEADER,
+  MULTICA_LOCALE_HEADER,
   resolveLocaleFromSignals,
 } from "./lib/locale-routing";
 import { runtimeRewriteDestination } from "./config/runtime-urls";
 import { isOfficialMarketingHost } from "./lib/public-host";
-
-// Clerk public routes — no authentication required
-const clerkPublicRoutes = createRouteMatcher([
-  "/",
-  "/login(.*)",
-  "/signup(.*)",
-  "/sign-in(.*)",
-  "/sign-up(.*)",
-  "/sso-callback(.*)",
-  "/oauth/google(.*)",
-  "/auth/callback",
-  "/api/webhooks(.*)",
-  "/api/config",
-  "/api/health",
-  "/pricing",
-  "/docs(.*)",
-  "/legal(.*)",
-  "/changelog",
-]);
 
 // Old workspace-scoped route segments that existed before the URL refactor
 // (pre-#1131). Any URL with these as the FIRST segment is a legacy URL that
@@ -39,10 +15,10 @@ const LEGACY_ROUTE_SEGMENTS = new Set([
   "issues",
   "projects",
   "agents",
-  "teams",
+  "squads",
   "inbox",
   "my-issues",
-  "automations",
+  "autopilots",
   "runtimes",
   "skills",
   "settings",
@@ -56,19 +32,22 @@ function resolveLocale(req: NextRequest): string {
   });
 }
 
-// Forward the resolved locale to RSC layouts via the `x-patchbay-locale`
+// Forward the resolved locale to RSC layouts via the `x-multica-locale`
 // request header. layout.tsx reads it through `await headers()`. The
 // `request: { headers }` form is what makes the header land on the upstream
 // request — without it the value would only sit on the response.
 function nextWithLocale(req: NextRequest): NextResponse {
   const headers = new Headers(req.headers);
-  headers.set(PATCHBAY_LOCALE_HEADER, resolveLocale(req));
+  headers.set(MULTICA_LOCALE_HEADER, resolveLocale(req));
   return NextResponse.next({ request: { headers } });
 }
 
-function runtimeRewrite(req: NextRequest): NextResponse | null {
+// Next.js 16 renamed `middleware` → `proxy`. API surface (NextRequest /
+// NextResponse / cookies / matcher) is identical; the only behavioral
+// change is the runtime — proxy is forced to nodejs and cannot opt into
+// edge.
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
-
   const runtimeDestination = runtimeRewriteDestination(pathname, process.env);
   if (runtimeDestination) {
     const url = new URL(runtimeDestination);
@@ -76,30 +55,7 @@ function runtimeRewrite(req: NextRequest): NextResponse | null {
     return NextResponse.rewrite(url);
   }
 
-  return null;
-}
-
-// Next.js 16 renamed `middleware` → `proxy`. API surface (NextRequest /
-// NextResponse / cookies / matcher) is identical; the only behavioral
-// change is the runtime — proxy is forced to nodejs and cannot opt into
-// edge.
-const clerkProxy = clerkMiddleware(async (auth, req) => {
-  const { pathname } = req.nextUrl;
-
-  if (!clerkPublicRoutes(req)) {
-    const { userId } = await auth();
-    if (!userId) {
-      const loginUrl = req.nextUrl.clone();
-      loginUrl.pathname = "/login";
-      loginUrl.search = "";
-      loginUrl.searchParams.set("redirect_url", `${pathname}${req.nextUrl.search}`);
-      return NextResponse.redirect(loginUrl);
-    }
-  }
-
-  const hasSession =
-    req.cookies.has("patchbay_logged_in") ||
-    req.cookies.has("cordy_logged_in"); // legacy-brand-compat
+  const hasSession = req.cookies.has("multica_logged_in");
   const lastSlug = req.cookies.get("last_workspace_slug")?.value;
 
   // --- Legacy URL redirect: /issues/... → /{slug}/issues/... ---
@@ -136,7 +92,7 @@ const clerkProxy = clerkMiddleware(async (auth, req) => {
 
   // --- Root path: redirect logged-in users to their last workspace ---
   // The official cloud host also serves the public marketing site. Visiting
-  // https://patchbay.aspectlylabs.com/ must remain a public-site navigation even when a local
+  // https://multica.ai/ must remain a public-site navigation even when a local
   // desktop/runtime session has fresh auth cookies; explicit app routes such
   // as /acme/issues and legacy /issues still route to the workspace app.
   if (
@@ -153,19 +109,6 @@ const clerkProxy = clerkMiddleware(async (auth, req) => {
   // --- Default: forward locale header to RSC, no redirect/rewrite ---
   // Covers logged-out root path, /login, /:slug/*, and everything else.
   return nextWithLocale(req);
-});
-
-export function proxy(
-  req: NextRequest,
-  event?: NextFetchEvent,
-): ReturnType<typeof clerkProxy> {
-  const rewrite = runtimeRewrite(req);
-  if (rewrite) return rewrite;
-
-  return clerkProxy(
-    req,
-    event ?? ({ waitUntil: () => undefined } as unknown as NextFetchEvent),
-  );
 }
 
 export const config = {
@@ -174,11 +117,12 @@ export const config = {
   // proxy routes whose upstream origins are resolved from process.env at
   // request time instead of being baked into next.config.js at build time.
   matcher: [
+    "/v1/:path*",
     "/api/:path*",
     "/auth/:path*",
     "/uploads/:path*",
     "/docs/:path*",
     "/ws",
-    "/((?!api|_next/static|_next/image|favicon.ico|.*\\.).*)",
+    "/((?!api|v1|_next/static|_next/image|favicon.ico|.*\\.).*)",
   ],
 };

@@ -1,5 +1,5 @@
 /**
- * PB-5208 — a link that points back at this deployment is an in-app
+ * MUL-5208 — a link that points back at this deployment is an in-app
  * destination, not an external one.
  *
  * Chat and comments render agent-written content full of absolute URLs. When one
@@ -21,8 +21,8 @@ vi.mock("../issues/hooks", () => ({
 
 // Only the workspace hooks are stubbed — the real path helpers stay in place so
 // the reserved-slug rule that decides in-app vs external is the shipped one.
-vi.mock("@patchbay/core/paths", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("@patchbay/core/paths")>()),
+vi.mock("@multica/core/paths", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@multica/core/paths")>()),
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/test/issues/${id}`,
     projectDetail: (id: string) => `/test/projects/${id}`,
@@ -56,12 +56,12 @@ let openSpy: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
   navigatedPaths = [];
-  window.addEventListener("patchbay:navigate", captureNavigate);
+  window.addEventListener("multica:navigate", captureNavigate);
   openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
 });
 
 afterEach(() => {
-  window.removeEventListener("patchbay:navigate", captureNavigate);
+  window.removeEventListener("multica:navigate", captureNavigate);
   vi.restoreAllMocks();
 });
 
@@ -83,16 +83,16 @@ function renderContent(content: string) {
 
 describe("RichContent link routing", () => {
   it("routes a link to this deployment into the app instead of the browser", () => {
-    renderContent(`[PB-1](${APP_ORIGIN}/acme/issues/PB-1)`);
+    renderContent(`[MUL-1](${APP_ORIGIN}/acme/issues/MUL-1)`);
 
-    screen.getByText("PB-1").click();
+    screen.getByText("MUL-1").click();
 
-    expect(navigatedPaths).toEqual(["/acme/issues/PB-1"]);
+    expect(navigatedPaths).toEqual(["/acme/issues/MUL-1"]);
     expect(openSpy).not.toHaveBeenCalled();
   });
 
   it("still hands a genuinely external link to the browser", () => {
-    const external = "https://github.com/alexj11324/Cordy/pull/1";
+    const external = "https://github.com/multica-ai/multica/pull/1";
     renderContent(`[#1](${external})`);
 
     screen.getByText("#1").click();

@@ -5,8 +5,8 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import type {
   AgentInvocationTarget,
   MemberWithUser,
-} from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+} from "@multica/core/types";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
 import enIssues from "../../../locales/en/issues.json";
@@ -48,7 +48,7 @@ function renderPicker(
   return { ...utils, onChange };
 }
 
-describe("AccessPicker owner-only editing (PB-3963)", () => {
+describe("AccessPicker owner-only editing (MUL-3963)", () => {
   beforeEach(() => cleanup());
   afterEach(() => cleanup());
 

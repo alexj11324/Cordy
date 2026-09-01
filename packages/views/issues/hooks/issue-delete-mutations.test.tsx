@@ -5,13 +5,13 @@ import {
   QueryClientProvider,
   QueryObserver,
 } from "@tanstack/react-query";
-import { setApiInstance } from "@patchbay/core/api";
-import { agentTaskSnapshotKeys, agentTasksKeys } from "@patchbay/core/agents/queries";
-import { useBatchDeleteIssues, useDeleteIssue } from "@patchbay/core/issues/mutations";
-import { issueKeys } from "@patchbay/core/issues/queries";
-import { labelKeys } from "@patchbay/core/labels/queries";
-import { WorkspaceSlugProvider } from "@patchbay/core/paths";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
+import { setApiInstance } from "@multica/core/api";
+import { agentTaskSnapshotKeys, agentTasksKeys } from "@multica/core/agents/queries";
+import { useBatchDeleteIssues, useDeleteIssue } from "@multica/core/issues/mutations";
+import { issueKeys } from "@multica/core/issues/queries";
+import { labelKeys } from "@multica/core/labels/queries";
+import { WorkspaceSlugProvider } from "@multica/core/paths";
+import { workspaceKeys } from "@multica/core/workspace/queries";
 import type {
   AgentTask,
   Attachment,
@@ -22,7 +22,7 @@ import type {
   ListIssuesCache,
   TimelineEntry,
   Workspace,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 
 const WS_ID = "ws-1";
 const SLUG = "test";
@@ -54,12 +54,8 @@ const baseIssue: Issue = {
   description: null,
   status: "todo",
   priority: "none",
-  owner_type: null,
-  owner_id: null,
-  executor_type: null,
-  executor_id: null,
-  reviewer_type: null,
-  reviewer_id: null,
+  assignee_type: null,
+  assignee_id: null,
   creator_type: "member",
   creator_id: "member-1",
   parent_issue_id: PARENT_ISSUE_ID,
@@ -210,7 +206,7 @@ describe("useDeleteIssue", () => {
 
   it("cleans list, my-list, issue-scoped, and dependent agent caches after a successful single delete", async () => {
     const { qc, deleteIssue, wrapper } = setup();
-    const assignedFilter = { executor_id: AGENT_ID };
+    const assignedFilter = { assignee_id: AGENT_ID };
     const createdFilter = { creator_id: "member-1" };
     qc.setQueryData<ListIssuesCache>(
       issueKeys.list(WS_ID),
@@ -325,7 +321,7 @@ describe("useDeleteIssue", () => {
   it("restores optimistic snapshots when a single delete fails", async () => {
     const error = new Error("delete failed");
     const { qc, wrapper } = setup(vi.fn().mockRejectedValue(error));
-    const assignedFilter = { executor_id: AGENT_ID };
+    const assignedFilter = { assignee_id: AGENT_ID };
     const list = makeListCache(baseIssue, otherIssue);
     const myList = makeListCache(baseIssue);
     const children = [baseIssue, otherIssue];
@@ -371,7 +367,7 @@ describe("useBatchDeleteIssues", () => {
   it("cleans list, my-list, issue-scoped, parent, and dependent agent caches after a fully successful batch delete", async () => {
     const batchDeleteIssues = vi.fn().mockResolvedValue({ deleted: 2 });
     const { qc, wrapper } = setup(undefined, batchDeleteIssues);
-    const assignedFilter = { executor_id: AGENT_ID };
+    const assignedFilter = { assignee_id: AGENT_ID };
     const createdFilter = { creator_id: "member-1" };
     const idsToDelete = [ISSUE_ID, OTHER_ISSUE_ID];
     const childIssue = { ...otherIssue, parent_issue_id: PARENT_ISSUE_ID };
@@ -469,7 +465,7 @@ describe("useBatchDeleteIssues", () => {
   it("restores optimistic list snapshots on partial batch delete before invalidating caches", async () => {
     const batchDeleteIssues = vi.fn().mockResolvedValue({ deleted: 1 });
     const { qc, wrapper } = setup(undefined, batchDeleteIssues);
-    const assignedFilter = { executor_id: AGENT_ID };
+    const assignedFilter = { assignee_id: AGENT_ID };
     const createdFilter = { creator_id: "member-1" };
     const idsToDelete = [ISSUE_ID, OTHER_ISSUE_ID];
     const childIssue = { ...otherIssue, parent_issue_id: PARENT_ISSUE_ID };
@@ -596,7 +592,7 @@ describe("useBatchDeleteIssues", () => {
   it("restores optimistic workspace, my-list, and parent children snapshots when a batch delete fails", async () => {
     const pendingDelete = deferred<{ deleted: number }>();
     const { qc, wrapper } = setup(undefined, vi.fn(() => pendingDelete.promise));
-    const assignedFilter = { executor_id: AGENT_ID };
+    const assignedFilter = { assignee_id: AGENT_ID };
     const createdFilter = { creator_id: "member-1" };
     const list = makeListCache(baseIssue, otherIssue);
     const assignedMyList = makeListCache(baseIssue, otherIssue);

@@ -1,16 +1,16 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentTask } from "@patchbay/core/types";
+import type { AgentTask } from "@multica/core/types";
 
 const mockState = vi.hoisted(() => ({
   snapshot: [] as unknown[],
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@patchbay/core/agents", () => ({
+vi.mock("@multica/core/agents", () => ({
   agentTaskSnapshotOptions: (wsId: string) => ({
     queryKey: ["agents", "task-snapshot", wsId],
   }),
@@ -33,7 +33,7 @@ vi.mock("../../i18n", () => ({
 // The hover card only portals its content once open, so absence of the body
 // cannot distinguish "closed" from "not wired up". Mock the primitive instead
 // and assert on the wrapper itself.
-vi.mock("@patchbay/ui/components/ui/hover-card", () => ({
+vi.mock("@multica/ui/components/ui/hover-card", () => ({
   HoverCard: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="hover-card">{children}</div>
   ),
@@ -131,31 +131,6 @@ describe("IssueAgentActivityIndicator", () => {
     // The cue itself survives — only the popup behind it is dropped.
     expect(screen.getByTestId("agent-avatar-stack")).not.toBeNull();
     expect(screen.getByText("Working")).not.toBeNull();
-  });
-
-  it("marks running and queued activity for card-level visuals", () => {
-    const { container, rerender } = render(
-      <IssueAgentActivityIndicator issueId="issue-1" hoverCard={false} />,
-    );
-
-    expect(container.firstElementChild).toHaveAttribute(
-      "data-issue-agent-activity",
-      "running",
-    );
-
-    mockState.snapshot = [makeTask({ status: "queued" })];
-    rerender(
-      <IssueAgentActivityIndicator
-        key="queued"
-        issueId="issue-1"
-        hoverCard={false}
-      />,
-    );
-
-    expect(container.firstElementChild).toHaveAttribute(
-      "data-issue-agent-activity",
-      "queued",
-    );
   });
 
   it("renders nothing when no agent is on the issue", () => {

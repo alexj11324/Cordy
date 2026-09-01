@@ -7,8 +7,8 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { useState, type ReactElement } from "react";
-import type { Attachment } from "@patchbay/core/types";
-import { collectImageSequence } from "@patchbay/core/attachments/image-sequence";
+import type { Attachment } from "@multica/core/types";
+import { collectImageSequence } from "@multica/core/attachments/image-sequence";
 
 const { downloadMock, getBaseUrlMock, toastErrorMock } = vi.hoisted(() => ({
   downloadMock: vi.fn(),
@@ -18,7 +18,7 @@ const { downloadMock, getBaseUrlMock, toastErrorMock } = vi.hoisted(() => ({
 
 vi.mock("../platform", () => ({ openExternal: vi.fn() }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: { getBaseUrl: getBaseUrlMock, getAttachmentTextContent: vi.fn() },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
@@ -35,6 +35,7 @@ vi.mock("../navigation", () => ({
     back: vi.fn(),
     pathname: "/acme/issues",
     searchParams: new URLSearchParams(),
+    hash: "",
     getShareableUrl: (p: string) => `https://app.example${p}`,
   }),
 }));

@@ -35,7 +35,7 @@ vi.mock("@tanstack/react-query", () => ({
   queryOptions: (options: unknown) => options,
 }));
 
-vi.mock("@patchbay/core/projects", () => ({
+vi.mock("@multica/core/projects", () => ({
   projectResourcesOptions: () => ({ queryKey: ["project-resources"], queryFn: vi.fn() }),
   useCreateProjectResource: () => ({ mutateAsync: vi.fn() }),
   useUpdateProjectResource: () => ({ mutateAsync: updateMock }),
@@ -44,17 +44,17 @@ vi.mock("@patchbay/core/projects", () => ({
 
 // A backend that predates the capability signal: the client must assume it
 // would silently drop execution_mode.
-vi.mock("@patchbay/core/config", () => ({
+vi.mock("@multica/core/config", () => ({
   useConfigStore: (selector: (state: { localWorktreeSupported: boolean }) => unknown) =>
     selector({ localWorktreeSupported: false }),
 }));
 
-vi.mock("@patchbay/core/runtimes", () => ({
+vi.mock("@multica/core/runtimes", () => ({
   runtimeListOptions: () => ({ queryKey: ["runtimes"], queryFn: vi.fn() }),
   runtimeAdvertisesLocalWorktree: () => true,
 }));
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
+vi.mock("@multica/core/paths", () => ({
   useCurrentWorkspace: () => ({ id: "workspace-1", slug: "ws", repos: [] }),
 }));
 vi.mock("../../platform/local-directory", () => ({

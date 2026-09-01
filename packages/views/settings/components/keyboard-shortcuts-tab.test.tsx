@@ -5,7 +5,7 @@ import {
   configureShortcutPlatform,
   getShortcut,
   useShortcutStore,
-} from "@patchbay/core/shortcuts";
+} from "@multica/core/shortcuts";
 import { renderWithI18n } from "../../test/i18n";
 import { KeyboardShortcutsTab } from "./keyboard-shortcuts-tab";
 
@@ -19,6 +19,23 @@ describe("KeyboardShortcutsTab", () => {
     cleanup();
     configureShortcutPlatform(null);
     useShortcutStore.getState().resetAll();
+  });
+
+  it("shows distinct left and right sidebar actions", () => {
+    renderWithI18n(<KeyboardShortcutsTab />);
+
+    expect(
+      screen.getByRole("button", {
+        name: "Change shortcut for Toggle left sidebar",
+      }),
+    ).toBeInTheDocument();
+    const rightSidebarRecorder = screen.getByRole("button", {
+      name: "Change shortcut for Toggle right sidebar",
+    });
+    expect(within(rightSidebarRecorder).getByTitle("Ctrl")).toHaveTextContent(
+      "Ctrl",
+    );
+    expect(within(rightSidebarRecorder).getByTitle("/")).toHaveTextContent("/");
   });
 
   it("records a shortcut and applies it immediately", () => {

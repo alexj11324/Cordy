@@ -3,10 +3,9 @@ import {
   NavigationProvider,
   type LinkClickIntent,
   type NavigationAdapter,
-} from "@patchbay/views/navigation";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useModalStore } from "@patchbay/core/modals";
-import { isReservedSlug } from "@patchbay/core/paths";
+} from "@multica/views/navigation";
+import { useAuthStore } from "@multica/core/auth";
+import { isReservedSlug } from "@multica/core/paths";
 import {
   useTabStore,
   getActiveTab,
@@ -14,7 +13,6 @@ import {
   useActiveTabUrl,
 } from "@/stores/tab-store";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
-import { isStandaloneSettingsPath } from "@/platform/standalone-settings";
 
 function requireRuntimeAppUrl(scope: string): string {
   const runtimeConfig = window.desktopAPI.runtimeConfig;
@@ -42,7 +40,7 @@ function extractWorkspaceSlug(path: string): string | null {
  * desktop are rendered as a window-level overlay instead of a tab route.
  * Returns `true` if the navigation was handled (caller should NOT proceed).
  *
- * PB-4741 note: the old adapter also parked the tab's router at "/" when
+ * MUL-4741 note: the old adapter also parked the tab's router at "/" when
  * opening these overlays. Under the session architecture the Coordinator
  * parks the single router automatically whenever `activeWorkspaceSlug` goes
  * null (the zero-workspace flows), and an overlay opened over a still-valid
@@ -50,23 +48,6 @@ function extractWorkspaceSlug(path: string): string | null {
  */
 function tryRouteToOverlay(path: string): boolean {
   const overlay = useWindowOverlayStore.getState();
-  if (isStandaloneSettingsPath(path)) {
-    const targetSlug = extractWorkspaceSlug(path);
-    const tabs = useTabStore.getState();
-    if (!targetSlug || !tabs.validWorkspaceSlugs?.has(targetSlug)) {
-      return false;
-    }
-    if (targetSlug && targetSlug !== tabs.activeWorkspaceSlug) {
-      tabs.switchWorkspace(targetSlug);
-    }
-    // ModalRegistry dialogs render through a portal attached to document.body,
-    // outside the desktop underlay that Settings makes inert. Dismiss any
-    // active dialog before taking over the window so it cannot remain above or
-    // trap focus behind the standalone page.
-    useModalStore.getState().close();
-    overlay.open({ type: "settings", path });
-    return true;
-  }
   if (path === "/workspaces/new") {
     overlay.open({ type: "new-workspace" });
     return true;
@@ -116,7 +97,7 @@ function tryRouteToOtherWorkspace(path: string): boolean {
 }
 
 /**
- * Execute a content link (the `patchbay:navigate` event fired by the shared
+ * Execute a content link (the `multica:navigate` event fired by the shared
  * editor/markdown link handler) with the disposition the click resolved to:
  * a plain click navigates in place — the same thing a plain click means on
  * every other internal link — and modifier clicks open a background or
@@ -131,7 +112,6 @@ export function routeContentLinkPath(
   path: string,
   disposition: LinkClickIntent = "push",
 ): void {
-  if (tryRouteToOverlay(path)) return;
   const store = useTabStore.getState();
   const slug = extractWorkspaceSlug(path);
   if (slug && slug !== store.activeWorkspaceSlug) {
@@ -182,7 +162,7 @@ function tryRouteToPinnedNewTab(path: string): boolean {
  * RouterProvider (there is no per-tab provider anymore; the active session's
  * URL is the location for everyone).
  *
- * PB-4741 invariant 1: none of these operations touch the router. They
+ * MUL-4741 invariant 1: none of these operations touch the router. They
  * mutate tab sessions in the store; the Coordinator reconciles the single
  * router to the active session URL with a navigation token.
  */
@@ -195,16 +175,14 @@ export function DesktopNavigationProvider({
   // The active session's url IS the location. Primitive subscription: this
   // only re-renders when the active url actually changes.
   const activeUrl = useActiveTabUrl();
-  const settingsPath = useWindowOverlayStore((state) =>
-    state.overlay?.type === "settings" ? state.overlay.path : null,
-  );
   const location = useMemo(() => {
-    const url = settingsPath ?? activeUrl ?? "/";
+    const url = activeUrl ?? "/";
     const { pathname, suffix } = splitTabUrl(url);
     const hashIdx = suffix.indexOf("#");
     const search = hashIdx === -1 ? suffix : suffix.slice(0, hashIdx);
-    return { pathname, search };
-  }, [activeUrl, settingsPath]);
+    const hash = hashIdx === -1 ? "" : suffix.slice(hashIdx);
+    return { pathname, search, hash };
+  }, [activeUrl]);
 
   const adapter: NavigationAdapter = useMemo(
     () => ({
@@ -227,38 +205,32 @@ export function DesktopNavigationProvider({
         useTabStore.getState().navigateActiveSession(path, { replace: true });
       },
       back: () => {
-        if (useWindowOverlayStore.getState().overlay?.type === "settings") {
-          useWindowOverlayStore.getState().close();
-          return;
-        }
         useTabStore.getState().goBack();
       },
       forward: () => {
-        if (useWindowOverlayStore.getState().overlay?.type === "settings") return;
         useTabStore.getState().goForward();
       },
       // The active tab's virtual history, same source the shell's back button
       // reads. A tab opened straight onto a destination sits at index 0 and
       // has nothing behind it.
       canGoBack: () => {
-        if (useWindowOverlayStore.getState().overlay?.type === "settings") {
-          return true;
-        }
         const active = getActiveTab(useTabStore.getState());
         return (active?.history.index ?? 0) > 0;
       },
       pathname: location.pathname,
       searchParams: new URLSearchParams(location.search),
+      // The tab's URL is the only place the fragment survives on desktop: the
+      // renderer's own `window.location` is the packaged file:// page.
+      hash: location.hash,
       openInNewTab: (
         path: string,
         title?: string,
         opts?: { activate?: boolean },
       ) => {
-        if (tryRouteToOverlay(path)) return;
         // Cross-workspace "open in new tab" switches workspace and opens
         // the path there (focus follows the user), REGARDLESS of
         // `opts.activate`. This is a deliberate product exception to the
-        // background-tab contract (decided with PB-5860): a background tab
+        // background-tab contract (decided with MUL-5860): a background tab
         // added to a non-visible workspace's group would give the user zero
         // feedback — "nothing happened" is worse than losing the background
         // semantics for the rare cross-workspace link. Same-workspace

@@ -10,33 +10,12 @@ describe("MainRendererMessageQueue", () => {
     const queue = new MainRendererMessageQueue();
     const send = vi.fn();
 
-    queue.enqueue("auth:handoff", { code: "code-a", state: "state-a" }, send);
+    queue.enqueue("auth:token", "token-a", send);
     queue.setReady("invite:open", true, send);
     expect(send).not.toHaveBeenCalled();
 
-    queue.setReady("auth:handoff", true, send);
-    expect(send).toHaveBeenCalledWith("auth:handoff", {
-      code: "code-a",
-      state: "state-a",
-    });
-  });
-
-  it("keeps an unacknowledged auth handoff across renderer recreation", () => {
-    const queue = new MainRendererMessageQueue();
-    const send = vi.fn();
-    const payload = { code: "code-a", state: "state-a" };
-
-    queue.enqueue("auth:handoff", payload, send);
-    queue.setReady("auth:handoff", true, send);
-    queue.resetReady();
-    queue.setReady("auth:handoff", true, send);
-
-    expect(send).toHaveBeenCalledTimes(2);
-    queue.acknowledge("auth:handoff", payload);
-    queue.resetReady();
-    queue.setReady("auth:handoff", true, send);
-
-    expect(send).toHaveBeenCalledTimes(2);
+    queue.setReady("auth:token", true, send);
+    expect(send).toHaveBeenCalledWith("auth:token", "token-a");
   });
 
   it("delivers immediately while a channel is ready", () => {
@@ -77,8 +56,8 @@ describe("MainRendererMessageQueue", () => {
 describe("parseMainRendererChannelState", () => {
   it("accepts only allowlisted channels with an explicit boolean", () => {
     expect(
-      parseMainRendererChannelState({ channel: "auth:handoff", ready: true }),
-    ).toEqual({ channel: "auth:handoff", ready: true });
+      parseMainRendererChannelState({ channel: "auth:token", ready: true }),
+    ).toEqual({ channel: "auth:token", ready: true });
     expect(
       parseMainRendererChannelState({ channel: "shell:openExternal", ready: true }),
     ).toBeNull();

@@ -5,7 +5,7 @@ import { ALL_STATUSES } from "./config";
 
 /**
  * The category an issue's status belongs to — the bucket it occupies on the
- * board (PB-6243).
+ * board (MUL-6243).
  *
  * Pure on purpose: the cache helpers that call it run outside React and must
  * not reach for a catalog. It reads the server-provided `status_category` when
@@ -30,7 +30,7 @@ export function issueStatusCategory(issue: Pick<Issue, "status" | "status_catego
  * Exact for the 7 built-ins, which is every status that exists until an admin
  * defines a custom one. A custom key returns `todo` so presentation lookups
  * always resolve to something renderable; surfaces that must show the real
- * status use the catalog (`useIssueStatuses`) instead. (PB-6243)
+ * status use the catalog (`useIssueStatuses`) instead. (MUL-6243)
  */
 export function statusCategoryOfKey(statusKey: string): IssueStatusCategory {
   return isIssueStatusCategory(statusKey) ? statusKey : "todo";
@@ -38,7 +38,7 @@ export function statusCategoryOfKey(statusKey: string): IssueStatusCategory {
 
 /**
  * The board/list/swimlane COLUMN an issue renders in — always an answer, never
- * null (PB-6409).
+ * null (MUL-6409).
  *
  * Columns are categories while `issue.status` is a concrete KEY, and bucketing
  * a card by its key against category columns is how a custom status made cards
@@ -60,7 +60,7 @@ export function issueColumnCategory(
 
 /**
  * Rewrites a patch's `status_category` to match its `status`, before the patch
- * reaches any cache (PB-6243).
+ * reaches any cache (MUL-6243).
  *
  * The server now sends a category on every issue, so a cached entity looks like
  * `{status: "todo", status_category: "todo"}`. An optimistic patch carries only
@@ -88,7 +88,7 @@ export function normalizeStatusPatch(patch: Partial<Issue>): Partial<Issue> {
 }
 
 /**
- * How an exact status-key filter resolves to board/list COLUMNS (PB-6243).
+ * How an exact status-key filter resolves to board/list COLUMNS (MUL-6243).
  *
  * Three states, not two. Built-in keys resolve with no catalog at all, because
  * a built-in key IS its own category. A CUSTOM key does not — and `categoryOf`
@@ -135,7 +135,7 @@ export function statusFilterColumns(
 }
 
 /**
- * Whether an issue BEHAVES as a given category (PB-6243).
+ * Whether an issue BEHAVES as a given category (MUL-6243).
  *
  * The one question every status-coupled product rule actually asks. Comparing
  * `issue.status` to a built-in key answers it only for a workspace with no

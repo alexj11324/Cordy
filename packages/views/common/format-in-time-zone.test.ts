@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { formatInTimeZone } from "./format-in-time-zone";
 
-// An automation's next run is printed on the schedule's clock, not the reader's:
+// An autopilot's next run is printed on the schedule's clock, not the reader's:
 // a trigger that says "18:00 (America/Los_Angeles)" must not contradict itself by
 // showing its next run as 09:00 to a reader in UTC+8. A run that already happened
 // is an instant in the reader's day, and passes no zone.

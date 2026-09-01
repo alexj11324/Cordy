@@ -54,7 +54,7 @@ describe("StaticProvider", () => {
     expect(d?.enabled).toBe(true);
   });
 
-  // Regression test for the PB-3615 review: when a rule sets `variant`
+  // Regression test for the MUL-3615 review: when a rule sets `variant`
   // but the rule itself evaluates to enabled=false (deny match, percent
   // miss, default-off), the decision MUST report variant="off", never
   // the on-variant. Otherwise a switch on `useVariant()` would route

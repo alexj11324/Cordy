@@ -8,12 +8,12 @@
   "header": {
     "scope": {
       "all_label": "All",
-      "all_description": "Assigned to me, created by me, or involving my agents and teams",
+      "all_description": "Assigned to me, created by me, or involving my agents and squads",
       "assigned_label": "Assigned",
       "assigned_description": "Issues assigned to me",
       "created_label": "Created",
       "created_description": "Issues I created",
-      "agents_label": "My Agents and Teams",
+      "agents_label": "My Agents and Squads",
       "agents_description": "Issues assigned to my agents"
     },
     "filter_button": "Filter",
@@ -25,7 +25,7 @@
     "display_settings": "Display settings",
     "grouping": "Grouping",
     "group_status": "Status",
-    "group_executor": "Executor",
+    "group_assignee": "Assignee",
     "ordering": "Ordering",
     "ascending": "Ascending",
     "descending": "Descending",

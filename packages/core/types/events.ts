@@ -7,9 +7,8 @@ import type { TimelineEntry } from "./activity";
 import type { Workspace, MemberWithUser, Invitation } from "./workspace";
 import type { Project } from "./project";
 import type { Label } from "./label";
-import type { Channel, ChannelMessage } from "./channel";
 
-// WebSocket event types (matching the Rust protocol crate)
+// WebSocket event types (matching Go server protocol/events.go)
 export type WSEventType =
   | "issue:created"
   | "issue:updated"
@@ -61,17 +60,16 @@ export type WSEventType =
   | "chat:done"
   | "chat:quick_actions"
   | "chat:cancel_finalized"
+  | "chat:session_created"
   | "chat:session_read"
   | "chat:session_deleted"
   | "chat:session_updated"
-  | "channel:created"
-  | "channel:message"
   | "project:created"
   | "project:updated"
   | "project:deleted"
-  | "team:created"
-  | "team:updated"
-  | "team:deleted"
+  | "squad:created"
+  | "squad:updated"
+  | "squad:deleted"
   | "label:created"
   | "label:updated"
   | "label:deleted"
@@ -84,15 +82,12 @@ export type WSEventType =
   | "pin:created"
   | "pin:deleted"
   | "pin:reordered"
-  | "dependency_graph:updated"
   | "invitation:created"
   | "invitation:accepted"
   | "invitation:declined"
   | "invitation:revoked"
   | "github_installation:created"
   | "github_installation:deleted"
-  | "telegram_installation:verified"
-  | "weixin_installation:verified"
   | "pull_request:linked"
   | "pull_request:updated"
   | "pull_request:unlinked";
@@ -111,16 +106,15 @@ export interface IssueCreatedPayload {
 export interface IssueUpdatedPayload {
   issue: Issue;
   // The server stamps issue:updated with which fields actually changed
-  // in the Rust issue publisher. owner_changed / executor_changed let the
+  // (server/internal/handler/issue.go publish). assignee_changed lets the
   // realtime layer keep filtered myList caches in place on a non-membership
   // change instead of refetching; status_changed lets it reconcile board column
   // counts when a status change lands on an off-screen (unloaded) issue;
   // project_changed lets it drop a moved issue from the old project's filtered
   // list (the client-side cache diff is unreliable after an optimistic local
-  // move — PB-3669 / #4548). Other change flags are present on the wire too and
+  // move — MUL-3669 / #4548). Other change flags are present on the wire too and
   // can be surfaced here when needed.
-  owner_changed?: boolean;
-  executor_changed?: boolean;
+  assignee_changed?: boolean;
   status_changed?: boolean;
   project_changed?: boolean;
 }
@@ -157,7 +151,7 @@ export interface PropertyChangedPayload {
 }
 
 /**
- * The workspace issue status catalog changed (PB-6243).
+ * The workspace issue status catalog changed (MUL-6243).
  *
  * One event covers all four writes because clients answer them the same way:
  * re-read the catalog. It deliberately carries no entry — merging a row out of
@@ -329,9 +323,12 @@ export interface TaskRunningPayload {
 
 // task:waiting_local_directory fires when the daemon dequeues a task but
 // can't immediately acquire the on-disk path lock — another task on this
-// daemon is already executing in the same local_directory. The optional
-// `wait_reason` mirrors the server-side hint (path / holder task id), but
-// is not yet surfaced end-to-end; the UI today only reads the status.
+// daemon is already executing in the same local_directory. `wait_reason` names
+// the directory and, when known, the short id of the task holding it; the
+// StatusPill renders it so a parked task explains itself instead of just
+// spinning. It is a display name, never an absolute path — the daemon strips
+// that at the source (localDirectoryAssignment.DisplayName), because this text
+// reaches every client on the session and lands in screenshots.
 export interface TaskWaitingLocalDirectoryPayload {
   task_id: string;
   agent_id: string;
@@ -420,7 +417,7 @@ export interface ChatDonePayload {
   created_at?: string;
   /**
    * "message" (default) or "no_response" — a completed direct-chat turn with
-   * no text reply (PB-4351). Optional/additive: older servers omit it, so the
+   * no text reply (MUL-4351). Optional/additive: older servers omit it, so the
    * consumer defaults to "message". Because direct-chat completion now always
    * persists exactly one assistant row, message_id/content/created_at are
    * populated alongside this even for a no_response turn.
@@ -459,7 +456,7 @@ export interface ChatQuickActionsPayload {
 /**
  * Deferred outcome of a cancelled chat task (#5219). The cancel HTTP response
  * cannot carry it — the empty/non-empty judgment settles only after the
- * daemon's Agent event flush — so the server broadcasts it here instead:
+ * daemon's transcript flush — so the server broadcasts it here instead:
  * outcome "stopped" describes a freshly-persisted "Stopped." assistant row
  * (ChatDonePayload-shaped fields), outcome "restored" is a content-free
  * invalidation hint — the deleted prompt itself is durable server-side and
@@ -526,13 +523,18 @@ export interface InvitationRevokedPayload {
   invitee_email: string;
 }
 
-export interface ChannelCreatedPayload {
-  channel: Channel;
-}
-
-export interface ChannelMessageCreatedPayload {
-  channel_id: string;
-  message: ChannelMessage;
+export interface ChatSessionCreatedPayload {
+  workspace_id: string;
+  chat_session_id: string;
+  agent_id: string;
+  creator_id: string;
+  title: string;
+  channel_source: {
+    channel_type: string;
+    installation_id: string;
+    route_revision: number;
+  };
+  is_current_channel_route: boolean;
 }
 
 /**
@@ -599,11 +601,10 @@ export interface WSEventPayloadMap {
   "chat:done": ChatDonePayload;
   "chat:quick_actions": ChatQuickActionsPayload;
   "chat:cancel_finalized": ChatCancelFinalizedPayload;
+  "chat:session_created": ChatSessionCreatedPayload;
   "chat:session_read": ChatSessionReadPayload;
   "chat:session_deleted": ChatSessionDeletedPayload;
   "chat:session_updated": unknown;
-  "channel:created": ChannelCreatedPayload;
-  "channel:message": ChannelMessageCreatedPayload;
   "project:created": ProjectCreatedPayload;
   "project:updated": ProjectUpdatedPayload;
   "project:deleted": ProjectDeletedPayload;
@@ -618,20 +619,17 @@ export interface WSEventPayloadMap {
   "skill:created": unknown;
   "skill:updated": unknown;
   "skill:deleted": unknown;
-  "team:created": unknown;
-  "team:updated": unknown;
-  "team:deleted": unknown;
+  "squad:created": unknown;
+  "squad:updated": unknown;
+  "squad:deleted": unknown;
   "label:created": unknown;
   "label:updated": unknown;
   "label:deleted": unknown;
   "pin:created": unknown;
   "pin:deleted": unknown;
   "pin:reordered": unknown;
-  "dependency_graph:updated": unknown;
   "github_installation:created": unknown;
   "github_installation:deleted": unknown;
-  "telegram_installation:verified": unknown;
-  "weixin_installation:verified": unknown;
   "pull_request:linked": unknown;
   "pull_request:updated": unknown;
   "pull_request:unlinked": unknown;

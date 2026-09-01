@@ -1,12 +1,12 @@
 "use client";
 
-import { SettingsSwitch as Switch } from "@patchbay/ui/components/common/lobe-settings";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Switch } from "@multica/ui/components/ui/switch";
 import {
   MANUAL_CREATE_FIELDS,
   QUICK_CREATE_FIELDS,
   useIssueCreateSettingsStore,
-} from "@patchbay/core/issues/stores/issue-create-settings-store";
+} from "@multica/core/issues/stores/issue-create-settings-store";
+import { toast } from "sonner";
 import { useT } from "../../i18n";
 import {
   SettingsCard,
@@ -29,7 +29,9 @@ export function IssueTab() {
   const setQuickVisible = useIssueCreateSettingsStore((s) => s.setQuickCreateFieldVisible);
   const manualFields = useIssueCreateSettingsStore((s) => s.manualCreateFields);
   const setManualVisible = useIssueCreateSettingsStore((s) => s.setManualCreateFieldVisible);
-  const resetToDefaults = useIssueCreateSettingsStore((s) => s.resetToDefaults);
+
+  const savedToast = () =>
+    toast.success(t(($) => $.auto_save.toast_saved), { id: "settings-auto-save" });
 
   return (
     <SettingsTab
@@ -45,7 +47,10 @@ export function IssueTab() {
             <SettingsRow key={field} label={t(($) => $.issue.fields[field])}>
               <Switch
                 checked={quickFields.includes(field)}
-                onCheckedChange={(checked) => setQuickVisible(field, checked)}
+                onCheckedChange={(checked) => {
+                  setQuickVisible(field, checked);
+                  savedToast();
+                }}
                 aria-label={t(($) => $.issue.fields[field])}
               />
             </SettingsRow>
@@ -62,18 +67,16 @@ export function IssueTab() {
             <SettingsRow key={field} label={t(($) => $.issue.fields[field])}>
               <Switch
                 checked={manualFields.includes(field)}
-                onCheckedChange={(checked) => setManualVisible(field, checked)}
+                onCheckedChange={(checked) => {
+                  setManualVisible(field, checked);
+                  savedToast();
+                }}
                 aria-label={t(($) => $.issue.fields[field])}
               />
             </SettingsRow>
           ))}
         </SettingsCard>
       </SettingsSection>
-      <div className="flex justify-end">
-        <Button type="button" variant="outline" size="sm" onClick={resetToDefaults}>
-          {t(($) => $.issue.reset_to_defaults)}
-        </Button>
-      </div>
     </SettingsTab>
   );
 }

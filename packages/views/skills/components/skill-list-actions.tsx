@@ -15,19 +15,19 @@ import {
 } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { Agent, SkillSummary } from "@patchbay/core/types";
-import { api } from "@patchbay/core/api";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { Input } from "@patchbay/ui/components/ui/input";
+import type { Agent, SkillSummary } from "@multica/core/types";
+import { api } from "@multica/core/api";
+import { workspaceKeys } from "@multica/core/workspace/queries";
+import { useWorkspacePaths } from "@multica/core/paths";
+import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
+import { Button } from "@multica/ui/components/ui/button";
+import { Checkbox } from "@multica/ui/components/ui/checkbox";
+import { Input } from "@multica/ui/components/ui/input";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@patchbay/ui/components/ui/collapsible";
+} from "@multica/ui/components/ui/collapsible";
 import {
   Dialog,
   DialogContent,
@@ -35,21 +35,21 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@multica/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@multica/ui/components/ui/dropdown-menu";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
-import { ActorAvatar } from "@patchbay/ui/components/common/actor-avatar";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@multica/ui/components/ui/tooltip";
+import { ActorAvatar } from "@multica/ui/components/common/actor-avatar";
+import { cn } from "@multica/ui/lib/utils";
 import { useT } from "../../i18n";
 import { useIntentNavigate } from "../../navigation";
 import { isRefreshableOrigin, readOrigin } from "../lib/origin";
@@ -71,7 +71,7 @@ export interface SkillActionsContext {
 // ---------------------------------------------------------------------------
 
 // Attaching is permission-gated by the TARGET agent (its owner, or a
-// workspace owner/admin — the Rust agent handler's management gate).
+// workspace owner/admin — server/internal/handler/agent.go canManageAgent).
 // Members therefore only see their own agents; admins additionally see
 // everyone else's. Agents that already have every selected skill render
 // checked-out and disabled; partial overlap stays selectable because the

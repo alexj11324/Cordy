@@ -1,4 +1,4 @@
-import type { InboxItem } from "@patchbay/core/types";
+import type { InboxItem } from "@multica/core/types";
 
 function singleLine(value: string | null | undefined): string {
   return (value ?? "").replace(/\s+/g, " ").trim();

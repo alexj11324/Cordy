@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * PB-5477 regression coverage for the PRODUCTION Table path.
+ * MUL-5477 regression coverage for the PRODUCTION Table path.
  *
  * Production mounts the Table with `virtualizeRows` (table-view.tsx) and
  * `tableHierarchy` defaults to on (view-store.ts), so every parent row carries
@@ -11,7 +11,7 @@
  * reports a zero-height viewport and the real one would render nothing.
  *
  * This file supplies the missing layout instead of removing the virtualizer,
- * because the virtualizer is what closes the circuit PB-5477 runs around:
+ * because the virtualizer is what closes the circuit MUL-5477 runs around:
  * `serverDisplayRows` feeds the row list, the row list feeds the virtualizer's
  * `getItemKey`, and a new-but-equal row list makes the virtualizer re-key,
  * notify and re-render — which rebuilds the row list again. Any dependency of
@@ -29,27 +29,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, screen, waitFor } from "@testing-library/react";
 import { Profiler } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { setApiInstance } from "@patchbay/core/api";
-import type { ApiClient } from "@patchbay/core/api/client";
-import { ViewStoreProvider } from "@patchbay/core/issues/stores/view-store-context";
-import { getIssueSurfaceViewStore } from "@patchbay/core/issues/stores/surface-view-store";
+import { setApiInstance } from "@multica/core/api";
+import type { ApiClient } from "@multica/core/api/client";
+import { ViewStoreProvider } from "@multica/core/issues/stores/view-store-context";
+import { getIssueSurfaceViewStore } from "@multica/core/issues/stores/surface-view-store";
 import type {
   Issue,
   IssueTableQuerySpec,
   IssueTableRowsRequest,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { IssueSurfaceSelectionProvider } from "../surface/selection-context";
 import type { IssueSurfaceSelection } from "../surface/selection-context";
 import { TableView } from "./table-view";
 
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
 
 const actorNames = vi.hoisted(() => {
   const getActorName = () => "Someone";
   return { getActorName, result: { getActorName } };
 });
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@multica/core/workspace/hooks", () => ({
   useActorName: () => actorNames.result,
   buildActorNameResolver: () => actorNames.getActorName,
 }));
@@ -60,7 +60,7 @@ const authState = vi.hoisted(() => ({
     isAuthenticated: true,
   },
 }));
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@multica/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: (state: unknown) => unknown) =>
       selector ? selector(authState.value) : authState.value,
@@ -85,10 +85,10 @@ vi.mock("../../navigation", () => ({
   useIntentNavigate: () => () => {},
 }));
 
-vi.mock("@patchbay/core/paths", async () => {
+vi.mock("@multica/core/paths", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/paths")>(
-      "@patchbay/core/paths",
+    await vi.importActual<typeof import("@multica/core/paths")>(
+      "@multica/core/paths",
     );
   const workspacePaths = actual.paths.workspace("test");
   return { ...actual, useWorkspacePaths: () => workspacePaths };
@@ -195,17 +195,13 @@ function makeIssue(id: string): Issue {
     id,
     workspace_id: "ws-1",
     number: 1,
-    identifier: `PB-${id}`,
+    identifier: `MUL-${id}`,
     title: `Task ${id}`,
     description: null,
     status: "todo",
     priority: "none",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "member-1",
     parent_issue_id: null,
@@ -296,8 +292,8 @@ describe("Table view on the production virtualized hierarchy path", () => {
       listProperties: async () => ({ properties: [] }),
       listMembers: async () => [],
       listAgents: async () => [],
-      listTeams: async () => [],
-      getExecutorFrequency: async () => [],
+      listSquads: async () => [],
+      getAssigneeFrequency: async () => [],
       listIssueTableRows: async (request: IssueTableRowsRequest) => {
         const parent = request.parent_id ?? "root";
         rowRequests.push(parent);
@@ -333,12 +329,12 @@ describe("Table view on the production virtualized hierarchy path", () => {
 
     // The virtualizer is real, so rows appear only if it saw a viewport. This is
     // the part every other Table test skips by replacing it.
-    await screen.findByText("PB-a");
+    await screen.findByText("MUL-a");
     // Depth 1 arrives only by a branch sentinel activating its own query.
-    await waitFor(() => expect(screen.queryByText("PB-a1")).toBeTruthy(), {
+    await waitFor(() => expect(screen.queryByText("MUL-a1")).toBeTruthy(), {
       timeout: 5000,
     });
-    await waitFor(() => expect(screen.queryByText("PB-c2")).toBeTruthy(), {
+    await waitFor(() => expect(screen.queryByText("MUL-c2")).toBeTruthy(), {
       timeout: 5000,
     });
 

@@ -14,7 +14,7 @@
  * inside the screen (description text is a controlled input that doesn't
  * cross routes); only the attribute-chip values live here.
  *
- * Workspace lifecycle: this draft is workspace-scoped (e.g. an `executor`
+ * Workspace lifecycle: this draft is workspace-scoped (e.g. an `assignee`
  * id only resolves in the workspace whose memberlist seeded it). When the
  * user switches workspaces, the draft is invalid. Reset is wired in
  * `app/(app)/[workspace]/_layout.tsx` via `useResetOnWorkspaceChange()` —
@@ -26,23 +26,18 @@ import type {
   IssuePriority,
   IssueStatus,
   Project,
-} from "@patchbay/core/types";
-import type { ExecutorValue } from "@/components/issue/pickers/executor-picker-body";
-import type { RoleValue } from "@/components/issue/pickers/role-picker-body";
+} from "@multica/core/types";
+import type { AssigneeValue } from "@/components/issue/pickers/assignee-picker-body";
 
 interface NewIssueDraftState {
   status: IssueStatus;
   priority: IssuePriority;
-  executor: ExecutorValue;
-  owner: RoleValue;
-  reviewer: RoleValue;
+  assignee: AssigneeValue;
   dueDate: string | null;
   project: Project | null;
   setStatus: (next: IssueStatus) => void;
   setPriority: (next: IssuePriority) => void;
-  setExecutor: (next: ExecutorValue) => void;
-  setOwner: (next: RoleValue) => void;
-  setReviewer: (next: RoleValue) => void;
+  setAssignee: (next: AssigneeValue) => void;
   setDueDate: (next: string | null) => void;
   setProject: (next: Project | null) => void;
   reset: () => void;
@@ -50,13 +45,11 @@ interface NewIssueDraftState {
 
 const INITIAL: Pick<
   NewIssueDraftState,
-  "status" | "priority" | "executor" | "owner" | "reviewer" | "dueDate" | "project"
+  "status" | "priority" | "assignee" | "dueDate" | "project"
 > = {
   status: "todo",
   priority: "none",
-  executor: null,
-  owner: null,
-  reviewer: null,
+  assignee: null,
   dueDate: null,
   project: null,
 };
@@ -65,9 +58,7 @@ export const useNewIssueDraftStore = create<NewIssueDraftState>((set) => ({
   ...INITIAL,
   setStatus: (next) => set({ status: next }),
   setPriority: (next) => set({ priority: next }),
-  setExecutor: (next) => set({ executor: next }),
-  setOwner: (next) => set({ owner: next }),
-  setReviewer: (next) => set({ reviewer: next }),
+  setAssignee: (next) => set({ assignee: next }),
   setDueDate: (next) => set({ dueDate: next }),
   setProject: (next) => set({ project: next }),
   reset: () => set({ ...INITIAL }),

@@ -3,15 +3,15 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { buildCreateAgentRequest, type AgentDraft } from "@patchbay/core/agents";
-import { api, ApiError } from "@patchbay/core/api";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import type { Agent } from "@patchbay/core/types";
+import { buildCreateAgentRequest, type AgentDraft } from "@multica/core/agents";
+import { api, ApiError } from "@multica/core/api";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { useWorkspacePaths } from "@multica/core/paths";
+import type { Agent } from "@multica/core/types";
 import {
   cacheAgentResponse,
   workspaceKeys,
-} from "@patchbay/core/workspace/queries";
+} from "@multica/core/workspace/queries";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 
@@ -36,14 +36,14 @@ export function classifyAgentCreateError(
  * Commits the draft and leaves the creation flow.
  *
  * Deliberately not optimistic: the flow navigates away on success, so the agent
- * has to exist before the destination renders. A failed team join is reported
+ * has to exist before the destination renders. A failed squad join is reported
  * as a warning instead of failing the create — the agent is already committed
  * at that point and a retry would duplicate it.
  */
 export function useCreateAgentSubmit(options: {
   draft: AgentDraft;
   runtimeId: string | null;
-  teamId: string | null;
+  squadId: string | null;
   /** Creation-source attribution for the `agent_created` analytics event. */
   template?: string;
   duplicateSource?: Agent | null;
@@ -60,7 +60,7 @@ export function useCreateAgentSubmit(options: {
   const [nameError, setNameError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const { draft, runtimeId, teamId, template, duplicateSource, onCreated } =
+  const { draft, runtimeId, squadId, template, duplicateSource, onCreated } =
     options;
 
   const create = async () => {
@@ -79,23 +79,23 @@ export function useCreateAgentSubmit(options: {
       );
       if (!agent.id) throw new Error(t(($) => $.creation_studio.create_failed));
 
-      if (teamId) {
+      if (squadId) {
         try {
-          await api.addTeamMember(teamId, {
+          await api.addSquadMember(squadId, {
             member_type: "agent",
             member_id: agent.id,
           });
           await Promise.all([
             qc.invalidateQueries({
-              queryKey: [...workspaceKeys.teams(wsId), teamId, "members"],
+              queryKey: [...workspaceKeys.squads(wsId), squadId, "members"],
             }),
             qc.invalidateQueries({
-              queryKey: [...workspaceKeys.teams(wsId), teamId],
+              queryKey: [...workspaceKeys.squads(wsId), squadId],
             }),
           ]);
         } catch (error) {
           toast.warning(
-            t(($) => $.create_dialog.team_join_failed_toast, {
+            t(($) => $.create_dialog.squad_join_failed_toast, {
               name: agent.name || draft.name.trim(),
               error: error instanceof Error ? error.message : "unknown error",
             }),
@@ -115,7 +115,7 @@ export function useCreateAgentSubmit(options: {
         }),
       );
       navigation.push(
-        teamId ? paths.teamDetail(teamId) : paths.agentDetail(agent.id),
+        squadId ? paths.squadDetail(squadId) : paths.agentDetail(agent.id),
       );
     } catch (error) {
       const nextErrors = classifyAgentCreateError(

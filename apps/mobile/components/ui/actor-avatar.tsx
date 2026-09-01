@@ -3,12 +3,12 @@
  * (member/agent → avatar URL or initials chip), stripped down for phone use:
  * no hover card, no nested focus management.
  *
- * Behavioral parity rules (apps/mobile/AGENTS.md):
+ * Behavioral parity rules (apps/mobile/CLAUDE.md):
  *   - Same actor type → same name → same initials. Lookup is shared via
  *     useActorLookup which reads the same MemberWithUser / Agent lists.
  *   - Agents get distinct visual treatment (brand-tinted background) to
  *     match web's "agents render with distinct styling" rule from the
- *     repo-root AGENTS.md "Agent Assignees" section.
+ *     repo-root CLAUDE.md "Agent Assignees" section.
  *
  * Presence dot: opt-in via `showPresence`. Mirrors web's `showStatusDot`
  * (`packages/views/common/actor-avatar.tsx:51`). The prop is opt-in (default
@@ -29,12 +29,12 @@ import { THEME } from "@/lib/theme";
 
 // `system` actors are server-side automation (state changes triggered by the
 // platform itself, not a member or an agent). InboxItem.actor_type carries
-// this third value (packages/core/types/inbox.ts:28). `team` is a third
-// issue actor polymorph (packages/core/types/issue.ts IssueActorType) — when
-// a team has an avatar_url we render it; otherwise fall back to a generic
-// group glyph so team-assigned issues from web never render blank.
+// this third value (packages/core/types/inbox.ts:28). `squad` is a third
+// assignee polymorph (packages/core/types/issue.ts IssueAssigneeType) — when
+// a squad has an avatar_url we render it; otherwise fall back to a generic
+// group glyph so squad-assigned issues from web never render blank.
 interface Props {
-  type: "member" | "agent" | "system" | "team" | null | undefined;
+  type: "member" | "agent" | "system" | "squad" | null | undefined;
   id: string | null | undefined;
   size?: number;
   /**
@@ -75,15 +75,15 @@ function BareAvatar({
       ? THEME.dark.mutedForeground
       : THEME.light.mutedForeground;
 
-  // Team gets a soft-square tile (matches web actor-avatar.tsx:42 which uses
+  // Squad gets a soft-square tile (matches web actor-avatar.tsx:42 which uses
   // rounded-md) so a group never reads as a single person at a glance.
   // Everyone else stays round.
-  const radius = type === "team" ? Math.round(size * 0.22) : size / 2;
+  const radius = type === "squad" ? Math.round(size * 0.22) : size / 2;
 
-  // URL lookup runs BEFORE the team/system icon fallbacks so a team with
+  // URL lookup runs BEFORE the squad/system icon fallbacks so a squad with
   // an avatar_url renders its image instead of the generic group glyph.
-  // Team.avatar_url exists (packages/core/types/team.ts) and useActorLookup
-  // already returns it — the previous early-return for type==="team" meant
+  // Squad.avatar_url exists (packages/core/types/squad.ts) and useActorLookup
+  // already returns it — the previous early-return for type==="squad" meant
   // that value was silently dropped.
   // Only treat a URL as renderable if it actually looks like one — RN <Image>
   // can crash native-side on malformed sources (empty string, plain "foo",
@@ -134,7 +134,7 @@ function BareAvatar({
     );
   }
 
-  if (type === "team") {
+  if (type === "squad") {
     return (
       <View
         style={{ width: size, height: size, borderRadius: radius }}

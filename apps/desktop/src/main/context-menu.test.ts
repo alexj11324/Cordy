@@ -106,13 +106,13 @@ describe("installContextMenu — link items", () => {
 
   it("adds 'Open Link in Browser' and 'Copy Link Address' when right-clicking an http(s) link", () => {
     // The link case is the one this test file is here to cover —
-    // before PB-3083 follow-up, right-clicking an <a> in the
+    // before MUL-3083 follow-up, right-clicking an <a> in the
     // renderer only surfaced 'copy' (when the user happened to have
     // text selected) and gave no way to open the URL externally.
     const wc = makeWebContents();
     installContextMenu(wc as never);
     wc.fire({
-      ...baseSelection({ linkURL: "https://patchbay.aspectlylabs.com/welcome" }),
+      ...baseSelection({ linkURL: "https://multica.ai/welcome" }),
     });
 
     const labels = lastMenuLabels();
@@ -122,11 +122,11 @@ describe("installContextMenu — link items", () => {
     // The two click handlers must route to the existing
     // openExternalSafely allowlist + clipboard.writeText.
     invokeByLabel("Open Link in Browser");
-    expect(ctx.openExternalSpy).toHaveBeenCalledWith("https://patchbay.aspectlylabs.com/welcome");
+    expect(ctx.openExternalSpy).toHaveBeenCalledWith("https://multica.ai/welcome");
 
     invokeByLabel("Copy Link Address");
     expect(ctx.clipboardWriteText).toHaveBeenCalledWith(
-      "https://patchbay.aspectlylabs.com/welcome",
+      "https://multica.ai/welcome",
     );
     expect(ctx.popupSpy).toHaveBeenCalledTimes(1);
   });
@@ -170,7 +170,7 @@ describe("installContextMenu — link items", () => {
     ctx.preferredLanguagesRef.current = ["zh-CN"];
     const wc = makeWebContents();
     installContextMenu(wc as never);
-    wc.fire(baseSelection({ linkURL: "https://patchbay.aspectlylabs.com" }));
+    wc.fire(baseSelection({ linkURL: "https://multica.ai" }));
     expect(lastMenuLabels()).toContain("在浏览器中打开链接");
     expect(lastMenuLabels()).toContain("复制链接地址");
   });
@@ -179,7 +179,7 @@ describe("installContextMenu — link items", () => {
     ctx.preferredLanguagesRef.current = ["fr-FR"];
     const wc = makeWebContents();
     installContextMenu(wc as never);
-    wc.fire(baseSelection({ linkURL: "https://patchbay.aspectlylabs.com" }));
+    wc.fire(baseSelection({ linkURL: "https://multica.ai" }));
     expect(lastMenuLabels()).toContain("Open Link in Browser");
   });
 });

@@ -130,7 +130,7 @@ describe("WSClient", () => {
   });
 
   it("drops frames without a string type without throwing, and keeps dispatching", () => {
-    // Regression for PB-3418: a frame whose parsed JSON lacks a string `type`
+    // Regression for MUL-3418: a frame whose parsed JSON lacks a string `type`
     // (an out-of-protocol frame, or a bare JSON primitive) used to throw an
     // uncaught TypeError out of onmessage via `msg.type.split(...)` in a
     // downstream onAny handler, flooding `$exception` telemetry.

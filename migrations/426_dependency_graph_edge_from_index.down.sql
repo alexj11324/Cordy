@@ -1,1 +1,0 @@
-DROP INDEX CONCURRENTLY IF EXISTS idx_dependency_graph_edge_plan_from;

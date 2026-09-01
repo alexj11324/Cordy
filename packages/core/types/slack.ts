@@ -1,19 +1,13 @@
-import type {
-  MessagingInstallationRuntime,
-  MessagingInstallationSetup,
-} from "./messaging";
-
-/** A Slack bot installation, optionally bound to a Patchbay agent (PB-3666).
+/** A Slack bot installation bound to a single Multica agent (MUL-3666).
  *
  * Wire shape mirrors `SlackInstallationResponse` in
- * the Rust Slack handler. New fields the backend adds in the
+ * `server/internal/handler/slack.go`. New fields the backend adds in the
  * future MUST default to optional so older desktop builds keep parsing the
- * response — see AGENTS.md → API Compatibility. */
+ * response — see CLAUDE.md → API Compatibility. */
 export interface SlackInstallation {
   id: string;
   workspace_id: string;
-  /** Null for a workspace Hub; the channel selects an Agent with /agents. */
-  agent_id: string | null;
+  agent_id: string;
   /** The Slack workspace (team) id this bot is installed in. */
   team_id: string;
   /** The installed bot's Slack user id. */
@@ -23,8 +17,6 @@ export interface SlackInstallation {
   installed_at: string;
   created_at: string;
   updated_at: string;
-  runtime?: MessagingInstallationRuntime;
-  setup?: MessagingInstallationSetup;
 }
 
 export interface ListSlackInstallationsResponse {
@@ -33,20 +25,11 @@ export interface ListSlackInstallationsResponse {
    * the connect entry points are hidden and the panel renders an "ask the
    * operator to enable Slack" state. */
   configured: boolean;
-  /** Whether the deployment's selected setup path is ready. Managed mode
-   * requires the hosted OAuth client, signing secret, callback, and at-rest
-   * key; server-configured mode remains read-only in the App. */
+  /** Whether the install path is available (true whenever Slack is configured,
+   * i.e. the at-rest key is set — a bring-your-own-app install needs no hosted
+   * OAuth credentials). Kept as a separate flag for forward/backward compat;
+   * optional so an older desktop build that predates it treats it as off. */
   install_supported?: boolean;
-  setup_mode?: "managed_oauth" | "server_configured" | string;
-}
-
-export interface BeginSlackOAuthRequest {
-  /** Public-app path or same-origin HTTPS URL used after Slack returns. */
-  redirect_url: string;
-}
-
-export interface BeginSlackOAuthResponse {
-  authorization_url: string;
 }
 
 /** Request body for a bring-your-own-app (BYO) install: the two tokens the
@@ -59,7 +42,7 @@ export interface RegisterSlackBYORequest {
 }
 
 /** Post-redemption echo: the Slack user id the token carried is now bound to
- * the logged-in Patchbay user in this workspace/installation. */
+ * the logged-in Multica user in this workspace/installation. */
 export interface RedeemSlackBindingTokenResponse {
   workspace_id: string;
   installation_id: string;

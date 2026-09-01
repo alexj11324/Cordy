@@ -12,12 +12,12 @@ describe("issue window request", () => {
     expect(
       parseIssueWindowRequest({
         path: "/acme/issues/issue-123?comment=comment-1#activity",
-        title: "  PB-1: Fix tabs  ",
+        title: "  MUL-1: Fix tabs  ",
       }),
     ).toEqual({
       kind: "issue",
       path: "/acme/issues/issue-123?comment=comment-1#activity",
-      title: "PB-1: Fix tabs",
+      title: "MUL-1: Fix tabs",
       workspaceSlug: "acme",
       issueId: "issue-123",
     });
@@ -50,13 +50,13 @@ describe("issue window request", () => {
   it("round-trips a validated request through Electron additionalArguments", () => {
     const argument = encodeIssueWindowArgument({
       path: "/acme/issues/issue-1",
-      title: "PB-1: Fix tabs",
+      title: "MUL-1: Fix tabs",
     });
 
     expect(readDesktopWindowContext(["electron", argument])).toEqual({
       kind: "issue",
       path: "/acme/issues/issue-1",
-      title: "PB-1: Fix tabs",
+      title: "MUL-1: Fix tabs",
       workspaceSlug: "acme",
       issueId: "issue-1",
     });
@@ -64,7 +64,7 @@ describe("issue window request", () => {
 
   it("falls back to the main window for malformed launch arguments", () => {
     expect(
-      readDesktopWindowContext(["electron", "--patchbay-issue-window=%7Bbad"]),
+      readDesktopWindowContext(["electron", "--multica-issue-window=%7Bbad"]),
     ).toEqual({ kind: "main" });
   });
 });

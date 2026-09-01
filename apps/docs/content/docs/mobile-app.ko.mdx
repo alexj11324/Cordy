@@ -1,13 +1,13 @@
 ---
 title: 모바일 앱(iOS)
-description: 소스에서 Patchbay를 빌드해 iPhone에 설치하고 Cloud 또는 자체 호스팅 인스턴스에 연결합니다.
+description: 소스에서 Multica를 빌드해 iPhone에 설치하고 Cloud 또는 자체 호스팅 인스턴스에 연결합니다.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay iOS 클라이언트는 아직 App Store에 출시되지 않았습니다. Mac에서 오픈 소스 저장소의 Release 버전을 빌드해 자신의 iPhone에 설치할 수 있습니다. Android 클라이언트는 아직 제공하지 않습니다.
+Multica iOS 클라이언트는 아직 App Store에 출시되지 않았습니다. Mac에서 오픈 소스 저장소의 Release 버전을 빌드해 자신의 iPhone에 설치할 수 있습니다. Android 클라이언트는 아직 제공하지 않습니다.
 
-설치된 앱은 기본적으로 Patchbay Cloud에 연결되며 기존 계정으로 로그인하면 됩니다. 워크스페이스, 이슈, 댓글, Agent 스레드는 모두 서버에 저장되므로 Web이나 Desktop에서 직접 동기화할 필요가 없습니다.
+설치된 앱은 기본적으로 Multica Cloud에 연결되며 기존 계정으로 로그인하면 됩니다. 워크스페이스, 태스크, 댓글, 실행 기록은 모두 서버에 저장되므로 Web이나 Desktop에서 직접 동기화할 필요가 없습니다.
 
 ## 준비 사항
 
@@ -26,8 +26,8 @@ Xcode 또는 실제 기기 개발 환경이 설정되지 않았다면 먼저 Exp
 저장소를 clone하고 의존성을 설치합니다.
 
 ```bash
-git clone https://github.com/alexj11324/Cordy.git
-cd patchbay
+git clone https://github.com/multica-ai/multica.git
+cd multica
 pnpm install
 ```
 
@@ -52,11 +52,11 @@ Apple Developer Program 계정으로 서명하면 유효 기간이 더 길고 Te
 Xcode에 `No matching provisioning profiles found`가 표시되면 기본 bundle identifier가 Apple ID에 속하지 않을 수 있습니다. 자신이 제어하는 역방향 도메인으로 바꾼 뒤 다시 빌드하세요.
 
 ```bash
-export EXPO_BUNDLE_IDENTIFIER_PROD=com.yourname.patchbay
+export EXPO_BUNDLE_IDENTIFIER_PROD=com.yourname.multica
 pnpm ios:mobile:device:prod:release
 ```
 
-이 값은 자신의 Apple Developer team에서 사용할 수 있기만 하면 되며 Patchbay 계정이나 워크스페이스에는 영향을 주지 않습니다.
+이 값은 자신의 Apple Developer team에서 사용할 수 있기만 하면 되며 Multica 계정이나 워크스페이스에는 영향을 주지 않습니다.
 
 ## 업데이트
 
@@ -85,7 +85,7 @@ EXPO_PUBLIC_WEB_URL=https://app.example.com
 `.env.production`을 수정하면 현재 checkout의 프로덕션 설정이 바뀝니다. 이 변경을 커밋하면 개인 API 주소가 저장소의 프로덕션 설정에 들어갑니다.
 </Callout>
 
-모바일 개발, Simulator 사용, staging 연결 방법은 저장소의 [`apps/mobile/README.md`](https://github.com/alexj11324/Cordy/blob/main/apps/mobile/README.md)를 참고하세요.
+모바일 개발, Simulator 사용, staging 연결 방법은 저장소의 [`apps/mobile/README.md`](https://github.com/multica-ai/multica/blob/main/apps/mobile/README.md)를 참고하세요.
 
 ## 다음 단계
 

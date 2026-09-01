@@ -14,9 +14,9 @@ import { create } from "zustand";
  *
  * The signal is only needed when the user explicitly skips runtime setup.
  * The workspace welcome hook seeds one install-runtime guide and shows it in
- * a modal. Once a runtime appears, the Runtimes page offers the same Patrick
+ * a modal. Once a runtime appears, the Runtimes page offers the same Mika
  * bootstrap used by the connected onboarding path. Runtime-connected
- * onboarding creates Patrick before reaching the workspace and does not use
+ * onboarding creates Mika before reaching the workspace and does not use
  * this signal.
  */
 export interface WelcomeSignal {

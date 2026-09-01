@@ -1,18 +1,16 @@
 import {
   Inbox,
   MessageSquare,
-  Hash,
   CircleUser,
   ListTodo,
-  Network,
   FolderKanban,
-  AlarmClockCheck,
+  Zap,
   Bot,
+  Users,
   BarChart3,
   Monitor,
   Server,
   BookOpenText,
-  Plug,
   Settings,
   File,
   FileText,
@@ -24,12 +22,11 @@ import {
   FileQuestion,
   type LucideIcon,
 } from "lucide-react";
-import { resolveRouteIconName, type RouteIconName } from "@patchbay/core/paths";
-import { PeopleGroupIcon } from "@patchbay/ui/components/common/people-group-icon";
+import { resolveRouteIconName, type RouteIconName } from "@multica/core/paths";
 
 /**
  * Icon name → component registry: the rendering half of the route icon
- * contract defined in `@patchbay/core/paths`.
+ * contract defined in `@multica/core/paths`.
  *
  * Every {@link RouteIconName} must have an entry — the `Record` type makes a
  * missing key a compile error.
@@ -37,19 +34,16 @@ import { PeopleGroupIcon } from "@patchbay/ui/components/common/people-group-ico
 export const ROUTE_ICON_COMPONENTS: Record<RouteIconName, LucideIcon> = {
   Inbox,
   MessageSquare,
-  Hash,
   CircleUser,
   ListTodo,
-  Network,
   FolderKanban,
-  AlarmClockCheck,
+  Zap,
   Bot,
-  PeopleGroup: PeopleGroupIcon,
+  Users,
   BarChart3,
   Monitor,
   Server,
   BookOpenText,
-  Plug,
   Settings,
   File,
   FileText,

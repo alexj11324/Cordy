@@ -9,8 +9,8 @@ import type {
 import { ALLOW, deny, type Decision, type PermissionContext } from "./types";
 
 /**
- * Pure permission rules — single source of truth that mirrors the Rust backend
- * handler gates. Hooks in `use-resource-permissions.ts`
+ * Pure permission rules — single source of truth that mirrors the Go backend
+ * gates in `server/internal/handler/`. Hooks in `use-resource-permissions.ts`
  * are thin wrappers that pull `PermissionContext` from auth + member queries
  * and forward to these.
  *
@@ -26,7 +26,7 @@ const isAdminLike = (role: MemberRole | null) =>
 
 /**
  * Update / archive / restore agent fields. The backend gates archive and
- * restore identically to edit in the backend agent handler,
+ * restore identically to edit (`server/internal/handler/agent.go:519-535`),
  * so callers can use `canEditAgent` for all three.
  */
 export function canEditAgent(agent: Agent, ctx: PermissionContext): Decision {
@@ -43,7 +43,7 @@ export function canEditAgent(agent: Agent, ctx: PermissionContext): Decision {
 
 /**
  * Invoke an agent — assign it to an issue, @mention it, chat with it, or
- * otherwise trigger a run. Mirrors the PB-3963 backend invocation gate,
+ * otherwise trigger a run. Mirrors the MUL-3963 backend invocation gate,
  * which reads `permission_mode` + `invocation_targets` (NOT the derived
  * `visibility` field):
  *
@@ -210,7 +210,7 @@ export function canManageMembers(ctx: PermissionContext): Decision {
 }
 
 /**
- * Encodes the backend role-change matrix:
+ * Encodes the role-change matrix from `workspace.go:458-530`:
  *   - admins cannot touch the owner role (neither demote owners nor promote)
  *   - the last owner cannot be demoted
  *   - non-managers cannot change roles at all

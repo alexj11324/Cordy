@@ -1,10 +1,11 @@
 # Contributing Guide
 
-This guide documents the local development workflow for contributors working on the Patchbay codebase.
+This guide documents the local development workflow for contributors working on the Multica codebase.
 
 It covers:
 
 - first-time setup
+- environments: starting, inspecting, stopping and deleting them
 - day-to-day development in the main checkout
 - isolated worktree development
 - the shared PostgreSQL model
@@ -14,78 +15,150 @@ It covers:
 
 ## Contribution Terms
 
-By submitting a contribution to Patchbay — a pull request, a patch, or any
-other work — you agree to condition 2 of the [Patchbay License](LICENSE):
+By submitting a contribution to Multica — a pull request, a patch, or any
+other work — you agree to condition 2 of the [Multica License](LICENSE):
 
-- your contribution is submitted under the Patchbay License as a whole (the
+- your contribution is submitted under the Multica License as a whole (the
   additional conditions in Part I together with the incorporated Apache
   License 2.0 text in Part II), not under the Apache License 2.0 alone;
 - your contributed code may be used for commercial purposes, including the
   producer's cloud business operations;
-- the producer can adjust the Patchbay License to be more strict or relaxed
+- the producer can adjust the Multica License to be more strict or relaxed
   as deemed necessary.
 
 See the [LICENSE](LICENSE) file for the full terms.
 
 ## Development Model
 
-Local development uses one shared PostgreSQL service and one database per
-source-development checkout.
+Local development uses one shared PostgreSQL container and one database per checkout.
 
-- the main checkout, independent clones, and Git worktrees each use their own `.env.worktree`
-- `.env` is reserved for explicit non-development/self-host configuration
+- the main checkout usually uses `.env` and `POSTGRES_DB=multica`
+- each Git worktree uses its own `.env.worktree`
 - every checkout connects to the same PostgreSQL host: `localhost:5432`
-- isolation happens at the database level, not by starting a separate PostgreSQL service
-- backend and frontend ports are unique per checkout
+- isolation happens at the database level, not by starting a separate Docker Compose project
+- backend and frontend ports are still unique per worktree
 
-The service may be Docker Compose or a native local PostgreSQL installation;
-schema and data remain isolated either way.
-`PATCHBAY_POSTGRES_RUNTIME=auto` selects Docker only for the Compose-published
-`localhost:5432` endpoint and uses the configured native endpoint otherwise.
-Set it to `native` or `docker` when localhost:5432 is intentionally ambiguous.
+This keeps Docker simple while still isolating schema and data.
 
 ## Prerequisites
 
 - Node.js `22`
 - `pnpm` `10.28.2`
-- stable Rust toolchain with Cargo (required on a dev runtime cache miss)
-- Docker, or native PostgreSQL 15+
-
-`pnpm dev` is the cross-platform entrypoint. `make dev` is a POSIX convenience
-alias and is not required on Windows.
+- Go `1.26.6`
+- Docker
 
 ## Important Rules
 
-- Run `pnpm dev` (or `make dev`) from every source-development checkout.
-- The complete launcher creates and validates that checkout's `.env.worktree`.
-- Do not copy `.env` into a source-development checkout.
-- If the launcher reports a stale generated environment, run `FORCE=1 make worktree-env` once and retry.
-- Use `PATCHBAY_DEV_ENV_FILE=/absolute/path/to/file` only for an intentional,
-  explicit runtime override.
+- The main checkout should use `.env`.
+- A worktree should use `.env.worktree`.
+- Do not copy `.env` into a worktree directory.
+
+Why:
+
+- the current command flow prefers `.env` over `.env.worktree`
+- if a worktree contains `.env`, it can accidentally point back to the main database
 
 ## Environment Files
 
-### Source-development checkout
+### Main Checkout
 
-The complete launcher creates `.env.worktree` automatically. To create it
-before the first launch:
+Create `.env` once:
+
+```bash
+cp .env.example .env
+```
+
+By default, `.env` points to:
+
+```bash
+POSTGRES_DB=multica
+POSTGRES_PORT=5432
+DATABASE_URL=postgres://multica:multica@localhost:5432/multica?sslmode=disable
+PORT=8080
+FRONTEND_PORT=3000
+```
+
+### Worktree
+
+Generate `.env.worktree` from inside the worktree:
 
 ```bash
 make worktree-env
 ```
 
-Generated values are isolated to this checkout:
+That generates values like:
 
 ```bash
-POSTGRES_DB=patchbay_my_feature_a1b2c3d4_702
+POSTGRES_DB=multica_my_feature_702
 POSTGRES_PORT=5432
-DATABASE_URL=postgres://patchbay:patchbay@localhost:5432/patchbay_my_feature_a1b2c3d4_702?sslmode=disable
 PORT=18782
 FRONTEND_PORT=13702
+DATABASE_URL=postgres://multica:multica@localhost:5432/multica_my_feature_702?sslmode=disable
 ```
 
-`.env` remains available for explicit self-host or other non-development
-commands; it is never selected implicitly by the complete Desktop launcher.
+Notes:
+
+- `POSTGRES_DB` is unique per worktree
+- `POSTGRES_PORT` stays fixed at `5432`
+- backend and frontend ports are derived from the worktree path hash
+- `make worktree-env` refuses to overwrite an existing `.env.worktree`
+
+To regenerate a worktree env file:
+
+```bash
+FORCE=1 make worktree-env
+```
+
+## Environments
+
+An environment is the database, ports, CLI profile and processes that belong to
+one checkout. It is a named object: it can be listed, inspected and deleted.
+
+```bash
+make up                      # start this checkout's environment (api + web)
+make up C=api,web,daemon     # choose the components
+make status                  # what is running, and whether it is yours
+make list                    # every environment on this machine
+make down                    # stop the processes, keep the data
+make destroy                 # stop, then drop the database and free the slot
+make gc                      # collect expired environments or ones whose checkout is gone
+```
+
+Components are `api` (Go backend), `web` (Next.js), `daemon` (agent daemon) and
+`desktop` (Electron). Selecting any of them implies `api`. `make up` is
+idempotent: re-running it against a live environment reuses the database, the
+profile and any component already healthy.
+
+Three properties are worth knowing because the old flow lacked them:
+
+- **API, Web and Desktop renderer ports, database names and profiles are allocated, not recomputed.** The
+  allocator starts from this directory's path hash, so a checkout keeps the
+  numbers it has always had, and moves only when the registry or a live
+  listener says the slot is taken. The registry lives in `~/.multica/dev/`;
+  deleting it and re-running `make up` is a supported recovery.
+- **Nothing reports success for something it has not reached.** The database is
+  created and verified through `DATABASE_URL` — the same string the backend
+  uses — and `GET /health` reports `pid`, `commit` and `started_at` so `make up`
+  can prove the process answering is the one it just started rather than a
+  leftover on the same port.
+- **`down` and `destroy` differ deliberately.** `down` stops processes and
+  keeps the database, profile and slot, so the next `make up` is seconds.
+  `destroy` consumes the database, profile, daemon task workspaces, Desktop
+  userData and slot. If any deletion fails, it keeps the manifest and exits
+  non-zero so cleanup can be retried instead of losing the deletion recipe.
+- **Temporary environments have a best-effort fallback.** `make up
+  ARGS=--ephemeral` records a 24-hour TTL. The next `make up` automatically
+  collects expired and directory-less environments; `make gc` runs the same
+  collection explicitly.
+
+Run any command inside an environment's variables without repeating them:
+
+```bash
+make env-exec ARGS="-- pnpm exec playwright test"
+```
+
+`make dev` (below) still runs backend and frontend in the foreground of your
+terminal, which is the right thing when you want Ctrl-C to stop everything.
 
 ## First-Time Setup
 
@@ -94,41 +167,80 @@ commands; it is never selected implicitly by the complete Desktop launcher.
 From any checkout (main or worktree):
 
 ```bash
-pnpm dev
+make dev
 ```
 
 This single command:
 
-- creates and validates the checkout's isolated `.env.worktree`
-- checks the always-required prerequisites; Rust is required only on a runtime cache miss
+- auto-detects whether you're in a main checkout or a worktree
+- creates the appropriate env file (`.env` or `.env.worktree`) if it doesn't exist
+- checks that prerequisites (Node.js, pnpm, Go, Docker) are installed
 - installs JavaScript dependencies
-- uses the shared Docker or native PostgreSQL service
+- ensures the shared PostgreSQL container is running
 - creates the application database if it does not exist
 - runs all migrations
-- starts the backend, browser login/share origin, and complete Electron client with renderer hot reload
+- starts both backend and frontend
 
-`make dev` is a POSIX convenience alias for the same complete launcher. There
-is intentionally no separate setup/start path: runtime, database, auth, and
-capability checks must stay on one observable path.
+### Explicit Setup (advanced)
+
+If you prefer separate control over setup and startup:
+
+#### Main Checkout
+
+```bash
+cp .env.example .env
+make setup-main
+make start-main
+```
+
+Stop:
+
+```bash
+make stop-main
+```
+
+#### Worktree
+
+```bash
+make worktree-env
+make setup-worktree
+make start-worktree
+```
+
+Stop:
+
+```bash
+make stop-worktree
+```
 
 ## Recommended Daily Workflow
+
+### Main Checkout
+
+Use the main checkout when you want a stable local environment for `main`.
+
+```bash
+make start-main
+make stop-main
+make check-main
+```
 
 ### Feature Worktree
 
 Use a worktree when you want isolated data and separate app ports.
 
 ```bash
-git worktree add ../patchbay-feature -b feat/my-change main
-cd ../patchbay-feature
+git worktree add ../multica-feature -b feat/my-change main
+cd ../multica-feature
 make dev
 ```
 
 After that, day-to-day commands are:
 
 ```bash
-pnpm dev              # complete Desktop stack; setup is idempotent
-make stop             # stop this checkout's tracked process tree
-make check            # explicit full local verification
+make dev              # start (re-runs setup if needed, idempotent)
+make stop-worktree    # stop
+make check-worktree   # verify
 ```
 
 ### Removing a Worktree
@@ -138,7 +250,7 @@ from another checkout so database cleanup happens before Git removes the
 worktree directory:
 
 ```bash
-make remove-worktree WORKTREE=../patchbay-feature
+make remove-worktree WORKTREE=../multica-feature
 ```
 
 The command refuses to remove the primary checkout, the current checkout, a
@@ -150,17 +262,18 @@ was never set up has no `.env.worktree`, so database cleanup is skipped.
 Running `git worktree remove` directly bypasses this cleanup and can leave an
 orphaned local database.
 
-## Running Multiple Checkouts at the Same Time
+## Running Main and Worktree at the Same Time
 
 This is a first-class workflow.
 
-Example (all source-development checkouts use generated values):
+Example:
 
 - main checkout
-  - database: generated `patchbay_<checkout>_<offset>`
-  - backend/frontend: generated isolated ports
+  - database: `multica`
+  - backend: `8080`
+  - frontend: `3000`
 - worktree checkout
-  - database: generated `patchbay_my_feature_a1b2c3d4_702`
+  - database: `multica_my_feature_702`
   - backend: generated worktree port such as `18782`
   - frontend: generated worktree port such as `13702`
 
@@ -194,12 +307,33 @@ Important:
 
 ### App Lifecycle
 
-Commands always target the current checkout:
+Main checkout:
 
 ```bash
-pnpm dev
+make setup-main
+make start-main
+make stop-main
+make check-main
+```
+
+Worktree:
+
+```bash
+make worktree-env
+make setup-worktree
+make start-worktree
+make stop-worktree
+make check-worktree
+```
+
+Generic targets for the current checkout:
+
+```bash
+make setup
+make start
 make stop
 make check
+make dev
 make test
 make migrate-up
 make migrate-down
@@ -211,9 +345,11 @@ These generic targets require a valid env file in the current directory.
 
 Database creation is automatic.
 
-The following commands ensure the target database exists before they continue:
+The following commands all ensure the target database exists before they continue:
 
-- `pnpm dev` / `make dev`
+- `make setup`
+- `make start`
+- `make dev`
 - `make test`
 - `make migrate-up`
 - `make migrate-down`
@@ -223,22 +359,28 @@ That logic lives in `scripts/ensure-postgres.sh`.
 
 ## Testing
 
-Run the explicit full local verification pipeline:
+Run all local checks:
 
 ```bash
-make check
+make check-main
+```
+
+Or from a worktree:
+
+```bash
+make check-worktree
 ```
 
 This runs:
 
 1. TypeScript typecheck
 2. TypeScript unit tests
-3. Rust workspace tests
+3. Go tests
 4. Playwright E2E tests
 
 Notes:
 
-- Rust tests create their own fixture data
+- Go tests create their own fixture data
 - E2E tests create their own workspace and issue fixtures
 - the check flow starts backend/frontend only if they are not already running
 
@@ -250,258 +392,105 @@ Run the local daemon:
 make daemon
 ```
 
-The daemon authenticates using the CLI's stored token (`patchbay login`).
+The daemon authenticates using the CLI's stored token (`multica login`).
 It registers runtimes for all watched workspaces from the CLI config.
 
-## Complete Desktop Runtime
+## Full-Stack Isolated Testing
 
-The complete Desktop launcher owns the backend, browser login origin, daemon
-runtime, database, ports, and Electron process for the current checkout. Use
-one command for this path:
-
-```bash
-pnpm dev
-```
-
-It creates and validates `.env.worktree`, stages a source-matched CLI/backend/
-migration set from the shared artifact cache (or performs one incremental Rust
-build on a miss), starts the isolated database and services, runs capability
-diagnostics, and then opens Electron. `pnpm dev:doctor` repeats diagnostics
-without starting another stack.
-
-Do not manually write CLI profiles, copy tokens into config files, or use an
-ambient PATH-installed CLI for Desktop development. Browser login in Electron
-exchanges the session for a Desktop-owned CLI token. A standalone terminal CLI
-does require its own `patchbay setup`/`patchbay login`; keep that profile
-separate from Desktop's profile.
-
-If a generated `.env.worktree` is from an older workflow, the launcher fails
-closed. Regenerate it once with `FORCE=1 make worktree-env`; never copy `.env`
-into a source-development checkout.
-
-### Desktop App Local Testing
-
-Run the complete Electron development environment with one command:
+Running the complete stack — backend, frontend and daemon — from source, with
+its own database and CLI profile, is one command:
 
 ```bash
-pnpm dev
+make up C=api,web,daemon
 ```
 
-For Desktop UI development against the hosted Google login and API, use the
-explicit hosted profile:
+It creates the environment if needed, sets the fixed local verification code
+before the first launch, logs in as `dev@localhost`, mints a personal access
+token, creates a workspace, writes the CLI profile, builds `server/bin/multica`
+and starts the daemon from that binary. It then prints the URL, the login, the
+commit, and the stop command.
+
+Two constraints are enforced rather than documented:
+
+- **The daemon runs from a built binary, never `go run`.** The daemon records
+  its own executable path at startup and re-execs it as the
+  execution-environment helper for every task; `go run` deletes that binary when
+  the launcher exits, so the daemon would register, heartbeat, and then fail
+  every task with `fork/exec …/go-build…/exe/multica: no such file or directory`.
+- **`daemon start` is refused under a daemon-managed task.** A checkout below a
+  `.multica/daemon_task_context.json` marker cannot start a second daemon
+  competing for its own work, so `make up C=daemon` stops with that explanation
+  before spending a login on it. Use `C=api,web` there.
+
+### Desktop
 
 ```bash
-pnpm dev:hosted
+make up C=desktop
 ```
 
-The hosted profile keeps the Electron/Vite renderer local for hot reload, but
-opens OAuth at `https://accounts.aspectlylabs.com` and sends API/WebSocket
-traffic to `https://api.aspectlylabs.com`. It does not start a local database,
-Rust server, or Next.js login origin. This profile is intentionally opt-in
-because it can read and change shared hosted data. The launcher rejects
-conflicting inherited `VITE_*` values before starting.
+This writes a marked `apps/desktop/.env.development.local` pointing at this
+environment's backend, starts Electron with the renderer port and app name from
+the environment registry, and waits until that renderer is actually serving.
+Several checkouts can therefore run Desktop side by side without maintaining a
+second path-derived identity. `make destroy` removes the marked env file and
+this environment's Electron userData. Direct `pnpm dev:desktop` still uses its
+path-derived fallback when it is run outside `make up`.
 
-The command does not open Electron until it has:
-
-1. Created or loaded the checkout-specific env, database, ports, and Electron
-   `userData` identity
-2. Installed dependencies using the global content-addressable pnpm store and
-   this worktree's own `node_modules` link tree
-3. Staged checksum-valid dev CLI, backend, and migration binaries whose Rust
-   source, Cargo manifests/lockfile, toolchain, target, architecture, profile,
-   and build metadata match
-4. Applied migrations and reached the local backend's DB-backed `/healthz`
-   readiness endpoint
-5. Started the checkout's Next.js Web origin and pointed Desktop browser,
-   share, and Google login links at that reachable service. Without the full
-   Clerk configuration the launcher lists the missing values instead of
-   silently emitting a dead login link
-6. Exercised local agent discovery through `patchbay daemon probe-runtimes`
-   (the renderer never guesses the host PATH)
-7. Verified Telegram and Weixin credential-encryption keys without logging
-   their values
-
-There is deliberately no UI-only or released/PATH-CLI development fallback. A
-missing capability fails before the window opens and prints an executable fix.
-Use `pnpm dev:doctor` to repeat the local diagnostics while the stack is running,
-or `pnpm dev:doctor --hosted` from a separate terminal to probe the hosted API
-and accounts broker explicitly.
-
-### Credentialed Electron Acceptance
-
-`pnpm dev` is the normal complete development path, but the pre-launch doctor
-cannot prove that an authenticated renderer can create an agent, execute a
-task, and render its reply. For a credentialed acceptance run, stop any
-existing complete-dev process for this checkout first (`make stop`), then run
-the acceptance command. It starts its own complete Electron window and waits
-for you to sign in normally; it does not attach to an already-running window:
-
-```bash
-pnpm dev:acceptance
-```
-
-The command attaches only to a random loopback CDP port and invokes a
-development-only renderer hook. The endpoint is unauthenticated by Chromium;
-this is an explicit local-machine trust boundary, so run it only on a trusted
-developer machine and do not expose the loopback port through a proxy or
-remote-forward. The runner keeps the endpoint lifetime limited to this command
-and stops the complete Electron process tree in every exit path. It uses the
-normal Electron session, daemon, workspace headers, backend, and task APIs; it
-does not accept a token or password on the command line. It creates a
-disposable private agent and issue, requires the exact reply marker to reach an
-assistant message in the Electron DOM, and deletes/archives the disposable
-resources before exiting. A failed cleanup is reported as a failed acceptance,
-with the leftover IDs and a fix.
-
-Provider verification is opt-in and never treats an active credential as a
-successful message test:
-
-```bash
-pnpm dev:acceptance -- --provider telegram
-pnpm dev:acceptance -- --provider weixin
-```
-
-These variants require the real BotFather token or Weixin iLink authorization
-to have been entered through Settings → Integrations. After connecting, send a
-real message to the Telegram bot or Weixin account; the command passes only
-after the server records `round_trip_status: passed` for that provider message
-and response. Without credentials, the command stops with the exact missing
-key or connection step; it never reports a false success. The CDP hook is
-disabled in normal renderer sessions and all packaged builds.
-
-| Situation                                                                      | Command                                   | Expected work                                                                          |
-| ------------------------------------------------------------------------------ | ----------------------------------------- | -------------------------------------------------------------------------------------- |
-| Normal local product development                                               | `pnpm dev` or `make dev`                  | Complete Electron + dev CLI + backend + Web origin + isolated DB, with Vite hot reload |
-| Desktop development against hosted OAuth/API                                  | `pnpm dev:hosted`                         | Local Electron/Vite hot reload with the production accounts/API tuple; no local API    |
-| Re-run capability diagnostics                                                  | `pnpm dev:doctor [--hosted]`              | CLI/version/source, selected API/accounts endpoints, agent detection, Telegram/Weixin configuration |
-| Compile-check frontend/Electron output                                         | `pnpm --filter @patchbay/desktop build`   | Electron/Vite production bundles; no Rust                                              |
-| Validate an installer, signing/notarization, updater, embedded CLI, or release | `pnpm --filter @patchbay/desktop package` | Release Rust CLI and installer packaging; may take tens of minutes                     |
-
-The dev runtime cache is per user and content-addressed. Unchanged Rust source
-reuses the CLI, backend, and migration runner without compiling, including in
-another worktree; a miss builds all three together in the incremental dev
-profile. Install `sccache` to share compiler outputs. Do not point multiple
-worktrees at one `server-rs/target`: target directories, `node_modules` link
-trees, databases, ports, env files, and processes stay isolated. Only pnpm's
-store, Cargo registry/git downloads, sccache, and the verified dev runtime cache
-are shared.
-
-Do not use the package path for routine development. Release/package never
-reads the dev cache: it performs the formal release build or consumes a
-checksum-verified exact-commit CLI artifact produced by the release workflow.
-
-CI follows the same boundary. It caches pnpm's store, Cargo registry/git
-downloads, bounded sccache compiler objects, and Turbo outputs; it never uploads
-an entire `server-rs/target`. Pull-request sccache restores are read-only so a
-branch compile cannot evict `main`'s objects. Cargo incremental is disabled in
-those jobs because ephemeral runners cannot reuse `target/` and incremental
-fingerprints fight sccache. Debuginfo is `line-tables-only` so backtraces remain
-while skipping full DWARF. `rust-quality` runs `fmt`, Clippy, and a normal
-link of the shipping `patchbay-server` and `patchbay` binaries; it does not
-repeat `cargo check` or a workspace `cargo build`, because Clippy already
-typechecks every target and `rust-tests` already links `--all-targets` as
-libtest executables. Release CLIs/installers are exact-commit workflow
-artifacts, not reusable caches. Cache
-keys remain OS/architecture/target aware, and Rust jobs print sccache statistics
-so restore/upload time and hit rate can be compared with cold compilation. Keep
-the repository within GitHub's default cache budget unless measured savings
-justify a paid increase; shrinking or removing a cache is correct when transfer
-time approaches rebuild time. See
-[GitHub dependency caching](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching)
-and [repository Actions settings](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository).
-
-Complete Desktop development logs in through the browser Clerk development
-flow. The launcher bootstraps the development Clerk configuration from the
-approved secret store (or complete process-only Clerk variables) and fails
-before Electron if that configuration is unavailable. Never put Clerk secrets
-or CLI tokens in `.env` files, the repository, or chat.
-
-Telegram still requires a real BotFather token entered through the integration
-flow, and personal Weixin still requires a real iLink QR authorization. Without
-those external credentials the UI must stop at the explicit provider step; a
-configured encryption key is capability readiness, not proof of a successful
-provider connection or test message.
-
-An installation row with `status: active` means that provider authorization was
-accepted; it is not a message-delivery guarantee. The Desktop status remains
-“Authorized · test message required” until a real inbound provider message gets
-a successful outbound response. The Telegram and Weixin adapters then record a
-server-owned verification marker (`round_trip_status: passed`) atomically; a
-failed send or a missing marker keeps the UI pending. A standalone terminal CLI
-login is only needed for CLI commands that call a protected server directly;
-Electron's complete dev flow signs in through the browser and owns its daemon
-session separately. Do not copy a CLI token into the repository or an `.env`
-file.
-
-#### Running multiple checkouts side-by-side
-
-`pnpm dev` auto-isolates every source-development checkout so several
-checkouts can run their own desktop dev instance at once — no extra setup.
-The generated `.env.worktree` records the allocated offset (the same offset
-used for backend/frontend ports):
-
-- `DESKTOP_RENDERER_PORT` = `5174 + offset` — its own Vite dev server. The
-  one offset that would land on `6000` gets `6174` instead: Chromium treats
-  `6000` as a restricted port and fails the load with `ERR_UNSAFE_PORT`
-- `DESKTOP_APP_SUFFIX` = `<folder>-<checkout-id>-<offset>` — its own
-  single-instance lock / `userData`, and an app named `Patchbay Canary
-  <folder>-<checkout-id>-<offset>` so it is distinguishable in Cmd+Tab. The
-  checkout identity keeps independent clones unique even when their folder and
-  0–999 port offset collide.
-
-The user-level reservation registry under `~/.patchbay/dev/` records active
-generated env files, so independent clones participate in the same port
-allocation pool across restarts. Stale entries are ignored once their checkout
-or env file is gone. The registry contains paths and offsets only; it never
-contains provider credentials.
-
-The complete launcher exports each checkout's backend and WebSocket endpoints
-to Electron, so no hand-written `apps/desktop/.env.development.local` is
-required.
+Log in with `dev@localhost` and `888888`.
 
 ### Isolation Guarantee
 
-Nothing in this flow touches the system-installed `patchbay` or the default
-`~/.patchbay/config.json`:
+Nothing in this flow touches the system-installed `multica` or the default
+`~/.multica/config.json`:
 
-| Resource        | System / Production            | Local Dev (per-checkout)                             |
-| --------------- | ------------------------------ | ---------------------------------------------------- |
-| Config          | `~/.patchbay/config.json`      | `~/.patchbay/profiles/desktop-<host>/config.json` |
-| Daemon PID      | `~/.patchbay/daemon.pid`       | `~/.patchbay/profiles/desktop-<host>/daemon.pid`  |
-| Health port     | `19514`                        | derived from the Desktop profile (never `19514`)  |
-| Workspaces dir  | `~/patchbay_workspaces/`       | checkout-scoped task config root                  |
-| Database        | remote / production            | local PostgreSQL: `patchbay_<slug>_<checkout-id>_<offset>` |
-| Desktop profile | `desktop-api.aspectlylabs.com` | `desktop-localhost-<port>`                        |
+| Resource | System / Production | Local Dev (per environment) |
+|---|---|---|
+| Config | `~/.multica/config.json` | `~/.multica/profiles/dev-<slug>-<offset>/config.json` |
+| Daemon PID | `~/.multica/daemon.pid` | `~/.multica/profiles/dev-<slug>-<offset>/daemon.pid` |
+| Workspaces dir | `~/multica_workspaces/` | `~/multica_workspaces_dev-<slug>-<offset>/` |
+| Database | remote / production | local: `multica_<slug>_<offset>` |
+| Registry | — | `~/.multica/dev/envs/<name>/` |
+| Desktop profile | `desktop-api.multica.ai` | `desktop-localhost-<port>` |
 
-Multiple source-development checkouts can run simultaneously without sharing
-databases, ports, Electron identities, or target directories.
+Multiple environments run simultaneously without conflict; `make list` shows
+all of them.
 
 ## Troubleshooting
 
-### Missing or Stale Development Env
+### Missing Env File
 
 If you see:
+
+```text
+Missing env file: .env
+```
+
+or:
 
 ```text
 Missing env file: .env.worktree
 ```
 
-or a message saying that `.env.worktree` is not a current isolated checkout
-environment, create/regenerate the file:
+then create the expected env file first.
+
+Main checkout:
+
+```bash
+cp .env.example .env
+```
+
+Worktree:
 
 ```bash
 make worktree-env
 ```
-
-For an existing stale file, use `FORCE=1 make worktree-env`. Only set
-`PATCHBAY_DEV_ENV_FILE` when you intentionally want an explicit override
-outside the generated complete-dev environment.
 
 ### Check Which Database a Checkout Uses
 
 Inspect the env file:
 
 ```bash
+cat .env
 cat .env.worktree
 ```
 
@@ -515,21 +504,32 @@ Look for:
 ### List All Local Databases in Shared PostgreSQL
 
 ```bash
-docker compose exec -T postgres psql -U patchbay -d postgres -At -c "select datname from pg_database order by datname;"
+docker compose exec -T postgres psql -U multica -d postgres -At -c "select datname from pg_database order by datname;"
 ```
 
-### Checkout Is Accidentally Using the Main Database
+### Worktree Is Accidentally Using the Main Database
 
-The complete launcher validates the generated `.env.worktree` identity,
-database name, and ports before starting. If validation fails, regenerate it
-with `FORCE=1 make worktree-env` rather than copying `.env`.
+Check whether the worktree contains `.env`.
+
+It should not.
+
+The safe worktree setup is:
+
+```bash
+make worktree-env
+make setup-worktree
+make start-worktree
+```
 
 ### App Stops but PostgreSQL Keeps Running
 
 That is expected.
 
-`make stop` only stops the current checkout's tracked Electron/backend/Web
-process tree.
+- `make stop`
+- `make stop-main`
+- `make stop-worktree`
+
+only stop backend/frontend processes.
 
 To stop the shared PostgreSQL container:
 
@@ -549,9 +549,9 @@ If you want a fresh database for the current checkout only (drops the
 database named in `POSTGRES_DB`, recreates it, and runs all migrations):
 
 ```bash
-make stop        # stop the tracked development process tree first
+make stop        # stop backend/frontend first
 make db-reset
-pnpm dev
+make start
 ```
 
 - only affects the current env's database; other worktree databases are untouched
@@ -565,9 +565,9 @@ make db-drop ENV_FILE=.env.worktree
 ```
 
 The command prints the selected database and environment file, then requires a
-`y/N` confirmation. It only operates on the local Docker or native PostgreSQL service,
+`y/N` confirmation. It only operates on the local Docker PostgreSQL service,
 protects PostgreSQL system databases, and refuses to drop the default main
-database `patchbay` unless `ALLOW_MAIN_DB_DROP=1` is explicitly supplied.
+database `multica` unless `ALLOW_MAIN_DB_DROP=1` is explicitly supplied.
 Declining the confirmation is a successful no-op; when called by
 `make remove-worktree`, it also leaves the worktree in place.
 
@@ -581,7 +581,7 @@ Warning:
 
 - this deletes the shared Docker volume
 - this deletes the main database and every worktree database in that volume
-- after that run `pnpm dev` again
+- after that you must run `make setup-main` or `make setup-worktree` again
 
 ## Typical Flows
 
@@ -594,20 +594,28 @@ make dev
 ### Feature Worktree
 
 ```bash
-git worktree add ../patchbay-feature -b feat/my-change main
-cd ../patchbay-feature
+git worktree add ../multica-feature -b feat/my-change main
+cd ../multica-feature
 make dev
 ```
 
 ### Return to a Previously Configured Worktree
 
 ```bash
-cd ../patchbay-feature
-pnpm dev
+cd ../multica-feature
+make start-worktree
 ```
 
 ### Validate Before Pushing
 
+Main checkout:
+
 ```bash
-make check
+make check-main
+```
+
+Worktree:
+
+```bash
+make check-worktree
 ```

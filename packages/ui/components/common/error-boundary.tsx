@@ -27,7 +27,7 @@ const INITIAL_STATE: ErrorBoundaryState = { error: null };
 /**
  * Section-level error boundary. Wrap individual UI sections (the timeline,
  * the comment list, a sidebar panel) so a render-time crash in one section
- * does not blank the whole page. See AGENTS.md "API Response Compatibility".
+ * does not blank the whole page. See CLAUDE.md "API Response Compatibility".
  *
  * For full-page takeovers prefer route-level error UIs (Next.js error.tsx,
  * router error elements). This component is for the in-page recovery case.

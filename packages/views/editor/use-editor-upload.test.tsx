@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enEditor from "../locales/en/editor.json";
 
 const mockToastError = vi.hoisted(() => vi.fn());
@@ -11,7 +11,7 @@ vi.mock("sonner", () => ({
   toast: { error: mockToastError },
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: { uploadFile: mockUploadFile },
 }));
 
@@ -25,7 +25,7 @@ function wrapper({ children }: { children: ReactNode }) {
   );
 }
 
-// PB-4808 — `uploadWithToast` only ever toasted if its caller passed
+// MUL-4808 — `uploadWithToast` only ever toasted if its caller passed
 // `onError`, and no composer did. So a failed upload silently removed its
 // placeholder and the file simply vanished with no explanation. The gate's
 // minimum failure fallback ("drop the placeholder, SAY SO, allow submit

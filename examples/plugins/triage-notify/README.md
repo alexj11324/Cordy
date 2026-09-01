@@ -1,22 +1,24 @@
 # Triage Notify
 
-Demonstrates the hook engine: Patchbay calling **out** to a plugin's own server,
+Demonstrates the hook engine: Multica calling **out** to a plugin's own server,
 and that server calling back in.
 
 The three previous examples only ever ran inbound — a sandboxed panel asking the
 host for things. This one has a backend, which is what makes every check in the
 hook engine necessary.
 
-## The three triggers
+## The four triggers
 
-The same hook, reached three ways. What differs is who caused it, and therefore
-whose name the resulting comment carries.
+The triage hook is reached three ways; the heartbeat adds a fourth, scheduled
+trigger. What differs is who caused each call and therefore whose name any
+resulting comment carries.
 
 | Trigger | Where it comes from | Blocks? | Comment author |
 | --- | --- | --- | --- |
 | `ui` | The **Triage this issue** button in the panel | The panel only | The person who clicked |
 | `manual` | The **Triage this issue** entry in the issue actions menu | That menu only | The person who picked it |
 | `event` | Automatically, when an issue is created | **Never** | The plugin itself |
+| `schedule` | Every five minutes in UTC | **Never** | The plugin itself |
 
 `event` never blocking is not a performance tuning choice. The event bus runs its
 listeners inline on the goroutine of the request that published, so a hook
@@ -29,7 +31,7 @@ else's server was slow.
 ```bash
 # The signing secret is shown once, next to the install token, when an admin
 # rotates the plugin's token in workspace settings.
-PATCHBAY_SIGNING_SECRET=whsec_… node server/handler.mjs
+MULTICA_SIGNING_SECRET=whsec_… node server/handler.mjs
 ```
 
 `server/handler.mjs` is the interesting file if you are writing a plugin. It
@@ -58,6 +60,20 @@ it (recorded with `via_plugin_id`), an `event` call writes as the plugin. A
 handler cannot elect to write as somebody else, which is the reason the callback
 token exists instead of just handing out the install token.
 
+The callback token is revoked when this HTTP request returns and is held by one
+Multica server instance. Use it only for work completed before responding. A
+scheduled integration that needs to continue asynchronously or reconcile a
+large external backlog should store the `mpi_` install token shown to the admin
+at token rotation and use that standing credential instead.
+
+## Scheduled delivery identity
+
+The `scheduled_heartbeat` Hook is intentionally side-effect free. It logs the
+stable `delivery_id`, per-attempt `invocation_id` and `attempt`, plus
+`schedule.planned_at`. A real scheduled Hook must persist `delivery_id` before
+performing side effects: network timeouts and stale-lease recovery can deliver
+the same planned occurrence more than once.
+
 ## Where a plugin can send data
 
 `net:triage.example.com` in the manifest is the whole answer, and the admin sees
@@ -66,7 +82,7 @@ suffix: a plugin that needs `api.triage.example.com` declares that too. The same
 list becomes the panel's CSP `connect-src`, so one string means one thing in
 both places.
 
-Nothing a deployment can configure widens it. `PATCHBAY_PLUGIN_DEV_ORIGINS` lets
+Nothing a deployment can configure widens it. `MULTICA_PLUGIN_DEV_ORIGINS` lets
 an author point a hook at a local server during development, but the `net:`
 check still runs — the operator can relax where the network guard applies, not
 what the admin approved.
@@ -74,7 +90,7 @@ what the admin approved.
 ## Local development
 
 ```bash
-export PATCHBAY_PLUGIN_DEV_ORIGINS=https://localhost:8787
+export MULTICA_PLUGIN_DEV_ORIGINS=https://localhost:8787
 ```
 
 Then point `transport.url` at your local handler and declare the matching

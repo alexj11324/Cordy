@@ -1,41 +1,36 @@
 ---
 title: 개발 참여
-description: Patchbay 로컬 개발 환경을 설정하고 테스트를 실행하며 저장소 규칙에 따라 변경 사항을 제출합니다.
+description: Multica 로컬 개발 환경을 설정하고 테스트를 실행하며 저장소 규칙에 따라 변경 사항을 제출합니다.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay는 Rust backend와 pnpm monorepo로 구성됩니다. 로컬에서 시작하는 가장 간단한 방법은 `pnpm dev`입니다. 현재 checkout의 환경, 소스 일치 runtime, 데이터베이스, migration을 준비한 뒤 완전한 Electron, API, 브라우저 로그인/공유 origin을 시작합니다.
+Multica는 Go backend와 pnpm monorepo로 구성됩니다. 로컬에서 시작하는 가장 간단한 방법은 `make dev`입니다. 현재 checkout의 환경, 데이터베이스, migration을 준비한 뒤 Web과 API를 시작합니다.
 
 ## 환경 요구 사항
 
 - Node.js 22
 - pnpm 10.28.2
-- Rust stable과 Cargo(dev runtime cache miss 시 필요)
-- Docker Engine/Desktop 또는 native PostgreSQL 15+
-- Git(Make는 POSIX용 선택적 편의 명령)
+- Go 1.26.6
+- Docker Engine 또는 Docker Desktop
+- Git과 Make
 
-`pnpm dev`는 크로스 플랫폼에서 동작합니다. `PATCHBAY_POSTGRES_RUNTIME=auto`는
-Compose가 게시하는 `localhost:5432`에서만 Docker를 선택합니다. 해당 endpoint가
-의도적으로 모호한 경우 `native` 또는 `docker`를 명시하세요.
-
-버전과 의존성은 루트 `package.json`, `server-rs/Cargo.toml`, `server-rs/Cargo.lock`, CI workflow를 기준으로 확인합니다.
+버전은 루트 `package.json`, `server/go.mod`, CI workflow를 기준으로 확인합니다.
 
 ## 처음 시작
 
 ```bash
-git clone https://github.com/alexj11324/Cordy.git
-cd patchbay
-pnpm dev
+git clone https://github.com/multica-ai/multica.git
+cd multica
+make dev
 ```
 
-기본 checkout은 `.env`를 사용합니다. 파일이 없으면 `pnpm dev`가 `.env.example`에서 만들고 공유 PostgreSQL을 시작한 뒤 의존성을 설치하고 migration을 실행해 API, 브라우저 로그인/공유 origin, Electron을 시작합니다.
+기본 checkout은 `.env`를 사용합니다. 파일이 없으면 `make dev`가 `.env.example`에서 만들고 공유 PostgreSQL을 시작한 뒤 의존성을 설치하고 migration을 실행해 API와 Web을 시작합니다.
 
 기본 주소:
 
 ```text
-Desktop: renderer hot reload가 적용된 Electron 창
-브라우저/공유/로그인 origin: http://localhost:3000
+Web: http://localhost:3000
 API: http://localhost:8080
 ```
 
@@ -46,29 +41,28 @@ API: http://localhost:8080
 저장소는 기본 checkout과 여러 worktree를 동시에 실행할 수 있습니다. 하나의 PostgreSQL 컨테이너를 공유하지만 서로 다른 데이터베이스와 port를 사용합니다.
 
 ```bash
-git worktree add ../patchbay-feature -b feat/my-change main
-cd ../patchbay-feature
-pnpm dev
+git worktree add ../multica-feature -b feat/my-change main
+cd ../multica-feature
+make setup-worktree
+make start-worktree
 ```
 
-`pnpm dev`는 필요할 때 `.env.worktree`를 만들고 사용 가능한 격리 port를 할당한 뒤 source-matched runtime과 전체 개발 stack을 준비합니다. 다시 시작할 때도 같은 명령을 사용합니다.
+`make setup-worktree`는 `.env.worktree`를 만들고 경로를 기준으로 데이터베이스 이름과 port를 정합니다. 다시 시작하려면 다음을 실행합니다.
 
 ```bash
-pnpm dev
+make start-worktree
 ```
 
-현재 worktree의 Desktop/Electron, Web, API를 중지하려면 다음을 실행합니다.
+현재 worktree의 Web과 API를 중지하려면 다음을 실행합니다.
 
 ```bash
-make stop
+make stop-worktree
 ```
 
 `make dev`를 바로 실행할 수도 있습니다. 스크립트가 `.git` 파일을 통해 worktree를 감지하고 `.env.worktree`를 선택합니다.
 
 <Callout type="info">
-  worktree는 PostgreSQL 컨테이너만 공유하며 데이터베이스는 공유하지 않습니다.
-  worktree마다 새 Compose project를 시작하지 마세요. 먼저 `.env.worktree`의
-  `POSTGRES_DB`, `PORT`, `FRONTEND_PORT`를 확인하세요.
+worktree는 PostgreSQL 컨테이너만 공유하며 데이터베이스는 공유하지 않습니다. worktree마다 새 Compose project를 시작하지 마세요. 먼저 `.env.worktree`의 `POSTGRES_DB`, `PORT`, `FRONTEND_PORT`를 확인하세요.
 </Callout>
 
 ## 자주 사용하는 명령
@@ -76,8 +70,9 @@ make stop
 ### 전체 절차
 
 ```bash
-make dev              # 완전한 Electron + dev CLI + backend + Web origin + 격리 DB
-make stop             # 현재 checkout이 추적하는 Electron/backend/Web 프로세스 트리 중지
+make dev              # 현재 checkout 준비 및 시작
+make start            # 기존 환경으로 API와 Web 시작
+make stop             # 현재 checkout의 프로세스 중지
 make check            # 전체 로컬 검증 절차 실행
 make build            # server, CLI, migrate binary 빌드
 ```
@@ -86,32 +81,15 @@ make build            # server, CLI, migrate binary 빌드
 
 ```bash
 pnpm install
-pnpm dev              # hot reload를 포함한 완전한 Desktop 개발
-pnpm dev:doctor       # CLI/backend/DB/agent/integration 진단
-pnpm dev:web:next     # Next.js Web 클라이언트
+pnpm dev:web
+pnpm dev:desktop
 pnpm build
 pnpm typecheck
 pnpm lint
 pnpm test
 ```
 
-Desktop 개발 경로는 완전 모드 하나만 제공합니다:
-
-| 상황                                                      | 명령                                      | 수행 작업                                                                        |
-| --------------------------------------------------------- | ----------------------------------------- | -------------------------------------------------------------------------------- |
-| 일반 로컬 제품 개발                                       | `pnpm dev` 또는 `make dev`                | Electron, 소스 일치 dev CLI, backend, Web origin, 격리 DB, hot reload, 기능 검사 |
-| 개발 진단 재실행                                          | `pnpm dev:doctor`                         | CLI/소스/버전, backend/DB, agent 탐지, Telegram/Weixin 설정                      |
-| 프런트엔드/Electron 빌드 확인                             | `pnpm --filter @patchbay/desktop build`   | production JS bundle, Rust 없음                                                  |
-| installer, 서명/공증, updater, 내장 CLI 또는 release 검증 | `pnpm --filter @patchbay/desktop package` | release Rust CLI와 installer 패키징, 수십 분이 걸릴 수 있음                      |
-
-dev runtime cache에는 일치하는 CLI, backend, migration runner가 포함되며 Rust
-source, Cargo metadata, toolchain, target, architecture, profile, build 변수로
-분리됩니다. hit 시 Rust를 compile하지 않고 miss일 때만 세 바이너리를 함께
-incremental dev profile과 선택적 공유 sccache로 build합니다. worktree 간에는
-`node_modules` link tree, `server-rs/target`, DB, port, env, process를 공유하지 않습니다.
-release/package는 독립적이며 dev cache를 읽지 않습니다.
-
-루트 명령은 기본적으로 Mobile을 제외합니다. Mobile에는 별도 스크립트와 CI가 있으므로 변경하기 전에 `apps/mobile/AGENTS.md`를 읽으세요.
+루트 명령은 기본적으로 Mobile을 제외합니다. Mobile에는 별도 스크립트와 CI가 있으므로 변경하기 전에 `apps/mobile/CLAUDE.md`를 읽으세요.
 
 ### Backend
 
@@ -121,7 +99,7 @@ make daemon
 make test
 make migrate-up
 make migrate-down
-make rust-build
+make sqlc
 ```
 
 소스에서 CLI 명령을 실행하려면 다음을 사용합니다.
@@ -140,37 +118,37 @@ Web과 Desktop에 모두 필요한 기능은 역할에 따라 배치합니다.
 4. Next.js, Electron, 라우팅 adapter는 해당 app에 남깁니다.
 5. 공유 페이지는 Web과 Desktop 양쪽에 연결합니다.
 
-서버 데이터는 TanStack Query가 관리하고 필터, 초안, 레이아웃 같은 클라이언트 상태는 Zustand가 관리합니다. 구체적인 경계는 [프로젝트 아키텍처](/developers/architecture)와 루트 `AGENTS.md`를 참고하세요.
+서버 데이터는 TanStack Query가 관리하고 필터, 초안, 레이아웃 같은 클라이언트 상태는 Zustand가 관리합니다. 구체적인 경계는 [프로젝트 아키텍처](/developers/architecture)와 루트 `CLAUDE.md`를 참고하세요.
 
 API를 추가하거나 변경하면 `packages/core/api/`의 zod schema도 업데이트하고 누락된 필드, 알 수 없는 enum, 잘못된 형식에 대한 parsing 테스트를 추가해야 합니다.
 
 ## 데이터베이스 변경
 
-Migration은 `migrations/`에 있고 production query module은 `server-rs/crates/patchbay-db/src/queries/`에 있습니다.
+Migration은 `server/migrations/`에 있고 query는 `server/pkg/db/queries/`에 있습니다.
 
 1. 다음 사용하지 않은 숫자 접두사를 사용해 `.up.sql`과 `.down.sql`을 모두 만듭니다.
 2. 데이터베이스 foreign key, cascade delete, cascade update를 추가하지 않습니다. 관계 검사와 정리는 애플리케이션 계층에서 수행합니다.
 3. 모든 새 index는 `CREATE INDEX CONCURRENTLY` 또는 `CREATE UNIQUE INDEX CONCURRENTLY`를 사용합니다.
 4. concurrent index 하나는 해당 문장만 포함한 별도 migration 파일에 둡니다.
-5. 해당하는 handwritten SQLx query module을 직접 수정합니다. Rust 경로에는 생성된 sqlc 계층이 없습니다.
-6. 변경 사항과 가장 가까운 `patchbay-db` 테스트를 먼저 실행한 뒤 `make test`로 locked Rust workspace를 검증합니다.
+5. query를 수정한 뒤 `make sqlc`를 실행하고 생성된 `server/pkg/db/generated/` 변경 사항을 commit합니다.
+6. sqlc 생성 파일을 직접 수정하지 않습니다.
 
 여러 쓰기 작업이 함께 성공하거나 rollback되어야 하면 service 계층에서 애플리케이션 transaction을 사용합니다.
 
 ## 테스트 위치
 
-| 변경                             | 테스트 위치                                                                 |
-| -------------------------------- | --------------------------------------------------------------------------- |
-| 공유 비즈니스 로직, query, store | `packages/core/*.test.ts`                                                   |
-| 공유 페이지와 컴포넌트           | `packages/views/*.test.tsx`                                                 |
-| Web 또는 Desktop 플랫폼 wiring   | 해당 `apps/*` 디렉터리                                                      |
-| end-to-end 흐름                  | `e2e/*.spec.ts`                                                             |
-| Backend                          | 해당 `server-rs/crates/*` package의 `#[cfg(test)]` module 또는 `tests/*.rs` |
+| 변경 | 테스트 위치 |
+| --- | --- |
+| 공유 비즈니스 로직, query, store | `packages/core/*.test.ts` |
+| 공유 페이지와 컴포넌트 | `packages/views/*.test.tsx` |
+| Web 또는 Desktop 플랫폼 wiring | 해당 `apps/*` 디렉터리 |
+| end-to-end 흐름 | `e2e/*.spec.ts` |
+| Backend | 관련 Go package의 `*_test.go` |
 
 변경 사항과 가장 가까운 검사를 먼저 실행한 뒤 범위를 넓히세요. Docs만 변경한 경우:
 
 ```bash
-pnpm --filter @patchbay/docs typecheck
+pnpm --filter @multica/docs typecheck
 ```
 
 공유 프런트엔드 변경:
@@ -192,7 +170,7 @@ make test
 make check
 ```
 
-`make check`는 TypeScript 검사, locked Rust workspace 테스트, Playwright E2E를 실행합니다. CI는 변경 범위에 따라 build와 lint를 수행하고 플랫폼 또는 installer 전용 테스트도 실행합니다.
+`make check`는 TypeScript typecheck와 단위 테스트, Go 테스트, Playwright E2E를 실행합니다. CI는 변경 범위에 따라 build와 lint를 수행하고 플랫폼 또는 installer 전용 테스트도 실행합니다.
 
 ## 현재 개발 데이터베이스 초기화
 
@@ -201,15 +179,15 @@ make check
 ```bash
 make stop
 make db-reset
-pnpm dev
+make start
 ```
 
 `make db-reset`은 현재 `POSTGRES_DB`를 삭제하고 다시 만들며 원격 데이터베이스 연결을 거부합니다. 실행 전에 `.env` 또는 `.env.worktree`를 확인해 대상 데이터베이스가 맞는지 확인하세요.
 
 ## 제출 전 확인
 
-- 루트 `AGENTS.md`와 관련 하위 디렉터리 안내를 읽습니다.
-- 현재 태스크에 필요한 범위만 변경합니다.
+- 루트 `CLAUDE.md`와 관련 하위 디렉터리 안내를 읽습니다.
+- 현재 작업에 필요한 범위만 변경합니다.
 - 코드 주석은 영어로 작성합니다.
 - `.env`, token, 빌드 결과물, 로컬 경로를 commit하지 않습니다.
 - `feat(scope)`, `fix(scope)`, `docs` 같은 conventional commit을 사용합니다.

@@ -37,7 +37,7 @@ const CJK_URL_TERMINATOR_REGEX =
 // part of the URL. We drop a trailing run of them so the surrounding markdown
 // still parses — mirroring GFM's own autolink trailing-punctuation trim. A URL
 // that genuinely ends in `*` / `~` loses that character from the link, exactly
-// as it does on GitHub (PB-4242).
+// as it does on GitHub (MUL-4242).
 const TRAILING_MD_DELIMITER = /[*~]+$/
 
 interface DetectedLink {
@@ -347,7 +347,7 @@ export function detectLinks(text: string): DetectedLink[] {
  * Shared by the Tiptap editor and the read-only react-markdown renderers, so
  * both surfaces linkify identically. Trailing markdown delimiters are excluded
  * from the URL (see collectLinkifyMatches), which keeps `**url**` bold and its
- * link clean (PB-4242).
+ * link clean (MUL-4242).
  */
 export function preprocessLinks(text: string): string {
   // Quick check - if no potential links, return early

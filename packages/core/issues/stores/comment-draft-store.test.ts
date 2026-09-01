@@ -125,7 +125,7 @@ describe("comment draft store — attachments in the draft", () => {
 });
 
 describe("comment draft store — prune on rehydrate", () => {
-  const KEY = "patchbay_comment_drafts:acme";
+  const KEY = "multica_comment_drafts:acme";
 
   beforeEach(() => {
     localStorage.clear();

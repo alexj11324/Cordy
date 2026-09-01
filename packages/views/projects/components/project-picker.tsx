@@ -3,9 +3,9 @@
 import { useState } from "react";
 import { FolderKanban } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { projectListOptions } from "@patchbay/core/projects/queries";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import type { UpdateIssueRequest } from "@patchbay/core/types";
+import { projectListOptions } from "@multica/core/projects/queries";
+import { useWorkspaceId } from "@multica/core/hooks";
+import type { UpdateIssueRequest } from "@multica/core/types";
 import { ProjectIcon } from "./project-icon";
 import {
   PropertyPicker,
@@ -48,7 +48,7 @@ export function ProjectPicker({
   const current = projects.find((p) => p.id === projectId);
   const [filter, setFilter] = useState("");
   // Normalize to an always-boolean controlled `open`, matching the other
-  // pickers (status/priority/executor/labels). Base UI latches a controlled
+  // pickers (status/priority/assignee/labels). Base UI latches a controlled
   // `open={true}` — a later `undefined` does NOT close it — so callers wiring
   // `open={cond ? true : undefined}` (create-issue dialog) would otherwise
   // leave the popup stuck open after selecting a project.
@@ -64,7 +64,7 @@ export function ProjectPicker({
     (p) => p.title.toLowerCase().includes(query) || matchesPinyin(p.title, query),
   );
 
-  // Callers that bring their own trigger (create pill, chat pill, automation
+  // Callers that bring their own trigger (create pill, chat pill, autopilot
   // card, table cell) take over the trigger entirely.
   const resolvedTriggerRender = triggerRender ?? (
     <button type="button" disabled={disabled} className={PICKER_TRIGGER_CLASS} />
@@ -97,7 +97,7 @@ export function ProjectPicker({
       >
         {/* "No project" — always the first row, search active or not, and the
             only clear entry now that the pill carries no inline ×. Mirrors
-            the unassigned row in the executor picker. */}
+            the unassigned row in the assignee picker. */}
         <PickerItem
           emptyValue
           selected={!projectId}

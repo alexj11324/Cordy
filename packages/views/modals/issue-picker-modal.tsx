@@ -1,9 +1,9 @@
 "use client";
 
-import { issueStatusCategory } from "@patchbay/core/issues";
+import { issueStatusCategory } from "@multica/core/issues";
 import { useState, useEffect, useCallback, useRef } from "react";
-import type { Issue } from "@patchbay/core/types";
-import { api } from "@patchbay/core/api";
+import type { Issue } from "@multica/core/types";
+import { api } from "@multica/core/api";
 import {
   Command,
   CommandDialog,
@@ -12,7 +12,7 @@ import {
   CommandEmpty,
   CommandGroup,
   CommandItem,
-} from "@patchbay/ui/components/ui/command";
+} from "@multica/ui/components/ui/command";
 import { StatusIcon } from "../issues/components/status-icon";
 import { useT } from "../i18n";
 

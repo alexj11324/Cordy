@@ -4,7 +4,7 @@
  * when the user is anchored near the bottom; reading history is never
  * yanked down.
  *
- * Behavioral parity (apps/mobile/AGENTS.md):
+ * Behavioral parity (apps/mobile/CLAUDE.md):
  *   - Render ALL message roles. Unknown role values are downgraded to
  *     "assistant" by ChatMessageSchema's `.catch()`, so this list never
  *     needs to silently drop a row.
@@ -28,7 +28,7 @@
  * in `./message-long-press.tsx`.
  *
  * List engine: FlashList v2 (Shopify). FlatList was the original choice
- * (per the now-outdated "no FlashList" baseline in apps/mobile/AGENTS.md
+ * (per the now-outdated "no FlashList" baseline in apps/mobile/CLAUDE.md
  * — written before FlashList v2 stabilised). FlatList's `scrollToEnd` is
  * janky on variable-height lists by RN's own docs admission, and our
  * markdown bubbles render in multiple async passes (Shiki highlight,
@@ -46,12 +46,13 @@ import { FlashList } from "@shopify/flash-list";
 import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import type {
+  Agent,
   ChatMessage,
   ChatPendingTask,
   ChatQuickAction,
   TaskMessagePayload,
-} from "@patchbay/core/types";
-import type { AgentAvailability } from "@patchbay/core/agents";
+} from "@multica/core/types";
+import type { AgentAvailability } from "@multica/core/agents";
 import { taskMessagesOptions } from "@/data/queries/chat";
 import { Text } from "@/components/ui/text";
 import { Markdown } from "@/lib/markdown";
@@ -79,9 +80,9 @@ interface Props {
   loading: boolean;
   /** Has the workspace ever started a chat? Drives empty-state copy. */
   hasSessions: boolean;
-  /** Currently picked / inherited agent's display name. */
-  agentName?: string;
-  /** Receive a starter-prompt tap. Caller writes into the draft store
+  /** Currently picked / inherited agent. */
+  agent: Agent | null;
+  /** Receive a conversation-starter tap. Caller writes into the draft store
    *  (or focuses the composer with the text) — empty state stays neutral
    *  about send vs. preview. */
   onPickPrompt: (text: string) => void;
@@ -105,7 +106,7 @@ export function ChatMessageList({
   messages,
   loading,
   hasSessions,
-  agentName,
+  agent,
   onPickPrompt,
   onQuickAction,
   quickActionsDisabled = false,
@@ -118,13 +119,13 @@ export function ChatMessageList({
   // passes through to the list cells / bubble long-press wrappers normally.
   const selectingId = useChatSelectStore((s) => s.selectingId);
 
-  // Every image in this session, in message order (PB-5752), so tapping one
+  // Every image in this session, in message order (MUL-5752), so tapping one
   // opens the lightbox at its position and a swipe walks the rest.
   //
   // Above the loading / empty early returns because hooks must run on every
   // render — an empty `messages` just yields an empty block list.
   //
-  // Persisted messages only — same boundary web draws: a task Agent thread's
+  // Persisted messages only — same boundary web draws: a task transcript's
   // images live behind a separate cache and inside a folded section, so they
   // keep opening on their own rather than joining a sequence the reader
   // cannot see the rest of.
@@ -151,7 +152,7 @@ export function ChatMessageList({
     return (
       <ChatEmptyState
         hasSessions={hasSessions}
-        agentName={agentName}
+        agent={agent}
         onPickPrompt={onPickPrompt}
       />
     );
@@ -291,7 +292,7 @@ function MessageRow({
 
   if (isUser) {
     // User bubble: same Markdown pipeline as assistant — `@mention`
-    // serialisation `[PB-1](mention://issue/<id>)`, inline links, and
+    // serialisation `[MUL-1](mention://issue/<id>)`, inline links, and
     // inline code resolve identically to web's
     // `packages/views/chat/components/chat-message-list.tsx` user branch.
     // Width is capped at 80% so the bubble keeps the iMessage-style
@@ -378,7 +379,7 @@ function AssistantRow({
   const { data: timeline = [] } = useQuery(
     taskMessagesOptions(message.task_id),
   );
-  // no_response (PB-4351, mirrors packages/views AssistantMessage): the agent
+  // no_response (MUL-4351, mirrors packages/views AssistantMessage): the agent
   // completed this turn without text. Keep the tool timeline and show a notice
   // instead of an empty Markdown block; caption reads "Finished in" not
   // "Replied in".

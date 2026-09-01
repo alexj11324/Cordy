@@ -1,6 +1,6 @@
 /**
  * Mobile inbox cache patchers. Mirrors `packages/core/inbox/ws-updaters.ts`
- * (per AGENTS.md "Mobile-owned updaters" — copy the design, don't import:
+ * (per CLAUDE.md "Mobile-owned updaters" — copy the design, don't import:
  * key factory binding + cache shape can drift independently).
  *
  * Two cross-cutting events that change inbox state without firing an
@@ -15,7 +15,7 @@
  * Listing-level only; use-inbox-realtime wires these into the WS layer.
  */
 import type { QueryClient } from "@tanstack/react-query";
-import type { InboxItem, IssueStatus } from "@patchbay/core/types";
+import type { InboxItem, IssueStatus } from "@multica/core/types";
 import { inboxKeys } from "@/data/queries/inbox";
 
 export function patchInboxIssueStatus(

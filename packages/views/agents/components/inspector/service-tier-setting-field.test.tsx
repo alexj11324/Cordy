@@ -12,8 +12,8 @@ import {
 import type {
   RuntimeModel,
   RuntimeModelListRequest,
-} from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+} from "@multica/core/types";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enAgents from "../../../locales/en/agents.json";
 import enCommon from "../../../locales/en/common.json";
 import enIssues from "../../../locales/en/issues.json";
@@ -21,7 +21,7 @@ import enIssues from "../../../locales/en/issues.json";
 const mockInitiateListModels = vi.hoisted(() => vi.fn());
 const mockGetListModelsResult = vi.hoisted(() => vi.fn());
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: {
     initiateListModels: (...args: unknown[]) =>
       mockInitiateListModels(...args),
@@ -35,6 +35,7 @@ import { ServiceTierSettingField } from "./service-tier-setting-field";
 const FAST_MODEL: RuntimeModel = {
   id: "gpt-5.6-sol",
   label: "GPT-5.6 Sol",
+  supports_explicit_standard_service_tier: true,
   service_tiers: [
     {
       id: "priority",
@@ -106,6 +107,60 @@ describe("ServiceTierSettingField", () => {
     fireEvent.click(screen.getByText("Fast"));
 
     expect(onChange).toHaveBeenCalledWith("priority");
+  });
+
+  it("offers explicit standard speed separately from the runtime default", async () => {
+    const { onChange } = renderField();
+
+    await screen.findByText("Speed");
+    fireEvent.click(screen.getByRole("button"));
+    expect(
+      await screen.findByText("Standard speed and standard usage"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Standard"));
+
+    expect(onChange).toHaveBeenCalledWith("default");
+  });
+
+  it("does not offer explicit standard when an older daemon omits the capability", async () => {
+    const {
+      supports_explicit_standard_service_tier: _omitted,
+      ...oldDaemonModel
+    } = FAST_MODEL;
+    mockInitiateListModels.mockResolvedValue(listResult([oldDaemonModel]));
+    mockGetListModelsResult.mockResolvedValue(listResult([oldDaemonModel]));
+    renderField();
+
+    await screen.findByText("Speed");
+    fireEvent.click(screen.getByRole("button"));
+    expect(await screen.findByText("Fast")).toBeInTheDocument();
+    expect(screen.queryByText("Standard")).toBeNull();
+  });
+
+  it("offers explicit standard even when no alternative tier is advertised", async () => {
+    const standardOnly: RuntimeModel = {
+      id: "gpt-5.4-mini",
+      label: "GPT-5.4 mini",
+      supports_explicit_standard_service_tier: true,
+    };
+    mockInitiateListModels.mockResolvedValue(listResult([standardOnly]));
+    mockGetListModelsResult.mockResolvedValue(listResult([standardOnly]));
+    renderField({ model: standardOnly.id });
+
+    await screen.findByText("Speed");
+    fireEvent.click(screen.getByRole("button"));
+    expect(await screen.findByText("Standard")).toBeInTheDocument();
+  });
+
+  it("offers CLI-level explicit standard without a pinned model", async () => {
+    mockInitiateListModels.mockResolvedValue(listResult([FAST_MODEL]));
+    mockGetListModelsResult.mockResolvedValue(listResult([FAST_MODEL]));
+    renderField({ model: "" });
+
+    await screen.findByText("Speed");
+    fireEvent.click(screen.getByRole("button"));
+    expect(await screen.findByText("Standard")).toBeInTheDocument();
+    expect(screen.queryByText("Fast")).toBeNull();
   });
 
   it("hides when the model has no tiers and no value is persisted", async () => {

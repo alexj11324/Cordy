@@ -1,6 +1,6 @@
 /**
  * Pure picker body for issue labels — multi-select with toggle-on-tap.
- * Mirrors the executor picker shape (native nav header + UISearchController
+ * Mirrors the assignee picker shape (native nav header + UISearchController
  * registered in `_layout.tsx`; `query` flows in as a prop via
  * `useNativeSearchBar`) with two key differences:
  *
@@ -18,7 +18,7 @@ import { FlatList, Pressable, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
-import type { Label } from "@patchbay/core/types";
+import type { Label } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
 import { labelListOptions } from "@/data/queries/labels";
 import { useWorkspaceStore } from "@/data/workspace-store";

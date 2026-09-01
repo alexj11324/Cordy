@@ -58,7 +58,7 @@ expect_fail_naming "zz-unused-export-probe.tsx" \
 importer="$root_dir/packages/views/zz-probe-importer.tsx"
 track "$importer"
 cat >"$importer" <<'EOF'
-export { UnusedExportProbe } from "@patchbay/ui/components/ui/zz-unused-export-probe";
+export { UnusedExportProbe } from "@multica/ui/components/ui/zz-unused-export-probe";
 EOF
 expect_pass "check should pass once a consumer imports the component"
 rm -f "$importer" "$probe"
@@ -115,8 +115,8 @@ export function CommentProbe() {
 }
 EOF
 cat >"$mention" <<'EOF'
-// import { CommentProbe } from "@patchbay/ui/components/ui/zz-comment-probe";
-const note = 'import { CommentProbe } from "@patchbay/ui/components/ui/zz-comment-probe"';
+// import { CommentProbe } from "@multica/ui/components/ui/zz-comment-probe";
+const note = 'import { CommentProbe } from "@multica/ui/components/ui/zz-comment-probe"';
 export const probeNote = note;
 EOF
 expect_fail_naming "zz-comment-probe.tsx" \

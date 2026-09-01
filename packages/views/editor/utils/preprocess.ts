@@ -3,8 +3,8 @@ import {
   preprocessMentionShortcodes,
   preprocessFileCards,
   preprocessIssueIdentifiers,
-} from "@patchbay/ui/markdown";
-import { stripChannelMediaMarkers } from "@patchbay/core/types";
+} from "@multica/ui/markdown";
+import { stripChannelMediaMarkers } from "@multica/core/types";
 
 /**
  * Preprocess a markdown string before loading into Tiptap via contentType: 'markdown'.
@@ -16,7 +16,7 @@ import { stripChannelMediaMarkers } from "@patchbay/core/types";
  * String→string transforms on raw Markdown:
  * 1. Legacy mention shortcodes [@ id="..." label="..."] → [@Label](mention://member/id)
  *    (old serialization format in database, migrated on read)
- * 2. (readonly only) Bare issue identifiers PB-123 → [PB-123](mention://issue/PB-123)
+ * 2. (readonly only) Bare issue identifiers MUL-123 → [MUL-123](mention://issue/MUL-123)
  * 3. Raw URLs → markdown links via linkify-it (so they render as clickable Link nodes)
  * 4. File card syntax (new !file[name](url) + legacy [name](cdnUrl)) → HTML div for
  *    fileCard node parsing

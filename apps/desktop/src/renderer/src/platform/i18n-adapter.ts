@@ -1,7 +1,6 @@
-import type { LocaleAdapter, SupportedLocale } from "@patchbay/core/i18n";
+import type { LocaleAdapter, SupportedLocale } from "@multica/core/i18n";
 
-const STORAGE_KEY = "patchbay-locale";
-const LEGACY_STORAGE_KEY = "cordy-locale"; // legacy-brand-compat
+const STORAGE_KEY = "multica-locale";
 
 // Desktop adapter:
 //   - User choice: localStorage (set by Settings switcher).
@@ -13,14 +12,7 @@ export function createDesktopLocaleAdapter(systemLocale: string): LocaleAdapter 
   return {
     getUserChoice() {
       try {
-        const current = window.localStorage.getItem(STORAGE_KEY);
-        if (current) return current;
-        const legacy = window.localStorage.getItem(LEGACY_STORAGE_KEY);
-        if (legacy) {
-          window.localStorage.setItem(STORAGE_KEY, legacy);
-          window.localStorage.removeItem(LEGACY_STORAGE_KEY);
-        }
-        return legacy;
+        return window.localStorage.getItem(STORAGE_KEY);
       } catch {
         return null;
       }

@@ -22,44 +22,23 @@ import {
 import { AUTH_SESSION_STATE_CHANNEL } from "../shared/auth-session";
 import type {
   DaemonStatus,
-  DaemonAutoStartResult,
   LocalRuntimeProbe,
 } from "../shared/daemon-types";
 import {
   MAIN_RENDERER_CHANNEL_STATE_CHANNEL,
-  MAIN_RENDERER_MESSAGE_ACK_CHANNEL,
   type MainRendererMessageChannel,
 } from "../shared/main-renderer-messages";
-import {
-  createAuthHandoffDelivery,
-  type AuthHandoffPayload,
-} from "./auth-handoff";
 
 // Synchronously fetch app metadata from main at preload time so the renderer
 // can pass it into CoreProvider during the initial render — the alternative
 // (async ipc.invoke) would race the ApiClient construction in initCore and
 // the first few HTTP requests would go out without X-Client-Version/OS.
-function fetchAppInfo(): {
-  version: string;
-  os: "macos" | "windows" | "linux" | "unknown";
-  authCallbackProtocol: string;
-} {
+function fetchAppInfo(): { version: string; os: "macos" | "windows" | "linux" | "unknown" } {
   try {
     const info = ipcRenderer.sendSync("app:get-info") as
-      | {
-          version: string;
-          os: "macos" | "windows" | "linux" | "unknown";
-          authCallbackProtocol: string;
-        }
+      | { version: string; os: "macos" | "windows" | "linux" | "unknown" }
       | undefined;
-    if (
-      info &&
-      typeof info.version === "string" &&
-      typeof info.os === "string" &&
-      typeof info.authCallbackProtocol === "string"
-    ) {
-      return info;
-    }
+    if (info && typeof info.version === "string" && typeof info.os === "string") return info;
   } catch {
     // fall through
   }
@@ -67,7 +46,7 @@ function fetchAppInfo(): {
   const p = process.platform;
   const os: "macos" | "windows" | "linux" | "unknown" =
     p === "darwin" ? "macos" : p === "win32" ? "windows" : p === "linux" ? "linux" : "unknown";
-  return { version: "unknown", os, authCallbackProtocol: "patchbay" };
+  return { version: "unknown", os };
 }
 
 function fetchRuntimeConfig(): RuntimeConfigResult {
@@ -92,7 +71,7 @@ const windowContext = readDesktopWindowContext(process.argv);
 // Read the OS-preferred locale that main injected via additionalArguments.
 // Zero IPC, zero blocking — process.argv is populated before preload runs.
 function fetchSystemLocale(): string {
-  const arg = process.argv.find((a) => a.startsWith("--patchbay-locale="));
+  const arg = process.argv.find((a) => a.startsWith("--multica-locale="));
   return arg?.split("=")[1] ?? "en";
 }
 
@@ -119,8 +98,6 @@ function subscribeToMainRendererChannel<T>(
 }
 
 const desktopAPI = {
-  /** Identifies the native host for renderer capability decisions. */
-  host: "electron" as const,
   /** App version + normalized OS. Read once at preload time so the renderer
    *  can use it synchronously when initializing the API client. */
   appInfo,
@@ -161,42 +138,9 @@ const desktopAPI = {
    *  dedicated issue windows that belong to an old account. */
   reportAuthSession: (userId: string | null) =>
     ipcRenderer.send(AUTH_SESSION_STATE_CHANNEL, userId),
-  /** Listen for a PKCE-bound, one-time desktop login code delivered via deep link. */
-  onAuthHandoff: (
-    callback: (payload: {
-      code: string;
-      state: string;
-    }) => boolean | Promise<boolean>,
-  ) => {
-    const delivery = createAuthHandoffDelivery(callback, (payload) => {
-      ipcRenderer.send(MAIN_RENDERER_MESSAGE_ACK_CHANNEL, {
-        channel: "auth:handoff",
-        payload,
-      });
-    });
-    const handler = (
-      _event: Electron.IpcRendererEvent,
-      payload: AuthHandoffPayload,
-    ) => delivery.enqueue(payload);
-    const retry = () => delivery.retry();
-
-    ipcRenderer.on("auth:handoff", handler);
-    window.addEventListener("online", retry);
-    ipcRenderer.send(MAIN_RENDERER_CHANNEL_STATE_CHANNEL, {
-      channel: "auth:handoff",
-      ready: true,
-    });
-
-    return () => {
-      delivery.dispose();
-      ipcRenderer.removeListener("auth:handoff", handler);
-      window.removeEventListener("online", retry);
-      ipcRenderer.send(MAIN_RENDERER_CHANNEL_STATE_CHANNEL, {
-        channel: "auth:handoff",
-        ready: false,
-      });
-    };
-  },
+  /** Listen for auth token delivered via deep link */
+  onAuthToken: (callback: (token: string) => void) =>
+    subscribeToMainRendererChannel("auth:token", callback),
   /** Listen for invitation IDs delivered via deep link */
   onInviteOpen: (callback: (invitationId: string) => void) =>
     subscribeToMainRendererChannel("invite:open", callback),
@@ -261,9 +205,6 @@ const desktopAPI = {
   /** Open the OS folder picker and return the chosen absolute path. */
   pickDirectory: (defaultPath?: string) =>
     ipcRenderer.invoke("local-directory:pick", defaultPath),
-  /** Open the OS folder picker with multi-select and read each folder's origin. */
-  pickDirectories: (defaultPath?: string) =>
-    ipcRenderer.invoke("local-directory:pick-many", defaultPath),
   /** Validate that a path is an existing readable+writable directory. */
   validateLocalDirectory: (path: string) =>
     ipcRenderer.invoke("local-directory:validate", path),
@@ -279,8 +220,7 @@ const desktopAPI = {
   },
   /** Listen for Cmd/Ctrl+, requests to open Settings. Only the main window
    *  subscribes — main delivers the chord there even when it was pressed in
-   *  an issue window, because Settings belongs to the main app window.
-   *  Returns an unsubscribe fn. */
+   *  an issue window, because Settings is a tab. Returns an unsubscribe fn. */
   onOpenSettings: (callback: () => void) =>
     subscribeToMainRendererChannel("settings:open", () => callback()),
   /** Ask the main process to close the window (used after closing the last tab). */
@@ -330,7 +270,7 @@ const daemonAPI = {
     ipcRenderer.invoke("daemon:get-prefs"),
   setPrefs: (prefs: Partial<{ autoStart: boolean; autoStop: boolean }>): Promise<{ autoStart: boolean; autoStop: boolean }> =>
     ipcRenderer.invoke("daemon:set-prefs", prefs),
-  autoStart: (): Promise<DaemonAutoStartResult> =>
+  autoStart: (): Promise<void> =>
     ipcRenderer.invoke("daemon:auto-start"),
   retryInstall: (): Promise<void> =>
     ipcRenderer.invoke("daemon:retry-install"),
@@ -340,11 +280,6 @@ const daemonAPI = {
     const handler = (_: unknown, line: string) => callback(line);
     ipcRenderer.on("daemon:log-line", handler);
     return () => ipcRenderer.removeListener("daemon:log-line", handler);
-  },
-  onLogReset: (callback: () => void) => {
-    const handler = () => callback();
-    ipcRenderer.on("daemon:log-reset", handler);
-    return () => ipcRenderer.removeListener("daemon:log-reset", handler);
   },
   openLogFile: (): Promise<{ success: boolean; error?: string }> =>
     ipcRenderer.invoke("daemon:open-log-file"),

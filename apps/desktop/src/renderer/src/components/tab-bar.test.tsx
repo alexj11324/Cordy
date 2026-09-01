@@ -6,7 +6,8 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { useScrollFade } from "@patchbay/ui/hooks/use-scroll-fade";
+import { useScrollFade } from "@multica/ui/hooks/use-scroll-fade";
+import { SIDEBAR_WRAPPER_FILL_CLASS } from "@multica/ui/components/ui/sidebar";
 
 type MockTab = {
   id: string;
@@ -64,9 +65,9 @@ vi.mock("@/stores/tab-store", () => {
   return { useTabStore, useActiveGroup };
 });
 
-vi.mock("@patchbay/core/paths", async (importOriginal) => ({
+vi.mock("@multica/core/paths", async (importOriginal) => ({
   // Spread the real module so pure helpers (parseTabSubject etc.) keep working.
-  ...(await importOriginal<typeof import("@patchbay/core/paths")>()),
+  ...(await importOriginal<typeof import("@multica/core/paths")>()),
   paths: {
     workspace: (slug: string) => ({
       issues: () => `/${slug}/issues`,
@@ -81,7 +82,7 @@ vi.mock("@patchbay/core/paths", async (importOriginal) => ({
 // fallback); a test can set `pres.title` to simulate a resolved title that
 // differs, to exercise the active-tab persist effect.
 const pres = vi.hoisted(() => ({ title: null as string | null }));
-vi.mock("@patchbay/views/layout", () => ({
+vi.mock("@multica/views/layout", () => ({
   useTabPresentation: (_url: string, fallbackTitle?: string) => ({
     visual: { kind: "icon", icon: "ListTodo" },
     title: pres.title ?? fallbackTitle ?? "",
@@ -190,17 +191,17 @@ describe("TabBar hover action buttons", () => {
     expect(within(pinnedTab).getByText("Issues")).toBeTruthy();
   });
 
-  // PB-4370: each tab renders the shared ResourceLeadingVisual keyed off its
+  // MUL-4370: each tab renders the shared ResourceLeadingVisual keyed off its
   // URL. (Which visual/title a URL resolves to is covered by the views
   // tab-presentation tests; here we only assert the strip wires it in.)
   it("renders the resource leading visual for every tab", () => {
     state.byWorkspace.acme.tabs = [
-      { id: "tA", url: "/acme/automations", title: "Automations", pinned: false },
+      { id: "tA", url: "/acme/autopilots", title: "Autopilots", pinned: false },
       { id: "tB", url: "/acme/projects/proj-1", title: "Project", pinned: false },
     ];
     const { getByLabelText } = render(<TabBar />);
     expect(
-      getByLabelText("Automations").querySelector('[data-testid="tab-leading"]'),
+      getByLabelText("Autopilots").querySelector('[data-testid="tab-leading"]'),
     ).toBeTruthy();
     expect(
       getByLabelText("Project").querySelector('[data-testid="tab-leading"]'),
@@ -225,14 +226,14 @@ describe("TabBar hover action buttons", () => {
 
 describe("TabBar active-tab title persistence", () => {
   it("persists the resolved title only for the active tab", () => {
-    pres.title = "PB-1: Fixed";
+    pres.title = "MUL-1: Fixed";
     state.byWorkspace.acme.tabs = [
       { id: "tA", url: "/acme/issues/i1", title: "Issues", pinned: false },
       { id: "tB", url: "/acme/projects", title: "Projects", pinned: false },
     ];
     state.byWorkspace.acme.activeTabId = "tA";
     render(<TabBar />);
-    expect(state.updateTab).toHaveBeenCalledWith("tA", { title: "PB-1: Fixed" });
+    expect(state.updateTab).toHaveBeenCalledWith("tA", { title: "MUL-1: Fixed" });
     expect(state.updateTab).not.toHaveBeenCalledWith("tB", expect.anything());
     expect(state.updateTab).toHaveBeenCalledTimes(1);
   });
@@ -246,40 +247,76 @@ describe("TabBar active-tab title persistence", () => {
   });
 });
 
-describe("TabBar rectangular surfaces", () => {
-  it("renders the active tab as one detached rectangular surface", () => {
+describe("TabBar merged-tab chrome", () => {
+  // Keep the fill inside the translucent keyline so the merged border is even.
+  it("keeps the active tab's page-canvas fill out from under its keyline", () => {
     const { getByLabelText } = render(<TabBar />);
-    const surface = getByLabelText("Issues")
+    const cap = getByLabelText("Issues")
       .closest("[data-tab-frame]")
-      ?.querySelector("[data-tab-surface]");
+      ?.querySelector(".rounded-t-lg");
 
-    expect(surface).toHaveClass(
-      "rounded-sm",
+    expect(cap).toHaveClass(
       "border-surface-border",
       "bg-page-canvas",
-      "shadow-sm",
+      "bg-clip-padding",
     );
   });
 
-  it("keeps inactive tabs rectangular and transparent until hover", () => {
+  // The opaque backing keeps the flare and card keylines from stacking, and has
+  // to equal the strip's backdrop at every width. It reads that colour off the
+  // sidebar wrapper's published fill rather than naming a token, so no token may
+  // appear here or in the gradient — a pinned one is exactly the regression this
+  // covers. The wrapper's end of the contract is covered in packages/views.
+  it("paints each flare on the sidebar wrapper's own fill", () => {
     const { getByLabelText } = render(<TabBar />);
-    const surface = getByLabelText("Projects")
+    const flares = getByLabelText("Issues")
       .closest("[data-tab-frame]")
-      ?.querySelector("[data-tab-surface]");
+      ?.querySelectorAll('[style*="radial-gradient"]');
 
-    expect(surface).toHaveClass(
-      "rounded-sm",
-      "border-transparent",
-      "bg-transparent",
-      "group-hover/tab:bg-sidebar-accent",
-    );
+    expect(flares).toHaveLength(2);
+    for (const flare of flares ?? []) {
+      expect(flare).toHaveClass(SIDEBAR_WRAPPER_FILL_CLASS);
+      expect(flare.getAttribute("style")).toContain("var(--page-canvas) 10.2px)");
+      expect(flare.getAttribute("style")).not.toContain("var(--sidebar)");
+      expect(flare.getAttribute("style")).not.toContain("var(--app-shell)");
+      expect(flare.className).not.toContain("bg-app-shell");
+      expect(flare.className).not.toContain("bg-sidebar");
+    }
   });
 
-  it("does not render Chrome-style flares or merged caps", () => {
+  // A flare overhangs the neighbouring tab by 9px, so the backing above may only
+  // cover the arc and the canvas fill: left over the notch it prints a square of
+  // strip colour on top of whatever the neighbour draws there, which is how the
+  // hover pill lost its corner to a dark bite (MUL-6160). The notch is therefore
+  // masked out of the flare entirely, and the mask has to close before the arc's
+  // anti-aliasing starts (r - 1.2) or the arc loses the backing it needs.
+  it("punches the notch out rather than filling it with strip colour", () => {
     const { getByLabelText } = render(<TabBar />);
-    const frame = getByLabelText("Issues").closest("[data-tab-frame]");
-    expect(frame?.querySelector('[style*="radial-gradient"]')).toBeNull();
-    expect(frame?.querySelector(".rounded-t-lg")).toBeNull();
+    const flares = getByLabelText("Issues")
+      .closest("[data-tab-frame]")
+      ?.querySelectorAll<HTMLElement>('[style*="radial-gradient"]');
+
+    expect(flares).toHaveLength(2);
+    for (const flare of flares ?? []) {
+      const corner = /circle at top (left|right), transparent 8\.8px/.exec(
+        flare.style.backgroundImage,
+      )?.[1];
+      const mask = flare.style.maskImage;
+
+      expect(corner).toBeDefined();
+      expect(mask).toContain(`radial-gradient(circle at top ${corner}, transparent 8.4px`);
+      expect(mask).toMatch(/ 8\.8px\)$/);
+      expect(flare.style.getPropertyValue("-webkit-mask-image")).toBe(mask);
+    }
+  });
+
+  it("draws the merged cap only on the active tab", () => {
+    const { getByLabelText } = render(<TabBar />);
+    expect(
+      getByLabelText("Projects")
+        .closest("[data-tab-frame]")
+        ?.querySelector(".rounded-t-lg"),
+    ).toBeNull();
   });
 });
 
@@ -497,18 +534,18 @@ describe("TabBar context menu", () => {
       {
         id: "tA",
         url: "/acme/issues/issue-1?comment=comment-1",
-        title: "PB-1: Fix tabs",
+        title: "MUL-1: Fix tabs",
         pinned: false,
       },
     ];
 
     const { findByText, getByLabelText } = render(<TabBar />);
-    fireEvent.contextMenu(getByLabelText("PB-1: Fix tabs"));
+    fireEvent.contextMenu(getByLabelText("MUL-1: Fix tabs"));
     fireEvent.click(await findByText("Open as new window"));
 
     expect(state.openIssueWindow).toHaveBeenCalledWith({
       path: "/acme/issues/issue-1?comment=comment-1",
-      title: "PB-1: Fix tabs",
+      title: "MUL-1: Fix tabs",
     });
   });
 

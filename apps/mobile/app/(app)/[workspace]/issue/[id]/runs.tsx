@@ -1,6 +1,6 @@
 /**
  * Agent Runs sheet — presented as a formSheet by the parent Stack. Two
- * sections: Active (queued/deferred/dispatched/running, created_at desc) and Past
+ * sections: Active (queued/dispatched/running, created_at desc) and Past
  * (completed_at desc, status rank as tiebreaker). Empty
  * sections hide entirely.
  *
@@ -8,12 +8,14 @@
  * AgentHeaderBadge) now `router.push("/[workspace]/issue/[id]/runs")` —
  * the legacy `useRunsSheetStore` is gone since the route system is the
  * single source of truth for what's open.
+ *
+ * Past-row tap is a no-op in v1 — transcript drilldown is deferred.
  */
 import { useMemo } from "react";
 import { ScrollView, View } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
-import { isAgentTaskActive } from "@patchbay/core/agent-thread";
+import type { AgentTask } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
 import { RunRow } from "@/components/issue/run-row";
 import {
@@ -21,24 +23,20 @@ import {
   issueTasksOptions,
 } from "@/data/queries/issues";
 import { useWorkspaceStore } from "@/data/workspace-store";
-import { useAgentThreadCopy } from "@/lib/use-agent-thread-copy";
 
-const PAST_STATUS_ORDER: Record<string, number> = {
+const PAST_STATUS_ORDER: Record<AgentTask["status"], number> = {
   failed: 0,
   cancelled: 1,
   completed: 2,
   queued: 99,
   dispatched: 99,
   waiting_local_directory: 99,
-  waiting_capacity: 99,
   running: 99,
 };
 
 export default function IssueRunsRoute() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const wsId = useWorkspaceStore((s) => s.currentWorkspaceId);
-  const wsSlug = useWorkspaceStore((s) => s.currentWorkspaceSlug);
-  const copy = useAgentThreadCopy();
   const { data: activeTasks = [] } = useQuery(
     issueActiveTasksOptions(wsId, id),
   );
@@ -46,23 +44,23 @@ export default function IssueRunsRoute() {
 
   const active = useMemo(
     () =>
-      activeTasks
-        .filter(isAgentTaskActive)
-        .sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? "")),
+      [...activeTasks].sort((a, b) =>
+        (b.created_at ?? "").localeCompare(a.created_at ?? ""),
+      ),
     [activeTasks],
   );
 
   const past = useMemo(() => {
-    const filtered = allTasks.filter((t) => !isAgentTaskActive(t));
+    const filtered = allTasks.filter(
+      (t) =>
+        t.status === "completed" ||
+        t.status === "failed" ||
+        t.status === "cancelled",
+    );
     return filtered.sort((a, b) => {
-      const timeDiff = (b.completed_at ?? "").localeCompare(
-        a.completed_at ?? "",
-      );
+      const timeDiff = (b.completed_at ?? "").localeCompare(a.completed_at ?? "");
       if (timeDiff !== 0) return timeDiff;
-      return (
-        (PAST_STATUS_ORDER[a.status] ?? 99) -
-        (PAST_STATUS_ORDER[b.status] ?? 99)
-      );
+      return PAST_STATUS_ORDER[a.status] - PAST_STATUS_ORDER[b.status];
     });
   }, [allTasks]);
 
@@ -70,32 +68,22 @@ export default function IssueRunsRoute() {
     <View className="flex-1">
       <View className="px-4 pt-4 pb-3">
         <Text className="text-base font-semibold text-foreground">
-          {copy.runs_title}
+          Agent Runs
         </Text>
       </View>
       <ScrollView showsVerticalScrollIndicator={false}>
         <View className="px-4 gap-3 pb-4">
           {active.length > 0 ? (
-            <Section title={copy.active}>
+            <Section title="Active">
               {active.map((task) => (
-                <RunRow
-                  key={task.id}
-                  task={task}
-                  issueId={id}
-                  onOpen={() => openTaskThread(wsSlug, id, task.id)}
-                />
+                <RunRow key={task.id} task={task} issueId={id} />
               ))}
             </Section>
           ) : null}
           {past.length > 0 ? (
-            <Section title={copy.past}>
+            <Section title="Past">
               {past.map((task) => (
-                <RunRow
-                  key={task.id}
-                  task={task}
-                  issueId={id}
-                  onOpen={() => openTaskThread(wsSlug, id, task.id)}
-                />
+                <RunRow key={task.id} task={task} issueId={id} />
               ))}
             </Section>
           ) : null}
@@ -103,18 +91,6 @@ export default function IssueRunsRoute() {
       </ScrollView>
     </View>
   );
-}
-
-function openTaskThread(
-  workspace: string | null,
-  issueId: string,
-  taskId: string,
-) {
-  if (!workspace) return;
-  router.push({
-    pathname: "/[workspace]/issue/[id]/runs/[taskId]",
-    params: { workspace, id: issueId, taskId },
-  });
 }
 
 function Section({

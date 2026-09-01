@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { useRestoredScrollOffset } from "@patchbay/views/platform";
+import { useRestoredScrollOffset } from "@multica/views/platform";
 import { WebScrollRestorationProvider } from "./scroll-restoration";
 
 function ScrollProbe({ containerKey }: { containerKey: string }) {

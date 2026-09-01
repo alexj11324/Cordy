@@ -3,7 +3,7 @@ import { Editor } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "@tiptap/markdown";
 import { Slice } from "@tiptap/pm/model";
-import type { UploadResult } from "@patchbay/core/hooks/use-file-upload";
+import type { UploadResult } from "@multica/core/hooks/use-file-upload";
 import { ImageExtension, createEditorExtensions } from "./index";
 import { FileCardExtension } from "./file-card";
 import {
@@ -232,7 +232,7 @@ describe("uploadAndInsertFile", () => {
   });
 
   it("persists markdownLink (the stable per-attachment URL) into the markdown body, not the short-lived storage URL", async () => {
-    // Regression pin for PB-3130 review feedback. useFileUpload returns
+    // Regression pin for MUL-3130 review feedback. useFileUpload returns
     // both `link` (= att.url, short-lived signed `/uploads/<key>?exp&sig`
     // on LocalStorage) and `markdownLink` (= /api/attachments/<id>/download).
     // The editor must persist `markdownLink` so the comment doesn't

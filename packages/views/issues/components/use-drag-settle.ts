@@ -71,7 +71,7 @@ export function useDragSettle(
   // Equality-guarded column setter. When a resync (or a no-op drag) produces a
   // column map whose contents match the current one, return the SAME reference
   // so React bails out of the re-render. Second line of defense against the
-  // cold-load update loop (PB-4985): even if some input to `buildColumns`
+  // cold-load update loop (MUL-4985): even if some input to `buildColumns`
   // regains a per-render-unstable identity, a content-equal rebuild no longer
   // forces a new state object and cannot spin the resync effect. It never
   // changes the resulting value — only skips redundant writes — so drag/settle

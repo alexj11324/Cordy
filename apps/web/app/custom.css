@@ -1,7 +1,7 @@
 /* =============================================================================
- * Patchbay Web — Custom styles (non-shadcn, web-only)
+ * Multica Web — Custom styles (non-shadcn, web-only)
  * Shared styles (shiki, entrance-spin, sidebar, sonner, scrollbar) are in
- * @patchbay/ui/styles/base.css
+ * @multica/ui/styles/base.css
  * ============================================================================= */
 
 /* The landing route tree is intentionally always-light (hero/cli/cloud
@@ -118,7 +118,7 @@ html[lang|="ja"] .landing-light {
    `[lang|="zh"]` is the BCP-47 language-range selector: it matches exactly `zh`
    or `zh-<region>` (app/layout.tsx emits `zh-CN`, `ja-JP`, `ko-KR`), never an
    unrelated subtag such as `zha`. Scoped to headings so the footer wordmark — a
-   Latin-only <span> rendering "patchbay" at up to 16rem — keeps its tuned
+   Latin-only <span> rendering "multica" at up to 16rem — keeps its tuned
    tracking on every locale. */
 html[lang|="zh"] :is(h1, h2).landing-serif,
 html[lang|="ja"] :is(h1, h2).landing-serif,

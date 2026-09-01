@@ -1,6 +1,6 @@
 /**
  * Pure picker body for project lead — single-select over members + agents
- * with an Unassigned row. Mirrors the executor picker pattern: header +
+ * with an Unassigned row. Mirrors the assignee picker pattern: header +
  * search bar are owned by the iOS native nav header registered in
  * `app/(app)/[workspace]/_layout.tsx`; the route wires `query` in via
  * `useNativeSearchBar` and passes it through. Body is a pure FlatList.
@@ -15,7 +15,7 @@ import { FlatList, Pressable, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
-import type { Agent, MemberWithUser } from "@patchbay/core/types";
+import type { Agent, MemberWithUser } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
 import { ActorAvatar } from "@/components/ui/actor-avatar";
 import { MOBILE_PLACEHOLDER_COLOR } from "@/components/ui/input-tokens";

@@ -11,6 +11,7 @@ import type { ApiClient } from "../api/client";
 import {
   useBatchUpdateIssues,
   useCreateComment,
+  useCreateCommentSubIssue,
   useDeleteComment,
   useResolveComment,
   useUpdateComment,
@@ -40,17 +41,13 @@ function makeIssue(idx: number, overrides: Partial<Issue> = {}): Issue {
     id: `issue-${idx}`,
     workspace_id: WS_ID,
     number: idx,
-    identifier: `PB-${idx}`,
+    identifier: `MUL-${idx}`,
     title: `Issue ${idx}`,
     description: null,
     status: "todo",
     priority: "none",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -100,10 +97,48 @@ function createWrapper(qc: QueryClient) {
   };
 }
 
+describe("useCreateCommentSubIssue", () => {
+  it("applies the normal issue-create cache coordination", async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const listKey = issueKeys.list(WS_ID);
+    qc.setQueryData<ListIssuesCache>(listKey, {
+      byStatus: { todo: { issues: [], total: 0 } },
+    });
+    const child = makeIssue(2, { parent_issue_id: "issue-1" });
+    const createCommentSubIssue = vi.fn().mockResolvedValue(child);
+    setApiInstance({ createCommentSubIssue } as unknown as ApiClient);
+    const { result } = renderHook(() => useCreateCommentSubIssue(), {
+      wrapper: createWrapper(qc),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        anchorCommentId: "comment-1",
+        data: {
+          mode: "manual",
+          capture_token: "sha256:capture",
+          issue: { title: "Child" },
+        },
+      });
+    });
+
+    expect(createCommentSubIssue).toHaveBeenCalledWith("comment-1", {
+      mode: "manual",
+      capture_token: "sha256:capture",
+      issue: { title: "Child" },
+    });
+    expect(
+      qc.getQueryData<ListIssuesCache>(listKey)?.byStatus.todo?.issues,
+    ).toContainEqual(child);
+    expect(qc.getQueryState(listKey)?.isInvalidated).toBe(true);
+    qc.clear();
+  });
+});
+
 describe("useUpdateIssue — optimistic move keeps every bucketed board in sync", () => {
   const sort: IssueSortParam = { sort_by: "position", sort_direction: undefined };
   const myScope = "assigned";
-  const myFilter = { executor_id: "user-1" };
+  const myFilter = { assignee_id: "user-1" };
   const projectScope = "project:p1";
   const projectFilter = { project_id: "p1" };
   const wsKey = issueKeys.listSorted(WS_ID, sort);
@@ -435,7 +470,7 @@ describe("useUpdateIssue — optimistic move keeps every bucketed board in sync"
     // A project move makes the issue leave the old project's filtered list.
     // The membership-aware coordinator removes the card from that loaded list
     // in onMutate — deterministic, no WS echo or refetch needed — replacing
-    // the old blanket "invalidate myAll on settle" safety net (PB-3669 /
+    // the old blanket "invalidate myAll on settle" safety net (MUL-3669 /
     // #4548). Lists whose filter the move cannot affect stay untouched.
     let resolve!: (issue: Issue) => void;
     updateIssue.mockReturnValue(
@@ -454,7 +489,7 @@ describe("useUpdateIssue — optimistic move keeps every bucketed board in sync"
     });
 
     // Optimistic: gone from the old project's list immediately; the
-    // workspace board and the executor-filtered list keep the card.
+    // workspace board and the assignee-filtered list keep the card.
     expect(bucketIds(projectKey, "todo")).toEqual([]);
     expect(bucketIds(wsKey, "todo")).toEqual(["issue-1"]);
     expect(bucketIds(myKey, "todo")).toEqual(["issue-1"]);
@@ -579,7 +614,7 @@ describe("useUpdateIssue — detaching a sub-issue prunes the old parent's child
 describe("useBatchUpdateIssues — optimistic patch covers filtered boards too", () => {
   const sort: IssueSortParam = { sort_by: "position", sort_direction: undefined };
   const myScope = "assigned";
-  const myFilter = { executor_id: "user-1" };
+  const myFilter = { assignee_id: "user-1" };
   const wsKey = issueKeys.listSorted(WS_ID, sort);
   const myKey = issueKeys.myListSorted(WS_ID, myScope, myFilter, sort);
 
@@ -730,7 +765,7 @@ describe("useBatchUpdateIssues — optimistic patch covers filtered boards too",
   it("surgically removes moved issues from the old project's list (no blanket myAll refetch)", async () => {
     // Mirrors useUpdateIssue: a batch project move drops the cards from the
     // old project's loaded list via the membership-aware coordinator instead
-    // of refetching every filtered list (PB-3669 / #4548).
+    // of refetching every filtered list (MUL-3669 / #4548).
     const projectScope = "project:p1";
     const projectFilter = { project_id: "p1" };
     const projectKey = issueKeys.myListSorted(WS_ID, projectScope, projectFilter, sort);
@@ -750,7 +785,7 @@ describe("useBatchUpdateIssues — optimistic patch covers filtered boards too",
     });
 
     expect(bucketIds(projectKey, "todo")).toEqual([]);
-    // The executor-filtered list is untouched by a project move.
+    // The assignee-filtered list is untouched by a project move.
     expect(bucketIds(myKey, "todo")).toEqual(["issue-1"]);
     const invalidatedKeys = invalidateSpy.mock.calls.map((c) => c[0]?.queryKey);
     expect(invalidatedKeys).not.toContainEqual(issueKeys.myAll(WS_ID));
@@ -954,7 +989,7 @@ describe("useResolveComment", () => {
   });
 });
 
-// PB-6394: posting a comment while the Table view's grouped/facet caches are
+// MUL-6394: posting a comment while the Table view's grouped/facet caches are
 // loaded rejected `mutateAsync` with "Cannot read properties of undefined
 // (reading 'some')" — the comment WAS created server-side (the agent task
 // started), but the composer showed an error toast and never appended the

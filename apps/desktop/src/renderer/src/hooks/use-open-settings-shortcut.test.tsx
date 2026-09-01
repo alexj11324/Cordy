@@ -1,11 +1,10 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "@testing-library/react";
-import { useModalStore } from "@patchbay/core/modals";
 import { useTabStore } from "@/stores/tab-store";
 import { useWindowOverlayStore } from "@/stores/window-overlay-store";
 import {
-  openSettingsPage,
+  openSettingsTab,
   useOpenSettingsShortcut,
 } from "./use-open-settings-shortcut";
 
@@ -42,6 +41,11 @@ function tabUrls(): string[] {
   return useTabStore.getState().byWorkspace.acme?.tabs.map((t) => t.url) ?? [];
 }
 
+function activeTabUrl(): string | undefined {
+  const group = useTabStore.getState().byWorkspace.acme;
+  return group?.tabs.find((t) => t.id === group.activeTabId)?.url;
+}
+
 /** Installs a desktopAPI stub; `deliver()` plays the chord main would send. */
 function stubDesktopAPI(kind: "main" | "issue") {
   let handler: (() => void) | null = null;
@@ -61,48 +65,32 @@ function stubDesktopAPI(kind: "main" | "issue") {
   return { onOpenSettings, deliver: () => handler?.() };
 }
 
-describe("openSettingsPage", () => {
+describe("openSettingsTab", () => {
   beforeEach(() => {
     seedTabs();
     useWindowOverlayStore.setState({ overlay: null });
-    useModalStore.getState().close();
   });
 
-  it("opens Settings for the active workspace without changing tabs", () => {
-    openSettingsPage();
+  it("opens Settings for the active workspace and focuses it", () => {
+    openSettingsTab();
 
-    expect(tabUrls()).toEqual(["/acme/issues"]);
-    expect(useWindowOverlayStore.getState().overlay).toEqual({
-      type: "settings",
-      path: "/acme/settings",
-    });
+    expect(tabUrls()).toEqual(["/acme/issues", "/acme/settings"]);
+    expect(activeTabUrl()).toBe("/acme/settings");
   });
 
-  it("keeps an already-open Settings page stable", () => {
-    openSettingsPage();
-    const first = useWindowOverlayStore.getState().overlay;
-    openSettingsPage();
+  it("reuses the Settings tab instead of stacking duplicates", () => {
+    openSettingsTab();
+    useTabStore.getState().setActiveTab("t1");
+    openSettingsTab();
 
-    expect(useWindowOverlayStore.getState().overlay).toBe(first);
-    expect(tabUrls()).toEqual(["/acme/issues"]);
-  });
-
-  it("closes a portaled modal before opening Settings", () => {
-    useModalStore.getState().open("create-issue");
-
-    openSettingsPage();
-
-    expect(useModalStore.getState().modal).toBeNull();
-    expect(useWindowOverlayStore.getState().overlay).toEqual({
-      type: "settings",
-      path: "/acme/settings",
-    });
+    expect(tabUrls()).toEqual(["/acme/issues", "/acme/settings"]);
+    expect(activeTabUrl()).toBe("/acme/settings");
   });
 
   it("does nothing while a pre-workspace overlay covers the window", () => {
     useWindowOverlayStore.setState({ overlay: { type: "onboarding" } });
 
-    openSettingsPage();
+    openSettingsTab();
 
     expect(tabUrls()).toEqual(["/acme/issues"]);
   });
@@ -110,7 +98,7 @@ describe("openSettingsPage", () => {
   it("does nothing without an active workspace (logged out)", () => {
     useTabStore.setState({ activeWorkspaceSlug: null });
 
-    expect(() => openSettingsPage()).not.toThrow();
+    expect(() => openSettingsTab()).not.toThrow();
     expect(tabUrls()).toEqual(["/acme/issues"]);
   });
 });
@@ -119,7 +107,6 @@ describe("useOpenSettingsShortcut", () => {
   beforeEach(() => {
     seedTabs();
     useWindowOverlayStore.setState({ overlay: null });
-    useModalStore.getState().close();
   });
 
   it("opens Settings when main delivers the chord", () => {
@@ -128,13 +115,10 @@ describe("useOpenSettingsShortcut", () => {
 
     deliver();
 
-    expect(useWindowOverlayStore.getState().overlay).toEqual({
-      type: "settings",
-      path: "/acme/settings",
-    });
+    expect(activeTabUrl()).toBe("/acme/settings");
   });
 
-  // Main routes the chord to the app window; an issue renderer that also
+  // Main routes the chord to the tabbed window; an issue renderer that also
   // subscribed would mark the channel ready and drain the request into a
   // window that has no tabs to open it in.
   it("does not subscribe in a dedicated issue window", () => {

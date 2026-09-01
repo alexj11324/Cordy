@@ -14,5 +14,4 @@ export const telegramInstallationsOptions = (wsId: string) =>
     queryKey: telegramKeys.installations(wsId),
     queryFn: () => api.listTelegramInstallations(wsId),
     enabled: !!wsId,
-    refetchInterval: (query) => (query.state.status === "error" ? false : 5_000),
   });

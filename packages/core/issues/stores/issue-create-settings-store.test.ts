@@ -2,9 +2,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_MANUAL_CREATE_FIELDS,
   DEFAULT_QUICK_CREATE_FIELDS,
-  MANUAL_CREATE_FIELDS,
-  migrateIssueCreateSettings,
-  normalizeIssueCreateFields,
   useIssueCreateSettingsStore,
 } from "./issue-create-settings-store";
 
@@ -21,7 +18,7 @@ describe("issue create settings store", () => {
     expect(useIssueCreateSettingsStore.getState().manualCreateFields).toEqual([
       "status",
       "priority",
-      "executor",
+      "assignee",
       "labels",
       "project",
     ]);
@@ -55,7 +52,7 @@ describe("issue create settings store", () => {
     expect(useIssueCreateSettingsStore.getState().manualCreateFields).toEqual([
       "status",
       "priority",
-      "executor",
+      "assignee",
       "project",
       "due_date",
     ]);
@@ -67,42 +64,6 @@ describe("issue create settings store", () => {
 
     setManualCreateFieldVisible("status", true);
 
-    expect(useIssueCreateSettingsStore.getState().manualCreateFields).toEqual(
-      DEFAULT_MANUAL_CREATE_FIELDS,
-    );
-  });
-
-  it("migrates the legacy assignee visibility to both explicit roles", () => {
-    expect(
-      migrateIssueCreateSettings(
-        {
-          quickCreateFields: ["project", "unknown"],
-          manualCreateFields: ["status", "assignee", "labels", "unknown"],
-        },
-        1,
-      ),
-    ).toEqual({
-      quickCreateFields: ["project"],
-      manualCreateFields: ["status", "owner", "executor", "labels"],
-    });
-  });
-
-  it("normalizes unknown fields and preserves an intentional empty selection", () => {
-    expect(
-      normalizeIssueCreateFields(["unknown"], MANUAL_CREATE_FIELDS, DEFAULT_MANUAL_CREATE_FIELDS),
-    ).toEqual(DEFAULT_MANUAL_CREATE_FIELDS);
-    expect(
-      normalizeIssueCreateFields([], MANUAL_CREATE_FIELDS, DEFAULT_MANUAL_CREATE_FIELDS),
-    ).toEqual([]);
-  });
-
-  it("resets both modes to the product defaults", () => {
-    useIssueCreateSettingsStore.setState({
-      quickCreateFields: ["project", "priority"],
-      manualCreateFields: ["owner", "reviewer"],
-    });
-    useIssueCreateSettingsStore.getState().resetToDefaults();
-    expect(useIssueCreateSettingsStore.getState().quickCreateFields).toEqual(["project"]);
     expect(useIssueCreateSettingsStore.getState().manualCreateFields).toEqual(
       DEFAULT_MANUAL_CREATE_FIELDS,
     );

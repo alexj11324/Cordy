@@ -27,9 +27,9 @@ const h = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("@patchbay/core/api", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/api")>(
-    "@patchbay/core/api",
+vi.mock("@multica/core/api", async () => {
+  const actual = await vi.importActual<typeof import("@multica/core/api")>(
+    "@multica/core/api",
   );
   return {
     ...actual,
@@ -43,17 +43,17 @@ vi.mock("@patchbay/core/api", async () => {
     },
   };
 });
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
-vi.mock("@patchbay/core/chat", () => ({
+vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
+vi.mock("@multica/core/chat", () => ({
   useChatStore: Object.assign((sel: (s: typeof h.store) => unknown) => sel(h.store), {
     getState: () => h.store,
   }),
 }));
-// `@patchbay/core/realtime` is deliberately NOT mocked: removeChatMessageFromCaches
+// `@multica/core/realtime` is deliberately NOT mocked: removeChatMessageFromCaches
 // is the behaviour under test.
 
-import { chatKeys } from "@patchbay/core/chat/queries";
-import type { ChatMessage, ChatMessagesPage } from "@patchbay/core/types";
+import { chatKeys } from "@multica/core/chat/queries";
+import type { ChatMessage, ChatMessagesPage } from "@multica/core/types";
 import { useBuilderSession } from "./use-builder-session";
 
 const sessionId = "session-1";
@@ -96,7 +96,7 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-// Regression (PB-5711 review): the Builder send seeds BOTH message caches, so
+// Regression (MUL-5711 review): the Builder send seeds BOTH message caches, so
 // every Builder cleanup path has to clear both. `messagesPage` is
 // staleTime: Infinity — a copy left behind there stays fresh forever, and any
 // chat surface opening the same session reads it instead of the server.

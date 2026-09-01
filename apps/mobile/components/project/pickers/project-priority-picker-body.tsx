@@ -6,7 +6,7 @@
 import { Pressable, ScrollView, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useColorScheme } from "nativewind";
-import type { ProjectPriority } from "@patchbay/core/types";
+import type { ProjectPriority } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
 import { ProjectPriorityIcon } from "@/components/ui/project-priority-icon";
 import {

@@ -45,7 +45,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   PreviewTooLargeError,
   PreviewUnsupportedError,
-} from "@patchbay/core/api";
+} from "@multica/core/api";
 import {
   ChevronLeft,
   ChevronRight,
@@ -55,14 +55,14 @@ import {
   Loader2,
   X,
 } from "lucide-react";
-import type { Attachment } from "@patchbay/core/types";
-import { paths, useWorkspaceSlug } from "@patchbay/core/paths";
-import { cn } from "@patchbay/ui/lib/utils";
-import { resolvePublicFileUrl } from "@patchbay/core/workspace/avatar-url";
+import type { Attachment } from "@multica/core/types";
+import { paths, useWorkspaceSlug } from "@multica/core/paths";
+import { cn } from "@multica/ui/lib/utils";
+import { resolvePublicFileUrl } from "@multica/core/workspace/avatar-url";
 import {
   UI_EASE_OUT,
   UI_MOTION_DURATION,
-} from "@patchbay/ui/lib/motion";
+} from "@multica/ui/lib/motion";
 import { useT } from "../i18n";
 import { useNavigation } from "../navigation";
 import { openExternal } from "../platform";
@@ -149,7 +149,7 @@ function normalize(source: PreviewSource): PreviewState {
 // ---------------------------------------------------------------------------
 
 /**
- * Position of this preview inside a surface's image sequence (PB-5752).
+ * Position of this preview inside a surface's image sequence (MUL-5752).
  *
  * `onPrev` / `onNext` are undefined AT the boundaries — the sequence does not
  * wrap, so first/last simply disable the corresponding control. Supplied only
@@ -249,7 +249,7 @@ export function useAttachmentPreview(): AttachmentPreviewHandle {
 // image that worked (with the "unavailable" toast) instead of a broken glyph.
 //
 // Engines without `Image.decode()` (jsdom in tests) swap immediately: the old
-// pre-PB-5752 behaviour, traded back for correctness there.
+// pre-MUL-5752 behaviour, traded back for correctness there.
 function useSettledImageURL(
   targetUrl: string,
   enabled: boolean,

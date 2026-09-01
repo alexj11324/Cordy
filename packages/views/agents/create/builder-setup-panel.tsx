@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect } from "react";
-import { useWorkspacePaths } from "@patchbay/core/paths";
+import { useWorkspacePaths } from "@multica/core/paths";
 import type {
   AgentBuilderSessionSummary,
   RuntimeDevice,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import { BuilderSetup } from "./builder-conversation";
 import { UnfinishedDraftsBanner } from "./unfinished-drafts";
 import { useBuilderSession } from "./use-builder-session";

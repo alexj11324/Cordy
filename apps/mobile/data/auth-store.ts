@@ -5,12 +5,12 @@
  *     the next launch can retry
  *   - logout = clear token + clear in-memory user + setToken(null)
  *
- * NOT shared with web/desktop (per Sharing Principles in root AGENTS.md).
+ * NOT shared with web/desktop (per Sharing Principles in root CLAUDE.md).
  * Storage backend is expo-secure-store (mobile only); web uses HttpOnly
  * cookies, desktop uses localStorage via StorageAdapter.
  */
 import { create } from "zustand";
-import type { User } from "@patchbay/core/types";
+import type { User } from "@multica/core/types";
 import { api, ApiError } from "./api";
 import { clearToken, getToken, setToken } from "./secure-storage";
 import { useWorkspaceStore } from "./workspace-store";

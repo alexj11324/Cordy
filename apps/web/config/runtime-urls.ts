@@ -23,12 +23,12 @@ function cleanHttpUrl(raw: string | undefined): string | undefined {
 // The API base names the backend ORIGIN, never its `/api` endpoint: every
 // caller already carries its own prefix (`packages/core/api/client.ts` sends
 // `/api/**`, avatars resolve `/uploads/**`, realtime connects `/ws`), and the
-// Rust backend serves all three at the root. A base
+// backend serves all three at the root (server/cmd/server/router.go). A base
 // ending in `/api` therefore yields `/api/api/**` requests and 404s every
-// upload — the most common self-hosting mistake (#6619, PB-5922). Strip that
+// upload — the most common self-hosting mistake (#6619, MUL-5922). Strip that
 // one suffix instead of honouring it. Any other path is preserved: a reverse
 // proxy may legitimately mount the whole backend under a prefix such as
-// `https://host/patchbay`.
+// `https://host/multica`.
 function stripApiPathSuffix(value: string): string {
   let url: URL;
   try {
@@ -122,6 +122,9 @@ export function runtimeRewriteDestination(
   const remoteApiUrl = resolveRemoteApiUrl(env);
   if (!remoteApiUrl) return undefined;
 
+  if (pathname === "/v1" || pathname.startsWith("/v1/")) {
+    return appendPath(remoteApiUrl, pathname);
+  }
   if (pathname === "/api" || pathname.startsWith("/api/")) {
     return appendPath(remoteApiUrl, pathname);
   }
@@ -130,6 +133,14 @@ export function runtimeRewriteDestination(
   }
   if (pathname === "/ws") {
     return appendPath(remoteApiUrl, "/ws");
+  }
+  // `multica setup self-host` probes `{server-url}/health` and treats any
+  // non-200 as "Server not reachable". The backend serves it, but a
+  // same-origin reverse proxy that forwards everything to the web image left
+  // the probe 404ing at the Next.js router, so setup failed against a healthy
+  // stack. Proxy the exact path like /ws.
+  if (pathname === "/health") {
+    return appendPath(remoteApiUrl, "/health");
   }
   if (isBackendAuthPath(pathname)) {
     return appendPath(remoteApiUrl, pathname);
@@ -152,7 +163,7 @@ function isBackendAuthPath(pathname: string): boolean {
 // prefix-mounted deployment would break in one direction while working in the
 // other. `apps/desktop/src/shared/runtime-config.ts` derives it the same way,
 // so both clients read one configured value identically. The regression that
-// motivated PB-5922 — `NEXT_PUBLIC_API_URL=https://host/api` deriving
+// motivated MUL-5922 — `NEXT_PUBLIC_API_URL=https://host/api` deriving
 // `wss://host/api/ws` while the backend serves `/ws` at the root — is fixed
 // upstream in the base itself (see stripApiPathSuffix), not here.
 function tryDeriveWsUrl(apiUrl: string): string | undefined {

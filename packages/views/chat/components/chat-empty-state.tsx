@@ -1,111 +1,87 @@
 "use client";
 
-import { useCallback } from "react";
-import { Flexbox } from "@lobehub/ui/es/Flex/index";
-import type { Agent } from "@patchbay/core/types";
-import { DRAFT_NEW_SESSION, useChatStore } from "@patchbay/core/chat";
-import { cn } from "@patchbay/ui/lib/utils";
+import { Settings2 } from "lucide-react";
+import { selectConversationStarters } from "@multica/core/agents";
+import type { Agent } from "@multica/core/types";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { useT } from "../../i18n";
-import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
+import { AppLink } from "../../navigation";
+import {
+  ConversationStarterList,
+  useFallbackConversationStarters,
+} from "./conversation-starter-list";
 
-const STARTER_KEYS = ["list_open", "summarize_today", "plan_next"] as const;
-
-/**
- * Agent-page welcome, mapped from official https://github.com/lobehub/lobehub
- * `src/features/AgentHome` (`lobehub/lobe-chat` 301s to that same repository).
- * A flex spacer pins AgentInfo + OpeningQuestions above the composer. Chips
- * call `fillInputMessage` rather than sending. Avatars stay circular
- * (`ActorAvatar`); LobeHub's square welcome avatar is not copied.
- */
-export function EmptyState({ agent }: { agent: Agent | null }) {
-  const { t } = useT("chat");
-  const description = agent?.description?.trim();
-  const fillInputMessage = useFillInputMessage();
-
-  return (
-    <div className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto", CHAT_GUTTER)}>
-      <Flexbox className={cn(CHAT_COLUMN, "min-h-full")} flex={1} width="100%">
-        <Flexbox flex={1} />
-        <Flexbox gap={32} style={{ paddingBottom: "max(4vh, 16px)" }} width="100%">
-          {agent ? (
-            <>
-              <Flexbox gap={12}>
-                <ActorAvatar
-                  actorType="agent"
-                  actorId={agent.id}
-                  size="2xl"
-                  className="ring-1 ring-inset ring-border"
-                />
-                <h3 className="text-display-sm font-bold leading-tight">{agent.name}</h3>
-                {description ? (
-                  <p className="max-w-[640px] text-body text-muted-foreground">{description}</p>
-                ) : null}
-              </Flexbox>
-              <OpeningQuestions
-                questions={STARTER_KEYS.map((key) => t(($) => $.starter_prompts[key]))}
-                onPick={fillInputMessage}
-              />
-            </>
-          ) : (
-            <Flexbox gap={12}>
-              <h3 className="text-display-sm font-bold leading-tight">
-                {t(($) => $.empty_state.first_time_title)}
-              </h3>
-              <p className="max-w-[640px] text-body text-muted-foreground">
-                {t(($) => $.empty_state.first_time_intro)}{" "}
-                <span className="font-medium text-foreground">
-                  {t(($) => $.empty_state.first_time_pillars)}
-                </span>
-                {t(($) => $.empty_state.first_time_pillars_suffix)}
-              </p>
-              <p className="max-w-[640px] text-body text-muted-foreground">
-                {t(($) => $.empty_state.first_time_actions)}
-              </p>
-            </Flexbox>
-          )}
-        </Flexbox>
-      </Flexbox>
-    </div>
-  );
-}
-
-function useFillInputMessage() {
-  const setInputDraft = useChatStore((s) => s.setInputDraft);
-  const activeSessionId = useChatStore((s) => s.activeSessionId);
-  return useCallback(
-    (text: string) => {
-      setInputDraft(activeSessionId ?? DRAFT_NEW_SESSION, text);
-    },
-    [activeSessionId, setInputDraft],
-  );
-}
-
-function OpeningQuestions({
-  questions,
-  onPick,
+/** Empty compose placeholder shown before the first user message. */
+export function EmptyState({
+  agent,
+  hasSessions = true,
+  onPickPrompt,
+  customizeHref = null,
 }: {
-  questions: string[];
-  onPick: (question: string) => void;
+  agent: Agent | null;
+  hasSessions?: boolean;
+  onPickPrompt: (prompt: string) => void;
+  /**
+   * Where "customize" sends this viewer, or `null` to hide the affordance.
+   * The container resolves it: only someone who may edit THIS agent on a
+   * backend that persists conversation starters gets a link. Keeping it a prop
+   * leaves this component presentational — and keeps the link out of the DOM
+   * entirely for readers, rather than rendering a disabled tease.
+   */
+  customizeHref?: string | null;
 }) {
   const { t } = useT("chat");
+  const description = agent?.description?.trim();
+  const fallbackStarters = useFallbackConversationStarters();
+  const { starters } = selectConversationStarters(
+    agent?.conversation_starters,
+    fallbackStarters,
+  );
+
   return (
-    <div>
-      <p className="mb-2 text-body text-muted-foreground">
-        {t(($) => $.empty_state.returning_subtitle)}
-      </p>
-      <Flexbox gap={8} horizontal wrap="wrap">
-        {questions.map((question) => (
-          <button
-            key={question}
-            type="button"
-            onClick={() => onPick(question)}
-            className="rounded-full bg-muted px-4 py-2 text-left text-body text-foreground transition-colors hover:bg-accent"
-          >
-            {question}
-          </button>
-        ))}
-      </Flexbox>
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center-safe gap-5 overflow-y-auto px-6 py-8">
+      {agent && (
+        <ActorAvatar
+          actorType="agent"
+          actorId={agent.id}
+          size="2xl"
+          className="ring-1 ring-inset ring-border"
+        />
+      )}
+      <div className="max-w-sm space-y-1 text-center">
+        <h3 className="text-title-sm font-semibold">
+          {agent
+            ? t(($) => $.empty_state.chat_with_named, { name: agent.name })
+            : t(($) => $.empty_state.first_time_title)}
+        </h3>
+        {description && (
+          <p className="text-body text-muted-foreground">{description}</p>
+        )}
+        {!hasSessions && (
+          <p className="text-body text-muted-foreground">
+            {t(($) => $.empty_state.first_time_actions)}
+          </p>
+        )}
+      </div>
+      {agent ? (
+        <div
+          className="w-full max-w-sm space-y-2"
+          aria-label={t(($) => $.conversation_starters.aria_label)}
+        >
+          <ConversationStarterList starters={starters} onPick={onPickPrompt} />
+          {customizeHref ? (
+            <div className="flex justify-center pt-1">
+              <AppLink
+                href={customizeHref}
+                className="inline-flex items-center gap-1.5 text-caption text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <Settings2 className="size-3.5" aria-hidden="true" />
+                {t(($) => $.conversation_starters.customize)}
+              </AppLink>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

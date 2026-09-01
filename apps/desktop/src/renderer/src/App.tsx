@@ -1,17 +1,17 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { CoreProvider } from "@patchbay/core/platform";
-import { pickLocale, type SupportedLocale } from "@patchbay/core/i18n";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWelcomeStore } from "@patchbay/core/onboarding";
-import { workspaceKeys } from "@patchbay/core/workspace/queries";
-import { useWorkspaceList } from "@patchbay/core/workspace";
-import { api } from "@patchbay/core/api";
-import { useHasOnboarded } from "@patchbay/core/paths";
-import { setCurrentWorkspace } from "@patchbay/core/platform";
-import { ThemeProvider } from "@patchbay/ui/components/common/theme-provider";
-import { PatchbayIcon } from "@patchbay/ui/components/common/patchbay-icon";
-import { Toaster } from "@patchbay/ui/components/ui/sonner";
+import { CoreProvider } from "@multica/core/platform";
+import { pickLocale, type SupportedLocale } from "@multica/core/i18n";
+import { useAuthStore } from "@multica/core/auth";
+import { useWelcomeStore } from "@multica/core/onboarding";
+import { workspaceKeys } from "@multica/core/workspace/queries";
+import { useWorkspaceList } from "@multica/core/workspace";
+import { api } from "@multica/core/api";
+import { useHasOnboarded } from "@multica/core/paths";
+import { setCurrentWorkspace } from "@multica/core/platform";
+import { ThemeProvider } from "@multica/ui/components/common/theme-provider";
+import { MulticaIcon } from "@multica/ui/components/common/multica-icon";
+import { Toaster } from "@multica/ui/components/ui/sonner";
 import { DesktopLoginPage } from "./pages/login";
 import { DesktopAuthRecoveryPage } from "./pages/auth-recovery";
 import { DesktopShell } from "./components/desktop-layout";
@@ -22,16 +22,13 @@ import { useWindowOverlayStore } from "./stores/window-overlay-store";
 import { useOpenSettingsShortcut } from "./hooks/use-open-settings-shortcut";
 import { useDaemonIPCBridge } from "./platform/daemon-ipc-bridge";
 import { syncDaemonOnLogin } from "./platform/daemon-login-sync";
-import { reauthenticateDaemon } from "./platform/daemon-reauth";
 import { createDesktopLocaleAdapter } from "./platform/i18n-adapter";
-import { captureEvent } from "@patchbay/core/analytics";
-import { RESOURCES } from "@patchbay/views/locales";
+import { captureEvent } from "@multica/core/analytics";
+import { RESOURCES } from "@multica/views/locales";
 import { DesktopClientUsageReporter } from "./platform/client-usage-reporter";
 import { DiagnosticRouteReporter } from "./platform/diagnostic-route-reporter";
 import { flushFreezeBreadcrumb } from "./freeze-flush";
 import { DesktopAuthSessionBridge } from "./platform/auth-session-bridge";
-import { completeDesktopHandoff } from "./pages/login-handoff";
-import type { DaemonRecoveryReason } from "../../shared/daemon-types";
 
 // BCP-47 region tags for the <html lang> attribute, mirroring
 // apps/web/app/layout.tsx HTML_LANG. index.html ships a static lang="en";
@@ -60,11 +57,6 @@ function useCmdWCloseTab() {
     return window.desktopAPI.onCloseActiveTab(() => {
       if (window.desktopAPI.windowContext?.kind === "issue") {
         window.desktopAPI.closeWindow();
-        return;
-      }
-      const overlay = useWindowOverlayStore.getState();
-      if (overlay.overlay?.type === "settings") {
-        overlay.close();
         return;
       }
       const store = useTabStore.getState();
@@ -97,7 +89,7 @@ function IssueWindowContent() {
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <PatchbayIcon className="size-6 animate-pulse" />
+        <MulticaIcon className="size-6 animate-pulse" />
       </div>
     );
   }
@@ -105,12 +97,11 @@ function IssueWindowContent() {
   return user ? <IssueWindow context={context} /> : <DesktopLoginPage />;
 }
 
-export function AppContent() {
+function AppContent() {
   const user = useAuthStore((s) => s.user);
   const isLoading = useAuthStore((s) => s.isLoading);
   const authStatus = useAuthStore((s) => s.status);
   const qc = useQueryClient();
-  const isElectronRenderer = window.desktopAPI.host === "electron";
 
   // Deep-link login runs loginWithToken → syncToken → listWorkspaces →
   // setQueryData sequentially. loginWithToken sets user+isLoading=false
@@ -120,34 +111,19 @@ export function AppContent() {
   // finishes, so IndexRedirect gets a definitive workspace state on
   // first render.
   const [bootstrapping, setBootstrapping] = useState(false);
-  const [daemonSyncRetry, setDaemonSyncRetry] = useState(0);
-  const [daemonRecoveryPending, setDaemonRecoveryPending] = useState(false);
-  const [daemonSyncState, setDaemonSyncState] = useState<
-    "idle" | "pending" | "ready" | "error"
-  >(isElectronRenderer ? "pending" : "ready");
-  const [daemonSyncError, setDaemonSyncError] =
-    useState<DaemonRecoveryReason | null>(null);
-  // A ready state is only valid for the exact authenticated identity and
-  // backend target that produced it. Keeping the key beside the state closes
-  // the render/effect gap during account or target switches: the previous
-  // account's ready state cannot mount DesktopShell for even one frame.
-  const [daemonSyncedKey, setDaemonSyncedKey] = useState<string | null>(null);
-  const daemonSyncGeneration = useRef(0);
 
   const runtimeConfig = window.desktopAPI.runtimeConfig.ok
     ? window.desktopAPI.runtimeConfig.config
     : null;
-  const daemonIdentityKey =
-    user && runtimeConfig ? `${user.id}\u0000${runtimeConfig.apiUrl}` : null;
 
   // Tell the main process which backend URL we talk to, so daemon-manager
-  // can pick the matching CLI profile (server_url from ~/.patchbay config).
+  // can pick the matching CLI profile (server_url from ~/.multica config).
   useEffect(() => {
     if (!runtimeConfig) return;
     window.daemonAPI.setTargetApiUrl(runtimeConfig.apiUrl);
   }, [runtimeConfig]);
 
-  // Listen for invite IDs delivered via deep link (patchbay://invite/<id>).
+  // Listen for invite IDs delivered via deep link (multica://invite/<id>).
   // We open the overlay regardless of login state — if the user isn't logged
   // in, InvitePage's queries will fail and render the "not found" state,
   // which is acceptable; the expected pre-flight happens in the web app
@@ -158,24 +134,14 @@ export function AppContent() {
     });
   }, []);
 
-  // Listen for the PKCE-bound one-time code delivered by the Electron deep
-  // link. daemonAPI.syncToken is handled
-  // separately by the [user] effect below, which fires whenever a user logs
-  // in (handoff, session restore, account switch).
+  // Listen for auth token delivered via deep link (multica://auth/callback?token=...).
+  // daemonAPI.syncToken is handled separately by the [user] effect below, which
+  // fires whenever a user logs in (deep link, session restore, account switch).
   useEffect(() => {
-    return window.desktopAPI.onAuthHandoff(async ({ code, state }) => {
+    return window.desktopAPI.onAuthToken(async (token) => {
       setBootstrapping(true);
-      let acknowledged = false;
       try {
-        const completion = await completeDesktopHandoff(code, state, {
-          redeem: (handoffCode, verifier) =>
-            api.redeemDesktopHandoff(handoffCode, verifier),
-          login: (token) => useAuthStore.getState().loginWithToken(token),
-          recoverPersistedToken: () =>
-            useAuthStore.getState().retryAuthentication(),
-        });
-        acknowledged = completion.acknowledged;
-        if (!completion.authenticated) return completion.acknowledged;
+        await useAuthStore.getState().loginWithToken(token);
         // Seed React Query cache with the workspace list so the index-route
         // redirect (routes.tsx `IndexRedirect`) can resolve the initial
         // destination without a second fetch. Workspace side-effects
@@ -183,10 +149,8 @@ export function AppContent() {
         // WorkspaceRouteLayout when the URL resolves.
         const wsList = await api.listWorkspaces();
         qc.setQueryData(workspaceKeys.list(), wsList);
-        return completion.acknowledged;
       } catch {
         // Token invalid or expired — user stays on login page
-        return acknowledged;
       } finally {
         setBootstrapping(false);
       }
@@ -196,33 +160,10 @@ export function AppContent() {
   // Sync token and start the daemon whenever the user logs in. The ordering
   // inside syncDaemonOnLogin is load-bearing — see that module.
   useEffect(() => {
-    const generation = ++daemonSyncGeneration.current;
-    if (!user) {
-      setDaemonSyncState("idle");
-      setDaemonSyncError(null);
-      setDaemonSyncedKey(null);
-      return;
-    }
-    if (!isElectronRenderer || !runtimeConfig) {
-      setDaemonSyncState("ready");
-      setDaemonSyncError(null);
-      setDaemonSyncedKey(daemonIdentityKey);
-      return;
-    }
-    const token = localStorage.getItem("patchbay_token");
-    if (!token) {
-      // Token-mode Desktop sessions must have a renderer session token so the
-      // main process can mint the Desktop-owned daemon PAT. Do not mount the
-      // shell with a daemon that still belongs to another account.
-      setDaemonSyncState("error");
-      setDaemonSyncError("session_token_missing");
-      setDaemonSyncedKey(daemonIdentityKey);
-      return;
-    }
+    if (!user || !runtimeConfig) return;
+    const token = localStorage.getItem("multica_token");
+    if (!token) return;
     const userId = user.id;
-    setDaemonSyncState("pending");
-    setDaemonSyncError(null);
-    setDaemonSyncedKey(null);
     (async () => {
       try {
         await syncDaemonOnLogin(
@@ -231,36 +172,11 @@ export function AppContent() {
           token,
           userId,
         );
-        if (generation === daemonSyncGeneration.current) {
-          setDaemonSyncState("ready");
-          setDaemonSyncedKey(daemonIdentityKey);
-        }
       } catch (err) {
         console.error("Failed to sync daemon on login", err);
-        if (generation === daemonSyncGeneration.current) {
-          setDaemonSyncState("error");
-          const reason = (err as { reason?: unknown })?.reason;
-          setDaemonSyncError(
-            reason === "auto_start_disabled" ||
-              reason === "cli_not_found" ||
-              reason === "auth_expired" ||
-              reason === "start_failed" ||
-              reason === "not_ready"
-              ? reason
-              : "start_failed",
-          );
-          setDaemonSyncedKey(daemonIdentityKey);
-        }
       }
     })();
-    return () => undefined;
-  }, [
-    user,
-    runtimeConfig,
-    daemonIdentityKey,
-    isElectronRenderer,
-    daemonSyncRetry,
-  ]);
+  }, [user, runtimeConfig]);
 
   // When a user who started the session with zero workspaces creates their
   // first one, restart the daemon so it picks up the new workspace
@@ -366,9 +282,6 @@ export function AppContent() {
     if (!workspaceListReady) return;
     const validSlugs = new Set(workspaces.map((w) => w.slug));
     useTabStore.getState().validateWorkspaceSlugs(validSlugs);
-    useWindowOverlayStore
-      .getState()
-      .validateSettingsWorkspace(validSlugs);
     const { activeWorkspaceSlug, switchWorkspace } = useTabStore.getState();
     if (!activeWorkspaceSlug && workspaces.length > 0) {
       switchWorkspace(workspaces[0].slug);
@@ -398,56 +311,11 @@ export function AppContent() {
   if (authStatus === "recovering") {
     return <DesktopAuthRecoveryPage />;
   }
-  const daemonReadyForCurrentIdentity =
-    !isElectronRenderer ||
-    !user ||
-    !runtimeConfig ||
-    (daemonSyncState === "ready" && daemonSyncedKey === daemonIdentityKey);
-  const daemonFailedForCurrentIdentity =
-    !!user &&
-    isElectronRenderer &&
-    !!runtimeConfig &&
-    daemonSyncState === "error" &&
-    daemonSyncedKey === daemonIdentityKey;
-
-  if (
-    isLoading ||
-    bootstrapping ||
-    (user && !daemonReadyForCurrentIdentity && !daemonFailedForCurrentIdentity)
-  ) {
+  if (isLoading || bootstrapping) {
     return (
       <div className="flex h-screen items-center justify-center">
-        <PatchbayIcon className="size-6 animate-pulse" />
+        <MulticaIcon className="size-6 animate-pulse" />
       </div>
-    );
-  }
-
-  if (user && daemonFailedForCurrentIdentity) {
-    return (
-      <DesktopAuthRecoveryPage
-        onRetry={() => {
-          if (daemonRecoveryPending) return;
-          setDaemonRecoveryPending(true);
-          void (async () => {
-            try {
-              if (daemonSyncError === "cli_not_found") {
-                await window.daemonAPI.retryInstall();
-              } else if (daemonSyncError === "auto_start_disabled") {
-                await window.daemonAPI.setPrefs({ autoStart: true });
-              } else if (daemonSyncError === "auth_expired") {
-                await reauthenticateDaemon();
-              }
-              setDaemonSyncRetry((attempt) => attempt + 1);
-            } catch (error) {
-              console.error("Failed to repair daemon startup", error);
-            } finally {
-              setDaemonRecoveryPending(false);
-            }
-          })();
-        }}
-        isRetrying={daemonRecoveryPending}
-        errorReason={daemonSyncError ?? undefined}
-      />
     );
   }
 
@@ -471,7 +339,7 @@ function BlockingRuntimeConfigError({ message }: { message: string }) {
       <div className="max-w-xl rounded-lg border bg-card p-6 shadow-sm">
         <h1 className="text-title font-semibold">Desktop configuration error</h1>
         <p className="mt-3 text-body text-muted-foreground">
-          Patchbay Desktop could not load <code>~/.patchbay/desktop.json</code>. Fix or remove the file and restart the app.
+          Multica Desktop could not load <code>~/.multica/desktop.json</code>. Fix or remove the file and restart the app.
         </p>
         <pre className="mt-4 whitespace-pre-wrap rounded-md bg-muted p-3 text-caption text-muted-foreground">
           {message}
@@ -487,23 +355,23 @@ function BlockingRuntimeConfigError({ message }: { message: string }) {
 // useLogout clears the storage key, but the live stores stay populated until
 // we explicitly reset them here.
 async function handleDaemonLogout() {
-  // The main-process clear-token operation owns one queue transaction: it
-  // stops the current Desktop daemon, then removes its credentials. Keeping
-  // this await before the callback completes prevents a new login from
-  // interleaving between stop and clear. The shared store has already removed
-  // auth, so renderer session publication and local resets belong in finally.
+  // Report synchronously before async daemon cleanup so a rapidly closed main
+  // window cannot leave authenticated issue renderers behind.
+  window.desktopAPI.reportAuthSession?.(null);
+  useTabStore.getState().reset();
+  useWindowOverlayStore.getState().close();
+  // Drop any post-onboarding welcome signal so user B logging in next
+  // doesn't inherit user A's pending modal state.
+  useWelcomeStore.getState().reset();
   try {
     await window.daemonAPI.clearToken();
-  } finally {
-    // Auth has already been cleared by the shared store. Always publish that
-    // state and clear client-owned data, while preserving the cleanup error so
-    // the caller can surface that the old daemon still needs attention.
-    window.desktopAPI.reportAuthSession?.(null);
-    useTabStore.getState().reset();
-    useWindowOverlayStore.getState().close();
-    // Drop any post-onboarding welcome signal so user B logging in next
-    // doesn't inherit user A's pending modal state.
-    useWelcomeStore.getState().reset();
+  } catch {
+    // Best-effort — clearing is followed by stop which also hardens state.
+  }
+  try {
+    await window.daemonAPI.stop();
+  } catch {
+    // Daemon may already be stopped.
   }
 }
 
@@ -515,7 +383,6 @@ export default function App() {
   // restarting Electron; packaged builds always expose windowContext.
   const windowContext =
     window.desktopAPI.windowContext ?? { kind: "main" as const };
-  const isBrowserRenderer = window.desktopAPI.host === "browser";
   useCmdWCloseTab();
   // Mounted at the App root for the same reason as Cmd+W: the chord has to
   // work in every renderer state, not only inside the tab shell.
@@ -597,7 +464,7 @@ export default function App() {
         >
           <DesktopAuthSessionBridge />
           {windowContext.kind === "main" && <DiagnosticRouteReporter />}
-          {windowContext.kind === "main" && !isBrowserRenderer && (
+          {windowContext.kind === "main" && (
             <DesktopClientUsageReporter
               apiUrl={runtimeConfigResult.config.apiUrl}
             />

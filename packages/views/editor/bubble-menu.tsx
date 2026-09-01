@@ -33,25 +33,25 @@ import type { Editor } from "@tiptap/core";
 import { posToDOMRect } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
 import { toast } from "sonner";
-import { useCreateIssue } from "@patchbay/core/issues/mutations";
+import { useCreateIssue } from "@multica/core/issues/mutations";
 import { useT } from "../i18n";
-import { createShortcutChord, type ShortcutChord } from "@patchbay/core/shortcuts";
+import { createShortcutChord, type ShortcutChord } from "@multica/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
-import { Toggle } from "@patchbay/ui/components/ui/toggle";
-import { Separator } from "@patchbay/ui/components/ui/separator";
+import { Toggle } from "@multica/ui/components/ui/toggle";
+import { Separator } from "@multica/ui/components/ui/separator";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
   TooltipProvider,
-} from "@patchbay/ui/components/ui/tooltip";
+} from "@multica/ui/components/ui/tooltip";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@patchbay/ui/components/ui/popover";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@multica/ui/components/ui/popover";
+import { Input } from "@multica/ui/components/ui/input";
+import { Button } from "@multica/ui/components/ui/button";
 import {
   Bold,
   Italic,
@@ -521,7 +521,7 @@ function EditorBubbleMenu({
       // The level itself, not one boolean per offered level: the schema accepts
       // h1-h6 so the cursor can sit in an H4-H6 that Markdown brought in, and
       // the dropdown has to report that honestly instead of falling through to
-      // "Normal text". It still only offers H1-H3 as choices (PB-6060).
+      // "Normal text". It still only offers H1-H3 as choices (MUL-6060).
       headingLevel: e.isActive("heading")
         ? (e.getAttributes("heading").level as number | undefined)
         : undefined,

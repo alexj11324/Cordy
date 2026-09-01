@@ -26,7 +26,7 @@ import type {
   WSEventPayload,
   WSEventType,
   WSMessage,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 
 /** Generic handler used internally by the dispatcher map. Each `on<E>()`
  *  call narrows this to `(payload: WSEventPayload<E>, actorId?) => void`

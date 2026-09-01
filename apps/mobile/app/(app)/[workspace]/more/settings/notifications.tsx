@@ -5,14 +5,14 @@
  * Copy mirrors packages/views/settings/components/notifications-tab.tsx but
  * hardcoded English (mobile has no i18n infra yet). The group labels MUST
  * stay in sync with web — they describe the same server-side semantics,
- * and divergent labels would violate behavioral parity (apps/mobile/AGENTS.md).
+ * and divergent labels would violate behavioral parity (apps/mobile/CLAUDE.md).
  */
 import { ActivityIndicator, ScrollView, View } from "react-native";
 import { useQuery } from "@tanstack/react-query";
 import type {
   NotificationGroupKey,
   NotificationPreferences,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import { Text } from "@/components/ui/text";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
@@ -28,7 +28,7 @@ const INBOX_GROUPS: Array<{
   {
     key: "assignments",
     label: "Assignments",
-    description: "When you're assigned an issue or removed as executor.",
+    description: "When you're assigned an issue or removed as assignee.",
   },
   {
     key: "status_changes",
@@ -43,7 +43,7 @@ const INBOX_GROUPS: Array<{
   {
     key: "mentions",
     label: "Mentions",
-    description: "When someone @mentions you, including @all and @team.",
+    description: "When someone @mentions you, including @all and @squad.",
   },
   {
     key: "updates",
@@ -133,7 +133,7 @@ export default function NotificationsSettingsScreen() {
 
       <Section
         title="System"
-        description="Patchbay-wide announcements and important account events."
+        description="Multica-wide announcements and important account events."
       >
         <View className="flex-row items-center px-4 py-3 gap-3">
           <View className="flex-1">

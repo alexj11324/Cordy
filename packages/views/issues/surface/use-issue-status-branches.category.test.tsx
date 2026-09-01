@@ -5,13 +5,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { setApiInstance } from "@patchbay/core/api";
-import type { ApiClient } from "@patchbay/core/api/client";
-import type { Issue, IssueStatusCategory, IssueTableRowsRequest } from "@patchbay/core/types";
+import { setApiInstance } from "@multica/core/api";
+import type { ApiClient } from "@multica/core/api/client";
+import type { Issue, IssueStatusCategory, IssueTableRowsRequest } from "@multica/core/types";
 import { useIssueStatusBranches } from "./use-issue-status-branches";
 
 /**
- * Board and list columns are CATEGORIES (PB-6243). Before this, the hook asked
+ * Board and list columns are CATEGORIES (MUL-6243). Before this, the hook asked
  * the server for a concrete status key AND re-checked `row.issue.status` against
  * the column key, so a card on a custom status was dropped twice over: it never
  * came back from the server, and it would have been filtered out if it had.
@@ -22,18 +22,14 @@ function makeIssue(id: string, status: string, category: IssueStatusCategory): I
     id,
     workspace_id: "ws-1",
     number: 1,
-    identifier: `PB-${id}`,
+    identifier: `MUL-${id}`,
     title: id,
     description: null,
     status,
     status_category: category,
     priority: "none",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "u-1",
     project_id: null,
@@ -129,7 +125,7 @@ describe("useIssueStatusBranches — category columns", () => {
 
     // The FIRST request is the pre-feature contract: the catalog has not landed
     // yet, so the hook cannot know this workspace has custom statuses and must
-    // not send a group kind an un-upgraded backend would reject. (PB-6243)
+    // not send a group kind an un-upgraded backend would reject. (MUL-6243)
     expect(requests[0]?.group).toEqual({ kind: "status" });
     expect(requests[0]?.group_key).toBe("status:in_review");
     // Once the catalog confirms a custom status, it switches to the CATEGORY
@@ -196,7 +192,7 @@ describe("useIssueStatusBranches — category columns", () => {
   // header asks the opposite question, so an active filter has to narrow the
   // fold — otherwise filtering by one custom status headed the In Review
   // column with every in_review issue while showing only the matching cards
-  // beneath it. (PB-6409)
+  // beneath it. (MUL-6409)
   it("counts only the selected statuses while a status filter is active", async () => {
     setApiInstance({
       listIssueTableRows: async (request: IssueTableRowsRequest) => ({
@@ -247,7 +243,7 @@ describe("useIssueStatusBranches — category columns", () => {
 });
 
 /**
- * Rolling-deploy safety (PB-6243).
+ * Rolling-deploy safety (MUL-6243).
  *
  * `group.kind=status_category` is a server contract this feature introduced.
  * A new Web build hitting a backend pod that has not been updated yet gets a

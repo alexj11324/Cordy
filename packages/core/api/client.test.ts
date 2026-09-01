@@ -1,153 +1,79 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { configStore } from "../config";
 import { ApiClient, ApiError, CHAT_DRAFT_RESTORE_CAPABILITY, clientErrorMessage } from "./client";
-import { EMPTY_PLUGIN_PREVIEW } from "./schemas";
+import { EMPTY_PLUGIN_PACKAGE_LIST, EMPTY_PLUGIN_PREVIEW, EMPTY_PLUGIN_SURFACE_LAUNCH } from "./schemas";
 
 afterEach(() => {
+  configStore.getState().setAgentConversationStartersSupported(false);
   vi.unstubAllGlobals();
 });
 
-describe("ApiClient edit guards", () => {
-  it("sends the Clerk token only to the session exchange endpoint", async () => {
-    const user = {
-      id: "01972f7e-7e8d-77ef-a13d-1b0ce3e9c001",
-      name: "Alice",
-      email: "alice@example.com",
-      avatar_url: null,
-    };
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ token: "patchbay-token", user }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
+describe("ApiClient agent conversation-starter compatibility", () => {
+  const prompt = {
+    label: "Review a PR",
+    prompt: "Review the open pull request.",
+  };
+
+  it("rejects create writes before an older backend can drop them", async () => {
+    const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     const client = new ApiClient("https://api.example.test");
-    const signal = new AbortController().signal;
 
-    await expect(client.clerkLogin("clerk-session", signal)).resolves.toEqual({
-      token: "patchbay-token",
-      user,
-    });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.example.test/auth/clerk",
-      expect.objectContaining({
-        method: "POST",
-        credentials: "include",
-        headers: expect.objectContaining({
-          Authorization: "Bearer clerk-session",
-        }),
-        signal,
+    await expect(
+      client.createAgent({
+        name: "Reviewer",
+        runtime_id: "runtime-1",
+        conversation_starters: [prompt],
       }),
-    );
+    ).rejects.toThrow(/server version does not support agent conversation starters/i);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("binds desktop Google completion to the explicit Clerk token", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          callback_protocol: "patchbay-canary-login-fix-123",
-          code: "pbd_code",
-        }),
-        {
+  it("rejects update writes before an older backend can drop them", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new ApiClient("https://api.example.test");
+
+    await expect(
+      client.updateAgent("agent-1", { conversation_starters: [prompt] }),
+    ).rejects.toThrow(/server version does not support agent conversation starters/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("allows declared-capability create and update writes through", async () => {
+    configStore.getState().setAgentConversationStartersSupported(true);
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(JSON.stringify({ id: "agent-1" }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
-        },
+        }),
       ),
     );
     vi.stubGlobal("fetch", fetchMock);
-    const client = new ApiClient("https://api.example.test");
-    client.setToken("patchbay-native-token");
-    const state = "s".repeat(43);
-    const codeChallenge = "c".repeat(43);
 
-    await expect(
-      client.completeDesktopGoogleAttempt(
-        "clerk-session-token",
-        state,
-        codeChallenge,
-      ),
-    ).resolves.toEqual({
-      callback_protocol: "patchbay-canary-login-fix-123",
-      code: "pbd_code",
+    const client = new ApiClient("https://api.example.test");
+    await client.createAgent({
+      name: "Reviewer",
+      runtime_id: "runtime-1",
+      conversation_starters: [prompt],
+    });
+    await client.updateAgent("agent-1", {
+      conversation_starters: [prompt],
     });
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.example.test/api/desktop-google/complete",
-      expect.objectContaining({
-        method: "POST",
-        credentials: "include",
-        headers: expect.objectContaining({
-          Authorization: "Bearer clerk-session-token",
-        }),
-        body: JSON.stringify({
-          state,
-          code_challenge: codeChallenge,
-        }),
-      }),
-    );
-  });
-
-  it("registers the callback protocol from an authenticated desktop initiation", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      Response.json({ registered: true }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const client = new ApiClient("https://api.example.test");
-    client.setToken("patchbay-guest-token");
-    const state = "s".repeat(43);
-    const codeChallenge = "c".repeat(43);
-
-    await expect(
-      client.initiateDesktopGoogleAttempt(
-        state,
-        codeChallenge,
-        "patchbay-canary-login-fix-123",
-      ),
-    ).resolves.toEqual({ registered: true });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.example.test/api/desktop-google/initiate",
-      expect.objectContaining({
-        method: "POST",
-        headers: expect.objectContaining({
-          Authorization: "Bearer patchbay-guest-token",
-        }),
-        body: JSON.stringify({
-          state,
-          code_challenge: codeChallenge,
-          callback_protocol: "patchbay-canary-login-fix-123",
-        }),
-      }),
-    );
-  });
-
-  it("creates a guest session through the dedicated endpoint", async () => {
-    const user = {
-      id: "guest-user",
-      is_guest: true,
-      name: "Guest",
-      email: "guest@example.invalid",
-    };
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ token: "pbg_guest-token", user }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-    const client = new ApiClient("https://api.example.test");
-
-    await expect(client.createGuestSession()).resolves.toEqual({
-      token: "pbg_guest-token",
-      user,
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
+      name: "Reviewer",
+      runtime_id: "runtime-1",
+      conversation_starters: [prompt],
     });
-    expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.example.test/auth/guest",
-      expect.objectContaining({ method: "POST" }),
-    );
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      conversation_starters: [prompt],
+    });
   });
+});
 
+describe("ApiClient edit guards", () => {
   it("serializes field baselines for issue and comment writes", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
       new Response("{}", {
@@ -176,17 +102,13 @@ describe("ApiClient edit guards", () => {
       id: "issue-1",
       workspace_id: "ws-1",
       number: 1,
-      identifier: "PB-1",
+      identifier: "MUL-1",
       title: "Legacy issue",
       description: null,
       status: "todo",
       priority: "none",
-      owner_type: null,
-      owner_id: null,
-      executor_type: null,
-      executor_id: null,
-      reviewer_type: null,
-      reviewer_id: null,
+      assignee_type: null,
+      assignee_id: null,
       creator_type: "member",
       creator_id: "user-1",
       parent_issue_id: null,
@@ -228,10 +150,10 @@ describe("ApiClient pull-request response schema", () => {
     repo_owner: "acme",
     repo_name: "widget",
     number: 7,
-    title: "PB-1: fix",
+    title: "MUL-1: fix",
     state: "open",
     html_url: "https://github.example/acme/widget/pull/7",
-    branch: "fix/pb-1",
+    branch: "fix/mul-1",
     author_login: "octocat",
     author_avatar_url: null,
     merged_at: null,
@@ -298,50 +220,88 @@ describe("ApiClient Plugin preview response schema", () => {
 
     await expect(new ApiClient("https://api.example.test").previewPlugin(
       "workspace-1",
-      { source_url: "https://example.test/patchbay.plugin.json" },
+      { version_id: "version-1" },
     )).resolves.toEqual(EMPTY_PLUGIN_PREVIEW);
   });
-});
 
-describe("ApiClient workspace integration installs", () => {
-  it("does not add an Agent selector to workspace Hub requests", async () => {
-    const fetchMock = vi.fn().mockImplementation(() =>
-      Promise.resolve(
-        new Response("{}", {
+  // A malformed launch must not become a partly trusted frame URL.
+  it("falls back to an empty surface launch when the response is malformed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ url: 42, bridge_token: "proof" }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         }),
       ),
     );
+
+    await expect(new ApiClient("https://api.example.test").getPluginSurfaceLaunch(
+      "workspace-1",
+      "installation-1",
+      "hello",
+    )).resolves.toEqual(EMPTY_PLUGIN_SURFACE_LAUNCH);
+  });
+
+  it("falls back to an empty package list when the response is malformed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ packages: "nope" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    await expect(new ApiClient("https://api.example.test").listPluginPackages("workspace-1"))
+      .resolves.toEqual(EMPTY_PLUGIN_PACKAGE_LIST);
+  });
+});
+
+describe("ApiClient Plugin surface bridge routes", () => {
+  it("relays Action API calls through the session-only bridge prefix", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
     vi.stubGlobal("fetch", fetchMock);
-    const client = new ApiClient("https://api.example.test");
 
-    await client.beginLarkInstall("ws-1", undefined, "feishu");
-    await client.registerSlackBYO("ws-1", undefined, {
-      bot_token: "xoxb-token",
-      app_token: "xapp-token",
-    });
-    await client.registerDingTalkBYO("ws-1", undefined, {
-      client_id: "client-id",
-      client_secret: "client-secret",
-    });
-    await client.registerWecomBYO("ws-1", undefined, {
-      bot_id: "bot-id",
-      secret: "secret",
-    });
-    await client.registerTelegramBot("ws-1", undefined, { bot_token: "token" });
-    await client.beginWeixinInstall("ws-1");
+    await new ApiClient("https://api.example.test").callPluginAction(
+      "installation-1",
+      { method: "GET", path: "/context", issueId: "MUL-42" },
+    );
 
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      "https://api.example.test/api/workspaces/ws-1/lark/install/begin?region=feishu",
-      "https://api.example.test/api/workspaces/ws-1/slack/install/byo",
-      "https://api.example.test/api/workspaces/ws-1/dingtalk/install/byo",
-      "https://api.example.test/api/workspaces/ws-1/wecom/install/byo",
-      "https://api.example.test/api/workspaces/ws-1/telegram/install",
-      "https://api.example.test/api/workspaces/ws-1/weixin/install/begin",
-    ]);
-    expect(fetchMock.mock.calls.every(([, init]) => !String(init?.body).includes("agent_id"))).toBe(
-      true,
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/plugin-bridge/v1/context?issue_id=MUL-42",
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({
+      method: "GET",
+      headers: expect.objectContaining({
+        "X-Multica-Plugin-Installation": "installation-1",
+      }),
+    });
+  });
+
+  it("invokes UI hooks through the session-only bridge prefix", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({
+        status: "ok",
+        hook_key: "summarize",
+        trigger: "ui",
+        latency_ms: 1,
+        attempts: 1,
+      }), { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new ApiClient("https://api.example.test").invokePluginHook(
+      "installation-1",
+      "summarize",
+      { trigger: "ui", issueId: "issue-1" },
+    );
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(
+      "https://api.example.test/api/plugin-bridge/v1/hooks/summarize",
     );
   });
 });
@@ -389,7 +349,6 @@ describe("ApiClient server Table query", () => {
             facets: [
               {
                 kind: "status",
-                property_id: null,
                 values: [
                   { key: "todo", count: 501 },
                   { key: "done", count: 500 },
@@ -433,7 +392,7 @@ describe("ApiClient server Table query", () => {
       }),
     ).resolves.toMatchObject({
       total: 1001,
-      facets: [{ property_id: null, values: [{ key: "todo", count: 501 }, { key: "done", count: 500 }] }],
+      facets: [{ values: [{ key: "todo", count: 501 }, { key: "done", count: 500 }] }],
     });
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
@@ -528,7 +487,7 @@ describe("ApiClient server Table query", () => {
           {
             key: "service:bot-1",
             value: {
-              kind: "executor",
+              kind: "assignee",
               actor: { type: "service", id: "bot-1" },
             },
             count: 1,
@@ -561,11 +520,11 @@ describe("ApiClient server Table query", () => {
       groups: [{ value: { kind: "status", status: "paused" } }],
     });
     await expect(
-      client.listIssueTableGroups({ query, group: { kind: "executor" } }),
+      client.listIssueTableGroups({ query, group: { kind: "assignee" } }),
     ).resolves.toMatchObject({
       total: 1,
       groups: [
-        { value: { kind: "executor", actor: { type: "service", id: "bot-1" } } },
+        { value: { kind: "assignee", actor: { type: "service", id: "bot-1" } } },
       ],
     });
   });
@@ -585,7 +544,7 @@ describe("ApiClient server Table query", () => {
                 parent: {
                   id: "parent-1",
                   number: 10,
-                  identifier: "PB-10",
+                  identifier: "MUL-10",
                   title: "Parent",
                   status: "todo",
                 },
@@ -881,6 +840,60 @@ describe("ApiClient notification preferences", () => {
   });
 });
 
+describe("ApiClient Inbox response schemas", () => {
+  const legacyRow = {
+    id: "inbox-1",
+    workspace_id: "ws-1",
+    recipient_type: "member",
+    recipient_id: "member-1",
+    type: "new_comment",
+    severity: "info",
+    issue_id: "issue-1",
+    title: "Legacy Inbox row",
+    body: null,
+    read: false,
+    archived: false,
+    created_at: "2026-08-24T00:00:00Z",
+  };
+
+  it("schema-parses the main Inbox and preserves omitted legacy projections", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify([legacyRow]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+
+    const result = await new ApiClient("https://api.example.test").listInbox();
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).not.toHaveProperty("issue_status");
+    expect(result[0]).not.toHaveProperty("issue_priority");
+  });
+
+  it("falls back safely when the main Inbox projection is wrong-typed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify([{ ...legacyRow, issue_priority: 3 }]),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      ),
+    );
+
+    await expect(
+      new ApiClient("https://api.example.test").listInbox(),
+    ).resolves.toEqual([]);
+  });
+});
+
 describe("ApiClient", () => {
   it("preserves HTTP status on failed requests", async () => {
     vi.stubGlobal(
@@ -1051,7 +1064,7 @@ describe("ApiClient", () => {
     const tasks = await client.listTasksByIssue("issue-1");
 
     // A bad usage payload costs that row its figure and nothing else — the
-    // Agent thread events still lists every run.
+    // execution log still lists every run.
     expect(tasks).toHaveLength(3);
     expect(tasks[0]?.usage).toBeUndefined();
     expect(tasks[1]?.usage).toBeUndefined();
@@ -1059,9 +1072,9 @@ describe("ApiClient", () => {
     expect(tasks[2]?.usage?.[0]?.output_tokens).toBe(0);
   });
 
-  it("uses the expected HTTP contract for automation endpoints", async () => {
+  it("uses the expected HTTP contract for autopilot endpoints", async () => {
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(
-      new Response(JSON.stringify({ automations: [], runs: [], total: 0 }), {
+      new Response(JSON.stringify({ autopilots: [], runs: [], total: 0 }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
       }),
@@ -1070,27 +1083,27 @@ describe("ApiClient", () => {
 
     const client = new ApiClient("https://api.example.test");
 
-    await client.listAutomations({ status: "active" });
-    await client.getAutomation("ap-1");
-    await client.createAutomation({
+    await client.listAutopilots({ status: "active" });
+    await client.getAutopilot("ap-1");
+    await client.createAutopilot({
       title: "Daily triage",
       project_id: "project-1",
-      executor_id: "agent-1",
+      assignee_id: "agent-1",
       execution_mode: "create_issue",
     });
-    await client.updateAutomation("ap-1", { status: "paused", project_id: null });
-    await client.deleteAutomation("ap-1");
-    await client.triggerAutomation("ap-1");
-    await client.getAutomationQuotaUsage();
-    await client.listAutomationRuns("ap-1", { limit: 10, offset: 20 });
-    await client.createAutomationTrigger("ap-1", {
+    await client.updateAutopilot("ap-1", { status: "paused", project_id: null });
+    await client.deleteAutopilot("ap-1");
+    await client.triggerAutopilot("ap-1");
+    await client.getAutopilotQuotaUsage();
+    await client.listAutopilotRuns("ap-1", { limit: 10, offset: 20 });
+    await client.createAutopilotTrigger("ap-1", {
       kind: "schedule",
       cron_expression: "0 9 * * *",
       timezone: "UTC",
     });
-    await client.updateAutomationTrigger("ap-1", "tr-1", { enabled: false });
-    await client.deleteAutomationTrigger("ap-1", "tr-1");
-    await client.rotateAutomationTriggerWebhookToken("ap-1", "tr-1");
+    await client.updateAutopilotTrigger("ap-1", "tr-1", { enabled: false });
+    await client.deleteAutopilotTrigger("ap-1", "tr-1");
+    await client.rotateAutopilotTriggerWebhookToken("ap-1", "tr-1");
 
     const calls = fetchMock.mock.calls.map(([url, init]) => ({
       url,
@@ -1100,33 +1113,33 @@ describe("ApiClient", () => {
     }));
 
     expect(calls).toMatchObject([
-      { url: "https://api.example.test/api/automations?status=active", method: "GET" },
-      { url: "https://api.example.test/api/automations/ap-1", method: "GET" },
+      { url: "https://api.example.test/api/autopilots?status=active", method: "GET" },
+      { url: "https://api.example.test/api/autopilots/ap-1", method: "GET" },
       {
-        url: "https://api.example.test/api/automations",
+        url: "https://api.example.test/api/autopilots",
         method: "POST",
         body: JSON.stringify({
           title: "Daily triage",
           project_id: "project-1",
-          executor_id: "agent-1",
+          assignee_id: "agent-1",
           execution_mode: "create_issue",
         }),
       },
       {
-        url: "https://api.example.test/api/automations/ap-1",
+        url: "https://api.example.test/api/autopilots/ap-1",
         method: "PATCH",
         body: JSON.stringify({ status: "paused", project_id: null }),
       },
-      { url: "https://api.example.test/api/automations/ap-1", method: "DELETE" },
+      { url: "https://api.example.test/api/autopilots/ap-1", method: "DELETE" },
       {
-        url: "https://api.example.test/api/automations/ap-1/trigger",
+        url: "https://api.example.test/api/autopilots/ap-1/trigger",
         method: "POST",
         idempotencyKey: expect.any(String),
       },
-      { url: "https://api.example.test/api/automations/usage", method: "GET" },
-      { url: "https://api.example.test/api/automations/ap-1/runs?limit=10&offset=20", method: "GET" },
+      { url: "https://api.example.test/api/autopilots/usage", method: "GET" },
+      { url: "https://api.example.test/api/autopilots/ap-1/runs?limit=10&offset=20", method: "GET" },
       {
-        url: "https://api.example.test/api/automations/ap-1/triggers",
+        url: "https://api.example.test/api/autopilots/ap-1/triggers",
         method: "POST",
         body: JSON.stringify({
           kind: "schedule",
@@ -1135,13 +1148,13 @@ describe("ApiClient", () => {
         }),
       },
       {
-        url: "https://api.example.test/api/automations/ap-1/triggers/tr-1",
+        url: "https://api.example.test/api/autopilots/ap-1/triggers/tr-1",
         method: "PATCH",
         body: JSON.stringify({ enabled: false }),
       },
-      { url: "https://api.example.test/api/automations/ap-1/triggers/tr-1", method: "DELETE" },
+      { url: "https://api.example.test/api/autopilots/ap-1/triggers/tr-1", method: "DELETE" },
       {
-        url: "https://api.example.test/api/automations/ap-1/triggers/tr-1/rotate-webhook-token",
+        url: "https://api.example.test/api/autopilots/ap-1/triggers/tr-1/rotate-webhook-token",
         method: "POST",
       },
     ]);
@@ -1764,7 +1777,7 @@ describe("ApiClient", () => {
       expect(result.attribution).toBeUndefined();
     });
 
-    // The server only defers the empty-Agent event history judgment — and so only
+    // The server only defers the empty-transcript judgment — and so only
     // withholds the synchronous restore — for clients that advertise this
     // capability (#5219). Drop the header and this client is treated as a
     // pre-#5219 build, quietly losing the deferred path it actually implements.
@@ -1895,7 +1908,7 @@ describe("ApiClient", () => {
       expect(body.get("comment_id")).toBeNull();
     });
 
-    it("threads an AbortSignal into fetch so the coordinator can cancel it (PB-5181)", async () => {
+    it("threads an AbortSignal into fetch so the coordinator can cancel it (MUL-5181)", async () => {
       const fetchMock = vi.fn().mockResolvedValue(
         new Response(JSON.stringify({ id: "att-1", url: "https://cdn/x" }), {
           status: 200,
@@ -2032,45 +2045,13 @@ describe("ApiClient explicit workspace targeting", () => {
     return (init.headers as Record<string, string>)["X-Workspace-Slug"];
   }
 
-  it("sends the given slug on Patrick creation", async () => {
+  it("sends the given slug on Mika creation", async () => {
     const fetchMock = stubOk({ id: "agent-1" });
-    await new ApiClient("https://api.example.test").createPatrickAgent(
-      {
-        runtime_id: "runtime-1",
-        language: "en",
-      },
+    await new ApiClient("https://api.example.test").createMikaAgent(
+      { runtime_id: "runtime-1", language: "en" },
       "proxima-centauri",
     );
     expect(slugHeaderOf(fetchMock)).toBe("proxima-centauri");
-  });
-
-  it("falls back to the legacy bootstrap route only when Patrick is unavailable", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: "not found" }), {
-          status: 404,
-          statusText: "Not Found",
-          headers: { "Content-Type": "application/json" },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ id: "agent-1" }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }),
-      );
-    vi.stubGlobal("fetch", fetchMock);
-
-    await new ApiClient("https://api.example.test").createPatrickAgent({
-      runtime_id: "runtime-1",
-      language: "en",
-    });
-
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
-      "https://api.example.test/api/agents/patrick",
-      "https://api.example.test/api/agents/mika",
-    ]);
   });
 
   it("sends the given slug when listing another workspace's runtimes", async () => {
@@ -2176,11 +2157,11 @@ describe("ApiClient model discovery response schema", () => {
 });
 
 /**
- * Mixed-version contract for subtree unsubscribe (PB-5483).
+ * Mixed-version contract for subtree unsubscribe (MUL-5483).
  *
  * Web/desktop staging deploys on merge while the backend is deployed by hand,
  * so this client routinely runs against an older server. Subtree unsubscribe
- * must therefore be carried by its own PATH, never by a body field: JSON
+ * must therefore be carried by its own PATH, never by a body field: Go's JSON
  * decoder drops unknown fields, so an old server would unsubscribe only the
  * root and still answer 200 — telling the user the whole tree was muted while
  * every child kept notifying. An unknown path 404s, which surfaces as a
@@ -2240,7 +2221,7 @@ describe("ApiClient unsubscribe endpoints", () => {
   });
 });
 
-describe("ApiClient startPatrickOnboarding", () => {
+describe("ApiClient startMikaOnboarding", () => {
   it("returns the opening a well-formed response reports", async () => {
     vi.stubGlobal(
       "fetch",
@@ -2257,7 +2238,7 @@ describe("ApiClient startPatrickOnboarding", () => {
     );
 
     await expect(
-      new ApiClient("https://api.example.test").startPatrickOnboarding("session-1", {
+      new ApiClient("https://api.example.test").startMikaOnboarding("session-1", {
         language: "en",
       }),
     ).resolves.toEqual({
@@ -2282,7 +2263,7 @@ describe("ApiClient startPatrickOnboarding", () => {
     // already opened this conversation" and navigates, rather than acting on a
     // body it could not understand.
     await expect(
-      new ApiClient("https://api.example.test").startPatrickOnboarding("session-1", {
+      new ApiClient("https://api.example.test").startMikaOnboarding("session-1", {
         language: "en",
       }),
     ).resolves.toEqual({ started: false });
@@ -2300,7 +2281,7 @@ describe("ApiClient startPatrickOnboarding", () => {
     );
 
     await expect(
-      new ApiClient("https://api.example.test").startPatrickOnboarding("session-1", {
+      new ApiClient("https://api.example.test").startMikaOnboarding("session-1", {
         language: "en",
       }),
     ).resolves.toEqual({ started: false });
@@ -2514,18 +2495,113 @@ describe("ApiClient workspace MCP servers", () => {
   });
 });
 
+describe("importSkillArchive", () => {
+  it("POSTs multipart form data without a JSON content-type", async () => {
+    const skill = {
+      id: "skill-1",
+      workspace_id: "ws-1",
+      name: "review-helper",
+      description: "Reviews code",
+      content: "# Review",
+      config: {},
+      files: [],
+      created_by: "user-1",
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ status: "created", skill }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const file = new File(["pk"], "review-helper.skill", { type: "application/zip" });
+    const result = await new ApiClient("https://api.example.test").importSkillArchive(
+      file,
+      "fail",
+    );
+
+    expect(result.id).toBe("skill-1");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("https://api.example.test/api/skills/import");
+    expect(init?.method).toBe("POST");
+    const headers = init?.headers as Record<string, string>;
+    expect(headers["Content-Type"]).toBeUndefined();
+    const body = init?.body as FormData;
+    expect(body).toBeInstanceOf(FormData);
+    expect(body.get("on_conflict")).toBe("fail");
+    const uploaded = body.get("file");
+    expect(uploaded).toBeInstanceOf(File);
+    expect((uploaded as File).name).toBe("review-helper.skill");
+  });
+
+  it("falls back to Import failed when the archive envelope is malformed", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ not_a_status: true, skill: 42 }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const file = new File(["pk"], "review-helper.skill");
+    await expect(
+      new ApiClient("https://api.example.test").importSkillArchive(file),
+    ).rejects.toThrow(/import failed/i);
+  });
+
+  it("keeps the server reason for a status this client does not know", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ status: "quarantined", reason: "pending review" }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const file = new File(["pk"], "review-helper.skill");
+    await expect(
+      new ApiClient("https://api.example.test").importSkillArchive(file),
+    ).rejects.toThrow("pending review");
+  });
+
+  it("throws the structured reason on a name conflict", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: "conflict",
+          reason: "a skill with this name already exists",
+        }),
+        { status: 409, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const file = new File(["pk"], "review-helper.skill");
+    await expect(
+      new ApiClient("https://api.example.test").importSkillArchive(file),
+    ).rejects.toMatchObject({
+      message: "a skill with this name already exists",
+      status: 409,
+    });
+  });
+});
+
 describe("clientErrorMessage", () => {
   it("returns a 4xx message, which handlers write for the user", () => {
-    expect(clientErrorMessage(new ApiError("automation is not active", 400, "Bad Request")))
-      .toBe("automation is not active");
+    expect(clientErrorMessage(new ApiError("autopilot is not active", 400, "Bad Request")))
+      .toBe("autopilot is not active");
     expect(clientErrorMessage(new ApiError("forbidden", 403, "Forbidden"))).toBe("forbidden");
   });
 
   it("withholds a 5xx message, which carries internal server detail", () => {
-    // PB-6472: the pre-fix body for a failed automation trigger looked like
+    // MUL-6472: the pre-fix body for a failed autopilot trigger looked like
     // this, and it was rendered verbatim in the run-now toast.
     const leaky = new ApiError(
-      'failed to trigger automation: create run: ERROR: duplicate key value violates unique constraint "automation_run_pkey" (SQLSTATE 23505)',
+      'failed to trigger autopilot: create run: ERROR: duplicate key value violates unique constraint "autopilot_run_pkey" (SQLSTATE 23505)',
       500,
       "Internal Server Error",
     );

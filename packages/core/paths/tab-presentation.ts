@@ -7,7 +7,7 @@
  * decision lives — icon and title no longer come from two unrelated code paths.
  *
  * It is pure and React-free: the visual is a descriptor (rendered by
- * `@patchbay/views`' `ResourceLeadingVisual`) and the title is a spec that is
+ * `@multica/views`' `ResourceLeadingVisual`) and the title is a spec that is
  * either literal text or a localization key (localized by the view layer).
  * Keeping it pure makes the whole "URL + data → icon + title" matrix unit
  * testable without React, which is exactly what the tab behavior needs guarded.
@@ -27,11 +27,11 @@ import type { TabActorType, TabSubject } from "./tab-subject";
 
 /** The leading visual a tab should render. */
 export type TabVisual =
-  /** A static route icon (page icon or resourceless type icon). */
+  /** A static Lucide icon (page icon or resourceless type icon). */
   | { kind: "icon"; icon: RouteIconName }
   /** An issue's live status glyph. `null` while the issue is loading.
    *  `category` is what selects the glyph — carried here so the tab strip
-   *  never has to resolve a custom status key on its own. (PB-6243) */
+   *  never has to resolve a custom status key on its own. (MUL-6243) */
   | { kind: "issue-status"; status: IssueStatus | null; category?: IssueStatusCategory }
   /** A project's own icon. `null` falls back to the default project glyph. */
   | { kind: "project-icon"; icon: string | null }
@@ -42,10 +42,10 @@ export type TabVisual =
 export type TabLabelKey =
   | "issue"
   | "project"
-  | "automation"
+  | "autopilot"
   | "agent"
   | "member"
-  | "team"
+  | "squad"
   | "skill"
   | "machine"
   | "runtime"
@@ -80,7 +80,7 @@ export type InboxSelectionData =
 export interface TabEntityData {
   issue?: { identifier: string; title: string; status: IssueStatus };
   project?: { icon: string | null; title: string };
-  automation?: { title: string };
+  autopilot?: { title: string };
   /** Resolved display name for an actor subject. */
   actorName?: string;
   skill?: { name: string };
@@ -104,7 +104,7 @@ function textOr(text: string | undefined | null, tabKey: TabLabelKey): TabTitleS
 const ACTOR_LABEL: Record<TabActorType, TabLabelKey> = {
   agent: "agent",
   member: "member",
-  team: "team",
+  squad: "squad",
 };
 
 // Extension → file-type icon. The preview URL only carries the filename, so the
@@ -171,10 +171,10 @@ export function resolveTabPresentation(
         visual: { kind: "project-icon", icon: data.project?.icon ?? null },
         title: textOr(data.project?.title, "project"),
       };
-    case "automation":
+    case "autopilot":
       return {
-        visual: { kind: "icon", icon: "AlarmClockCheck" },
-        title: textOr(data.automation?.title, "automation"),
+        visual: { kind: "icon", icon: "Zap" },
+        title: textOr(data.autopilot?.title, "autopilot"),
       };
     case "actor":
       return {

@@ -5,11 +5,11 @@ description: 配置邮箱验证码、Google 登录和新用户注册范围。
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay 默认使用邮箱验证码登录，也可以增加 Google OAuth。已经存在的用户始终可以再次登录；注册限制只决定是否允许创建新账号。
+Multica 默认使用邮箱验证码登录，也可以增加 Google OAuth。已经存在的用户始终可以再次登录；注册限制只决定是否允许创建新账号。
 
 ## 邮箱验证码
 
-用户输入邮箱后，Patchbay 会发送一个 6 位验证码。验证码 10 分钟内有效，验证成功后浏览器获得登录 cookie。
+用户输入邮箱后，Multica 会发送一个 6 位验证码。验证码 10 分钟内有效，验证成功后浏览器获得登录 cookie。
 
 邮件可以通过 Resend 或 SMTP 发送。两者同时配置时，`SMTP_HOST` 优先。
 
@@ -18,10 +18,10 @@ Patchbay 默认使用邮箱验证码登录，也可以增加 Google OAuth。已�
 1. 在 [Resend](https://resend.com/) 验证发信域名并创建 API key。
 2. 设置：
 
-   ```dotenv
-   RESEND_API_KEY=re_xxxxxxxxxxxxxxxx
-   RESEND_FROM_EMAIL=noreply@example.com
-   ```
+ ```dotenv
+ RESEND_API_KEY=re_xxxxxxxxxxxxxxxx
+ RESEND_FROM_EMAIL=noreply@example.com
+ ```
 
 3. 重启 API 服务。
 
@@ -34,7 +34,7 @@ Patchbay 默认使用邮箱验证码登录，也可以增加 Google OAuth。已�
 ```dotenv
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
-SMTP_USERNAME=patchbay
+SMTP_USERNAME=multica
 SMTP_PASSWORD=<password>
 SMTP_FROM_EMAIL=noreply@example.com
 ```
@@ -67,27 +67,35 @@ SMTP_EHLO_NAME=mail.example.com
 
 ```dotenv
 APP_ENV=development
-PATCHBAY_DEV_VERIFICATION_CODE=888888
+MULTICA_DEV_VERIFICATION_CODE=888888
 ```
 
 验证码必须是 6 位数字。`APP_ENV=production` 时固定验证码会被忽略。
 
 <Callout type="warning">
-不要在公网实例中启用固定验证码。生产环境的组合是 `APP_ENV=production` 加空的 `PATCHBAY_DEV_VERIFICATION_CODE`。
+不要在公网实例中启用固定验证码。生产环境的组合是 `APP_ENV=production` 加空的 `MULTICA_DEV_VERIFICATION_CODE`。
 </Callout>
 
 ## Google 登录
 
-1. 在托管的 `accounts` 服务中配置 Google provider。
-2. 把 broker 回调地址加入 **Authorized redirect URIs**：
+1. 在 [Google Cloud Console](https://console.cloud.google.com/) 创建 OAuth 2.0 client。
+2. 把 Multica 前端的回调地址加入 **Authorized redirect URIs**：
 
-   ```text
-   https://accounts.example.com/oauth/google/callback
-   ```
+ ```text
+ https://multica.example.com/auth/callback
+ ```
 
-3. Desktop 登录只使用 broker 的 `/oauth/google` 与
-   `/oauth/google/callback`。broker 只通过 `patchbay://auth/callback` 返回
-   一次性 PKCE code，Rust API 在 `/api/desktop-handoff/redeem` 兑换它。
+3. 设置：
+
+ ```dotenv
+ GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com
+ GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxxxxx
+ GOOGLE_REDIRECT_URI=https://multica.example.com/auth/callback
+ ```
+
+4. 重启 API 服务。
+
+Google Console 与 `GOOGLE_REDIRECT_URI` 中的地址必须完全一致，包括协议、端口和结尾斜杠。配置生效后，登录页会出现 Google 登录按钮；前端镜像不需要重新构建。
 
 ## 注册范围控制
 
@@ -126,14 +134,14 @@ ALLOWED_EMAILS=partner@example.net
 
 邀请不会自动绕过注册限制：
 
-- 对方已经有 Patchbay 账号时，可以登录并接受邀请；
+- 对方已经有 Multica 账号时，可以登录并接受邀请；
 - 对方还没有账号时，邮箱必须符合上面的注册规则。
 
 在关闭开放注册的实例中邀请新成员时，先把对方邮箱加入 `ALLOWED_EMAILS`。账号创建并接受邀请后，可以再从名单中移除。
 
 ## 登录有效期
 
-浏览器登录默认保持 30 天。可以用 `AUTH_TOKEN_TTL` 调整，支持 duration 或正整数秒数：
+浏览器登录默认保持 30 天。可以用 `AUTH_TOKEN_TTL` 调整，支持 Go duration 或正整数秒数：
 
 ```dotenv
 AUTH_TOKEN_TTL=720h

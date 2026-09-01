@@ -24,7 +24,7 @@ import type {
   Reaction,
   TimelineEntry,
   UpdateIssueRequest,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import { api } from "@/data/api";
 import { isIssueStatusCategory } from "@/lib/issue-status";
 import { issueKeys } from "@/data/queries/issues";
@@ -479,7 +479,7 @@ export function useToggleIssueReaction(issueId: string) {
 
 /**
  * Keeps `status_category` consistent with an optimistic `status` write
- * (PB-6243).
+ * (MUL-6243).
  *
  * A cached issue looks like `{status: "todo", status_category: "todo"}` while a
  * patch carries only `{status: "human_review"}`, so a bare spread would leave
@@ -497,7 +497,7 @@ function statusCategoryPatch(status: IssueStatus | undefined): Partial<Issue> {
 }
 
 /**
- * Update an issue's editable fields (status / priority / executor / due_date /
+ * Update an issue's editable fields (status / priority / assignee / due_date /
  * project_id / etc). Predictable fields merge optimistically into the detail
  * cache; description stays authoritative because the server resolves it
  * against description_base and hidden channel-media markers. Settle invalidates

@@ -1,18 +1,18 @@
 "use client";
 
-import { issueStatusCategory } from "@patchbay/core/issues";
+import { issueStatusCategory } from "@multica/core/issues";
 import { useStatusLabel } from "./../utils/status-label";
 import type { ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { childIssueProgressOptions, issueDetailOptions } from "@patchbay/core/issues/queries";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useActorName } from "@patchbay/core/workspace/hooks";
+import { childIssueProgressOptions, issueDetailOptions } from "@multica/core/issues/queries";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { useActorName } from "@multica/core/workspace/hooks";
 import {
   HoverCard,
   HoverCardTrigger,
   HoverCardContent,
-} from "@patchbay/ui/components/ui/hover-card";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+} from "@multica/ui/components/ui/hover-card";
+import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { useT } from "../../i18n";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { descriptionPreview } from "./description-preview";
@@ -25,7 +25,7 @@ interface IssueHoverCardProps {
   children: ReactNode;
   /**
    * Identifier to name the issue with when the detail fetch fails (e.g.
-   * "PB-7"). The same label the chip degrades to, so a card that cannot load
+   * "MUL-7"). The same label the chip degrades to, so a card that cannot load
    * still says which issue it is about.
    */
   fallbackLabel?: string;
@@ -43,7 +43,7 @@ interface IssueHoverCardProps {
  * The inline chip shows status, identifier, and as much title as fits inside
  * its `min(18rem, 100%)` cap — so a long title arrives truncated. The card
  * carries what the chip cannot: the full untruncated title, priority, a
- * description snippet, the executor, and sub-issue progress. Issue mentions are
+ * description snippet, the assignee, and sub-issue progress. Issue mentions are
  * the only kind with a hover preview — member and agent mentions render as a
  * plain `.mention` span in rich-content.tsx. This lives here rather than in
  * packages/ui because it reads workspace queries.
@@ -75,14 +75,14 @@ export function IssueHoverCard({
 }
 
 /**
- * Executor row of the card.
+ * Assignee row of the card.
  *
  * Its own component so `useActorName` — which subscribes to the workspace
  * member list, a query nothing else on this path warms — mounts only for cards
- * that actually have an executor to name. Inlining it back into the body would
+ * that actually have an assignee to name. Inlining it back into the body would
  * make the first hover on any mention pull the member directory.
  */
-function IssueHoverCardExecutor({
+function IssueHoverCardAssignee({
   actorType,
   actorId,
 }: {
@@ -157,9 +157,9 @@ function IssueHoverCardBody({
   }
 
   const preview = issue.description ? descriptionPreview(issue.description) : "";
-  const executorType = issue.executor_type;
-  const executorId = issue.executor_id;
-  const hasExecutor = !!executorType && !!executorId;
+  const assigneeType = issue.assignee_type;
+  const assigneeId = issue.assignee_id;
+  const hasAssignee = !!assigneeType && !!assigneeId;
   const progress = childProgress?.get(issue.id);
   const hasProgress = !!progress && progress.total > 0;
   // Board cards and list rows render the glyph into a fixed grid slot, so the
@@ -204,10 +204,10 @@ function IssueHoverCardBody({
         <p className="mt-1 text-caption text-muted-foreground line-clamp-2">{preview}</p>
       )}
 
-      {(hasExecutor || hasProgress) && (
+      {(hasAssignee || hasProgress) && (
         <div className="mt-1 flex items-center justify-between gap-3">
-          {hasExecutor ? (
-            <IssueHoverCardExecutor actorType={executorType} actorId={executorId} />
+          {hasAssignee ? (
+            <IssueHoverCardAssignee actorType={assigneeType} actorId={assigneeId} />
           ) : (
             <span />
           )}

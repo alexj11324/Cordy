@@ -1,11 +1,11 @@
 /**
- * Cross-surface sanitize contract (PB-4922).
+ * Cross-surface sanitize contract (MUL-4922).
  *
  * The two product-level Markdown chains — Chat (ui/markdown/Markdown.tsx) and
  * Issue/Comment (views/editor/readonly-content.tsx) — used to carry a verbatim
  * fork of the sanitize schema and urlTransform each, and had already drifted:
  * readonly whitelisted <mark>, chat did not. Both now import the single
- * canonical base from @patchbay/ui/markdown.
+ * canonical base from @multica/ui/markdown.
  *
  * This suite runs one set of security fixtures through BOTH surfaces and
  * asserts the same outcome. It is the mechanism that stops a third fork from
@@ -16,9 +16,9 @@ import { render } from "@testing-library/react";
 import {
   Markdown as MarkdownBase,
   markdownSanitizeSchema,
-} from "@patchbay/ui/markdown";
+} from "@multica/ui/markdown";
 
-vi.mock("@patchbay/core/config", () => ({
+vi.mock("@multica/core/config", () => ({
   useConfigStore: (selector: (state: { cdnDomain: string }) => unknown) =>
     selector({ cdnDomain: "" }),
   configStore: { getState: () => ({ cdnDomain: "" }) },
@@ -38,13 +38,13 @@ vi.mock("../i18n", async () => {
   };
 });
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: { getAttachmentTextContent: vi.fn() },
   PreviewTooLargeError: class extends Error {},
   PreviewUnsupportedError: class extends Error {},
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/paths", () => ({
   useWorkspacePaths: () => ({
     issueDetail: (id: string) => `/test/issues/${id}`,
     projectDetail: (id: string) => `/test/projects/${id}`,
@@ -173,7 +173,7 @@ describe.each(SURFACES)("sanitize contract — $name", ({ render: renderSurface 
 
 // Code-block *rendering* is deliberately not asserted cross-surface yet: chat
 // highlights with Shiki and readonly with lowlight, so the emitted class tokens
-// still differ. Converging them is the RichCodeBlock phase of PB-4922; until
+// still differ. Converging them is the RichCodeBlock phase of MUL-4922; until
 // the highlight engine is picked, only the schema-level allow-list is shared.
 describe("canonical sanitize schema", () => {
   it("permits language-/math-/hljs class tokens on <code>", () => {

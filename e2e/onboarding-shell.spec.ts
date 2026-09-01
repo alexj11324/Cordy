@@ -55,12 +55,19 @@ test("onboarding — structural blocks match the column width on every step", as
   await api.login(`widths-${Date.now()}@localhost`, "Width Guard");
   const token = api.getToken();
 
-  await page.addInitScript((t) => localStorage.setItem("patchbay_token", t), token);
+  await page.addInitScript((t) => localStorage.setItem("multica_token", t), token);
   await page.goto("/onboarding", { waitUntil: "domcontentloaded" });
   await waitForPageText(page, "Continue on web");
   await page.getByRole("button", { name: "Continue on web" }).click();
 
-  await page.getByRole("heading", { name: /Set up your first workspace/i }).waitFor();
+  await page.getByText("Tell us a bit about you.").waitFor();
+  await expectFullWidthBlocks(page, "about you");
+
+  await page.getByRole("radio", { name: /Engineer \/ developer/i }).click();
+  await page.getByRole("checkbox", { name: /Ship code with AI agents/i }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+
+  await page.getByRole("heading", { name: /Name your workspace/i }).waitFor();
   await expectFullWidthBlocks(page, "workspace");
 
   await page.getByRole("textbox").first().fill(`Width Guard ${Date.now()}`);
@@ -84,13 +91,13 @@ test("onboarding — the shell survives step changes instead of re-mounting", as
   await api.login(`shell-${Date.now()}@localhost`, "Shell Guard");
 
   await page.addInitScript(
-    (t) => localStorage.setItem("patchbay_token", t),
+    (t) => localStorage.setItem("multica_token", t),
     api.getToken(),
   );
   await page.goto("/onboarding", { waitUntil: "domcontentloaded" });
   await waitForPageText(page, "Continue on web");
   await page.getByRole("button", { name: "Continue on web" }).click();
-  await page.getByRole("heading", { name: /Set up your first workspace/i }).waitFor();
+  await page.getByText("Tell us a bit about you.").waitFor();
 
   // Tag the live nodes. A remount replaces the elements and drops the marks.
   await page.evaluate(() => {
@@ -98,11 +105,10 @@ test("onboarding — the shell survives step changes instead of re-mounting", as
     document.querySelector("main")?.setAttribute("data-persist-probe", "1");
   });
 
-  await page.getByRole("textbox").first().fill(`Shell Guard ${Date.now()}`);
-  await page.getByRole("button", { name: /^Create /i }).click();
-  await page
-    .getByRole("heading", { name: /Connect a computer/i })
-    .waitFor({ timeout: 20000 });
+  await page.getByRole("radio", { name: /Engineer \/ developer/i }).click();
+  await page.getByRole("checkbox", { name: /Ship code with AI agents/i }).click();
+  await page.getByRole("button", { name: "Continue" }).click();
+  await page.getByRole("heading", { name: /Name your workspace/i }).waitFor();
 
   await expect(
     page.locator("aside[data-persist-probe]"),

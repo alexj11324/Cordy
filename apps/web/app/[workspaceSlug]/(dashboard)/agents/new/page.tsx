@@ -1,4 +1,4 @@
-import { ChooseCreateMethodPage } from "@patchbay/views/agents";
+import { ChooseCreateMethodPage } from "@multica/views/agents";
 
 export default function NewAgentRoute() {
   return <ChooseCreateMethodPage />;

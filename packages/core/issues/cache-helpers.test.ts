@@ -7,24 +7,20 @@ const WS_ID = "ws-1";
 
 // The server now sends status_category on EVERY issue, built-ins included, so
 // fixtures must carry it. Without it a patch that leaves a stale category on the
-// entity looks correct here while being wrong in production. (PB-6243)
+// entity looks correct here while being wrong in production. (MUL-6243)
 function mk(id: string, status: Issue["status"], position: number): Issue {
   return {
     id,
     status_category: statusCategoryOfKey(status),
     workspace_id: WS_ID,
     number: 1,
-    identifier: `PB-${id}`,
+    identifier: `MUL-${id}`,
     title: id,
     description: null,
     status,
     priority: "none",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -45,7 +41,7 @@ function cache(byStatus: ListIssuesCache["byStatus"]): ListIssuesCache {
   return { byStatus };
 }
 
-// The cache is bucketed by CATEGORY (PB-6243), so tests index it with one.
+// The cache is bucketed by CATEGORY (MUL-6243), so tests index it with one.
 function ids(c: ListIssuesCache, status: IssueStatusCategory): string[] {
   return (c.byStatus[status]?.issues ?? []).map((i: Issue) => i.id);
 }
@@ -106,7 +102,7 @@ describe("patchIssueInBuckets — cross-status move", () => {
     expect(next.byStatus.in_progress?.total).toBe(2);
   });
 
-  // PB-4261: `cancelled` is now a first-class paginated bucket, so cancelling
+  // MUL-4261: `cancelled` is now a first-class paginated bucket, so cancelling
   // an issue rebuckets it into `cancelled` (instead of dropping it) and the
   // rebucketed card stays locatable for later patches.
   it("rebuckets a cancelled issue and keeps it locatable", () => {

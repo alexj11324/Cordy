@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render } from "@testing-library/react";
-import { configureShortcutPlatform } from "@patchbay/core/shortcuts";
+import { configureShortcutPlatform } from "@multica/core/shortcuts";
 import { GlobalShortcuts } from "./global-shortcuts";
 
-// The floating chat overlay is reachable from the keyboard (PB-5522). What
+// The floating chat overlay is reachable from the keyboard (MUL-5522). What
 // matters is not just "the chord calls toggle", but that it stays a no-op —
 // without swallowing the keypress — everywhere the overlay cannot exist.
 const h = vi.hoisted(() => ({
@@ -13,35 +13,35 @@ const h = vi.hoisted(() => ({
   searchToggle: vi.fn(),
 }));
 
-vi.mock("@patchbay/core/chat", () => ({
+vi.mock("@multica/core/chat", () => ({
   useChatStore: Object.assign(
     (selector: (state: typeof h.chat) => unknown) => selector(h.chat),
     { getState: () => h.chat },
   ),
 }));
-vi.mock("@patchbay/core/issues/stores", () => ({
+vi.mock("@multica/core/issues/stores", () => ({
   openCreateIssueWithPreference: vi.fn(),
 }));
-vi.mock("@patchbay/core/modals", () => ({
+vi.mock("@multica/core/modals", () => ({
   useModalStore: { getState: () => ({ modal: null }) },
 }));
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/paths", () => ({
   useWorkspacePaths: () => ({
     inbox: () => "/acme/inbox",
     chat: () => "/acme/chat",
     myIssues: () => "/acme/my-issues",
     issues: () => "/acme/issues",
     projects: () => "/acme/projects",
-    automations: () => "/acme/automations",
+    autopilots: () => "/acme/autopilots",
     agents: () => "/acme/agents",
-    teams: () => "/acme/teams",
+    squads: () => "/acme/squads",
     usage: () => "/acme/usage",
     runtimes: () => "/acme/runtimes",
     skills: () => "/acme/skills",
     settings: () => "/acme/settings",
   }),
 }));
-vi.mock("@patchbay/ui/components/ui/sidebar", () => ({
+vi.mock("@multica/ui/components/ui/sidebar", () => ({
   useSidebar: () => ({ toggleSidebar: h.toggleSidebar }),
 }));
 vi.mock("../navigation", () => ({ useNavigation: () => h.navigation }));

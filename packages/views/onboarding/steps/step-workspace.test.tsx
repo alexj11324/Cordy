@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enOnboarding from "../../locales/en/onboarding.json";
 import enWorkspace from "../../locales/en/workspace.json";
-import type { Workspace } from "@patchbay/core/types";
+import type { Workspace } from "@multica/core/types";
 
 const TEST_RESOURCES = {
   en: {
@@ -31,33 +31,19 @@ vi.mock("../../auth", () => ({
   useLogout: () => mockLogout,
 }));
 
-vi.mock("@patchbay/core/config", () => ({
+vi.mock("@multica/core/config", () => ({
   useConfigStore: (selector: (state: MockConfigState) => unknown) =>
     mockUseConfigStore(selector),
 }));
 
 const mockCreateMutate = vi.hoisted(() => vi.fn());
 
-vi.mock("@patchbay/core/workspace/mutations", () => ({
-  useCreateWorkspace: () => ({
-    mutate: mockCreateMutate,
-    mutateAsync: (...args: unknown[]) => {
-      mockCreateMutate(...args);
-      return Promise.resolve({
-        id: "ws-new",
-        name: "Created",
-        slug: "created",
-      });
-    },
-    isPending: false,
-  }),
+vi.mock("@multica/core/workspace/mutations", () => ({
+  useCreateWorkspace: () => ({ mutate: mockCreateMutate, isPending: false }),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
-  api: {
-    getBaseUrl: () => "http://127.0.0.1:8080",
-    createProject: vi.fn(),
-  },
+vi.mock("@multica/core/api", () => ({
+  api: { getBaseUrl: () => "http://127.0.0.1:8080" },
 }));
 
 import { StepWorkspace } from "./step-workspace";
@@ -111,7 +97,7 @@ describe("StepWorkspace — DISABLE_WORKSPACE_CREATION gate", () => {
     renderStep({ existing: null, disabled: false });
 
     expect(
-      screen.getByText("Set up your first workspace", { exact: false }),
+      screen.getByText("Name your workspace.", { exact: false }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Workspace name")).toBeInTheDocument();
     expect(screen.getByLabelText("URL")).toBeInTheDocument();
@@ -161,23 +147,21 @@ describe("StepWorkspace — DISABLE_WORKSPACE_CREATION gate", () => {
 });
 
 // #4263: the workspace URL prefix must reflect the deployment's own host on
-// self-hosted instances instead of the hardcoded hosted origin.
+// self-hosted instances instead of the hardcoded `multica.ai`.
 describe("StepWorkspace — workspace URL prefix", () => {
   it("shows the brand host when no app URL is configured", () => {
     renderStep({ existing: null, disabled: false });
-    expect(screen.getByText("patchbay.aspectlylabs.com/")).toBeInTheDocument();
+    expect(screen.getByText("multica.ai/")).toBeInTheDocument();
   });
 
   it("shows the deployment host for self-hosted instances", () => {
     renderStep({
       existing: null,
       disabled: false,
-      daemonAppUrl: "https://patchbay.example.com",
+      daemonAppUrl: "https://multica.example.com",
     });
-    expect(screen.getByText("patchbay.example.com/")).toBeInTheDocument();
-    expect(
-      screen.queryByText("patchbay.aspectlylabs.com/"),
-    ).not.toBeInTheDocument();
+    expect(screen.getByText("multica.example.com/")).toBeInTheDocument();
+    expect(screen.queryByText("multica.ai/")).not.toBeInTheDocument();
   });
 });
 
@@ -201,7 +185,7 @@ describe("StepWorkspace — random workspace identity", () => {
   });
 });
 
-// PB-6050: the issue prefix used to be a read-only preview derived
+// MUL-6050: the issue prefix used to be a read-only preview derived
 // server-side from the workspace NAME, so every workspace named in Chinese
 // (or Japanese, Korean, emoji…) was created as "WS" with no way to change it
 // in the create flow. It now derives from the slug — which the same form

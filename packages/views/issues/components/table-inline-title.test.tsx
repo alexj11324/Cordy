@@ -6,7 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { useState } from "react";
 
-import type { Issue } from "@patchbay/core/types";
+import type { Issue } from "@multica/core/types";
 
 // InlineTitle renders the self-contained agent-activity badge, which fetches
 // the workspace agent-task snapshot via React Query. Stub it (same pattern as
@@ -28,17 +28,13 @@ function makeIssue(title: string): Issue {
     id: "issue-1",
     workspace_id: "ws-1",
     number: 1,
-    identifier: "PB-1",
+    identifier: "MUL-1",
     title,
     description: null,
     status: "todo",
     priority: "none",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "member-1",
     parent_issue_id: null,
@@ -178,7 +174,7 @@ describe("InlineTitle", () => {
     // The identifier is inside the title cell and not focusable, so clicking
     // it blurs the input (→ commit) and is the click that previously leaked
     // into row navigation.
-    await user.click(screen.getByText("PB-1"));
+    await user.click(screen.getByText("MUL-1"));
 
     expect(onUpdate).toHaveBeenCalledWith({ title: "Renamed" });
     expect(screen.queryByRole("textbox")).toBeNull();
@@ -213,7 +209,7 @@ describe("InlineTitle", () => {
   it("renders the agent-activity badge for the row's issue, between the identifier and the title", () => {
     render(<Harness title="Original" />);
 
-    const identifier = screen.getByText("PB-1");
+    const identifier = screen.getByText("MUL-1");
     const badge = screen.getByTestId("issue-agent-activity");
     const titleButton = screen.getByRole("button", { name: "Original" });
 

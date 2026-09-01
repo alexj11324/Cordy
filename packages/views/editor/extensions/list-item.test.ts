@@ -260,7 +260,7 @@ describe("PatchedListItem Enter behaviour", () => {
   });
 });
 
-describe("PatchedListItem Tab indent (PB-3697)", () => {
+describe("PatchedListItem Tab indent (MUL-3697)", () => {
   let editor: Editor | undefined;
   afterEach(() => {
     editor?.destroy();
@@ -343,7 +343,7 @@ describe("PatchedListItem Tab indent (PB-3697)", () => {
   });
 });
 
-describe("Tab indent across list types (PB-3697)", () => {
+describe("Tab indent across list types (MUL-3697)", () => {
   let editor: Editor | undefined;
   afterEach(() => {
     editor?.destroy();
@@ -373,7 +373,7 @@ describe("Tab indent across list types (PB-3697)", () => {
   });
 });
 
-describe("Shift-Tab dedent regression (PB-3697)", () => {
+describe("Shift-Tab dedent regression (MUL-3697)", () => {
   let editor: Editor | undefined;
   afterEach(() => {
     editor?.destroy();

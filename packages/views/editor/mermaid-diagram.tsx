@@ -29,7 +29,7 @@ import {
   type CSSProperties,
 } from "react";
 import { Check, Copy, Maximize2 } from "lucide-react";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+import { copyText } from "@multica/ui/lib/clipboard";
 import { useT } from "../i18n";
 import { useDragToScroll } from "./hooks/use-drag-to-scroll";
 import { MermaidViewer } from "./mermaid-viewer";
@@ -148,7 +148,7 @@ function getMermaidLayout(svg: string): Size | null {
 // excessive empty space; web.dev's CLS guidance recommends reserving any
 // such space upfront so async content doesn't shift surrounding layout.
 export const MERMAID_SKELETON_HEIGHT_PX = 280;
-const MERMAID_LAYOUT_CACHE_PREFIX = "patchbay:mermaid:layout:";
+const MERMAID_LAYOUT_CACHE_PREFIX = "multica:mermaid:layout:";
 
 // DJB2 — small, fast, sufficient for sessionStorage cache keys. The chart
 // text itself is too unwieldy as a key (length, special chars), and a
@@ -469,7 +469,7 @@ export function MermaidDiagram({ chart }: { chart: string }) {
     <div
       ref={containerRef}
       className="mermaid-diagram"
-      aria-label="Mermaid diagram"
+      aria-label={t(($) => $.mermaid.diagram_label)}
       style={containerStyle}
       data-overflow-start={overflow.start ? "" : undefined}
       data-overflow-end={overflow.end ? "" : undefined}
@@ -496,7 +496,7 @@ export function MermaidDiagram({ chart }: { chart: string }) {
                 height: rendered.layout ? `${rendered.layout.height}px` : undefined,
                 width: rendered.layout ? `${rendered.layout.width}px` : undefined,
               }}
-              title="Mermaid diagram"
+              title={t(($) => $.mermaid.diagram_label)}
             />
           </div>
           <div className="mermaid-diagram-toolbar">

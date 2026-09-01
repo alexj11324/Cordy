@@ -3,15 +3,15 @@ import {
   closestCenter,
   type CollisionDetection,
 } from "@dnd-kit/core";
-import type { Issue, IssueExecutorType, IssueStatus, UpdateIssueRequest } from "@patchbay/core/types";
-import type { IssueGrouping } from "@patchbay/core/issues/stores/view-store";
-import { propertyIdFromViewKey } from "@patchbay/core/issues/stores/view-store";
-import { issueColumnCategory } from "@patchbay/core/issues";
+import type { Issue, IssueAssigneeType, IssueStatus, UpdateIssueRequest } from "@multica/core/types";
+import type { IssueGrouping } from "@multica/core/issues/stores/view-store";
+import { propertyIdFromViewKey } from "@multica/core/issues/stores/view-store";
+import { issueColumnCategory } from "@multica/core/issues";
 import type { BoardColumnGroup } from "../components/board-column";
 
 export type DragMoveTargetUpdates = Pick<
   UpdateIssueRequest,
-  "status" | "executor_type" | "executor_id" | "position"
+  "status" | "assignee_type" | "assignee_id" | "project_id" | "position"
 >;
 
 export type DragMoveUpdates = DragMoveTargetUpdates & {
@@ -19,7 +19,7 @@ export type DragMoveUpdates = DragMoveTargetUpdates & {
   after_id: string | null;
 };
 
-const UNASSIGNED_GROUP_ID = "executor:unassigned";
+const UNASSIGNED_GROUP_ID = "assignee:unassigned";
 
 export function makeKanbanCollision(groupIds: Set<string>): CollisionDetection {
   return (args) => {
@@ -41,11 +41,17 @@ export function propertyGroupId(propertyId: string, optionId: string | null): st
   return `property:${propertyId}:${optionId ?? "none"}`;
 }
 
-export function executorGroupId(
-  type: IssueExecutorType | null,
+export function assigneeGroupId(
+  type: IssueAssigneeType | null,
   id: string | null,
 ): string {
-  return type && id ? `executor:${type}:${id}` : UNASSIGNED_GROUP_ID;
+  return type && id ? `assignee:${type}:${id}` : UNASSIGNED_GROUP_ID;
+}
+
+/** Mirrors the server's project group key (`project:<id>` / `project:none`)
+ *  so a column built from a descriptor and one built from a card agree. */
+export function projectGroupId(projectId: string | null): string {
+  return `project:${projectId ?? "none"}`;
 }
 
 export function getIssueGroupId(
@@ -56,8 +62,9 @@ export function getIssueGroupId(
   // Status columns are CATEGORIES, so the card buckets by the category it
   // behaves as. Bucketing by the raw key gave a custom status a column id no
   // column has, and the card was dropped from the board/list entirely
-  // (PB-6409).
+  // (MUL-6409).
   if (grouping === "status") return statusGroupId(issueColumnCategory(issue));
+  if (grouping === "project") return projectGroupId(issue.project_id ?? null);
   const propertyId = propertyIdFromViewKey(grouping);
   if (propertyId) {
     const value = issue.properties?.[propertyId];
@@ -71,7 +78,7 @@ export function getIssueGroupId(
     }
     return propertyGroupId(propertyId, optionId);
   }
-  return executorGroupId(issue.executor_type, issue.executor_id);
+  return assigneeGroupId(issue.assignee_type, issue.assignee_id);
 }
 
 export function buildColumns(
@@ -113,7 +120,7 @@ export function getMoveAnchors(
 /**
  * Insert `id` into `ids` at the slot implied by `position ASC`, reading each
  * id's position from `issueMap`. Mirrors `insertByPosition` in
- * `@patchbay/core/issues/cache-helpers` so the board's optimistic placement on
+ * `@multica/core/issues/cache-helpers` so the board's optimistic placement on
  * drop matches the cache the settle reconcile rebuilds from — otherwise the
  * card would land in one slot, then jump when local columns re-derive from TQ.
  */
@@ -146,16 +153,19 @@ export function findColumn(
 export function issueMatchesGroup(issue: Issue, group: BoardColumnGroup): boolean {
   // "Is this card already in that column?" — a category question, like the
   // column itself. Comparing the raw key answered no for every custom status,
-  // so a drop that changed nothing still fired a status write (PB-6409).
+  // so a drop that changed nothing still fired a status write (MUL-6409).
   if (group.status) return issueColumnCategory(issue) === group.status;
   if (group.propertyId !== undefined) {
     const value = issue.properties?.[group.propertyId];
     const optionId = typeof value === "string" ? value : null;
     return optionId === (group.propertyOptionId ?? null);
   }
+  if (group.projectId !== undefined) {
+    return (issue.project_id ?? null) === group.projectId;
+  }
   return (
-    (issue.executor_type ?? null) === (group.executorType ?? null) &&
-    (issue.executor_id ?? null) === (group.executorId ?? null)
+    (issue.assignee_type ?? null) === (group.assigneeType ?? null) &&
+    (issue.assignee_id ?? null) === (group.assigneeId ?? null)
   );
 }
 
@@ -166,7 +176,7 @@ export function getMoveUpdates(
    *  CATEGORY, and a card on a custom status is already in that column under a
    *  DIFFERENT key — so writing the column's canonical key would silently
    *  rewrite `awaiting_response` to `in_review`, and a status change starts an
-   *  agent run, for a drag that only changed the row order (PB-6409). */
+   *  agent run, for a drag that only changed the row order (MUL-6409). */
   issue?: Pick<Issue, "status" | "status_category">,
 ): DragMoveTargetUpdates {
   if (group.status) {
@@ -180,9 +190,12 @@ export function getMoveUpdates(
   // Property columns: the value change is not part of UpdateIssueRequest —
   // the board applies it through useSetIssueProperty after the position move.
   if (group.propertyId !== undefined) return { position };
+  if (group.projectId !== undefined) {
+    return { project_id: group.projectId, position };
+  }
   return {
-    executor_type: group.executorType ?? null,
-    executor_id: group.executorId ?? null,
+    assignee_type: group.assigneeType ?? null,
+    assignee_id: group.assigneeId ?? null,
     position,
   };
 }

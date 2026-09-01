@@ -4,9 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createStore, type StoreApi } from "zustand/vanilla";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, ChevronRight, Plus } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Input } from "@patchbay/ui/components/ui/input";
-import { Label } from "@patchbay/ui/components/ui/label";
+import { Button } from "@multica/ui/components/ui/button";
+import { Input } from "@multica/ui/components/ui/input";
+import { Label } from "@multica/ui/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -14,12 +14,12 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@multica/ui/components/ui/dialog";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@patchbay/ui/components/ui/collapsible";
+} from "@multica/ui/components/ui/collapsible";
 import {
   Select,
   SelectContent,
@@ -27,19 +27,19 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@patchbay/ui/components/ui/select";
-import { Toggle } from "@patchbay/ui/components/ui/toggle";
+} from "@multica/ui/components/ui/select";
+import { Toggle } from "@multica/ui/components/ui/toggle";
 import { toast } from "sonner";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useCreateIssueView, useUpdateIssueView } from "@patchbay/core/issue-views/mutations";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { useCreateIssueView, useUpdateIssueView } from "@multica/core/issue-views/mutations";
 import {
   issueViewContainerKey,
   useActiveIssueViewStore,
-} from "@patchbay/core/issue-views/active-view-store";
-import { ApiError } from "@patchbay/core/api/client";
-import type { CreateIssueViewRequest, IssueView } from "@patchbay/core/api/schemas";
-import { projectListOptions } from "@patchbay/core/projects/queries";
-import { propertyListOptions } from "@patchbay/core/properties";
+} from "@multica/core/issue-views/active-view-store";
+import { ApiError } from "@multica/core/api/client";
+import type { CreateIssueViewRequest, IssueView } from "@multica/core/api/schemas";
+import { projectListOptions } from "@multica/core/projects/queries";
+import { propertyListOptions } from "@multica/core/properties";
 import {
   viewStoreSlice,
   viewStorePersistOptions,
@@ -53,12 +53,12 @@ import {
   type SortField,
   type SwimlaneGrouping,
   type ViewMode,
-} from "@patchbay/core/issues/stores/view-store";
+} from "@multica/core/issues/stores/view-store";
 import {
   ViewStoreProvider,
   useViewStore,
   useViewStoreApi,
-} from "@patchbay/core/issues/stores/view-store-context";
+} from "@multica/core/issues/stores/view-store-context";
 import { IssueFilterMenu } from "./issues-header";
 import { FilterChipList } from "./filter-chips-bar";
 import { useT } from "../../i18n";
@@ -103,18 +103,18 @@ const LAYOUT_LABEL_KEY = {
   table: "table",
   swimlane: "swimlane",
   gantt: "gantt",
-  graph: "graph",
 } as const;
 
 const GROUPING_LABEL_KEY = {
   status: "group_status",
-  executor: "group_executor",
+  assignee: "group_assignee",
+  project: "group_project",
 } as const;
 
 const SWIMLANE_LABEL_KEY = {
   parent: "group_parent",
   project: "group_project",
-  executor: "group_executor",
+  assignee: "group_assignee",
 } as const;
 
 const SORT_LABEL_KEY = {
@@ -131,7 +131,7 @@ const SORT_LABEL_KEY = {
 const CARD_PROPERTY_LABEL_KEY = {
   priority: "card_priority",
   description: "card_description",
-  executor: "card_executor",
+  assignee: "card_assignee",
   startDate: "card_start_date",
   dueDate: "card_due_date",
   project: "card_project",
@@ -586,8 +586,8 @@ export function SaveViewDialog({
       query: {
         statusFilters: state.statusFilters,
         priorityFilters: state.priorityFilters,
-        executorFilters: state.executorFilters,
-        includeNoExecutor: state.includeNoExecutor,
+        assigneeFilters: state.assigneeFilters,
+        includeNoAssignee: state.includeNoAssignee,
         creatorFilters: state.creatorFilters,
         projectFilters: state.projectFilters,
         includeNoProject: state.includeNoProject,

@@ -2,11 +2,11 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 
 const captureException = vi.hoisted(() => vi.fn());
-vi.mock("@patchbay/core/analytics", () => ({ captureException }));
+vi.mock("@multica/core/analytics", () => ({ captureException }));
 
-// Marker stand-in so the fallback test checks that native drag recovery stays
-// mounted without depending on DragStrip's own implementation.
-vi.mock("@patchbay/views/platform", () => ({
+// Marker stand-in so the structural assertion below tests the contract ("the
+// drag strip is the first flex child") rather than DragStrip's own markup.
+vi.mock("@multica/views/platform", () => ({
   DragStrip: () => <div data-testid="drag-strip" />,
 }));
 
@@ -28,7 +28,7 @@ afterEach(() => {
 });
 
 /**
- * PB-6231 / #7021. The desktop renderer mounted <App /> with no boundary
+ * MUL-6231 / #7021. The desktop renderer mounted <App /> with no boundary
  * above it, so one throw in the shell emptied the window and left force-quit
  * as the only way out.
  */
@@ -52,23 +52,24 @@ describe("AppCrashBoundary", () => {
 
     const alert = screen.getByRole("alert");
     expect(alert).not.toBeNull();
-    expect(alert.textContent).toContain(
-      "useWorkspaceId: no workspace selected",
-    );
+    expect(alert.textContent).toContain("useWorkspaceId: no workspace selected");
     expect(screen.getByRole("button", { name: /reload/i })).not.toBeNull();
   });
 
-  it("keeps the window draggable by mounting the native drag overlay", () => {
+  it("keeps the window draggable by mounting the drag strip as the first child", () => {
     // A full-window view outside the dashboard shell owns its own window
     // chrome. Without this the user loses the draggable top edge precisely
     // when the app is least usable — see CLAUDE.md Desktop Rules.
-    render(
+    const { container } = render(
       <AppCrashBoundary>
         <Boom />
       </AppCrashBoundary>,
     );
 
-    expect(screen.getByTestId("drag-strip")).toBeInTheDocument();
+    const shell = container.firstElementChild;
+    expect(shell).not.toBeNull();
+    expect(shell).toHaveClass("flex", "flex-col");
+    expect(shell?.firstElementChild).toHaveAttribute("data-testid", "drag-strip");
   });
 
   it("reports the crash through the exception pipeline, not as a plain event", () => {

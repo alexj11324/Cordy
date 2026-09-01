@@ -1,7 +1,7 @@
 "use client";
 
-import { SettingsSwitch as Switch } from "@patchbay/ui/components/common/lobe-settings";
-import { useChatStore } from "@patchbay/core/chat";
+import { Switch } from "@multica/ui/components/ui/switch";
+import { useChatStore } from "@multica/core/chat";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import {

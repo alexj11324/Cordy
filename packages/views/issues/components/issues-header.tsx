@@ -13,7 +13,6 @@ import {
   FolderKanban,
   FolderMinus,
   List,
-  Network,
   Rows3,
   SignalHigh,
   SlidersHorizontal,
@@ -24,8 +23,9 @@ import {
   UserPen,
   Waves,
 } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Spinner } from "@patchbay/ui/components/ui/spinner";
+import { Button } from "@multica/ui/components/ui/button";
+import { Spinner } from "@multica/ui/components/ui/spinner";
+import { Input } from "@multica/ui/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -40,14 +40,14 @@ import {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
-} from "@patchbay/ui/components/ui/dropdown-menu";
+} from "@multica/ui/components/ui/dropdown-menu";
 import {
   Popover,
   PopoverTrigger,
   PopoverContent,
-} from "@patchbay/ui/components/ui/popover";
-import { Calendar } from "@patchbay/ui/components/ui/calendar";
-import { Switch } from "@patchbay/ui/components/ui/switch";
+} from "@multica/ui/components/ui/popover";
+import { Calendar } from "@multica/ui/components/ui/calendar";
+import { Switch } from "@multica/ui/components/ui/switch";
 import {
   Select,
   SelectTrigger,
@@ -55,27 +55,27 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
-} from "@patchbay/ui/components/ui/select";
-import { Toggle } from "@patchbay/ui/components/ui/toggle";
+} from "@multica/ui/components/ui/select";
+import { Toggle } from "@multica/ui/components/ui/toggle";
 import {
   PRIORITY_DISPLAY_ORDER,
-} from "@patchbay/core/issues/config";
+} from "@multica/core/issues/config";
 import { StatusIcon, PriorityIcon } from ".";
 import { useQuery } from "@tanstack/react-query";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { memberListOptions, agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
-import { projectListOptions } from "@patchbay/core/projects/queries";
-import { labelListOptions } from "@patchbay/core/labels/queries";
-import { propertyListOptions } from "@patchbay/core/properties";
-import { propertyIdFromViewKey } from "@patchbay/core/issues/stores/view-store";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { memberListOptions, agentListOptions, squadListOptions } from "@multica/core/workspace/queries";
+import { projectListOptions } from "@multica/core/projects/queries";
+import { labelListOptions } from "@multica/core/labels/queries";
+import { propertyListOptions } from "@multica/core/properties";
+import { propertyIdFromViewKey } from "@multica/core/issues/stores/view-store";
 import type {
   Issue,
   IssueProperty,
   IssueTableFacetSpec,
   IssueTableFacetsResponse,
   WorkingAgentSummary,
-} from "@patchbay/core/types";
-import { formatActorRef, isActorPropertyType } from "@patchbay/core/types";
+} from "@multica/core/types";
+import { formatActorRef, isActorPropertyType, isFilterablePropertyType, isScalarPropertyType, propertyFilterValueKey, PROPERTY_FILTER_OP_SYMBOLS, PROPERTY_FILTER_OPS_BY_TYPE, type PropertyFilterOp, type PropertyFilterValue } from "@multica/core/types";
 import { ProjectIcon } from "../../projects/components/project-icon";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { PropertyIcon } from "../../common/property-icon";
@@ -93,27 +93,27 @@ import {
   type SwimlaneGrouping,
   type TableGrouping,
   type ViewMode,
-} from "@patchbay/core/issues/stores/view-store";
-import { useViewStore, useViewStoreApi } from "@patchbay/core/issues/stores/view-store-context";
+} from "@multica/core/issues/stores/view-store";
+import { useViewStore, useViewStoreApi } from "@multica/core/issues/stores/view-store-context";
 import { FilterChipsBar } from "./filter-chips-bar";
 import { SaveViewDialog, type SaveViewScope } from "./save-view-dialog";
 import { ViewBar } from "./view-bar";
 import { toast } from "sonner";
-import { useActiveIssueView } from "@patchbay/core/issue-views/use-active-view";
-import { useAuthStore } from "@patchbay/core/auth";
-import type { IssueViewScope } from "@patchbay/core/issue-views/queries";
-import { actorFilterKey, baselineFromQuery, type IssueViewBaseline } from "@patchbay/core/issue-views/baseline";
-import type { IssueView } from "@patchbay/core/api/schemas";
-import { addDaysDateOnly, dateOnlyToLocalDate, formatDateOnly, toDateOnly, todayDateOnly } from "@patchbay/core/issues/date";
+import { useActiveIssueView } from "@multica/core/issue-views/use-active-view";
+import { useAuthStore } from "@multica/core/auth";
+import type { IssueViewScope } from "@multica/core/issue-views/queries";
+import { actorFilterKey, baselineFromQuery, type IssueViewBaseline } from "@multica/core/issue-views/baseline";
+import type { IssueView } from "@multica/core/api/schemas";
+import { addDaysDateOnly, dateOnlyToLocalDate, formatDateOnly, toDateOnly, todayDateOnly } from "@multica/core/issues/date";
 import {
   useIssuesScope,
   useIssuesScopeStore,
   type IssuesScope,
   type IssuesScopePageKey,
-} from "@patchbay/core/issues/stores/issues-scope-store";
-import { actorKindForViewVariant } from "@patchbay/core/issues/surface/scope";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@patchbay/ui/components/ui/tooltip";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@multica/core/issues/stores/issues-scope-store";
+import { actorKindForViewVariant } from "@multica/core/issues/surface/scope";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@multica/ui/components/ui/tooltip";
+import { cn } from "@multica/ui/lib/utils";
 import { PAGE_GUTTER } from "../../layout/page-header";
 import { useT } from "../../i18n";
 import { useStatusOptions } from "../utils/status-options";
@@ -136,13 +136,13 @@ function getActiveFilterCount(
   state: {
     statusFilters: string[];
     priorityFilters: string[];
-    executorFilters: ActorFilterValue[];
-    includeNoExecutor: boolean;
+    assigneeFilters: ActorFilterValue[];
+    includeNoAssignee: boolean;
     creatorFilters: ActorFilterValue[];
     projectFilters: string[];
     includeNoProject: boolean;
     labelFilters: string[];
-    propertyFilters?: Record<string, string[]>;
+    propertyFilters?: Record<string, PropertyFilterValue[]>;
     dateFilter?: IssueDateFilter | null;
   },
   // Inside a saved view only the user's additions on top of the view's own
@@ -154,10 +154,10 @@ function getActiveFilterCount(
     fixed ? values.filter((v) => !fixed.has(v)).length : values.length;
   if (delta(state.statusFilters, baseline?.status) > 0) count++;
   if (delta(state.priorityFilters, baseline?.priority) > 0) count++;
-  const executorDelta =
-    delta(state.executorFilters.map(actorFilterKey), baseline?.executor) > 0 ||
-    (state.includeNoExecutor && !(baseline?.includeNoExecutor ?? false));
-  if (executorDelta) count++;
+  const assigneeDelta =
+    delta(state.assigneeFilters.map(actorFilterKey), baseline?.assignee) > 0 ||
+    (state.includeNoAssignee && !(baseline?.includeNoAssignee ?? false));
+  if (assigneeDelta) count++;
   if (delta(state.creatorFilters.map(actorFilterKey), baseline?.creator) > 0) count++;
   const projectDelta =
     delta(state.projectFilters, baseline?.project) > 0 ||
@@ -165,7 +165,13 @@ function getActiveFilterCount(
   if (projectDelta) count++;
   if (delta(state.labelFilters, baseline?.label) > 0) count++;
   for (const [id, selected] of Object.entries(state.propertyFilters ?? {})) {
-    if (delta(selected, baseline?.property.get(id)) > 0) count++;
+    // Property members can be operator objects — compare through their
+    // canonical keys so a view-fixed operator still cancels out.
+    const fixed = baseline?.property.get(id);
+    const deltaCount = fixed
+      ? selected.filter((v) => !fixed.has(propertyFilterValueKey(v))).length
+      : selected.length;
+    if (deltaCount > 0) count++;
   }
   if (state.dateFilter) count++;
   return count;
@@ -195,14 +201,14 @@ function useIssueCounts(
   return useMemo(() => {
     const status = new Map<string, number>();
     const priority = new Map<string, number>();
-    const executor = new Map<string, number>();
+    const assignee = new Map<string, number>();
     const creator = new Map<string, number>();
     const project = new Map<string, number>();
     const label = new Map<string, number>();
     // property definition id → option key → count. Checkbox values count
     // under the "true"/"false" pseudo-option keys the filter store uses.
     const property = new Map<string, Map<string, number>>();
-    let noExecutor = 0;
+    let noAssignee = 0;
     let noProject = 0;
 
     if (serverFacets) {
@@ -212,8 +218,8 @@ function useIssueCounts(
             ? status
             : facet.kind === "priority"
               ? priority
-              : facet.kind === "executor"
-                ? executor
+              : facet.kind === "assignee"
+                ? assignee
                 : facet.kind === "creator"
                   ? creator
                   : facet.kind === "project"
@@ -229,8 +235,8 @@ function useIssueCounts(
           continue;
         }
         for (const value of facet.values) {
-          if (facet.kind === "executor" && value.key === "__none__") {
-            noExecutor = value.count;
+          if (facet.kind === "assignee" && value.key === "__none__") {
+            noAssignee = value.count;
           } else if (facet.kind === "project" && value.key === "__none__") {
             noProject = value.count;
           } else {
@@ -238,18 +244,18 @@ function useIssueCounts(
           }
         }
       }
-      return { status, priority, executor, creator, noExecutor, project, noProject, label, property };
+      return { status, priority, assignee, creator, noAssignee, project, noProject, label, property };
     }
 
     for (const issue of allIssues) {
       status.set(issue.status, (status.get(issue.status) ?? 0) + 1);
       priority.set(issue.priority, (priority.get(issue.priority) ?? 0) + 1);
 
-      if (!issue.executor_id) {
-        noExecutor++;
+      if (!issue.assignee_id) {
+        noAssignee++;
       } else {
-        const aKey = `${issue.executor_type}:${issue.executor_id}`;
-        executor.set(aKey, (executor.get(aKey) ?? 0) + 1);
+        const aKey = `${issue.assignee_type}:${issue.assignee_id}`;
+        assignee.set(aKey, (assignee.get(aKey) ?? 0) + 1);
       }
 
       const cKey = `${issue.creator_type}:${issue.creator_id}`;
@@ -288,7 +294,7 @@ function useIssueCounts(
       }
     }
 
-    return { status, priority, executor, creator, noExecutor, project, noProject, label, property };
+    return { status, priority, assignee, creator, noAssignee, project, noProject, label, property };
   }, [allIssues, serverFacets]);
 }
 
@@ -299,33 +305,33 @@ function useIssueCounts(
 const SCOPE_VALUES: IssuesScope[] = ["all", "members", "agents"];
 
 // ---------------------------------------------------------------------------
-// Actor sub-menu content (shared between Executor and Creator)
+// Actor sub-menu content (shared between Assignee and Creator)
 // ---------------------------------------------------------------------------
 
 function ActorSubContent({
   counts,
   selected,
   onToggle,
-  showNoExecutor,
-  includeNoExecutor,
-  onToggleNoExecutor,
-  noExecutorCount,
-  showTeams = true,
+  showNoAssignee,
+  includeNoAssignee,
+  onToggleNoAssignee,
+  noAssigneeCount,
+  showSquads = true,
   fixedKeys,
-  noExecutorFixed = false,
+  noAssigneeFixed = false,
   fixedTitle,
 }: {
   counts: Map<string, number>;
   selected: ActorFilterValue[];
   onToggle: (value: ActorFilterValue) => void;
-  showNoExecutor?: boolean;
-  includeNoExecutor?: boolean;
-  onToggleNoExecutor?: () => void;
-  noExecutorCount?: number;
-  showTeams?: boolean;
+  showNoAssignee?: boolean;
+  includeNoAssignee?: boolean;
+  onToggleNoAssignee?: () => void;
+  noAssigneeCount?: number;
+  showSquads?: boolean;
   /** Actor keys (`type:id`) fixed by the open saved view. */
   fixedKeys?: Set<string>;
-  noExecutorFixed?: boolean;
+  noAssigneeFixed?: boolean;
   fixedTitle?: string;
 }) {
   const { t } = useT("issues");
@@ -333,7 +339,7 @@ function ActorSubContent({
   const wsId = useWorkspaceId();
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
-  const { data: teams = [] } = useQuery(teamListOptions(wsId));
+  const { data: squads = [] } = useQuery(squadListOptions(wsId));
   const query = search.trim().toLowerCase();
   const filteredMembers = members.filter((m) =>
     m.name.toLowerCase().includes(query) || matchesPinyin(m.name, query),
@@ -341,11 +347,11 @@ function ActorSubContent({
   const filteredAgents = agents.filter((a) =>
     !a.archived_at && (a.name.toLowerCase().includes(query) || matchesPinyin(a.name, query)),
   );
-  const filteredTeams = teams.filter((s) =>
+  const filteredSquads = squads.filter((s) =>
     !s.archived_at && (s.name.toLowerCase().includes(query) || matchesPinyin(s.name, query)),
   );
 
-  const isSelected = (type: "member" | "agent" | "team", id: string) =>
+  const isSelected = (type: "member" | "agent" | "squad", id: string) =>
     selected.some((f) => f.type === type && f.id === id);
 
   return (
@@ -362,21 +368,21 @@ function ActorSubContent({
       </div>
 
       <div className="max-h-64 overflow-y-auto p-1">
-        {showNoExecutor &&
-          (!query || "no executor".includes(query) || "unassigned".includes(query)) && (
+        {showNoAssignee &&
+          (!query || "no assignee".includes(query) || "unassigned".includes(query)) && (
             <DropdownMenuCheckboxItem
-              checked={includeNoExecutor ?? false}
-              disabled={noExecutorFixed}
-              title={noExecutorFixed ? fixedTitle : undefined}
-              onCheckedChange={() => onToggleNoExecutor?.()}
+              checked={includeNoAssignee ?? false}
+              disabled={noAssigneeFixed}
+              title={noAssigneeFixed ? fixedTitle : undefined}
+              onCheckedChange={() => onToggleNoAssignee?.()}
               className={FILTER_ITEM_CLASS}
             >
-              <HoverCheck checked={includeNoExecutor ?? false} />
+              <HoverCheck checked={includeNoAssignee ?? false} />
               <UserMinus className="size-3.5 text-muted-foreground" />
-              {t(($) => $.filters.no_executor)}
-              {(noExecutorCount ?? 0) > 0 && (
+              {t(($) => $.filters.no_assignee)}
+              {(noAssigneeCount ?? 0) > 0 && (
                 <span className="ml-auto text-caption text-muted-foreground">
-                  {noExecutorCount}
+                  {noAssigneeCount}
                 </span>
               )}
             </DropdownMenuCheckboxItem>
@@ -444,25 +450,25 @@ function ActorSubContent({
           </DropdownMenuGroup>
         )}
 
-        {showTeams && filteredTeams.length > 0 && (
+        {showSquads && filteredSquads.length > 0 && (
           <DropdownMenuGroup>
-            <DropdownMenuLabel>{t(($) => $.filters.teams_group)}</DropdownMenuLabel>
-            {filteredTeams.map((s) => {
-              const checked = isSelected("team", s.id);
-              const count = counts.get(`team:${s.id}`) ?? 0;
+            <DropdownMenuLabel>{t(($) => $.filters.squads_group)}</DropdownMenuLabel>
+            {filteredSquads.map((s) => {
+              const checked = isSelected("squad", s.id);
+              const count = counts.get(`squad:${s.id}`) ?? 0;
               return (
                 <DropdownMenuCheckboxItem
                   key={s.id}
                   checked={checked}
-                  disabled={fixedKeys?.has(`team:${s.id}`) === true}
-                  title={fixedKeys?.has(`team:${s.id}`) === true ? fixedTitle : undefined}
+                  disabled={fixedKeys?.has(`squad:${s.id}`) === true}
+                  title={fixedKeys?.has(`squad:${s.id}`) === true ? fixedTitle : undefined}
                   onCheckedChange={() =>
-                    onToggle({ type: "team", id: s.id })
+                    onToggle({ type: "squad", id: s.id })
                   }
                   className={FILTER_ITEM_CLASS}
                 >
                   <HoverCheck checked={checked} />
-                  <ActorAvatar actorType="team" actorId={s.id} size="sm" />
+                  <ActorAvatar actorType="squad" actorId={s.id} size="sm" />
                   <span className="truncate">{s.name}</span>
                   {count > 0 && (
                     <span className="ml-auto text-caption text-muted-foreground">
@@ -475,7 +481,7 @@ function ActorSubContent({
           </DropdownMenuGroup>
         )}
 
-        {filteredMembers.length === 0 && filteredAgents.length === 0 && (!showTeams || filteredTeams.length === 0) && search && (
+        {filteredMembers.length === 0 && filteredAgents.length === 0 && (!showSquads || filteredSquads.length === 0) && search && (
           <div className="px-2 py-3 text-center text-body text-muted-foreground">
             {t(($) => $.filters.no_results)}
           </div>
@@ -665,18 +671,30 @@ function LabelSubContent({
  * from the member directory instead, with the signed-in member first so
  * "this property is me" stays one click away.
  */
+
+// Keyboard guard for the inline operator radios — same contract as the
+// scalar input below: Escape/Tab belong to the menu (close / move focus);
+// every other navigation or selection key must not bubble into the popup's
+// typeahead / list-navigation handlers.
+function stopScalarMenuKeys(event: React.KeyboardEvent) {
+  if (event.key === "Escape" || event.key === "Tab") return;
+  event.stopPropagation();
+}
 function PropertyFilterOptions({
   property,
   counts,
   selected,
   onToggle,
+  onSetValues,
   fixedIds,
   fixedTitle,
 }: {
   property: IssueProperty;
   counts: Map<string, number> | undefined;
-  selected: string[];
+  selected: PropertyFilterValue[];
   onToggle: (optionId: string) => void;
+  /** Replace the property's full filter value set (scalar types only). */
+  onSetValues: (optionIds: PropertyFilterValue[]) => void;
   fixedIds?: Set<string>;
   fixedTitle?: string;
 }) {
@@ -684,6 +702,8 @@ function PropertyFilterOptions({
   const wsId = useWorkspaceId();
   const currentUserId = useAuthStore((s) => s.user?.id);
   const actorProperty = isActorPropertyType(property.type);
+  // Scalar properties (text / number / date / url) have no option list — the
+  // filter menu shows a value input plus "No value".
   const { data: actorMembers = [] } = useQuery({
     ...memberListOptions(wsId),
     enabled: actorProperty,
@@ -715,6 +735,31 @@ function PropertyFilterOptions({
     actorType: undefined as string | undefined,
     actorId: undefined as string | undefined,
   };
+  // Scalar value state lives at the top level so the hooks stay unconditional
+  // (Rules of Hooks): it is only rendered for text / number / date / url, but
+  // must be declared regardless of which branch runs. The draft syncs to the
+  // committed scalar member whenever that changes, so a filter cleared or
+  // rewritten elsewhere cannot be written back from a stale input.
+  const committedMember = selected.find((member) => member !== NO_PROPERTY_VALUE);
+  const committedScalar =
+    typeof committedMember === "object" ? committedMember.value : (committedMember ?? "");
+  const committedOp: PropertyFilterOp | "is" =
+    typeof committedMember === "object" ? committedMember.op : "is";
+  const hasNoValue = selected.includes(NO_PROPERTY_VALUE);
+  const [draft, setDraft] = useState(committedScalar);
+  useEffect(() => setDraft(committedScalar), [committedScalar]);
+  // Operator picked in the open menu but not yet committed; null defers to the
+  // committed member (equality when there is none). Resets whenever the
+  // committed member changes — including right after this menu commits — so a
+  // value rewritten elsewhere can't inherit a stale operator.
+  const [pendingOp, setPendingOp] = useState<PropertyFilterOp | "is" | null>(null);
+  const committedKey =
+    committedMember === undefined
+      ? ""
+      : typeof committedMember === "object"
+        ? `op:${committedMember.op}:${committedMember.value}`
+        : `eq:${committedMember}`;
+  useEffect(() => setPendingOp(null), [committedKey]);
   const options = [
     ...(actorProperty
       ? actorOptions.map((option) => ({
@@ -738,6 +783,169 @@ function PropertyFilterOptions({
           }))),
     noValueOption,
   ];
+
+  if (isScalarPropertyType(property.type)) {
+    const placeholder =
+      property.type === "url"
+        ? t(($) => $.pickers.custom_property.url_placeholder)
+        : property.type === "number"
+          ? t(($) => $.pickers.custom_property.number_placeholder)
+          : t(($) => $.pickers.custom_property.value_placeholder);
+    const noneCount = counts?.get(NO_PROPERTY_VALUE) ?? 0;
+    // A saved view locks this dimension: the value (with its operator) AND
+    // "No value" are both part of the view's identity, so neither can be
+    // edited in place.
+    const locked = fixedIds !== undefined && fixedIds.size > 0;
+    // "is" is equality and commits a bare string — the pre-operator shape.
+    // Every other op commits an operator object; the server and matcher both
+    // treat unknown shapes conservatively.
+    const effectiveOp: PropertyFilterOp | "is" = pendingOp ?? committedOp;
+    const scalarOperatorLabel = (op: PropertyFilterOp): string => {
+      if (op === "contains") return t(($) => $.pickers.custom_property.op_contains);
+      if (op === "before") return t(($) => $.pickers.custom_property.op_before);
+      if (op === "after") return t(($) => $.pickers.custom_property.op_after);
+      return PROPERTY_FILTER_OP_SYMBOLS[op] ?? op;
+    };
+    const opButtons: { op: PropertyFilterOp | "is"; label: string }[] = [
+      {
+        op: "is",
+        label:
+          property.type === "number"
+            ? "="
+            : t(($) => $.pickers.custom_property.op_is),
+      },
+      ...(PROPERTY_FILTER_OPS_BY_TYPE[property.type] ?? []).map((op) => ({
+        op,
+        label: scalarOperatorLabel(op),
+      })),
+    ];
+    const commitValue = (raw: string, op: PropertyFilterOp | "is" = effectiveOp) => {
+      const value = raw.trim();
+      // NO_PROPERTY_VALUE is the reserved "no value" sentinel — it cannot be
+      // filtered as a literal value. The value and "No value" compose like
+      // every other property type: committing a value replaces only the value
+      // member and preserves "No value" membership.
+      if (value === NO_PROPERTY_VALUE) return;
+      const member: PropertyFilterValue | undefined = value
+        ? op === "is"
+          ? value
+          : { op, value }
+        : undefined;
+      onSetValues([
+        ...(member ? [member] : []),
+        ...(hasNoValue ? [NO_PROPERTY_VALUE] : []),
+      ]);
+    };
+    const applyOp = (op: PropertyFilterOp | "is") => {
+      // An explicit click commits the current draft with the chosen op, unlike
+      // the input which waits for Enter/blur. With an empty draft nothing
+      // commits, so the choice rides on pendingOp and the next Enter/blur
+      // commit carries it — killing pendingOp here would silently downgrade
+      // that later commit back to equality.
+      setPendingOp(op);
+      commitValue(draft, op);
+    };
+    return (
+      <>
+        {opButtons.length > 1 && (
+          <div
+            role="radiogroup"
+            aria-label={t(($) => $.pickers.custom_property.operator_label)}
+            className="flex flex-wrap gap-1 px-2 pt-1.5"
+          >
+            {opButtons.map(({ op, label }) => {
+              const active = effectiveOp === op;
+              return (
+                <label
+                  key={op}
+                  className={locked ? "cursor-not-allowed" : "cursor-pointer"}
+                >
+                  <input
+                    type="radio"
+                    name={`property-filter-op-${property.id}`}
+                    value={op}
+                    checked={active}
+                    disabled={locked}
+                    onChange={() => applyOp(op)}
+                    onKeyDown={stopScalarMenuKeys}
+                    className="peer sr-only"
+                  />
+                  <span
+                    className={`inline-flex h-6 items-center rounded-md px-1.5 text-caption transition-colors peer-focus-visible:outline-none peer-focus-visible:ring-2 peer-focus-visible:ring-ring ${
+                      active
+                        ? "bg-accent font-medium text-foreground"
+                        : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+                    }`}
+                  >
+                    {label}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        )}
+        <div className="px-2 py-1.5">
+          <Input
+            type={property.type === "number" ? "number" : property.type === "date" ? "date" : "text"}
+            step={property.type === "number" ? "any" : undefined}
+            inputMode={property.type === "number" ? "decimal" : undefined}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={(event) => {
+              // Clicking the "No value" menu item moves focus off the input,
+              // firing blur first. That premature commit would flip the
+              // checkbox's controlled state before its click handler reads it
+              // — so when focus moves into a menu item in this popup, skip the
+              // blur commit and let onCheckedChange decide from the pre-blur
+              // state.
+              const next = event.relatedTarget;
+              const movedToMenuItem =
+                next instanceof HTMLElement &&
+                next.closest('[role="menuitemcheckbox"]') !== null;
+              if (!movedToMenuItem) commitValue(draft);
+            }}
+            onKeyDown={(event) => {
+              // Base UI's menu popup merges typeahead + list-navigation handlers
+              // onto the role="menu" element and stopEvent()s every printable
+              // key — without stopping propagation, the input would swallow no
+              // characters at all (and arrow keys on number/date inputs would
+              // be hijacked). Escape/Tab are left for the menu to close/move
+              // focus; Enter commits and still needs stopPropagation so it does
+              // not bubble up and activate the highlighted "No value" item.
+              if (event.key === "Escape" || event.key === "Tab") return;
+              if (event.key === "Enter") commitValue(draft);
+              event.stopPropagation();
+            }}
+            disabled={locked}
+            placeholder={placeholder}
+            className="h-8"
+          />
+        </div>
+        <DropdownMenuCheckboxItem
+          checked={hasNoValue}
+          disabled={locked}
+          onCheckedChange={(checked) => {
+            // "No value" toggles membership in the same OR-set as the value —
+            // checking/unchecking never touches the committed value member, so
+            // unchecking restores it without any draft round-trip.
+            const valueMembers = selected.filter((id) => id !== NO_PROPERTY_VALUE);
+            onSetValues(
+              checked
+                ? [...valueMembers, NO_PROPERTY_VALUE]
+                : valueMembers,
+            );
+          }}
+          className={FILTER_ITEM_CLASS}
+        >
+          <HoverCheck checked={hasNoValue} />
+          <span className="truncate">{noValueOption.name}</span>
+          {noneCount > 0 && (
+            <span className="ml-auto text-caption text-muted-foreground">{noneCount}</span>
+          )}
+        </DropdownMenuCheckboxItem>
+      </>
+    );
+  }
 
   return (
     <>
@@ -935,7 +1143,6 @@ export function IssuesHeader({
   scopedIssues,
   workingAgents,
   allowGantt = false,
-  allowGraph = false,
   dateFilter = null,
   onDateFilterChange,
   isRefreshing = false,
@@ -949,7 +1156,6 @@ export function IssuesHeader({
    *  behind the agents-working chip. */
   workingAgents: WorkingAgentSummary[] | undefined;
   allowGantt?: boolean;
-  allowGraph?: boolean;
   dateFilter?: IssueDateFilter | null;
   onDateFilterChange?: (filter: IssueDateFilter | null) => void;
   isRefreshing?: boolean;
@@ -1128,7 +1334,6 @@ export function IssuesHeader({
           <IssueDisplayControls
             scopedIssues={scopedIssues}
             allowGantt={allowGantt}
-            allowGraph={allowGraph}
             dateFilter={dateFilter}
             onDateFilterChange={onDateFilterChange}
             facetCountsExact={facetCountsExact}
@@ -1219,8 +1424,8 @@ export function IssueFilterMenu({
   const [frozenAnchor, setFrozenAnchor] = useState<{ getBoundingClientRect: () => DOMRect } | null>(null);
   const statusFilters = useViewStore((s) => s.statusFilters);
   const priorityFilters = useViewStore((s) => s.priorityFilters);
-  const executorFilters = useViewStore((s) => s.executorFilters);
-  const includeNoExecutor = useViewStore((s) => s.includeNoExecutor);
+  const assigneeFilters = useViewStore((s) => s.assigneeFilters);
+  const includeNoAssignee = useViewStore((s) => s.includeNoAssignee);
   const creatorFilters = useViewStore((s) => s.creatorFilters);
   const projectFilters = useViewStore((s) => s.projectFilters);
   const includeNoProject = useViewStore((s) => s.includeNoProject);
@@ -1233,13 +1438,7 @@ export function IssueFilterMenu({
   const { data: workspaceProperties = [] } = useQuery(propertyListOptions(wsId));
   const filterableProperties = useMemo(
     () =>
-      workspaceProperties.filter(
-        (p) =>
-          p.type === "select" ||
-          p.type === "multi_select" ||
-          p.type === "checkbox" ||
-          isActorPropertyType(p.type),
-      ),
+      workspaceProperties.filter((p) => isFilterablePropertyType(p.type)),
     [workspaceProperties],
   );
   const counts = useIssueCounts(
@@ -1259,8 +1458,8 @@ export function IssueFilterMenu({
         statusFilters,
         priorityFilters,
         propertyFilters: effectivePropertyFilters,
-        executorFilters,
-        includeNoExecutor,
+        assigneeFilters,
+        includeNoAssignee,
         creatorFilters,
         projectFilters,
         includeNoProject,
@@ -1329,7 +1528,7 @@ export function IssueFilterMenu({
                     be narrowed to. One flat list in category order: the icon
                     already carries the category, and a heading per category
                     doubled the menu's height for no added information
-                    (PB-6243, PB-6399). */}
+                    (MUL-6243, MUL-6399). */}
                 {statusOptions.map((option) => {
                   const checked = statusFilters.includes(option.key);
                   const count = counts.status.get(option.key) ?? 0;
@@ -1425,32 +1624,32 @@ export function IssueFilterMenu({
               </DropdownMenuSub>
             )}
 
-            {/* Executor */}
+            {/* Assignee */}
             <DropdownMenuSub
               onOpenChange={(open) =>
-                onTableFacetChange?.(open ? { kind: "executor" } : null)
+                onTableFacetChange?.(open ? { kind: "assignee" } : null)
               }
             >
               <DropdownMenuSubTrigger>
                 <User className="size-3.5" />
-                <span className="flex-1">{t(($) => $.filters.section_executor)}</span>
-                {(executorFilters.length > 0 || includeNoExecutor) && (
+                <span className="flex-1">{t(($) => $.filters.section_assignee)}</span>
+                {(assigneeFilters.length > 0 || includeNoAssignee) && (
                   <span className="text-caption text-primary font-medium">
-                    {executorFilters.length + (includeNoExecutor ? 1 : 0)}
+                    {assigneeFilters.length + (includeNoAssignee ? 1 : 0)}
                   </span>
                 )}
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="w-auto min-w-52 p-0">
                 <ActorSubContent
-                  counts={counts.executor}
-                  selected={executorFilters}
-                  onToggle={act.toggleExecutorFilter}
-                  showNoExecutor
-                  includeNoExecutor={includeNoExecutor}
-                  onToggleNoExecutor={act.toggleNoExecutor}
-                  noExecutorCount={counts.noExecutor}
-                  fixedKeys={viewBaseline?.executor}
-                  noExecutorFixed={viewBaseline?.includeNoExecutor === true}
+                  counts={counts.assignee}
+                  selected={assigneeFilters}
+                  onToggle={act.toggleAssigneeFilter}
+                  showNoAssignee
+                  includeNoAssignee={includeNoAssignee}
+                  onToggleNoAssignee={act.toggleNoAssignee}
+                  noAssigneeCount={counts.noAssignee}
+                  fixedKeys={viewBaseline?.assignee}
+                  noAssigneeFixed={viewBaseline?.includeNoAssignee === true}
                   fixedTitle={fixedTitle}
                 />
               </DropdownMenuSubContent>
@@ -1476,7 +1675,7 @@ export function IssueFilterMenu({
                   counts={counts.creator}
                   selected={creatorFilters}
                   onToggle={act.toggleCreatorFilter}
-                  showTeams={false}
+                  showSquads={false}
                   fixedKeys={viewBaseline?.creator}
                   fixedTitle={fixedTitle}
                 />
@@ -1573,6 +1772,7 @@ export function IssueFilterMenu({
                       counts={counts.property.get(property.id)}
                       selected={selected}
                       onToggle={(optionId) => act.togglePropertyFilter(property.id, optionId)}
+                      onSetValues={(optionIds) => act.setPropertyFilterValues(property.id, optionIds)}
                       fixedIds={viewBaseline?.property.get(property.id)}
                       fixedTitle={fixedTitle}
                     />
@@ -1610,7 +1810,6 @@ export function IssueDisplayControls({
   scopedIssues,
   hideViewToggle = false,
   allowGantt = false,
-  allowGraph = false,
   dateFilter = null,
   onDateFilterChange,
   facetCountsExact = true,
@@ -1629,7 +1828,6 @@ export function IssueDisplayControls({
   // /my-issues, actor panel) ignore viewMode === "gantt" and would silently
   // fall back to List if the option were exposed there. Keep Gantt opt-in.
   allowGantt?: boolean;
-  allowGraph?: boolean;
   /**
    * Whether `scopedIssues` covers the surface's full window. Table does not
    * use loaded rows for counts; server-paged List, Board, and Swimlane follow
@@ -1646,8 +1844,8 @@ export function IssueDisplayControls({
   const viewMode = useViewStore((s) => s.viewMode);
   const statusFilters = useViewStore((s) => s.statusFilters);
   const priorityFilters = useViewStore((s) => s.priorityFilters);
-  const executorFilters = useViewStore((s) => s.executorFilters);
-  const includeNoExecutor = useViewStore((s) => s.includeNoExecutor);
+  const assigneeFilters = useViewStore((s) => s.assigneeFilters);
+  const includeNoAssignee = useViewStore((s) => s.includeNoAssignee);
   const creatorFilters = useViewStore((s) => s.creatorFilters);
   const projectFilters = useViewStore((s) => s.projectFilters);
   const includeNoProject = useViewStore((s) => s.includeNoProject);
@@ -1673,13 +1871,7 @@ export function IssueDisplayControls({
   );
   const filterableProperties = useMemo(
     () =>
-      workspaceProperties.filter(
-        (p) =>
-          p.type === "select" ||
-          p.type === "multi_select" ||
-          p.type === "checkbox" ||
-          isActorPropertyType(p.type),
-      ),
+      workspaceProperties.filter((p) => isFilterablePropertyType(p.type)),
     [workspaceProperties],
   );
   const sortableProperties = useMemo(
@@ -1715,8 +1907,8 @@ export function IssueDisplayControls({
       statusFilters,
       priorityFilters,
       propertyFilters: effectivePropertyFilters,
-      executorFilters,
-      includeNoExecutor,
+      assigneeFilters,
+      includeNoAssignee,
       creatorFilters,
       projectFilters,
       includeNoProject,
@@ -1737,19 +1929,20 @@ export function IssueDisplayControls({
     updated_at: "sort_updated",
     title: "sort_title",
   };
-  const GROUPING_LABEL_KEY: Record<typeof GROUPING_OPTIONS[number]["value"], "group_status" | "group_executor"> = {
+  const GROUPING_LABEL_KEY: Record<typeof GROUPING_OPTIONS[number]["value"], "group_status" | "group_assignee" | "group_project"> = {
     status: "group_status",
-    executor: "group_executor",
+    assignee: "group_assignee",
+    project: "group_project",
   };
-  const SWIMLANE_GROUPING_LABEL_KEY: Record<SwimlaneGrouping, "group_parent" | "group_project" | "group_executor"> = {
+  const SWIMLANE_GROUPING_LABEL_KEY: Record<SwimlaneGrouping, "group_parent" | "group_project" | "group_assignee"> = {
     parent: "group_parent",
     project: "group_project",
-    executor: "group_executor",
+    assignee: "group_assignee",
   };
-  const CARD_PROPERTY_LABEL_KEY: Record<typeof CARD_PROPERTY_OPTIONS[number]["key"], "card_priority" | "card_description" | "card_executor" | "card_start_date" | "card_due_date" | "card_project" | "card_labels" | "card_child_progress"> = {
+  const CARD_PROPERTY_LABEL_KEY: Record<typeof CARD_PROPERTY_OPTIONS[number]["key"], "card_priority" | "card_description" | "card_assignee" | "card_start_date" | "card_due_date" | "card_project" | "card_labels" | "card_child_progress"> = {
     priority: "card_priority",
     description: "card_description",
-    executor: "card_executor",
+    assignee: "card_assignee",
     startDate: "card_start_date",
     dueDate: "card_due_date",
     project: "card_project",
@@ -1778,9 +1971,11 @@ export function IssueDisplayControls({
       t(($) => $.table.group_none)
     : effectiveTableGrouping === "status"
       ? t(($) => $.table.columns.status)
-      : effectiveTableGrouping === "executor"
-        ? t(($) => $.table.columns.executor)
-        : t(($) => $.table.group_none);
+      : effectiveTableGrouping === "assignee"
+        ? t(($) => $.table.columns.assignee)
+        : effectiveTableGrouping === "project"
+          ? t(($) => $.table.columns.project)
+          : t(($) => $.table.group_none);
   const controlButtonClass = "h-8 w-8 gap-1 px-0 text-muted-foreground md:h-7 md:w-auto md:px-2.5";
 
   return (
@@ -1855,8 +2050,11 @@ export function IssueDisplayControls({
                 <DropdownMenuRadioItem value="status">
                   {t(($) => $.table.columns.status)}
                 </DropdownMenuRadioItem>
-                <DropdownMenuRadioItem value="executor">
-                  {t(($) => $.table.columns.executor)}
+                <DropdownMenuRadioItem value="assignee">
+                  {t(($) => $.table.columns.assignee)}
+                </DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="project">
+                  {t(($) => $.table.columns.project)}
                 </DropdownMenuRadioItem>
                 {tableGroupableProperties.map((property) => (
                   <DropdownMenuRadioItem
@@ -2128,8 +2326,6 @@ export function IssueDisplayControls({
                           <Waves className="size-3.5" />
                         ) : viewMode === "gantt" && allowGantt ? (
                           <ChartGantt className="size-3.5" />
-                        ) : viewMode === "graph" && allowGraph ? (
-                          <Network className="size-3.5" />
                         ) : (
                           <List className="size-3.5" />
                         )}
@@ -2142,8 +2338,6 @@ export function IssueDisplayControls({
                             ? t(($) => $.view.swimlane)
                             : viewMode === "gantt" && allowGantt
                             ? t(($) => $.view.gantt)
-                            : viewMode === "graph" && allowGraph
-                            ? t(($) => $.view.graph)
                             : t(($) => $.view.list)}
                         </span>
                       </Button>
@@ -2160,8 +2354,6 @@ export function IssueDisplayControls({
                   ? t(($) => $.view.tooltip_swimlane)
                   : viewMode === "gantt" && allowGantt
                   ? t(($) => $.view.tooltip_gantt)
-                  : viewMode === "graph" && allowGraph
-                  ? t(($) => $.view.tooltip_graph)
                   : t(($) => $.view.tooltip_list)}
               </TooltipContent>
             </Tooltip>
@@ -2196,12 +2388,6 @@ export function IssueDisplayControls({
                   <DropdownMenuRadioItem value="gantt">
                     <ChartGantt />
                     {t(($) => $.view.gantt)}
-                  </DropdownMenuRadioItem>
-                )}
-                {allowGraph && (
-                  <DropdownMenuRadioItem value="graph">
-                    <Network />
-                    {t(($) => $.view.graph)}
                   </DropdownMenuRadioItem>
                 )}
               </DropdownMenuRadioGroup>

@@ -2,8 +2,8 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, cleanup } from "@testing-library/react";
-import type { MemberWithUser, RuntimeDevice } from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { MemberWithUser, RuntimeDevice } from "@multica/core/types";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
 import enIssues from "../../locales/en/issues.json";
@@ -90,7 +90,7 @@ describe("RuntimePicker (creation studio)", () => {
   // A builder session rebinds its execution runtime on the server. While that
   // request is in flight the selection cannot be honoured yet, so the picker
   // must refuse to open rather than let the user queue a second, conflicting
-  // choice (PB-5163).
+  // choice (MUL-5163).
   it("cannot be opened while disabled", () => {
     const { container, onSelect } = renderPicker({ disabled: true });
     expect(trigger(container).disabled).toBe(true);

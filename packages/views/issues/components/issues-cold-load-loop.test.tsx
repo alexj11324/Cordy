@@ -1,10 +1,10 @@
 /**
  * @vitest-environment jsdom
  *
- * PB-4985 regression — cold-load render loop on the Issues route.
+ * MUL-4985 regression — cold-load render loop on the Issues route.
  *
  * These tests render Board and Swimlane with the REAL react-virtuoso and the
- * REAL `useActorName`, while the member/agent/team directory queries are held
+ * REAL `useActorName`, while the member/agent/squad directory queries are held
  * pending (the cold-load state). Before the fix, `useActorName` returned a
  * fresh `getActorName` on every render, which churned BoardView's `groups` /
  * SwimLaneView's `laneGroups`, re-fired the column-resync effect without end,
@@ -15,29 +15,28 @@
  * point of the reproduction.)
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { BoardView } from "./board-view";
 import { SwimLaneView } from "./swimlane-view";
 import { IssueContextMenuProvider } from "../actions";
-import { setApiInstance } from "@patchbay/core/api";
-import type { ApiClient } from "@patchbay/core/api/client";
-import type { Issue } from "@patchbay/core/types";
-import type { IssueStatusPagination } from "../surface/use-issue-status-branches";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { setApiInstance } from "@multica/core/api";
+import type { ApiClient } from "@multica/core/api/client";
+import type { Issue } from "@multica/core/types";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enIssues from "../../locales/en/issues.json";
 
 const TEST_RESOURCES = { en: { common: enCommon, issues: enIssues } };
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@patchbay/core/paths", async () => {
-  const actual = await vi.importActual<typeof import("@patchbay/core/paths")>(
-    "@patchbay/core/paths",
+vi.mock("@multica/core/paths", async () => {
+  const actual = await vi.importActual<typeof import("@multica/core/paths")>(
+    "@multica/core/paths",
   );
   return {
     ...actual,
@@ -48,7 +47,7 @@ vi.mock("@patchbay/core/paths", async () => {
 });
 
 const mockAuthUser = { id: "user-1", email: "test@test.com", name: "Test User" };
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@multica/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: any) => {
       const state = { user: mockAuthUser, isAuthenticated: true };
@@ -72,7 +71,7 @@ vi.mock("../../navigation", () => ({
   NavigationProvider: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-vi.mock("@patchbay/core/issues/config", () => ({
+vi.mock("@multica/core/issues/config", () => ({
   ALL_STATUSES: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_ORDER: ["backlog", "todo", "in_progress", "in_review", "done", "blocked", "cancelled"],
   STATUS_CONFIG: {
@@ -95,15 +94,15 @@ vi.mock("@patchbay/core/issues/config", () => ({
   },
 }));
 
-vi.mock("@patchbay/core/issues/mutations", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@patchbay/core/issues/mutations")>();
+vi.mock("@multica/core/issues/mutations", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@multica/core/issues/mutations")>();
   return {
     ...actual,
   };
 });
 
-vi.mock("@patchbay/core/properties", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@patchbay/core/properties")>();
+vi.mock("@multica/core/properties", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@multica/core/properties")>();
   return {
     ...actual,
     useSetIssueProperty: () => ({ mutate: vi.fn(), mutateAsync: vi.fn() }),
@@ -111,23 +110,23 @@ vi.mock("@patchbay/core/properties", async (importOriginal) => {
   };
 });
 
-// Board default grouping is "status"; swimlane switches to "executor" per test.
+// Board default grouping is "status"; swimlane switches to "assignee" per test.
 const mockViewState: Record<string, unknown> = {
   grouping: "status",
   sortBy: "position",
   sortDirection: "asc",
-  cardProperties: { priority: true, executor: true, dueDate: true, project: true, childProgress: true, labels: true },
-  swimlaneGrouping: "executor",
-  swimlaneOrders: { parent: [], project: [], executor: [] },
-  collapsedSwimlanes: { parent: [], project: [], executor: [] },
+  cardProperties: { priority: true, assignee: true, dueDate: true, project: true, childProgress: true, labels: true },
+  swimlaneGrouping: "assignee",
+  swimlaneOrders: { parent: [], project: [], assignee: [] },
+  collapsedSwimlanes: { parent: [], project: [], assignee: [] },
   setSwimlaneGrouping: vi.fn(),
   setSwimlaneOrder: vi.fn(),
   toggleSwimlaneCollapsed: vi.fn(),
   hideStatus: vi.fn(),
   showStatus: vi.fn(),
   priorityFilters: [],
-  executorFilters: [],
-  includeNoExecutor: false,
+  assigneeFilters: [],
+  includeNoAssignee: false,
   creatorFilters: [],
   projectFilters: [],
   includeNoProject: false,
@@ -136,13 +135,13 @@ const mockViewState: Record<string, unknown> = {
   cardPropertyIds: [],
   agentRunningFilter: false,
 };
-vi.mock("@patchbay/core/issues/stores/view-store-context", () => ({
+vi.mock("@multica/core/issues/stores/view-store-context", () => ({
   ViewStoreProvider: ({ children }: { children: ReactNode }) => children,
   useViewStore: (selector?: any) => (selector ? selector(mockViewState) : mockViewState),
   useViewStoreApi: () => ({ getState: () => mockViewState, setState: vi.fn(), subscribe: vi.fn() }),
 }));
 
-vi.mock("@patchbay/core/modals", () => ({
+vi.mock("@multica/core/modals", () => ({
   useModalStore: Object.assign(
     () => ({ open: vi.fn() }),
     { getState: () => ({ open: vi.fn() }) },
@@ -150,17 +149,7 @@ vi.mock("@patchbay/core/modals", () => ({
 }));
 
 vi.mock("@dnd-kit/core", () => ({
-  DndContext: ({
-    children,
-    onDragStart,
-    onDragOver,
-    onDragEnd,
-  }: any) => {
-    lastOnDragStart = onDragStart;
-    lastOnDragOver = onDragOver;
-    lastOnDragEnd = onDragEnd;
-    return children;
-  },
+  DndContext: ({ children }: any) => children,
   DragOverlay: () => null,
   PointerSensor: class {},
   useSensor: () => ({}),
@@ -192,23 +181,6 @@ vi.mock("@dnd-kit/utilities", () => ({
 // the cold-load state. A never-resolving promise keeps `data` undefined.
 const pending = () => new Promise<never>(() => {});
 
-let lastOnDragStart: ((event: any) => void) | undefined;
-let lastOnDragOver: ((event: any) => void) | undefined;
-let lastOnDragEnd: ((event: any) => void) | undefined;
-
-function page(total: number) {
-  return {
-    total,
-    loaded: total,
-    hasMore: false,
-    isLoading: false,
-    isFetching: false,
-    isError: false,
-    loadMore: vi.fn(),
-    retry: vi.fn(),
-  };
-}
-
 function makeIssue(overrides: Partial<Issue> & { id: string }): Issue {
   return {
     workspace_id: "ws-1",
@@ -218,12 +190,8 @@ function makeIssue(overrides: Partial<Issue> & { id: string }): Issue {
     description: null,
     status: "todo",
     priority: "none",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -253,18 +221,15 @@ function renderWithProviders(ui: ReactNode) {
   );
 }
 
-describe("Issues cold-load render loop (PB-4985)", () => {
+describe("Issues cold-load render loop (MUL-4985)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    lastOnDragStart = undefined;
-    lastOnDragOver = undefined;
-    lastOnDragEnd = undefined;
     mockViewState.grouping = "status";
-    mockViewState.swimlaneGrouping = "executor";
+    mockViewState.swimlaneGrouping = "assignee";
     setApiInstance({
       listMembers: pending,
       listAgents: pending,
-      listTeams: pending,
+      listSquads: pending,
       getAgentTaskSnapshot: () => Promise.resolve([]),
       listChildrenByParents: () => Promise.resolve({ issues: [] }),
       listProjects: pending,
@@ -298,12 +263,12 @@ describe("Issues cold-load render loop (PB-4985)", () => {
     expect(screen.getByText("Board Card 0")).toBeInTheDocument();
   });
 
-  it("Swimlane grouped by executor paints during cold load (real Virtuoso mounts, no update-depth loop)", async () => {
-    mockViewState.swimlaneGrouping = "executor";
+  it("Swimlane grouped by assignee paints during cold load (real Virtuoso mounts, no update-depth loop)", async () => {
+    mockViewState.swimlaneGrouping = "assignee";
     const issues = [
-      makeIssue({ id: "s1", title: "Swim Card 1", owner_type: "member", owner_id: "user-1", status: "todo" }),
-      makeIssue({ id: "s2", title: "Swim Card 2", executor_type: "agent", executor_id: "agent-1", status: "in_progress" }),
-      makeIssue({ id: "s3", title: "Swim Card 3", executor_type: null, executor_id: null, status: "todo" }),
+      makeIssue({ id: "s1", title: "Swim Card 1", assignee_type: "member", assignee_id: "user-1", status: "todo" }),
+      makeIssue({ id: "s2", title: "Swim Card 2", assignee_type: "agent", assignee_id: "agent-1", status: "in_progress" }),
+      makeIssue({ id: "s3", title: "Swim Card 3", assignee_type: null, assignee_id: null, status: "todo" }),
     ];
 
     renderWithProviders(
@@ -314,153 +279,5 @@ describe("Issues cold-load render loop (PB-4985)", () => {
       expect(screen.getByText("Swim Card 1")).toBeInTheDocument();
     });
     expect(screen.getByText("Swim Card 3")).toBeInTheDocument();
-  });
-
-  it("hides empty status columns while keeping them as hidden drop targets", () => {
-    const issues = [makeIssue({ id: "todo-1", status: "todo" })];
-    const pagination = {
-      todo: page(1),
-      in_progress: page(0),
-    } as unknown as IssueStatusPagination;
-
-    const { container } = renderWithProviders(
-      <BoardView
-        issues={issues}
-        visibleStatuses={["todo", "in_progress"]}
-        hiddenStatuses={[]}
-        statusPagination={pagination}
-        onMoveIssue={vi.fn()}
-      />,
-    );
-
-    expect(
-      container.querySelector('[data-board-column="status:todo"]'),
-    ).not.toBeNull();
-    expect(
-      container.querySelector('[data-board-column="status:in_progress"]'),
-    ).toBeNull();
-    expect(
-      container.querySelector('[data-hidden-column-drop-target="in_progress"]'),
-    ).not.toBeNull();
-  });
-
-  it("does not make filter-only hidden statuses drop targets", () => {
-    const issues = [makeIssue({ id: "todo-1", status: "todo" })];
-
-    const { container } = renderWithProviders(
-      <BoardView
-        issues={issues}
-        visibleStatuses={["todo"]}
-        hiddenStatuses={["in_progress"]}
-        droppableHiddenStatuses={[]}
-        onMoveIssue={vi.fn()}
-      />,
-    );
-
-    expect(
-      container.querySelector('[data-hidden-column-drop-target="in_progress"]'),
-    ).toBeNull();
-  });
-
-  it("reveals an auto-hidden empty status after a card is dropped there", () => {
-    const onMoveIssue = vi.fn();
-    const issues = [makeIssue({ id: "todo-1", status: "todo" })];
-    const pagination = {
-      todo: page(1),
-      in_progress: page(0),
-    } as unknown as IssueStatusPagination;
-
-    const { container } = renderWithProviders(
-      <BoardView
-        issues={issues}
-        visibleStatuses={["todo", "in_progress"]}
-        hiddenStatuses={[]}
-        statusPagination={pagination}
-        onMoveIssue={onMoveIssue}
-      />,
-    );
-
-    expect(
-      container.querySelector('[data-board-column="status:in_progress"]'),
-    ).toBeNull();
-
-    act(() => {
-      lastOnDragStart?.({ active: { id: "todo-1" } });
-    });
-    act(() => {
-      lastOnDragOver?.({
-        active: { id: "todo-1" },
-        over: { id: "status:in_progress" },
-      });
-    });
-    act(() => {
-      lastOnDragEnd?.({
-        active: { id: "todo-1" },
-        over: { id: "status:in_progress" },
-      });
-    });
-
-    expect(onMoveIssue).toHaveBeenCalledWith(
-      "todo-1",
-      expect.objectContaining({ status: "in_progress" }),
-      expect.objectContaining({
-        onSettled: expect.any(Function),
-        onSuccess: expect.any(Function),
-        onError: expect.any(Function),
-      }),
-    );
-    expect(
-      container.querySelector('[data-board-column="status:in_progress"]'),
-    ).not.toBeNull();
-    expect(
-      container.querySelector('[data-hidden-column-drop-target="in_progress"]'),
-    ).toBeNull();
-  });
-
-  it("moves a card to a hidden status and reveals that status", () => {
-    const onMoveIssue = vi.fn();
-    const issues = [makeIssue({ id: "todo-1", status: "todo" })];
-    const showStatus = mockViewState.showStatus as ReturnType<typeof vi.fn>;
-    const pagination = {
-      todo: page(1),
-      in_progress: page(0),
-    } as unknown as IssueStatusPagination;
-
-    renderWithProviders(
-      <BoardView
-        issues={issues}
-        visibleStatuses={["todo"]}
-        hiddenStatuses={["in_progress"]}
-        statusPagination={pagination}
-        onMoveIssue={onMoveIssue}
-      />,
-    );
-
-    act(() => {
-      lastOnDragStart?.({ active: { id: "todo-1" } });
-    });
-    act(() => {
-      lastOnDragOver?.({
-        active: { id: "todo-1" },
-        over: { id: "status:in_progress" },
-      });
-    });
-    act(() => {
-      lastOnDragEnd?.({
-        active: { id: "todo-1" },
-        over: { id: "status:in_progress" },
-      });
-    });
-
-    expect(onMoveIssue).toHaveBeenCalledWith(
-      "todo-1",
-      expect.objectContaining({ status: "in_progress" }),
-      expect.objectContaining({
-        onSettled: expect.any(Function),
-        onSuccess: expect.any(Function),
-        onError: expect.any(Function),
-      }),
-    );
-    expect(showStatus).toHaveBeenCalledWith("in_progress");
   });
 });

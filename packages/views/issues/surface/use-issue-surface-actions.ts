@@ -2,14 +2,14 @@
 
 import { useCallback, useMemo } from "react";
 import { toast } from "sonner";
-import type { UpdateIssueRequest } from "@patchbay/core/types";
+import type { UpdateIssueRequest } from "@multica/core/types";
 import {
   useBatchDeleteIssues,
   useBatchUpdateIssues,
   useUpdateIssue,
-} from "@patchbay/core/issues/mutations";
-import { errorCode } from "@patchbay/core/api";
-import { useModalStore } from "@patchbay/core/modals";
+} from "@multica/core/issues/mutations";
+import { errorCode } from "@multica/core/api";
+import { useModalStore } from "@multica/core/modals";
 import {
   type IssueSurfaceActions,
   type IssueSurfaceMutationOptions,
@@ -20,8 +20,8 @@ import { useT } from "../../i18n";
 export type MoveIssueUpdates = Pick<
   UpdateIssueRequest,
   | "status"
-  | "executor_type"
-  | "executor_id"
+  | "assignee_type"
+  | "assignee_id"
   | "position"
   | "parent_issue_id"
   | "project_id"
@@ -30,19 +30,13 @@ export type MoveIssueUpdates = Pick<
   after_id: string | null;
 };
 
-export type MoveIssueCallbacks = {
-  onSettled?: () => void;
-  onSuccess?: () => void;
-  onError?: () => void;
-};
-
 export interface IssueSurfaceActionController {
   actions: IssueSurfaceActions;
   openCreateIssue: (defaults?: IssueCreateDefaults) => void;
   moveIssue: (
     issueId: string,
     updates: MoveIssueUpdates,
-    callbacks?: MoveIssueCallbacks,
+    onSettled?: () => void,
   ) => void;
 }
 
@@ -89,7 +83,7 @@ export function useIssueSurfaceActions({
     (
       issueId: string,
       updates: MoveIssueUpdates,
-      callbacks?: MoveIssueCallbacks,
+      onSettled?: () => void,
     ) => {
       const { before_id, after_id, ...optimisticUpdates } = updates;
       updateIssueMutation.mutate(
@@ -107,10 +101,8 @@ export function useIssueSurfaceActions({
                 ? err.message
                 : t(($) => $.detail.toast_move_issue_failed),
             );
-            callbacks?.onError?.();
           },
-          onSuccess: () => callbacks?.onSuccess?.(),
-          onSettled: callbacks?.onSettled,
+          onSettled,
         },
       );
     },

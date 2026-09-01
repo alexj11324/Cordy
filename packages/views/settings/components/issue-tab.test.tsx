@@ -5,7 +5,7 @@ import {
   DEFAULT_MANUAL_CREATE_FIELDS,
   DEFAULT_QUICK_CREATE_FIELDS,
   useIssueCreateSettingsStore,
-} from "@patchbay/core/issues/stores/issue-create-settings-store";
+} from "@multica/core/issues/stores/issue-create-settings-store";
 import { renderWithI18n } from "../../test/i18n";
 import { IssueTab } from "./issue-tab";
 
@@ -27,9 +27,9 @@ describe("IssueTab", () => {
   it("renders a switch per field with the persisted selection", () => {
     renderWithI18n(<IssueTab />);
 
-    // 3 quick create fields + 9 manual create fields.
+    // 3 quick create fields + 7 manual create fields.
     const switches = screen.getAllByRole("switch");
-    expect(switches).toHaveLength(12);
+    expect(switches).toHaveLength(10);
 
     // Quick create defaults to project only.
     const [quickProject, quickPriority, quickDueDate] = switches;
@@ -37,18 +37,11 @@ describe("IssueTab", () => {
     expect(quickPriority).not.toBeChecked();
     expect(quickDueDate).not.toBeChecked();
 
-    // Manual create defaults to status, priority, executor, labels and
-    // project; owner, reviewer and dates start hidden.
+    // Manual create defaults to the classic toolbar; dates start hidden.
     const manual = switches.slice(3);
-    expect(manual[0]).toBeChecked();
-    expect(manual[1]).toBeChecked();
-    expect(manual[2]).not.toBeChecked();
-    expect(manual[3]).toBeChecked();
-    expect(manual[4]).not.toBeChecked();
-    expect(manual[5]).toBeChecked();
-    expect(manual[6]).toBeChecked();
-    expect(manual[7]).not.toBeChecked();
-    expect(manual[8]).not.toBeChecked();
+    for (const s of manual.slice(0, 5)) expect(s).toBeChecked();
+    expect(manual[5]).not.toBeChecked();
+    expect(manual[6]).not.toBeChecked();
   });
 
   it("persists enabling a quick create field", async () => {
@@ -68,14 +61,14 @@ describe("IssueTab", () => {
     const user = userEvent.setup();
     renderWithI18n(<IssueTab />);
 
-    // Manual section starts at index 3; labels is its 6th row (index 8 overall).
-    const manualLabels = screen.getAllByRole("switch")[8];
+    // Manual section starts at index 3; labels is its 4th row (index 6 overall).
+    const manualLabels = screen.getAllByRole("switch")[6];
     await user.click(manualLabels!);
 
     expect(useIssueCreateSettingsStore.getState().manualCreateFields).toEqual([
       "status",
       "priority",
-      "executor",
+      "assignee",
       "project",
     ]);
     expect(useIssueCreateSettingsStore.getState().quickCreateFields).toEqual(["project"]);

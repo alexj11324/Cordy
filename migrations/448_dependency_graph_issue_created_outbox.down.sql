@@ -1,1 +1,0 @@
-DROP TABLE IF EXISTS dependency_graph_issue_created_outbox;

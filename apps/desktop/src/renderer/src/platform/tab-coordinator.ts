@@ -4,7 +4,7 @@ import type {
   ExternalScrollSource,
   ScrollRestorationAdapter,
   ScrollRestorationEntry,
-} from "@patchbay/views/platform";
+} from "@multica/views/platform";
 import { createAppRouter } from "@/routes";
 import {
   useTabStore,
@@ -14,7 +14,7 @@ import {
 } from "@/stores/tab-store";
 
 /**
- * Tab Coordinator (PB-4741 Phase 2) — the ONLY writer of the single app
+ * Tab Coordinator (MUL-4741 Phase 2) — the ONLY writer of the single app
  * router.
  *
  * Architecture: the tab store is the source of truth; the router is a
@@ -110,7 +110,7 @@ export function registerCoordinatorQueryClient(qc: QueryClient): void {
 
 /**
  * Serves saved scroll offsets back to mounting views (pull-based restore —
- * see ScrollRestorationProvider in @patchbay/views/platform). Offsets are
+ * see ScrollRestorationProvider in @multica/views/platform). Offsets are
  * looked up live against the tab's memento, scoped to the route the view is
  * mounting under, so in-tab back/forward pulls each route's own offsets.
  *

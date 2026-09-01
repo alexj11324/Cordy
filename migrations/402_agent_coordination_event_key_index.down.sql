@@ -1,1 +1,0 @@
-DROP INDEX CONCURRENTLY IF EXISTS idx_agent_coordination_outbox_event_key;

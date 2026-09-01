@@ -5,14 +5,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { setApiInstance } from "@patchbay/core/api";
-import type { ApiClient } from "@patchbay/core/api/client";
+import { setApiInstance } from "@multica/core/api";
+import type { ApiClient } from "@multica/core/api/client";
 import type {
   Issue,
   IssueTableGroupsRequest,
   IssueTableQuerySpec,
   IssueTableRowsRequest,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import { useIssueGroupBranches } from "./use-issue-group-branches";
 
 function makeIssue(id: string, status: Issue["status"]): Issue {
@@ -20,17 +20,13 @@ function makeIssue(id: string, status: Issue["status"]): Issue {
     id,
     workspace_id: "ws-1",
     number: id === "child-1" ? 1 : 2,
-    identifier: id === "child-1" ? "PB-1" : "PB-2",
+    identifier: id === "child-1" ? "MUL-1" : "MUL-2",
     title: id,
     description: null,
     status,
     priority: "none",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: "parent-1",
@@ -75,10 +71,10 @@ describe("useIssueGroupBranches", () => {
           groups: [
             {
               key: secondPage
-                ? "executor:unassigned"
-                : "executor:member:user-1",
+                ? "assignee:unassigned"
+                : "assignee:member:user-1",
               value: {
-                kind: "executor" as const,
+                kind: "assignee" as const,
                 actor: secondPage
                   ? null
                   : { type: "member" as const, id: "user-1" },
@@ -102,7 +98,7 @@ describe("useIssueGroupBranches", () => {
         useIssueGroupBranches({
           wsId: "ws-1",
           query,
-          group: { kind: "executor" },
+          group: { kind: "assignee" },
           enabled: true,
         }),
       { wrapper: wrapper(queryClient) },
@@ -134,7 +130,7 @@ describe("useIssueGroupBranches", () => {
             parent: {
               id: "parent-1",
               number: 10,
-              identifier: "PB-10",
+              identifier: "MUL-10",
               title: "Parent",
               status: "in_progress",
             },

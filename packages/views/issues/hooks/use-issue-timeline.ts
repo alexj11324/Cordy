@@ -11,7 +11,7 @@ import type {
   Comment,
   TimelineEntry,
   Reaction,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import type {
   CommentCreatedPayload,
   CommentUpdatedPayload,
@@ -21,11 +21,11 @@ import type {
   ActivityCreatedPayload,
   ReactionAddedPayload,
   ReactionRemovedPayload,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import {
   issueTimelineOptions,
   issueKeys,
-} from "@patchbay/core/issues/queries";
+} from "@multica/core/issues/queries";
 import {
   useCreateComment,
   useUpdateComment,
@@ -33,13 +33,13 @@ import {
   useResolveComment,
   useToggleCommentReaction,
   type ToggleCommentReactionVars,
-} from "@patchbay/core/issues/mutations";
-import { sortTimelineEntriesAsc } from "@patchbay/core/issues/timeline-sort";
+} from "@multica/core/issues/mutations";
+import { sortTimelineEntriesAsc } from "@multica/core/issues/timeline-sort";
 import {
   unhandledCommentTriggerOutcomes,
   mentionLabelsByTarget,
-} from "@patchbay/core/issues/comment-trigger-outcomes";
-import { useWSEvent, useWSReconnect } from "@patchbay/core/realtime";
+} from "@multica/core/issues/comment-trigger-outcomes";
+import { useWSEvent, useWSReconnect } from "@multica/core/realtime";
 import { toast } from "sonner";
 import { useT } from "../../i18n";
 import { blockedShortReasonLabel } from "../blocked-trigger-copy";
@@ -323,7 +323,7 @@ export function useIssueTimeline(issueId: string, userId?: string) {
 
   // The comment saved, but a mention did not clearly trigger (blocked, or an
   // unknown/future status we must not assume succeeded). Warn instead of a
-  // silent no-op (PB-4525 §2): the comment IS posted, but N explicitly-named
+  // silent no-op (MUL-4525 §2): the comment IS posted, but N explicitly-named
   // targets were not triggered.
   const warnUnhandledTriggers = useCallback(
     (triggerOutcomes: unknown, content?: string) => {

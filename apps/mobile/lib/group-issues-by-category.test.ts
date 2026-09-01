@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { Issue } from "@patchbay/core/types";
+import type { Issue } from "@multica/core/types";
 import { groupIssuesByCategory } from "./group-issues-by-category";
 
 function issue(id: string, status: string, statusCategory?: string): Issue {
@@ -8,18 +8,14 @@ function issue(id: string, status: string, statusCategory?: string): Issue {
     id,
     workspace_id: "ws-1",
     number: 1,
-    identifier: `PB-${id}`,
+    identifier: `MUL-${id}`,
     title: id,
     description: null,
     status,
     ...(statusCategory ? { status_category: statusCategory as Issue["status_category"] } : {}),
     priority: "none",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -38,7 +34,7 @@ function issue(id: string, status: string, statusCategory?: string): Issue {
 describe("groupIssuesByCategory", () => {
   // The regression this exists for: bucketing by `issue.status` created a `qa`
   // bucket no section ever read, so the issue was simply not on the screen
-  // while the header counts said nothing was wrong (PB-6457).
+  // while the header counts said nothing was wrong (MUL-6457).
   it("puts a custom status in its category's section", () => {
     const sections = groupIssuesByCategory([
       issue("a", "qa", "in_review"),

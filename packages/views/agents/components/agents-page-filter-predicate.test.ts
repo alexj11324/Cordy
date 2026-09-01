@@ -2,11 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   effectiveAccessScope,
   type AccessScope,
-} from "@patchbay/core/agents";
+} from "@multica/core/agents";
 import {
   EMPTY_AGENT_FILTERS,
   type AgentListFilters,
-} from "@patchbay/core/agents/stores";
+} from "@multica/core/agents/stores";
 import { rowMatchesFilters, type AgentListRow } from "./agents-page";
 
 function makeRow(

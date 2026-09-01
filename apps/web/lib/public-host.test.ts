@@ -4,23 +4,14 @@ import { describe, expect, it } from "vitest";
 import { isOfficialMarketingHost } from "./public-host";
 
 describe("isOfficialMarketingHost", () => {
-  it.each([
-    "patchbay.aspectlylabs.com",
-    "PATCHBAY.ASPECTLYLABS.COM",
-    "patchbay.aspectlylabs.com.",
-  ])(
+  it.each(["multica.ai", "www.multica.ai", "MULTICA.AI", "multica.ai."])(
     "recognizes %s as an official marketing host",
     (host) => {
       expect(isOfficialMarketingHost(host)).toBe(true);
     },
   );
 
-  it.each([
-    "api.aspectlylabs.com",
-    "www.example.invalid",
-    "localhost",
-    "patchbay.test",
-  ])(
+  it.each(["app.multica.ai", "api.multica.ai", "localhost", "multica.test"])(
     "does not treat %s as the public marketing host",
     (host) => {
       expect(isOfficialMarketingHost(host)).toBe(false);

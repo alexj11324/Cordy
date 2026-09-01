@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   CheckCircle2,
   Circle,
@@ -14,26 +13,18 @@ import {
   GitPullRequestClosed,
   GitPullRequestDraft,
   TriangleAlert,
-  Unlink,
   XCircle,
 } from "lucide-react";
 import {
   issuePullRequestsOptions,
-  issueWorkProductsOptions,
-  unassociatedWorkProductsOptions,
   deriveChecksStatus,
   deriveMergeStatus,
   shouldShowPullRequestStats,
-  useAttachIssuePullRequest,
-  useAttachIssueWorkProduct,
-  useDetachIssueWorkProduct,
   type PullRequestChecksStatus,
   type PullRequestMergeStatus,
-} from "@patchbay/core/github";
-import type { GitHubPullRequest, GitHubPullRequestState } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@multica/core/github";
+import type { GitHubPullRequest, GitHubPullRequestState } from "@multica/core/types";
+import { cn } from "@multica/ui/lib/utils";
 import { useT, useTimeAgo } from "../../i18n";
 
 type IssuesT = ReturnType<typeof useT<"issues">>["t"];
@@ -52,57 +43,20 @@ const STATE_ICON: Record<
   closed: { icon: GitPullRequestClosed, className: "text-rose-600 dark:text-rose-400" },
 };
 
-export function PullRequestList({ issueId, workspaceId }: { issueId: string; workspaceId: string }) {
+export function PullRequestList({ issueId }: { issueId: string }) {
   const { t } = useT("issues");
   const [expanded, setExpanded] = useState(false);
   const { data, isLoading } = useQuery(issuePullRequestsOptions(issueId));
-  const { data: workProductsData } = useQuery(issueWorkProductsOptions(issueId));
-  const attachMutation = useAttachIssuePullRequest(issueId, workspaceId);
-  const detachMutation = useDetachIssueWorkProduct(issueId, workspaceId);
-  const [detachingId, setDetachingId] = useState<string | null>(null);
   const prs = data?.pull_requests ?? [];
-  const workProductIds = new Map(
-    (workProductsData?.work_products ?? [])
-      .filter((product) => product.kind === "pull_request" && product.provider_record_id)
-      .map((product) => [`${product.provider}:${product.provider_record_id}`, product.id] as const),
-  );
-
-  function renderPullRequestRow(pr: GitHubPullRequest) {
-    const workProductId = workProductIds.get(`${pr.provider ?? "github"}:${pr.id}`);
-    return (
-      <PullRequestRow
-        key={pr.id}
-        pr={pr}
-        workProductId={workProductId}
-        isDetaching={workProductId === detachingId}
-        onDetach={
-          workProductId
-            ? () => {
-                setDetachingId(workProductId);
-                detachMutation.mutate(workProductId, {
-                  onSuccess: () => toast.success(t(($) => $.detail.pull_requests_detach_success)),
-                  onError: () => toast.error(t(($) => $.detail.pull_requests_detach_failed)),
-                  onSettled: () => setDetachingId(null),
-                });
-              }
-            : undefined
-        }
-      />
-    );
-  }
 
   if (isLoading) {
     return <p className="text-caption text-muted-foreground px-2">{t(($) => $.detail.pull_requests_loading)}</p>;
   }
   if (prs.length === 0) {
     return (
-      <div className="space-y-2">
-        <p className="text-caption text-muted-foreground px-2">
-          {t(($) => $.detail.pull_requests_empty)}
-        </p>
-        <UnassociatedPullRequests issueId={issueId} workspaceId={workspaceId} />
-        <AttachPullRequestForm issueId={issueId} mutation={attachMutation} />
-      </div>
+      <p className="text-caption text-muted-foreground px-2">
+        {t(($) => $.detail.pull_requests_empty)}
+      </p>
     );
   }
 
@@ -117,12 +71,12 @@ export function PullRequestList({ issueId, workspaceId }: { issueId: string; wor
   return (
     <div className="space-y-1">
       {expandedHead.map((pr) => (
-        renderPullRequestRow(pr)
+        <PullRequestRow key={pr.id} pr={pr} />
       ))}
       {useCollapse ? (
         <div className="space-y-1">
           {expanded
-            ? collapsedTail.map(renderPullRequestRow)
+            ? collapsedTail.map((pr) => <PullRequestRow key={pr.id} pr={pr} />)
             : null}
           <button
             type="button"
@@ -135,268 +89,40 @@ export function PullRequestList({ issueId, workspaceId }: { issueId: string; wor
           </button>
         </div>
       ) : null}
-      <UnassociatedPullRequests issueId={issueId} workspaceId={workspaceId} />
-      <AttachPullRequestForm issueId={issueId} mutation={attachMutation} />
     </div>
   );
 }
 
-function UnassociatedPullRequests({ issueId, workspaceId }: { issueId: string; workspaceId: string }) {
-  const { t } = useT("issues");
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [searchInput, setSearchInput] = useState("");
-  const [searchQuery, setSearchQuery] = useState("");
-  const { data, isLoading, hasNextPage, fetchNextPage, isFetchingNextPage } = useInfiniteQuery(
-    unassociatedWorkProductsOptions(workspaceId, searchQuery, pickerOpen),
-  );
-  const mutation = useAttachIssueWorkProduct(issueId, workspaceId);
-  const [attachingId, setAttachingId] = useState<string | null>(null);
-  const [closeIntent, setCloseIntent] = useState(false);
-  const products = (data?.pages ?? []).flatMap((page) => page.work_products).filter(
-    (product) => product.external_url,
-  );
-
-  function submitSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSearchQuery(searchInput.trim());
-  }
-
-  return (
-    <div className="space-y-1 px-2 pt-1">
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        onClick={() => setPickerOpen((open) => !open)}
-      >
-        {pickerOpen
-          ? t(($) => $.detail.pull_requests_unassociated_hide)
-          : t(($) => $.detail.pull_requests_unassociated_browse)}
-      </Button>
-      {pickerOpen ? (
-        <div
-          data-testid="unassociated-pull-requests"
-          className="space-y-2 rounded-md border border-dashed border-border/70 px-2 py-1.5"
-        >
-          <p className="text-micro font-medium text-muted-foreground">
-            {t(($) => $.detail.pull_requests_unassociated_heading)}
-          </p>
-          <form onSubmit={submitSearch} className="flex items-center gap-2">
-            <input
-              type="search"
-              value={searchInput}
-              onChange={(event) => setSearchInput(event.target.value)}
-              placeholder={t(($) => $.detail.pull_requests_unassociated_search_placeholder)}
-              aria-label={t(($) => $.detail.pull_requests_unassociated_search_placeholder)}
-              className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-micro outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
-            />
-            <Button type="submit" size="sm" variant="ghost">
-              {t(($) => $.detail.pull_requests_unassociated_search)}
-            </Button>
-          </form>
-          <label className="flex items-center gap-2 text-micro text-muted-foreground">
-            <Checkbox
-              checked={closeIntent}
-              onCheckedChange={(checked) => setCloseIntent(checked === true)}
-              aria-label={t(($) => $.detail.pull_requests_close_intent)}
-            />
-            <span>{t(($) => $.detail.pull_requests_close_intent)}</span>
-          </label>
-          {isLoading ? (
-            <p className="text-micro text-muted-foreground">
-              {t(($) => $.detail.pull_requests_loading)}
-            </p>
-          ) : products.length === 0 ? (
-            <p className="text-micro text-muted-foreground">
-              {t(($) => $.detail.pull_requests_unassociated_empty)}
-            </p>
-          ) : products.map((product) => (
-            <div key={product.id} className="flex items-center gap-2 text-micro">
-              <a
-                href={product.external_url ?? undefined}
-                target="_blank"
-                rel="noreferrer noopener"
-                className="min-w-0 flex-1 truncate text-muted-foreground hover:text-foreground"
-              >
-                {product.external_identity}
-              </a>
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                disabled={mutation.isPending}
-                onClick={() => {
-                  setAttachingId(product.id);
-                  mutation.mutate(
-                    { work_product_id: product.id, close_intent: closeIntent },
-                    {
-                      onSuccess: () => toast.success(t(($) => $.detail.pull_requests_attach_success)),
-                      onError: () => toast.error(t(($) => $.detail.pull_requests_attach_failed)),
-                      onSettled: () => setAttachingId(null),
-                    },
-                  );
-                }}
-              >
-                {mutation.isPending && attachingId === product.id
-                  ? t(($) => $.detail.pull_requests_attaching)
-                  : t(($) => $.detail.pull_requests_unassociated_attach)}
-              </Button>
-            </div>
-          ))}
-          {hasNextPage ? (
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              disabled={isFetchingNextPage}
-              onClick={() => void fetchNextPage()}
-            >
-              {t(($) => $.detail.pull_requests_unassociated_load_more)}
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function AttachPullRequestForm({
-  issueId,
-  mutation,
-}: {
-  issueId: string;
-  mutation: ReturnType<typeof useAttachIssuePullRequest>;
-}) {
-  const { t } = useT("issues");
-  const [url, setUrl] = useState("");
-  const [closeIntent, setCloseIntent] = useState(false);
-
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const value = url.trim();
-    if (!value || mutation.isPending) return;
-    mutation.mutate(
-      { url: value, close_intent: closeIntent },
-      {
-        onSuccess: () => {
-          setUrl("");
-          toast.success(t(($) => $.detail.pull_requests_attach_success));
-        },
-        onError: () => {
-          toast.error(t(($) => $.detail.pull_requests_attach_failed));
-        },
-      },
-    );
-  }
-
-  return (
-    <form
-      data-testid="attach-pull-request-form"
-      onSubmit={submit}
-      className="flex items-center gap-2 px-2 pt-1"
-    >
-      <label htmlFor={`attach-pull-request-${issueId}`} className="sr-only">
-        {t(($) => $.detail.pull_requests_attach_label)}
-      </label>
-      <input
-        id={`attach-pull-request-${issueId}`}
-        data-testid="attach-pull-request-input"
-        type="url"
-        value={url}
-        onChange={(event) => setUrl(event.target.value)}
-        placeholder={t(($) => $.detail.pull_requests_attach_placeholder)}
-        aria-label={t(($) => $.detail.pull_requests_attach_label)}
-        disabled={mutation.isPending}
-        className="min-w-0 flex-1 rounded-md border border-input bg-background px-2 py-1 text-micro outline-none placeholder:text-muted-foreground focus-visible:ring-1 focus-visible:ring-ring"
-      />
-      <Button
-        data-testid="attach-pull-request-button"
-        type="submit"
-        size="sm"
-        variant="outline"
-        disabled={!url.trim() || mutation.isPending}
-      >
-        {mutation.isPending
-          ? t(($) => $.detail.pull_requests_attaching)
-          : t(($) => $.detail.pull_requests_attach_action)}
-      </Button>
-      <label className="flex basis-full items-center gap-2 text-micro text-muted-foreground">
-        <Checkbox
-          checked={closeIntent}
-          onCheckedChange={(checked) => setCloseIntent(checked === true)}
-          aria-label={t(($) => $.detail.pull_requests_close_intent)}
-        />
-        <span>{t(($) => $.detail.pull_requests_close_intent)}</span>
-      </label>
-    </form>
-  );
-}
-
-function PullRequestRow({
-  pr,
-  workProductId,
-  isDetaching,
-  onDetach,
-}: {
-  pr: GitHubPullRequest;
-  workProductId?: string;
-  isDetaching: boolean;
-  onDetach?: () => void;
-}) {
+function PullRequestRow({ pr }: { pr: GitHubPullRequest }) {
   const { t } = useT("issues");
   const cfg = STATE_ICON[pr.state] ?? { icon: GitPullRequest, className: "" };
   const StateIcon = cfg.icon;
   const isDraft = pr.state === "draft";
   const stateLabel = getStateLabel(pr.state, t);
-  const detachLabel = t(($) =>
-    isDetaching ? $.detail.pull_requests_detaching : $.detail.pull_requests_detach,
-  );
 
   return (
-    <div
+    <a
       data-testid="pull-request-row"
+      href={pr.html_url}
+      target="_blank"
+      rel="noreferrer noopener"
       className={cn(
         "flex items-start gap-2 rounded-md px-2 py-1.5 -mx-2 hover:bg-accent/50 transition-colors group",
         isDraft ? "opacity-80" : null,
       )}
     >
-      <a
-        href={pr.html_url}
-        target="_blank"
-        rel="noreferrer noopener"
-        className="flex min-w-0 flex-1 items-start gap-2"
-      >
-        <StateIcon className={cn("h-3.5 w-3.5 mt-0.5 shrink-0", cfg.className)} />
-        <div className="min-w-0 flex-1">
-          <p className="text-caption font-medium leading-snug truncate group-hover:text-foreground">
-            {pr.title}
-          </p>
-          <p className="text-micro text-muted-foreground truncate">
-            {pr.repo_owner}/{pr.repo_name}#{pr.number} · {stateLabel}
-            {pr.author_login ? ` · @${pr.author_login}` : null}
-          </p>
-          <PullRequestRowDetails pr={pr} />
-        </div>
-      </a>
-      {workProductId && onDetach ? (
-        <Button
-          type="button"
-          size="icon"
-          variant="ghost"
-          className="h-6 w-6 shrink-0"
-          disabled={isDetaching}
-          aria-label={detachLabel}
-          title={detachLabel}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            onDetach();
-          }}
-        >
-          <Unlink className="h-3 w-3" />
-        </Button>
-      ) : null}
-    </div>
+      <StateIcon className={cn("h-3.5 w-3.5 mt-0.5 shrink-0", cfg.className)} />
+      <div className="min-w-0 flex-1">
+        <p className="text-caption font-medium leading-snug truncate group-hover:text-foreground">
+          {pr.title}
+        </p>
+        <p className="text-micro text-muted-foreground truncate">
+          {pr.repo_owner}/{pr.repo_name}#{pr.number} · {stateLabel}
+          {pr.author_login ? ` · @${pr.author_login}` : null}
+        </p>
+        <PullRequestRowDetails pr={pr} />
+      </div>
+    </a>
   );
 }
 

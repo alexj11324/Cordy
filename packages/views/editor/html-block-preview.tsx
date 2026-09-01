@@ -24,12 +24,12 @@ import {
   Eye,
   Maximize2,
 } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+import { cn } from "@multica/ui/lib/utils";
+import { copyText } from "@multica/ui/lib/clipboard";
 import {
   Dialog,
   DialogContent,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@multica/ui/components/ui/dialog";
 import { useT } from "../i18n";
 import { CodeBlockStatic } from "./code-block-static";
 import { HtmlPreviewBody } from "./html-preview-body";
@@ -125,7 +125,7 @@ export function HtmlBlockPreview({ html, className }: HtmlBlockPreviewProps) {
       {view === "preview" ? (
         <HtmlPreviewBody
           source={{ kind: "inline", html }}
-          title="HTML preview"
+          title={t(($) => $.code_block.html_preview)}
           className={CODE_BLOCK_IFRAME_HEIGHT}
         />
       ) : (
@@ -138,7 +138,7 @@ export function HtmlBlockPreview({ html, className }: HtmlBlockPreviewProps) {
         >
           <HtmlPreviewBody
             source={{ kind: "inline", html }}
-            title="HTML preview"
+            title={t(($) => $.code_block.html_preview)}
             className="h-full w-full"
             iframeClassName="rounded-none border-0"
           />

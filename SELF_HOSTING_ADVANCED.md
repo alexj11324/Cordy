@@ -1,6 +1,6 @@
 # Self-Hosting — Advanced Configuration
 
-This document covers advanced configuration for self-hosted Patchbay deployments. For the quick start guide, see [SELF_HOSTING.md](SELF_HOSTING.md).
+This document covers advanced configuration for self-hosted Multica deployments. For the quick start guide, see [SELF_HOSTING.md](SELF_HOSTING.md).
 
 ## Configuration
 
@@ -10,7 +10,7 @@ All configuration is done via environment variables. Copy `.env.example` as a st
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | `postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable` |
+| `DATABASE_URL` | PostgreSQL connection string | `postgres://multica:multica@localhost:5432/multica?sslmode=disable` |
 | `JWT_SECRET` | **Required — no safe default.** Secret key for signing JWT tokens. A production backend refuses to boot if this is empty or a known placeholder. Generate with `openssl rand -hex 32`. | `openssl rand -hex 32` |
 | `FRONTEND_ORIGIN` | URL where the frontend is served (used for CORS) | `https://app.example.com` |
 
@@ -25,14 +25,14 @@ These have sensible defaults and only need to be set when tuning a large or cons
 
 ### Email (Required for Authentication)
 
-Patchbay supports two email backends. `SMTP_HOST` takes priority when set; otherwise `RESEND_API_KEY` is used. With neither configured, verification codes are printed to the server log — copy them from there to log in.
+Multica supports two email backends. `SMTP_HOST` takes priority when set; otherwise `RESEND_API_KEY` is used. With neither configured, verification codes are printed to the server log — copy them from there to log in.
 
 #### Option A: Resend (recommended for cloud deployments)
 
 | Variable | Description |
 |----------|-------------|
 | `RESEND_API_KEY` | Your Resend API key |
-| `RESEND_FROM_EMAIL` | Sender email address (default placeholder: `noreply@example.com`; replace it with a verified sender before enabling email) |
+| `RESEND_FROM_EMAIL` | Sender email address (default: `noreply@multica.ai`) |
 
 #### Option B: SMTP relay (for self-hosted / on-premise deployments)
 
@@ -50,16 +50,17 @@ Use this option when your deployment cannot reach the public internet or you alr
 
 STARTTLS is used automatically when advertised by the server. Port 465 (SMTPS / implicit TLS) is supported and auto-enables implicit TLS; set `SMTP_TLS=implicit` (aliases `smtps`, `ssl`) to force it on a non-standard port.
 
-> **Note:** If neither Resend nor SMTP is configured, generated verification codes are printed to backend logs — copy them from there to log in. A fixed local testing code (e.g. `888888`) is **opt-in only**: set `PATCHBAY_DEV_VERIFICATION_CODE=888888` in `.env` and keep `APP_ENV` non-production. The Docker self-host stack pins `APP_ENV=production`, so the shortcut is ignored there. **Never enable a fixed code on a publicly reachable instance.**
+> **Note:** If neither Resend nor SMTP is configured, generated verification codes are printed to backend logs — copy them from there to log in. A fixed local testing code (e.g. `888888`) is **opt-in only**: set `MULTICA_DEV_VERIFICATION_CODE=888888` in `.env` and keep `APP_ENV` non-production. The Docker self-host stack pins `APP_ENV=production`, so the shortcut is ignored there. **Never enable a fixed code on a publicly reachable instance.**
 
-### Google sign-in
+### Google OAuth (Optional)
 
-Google sign-in is brokered by the managed `accounts` service. Configure the
-Google provider and Clerk callback at `/oauth/google/callback`; the self-hosted
-backend does not accept Google client secrets or direct Google authorization
-codes. Desktop sign-in returns only a one-time PKCE-bound code over
-`patchbay://auth/callback`, which the Rust API redeems at
-`/api/desktop-handoff/redeem`.
+| Variable | Description |
+|----------|-------------|
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret |
+| `GOOGLE_REDIRECT_URI` | OAuth callback URL (e.g. `https://app.example.com/auth/callback`) |
+
+Changes take effect after restarting the backend / compose stack. The web UI reads `GOOGLE_CLIENT_ID` from `/api/config` at runtime, so no web rebuild is needed.
 
 ### Signup Controls (Optional)
 
@@ -85,7 +86,17 @@ Changes take effect after restarting the backend / compose stack. The web UI rea
 
 ### File Storage (Optional)
 
-For file uploads and attachments, configure S3 and (optionally) CloudFront:
+Uploads and attachments are written to local disk by default. Set `S3_BUCKET` to
+use S3-compatible object storage instead.
+
+#### Local disk (default)
+
+| Variable | Description |
+|----------|-------------|
+| `LOCAL_UPLOAD_DIR` | Directory attachments are written to (default: `./data/uploads`). The default is **relative to the backend's working directory** — `/app` in the bundled image, where the compose file mounts the `backend_uploads` volume. When running the binary manually it resolves against whatever directory you launched from, so set an absolute path; otherwise uploads land somewhere new each time the launch directory changes, and existing `attachment` rows point at files the server no longer looks for |
+| `LOCAL_UPLOAD_BASE_URL` | Optional absolute base for attachment URLs (e.g. `http://localhost:8080`). Leave empty to store `/uploads/...` paths that stay relative to the API origin |
+
+#### S3 / CloudFront
 
 | Variable | Description |
 |----------|-------------|
@@ -102,7 +113,7 @@ For file uploads and attachments, configure S3 and (optionally) CloudFront:
 
 #### Avatars on a private bucket
 
-User / agent / team / workspace avatars are stored as the raw storage object
+User / agent / squad / workspace avatars are stored as the raw storage object
 URL. When the bucket is public — a public `CLOUDFRONT_DOMAIN`, or the default
 local-disk backend — that URL is served to clients unchanged.
 
@@ -131,7 +142,7 @@ existed are fixed without a backfill.
 
 The `Secure` flag on session cookies is derived automatically from the scheme of `FRONTEND_ORIGIN`: HTTPS origins get `Secure` cookies; plain-HTTP origins (LAN / private-network self-host) get non-secure cookies so the browser can actually store them.
 
-If the frontend and backend are served from different hostnames, `COOKIE_DOMAIN` is **required**, not optional: the browser must be able to read the `patchbay_csrf` cookie from the page's own origin to send the `X-CSRF-Token` header, and without it every write request fails with `403 {"error":"CSRF validation failed"}`. Scope it to the narrowest parent domain that covers both hosts — it also shares the `patchbay_auth` session cookie with every host under that domain. See [Reverse Proxy](#reverse-proxy) for the full split-domain configuration and its trust requirements.
+If the frontend and backend are served from different hostnames, `COOKIE_DOMAIN` is **required**, not optional: the browser must be able to read the `multica_csrf` cookie from the page's own origin to send the `X-CSRF-Token` header, and without it every write request fails with `403 {"error":"CSRF validation failed"}`. Scope it to the narrowest parent domain that covers both hosts — it also shares the `multica_auth` session cookie with every host under that domain. See [Reverse Proxy](#reverse-proxy) for the full split-domain configuration and its trust requirements.
 
 ### Server
 
@@ -142,7 +153,7 @@ If the frontend and backend are served from different hostnames, `COOKIE_DOMAIN`
 | `METRICS_ADDR` | empty | Optional Prometheus metrics listener, for example `127.0.0.1:9090` |
 | `FRONTEND_PORT` | `3000` | Frontend port. Host port in Compose; the container always listens on `3000` internally. |
 | `CORS_ALLOWED_ORIGINS` | Value of `FRONTEND_ORIGIN` | Comma-separated list of allowed origins. Governs **both** the HTTP CORS allowlist **and** the WebSocket `Origin` check. A browser origin that isn't listed here (and isn't `localhost`) has its real-time WebSocket upgrade rejected with `403`, so live updates stop working until a manual refresh. |
-| `LOG_LEVEL` | `debug` | Log level: `debug`, `info`, `warn`, `error`; `warning` is accepted as an alias for `warn` |
+| `LOG_LEVEL` | `info` | Log level: `debug`, `info`, `warn`, `error` |
 
 > **Which source wins depends on the entry point**, and only the alias order above
 > is shared. Docker Compose lets the calling environment outrank `.env`
@@ -165,7 +176,7 @@ rewrite configuration. Its backend fallback therefore accepts
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PATCHBAY_WECOM_TRACE` | empty (off) | `1` records every WeCom frame the backend reads and writes, including the first 120 runes of each message body. Anything else is off. |
+| `MULTICA_WECOM_TRACE` | empty (off) | `1` records every WeCom frame the backend reads and writes, including the first 120 runes of each message body. Anything else is off. |
 
 Turn it on for a debugging session and unset it when the session ends. Before
 you do:
@@ -191,38 +202,70 @@ These are configured on each user's machine, not on the server:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PATCHBAY_SERVER_URL` | `ws://localhost:8080/ws` | WebSocket URL for daemon → server connection |
-| `PATCHBAY_APP_URL` | `http://localhost:3000` | Frontend URL for CLI login flow |
-| `PATCHBAY_DAEMON_POLL_INTERVAL` | `3s` | How often the daemon polls for tasks |
-| `PATCHBAY_DAEMON_HEARTBEAT_INTERVAL` | `15s` | Heartbeat frequency |
+| `MULTICA_SERVER_URL` | `ws://localhost:8080/ws` | WebSocket URL for daemon → server connection |
+| `MULTICA_APP_URL` | `http://localhost:3000` | Frontend URL for CLI login flow |
+| `MULTICA_DAEMON_POLL_INTERVAL` | `30s` | Catch-up poll for tasks; WebSocket wake signals normally deliver work sooner |
+| `MULTICA_DAEMON_HEARTBEAT_INTERVAL` | `15s` | Heartbeat frequency |
 
 Agent-specific overrides:
 
 | Variable | Description |
 |----------|-------------|
-| `PATCHBAY_CLAUDE_PATH` | Custom path to the `claude` binary |
-| `PATCHBAY_CLAUDE_MODEL` | Override the Claude model used |
-| `PATCHBAY_CODEX_PATH` | Custom path to the `codex` binary |
-| `PATCHBAY_CODEX_MODEL` | Override the Codex model used |
-| `PATCHBAY_COPILOT_PATH` | Custom path to the `copilot` (GitHub Copilot CLI) binary |
-| `PATCHBAY_COPILOT_MODEL` | Override the Copilot model used (note: GitHub Copilot routes models through your account entitlement, so this may not be honoured) |
-| `PATCHBAY_OPENCODE_PATH` | Custom path to the `opencode` binary |
-| `PATCHBAY_OPENCODE_MODEL` | Override the OpenCode model used |
-| `PATCHBAY_OPENCLAW_PATH` | Custom path to the `openclaw` binary |
-| `PATCHBAY_OPENCLAW_MODEL` | Override the OpenClaw model used |
-| `PATCHBAY_OPENCLAW_CLI_TIMEOUT` | Deadline for each `openclaw config ...` call during task preparation (default 30s; accepts `45s` or `45`). Raise it when the local CLI is slow to start; the daemon also reads it from `backends.openclaw.cli_timeout` in the CLI config |
-| `PATCHBAY_HERMES_PATH` | Custom path to the `hermes` binary |
-| `PATCHBAY_HERMES_MODEL` | Override the Hermes model used |
-| `PATCHBAY_PI_PATH` | Custom path to the `pi` binary |
-| `PATCHBAY_PI_MODEL` | Override the Pi model used |
-| `PATCHBAY_CURSOR_PATH` | Custom path to the `cursor-agent` binary |
-| `PATCHBAY_CURSOR_MODEL` | Override the Cursor Agent model used |
-| `PATCHBAY_GROK_PATH` | Custom path to the `grok` binary |
-| `PATCHBAY_GROK_MODEL` | Override the Grok model used (e.g. `grok-4.5`) |
+| `MULTICA_CLAUDE_PATH` | Custom path to the `claude` binary |
+| `MULTICA_CLAUDE_MODEL` | Override the Claude model used |
+| `MULTICA_CODEX_PATH` | Custom path to the `codex` binary |
+| `MULTICA_CODEX_MODEL` | Override the Codex model used |
+| `MULTICA_COPILOT_PATH` | Custom path to the `copilot` (GitHub Copilot CLI) binary |
+| `MULTICA_COPILOT_MODEL` | Override the Copilot model used (note: GitHub Copilot routes models through your account entitlement, so this may not be honoured) |
+| `MULTICA_OPENCODE_PATH` | Custom path to the `opencode` binary |
+| `MULTICA_OPENCODE_MODEL` | Override the OpenCode model used |
+| `MULTICA_CODEARTS_PATH` | Custom path to the `codearts` launcher or binary |
+| `MULTICA_CODEARTS_MODEL` | Override the CodeArts model used |
+| `MULTICA_OPENCLAW_PATH` | Custom path to the `openclaw` binary |
+| `MULTICA_OPENCLAW_MODEL` | Override the OpenClaw model used |
+| `MULTICA_OPENCLAW_CLI_TIMEOUT` | Deadline for each `openclaw config ...` call during task preparation (default 30s; accepts `45s` or `45`). Raise it when the local CLI is slow to start; the daemon also reads it from `backends.openclaw.cli_timeout` in the CLI config |
+| `MULTICA_HERMES_PATH` | Custom path to the `hermes` binary |
+| `MULTICA_HERMES_MODEL` | Override the Hermes model used |
+| `MULTICA_PI_PATH` | Custom path to the `pi` binary |
+| `MULTICA_PI_MODEL` | Override the Pi model used |
+| `MULTICA_CURSOR_PATH` | Custom path to the `cursor-agent` binary |
+| `MULTICA_CURSOR_MODEL` | Override the Cursor Agent model used |
+| `MULTICA_GROK_PATH` | Custom path to the `grok` binary |
+| `MULTICA_GROK_MODEL` | Override the Grok model used (e.g. `grok-4.5`) |
 
 ## Database Setup
 
-Patchbay requires PostgreSQL 17 with the pgvector extension.
+Multica requires PostgreSQL 17. It does **not** use pgvector — no migration
+declares a `vector` column or runs `CREATE EXTENSION vector`. The bundled image
+is named `pgvector/pgvector:pg17` for historical reasons only; a stock
+PostgreSQL 17 is sufficient.
+
+Migrations reference four extensions:
+
+| Extension | Migration | Required |
+| --- | --- | --- |
+| `pgcrypto` | `001_init` | **Yes** — a bare `CREATE EXTENSION`; the migration fails without it |
+| `pg_trgm` | `137_search_index_pg_trgm_extension` | **Yes** — same, and the search indexes depend on it |
+| `pg_bigm` | `032_issue_search_index` | No — wrapped in `DO ... EXCEPTION`, skipped with a `NOTICE` when unavailable |
+| `pg_cron` | `076_task_usage_pgcron_extension` | No — same; the usage rollup runs in-process instead, see [Usage Dashboard Rollup](#usage-dashboard-rollup) |
+
+`pgcrypto` and `pg_trgm` ship with every standard PostgreSQL 17 build
+(`postgresql-contrib` on Debian/Ubuntu, bundled in Homebrew's `postgresql@17`
+and in the official `postgres:17` image), so neither hard requirement needs a
+custom image.
+
+`pg_bigm` is optional and only affects **CJK search quality** — bigram indexes
+are far more selective than trigram ones for Chinese, Japanese, and Korean text.
+Search works without it: migrations 138–142 install portable `pg_trgm` fallback
+indexes covering every column the search handlers touch. Installing `pg_bigm`
+does require a custom image or a source build — the bundled
+`pgvector/pgvector:pg17` image does not ship it either.
+
+> Because `pg_bigm` and `pg_cron` are installed conditionally, a row in
+> `schema_migrations` proves the migration ran, not that its objects exist. Run
+> `SELECT extname FROM pg_extension` to see what a database actually has. To
+> recover a missing comment-content search index, follow
+> `server/cmd/migrate/README.md`.
 
 ### Using Docker Compose (Recommended)
 
@@ -230,10 +273,12 @@ The `docker-compose.selfhost.yml` includes PostgreSQL. No separate setup needed.
 
 ### Using Your Own PostgreSQL
 
-If you prefer to use an existing PostgreSQL instance, ensure the pgvector extension is available:
+If you prefer to use an existing PostgreSQL instance, confirm the migration role
+can create the two required extensions:
 
 ```sql
-CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 ```
 
 Set `DATABASE_URL` in your `.env` and remove the `postgres` service from the compose file.
@@ -243,16 +288,16 @@ Set `DATABASE_URL` in your `.env` and remove the `postgres` service from the com
 The Docker Compose setup runs migrations automatically. If you need to run them manually:
 
 ```bash
-# Using the built Rust binary
-./server-rs/target/release/patchbay-migrate up
+# Using the built binary
+./server/bin/migrate up
 
-# Or from the Rust source
-cd server-rs && cargo run --locked -p patchbay-migrate --bin patchbay-migrate -- up
+# Or from source
+cd server && go run ./cmd/migrate up
 ```
 
 ## Usage Dashboard Rollup
 
-The Usage and Runtime dashboards read from `task_usage_hourly`, a derived table populated by `rollup_task_usage_hourly()`. As of PB-2957 the backend runs this rollup **in-process** on every replica via a DB-backed scheduler (`sys_cron_executions`); a fresh self-host install needs no operator action — the bundled `pgvector/pgvector:pg17` image works without changes.
+The Usage and Runtime dashboards read from `task_usage_hourly`, a derived table populated by `rollup_task_usage_hourly()`. As of MUL-2957 the backend runs this rollup **in-process** on every replica via a DB-backed scheduler (`sys_cron_executions`); a fresh self-host install needs no operator action — the bundled `pgvector/pgvector:pg17` image works without changes.
 
 ### How the in-process scheduler works
 
@@ -276,29 +321,20 @@ SELECT cron.unschedule('rollup_task_usage_hourly')
   FROM cron.job WHERE jobname = 'rollup_task_usage_hourly';
 ```
 
-External cron / systemd / Kubernetes `CronJob` setups that call `SELECT rollup_task_usage_hourly()` directly are also still valid — they were the only option before PB-2957 and remain a supported compatibility path. They are no longer the recommended setup; new deployments should rely on the in-process scheduler.
+External cron / systemd / Kubernetes `CronJob` setups that call `SELECT rollup_task_usage_hourly()` directly are also still valid — they were the only option before MUL-2957 and remain a supported compatibility path. They are no longer the recommended setup; new deployments should rely on the in-process scheduler.
 
 ### Standalone backfill command
 
 `rollup_task_usage_hourly()` only processes new buckets after it starts running. If you already have `task_usage` rows from before the rollup was claimed for the first time — most commonly when upgrading from `v0.3.4` to `v0.3.5+` on a database that already has months of usage — you can run `backfill_task_usage_hourly` to seed historical buckets:
 
 ```bash
-# Docker Compose. `run` bypasses a failed backend container, and the explicit
-# entrypoint bypasses the normal migrate-before-server startup path.
-docker compose -f docker-compose.selfhost.yml run --rm --no-deps \
-  --entrypoint /app/backfill_task_usage_hourly backend \
-  --sleep-between-slices=2s
+# Docker Compose
+docker compose -f docker-compose.selfhost.yml exec backend \
+  ./backfill_task_usage_hourly --sleep-between-slices=2s
 
-# Kubernetes. Copy a backend Pod so the one-off command retains its image,
-# environment, secrets, service account, and network policy even if the
-# original container has already exited during migration.
-pod="$(kubectl -n patchbay get pod \
-  -l app.kubernetes.io/component=backend \
-  -o jsonpath='{.items[0].metadata.name}')"
-kubectl -n patchbay debug "$pod" --copy-to=patchbay-backfill --container=backend -- \
-  /app/backfill_task_usage_hourly --sleep-between-slices=2s
-kubectl -n patchbay logs -f patchbay-backfill -c backend
-kubectl -n patchbay delete pod patchbay-backfill
+# Kubernetes
+kubectl -n multica exec deploy/multica-backend -- \
+  ./backfill_task_usage_hourly --sleep-between-slices=2s
 ```
 
 The command walks `task_usage`'s full time range in monthly slices and calls the same idempotent primitive the in-process scheduler uses, so it's safe to re-run, to interrupt with Ctrl-C, and to run concurrently with the scheduler (advisory lock 4246 serialises them). Flags:
@@ -313,15 +349,15 @@ After backfill completes, the rollup-state watermark is stamped to `now() - 5 mi
 
 ### `v0.3.4 → v0.3.5+` upgrade order
 
-Migration `103` adds a fail-closed guard that refuses to drop the legacy daily rollups until `task_usage_hourly` has caught up. As of PB-2957 the migrate command runs an idempotent monthly-slice backfill (under advisory lock 4246) **automatically** immediately before applying migration `103`, so v0.3.4 → v0.3.5+ upgrades complete in a single `migrate up` invocation — no operator step is required.
+Migration `103` adds a fail-closed guard that refuses to drop the legacy daily rollups until `task_usage_hourly` has caught up. As of MUL-2957 the migrate command runs an idempotent monthly-slice backfill (under advisory lock 4246) **automatically** immediately before applying migration `103`, so v0.3.4 → v0.3.5+ upgrades complete in a single `migrate up` invocation — no operator step is required.
 
-If you are upgrading from a binary that pre-dates PB-2957 (or the auto-hook fails for an environmental reason), recovery is the manual path: run `backfill_task_usage_hourly` against the database, then re-run `migrate up` (or restart the backend container — migrations run automatically on startup). **Fresh installs are exempt** — the guard short-circuits when `task_usage` is empty, and the in-process scheduler picks up new buckets from the first tick.
+If you are upgrading from a binary that pre-dates MUL-2957 (or the auto-hook fails for an environmental reason), recovery is the manual path: run `backfill_task_usage_hourly` against the database, then re-run `migrate up` (or restart the backend container — migrations run automatically on startup). **Fresh installs are exempt** — the guard short-circuits when `task_usage` is empty, and the in-process scheduler picks up new buckets from the first tick.
 
 ## Manual Setup (Without Docker Compose)
 
 If you prefer to build and run services manually:
 
-**Prerequisites:** Rust stable, Node.js 22, pnpm 10.28.2, PostgreSQL 17 with pgvector.
+**Prerequisites:** Go 1.26.6, Node.js 22, pnpm 10.28.2, PostgreSQL 17 — a stock install is enough, see [Database Setup](#database-setup).
 
 ```bash
 # Start your PostgreSQL (or use: docker compose up -d postgres)
@@ -330,10 +366,10 @@ If you prefer to build and run services manually:
 make build
 
 # Run database migrations
-DATABASE_URL="your-database-url" ./bin/migrate up
+DATABASE_URL="your-database-url" ./server/bin/migrate up
 
 # Start the backend server
-DATABASE_URL="your-database-url" PORT=8080 JWT_SECRET="your-secret" ./bin/server
+DATABASE_URL="your-database-url" PORT=8080 JWT_SECRET="your-secret" ./server/bin/server
 ```
 
 For the frontend:
@@ -356,10 +392,10 @@ In production, put a reverse proxy in front of both the backend and frontend to 
 **Single-domain layout** — frontend and backend served on the same hostname (this is what `docker-compose.selfhost.yml` defaults to):
 
 ```
-patchbay.example.com {
+multica.example.com {
     # WebSocket route — must come before the catch-all
-    @patchbay_ws path /ws /ws/*
-    handle @patchbay_ws {
+    @multica_ws path /ws /ws/*
+    handle @multica_ws {
         reverse_proxy localhost:8080 {
             flush_interval -1
         }
@@ -370,7 +406,7 @@ patchbay.example.com {
 }
 ```
 
-> Even on a single domain, set `FRONTEND_ORIGIN` / `CORS_ALLOWED_ORIGINS` to that public origin (e.g. `https://patchbay.example.com`) on the backend. The backend's default origin allowlist is `localhost` only, so without this it rejects the WebSocket upgrade from the public URL with `403` and real-time updates silently stop working. See [LAN / Non-localhost Access](#lan--non-localhost-access).
+> Even on a single domain, set `FRONTEND_ORIGIN` / `CORS_ALLOWED_ORIGINS` to that public origin (e.g. `https://multica.example.com`) on the backend. The backend's default origin allowlist is `localhost` only, so without this it rejects the WebSocket upgrade from the public URL with `403` and real-time updates silently stop working. See [LAN / Non-localhost Access](#lan--non-localhost-access).
 
 **Separate-domain layout** — frontend and backend on different hostnames:
 
@@ -380,8 +416,8 @@ app.example.com {
 }
 
 api.example.com {
-    @patchbay_ws path /ws /ws/*
-    handle @patchbay_ws {
+    @multica_ws path /ws /ws/*
+    handle @multica_ws {
         reverse_proxy localhost:8080 {
             flush_interval -1
         }
@@ -462,11 +498,11 @@ NEXT_PUBLIC_WS_URL=wss://api.example.com/ws
 >
 > This bites on upgrade: before v0.4.10 `NEXT_PUBLIC_API_URL` was inert in the published images, so a wrong value sat in `.env` doing nothing. v0.4.10 wired it through, and the stale value took effect. If you upgraded and the UI loads but nothing else does, check this variable first, then recreate the frontend container (`docker compose ... up -d --force-recreate frontend`) so the new value is picked up.
 
-> **`COOKIE_DOMAIN` is required in this setup — omitting it breaks every write.** The web app authenticates with an HttpOnly `patchbay_auth` cookie plus a JS-readable `patchbay_csrf` cookie, and sends the CSRF value as an `X-CSRF-Token` header on every non-GET request. Both cookies are host-only unless `COOKIE_DOMAIN` is set, so a frontend on `app.example.com` cannot read a cookie issued by `api.example.com`. The header is then never sent and the backend rejects the request with `403 {"error":"CSRF validation failed"}` — while GET requests keep working, so the app renders but nothing can be created or edited.
+> **`COOKIE_DOMAIN` is required in this setup — omitting it breaks every write.** The web app authenticates with an HttpOnly `multica_auth` cookie plus a JS-readable `multica_csrf` cookie, and sends the CSRF value as an `X-CSRF-Token` header on every non-GET request. Both cookies are host-only unless `COOKIE_DOMAIN` is set, so a frontend on `app.example.com` cannot read a cookie issued by `api.example.com`. The header is then never sent and the backend rejects the request with `403 {"error":"CSRF validation failed"}` — while GET requests keep working, so the app renders but nothing can be created or edited.
 >
-> After changing `COOKIE_DOMAIN`, delete the existing `patchbay_auth` / `patchbay_csrf` cookies on **both** hosts and log in again. Stale host-only cookies otherwise sit alongside the new domain-scoped ones and the browser sends both.
+> After changing `COOKIE_DOMAIN`, delete the existing `multica_auth` / `multica_csrf` cookies on **both** hosts and log in again. Stale host-only cookies otherwise sit alongside the new domain-scoped ones and the browser sends both.
 
-> **Scope `COOKIE_DOMAIN` as narrowly as possible.** The same value also scopes `patchbay_auth`, the session JWT, and the browser then sends it to **every** host under that domain. `HttpOnly` only stops page scripts from reading the cookie — it does not stop the server behind a sibling subdomain from receiving it on every request. Use the narrowest parent that still covers both hosts: for `agent.example.com` + `api.agent.example.com` that is `.agent.example.com`, **not** `.example.com`, which would also hand your users' session cookie to unrelated hosts such as a separately deployed `docs.example.com`.
+> **Scope `COOKIE_DOMAIN` as narrowly as possible.** The same value also scopes `multica_auth`, the session JWT, and the browser then sends it to **every** host under that domain. `HttpOnly` only stops page scripts from reading the cookie — it does not stop the server behind a sibling subdomain from receiving it on every request. Use the narrowest parent that still covers both hosts: for `agent.example.com` + `api.agent.example.com` that is `.agent.example.com`, **not** `.example.com`, which would also hand your users' session cookie to unrelated hosts such as a separately deployed `docs.example.com`.
 
 Both of these must hold, or this layout is not safe to use:
 
@@ -488,10 +524,10 @@ COOKIE_DOMAIN=                       # empty: cookies are host-only on app.examp
 # Frontend
 NEXT_PUBLIC_API_URL=                 # empty: the client uses relative /api paths on the page origin
 NEXT_PUBLIC_WS_URL=                  # empty
-REMOTE_API_URL=http://backend:8080   # target the Next.js rewrites proxy /api, /auth and /uploads to
+REMOTE_API_URL=http://backend:8080   # target the Next.js rewrites proxy /v1, /api, /auth and /uploads to
 ```
 
-Serve everything from the single `app.example.com` vhost. HTTP works out of the box, because Next.js rewrites forward `/api`, `/auth` and `/uploads` to `REMOTE_API_URL`. WebSockets do **not** go through those rewrites, so add a `/ws` block to the frontend vhost that reaches the backend directly:
+Serve everything from the single `app.example.com` vhost. HTTP works out of the box, because Next.js rewrites forward `/v1`, `/api`, `/auth` and `/uploads` to `REMOTE_API_URL`. WebSockets do **not** go through those rewrites, so add a `/ws` block to the frontend vhost that reaches the backend directly:
 
 ```nginx
 # Add to the app.example.com server block above
@@ -507,11 +543,11 @@ location /ws {
 
 See [WebSocket for LAN / Non-localhost Access](#websocket-for-lan--non-localhost-access) for why the rewrites cannot carry the `Upgrade` handshake.
 
-This keeps cookies, CORS, and the WebSocket origin check on a single origin. It is both the configuration least likely to break and the safer one: the session cookie stays host-only, so no sibling subdomain can ever receive it. An `api.example.com` vhost can still be kept for CLI and daemon use: those clients authenticate with a `pby_` personal access token over `Authorization: Bearer`, which never goes through the cookie or CSRF path.
+This keeps cookies, CORS, and the WebSocket origin check on a single origin. It is both the configuration least likely to break and the safer one: the session cookie stays host-only, so no sibling subdomain can ever receive it. An `api.example.com` vhost can still be kept for CLI and daemon use: those clients authenticate with a `mul_` personal access token over `Authorization: Bearer`, which never goes through the cookie or CSRF path.
 
 ## LAN / Non-localhost Access
 
-By default, Patchbay works on `localhost`. If you access it from another machine on the LAN (e.g. `http://192.168.1.100:3000`), you need to tell the backend to accept that origin:
+By default, Multica works on `localhost`. If you access it from another machine on the LAN (e.g. `http://192.168.1.100:3000`), you need to tell the backend to accept that origin:
 
 ```bash
 # .env — replace with your server's LAN IP
@@ -527,7 +563,7 @@ docker compose -f docker-compose.selfhost.yml up -d
 
 ### WebSocket for LAN / Non-localhost Access
 
-HTTP requests (issues, comments, uploads) work on LAN out of the box — Next.js rewrites proxy `/api`, `/auth`, and `/uploads` to the backend. **WebSockets do not**: Next.js rewrites only forward HTTP requests, not the `Upgrade` handshake a WebSocket needs. If you open the app on `http://<lan-ip>:3000`, real-time features (chat streaming, live issue updates, notifications) will fail to connect until you do one of the following:
+HTTP requests (Plugin API, issues, comments, uploads) work on LAN out of the box — Next.js rewrites proxy `/v1`, `/api`, `/auth`, and `/uploads` to the backend. **WebSockets do not**: Next.js rewrites only forward HTTP requests, not the `Upgrade` handshake a WebSocket needs. If you open the app on `http://<lan-ip>:3000`, real-time features (chat streaming, live issue updates, notifications) will fail to connect until you do one of the following:
 
 1. **Put a reverse proxy in front of the stack (recommended).** Nginx or Caddy terminates the WebSocket upgrade and forwards it to the backend on port 8080. See the [Reverse Proxy](#reverse-proxy) section above — the Nginx example already includes a `location /ws { ... }` block with the correct `Upgrade` / `Connection` headers. Once a proxy is in place the browser connects directly through it, so no frontend rebuild is needed.
 
@@ -543,7 +579,7 @@ HTTP requests (issues, comments, uploads) work on LAN out of the box — Next.js
 
    `NEXT_PUBLIC_WS_URL` is a build-time variable (see `Dockerfile.web`), so setting it only in `environment:` on the pre-built image has no effect — you must use the `selfhost.build.yml` override that rebuilds the image.
 
-**Also required: allowlist the browser origin.** The two options above fix the WebSocket *upgrade proxying*, but a second, independent setting gates the connection: the backend validates the WebSocket `Origin` header against an allowlist that defaults to `localhost` only. When you open Patchbay from any other origin — a LAN IP **or a public domain behind a reverse proxy** — set `CORS_ALLOWED_ORIGINS` (or `FRONTEND_ORIGIN`) on the backend to that exact origin and restart, exactly as shown under [LAN / Non-localhost Access](#lan--non-localhost-access) above. Otherwise the upgrade is refused with `403`: the backend logs `websocket: request origin not allowed by Upgrader.CheckOrigin` and the browser console loops `disconnected, reconnecting in 3s`, while HTTP requests (and manual page refreshes) keep working because they are same-origin to the page. The single value covers both HTTP CORS and the WebSocket origin check.
+**Also required: allowlist the browser origin.** The two options above fix the WebSocket *upgrade proxying*, but a second, independent setting gates the connection: the backend validates the WebSocket `Origin` header against an allowlist that defaults to `localhost` only. When you open Multica from any other origin — a LAN IP **or a public domain behind a reverse proxy** — set `CORS_ALLOWED_ORIGINS` (or `FRONTEND_ORIGIN`) on the backend to that exact origin and restart, exactly as shown under [LAN / Non-localhost Access](#lan--non-localhost-access) above. Otherwise the upgrade is refused with `403`: the backend logs `websocket: request origin not allowed by Upgrader.CheckOrigin` and the browser console loops `disconnected, reconnecting in 3s`, while HTTP requests (and manual page refreshes) keep working because they are same-origin to the page. The single value covers both HTTP CORS and the WebSocket origin check.
 
 > **Note:** If you need to hard-code a different public API / WebSocket endpoint into the web image for any other reason, use the same source-build override: `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`.
 
@@ -556,24 +592,23 @@ GET /health
 → {"status":"ok"}
 
 GET /readyz
-→ {"status":"ready"}
+→ {"status":"ok","checks":{"db":"ok","migrations":"ok"}}
 
 GET /healthz
 → same response as /readyz
 ```
 
 Use `/health` for basic liveness / reachability checks. Use `/readyz` for
-readiness probes and external monitoring that should fail when the database is
-unavailable. The Rust entrypoint runs migrations before serving, so migration
-failures prevent the service from becoming ready. `/healthz` is kept as an alias
-for operator familiarity.
+dependency-aware readiness probes and external monitoring that should fail when
+the database is unavailable or migrations are not fully applied. `/healthz` is
+kept as an alias for operator familiarity.
 
 ## Prometheus Metrics
 
 The backend can expose Prometheus metrics on a separate management listener:
 
 ```bash
-METRICS_ADDR=127.0.0.1:9090 ./bin/server
+METRICS_ADDR=127.0.0.1:9090 ./server/bin/server
 curl http://127.0.0.1:9090/metrics
 ```
 
@@ -590,54 +625,22 @@ networking, allowlists, NetworkPolicy, or proxy authentication. If you bind
 trusted network, for example a host-local mapping such as
 `127.0.0.1:9090:9090`.
 
-## Runtime Profiling
+## Go Runtime Profiling
 
-The Rust backend exposes CPU pprof and, on Linux, allocation-stack heap pprof
-on the fixed loopback-only management listener `127.0.0.1:6060`:
-
-Use a pprof-compatible viewer to inspect the Rust server's profile output. The
-examples below use the standalone `pprof` client.
+The backend exposes all standard Go pprof routes on the fixed loopback-only
+management listener `127.0.0.1:6060`, including CPU, heap, allocs, goroutine,
+block, mutex, threadcreate, symbol, and trace profiles:
 
 ```bash
-pprof 'http://127.0.0.1:6060/debug/pprof/profile?seconds=30'
-curl -fsS http://127.0.0.1:6060/debug/pprof/heap -o heap.pb.gz
-pprof heap.pb.gz
+go tool pprof 'http://127.0.0.1:6060/debug/pprof/profile?seconds=30'
+go tool pprof http://127.0.0.1:6060/debug/pprof/heap
 ```
 
-The `/debug/pprof/`, `/debug/pprof/cmdline`, and `/debug/pprof/symbol`
-endpoints are available on that listener as well. The public API port does not
-serve `/debug/pprof/`. The listener address is not configurable and is never
-bound to a container or host network interface. Profiles can reveal process
-internals and captures add CPU pressure, so access should remain limited to
-operators on the same host or in the same container network namespace.
-
-The Linux production binary uses jemalloc sampling for the heap endpoint. A
-capture is a real gzipped pprof protobuf containing allocation stacks, not a
-translation of process totals. Capturing requires a writable process temporary
-directory; capture errors fail with a non-2xx response. Non-Linux builds return
-`501 Not Implemented` because the allocator profiler is Linux-only. For memory
-trends between captures, enable the private metrics listener and graph:
-
-- `process_resident_memory_bytes`
-- `process_virtual_memory_bytes`
-- `process_threads`
-- `process_open_fds`
-
-The `/debug/pprof/trace` URL is intentionally unavailable and returns `410
-Gone`. The Rust server instead exports live
-Tokio task, resource, and operation diagnostics over the fixed loopback-only
-console endpoint `127.0.0.1:6669`. Install the official client and connect from
-the same host or container network namespace:
-
-```bash
-cargo install --locked tokio-console
-tokio-console http://127.0.0.1:6669
-```
-
-The console reports task busy/scheduled/idle time, polls, synchronization and
-timer resources. Its bind address is fixed in the binary and cannot be changed
-to a public interface through environment configuration. Structured logs keep
-their existing LOG_LEVEL, timestamp, ANSI, component, request, and user fields.
+The public API port does not serve `/debug/pprof/`. The listener address is not
+configurable and is never bound to a container or host network interface.
+Profiles can reveal process internals and some captures add CPU or memory
+pressure, so access should remain limited to operators on the same host or in
+the same container network namespace.
 
 A loopback listener inside a container belongs to that container's network
 namespace and is not reachable directly from the host. With the Compose stack,
@@ -645,90 +648,17 @@ capture the profile inside the backend container and copy it out:
 
 ```bash
 docker compose -f docker-compose.selfhost.yml exec backend \
-  wget -qO /tmp/cpu.pprof 'http://127.0.0.1:6060/debug/pprof/profile?seconds=30'
-docker compose -f docker-compose.selfhost.yml cp backend:/tmp/cpu.pprof ./cpu.pprof
-pprof ./cpu.pprof
-
-docker compose -f docker-compose.selfhost.yml exec backend \
-  wget -qO /tmp/heap.pb.gz http://127.0.0.1:6060/debug/pprof/heap
-docker compose -f docker-compose.selfhost.yml cp backend:/tmp/heap.pb.gz ./heap.pb.gz
-pprof ./heap.pb.gz
-```
-
-For an interactive Tokio console session against Compose, run the locally
-installed client in the backend container's network namespace without
-publishing the management port:
-
-```bash
-console_bin="$(command -v tokio-console)"
-test -x "$console_bin"
-backend_id="$(docker compose -f docker-compose.selfhost.yml ps -q backend)"
-backend_pid="$(docker inspect --format '{{.State.Pid}}' "$backend_id")"
-test "$backend_pid" -gt 1
-sudo nsenter --target "$backend_pid" --net \
-  "$console_bin" http://127.0.0.1:6669
+  wget -qO /tmp/heap.pprof http://127.0.0.1:6060/debug/pprof/heap
+docker compose -f docker-compose.selfhost.yml cp backend:/tmp/heap.pprof ./heap.pprof
+go tool pprof ./heap.pprof
 ```
 
 ## Upgrading
 
-Re-run the installer to move the Compose assets and both Rust production images
-to the same latest release tag:
-
 ```bash
-curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | \
-  bash -s -- --with-server
+docker compose -f docker-compose.selfhost.yml pull
+docker compose -f docker-compose.selfhost.yml up -d
 ```
 
-The installer records the selected release in `.env` as `PATCHBAY_IMAGE_TAG`, so
-the checked-out Compose files, backend image, and web image cannot drift across
-versions. To install or roll back to an exact release, select it explicitly:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | \
-  PATCHBAY_SELFHOST_REF=v0.2.4 bash -s -- --with-server
-```
-
-On Windows PowerShell:
-
-```powershell
-$env:PATCHBAY_SELFHOST_REF = "v0.2.4"
-$env:PATCHBAY_MODE = "with-server"
-irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex
-```
-
-Each run fetches the requested Git ref, writes the matching image tag, pulls
-both images, and recreates the services. An invalid or unavailable ref now
-fails before Compose changes the running deployment. Migrations still run
-automatically on backend startup and are not rolled back when an older image is
-selected. Before rolling back across a schema change, confirm the older backend
-supports the current schema or restore the matching database backup.
-
+Pin `MULTICA_IMAGE_TAG` in `.env` to an exact release like `v0.2.4` if you want to stay on a specific version. Migrations run automatically on backend startup. They are idempotent — running them multiple times has no effect.
 If the selected GHCR tag has not been published yet, fall back to `docker compose -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build`.
-
-### Linux systemd lifecycle
-
-On a Linux host with systemd, opt in while installing the self-host stack:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | \
-  bash -s -- --with-server --systemd
-```
-
-The installer generates `~/.config/systemd/user/patchbay-selfhost.service` with
-the exact installation directory and Docker executable, validates the same
-Compose file before startup, enables user lingering, and enables the service.
-It does not introduce a second configuration or deployment path: the unit runs
-the same pinned Rust backend/web images and `.env` used by the installer.
-
-```bash
-systemctl --user status patchbay-selfhost.service
-systemctl --user restart patchbay-selfhost.service
-journalctl --user -u patchbay-selfhost.service
-```
-
-Re-run the installer to upgrade or roll back; it updates `.env` and recreates
-the services before refreshing the same unit. `install.sh --stop` disables the
-unit and then runs Compose down, so the stack stays stopped after reboot. The
-explicit `--systemd` option fails on macOS, Windows, or Linux sessions without
-a working systemd user manager instead of claiming persistence it cannot
-provide.

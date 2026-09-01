@@ -11,7 +11,7 @@
  */
 import { Pressable, ScrollView, View } from "react-native";
 import { useLocalSearchParams } from "expo-router";
-import type { IssuePriority, IssueStatus } from "@patchbay/core/types";
+import type { IssuePriority, IssueStatus } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { PriorityIcon } from "@/components/ui/priority-icon";
@@ -49,7 +49,7 @@ export default function IssuesFilterRoute() {
   const statusFilters = useScopedFilters(resolvedScope, "status");
   const priorityFilters = useScopedFilters(resolvedScope, "priority");
   // Same option list the status picker offers, so every status a user can set
-  // is also a status they can filter by. (PB-6243)
+  // is also a status they can filter by. (MUL-6243)
   const catalog = useIssueStatuses();
   const statusChoices = statusOptions(catalog);
 

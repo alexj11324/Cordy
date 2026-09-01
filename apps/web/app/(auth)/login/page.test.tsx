@@ -1,351 +1,204 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { I18nProvider } from "@multica/core/i18n/react";
+import enCommon from "@multica/views/locales/en/common.json";
+import enAuth from "@multica/views/locales/en/auth.json";
+import enSettings from "@multica/views/locales/en/settings.json";
+import type { ReactNode } from "react";
+
+const TEST_RESOURCES = {
+  en: { common: enCommon, auth: enAuth, settings: enSettings },
+};
+
+function createWrapper() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return ({ children }: { children: ReactNode }) => (
+    <I18nProvider locale="en" resources={TEST_RESOURCES}>
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    </I18nProvider>
+  );
+}
 
 const {
-  signInProps,
-  authState,
-  search,
-  authStoreState,
-  issueCliToken,
-  completeDesktopGoogleAttempt,
-  redirectToCliCallback,
-  redirectToDesktopApp,
-  exchangeReady,
+  mockIssueCliToken,
+  mockListWorkspaces,
+  mockListMyInvitations,
+  mockPush,
+  mockReplace,
+  searchParamsState,
+  authStateRef,
 } = vi.hoisted(() => ({
-  signInProps: { current: {} as Record<string, unknown> },
-  authState: {
-    current: { isLoaded: true, isSignedIn: false, getToken: vi.fn() },
+  mockIssueCliToken: vi.fn(),
+  mockListWorkspaces: vi.fn(),
+  mockListMyInvitations: vi.fn(),
+  mockPush: vi.fn(),
+  mockReplace: vi.fn(),
+  searchParamsState: { params: new URLSearchParams() },
+  authStateRef: {
+    state: {
+      sendCode: vi.fn(),
+      verifyCode: vi.fn(),
+      user: null as null | { id: string; email: string; onboarded_at?: string | null },
+      isLoading: false,
+    },
   },
-  search: { current: "" },
-  authStoreState: { current: { status: "unauthenticated" } },
-  issueCliToken: vi.fn(),
-  completeDesktopGoogleAttempt: vi.fn(),
-  redirectToCliCallback: vi.fn(),
-  redirectToDesktopApp: vi.fn(),
-  exchangeReady: { current: true },
 }));
 
-vi.mock("@patchbay/core/auth", () => ({
-  useAuthStore: (selector: (state: { status: string }) => unknown) =>
-    selector(authStoreState.current),
-}));
-
-vi.mock("@clerk/nextjs", () => ({
-  SignIn: (props: Record<string, unknown>) => {
-    signInProps.current = props;
-    return <div data-testid="clerk-sign-in" />;
-  },
-  useAuth: () => authState.current,
-}));
-
+// Mock next/navigation — router spies are hoisted so tests can assert
+// which navigation (if any) the page issued.
 vi.mock("next/navigation", () => ({
-  useSearchParams: () => new URLSearchParams(search.current),
+  useRouter: () => ({ push: mockPush, replace: mockReplace }),
+  usePathname: () => "/login",
+  useSearchParams: () => searchParamsState.params,
 }));
 
-vi.mock("@patchbay/core/api", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@patchbay/core/api")>();
-  return {
-    ...original,
-    api: { issueCliToken, completeDesktopGoogleAttempt },
-  };
+// Mock auth store — shared LoginPage uses getState().sendCode/verifyCode,
+// web wrapper uses useAuthStore((s) => s.user/isLoading). Keep the real
+// sanitizeNextUrl so the redirect-sanitization rules are exercised rather
+// than silently drifting behind a mock reimplementation.
+vi.mock("@multica/core/auth", async () => {
+  const actual =
+    await vi.importActual<typeof import("@multica/core/auth")>(
+      "@multica/core/auth",
+    );
+  const useAuthStore = Object.assign(
+    (selector: (s: typeof authStateRef.state) => unknown) =>
+      selector(authStateRef.state),
+    { getState: () => authStateRef.state },
+  );
+  return { ...actual, useAuthStore };
 });
 
-vi.mock("@patchbay/views/auth", async (importOriginal) => {
-  const original =
-    await importOriginal<typeof import("@patchbay/views/auth")>();
-  return { ...original, redirectToCliCallback, redirectToDesktopApp };
-});
-
-vi.mock("@/components/clerk-auth-adapter", () => ({
-  useClerkSessionExchangeReady: () => exchangeReady.current,
+// Mock auth-cookie
+vi.mock("@/features/auth/auth-cookie", () => ({
+  setLoggedInCookie: vi.fn(),
 }));
 
-vi.mock("@patchbay/views/i18n", () => ({
-  useT: () => ({
-    t: (
-      selector: (resources: {
-        web: {
-          cli_authorization: Record<string, string>;
-          desktop_handoff: Record<string, string>;
-        };
-      }) => string,
-    ) =>
-      selector({
-        web: {
-          cli_authorization: {
-            prompt: "Localized CLI authorization prompt",
-            authorize_button: "Localized CLI authorization button",
-            failed: "Localized CLI authorization failure",
-            invalid_callback: "Localized invalid CLI callback",
-          },
-          desktop_handoff: {
-            opening_title: "Opening Patchbay",
-            preparing: "Preparing Desktop sign-in...",
-            opening_description: "Opening Patchbay Desktop",
-            open_button: "Open Patchbay Desktop",
-            prepare_failed: "Failed to prepare Desktop sign-in",
-          },
-        },
-      }),
-  }),
+// Mock api
+vi.mock("@multica/core/api", () => ({
+  api: {
+    listWorkspaces: mockListWorkspaces,
+    listMyInvitations: mockListMyInvitations,
+    verifyCode: vi.fn(),
+    setToken: vi.fn(),
+    getMe: vi.fn(),
+    issueCliToken: mockIssueCliToken,
+  },
 }));
 
 import LoginPage from "./page";
 
 describe("LoginPage", () => {
   beforeEach(() => {
-    vi.unstubAllGlobals();
-    signInProps.current = {};
-    search.current = "";
-    authStoreState.current = { status: "unauthenticated" };
-    authState.current = {
-      isLoaded: true,
-      isSignedIn: false,
-      getToken: vi.fn(),
+    vi.clearAllMocks();
+    searchParamsState.params = new URLSearchParams();
+    authStateRef.state.user = null;
+    authStateRef.state.isLoading = false;
+    mockListWorkspaces.mockResolvedValue([]);
+    mockListMyInvitations.mockResolvedValue([]);
+  });
+
+  // Shared LoginPage behavior is canonical in
+  // packages/views/auth/login-page.test.tsx. This wrapper suite only owns web
+  // platform handoff and redirect behavior.
+
+  // Regression: MUL-1080 — if the user is already authenticated on the web
+  // and the Desktop app redirects them to /login?platform=desktop, the web
+  // must exchange the cookie session for a bearer token and hand it off via
+  // the multica:// deep link, not silently redirect to the workspace page.
+  it("mints a token and deep-links to Desktop when already logged in with platform=desktop", async () => {
+    searchParamsState.params = new URLSearchParams({ platform: "desktop" });
+    authStateRef.state.user = { id: "u1", email: "test@multica.ai" };
+    mockIssueCliToken.mockImplementation(() =>
+      Promise.resolve({ token: "handoff-jwt" }),
+    );
+
+    const hrefSetter = vi.fn();
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...originalLocation, set href(value: string) { hrefSetter(value); } },
+    });
+
+    try {
+      render(<LoginPage />, { wrapper: createWrapper() });
+
+      await waitFor(() => {
+        expect(mockIssueCliToken).toHaveBeenCalledTimes(1);
+      });
+      await waitFor(() => {
+        expect(hrefSetter).toHaveBeenCalledWith(
+          "multica://auth/callback?token=handoff-jwt",
+        );
+      });
+      expect(
+        await screen.findByRole("button", { name: "Open Multica Desktop" }),
+      ).toBeInTheDocument();
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
+  });
+
+  // Regression: #5009 — the "already authenticated on arrival" effect used to
+  // fire for fresh form logins too. verifyCode writes `user` while handleVerify
+  // is still fetching the workspace list, so the effect read an empty cache and
+  // raced handleSuccess with replace("/workspaces/new"); depending on the
+  // interleaving the user could end up stuck on the create-workspace page
+  // despite having workspaces.
+  describe("post-login redirect ownership (#5009)", () => {
+    const onboardedUser = {
+      id: "u1",
+      email: "test@multica.ai",
+      onboarded_at: "2026-01-01T00:00:00Z",
     };
-    exchangeReady.current = true;
-    issueCliToken.mockReset();
-    completeDesktopGoogleAttempt.mockReset();
-    redirectToCliCallback.mockReset();
-    redirectToDesktopApp.mockReset();
-  });
 
-  it("renders the Clerk sign-in flow at the canonical login route", () => {
-    render(<LoginPage />);
+    it("does not redirect from the arrival effect when the user logs in via the form", async () => {
+      // Auth settles as logged-out first — the page latches "any user from
+      // now on came from the form".
+      const wrapper = createWrapper();
+      const { rerender } = render(<LoginPage />, { wrapper });
+      // verifyCode set the user; the workspace list fetch is still in flight
+      // (cache cold). The arrival effect must stay silent — handleSuccess
+      // owns this navigation.
+      authStateRef.state.user = onboardedUser;
+      rerender(<LoginPage />);
 
-    expect(screen.getByTestId("clerk-sign-in")).toBeInTheDocument();
-    expect(signInProps.current).toMatchObject({
-      routing: "path",
-      path: "/login",
-      signUpUrl: "/signup",
-      forceRedirectUrl: "/",
-    });
-  });
-
-  it("preserves a validated CLI callback through Clerk sign-in", () => {
-    search.current =
-      "cli_callback=http%3A%2F%2F127.0.0.1%3A43821%2Fcallback&cli_state=opaque-state";
-
-    render(<LoginPage />);
-
-    expect(signInProps.current.forceRedirectUrl).toBe(
-      "/login?cli_callback=http%3A%2F%2F127.0.0.1%3A43821%2Fcallback&cli_state=opaque-state",
-    );
-  });
-
-  it("localizes an invalid CLI callback", () => {
-    search.current =
-      "cli_callback=https%3A%2F%2Fevil.example%2Fcallback&cli_state=opaque-state";
-
-    render(<LoginPage />);
-
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Localized invalid CLI callback",
-    );
-    expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
-  });
-
-  it("preserves the requested app path and query through Clerk sign-in", () => {
-    search.current = "redirect_url=%2Fusage%3Ftab%3Dbilling%23summary";
-
-    render(<LoginPage />);
-
-    expect(signInProps.current.forceRedirectUrl).toBe(
-      "/usage?tab=billing#summary",
-    );
-    expect(signInProps.current.signUpUrl).toBe(
-      "/signup?redirect_url=%2Fusage%3Ftab%3Dbilling%23summary",
-    );
-  });
-
-  it("rejects an external post-login redirect", () => {
-    search.current = "redirect_url=https%3A%2F%2Fevil.example%2Ftakeover";
-
-    render(<LoginPage />);
-
-    expect(signInProps.current.forceRedirectUrl).toBe("/");
-    expect(signInProps.current.signUpUrl).toBe("/signup");
-  });
-
-  it("preserves the desktop handoff through Clerk sign-in", () => {
-    search.current =
-      "platform=desktop&code_challenge=challenge-value&state=opaque-state";
-
-    render(<LoginPage />);
-
-    expect(signInProps.current).toMatchObject({
-      signUpUrl:
-        "/signup?platform=desktop&code_challenge=challenge-value&state=opaque-state",
-      forceRedirectUrl:
-        "/login?platform=desktop&code_challenge=challenge-value&state=opaque-state",
-    });
-  });
-
-  it("offers CLI authorization after Clerk has established the session", () => {
-    search.current =
-      "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
-    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
-    authStoreState.current = { status: "authenticated" };
-
-    render(<LoginPage />);
-
-    expect(
-      screen.getByRole("button", {
-        name: "Localized CLI authorization button",
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("Localized CLI authorization prompt"),
-    ).toBeInTheDocument();
-    expect(screen.queryByTestId("clerk-sign-in")).not.toBeInTheDocument();
-  });
-
-  it("exchanges the Clerk session for a native Patchbay CLI token", async () => {
-    search.current =
-      "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
-    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
-    authStoreState.current = { status: "authenticated" };
-    issueCliToken.mockResolvedValue({ token: "patchbay-native-token" });
-
-    render(<LoginPage />);
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Localized CLI authorization button",
-      }),
-    );
-
-    await waitFor(() => expect(issueCliToken).toHaveBeenCalledOnce());
-    expect(redirectToCliCallback).toHaveBeenCalledWith(
-      "http://localhost:43821/callback",
-      "patchbay-native-token",
-      "opaque-state",
-    );
-    expect(authState.current.getToken).not.toHaveBeenCalled();
-  });
-
-  it("localizes a retryable CLI authorization failure", async () => {
-    search.current =
-      "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
-    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
-    authStoreState.current = { status: "authenticated" };
-    issueCliToken.mockRejectedValue(new Error("temporary failure"));
-
-    render(<LoginPage />);
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: "Localized CLI authorization button",
-      }),
-    );
-
-    await waitFor(() =>
-      expect(screen.getByRole("alert")).toHaveTextContent(
-        "Localized CLI authorization failure",
-      ),
-    );
-    expect(redirectToCliCallback).not.toHaveBeenCalled();
-  });
-
-  it("does not authorize CLI before the Patchbay session exchange completes", () => {
-    search.current =
-      "cli_callback=http%3A%2F%2Flocalhost%3A43821%2Fcallback&cli_state=opaque-state";
-    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
-    authStoreState.current = { status: "authenticating" };
-
-    render(<LoginPage />);
-
-    expect(screen.getByTestId("clerk-sign-in")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", {
-        name: "Localized CLI authorization button",
-      }),
-    ).not.toBeInTheDocument();
-    expect(issueCliToken).not.toHaveBeenCalled();
-  });
-
-  it("automatically hands a signed-in desktop session to the Patchbay app", async () => {
-    search.current =
-      "platform=desktop&code_challenge=challenge-value&state=opaque-state&callback_protocol=patchbay-canary-attacker";
-    authState.current = {
-      isLoaded: true,
-      isSignedIn: true,
-      getToken: vi.fn().mockResolvedValue("clerk-session-token"),
-    };
-    authStoreState.current = { status: "authenticated" };
-    completeDesktopGoogleAttempt.mockResolvedValue({
-      callback_protocol: "patchbay-canary-login-fix-123",
-      code: "desktop-handoff-code",
+      await act(async () => {});
+      expect(mockReplace).not.toHaveBeenCalled();
+      expect(mockPush).not.toHaveBeenCalled();
+      expect(mockListWorkspaces).not.toHaveBeenCalled();
     });
 
-    render(<LoginPage />);
+    it("fetches the workspace list before redirecting a visitor who arrived authenticated", async () => {
+      // Cold Query cache on a fresh page load: reading it would say "no
+      // workspaces" and misroute to /workspaces/new. The effect must fetch.
+      authStateRef.state.user = onboardedUser;
+      mockListWorkspaces.mockResolvedValue([{ id: "ws-1", slug: "acme" }]);
 
-    await waitFor(() =>
-      expect(completeDesktopGoogleAttempt).toHaveBeenCalledOnce(),
-    );
-    expect(completeDesktopGoogleAttempt).toHaveBeenCalledWith(
-      "clerk-session-token",
-      "opaque-state",
-      "challenge-value",
-    );
-    expect(redirectToDesktopApp).toHaveBeenCalledWith(
-      "desktop-handoff-code",
-      "opaque-state",
-      "patchbay-canary-login-fix-123",
-    );
-  });
+      render(<LoginPage />, { wrapper: createWrapper() });
 
-  it("waits for the current Clerk identity to finish the Rust session exchange", async () => {
-    search.current =
-      "platform=desktop&code_challenge=challenge-value&state=opaque-state";
-    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
-    authStoreState.current = { status: "authenticated" };
-    exchangeReady.current = false;
-
-    render(<LoginPage />);
-
-    expect(completeDesktopGoogleAttempt).not.toHaveBeenCalled();
-    expect(
-      screen.getByRole("button", { name: "Preparing Desktop sign-in..." }),
-    ).toBeDisabled();
-  });
-
-  it("restarts Google instead of accepting an ambient signed-in session", async () => {
-    const { ApiError } = await import("@patchbay/core/api");
-    const codeChallenge = "c".repeat(43);
-    const state = "s".repeat(43);
-    search.current = `platform=desktop&code_challenge=${codeChallenge}&state=${state}`;
-    authState.current = {
-      isLoaded: true,
-      isSignedIn: true,
-      getToken: vi.fn().mockResolvedValue("ambient-clerk-token"),
-    };
-    authStoreState.current = { status: "authenticated" };
-    completeDesktopGoogleAttempt.mockRejectedValue(
-      new ApiError("fresh Google authorization is required", 409, "Conflict"),
-    );
-    const locationReplace = vi.fn();
-    vi.stubGlobal("location", {
-      pathname: "/login",
-      replace: locationReplace,
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith("/acme/issues");
+      });
+      expect(mockListWorkspaces).toHaveBeenCalledTimes(1);
     });
 
-    render(<LoginPage />);
+    it("still honors ?next= for a visitor who arrived authenticated", async () => {
+      searchParamsState.params = new URLSearchParams({
+        next: "/invite/abc",
+      });
+      authStateRef.state.user = onboardedUser;
 
-    await waitFor(() => expect(locationReplace).toHaveBeenCalledOnce());
-    expect(locationReplace).toHaveBeenCalledWith(
-      `/oauth/google?platform=desktop&code_challenge=${codeChallenge}&state=${state}`,
-    );
-    expect(redirectToDesktopApp).not.toHaveBeenCalled();
-  });
+      render(<LoginPage />, { wrapper: createWrapper() });
 
-  it("does not mint a desktop handoff without a renderer binding", async () => {
-    search.current = "platform=desktop";
-    authState.current = { isLoaded: true, isSignedIn: true, getToken: vi.fn() };
-    authStoreState.current = { status: "authenticated" };
-
-    render(<LoginPage />);
-
-    await waitFor(() => expect(screen.getByRole("alert")).toBeInTheDocument());
-    expect(completeDesktopGoogleAttempt).not.toHaveBeenCalled();
-    expect(redirectToDesktopApp).not.toHaveBeenCalled();
+      await waitFor(() => {
+        expect(mockReplace).toHaveBeenCalledWith("/invite/abc");
+      });
+      expect(mockListWorkspaces).not.toHaveBeenCalled();
+    });
   });
 });

@@ -18,13 +18,13 @@ export function CommunityLinks({
     },
     {
       label: "GitHub",
-      href: "https://github.com/alexj11324/Cordy",
+      href: "https://github.com/multica-ai/multica",
       description: githubDescription,
       Icon: GitHubMark,
     },
     {
       label: "X（Twitter）",
-      href: "https://x.com/PatchbayAI",
+      href: "https://x.com/MulticaAI",
       description: xDescription,
       Icon: XMark,
     },

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * RichCodeBlock — the ONLY fenced-code dispatcher in the product (PB-4922).
+ * RichCodeBlock — the ONLY fenced-code dispatcher in the product (MUL-4922).
  *
  * Every product surface (Chat, Issue description, Comment) reaches fenced code
  * through this file. Adding a language branch anywhere else — a per-surface
@@ -25,8 +25,8 @@
 import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 import { toHtml } from "hast-util-to-html";
 import { Check, Copy } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+import { cn } from "@multica/ui/lib/utils";
+import { copyText } from "@multica/ui/lib/clipboard";
 import { useT } from "../i18n";
 import {
   MermaidDiagram,

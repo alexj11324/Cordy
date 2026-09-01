@@ -17,24 +17,24 @@ import {
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+import { useWorkspaceId } from "@multica/core/hooks";
 import {
   quickActionListOptions,
   useCreateQuickAction,
   useDeleteQuickAction,
   useUpdateQuickAction,
-} from "@patchbay/core/quick-actions";
+} from "@multica/core/quick-actions";
 import type {
   QuickAction,
-  QuickActionExecutorType,
+  QuickActionAssigneeType,
   QuickActionVisibility,
-} from "@patchbay/core/types";
-import { findQuickActionTemplateToken } from "@patchbay/core/types";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { Label as FieldLabel } from "@patchbay/ui/components/ui/label";
+} from "@multica/core/types";
+import { findQuickActionTemplateToken } from "@multica/core/types";
+import { Button } from "@multica/ui/components/ui/button";
+import { Badge } from "@multica/ui/components/ui/badge";
+import { Input } from "@multica/ui/components/ui/input";
+import { Textarea } from "@multica/ui/components/ui/textarea";
+import { Label as FieldLabel } from "@multica/ui/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -42,7 +42,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@multica/ui/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -52,19 +52,19 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@multica/ui/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { cn } from "@patchbay/ui/lib/utils";
-import { AgentPicker } from "../../automations/components/pickers/agent-picker";
-import { useT } from "../../i18n";
+} from "@multica/ui/components/ui/dropdown-menu";
+import { cn } from "@multica/ui/lib/utils";
+import { AgentPicker } from "../../autopilots/components/pickers/agent-picker";
+import { useLocale, useT } from "../../i18n";
 import { SettingsTab } from "./settings-layout";
 
-// Quick Actions catalog (PB-5465).
+// Quick Actions catalog (MUL-5465).
 //
 // Ordering is by use_count DESC, not created_at: the list's job is to answer
 // "what does this workspace actually use", and recency of creation says
@@ -159,8 +159,8 @@ function TargetLine({ action, t }: { action: QuickAction; t: QuickActionsT }) {
 interface FormState {
   name: string;
   description: string;
-  executorType: QuickActionExecutorType;
-  executorId: string;
+  assigneeType: QuickActionAssigneeType;
+  assigneeId: string;
   prompt: string;
   visibility: QuickActionVisibility;
 }
@@ -168,8 +168,8 @@ interface FormState {
 const EMPTY_FORM: FormState = {
   name: "",
   description: "",
-  executorType: "agent",
-  executorId: "",
+  assigneeType: "agent",
+  assigneeId: "",
   prompt: "",
   visibility: "public",
 };
@@ -178,8 +178,8 @@ function toFormState(action: QuickAction): FormState {
   return {
     name: action.name,
     description: action.description,
-    executorType: action.executor_type === "team" ? "team" : "agent",
-    executorId: action.executor_id,
+    assigneeType: action.assignee_type === "squad" ? "squad" : "agent",
+    assigneeId: action.assignee_id,
     prompt: action.prompt,
     visibility: action.visibility === "private" ? "private" : "public",
   };
@@ -187,6 +187,7 @@ function toFormState(action: QuickAction): FormState {
 
 export function QuickActionsTab() {
   const { t } = useT("settings");
+  const locale = useLocale();
   const wsId = useWorkspaceId();
   const { data: actions = [], isLoading } = useQuery(quickActionListOptions(wsId, true));
 
@@ -331,7 +332,7 @@ export function QuickActionsTab() {
                         : t(($) => $.quick_actions.used_count, { count: action.use_count })}
                     </span>
                     <span className="text-caption text-muted-foreground">
-                      {new Date(action.updated_at).toLocaleDateString()}
+                      {new Date(action.updated_at).toLocaleDateString(locale)}
                     </span>
                     <DropdownMenu>
                       <DropdownMenuTrigger
@@ -395,8 +396,8 @@ export function QuickActionsTab() {
               id: editing.id,
               name: form.name,
               description: form.description,
-              executor_type: form.executorType,
-              executor_id: form.executorId,
+              assignee_type: form.assigneeType,
+              assignee_id: form.assigneeId,
               prompt: form.prompt,
               visibility: form.visibility,
             });
@@ -404,8 +405,8 @@ export function QuickActionsTab() {
             await createMutation.mutateAsync({
               name: form.name,
               description: form.description,
-              executor_type: form.executorType,
-              executor_id: form.executorId,
+              assignee_type: form.assigneeType,
+              assignee_id: form.assigneeId,
               prompt: form.prompt,
               visibility: form.visibility,
             });
@@ -461,7 +462,7 @@ function QuickActionDialog({
   const canSave =
     form.name.trim().length > 0 &&
     form.prompt.trim().length > 0 &&
-    form.executorId.length > 0 &&
+    form.assigneeId.length > 0 &&
     templateToken === null;
 
   const handleSubmit = async () => {
@@ -546,9 +547,9 @@ function QuickActionDialog({
           <div className="space-y-1.5">
             <FieldLabel>{t(($) => $.quick_actions.field_target)}</FieldLabel>
             <AgentPicker
-              executor={form.executorId ? { type: form.executorType, id: form.executorId } : null}
+              assignee={form.assigneeId ? { type: form.assigneeType, id: form.assigneeId } : null}
               onChange={(next) =>
-                setForm((f) => ({ ...f, executorType: next.type, executorId: next.id }))
+                setForm((f) => ({ ...f, assigneeType: next.type, assigneeId: next.id }))
               }
             />
             {/* Public promises "everyone can run this", so the server refuses a

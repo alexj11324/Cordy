@@ -15,8 +15,8 @@ import type {
   InboxItem,
   InboxItemType,
   IssuePriority,
-} from "@patchbay/core/types";
-import { formatDateOnly } from "@patchbay/core/issues/date";
+} from "@multica/core/types";
+import { formatDateOnly } from "@multica/core/issues/date";
 import { Text } from "@/components/ui/text";
 import { StatusIcon } from "@/components/ui/status-icon";
 import { PriorityIcon } from "@/components/ui/priority-icon";
@@ -38,7 +38,7 @@ const TYPE_LABEL: Record<InboxItemType, string> = {
   issue_assigned: "Assigned",
   issue_subscribed: "Subscribed",
   unassigned: "Unassigned",
-  executor_changed: "Reassigned",
+  assignee_changed: "Reassigned",
   status_changed: "Status changed",
   priority_changed: "Priority changed",
   start_date_changed: "Start date changed",
@@ -74,7 +74,7 @@ export function InboxDetailLabel({
 }) {
   const { getName } = useActorLookup();
   // `details.to` is a status KEY and may be a custom one, so its name, colour
-  // and glyph all resolve through the workspace catalog. (PB-6243)
+  // and glyph all resolve through the workspace catalog. (MUL-6243)
   const { categoryOf, colorOf, labelOf } = useIssueStatuses();
   const details = item.details ?? {};
 
@@ -114,17 +114,17 @@ export function InboxDetailLabel({
   const text = (() => {
     switch (item.type) {
       case "issue_assigned":
-      case "executor_changed":
-        if (details.new_executor_id) {
+      case "assignee_changed":
+        if (details.new_assignee_id) {
           const name = getName(
-            (details.new_executor_type ?? "member") as "member" | "agent",
-            details.new_executor_id,
+            (details.new_assignee_type ?? "member") as "member" | "agent",
+            details.new_assignee_id,
           );
           return `Assigned to ${name}`;
         }
         return TYPE_LABEL[item.type];
       case "unassigned":
-        return "Removed executor";
+        return "Removed assignee";
       case "due_date_changed":
         return details.to
           ? `Set due date to ${shortDate(details.to)}`

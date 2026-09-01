@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { LogOut } from "lucide-react";
-import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-settings";
-import { Textarea } from "@patchbay/ui/components/ui/textarea";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Input } from "@multica/ui/components/ui/input";
+import { Textarea } from "@multica/ui/components/ui/textarea";
+import { Button } from "@multica/ui/components/ui/button";
 import {
   AlertDialog,
   AlertDialogContent,
@@ -14,25 +14,25 @@ import {
   AlertDialogFooter,
   AlertDialogCancel,
   AlertDialogAction,
-} from "@patchbay/ui/components/ui/alert-dialog";
+} from "@multica/ui/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useLeaveWorkspace, useDeleteWorkspace } from "@patchbay/core/workspace/mutations";
+import { useAuthStore } from "@multica/core/auth";
+import { useLeaveWorkspace, useDeleteWorkspace } from "@multica/core/workspace/mutations";
 import {
   memberListOptions,
   workspaceKeys,
   workspaceListOptions,
-} from "@patchbay/core/workspace/queries";
-import { issueKeys } from "@patchbay/core/issues/queries";
-import { api } from "@patchbay/core/api";
+} from "@multica/core/workspace/queries";
+import { issueKeys } from "@multica/core/issues/queries";
+import { api } from "@multica/core/api";
 import {
   resolvePostAuthDestination,
   useCurrentWorkspace,
   useHasOnboarded,
-} from "@patchbay/core/paths";
-import { setCurrentWorkspace } from "@patchbay/core/platform";
-import type { Workspace } from "@patchbay/core/types";
+} from "@multica/core/paths";
+import { setCurrentWorkspace } from "@multica/core/platform";
+import type { Workspace } from "@multica/core/types";
 import { AvatarUploadControl } from "../../common/avatar-upload-control";
 import { useNavigation } from "../../navigation";
 import { DeleteWorkspaceDialog } from "./delete-workspace-dialog";
@@ -145,7 +145,7 @@ export function WorkspaceTab() {
   const currentMember = members.find((m) => m.user_id === user?.id) ?? null;
   const canManageWorkspace = currentMember?.role === "owner" || currentMember?.role === "admin";
   const isOwner = currentMember?.role === "owner";
-  // Mirror the Rust backend invariant:
+  // Mirror the backend invariant (server/internal/handler/workspace.go:569):
   // a workspace must always have at least one owner, so the sole owner can't
   // leave. Pre-flight here instead of letting the 400 round-trip become a
   // confusing toast — disable Leave and tell the user what they need to do.
@@ -281,7 +281,7 @@ export function WorkspaceTab() {
     if (!workspace) return;
     setActionId("delete-workspace");
     // Await the DELETE with the dialog in its loading state, and only
-    // navigate on success (AGENTS.md: flows that navigate must await the
+    // navigate on success (CLAUDE.md: flows that navigate must await the
     // server; no optimistic removal). The realtime `workspace:deleted`
     // handler skips self-initiated deletes via the pending-delete registry,
     // so it can't race this navigation with its own full-page relocate.

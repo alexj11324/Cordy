@@ -1,4 +1,4 @@
-/* Patchbay design tokens — shared across Web + Desktop */
+/* Multica design tokens — shared across Web + Desktop */
 
 @theme inline {
     --font-heading: var(--font-sans);
@@ -22,13 +22,6 @@
     --color-sidebar-primary: var(--sidebar-primary);
     --color-sidebar-foreground: var(--sidebar-foreground);
     --color-sidebar: var(--sidebar);
-    --color-sidebar-text-primary: var(--sidebar-text-primary);
-    --color-sidebar-text-secondary: var(--sidebar-text-secondary);
-    --color-sidebar-icon-secondary: var(--sidebar-icon-secondary);
-    --color-sidebar-icon-active: var(--sidebar-icon-active);
-    --color-sidebar-item-active-foreground: var(--sidebar-item-active-foreground);
-    --color-sidebar-item-hover: var(--sidebar-item-hover);
-    --color-sidebar-item-active: var(--sidebar-item-active);
     --color-chart-5: var(--chart-5);
     --color-chart-4: var(--chart-4);
     --color-chart-3: var(--chart-3);
@@ -212,20 +205,6 @@
     --sidebar-accent-foreground: oklch(0.21 0.006 285.885);
     --sidebar-border: oklch(0.92 0.004 286.32);
     --sidebar-ring: oklch(0.705 0.015 286.067);
-    /* Sidebar semantic ramp. Keeping these aliases next to the source palette
-       makes the light/dark relationship explicit while allowing components to
-       speak in roles instead of choosing raw palette values. The two washes
-       mirror the restrained navigation contrast from the LobeHub reference:
-       hover is 6% of the theme foreground and active is 3%. Because the
-       foreground flips with the theme, the same tokens stay quiet in both
-       light and dark mode. */
-    --sidebar-text-primary: var(--sidebar-foreground);
-    --sidebar-text-secondary: var(--muted-foreground);
-    --sidebar-icon-secondary: var(--faint-foreground);
-    --sidebar-icon-active: var(--sidebar-text-primary);
-    --sidebar-item-active-foreground: var(--sidebar-text-primary);
-    --sidebar-item-hover: color-mix(in oklab, var(--sidebar) 94%, var(--sidebar-foreground));
-    --sidebar-item-active: color-mix(in oklab, var(--sidebar) 97%, var(--sidebar-foreground));
     --brand: oklch(0.55 0.16 255);
     --brand-foreground: oklch(0.985 0 0);
     --success: oklch(0.55 0.16 145);

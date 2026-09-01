@@ -15,61 +15,62 @@ import {
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { DialogTitle } from "@patchbay/ui/components/ui/dialog";
+import { DialogTitle } from "@multica/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Switch } from "@patchbay/ui/components/ui/switch";
-import { cn } from "@patchbay/ui/lib/utils";
-import { api, ApiError } from "@patchbay/core/api";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useCurrentWorkspace, useWorkspacePaths } from "@patchbay/core/paths";
+} from "@multica/ui/components/ui/dropdown-menu";
+import { Button } from "@multica/ui/components/ui/button";
+import { Switch } from "@multica/ui/components/ui/switch";
+import { cn } from "@multica/ui/lib/utils";
+import { api, ApiError } from "@multica/core/api";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { useCurrentWorkspace, useWorkspacePaths } from "@multica/core/paths";
 import { AppLink, resolveClickIntent } from "../navigation";
-import { agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
-import { projectListOptions } from "@patchbay/core/projects/queries";
+import { agentListOptions, squadListOptions } from "@multica/core/workspace/queries";
+import { projectListOptions } from "@multica/core/projects/queries";
 import {
   useQuickCreateStore,
   type QuickCreateActorType,
-} from "@patchbay/core/issues/stores/quick-create-store";
+} from "@multica/core/issues/stores/quick-create-store";
 import {
   useIssueCreateSettingsStore,
   type QuickCreateField,
-} from "@patchbay/core/issues/stores/issue-create-settings-store";
-import { useIssueDraftStore, type IssueCreateDraft } from "@patchbay/core/issues/stores/draft-store";
-import { useCreateModeStore } from "@patchbay/core/issues/stores/create-mode-store";
+} from "@multica/core/issues/stores/issue-create-settings-store";
+import { useIssueDraftStore, type IssueCreateDraft } from "@multica/core/issues/stores/draft-store";
+import { useCreateModeStore } from "@multica/core/issues/stores/create-mode-store";
 import {
   runtimeListOptions,
   checkQuickCreateCliVersion,
   checkQuickCreateFieldsCliVersion,
   readRuntimeCliVersion,
-} from "@patchbay/core/runtimes";
-import { useShortcut } from "@patchbay/core/shortcuts";
+} from "@multica/core/runtimes";
+import { useShortcut } from "@multica/core/shortcuts";
 import { ShortcutKeycaps } from "../common/shortcut-keycaps";
 import {
   contentReferencesAttachment,
   type Agent,
   type IssuePriority,
-  type Team,
-} from "@patchbay/core/types";
+  type SourceContextPreview,
+  type Squad,
+} from "@multica/core/types";
 import { ActorAvatar } from "../common/actor-avatar";
 import { ClearablePillButton, PillButton } from "../common/pill-button";
 import { ProjectPicker } from "../projects/components/project-picker";
 import { DueDatePicker, PriorityIcon, PriorityPicker } from "../issues/components";
-import { canAssignAgent } from "../issues/components/pickers/executor-picker";
-import { isAgentRuntimeBound } from "@patchbay/core/agents";
+import { canAssignAgent } from "../issues/components/pickers/assignee-picker";
+import { isAgentRuntimeBound } from "@multica/core/agents";
 import {
   PropertyPicker,
   PickerItem,
   PickerSection,
   PickerEmpty,
 } from "../issues/components/pickers/property-picker";
-import { useAuthStore } from "@patchbay/core/auth";
-import { memberListOptions } from "@patchbay/core/workspace/queries";
+import { useAuthStore } from "@multica/core/auth";
+import { memberListOptions } from "@multica/core/workspace/queries";
 import {
   ContentEditor,
   type ContentEditorRef,
@@ -79,13 +80,15 @@ import {
   useComposerSubmit,
 } from "../editor";
 import { useIssueCreateUploads } from "./use-issue-create-uploads";
-import { FileUploadButton } from "@patchbay/ui/components/common/file-upload-button";
+import { FileUploadButton } from "@multica/ui/components/common/file-upload-button";
 import { useT } from "../i18n";
 import { matchesPinyin } from "../editor/extensions/pinyin-match";
+import { SourceContextPreviewCard, useSourceContextFailureMessage } from "./source-context-preview";
+import { useIssueLimitUpgradePrompt } from "./use-issue-limit-upgrade-prompt";
 
 type ActorSelection =
   | { type: "agent"; id: string }
-  | { type: "team"; id: string };
+  | { type: "squad"; id: string };
 
 // AgentCreatePanel — agent-mode body of the create-issue dialog. Renders
 // only the inner content; the surrounding `<Dialog>` AND `<DialogContent>`
@@ -116,15 +119,28 @@ export function AgentCreatePanel({
   setIsExpanded: (v: boolean) => void;
 }) {
   const { t } = useT("modals");
+  const { t: tIssues } = useT("issues");
   const { t: tProjects } = useT("projects");
   const sendShortcut = useShortcut("send");
   const workspaceName = useCurrentWorkspace()?.name;
   const workspacePaths = useWorkspacePaths();
   const wsId = useWorkspaceId();
+  const anchorCommentId = typeof data?.anchor_comment_id === "string" ? data.anchor_comment_id : null;
+  const sourcePreview = data?.source_context_preview as SourceContextPreview | undefined;
+  const sourceContextLoading = data?.source_context_loading === true;
+  const sourceContextFailed = data?.source_context_failed === true;
+  const sourceContextError = data?.source_context_error;
+  const refetchSourceContext = data?.source_context_refetch as (() => Promise<unknown>) | undefined;
+  const sourceContextExpanded = typeof data?.source_context_expanded === "boolean"
+    ? data.source_context_expanded
+    : undefined;
+  const onSourceContextExpandedChange = data?.source_context_on_expanded_change as ((expanded: boolean) => void) | undefined;
+  const sourceContextFailureMessage = useSourceContextFailureMessage();
+  const showIssueLimitUpgradePrompt = useIssueLimitUpgradePrompt();
   const userId = useAuthStore((s) => s.user?.id);
   const { data: members = [] } = useQuery(memberListOptions(wsId));
   const { data: agents = [] } = useQuery(agentListOptions(wsId));
-  const { data: teams = [] } = useQuery(teamListOptions(wsId));
+  const { data: squads = [] } = useQuery(squadListOptions(wsId));
   // Pull `isSuccess` so the stale-id sweep below can distinguish "still
   // loading" from "loaded as empty". Reading length alone treats both as
   // empty and incorrectly clears a valid persisted preference on every open.
@@ -137,9 +153,9 @@ export function AgentCreatePanel({
     [members, userId],
   );
 
-  // Visible = not archived AND assignable by this user. Teams inherit
-  // their leader agent's reachability: the backend always routes a team
-  // pick to the leader, so hiding teams whose leader isn't visible keeps
+  // Visible = not archived AND assignable by this user. Squads inherit
+  // their leader agent's reachability: the backend always routes a squad
+  // pick to the leader, so hiding squads whose leader isn't visible keeps
   // the picker honest with what the server would actually accept.
   const visibleAgents = useMemo(
     () =>
@@ -155,12 +171,12 @@ export function AgentCreatePanel({
     () => new Set(visibleAgents.map((a) => a.id)),
     [visibleAgents],
   );
-  const visibleTeams = useMemo(
+  const visibleSquads = useMemo(
     () =>
-      teams.filter(
+      squads.filter(
         (s) => !s.archived_at && visibleAgentIds.has(s.leader_id),
       ),
-    [teams, visibleAgentIds],
+    [squads, visibleAgentIds],
   );
 
   const lastActorType = useQuickCreateStore((s) => s.lastActorType);
@@ -180,36 +196,36 @@ export function AgentCreatePanel({
   const setActiveMode = useIssueDraftStore((s) => s.setActiveMode);
   const clearDraft = useIssueDraftStore((s) => s.clearDraft);
 
-  // Resolve a candidate actor against the currently-visible agents / teams.
+  // Resolve a candidate actor against the currently-visible agents / squads.
   // Returns null when the candidate doesn't exist in this workspace right
   // now (deleted, archived, permission revoked, etc.) so callers can fall
   // through to the next seed in the chain.
   const resolveActor = useCallback(
     (
-      type: QuickCreateActorType | "agent" | "team" | null | undefined,
+      type: QuickCreateActorType | "agent" | "squad" | null | undefined,
       id: string | null | undefined,
     ): ActorSelection | null => {
       if (!type || !id) return null;
-      if (type === "team" && visibleTeams.some((s) => s.id === id)) {
-        return { type: "team", id };
+      if (type === "squad" && visibleSquads.some((s) => s.id === id)) {
+        return { type: "squad", id };
       }
       if (type === "agent" && visibleAgentIds.has(id)) {
         return { type: "agent", id };
       }
       return null;
     },
-    [visibleTeams, visibleAgentIds],
+    [visibleSquads, visibleAgentIds],
   );
 
   const seedActor = useCallback((): ActorSelection | null => {
     // Caller-provided seed wins (e.g. shell pre-seeds with `agent_id` /
-    // `team_id`), then the persisted agent draft, the last successful pick,
+    // `squad_id`), then the persisted agent draft, the last successful pick,
     // and finally the first visible agent.
     const dataAgent = data?.agent_id as string | undefined;
-    const dataTeam = data?.team_id as string | undefined;
+    const dataSquad = data?.squad_id as string | undefined;
     return (
       resolveActor("agent", dataAgent) ||
-      resolveActor("team", dataTeam) ||
+      resolveActor("squad", dataSquad) ||
       resolveActor(draft.agent.actorType, draft.agent.actorId) ||
       resolveActor(lastActorType, lastActorId) ||
       (visibleAgents[0]
@@ -219,7 +235,7 @@ export function AgentCreatePanel({
   }, [
     resolveActor,
     data?.agent_id,
-    data?.team_id,
+    data?.squad_id,
     draft.agent.actorType,
     draft.agent.actorId,
     lastActorType,
@@ -238,15 +254,15 @@ export function AgentCreatePanel({
   const selectedAgent = useMemo<Agent | undefined>(() => {
     if (!actor) return undefined;
     if (actor.type === "agent") return visibleAgents.find((a) => a.id === actor.id);
-    const team = visibleTeams.find((s) => s.id === actor.id);
-    if (!team) return undefined;
-    return visibleAgents.find((a) => a.id === team.leader_id);
-  }, [actor, visibleAgents, visibleTeams]);
+    const squad = visibleSquads.find((s) => s.id === actor.id);
+    if (!squad) return undefined;
+    return visibleAgents.find((a) => a.id === squad.leader_id);
+  }, [actor, visibleAgents, visibleSquads]);
 
-  const selectedTeam = useMemo<Team | undefined>(() => {
-    if (actor?.type !== "team") return undefined;
-    return visibleTeams.find((s) => s.id === actor.id);
-  }, [actor, visibleTeams]);
+  const selectedSquad = useMemo<Squad | undefined>(() => {
+    if (actor?.type !== "squad") return undefined;
+    return visibleSquads.find((s) => s.id === actor.id);
+  }, [actor, visibleSquads]);
 
   // Unfinished selections live in the shared issue-create draft. The
   // last-successful actor remains a separate fallback, so closing a draft
@@ -255,7 +271,7 @@ export function AgentCreatePanel({
   // Project has exactly two seeds, both carrying explicit user intent: the
   // project page (or manual panel) the modal was opened from, and the user's
   // own unfinished draft. It is deliberately NOT seeded from the last create
-  // — see quick-create-store (PB-5862).
+  // — see quick-create-store (MUL-5862).
   const [projectId, setProjectId] = useState<string | null>(() => {
     const seed = (data?.project_id as string | undefined) ?? draft.shared.projectId;
     return seed ?? null;
@@ -306,9 +322,9 @@ export function AgentCreatePanel({
   }, [setActiveMode]);
 
   // Daemon CLI version gate. The agent-create flow needs the runtime's
-  // bundled patchbay CLI to be ≥ MIN_QUICK_CREATE_CLI_VERSION; older
+  // bundled multica CLI to be ≥ MIN_QUICK_CREATE_CLI_VERSION; older
   // daemons handle attachments and partial-failure retries incorrectly
-  // (see PR #1851 / PB-1496). Pre-check on the picker so the user gets
+  // (see PR #1851 / MUL-1496). Pre-check on the picker so the user gets
   // immediate feedback instead of waiting for the inbox failure; the
   // server re-validates as the trust boundary. Dev-built daemons
   // (git-describe shape) are exempted inside checkQuickCreateCliVersion
@@ -347,7 +363,7 @@ export function AgentCreatePanel({
   const [sentCount, setSentCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const uploadGate = useUploadGate(editorRef);
-  // Coordinator-owned uploads in the shared draft pool (PB-5181, L2): a file
+  // Coordinator-owned uploads in the shared draft pool (MUL-5181, L2): a file
   // pasted into the prompt survives dialog close and mode switches, aborts on
   // logout, and is dropped after a reload. `gate` widens the editor gate with
   // the pool's placeholders.
@@ -372,7 +388,7 @@ export function AgentCreatePanel({
   // (single-flight ref, submit-time upload re-check, lock+spin, await→boolean,
   // clear only on acceptance). The prompt IS the editor content, so this maps
   // onto the hook directly.
-  // Stale-submit guard (PB-5181 P0): the issue draft is a SINGLETON store.
+  // Stale-submit guard (MUL-5181 P0): the issue draft is a SINGLETON store.
   // A late success from a dialog the user closed mid-submit must not clear a
   // newer draft typed after reopening — see ManualCreatePanel for the rule.
   const mountedRef = useRef(true);
@@ -394,7 +410,7 @@ export function AgentCreatePanel({
     onSubmit: async (md): Promise<boolean> => {
       // The button already disables on !actor / versionBlocked, but the
       // ⌘+Enter path bypasses it — re-guard here and keep the draft in place.
-      if (!actor || versionBlocked) return false;
+      if (!actor || versionBlocked || (anchorCommentId && !sourcePreview)) return false;
       // Flush the prompt editor's pending debounce before snapshotting — see
       // ManualCreatePanel.
       const pendingPrompt = editorRef.current?.flushPendingUpdate?.();
@@ -405,17 +421,34 @@ export function AgentCreatePanel({
         .map((a) => a.id);
       setError(null);
       try {
-        await api.quickCreateIssue({
-          ...(actor.type === "agent"
-            ? { agent_id: actor.id }
-            : { team_id: actor.id }),
-          prompt: md,
-          project_id: projectId ?? undefined,
-          ...(priority !== "none" ? { priority } : {}),
-          ...(dueDate ? { due_date: dueDate } : {}),
-          parent_issue_id: parentIssueId,
-          ...(activeAttachmentIds.length > 0 ? { attachment_ids: activeAttachmentIds } : {}),
-        });
+        if (anchorCommentId && sourcePreview) {
+          await api.createCommentSubIssue(anchorCommentId, {
+            mode: "agent",
+            capture_token: sourcePreview.capture_token,
+            quick_create: {
+              ...(actor.type === "agent"
+                ? { agent_id: actor.id }
+                : { squad_id: actor.id }),
+              prompt: md,
+              project_id: projectId ?? undefined,
+              ...(priority !== "none" ? { priority } : {}),
+              ...(dueDate ? { due_date: dueDate } : {}),
+              ...(activeAttachmentIds.length > 0 ? { attachment_ids: activeAttachmentIds } : {}),
+            },
+          });
+        } else {
+          await api.quickCreateIssue({
+            ...(actor.type === "agent"
+              ? { agent_id: actor.id }
+              : { squad_id: actor.id }),
+            prompt: md,
+            project_id: projectId ?? undefined,
+            ...(priority !== "none" ? { priority } : {}),
+            ...(dueDate ? { due_date: dueDate } : {}),
+            parent_issue_id: parentIssueId,
+            ...(activeAttachmentIds.length > 0 ? { attachment_ids: activeAttachmentIds } : {}),
+          });
+        }
         setLastActor(actor.type, actor.id);
         setLastMode("agent");
         toast.success(t(($) => $.create_issue.agent.toast_sent), {
@@ -434,6 +467,10 @@ export function AgentCreatePanel({
             current_version?: string;
             min_version?: string;
           };
+          if (body.code === "issue_limit_reached") {
+            showIssueLimitUpgradePrompt();
+            return false;
+          }
           if (body.code === "agent_unavailable") {
             setError(body.reason || t(($) => $.create_issue.agent.error_agent_unavailable_fallback));
             return false;
@@ -450,6 +487,27 @@ export function AgentCreatePanel({
                 min: body.min_version || versionCheck.min,
               }),
             );
+            return false;
+          }
+          if (anchorCommentId && (
+            body.code === "source_context_changed"
+            || body.code === "anchor_comment_deleted"
+            || body.code === "source_issue_deleted"
+          )) {
+            await refetchSourceContext?.();
+            setError(sourceContextFailureMessage(e) ?? tIssues(($) => $.source_context.error_source_changed));
+            return false;
+          }
+          if (anchorCommentId && body.code === "source_context_quick_create_unsupported") {
+            setError(tIssues(($) => $.source_context.error_agent_unsupported));
+            return false;
+          }
+          if (anchorCommentId && body.code === "source_context_server_unsupported") {
+            setError(tIssues(($) => $.source_context.error_server_unsupported));
+            return false;
+          }
+          if (anchorCommentId && body.code === "source_context_too_large") {
+            setError(sourceContextFailureMessage(e) ?? tIssues(($) => $.source_context.error_too_large));
             return false;
           }
         }
@@ -504,7 +562,7 @@ export function AgentCreatePanel({
   // restores it verbatim. Project / priority / due date already live in the
   // shared slot and carry across for free. Two one-time assist-inits run only
   // when the manual slot is still empty: seed the description from the prompt
-  // and the executor from the picked actor. The parent-issue context is not
+  // and the assignee from the picked actor. The parent-issue context is not
   // persisted (a per-invocation intent) so it rides the carry channel.
   const switchToManual = () => {
     // The prompt is copied into the manual description on assist-init; mid-upload
@@ -518,8 +576,8 @@ export function AgentCreatePanel({
       const md = editorRef.current?.getMarkdown() ?? "";
       if (md) setManual({ description: md });
     }
-    if (!draft.manual.executorId && actor) {
-      setManual({ executorType: actor.type, executorId: actor.id });
+    if (!draft.manual.assigneeId && actor) {
+      setManual({ assigneeType: actor.type, assigneeId: actor.id });
     }
     setLastMode("manual");
     setActiveMode("manual");
@@ -578,17 +636,17 @@ export function AgentCreatePanel({
           </div>
         </div>
 
-        {/* Actor picker — agents and teams in one searchable list. Teams
+        {/* Actor picker — agents and squads in one searchable list. Squads
             route to their leader agent on the backend; the leader runs the
-            quick-create flow with the team's Operating Protocol layered
-            on top, so a team pick is "ask this team to file the issue". */}
+            quick-create flow with the squad's Operating Protocol layered
+            on top, so a squad pick is "ask this squad to file the issue". */}
         <div className="px-5 pt-1 pb-2 shrink-0">
           <ActorPicker
             actor={actor}
             visibleAgents={visibleAgents}
-            visibleTeams={visibleTeams}
+            visibleSquads={visibleSquads}
             selectedAgent={selectedAgent}
-            selectedTeam={selectedTeam}
+            selectedSquad={selectedSquad}
             onPick={(next) => {
               setActor(next);
               setAgent({ actorType: next.type, actorId: next.id });
@@ -623,7 +681,9 @@ export function AgentCreatePanel({
           <ContentEditor
             ref={editorRef}
             defaultValue={initialPrompt}
-            placeholder={t(($) => $.create_issue.agent.prompt_placeholder)}
+            placeholder={anchorCommentId
+              ? t(($) => $.create_issue.agent.source_context_prompt_placeholder)
+              : t(($) => $.create_issue.agent.prompt_placeholder)}
             onUpdate={(md) => {
               setHasContent(md.trim().length > 0);
               setAgent({ prompt: md });
@@ -637,6 +697,18 @@ export function AgentCreatePanel({
           {isDragOver && <FileDropOverlay />}
         </div>
 
+        {anchorCommentId && (
+          <SourceContextPreviewCard
+            preview={sourcePreview}
+            loading={sourceContextLoading}
+            failed={sourceContextFailed}
+            error={sourceContextError}
+            onRetry={refetchSourceContext ? () => { void refetchSourceContext(); } : undefined}
+            constrainToParent
+            expanded={sourceContextExpanded}
+            onExpandedChange={onSourceContextExpandedChange}
+          />
+        )}
 
         {error && (
           <div className="px-5 pb-2 text-caption text-destructive">{error}</div>
@@ -767,7 +839,7 @@ export function AgentCreatePanel({
               toggle / Create on the bottom one. Laid out as a single row the
               four controls need ~383px of the 398px a 430px phone has left
               after padding, which reads as jammed and wraps outright below
-              ~410px (PB-6236).
+              ~410px (MUL-6236).
             - From `sm` up it is the original single flex row: `mr-auto` on the
               attach group reproduces what `justify-between` did when the
               children were two wrapper divs, and `justify-self-end` goes
@@ -811,7 +883,7 @@ export function AgentCreatePanel({
           <Button
             size="sm"
             onClick={submit}
-            disabled={!hasContent || !actor || submitting || versionBlocked || gate.uploading}
+            disabled={!hasContent || !actor || submitting || versionBlocked || gate.uploading || (!!anchorCommentId && !sourcePreview)}
             aria-disabled={gate.uploading || undefined}
             // Sending is a busy state too, not just uploading.
             aria-busy={gate.uploading || submitting || undefined}
@@ -850,24 +922,24 @@ export function AgentCreatePanel({
 }
 
 // ActorPicker — the "Created by" trigger + searchable popover listing
-// agents and teams. Lives in this file (not under issues/components/pickers)
+// agents and squads. Lives in this file (not under issues/components/pickers)
 // because it composes the generic PropertyPicker with a quick-create-shaped
 // trigger styled to match the modal header row — promoting it would invite
 // reuse pressure on a UI that's deliberately tuned for this one surface.
 function ActorPicker({
   actor,
   visibleAgents,
-  visibleTeams,
+  visibleSquads,
   selectedAgent,
-  selectedTeam,
+  selectedSquad,
   onPick,
   t,
 }: {
   actor: ActorSelection | null;
   visibleAgents: Agent[];
-  visibleTeams: Team[];
+  visibleSquads: Squad[];
   selectedAgent: Agent | undefined;
-  selectedTeam: Team | undefined;
+  selectedSquad: Squad | undefined;
   onPick: (next: ActorSelection) => void;
   t: ReturnType<typeof useT<"modals">>["t"];
 }) {
@@ -879,14 +951,14 @@ function ActorPicker({
     () => visibleAgents.filter((a) => a.name.toLowerCase().includes(query) || matchesPinyin(a.name, query)),
     [visibleAgents, query],
   );
-  const filteredTeams = useMemo(
-    () => visibleTeams.filter((s) => s.name.toLowerCase().includes(query) || matchesPinyin(s.name, query)),
-    [visibleTeams, query],
+  const filteredSquads = useMemo(
+    () => visibleSquads.filter((s) => s.name.toLowerCase().includes(query) || matchesPinyin(s.name, query)),
+    [visibleSquads, query],
   );
 
-  const displayLabel = selectedTeam?.name ?? selectedAgent?.name;
-  const displayActor: ActorSelection | null = selectedTeam
-    ? { type: "team", id: selectedTeam.id }
+  const displayLabel = selectedSquad?.name ?? selectedAgent?.name;
+  const displayActor: ActorSelection | null = selectedSquad
+    ? { type: "squad", id: selectedSquad.id }
     : selectedAgent
       ? { type: "agent", id: selectedAgent.id }
       : null;
@@ -921,7 +993,7 @@ function ActorPicker({
         </span>
       }
     >
-      {filteredAgents.length === 0 && filteredTeams.length === 0 ? (
+      {filteredAgents.length === 0 && filteredSquads.length === 0 ? (
         query ? (
           <PickerEmpty />
         ) : (
@@ -948,18 +1020,18 @@ function ActorPicker({
               ))}
             </PickerSection>
           )}
-          {filteredTeams.length > 0 && (
-            <PickerSection label={t(($) => $.create_issue.agent.teams_group)}>
-              {filteredTeams.map((s) => (
+          {filteredSquads.length > 0 && (
+            <PickerSection label={t(($) => $.create_issue.agent.squads_group)}>
+              {filteredSquads.map((s) => (
                 <PickerItem
                   key={s.id}
-                  selected={actor?.type === "team" && actor.id === s.id}
+                  selected={actor?.type === "squad" && actor.id === s.id}
                   onClick={() => {
-                    onPick({ type: "team", id: s.id });
+                    onPick({ type: "squad", id: s.id });
                     setOpen(false);
                   }}
                 >
-                  <ActorAvatar actorType="team" actorId={s.id} size="sm" />
+                  <ActorAvatar actorType="squad" actorId={s.id} size="sm" />
                   <span className="truncate">{s.name}</span>
                 </PickerItem>
               ))}

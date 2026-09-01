@@ -19,28 +19,28 @@ import type {
   Agent,
   AgentRuntime,
   UpdateAgentRequest,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import {
   type AgentPresenceDetail,
   isAgentRuntimeBound,
   useWorkspacePresenceMap,
-} from "@patchbay/core/agents";
-import { api, ApiError } from "@patchbay/core/api";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useModalStore } from "@patchbay/core/modals";
-import { useWorkspacePaths } from "@patchbay/core/paths";
+} from "@multica/core/agents";
+import { api, ApiError } from "@multica/core/api";
+import { useAuthStore } from "@multica/core/auth";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { useModalStore } from "@multica/core/modals";
+import { useWorkspacePaths } from "@multica/core/paths";
 import {
   agentDetailOptions,
   agentListOptions,
   cacheAgentResponse,
   memberListOptions,
   workspaceKeys,
-} from "@patchbay/core/workspace/queries";
-import { runtimeDisplayLabel, runtimeListOptions } from "@patchbay/core/runtimes";
-import { useAgentPermissions } from "@patchbay/core/permissions";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { CapabilityBanner } from "@patchbay/ui/components/common/capability-banner";
+} from "@multica/core/workspace/queries";
+import { runtimeDisplayLabel, runtimeListOptions } from "@multica/core/runtimes";
+import { useAgentPermissions } from "@multica/core/permissions";
+import { Button } from "@multica/ui/components/ui/button";
+import { CapabilityBanner } from "@multica/ui/components/common/capability-banner";
 import {
   Dialog,
   DialogContent,
@@ -48,14 +48,14 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@multica/ui/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@patchbay/ui/components/ui/dropdown-menu";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+} from "@multica/ui/components/ui/dropdown-menu";
+import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import { AppLink, useNavigation } from "../../navigation";
 import { PageHeader } from "../../layout/page-header";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -305,7 +305,7 @@ export function AgentDetailPage({ agentId }: AgentDetailPageProps) {
     ? members.find((m) => m.user_id === agent.owner_id) ?? null
     : null;
 
-  // Chat shares the invocation gate with assignment (PB-3963): starting a
+  // Chat shares the invocation gate with assignment (MUL-3963): starting a
   // chat triggers agent runs. The button stays visible either way — a denied
   // click explains itself instead of the affordance silently missing. While
   // membership is still resolving the decision is undetermined, so the button
@@ -490,7 +490,7 @@ function DetailHeader({
    *  the chat, which is what stops AppLink from pushing. */
   onDm: (e: React.MouseEvent<HTMLAnchorElement>) => void;
   onAssign: () => void;
-  /** Absent for Patchbay's built-in agents, which the server refuses to
+  /** Absent for Multica's built-in agents, which the server refuses to
    *  archive — the menu hides the action rather than offering a failure. */
   onArchive?: () => void;
 }) {

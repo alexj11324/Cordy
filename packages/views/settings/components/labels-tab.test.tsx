@@ -3,7 +3,7 @@ import { cleanup, screen } from "@testing-library/react";
 import { renderWithI18n } from "../../test/i18n";
 import { LabelsTab } from "./labels-tab";
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "workspace-1",
 }));
 
@@ -11,7 +11,7 @@ vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({ data: [], isLoading: false }),
 }));
 
-vi.mock("@patchbay/core/labels", () => ({
+vi.mock("@multica/core/labels", () => ({
   labelListOptions: (wsId: string, resourceType: string) => ({
     queryKey: ["labels", wsId, "list", resourceType],
   }),
@@ -23,7 +23,7 @@ vi.mock("@patchbay/core/labels", () => ({
 describe("LabelsTab scopes", () => {
   afterEach(cleanup);
 
-  // Agent labels were removed from the product (PB-5600). The backend still
+  // Agent labels were removed from the product (MUL-5600). The backend still
   // models the `agent` resource type, so the guard here is that the settings
   // UI never offers it as a manageable catalog again.
   it("offers only the issue and skill catalogs", () => {

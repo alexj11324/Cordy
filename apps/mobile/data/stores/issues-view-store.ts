@@ -6,14 +6,14 @@
  * `packages/views/issues/components/issues-page.tsx:32-94`), while
  * My Issues has its own `assigned / created / agents` scopes.
  *
- * The `scope` filter is **client-side** on `executor_type` — see
+ * The `scope` filter is **client-side** on `assignee_type` — see
  * `more/issues.tsx`'s `scopedIssues` derivation. Server param stays unset
  * so the cache key (`issueKeys.list(wsId)`) and WS realtime invalidation
  * (`useIssuesRealtime`) don't have to know about scope.
  *
  * `IssuesScope` is defined locally rather than imported from
- * `@patchbay/core/issues/stores/issues-scope-store` — mobile only
- * `import type` from `@patchbay/core/types/*` per Sharing Principles, and
+ * `@multica/core/issues/stores/issues-scope-store` — mobile only
+ * `import type` from `@multica/core/types/*` per Sharing Principles, and
  * the union is small enough that a duplicated literal is preferable to a
  * cross-package type import hop.
  *
@@ -26,7 +26,7 @@
  * to its routing model, not an invariant mobile should mirror).
  */
 import { create } from "zustand";
-import type { IssuePriority, IssueStatus } from "@patchbay/core/types";
+import type { IssuePriority, IssueStatus } from "@multica/core/types";
 
 export type IssuesScope = "all" | "members" | "agents";
 

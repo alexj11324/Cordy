@@ -1,7 +1,7 @@
 import type {
   LocalDirectoryResourceRef,
   ProjectResource,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 
 /**
  * Display name for a local_directory row.

@@ -2,9 +2,9 @@
  * Slim header for the issue detail screen.
  *
  * Linear iOS-inspired layout:
- *   - identifier (PB-NN) above as a small muted label
+ *   - identifier (MUL-NN) above as a small muted label
  *   - title in a large bold treatment
- *   - attribute chip row below (status / priority / executor / labels /
+ *   - attribute chip row below (status / priority / assignee / labels /
  *     project / due date) — tappable, opens picker sheets
  *
  * The native iOS Stack header still renders `issue.identifier` as the
@@ -12,7 +12,7 @@
  * reference screenshot.
  */
 import { View } from "react-native";
-import type { Issue } from "@patchbay/core/types";
+import type { Issue } from "@multica/core/types";
 import { Text } from "@/components/ui/text";
 import { AttributeRow } from "./attribute-row";
 import { AgentActivityRow } from "./agent-activity-row";

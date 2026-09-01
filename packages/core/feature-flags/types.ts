@@ -1,7 +1,7 @@
 /**
- * Public types for the @patchbay/core/feature-flags module.
+ * Public types for the @multica/core/feature-flags module.
  *
- * The shape mirrors the Rust feature-flag service on purpose so
+ * The shape mirrors the Go-side server/pkg/featureflag package on purpose so
  * a Decision returned by the backend can be marshalled directly into the
  * frontend Service without translation. Keep them in sync when extending
  * either side.

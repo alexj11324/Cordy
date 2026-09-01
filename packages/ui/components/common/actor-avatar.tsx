@@ -1,16 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Bot } from "lucide-react";
-import { cn } from "@patchbay/ui/lib/utils";
+import { Bot, Users } from "lucide-react";
+import { cn } from "@multica/ui/lib/utils";
 import {
   AVATAR_SIZE_PX,
   DEFAULT_AVATAR_SIZE,
   type AvatarSize,
-} from "@patchbay/ui/lib/avatar-size";
-import { parseAvatarEmoji } from "@patchbay/ui/lib/avatar-emoji";
-import { PatchbayIcon } from "./patchbay-icon";
-import { PeopleGroupIcon } from "./people-group-icon";
+} from "@multica/ui/lib/avatar-size";
+import { parseAvatarEmoji } from "@multica/ui/lib/avatar-emoji";
+import { MulticaIcon } from "./multica-icon";
 
 interface ActorAvatarProps {
   name: string;
@@ -18,7 +17,7 @@ interface ActorAvatarProps {
   avatarUrl?: string | null;
   isAgent?: boolean;
   isSystem?: boolean;
-  isTeam?: boolean;
+  isSquad?: boolean;
   size?: AvatarSize;
   className?: string;
 }
@@ -29,7 +28,7 @@ function ActorAvatar({
   avatarUrl,
   isAgent,
   isSystem,
-  isTeam,
+  isSquad,
   size = DEFAULT_AVATAR_SIZE,
   className,
 }: ActorAvatarProps) {
@@ -41,7 +40,7 @@ function ActorAvatar({
     setImgError(false);
   }, [avatarUrl]);
 
-  // Every actor — member, agent, team, or system — renders as a circle. This
+  // Every actor — member, agent, squad, or system — renders as a circle. This
   // is the single source of truth for avatar shape; the upload editors mirror
   // it (packages/views/common/avatar-upload-control.tsx).
   return (
@@ -74,11 +73,11 @@ function ActorAvatar({
           onError={() => setImgError(true)}
         />
       ) : isSystem ? (
-        <PatchbayIcon noSpin style={{ width: px * 0.55, height: px * 0.55 }} />
+        <MulticaIcon noSpin style={{ width: px * 0.55, height: px * 0.55 }} />
       ) : isAgent ? (
         <Bot style={{ width: px * 0.55, height: px * 0.55 }} />
-      ) : isTeam ? (
-        <PeopleGroupIcon style={{ width: px * 0.55, height: px * 0.55 }} />
+      ) : isSquad ? (
+        <Users style={{ width: px * 0.55, height: px * 0.55 }} />
       ) : (
         initials
       )}

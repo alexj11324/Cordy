@@ -1,11 +1,12 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import type { RuntimeModel } from "@patchbay/core/types";
+import type { RuntimeModel } from "@multica/core/types";
 import { buildModelChangeUpdate } from "./model-change-cleanup";
 
 const FAST_HIGH: RuntimeModel = {
   id: "gpt-5.6-sol",
   label: "GPT-5.6 Sol",
+  supports_explicit_standard_service_tier: true,
   thinking: {
     supported_levels: [
       { value: "medium", label: "Medium" },
@@ -18,11 +19,13 @@ const FAST_HIGH: RuntimeModel = {
 const PLAIN: RuntimeModel = {
   id: "gpt-5.4-mini",
   label: "GPT-5.4 mini",
+  supports_explicit_standard_service_tier: true,
 };
 
 const MEDIUM_ONLY: RuntimeModel = {
   id: "gpt-5.5",
   label: "GPT-5.5",
+  supports_explicit_standard_service_tier: true,
   thinking: { supported_levels: [{ value: "medium", label: "Medium" }] },
   service_tiers: [{ id: "priority", name: "Fast" }],
 };
@@ -35,7 +38,7 @@ const CLAUDE_MEDIUM_ONLY: RuntimeModel = {
   thinking: { supported_levels: [{ value: "medium", label: "Medium" }] },
 };
 
-describe("buildModelChangeUpdate (PB-5390)", () => {
+describe("buildModelChangeUpdate (MUL-5390)", () => {
   it("clears overrides the new model does not advertise", () => {
     expect(
       buildModelChangeUpdate({
@@ -62,6 +65,30 @@ describe("buildModelChangeUpdate (PB-5390)", () => {
         catalog: CATALOG,
       }),
     ).toEqual({ model: "gpt-5.6-sol" });
+  });
+
+  it("keeps Codex explicit standard across model changes", () => {
+    expect(
+      buildModelChangeUpdate({
+        provider: "codex",
+        model: "gpt-5.4-mini",
+        thinkingLevel: "",
+        serviceTier: "default",
+        catalog: CATALOG,
+      }),
+    ).toEqual({ model: "gpt-5.4-mini" });
+  });
+
+  it("clears explicit standard when an older daemon does not advertise support", () => {
+    expect(
+      buildModelChangeUpdate({
+        provider: "codex",
+        model: "gpt-5.4-mini",
+        thinkingLevel: "",
+        serviceTier: "default",
+        catalog: [{ id: "gpt-5.4-mini", label: "GPT-5.4 mini" }],
+      }),
+    ).toEqual({ model: "gpt-5.4-mini", service_tier: "" });
   });
 
   it("clears only the unsupported half", () => {

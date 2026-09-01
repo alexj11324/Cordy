@@ -8,21 +8,10 @@ export interface AuthStoreOptions {
   api: ApiClient;
   storage: StorageAdapter;
   onLogin?: () => void;
-  onLogout?: AuthLogoutHandler;
+  onLogout?: () => void;
   /** When true, rely on HttpOnly cookies instead of localStorage for auth tokens. */
   cookieAuth?: boolean;
 }
-
-export type AuthLogoutOptions = {
-  /** Prevent platform auth recovery when cleaning up a permanently rejected session. */
-  rearmAuth?: boolean;
-};
-
-/** Optional promise that platform auth cleanup can await before re-authentication. */
-export type AuthLogoutHandler = (
-  serverLogout?: Promise<void>,
-  options?: AuthLogoutOptions,
-) => void | Promise<void>;
 
 export type AuthStatus =
   | "authenticating"
@@ -39,13 +28,9 @@ export interface AuthState {
   retryAuthentication: () => void;
   sendCode: (email: string) => Promise<void>;
   verifyCode: (email: string, code: string) => Promise<User>;
-  loginWithClerk: (sessionToken: string, signal?: AbortSignal) => Promise<User>;
-  createGuestSession: () => Promise<User>;
-  /** Starts a guest bearer for a desktop OAuth handoff without publishing it as the active UI user. */
-  createGuestSessionForHandoff: () => Promise<User>;
+  loginWithGoogle: (code: string, redirectUri: string) => Promise<User>;
   loginWithToken: (token: string) => Promise<User>;
-  /** Clears local auth state and resolves after a cookie session is revoked. */
-  logout: (options?: AuthLogoutOptions) => Promise<void>;
+  logout: () => void;
   setUser: (user: User) => void;
   refreshMe: () => Promise<void>;
 }
@@ -53,15 +38,7 @@ export interface AuthState {
 export function createAuthStore(options: AuthStoreOptions) {
   const { api, storage, onLogin, onLogout, cookieAuth } = options;
 
-  const requestGuestSession = async () => {
-    const { token, user } = await api.createGuestSession();
-    if (user.is_guest !== true) {
-      throw new Error("server did not return a guest session");
-    }
-    return { token, user };
-  };
-
-  return create<AuthState>((set, get) => ({
+  return create<AuthState>((set) => ({
     user: null,
     isLoading: true,
     status: "authenticating",
@@ -83,7 +60,7 @@ export function createAuthStore(options: AuthStoreOptions) {
       const { token, user } = await api.verifyCode(email, code);
       if (!cookieAuth) {
         // Token mode: persist for Electron / legacy.
-        storage.setItem("patchbay_token", token);
+        storage.setItem("multica_token", token);
         api.setToken(token);
       }
       onLogin?.();
@@ -92,20 +69,10 @@ export function createAuthStore(options: AuthStoreOptions) {
       return user;
     },
 
-    loginWithClerk: async (sessionToken: string, signal?: AbortSignal) => {
-      const { token, user } = await api.clerkLogin(sessionToken, signal);
-      if (signal?.aborted) {
-        const error = new Error("Clerk session exchange aborted");
-        error.name = "AbortError";
-        throw error;
-      }
-      // The Clerk token is only an input to the exchange. Every subsequent
-      // API and WebSocket request uses the HttpOnly Patchbay session cookie.
-      api.setTokenProvider(null);
-      if (cookieAuth) {
-        api.setToken(null);
-      } else {
-        storage.setItem("patchbay_token", token);
+    loginWithGoogle: async (code: string, redirectUri: string) => {
+      const { token, user } = await api.googleLogin(code, redirectUri);
+      if (!cookieAuth) {
+        storage.setItem("multica_token", token);
         api.setToken(token);
       }
       onLogin?.();
@@ -114,27 +81,8 @@ export function createAuthStore(options: AuthStoreOptions) {
       return user;
     },
 
-    createGuestSession: async () => {
-      const { token, user } = await requestGuestSession();
-      // Guest auth is still token auth: the user is real and the bearer is
-      // required for every subsequent workspace/onboarding API call.
-      storage.setItem("patchbay_token", token);
-      api.setToken(token);
-      onLogin?.();
-      identifyAnalytics(user.id, { email: user.email, name: user.name });
-      set({ user, isLoading: false, status: "authenticated" });
-      return user;
-    },
-    createGuestSessionForHandoff: async () => {
-      const { token, user } = await requestGuestSession();
-      // The bootstrap bearer only authenticates the one desktop initiation.
-      // Keep it in the in-memory API client so the renderer remains on the
-      // login page, and let the server claim it when Google completes.
-      api.setToken(token);
-      return user;
-    },
     loginWithToken: async (token: string) => {
-      storage.setItem("patchbay_token", token);
+      storage.setItem("multica_token", token);
       api.setToken(token);
       const user = await api.getMe();
       onLogin?.();
@@ -143,21 +91,17 @@ export function createAuthStore(options: AuthStoreOptions) {
       return user;
     },
 
-    logout: async (logoutOptions?: AuthLogoutOptions) => {
-      const serverLogout =
-        cookieAuth || get().user?.is_guest === true
-          ? api.logout().catch(() => {})
-          : Promise.resolve();
-      const platformLogout = onLogout?.(serverLogout, logoutOptions);
-      // Keep the promise so callers that are about to start a new Clerk
-      // exchange or navigate away can serialize behind both server-side
-      // session revocation and platform auth cleanup (for example Clerk).
-      storage.removeItem("patchbay_token");
+    logout: () => {
+      if (cookieAuth) {
+        // Clear server-side HttpOnly cookie.
+        api.logout().catch(() => {});
+      }
+      storage.removeItem("multica_token");
       api.setToken(null);
       setCurrentWorkspace(null, null);
       resetAnalytics();
+      onLogout?.();
       set({ user: null, isLoading: false, status: "unauthenticated" });
-      await Promise.all([serverLogout, platformLogout]);
     },
 
     setUser: (user: User) => {

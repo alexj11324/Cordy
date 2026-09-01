@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { X, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { Button } from "@patchbay/ui/components/ui/button";
+import { Button } from "@multica/ui/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,21 +14,19 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@patchbay/ui/components/ui/alert-dialog";
-import type { Issue, UpdateIssueRequest } from "@patchbay/core/types";
-import { commonIssueFields } from "@patchbay/core/issues/batch";
-import { issueBehavesAs, issueBehavesAsAny } from "@patchbay/core/issues";
-import { useBatchUpdateIssues, useBatchDeleteIssues } from "@patchbay/core/issues/mutations";
-import { useModalStore } from "@patchbay/core/modals";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
-import { StatusPicker, PriorityPicker, ExecutorPicker, OwnerPicker } from "./pickers";
+} from "@multica/ui/components/ui/alert-dialog";
+import type { Issue, UpdateIssueRequest } from "@multica/core/types";
+import { commonIssueFields } from "@multica/core/issues/batch";
+import { issueBehavesAs } from "@multica/core/issues";
+import { useBatchUpdateIssues, useBatchDeleteIssues } from "@multica/core/issues/mutations";
+import { useModalStore } from "@multica/core/modals";
+import { StatusPicker, PriorityPicker, AssigneePicker } from "./pickers";
 import { useT } from "../../i18n";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@multica/ui/lib/utils";
 import {
   UI_EASE_OUT,
   UI_MOTION_DURATION,
-} from "@patchbay/ui/lib/motion";
+} from "@multica/ui/lib/motion";
 import { useIssueSurfaceActionsOptional } from "../surface/actions-context";
 import { useIssueSurfaceSelection } from "../surface/selection-context";
 
@@ -39,7 +37,7 @@ export function BatchActionToolbar({
   /**
    * The universe of selectable issues at this call site (the same list the
    * rows are rendered from). The toolbar filters it by the active surface
-   * selection to reflect the real common status / priority / executor of the
+   * selection to reflect the real common status / priority / assignee of the
    * selected issues, mirroring how the skill list filters rows by `selectedIds`.
    */
   issues: Issue[];
@@ -52,8 +50,6 @@ export function BatchActionToolbar({
   placement?: "fixed-bottom" | "inline";
 }) {
   const { t } = useT("issues");
-  const wsId = useWorkspaceId();
-  const { categoryOf } = useIssueStatuses(wsId);
   const selection = useIssueSurfaceSelection();
   const selectedIds = selection.selectedIds;
   const clear = selection.clear;
@@ -80,8 +76,7 @@ export function BatchActionToolbar({
 
   const [statusOpen, setStatusOpen] = useState(false);
   const [priorityOpen, setPriorityOpen] = useState(false);
-  const [ownerOpen, setOwnerOpen] = useState(false);
-  const [executorOpen, setExecutorOpen] = useState(false);
+  const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const surfaceActions = useIssueSurfaceActionsOptional();
   const batchUpdate = useBatchUpdateIssues();
@@ -95,8 +90,7 @@ export function BatchActionToolbar({
     if (count > 0) return;
     setStatusOpen(false);
     setPriorityOpen(false);
-    setOwnerOpen(false);
-    setExecutorOpen(false);
+    setAssigneeOpen(false);
     setDeleteOpen(false);
   }, [count]);
 
@@ -117,76 +111,36 @@ export function BatchActionToolbar({
     }
   };
 
-  // Entering an executable category confirms execution admission. Entering
-  // review first chooses one reviewer who differs from every current executor,
-  // then the modal submits the status + reviewer handoff for the full
-  // selection.
+  // Batch status changes apply directly — no run-confirm modal (MUL-4155).
+  // done/cancelled can never start a run, and a backlog → active promotion now
+  // starts its run the same way a single-issue status change or the CLI does,
+  // without an extra confirmation step (product decision on MUL-4155). The
+  // status change was previously routed through the pre-trigger modal, which for
+  // the common done/cancelled case only rendered a misleading "现在开始处理？ →
+  // 不会开始处理" box. Agent/squad assignment still confirms via
+  // handleBatchAssignee — that is the only batch action that should preview a
+  // run fan-out.
   const handleBatchStatus = (updates: Partial<UpdateIssueRequest>) => {
     if (!updates.status) return;
-    if (
-      categoryOf(updates.status) === "in_review" &&
-      selectedIssues.some((issue) => !issueBehavesAs(issue, "in_review"))
-    ) {
-      const excludedExecutors = Array.from(
-        new Map(
-          selectedIssues.flatMap((issue) =>
-            issue.executor_type && issue.executor_id
-              ? [
-                  [
-                    `${issue.executor_type}:${issue.executor_id}`,
-                    { type: issue.executor_type, id: issue.executor_id },
-                  ] as const,
-                ]
-              : [],
-          ),
-        ).values(),
-      );
-      openModal("issue-run-confirm", {
-        issueIds: ids,
-        mode: "review",
-        status: updates.status,
-        fromExecutorType: null,
-        fromExecutorId: null,
-        fromExecutorName: t(($) => $.batch.selected_executors),
-        excludedExecutors,
-        executorType: null,
-        executorId: null,
-      });
-      return;
-    }
-    if (
-      ["todo", "in_progress", "blocked"].includes(categoryOf(updates.status)) &&
-      selectedIssues.some(
-        (issue) =>
-          !issueBehavesAsAny(issue, ["todo", "in_progress", "in_review", "blocked"]),
-      )
-    ) {
-      const executor = common.executor;
-      openModal("issue-run-confirm", {
-        issueIds: ids,
-        mode: "promote",
-        status: updates.status,
-        executorType: executor?.type ?? null,
-        executorId: executor?.id ?? null,
-        executorName: t(($) => $.batch.selected_executors),
-      });
-      return;
-    }
     void handleBatchUpdate(updates);
   };
 
-  const handleBatchExecutor = (updates: Partial<UpdateIssueRequest>) => {
-    if ((updates.executor_type === "agent" || updates.executor_type === "team") && updates.executor_id) {
-      // Executor assignment can start work from every executable category.
-      const hasRunningIssue = selectedIssues.some((issue) =>
-        issueBehavesAsAny(issue, ["todo", "in_progress", "in_review", "blocked"]),
-      );
-      if (hasRunningIssue) {
+  const handleBatchAssignee = (updates: Partial<UpdateIssueRequest>) => {
+    if ((updates.assignee_type === "agent" || updates.assignee_type === "squad") && updates.assignee_id) {
+      // Backlog never starts a run on assign (parking lot), so if every selected
+      // issue is in backlog the confirm modal would only render an empty "won't
+      // start" box — apply directly, matching handleBatchStatus's backlog short-
+      // circuit. A mixed selection still routes through the modal: the non-backlog
+      // issues will trigger and need confirmation.
+      // Category, not key: a custom status in the backlog category is a parking
+      // lot too, and assigning into it never starts a run. (MUL-6243)
+      const allBacklog = selectedIssues.every((i) => issueBehavesAs(i, "backlog"));
+      if (!allBacklog) {
         openModal("issue-run-confirm", {
           issueIds: ids,
           mode: "assign",
-          executorType: updates.executor_type,
-          executorId: updates.executor_id,
+          assigneeType: updates.assignee_type,
+          assigneeId: updates.assignee_id,
         });
         return;
       }
@@ -289,29 +243,16 @@ export function BatchActionToolbar({
           align="center"
         />
 
-        {/* Owner */}
-        <OwnerPicker
-          ownerType={common.owner?.type ?? null}
-          ownerId={common.owner?.id ?? null}
-          mixed={common.owner === null}
-          onUpdate={handleBatchUpdate}
-          open={ownerOpen}
-          onOpenChange={setOwnerOpen}
+        {/* Assignee */}
+        <AssigneePicker
+          assigneeType={common.assignee?.type ?? null}
+          assigneeId={common.assignee?.id ?? null}
+          mixed={common.assignee === null}
+          onUpdate={handleBatchAssignee}
+          open={assigneeOpen}
+          onOpenChange={setAssigneeOpen}
           triggerRender={<Button variant="ghost" size="sm" disabled={loading} />}
-          trigger={t(($) => $.batch.owner)}
-          align="center"
-        />
-
-        {/* Executor */}
-        <ExecutorPicker
-          executorType={common.executor?.type ?? null}
-          executorId={common.executor?.id ?? null}
-          mixed={common.executor === null}
-          onUpdate={handleBatchExecutor}
-          open={executorOpen}
-          onOpenChange={setExecutorOpen}
-          triggerRender={<Button variant="ghost" size="sm" disabled={loading} />}
-          trigger={t(($) => $.batch.executor)}
+          trigger={t(($) => $.batch.assignee)}
           align="center"
         />
 

@@ -5,7 +5,7 @@
  *
  * v1 only supports `github_repo` resource type. Loose client-side
  * validation: URL must look like `https://github.com/owner/repo`. Server
- * is the canonical validator in the Rust backend.
+ * is the canonical validator (validateAndNormalizeResourceRef in Go).
  */
 import { useCallback, useState } from "react";
 import { Alert, Pressable, View } from "react-native";

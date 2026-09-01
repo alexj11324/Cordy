@@ -12,7 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useAuthStore } from "@patchbay/core/auth";
+import { useAuthStore } from "@multica/core/auth";
 import {
   agentCompletedIssueCountOptions,
   needsSourceBackfill,
@@ -20,13 +20,13 @@ import {
   SOURCE_BACKFILL_MIN_AGENT_DONE_ISSUES,
   type QuestionnaireAnswers,
   type Source,
-} from "@patchbay/core/onboarding";
-import { useCurrentWorkspace } from "@patchbay/core/paths";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@multica/core/onboarding";
+import { useCurrentWorkspace } from "@multica/core/paths";
+import { Button } from "@multica/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
-} from "@patchbay/ui/components/ui/dialog";
+} from "@multica/ui/components/ui/dialog";
 import {
   GitHubIcon,
   GoogleIcon,
@@ -65,9 +65,9 @@ const EMPTY_BACKFILL: Pick<
  *
  *   1. User-level: `needsSourceBackfill(user, dismissCount)` — no
  *      source recorded, never declined, dismiss cap not reached.
- *   2. Workspace-level: agents (or teams) have completed at least
+ *   2. Workspace-level: agents (or squads) have completed at least
  *      SOURCE_BACKFILL_MIN_AGENT_DONE_ISSUES issues here. Attribution
- *      is a zero-payoff ask for the user, so it waits until Patchbay
+ *      is a zero-payoff ask for the user, so it waits until Multica
  *      has visibly delivered value. The count query only runs while
  *      gate 1 passes, so settled users never pay for it.
  *
@@ -273,9 +273,13 @@ function SourceBackfillDialogBody({
       onComplete();
     } catch (err) {
       setBusy(false);
-      toast.error(err instanceof Error ? err.message : "Failed to save");
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : t(($) => $.source_backfill.save_failed_toast),
+      );
     }
-  }, [canSubmit, answers.source, answers.source_other, onComplete]);
+  }, [canSubmit, answers.source, answers.source_other, onComplete, t]);
 
   const skip = useCallback(async () => {
     if (busy) return;
@@ -293,9 +297,13 @@ function SourceBackfillDialogBody({
       onComplete();
     } catch (err) {
       setBusy(false);
-      toast.error(err instanceof Error ? err.message : "Failed to save");
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : t(($) => $.source_backfill.save_failed_toast),
+      );
     }
-  }, [busy, onComplete]);
+  }, [busy, onComplete, t]);
 
   return (
     <DialogContent className="sm:max-w-2xl p-0 gap-0 overflow-hidden">

@@ -14,7 +14,7 @@ export type MyIssuesScope = "all" | "assigned" | "created" | "agents";
 export type MyIssuesRelation = "all" | "assigned" | "created" | "involved";
 
 // "agents" is the user-facing scope label; the issue APIs call the same
-// ownership/team-membership relation "involved".
+// ownership/squad-membership relation "involved".
 export function myIssuesRelationFromScope(
   scope: MyIssuesScope,
 ): MyIssuesRelation {
@@ -27,7 +27,7 @@ export interface MyIssuesViewState extends IssueViewState {
   setScope: (scope: MyIssuesScope) => void;
 }
 
-const basePersist = viewStorePersistOptions("patchbay_my_issues_view");
+const basePersist = viewStorePersistOptions("multica_my_issues_view");
 
 const _myIssuesViewStore = createStore<MyIssuesViewState>()(
   persist(

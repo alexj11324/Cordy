@@ -2,21 +2,21 @@
 
 import { MessageCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { cn } from "@patchbay/ui/lib/utils";
-import { useChatStore } from "@patchbay/core/chat";
+import { cn } from "@multica/ui/lib/utils";
+import { useChatStore } from "@multica/core/chat";
 import {
   chatSessionsOptions,
   countUnreadChatSessions,
   hasPendingChatTasksOptions,
-} from "@patchbay/core/chat/queries";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { createLogger } from "@patchbay/core/logger";
-import { useShortcut } from "@patchbay/core/shortcuts";
+} from "@multica/core/chat/queries";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { createLogger } from "@multica/core/logger";
+import { useShortcut } from "@multica/core/shortcuts";
 import {
   Tooltip,
   TooltipTrigger,
   TooltipContent,
-} from "@patchbay/ui/components/ui/tooltip";
+} from "@multica/ui/components/ui/tooltip";
 import { ShortcutKeycaps } from "../../common/shortcut-keycaps";
 import { useT } from "../../i18n";
 
@@ -35,7 +35,7 @@ export function ChatFab() {
   // FAB only needs a boolean "is anything running", and only while the window
   // is closed (when open, ChatWindow owns the detailed pending query). Gating
   // on `enabled: !isOpen` keeps the minimised button off the per-message
-  // aggregate hot path entirely (PB-4159).
+  // aggregate hot path entirely (MUL-4159).
   const { data: hasPending } = useQuery({
     ...hasPendingChatTasksOptions(wsId),
     enabled: !isOpen,
@@ -52,7 +52,7 @@ export function ChatFab() {
   };
 
   // Tooltip text carries the running/unread state on hover; the FAB itself no
-  // longer shows an unread-count badge (it duplicated the chat tab's, PB-4374).
+  // longer shows an unread-count badge (it duplicated the chat tab's, MUL-4374).
   const tooltip = isRunning
     ? t(($) => $.fab.running)
     : unreadSessionCount > 0

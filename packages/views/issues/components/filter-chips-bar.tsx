@@ -1,6 +1,6 @@
 "use client";
 
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
+import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
 import { useStatusLabel } from "../utils/status-label";
 import { NO_PROPERTY_VALUE } from "../utils/filter";
 import { useMemo, type ReactNode } from "react";
@@ -15,24 +15,24 @@ import {
   X,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { memberListOptions, agentListOptions, teamListOptions } from "@patchbay/core/workspace/queries";
-import { projectListOptions } from "@patchbay/core/projects/queries";
-import { labelListOptions } from "@patchbay/core/labels/queries";
-import { propertyListOptions } from "@patchbay/core/properties";
-import { isActorPropertyType, parseActorRef } from "@patchbay/core/types";
+import { Button } from "@multica/ui/components/ui/button";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { memberListOptions, agentListOptions, squadListOptions } from "@multica/core/workspace/queries";
+import { projectListOptions } from "@multica/core/projects/queries";
+import { labelListOptions } from "@multica/core/labels/queries";
+import { propertyListOptions } from "@multica/core/properties";
+import { isActorPropertyType, isScalarPropertyType, parseActorRef, propertyFilterValueKey, PROPERTY_FILTER_OP_SYMBOLS, type PropertyFilterValue } from "@multica/core/types";
 import {
   type ActorFilterValue,
   type FilterDimension,
   type FilterSnapshot,
   type IssueDateFilter,
-} from "@patchbay/core/issues/stores/view-store";
+} from "@multica/core/issues/stores/view-store";
 import {
   actorFilterKey,
   type IssueViewBaseline,
-} from "@patchbay/core/issue-views/baseline";
-import { useViewStore, useViewStoreApi } from "@patchbay/core/issues/stores/view-store-context";
+} from "@multica/core/issue-views/baseline";
+import { useViewStore, useViewStoreApi } from "@multica/core/issues/stores/view-store-context";
 import { StatusIcon } from "./status-icon";
 import { PriorityIcon } from "./priority-icon";
 import { ActorAvatar } from "../../common/actor-avatar";
@@ -81,8 +81,8 @@ function IconStack({ children }: { children: ReactNode[] }) {
  * Name lookup for chip values, keyed the way filters actually store actors.
  *
  * Members are keyed by `user_id`, NOT by the membership row id: every actor
- * filter value — executor, creator, and actor properties — carries the user
- * id. Keying by `Member.id` silently resolved nothing (PB-6286 review).
+ * filter value — assignee, creator, and actor properties — carries the user
+ * id. Keying by `Member.id` silently resolved nothing (MUL-6286 review).
  *
  * Returns undefined for anything unresolved so the caller can omit it, rather
  * than rendering a placeholder like "Unknown".
@@ -90,12 +90,12 @@ function IconStack({ children }: { children: ReactNode[] }) {
 export function buildChipActorNames(
   members: readonly { user_id: string; name: string }[],
   agents: readonly { id: string; name: string }[],
-  teams: readonly { id: string; name: string }[],
+  squads: readonly { id: string; name: string }[],
 ): (actor: ActorFilterValue) => string | undefined {
   const byKey = new Map<string, string>();
   for (const m of members) byKey.set(`member:${m.user_id}`, m.name);
   for (const a of agents) byKey.set(`agent:${a.id}`, a.name);
-  for (const s of teams) byKey.set(`team:${s.id}`, s.name);
+  for (const s of squads) byKey.set(`squad:${s.id}`, s.name);
   return (actor: ActorFilterValue) => byKey.get(`${actor.type}:${actor.id}`);
 }
 
@@ -104,7 +104,7 @@ export function buildChipActorNames(
  * stack. Unparseable entries drop out — the chip degrades to fewer avatars
  * rather than rendering a broken one.
  */
-export function actorFilterValues(selected: string[]): ActorFilterValue[] {
+export function actorFilterValues(selected: PropertyFilterValue[]): ActorFilterValue[] {
   return selected
     .map((value) => parseActorRef(value))
     .filter((ref): ref is NonNullable<ReturnType<typeof parseActorRef>> => ref !== null)
@@ -117,10 +117,10 @@ export function actorFilterValues(selected: string[]): ActorFilterValue[] {
  * The chips bar loads each directory lazily, and actor properties are the one
  * property type whose chip needs the member directory to say anything useful:
  * their values are references, not config options, so without this the chip
- * can only render a bare count (PB-6286 review).
+ * can only render a bare count (MUL-6286 review).
  */
 export function hasActorPropertyFilterSelection(
-  propertyFilters: Record<string, string[]>,
+  propertyFilters: Record<string, PropertyFilterValue[]>,
   properties: { id: string; type: string }[],
 ): boolean {
   return Object.entries(propertyFilters).some(
@@ -186,8 +186,8 @@ function useFilterChips(
 
   const statusFilters = useViewStore((s) => s.statusFilters);
   const priorityFilters = useViewStore((s) => s.priorityFilters);
-  const executorFilters = useViewStore((s) => s.executorFilters);
-  const includeNoExecutor = useViewStore((s) => s.includeNoExecutor);
+  const assigneeFilters = useViewStore((s) => s.assigneeFilters);
+  const includeNoAssignee = useViewStore((s) => s.includeNoAssignee);
   const creatorFilters = useViewStore((s) => s.creatorFilters);
   const projectFilters = useViewStore((s) => s.projectFilters);
   const includeNoProject = useViewStore((s) => s.includeNoProject);
@@ -198,8 +198,8 @@ function useFilterChips(
   const hasStoreFilters =
     statusFilters.length > 0 ||
     priorityFilters.length > 0 ||
-    executorFilters.length > 0 ||
-    includeNoExecutor ||
+    assigneeFilters.length > 0 ||
+    includeNoAssignee ||
     creatorFilters.length > 0 ||
     projectFilters.length > 0 ||
     includeNoProject ||
@@ -223,15 +223,15 @@ function useFilterChips(
     ...memberListOptions(wsId),
     enabled:
       enabled &&
-      (executorFilters.length > 0 || creatorFilters.length > 0 || hasActorPropertyFilter),
+      (assigneeFilters.length > 0 || creatorFilters.length > 0 || hasActorPropertyFilter),
   });
   const { data: agents = [] } = useQuery({
     ...agentListOptions(wsId),
-    enabled: enabled && (executorFilters.length > 0 || creatorFilters.length > 0),
+    enabled: enabled && (assigneeFilters.length > 0 || creatorFilters.length > 0),
   });
-  const { data: teams = [] } = useQuery({
-    ...teamListOptions(wsId),
-    enabled: enabled && executorFilters.some((f) => f.type === "team"),
+  const { data: squads = [] } = useQuery({
+    ...squadListOptions(wsId),
+    enabled: enabled && assigneeFilters.some((f) => f.type === "squad"),
   });
   const { data: projects = [] } = useQuery({
     ...projectListOptions(wsId),
@@ -242,8 +242,8 @@ function useFilterChips(
     enabled: enabled && labelFilters.length > 0,
   });
   const actorName = useMemo(
-    () => buildChipActorNames(members, agents, teams),
-    [members, agents, teams],
+    () => buildChipActorNames(members, agents, squads),
+    [members, agents, squads],
   );
 
   // Inside a saved view chips show only the user's additions ON TOP of the
@@ -259,8 +259,8 @@ function useFilterChips(
     const current: FilterSnapshot = {
       statusFilters: s.statusFilters,
       priorityFilters: s.priorityFilters,
-      executorFilters: s.executorFilters,
-      includeNoExecutor: s.includeNoExecutor,
+      assigneeFilters: s.assigneeFilters,
+      includeNoAssignee: s.includeNoAssignee,
       creatorFilters: s.creatorFilters,
       projectFilters: s.projectFilters,
       includeNoProject: s.includeNoProject,
@@ -274,11 +274,11 @@ function useFilterChips(
       case "priority":
         s.resetFiltersTo({ ...current, priorityFilters: raw.priorityFilters });
         break;
-      case "executor":
+      case "assignee":
         s.resetFiltersTo({
           ...current,
-          executorFilters: raw.executorFilters,
-          includeNoExecutor: raw.includeNoExecutor,
+          assigneeFilters: raw.assigneeFilters,
+          includeNoAssignee: raw.includeNoAssignee,
         });
         break;
       case "creator":
@@ -312,12 +312,12 @@ function useFilterChips(
   const deltaPriority = baseline
     ? priorityFilters.filter((p) => !baseline.priority.has(p))
     : priorityFilters;
-  const deltaExecutors = baseline
-    ? executorFilters.filter((a) => !baseline.executor.has(actorFilterKey(a)))
-    : executorFilters;
-  const deltaNoExecutor = baseline
-    ? includeNoExecutor && !baseline.includeNoExecutor
-    : includeNoExecutor;
+  const deltaAssignees = baseline
+    ? assigneeFilters.filter((a) => !baseline.assignee.has(actorFilterKey(a)))
+    : assigneeFilters;
+  const deltaNoAssignee = baseline
+    ? includeNoAssignee && !baseline.includeNoAssignee
+    : includeNoAssignee;
   const deltaCreators = baseline
     ? creatorFilters.filter((a) => !baseline.creator.has(actorFilterKey(a)))
     : creatorFilters;
@@ -330,10 +330,12 @@ function useFilterChips(
   const deltaLabels = baseline
     ? labelFilters.filter((id) => !baseline.label.has(id))
     : labelFilters;
-  const deltaProperties: Record<string, string[]> = {};
+  const deltaProperties: Record<string, PropertyFilterValue[]> = {};
   for (const [id, selected] of Object.entries(propertyFilters)) {
     const fixed = baseline?.property.get(id);
-    const delta = fixed ? selected.filter((v) => !fixed.has(v)) : selected;
+    const delta = fixed
+      ? selected.filter((v) => !fixed.has(propertyFilterValueKey(v)))
+      : selected;
     if (delta.length > 0) deltaProperties[id] = delta;
   }
 
@@ -385,16 +387,16 @@ function useFilterChips(
       onRemove: () => clearDimension("priority"),
     });
   }
-  if (deltaExecutors.length > 0 || deltaNoExecutor) {
-    const names = deltaExecutors.map(actorName);
-    if (deltaNoExecutor) names.push(t(($) => $.filters.no_executor));
+  if (deltaAssignees.length > 0 || deltaNoAssignee) {
+    const names = deltaAssignees.map(actorName);
+    if (deltaNoAssignee) names.push(t(($) => $.filters.no_assignee));
     chips.push({
-      key: "executor",
+      key: "assignee",
       icon: <User className={CHIP_ICON_CLASS} />,
-      label: t(($) => $.filters.section_executor),
-      valueIcons: deltaExecutors.length > 0 ? <AvatarStack actors={deltaExecutors} /> : undefined,
+      label: t(($) => $.filters.section_assignee),
+      valueIcons: deltaAssignees.length > 0 ? <AvatarStack actors={deltaAssignees} /> : undefined,
       value: summarize(names),
-      onRemove: () => clearDimension("executor"),
+      onRemove: () => clearDimension("assignee"),
     });
   }
   if (deltaCreators.length > 0) {
@@ -457,20 +459,39 @@ function useFilterChips(
     // references, so names come from the directory and the icons are avatars.
     const actorProperty = isActorPropertyType(definition.type);
     const actorValues = actorProperty ? actorFilterValues(selected) : [];
-    const optionName = (optionId: string): string | undefined => {
-      if (optionId === NO_PROPERTY_VALUE) {
+    const optionName = (member: PropertyFilterValue): string | undefined => {
+      if (member === NO_PROPERTY_VALUE) {
         return t(($) => $.pickers.custom_property.none);
       }
+      // Scalar operator members summarize with their operator; the comparison
+      // symbols are locale-independent, the word ops get chip phrases.
+      if (typeof member === "object") {
+        if (member.op === "contains") {
+          return t(($) => $.filters.chip_op_contains, { value: member.value });
+        }
+        if (member.op === "before") {
+          return t(($) => $.filters.chip_op_before, { value: member.value });
+        }
+        if (member.op === "after") {
+          return t(($) => $.filters.chip_op_after, { value: member.value });
+        }
+        const symbol = PROPERTY_FILTER_OP_SYMBOLS[member.op] ?? member.op;
+        return `${symbol} ${member.value}`;
+      }
       if (actorProperty) {
-        const ref = parseActorRef(optionId);
+        const ref = parseActorRef(member);
         return ref ? actorName({ type: ref.kind, id: ref.id }) : undefined;
       }
       if (definition.type === "checkbox") {
-        return optionId === "true"
+        return member === "true"
           ? t(($) => $.pickers.custom_property.true_label)
           : t(($) => $.pickers.custom_property.false_label);
       }
-      return definition.config.options?.find((o) => o.id === optionId)?.name;
+      // Scalar properties have no option list — the filter value IS the label.
+      if (isScalarPropertyType(definition.type)) {
+        return member;
+      }
+      return definition.config.options?.find((o) => o.id === member)?.name;
     };
     const optionColors =
       definition.type === "checkbox" || actorProperty

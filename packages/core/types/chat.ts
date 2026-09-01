@@ -7,14 +7,14 @@ export interface ChatPinnedAgent {
 }
 
 /**
- * Kind of a chat message. Additive (PB-4351): the server always sends a
+ * Kind of a chat message. Additive (MUL-4351): the server always sends a
  * concrete value, but treat a missing/unknown value as "message" so an older
  * server or a future kind never breaks rendering.
  * - "message"     — an ordinary user/assistant message.
  * - "no_response" — a completed direct-chat turn that produced no text reply.
  * - "onboarding_kickoff" — a product-authored opening input that is sent to
- *   Patrick but never rendered as a member message.
- * - "onboarding_opening" — Patrick's reply to the kickoff; chat renders the
+ *   Mika but never rendered as a member message.
+ * - "onboarding_opening" — Mika's reply to the kickoff; chat renders the
  *   onboarding starter cards under it instead of quick-action chips.
  */
 export type ChatMessageKind =
@@ -48,7 +48,7 @@ export interface ChatQuickActionsPendingState {
    * chat:quick_actions supplement and clears this marker. Stored on the marker
    * (not as a component timer) so switching chat surfaces — which unmounts and
    * remounts the timeout hook — resumes the SAME deadline instead of re-arming
-   * a fresh window each time (PB-5149 review).
+   * a fresh window each time (MUL-5149 review).
    */
   expires_at: number;
 }
@@ -59,7 +59,7 @@ export interface ChatQuickActionsPendingState {
  * the turn's pills are unchanged. Set by the realtime layer off a failed
  * chat:quick_actions and consumed once by a view to toast "couldn't refresh"
  * before clearing itself. `at` is a per-event nonce so a second failure re-fires
- * even when the message_id repeats (PB-5149 review).
+ * even when the message_id repeats (MUL-5149 review).
  */
 export interface ChatQuickActionsFailureState {
   message_id: string;
@@ -75,6 +75,12 @@ export interface ChatLastMessage {
   failure_reason?: string | null;
   /** "message" (default) or "no_response". Optional for older servers. */
   message_kind?: ChatMessageKind;
+}
+
+export interface ChatChannelSource {
+  channel_type: string;
+  installation_id: string;
+  route_revision: number;
 }
 
 export interface ChatSession {
@@ -98,6 +104,11 @@ export interface ChatSession {
   /** True when the user has pinned this chat to the top of the list.
    *  Optional so older clients / non-list payloads stay valid. */
   pinned?: boolean;
+  /** Present for Chats created by an external Channel. Historical Chats keep
+   *  their source even after a newer route generation becomes current. */
+  channel_source?: ChatChannelSource;
+  /** Absent for first-party Chats. */
+  is_current_channel_route?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -155,7 +166,7 @@ export interface ChatMessage {
   elapsed_ms?: number | null;
   /**
    * "message" (default) or "no_response" — a completed direct-chat turn that
-   * produced no text reply (PB-4351). Optional/additive: absent on older
+   * produced no text reply (MUL-4351). Optional/additive: absent on older
    * servers and on user messages; treat a missing value as "message".
    */
   message_kind?: ChatMessageKind;
@@ -201,13 +212,13 @@ export interface SendChatMessageResponse {
   attachment_ids?: string[];
 }
 
-export interface StartPatrickOnboardingResponse {
+export interface StartMikaOnboardingResponse {
   /** True only for the request that wrote the opening. */
   started: boolean;
   /**
    * The opening message, already persisted and final. No agent runs to
    * produce it, so there is no task to await — a `started` response means the
-   * member's first message from Patrick is in the Agent event history right now.
+   * member's first message from Mika is in the transcript right now.
    */
   message_id?: string;
   created_at?: string;
@@ -231,7 +242,7 @@ export interface CancelTaskResponse extends AgentTask {
 
 /**
  * One durable draft restore from GET /api/chat/sessions/{id}/draft-restores
- * (#5219): a deferred cancellation settled as empty-Agent event history after the
+ * (#5219): a deferred cancellation settled as empty-transcript after the
  * cancel HTTP response had returned, so the deleted prompt is held
  * server-side until the creator's client applies it to the composer and
  * consumes it (DELETE, idempotent). The chat:cancel_finalized event is only
@@ -282,6 +293,14 @@ export interface ChatPendingTask {
   task_id?: string;
   status?: string;
   created_at?: string;
+  /**
+   * Why a `waiting_local_directory` task is parked: the directory it needs and,
+   * when known, the short id of the task holding it. Set only while that status
+   * is current — see promotePendingChatTask, which clears it on every other
+   * transition so a stale hold can never be read as a live one. Absent on
+   * servers predating the field, which renders as the bare waiting label.
+   */
+  wait_reason?: string;
   /** Explicit capability gate; absent on servers predating follow-up queues. */
   supports_queue?: boolean;
   /**

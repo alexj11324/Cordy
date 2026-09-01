@@ -13,7 +13,7 @@ import type {
   Agent,
   AgentRuntime,
   MemberWithUser,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 import {
   type AgentActivity,
   agentRunCounts30dOptions,
@@ -23,7 +23,7 @@ import {
   useWorkspacePresenceMap,
   VISIBILITY_TOOLTIP,
   type AgentPresenceDetail,
-} from "@patchbay/core/agents";
+} from "@multica/core/agents";
 import {
   type AgentListFilters,
   useAgentsViewStore,
@@ -32,17 +32,17 @@ import {
   type AgentColumnKey,
   type AgentsScope,
   type AgentSortField,
-} from "@patchbay/core/agents/stores";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
+} from "@multica/core/agents/stores";
+import { useAuthStore } from "@multica/core/auth";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { useWorkspacePaths } from "@multica/core/paths";
 import {
   agentListOptions,
   memberListOptions,
-} from "@patchbay/core/workspace/queries";
-import { runtimeDisplayLabel, runtimeListOptions } from "@patchbay/core/runtimes";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { Checkbox } from "@patchbay/ui/components/ui/checkbox";
+} from "@multica/core/workspace/queries";
+import { runtimeDisplayLabel, runtimeListOptions } from "@multica/core/runtimes";
+import { Button } from "@multica/ui/components/ui/button";
+import { Checkbox } from "@multica/ui/components/ui/checkbox";
 import {
   LIST_GRID_BOTTOM_CLEARANCE,
   ListGrid,
@@ -52,13 +52,13 @@ import {
   ListGridHeaderCell,
   ListGridRow,
   type ListGridSortDirection,
-} from "@patchbay/ui/components/ui/list-grid";
-import { Skeleton } from "@patchbay/ui/components/ui/skeleton";
+} from "@multica/ui/components/ui/list-grid";
+import { Skeleton } from "@multica/ui/components/ui/skeleton";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@patchbay/ui/components/ui/tooltip";
+} from "@multica/ui/components/ui/tooltip";
 import { useNavigation, useRowLink } from "../../navigation";
 import { ActorAvatar } from "../../common/actor-avatar";
 import { ProviderLogo } from "../../runtimes/components/provider-logo";
@@ -73,11 +73,11 @@ import {
   AgentListToolbar,
   countActiveFilterDimensions,
 } from "./agent-list-toolbar";
-import { useT } from "../../i18n";
+import { useLocale, useT } from "../../i18n";
 import { matchesPinyin } from "../../editor/extensions/pinyin-match";
 
 // Column template — single source of truth for header, rows, and skeletons.
-// Same conventions as the skills/automations lists (see list-grid.tsx):
+// Same conventions as the skills/autopilots lists (see list-grid.tsx):
 // deterministic var-width tracks, two-zone responsiveness (≥@2xl WYSIWYG
 // with min-width + horizontal-scroll escape valve; <@2xl static core set of
 // name + status, toggles don't apply).
@@ -227,11 +227,11 @@ export function rowMatchesFilters(
 
 /**
  * Bulk-access dialog confirm-button enablement is centralized in
- * `@patchbay/core/agents` as `isAccessChangeReady` (PB-3963). The dialog
+ * `@multica/core/agents` as `isAccessChangeReady` (MUL-3963). The dialog
  * consumes it; the picker also gates its internal Save button on the same
  * predicate (its own Save button is hidden via `hideFooter` in the bulk flow).
  */
-import { isAccessChangeReady } from "@patchbay/core/agents";
+import { isAccessChangeReady } from "@multica/core/agents";
 import { AgentBatchToolbar } from "./agent-batch-toolbar";
 export { isAccessChangeReady };
 
@@ -263,7 +263,7 @@ function PageHeaderBar({
       count={totalCount}
       description={t(($) => $.page.tagline)}
       learnMore={{
-        href: "https://patchbay.aspectlylabs.com/docs/agents",
+        href: "https://multica.ai/docs/agents",
         label: t(($) => $.page.learn_more),
       }}
       actions={
@@ -768,6 +768,7 @@ function LoadingSkeleton() {
 
 export function AgentsPage(_props: AgentsPageProps = {}) {
   const { t } = useT("agents");
+  const locale = useLocale();
   const wsId = useWorkspaceId();
   const paths = useWorkspacePaths();
   const navigation = useNavigation();
@@ -1140,7 +1141,7 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
                       )}
                       {isColVisible("runs") ? (
                         <ListGridCell className="hidden justify-end font-mono text-caption tabular-nums text-muted-foreground @2xl:flex">
-                          {row.runCount.toLocaleString()}
+                          {row.runCount.toLocaleString(locale)}
                         </ListGridCell>
                       ) : (
                         <ListGridCell className="hidden px-0 @2xl:flex" />
@@ -1158,7 +1159,7 @@ export function AgentsPage(_props: AgentsPageProps = {}) {
                         <ListGridCell className="hidden whitespace-nowrap text-caption tabular-nums text-muted-foreground @2xl:flex">
                           {new Date(
                             row.agent.created_at,
-                          ).toLocaleDateString()}
+                          ).toLocaleDateString(locale)}
                         </ListGridCell>
                       ) : (
                         <ListGridCell className="hidden px-0 @2xl:flex" />

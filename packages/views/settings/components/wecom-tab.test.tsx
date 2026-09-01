@@ -4,7 +4,7 @@ import { type ReactNode } from "react";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
 
@@ -31,12 +31,6 @@ const mockRegisterBYO = vi.hoisted(() => vi.fn());
 const mockDeleteInstallation = vi.hoisted(() => vi.fn());
 const mockInvalidate = vi.hoisted(() => vi.fn());
 
-const healthyRuntime = {
-  state: "healthy",
-  observedAt: null,
-  errorCode: null,
-} as const;
-
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
     if (opts.enabled === false) return { data: undefined, isLoading: false };
@@ -49,17 +43,17 @@ vi.mock("@tanstack/react-query", () => ({
   queryOptions: <T,>(opts: T) => opts,
 }));
 
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
+vi.mock("@multica/core/hooks", () => ({ useWorkspaceId: () => "workspace-1" }));
 
-vi.mock("@patchbay/core/workspace/queries", () => ({
+vi.mock("@multica/core/workspace/queries", () => ({
   memberListOptions: () => ({ queryKey: ["members"], queryFn: vi.fn() }),
 }));
 
-vi.mock("@patchbay/core/workspace/hooks", () => ({
+vi.mock("@multica/core/workspace/hooks", () => ({
   useActorName: () => ({
     getAgentName: (agentId: string) => `Agent ${agentId}`,
     getMemberName: () => "Unknown",
-    getTeamName: () => "Unknown Team",
+    getSquadName: () => "Unknown Squad",
     getActorName: () => "Unknown",
     getActorInitials: () => "??",
     getActorAvatarUrl: () => null,
@@ -72,7 +66,7 @@ vi.mock("../../common/actor-avatar", () => ({
   ),
 }));
 
-vi.mock("@patchbay/core/wecom", () => ({
+vi.mock("@multica/core/wecom", () => ({
   wecomInstallationsOptions: () => ({
     queryKey: ["wecom", "installations"],
     queryFn: vi.fn(),
@@ -80,7 +74,7 @@ vi.mock("@patchbay/core/wecom", () => ({
   wecomKeys: { installations: (wsId: string) => ["wecom", "installations", wsId] },
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: {
     registerWecomBYO: mockRegisterBYO,
     deleteWecomInstallation: mockDeleteInstallation,
@@ -91,7 +85,7 @@ vi.mock("@patchbay/core/api", () => ({
     e && typeof e === "object" ? (e as { code?: string }).code : undefined,
 }));
 
-vi.mock("@patchbay/core/auth", () => {
+vi.mock("@multica/core/auth", () => {
   const useAuthStore = Object.assign(
     (sel?: (s: { user: { id: string } }) => unknown) =>
       sel ? sel({ user: { id: "user-1" } }) : { user: { id: "user-1" } },
@@ -129,12 +123,7 @@ describe("WecomAgentBindButton", () => {
   beforeEach(resetFixtures);
 
   it("opens the BYO dialog and submits the trimmed bot id + secret", async () => {
-    mockRegisterBYO.mockResolvedValue({
-      id: "i1",
-      agent_id: "agent-1",
-      status: "active",
-      runtime: healthyRuntime,
-    });
+    mockRegisterBYO.mockResolvedValue({ id: "i1", agent_id: "agent-1", status: "active" });
     renderUI(<WecomAgentBindButton agentId="agent-1" agentName="Bot" />);
     await userEvent.click(screen.getByTestId("wecom-agent-connect"));
     await userEvent.type(await screen.findByTestId("wecom-byo-bot-id"), "  aibot_xyz  ");
@@ -224,7 +213,7 @@ describe("WecomAgentBindButton", () => {
   // The bot's chat name reaches the server, and only when it was typed.
   //
   // WeCom delivers a group @-mention as literal text with no structured
-  // mention list, so a name containing a space ("Patchbay Bot") swallows the
+  // mention list, so a name containing a space ("Multica Bot") swallows the
   // slash command typed after it. The name is the only way to tell where the
   // mention ends — and it cannot be discovered, because the smart bot exposes
   // no REST surface to ask. Left blank, the request omits it entirely so a
@@ -235,11 +224,11 @@ describe("WecomAgentBindButton", () => {
     await userEvent.click(screen.getByTestId("wecom-agent-connect"));
     await userEvent.type(await screen.findByTestId("wecom-byo-bot-id"), "aib94");
     await userEvent.type(screen.getByTestId("wecom-byo-secret"), "s3cret");
-    await userEvent.type(screen.getByTestId("wecom-byo-bot-name"), "  Patchbay Bot  ");
+    await userEvent.type(screen.getByTestId("wecom-byo-bot-name"), "  Multica Bot  ");
     await userEvent.click(screen.getByTestId("wecom-byo-submit"));
 
     await waitFor(() => expect(mockRegisterBYO).toHaveBeenCalled());
-    expect(mockRegisterBYO.mock.calls[0]?.[2].bot_name).toBe("Patchbay Bot");
+    expect(mockRegisterBYO.mock.calls[0]?.[2].bot_name).toBe("Multica Bot");
 
     cleanup();
     mockRegisterBYO.mockClear();
@@ -256,7 +245,7 @@ describe("WecomAgentBindButton", () => {
 
   it("shows the connected badge (not the CTA) when the agent has an active install", () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-1", bot_id: "aibot_x", status: "active", runtime: healthyRuntime }],
+      installations: [{ id: "i1", agent_id: "agent-1", bot_id: "aibot_x", status: "active" }],
       configured: true,
       install_supported: true,
     };
@@ -305,7 +294,7 @@ describe("WecomTab", () => {
 
   it("lists a connected installation with its agent name and a disconnect control", () => {
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-7", bot_id: "aibot_x", status: "active", runtime: healthyRuntime }],
+      installations: [{ id: "i1", agent_id: "agent-7", bot_id: "aibot_x", status: "active" }],
       configured: true,
       install_supported: true,
     };
@@ -317,7 +306,7 @@ describe("WecomTab", () => {
   it("confirms before disconnecting, then calls deleteWecomInstallation", async () => {
     mockDeleteInstallation.mockResolvedValue(undefined);
     installationsRef.current = {
-      installations: [{ id: "i1", agent_id: "agent-7", bot_id: "aibot_x", status: "active", runtime: healthyRuntime }],
+      installations: [{ id: "i1", agent_id: "agent-7", bot_id: "aibot_x", status: "active" }],
       configured: true,
       install_supported: true,
     };

@@ -4,14 +4,14 @@ import type { ChatMessage, ChatMessagesPage } from "../types";
 
 /**
  * The single door a settled chat message goes through on its way into the
- * message caches (PB-5711).
+ * message caches (MUL-5711).
  *
  * Before this, every writer rolled its own: `chat:done` inline-inserted the
  * assistant reply, `chat:message` threw its payload away and only invalidated,
  * and the three send paths each appended by hand — two of them to both caches,
  * the Agent Builder to the flat one only. The gap that produced this bug was in
  * that inconsistency, not in any single writer: a human's own message was the
- * one row no WebSocket handler ever wrote, so it reached the Agent event history solely
+ * one row no WebSocket handler ever wrote, so it reached the transcript solely
  * through a refetch, and a refetch that gets cancelled takes the message with
  * it.
  *
@@ -102,7 +102,7 @@ export interface UpsertChatMessageOptions {
    *
    * WebSocket handlers pass `false` (the default). An event for a session this
    * client has not opened must not fabricate a one-message history that a later
-   * reader would mistake for the whole Agent event history — the first real fetch owns
+   * reader would mistake for the whole transcript — the first real fetch owns
    * that.
    */
   seedIfMissing?: boolean;

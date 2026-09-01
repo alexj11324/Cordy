@@ -1,5 +1,5 @@
 /**
- * The workspace status catalog, resolved and memoized (PB-6243).
+ * The workspace status catalog, resolved and memoized (MUL-6243).
  *
  * Mobile-owned mirror of `packages/core/issue-statuses/hooks.ts`. Two
  * deliberate differences:

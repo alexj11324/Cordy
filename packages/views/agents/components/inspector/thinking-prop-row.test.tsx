@@ -12,8 +12,8 @@ import {
 import type {
   RuntimeModel,
   RuntimeModelListRequest,
-} from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+} from "@multica/core/types";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
 import enIssues from "../../../locales/en/issues.json";
@@ -25,7 +25,7 @@ const TEST_RESOURCES = {
 const mockInitiateListModels = vi.hoisted(() => vi.fn());
 const mockGetListModelsResult = vi.hoisted(() => vi.fn());
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: {
     initiateListModels: (...args: unknown[]) =>
       mockInitiateListModels(...args),
@@ -62,7 +62,7 @@ const NO_THINKING_MODEL: RuntimeModel = {
 
 // Codex flagship: flagged Default and advertises the widest catalog
 // (up to `ultra`). For an empty (follow-config) codex model the row must NOT
-// borrow this entry's levels — that's the PB-4347 fix.
+// borrow this entry's levels — that's the MUL-4347 fix.
 const CODEX_DEFAULT_MODEL: RuntimeModel = {
   id: "gpt-5.6-sol",
   label: "GPT-5.6 Sol",
@@ -206,7 +206,7 @@ describe("ThinkingPropRow", () => {
     renderRow({ value: "" });
 
     await screen.findByText("Thinking");
-    // Empty value means Patchbay omits --effort, so the local CLI's
+    // Empty value means Multica omits --effort, so the local CLI's
     // config decides — chip + tooltip both read "Follow CLI config".
     expect((await screen.findAllByText("Follow CLI config")).length).toBeGreaterThan(0);
   });
@@ -218,7 +218,7 @@ describe("ThinkingPropRow", () => {
     expect((await screen.findAllByText("Follow CLI config")).length).toBeGreaterThan(0);
   });
 
-  it("hides the picker for an empty codex model — it must not borrow the Default's catalog (PB-4347)", async () => {
+  it("hides the picker for an empty codex model — it must not borrow the Default's catalog (MUL-4347)", async () => {
     // Empty model on codex follows config.toml, which can resolve to any
     // installed model. Previewing gpt-5.6-sol's levels (the flagged Default,
     // the only one with `ultra`) would offer a level the real model may not

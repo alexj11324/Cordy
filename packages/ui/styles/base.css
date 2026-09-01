@@ -1,5 +1,5 @@
 /* =============================================================================
- * Patchbay shared base styles — imported by all apps
+ * Multica shared base styles — imported by all apps
  * ============================================================================= */
 
 /* The chat launcher overlays the dashboard's bottom-right corner on every
@@ -42,7 +42,7 @@
   color: var(--shiki-dark) !important;
 }
 
-/* Patchbay icon: entrance spin animation */
+/* Multica icon: entrance spin animation */
 @keyframes entrance-spin {
   0% { transform: rotate(0deg); opacity: 0; }
   50% { opacity: 1; }
@@ -240,77 +240,10 @@
   }
 }
 
-/* Board cards share the border-beam primitive, but only an issue with an
- * actually running agent task should animate. Queued tasks still show their
- * quiet activity badge without turning an entire column into motion. */
-.running-task-card:not(:has([data-issue-agent-activity="running"]))::before {
-  display: none;
-}
-
 /* Sidebar: open triggers (dropdown/popover) get active background */
 [data-sidebar="menu-button"][data-popup-open] {
-  background-color: var(--sidebar-item-active);
-  color: var(--sidebar-item-active-foreground);
-}
-
-/* Explicit desktop navigation glass. Electron supplies native `sidebar`
- * vibrancy on macOS; this translucent surface is also the browser fallback.
- * The compact Sheet is portalled outside the opted-in wrapper and stays solid. */
-[data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
-  [data-slot="sidebar-container"],
-[data-settings-sidebar-glass="true"] {
-  background-color: var(--sidebar);
-  background: linear-gradient(
-      180deg,
-      color-mix(in oklab, white 9%, transparent),
-      transparent 36%
-    ),
-    color-mix(in oklab, var(--sidebar) 70%, transparent);
-  border-inline-end: 1px solid color-mix(
-    in oklab,
-    var(--foreground) 10%,
-    transparent
-  );
-  box-shadow: 10px 0 30px color-mix(in oklab, var(--foreground) 7%, transparent);
-  -webkit-backdrop-filter: blur(24px) saturate(125%);
-  backdrop-filter: blur(24px) saturate(125%);
-}
-
-/* Standalone settings keeps the same material on desktop while its compact
- * horizontal tab strip remains opaque, matching the mobile Sidebar sheet. */
-@media (max-width: 767px) {
-  [data-settings-sidebar-glass="true"] {
-    background: var(--sidebar);
-    box-shadow: none;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
-}
-
-[data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
-  [data-slot="sidebar-inner"] {
-  background-color: transparent;
-}
-
-/* An offcanvas sidebar lands exactly outside the viewport. Suppress its
- * outward glow while hidden; hover reveal changes the parent back to expanded
- * before the material moves onscreen, restoring the normal shadow above. */
-[data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
-  [data-slot="sidebar"][data-state="collapsed"][data-collapsible="offcanvas"]
-  > [data-slot="sidebar-container"] {
-  box-shadow: none;
-}
-
-@media (prefers-reduced-transparency: reduce) {
-  [data-slot="sidebar-wrapper"][data-sidebar-glass="true"]
-    [data-slot="sidebar-container"],
-  [data-settings-sidebar-glass="true"] {
-    background: var(--sidebar);
-    border-inline-end-color: var(--sidebar-border);
-    box-shadow: none;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-  }
+  background-color: var(--sidebar-accent);
+  color: var(--sidebar-accent-foreground);
 }
 
 /* Sidebar resizing follows the same cursor contract as
@@ -433,55 +366,16 @@ html[data-dnd-dragging="true"] * {
   }
 }
 
-/* @lobehub/ui Flexbox (`lobe-flex`) contract.
- *
- * Flexbox sets CSS variables (`--lobe-flex-*`) on the element. The matching
- * `display:flex` / `flex-flow` / `gap` rules normally come from LobeHub's
- * ThemeProvider EssentialStyle. This app only mounts that provider on Settings,
- * so Agent chat (and the Agent sidebar) would otherwise render Flexbox as a
- * block box: send stuck to the left, welcome spacer not pinning above the
- * composer. Keep this in sync with `@lobehub/ui` `ThemeProvider/GlobalStyle/essential`.
- * `:where()` keeps specificity at 0 so a call-site utility can still override. */
-:where(.lobe-flex) {
-  --lobe-flex: 0 1 auto;
-  --lobe-flex-direction: column;
-  --lobe-flex-wrap: nowrap;
-  --lobe-flex-justify: flex-start;
-  --lobe-flex-align: stretch;
-  --lobe-flex-width: auto;
-  --lobe-flex-height: auto;
-  --lobe-flex-padding: 0;
-  --lobe-flex-padding-inline: var(--lobe-flex-padding);
-  --lobe-flex-padding-block: var(--lobe-flex-padding);
-  --lobe-flex-gap: 0;
-
-  display: flex;
-  flex: var(--lobe-flex);
-  flex-flow: var(--lobe-flex-direction) var(--lobe-flex-wrap);
-  gap: var(--lobe-flex-gap);
-  align-items: var(--lobe-flex-align);
-  justify-content: var(--lobe-flex-justify);
-  width: var(--lobe-flex-width);
-  height: var(--lobe-flex-height);
-  padding: var(--lobe-flex-padding);
-  padding-block: var(--lobe-flex-padding-block);
-  padding-inline: var(--lobe-flex-padding-inline);
-}
-
-.lobe-flex-hidden {
-  display: none;
-}
-
 /* In-page find (Cmd/Ctrl+F on the issue detail page). Matches are painted with
  * the CSS Custom Highlight API — ranges only, no DOM mutation — so the tint
  * layers cleanly over React-rendered markdown and the contenteditable
- * title/description editors. `patchbay-find-active` is registered with a higher
+ * title/description editors. `multica-find-active` is registered with a higher
  * priority so the current match paints on top of the dimmer all-matches tint. */
-::highlight(patchbay-find) {
+::highlight(multica-find) {
   background-color: var(--find-match);
   color: var(--find-match-foreground);
 }
-::highlight(patchbay-find-active) {
+::highlight(multica-find-active) {
   background-color: var(--find-match-active);
   color: var(--find-match-foreground);
 }

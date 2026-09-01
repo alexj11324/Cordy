@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # ==========================================================================
-# Full verification pipeline: typecheck → unit tests → Rust tests → Rust build → E2E
+# Full verification pipeline: typecheck → unit tests → Go tests → E2E
 # Usage: bash scripts/check.sh
 # ==========================================================================
 
@@ -80,62 +80,56 @@ bash scripts/ensure-postgres.sh "$ENV_FILE"
 # Step 1: TypeScript typecheck
 # --------------------------------------------------------------------------
 echo ""
-echo "==> [1/6] TypeScript typecheck..."
+echo "==> [1/5] TypeScript typecheck..."
 pnpm typecheck || { EXIT_CODE=1; exit 1; }
 
 # --------------------------------------------------------------------------
 # Step 2: TypeScript unit tests (Vitest)
 # --------------------------------------------------------------------------
 echo ""
-echo "==> [2/6] TypeScript unit tests..."
+echo "==> [2/5] TypeScript unit tests..."
 pnpm test || { EXIT_CODE=1; exit 1; }
 
 # --------------------------------------------------------------------------
-# Step 3: Rust migrations and tests
+# Step 3: Go tests
 # --------------------------------------------------------------------------
 echo ""
-echo "==> [3/6] Rust migrations..."
-node apps/desktop/scripts/prepare-dev-runtime.mjs || { EXIT_CODE=1; exit 1; }
-./.patchbay-dev/bin/patchbay-migrate up || { EXIT_CODE=1; exit 1; }
-echo "==> Rust workspace tests..."
-./scripts/run-dev-rust.sh test --workspace --all-targets --locked || { EXIT_CODE=1; exit 1; }
+echo "==> [3/5] Go tests..."
+echo "==> Verifying Go test wrapper..."
+bash scripts/test-go.test.sh || { EXIT_CODE=1; exit 1; }
+echo "==> Running database migrations..."
+(cd server && go run ./cmd/migrate up) || { EXIT_CODE=1; exit 1; }
+bash scripts/test-go.sh || { EXIT_CODE=1; exit 1; }
 
 # --------------------------------------------------------------------------
-# Step 4: Build the Rust server before the readiness deadline
+# Step 4: Start services for E2E (only if not already running)
 # --------------------------------------------------------------------------
 echo ""
-echo "==> [4/6] Building Rust server..."
-./scripts/run-dev-rust.sh build --locked -p patchbay-server || { EXIT_CODE=1; exit 1; }
+echo "==> [4/5] Starting services for E2E..."
 
-# --------------------------------------------------------------------------
-# Step 5: Start services for E2E (only if not already running)
-# --------------------------------------------------------------------------
-echo ""
-echo "==> [5/6] Starting services for E2E..."
-
-if curl -sf "http://localhost:${PORT}/healthz" > /dev/null 2>&1; then
+if curl -sf "http://localhost:${PORT}/health" > /dev/null 2>&1; then
   echo "    Backend already running on :$PORT"
 else
-  echo "    Starting backend (Rust)..."
-  ./.patchbay-dev/bin/patchbay-server > /tmp/patchbay-check-backend.log 2>&1 &
+  echo "    Starting backend..."
+  (cd server && go run ./cmd/server) > /tmp/multica-check-backend.log 2>&1 &
   BACKEND_PID=$!
   STARTED_BACKEND=true
-  wait_for_port "$PORT" "Backend" "${PATCHBAY_DEV_BACKEND_TIMEOUT_SECONDS:-120}" "/healthz"
+  wait_for_port "$PORT" "Backend" 90 "/health"
 fi
 
 if curl -sf "http://localhost:${FRONTEND_PORT}" > /dev/null 2>&1; then
   echo "    Frontend already running on :$FRONTEND_PORT"
 else
   echo "    Starting frontend..."
-  pnpm dev:web:next > /tmp/patchbay-check-frontend.log 2>&1 &
+  pnpm dev:web > /tmp/multica-check-frontend.log 2>&1 &
   FRONTEND_PID=$!
   STARTED_FRONTEND=true
-  wait_for_port "$FRONTEND_PORT" "Frontend" "${PATCHBAY_DEV_FRONTEND_TIMEOUT_SECONDS:-120}" "/"
+  wait_for_port "$FRONTEND_PORT" "Frontend" 120 "/"
 fi
 
 # --------------------------------------------------------------------------
-# Step 6: E2E tests (Playwright)
+# Step 5: E2E tests (Playwright)
 # --------------------------------------------------------------------------
 echo ""
-echo "==> [6/6] E2E tests (Playwright)..."
+echo "==> [5/5] E2E tests (Playwright)..."
 pnpm exec playwright test || { EXIT_CODE=1; exit 1; }

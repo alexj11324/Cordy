@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Issue-create binding for the coordinated-upload engine (PB-5181, L2).
+ * Issue-create binding for the coordinated-upload engine (MUL-5181, L2).
  *
  * Both create panels (manual form and agent prompt) share ONE upload pool —
  * `draft.shared.attachments` — so a file survives a mode switch from either
@@ -16,9 +16,9 @@
  */
 
 import { useMemo, type RefObject } from "react";
-import { attachmentToDraftUpload, type DraftUpload } from "@patchbay/core/drafts";
-import { useIssueDraftStore } from "@patchbay/core/issues/stores";
-import type { CreateMode } from "@patchbay/core/issues/stores";
+import { attachmentToDraftUpload, type DraftUpload } from "@multica/core/drafts";
+import { useIssueDraftStore } from "@multica/core/issues/stores";
+import type { CreateMode } from "@multica/core/issues/stores";
 import type { UploadGate } from "../editor/use-upload-gate";
 import type { ContentEditorRef } from "../editor/content-editor";
 import {

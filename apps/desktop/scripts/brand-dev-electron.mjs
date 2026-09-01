@@ -1,85 +1,41 @@
 #!/usr/bin/env node
-// Stage and rebrand Electron.app so `pnpm dev:desktop`
-// shows "Patchbay Canary" in the menu bar, Cmd+Tab switcher, and
+// Rebrand the bundled Electron.app's Info.plist so `pnpm dev:desktop`
+// shows "Multica Canary" in the menu bar, Cmd+Tab switcher, and
 // Activity Monitor. On macOS these titles come from CFBundleName at
-// launch time — `app.setName()` cannot override them at runtime.
+// launch time — `app.setName()` cannot override them at runtime, so
+// patching the plist in node_modules is the only working fix.
 //
-// The staged app lives under ~/Applications because macOS LaunchServices does
-// not route custom URL schemes to an Electron bundle inside pnpm's hidden
-// `.pnpm` directory. The destination is isolated by callback protocol,
-// Electron version, and architecture, and is reused across incremental runs.
+// Idempotent: runs on every dev launch and no-ops once the plist already
+// matches. The patch is isolated to this worktree's node_modules — we
+// unlink the file before rewriting so we never mutate a pnpm-store inode
+// shared with another project.
 //
 // In a worktree, scripts/dev.mjs sets DESKTOP_APP_SUFFIX so the name becomes
-// "Patchbay Canary <suffix>" — distinguishable in Cmd+Tab and matching the app
+// "Multica Canary <suffix>" — distinguishable in Cmd+Tab and matching the app
 // name src/main/index.ts derives from the same env var.
 
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
-import {
-  existsSync,
-  mkdtempSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
-import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
-
-import {
-  authCallbackProtocolForSuffix,
-  devElectronDistPath,
-} from "./worktree-dev-env.mjs";
+import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 if (process.platform !== "darwin") process.exit(0);
 
 const DESIRED_NAME = process.env.DESKTOP_APP_SUFFIX
-  ? `Patchbay Canary ${process.env.DESKTOP_APP_SUFFIX}`
-  : "Patchbay Canary";
-const DESIRED_PROTOCOL =
-  process.env.DESKTOP_AUTH_CALLBACK_PROTOCOL ??
-  authCallbackProtocolForSuffix(process.env.DESKTOP_APP_SUFFIX);
-if (
-  !/^patchbay-canary(?:-[a-z0-9](?:[a-z0-9-]{0,46}[a-z0-9])?)?$/.test(
-    DESIRED_PROTOCOL,
-  )
-) {
-  throw new Error(
-    `Invalid DESKTOP_AUTH_CALLBACK_PROTOCOL: ${DESIRED_PROTOCOL}`,
-  );
-}
-const protocolSuffix = DESIRED_PROTOCOL.replace(/^patchbay-canary-?/, "");
-const DESIRED_BUNDLE_IDENTIFIER = protocolSuffix
-  ? `ai.patchbay.desktop.canary.${protocolSuffix.replace(/-/g, ".")}`
-  : "ai.patchbay.desktop.canary";
+  ? `Multica Canary ${process.env.DESKTOP_APP_SUFFIX}`
+  : "Multica Canary";
 
 const require = createRequire(import.meta.url);
-const electronPackagePath = require.resolve("electron/package.json");
-const electronPackage = JSON.parse(readFileSync(electronPackagePath, "utf8"));
-const explicitSourceElectronDistPath =
-  process.env.ELECTRON_OVERRIDE_DIST_PATH;
-const sourceElectronDistPath =
-  explicitSourceElectronDistPath ??
-  join(dirname(electronPackagePath), "dist");
-const sourceAppBundlePath = join(sourceElectronDistPath, "Electron.app");
-const electronDistPath =
-  process.env.PATCHBAY_DEV_ELECTRON_DIST_PATH ??
-  devElectronDistPath({
-    home: homedir(),
-    authCallbackProtocol: DESIRED_PROTOCOL,
-    electronVersion: electronPackage.version,
-    arch: process.arch,
-  });
-const appBundlePath = join(electronDistPath, "Electron.app");
-const plistPath = resolve(appBundlePath, "Contents/Info.plist");
+// `require('electron')` returns the path to the executable
+// (.../Electron.app/Contents/MacOS/Electron). Walk up to Contents/Info.plist.
+const electronBin = require("electron");
+const plistPath = resolve(electronBin, "../../Info.plist");
 
-function plistGet(path, key) {
+function plistGet(key) {
   try {
     return execFileSync(
       "/usr/libexec/PlistBuddy",
-      ["-c", `Print :${key}`, path],
+      ["-c", `Print :${key}`, plistPath],
       { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
     ).trim();
   } catch {
@@ -87,147 +43,37 @@ function plistGet(path, key) {
   }
 }
 
-function plistSet(path, key, value) {
+function plistSet(key, value) {
   try {
     execFileSync("/usr/libexec/PlistBuddy", [
       "-c",
       `Set :${key} ${value}`,
-      path,
+      plistPath,
     ]);
   } catch {
     execFileSync("/usr/libexec/PlistBuddy", [
       "-c",
       `Add :${key} string ${value}`,
-      path,
+      plistPath,
     ]);
   }
 }
 
-function plistCommand(path, command, { quiet = false } = {}) {
-  execFileSync("/usr/libexec/PlistBuddy", ["-c", command, path], {
-    stdio: quiet ? "ignore" : undefined,
-  });
-}
-
-function resetUrlSchemes(path, protocol) {
-  try {
-    plistCommand(path, "Delete :CFBundleURLTypes", { quiet: true });
-  } catch {
-    // The stock Electron development bundle has no URL types.
-  }
-  plistCommand(path, "Add :CFBundleURLTypes array");
-  plistCommand(path, "Add :CFBundleURLTypes:0 dict");
-  plistCommand(path, "Add :CFBundleURLTypes:0:CFBundleTypeRole string Editor");
-  plistCommand(
-    path,
-    `Add :CFBundleURLTypes:0:CFBundleURLName string ${DESIRED_BUNDLE_IDENTIFIER}`,
-  );
-  plistCommand(path, "Add :CFBundleURLTypes:0:CFBundleURLSchemes array");
-  plistCommand(
-    path,
-    `Add :CFBundleURLTypes:0:CFBundleURLSchemes:0 string ${protocol}`,
-  );
-}
-
-function codeSignatureIsValid(path) {
-  try {
-    execFileSync(
-      "/usr/bin/codesign",
-      ["--verify", "--deep", "--strict", path],
-      { stdio: "ignore" },
-    );
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function appBundleIsReady(bundlePath, bundlePlistPath) {
-  return (
-    existsSync(bundlePlistPath) &&
-    plistGet(bundlePlistPath, "CFBundleName") === DESIRED_NAME &&
-    plistGet(bundlePlistPath, "CFBundleDisplayName") === DESIRED_NAME &&
-    plistGet(bundlePlistPath, "CFBundleIdentifier") ===
-      DESIRED_BUNDLE_IDENTIFIER &&
-    plistGet(bundlePlistPath, "CFBundleURLTypes:0:CFBundleTypeRole") ===
-      "Editor" &&
-    plistGet(bundlePlistPath, "CFBundleURLTypes:0:CFBundleURLSchemes:0") ===
-      DESIRED_PROTOCOL &&
-    codeSignatureIsValid(bundlePath)
-  );
-}
-
-if (!existsSync(sourceAppBundlePath)) {
-  throw new Error(`Electron source bundle is missing: ${sourceAppBundlePath}`);
-}
-
-// An explicit source is commonly a locally rebuilt Electron bundle. Its
-// contents can change without the version, protocol, or architecture changing,
-// so never reuse an earlier staged bundle for that path.
 if (
-  explicitSourceElectronDistPath === undefined &&
-  appBundleIsReady(appBundlePath, plistPath)
+  plistGet("CFBundleName") === DESIRED_NAME &&
+  plistGet("CFBundleDisplayName") === DESIRED_NAME
 ) {
   process.exit(0);
 }
 
-const destinationParent = dirname(electronDistPath);
-mkdirSync(destinationParent, { recursive: true });
-const temporaryDistPath = mkdtempSync(
-  join(destinationParent, ".electron-staging-"),
-);
-const temporaryAppBundlePath = join(temporaryDistPath, "Electron.app");
-const temporaryPlistPath = resolve(
-  temporaryAppBundlePath,
-  "Contents/Info.plist",
-);
-const previousDistPath = `${electronDistPath}.previous-${process.pid}`;
+// Break any pnpm hardlink to the global store: read, unlink, rewrite.
+// PlistBuddy would otherwise write through the hardlink and mutate the
+// shared store file (and every other project's Electron.app with it).
+const original = readFileSync(plistPath);
+unlinkSync(plistPath);
+writeFileSync(plistPath, original);
 
-try {
-  execFileSync("/bin/cp", ["-cR", sourceAppBundlePath, temporaryAppBundlePath]);
+plistSet("CFBundleName", DESIRED_NAME);
+plistSet("CFBundleDisplayName", DESIRED_NAME);
 
-  // Replace the cloned plist inode before editing. This keeps the source
-  // package or caller-supplied override untouched when clone-on-write storage
-  // is unavailable.
-  const original = readFileSync(temporaryPlistPath);
-  unlinkSync(temporaryPlistPath);
-  writeFileSync(temporaryPlistPath, original);
-
-  plistSet(temporaryPlistPath, "CFBundleName", DESIRED_NAME);
-  plistSet(temporaryPlistPath, "CFBundleDisplayName", DESIRED_NAME);
-  plistSet(temporaryPlistPath, "CFBundleIdentifier", DESIRED_BUNDLE_IDENTIFIER);
-  resetUrlSchemes(temporaryPlistPath, DESIRED_PROTOCOL);
-  execFileSync("/usr/bin/xattr", ["-cr", temporaryAppBundlePath]);
-  execFileSync("/usr/bin/codesign", [
-    "--force",
-    "--deep",
-    "--sign",
-    "-",
-    "--identifier",
-    DESIRED_BUNDLE_IDENTIFIER,
-    temporaryAppBundlePath,
-  ]);
-  if (!appBundleIsReady(temporaryAppBundlePath, temporaryPlistPath)) {
-    throw new Error("Staged Electron bundle failed validation");
-  }
-
-  rmSync(previousDistPath, { force: true, recursive: true });
-  if (existsSync(electronDistPath)) {
-    renameSync(electronDistPath, previousDistPath);
-  }
-  try {
-    renameSync(temporaryDistPath, electronDistPath);
-  } catch (error) {
-    if (!existsSync(electronDistPath) && existsSync(previousDistPath)) {
-      renameSync(previousDistPath, electronDistPath);
-    }
-    throw error;
-  }
-  rmSync(previousDistPath, { force: true, recursive: true });
-} finally {
-  rmSync(temporaryDistPath, { force: true, recursive: true });
-}
-
-console.log(
-  `[brand-dev-electron] ${plistPath} → name="${DESIRED_NAME}", bundle="${DESIRED_BUNDLE_IDENTIFIER}", callback="${DESIRED_PROTOCOL}://"`,
-);
+console.log(`[brand-dev-electron] ${plistPath} → CFBundleName="${DESIRED_NAME}"`);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useSidebar } from "@patchbay/ui/components/ui/sidebar";
+import { useSidebar } from "@multica/ui/components/ui/sidebar";
 import {
   getShortcut,
   isEditableShortcutTarget,
@@ -9,12 +9,12 @@ import {
   SHORTCUT_ACTION_BY_ID,
   useShortcutStore,
   type ShortcutActionId,
-} from "@patchbay/core/shortcuts";
-import { useChatStore } from "@patchbay/core/chat";
-import { openCreateIssueWithPreference } from "@patchbay/core/issues/stores";
-import { useModalStore } from "@patchbay/core/modals";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { isImeComposing } from "@patchbay/core/utils";
+} from "@multica/core/shortcuts";
+import { useChatStore } from "@multica/core/chat";
+import { openCreateIssueWithPreference } from "@multica/core/issues/stores";
+import { useModalStore } from "@multica/core/modals";
+import { useWorkspacePaths } from "@multica/core/paths";
+import { isImeComposing } from "@multica/core/utils";
 import { isFloatingChatRouteSuppressed } from "../chat/floating-chat-visibility";
 import { useNavigation } from "../navigation";
 import { useSearchStore } from "../search/search-store";
@@ -31,9 +31,9 @@ const GLOBAL_ACTIONS: readonly ShortcutActionId[] = [
   "goMyIssues",
   "goIssues",
   "goProjects",
-  "goAutomations",
+  "goAutopilots",
   "goAgents",
-  "goTeams",
+  "goSquads",
   "goUsage",
   "goRuntimes",
   "goSkills",
@@ -62,9 +62,9 @@ export function GlobalShortcuts() {
       goMyIssues: workspacePaths.myIssues(),
       goIssues: workspacePaths.issues(),
       goProjects: workspacePaths.projects(),
-      goAutomations: workspacePaths.automations(),
+      goAutopilots: workspacePaths.autopilots(),
       goAgents: workspacePaths.agents(),
-      goTeams: workspacePaths.teams(),
+      goSquads: workspacePaths.squads(),
       goUsage: workspacePaths.usage(),
       goRuntimes: workspacePaths.runtimes(),
       goSkills: workspacePaths.skills(),

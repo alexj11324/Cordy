@@ -42,7 +42,7 @@ test.describe("Settings", () => {
   // without a configured COMPOSIO_API_KEY or a live Composio project. The
   // backend redirect is simulated by pointing the init endpoint's redirect_url
   // straight back at the settings page with ?connected=<slug> — exercising the
-  // frontend's callback toast + connections refresh (PB-3718) end to end.
+  // frontend's callback toast + connections refresh (MUL-3718) end to end.
   test("connecting a Composio toolkit shows a toast and refreshes the list", async ({
     page,
   }) => {

@@ -37,7 +37,7 @@ vi.mock("../platform", () => ({
   DragStrip: () => null,
 }));
 
-vi.mock("@patchbay/core/auth", () => ({
+vi.mock("@multica/core/auth", () => ({
   useAuthStore: Object.assign(
     (selector?: (s: unknown) => unknown) => {
       const state = { refreshMe };
@@ -49,7 +49,7 @@ vi.mock("@patchbay/core/auth", () => ({
   ),
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: {
     acceptInvitation,
     markOnboardingComplete,
@@ -58,7 +58,7 @@ vi.mock("@patchbay/core/api", () => ({
   },
 }));
 
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../locales/en/common.json";
 import enInvite from "../locales/en/invite.json";
 import { InvitationsPage } from "./invitations-page";

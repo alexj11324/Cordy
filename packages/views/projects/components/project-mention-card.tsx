@@ -1,7 +1,7 @@
 "use client";
 
 import { AppLink } from "../../navigation";
-import { useWorkspacePaths } from "@patchbay/core/paths";
+import { useWorkspacePaths } from "@multica/core/paths";
 import { ProjectChip } from "./project-chip";
 
 interface ProjectMentionCardProps {

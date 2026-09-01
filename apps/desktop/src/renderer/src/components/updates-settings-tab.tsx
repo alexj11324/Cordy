@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { AlertCircle, ArrowDownToLine, Check, Loader2 } from "lucide-react";
-import { Button } from "@patchbay/ui/components/ui/button";
-import { SettingsSwitch as Switch } from "@patchbay/ui/components/common/lobe-settings";
-import { useT } from "@patchbay/views/i18n";
-import { SettingsCard, SettingsRow, SettingsTab } from "@patchbay/views/settings";
+import { Button } from "@multica/ui/components/ui/button";
+import { Switch } from "@multica/ui/components/ui/switch";
+import { useT } from "@multica/views/i18n";
+import { SettingsCard, SettingsRow, SettingsTab } from "@multica/views/settings";
 import { toast } from "sonner";
 
 type CheckState =

@@ -9,11 +9,11 @@ const useWorkspaceSlugMock = vi.hoisted(() =>
   vi.fn<() => string | null>(() => "acme"),
 );
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: { getAttachment: getAttachmentMock, getBaseUrl: getBaseUrlMock },
 }));
 
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/paths", () => ({
   useWorkspaceSlug: useWorkspaceSlugMock,
 }));
 
@@ -398,7 +398,7 @@ describe("useDownloadAttachment (desktop)", () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalled());
   });
 
-  // PB-2976: when the backend has no CloudFront signer, `getAttachment`
+  // MUL-2976: when the backend has no CloudFront signer, `getAttachment`
   // returns a server-relative `download_url` like `/api/attachments/.../download`.
   // The Electron main-process `downloadURLSafely` requires a parsable
   // http(s) URL or it drops the request — so the renderer must resolve
@@ -427,7 +427,7 @@ describe("useDownloadAttachment (desktop)", () => {
     );
   });
 
-  // PB-5292: in proxy mode the backend now answers with a capability URL —
+  // MUL-5292: in proxy mode the backend now answers with a capability URL —
   // still server-relative, but carrying `?exp=&sig=`. The query is what makes
   // the request authenticate itself, so it must survive the resolve step and
   // reach the native downloader intact.

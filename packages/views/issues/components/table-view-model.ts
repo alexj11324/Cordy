@@ -1,12 +1,12 @@
-import { propertyIdFromViewKey } from "@patchbay/core/issues/stores/view-store";
+import { propertyIdFromViewKey } from "@multica/core/issues/stores/view-store";
 import type {
   TableCalculation,
   TableColumnKey,
-} from "@patchbay/core/issues/stores/view-store";
+} from "@multica/core/issues/stores/view-store";
 import type {
   Issue,
   IssuePropertyValue,
-} from "@patchbay/core/types";
+} from "@multica/core/types";
 
 /** Export must fail closed when paged Table responses cannot prove that the
  * complete query window was collected. The UI translates this marker instead
@@ -103,8 +103,8 @@ function columnValue(
       return issue.status;
     case "priority":
       return issue.priority;
-    case "executor":
-      return issue.executor_id;
+    case "assignee":
+      return issue.assignee_id;
     case "labels":
       return issue.labels?.map((label) => label.name).join(", ");
     case "project":

@@ -9,7 +9,7 @@
  *   - Persistence can be a follow-up if users miss it
  *
  * Why per-workspace:
- *   - Viewing PB-1 in workspace A shouldn't surface it in workspace B's
+ *   - Viewing MUL-1 in workspace A shouldn't surface it in workspace B's
  *     chat — different agents, different context
  *
  * Capacity 10 per workspace: enough for "the last few things I looked
@@ -54,7 +54,7 @@ export const useViewedIssuesStore = create<State>((set) => ({
 
 /** Stable empty array — Zustand selectors that return a fresh `[]` each
  *  call trigger an infinite re-render loop in useSyncExternalStore
- *  (see AGENTS.md "Common Zustand footguns"). All "no entry" paths
+ *  (see CLAUDE.md "Common Zustand footguns"). All "no entry" paths
  *  share this single frozen reference. */
 const EMPTY_IDS: readonly string[] = Object.freeze([]);
 

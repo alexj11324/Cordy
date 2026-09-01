@@ -3,8 +3,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { Agent, AgentRuntime } from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { Agent, AgentRuntime } from "@multica/core/types";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enAgents from "../../locales/en/agents.json";
 import {
@@ -62,22 +62,22 @@ const slackListingRef = vi.hoisted(() => ({
 const telegramListingRef = vi.hoisted(() => ({
   current: { installations: [] as unknown[], configured: false },
 }));
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
-vi.mock("@patchbay/core/lark", () => ({
+vi.mock("@multica/core/lark", () => ({
   larkInstallationsOptions: () => ({
     queryKey: ["lark", "installations"],
     queryFn: () => Promise.resolve(larkListingRef.current),
   }),
 }));
-vi.mock("@patchbay/core/slack", () => ({
+vi.mock("@multica/core/slack", () => ({
   slackInstallationsOptions: () => ({
     queryKey: ["slack", "installations"],
     queryFn: () => Promise.resolve(slackListingRef.current),
   }),
 }));
-vi.mock("@patchbay/core/telegram", () => ({
+vi.mock("@multica/core/telegram", () => ({
   telegramInstallationsOptions: () => ({
     queryKey: ["telegram", "installations"],
     queryFn: () => Promise.resolve(telegramListingRef.current),
@@ -144,6 +144,7 @@ function renderPane(
     back: vi.fn(),
     pathname: "/acme/agents/agent-1",
     searchParams: new URLSearchParams(),
+    hash: "",
     getShareableUrl: (path) => path,
   };
   return render(
@@ -189,6 +190,7 @@ describe("AgentOverviewPane MCP tab visibility", () => {
     ["Kiro", "kiro"],
     ["OpenCode", "opencode"],
     ["OpenClaw", "openclaw"],
+    ["Oh My Pi", "omp"],
   ])("renders the MCP tab when the agent runs on the %s runtime", (_label, provider) => {
     renderPane([makeRuntime(provider)]);
     openCapabilities();
@@ -275,7 +277,7 @@ describe("AgentOverviewPane Environment tab visibility", () => {
 
   it("hides the Environment tab from users who cannot manage the agent", () => {
     // The env endpoints admit the agent owner or a workspace owner/admin
-    // (PB-5438) — the rule `canEdit` already encodes. Anyone else who opens
+    // (MUL-5438) — the rule `canEdit` already encodes. Anyone else who opens
     // the tab hits a guaranteed 403 on "Reveal & edit".
     renderPane([makeRuntime("claude")], { canEdit: false });
     openSettings();

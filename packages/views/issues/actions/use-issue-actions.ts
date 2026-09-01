@@ -3,16 +3,16 @@
 import { useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { Issue, UpdateIssueRequest } from "@patchbay/core/types";
-import { useAuthStore } from "@patchbay/core/auth";
-import { useWorkspaceId } from "@patchbay/core/hooks";
-import { useWorkspacePaths } from "@patchbay/core/paths";
-import { useModalStore } from "@patchbay/core/modals";
-import { useUpdateIssue } from "@patchbay/core/issues/mutations";
-import { useIssueStatuses } from "@patchbay/core/issue-statuses/hooks";
-import { errorCode } from "@patchbay/core/api";
-import { pinListOptions, useCreatePin, useDeletePin } from "@patchbay/core/pins";
-import { copyText } from "@patchbay/ui/lib/clipboard";
+import type { Issue, UpdateIssueRequest } from "@multica/core/types";
+import { useAuthStore } from "@multica/core/auth";
+import { useWorkspaceId } from "@multica/core/hooks";
+import { useWorkspacePaths } from "@multica/core/paths";
+import { useModalStore } from "@multica/core/modals";
+import { useUpdateIssue } from "@multica/core/issues/mutations";
+import { useIssueStatuses } from "@multica/core/issue-statuses/hooks";
+import { errorCode } from "@multica/core/api";
+import { pinListOptions, useCreatePin, useDeletePin } from "@multica/core/pins";
+import { copyText } from "@multica/ui/lib/clipboard";
 import { useNavigation } from "../../navigation";
 import { useT } from "../../i18n";
 import { runConfirmIntent } from "./run-confirm-gate";
@@ -68,10 +68,8 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
   const issueId = issue?.id ?? null;
   const issueIdentifier = issue?.identifier ?? null;
   const issueProjectId = issue?.project_id ?? null;
-  const issueOwnerType = issue?.owner_type ?? null;
-  const issueOwnerId = issue?.owner_id ?? null;
-  const issueExecutorType = issue?.executor_type ?? null;
-  const issueExecutorId = issue?.executor_id ?? null;
+  const issueAssigneeType = issue?.assignee_type ?? null;
+  const issueAssigneeId = issue?.assignee_id ?? null;
   const { entryOf } = useIssueStatuses(wsId);
   const updateField = useCallback(
     (
@@ -79,17 +77,15 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
       options?: IssueSurfaceMutationOptions,
     ) => {
       if (!issueId) return;
-      // Writes that hand work to an agent — assigning, promoting out of the
-      // parking lot, entering Review, and returning from Review — confirm
-      // first through the shared Gate. Review also chooses a reviewer and
-      // sends status + reviewer in one update. The modal applies the change
-      // itself. If a reviewer is already set, entering Review applies
-      // directly.
+      // The two writes that can hand work to an agent — giving it an owner, and
+      // promoting it out of the parking lot — confirm first, through the shared
+      // gate every single-issue entry point routes on (runConfirmIntent). The
+      // modal applies the change itself; everything else applies directly.
       //
       // Not wired into drag-and-drop or the batch toolbar, which keep applying
       // directly. That is the existing split, not a new one: a drop is direct
       // manipulation whose card has already moved, and batch status was made
-      // deliberately dialog-free in PB-4155.
+      // deliberately dialog-free in MUL-4155.
       const intent = issue && runConfirmIntent(issue, updates, { entryOf });
       if (intent) {
         openModal("issue-run-confirm", intent);
@@ -161,7 +157,7 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
 
   const copyLink = useCallback(async () => {
     if (!issueId) return;
-    // Share the identifier form (`/{ws}/issues/PB-123`): a pasted link should
+    // Share the identifier form (`/{ws}/issues/MUL-123`): a pasted link should
     // say which issue it points at. The UUID form stays valid, so links copied
     // before this still resolve.
     const url = navigation.getShareableUrl(paths.issueDetail(issueIdentifier || issueId));
@@ -178,17 +174,15 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
       parent_issue_id: issueId,
       parent_issue_identifier: issueIdentifier,
       ...(issueProjectId ? { project_id: issueProjectId } : {}),
-      // Inherit the parent's owner and executor independently so a sub-issue
-      // created from the "Add sub-issue" entry keeps both responsibility
-      // fields (discussion #1728). The modal keys off whether these fields are
+      // Inherit the parent's assignee (member/agent/squad) so a sub-issue
+      // created from the "Add sub-issue" entry starts with the same owner
+      // (discussion #1728). The modal keys off whether these fields are
       // present, not their value, so a seed overrides the sticky last-used
-      // values it would otherwise fall back to. Executor type is meaningless
-      // without its id, and owner is only valid for workspace members.
-      ...(issueOwnerType === "member" && issueOwnerId
-        ? { owner_type: "member" as const, owner_id: issueOwnerId }
-        : {}),
-      ...(issueExecutorType && issueExecutorId
-        ? { executor_type: issueExecutorType, executor_id: issueExecutorId }
+      // assignee it would otherwise fall back to, while omitting both for
+      // an unassigned parent leaves that fallback intact. Seed the two
+      // together — assignee_type is meaningless without assignee_id.
+      ...(issueAssigneeType && issueAssigneeId
+        ? { assignee_type: issueAssigneeType, assignee_id: issueAssigneeId }
         : {}),
     });
   }, [
@@ -196,10 +190,8 @@ export function useIssueActions(issue: Issue | null): UseIssueActionsResult {
     issueId,
     issueIdentifier,
     issueProjectId,
-    issueOwnerType,
-    issueOwnerId,
-    issueExecutorType,
-    issueExecutorId,
+    issueAssigneeType,
+    issueAssigneeId,
   ]);
 
   const openSetParent = useCallback(() => {

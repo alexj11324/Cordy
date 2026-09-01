@@ -22,7 +22,7 @@ export const SUB_ISSUE_ROW_PROPERTY_KEYS = [
   "labels",
   "childProgress",
   "dueDate",
-  "executor",
+  "assignee",
 ] as const;
 export type SubIssueRowPropertyKey =
   (typeof SUB_ISSUE_ROW_PROPERTY_KEYS)[number];
@@ -33,7 +33,7 @@ export const DEFAULT_SUB_ISSUE_ROW_PROPERTIES: SubIssueRowProperties = {
   labels: true,
   childProgress: true,
   dueDate: true,
-  executor: true,
+  assignee: true,
 };
 
 interface SubIssueDisplayStore {
@@ -60,7 +60,7 @@ export const useSubIssueDisplayStore = create<SubIssueDisplayStore>()(
         })),
     }),
     {
-      name: "patchbay_sub_issue_display",
+      name: "multica_sub_issue_display",
       storage: createJSONStorage(() => defaultStorage),
       // Deep-merge rowProperties so a key added in a future release defaults
       // to visible instead of undefined (persist's default shallow merge

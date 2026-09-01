@@ -20,27 +20,38 @@ import {
   issueKeys,
   issueTableRowPageOptions,
   projectGanttIssuesOptions,
+  sourceContextPreviewOptions,
 } from "./queries";
 
 const WS_ID = "ws-1";
 const PROJECT_ID = "project-1";
+
+describe("sourceContextPreviewOptions", () => {
+  it("isolates preview cache entries by workspace", () => {
+    expect(sourceContextPreviewOptions("ws-1", "comment-1").queryKey).toEqual([
+      "source-context",
+      "preview",
+      "ws-1",
+      "comment-1",
+    ]);
+    expect(sourceContextPreviewOptions("ws-2", "comment-1").queryKey).not.toEqual(
+      sourceContextPreviewOptions("ws-1", "comment-1").queryKey,
+    );
+  });
+});
 
 function makeIssue(idx: number, overrides: Partial<Issue> = {}): Issue {
   return {
     id: `issue-${idx}`,
     workspace_id: WS_ID,
     number: idx,
-    identifier: `PB-${idx}`,
+    identifier: `MUL-${idx}`,
     title: `Issue ${idx}`,
     description: null,
     status: "todo",
     priority: "none",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -388,7 +399,7 @@ describe("projectGanttIssuesOptions", () => {
     expect(options.queryKey).toEqual(issueKeys.projectGantt(WS_ID, PROJECT_ID));
   });
 
-  it("threads the executor-type tab into the request and the cache key", async () => {
+  it("threads the assignee-type tab into the request and the cache key", async () => {
     const listIssues = vi
       .fn<(params?: ListIssuesParams) => Promise<ListIssuesResponse>>()
       .mockResolvedValue({ issues: [makeIssue(1)], total: 1 });
@@ -396,7 +407,7 @@ describe("projectGanttIssuesOptions", () => {
 
     const agentsTab = projectGanttIssuesOptions(WS_ID, PROJECT_ID, [
       "agent",
-      "team",
+      "squad",
     ]);
     await qc.fetchQuery(agentsTab);
 
@@ -404,7 +415,7 @@ describe("projectGanttIssuesOptions", () => {
       expect.objectContaining({
         project_id: PROJECT_ID,
         scheduled: true,
-        executor_types: ["agent", "team"],
+        assignee_types: ["agent", "squad"],
       }),
     );
     // Distinct tabs must not share a cache entry.
@@ -417,7 +428,7 @@ describe("projectGanttIssuesOptions", () => {
       .mockResolvedValue({ issues: [], total: 0 });
     installFakeApi(unrestricted);
     await qc.fetchQuery(projectGanttIssuesOptions(WS_ID, PROJECT_ID));
-    expect(unrestricted.mock.calls[0]![0]).not.toHaveProperty("executor_types");
+    expect(unrestricted.mock.calls[0]![0]).not.toHaveProperty("assignee_types");
   });
 });
 
@@ -514,15 +525,15 @@ describe("issueIdentifierOptions", () => {
       .mockResolvedValue(makeIssue(7));
     installFakeIssueApi(getIssue);
 
-    const data = await qc.fetchQuery(issueIdentifierOptions(WS_ID, "PB-7"));
+    const data = await qc.fetchQuery(issueIdentifierOptions(WS_ID, "MUL-7"));
 
     expect(data?.id).toBe("issue-7");
     expect(getIssue).toHaveBeenCalledTimes(1);
-    expect(getIssue.mock.calls[0]?.[0]).toBe("PB-7");
+    expect(getIssue.mock.calls[0]?.[0]).toBe("MUL-7");
   });
 
   it("returns null on 404 (unknown number or wrong workspace prefix)", async () => {
-    // The server enforces the prefix now: TES-7 in a PB workspace 404s.
+    // The server enforces the prefix now: TES-7 in a MUL workspace 404s.
     const getIssue = vi
       .fn<(id: string) => Promise<Issue>>()
       .mockRejectedValue(new ApiError("issue not found", 404, "Not Found"));
@@ -540,7 +551,7 @@ describe("issueIdentifierOptions", () => {
     installFakeIssueApi(getIssue);
 
     await expect(
-      qc.fetchQuery(issueIdentifierOptions(WS_ID, "PB-9")),
+      qc.fetchQuery(issueIdentifierOptions(WS_ID, "MUL-9")),
     ).rejects.toThrow("boom");
   });
 
@@ -550,17 +561,17 @@ describe("issueIdentifierOptions", () => {
       .mockResolvedValue(makeIssue(7));
     installFakeIssueApi(getIssue);
 
-    await qc.fetchQuery(issueIdentifierOptions(WS_ID, "PB-7"));
+    await qc.fetchQuery(issueIdentifierOptions(WS_ID, "MUL-7"));
 
     expect(getIssue.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
   });
 
   it("keys the query by workspace and identifier", () => {
-    expect(issueKeys.identifier(WS_ID, "PB-7")).toEqual([
+    expect(issueKeys.identifier(WS_ID, "MUL-7")).toEqual([
       "issues",
       WS_ID,
       "identifier",
-      "PB-7",
+      "MUL-7",
     ]);
   });
 });

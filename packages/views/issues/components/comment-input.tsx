@@ -1,13 +1,13 @@
 "use client";
 
 import { useRef, useState, useCallback, useEffect } from "react";
-import { cn } from "@patchbay/ui/lib/utils";
+import { cn } from "@multica/ui/lib/utils";
 import { ContentEditor, type ContentEditorRef, useFileDropZone, FileDropOverlay, useLazyEditor, useUploadGate, useComposerSubmit } from "../../editor";
-import { FileUploadButton } from "@patchbay/ui/components/common/file-upload-button";
-import { SubmitButton } from "@patchbay/ui/components/common/submit-button";
-import { contentReferencesAttachment } from "@patchbay/core/types";
-import { formatShortcut, useShortcut } from "@patchbay/core/shortcuts";
-import { useCommentDraftStore } from "@patchbay/core/issues/stores";
+import { FileUploadButton } from "@multica/ui/components/common/file-upload-button";
+import { SubmitButton } from "@multica/ui/components/common/submit-button";
+import { contentReferencesAttachment } from "@multica/core/types";
+import { formatShortcut, useShortcut } from "@multica/core/shortcuts";
+import { useCommentDraftStore } from "@multica/core/issues/stores";
 import { useT } from "../../i18n";
 import { CommentTriggerChips } from "./comment-trigger-chips";
 import { useCommentTriggerPreview } from "../hooks/use-comment-trigger-preview";
@@ -48,7 +48,7 @@ function CommentInput({ issueId, onSubmit, onAccepted }: CommentInputProps) {
   const [isEmpty, setIsEmpty] = useState(() => !initialDraft?.trim());
   const [suppressedAgentIds, setSuppressedAgentIds] = useState<Set<string>>(() => new Set());
   const triggerPreview = useCommentTriggerPreview({ issueId, content });
-  // Uploads for this composer session (PB-5181). Owned by the module-level
+  // Uploads for this composer session (MUL-5181). Owned by the module-level
   // coordinator and persisted in the draft store, so closing/scrolling the
   // composer away no longer drops an in-flight upload — its result lands in the
   // draft. `attachments` (completed rows) drives both the submit `attachment_ids`
@@ -117,11 +117,11 @@ function CommentInput({ issueId, onSubmit, onAccepted }: CommentInputProps) {
     });
   }, []);
 
-  // Await-then-render send (PB-5181): the shared hook reads the markdown,
+  // Await-then-render send (MUL-5181): the shared hook reads the markdown,
   // guards empty/in-flight, re-checks the upload gate, locks + spins via
   // `submitting`, and clears only once the server accepts — a failed send keeps
   // the draft instead of silently dropping it.
-  // Stale-submit guard (PB-5181 P0): if this composer unmounts mid-submit
+  // Stale-submit guard (MUL-5181 P0): if this composer unmounts mid-submit
   // (issue detail closed) and the user reopens and types a new draft under the
   // same key, the late success may only clear the draft it submitted.
   const mountedRef = useRef(true);
@@ -153,7 +153,7 @@ function CommentInput({ issueId, onSubmit, onAccepted }: CommentInputProps) {
       const pending = editorRef.current?.flushPendingUpdate?.();
       if (pending != null) setDraft(draftKey, pending);
       submittedEntryRef.current = useCommentDraftStore.getState().drafts[draftKey];
-      // Bind only uploads the BODY still references (PB-5181): deleting an
+      // Bind only uploads the BODY still references (MUL-5181): deleting an
       // inline image really unbinds it. Uploads that finished after a close
       // are written back into the body by the settle handler, so surviving
       // files are referenced too — never silently attached.
@@ -173,7 +173,7 @@ function CommentInput({ issueId, onSubmit, onAccepted }: CommentInputProps) {
       });
     },
     onAccepted: () => {
-      // Success may only consume the entry it submitted (PB-5181 P0): edits
+      // Success may only consume the entry it submitted (MUL-5181 P0): edits
       // made while the request was in flight — or by a reopened composer after
       // this one unmounted — survive both in the store and in the editor.
       // Flush the pending debounce first so typing still inside the window is

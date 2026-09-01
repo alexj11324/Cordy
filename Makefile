@@ -1,50 +1,44 @@
-.PHONY: help makehelp dev dev-acceptance web-next-dev api-dev server rust-server daemon cli patchbay rust-cli build-rust-cli build rust-build test rust-test migrate-up migrate-down rust-migrate-up rust-migrate-down seed clean stop check worktree-env remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop
+.PHONY: help makehelp dev server daemon cli multica build test migrate-up migrate-down sqlc seed clean setup start stop check worktree-env setup-main start-main stop-main check-main setup-worktree start-worktree stop-worktree check-worktree remove-worktree db-up db-down db-drop db-reset selfhost selfhost-build selfhost-stop up down status list destroy gc env-exec api-dev web-dev desktop-dev
 
+MAIN_ENV_FILE ?= .env
 WORKTREE_ENV_FILE ?= .env.worktree
-SELFHOST_ENV_FILE ?= .env
-SELFHOST_GOALS := selfhost selfhost-build selfhost-stop
-DEFAULT_ENV_FILE := $(if $(filter $(SELFHOST_GOALS),$(MAKECMDGOALS)),$(SELFHOST_ENV_FILE),$(WORKTREE_ENV_FILE))
-ENV_FILE ?= $(DEFAULT_ENV_FILE)
+ENV_FILE ?= $(if $(wildcard $(MAIN_ENV_FILE)),$(MAIN_ENV_FILE),$(if $(wildcard $(WORKTREE_ENV_FILE)),$(WORKTREE_ENV_FILE),$(MAIN_ENV_FILE)))
 
 ifneq ($(wildcard $(ENV_FILE)),)
 include $(ENV_FILE)
 endif
 
-POSTGRES_DB ?= patchbay
-POSTGRES_USER ?= patchbay
-POSTGRES_PASSWORD ?= patchbay
+POSTGRES_DB ?= multica
+POSTGRES_USER ?= multica
+POSTGRES_PASSWORD ?= multica
 POSTGRES_PORT ?= 5432
 PORT := $(or $(BACKEND_PORT),$(API_PORT),$(SERVER_PORT),$(PORT),8080)
-ifeq ($(origin PATCHBAY_PUBLIC_URL), undefined)
-PATCHBAY_PUBLIC_URL := http://localhost:$(PORT)
+ifeq ($(origin MULTICA_PUBLIC_URL), undefined)
+MULTICA_PUBLIC_URL := http://localhost:$(PORT)
 endif
 FRONTEND_PORT ?= 3000
 FRONTEND_ORIGIN ?= http://localhost:$(FRONTEND_PORT)
-PATCHBAY_APP_URL ?= $(FRONTEND_ORIGIN)
+MULTICA_APP_URL ?= $(FRONTEND_ORIGIN)
 DATABASE_URL ?= postgres://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@localhost:$(POSTGRES_PORT)/$(POSTGRES_DB)?sslmode=disable
 NEXT_PUBLIC_API_URL ?= http://localhost:$(PORT)
 NEXT_PUBLIC_WS_URL ?= ws://localhost:$(PORT)/ws
-PATCHBAY_SERVER_URL ?= ws://localhost:$(PORT)/ws
+GOOGLE_REDIRECT_URI ?= $(FRONTEND_ORIGIN)/auth/callback
+MULTICA_SERVER_URL ?= ws://localhost:$(PORT)/ws
 LOCAL_UPLOAD_BASE_URL ?= http://localhost:$(PORT)
 
 export
 
-PATCHBAY_ARGS ?= $(ARGS)
+MULTICA_ARGS ?= $(ARGS)
 
 COMPOSE := docker compose
 
 define REQUIRE_ENV
 	@if [ ! -f "$(ENV_FILE)" ]; then \
 		echo "Missing env file: $(ENV_FILE)"; \
-		echo "Run 'make worktree-env' to create the isolated source-development environment, or pass ENV_FILE=.env explicitly for non-development use."; \
+		echo "Create .env from .env.example, or run 'make worktree-env' and use .env.worktree."; \
 		exit 1; \
 	fi
 endef
-
-# The Rust workspace is the source/runtime entrypoint. The wrapper keeps
-# Cargo's workspace working directory during local development.
-RUST_RUNNER := ./scripts/run-rust.sh
-DEV_RUNTIME_CMD := node scripts/dev-runtime-command.mjs
 
 # Self-hosting requires the Docker Compose CLI plugin (`docker compose`).
 # The self-host compose files use compose-spec syntax (top-level `name:`, no
@@ -76,7 +70,7 @@ endef
 ##@ Help
 
 help: ## Show available make targets and common local workflows
-	@awk 'BEGIN {FS = ":.*## "; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nQuick start:\n  \033[36mmake dev\033[0m          Bootstrap the current checkout and start everything\n  \033[36mmake check\033[0m        Run the full local verification pipeline\n\nCheckout modes:\n  Every source-development checkout uses \033[36m.env.worktree\033[0m (generate with \033[36mmake worktree-env\033[0m)\n  Self-host targets use \033[36m.env\033[0m unless ENV_FILE is passed explicitly\n\n"} \
+	@awk 'BEGIN {FS = ":.*## "; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nQuick start:\n  \033[36mmake up\033[0m           Start this checkout'"'"'s environment (C=api,web,daemon,desktop)\n  \033[36mmake status\033[0m       Show what is running, and prove it is yours\n  \033[36mmake down\033[0m         Stop it again, keeping the database\n  \033[36mmake check\033[0m        Run the full local verification pipeline\n\nCheckout modes:\n  Main checkout uses \033[36m.env\033[0m\n  Worktrees use \033[36m.env.worktree\033[0m (generate with \033[36mmake worktree-env\033[0m)\n\n"} \
 		/^##@/ {printf "\n\033[1m%s\033[0m\n", substr($$0, 5); next} \
 		/^[a-zA-Z0-9_.-]+:.*## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
@@ -97,24 +91,24 @@ selfhost: ## Create .env if needed, then pull and start the official self-hosted
 			sed -i '' "s/^JWT_SECRET=.*/JWT_SECRET=$$JWT/" .env; \
 			sed -i '' "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$$PGPASS/" .env; \
 			sed -i '' -E "s#^(DATABASE_URL=postgres://[^:]+:)[^@]*(@.*)#\1$$PGPASS\2#" .env; \
-			sed -i '' "s#^PATCHBAY_VCS_SECRET_KEY=.*#PATCHBAY_VCS_SECRET_KEY=$$VCSKEY#" .env; \
+			sed -i '' "s#^MULTICA_VCS_SECRET_KEY=.*#MULTICA_VCS_SECRET_KEY=$$VCSKEY#" .env; \
 		else \
 			sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$$JWT/" .env; \
 			sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$$PGPASS/" .env; \
 			sed -i -E "s#^(DATABASE_URL=postgres://[^:]+:)[^@]*(@.*)#\1$$PGPASS\2#" .env; \
-			sed -i "s#^PATCHBAY_VCS_SECRET_KEY=.*#PATCHBAY_VCS_SECRET_KEY=$$VCSKEY#" .env; \
+			sed -i "s#^MULTICA_VCS_SECRET_KEY=.*#MULTICA_VCS_SECRET_KEY=$$VCSKEY#" .env; \
 		fi; \
-		echo "==> Generated random JWT_SECRET, POSTGRES_PASSWORD, and PATCHBAY_VCS_SECRET_KEY"; \
+		echo "==> Generated random JWT_SECRET, POSTGRES_PASSWORD, and MULTICA_VCS_SECRET_KEY"; \
 	fi
-	@echo "==> Pulling official Patchbay images..."
+	@echo "==> Pulling official Multica images..."
 	@if ! $(COMPOSE) -f docker-compose.selfhost.yml pull; then \
 		echo ""; \
-		echo "Official images for tag '$${PATCHBAY_IMAGE_TAG:-latest}' are not published yet."; \
+		echo "Official images for tag '$${MULTICA_IMAGE_TAG:-latest}' are not published yet."; \
 		echo "If this is before the first GHCR release, build from the current checkout:"; \
 		echo "  make selfhost-build"; \
 		exit 1; \
 	fi
-	@echo "==> Starting Patchbay via Docker Compose..."
+	@echo "==> Starting Multica via Docker Compose..."
 	$(COMPOSE) -f docker-compose.selfhost.yml up -d
 	@bash scripts/selfhost-wait.sh official
 
@@ -130,29 +124,112 @@ selfhost-build: ## Build backend/web from the current checkout and start the sel
 			sed -i '' "s/^JWT_SECRET=.*/JWT_SECRET=$$JWT/" .env; \
 			sed -i '' "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$$PGPASS/" .env; \
 			sed -i '' -E "s#^(DATABASE_URL=postgres://[^:]+:)[^@]*(@.*)#\1$$PGPASS\2#" .env; \
-			sed -i '' "s#^PATCHBAY_VCS_SECRET_KEY=.*#PATCHBAY_VCS_SECRET_KEY=$$VCSKEY#" .env; \
+			sed -i '' "s#^MULTICA_VCS_SECRET_KEY=.*#MULTICA_VCS_SECRET_KEY=$$VCSKEY#" .env; \
 		else \
 			sed -i "s/^JWT_SECRET=.*/JWT_SECRET=$$JWT/" .env; \
 			sed -i "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$$PGPASS/" .env; \
 			sed -i -E "s#^(DATABASE_URL=postgres://[^:]+:)[^@]*(@.*)#\1$$PGPASS\2#" .env; \
-			sed -i "s#^PATCHBAY_VCS_SECRET_KEY=.*#PATCHBAY_VCS_SECRET_KEY=$$VCSKEY#" .env; \
+			sed -i "s#^MULTICA_VCS_SECRET_KEY=.*#MULTICA_VCS_SECRET_KEY=$$VCSKEY#" .env; \
 		fi; \
-		echo "==> Generated random JWT_SECRET, POSTGRES_PASSWORD, and PATCHBAY_VCS_SECRET_KEY"; \
+		echo "==> Generated random JWT_SECRET, POSTGRES_PASSWORD, and MULTICA_VCS_SECRET_KEY"; \
 	fi
-	@echo "==> Building Patchbay from the current checkout..."
+	@echo "==> Building Multica from the current checkout..."
 	$(COMPOSE) -f docker-compose.selfhost.yml -f docker-compose.selfhost.build.yml up -d --build
 	@bash scripts/selfhost-wait.sh build
 
 selfhost-stop: ## Stop the self-hosted Docker Compose stack
 	$(REQUIRE_COMPOSE)
-	@echo "==> Stopping Patchbay services..."
+	@echo "==> Stopping Multica services..."
 	$(COMPOSE) -f docker-compose.selfhost.yml down
 	@echo "✓ All services stopped."
 
-stop: ## Stop the tracked complete Electron stack for the current checkout
-	@node scripts/stop-dev.mjs
+# ---------- Environments ----------
+##@ Environments
 
-check: ## Run typecheck, TS tests, Rust tests, a Rust build, and Playwright E2E
+# One verb per lifecycle step, shared by humans and agents. C= picks the
+# components; ARGS= forwards anything else to the script.
+#
+#   make up                     api + web
+#   make up C=api,web,daemon    add the agent daemon
+#   make up C=desktop           Electron against this environment's backend
+#   make up ARGS=--ephemeral    agent-owned, expires, collected by `make gc`
+
+up: ## Start this checkout's environment (C=api,web,daemon,desktop; default api,web)
+	@bash scripts/dev-env.sh up $(if $(C),--components $(C)) $(ARGS)
+
+down: ## Stop this environment's processes, keeping its database and profile
+	@bash scripts/dev-env.sh down $(ARGS)
+
+status: ## Show what is running for this environment, with proof of identity
+	@bash scripts/dev-env.sh status $(ARGS)
+
+list: ## List every registered development environment on this machine
+	@bash scripts/dev-env.sh list $(ARGS)
+
+destroy: ## Stop this environment, drop its database and profile, free its slot
+	@bash scripts/dev-env.sh destroy $(ARGS)
+
+gc: ## Collect environments whose directory is gone or whose TTL expired
+	@bash scripts/dev-env.sh gc $(ARGS)
+
+env-exec: ## Run a command with this environment's variables (ARGS="-- pnpm dev:desktop")
+	@bash scripts/dev-env.sh exec $(ARGS)
+
+# Single-component entry points. No database preflight: `up` has already proven
+# the database is reachable before it launches anything, and repeating the
+# check here would make each component slower to restart on its own.
+# The commit ldflag is what makes /health's identity useful: without it every
+# environment reports "unknown" and cannot prove which revision it is serving.
+api-dev: ## Run only the Go backend for the current env file
+	cd server && go run -ldflags "-X main.commit=$(COMMIT)" ./cmd/server
+
+web-dev: ## Run only the Next.js dev server for the current env file
+	pnpm dev:web
+
+desktop-dev: ## Run only the Electron desktop app for the current env file
+	pnpm dev:desktop
+
+# ---------- One-click commands ----------
+##@ One-click
+
+setup: ## Prepare the current checkout from its env file: install deps, ensure DB, run migrations
+	$(REQUIRE_ENV)
+	@echo "==> Using env file: $(ENV_FILE)"
+	@echo "==> Installing dependencies..."
+	pnpm install
+	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
+	@echo "==> Running migrations..."
+	cd server && go run ./cmd/migrate up
+	@echo ""
+	@echo "✓ Setup complete! Run 'make start' to launch the app."
+
+start: ## Start backend and frontend for the current checkout and run migrations first
+	$(REQUIRE_ENV)
+	@echo "Using env file: $(ENV_FILE)"
+	@echo "Backend: http://localhost:$(PORT)"
+	@echo "Frontend: http://localhost:$(FRONTEND_PORT)"
+	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
+	@echo "Running migrations..."
+	cd server && go run ./cmd/migrate up
+	@echo "Starting backend and frontend..."
+	@trap 'kill 0' EXIT; \
+		(cd server && go run ./cmd/server) & \
+		pnpm dev:web & \
+		wait
+
+stop: ## Stop backend and frontend processes for the current checkout
+	$(REQUIRE_ENV)
+	@echo "Stopping services..."
+	@-lsof -nP -iTCP:$(PORT) -sTCP:LISTEN -t | xargs kill -9 2>/dev/null
+	@-lsof -nP -iTCP:$(FRONTEND_PORT) -sTCP:LISTEN -t | xargs kill -9 2>/dev/null
+	@case "$(DATABASE_URL)" in \
+		""|*@localhost:*|*@localhost/*|*@127.0.0.1:*|*@127.0.0.1/*|*@\[::1\]:*|*@\[::1\]/*) \
+			echo "✓ App processes stopped. Shared PostgreSQL is still running on localhost:$(POSTGRES_PORT)." ;; \
+		*) \
+			echo "✓ App processes stopped. Remote PostgreSQL was not affected." ;; \
+	esac
+
+check: ## Run typecheck, TS tests, Go tests, and Playwright E2E for the current checkout
 	$(REQUIRE_ENV)
 	@ENV_FILE="$(ENV_FILE)" bash scripts/check.sh
 
@@ -170,18 +247,56 @@ db-drop: ## Permanently drop the current env's local database after confirmation
 
 # Drop + recreate the current env's database, then run all migrations.
 # Use for a clean slate in local dev. Only affects the DB named in
-# ENV_FILE (POSTGRES_DB); the selected local PostgreSQL runtime and other
+# ENV_FILE (POSTGRES_DB); the shared postgres container and other
 # worktree DBs are untouched. Refuses to run against a remote host.
 db-reset: ## Drop and recreate the current env's database, then re-run all migrations
 	$(REQUIRE_ENV)
-	@bash scripts/reset-database.sh "$(ENV_FILE)"
+	@case "$(DATABASE_URL)" in \
+		""|*@localhost:*|*@localhost/*|*@127.0.0.1:*|*@127.0.0.1/*|*@\[::1\]:*|*@\[::1\]/*) ;; \
+		*) echo "Refusing to reset: DATABASE_URL points at a remote host."; exit 1 ;; \
+	esac
+	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
+	@echo "==> Dropping and recreating database '$(POSTGRES_DB)'..."
+	@$(COMPOSE) exec -T postgres psql -U $(POSTGRES_USER) -d postgres -v ON_ERROR_STOP=1 \
+		-c "DROP DATABASE IF EXISTS \"$(POSTGRES_DB)\" WITH (FORCE);" \
+		-c "CREATE DATABASE \"$(POSTGRES_DB)\";"
 	@echo "==> Running migrations..."
-	@ENV_FILE="$(ENV_FILE)" $(DEV_RUNTIME_CMD) migrations up
+	cd server && go run ./cmd/migrate up
 	@echo ""
-	@echo "✓ Database '$(POSTGRES_DB)' reset. Run 'pnpm dev' to launch the app."
+	@echo "✓ Database '$(POSTGRES_DB)' reset. Run 'make start' to launch the app."
 
 worktree-env: ## Generate .env.worktree with a unique DB name and app ports for this worktree
 	@bash scripts/init-worktree-env.sh .env.worktree
+
+setup-main: ## Prepare the main checkout using .env
+	@$(MAKE) setup ENV_FILE=$(MAIN_ENV_FILE)
+
+start-main: ## Start the main checkout using .env
+	@$(MAKE) start ENV_FILE=$(MAIN_ENV_FILE)
+
+stop-main: ## Stop the main checkout processes defined by .env
+	@$(MAKE) stop ENV_FILE=$(MAIN_ENV_FILE)
+
+check-main: ## Run the full verification pipeline for the main checkout
+	@ENV_FILE=$(MAIN_ENV_FILE) bash scripts/check.sh
+
+setup-worktree: ## Ensure .env.worktree exists, then prepare this worktree
+	@if [ ! -f "$(WORKTREE_ENV_FILE)" ]; then \
+		echo "==> Generating $(WORKTREE_ENV_FILE) with unique ports..."; \
+		bash scripts/init-worktree-env.sh $(WORKTREE_ENV_FILE); \
+	else \
+		echo "==> Using existing $(WORKTREE_ENV_FILE)"; \
+	fi
+	@$(MAKE) setup ENV_FILE=$(WORKTREE_ENV_FILE)
+
+start-worktree: ## Start this worktree using .env.worktree
+	@$(MAKE) start ENV_FILE=$(WORKTREE_ENV_FILE)
+
+stop-worktree: ## Stop this worktree's backend and frontend processes
+	@$(MAKE) stop ENV_FILE=$(WORKTREE_ENV_FILE)
+
+check-worktree: ## Run the full verification pipeline for this worktree
+	@ENV_FILE=$(WORKTREE_ENV_FILE) bash scripts/check.sh
 
 remove-worktree: ## Drop a linked worktree's database, then remove it (WORKTREE=path)
 	@bash scripts/remove-worktree.sh "$(WORKTREE)"
@@ -189,95 +304,70 @@ remove-worktree: ## Drop a linked worktree's database, then remove it (WORKTREE=
 # ---------- Individual commands ----------
 ##@ Individual commands
 
-dev: ## Start complete Electron + source CLI + backend + isolated DB development
-	@pnpm dev
+dev: ## Bootstrap this checkout end-to-end: create env if needed, ensure DB, migrate, start services
+	@bash scripts/dev.sh
 
-dev-acceptance: ## Verify the complete Electron → daemon → backend → agent path (normal login required)
-	@pnpm dev:acceptance $(PATCHBAY_ARGS)
-
-web-next-dev: ## Run only the Next.js web frontend (API-dependent screens need a separate backend)
-	@echo "Frontend: http://localhost:$(FRONTEND_PORT)"
-	@pnpm dev:web:next
-
-api-dev: ## Run only the API/WebSocket backend (PostgreSQL must already be running)
-	$(REQUIRE_ENV)
-	@echo "Backend: http://localhost:$(PORT)"
-	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
-	@ENV_FILE="$(ENV_FILE)" $(DEV_RUNTIME_CMD) backend
-
-daemon: PATCHBAY_ARGS := daemon restart --profile local
-daemon: ## Restart the local agent daemon using the source-matched CLI
-	$(REQUIRE_ENV)
-	@ENV_FILE="$(ENV_FILE)" $(DEV_RUNTIME_CMD) cli $(PATCHBAY_ARGS)
-
-server: ## Run only the Rust server for the current checkout
+server: ## Run only the Go server for the current checkout
 	$(REQUIRE_ENV)
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
-	@ENV_FILE="$(ENV_FILE)" $(DEV_RUNTIME_CMD) backend
+	cd server && go run ./cmd/server
 
-rust-server: server ## Run the migrated Rust server entrypoint
+daemon: ## Restart the local agent daemon using the CLI's stored auth/session
+	@$(MAKE) multica MULTICA_ARGS="daemon restart --profile local"
 
-cli: rust-cli ## Run the Rust patchbay CLI with ARGS or PATCHBAY_ARGS from source
+cli: ## Run the multica CLI with ARGS or MULTICA_ARGS from source
+	@$(MAKE) multica MULTICA_ARGS="$(MULTICA_ARGS)"
 
-patchbay: rust-cli ## Run the Rust patchbay CLI entrypoint
-
-rust-cli: ## Run the migrated Rust CLI slice with ARGS or PATCHBAY_ARGS
-	$(REQUIRE_ENV)
-	@ENV_FILE="$(ENV_FILE)" $(DEV_RUNTIME_CMD) cli $(PATCHBAY_ARGS)
-
-build-rust-cli: ## Build the migrated Rust CLI slice in release mode
-	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)" PATCHBAY_BUILD_VERSION="$(VERSION)" PATCHBAY_BUILD_COMMIT="$(COMMIT)" PATCHBAY_BUILD_DATE="$(DATE)" $(RUST_RUNNER) build --release --locked -p patchbay-cli
+multica: ## Run the multica CLI entrypoint directly from the Go source tree
+	cd server && go run -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" ./cmd/multica $(MULTICA_ARGS)
 
 VERSION ?= $(shell git describe --tags --match 'v[0-9]*' --always --dirty 2>/dev/null || echo dev)
 COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE    ?= $(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
+# Windows will not execute an extensionless binary, so a source build there has
+# to name its outputs the way the target platform expects — otherwise the CLI
+# builds fine and then fails to re-exec itself as a daemon (#7255). GOOS reaches
+# a build two ways: as an environment variable (`GOOS=windows make build`) and
+# as a Make variable (`make build GOOS=windows`). The top-level `export` sends
+# both forms to the recipe, so `go build` honors both and the suffix has to as
+# well; `$(GOOS)` covers the Make-variable form, which a parse-time
+# `go env GOOS` cannot see. Target-specific so only `build` pays for the probe:
+# a global assignment runs `go env` on every target — `export` expands even a
+# recursive one — which prints `go: Command not found` on frontend-only
+# checkouts with no Go toolchain installed.
+build: EXE = $(if $(filter windows,$(or $(GOOS),$(shell go env GOOS))),.exe,)
+build: ## Build the server, CLI, and migrate binaries into server/bin
+	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT)" -o bin/server$(EXE) ./cmd/server
+	cd server && go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" -o bin/multica$(EXE) ./cmd/multica
+	cd server && go build -o bin/migrate$(EXE) ./cmd/migrate
 
-RUST_BUILD_DATE ?= $(shell git show -s --format=%cI HEAD 2>/dev/null || echo unknown)
-RUST_TARGET_DIR ?= $(CURDIR)/server-rs/target
-RUST_EXE ?= $(if $(filter Windows_NT,$(OS)),.exe,)
-
-build: rust-build ## Build Rust server, CLI, migration, and backfill binaries into bin
-
-rust-build: ## Build native Rust server, CLI, migration, and backfill binaries into bin
-	@mkdir -p bin
-	CARGO_TARGET_DIR="$(RUST_TARGET_DIR)" PATCHBAY_BUILD_VERSION="$(VERSION)" PATCHBAY_BUILD_COMMIT="$(COMMIT)" PATCHBAY_BUILD_DATE="$(DATE)" PATCHBAY_GIT_COMMIT="$(COMMIT)" $(RUST_RUNNER) build --release --locked -p patchbay-server -p patchbay-cli -p patchbay-migrate --bins
-	cp "$(RUST_TARGET_DIR)/release/patchbay-server$(RUST_EXE)" "bin/server$(RUST_EXE)"
-	cp "$(RUST_TARGET_DIR)/release/patchbay$(RUST_EXE)" "bin/patchbay$(RUST_EXE)"
-	cp "$(RUST_TARGET_DIR)/release/patchbay-migrate$(RUST_EXE)" "bin/migrate$(RUST_EXE)"
-	cp "$(RUST_TARGET_DIR)/release/backfill_task_usage_hourly$(RUST_EXE)" "bin/backfill_task_usage_hourly$(RUST_EXE)"
-	cp "$(RUST_TARGET_DIR)/release/backfill_issue_last_activity$(RUST_EXE)" "bin/backfill_issue_last_activity$(RUST_EXE)"
-	cp "$(RUST_TARGET_DIR)/release/backfill_codex_usage_cache$(RUST_EXE)" "bin/backfill_codex_usage_cache$(RUST_EXE)"
-
-test: rust-test ## Run Rust tests after ensuring the target DB exists and migrations are applied
-
-rust-test: ## Run Rust workspace tests after ensuring the target DB exists and migrations are applied
+test: ## Run Go tests after ensuring the target DB exists and migrations are applied
 	$(REQUIRE_ENV)
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
-	@ENV_FILE="$(ENV_FILE)" $(DEV_RUNTIME_CMD) migrations up
-	@bash scripts/run-dev-rust.sh test --workspace --all-targets --locked
+	cd server && go run ./cmd/migrate up
+	bash scripts/test-go.sh --race
 
 # Database
 ##@ Database
 
-migrate-up: rust-migrate-up ## Create the target DB if needed, then apply database migrations
-
-rust-migrate-up: ## Apply database migrations with the Rust runner
+migrate-up: ## Create the target DB if needed, then apply database migrations
 	$(REQUIRE_ENV)
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
-	@ENV_FILE="$(ENV_FILE)" $(DEV_RUNTIME_CMD) migrations up
+	cd server && go run ./cmd/migrate up
 
-migrate-down: rust-migrate-down ## Create the target DB if needed, then roll back database migrations
-
-rust-migrate-down: ## Roll back database migrations with the Rust runner
+migrate-down: ## Create the target DB if needed, then roll back database migrations
 	$(REQUIRE_ENV)
 	@bash scripts/ensure-postgres.sh "$(ENV_FILE)"
-	@ENV_FILE="$(ENV_FILE)" $(DEV_RUNTIME_CMD) migrations down
+	cd server && go run ./cmd/migrate down
+
+sqlc: ## Regenerate sqlc code
+	cd server && go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 generate
 
 # Cleanup
 ##@ Cleanup
 
 clean: ## Remove build caches, generated binaries, and temp files
-	rm -rf bin
+	rm -rf server/bin server/tmp
 	rm -rf apps/*/.next apps/*/.source apps/*/.expo
 	rm -rf apps/*/out apps/*/dist apps/*/dist-electron packages/*/dist
 	rm -rf .turbo apps/*/.turbo packages/*/.turbo

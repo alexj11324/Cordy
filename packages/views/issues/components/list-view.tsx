@@ -16,9 +16,9 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, arrayMove } from "@dnd-kit/sortable";
 import { Virtuoso } from "react-virtuoso";
-import { Button } from "@patchbay/ui/components/ui/button";
-import type { Issue, IssueStatusCategory, Project } from "@patchbay/core/types";
-import { useViewStore } from "@patchbay/core/issues/stores/view-store-context";
+import { Button } from "@multica/ui/components/ui/button";
+import type { Issue, IssueStatusCategory, Project } from "@multica/core/types";
+import { useViewStore } from "@multica/core/issues/stores/view-store-context";
 import { StatusHeading } from "./status-heading";
 import { ListRow, DraggableListRow, type ChildProgress } from "./list-row";
 import { useDragSettle } from "./use-drag-settle";
@@ -43,7 +43,6 @@ import type {
   IssueStatusPageState,
   IssueStatusPagination,
 } from "../surface/use-issue-status-branches";
-import type { MoveIssueCallbacks } from "../surface/use-issue-surface-actions";
 import { VirtuosoSeed, VIRTUOSO_SEED_COUNT } from "../../common/virtuoso-seed";
 import { DeferredTooltip } from "../../common/deferred-tooltip";
 import { useRestoredScrollRef } from "../../platform";
@@ -52,7 +51,7 @@ import { useRestoredScrollRef } from "../../platform";
 // trailing spacer and Virtuoso's defaultItemHeight keeps the shared
 // scroller's height truthful from the first frame — which both stops the
 // scrollbar from re-drawing across the seed → Virtuoso handoff and lets the
-// restored scrollTop assignment stick at ref-attach (PB-4741).
+// restored scrollTop assignment stick at ref-attach (MUL-4741).
 const LIST_ROW_ESTIMATED_HEIGHT = 36;
 
 const EMPTY_PROGRESS_MAP = new Map<string, ChildProgress>();
@@ -83,11 +82,7 @@ function ListViewImpl({
   projectMap?: Map<string, Project>;
   statusPagination: IssueStatusPagination;
   projectId?: string;
-  onMoveIssue?: (
-    issueId: string,
-    updates: DragMoveUpdates,
-    callbacks?: MoveIssueCallbacks,
-  ) => boolean | void;
+  onMoveIssue?: (issueId: string, updates: DragMoveUpdates, onSettled?: () => void) => void;
   onCreateIssue?: (defaults: IssueCreateDefaults) => void;
 }) {
   const listCollapsedStatuses = useViewStore(
@@ -280,20 +275,14 @@ function ListViewImpl({
           const fromIds = (prev[activeCol] ?? []).filter((cid) => cid !== activeId);
           return { ...prev, [activeCol]: fromIds, [finalCol]: targetIds };
         });
-        const settle = beginSettle();
-        const committed = onMoveIssue(
+        onMoveIssue(
           activeId,
           {
             ...getMoveUpdates(finalGroup, currentIssue.position, currentIssue),
             ...getMoveAnchors(targetIds, activeId),
           },
-          { onSettled: settle },
+          beginSettle(),
         );
-        if (committed === false) {
-          settle();
-          resetColumns();
-          return;
-        }
         return;
       }
 
@@ -312,19 +301,14 @@ function ListViewImpl({
       // beginSettle() also bumps settleVersion on settle (board-view did, this
       // branch did not) so a failed position move reverts instead of stranding
       // the row at the drop target.
-      const settle = beginSettle();
-      const committed = onMoveIssue(
+      onMoveIssue(
         activeId,
         {
           ...getMoveUpdates(finalGroup, newPosition, currentIssue),
           ...getMoveAnchors(finalIds, activeId),
         },
-        { onSettled: settle },
+        beginSettle(),
       );
-      if (committed === false) {
-        settle();
-        resetColumns();
-      }
     },
     [issues, groups, onMoveIssue, groupIds, groupMap, sortBy, beginSettle, setColumns, columnsRef, isDraggingRef],
   );
@@ -337,7 +321,7 @@ function ListViewImpl({
   // handler `isDraggingRef` stayed true for the rest of the session, which
   // froze the column mirror against cache updates and — because the accordion's
   // onValueChange is guarded by the same ref — made tapping a status header a
-  // no-op, so groups could no longer be collapsed at all (PB-6240).
+  // no-op, so groups could no longer be collapsed at all (MUL-6240).
   const handleDragCancel = useCallback(() => {
     isDraggingRef.current = false;
     setActiveIssue(null);
@@ -350,7 +334,7 @@ function ListViewImpl({
   // the current sticky-header + cross-section scroll behavior; only the rows
   // inside each expanded panel virtualize.
   const [scrollEl, setScrollEl] = useState<HTMLDivElement | null>(null);
-  // Pull-based scroll restoration (PB-4741): assign the saved offset when
+  // Pull-based scroll restoration (MUL-4741): assign the saved offset when
   // the shared scroller attaches — the per-status seeds plus their estimate
   // spacers give it a truthful height on the first commit.
   const restoreScrollRef = useRestoredScrollRef("list");
@@ -491,7 +475,7 @@ function StatusAccordionItem({
   const listComponents = useMemo(
     () => ({
       // Always a non-undefined object: react-virtuoso throws if `components`
-      // is ever undefined (PB-4474). The footer itself renders null for a
+      // is ever undefined (MUL-4474). The footer itself renders null for a
       // short, non-paginated section.
       Footer: () => (
         <ListLoadMoreFooter
@@ -534,7 +518,7 @@ function StatusAccordionItem({
   // is still null (callback ref not settled after a route-return remount),
   // seed a bounded slice of real rows so the first painted frame isn't blank;
   // once it's set, mount the Virtuoso with a matching `initialItemCount` so the
-  // measurement frame keeps those rows instead of flashing empty (PB-4750).
+  // measurement frame keeps those rows instead of flashing empty (MUL-4750).
   // The droppable, SortableContext, sticky header, and collapse are unchanged;
   // virtualization only decides whether an off-screen row is in the DOM.
   const rows =

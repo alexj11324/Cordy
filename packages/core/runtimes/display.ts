@@ -1,7 +1,7 @@
 import type { AgentRuntime } from "../types";
 
 /**
- * The name to show for a runtime (PB-4217): the user's custom override when
+ * The name to show for a runtime (MUL-4217): the user's custom override when
  * set, otherwise the daemon-proposed default. Defends against older backends
  * that omit custom_name and against whitespace-only overrides.
  */
@@ -34,13 +34,14 @@ export function runtimeDisplayLabel(
 /**
  * Provider slugs whose human display name isn't just a capitalization of the
  * slug. This MUST mirror the daemon's `runtimeDisplayNameOverrides`
- * by the Rust daemon: the daemon bakes that display name into
+ * (server/internal/daemon/daemon.go): the daemon bakes that display name into
  * `name` for the no-alias case (for example, "Trae (host)"), so the aliased label has to use
  * the exact same names or the two paths drift apart (#5260). `qoderclicn`,
- * `dsh`, `traecli`, `qwen`, `qwenpaw`, and `mcode` need overrides today — every other provider is a
+ * `codearts`, `dsh`, `traecli`, `qwen`, `qwenpaw`, `mcode`, and `zeroclaw` need overrides today — every other provider is a
  * first-letter capitalization of its slug on both sides. Keep in sync with the daemon map.
  */
 const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
+  codearts: "CodeArts",
   dsh: "DeepSeek Harness",
   qoderclicn: "Qoder CN",
   traecli: "Trae",
@@ -48,6 +49,7 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   qwenpaw: "QwenPaw",
   mcode: "MiniMax Code",
   omp: "Oh-My-Pi",
+  zeroclaw: "ZeroClaw",
 };
 
 /**

@@ -1,4 +1,4 @@
-import { AiCreateAgentPage } from "@patchbay/views/agents";
+import { AiCreateAgentPage } from "@multica/views/agents";
 
 export default function NewAgentAiRoute() {
   return <AiCreateAgentPage />;

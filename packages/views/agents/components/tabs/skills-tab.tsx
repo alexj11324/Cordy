@@ -16,29 +16,30 @@ import type {
   AgentRuntime,
   DisabledRuntimeSkill,
   RuntimeLocalSkillSummary,
-} from "@patchbay/core/types";
-import { api, ApiError } from "@patchbay/core/api";
-import { useWorkspaceId } from "@patchbay/core/hooks";
+} from "@multica/core/types";
+import { api, ApiError } from "@multica/core/api";
+import { useWorkspaceId } from "@multica/core/hooks";
 import {
+  isRuntimeUsableForUser,
   runtimeCapabilitiesOptions,
   runtimeDisplayLabel,
-} from "@patchbay/core/runtimes";
+} from "@multica/core/runtimes";
 import {
   skillDetailOptions,
   skillListOptions,
   workspaceKeys,
-} from "@patchbay/core/workspace/queries";
-import { Badge } from "@patchbay/ui/components/ui/badge";
-import { Button } from "@patchbay/ui/components/ui/button";
+} from "@multica/core/workspace/queries";
+import { Badge } from "@multica/ui/components/ui/badge";
+import { Button } from "@multica/ui/components/ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@patchbay/ui/components/ui/dialog";
-import { Switch } from "@patchbay/ui/components/ui/switch";
-import { cn } from "@patchbay/ui/lib/utils";
+} from "@multica/ui/components/ui/dialog";
+import { Switch } from "@multica/ui/components/ui/switch";
+import { cn } from "@multica/ui/lib/utils";
 import { SkillAddDialog } from "../skill-add-dialog";
 import { useT } from "../../../i18n";
 
@@ -50,18 +51,24 @@ type SelectedSkill =
 export function SkillsTab({
   agent,
   runtime,
+  currentUserId,
   canEdit = true,
 }: {
   agent: Agent;
   runtime: AgentRuntime | null;
+  currentUserId?: string | null;
   canEdit?: boolean;
 }) {
   const { t } = useT("agents");
   const qc = useQueryClient();
   const wsId = useWorkspaceId();
   const { data: workspaceSkills = [] } = useQuery(skillListOptions(wsId));
+  const canReadRuntime =
+    runtime != null && isRuntimeUsableForUser(runtime, currentUserId ?? null);
   const runtimeId =
-    runtime?.runtime_mode === "local" && runtime.status === "online"
+    runtime?.runtime_mode === "local" &&
+    runtime.status === "online" &&
+    canReadRuntime
       ? runtime.id
       : null;
   const runtimeQuery = useQuery(runtimeCapabilitiesOptions(runtimeId));
@@ -232,7 +239,7 @@ export function SkillsTab({
       <CapabilitySection
         title={t(($) => $.tab_body.skills.runtime_title)}
         description={t(($) => $.tab_body.skills.runtime_hint, {
-          runtime: runtime ? runtimeDisplayLabel(runtime) : "Device",
+          runtime: runtime ? runtimeDisplayLabel(runtime) : "Runtime",
         })}
         action={
           runtimeId ? (
@@ -255,6 +262,8 @@ export function SkillsTab({
       >
         {!runtime ? (
           <RuntimeNotice text={t(($) => $.tab_body.skills.runtime_missing)} />
+        ) : !canReadRuntime ? (
+          <RuntimeNotice text={t(($) => $.tab_body.skills.runtime_forbidden)} />
         ) : runtime.status !== "online" ? (
           <RuntimeNotice text={t(($) => $.tab_body.skills.runtime_offline)} />
         ) : runtimeQuery.isLoading ? (

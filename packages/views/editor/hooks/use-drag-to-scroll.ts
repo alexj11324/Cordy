@@ -8,7 +8,7 @@
  * Without an intent test every drag ends in a `click` and the viewer opens on
  * top of the user, which reads as the diagram fighting back.
  *
- * The rule (product decision, PB-4908): once the pointer travels past a small
+ * The rule (product decision, MUL-4908): once the pointer travels past a small
  * threshold the gesture is a drag for good, and releasing must not tap — even
  * when the element had no room to scroll, so an unscrollable diagram cannot
  * surprise the user by opening on release either.

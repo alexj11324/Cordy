@@ -4,8 +4,8 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { Agent, AgentRuntime } from "@patchbay/core/types";
-import { I18nProvider } from "@patchbay/core/i18n/react";
+import type { Agent, AgentRuntime } from "@multica/core/types";
+import { I18nProvider } from "@multica/core/i18n/react";
 import enCommon from "../../../locales/en/common.json";
 import enAgents from "../../../locales/en/agents.json";
 
@@ -34,11 +34,11 @@ const { ApiError } = vi.hoisted(() => {
   return { ApiError };
 });
 
-vi.mock("@patchbay/core/hooks", () => ({
+vi.mock("@multica/core/hooks", () => ({
   useWorkspaceId: () => "ws-1",
 }));
 
-vi.mock("@patchbay/core/api", () => ({
+vi.mock("@multica/core/api", () => ({
   api: {
     listSkills: (...args: unknown[]) => mockListSkills(...args),
     getSkill: (...args: unknown[]) => mockGetSkill(...args),
@@ -51,10 +51,10 @@ vi.mock("@patchbay/core/api", () => ({
   ApiError,
 }));
 
-vi.mock("@patchbay/core/runtimes", async () => {
+vi.mock("@multica/core/runtimes", async () => {
   const actual =
-    await vi.importActual<typeof import("@patchbay/core/runtimes")>(
-      "@patchbay/core/runtimes",
+    await vi.importActual<typeof import("@multica/core/runtimes")>(
+      "@multica/core/runtimes",
     );
   return {
     ...actual,
@@ -122,6 +122,7 @@ const onlineRuntime: AgentRuntime = {
 function renderSkillsTab(
   agentOverrides: Partial<Agent> = {},
   runtime: AgentRuntime | null = null,
+  currentUserId: string | null = "user-1",
 ) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -134,7 +135,11 @@ function renderSkillsTab(
   return render(
     <I18nProvider locale="en" resources={TEST_RESOURCES}>
       <QueryClientProvider client={queryClient}>
-        <SkillsTab agent={{ ...agent, ...agentOverrides }} runtime={runtime} />
+        <SkillsTab
+          agent={{ ...agent, ...agentOverrides }}
+          runtime={runtime}
+          currentUserId={currentUserId}
+        />
       </QueryClientProvider>
     </I18nProvider>,
   );
@@ -161,8 +166,8 @@ describe("SkillsTab", () => {
     expect(
       await screen.findByText("Assigned to agent"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Inherited from device")).toBeInTheDocument();
-    expect(screen.getByText(/Assign a local device/i)).toBeInTheDocument();
+    expect(screen.getByText("Inherited from runtime")).toBeInTheDocument();
+    expect(screen.getByText(/Assign a local runtime/i)).toBeInTheDocument();
   });
 
   it("disables an assigned skill without removing it", async () => {
@@ -296,9 +301,20 @@ describe("SkillsTab", () => {
 
     expect(
       await screen.findByText(
-        "You don't have permission to view this device's skills.",
+        "You don't have permission to view this runtime's skills.",
       ),
     ).toBeInTheDocument();
+  });
+
+  it("does not discover skills for another member's private runtime", async () => {
+    renderSkillsTab({}, { ...onlineRuntime, owner_id: "user-2" }, "admin-1");
+
+    expect(
+      await screen.findByText(
+        "You don't have permission to view this runtime's skills.",
+      ),
+    ).toBeInTheDocument();
+    expect(mockRuntimeCapabilities).not.toHaveBeenCalled();
   });
 
   it("shows a retry notice when capability discovery fails", async () => {
@@ -309,7 +325,7 @@ describe("SkillsTab", () => {
     renderSkillsTab({}, onlineRuntime);
 
     expect(
-      await screen.findByText("Couldn't discover device skills. Try again."),
+      await screen.findByText("Couldn't discover runtime skills. Try again."),
     ).toBeInTheDocument();
   });
 });

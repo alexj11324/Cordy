@@ -5,18 +5,18 @@ import { fetchLatestRelease } from "./github-release";
 /** The twelve desktop artifacts a finished release carries. */
 function completeAssets(version: string) {
   return [
-    `patchbay-desktop-${version}-mac-arm64.dmg`,
-    `patchbay-desktop-${version}-mac-arm64.zip`,
-    `patchbay-desktop-${version}-mac-x64.dmg`,
-    `patchbay-desktop-${version}-mac-x64.zip`,
-    `patchbay-desktop-${version}-windows-x64.exe`,
-    `patchbay-desktop-${version}-windows-arm64.exe`,
-    `patchbay-desktop-${version}-linux-x86_64.AppImage`,
-    `patchbay-desktop-${version}-linux-amd64.deb`,
-    `patchbay-desktop-${version}-linux-x86_64.rpm`,
-    `patchbay-desktop-${version}-linux-arm64.AppImage`,
-    `patchbay-desktop-${version}-linux-arm64.deb`,
-    `patchbay-desktop-${version}-linux-aarch64.rpm`,
+    `multica-desktop-${version}-mac-arm64.dmg`,
+    `multica-desktop-${version}-mac-arm64.zip`,
+    `multica-desktop-${version}-mac-x64.dmg`,
+    `multica-desktop-${version}-mac-x64.zip`,
+    `multica-desktop-${version}-windows-x64.exe`,
+    `multica-desktop-${version}-windows-arm64.exe`,
+    `multica-desktop-${version}-linux-x86_64.AppImage`,
+    `multica-desktop-${version}-linux-amd64.deb`,
+    `multica-desktop-${version}-linux-x86_64.rpm`,
+    `multica-desktop-${version}-linux-arm64.AppImage`,
+    `multica-desktop-${version}-linux-arm64.deb`,
+    `multica-desktop-${version}-linux-aarch64.rpm`,
   ].map((name) => ({
     name,
     browser_download_url: `https://github.test/download/v${version}/${name}`,
@@ -37,7 +37,7 @@ function releasePayload(overrides: {
   return {
     tag_name: overrides.tag,
     published_at: "2026-08-17T10:00:00Z",
-    html_url: `https://github.com/alexj11324/Cordy/releases/tag/${overrides.tag}`,
+    html_url: `https://github.com/multica-ai/multica/releases/tag/${overrides.tag}`,
     prerelease: overrides.prerelease ?? false,
     draft: overrides.draft ?? false,
     assets: overrides.assets ?? [],
@@ -72,7 +72,7 @@ describe("fetchLatestRelease", () => {
     expect(result.assets.winX64Exe).toContain("0.2.14");
   });
 
-  // PB-6313: v0.4.28's Windows packaging job failed and its Linux job
+  // MUL-6313: v0.4.28's Windows packaging job failed and its Linux job
   // never finished, so the newest release carried Mac builds only and
   // /download rendered every Windows and Linux button as disabled.
   it("steps back to the newest complete release when the latest is missing platforms", async () => {

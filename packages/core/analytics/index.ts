@@ -1,11 +1,11 @@
 // Frontend analytics glue. Thin wrapper over posthog-js.
 //
-// The source-of-truth event catalog is owned by the Rust analytics backend. This module only
+// The source-of-truth event catalog is `server/internal/analytics/events.go`. This module only
 // handles the two things the backend can't do itself: attribution capture on
 // first anonymous pageview, and person-identity merge on login. Every funnel
 // event (signup, workspace_created, runtime_registered, issue_executed,
 // invite_sent, invite_accepted) is emitted server-side — see
-// the backend analytics module.
+// `server/internal/analytics`.
 //
 // Configuration comes from the backend's `/api/config` response (populated
 // from POSTHOG_API_KEY on the server), NOT from NEXT_PUBLIC_* envs. That
@@ -19,7 +19,7 @@ import { isBenignException } from "./benign-exceptions";
 
 export const EVENT_SCHEMA_VERSION = 2;
 
-const SIGNUP_SOURCE_COOKIE = "patchbay_signup_source";
+const SIGNUP_SOURCE_COOKIE = "multica_signup_source";
 // Per-value cap keeps a long utm_content from blowing the budget. We drop
 // the entire cookie if the JSON still exceeds the overall limit — partial
 // JSON is worse than no attribution because PostHog can't parse it.
@@ -117,7 +117,7 @@ export function initAnalytics(config: AnalyticsConfig | null | undefined): boole
     // our funnel is set up: signup is the first real funnel step.
     person_profiles: "identified_only",
     // Turn off every on-by-default auto-capture surface. Our funnel is
-    // narrow and explicit (the backend event catalog + a manual
+    // narrow and explicit (the events in server/internal/analytics/events.go + a manual
     // $pageview). Autocapture floods the Activity view with anonymous
     // "clicked button" / "clicked link" noise, burns the billed event
     // budget, and risks capturing user-typed content in input values.
@@ -141,7 +141,7 @@ export function initAnalytics(config: AnalyticsConfig | null | undefined): boole
     //
     // After scrubbing, a session-level fuse drops repeats of the same error so
     // a render loop or a polling fetch that keeps throwing can't emit 100+
-    // identical `$exception` events per session (PB-3331). The fingerprint is
+    // identical `$exception` events per session (MUL-3331). The fingerprint is
     // built only from the already-redacted fields, so no PII reaches storage.
     // Order matters: redact first, then fingerprint the redacted shape.
     capture_exceptions: true,
@@ -239,7 +239,7 @@ export function resetAnalytics(): void {
 
 /**
  * Capture a frontend-emitted event. Most funnel events fire server-side
- * in the backend analytics module; this wrapper is reserved for the
+ * (see `server/internal/analytics`); this wrapper is reserved for the
  * handful of signals the backend can't see — primarily the Step 3
  * platform-fork choice on web, where the user's click never round-trips
  * to a handler.
@@ -252,7 +252,7 @@ export interface CaptureEventOptions {
    * Bypass posthog-js's batching timer and put the event on the wire now.
    * Batching is a JS timer in the same thread that is about to freeze or be
    * killed, so a failure report queued normally can be lost exactly when it
-   * matters (PB-4115: three deterministic hangs, zero events delivered).
+   * matters (MUL-4115: three deterministic hangs, zero events delivered).
    * Reserve this for failure telemetry — routine events should batch.
    */
   sendInstantly?: boolean;
@@ -304,7 +304,7 @@ function captureNow(
  * handlers can't see.
  *
  * Currently called by the web route-level `global-error`. Section-level
- * `@patchbay/ui` ErrorBoundary can opt in by passing `onError={captureException}`
+ * `@multica/ui` ErrorBoundary can opt in by passing `onError={captureException}`
  * at its call sites; it is not wired app-wide (those failures already degrade
  * gracefully with fallback UI).
  *

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, screen } from "@testing-library/react";
-import type { Agent } from "@patchbay/core/types";
+import type { Agent } from "@multica/core/types";
 import { renderWithI18n } from "../../test/i18n";
 import { AgentDetailInspector } from "./agent-detail-inspector";
 
@@ -45,9 +45,11 @@ const agent = {
 } as Agent;
 
 describe("AgentDetailInspector labels", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+  });
 
-  // Agent labels were removed from the product (PB-5600). Label Settings no
+  // Agent labels were removed from the product (MUL-5600). Label Settings no
   // longer manages an agent catalog, so an attach-only picker here would be a
   // dead end pointing at a catalog the user cannot populate.
   it("does not offer a label picker", () => {

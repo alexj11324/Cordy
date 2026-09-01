@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import type { Issue, UpdateIssueRequest } from "@patchbay/core/types";
+import type { Issue, UpdateIssueRequest } from "@multica/core/types";
 import { BatchActionToolbar } from "./batch-action-toolbar";
 
-// Batch writes use the same category scheduling contract as single-issue
-// writes: Todo, In Progress, In Review, and Blocked can start execution;
-// Backlog and terminal categories apply directly.
+// MUL-4155: batch status changes must apply directly (no run-confirm modal),
+// while agent/squad assignment still confirms and delete still confirms. These
+// tests drive the pickers' onUpdate callbacks and assert which path is taken.
 
 const selection = vi.hoisted(() => ({
   selectedIds: new Set<string>(),
@@ -14,31 +14,27 @@ const selection = vi.hoisted(() => ({
   select: vi.fn(),
   deselect: vi.fn(),
 }));
-vi.mock("@patchbay/core/issues/stores/selection-store", () => ({
+vi.mock("@multica/core/issues/stores/selection-store", () => ({
   useIssueSelectionStore: (selector: (s: typeof selection) => unknown) => selector(selection),
 }));
 
 const batchUpdate = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 const batchDelete = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
-vi.mock("@patchbay/core/issues/mutations", () => ({
+vi.mock("@multica/core/issues/mutations", () => ({
   useBatchUpdateIssues: () => ({ mutateAsync: batchUpdate, isPending: false }),
   useBatchDeleteIssues: () => ({ mutateAsync: batchDelete, isPending: false }),
 }));
 
 const openModal = vi.hoisted(() => vi.fn());
-vi.mock("@patchbay/core/modals", () => ({
+vi.mock("@multica/core/modals", () => ({
   useModalStore: (selector: (s: { open: typeof openModal }) => unknown) => selector({ open: openModal }),
-}));
-vi.mock("@patchbay/core/hooks", () => ({ useWorkspaceId: () => "ws-1" }));
-vi.mock("@patchbay/core/issue-statuses/hooks", () => ({
-  useIssueStatuses: () => ({ categoryOf: (status: string) => status }),
 }));
 
 vi.mock("../../i18n", () => ({ useT: () => ({ t: () => "label" }) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 // Interactive picker stubs: each renders buttons that fire the real onUpdate the
-// toolbar passes in, so we exercise handleBatchStatus / handleBatchExecutor.
+// toolbar passes in, so we exercise handleBatchStatus / handleBatchAssignee.
 const ACTIVE_STATUSES = ["todo", "in_progress", "in_review", "blocked"] as const;
 const TERMINAL_STATUSES = ["done", "cancelled"] as const;
 vi.mock("./pickers", () => ({
@@ -54,19 +50,18 @@ vi.mock("./pickers", () => ({
     </div>
   ),
   PriorityPicker: () => <div data-testid="priority-picker" />,
-  ExecutorPicker: ({ onUpdate }: { onUpdate: (u: Partial<UpdateIssueRequest>) => void }) => (
+  AssigneePicker: ({ onUpdate }: { onUpdate: (u: Partial<UpdateIssueRequest>) => void }) => (
     <div>
       <button
         data-testid="assign-agent"
-        onClick={() => onUpdate({ executor_type: "agent", executor_id: "agent-1" })}
+        onClick={() => onUpdate({ assignee_type: "agent", assignee_id: "agent-1" })}
       />
       <button
         data-testid="assign-member"
-        onClick={() => onUpdate({ owner_type: "member", owner_id: "user-1" })}
+        onClick={() => onUpdate({ assignee_type: "member", assignee_id: "user-1" })}
       />
     </div>
   ),
-  OwnerPicker: () => <div data-testid="owner-picker" />,
 }));
 
 function makeIssue(overrides: Partial<Issue> = {}): Issue {
@@ -74,17 +69,13 @@ function makeIssue(overrides: Partial<Issue> = {}): Issue {
     id: "a",
     workspace_id: "ws-1",
     number: 1,
-    identifier: "PB-1",
+    identifier: "MUL-1",
     title: "Issue",
     description: null,
     status: "todo",
     priority: "none",
-    owner_type: null,
-    owner_id: null,
-    executor_type: null,
-    executor_id: null,
-    reviewer_type: null,
-    reviewer_id: null,
+    assignee_type: null,
+    assignee_id: null,
     creator_type: "member",
     creator_id: "user-1",
     parent_issue_id: null,
@@ -108,9 +99,9 @@ beforeEach(() => {
   openModal.mockClear();
 });
 
-describe("BatchActionToolbar status routing (PB-4155)", () => {
-  it("applies non-running, non-review status targets directly", () => {
-    for (const status of [...TERMINAL_STATUSES, "backlog"]) {
+describe("BatchActionToolbar status routing (MUL-4155)", () => {
+  it("applies every status target directly, never opening the run-confirm modal", () => {
+    for (const status of [...ACTIVE_STATUSES, ...TERMINAL_STATUSES, "backlog"]) {
       batchUpdate.mockClear();
       openModal.mockClear();
       // A backlog issue in the selection is the case that historically could
@@ -123,88 +114,12 @@ describe("BatchActionToolbar status routing (PB-4155)", () => {
     }
   });
 
-  it.each(["todo", "blocked"])("confirms admission into %s", (status) => {
-    render(
-      <BatchActionToolbar
-        issues={[
-          makeIssue({
-            status: "backlog",
-            executor_type: "agent",
-            executor_id: "agent-1",
-          }),
-        ]}
-      />,
-    );
-    fireEvent.click(screen.getByTestId(`status-${status}`));
-    expect(openModal).toHaveBeenCalledWith(
-      "issue-run-confirm",
-      expect.objectContaining({
-        issueIds: ["a"],
-        mode: "promote",
-        status,
-        executorType: "agent",
-        executorId: "agent-1",
-      }),
-    );
-  });
-
-  it("applies a transition within executable categories directly", () => {
-    render(
-      <BatchActionToolbar
-        issues={[
-          makeIssue({
-            status: "todo",
-            executor_type: "agent",
-            executor_id: "agent-1",
-          }),
-        ]}
-      />,
-    );
-    fireEvent.click(screen.getByTestId("status-in_progress"));
-    expect(openModal).not.toHaveBeenCalled();
-    expect(batchUpdate).toHaveBeenCalledWith({
-      ids: ["a"],
-      updates: { status: "in_progress" },
-    });
-  });
-
-  it("routes entry into review through reviewer selection", () => {
-    render(
-      <BatchActionToolbar
-        issues={[
-          makeIssue({ executor_type: "agent", executor_id: "agent-1" }),
-        ]}
-      />,
-    );
-    fireEvent.click(screen.getByTestId("status-in_review"));
-    expect(openModal).toHaveBeenCalledWith(
-      "issue-run-confirm",
-      expect.objectContaining({
-        issueIds: ["a"],
-        mode: "review",
-        status: "in_review",
-        excludedExecutors: [{ type: "agent", id: "agent-1" }],
-      }),
-    );
-    expect(batchUpdate).not.toHaveBeenCalled();
-  });
-
-  it("routes executor assignment on In Progress through the run-confirm modal", () => {
-    render(<BatchActionToolbar issues={[makeIssue({ status: "in_progress" })]} />);
+  it("still routes agent assignment through the run-confirm modal", () => {
+    render(<BatchActionToolbar issues={[makeIssue({ status: "todo" })]} />);
     fireEvent.click(screen.getByTestId("assign-agent"));
     expect(openModal).toHaveBeenCalledWith(
       "issue-run-confirm",
-      expect.objectContaining({ issueIds: ["a"], mode: "assign", executorType: "agent", executorId: "agent-1" }),
-    );
-    expect(batchUpdate).not.toHaveBeenCalled();
-  });
-
-  it.each(["todo", "blocked", "in_review"])("confirms assigning an executor in %s", (status) => {
-    render(<BatchActionToolbar issues={[makeIssue({ status: status as Issue["status"] })]} />);
-    fireEvent.click(screen.getByTestId("assign-agent"));
-    expect(openModal).toHaveBeenCalledWith(
-      "issue-run-confirm",
-      expect.objectContaining({ issueIds: ["a"], mode: "assign", executorType: "agent", executorId: "agent-1" }),
+      expect.objectContaining({ issueIds: ["a"], mode: "assign", assigneeType: "agent", assigneeId: "agent-1" }),
     );
     expect(batchUpdate).not.toHaveBeenCalled();
   });
@@ -215,7 +130,7 @@ describe("BatchActionToolbar status routing (PB-4155)", () => {
     expect(openModal).not.toHaveBeenCalled();
     expect(batchUpdate).toHaveBeenCalledWith({
       ids: ["a"],
-      updates: { owner_type: "member", owner_id: "user-1" },
+      updates: { assignee_type: "member", assignee_id: "user-1" },
     });
   });
 

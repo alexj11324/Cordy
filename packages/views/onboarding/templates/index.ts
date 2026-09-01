@@ -1,17 +1,17 @@
 import {
   matchLocale,
   type SupportedLocale,
-} from "@patchbay/core/i18n";
+} from "@multica/core/i18n";
 
 export {
   INSTALL_RUNTIME_ISSUE_TITLE,
   INSTALL_RUNTIME_ISSUE_BODY,
 } from "./install-runtime-issue";
 export {
-  getPatrickOnboarding,
-  type PatrickContentLang,
-  type PatrickOnboardingDefinition,
-} from "./patrick";
+  getMikaOnboarding,
+  type MikaContentLang,
+  type MikaOnboardingDefinition,
+} from "./mika";
 type ContentLang = "en" | "zh" | "ko" | "ja";
 
 const CONTENT_LANG_BY_LOCALE: Record<SupportedLocale, ContentLang> = {

@@ -4,7 +4,7 @@ import { loginAsDefault, createTestApi, preferManualCreateMode, reloadAppPage } 
 import type { TestApiClient } from "./fixtures";
 
 const DATABASE_URL =
-  process.env.DATABASE_URL ?? "postgres://patchbay:patchbay@localhost:5432/patchbay?sslmode=disable";
+  process.env.DATABASE_URL ?? "postgres://multica:multica@localhost:5432/multica?sslmode=disable";
 
 async function setIssueTimestamps(
   issueId: string,
@@ -179,9 +179,9 @@ test.describe("Issues", () => {
       page.locator("a", { hasText: "Issues" }).first(),
     ).toBeVisible();
     // The browser tab must name the issue, so several open at once stay
-    // distinguishable without clicking into each (PB-6222).
+    // distinguishable without clicking into each (MUL-6222).
     await expect(page).toHaveTitle(
-      `${issue.identifier}: ${issue.title} | Patchbay`,
+      `${issue.identifier}: ${issue.title} | Multica`,
     );
   });
 

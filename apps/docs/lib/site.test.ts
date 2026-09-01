@@ -41,11 +41,11 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://patchbay.aspectlylabs.com/docs/agents",
+      canonical: "https://www.multica.ai/docs/agents",
       languages: {
-        en: "https://patchbay.aspectlylabs.com/docs/agents",
-        zh: "https://patchbay.aspectlylabs.com/docs/zh/agents",
-        "x-default": "https://patchbay.aspectlylabs.com/docs/agents",
+        en: "https://www.multica.ai/docs/agents",
+        zh: "https://www.multica.ai/docs/zh/agents",
+        "x-default": "https://www.multica.ai/docs/agents",
       },
     });
   });
@@ -61,12 +61,12 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://patchbay.aspectlylabs.com/docs/agents",
+      canonical: "https://www.multica.ai/docs/agents",
       languages: {
-        en: "https://patchbay.aspectlylabs.com/docs/agents",
-        zh: "https://patchbay.aspectlylabs.com/docs/zh/agents",
-        ko: "https://patchbay.aspectlylabs.com/docs/ko/agents",
-        "x-default": "https://patchbay.aspectlylabs.com/docs/agents",
+        en: "https://www.multica.ai/docs/agents",
+        zh: "https://www.multica.ai/docs/zh/agents",
+        ko: "https://www.multica.ai/docs/ko/agents",
+        "x-default": "https://www.multica.ai/docs/agents",
       },
     });
   });
@@ -76,12 +76,12 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates(["agents"])).toEqual({
-      canonical: "https://patchbay.aspectlylabs.com/docs/agents",
+      canonical: "https://www.multica.ai/docs/agents",
       languages: {
-        en: "https://patchbay.aspectlylabs.com/docs/agents",
-        zh: "https://patchbay.aspectlylabs.com/docs/zh/agents",
-        ja: "https://patchbay.aspectlylabs.com/docs/ja/agents",
-        "x-default": "https://patchbay.aspectlylabs.com/docs/agents",
+        en: "https://www.multica.ai/docs/agents",
+        zh: "https://www.multica.ai/docs/zh/agents",
+        ja: "https://www.multica.ai/docs/ja/agents",
+        "x-default": "https://www.multica.ai/docs/agents",
       },
     });
   });
@@ -90,11 +90,11 @@ describe("docsAlternates", () => {
     const { docsAlternates } = await import("./site");
 
     expect(docsAlternates([])).toEqual({
-      canonical: "https://patchbay.aspectlylabs.com/docs",
+      canonical: "https://www.multica.ai/docs",
       languages: {
-        en: "https://patchbay.aspectlylabs.com/docs",
-        zh: "https://patchbay.aspectlylabs.com/docs/zh",
-        "x-default": "https://patchbay.aspectlylabs.com/docs",
+        en: "https://www.multica.ai/docs",
+        zh: "https://www.multica.ai/docs/zh",
+        "x-default": "https://www.multica.ai/docs",
       },
     });
   });

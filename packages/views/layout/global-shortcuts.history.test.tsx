@@ -1,28 +1,28 @@
 import { render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { configureShortcutPlatform } from "@patchbay/core/shortcuts";
+import { configureShortcutPlatform } from "@multica/core/shortcuts";
 import { NavigationProvider, type NavigationAdapter } from "../navigation";
 import { GlobalShortcuts } from "./global-shortcuts";
 
 // GlobalShortcuts pulls workspace paths and the sidebar/chat stores at render
 // time; none of that is exercised by the history chords, so stub them to keep
 // the test focused on the back/forward wiring and free of provider setup.
-vi.mock("@patchbay/ui/components/ui/sidebar", () => ({
+vi.mock("@multica/ui/components/ui/sidebar", () => ({
   useSidebar: () => ({ toggleSidebar: vi.fn() }),
 }));
-vi.mock("@patchbay/core/chat", () => ({
+vi.mock("@multica/core/chat", () => ({
   useChatStore: { getState: () => ({ floatingChatEnabled: false }) },
 }));
-vi.mock("@patchbay/core/paths", () => ({
+vi.mock("@multica/core/paths", () => ({
   useWorkspacePaths: () => ({
     inbox: () => "/w/inbox",
     chat: () => "/w/chat",
     myIssues: () => "/w/my-issues",
     issues: () => "/w/issues",
     projects: () => "/w/projects",
-    automations: () => "/w/automations",
+    autopilots: () => "/w/autopilots",
     agents: () => "/w/agents",
-    teams: () => "/w/teams",
+    squads: () => "/w/squads",
     usage: () => "/w/usage",
     runtimes: () => "/w/runtimes",
     skills: () => "/w/skills",
@@ -38,6 +38,7 @@ function makeAdapter(overrides: Partial<NavigationAdapter> = {}): NavigationAdap
     forward: vi.fn(),
     pathname: "/w/issues",
     searchParams: new URLSearchParams(),
+    hash: "",
     getShareableUrl: (path) => path,
     ...overrides,
   };

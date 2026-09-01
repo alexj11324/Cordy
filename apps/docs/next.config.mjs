@@ -4,22 +4,8 @@ const withMDX = createMDX();
 
 /** @type {import('next').NextConfig} */
 const config = {
-  output: "standalone",
   reactStrictMode: true,
   basePath: "/docs",
-  async headers() {
-    return [
-      {
-        source: "/:path*",
-        headers: [
-          {
-            key: "X-Patchbay-Build",
-            value: process.env.NEXT_PUBLIC_APP_VERSION || "dev",
-          },
-        ],
-      },
-    ];
-  },
   // Visiting http://host/ (outside basePath) would otherwise 404 — redirect
   // to the docs root. basePath: false makes the source and destination
   // literal (not re-prefixed with `/docs`), so the redirect runs before
@@ -60,26 +46,6 @@ const config = {
       {
         source: "/zh/cli/reference",
         destination: "/zh/cli",
-        permanent: true,
-      },
-      {
-        source: "/how-cordy-works", // legacy-brand-compat
-        destination: "/how-patchbay-works",
-        permanent: true,
-      },
-      {
-        source: "/zh/how-cordy-works", // legacy-brand-compat
-        destination: "/zh/how-patchbay-works",
-        permanent: true,
-      },
-      {
-        source: "/ja/how-cordy-works", // legacy-brand-compat
-        destination: "/ja/how-patchbay-works",
-        permanent: true,
-      },
-      {
-        source: "/ko/how-cordy-works", // legacy-brand-compat
-        destination: "/ko/how-patchbay-works",
         permanent: true,
       },
     ];

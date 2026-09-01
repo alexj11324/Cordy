@@ -4,7 +4,7 @@
  *
  * Filters every event by id match (`project.id === projectId` for project
  * events, `issue.project_id === projectId` for issue events) so the hook
- * only mutates the caches it owns (apps/mobile/AGENTS.md "Realtime → Mount
+ * only mutates the caches it owns (apps/mobile/CLAUDE.md "Realtime → Mount
  * strategy").
  *
  * Handles:
@@ -24,7 +24,7 @@
  * `project:created` is not relevant to the per-record hook (no id match).
  */
 import { useQueryClient } from "@tanstack/react-query";
-import type { Issue } from "@patchbay/core/types";
+import type { Issue } from "@multica/core/types";
 import { issueKeys } from "@/data/queries/issue-keys";
 import { projectKeys } from "@/data/queries/projects";
 import { useWSSubscriptions } from "@/lib/use-ws-subscriptions";

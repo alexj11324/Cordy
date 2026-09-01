@@ -1,6 +1,6 @@
-import { statusCategoryOfKey } from "@patchbay/core/issues";
-import type { IssueStatus, IssueStatusCategory } from "@patchbay/core/types";
-import { STATUS_CONFIG } from "@patchbay/core/issues/config";
+import { statusCategoryOfKey } from "@multica/core/issues";
+import type { IssueStatus, IssueStatusCategory } from "@multica/core/types";
+import { STATUS_CONFIG } from "@multica/core/issues/config";
 
 // ---------------------------------------------------------------------------
 // Geometry constants (viewBox 0 0 14 14, center 7,7)
@@ -178,7 +178,7 @@ export function StatusIcon({
   inheritColor?: boolean;
 }) {
   // The glyph set is per CATEGORY: a custom status renders with its category's
-  // icon, which is what makes it read as "the same kind of thing". (PB-6243)
+  // icon, which is what makes it read as "the same kind of thing". (MUL-6243)
   const category = categoryProp ?? statusCategoryOfKey(status);
   const cfg = STATUS_CONFIG[category];
   const Renderer = STATUS_RENDERERS[category] ?? TodoIcon;

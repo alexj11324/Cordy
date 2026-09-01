@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useWSEvent } from "@patchbay/core/realtime";
+import { useWSEvent } from "@multica/core/realtime";
 import {
   runtimeKeys,
   runtimeListOptions,
-} from "@patchbay/core/runtimes/queries";
-import type { AgentRuntime } from "@patchbay/core/types";
+} from "@multica/core/runtimes/queries";
+import type { AgentRuntime } from "@multica/core/types";
 
 /**
  * Step 3's runtime data layer, shared by Desktop (`StepRuntimeConnect`)
@@ -21,11 +21,7 @@ import type { AgentRuntime } from "@patchbay/core/types";
  *     Only runs when the user hasn't picked anything, so a manual
  *     selection survives subsequent refetches.
  */
-export function useRuntimePicker(
-  wsId: string,
-  wsSlug?: string,
-  options: { enabled?: boolean } = {},
-): {
+export function useRuntimePicker(wsId: string, wsSlug?: string): {
   runtimes: AgentRuntime[];
   selected: AgentRuntime | null;
   selectedId: string | null;
@@ -33,30 +29,25 @@ export function useRuntimePicker(
   hasRuntimes: boolean;
 } {
   const qc = useQueryClient();
-  const enabled = options.enabled ?? true;
 
   const { data: runtimes = [] } = useQuery({
     ...runtimeListOptions(wsId, "me", wsSlug),
-    enabled,
-    refetchInterval: enabled
-      ? (q) => (q.state.data?.length ? false : 2000)
-      : false,
+    refetchInterval: (q) => (q.state.data?.length ? false : 2000),
   });
 
   const handleDaemonEvent = useCallback(() => {
-    if (!enabled) return;
     qc.invalidateQueries({ queryKey: runtimeKeys.all(wsId) });
-  }, [enabled, qc, wsId]);
+  }, [qc, wsId]);
   useWSEvent("daemon:register", handleDaemonEvent);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!enabled || selectedId) return;
+    if (selectedId) return;
     const preferred =
       runtimes.find((r) => r.status === "online") ?? runtimes[0];
     if (preferred) setSelectedId(preferred.id);
-  }, [enabled, runtimes, selectedId]);
+  }, [runtimes, selectedId]);
 
   const selected = runtimes.find((r) => r.id === selectedId) ?? null;
 

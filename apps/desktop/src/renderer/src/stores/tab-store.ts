@@ -1,16 +1,15 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import { arrayMove } from "@dnd-kit/sortable";
-import { createPersistStorage, defaultStorage } from "@patchbay/core/platform";
-import { createSafeId } from "@patchbay/core/utils";
-import { isReservedSlug } from "@patchbay/core/paths";
-import { isStandaloneSettingsPath } from "@/platform/standalone-settings";
+import { createPersistStorage, defaultStorage } from "@multica/core/platform";
+import { createSafeId } from "@multica/core/utils";
+import { isReservedSlug } from "@multica/core/paths";
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 //
-// PB-4741 Phase 2: tabs are *sessions*, not routers. A TabSession is pure
+// MUL-4741 Phase 2: tabs are *sessions*, not routers. A TabSession is pure
 // serializable state — URL, identity, virtual history, and a memento of
 // restorable view state. The single app router is a projection of the active
 // session, driven exclusively by the tab Coordinator (src/platform/
@@ -23,7 +22,7 @@ import { isStandaloneSettingsPath } from "@/platform/standalone-settings";
  *
  * `contentKey` is an optional fingerprint of the rendered content, used by
  * out-of-DOM scroll sources (the sandboxed HTML-attachment iframe — see
- * patchbay-ai#6405) to invalidate restoration when the content changed
+ * multica-ai#6405) to invalidate restoration when the content changed
  * (re-upload to the same attachment id). Plain `[data-tab-scroll-root]`
  * containers leave it undefined; identity comparison (undefined ===
  * undefined) means their behavior is unchanged.
@@ -121,7 +120,7 @@ export interface WorkspaceTabGroup {
    *
    * This is the group's MRU (most-recently-used) order, and it exists for one
    * question: where do we land when the active tab goes away? Closing a tab
-   * returns to the tab you were last looking at (PB-5665), not to a
+   * returns to the tab you were last looking at (MUL-5665), not to a
    * positional neighbour — opening a detail tab from a list, then closing it,
    * must put you back on that list even when the tab bar appended the new tab
    * far away from it.
@@ -147,14 +146,6 @@ interface TabStore {
    * impossible by construction because there is no global tab array.
    */
   byWorkspace: Record<string, WorkspaceTabGroup>;
-
-  /**
-   * Last authoritative workspace-slug set supplied by the workspace list.
-   * Null means the list has not settled for the current session yet. This is
-   * deliberately live-only state so deep links cannot create a Settings
-   * overlay for a deleted or unknown workspace.
-   */
-  validWorkspaceSlugs: Set<string> | null;
 
   /**
    * Bumped by reloadActiveTab. The ActiveTabHost keys its subtree on
@@ -291,8 +282,8 @@ interface TabStore {
 // ---------------------------------------------------------------------------
 //
 // A tab's icon is NOT part of this model. It is derived from `tab.url` at
-// render time via `routeIconForPath` (@patchbay/views/layout), which shares the
-// route → icon map in `@patchbay/core/paths` with the sidebar nav — so the two
+// render time via `routeIconForPath` (@multica/views/layout), which shares the
+// route → icon map in `@multica/core/paths` with the sidebar nav — so the two
 // surfaces cannot drift, and no stale icon can survive in persisted state.
 // Title is likewise not determined here; it comes from document.title.
 
@@ -337,22 +328,19 @@ export function resourceKeyForUrl(url: string): string {
  *     pre-workspace flows rendered by the window overlay on desktop, not
  *     tab routes. The navigation adapter normally intercepts these before
  *     they reach the store; this guard catches older persisted state.
- *  2. **Settings paths** (`/{slug}/settings`). Settings is a first-class,
- *     window-level page on desktop and must never become a tab session.
- *  3. **Malformed workspace-scoped paths** like a stray `/issues/abc` that
+ *  2. **Malformed workspace-scoped paths** like a stray `/issues/abc` that
  *     was constructed without the workspace prefix. The router would
  *     interpret `issues` as a workspace slug → NoAccessPage.
  *
  * Normalizes: a bare `/{slug}` (no route segment) becomes `/{slug}/issues` —
  * the workspace's default surface. This replaces the old in-router
- * `<Navigate to="issues">` index redirect (PB-4741 invariant 1: the router
+ * `<Navigate to="issues">` index redirect (MUL-4741 invariant 1: the router
  * never self-navigates; URLs are normalized before they become sessions).
  *
  * Returns null for rejects (caller decides how to recover — usually by
  * dropping the tab or substituting a default).
  */
 export function sanitizeTabPath(path: string): string | null {
-  if (isStandaloneSettingsPath(path)) return null;
   const { pathname, suffix } = splitTabUrl(path);
   const segments = pathname.split("/").filter(Boolean);
   const firstSegment = segments[0] ?? "";
@@ -508,7 +496,6 @@ export const useTabStore = create<TabStore>()(
     (set, get) => ({
       activeWorkspaceSlug: null,
       byWorkspace: {},
-      validWorkspaceSlugs: null,
       mountGeneration: 0,
 
       switchWorkspace(slug, openPath) {
@@ -601,7 +588,7 @@ export const useTabStore = create<TabStore>()(
 
         const tab = makeSession(clean, title);
         // Insert immediately right of the opener (the active tab) — browser
-        // convention for cmd/middle/menu opens (PB-5860) — rather than
+        // convention for cmd/middle/menu opens (MUL-5860) — rather than
         // appending. The pinned-first invariant caps the left edge: a pinned
         // opener's "right" is the start of the unpinned zone. The explicit
         // "+" button appends instead (see addTab).
@@ -983,28 +970,16 @@ export const useTabStore = create<TabStore>()(
           }
         }
 
-        if (!changed) {
-          set({ validWorkspaceSlugs: new Set(validSlugs) });
-          return;
-        }
-        set({
-          byWorkspace: nextByWorkspace,
-          activeWorkspaceSlug: nextActive,
-          validWorkspaceSlugs: new Set(validSlugs),
-        });
+        if (!changed) return;
+        set({ byWorkspace: nextByWorkspace, activeWorkspaceSlug: nextActive });
       },
 
       reset() {
-        set({
-          activeWorkspaceSlug: null,
-          byWorkspace: {},
-          validWorkspaceSlugs: null,
-          mountGeneration: 0,
-        });
+        set({ activeWorkspaceSlug: null, byWorkspace: {}, mountGeneration: 0 });
       },
     }),
     {
-      name: "patchbay_tabs",
+      name: "multica_tabs",
       version: 4,
       storage: createJSONStorage(() => createPersistStorage(defaultStorage)),
       migrate: (persistedState, version) => {
@@ -1021,7 +996,7 @@ export const useTabStore = create<TabStore>()(
         if (version < 3 && state && typeof state === "object") {
           state = migrateV2ToV3(state as V2Persisted);
         }
-        // v3 → v4: Tab → TabSession (PB-4741). One-time import of legacy
+        // v3 → v4: Tab → TabSession (MUL-4741). One-time import of legacy
         // view-state: `path` becomes `url`, identity/history/memento are
         // derived. Routers are no longer part of the model.
         if (version < 4 && state && typeof state === "object") {
@@ -1100,34 +1075,14 @@ export function mergePersistedTabs<T extends PersistedTabState>(
         );
         continue;
       }
-      const rawStack =
+      const stack =
         Array.isArray(pTab.history?.stack) && pTab.history.stack.length > 0
           ? pTab.history.stack
           : [clean];
-      const rawIndex = Math.min(
-        Math.max(pTab.history?.index ?? rawStack.length - 1, 0),
-        rawStack.length - 1,
+      const index = Math.min(
+        Math.max(pTab.history?.index ?? stack.length - 1, 0),
+        stack.length - 1,
       );
-      const sanitizeHistoryEntry = (entry: unknown): string | null => {
-        if (typeof entry !== "string") return null;
-        const sanitized = sanitizeTabPath(entry);
-        return sanitized && extractWorkspaceSlug(sanitized) === slug
-          ? sanitized
-          : null;
-      };
-      const past = rawStack
-        .slice(0, rawIndex)
-        .map(sanitizeHistoryEntry)
-        .filter((entry): entry is string => entry !== null);
-      const future = rawStack
-        .slice(rawIndex + 1)
-        .map(sanitizeHistoryEntry)
-        .filter((entry): entry is string => entry !== null);
-      // `url` is the persisted source of truth for the current entry. Rebuild
-      // the stack around it so removing legacy Settings entries preserves the
-      // relative past/future order and leaves the index pointing at `url`.
-      const stack = [...past, clean, ...future];
-      const index = past.length;
       tabs.push({
         id: pTab.id,
         url: clean,
@@ -1194,8 +1149,7 @@ function stepHistory(
   const current = group.tabs[index];
   const nextIndex = current.history.index + delta;
   if (nextIndex < 0 || nextIndex >= current.history.stack.length) return;
-  const url = sanitizeTabPath(current.history.stack[nextIndex]);
-  if (!url || extractWorkspaceSlug(url) !== activeWorkspaceSlug) return;
+  const url = current.history.stack[nextIndex];
   const next: TabSession = {
     ...current,
     url,
@@ -1286,7 +1240,7 @@ interface V4PersistedGroup {
   tabs: V4PersistedTab[];
   activeTabId: string;
   /**
-   * MRU activation order. Optional: payloads written before PB-5665 don't
+   * MRU activation order. Optional: payloads written before MUL-5665 don't
    * have it, and an absent order simply means the first close of that group
    * falls back to the positional neighbour. Re-validated on rehydration, so
    * a stale id from a hand-edited payload can never become the active tab.
