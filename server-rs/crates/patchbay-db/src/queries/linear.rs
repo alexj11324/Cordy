@@ -879,6 +879,24 @@ pub async fn renew_claimed_sync_inbox(
     Ok(result.rows_affected() == 1)
 }
 
+pub async fn lock_claimed_sync_inbox_for_update(
+    executor: impl Executor<'_, Database = Postgres>,
+    id: Uuid,
+    worker_id: &str,
+) -> anyhow::Result<bool> {
+    Ok(sqlx::query_scalar::<_, Uuid>(
+        r#"SELECT id FROM linear_sync_inbox
+           WHERE id = $1 AND processed_at IS NULL
+             AND dead_lettered_at IS NULL AND locked_by = $2
+           FOR UPDATE"#,
+    )
+    .bind(id)
+    .bind(worker_id)
+    .fetch_optional(executor)
+    .await?
+    .is_some())
+}
+
 /// Rows whose last worker died after claim are dead-lettered once their retry
 /// budget is exhausted. This prevents a permanent protocol error from being
 /// selected forever after its lease expires.

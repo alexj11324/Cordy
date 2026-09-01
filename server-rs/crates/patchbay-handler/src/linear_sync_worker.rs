@@ -6,8 +6,9 @@
 //! Outbound mutations are emitted only from the durable Outbox and are gated
 //! independently from inbound import.
 
+use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chrono::{DateTime, NaiveDate, Utc};
 use patchbay_db::models::{
@@ -25,7 +26,7 @@ use patchbay_service::issue_service::{
 use patchbay_service::task_helpers::has_runnable_successor;
 use patchbay_service::task_service::pending_slot_taken_err;
 use serde_json::{json, Value};
-use tokio::sync::Notify;
+use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
@@ -251,12 +252,14 @@ fn parse_agent_session_terminal_event(
         })
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let error_body = first_string(Some(data), &["error", "failureReason", "message"]);
+    let error_body = first_string(Some(data), &["error", "failureReason", "message"])
+        .map(|error| patchbay_service::redact::text(&error));
     let body = match (status.as_str(), result_body, error_body) {
         ("completed", Some(body), _) => body.to_string(),
-        ("completed", None, _) => "Patchbay Agent completed the task.".to_string(),
-        (_, _, Some(error)) => format!("Patchbay Agent {status}: {error}"),
-        (_, _, None) => format!("Patchbay Agent {status} the task."),
+        ("completed", None, _) => "✅".to_string(),
+        (_, _, Some(error)) => error,
+        ("cancelled", _, None) => "⏹".to_string(),
+        (_, _, None) => "❌".to_string(),
     };
     Ok(LinearAgentSessionTerminalEvent {
         session_id,
@@ -452,6 +455,7 @@ pub struct LinearSyncWorker {
     state: HandlerState,
     notify: Arc<Notify>,
     worker_id: String,
+    agent_label_catalog_validity: Mutex<HashMap<Uuid, (String, Instant, bool)>>,
 }
 
 impl LinearSyncWorker {
@@ -460,6 +464,7 @@ impl LinearSyncWorker {
             state,
             notify,
             worker_id: format!("linear-sync-{}", Uuid::now_v7()),
+            agent_label_catalog_validity: Mutex::new(HashMap::new()),
         })
     }
 
@@ -1136,7 +1141,11 @@ impl LinearSyncWorker {
         } else {
             None
         };
-        let agent_label_ids = if self.state.linear_agent_bridge_enabled(row.workspace_id) {
+        let agent_label_ids = if self.state.linear_agent_bridge_enabled(row.workspace_id)
+            && self
+                .agent_label_mapping_is_live(&connection, &binding, true)
+                .await?
+        {
             agent_label_ids_for_issue(
                 &binding,
                 issue.executor_type.as_deref(),
@@ -2130,19 +2139,6 @@ impl LinearSyncWorker {
                 .await
                 .map_err(|error| classify_token_error(error, "update Linear Agent Session URL"))?;
         }
-        let activity = if event.action == "prompted" {
-            "Linear prompt accepted and queued for the selected Agent."
-        } else {
-            "Linear Agent Session accepted and queued for the selected Agent."
-        };
-        manager
-            .create_agent_activity(
-                connection.id,
-                &event.session_id,
-                json!({"type": "thought", "body": activity}),
-            )
-            .await
-            .map_err(|error| classify_token_error(error, "acknowledge Linear Agent Session"))?;
         let released = linear_agent_q::release_linear_agent_session_dispatch(
             &self.state.pool,
             connection.workspace_id,
@@ -2261,6 +2257,17 @@ impl LinearSyncWorker {
             )));
         }
 
+        let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
+        if !linear_q::lock_claimed_sync_inbox_for_update(
+            &mut *transaction,
+            row.id,
+            worker_id,
+        )
+        .await
+        .map_err(SyncError::retry)?
+        {
+            return Ok(());
+        }
         let manager = LinearTokenManager::from_state(&self.state)
             .map_err(|error| classify_token_error(error, "create Linear token manager"))?;
         manager
@@ -2273,7 +2280,7 @@ impl LinearSyncWorker {
             .map_err(|error| classify_token_error(error, "publish Linear Agent Session result"))?;
 
         let updated = linear_agent_q::mark_linear_agent_session_terminal(
-            &self.state.pool,
+            &mut *transaction,
             connection.workspace_id,
             connection.id,
             &event.session_id,
@@ -2284,6 +2291,7 @@ impl LinearSyncWorker {
         )
         .await
         .map_err(SyncError::retry)?;
+        transaction.commit().await.map_err(SyncError::retry)?;
         if !updated {
             tracing::warn!(
                 connection_id = %connection.id,
@@ -2311,14 +2319,13 @@ impl LinearSyncWorker {
             {
                 return Ok(binding.patchbay_user_id);
             }
-            tracing::warn!(
-                workspace_id = %connection.workspace_id,
-                connection_id = %connection.id,
-                linear_user_id,
-                "Linear Agent Session creator has no member mapping; falling back to installation creator"
-            );
+            return Err(SyncError::permanent(anyhow::anyhow!(
+                "Linear Agent Session creator has no workspace member mapping"
+            )));
         }
-        Ok(connection.created_by_id)
+        Err(SyncError::permanent(anyhow::anyhow!(
+            "Linear Agent Session creator identity is required"
+        )))
     }
 
     async fn resume_waiting_agent_sessions(
@@ -2953,16 +2960,10 @@ impl LinearSyncWorker {
             .and_then(Value::as_str)
             .is_some_and(|group_id| !group_id.trim().is_empty());
         if group_configured {
-            let manager = LinearTokenManager::from_state(&self.state)
-                .map_err(|error| classify_token_error(error, "create Linear token manager"))?;
-            let catalog = manager.catalog(connection.id).await.map_err(|error| {
-                classify_token_error(error, "revalidate Linear Agent label mapping")
-            })?;
-            if !agent_label_mapping_matches_catalog(
-                &binding.agent_label_mapping,
-                binding.linear_team_id.as_deref(),
-                &catalog,
-            ) {
+            if !self
+                .agent_label_mapping_is_live(connection, binding, false)
+                .await?
+            {
                 tracing::warn!(
                     workspace_id = %connection.workspace_id,
                     connection_id = %connection.id,
@@ -3002,6 +3003,48 @@ impl LinearSyncWorker {
             }
         }
         Ok(decision)
+    }
+
+    async fn agent_label_mapping_is_live(
+        &self,
+        connection: &LinearConnection,
+        binding: &LinearProjectBinding,
+        force_refresh: bool,
+    ) -> Result<bool, SyncError> {
+        if binding
+            .agent_label_mapping
+            .get("group_id")
+            .and_then(Value::as_str)
+            .is_none_or(|group_id| group_id.trim().is_empty())
+        {
+            return Ok(true);
+        }
+        let mapping_key = binding.agent_label_mapping.to_string();
+        {
+            let cache = self.agent_label_catalog_validity.lock().await;
+            if !force_refresh
+                && let Some((cached_key, checked_at, valid)) = cache.get(&binding.id)
+                && cached_key == &mapping_key
+                && checked_at.elapsed() < Duration::from_secs(300)
+            {
+                return Ok(*valid);
+            }
+        }
+        let manager = LinearTokenManager::from_state(&self.state)
+            .map_err(|error| classify_token_error(error, "create Linear token manager"))?;
+        let catalog = manager.catalog(connection.id).await.map_err(|error| {
+            classify_token_error(error, "revalidate Linear Agent label mapping")
+        })?;
+        let valid = agent_label_mapping_matches_catalog(
+            &binding.agent_label_mapping,
+            binding.linear_team_id.as_deref(),
+            &catalog,
+        );
+        self.agent_label_catalog_validity
+            .lock()
+            .await
+            .insert(binding.id, (mapping_key, Instant::now(), valid));
+        Ok(valid)
     }
 
     async fn normalized_base_snapshot(

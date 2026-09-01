@@ -46,7 +46,14 @@ pub async fn upsert_linear_agent_session(
            linear_issue_id = EXCLUDED.linear_issue_id,\
            patchbay_issue_id = COALESCE(EXCLUDED.patchbay_issue_id, linear_agent_session.patchbay_issue_id),\
            agent_id = COALESCE(EXCLUDED.agent_id, linear_agent_session.agent_id),\
-           task_id = COALESCE(EXCLUDED.task_id, linear_agent_session.task_id),\
+           task_id = CASE
+             WHEN EXCLUDED.action = 'prompted'
+              AND EXCLUDED.last_event_at_ms IS NOT NULL
+              AND (linear_agent_session.last_event_at_ms IS NULL
+                   OR EXCLUDED.last_event_at_ms > linear_agent_session.last_event_at_ms)
+             THEN EXCLUDED.task_id
+             ELSE COALESCE(EXCLUDED.task_id, linear_agent_session.task_id)
+           END,\
            action = EXCLUDED.action,\
            status = EXCLUDED.status,\
            prompt_context = COALESCE(EXCLUDED.prompt_context, linear_agent_session.prompt_context),\
