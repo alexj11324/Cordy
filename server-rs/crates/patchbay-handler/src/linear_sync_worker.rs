@@ -3694,7 +3694,7 @@ mod tests {
         .message()
         .contains("no label mapping"));
 
-        binding.agent_label_mapping["default_agent_id"] = Value::String(unmapped_agent.to_string());
+        binding.agent_label_mapping["default_agent_id"] = json!(unmapped_agent.to_string());
         assert_eq!(
             agent_label_ids_for_issue(&binding, Some("agent"), Some(unmapped_agent), &existing,)
                 .unwrap(),
