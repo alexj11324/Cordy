@@ -25,7 +25,16 @@ vi.mock("@lobehub/ui/es/Flex/index", () => ({
       }
     }
     return (
-      <div className={className} style={style} {...dom}>
+      <div
+        className={className}
+        style={{
+          ...style,
+          ...(typeof rest.width === "string" || typeof rest.width === "number"
+            ? { width: rest.width }
+            : {}),
+        }}
+        {...dom}
+      >
         {children}
       </div>
     );
@@ -54,6 +63,7 @@ describe("DesktopChatInput", () => {
 
     for (const cls of CHAT_GUTTER.split(" ")) expect(outer).toHaveClass(cls);
     for (const cls of CHAT_COLUMN.split(" ")) expect(column).toHaveClass(cls);
+    expect(column).toHaveStyle({ width: "100%" });
     expect(surface).toHaveAttribute("data-lobe-chat-input");
     expect(surface?.contains(container.querySelector("[data-testid='header-slot']"))).toBe(true);
     expect(surface?.contains(container.querySelector("[data-testid='editor']"))).toBe(true);

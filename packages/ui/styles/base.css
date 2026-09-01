@@ -433,6 +433,45 @@ html[data-dnd-dragging="true"] * {
   }
 }
 
+/* @lobehub/ui Flexbox (`lobe-flex`) contract.
+ *
+ * Flexbox sets CSS variables (`--lobe-flex-*`) on the element. The matching
+ * `display:flex` / `flex-flow` / `gap` rules normally come from LobeHub's
+ * ThemeProvider EssentialStyle. This app only mounts that provider on Settings,
+ * so Agent chat (and the Agent sidebar) would otherwise render Flexbox as a
+ * block box: send stuck to the left, welcome spacer not pinning above the
+ * composer. Keep this in sync with `@lobehub/ui` `ThemeProvider/GlobalStyle/essential`.
+ * `:where()` keeps specificity at 0 so a call-site utility can still override. */
+:where(.lobe-flex) {
+  --lobe-flex: 0 1 auto;
+  --lobe-flex-direction: column;
+  --lobe-flex-wrap: nowrap;
+  --lobe-flex-justify: flex-start;
+  --lobe-flex-align: stretch;
+  --lobe-flex-width: auto;
+  --lobe-flex-height: auto;
+  --lobe-flex-padding: 0;
+  --lobe-flex-padding-inline: var(--lobe-flex-padding);
+  --lobe-flex-padding-block: var(--lobe-flex-padding);
+  --lobe-flex-gap: 0;
+
+  display: flex;
+  flex: var(--lobe-flex);
+  flex-flow: var(--lobe-flex-direction) var(--lobe-flex-wrap);
+  gap: var(--lobe-flex-gap);
+  align-items: var(--lobe-flex-align);
+  justify-content: var(--lobe-flex-justify);
+  width: var(--lobe-flex-width);
+  height: var(--lobe-flex-height);
+  padding: var(--lobe-flex-padding);
+  padding-block: var(--lobe-flex-padding-block);
+  padding-inline: var(--lobe-flex-padding-inline);
+}
+
+.lobe-flex-hidden {
+  display: none;
+}
+
 /* In-page find (Cmd/Ctrl+F on the issue detail page). Matches are painted with
  * the CSS Custom Highlight API — ranges only, no DOM mutation — so the tint
  * layers cleanly over React-rendered markdown and the contenteditable

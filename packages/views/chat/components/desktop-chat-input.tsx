@@ -16,7 +16,10 @@ import { CHAT_COLUMN, CHAT_GUTTER } from "./chat-column";
  * product already owns Tiptap (slash, mentions, attachments, drafts) and
  * auto-grows the draft up to half the surface (PB-5196). The mapping therefore
  * reuses `@lobehub/ui` Flexbox with the same header / body / footer ActionBar
- * geometry, and keeps ContentEditor as the body.
+ * geometry, and keeps ContentEditor as the body. Flexbox layout requires the
+ * `.lobe-flex` contract in `@patchbay/ui` `styles/base.css` (this app does not
+ * mount LobeHub ThemeProvider on the Agent shell). The column Flexbox is
+ * `width="100%"` so that contract does not shrink the composer to its actions.
  */
 export type DesktopChatInputProps = {
   composerRef: Ref<HTMLDivElement>;
@@ -59,6 +62,7 @@ export function DesktopChatInput({
         className={cn(CHAT_COLUMN, noAgent && "pointer-events-none opacity-60")}
         gap={8}
         paddingBlock="0 8px"
+        width="100%"
         aria-disabled={noAgent || undefined}
       >
         <div
