@@ -887,7 +887,7 @@ async fn resolve_conflict(
             );
         }
     };
-    let Some(conflict) = (match linear_q::get_linear_sync_conflict_for_update(
+    let Some(conflict_snapshot) = (match linear_q::get_linear_sync_conflict(
         &mut *transaction,
         workspace_id,
         path.conflict_id,
@@ -905,56 +905,13 @@ async fn resolve_conflict(
     }) else {
         return error_response(StatusCode::NOT_FOUND, "Linear conflict not found");
     };
-    if conflict.status != "open" {
+    if conflict_snapshot.status != "open" {
         return error_response(StatusCode::CONFLICT, "Linear conflict is already resolved");
-    }
-    let Some(issue) = (match sqlx::query_as::<_, patchbay_db::models::Issue>(
-        "SELECT * FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
-    )
-    .bind(conflict.patchbay_issue_id)
-    .bind(workspace_id)
-    .fetch_optional(&mut *transaction)
-    .await
-    {
-        Ok(issue) => issue,
-        Err(error) => {
-            tracing::warn!(%error, "Linear conflict Issue lookup failed");
-            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load Issue");
-        }
-    }) else {
-        return error_response(StatusCode::NOT_FOUND, "Patchbay Issue not found");
-    };
-    let Some(link) = (match linear_q::get_linear_issue_link_for_update(
-        &mut *transaction,
-        workspace_id,
-        conflict.link_id,
-    )
-    .await
-    {
-        Ok(link) => link,
-        Err(error) => {
-            tracing::warn!(%error, "Linear conflict link lookup failed");
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "failed to load Linear link",
-            );
-        }
-    }) else {
-        return error_response(StatusCode::NOT_FOUND, "Linear Issue Link not found");
-    };
-    if link.patchbay_issue_id != conflict.patchbay_issue_id
-        || link.binding_id != conflict.binding_id
-        || link.sync_status == "deleted"
-    {
-        return error_response(
-            StatusCode::CONFLICT,
-            "Linear Issue Link is no longer syncable",
-        );
     }
     let Some(binding) = (match linear_q::get_project_binding_for_update(
         &mut *transaction,
         workspace_id,
-        link.binding_id,
+        conflict_snapshot.binding_id,
     )
     .await
     {
@@ -969,6 +926,77 @@ async fn resolve_conflict(
     }) else {
         return error_response(StatusCode::CONFLICT, "Linear binding is no longer syncable");
     };
+    let Some(link) = (match linear_q::get_linear_issue_link_for_update(
+        &mut *transaction,
+        workspace_id,
+        conflict_snapshot.link_id,
+    )
+    .await
+    {
+        Ok(link) => link,
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict link lookup failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear link",
+            );
+        }
+    }) else {
+        return error_response(StatusCode::NOT_FOUND, "Linear Issue Link not found");
+    };
+    if link.patchbay_issue_id != conflict_snapshot.patchbay_issue_id
+        || link.binding_id != conflict_snapshot.binding_id
+        || link.sync_status == "deleted"
+    {
+        return error_response(
+            StatusCode::CONFLICT,
+            "Linear Issue Link is no longer syncable",
+        );
+    }
+    let Some(issue) = (match sqlx::query_as::<_, patchbay_db::models::Issue>(
+        "SELECT * FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
+    )
+    .bind(conflict_snapshot.patchbay_issue_id)
+    .bind(workspace_id)
+    .fetch_optional(&mut *transaction)
+    .await
+    {
+        Ok(issue) => issue,
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict Issue lookup failed");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load Issue");
+        }
+    }) else {
+        return error_response(StatusCode::NOT_FOUND, "Patchbay Issue not found");
+    };
+    let Some(conflict) = (match linear_q::get_linear_sync_conflict_for_update(
+        &mut *transaction,
+        workspace_id,
+        path.conflict_id,
+    )
+    .await
+    {
+        Ok(conflict) => conflict,
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict lock failed before resolution");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to lock Linear conflict",
+            );
+        }
+    }) else {
+        return error_response(StatusCode::NOT_FOUND, "Linear conflict not found");
+    };
+    if conflict.status != "open"
+        || conflict.binding_id != binding.id
+        || conflict.link_id != link.id
+        || conflict.patchbay_issue_id != issue.id
+    {
+        return error_response(
+            StatusCode::CONFLICT,
+            "Linear conflict is no longer resolvable",
+        );
+    }
     if binding.status != "active"
         || !(matches!(binding.sync_mode.as_str(), "publish" | "two_way")
             || (binding.sync_mode == "import" && request.resolution == "remote"))
