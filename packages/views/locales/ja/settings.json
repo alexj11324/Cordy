@@ -764,6 +764,7 @@
     "feature_pr_sidebar_description": "リンクされた Pull request をタスク詳細サイドバーに表示します。",
     "feature_co_author_label": "Co-authored-by トレーラー",
     "feature_co_author_description_prefix": "エージェントが作成したコミットに",
+    "feature_co_author_trailer": "Co-authored-by: patchbay-agent <patchbay-agent@users.noreply.github.com>",
     "feature_co_author_description_suffix": "を追加します。",
     "section_repositories": "リポジトリ",
     "repositories_shortcut_label": "リポジトリ URL はリポジトリタブにあります",

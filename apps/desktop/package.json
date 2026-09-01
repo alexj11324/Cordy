@@ -10,7 +10,10 @@
     "url": "https://github.com/alexj11324/Cordy.git",
     "directory": "apps/desktop"
   },
-  "author": "Patchbay",
+  "author": {
+    "name": "Patchbay",
+    "email": "support@patchbay.ai"
+  },
   "license": "SEE LICENSE IN ../../LICENSE",
   "main": "./out/main/index.js",
   "scripts": {

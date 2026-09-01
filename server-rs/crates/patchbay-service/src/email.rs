@@ -101,18 +101,16 @@ fn should_fallback_to_login(plain_err: &str, auth_ext: Option<&str>) -> bool {
 }
 
 /// From-address resolution chain. With no SMTP host configured we are on the
-/// hosted path: RESEND_FROM_EMAIL or the product default. On the self-hosted
-/// SMTP path SMTP_FROM_EMAIL wins because operators control that domain.
+/// hosted path and require the explicitly configured, Resend-verified sender.
+/// On the self-hosted SMTP path SMTP_FROM_EMAIL wins because operators control
+/// that domain.
 fn resolve_from_email(smtp_host: &str) -> String {
     let resend_from = std::env::var("RESEND_FROM_EMAIL")
         .unwrap_or_default()
         .trim()
         .to_string();
     if smtp_host.is_empty() {
-        if !resend_from.is_empty() {
-            return resend_from;
-        }
-        return "noreply@example.com".to_string();
+        return resend_from;
     }
     let smtp_from = std::env::var("SMTP_FROM_EMAIL")
         .unwrap_or_default()
@@ -122,6 +120,13 @@ fn resolve_from_email(smtp_host: &str) -> String {
         return smtp_from;
     }
     resend_from
+}
+
+fn require_resend_sender(from: &str) -> anyhow::Result<()> {
+    if from.trim().is_empty() {
+        bail!("RESEND_FROM_EMAIL is required when RESEND_API_KEY is set");
+    }
+    Ok(())
 }
 
 /// Byte-for-byte equivalent of Go's `html.EscapeString` (escapes exactly
@@ -798,7 +803,15 @@ impl EmailService {
                     smtp_host, smtp_port, tls_label
                 );
             }
-            (false, true) => println!("EmailService: Resend API from={from}"),
+            (false, true) => {
+                if from.is_empty() {
+                    println!(
+                        "EmailService: ERROR — RESEND_API_KEY is configured but RESEND_FROM_EMAIL is missing; email sends will fail"
+                    );
+                } else {
+                    println!("EmailService: Resend API from={from}");
+                }
+            }
             (false, false) => println!(
                 "EmailService: DEV mode — codes printed to stdout (set PATCHBAY_DEV_VERIFICATION_CODE in .env for a fixed local code)"
             ),
@@ -923,6 +936,7 @@ impl EmailService {
     }
 
     async fn resend_send(&self, req: SendEmailRequest) -> anyhow::Result<()> {
+        require_resend_sender(&req.from)?;
         let key = self.resend_api_key.as_deref().expect("checked by caller");
         let http = self.resend_http.as_ref().expect("checked by caller");
         let resp = http
@@ -1199,6 +1213,12 @@ mod tests {
         assert!(v.get("to").is_some());
         assert!(v.get("subject").is_some());
         assert!(v.get("html").is_some());
+    }
+
+    #[test]
+    fn resend_sender_requires_an_explicit_address() {
+        assert!(require_resend_sender(" ").is_err());
+        assert!(require_resend_sender("noreply@patchbay.aspectlylabs.com").is_ok());
     }
 
     #[test]

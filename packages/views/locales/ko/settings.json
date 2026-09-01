@@ -764,6 +764,7 @@
     "feature_pr_sidebar_description": "연결된 Pull request를 태스크 상세 사이드바에 표시합니다.",
     "feature_co_author_label": "Co-authored-by 트레일러",
     "feature_co_author_description_prefix": "에이전트가 작성한 커밋에",
+    "feature_co_author_trailer": "Co-authored-by: patchbay-agent <patchbay-agent@users.noreply.github.com>",
     "feature_co_author_description_suffix": "을(를) 추가합니다.",
     "section_repositories": "저장소",
     "repositories_shortcut_label": "저장소 URL은 저장소 탭에 있습니다",

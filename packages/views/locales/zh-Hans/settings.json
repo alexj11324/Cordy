@@ -764,6 +764,7 @@
     "feature_pr_sidebar_description": "在任务详情侧栏中展示关联的 Pull Request。",
     "feature_co_author_label": "Co-authored-by trailer",
     "feature_co_author_description_prefix": "在智能体提交的 commit 中追加",
+    "feature_co_author_trailer": "Co-authored-by: patchbay-agent <patchbay-agent@users.noreply.github.com>",
     "feature_co_author_description_suffix": "。",
     "section_repositories": "代码仓库",
     "repositories_shortcut_label": "仓库 URL 仍在\"代码仓库\"标签页中管理",
