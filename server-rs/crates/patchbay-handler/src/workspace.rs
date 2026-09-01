@@ -957,6 +957,20 @@ async fn revoke_and_remove_member(
                 agent_ids,
             )
             .await?;
+        for task in &result.cancelled_tasks {
+            patchbay_db::queries::linear_agent::enqueue_linear_agent_terminal_event(
+                &mut transaction,
+                task.id,
+                &format!("linear-agent-terminal:{}:cancelled", task.id),
+                &serde_json::json!({
+                    "action": "terminal",
+                    "linearAgentSessionTerminal": true,
+                    "status": "cancelled",
+                    "taskId": task.id,
+                }),
+            )
+            .await?;
+        }
         result.offline_runtime_ids = patchbay_db::queries::runtime::force_offline_runtimes_by_i_ds(
             &mut *transaction,
             runtime_ids,

@@ -19,7 +19,9 @@ use patchbay_analytics as analytics;
 use patchbay_db::dbid::new_v7;
 use patchbay_db::models::{Agent, AgentTaskQueue, Attachment, Issue, IssueLabel};
 use patchbay_db::queries::activity;
-use patchbay_db::queries::agent::{get_agent, has_pending_task_for_issue_and_agent};
+use patchbay_db::queries::agent::{
+    get_agent, get_agent_in_workspace, has_pending_task_for_issue_and_agent,
+};
 use patchbay_db::queries::attachment::{link_attachments_to_issue, list_attachments_by_issue};
 use patchbay_db::queries::issue::{create_issue, create_issue_with_origin, get_issue_in_workspace};
 use patchbay_db::queries::issue_label::{attach_label_to_issue_on_create, get_label};
@@ -165,6 +167,32 @@ impl IssueService {
         if let Some(owner_id) = patch.owner_id {
             next.owner_id = owner_id;
         }
+        let executor_patch_present = patch.executor_type.is_some() || patch.executor_id.is_some();
+        if let Some(executor_type) = patch.executor_type {
+            next.executor_type = executor_type;
+        }
+        if let Some(executor_id) = patch.executor_id {
+            next.executor_id = executor_id;
+        }
+        if executor_patch_present {
+            match (next.executor_type.as_deref(), next.executor_id) {
+                (None, None) => {}
+                (Some("agent"), Some(executor_id)) => {
+                    if get_agent_in_workspace(&mut *executor, executor_id, workspace_id)
+                        .await
+                        .map_err(|error| {
+                            ExternalIssueError::Internal(format!(
+                                "validate external executor: {error}"
+                            ))
+                        })?
+                        .is_none()
+                    {
+                        return Err(ExternalIssueError::InvalidExecutor);
+                    }
+                }
+                _ => return Err(ExternalIssueError::InvalidExecutor),
+            }
+        }
         match (next.owner_type.as_deref(), next.owner_id) {
             (None, None) => {}
             (Some("member"), Some(owner_id)) => {
@@ -201,6 +229,8 @@ impl IssueService {
             && next.project_id == previous.project_id
             && next.owner_type == previous.owner_type
             && next.owner_id == previous.owner_id
+            && next.executor_type == previous.executor_type
+            && next.executor_id == previous.executor_id
         {
             return Ok(ExternalIssueApply {
                 source,
@@ -220,6 +250,8 @@ impl IssueService {
                project_id = $8,
                owner_type = $9,
                owner_id = $10,
+               executor_type = $11,
+               executor_id = $12,
                revision = revision + 1,
                last_activity_at = GREATEST(COALESCE(last_activity_at, updated_at), now()),
                updated_at = now()
@@ -236,6 +268,8 @@ impl IssueService {
         .bind(next.project_id)
         .bind(&next.owner_type)
         .bind(next.owner_id)
+        .bind(&next.executor_type)
+        .bind(next.executor_id)
         .fetch_one(&mut *executor)
         .await?;
         activity::create_activity(
@@ -257,6 +291,8 @@ impl IssueService {
                 "prev_project_id": previous.project_id.map(|id| id.to_string()),
                 "prev_owner_type": previous.owner_type,
                 "prev_owner_id": previous.owner_id.map(|id| id.to_string()),
+                "executor_changed": previous.executor_type != updated.executor_type
+                    || previous.executor_id != updated.executor_id,
             }),
             new_v7(),
         )
@@ -281,6 +317,8 @@ impl IssueService {
         let workspace_id = updated.workspace_id;
         let source = applied.source;
         let source_event_id = &applied.source_event_id;
+        let executor_changed = previous.executor_type != updated.executor_type
+            || previous.executor_id != updated.executor_id;
         let prefix = get_workspace(&self.pool, workspace_id)
             .await
             .ok()
@@ -299,7 +337,7 @@ impl IssueService {
                 "source_event_id": source_event_id,
                 "owner_changed": previous.owner_type != updated.owner_type
                     || previous.owner_id != updated.owner_id,
-                "executor_changed": false,
+                "executor_changed": executor_changed,
                 "status_changed": previous.status != updated.status,
                 "priority_changed": previous.priority != updated.priority,
                 "project_changed": previous.project_id != updated.project_id,
@@ -329,7 +367,7 @@ impl IssueService {
                     issue: updated.clone(),
                     prev_status: previous.status.clone(),
                     is_create: false,
-                    executor_changed: false,
+                    executor_changed,
                     status_changed: previous.status != updated.status,
                 },
                 IssueTriggerProbe {
@@ -519,6 +557,10 @@ pub struct ExternalIssuePatch {
     /// validated as one member-scoped pair before the update commits.
     pub owner_type: Option<Option<String>>,
     pub owner_id: Option<Option<Uuid>>,
+    /// `Some(None)` clears the Agent executor; `None` leaves it untouched.
+    /// When present, the type and id are validated as an agent-scoped pair.
+    pub executor_type: Option<Option<String>>,
+    pub executor_id: Option<Option<Uuid>>,
 }
 
 /// Result of applying an external Issue command inside a caller-owned
@@ -561,6 +603,8 @@ pub enum ExternalIssueError {
     ProjectNotFound,
     #[error("invalid external issue owner")]
     InvalidOwner,
+    #[error("invalid external issue executor")]
+    InvalidExecutor,
     #[error("external issue status requires an executor")]
     ActiveExecutorRequired,
     #[error("external issue review status requires a reviewer different from the executor")]

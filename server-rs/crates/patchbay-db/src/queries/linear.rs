@@ -5,8 +5,8 @@
 //! accidentally accept an unverified provider payload.
 
 use crate::models::{
-    Issue, LinearConnection, LinearIssueLink, LinearMemberBinding, LinearOAuthState,
-    LinearProjectBinding, LinearSyncConflict, LinearSyncInbox, LinearSyncOutbox,
+    AgentTaskQueue, Issue, LinearConnection, LinearIssueLink, LinearMemberBinding,
+    LinearOAuthState, LinearProjectBinding, LinearSyncConflict, LinearSyncInbox, LinearSyncOutbox,
 };
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -120,7 +120,7 @@ pub async fn upsert_connection(
     connection: &LinearConnectionInput<'_>,
 ) -> anyhow::Result<LinearConnection> {
     Ok(sqlx::query_as::<_, LinearConnection>(
-        r#"WITH workspace_connection AS MATERIALIZED (
+        r#"WITH RECURSIVE workspace_connection AS MATERIALIZED (
                SELECT id, organization_id
                FROM linear_connection
                WHERE workspace_id = $2
@@ -132,6 +132,46 @@ pub async fn upsert_connection(
                WHERE connection.organization_id <> $3
                ORDER BY binding.id
                FOR UPDATE OF binding
+           ), old_agent_sessions AS MATERIALIZED (
+               SELECT session.task_id
+               FROM linear_agent_session AS session
+               WHERE session.workspace_id = $2
+                 AND session.task_id IS NOT NULL
+                 AND session.connection_id IN (
+                     SELECT id
+                     FROM workspace_connection
+                     WHERE organization_id <> $3
+                 )
+           ), old_agent_task_tree AS (
+               SELECT queue.id
+               FROM agent_task_queue AS queue
+               JOIN old_agent_sessions AS session ON session.task_id = queue.id
+               UNION
+               SELECT child.id
+               FROM agent_task_queue AS child
+               JOIN old_agent_task_tree AS parent ON child.parent_task_id = parent.id
+           ), cancelled_agent_tasks AS (
+               UPDATE agent_task_queue
+               SET status = 'cancelled', completed_at = now(), prepare_lease_expires_at = NULL
+               WHERE id IN (SELECT id FROM old_agent_task_tree)
+                 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory',
+                                'waiting_capacity', 'deferred')
+               RETURNING id
+           ), deleted_inbox AS (
+               DELETE FROM linear_sync_inbox
+               WHERE connection_id IN (
+                   SELECT id
+                   FROM workspace_connection
+                   WHERE organization_id <> $3
+               )
+           ), deleted_agent_sessions AS (
+               DELETE FROM linear_agent_session
+               WHERE workspace_id = $2
+                 AND connection_id IN (
+                     SELECT id
+                     FROM workspace_connection
+                     WHERE organization_id <> $3
+                 )
            ), deleted_conflicts AS (
                DELETE FROM linear_sync_conflict
                WHERE workspace_id = $2
@@ -387,17 +427,49 @@ pub async fn mark_revoked(
     executor: impl Executor<'_, Database = Postgres>,
     workspace_id: Uuid,
     connection_id: Uuid,
-) -> anyhow::Result<bool> {
-    let result = sqlx::query(
-        r#"UPDATE linear_connection
-           SET status = 'revoked', last_error = NULL, updated_at = now()
-           WHERE workspace_id = $1 AND id = $2 AND status <> 'revoked'"#,
+) -> anyhow::Result<Vec<AgentTaskQueue>> {
+    let cancelled = sqlx::query_as::<_, AgentTaskQueue>(
+        r#"WITH RECURSIVE revoked_connection AS (
+               UPDATE linear_connection
+               SET status = 'revoked', last_error = NULL, updated_at = now()
+               WHERE workspace_id = $1 AND id = $2 AND status <> 'revoked'
+               RETURNING id
+           ), session_roots AS (
+               SELECT task_id
+               FROM linear_agent_session
+               WHERE workspace_id = $1
+                 AND connection_id IN (SELECT id FROM revoked_connection)
+                 AND task_id IS NOT NULL
+           ), task_tree AS (
+               SELECT queue.id
+               FROM agent_task_queue AS queue
+               JOIN session_roots AS root ON root.task_id = queue.id
+               UNION
+               SELECT child.id
+               FROM agent_task_queue AS child
+               JOIN task_tree AS parent ON child.parent_task_id = parent.id
+           ), cancelled_tasks AS (
+               UPDATE agent_task_queue AS queue
+               SET status = 'cancelled', completed_at = now(), prepare_lease_expires_at = NULL
+               WHERE queue.id IN (SELECT id FROM task_tree)
+                 AND queue.status IN ('queued', 'dispatched', 'running', 'waiting_local_directory',
+                                      'waiting_capacity', 'deferred')
+               RETURNING queue.*
+           ), settled_sessions AS (
+               UPDATE linear_agent_session
+               SET status = 'revocation_cancellation_pending', updated_at = now()
+               WHERE workspace_id = $1
+                 AND connection_id IN (SELECT id FROM revoked_connection)
+                 AND status NOT IN ('completed', 'failed', 'cancelled')
+               RETURNING id
+           )
+           SELECT * FROM cancelled_tasks"#,
     )
     .bind(workspace_id)
     .bind(connection_id)
-    .execute(executor)
+    .fetch_all(executor)
     .await?;
-    Ok(result.rows_affected() == 1)
+    Ok(cancelled)
 }
 
 pub async fn update_tokens(
@@ -487,6 +559,28 @@ pub async fn get_linear_member_binding_by_linear_user(
         .bind(linear_user_id)
         .fetch_optional(executor)
         .await?)
+}
+
+pub async fn lock_linear_member_binding(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    connection_id: Uuid,
+    patchbay_user_id: Uuid,
+    linear_user_id: &str,
+) -> anyhow::Result<bool> {
+    Ok(sqlx::query_scalar::<_, Uuid>(
+        r#"SELECT id FROM linear_member_binding
+           WHERE workspace_id = $1 AND connection_id = $2
+             AND patchbay_user_id = $3 AND linear_user_id = $4
+           FOR SHARE"#,
+    )
+    .bind(workspace_id)
+    .bind(connection_id)
+    .bind(patchbay_user_id)
+    .bind(linear_user_id)
+    .fetch_optional(executor)
+    .await?
+    .is_some())
 }
 
 pub async fn upsert_linear_member_binding(
@@ -722,6 +816,7 @@ pub async fn claim_sync_inbox(
     limit: i64,
     lease_seconds: i64,
     workspace_ids: Option<&[Uuid]>,
+    include_issue_events: bool,
 ) -> anyhow::Result<Vec<LinearSyncInbox>> {
     Ok(sqlx::query_as::<_, LinearSyncInbox>(
         r#"WITH picked AS (
@@ -733,12 +828,32 @@ pub async fn claim_sync_inbox(
                  AND attempts < max_attempts
                  AND (locked_until IS NULL OR locked_until < now())
                  AND (
-                     $4::uuid[] IS NULL
-                     OR EXISTS (
-                         SELECT 1
-                         FROM linear_connection
-                         WHERE linear_connection.id = linear_sync_inbox.connection_id
-                           AND linear_connection.workspace_id = ANY($4::uuid[])
+                     ($4::uuid[] IS NULL
+                      OR EXISTS (
+                          SELECT 1
+                          FROM linear_connection
+                          WHERE linear_connection.id = linear_sync_inbox.connection_id
+                            AND linear_connection.workspace_id = ANY($4::uuid[])
+                      ))
+                     AND (
+                         (
+                             $5
+                             AND replace(lower(event_type), '_', '') NOT LIKE '%agentsession%'
+                             AND NOT (payload ? 'agentSession')
+                             AND NOT (payload ? 'agentSessionEvent')
+                             AND NOT COALESCE(payload->'data' ? 'agentSession', false)
+                             AND NOT COALESCE(payload->'data' ? 'agentSessionEvent', false)
+                         )
+                         OR (
+                             NOT $5
+                             AND (
+                                 replace(lower(event_type), '_', '') LIKE '%agentsession%'
+                                 OR payload ? 'agentSession'
+                                 OR payload ? 'agentSessionEvent'
+                                 OR COALESCE(payload->'data' ? 'agentSession', false)
+                                 OR COALESCE(payload->'data' ? 'agentSessionEvent', false)
+                             )
+                         )
                      )
                  )
                ORDER BY available_at, received_at, id
@@ -761,6 +876,7 @@ pub async fn claim_sync_inbox(
     .bind(worker_id)
     .bind(lease_seconds.max(1))
     .bind(workspace_ids.map(|ids| ids.to_vec()))
+    .bind(include_issue_events)
     .fetch_all(executor)
     .await?)
 }
@@ -786,6 +902,24 @@ pub async fn renew_claimed_sync_inbox(
     .execute(executor)
     .await?;
     Ok(result.rows_affected() == 1)
+}
+
+pub async fn lock_claimed_sync_inbox_for_update(
+    executor: impl Executor<'_, Database = Postgres>,
+    id: Uuid,
+    worker_id: &str,
+) -> anyhow::Result<bool> {
+    Ok(sqlx::query_scalar::<_, Uuid>(
+        r#"SELECT id FROM linear_sync_inbox
+           WHERE id = $1 AND processed_at IS NULL
+             AND dead_lettered_at IS NULL AND locked_by = $2
+           FOR UPDATE"#,
+    )
+    .bind(id)
+    .bind(worker_id)
+    .fetch_optional(executor)
+    .await?
+    .is_some())
 }
 
 /// Rows whose last worker died after claim are dead-lettered once their retry

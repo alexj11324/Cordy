@@ -29,6 +29,7 @@ use patchbay_db::queries::chat::{
 use patchbay_db::queries::comment::get_comment;
 use patchbay_db::queries::issue::{get_issue, update_issue_status};
 use patchbay_db::queries::linear as linear_q;
+use patchbay_db::queries::linear_agent as linear_agent_q;
 use patchbay_db::queries::workspace_channel as workspace_channel_q;
 
 use crate::chat_quick_actions::{split_chat_quick_actions, ChatQuickActionsOrigin};
@@ -221,6 +222,22 @@ impl TaskService {
             .map_err(|error| {
                 TaskServiceError::Internal(format!("record task completion handoff: {error}"))
             })?;
+        linear_agent_q::enqueue_linear_agent_terminal_event(
+            &mut tx,
+            t.id,
+            &format!("linear-agent-terminal:{}:completed", t.id),
+            &serde_json::json!({
+                "action": "terminal",
+                "linearAgentSessionTerminal": true,
+                "status": "completed",
+                "result": result,
+                "taskId": t.id,
+            }),
+        )
+        .await
+        .map_err(|error| {
+            TaskServiceError::Internal(format!("enqueue Linear Agent completion: {error}"))
+        })?;
         tx.commit().await.map_err(TaskServiceError::Sql)?;
         let task = t;
 
@@ -546,6 +563,26 @@ impl TaskService {
         }
 
         let retry_pending = retried.is_some() || successor_pending;
+
+        if !retry_pending {
+            linear_agent_q::enqueue_linear_agent_terminal_event(
+                &mut tx,
+                t.id,
+                &format!("linear-agent-terminal:{}:failed", t.id),
+                &serde_json::json!({
+                    "action": "terminal",
+                    "linearAgentSessionTerminal": true,
+                    "status": "failed",
+                    "error": err_msg,
+                    "failureReason": failure_reason,
+                    "taskId": t.id,
+                }),
+            )
+            .await
+            .map_err(|error| {
+                TaskServiceError::Internal(format!("enqueue Linear Agent failure: {error}"))
+            })?;
+        }
 
         // Terminal non-retried chat failure is a visible assistant outcome,
         // persisted while the session lock is held, then the next direct head
@@ -945,7 +982,29 @@ impl TaskService {
         // Clear only not-yet-executing rows; running/waiting_local_directory
         // are deliberately left alone — interrupting an in-flight run is what
         // CancelTask is for.
-        match cancel_pending_tasks_by_issue_and_agent(&self.pool, issue.id, agent_id).await {
+        let cancellation = async {
+            let mut tx = self.pool.begin().await?;
+            let cancelled =
+                cancel_pending_tasks_by_issue_and_agent(&mut *tx, issue.id, agent_id).await?;
+            for task in &cancelled {
+                linear_agent_q::enqueue_linear_agent_terminal_event(
+                    &mut tx,
+                    task.id,
+                    &format!("linear-agent-terminal:{}:cancelled", task.id),
+                    &serde_json::json!({
+                        "action": "terminal",
+                        "linearAgentSessionTerminal": true,
+                        "status": "cancelled",
+                        "taskId": task.id,
+                    }),
+                )
+                .await?;
+            }
+            tx.commit().await?;
+            Ok::<_, anyhow::Error>(cancelled)
+        }
+        .await;
+        match cancellation {
             Ok(cancelled) => {
                 *cancelled_count += cancelled.len();
                 for t in &cancelled {
@@ -1117,6 +1176,35 @@ impl TaskService {
                 .clone()
                 .filter(|r| !r.is_empty())
                 .unwrap_or_else(|| "agent_error".to_string());
+            if !retry_pending {
+                let terminal_enqueue = async {
+                    let mut tx = self.pool.begin().await?;
+                    linear_agent_q::enqueue_linear_agent_terminal_event(
+                        &mut tx,
+                        t.id,
+                        &format!("linear-agent-terminal:{}:failed", t.id),
+                        &serde_json::json!({
+                            "action": "terminal",
+                            "linearAgentSessionTerminal": true,
+                            "status": "failed",
+                            "error": t.error.as_deref(),
+                            "failureReason": failure_reason.as_str(),
+                            "taskId": t.id,
+                        }),
+                    )
+                    .await?;
+                    tx.commit().await?;
+                    Ok::<_, anyhow::Error>(())
+                }
+                .await;
+                if let Err(error) = terminal_enqueue {
+                    tracing::warn!(
+                        task_id = %t.id,
+                        %error,
+                        "handle failed tasks: enqueue Linear Agent terminal event failed; durable recovery sweep will retry"
+                    );
+                }
+            }
             self.capture_task_failed(t).await;
 
             if let Some(issue_id) = t.issue_id {

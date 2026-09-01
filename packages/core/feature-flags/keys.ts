@@ -4,3 +4,4 @@ export const BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG =
   "billing_workspace_subscriptions";
 export const LINEAR_INSTALLATION_FOUNDATION_FLAG =
   "linear_installation_foundation";
+export const LINEAR_AGENT_BRIDGE_FLAG = "linear_agent_bridge";

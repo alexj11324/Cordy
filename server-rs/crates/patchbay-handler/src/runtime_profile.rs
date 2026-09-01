@@ -432,6 +432,20 @@ pub(crate) async fn teardown_runtime(
         agent_ids.clone(),
     )
     .await?;
+    for task in &cancelled_tasks {
+        patchbay_db::queries::linear_agent::enqueue_linear_agent_terminal_event(
+            transaction,
+            task.id,
+            &format!("linear-agent-terminal:{}:cancelled", task.id),
+            &json!({
+                "action": "terminal",
+                "linearAgentSessionTerminal": true,
+                "status": "cancelled",
+                "taskId": task.id,
+            }),
+        )
+        .await?;
+    }
     let undrained = runtime::count_undrained_tasks_by_runtime_or_agent(
         &mut **transaction,
         vec![runtime_id],

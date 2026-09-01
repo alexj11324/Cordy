@@ -325,6 +325,7 @@ export const LinearConnectionResponseSchema = z.object({
   connected: z.boolean().default(false),
   pull_import_enabled: z.boolean().default(false),
   push_enabled: z.boolean().default(false),
+  agent_bridge_enabled: z.boolean().default(false),
   connection: LinearConnectionSchema.nullable().default(null),
 }).loose();
 
@@ -333,6 +334,7 @@ export const EMPTY_LINEAR_CONNECTION_RESPONSE: LinearConnectionResponse = {
   connected: false,
   pull_import_enabled: false,
   push_enabled: false,
+  agent_bridge_enabled: false,
   connection: null,
 };
 

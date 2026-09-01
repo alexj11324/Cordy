@@ -28,6 +28,7 @@ export type LinearConnectionResponse = {
   connected: boolean;
   pull_import_enabled: boolean;
   push_enabled: boolean;
+  agent_bridge_enabled: boolean;
   connection: LinearConnection | null;
 };
 

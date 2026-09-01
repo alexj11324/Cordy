@@ -17,6 +17,7 @@ use base64::Engine as _;
 use chrono::{Duration, NaiveDate, Utc};
 use hmac::{Hmac, Mac};
 use patchbay_db::models::{LinearConnection, LinearProjectBinding};
+use patchbay_db::queries::agent as agent_q;
 use patchbay_db::queries::issue as issue_q;
 use patchbay_db::queries::linear as linear_q;
 use patchbay_db::queries::member as member_q;
@@ -214,6 +215,7 @@ async fn get_connection(
             "connected": connection.status == "active",
             "pull_import_enabled": state.linear_pull_import_enabled(workspace_id),
             "push_enabled": state.linear_push_enabled(workspace_id),
+            "agent_bridge_enabled": state.linear_agent_bridge_enabled(workspace_id),
             "connection": connection_json(connection),
         }))
         .into_response(),
@@ -222,6 +224,7 @@ async fn get_connection(
             "connected": false,
             "pull_import_enabled": state.linear_pull_import_enabled(workspace_id),
             "push_enabled": state.linear_push_enabled(workspace_id),
+            "agent_bridge_enabled": state.linear_agent_bridge_enabled(workspace_id),
             "connection": Value::Null,
         }))
         .into_response(),
@@ -842,6 +845,7 @@ fn external_conflict_error_status(error: &ExternalIssueError) -> StatusCode {
         ExternalIssueError::InvalidStatus
         | ExternalIssueError::InvalidPriority
         | ExternalIssueError::InvalidOwner
+        | ExternalIssueError::InvalidExecutor
         | ExternalIssueError::ActiveExecutorRequired
         | ExternalIssueError::ReviewReviewerRequired
         | ExternalIssueError::ProjectNotFound
@@ -1418,6 +1422,147 @@ async fn validate_remote_binding(
     }
 }
 
+pub(crate) fn agent_label_mapping_matches_catalog(
+    mapping: &Value,
+    linear_team_id: Option<&str>,
+    catalog: &LinearCatalogResponse,
+) -> bool {
+    if mapping
+        .get("default_agent_id")
+        .filter(|value| !value.is_null())
+        .is_some_and(|value| {
+            value
+                .as_str()
+                .and_then(|value| value.parse::<Uuid>().ok())
+                .is_none()
+        })
+    {
+        return false;
+    }
+    let Some(group_id) = mapping
+        .get("group_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return true;
+    };
+    let group_is_valid = catalog.labels.iter().any(|label| {
+        label.id == group_id
+            && label.is_group
+            && (label.team_id.is_none() || label.team_id.as_deref() == linear_team_id)
+    });
+    if !group_is_valid {
+        return false;
+    }
+    let Some(labels) = mapping.get("labels").and_then(Value::as_object) else {
+        return false;
+    };
+    let mut agent_targets = std::collections::HashSet::new();
+    labels.iter().all(|(label_id, agent_id)| {
+        let Some(agent_id) = agent_id
+            .as_str()
+            .filter(|value| value.parse::<Uuid>().is_ok())
+        else {
+            return false;
+        };
+        agent_targets.insert(agent_id)
+            && catalog.labels.iter().any(|label| {
+                label.id == *label_id
+                    && !label.is_group
+                    && label.parent_id.as_deref() == Some(group_id)
+                    && (label.team_id.is_none() || label.team_id.as_deref() == linear_team_id)
+            })
+    })
+}
+
+async fn validate_agent_label_mapping(
+    state: &HandlerState,
+    connection: &LinearConnection,
+    request: &SaveLinearProjectBindingRequest,
+) -> Result<(), Response> {
+    let mut agent_ids = std::collections::HashSet::new();
+    if let Some(value) = request
+        .agent_label_mapping
+        .get("default_agent_id")
+        .filter(|value| !value.is_null())
+    {
+        let agent_id = value
+            .as_str()
+            .and_then(|value| value.parse::<Uuid>().ok())
+            .ok_or_else(|| {
+                error_response(
+                    StatusCode::BAD_REQUEST,
+                    "Linear default Agent target must be a valid Agent id",
+                )
+            })?;
+        agent_ids.insert(agent_id);
+    }
+    if let Some(labels) = request
+        .agent_label_mapping
+        .get("labels")
+        .and_then(Value::as_object)
+    {
+        for value in labels.values() {
+            let agent_id = value
+                .as_str()
+                .and_then(|value| value.parse::<Uuid>().ok())
+                .ok_or_else(|| {
+                    error_response(
+                        StatusCode::BAD_REQUEST,
+                        "Linear Agent label targets must be valid Agent ids",
+                    )
+                })?;
+            agent_ids.insert(agent_id);
+        }
+    }
+    for agent_id in agent_ids {
+        let agent = agent_q::get_agent_in_workspace(&state.pool, agent_id, connection.workspace_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, %agent_id, "Linear Agent target validation failed");
+                error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "Failed to validate Agent target",
+                )
+            })?;
+        if agent.is_none_or(|agent| agent.archived_at.is_some()) {
+            return Err(error_response(
+                StatusCode::BAD_REQUEST,
+                "Linear Agent target must be an available workspace Agent",
+            ));
+        }
+    }
+
+    if request
+        .agent_label_mapping
+        .get("group_id")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_none()
+    {
+        return Ok(());
+    }
+    let manager = LinearTokenManager::from_state(state).map_err(linear_token_error_response)?;
+    let catalog = manager
+        .catalog(connection.id)
+        .await
+        .map_err(linear_token_error_response)?;
+    if agent_label_mapping_matches_catalog(
+        &request.agent_label_mapping,
+        request.linear_team_id.as_deref(),
+        &catalog,
+    ) {
+        Ok(())
+    } else {
+        Err(error_response(
+            StatusCode::BAD_REQUEST,
+            "Linear Agent label group must belong to the binding team",
+        ))
+    }
+}
+
 fn is_linear_binding_unique_conflict(error: &anyhow::Error) -> bool {
     error.downcast_ref::<sqlx::Error>().is_some_and(|error| {
         matches!(
@@ -1511,6 +1656,9 @@ async fn create_binding(
         Ok(connection) => connection,
         Err(response) => return response,
     };
+    if let Err(response) = validate_agent_label_mapping(&state, &connection, &request).await {
+        return response;
+    }
     if let Err(response) = validate_remote_binding(&state, &connection, &request).await {
         return response;
     }
@@ -1643,6 +1791,9 @@ async fn update_binding(
         Ok(connection) => connection,
         Err(response) => return response,
     };
+    if let Err(response) = validate_agent_label_mapping(&state, &connection, &request).await {
+        return response;
+    }
     if let Err(response) = validate_remote_binding(&state, &connection, &request).await {
         return response;
     }
@@ -2224,6 +2375,7 @@ pub(crate) struct LinearRemoteIssue {
     pub updated_at: String,
     pub team: Option<LinearRemoteTeam>,
     pub assignee: Option<LinearRemoteUser>,
+    pub delegate: Option<LinearRemoteUser>,
     pub labels: LinearCatalogPage<LinearRemoteLabel>,
 }
 
@@ -2238,6 +2390,8 @@ pub(crate) struct LinearIssueCreateInput<'a> {
     pub state_id: Option<&'a str>,
     pub due_date: Option<&'a str>,
     pub assignee_id: Option<&'a str>,
+    pub delegate_id: Option<&'a str>,
+    pub label_ids: Option<&'a [String]>,
 }
 
 pub(crate) struct LinearIssueUpdateInput<'a> {
@@ -2250,6 +2404,8 @@ pub(crate) struct LinearIssueUpdateInput<'a> {
     pub state_id: Option<&'a str>,
     pub due_date: Option<&'a str>,
     pub assignee_id: Option<Option<&'a str>>,
+    pub delegate_id: Option<Option<&'a str>>,
+    pub label_ids: Option<&'a [String]>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -2277,6 +2433,13 @@ pub(crate) struct LinearRemoteUser {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct LinearRemoteLabel {
+    pub id: String,
+    #[serde(default)]
+    pub parent: Option<LinearRemoteLabelParent>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct LinearRemoteLabelParent {
     pub id: String,
 }
 
@@ -2590,6 +2753,9 @@ impl LinearTokenManager {
                 LinearTokenError::Provider
             })?;
         let status = response.status();
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            return Err(LinearTokenError::RateLimited);
+        }
         let payload = response
             .json::<GraphQlResponse<IdentityData>>()
             .await
@@ -2875,7 +3041,7 @@ impl LinearTokenManager {
             .post(&self.graphql_url)
             .bearer_auth(access_token)
             .json(&json!({
-                "query": "query LinearIssue($issueId: ID!) { issue(id: $issueId) { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } labels { nodes { id } } } }",
+                "query": "query LinearIssue($issueId: ID!) { issue(id: $issueId) { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } delegate { id } labels { nodes { id parent { id } } } } }",
                 "variables": { "issueId": linear_issue_id },
             }))
             .send()
@@ -2918,7 +3084,7 @@ impl LinearTokenManager {
             .post(&self.graphql_url)
             .bearer_auth(access_token)
             .json(&json!({
-                "query": "query LinearProjectIssues($projectId: ID!, $after: String) { issues(first: 100, after: $after, filter: { project: { id: { eq: $projectId } } }) { nodes { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } labels { nodes { id } } } pageInfo { hasNextPage endCursor } } }",
+                "query": "query LinearProjectIssues($projectId: ID!, $after: String) { issues(first: 100, after: $after, filter: { project: { id: { eq: $projectId } } }) { nodes { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } delegate { id } labels { nodes { id parent { id } } } } pageInfo { hasNextPage endCursor } } }",
                 "variables": {
                     "projectId": linear_project_id,
                     "after": after,
@@ -3045,6 +3211,168 @@ impl LinearTokenManager {
         Ok(issue)
     }
 
+    /// Executes a small Agent/Attachment mutation and validates the common
+    /// Linear mutation envelope. These APIs are developer-preview only, so
+    /// the bridge keeps them isolated from the Issue mutation contract.
+    async fn mutate_success(
+        &self,
+        access_token: &str,
+        operation: &str,
+        query: &str,
+        variables: Value,
+    ) -> Result<(), LinearTokenError> {
+        let response = self
+            .client
+            .post(&self.graphql_url)
+            .bearer_auth(access_token)
+            .json(&json!({ "query": query, "variables": variables }))
+            .send()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, operation, "Linear Agent mutation request failed");
+                LinearTokenError::Provider
+            })?;
+        let status = response.status();
+        if status == StatusCode::TOO_MANY_REQUESTS {
+            return Err(LinearTokenError::RateLimited);
+        }
+        if status.is_server_error() {
+            tracing::warn!(%status, operation, "Linear Agent mutation returned a server error");
+            return Err(LinearTokenError::Provider);
+        }
+        let payload = response
+            .json::<GraphQlResponse<Value>>()
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, operation, "Linear Agent mutation response is invalid JSON");
+                LinearTokenError::InvalidResponse
+            })?;
+        if !status.is_success() {
+            if status.is_client_error() {
+                return Err(LinearTokenError::MutationRejected(format!(
+                    "Linear Agent mutation returned HTTP {status}"
+                )));
+            }
+            return Err(LinearTokenError::Provider);
+        }
+        if let Some(errors) = payload.errors.as_ref().filter(|errors| !errors.is_empty()) {
+            let message = errors
+                .iter()
+                .filter_map(|error| error.message.as_deref())
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(LinearTokenError::MutationRejected(if message.is_empty() {
+                "Linear Agent GraphQL mutation failed".to_string()
+            } else {
+                message
+            }));
+        }
+        let result = payload
+            .data
+            .as_ref()
+            .and_then(|data| data.get(operation))
+            .ok_or(LinearTokenError::InvalidResponse)?;
+        let success = result
+            .get("success")
+            .and_then(Value::as_bool)
+            .ok_or(LinearTokenError::InvalidResponse)?;
+        if !success {
+            let message = result
+                .get("userErrors")
+                .and_then(Value::as_array)
+                .map(|errors| {
+                    errors
+                        .iter()
+                        .filter_map(|error| error.get("message").and_then(Value::as_str))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                })
+                .filter(|message| !message.is_empty())
+                .unwrap_or_else(|| "Linear rejected the Agent mutation".to_string());
+            return Err(LinearTokenError::MutationRejected(message));
+        }
+        Ok(())
+    }
+
+    /// Adds or replaces the stable Patchbay URL shown from a Linear Agent
+    /// Session. Linear replaces the complete `externalUrls` array, so this
+    /// method owns the single integration URL and is idempotent.
+    pub(crate) async fn update_agent_session_external_url(
+        &self,
+        connection_id: Uuid,
+        session_id: &str,
+        url: &str,
+    ) -> Result<(), LinearTokenError> {
+        let access_token = self.access_token(connection_id).await?;
+        self.mutate_success(
+            &access_token,
+            "agentSessionUpdate",
+            "mutation AgentSessionUpdate($agentSessionId: String!, $input: AgentSessionUpdateInput!) { agentSessionUpdate(id: $agentSessionId, input: $input) { success } }",
+            json!({
+                "agentSessionId": session_id,
+                "input": {
+                    "externalUrls": [{ "label": "Open in Patchbay", "url": url }]
+                }
+            }),
+        )
+        .await
+    }
+
+    /// Emits a semantic activity so a newly delegated session is visibly
+    /// acknowledged in Linear before the local task is dispatched.
+    pub(crate) async fn create_agent_activity(
+        &self,
+        connection_id: Uuid,
+        session_id: &str,
+        activity_id: Uuid,
+        content: Value,
+    ) -> Result<(), LinearTokenError> {
+        let access_token = self.access_token(connection_id).await?;
+        self.mutate_success(
+            &access_token,
+            "agentActivityCreate",
+            "mutation AgentActivityCreate($input: AgentActivityCreateInput!) { agentActivityCreate(input: $input) { success } }",
+            json!({
+                "input": {
+                    "id": activity_id,
+                    "agentSessionId": session_id,
+                    "content": content
+                }
+            }),
+        )
+        .await
+    }
+
+    /// Creates or updates the issue attachment with a stable URL. Linear
+    /// treats `(issueId, url)` as the idempotency key, so retries update the
+    /// existing card instead of adding another one.
+    pub(crate) async fn create_or_update_attachment(
+        &self,
+        connection_id: Uuid,
+        linear_issue_id: &str,
+        title: &str,
+        subtitle: &str,
+        url: &str,
+        metadata: Value,
+    ) -> Result<(), LinearTokenError> {
+        let access_token = self.access_token(connection_id).await?;
+        self.mutate_success(
+            &access_token,
+            "attachmentCreate",
+            "mutation LinearAttachmentCreate($input: AttachmentCreateInput!) { attachmentCreate(input: $input) { success attachment { id } } }",
+            json!({
+                "input": {
+                    "issueId": linear_issue_id,
+                    "title": title,
+                    "subtitle": subtitle,
+                    "url": url,
+                    "metadata": metadata
+                }
+            }),
+        )
+        .await
+    }
+
     pub(crate) async fn create_issue(
         &self,
         input: &LinearIssueCreateInput<'_>,
@@ -3071,10 +3399,16 @@ impl LinearTokenManager {
         if let Some(assignee_id) = input.assignee_id {
             variables.insert("assigneeId".to_string(), json!(assignee_id));
         }
+        if let Some(delegate_id) = input.delegate_id {
+            variables.insert("delegateId".to_string(), json!(delegate_id));
+        }
+        if let Some(label_ids) = input.label_ids {
+            variables.insert("labelIds".to_string(), json!(label_ids));
+        }
         self.mutate_issue(
             &access_token,
             "issueCreate",
-            "mutation LinearIssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } labels { nodes { id } } } userErrors { message } } }",
+            "mutation LinearIssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } delegate { id } labels { nodes { id parent { id } } } } userErrors { message } } }",
             json!({ "input": Value::Object(variables) }),
         )
         .await
@@ -3102,10 +3436,16 @@ impl LinearTokenManager {
         if let Some(assignee_id) = input.assignee_id {
             variables.insert("assigneeId".to_string(), json!(assignee_id));
         }
+        if let Some(delegate_id) = input.delegate_id {
+            variables.insert("delegateId".to_string(), json!(delegate_id));
+        }
+        if let Some(label_ids) = input.label_ids {
+            variables.insert("labelIds".to_string(), json!(label_ids));
+        }
         self.mutate_issue(
             &access_token,
             "issueUpdate",
-            "mutation LinearIssueUpdate($issueId: ID!, $input: IssueUpdateInput!) { issueUpdate(id: $issueId, input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } labels { nodes { id } } } userErrors { message } } }",
+            "mutation LinearIssueUpdate($issueId: ID!, $input: IssueUpdateInput!) { issueUpdate(id: $issueId, input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } delegate { id } labels { nodes { id parent { id } } } } userErrors { message } } }",
             json!({ "issueId": input.linear_issue_id, "input": Value::Object(variables) }),
         )
         .await
@@ -3349,9 +3689,9 @@ impl LinearTokenManager {
         &self,
         workspace_id: Uuid,
         connection: &LinearConnection,
-    ) -> Result<(), LinearTokenError> {
+    ) -> Result<Vec<patchbay_db::models::AgentTaskQueue>, LinearTokenError> {
         match connection.status.as_str() {
-            "revoked" => return Ok(()),
+            "revoked" => return Ok(vec![]),
             "reauthorization_required" => return Err(LinearTokenError::ReauthorizationRequired),
             _ => {}
         }
@@ -3374,13 +3714,10 @@ impl LinearTokenManager {
             tracing::warn!(status = %response.status(), "Linear revoke request rejected");
             return Err(LinearTokenError::Provider);
         }
-        let marked = linear_q::mark_revoked(&self.pool, workspace_id, connection.id)
+        let cancelled = linear_q::mark_revoked(&self.pool, workspace_id, connection.id)
             .await
             .map_err(storage_error)?;
-        if !marked {
-            return Err(LinearTokenError::InvalidResponse);
-        }
-        Ok(())
+        Ok(cancelled)
     }
 }
 
@@ -3627,7 +3964,7 @@ async fn disconnect(
         }
     };
     if connection.status == "revoked" {
-        return StatusCode::NO_CONTENT.into_response();
+        return finish_linear_disconnect(&state, connection.id).await;
     }
     let manager = match LinearTokenManager::from_state(&state) {
         Ok(manager) => manager,
@@ -3640,10 +3977,10 @@ async fn disconnect(
         }
     };
     match manager.revoke_connection(workspace_id, &connection).await {
-        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Ok(_) => finish_linear_disconnect(&state, connection.id).await,
         Err(LinearTokenError::InvalidGrant | LinearTokenError::ReauthorizationRequired) => {
             match linear_q::mark_revoked(&state.pool, workspace_id, connection.id).await {
-                Ok(_) => StatusCode::NO_CONTENT.into_response(),
+                Ok(_) => finish_linear_disconnect(&state, connection.id).await,
                 Err(error) => {
                     tracing::warn!(%error, "Linear local disconnect fallback failed");
                     error_response(
@@ -3661,6 +3998,23 @@ async fn disconnect(
             error_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "failed to disconnect Linear",
+            )
+        }
+    }
+}
+
+async fn finish_linear_disconnect(state: &HandlerState, connection_id: Uuid) -> Response {
+    match state
+        .tasks
+        .replay_linear_revocation_cancellation(connection_id)
+        .await
+    {
+        Ok(_) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => {
+            tracing::warn!(%error, %connection_id, "Linear disconnect cancellation replay failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to finalize Linear disconnect",
             )
         }
     }
@@ -4262,5 +4616,91 @@ mod tests {
         assert_eq!(response.parent_id.as_deref(), Some("patchbay-agent-group"));
         assert_eq!(response.team_id.as_deref(), Some("team-1"));
         assert!(!response.is_group);
+    }
+
+    #[test]
+    fn agent_label_mapping_rejects_groups_and_values_from_another_team() {
+        let catalog = LinearCatalogResponse {
+            teams: vec![],
+            projects: vec![],
+            states: vec![],
+            users: vec![],
+            labels: vec![
+                LinearCatalogLabelResponse {
+                    id: "workspace-group".to_string(),
+                    name: "Workspace agents".to_string(),
+                    color: "#000000".to_string(),
+                    is_group: true,
+                    parent_id: None,
+                    team_id: None,
+                },
+                LinearCatalogLabelResponse {
+                    id: "workspace-agent".to_string(),
+                    name: "Agent".to_string(),
+                    color: "#000000".to_string(),
+                    is_group: false,
+                    parent_id: Some("workspace-group".to_string()),
+                    team_id: None,
+                },
+                LinearCatalogLabelResponse {
+                    id: "workspace-agent-2".to_string(),
+                    name: "Agent 2".to_string(),
+                    color: "#000000".to_string(),
+                    is_group: false,
+                    parent_id: Some("workspace-group".to_string()),
+                    team_id: None,
+                },
+                LinearCatalogLabelResponse {
+                    id: "other-team-group".to_string(),
+                    name: "Other team".to_string(),
+                    color: "#000000".to_string(),
+                    is_group: true,
+                    parent_id: None,
+                    team_id: Some("team-2".to_string()),
+                },
+            ],
+        };
+
+        assert!(agent_label_mapping_matches_catalog(
+            &json!({
+                "group_id": "workspace-group",
+                "labels": {"workspace-agent": Uuid::nil().to_string()},
+            }),
+            Some("team-1"),
+            &catalog,
+        ));
+        assert!(!agent_label_mapping_matches_catalog(
+            &json!({"group_id": "other-team-group", "labels": {}}),
+            Some("team-1"),
+            &catalog,
+        ));
+        assert!(!agent_label_mapping_matches_catalog(
+            &json!({
+                "group_id": "workspace-group",
+                "labels": {
+                    "workspace-agent": Uuid::nil().to_string(),
+                    "workspace-agent-2": Uuid::nil().to_string(),
+                },
+            }),
+            Some("team-1"),
+            &catalog,
+        ));
+        assert!(!agent_label_mapping_matches_catalog(
+            &json!({
+                "group_id": "workspace-group",
+                "labels": {"other-team-group": Uuid::nil().to_string()},
+            }),
+            Some("team-1"),
+            &catalog,
+        ));
+        assert!(!agent_label_mapping_matches_catalog(
+            &json!({
+                "default_agent_id": "not-a-uuid",
+                "group_id": "workspace-group",
+                "labels": {},
+            }),
+            Some("team-1"),
+            &catalog,
+        ));
     }
 }

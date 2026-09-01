@@ -1921,6 +1921,30 @@ pub struct LinearMemberBinding {
     pub workspace_id: Uuid,
 }
 
+/// Durable correlation for a native Linear Agent Session. The Linear session
+/// id is kept separate from `agent_task_queue.session_id`, which belongs to
+/// the runtime provider and must not be overloaded with an external id.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct LinearAgentSession {
+    pub action: String,
+    pub agent_id: Option<Uuid>,
+    pub connection_id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub id: Uuid,
+    pub last_event_at_ms: Option<i64>,
+    pub last_event_id: String,
+    pub linear_issue_id: String,
+    pub linear_session_id: String,
+    pub patchbay_issue_id: Option<Uuid>,
+    pub prompt_body: Option<String>,
+    pub prompt_context: Option<String>,
+    pub requester_linear_user_id: Option<String>,
+    pub status: String,
+    pub task_id: Option<Uuid>,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
+}
+
 /// Server-persisted execution provenance used by the post-run branch
 /// discovery path. One task may have multiple rows, one per exact repository
 /// checkout/workspace key. The task id is the ownership boundary: callers can

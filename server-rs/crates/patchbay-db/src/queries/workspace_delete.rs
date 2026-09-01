@@ -305,6 +305,11 @@ pub async fn delete_workspace_linear_data(
         .execute(&mut *executor)
         .await?;
 
+    sqlx::query(r#"DELETE FROM linear_agent_session WHERE workspace_id = $1"#)
+        .bind(workspace_id)
+        .execute(&mut *executor)
+        .await?;
+
     sqlx::query(r#"DELETE FROM linear_project_binding WHERE workspace_id = $1"#)
         .bind(workspace_id)
         .execute(&mut *executor)

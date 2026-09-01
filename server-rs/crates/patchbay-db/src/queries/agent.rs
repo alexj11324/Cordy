@@ -3849,6 +3849,38 @@ WHERE atq.id = $1 AND a.workspace_id = $2"#
     }))
 }
 
+/// Returns the newest non-cancelled task in the automatic retry chain rooted
+/// at `task_id`. Continuation children are deliberately excluded: only
+/// `retry_of_task_id` represents replacement execution for the same turn.
+pub async fn latest_retry_descendant_task_id(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    task_id: Uuid,
+    workspace_id: Uuid,
+) -> anyhow::Result<Option<Uuid>> {
+    Ok(sqlx::query_scalar::<_, Uuid>(
+        r#"WITH RECURSIVE retry_chain AS (
+               SELECT task.id, task.created_at, 0 AS depth
+               FROM agent_task_queue task
+               JOIN agent ON agent.id = task.agent_id
+               WHERE task.id = $1 AND agent.workspace_id = $2
+               UNION ALL
+               SELECT child.id, child.created_at, parent.depth + 1
+               FROM agent_task_queue child
+               JOIN retry_chain parent ON child.retry_of_task_id = parent.id
+           )
+           SELECT chain.id
+           FROM retry_chain chain
+           JOIN agent_task_queue task ON task.id = chain.id
+           WHERE task.status <> 'cancelled'
+           ORDER BY chain.depth DESC, chain.created_at DESC, chain.id DESC
+           LIMIT 1"#,
+    )
+    .bind(task_id)
+    .bind(workspace_id)
+    .fetch_optional(executor)
+    .await?)
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct GetLastTaskSessionRow {
     pub session_id: Option<String>,
@@ -4516,6 +4548,33 @@ ORDER BY created_at DESC"#
         });
     }
     Ok(out)
+}
+
+/// Finds a task previously dispatched for an external Agent Session. The
+/// marker is stored at the start of the handoff note so a worker can recover
+/// an already-created task even after it completed before the correlation row
+/// was committed.
+pub async fn find_task_id_by_issue_agent_session_marker(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    issue_id: Uuid,
+    agent_id: Uuid,
+    marker: &str,
+) -> anyhow::Result<Option<Uuid>> {
+    Ok(sqlx::query_scalar(
+        r#"SELECT id
+           FROM agent_task_queue
+           WHERE issue_id = $1
+             AND agent_id = $2
+             AND handoff_note IS NOT NULL
+             AND position($3 IN handoff_note) = 1
+           ORDER BY created_at DESC, id DESC
+           LIMIT 1"#,
+    )
+    .bind(issue_id)
+    .bind(agent_id)
+    .bind(marker)
+    .fetch_optional(executor)
+    .await?)
 }
 
 pub async fn list_agent_tasks(

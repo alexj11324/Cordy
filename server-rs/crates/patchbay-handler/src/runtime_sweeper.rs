@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use patchbay_db::queries::{agent, linear, runtime};
+use patchbay_db::queries::{agent, linear, linear_agent, runtime};
 use patchbay_events::{Bus, Event};
 use patchbay_service::task_service::TaskService;
 use serde_json::json;
@@ -26,6 +26,8 @@ const RECOVERY_BATCH: i32 = 100;
 const CHAT_FINALIZE_GRACE: Duration = Duration::from_secs(60);
 const CHAT_FINALIZE_BATCH: i32 = 100;
 const LINEAR_OAUTH_STATE_BATCH: i64 = 100;
+const LINEAR_AGENT_TERMINAL_RECOVERY_BATCH: i64 = 100;
+const LINEAR_REVOCATION_CANCELLATION_BATCH: i64 = 100;
 const OFFLINE_RUNTIME_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 const GC_BATCH: i32 = 100;
 const GC_BLOCKED_LIMIT: i32 = 1000;
@@ -335,6 +337,44 @@ impl RuntimeTaskSweeper {
                 self.tasks.handle_failed_tasks(&failed).await;
             }
             Err(error) => tracing::warn!(%error, "runtime sweeper: expire queued tasks failed"),
+        }
+        let terminal_recovery = async {
+            let mut transaction = self.pool.begin().await?;
+            let recovered = linear_agent::recover_missing_failed_terminal_events(
+                &mut transaction,
+                LINEAR_AGENT_TERMINAL_RECOVERY_BATCH,
+            )
+            .await?;
+            transaction.commit().await?;
+            Ok::<_, anyhow::Error>(recovered)
+        }
+        .await;
+        match terminal_recovery {
+            Ok(recovered) if recovered > 0 => {
+                tracing::info!(
+                    recovered,
+                    "runtime sweeper: recovered Linear Agent terminal events"
+                )
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::warn!(%error, "runtime sweeper: recover Linear Agent terminal events failed")
+            }
+        }
+        match self
+            .tasks
+            .recover_pending_linear_revocation_cancellations(LINEAR_REVOCATION_CANCELLATION_BATCH)
+            .await
+        {
+            Ok(recovered) if recovered > 0 => tracing::info!(
+                recovered,
+                "runtime sweeper: replayed Linear revocation cancellations"
+            ),
+            Ok(_) => {}
+            Err(error) => tracing::warn!(
+                %error,
+                "runtime sweeper: replay Linear revocation cancellations failed"
+            ),
         }
         match self
             .tasks

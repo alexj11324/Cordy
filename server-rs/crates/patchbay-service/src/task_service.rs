@@ -67,6 +67,7 @@ use patchbay_db::queries::issue::{
     get_issue, get_issue_in_workspace, list_issues_in_workspace_by_ids,
 };
 use patchbay_db::queries::linear as linear_q;
+use patchbay_db::queries::linear_agent as linear_agent_q;
 use patchbay_db::queries::member::{
     get_member_by_user_and_workspace, lock_member_by_user_and_workspace,
 };
@@ -629,6 +630,16 @@ struct PreparedIssueEnqueue {
     attr_evidence_ref: Option<Uuid>,
     trigger_summary: Option<String>,
     head_sha: String,
+}
+
+struct LinearIssueEnqueueAuthority {
+    connection_id: Uuid,
+    patchbay_user_id: Uuid,
+    linear_user_id: String,
+    linear_session_id: String,
+    linear_issue_id: String,
+    last_event_id: String,
+    claim_owner: String,
 }
 
 #[derive(Default)]
@@ -1281,6 +1292,24 @@ impl TaskService {
     /// capability leases. Keep the rows for explain/audit; authentication
     /// rejects revoked leases and a separate retention policy may purge them.
     pub async fn capture_task_cancelled(&self, task: &AgentTaskQueue) {
+        if let Err(error) = self.capture_task_cancelled_required(task).await {
+            tracing::warn!(
+                task_id = %task.id,
+                %error,
+                "cancel task: required cancellation capture failed"
+            );
+        }
+    }
+
+    async fn capture_task_cancelled_required(
+        &self,
+        task: &AgentTaskQueue,
+    ) -> Result<(), TaskServiceError> {
+        revoke_task_tokens_by_task(&self.pool, task.id, "task_cancelled")
+            .await
+            .map_err(|error| {
+                TaskServiceError::Internal(format!("revoke cancelled task tokens: {error}"))
+            })?;
         if let Some(metrics) = &self.metrics {
             let (source, runtime_mode, _) = self.task_metrics_context(task).await;
             metrics.record_task_terminal(
@@ -1293,13 +1322,7 @@ impl TaskService {
                 task.attempt,
             );
         }
-        if let Err(err) = revoke_task_tokens_by_task(&self.pool, task.id, "task_cancelled").await {
-            tracing::warn!(
-                task_id = %task.id,
-                error = %err,
-                "cancel task: failed to revoke task tokens"
-            );
-        }
+        Ok(())
     }
 
     /// cost_usd_ticks is the provider's own price for this usage in 1e-10 USD,
@@ -1807,27 +1830,39 @@ impl TaskService {
     /// best-effort here: cancellation must still finish if the issue was
     /// deleted as part of the surrounding lifecycle operation.
     async fn flag_dependency_attention_for_cancelled_task(&self, task: &AgentTaskQueue) {
+        if let Err(error) = self
+            .flag_dependency_attention_for_cancelled_task_required(task)
+            .await
+        {
+            tracing::warn!(
+                %error,
+                task_id = %task.id,
+                "dependency attention update after batch task cancellation failed"
+            );
+        }
+    }
+
+    async fn flag_dependency_attention_for_cancelled_task_required(
+        &self,
+        task: &AgentTaskQueue,
+    ) -> Result<(), TaskServiceError> {
         let Some(issue_id) = task.issue_id else {
-            return;
+            return Ok(());
         };
-        let Ok(Some(issue)) = get_issue(&self.pool, issue_id).await else {
-            return;
+        let Some(issue) = get_issue(&self.pool, issue_id)
+            .await
+            .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?
+        else {
+            return Ok(());
         };
         let reason = task
             .failure_reason
             .as_deref()
             .filter(|reason| !reason.trim().is_empty())
             .unwrap_or("prerequisite task cancelled");
-        if let Err(error) = self
-            .flag_dependency_attention(issue.workspace_id, issue.id, reason)
-            .await
-        {
-            tracing::warn!(
-                %error,
-                issue_id = %issue.id,
-                "dependency attention update after batch task cancellation failed"
-            );
-        }
+        self.flag_dependency_attention(issue.workspace_id, issue.id, reason)
+            .await?;
+        Ok(())
     }
 
     /// Claim recovery closes the only unsafe window left by a two-phase
@@ -2351,6 +2386,42 @@ impl TaskService {
             .await
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub async fn enqueue_task_for_issue_with_handoff_from_linear(
+        &self,
+        issue: &Issue,
+        handoff_note: &str,
+        patchbay_user_id: Uuid,
+        connection_id: Uuid,
+        linear_user_id: &str,
+        linear_session_id: &str,
+        linear_issue_id: &str,
+        last_event_id: &str,
+        claim_owner: &str,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        self.enqueue_issue_task_with_comment_plan_internal(
+            issue,
+            None,
+            vec![],
+            false,
+            handoff_note,
+            Some(patchbay_user_id),
+            None,
+            None,
+            None,
+            Some(LinearIssueEnqueueAuthority {
+                connection_id,
+                patchbay_user_id,
+                linear_user_id: linear_user_id.to_string(),
+                linear_session_id: linear_session_id.to_string(),
+                linear_issue_id: linear_issue_id.to_string(),
+                last_event_id: last_event_id.to_string(),
+                claim_owner: claim_owner.to_string(),
+            }),
+        )
+        .await
+    }
+
     /// Creates the coordinator's task while it is still unclaimable. The
     /// coordinator links the returned task to its assignment in the same
     /// transaction that promotes it to `queued`.
@@ -2371,6 +2442,7 @@ impl TaskService {
             None,
             None,
             Some(coordination_assignment_id),
+            None,
         )
         .await
     }
@@ -2526,6 +2598,7 @@ impl TaskService {
             rerun_of_task_id,
             fire_at,
             None,
+            None,
         )
         .await
     }
@@ -2542,6 +2615,7 @@ impl TaskService {
         rerun_of_task_id: Option<Uuid>,
         fire_at: Option<chrono::DateTime<chrono::Utc>>,
         coordination_assignment_id: Option<Uuid>,
+        linear_authority: Option<LinearIssueEnqueueAuthority>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
         if coordination_assignment_id.is_some() && fire_at.is_some() {
             return Err(TaskServiceError::Internal(
@@ -2552,6 +2626,51 @@ impl TaskService {
             .prepare_issue_enqueue(issue, trigger_comment_id, actor_user_id, true)
             .await?;
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        if let Some(authority) = linear_authority.as_ref() {
+            if !linear_agent_q::lock_linear_agent_initial_dispatch_authority(
+                &mut tx,
+                issue.workspace_id,
+                authority.connection_id,
+                &authority.linear_session_id,
+                &authority.linear_issue_id,
+                issue.id,
+                prep.executor_id,
+                &authority.linear_user_id,
+                &authority.last_event_id,
+                &authority.claim_owner,
+            )
+            .await
+            .map_err(downcast_sqlx)?
+                || lock_member_by_user_and_workspace(
+                    &mut *tx,
+                    authority.patchbay_user_id,
+                    issue.workspace_id,
+                )
+                .await
+                .map_err(downcast_sqlx)?
+                .is_none()
+                || !linear_q::lock_linear_member_binding(
+                    &mut *tx,
+                    issue.workspace_id,
+                    authority.connection_id,
+                    authority.patchbay_user_id,
+                    &authority.linear_user_id,
+                )
+                .await
+                .map_err(downcast_sqlx)?
+                || !linear_agent_q::lock_linear_agent_initial_dispatch_binding(
+                    &mut tx,
+                    issue.workspace_id,
+                    authority.connection_id,
+                    &authority.linear_issue_id,
+                    issue.id,
+                )
+                .await
+                .map_err(downcast_sqlx)?
+            {
+                return Err(TaskServiceError::AgentThreadInvokeForbidden);
+            }
+        }
         // The owner-row fence acquires workspace → agent → issue → runtime
         // locks. Take it before the issue FOR UPDATE below so this transaction
         // cannot invert the teardown/merge lock order.
@@ -2666,6 +2785,22 @@ impl TaskService {
                 return Err(TaskServiceError::Sql(downcast_sqlx(e)));
             }
         };
+        if let Some(authority) = linear_authority.as_ref() {
+            if !linear_agent_q::correlate_linear_agent_session_dispatch(
+                &mut *tx,
+                issue.workspace_id,
+                authority.connection_id,
+                &authority.linear_session_id,
+                &authority.last_event_id,
+                task.id,
+                &authority.claim_owner,
+            )
+            .await
+            .map_err(downcast_sqlx)?
+            {
+                return Err(TaskServiceError::AgentThreadInvokeForbidden);
+            }
+        }
         tx.commit().await.map_err(TaskServiceError::Sql)?;
 
         tracing::info!(
@@ -3218,6 +3353,49 @@ impl TaskService {
         idempotency_key: &str,
         requester_user_id: Uuid,
     ) -> Result<TaskMessageBusReceipt, TaskServiceError> {
+        self.continue_agent_thread_with_authority(
+            parent_task_id,
+            content,
+            idempotency_key,
+            requester_user_id,
+            None,
+            None,
+        )
+        .await
+    }
+
+    /// Queues a provider continuation only when the database still proves
+    /// that the active Linear installation, binding, Issue route, claimed
+    /// session, and exact parent task form one authorized chain.
+    pub async fn continue_agent_thread_from_integration(
+        &self,
+        parent_task_id: Uuid,
+        content: &str,
+        idempotency_key: &str,
+        requester_user_id: Uuid,
+        connection_id: Uuid,
+        linear_session_id: &str,
+    ) -> Result<TaskMessageBusReceipt, TaskServiceError> {
+        self.continue_agent_thread_with_authority(
+            parent_task_id,
+            content,
+            idempotency_key,
+            requester_user_id,
+            Some(connection_id),
+            Some(linear_session_id),
+        )
+        .await
+    }
+
+    async fn continue_agent_thread_with_authority(
+        &self,
+        parent_task_id: Uuid,
+        content: &str,
+        idempotency_key: &str,
+        requester_user_id: Uuid,
+        integration_connection_id: Option<Uuid>,
+        integration_session_id: Option<&str>,
+    ) -> Result<TaskMessageBusReceipt, TaskServiceError> {
         const MAX_MESSAGE_CHARS: usize = 12_000;
         let content = sanitize_text_for_postgres(content.trim());
         let idempotency_key = sanitize_text_for_postgres(idempotency_key.trim());
@@ -3249,6 +3427,24 @@ impl TaskService {
             .await
             .map_err(downcast_sqlx)?
             .ok_or_else(|| TaskServiceError::Internal("Agent binding not found".to_string()))?;
+        let integration_authorized = match (integration_connection_id, integration_session_id) {
+            (Some(connection_id), Some(session_id)) => {
+                linear_agent_q::linear_agent_continuation_authorized(
+                    &self.pool,
+                    connection_id,
+                    session_id,
+                    snapshot_parent.id,
+                    requester_user_id,
+                )
+                .await
+                .map_err(downcast_sqlx)?
+            }
+            (None, None) => false,
+            _ => return Err(TaskServiceError::AgentThreadInvokeForbidden),
+        };
+        if integration_connection_id.is_some() && !integration_authorized {
+            return Err(TaskServiceError::AgentThreadInvokeForbidden);
+        }
         let snapshot_runtime_exists = match snapshot_agent.runtime_id {
             Some(runtime_id) => get_agent_runtime(&self.pool, runtime_id)
                 .await
@@ -3305,13 +3501,15 @@ impl TaskService {
         } else {
             Vec::new()
         };
-        if !member_invocation_allowed(
-            snapshot_agent.owner_id,
-            &snapshot_agent.permission_mode,
-            is_workspace_member,
-            &targets,
-            requester_user_id,
-        ) {
+        if !integration_authorized
+            && !member_invocation_allowed(
+                snapshot_agent.owner_id,
+                &snapshot_agent.permission_mode,
+                is_workspace_member,
+                &targets,
+                requester_user_id,
+            )
+        {
             return Err(TaskServiceError::AgentThreadInvokeForbidden);
         }
 
@@ -3331,6 +3529,31 @@ impl TaskService {
             .map(|source| source.as_str().to_string());
 
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        // Member revocation takes this row before touching owned runtimes,
+        // Agents, or tasks. Follow the same order so a continuation cannot
+        // deadlock with revocation and hold the fence through the final
+        // integration/ACL authorization and child insert.
+        let requester_member = match lock_member_by_user_and_workspace(
+            &mut *tx,
+            requester_user_id,
+            snapshot_agent.workspace_id,
+        )
+        .await
+        {
+            Ok(member) => member,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    requester_user_id = %requester_user_id,
+                    agent_id = %snapshot_agent.id,
+                    "failed to verify Agent thread requester membership"
+                );
+                None
+            }
+        };
+        if integration_connection_id.is_some() && requester_member.is_none() {
+            return Err(TaskServiceError::AgentThreadInvokeForbidden);
+        }
         // Follow the repository owner-row fence: lock Agent/owner rows before
         // the task row. Claim paths take the same order; upgrading the Agent
         // after locking the task could otherwise deadlock on a concurrent
@@ -3389,30 +3612,25 @@ impl TaskService {
             return Err(TaskServiceError::AgentThreadUnavailable(reason));
         }
 
-        // Recheck the authenticated requester after taking the Agent and
-        // parent-task locks. The handler performs the same admission check for
-        // the HTTP path, but this service boundary must also fail closed for
-        // direct callers and for permission changes racing the continuation
-        // request. Locking the member row makes a concurrent role revocation
-        // serialize with this final authorization decision.
-        let requester_member = match lock_member_by_user_and_workspace(
-            &mut *tx,
-            requester_user_id,
-            agent.workspace_id,
-        )
-        .await
-        {
-            Ok(member) => member,
-            Err(error) => {
-                tracing::warn!(
-                    %error,
-                    requester_user_id = %requester_user_id,
-                    agent_id = %agent.id,
-                    "failed to verify Agent thread requester membership"
-                );
-                None
+        let integration_authorized = match (integration_connection_id, integration_session_id) {
+            (Some(connection_id), Some(session_id)) => {
+                linear_agent_q::linear_agent_continuation_authorized(
+                    &mut *tx,
+                    connection_id,
+                    session_id,
+                    parent.id,
+                    requester_user_id,
+                )
+                .await
+                .map_err(downcast_sqlx)?
             }
+            (None, None) => false,
+            _ => return Err(TaskServiceError::AgentThreadInvokeForbidden),
         };
+        if integration_connection_id.is_some() && !integration_authorized {
+            return Err(TaskServiceError::AgentThreadInvokeForbidden);
+        }
+
         let is_workspace_member = requester_member.is_some();
 
         // Continuation children intentionally clear `automation_run_id`; use
@@ -3435,30 +3653,36 @@ impl TaskService {
             .iter()
             .find_map(|task| task.automation_run_id)
             .or(parent.automation_run_id);
-        if let Some(automation_run_id) = automation_run_id {
-            let automation_allowed = match get_automation_run(&mut *tx, automation_run_id).await {
-                Ok(Some(run)) => match get_automation(&mut *tx, run.automation_id).await {
-                    Ok(Some(automation)) => {
-                        let collaborates =
-                            is_automation_collaborator(&mut *tx, automation.id, requester_user_id)
-                                .await
-                                .unwrap_or_default();
-                        automation_invocation_allowed(
-                            automation.workspace_id,
-                            agent.workspace_id,
-                            requester_member.as_ref().map(|member| member.role.as_str()),
-                            &automation.created_by_type,
-                            automation.created_by_id,
-                            requester_user_id,
-                            collaborates,
-                        )
-                    }
+        if !integration_authorized {
+            if let Some(automation_run_id) = automation_run_id {
+                let automation_allowed = match get_automation_run(&mut *tx, automation_run_id).await
+                {
+                    Ok(Some(run)) => match get_automation(&mut *tx, run.automation_id).await {
+                        Ok(Some(automation)) => {
+                            let collaborates = is_automation_collaborator(
+                                &mut *tx,
+                                automation.id,
+                                requester_user_id,
+                            )
+                            .await
+                            .unwrap_or_default();
+                            automation_invocation_allowed(
+                                automation.workspace_id,
+                                agent.workspace_id,
+                                requester_member.as_ref().map(|member| member.role.as_str()),
+                                &automation.created_by_type,
+                                automation.created_by_id,
+                                requester_user_id,
+                                collaborates,
+                            )
+                        }
+                        Ok(None) | Err(_) => false,
+                    },
                     Ok(None) | Err(_) => false,
-                },
-                Ok(None) | Err(_) => false,
-            };
-            if !automation_allowed {
-                return Err(TaskServiceError::AgentThreadInvokeForbidden);
+                };
+                if !automation_allowed {
+                    return Err(TaskServiceError::AgentThreadInvokeForbidden);
+                }
             }
         }
         let targets = if is_workspace_member
@@ -3480,13 +3704,15 @@ impl TaskService {
         } else {
             Vec::new()
         };
-        if !member_invocation_allowed(
-            agent.owner_id,
-            &agent.permission_mode,
-            is_workspace_member,
-            &targets,
-            requester_user_id,
-        ) {
+        if !integration_authorized
+            && !member_invocation_allowed(
+                agent.owner_id,
+                &agent.permission_mode,
+                is_workspace_member,
+                &targets,
+                requester_user_id,
+            )
+        {
             return Err(TaskServiceError::AgentThreadInvokeForbidden);
         }
 
@@ -4077,6 +4303,96 @@ impl TaskService {
             self.reconcile_agent_status(agent_id).await;
         }
         self.notify_tasks_finished(cancelled).await;
+    }
+
+    async fn publish_transactional_cancellations_required(
+        &self,
+        cancelled: &[AgentTaskQueue],
+    ) -> Result<(), TaskServiceError> {
+        let mut agents = std::collections::HashSet::new();
+        for task in cancelled {
+            self.flag_dependency_attention_for_cancelled_task_required(task)
+                .await?;
+            self.capture_task_cancelled_required(task).await?;
+            self.broadcast_task_event(
+                patchbay_protocol::EVENT_TASK_CANCELLED,
+                task,
+                Default::default(),
+            )
+            .await;
+            agents.insert(task.agent_id);
+        }
+        for agent_id in agents {
+            self.reconcile_agent_status_required(agent_id).await?;
+        }
+        self.notify_tasks_finished(cancelled).await;
+        Ok(())
+    }
+
+    pub async fn replay_linear_revocation_cancellation(
+        &self,
+        connection_id: Uuid,
+    ) -> Result<usize, TaskServiceError> {
+        let claim_owner = Uuid::now_v7().to_string();
+        if !linear_agent_q::claim_revocation_cancellation(&self.pool, connection_id, &claim_owner)
+            .await
+            .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?
+        {
+            return Ok(0);
+        }
+        let replay_result = async {
+            let cancelled = linear_agent_q::list_revocation_cancelled_tasks(
+                &self.pool,
+                connection_id,
+                &claim_owner,
+            )
+            .await
+            .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?;
+            self.publish_transactional_cancellations_required(&cancelled)
+                .await?;
+            linear_agent_q::complete_revocation_cancellation(
+                &self.pool,
+                connection_id,
+                &claim_owner,
+            )
+            .await
+            .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?;
+            Ok::<_, TaskServiceError>(cancelled.len())
+        }
+        .await;
+        if replay_result.is_err() {
+            if let Err(release_error) = linear_agent_q::release_revocation_cancellation(
+                &self.pool,
+                connection_id,
+                &claim_owner,
+            )
+            .await
+            {
+                tracing::warn!(
+                    %release_error,
+                    %connection_id,
+                    "release failed Linear revocation cancellation claim failed"
+                );
+            }
+        }
+        replay_result
+    }
+
+    pub async fn recover_pending_linear_revocation_cancellations(
+        &self,
+        limit: i64,
+    ) -> Result<usize, TaskServiceError> {
+        let connection_ids =
+            linear_agent_q::list_pending_revocation_cancellation_connections(&self.pool, limit)
+                .await
+                .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?;
+        let mut recovered = 0usize;
+        for connection_id in connection_ids {
+            recovered += self
+                .replay_linear_revocation_cancellation(connection_id)
+                .await?;
+        }
+        Ok(recovered)
     }
 
     // --- Chat task family -------------------------------------------------------
@@ -4863,11 +5179,24 @@ impl TaskService {
     /// Refreshes the agent's status from its active tasks and broadcasts
     /// agent:status. Best-effort: errors are swallowed like Go's early return.
     pub async fn reconcile_agent_status(&self, agent_id: Uuid) {
-        let Ok(Some(agent)) = refresh_agent_status_from_tasks(&self.pool, agent_id).await else {
-            return;
+        if let Err(error) = self.reconcile_agent_status_required(agent_id).await {
+            tracing::warn!(%error, %agent_id, "agent status reconciliation failed");
+        }
+    }
+
+    async fn reconcile_agent_status_required(
+        &self,
+        agent_id: Uuid,
+    ) -> Result<(), TaskServiceError> {
+        let Some(agent) = refresh_agent_status_from_tasks(&self.pool, agent_id)
+            .await
+            .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?
+        else {
+            return Ok(());
         };
         tracing::debug!(agent_id = %agent_id, status = %agent.status, "agent status reconciled");
         self.publish_agent_status(&agent).await;
+        Ok(())
     }
 
     pub(crate) async fn publish_agent_status(&self, agent: &Agent) {
@@ -4914,6 +5243,23 @@ impl TaskService {
                         "record cancelled reviewer recovery: {error}"
                     ))
                 })?;
+            linear_agent_q::enqueue_linear_agent_terminal_event(
+                &mut *executor,
+                task.id,
+                &format!("linear-agent-terminal:{}:cancelled", task.id),
+                &serde_json::json!({
+                    "action": "terminal",
+                    "linearAgentSessionTerminal": true,
+                    "status": "cancelled",
+                    "taskId": task.id,
+                }),
+            )
+            .await
+            .map_err(|error| {
+                TaskServiceError::Internal(format!(
+                    "enqueue bulk Linear Agent cancellation: {error}"
+                ))
+            })?;
         }
         Ok(cancelled)
     }
@@ -5091,6 +5437,23 @@ impl TaskService {
                         "record cancelled reviewer recovery: {error}"
                     ))
                 })?;
+            linear_agent_q::enqueue_linear_agent_terminal_event(
+                &mut tx,
+                cancelled.id,
+                &format!("linear-agent-terminal:{}:cancelled", cancelled.id),
+                &serde_json::json!({
+                    "action": "terminal",
+                    "linearAgentSessionTerminal": true,
+                    "status": "cancelled",
+                    "error": opts.error_message,
+                    "failureReason": opts.failure_reason,
+                    "taskId": cancelled.id,
+                }),
+            )
+            .await
+            .map_err(|error| {
+                TaskServiceError::Internal(format!("enqueue Linear Agent cancellation: {error}"))
+            })?;
             cancelled_chat_message = self
                 .settle_queued_chat_input(&mut tx, &cancelled, &opts.queue_action)
                 .await?;
@@ -5143,6 +5506,23 @@ impl TaskService {
                         "record cancelled reviewer recovery: {error}"
                     ))
                 })?;
+            linear_agent_q::enqueue_linear_agent_terminal_event(
+                &mut tx,
+                cancelled.id,
+                &format!("linear-agent-terminal:{}:cancelled", cancelled.id),
+                &serde_json::json!({
+                    "action": "terminal",
+                    "linearAgentSessionTerminal": true,
+                    "status": "cancelled",
+                    "error": opts.error_message,
+                    "failureReason": opts.failure_reason,
+                    "taskId": cancelled.id,
+                }),
+            )
+            .await
+            .map_err(|error| {
+                TaskServiceError::Internal(format!("enqueue Linear Agent cancellation: {error}"))
+            })?;
             tx.commit().await.map_err(TaskServiceError::Sql)?;
             cancelled
         };
