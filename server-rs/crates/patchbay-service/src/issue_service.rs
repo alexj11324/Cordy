@@ -738,14 +738,10 @@ RETURNING id"#,
         }
         if opts.require_owner_member && p.owner_type.as_deref() == Some("member") {
             if let Some(owner_id) = p.owner_id.filter(|id| !id.is_nil()) {
-                if member_q::lock_member_by_user_and_workspace(
-                    &mut *tx,
-                    owner_id,
-                    p.workspace_id,
-                )
-                .await
-                .map_err(|error| ic_err("lock issue owner member", error))?
-                .is_none()
+                if member_q::lock_member_by_user_and_workspace(&mut *tx, owner_id, p.workspace_id)
+                    .await
+                    .map_err(|error| ic_err("lock issue owner member", error))?
+                    .is_none()
                 {
                     return Err(ic_err_msg("issue owner is no longer a workspace member"));
                 }

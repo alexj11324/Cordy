@@ -2575,8 +2575,7 @@ impl LinearSyncWorker {
                         if locked_link.binding_id != link.binding_id
                             || locked_link.sync_status == "deleted"
                             || locked_link.last_common_snapshot != link.last_common_snapshot
-                            || locked_link.last_remote_event_at_ms
-                                != link.last_remote_event_at_ms
+                            || locked_link.last_remote_event_at_ms != link.last_remote_event_at_ms
                             || locked_link.last_remote_event_id != link.last_remote_event_id
                         {
                             return Err(SyncError::retry(anyhow::anyhow!(
@@ -3177,16 +3176,13 @@ impl LinearSyncWorker {
                 field: "status".to_string(),
                 base_value: base_snapshot.get("status").cloned().unwrap_or(Value::Null),
                 local_value: local_snapshot.get("status").cloned().unwrap_or(Value::Null),
-                remote_value: remote_snapshot.get("status").cloned().unwrap_or(Value::Null),
+                remote_value: remote_snapshot
+                    .get("status")
+                    .cloned()
+                    .unwrap_or(Value::Null),
             });
-            merge.common["status"] = base_snapshot
-                .get("status")
-                .cloned()
-                .unwrap_or(Value::Null);
-            merge.merged["status"] = local_snapshot
-                .get("status")
-                .cloned()
-                .unwrap_or(Value::Null);
+            merge.common["status"] = base_snapshot.get("status").cloned().unwrap_or(Value::Null);
+            merge.merged["status"] = local_snapshot.get("status").cloned().unwrap_or(Value::Null);
         }
         let last_event_at_ms = event_timestamp_ms.or(link.last_remote_event_at_ms);
         let last_event_id = event_timestamp_ms
