@@ -100,10 +100,10 @@ and publishes those same artifacts; it does not rebuild them.
 
 Configure `macos-production` in repository settings with one or more required
 reviewers. The publish job also reads the environment rules and fails closed if
-the required-reviewer rule is missing, so an accidentally unprotected
-environment cannot publish a release. The environment is the publication gate,
-not a substitute for the signature, notarization, or Gatekeeper checks
-performed by the packaging job.
+the required-reviewer rule is missing or administrators can bypass it, so an
+accidentally unprotected environment cannot publish a release. The environment
+is the publication gate, not a substitute for the signature, notarization, or
+Gatekeeper checks performed by the packaging job.
 
 ### Manual macOS-only release
 

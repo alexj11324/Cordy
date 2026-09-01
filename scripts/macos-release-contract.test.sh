@@ -107,5 +107,7 @@ fi
 require_literal 'Require protected macos-production environment'
 require_literal 'select(.type == "required_reviewers")'
 require_literal 'refusing to publish without the approval gate'
+require_literal 'can_admins_bypass'
+require_literal 'refusing to publish without an enforceable approval gate'
 
 echo "macOS candidate artifact and promotion contracts: ok"
