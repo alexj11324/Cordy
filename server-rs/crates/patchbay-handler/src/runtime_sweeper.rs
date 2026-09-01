@@ -3094,7 +3094,7 @@ mod tests {
             sqlx::query("INSERT INTO \"user\" (id, name, email) VALUES ($1, $2, $3)")
                 .bind(user_id)
                 .bind("Rust chat finalize contract")
-                .bind(format!("chat-finalize-{user_id}@patchbay.ai"))
+                .bind(format!("chat-finalize-{user_id}@example.com"))
                 .execute(&mut *tx)
                 .await?;
             sqlx::query("INSERT INTO workspace (id, name, slug) VALUES ($1, $2, $3)")

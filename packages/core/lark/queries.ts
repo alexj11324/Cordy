@@ -14,4 +14,5 @@ export const larkInstallationsOptions = (wsId: string) =>
     queryKey: larkKeys.installations(wsId),
     queryFn: () => api.listLarkInstallations(wsId),
     enabled: !!wsId,
+    refetchInterval: (query) => (query.state.status === "error" ? false : 5_000),
   });

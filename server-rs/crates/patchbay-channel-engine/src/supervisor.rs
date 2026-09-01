@@ -21,12 +21,16 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use tokio_util::sync::CancellationToken;
 
-use patchbay_channel::{BuiltChannel, Config as ChannelConfig, LeaseGeneration, Registry};
+use patchbay_channel::{
+    BuiltChannel, Config as ChannelConfig, LeaseGeneration, Registry, RuntimeHealthObservation,
+    RuntimeHealthReporter, RuntimeHealthState,
+};
 
 use crate::ids::new_node_id;
 use crate::lease::{AcquireLeaseParams, LeaseError, LeaseStore, ReleaseLeaseParams};
 
 type SharedAbortHandle = Arc<Mutex<Option<tokio::task::AbortHandle>>>;
+type SharedRuntimeObservation = Arc<Mutex<Option<RuntimeHealthObservation>>>;
 
 /// One active installation row the supervisor may lease and drive.
 /// Mirrors Go `engine.Installation`.
@@ -60,6 +64,28 @@ pub trait InstallationStore: Send + Sync {
     /// is no per-platform filter here — that hard-coded "feishu" was the
     /// whole limitation PB-3620 removes.
     async fn list_active_installations(&self) -> anyhow::Result<Vec<Installation>>;
+
+    /// Claims the durable observation row for this lease generation and puts
+    /// it into `starting`. Implementations without durable storage may keep
+    /// the default no-op for isolated Supervisor tests.
+    async fn claim_runtime_observer(
+        &self,
+        _installation_id: uuid::Uuid,
+        _observer_token: &str,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    /// Applies one observation only while the same generation still owns the
+    /// row. Returning false means a newer owner has already replaced it.
+    async fn observe_runtime(
+        &self,
+        _installation_id: uuid::Uuid,
+        _observer_token: &str,
+        _observation: RuntimeHealthObservation,
+    ) -> anyhow::Result<bool> {
+        Ok(true)
+    }
 }
 
 /// Backend-agnostic observability seam for lease operations.
@@ -672,6 +698,27 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                     self.record_lease_operation("acquire", "success");
                     self.observe_takeover(&id);
                     let mut active_owner = ActiveOwnerGuard::new(self, &id);
+                    if let Err(error) = self.store.claim_runtime_observer(inst.id, &lease_tok).await
+                    {
+                        tracing::warn!(
+                            installation_id = %inst.id,
+                            %error,
+                            "channel engine: failed to claim runtime observation"
+                        );
+                        // A generation that cannot claim the token-fenced
+                        // observation row must not start the transport. Doing
+                        // so would leave the previous generation's health
+                        // visible while every report from this one is rejected.
+                        self.release_lease(&inst.id, &lease_tok).await;
+                        active_owner.finish();
+                        if sleep(&ctx, jitter(backoff)).await {
+                            return;
+                        }
+                        backoff = next_backoff(backoff, self.cfg.max_backoff);
+                        continue;
+                    }
+                    let (runtime_health, last_runtime_observation) =
+                        self.runtime_health_reporter(inst.id, lease_tok.clone());
 
                     // Build the platform channel via the registry, run it
                     // under a child token, and renew the lease in parallel.
@@ -685,6 +732,7 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                             raw: inst.config.clone(),
                             handler: Some(self.handler.clone()),
                             generation: Some(generation.clone()),
+                            runtime_health: Some(runtime_health.clone()),
                         })
                         .await;
                     let ch = match built {
@@ -695,6 +743,15 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                                 error = %err,
                                 "channel engine: build channel failed"
                             );
+                            runtime_health
+                                .observe(RuntimeHealthObservation {
+                                    state: RuntimeHealthState::Error,
+                                    error_code: Some("configuration_invalid"),
+                                    error_summary: Some(
+                                        "The channel configuration could not be loaded.",
+                                    ),
+                                })
+                                .await;
                             self.release_lease(&inst.id, &lease_tok).await;
                             active_owner.finish();
                             if sleep(&ctx, backoff).await {
@@ -709,6 +766,8 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                     let renew_run = run_ctx.clone();
                     let renew_inst_id = inst.id;
                     let renew_token = lease_tok.clone();
+                    let renew_health = runtime_health.clone();
+                    let renew_last_observation = Arc::clone(&last_runtime_observation);
                     let renewed = tokio::spawn(async move {
                         // renew_lease_until cancels run_ctx itself on lease
                         // loss so the channel exits even if its wire I/O is
@@ -720,12 +779,15 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                                 &run_ctx_of(&renew_run),
                                 &renew_inst_id,
                                 &renew_token,
+                                &renew_health,
+                                &renew_last_observation,
                             )
                             .await;
                     });
 
                     let started_at = self.cfg.now();
                     let run_result = ch.connect(run_ctx.clone()).await;
+                    let lease_task_cancelled_run = run_ctx.is_cancelled() && !ctx.is_cancelled();
                     generation.revoke();
                     let _ = renewed.await;
                     self.disconnect_channel(&ch, &id).await;
@@ -733,7 +795,38 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                     active_owner.finish();
 
                     if ctx.is_cancelled() {
+                        runtime_health
+                            .observe(RuntimeHealthObservation {
+                                state: RuntimeHealthState::Offline,
+                                error_code: Some("supervisor_stopped"),
+                                error_summary: Some("The channel runtime stopped."),
+                            })
+                            .await;
                         return;
+                    }
+
+                    // A renewal failure already wrote the more precise lease
+                    // state before cancelling `run_ctx`; do not overwrite it
+                    // with a generic transport result on the way out.
+                    if !lease_task_cancelled_run {
+                        runtime_health
+                            .observe(match &run_result {
+                                Err(_) => RuntimeHealthObservation {
+                                    state: RuntimeHealthState::Degraded,
+                                    error_code: Some("transport_error"),
+                                    error_summary: Some(
+                                        "The platform connection ended unexpectedly and will retry.",
+                                    ),
+                                },
+                                Ok(()) => RuntimeHealthObservation {
+                                    state: RuntimeHealthState::Degraded,
+                                    error_code: Some("transport_closed"),
+                                    error_summary: Some(
+                                        "The platform closed the connection and it will retry.",
+                                    ),
+                                },
+                            })
+                            .await;
                     }
 
                     // If the connection lived long enough to be "stable",
@@ -805,22 +898,39 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
         ctx: &CancellationToken,
         inst_id: &uuid::Uuid,
         token: &str,
+        runtime_health: &RuntimeHealthReporter,
+        last_runtime_observation: &SharedRuntimeObservation,
     ) {
         let confirmed_until = match self.acquire_lease(inst_id, token).await {
             // Re-acquire is a renewal when we still own it (same token).
             Ok(Some(until)) => until,
             Ok(None) => {
+                runtime_health
+                    .observe(RuntimeHealthObservation {
+                        state: RuntimeHealthState::Offline,
+                        error_code: Some("lease_lost"),
+                        error_summary: Some("Connection ownership moved to another server."),
+                    })
+                    .await;
                 self.lease_lost(inst_id, ctx, "lease token no longer matches");
                 return;
             }
             Err(err) => {
                 tracing::warn!(error = %err, "channel engine: initial renewal probe failed");
+                runtime_health
+                    .observe(RuntimeHealthObservation {
+                        state: RuntimeHealthState::Degraded,
+                        error_code: Some("lease_renewal_failed"),
+                        error_summary: Some("Connection ownership could not be renewed."),
+                    })
+                    .await;
                 self.lease_lost(inst_id, ctx, "renewal probe error");
                 return;
             }
         };
         let mut confirmed_until = confirmed_until;
         let mut next_delay = renewal_jitter(self.cfg.lease_renew_interval);
+        let mut restore_healthy_after_renewal = false;
         loop {
             let remaining = (confirmed_until - self.cfg.now())
                 .to_std()
@@ -855,14 +965,36 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
             match attempt {
                 // Budget exhausted reads as a lost window.
                 Err(_) => {
+                    runtime_health
+                        .observe(RuntimeHealthObservation {
+                            state: RuntimeHealthState::Offline,
+                            error_code: Some("lease_expired"),
+                            error_summary: Some("Connection ownership expired."),
+                        })
+                        .await;
                     self.lease_lost(inst_id, ctx, "renewal budget exceeded");
                     return;
                 }
                 Ok(Err(LeaseError::NotAcquired)) => {
+                    runtime_health
+                        .observe(RuntimeHealthObservation {
+                            state: RuntimeHealthState::Offline,
+                            error_code: Some("lease_lost"),
+                            error_summary: Some("Connection ownership moved to another server."),
+                        })
+                        .await;
                     self.lease_lost(inst_id, ctx, "lease token no longer matches");
                     return;
                 }
                 Ok(Err(err)) => {
+                    let was_healthy = last_runtime_observation
+                        .lock()
+                        .unwrap_or_else(|error| error.into_inner())
+                        .as_ref()
+                        .is_some_and(|observation| {
+                            observation.state == RuntimeHealthState::Healthy
+                        });
+                    restore_healthy_after_renewal |= was_healthy;
                     self.set_renewal_error(&inst_id.to_string(), true);
                     self.record_lease_operation("renew", "error");
                     tracing::warn!(
@@ -871,10 +1003,32 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
                         confirmed_until = %confirmed_until,
                         "channel engine: lease renewal error"
                     );
+                    runtime_health
+                        .observe(RuntimeHealthObservation {
+                            state: RuntimeHealthState::Degraded,
+                            error_code: Some("lease_renewal_failed"),
+                            error_summary: Some("Connection ownership could not be renewed."),
+                        })
+                        .await;
                     next_delay = self.cfg.lease_error_retry_interval;
                     continue;
                 }
-                Ok(Ok(())) => {}
+                Ok(Ok(())) => {
+                    if restore_healthy_after_renewal {
+                        let renewal_is_still_the_latest_observation = last_runtime_observation
+                            .lock()
+                            .unwrap_or_else(|error| error.into_inner())
+                            .as_ref()
+                            .is_some_and(|observation| {
+                                observation.state == RuntimeHealthState::Degraded
+                                    && observation.error_code == Some("lease_renewal_failed")
+                            });
+                        if renewal_is_still_the_latest_observation {
+                            runtime_health.healthy().await;
+                        }
+                        restore_healthy_after_renewal = false;
+                    }
+                }
             }
             confirmed_until = started + ttl
                 - chrono::Duration::from_std(self.cfg.lease_expiry_safety_margin).unwrap();
@@ -934,6 +1088,48 @@ impl<S: InstallationStore + 'static, L: LeaseStore + 'static> Supervisor<S, L> {
         if let Some(m) = &self.metrics {
             m.record_lease_operation(operation, outcome);
         }
+    }
+
+    fn runtime_health_reporter(
+        &self,
+        installation_id: uuid::Uuid,
+        observer_token: String,
+    ) -> (RuntimeHealthReporter, SharedRuntimeObservation) {
+        let store = Arc::clone(&self.store);
+        let last_observation = Arc::new(Mutex::new(None));
+        let callback_observation = Arc::clone(&last_observation);
+        let reporter = RuntimeHealthReporter::new(move |observation| {
+            let store = Arc::clone(&store);
+            let observer_token = observer_token.clone();
+            let callback_observation = Arc::clone(&callback_observation);
+            async move {
+                *callback_observation
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner()) = Some(observation.clone());
+                match store
+                    .observe_runtime(installation_id, &observer_token, observation)
+                    .await
+                {
+                    Ok(true) => true,
+                    Ok(false) => {
+                        tracing::debug!(
+                            %installation_id,
+                            "channel engine: stale runtime observation ignored"
+                        );
+                        false
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            %installation_id,
+                            %error,
+                            "channel engine: failed to persist runtime observation"
+                        );
+                        false
+                    }
+                }
+            }
+        });
+        (reporter, last_observation)
     }
 
     fn adjust_active_owners(&self, delta: i64) {
@@ -1186,6 +1382,41 @@ mod tests {
         abort_waits(&[abort]);
 
         assert!(task.await.unwrap_err().is_cancelled());
+    }
+
+    #[tokio::test]
+    async fn runtime_reporter_tracks_the_latest_generation_observation() {
+        let supervisor = test_supervisor();
+        let (reporter, latest) =
+            supervisor.runtime_health_reporter(uuid::Uuid::now_v7(), "lease-g1".into());
+
+        reporter.healthy().await;
+        assert_eq!(
+            latest
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .as_ref()
+                .map(|observation| observation.state),
+            Some(RuntimeHealthState::Healthy)
+        );
+
+        reporter
+            .observe(RuntimeHealthObservation {
+                state: RuntimeHealthState::Degraded,
+                error_code: Some("lease_renewal_failed"),
+                error_summary: None,
+            })
+            .await;
+        let latest = latest
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone();
+        assert_eq!(
+            latest
+                .as_ref()
+                .and_then(|observation| observation.error_code),
+            Some("lease_renewal_failed")
+        );
     }
 
     #[test]

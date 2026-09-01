@@ -12,7 +12,10 @@ import {
 } from "@testing-library/react";
 import { ApiError } from "@patchbay/core/api";
 import { configStore } from "@patchbay/core/config";
-import { COMPOSIO_MCP_APPS_FLAG } from "@patchbay/core/feature-flags";
+import {
+  BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
+  COMPOSIO_MCP_APPS_FLAG,
+} from "@patchbay/core/feature-flags";
 import { I18nProvider } from "@patchbay/core/i18n/react";
 import enCommon from "../../locales/en/common.json";
 import enSettings from "../../locales/en/settings.json";
@@ -61,11 +64,34 @@ vi.mock("sonner", () => ({
     error: toastError,
   },
 }));
+const messagingQuotaRef = vi.hoisted(() => ({
+  current: null as null | {
+    mode: string;
+    limit: number | null;
+    used: number | null;
+    reserved: number | null;
+    reset_at: string | null;
+  },
+}));
+const subscriptionSummaryRef = vi.hoisted(() => ({
+  current: null as null | {
+    entitlement: {
+      hostedWorkspaceLimit?: number | null;
+      imInstallationLimit?: number | null;
+      imAgentTurns?: number | null;
+    };
+  },
+}));
+const navigationPush = vi.hoisted(() => vi.fn());
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
     queryCallsRef.current.push(opts);
     const isMemberQuery = opts.queryKey[opts.queryKey.length - 1] === "members";
+    const isMessagingQuotaQuery = opts.queryKey[0] === "messaging-quota";
+    const isSubscriptionSummaryQuery =
+      opts.queryKey[0] === "workspace-subscriptions" &&
+      opts.queryKey[opts.queryKey.length - 1] === "summary";
     const channel = opts.queryKey[0];
     const isChannelInstallationsQuery =
       typeof channel === "string" &&
@@ -74,6 +100,10 @@ vi.mock("@tanstack/react-query", () => ({
     return {
       data: isMemberQuery
         ? membersRef.current
+        : isMessagingQuotaQuery
+          ? messagingQuotaRef.current
+          : isSubscriptionSummaryQuery
+            ? subscriptionSummaryRef.current
         : isChannelInstallationsQuery
           ? channelInstallationsRef.current[
               channel as keyof typeof channelInstallationsRef.current
@@ -96,11 +126,19 @@ vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "workspace-id",
 }));
 
+vi.mock("@patchbay/core/paths", () => ({
+  paths: {
+    workspace: (slug: string) => ({ settings: () => `/${slug}/settings` }),
+  },
+  useCurrentWorkspace: () => ({ id: "workspace-id", slug: "acme" }),
+}));
+
 vi.mock("../../navigation", () => ({
   useNavigation: () => ({
     pathname: "/acme/settings",
     searchParams: navigationRef.searchParams,
     replace: navigationRef.replace,
+    push: navigationPush,
   }),
 }));
 
@@ -159,6 +197,17 @@ function renderTab() {
   );
 }
 
+function setSuccessfulEmptyChannelListings() {
+  channelInstallationsRef.current = {
+    lark: { configured: false, install_supported: false, installations: [] },
+    slack: { configured: false, install_supported: false, installations: [] },
+    dingtalk: { configured: false, install_supported: false, installations: [] },
+    wecom: { configured: false, install_supported: false, installations: [] },
+    telegram: { configured: false, install_supported: false, installations: [] },
+    weixin: { configured: false, install_supported: false, installations: [] },
+  };
+}
+
 describe("Settings IntegrationsTab", () => {
   beforeEach(() => {
     queryCallsRef.current = [];
@@ -170,6 +219,9 @@ describe("Settings IntegrationsTab", () => {
     navigationRef.replace.mockReset();
     toastSuccess.mockReset();
     toastError.mockReset();
+    messagingQuotaRef.current = null;
+    subscriptionSummaryRef.current = null;
+    navigationPush.mockReset();
     configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: true });
     // Reset the self-host-only VCS gate to its default (hidden) so tests stay
     // isolated; individual tests opt in below.
@@ -256,6 +308,177 @@ describe("Settings IntegrationsTab", () => {
     expect(screen.getByRole("button", { name: "Manage" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reconnect" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Disconnect" })).toBeInTheDocument();
+  });
+
+  it("localizes runtime health from the stable error code and state", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    channelInstallationsRef.current.dingtalk = {
+      configured: true,
+      install_supported: true,
+      installations: [{
+        id: "offline-hub",
+        agent_id: null,
+        status: "active",
+        runtime: {
+          state: "offline",
+          observedAt: "2026-09-01T00:00:00Z",
+          errorCode: "lease_expired",
+        },
+      }],
+    };
+
+    renderTab();
+
+    expect(screen.getByText("Runtime offline")).toBeInTheDocument();
+    expect(screen.queryByText("The runtime that owned this connection is no longer active.")).toBeNull();
+  });
+
+  it("shows hosted capacity and opens the billing upgrade from this page", () => {
+    authUserRef.current = { id: "user-1" };
+    membersRef.current = [{ user_id: "user-1", role: "owner" }];
+    setSuccessfulEmptyChannelListings();
+    channelInstallationsRef.current.telegram = {
+      configured: true,
+      install_supported: true,
+      installations: [{
+        id: "telegram-1",
+        agent_id: null,
+        status: "active",
+        runtime: {
+          state: "healthy",
+          observedAt: "2026-09-01T00:00:00Z",
+          errorCode: null,
+        },
+      }],
+    };
+    messagingQuotaRef.current = {
+      mode: "managed",
+      limit: 100,
+      used: 10,
+      reserved: 1,
+      reset_at: "2026-10-01T00:00:00Z",
+    };
+    subscriptionSummaryRef.current = {
+      entitlement: {
+        hostedWorkspaceLimit: 2,
+        imInstallationLimit: 1,
+        imAgentTurns: 100,
+      },
+    };
+    configStore.getState().setFeatureFlags({
+      [COMPOSIO_MCP_APPS_FLAG]: true,
+      [BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG]: true,
+    });
+
+    renderTab();
+
+    expect(screen.getByTestId("messaging-quota")).toHaveTextContent(
+      "11/100 Agent turns used",
+    );
+    expect(screen.getByTestId("messaging-quota")).toHaveTextContent("1/1 active");
+    expect(screen.getByTestId("messaging-quota")).toHaveTextContent("up to 2");
+    fireEvent.click(screen.getByRole("button", { name: "Upgrade hosted messaging" }));
+    expect(navigationPush).toHaveBeenCalledWith("/acme/settings?tab=billing");
+  });
+
+  it("does not under-report installation usage while a provider listing is missing", () => {
+    authUserRef.current = { id: "user-1" };
+    membersRef.current = [{ user_id: "user-1", role: "owner" }];
+    setSuccessfulEmptyChannelListings();
+    delete channelInstallationsRef.current.weixin;
+    subscriptionSummaryRef.current = {
+      entitlement: { imInstallationLimit: 10 },
+    };
+    configStore.getState().setFeatureFlags({
+      [COMPOSIO_MCP_APPS_FLAG]: true,
+      [BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG]: true,
+    });
+
+    renderTab();
+
+    expect(screen.getByTestId("messaging-quota")).toHaveTextContent(
+      "Hosted installations: Usage unavailable",
+    );
+  });
+
+  it("surfaces a hosted quota pause even when another installation is healthy", () => {
+    authUserRef.current = { id: "admin-user" };
+    membersRef.current = [{ user_id: "admin-user", role: "owner" }];
+    channelInstallationsRef.current.telegram = {
+      configured: true,
+      install_supported: true,
+      installations: [
+        {
+          id: "telegram-hub",
+          agent_id: null,
+          status: "active",
+          runtime: { state: "healthy", observedAt: null, errorCode: null },
+        },
+        {
+          id: "telegram-agent-paused",
+          agent_id: "agent-1",
+          status: "active",
+          runtime: {
+            state: "offline",
+            observedAt: null,
+            errorCode: "hosted_quota_paused",
+          },
+        },
+      ],
+    };
+
+    renderTab();
+
+    const card = screen.getByTestId("integration-channel-card-telegram");
+    expect(
+      within(card).getByText(
+        "Hosted quota paused — upgrade or disconnect another installation",
+      ),
+    ).toBeInTheDocument();
+    expect(within(card).queryByText("Connected")).toBeNull();
+  });
+
+  it("offers a billing upgrade when only the hosted workspace cap is finite", () => {
+    authUserRef.current = { id: "user-1" };
+    membersRef.current = [{ user_id: "user-1", role: "owner" }];
+    subscriptionSummaryRef.current = {
+      entitlement: { hostedWorkspaceLimit: 2 },
+    };
+    configStore.getState().setFeatureFlags({
+      [COMPOSIO_MCP_APPS_FLAG]: true,
+      [BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG]: true,
+    });
+
+    renderTab();
+
+    fireEvent.click(screen.getByRole("button", { name: "Upgrade hosted messaging" }));
+    expect(navigationPush).toHaveBeenCalledWith("/acme/settings?tab=billing");
+  });
+
+  it("names hosted quota pauses instead of reporting a generic offline runtime", () => {
+    channelInstallationsRef.current.telegram = {
+      configured: true,
+      install_supported: true,
+      installations: [{
+        id: "telegram-paused",
+        agent_id: null,
+        status: "active",
+        runtime: {
+          state: "offline",
+          observedAt: "2026-09-01T00:00:00Z",
+          errorCode: "hosted_quota_paused",
+        },
+      }],
+    };
+
+    renderTab();
+
+    expect(
+      screen.getByText(
+        "Hosted quota paused — upgrade or disconnect another installation",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("opens an actionable setup detail instead of exposing a deployment variable", () => {

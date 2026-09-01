@@ -1431,6 +1431,11 @@ impl TaskEnqueuer for ChannelServices {
                 patchbay_service::task_service::TaskServiceError::ChannelQuotaExceeded {
                     ..
                 } => anyhow::Error::new(patchbay_channel_engine::router::FlushError::QuotaExceeded),
+                patchbay_service::task_service::TaskServiceError::ChannelQuotaUnavailable => {
+                    anyhow::Error::new(
+                        patchbay_channel_engine::router::FlushError::QuotaUnavailable,
+                    )
+                }
                 other => anyhow::Error::new(other),
             })
     }
@@ -1829,6 +1834,7 @@ mod tests {
                 id: None,
                 handler: None,
                 generation: None,
+                runtime_health: None,
             })
             .await
             .unwrap();

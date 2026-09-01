@@ -654,7 +654,7 @@ impl LarkPatcher {
 // ---- DB helpers kept local so the patcher owns its narrow queries ----
 
 async fn get_lark_installation(pool: &PgPool, id: Uuid) -> anyhow::Result<Installation> {
-    let row = patchbay_db::queries::channel::get_channel_installation(
+    let row = patchbay_db::queries::channel::get_channel_installation_for_runtime(
         pool,
         id,
         crate::channel_store::CHANNEL_TYPE_FEISHU,

@@ -78,6 +78,36 @@ impl InstallationStore for PostgresChannelStore {
             })
             .collect())
     }
+
+    async fn claim_runtime_observer(
+        &self,
+        installation_id: Uuid,
+        observer_token: &str,
+    ) -> anyhow::Result<()> {
+        patchbay_db::queries::channel::claim_channel_runtime_observer(
+            &self.pool,
+            installation_id,
+            observer_token,
+        )
+        .await
+    }
+
+    async fn observe_runtime(
+        &self,
+        installation_id: Uuid,
+        observer_token: &str,
+        observation: patchbay_channel::RuntimeHealthObservation,
+    ) -> anyhow::Result<bool> {
+        patchbay_db::queries::channel::observe_channel_runtime(
+            &self.pool,
+            installation_id,
+            observer_token,
+            observation.state.as_str(),
+            observation.error_code,
+            observation.error_summary,
+        )
+        .await
+    }
 }
 
 #[async_trait]

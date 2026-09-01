@@ -8,7 +8,7 @@ use uuid::Uuid;
 use patchbay_channel::{HistoryMessage, HistoryOptions, HistoryPage, HistoryRole};
 use patchbay_db::models::{ChannelChatSessionBinding, ChannelInstallation};
 use patchbay_db::queries::channel::{
-    get_channel_chat_session_binding_by_session, get_channel_installation,
+    get_channel_chat_session_binding_by_session, get_channel_installation_for_runtime,
 };
 
 use crate::client::{ConversationHistoryResponse, Message as SlackMessage, SlackClient};
@@ -60,9 +60,10 @@ impl History {
             get_channel_chat_session_binding_by_session(&self.pool, chat_session_id, TYPE_SLACK)
                 .await?
                 .ok_or(ErrNoSlackSession)?;
-        let inst = get_channel_installation(&self.pool, binding.installation_id, TYPE_SLACK)
-            .await?
-            .ok_or(ErrNoSlackSession)?;
+        let inst =
+            get_channel_installation_for_runtime(&self.pool, binding.installation_id, TYPE_SLACK)
+                .await?
+                .ok_or(ErrNoSlackSession)?;
         if inst.status != "active" {
             return Err(ErrNoSlackSession.into()); // revoked install: nothing to read
         }

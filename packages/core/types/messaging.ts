@@ -28,6 +28,7 @@ export interface MessagingInstallationRuntime {
   state: MessagingRuntimeState;
   observedAt: string | null;
   errorCode: string | null;
+  errorSummary?: string | null;
 }
 
 export type MessagingInstallationSetupMode =

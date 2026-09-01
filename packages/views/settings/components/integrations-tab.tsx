@@ -26,11 +26,14 @@ import { ApiError } from "@patchbay/core/api";
 import { api } from "@patchbay/core/api";
 import { useConfigStore, useFeatureEnabled } from "@patchbay/core/config";
 import {
+  BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG,
   COMPOSIO_MCP_APPS_FLAG,
   LINEAR_INSTALLATION_FOUNDATION_FLAG,
 } from "@patchbay/core/feature-flags";
+import { workspaceSubscriptionSummaryOptions } from "@patchbay/core/billing";
 import { useAuthStore } from "@patchbay/core/auth";
 import { useWorkspaceId } from "@patchbay/core/hooks";
+import { paths, useCurrentWorkspace } from "@patchbay/core/paths";
 import { isMessagingInstallationHealthy } from "@patchbay/core/types";
 import { memberListOptions } from "@patchbay/core/workspace/queries";
 import { larkInstallationsOptions, larkKeys } from "@patchbay/core/lark";
@@ -138,6 +141,16 @@ function hasHealthyAgentInstallation(listing: InstallationListing | undefined) {
   );
 }
 
+function hasHostedQuotaPause(listing: InstallationListing | undefined) {
+  return (
+    listing?.installations.some(
+      (installation) =>
+        installation.status === "active" &&
+        installation.runtime?.errorCode === "hosted_quota_paused",
+    ) ?? false
+  );
+}
+
 function ConnectionStatus({ query }: { query: IntegrationQuery }) {
   const { t } = useT("settings");
   if (query.isLoading) {
@@ -163,6 +176,15 @@ function ConnectionStatus({ query }: { query: IntegrationQuery }) {
       </div>
     );
   }
+  // A healthy Hub/Agent can coexist with a quota-paused installation. Surface
+  // the quota pause before aggregate success states so the row remains honest.
+  if (hasHostedQuotaPause(query.data)) {
+    return (
+      <Badge variant="outline">
+        {t(($) => $.page.integrations_runtime_quota_paused)}
+      </Badge>
+    );
+  }
   if (query.data.installations.some((installation) => installation.agent_id === null && isHealthy(installation))) {
     return (
       <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
@@ -182,13 +204,24 @@ function ConnectionStatus({ query }: { query: IntegrationQuery }) {
   ) {
     return <Badge variant="outline">{t(($) => $.page.integrations_experimental)}</Badge>;
   }
-  if (
-    query.data.installations.some(
-      (installation) =>
-        installation.status === "active" && !isHealthy(installation),
-    )
-  ) {
-    return <Badge variant="outline">{t(($) => $.page.integrations_status)}</Badge>;
+  const activeUnhealthy = query.data.installations.find(
+    (installation) => installation.status === "active" && !isHealthy(installation),
+  );
+  if (activeUnhealthy) {
+    const runtime = activeUnhealthy.runtime;
+    let label = t(($) => $.page.integrations_status);
+    if (runtime?.state === "starting") {
+      label = t(($) => $.page.integrations_runtime_starting);
+    } else if (runtime?.errorCode === "configuration_invalid") {
+      label = t(($) => $.page.integrations_runtime_configuration_error);
+    } else if (runtime?.state === "offline") {
+      label = t(($) => $.page.integrations_runtime_offline);
+    } else if (runtime?.state === "degraded") {
+      label = t(($) => $.page.integrations_runtime_degraded);
+    } else if (runtime?.state === "error") {
+      label = t(($) => $.page.integrations_runtime_error);
+    }
+    return <Badge variant="outline">{label}</Badge>;
   }
   const nonActive = query.data.installations.find((installation) => installation.status !== "active");
   if (nonActive) {
@@ -339,6 +372,7 @@ function HubAction({
 export function IntegrationsTab({ standalone = false }: { standalone?: boolean } = {}) {
   const { t } = useT("settings");
   const navigation = useNavigation();
+  const workspace = useCurrentWorkspace();
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
   const [managedChannel, setManagedChannel] = useState<HubIntegrationChannel | null>(null);
@@ -395,6 +429,7 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
 
   const composioEnabled = useFeatureEnabled(COMPOSIO_MCP_APPS_FLAG, false);
   const linearEnabled = useFeatureEnabled(LINEAR_INSTALLATION_FOUNDATION_FLAG, false);
+  const billingEnabled = useFeatureEnabled(BILLING_WORKSPACE_SUBSCRIPTIONS_FLAG, false);
   const composioToolkits = useQuery({
     ...composioToolkitsOptions(),
     enabled: composioEnabled,
@@ -455,7 +490,42 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
       ? messagingQuota.data.used + (messagingQuota.data.reserved ?? 0)
       : null;
 
+  const subscriptionSummary = useQuery({
+    ...workspaceSubscriptionSummaryOptions(wsId),
+    enabled: !!wsId && billingEnabled && messaging?.mode === "managed",
+  });
+
   const listings = { lark, slack, dingtalk, wecom, telegram, weixin };
+  // A numeric aggregate is only meaningful once every provider listing has
+  // settled successfully. Do not under-report usage while one query is still
+  // loading, failed, or missing its capability response.
+  const installationQueriesReady = Object.values(listings).every(
+    (query) => !query.isLoading && !query.isError && query.data !== undefined,
+  );
+  const activeInstallationCount = installationQueriesReady
+    ? Object.values(listings).reduce(
+        (count, query) =>
+          count +
+          (query.data?.installations.filter(
+            (installation) => installation.status === "active",
+          ).length ?? 0),
+        0,
+      )
+    : null;
+  const hostedEntitlement = subscriptionSummary.data?.entitlement;
+  const installationLimit = hostedEntitlement?.imInstallationLimit;
+  const workspaceLimit = hostedEntitlement?.hostedWorkspaceLimit;
+  const canOfferUpgrade = Boolean(
+    billingEnabled &&
+    canManage &&
+    workspace?.slug &&
+    ((typeof installationLimit === "number" && installationLimit >= 0) ||
+      (typeof workspaceLimit === "number" && workspaceLimit >= 0) ||
+      (typeof hostedEntitlement?.imAgentTurns === "number" &&
+        hostedEntitlement.imAgentTurns >= 0) ||
+      (messagingQuota.data?.mode === "managed" &&
+        messagingQuota.data.limit !== null)),
+  );
   const managedListing = managedChannel ? listings[managedChannel].data : undefined;
   const managedChannelNeedsSetup = Boolean(
     managedChannel && !hasActiveInstallation(managedListing),
@@ -551,35 +621,86 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
           </p>
           {messaging?.mode === "managed" ? (
             <div
-              className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted-foreground"
+              className="mt-3 space-y-1.5 text-caption text-muted-foreground"
               data-testid="messaging-quota"
             >
-              <span className="font-medium text-foreground">
-                {t(($) => $.page.integrations_quota_title)}
-              </span>
-              {messagingQuota.isLoading ? (
-                <span>{t(($) => $.page.integrations_quota_loading)}</span>
-              ) : messagingQuota.isError || !messagingQuota.data ? (
-                <span>{t(($) => $.page.integrations_quota_unavailable)}</span>
-              ) : messagingQuota.data.mode === "unavailable" ? (
-                <span>{t(($) => $.page.integrations_quota_unavailable)}</span>
-              ) : messagingQuota.data.mode === "unlimited" && messagingQuota.data.limit === null ? (
-                <span>{t(($) => $.page.integrations_quota_unlimited)}</span>
-              ) : messagingQuota.data.mode === "managed" &&
-                messagingQuota.data.limit !== null &&
-                quotaConsumed !== null ? (
-                <span>
-                  {t(($) => $.page.integrations_quota_used, {
-                    used: quotaConsumed,
-                    limit: messagingQuota.data.limit,
-                  })}
-                  {quotaResetAt
-                    ? ` · ${t(($) => $.page.integrations_quota_resets, { date: quotaResetAt })}`
-                    : null}
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="font-medium text-foreground">
+                  {t(($) => $.page.integrations_quota_title)}
                 </span>
-              ) : (
-                <span>{t(($) => $.page.integrations_quota_unavailable)}</span>
-              )}
+                {messagingQuota.isLoading ? (
+                  <span>{t(($) => $.page.integrations_quota_loading)}</span>
+                ) : messagingQuota.isError || !messagingQuota.data ? (
+                  <span>{t(($) => $.page.integrations_quota_unavailable)}</span>
+                ) : messagingQuota.data.mode === "unavailable" ? (
+                  <span>{t(($) => $.page.integrations_quota_unavailable)}</span>
+                ) : messagingQuota.data.mode === "unlimited" && messagingQuota.data.limit === null ? (
+                  <span>{t(($) => $.page.integrations_quota_unlimited)}</span>
+                ) : messagingQuota.data.mode === "managed" &&
+                  messagingQuota.data.limit !== null &&
+                  quotaConsumed !== null ? (
+                  <span>
+                    {t(($) => $.page.integrations_quota_used, {
+                      used: quotaConsumed,
+                      limit: messagingQuota.data.limit,
+                    })}
+                    {quotaResetAt
+                      ? ` · ${t(($) => $.page.integrations_quota_resets, { date: quotaResetAt })}`
+                      : null}
+                  </span>
+                ) : (
+                  <span>{t(($) => $.page.integrations_quota_unavailable)}</span>
+                )}
+              </div>
+              {billingEnabled ? (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                  <span>
+                    {t(($) => $.page.integrations_installation_quota)}:{" "}
+                    {subscriptionSummary.isLoading
+                      ? t(($) => $.page.integrations_quota_loading)
+                      : subscriptionSummary.isError || !hostedEntitlement
+                        ? t(($) => $.page.integrations_quota_unavailable)
+                        : installationLimit === null
+                          ? t(($) => $.page.integrations_quota_unlimited)
+                          : typeof installationLimit === "number" &&
+                              activeInstallationCount !== null
+                            ? t(($) => $.page.integrations_installation_quota_used, {
+                                used: activeInstallationCount,
+                                limit: installationLimit,
+                              })
+                            : t(($) => $.page.integrations_quota_unavailable)}
+                  </span>
+                  <span>
+                    {t(($) => $.page.integrations_workspace_quota)}:{" "}
+                    {subscriptionSummary.isLoading
+                      ? t(($) => $.page.integrations_quota_loading)
+                      : subscriptionSummary.isError || !hostedEntitlement
+                        ? t(($) => $.page.integrations_quota_unavailable)
+                        : workspaceLimit === null
+                          ? t(($) => $.page.integrations_quota_unlimited)
+                          : typeof workspaceLimit === "number"
+                            ? t(($) => $.page.integrations_workspace_quota_limit, {
+                                limit: workspaceLimit,
+                              })
+                            : t(($) => $.page.integrations_quota_unavailable)}
+                  </span>
+                  {canOfferUpgrade && workspace ? (
+                    <Button
+                      type="button"
+                      variant="link"
+                      size="sm"
+                      className="h-auto p-0 text-caption"
+                      onClick={() =>
+                        navigation.push(
+                          `${paths.workspace(workspace.slug).settings()}?tab=billing`,
+                        )
+                      }
+                    >
+                      {t(($) => $.page.integrations_upgrade)}
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </div>

@@ -16,6 +16,7 @@ pub struct WeixinChannel {
     client: Client,
     handler: InboundHandler,
     pool: sqlx::PgPool,
+    runtime_health: Option<patchbay_channel::RuntimeHealthReporter>,
 }
 
 #[async_trait]
@@ -32,6 +33,7 @@ impl Channel for WeixinChannel {
         )
         .await?
         .unwrap_or_default();
+        let mut health_reported = false;
         loop {
             let response = tokio::select! {
                 _ = ctx.cancelled() => return Ok(()),
@@ -39,6 +41,12 @@ impl Channel for WeixinChannel {
             };
             match response {
                 Ok(response) => {
+                    if !health_reported {
+                        if let Some(reporter) = &self.runtime_health {
+                            reporter.healthy().await;
+                        }
+                        health_reported = true;
+                    }
                     let next_cursor = response.get_updates_buf;
                     for raw in response.msgs {
                         if let Some(message) = inbound_from_message(&raw, &self.bot_id) {
@@ -136,6 +144,7 @@ pub fn factory(deps: ChannelDeps) -> Factory {
                 client: Client::new(&credentials.base_url, &credentials.bot_token)?,
                 handler,
                 pool,
+                runtime_health: config.runtime_health,
             }) as BuiltChannel)
         })
     })

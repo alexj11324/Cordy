@@ -1095,7 +1095,7 @@ impl Outbound {
     ) -> anyhow::Result<Option<RuntimeTarget>> {
         use patchbay_db::queries::agent::get_agent_task;
         use patchbay_db::queries::channel::{
-            get_channel_chat_session_binding_by_session, get_channel_installation,
+            get_channel_chat_session_binding_by_session, get_channel_installation_for_runtime,
         };
 
         let Some(task_id) = task_id_from_event(event) else {
@@ -1124,9 +1124,12 @@ impl Outbound {
         else {
             return Ok(None);
         };
-        let Some(installation) =
-            get_channel_installation(&self.pool, binding.installation_id, crate::TYPE_TELEGRAM)
-                .await?
+        let Some(installation) = get_channel_installation_for_runtime(
+            &self.pool,
+            binding.installation_id,
+            crate::TYPE_TELEGRAM,
+        )
+        .await?
         else {
             return Ok(None);
         };

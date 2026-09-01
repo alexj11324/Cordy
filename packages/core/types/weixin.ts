@@ -39,6 +39,8 @@ export type BeginWeixinInstallResponse = {
 export type WeixinInstallStatusResponse = {
   status: string;
   installation_id?: string;
+  /** Stable diagnostic code when the provider reports a non-success state. */
+  errorCode?: string;
 };
 
 export type RedeemWeixinBindingTokenResponse = {

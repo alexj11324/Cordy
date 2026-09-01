@@ -8,8 +8,6 @@
 //! row commits, its turn remains usage even if the run later fails or is
 //! cancelled; only the pre-commit reservation is released by rollback.
 
-use std::env;
-
 use chrono::{DateTime, Datelike, TimeZone, Utc};
 use sqlx::PgConnection;
 use uuid::Uuid;
@@ -84,17 +82,11 @@ impl ChannelQuotaMode {
         if mode != "managed" {
             return Self::Disabled;
         }
-        match env::var("PATCHBAY_IM_AGENT_TURNS_LIMIT") {
-            Ok(value) if value.trim().eq_ignore_ascii_case("unlimited") => Self::Unlimited,
-            Ok(value) => value
-                .trim()
-                .parse::<i64>()
-                .ok()
-                .filter(|limit| *limit >= 0)
-                .map(Self::Limited)
-                .unwrap_or(Self::Limited(100)),
-            Err(_) => Self::Limited(100),
-        }
+        // The numeric value is the product's Free-plan default, not an
+        // admission authority. Managed admission still requires a trusted
+        // Cloud entitlement decision; Pro unlimited is represented by a
+        // policy `limit: null` rather than a process-local environment knob.
+        Self::Limited(100)
     }
 
     pub const fn limit(self) -> Option<i64> {

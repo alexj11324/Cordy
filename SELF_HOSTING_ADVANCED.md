@@ -32,7 +32,7 @@ Patchbay supports two email backends. `SMTP_HOST` takes priority when set; other
 | Variable | Description |
 |----------|-------------|
 | `RESEND_API_KEY` | Your Resend API key |
-| `RESEND_FROM_EMAIL` | Sender email address (default: `noreply@patchbay.ai`) |
+| `RESEND_FROM_EMAIL` | Sender email address (default placeholder: `noreply@example.com`; replace it with a verified sender before enabling email) |
 
 #### Option B: SMTP relay (for self-hosted / on-premise deployments)
 
