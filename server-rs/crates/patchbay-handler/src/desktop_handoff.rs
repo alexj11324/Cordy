@@ -17,7 +17,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::post;
 use axum::Router;
 use base64::Engine;
-use patchbay_db::queries::user;
+use patchbay_db::queries::{guest, user};
 use rand::RngCore;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
@@ -33,6 +33,7 @@ const CODE_TTL: Duration = Duration::from_secs(CODE_TTL_SECS as u64);
 const REDIS_TIMEOUT: Duration = Duration::from_millis(250);
 const REDIS_PREFIX: &str = "patchbay:auth:desktop:";
 const ATTEMPT_REDIS_PREFIX: &str = "patchbay:auth:desktop-google-attempt:";
+const INITIATE_PATH: &str = "/api/desktop-google/initiate";
 const ATTEMPT_PATH: &str = "/api/desktop-google/attempt";
 const COMPLETE_PATH: &str = "/api/desktop-google/complete";
 const BROKER_AUTH_HEADER: &str = "x-patchbay-desktop-broker-auth";
@@ -50,7 +51,7 @@ return string.sub(value, separator + 1)
 const REDIS_CONSUME_ATTEMPT_SCRIPT: &str = r#"
 local value = redis.call("GET", KEYS[1])
 if not value then return "" end
-if value ~= ARGV[1] then return "__mismatch__" end
+if value ~= ARGV[1] and (ARGV[2] == "" or value ~= ARGV[2]) then return "__mismatch__" end
 redis.call("DEL", KEYS[1])
 return "1"
 "#;
@@ -104,6 +105,8 @@ struct LocalGrant {
 #[derive(Clone)]
 struct LocalAttempt {
     code_challenge: String,
+    callback_protocol: String,
+    guest_token_hash: Option<String>,
     started_at_ms: i64,
     generation: String,
     expires_at: Instant,
@@ -111,6 +114,8 @@ struct LocalAttempt {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DesktopGoogleAttempt {
+    callback_protocol: String,
+    guest_token_hash: Option<String>,
     started_at_ms: i64,
     generation: String,
 }
@@ -235,9 +240,23 @@ impl DesktopHandoffTokens {
         &self,
         state: &str,
         code_challenge: &str,
+        callback_protocol: &str,
+    ) -> Result<Option<DesktopGoogleAttempt>, DesktopHandoffStoreError> {
+        self.register_google_attempt_with_guest(state, code_challenge, callback_protocol, None)
+            .await
+    }
+
+    pub async fn register_google_attempt_with_guest(
+        &self,
+        state: &str,
+        code_challenge: &str,
+        callback_protocol: &str,
+        guest_token_hash: Option<&str>,
     ) -> Result<Option<DesktopGoogleAttempt>, DesktopHandoffStoreError> {
         let key = attempt_redis_key(state);
         let attempt = DesktopGoogleAttempt {
+            callback_protocol: callback_protocol.to_string(),
+            guest_token_hash: guest_token_hash.map(str::to_owned),
             started_at_ms: unix_epoch_ms()?,
             generation: generate_attempt_generation(),
         };
@@ -280,6 +299,8 @@ impl DesktopHandoffTokens {
         if let Some(existing) = attempts.get(&key) {
             return Ok(
                 (existing.code_challenge == code_challenge).then(|| DesktopGoogleAttempt {
+                    callback_protocol: existing.callback_protocol.clone(),
+                    guest_token_hash: existing.guest_token_hash.clone(),
                     started_at_ms: existing.started_at_ms,
                     generation: existing.generation.clone(),
                 }),
@@ -289,6 +310,8 @@ impl DesktopHandoffTokens {
             key,
             LocalAttempt {
                 code_challenge: code_challenge.to_string(),
+                callback_protocol: callback_protocol.to_string(),
+                guest_token_hash: guest_token_hash.map(str::to_owned),
                 started_at_ms: attempt.started_at_ms,
                 generation: attempt.generation.clone(),
                 expires_at: Instant::now() + CODE_TTL,
@@ -324,6 +347,8 @@ impl DesktopHandoffTokens {
             .get(&hash_code(state))
             .filter(|attempt| attempt.code_challenge == code_challenge)
             .map(|attempt| DesktopGoogleAttempt {
+                callback_protocol: attempt.callback_protocol.clone(),
+                guest_token_hash: attempt.guest_token_hash.clone(),
                 started_at_ms: attempt.started_at_ms,
                 generation: attempt.generation.clone(),
             }))
@@ -337,14 +362,16 @@ impl DesktopHandoffTokens {
     ) -> Result<bool, DesktopHandoffStoreError> {
         if let Some(connection) = self.redis.clone() {
             let mut connection = connection;
-            let expected = encode_attempt(code_challenge, expected);
+            let expected_payload = encode_attempt(code_challenge, expected);
+            let legacy_expected = encode_legacy_attempt(code_challenge, expected);
             let value = tokio::time::timeout(
                 REDIS_TIMEOUT,
                 redis::cmd("EVAL")
                     .arg(REDIS_CONSUME_ATTEMPT_SCRIPT)
                     .arg(1)
                     .arg(attempt_redis_key(state))
-                    .arg(expected)
+                    .arg(expected_payload)
+                    .arg(legacy_expected.unwrap_or_default())
                     .query_async::<String>(&mut connection),
             )
             .await
@@ -363,6 +390,8 @@ impl DesktopHandoffTokens {
             return Ok(false);
         };
         if attempt.code_challenge != code_challenge
+            || attempt.callback_protocol != expected.callback_protocol
+            || attempt.guest_token_hash != expected.guest_token_hash
             || attempt.started_at_ms != expected.started_at_ms
             || attempt.generation != expected.generation
         {
@@ -408,10 +437,27 @@ fn unix_epoch_ms() -> Result<i64, DesktopHandoffStoreError> {
 }
 
 fn encode_attempt(code_challenge: &str, attempt: &DesktopGoogleAttempt) -> String {
-    format!(
-        "{code_challenge}|{}|{}",
-        attempt.started_at_ms, attempt.generation
-    )
+    if let Some(legacy) = encode_legacy_attempt(code_challenge, attempt) {
+        return legacy;
+    }
+    let mut value = format!(
+        "{code_challenge}|{}|{}|{}",
+        attempt.started_at_ms, attempt.generation, attempt.callback_protocol
+    );
+    if let Some(guest_token_hash) = attempt.guest_token_hash.as_deref() {
+        value.push('|');
+        value.push_str(guest_token_hash);
+    }
+    value
+}
+
+fn encode_legacy_attempt(code_challenge: &str, attempt: &DesktopGoogleAttempt) -> Option<String> {
+    (attempt.callback_protocol == "patchbay" && attempt.guest_token_hash.is_none()).then(|| {
+        format!(
+            "{code_challenge}|{}|{}",
+            attempt.started_at_ms, attempt.generation
+        )
+    })
 }
 
 fn parse_attempt(value: &str, code_challenge: &str) -> Option<DesktopGoogleAttempt> {
@@ -419,10 +465,27 @@ fn parse_attempt(value: &str, code_challenge: &str) -> Option<DesktopGoogleAttem
     let stored_challenge = parts.next()?;
     let started_at_ms = parts.next()?.parse::<i64>().ok()?;
     let generation = parts.next()?;
-    if stored_challenge != code_challenge || generation.is_empty() || parts.next().is_some() {
+    let remaining = parts.collect::<Vec<_>>();
+    let (callback_protocol, guest_token_hash) = match remaining.as_slice() {
+        // Before callback protocols were persisted, the Redis value ended at
+        // the generation. Keep those in-flight attempts redeemable during a
+        // rolling deploy and use the packaged production scheme as the safe
+        // default.
+        [] => ("patchbay", None),
+        [callback_protocol] => (*callback_protocol, None),
+        [callback_protocol, guest_token_hash] => (*callback_protocol, Some(*guest_token_hash)),
+        _ => return None,
+    };
+    if stored_challenge != code_challenge
+        || generation.is_empty()
+        || !valid_callback_protocol(callback_protocol)
+        || guest_token_hash.is_some_and(|value| !valid_token_hash(value))
+    {
         return None;
     }
     Some(DesktopGoogleAttempt {
+        callback_protocol: callback_protocol.to_string(),
+        guest_token_hash: guest_token_hash.map(str::to_owned),
         started_at_ms,
         generation: generation.to_string(),
     })
@@ -458,8 +521,54 @@ fn valid_pkce_value(value: &str) -> bool {
         })
 }
 
+fn valid_callback_protocol(value: &str) -> bool {
+    if value == "patchbay" || value == "patchbay-canary" {
+        return true;
+    }
+    let Some(suffix) = value.strip_prefix("patchbay-canary-") else {
+        return false;
+    };
+    !suffix.is_empty()
+        && suffix.len() <= 48
+        && suffix
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+        && suffix
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphanumeric)
+        && suffix
+            .as_bytes()
+            .last()
+            .is_some_and(u8::is_ascii_alphanumeric)
+}
+
+fn callback_protocol_allowed(
+    is_production: bool,
+    guest_bootstrap: bool,
+    callback_protocol: &str,
+) -> bool {
+    !is_production
+        || callback_protocol == "patchbay"
+        // Hosted development uses an isolated canary scheme. It is accepted
+        // only for the short-lived, server-validated guest bootstrap bearer;
+        // formal production sessions remain pinned to the packaged scheme.
+        || (guest_bootstrap && callback_protocol.starts_with("patchbay-canary"))
+}
+
+fn valid_token_hash(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
 #[derive(Debug, Deserialize)]
 struct AttemptRequest {
+    code_challenge: String,
+    state: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct InitiateRequest {
+    callback_protocol: String,
     code_challenge: String,
     state: String,
 }
@@ -474,6 +583,10 @@ pub fn google_router() -> Router<HandlerState> {
     Router::new()
         .route(ATTEMPT_PATH, post(register_google_attempt))
         .route(COMPLETE_PATH, post(complete_google_attempt))
+}
+
+pub fn authenticated_initiate_router() -> Router<HandlerState> {
+    Router::new().route(INITIATE_PATH, post(initiate_google_attempt))
 }
 
 pub fn redeem_router() -> Router<HandlerState> {
@@ -592,6 +705,80 @@ fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
         == 0
 }
 
+async fn initiate_google_attempt(
+    State(state): State<HandlerState>,
+    headers: HeaderMap,
+    Json(request): Json<InitiateRequest>,
+) -> Response {
+    if headers
+        .get("x-user-id")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| Uuid::parse_str(value).ok())
+        .is_none()
+    {
+        return error_response(StatusCode::UNAUTHORIZED, "desktop session is required");
+    }
+    let guest_bootstrap = bearer_token(&headers).is_some_and(|token| {
+        token.starts_with("pbg_")
+            && headers
+                .get("x-guest-user")
+                .and_then(|value| value.to_str().ok())
+                == Some("true")
+    });
+    if !valid_pkce_value(&request.code_challenge)
+        || !valid_pkce_value(&request.state)
+        || !valid_callback_protocol(&request.callback_protocol)
+        || !callback_protocol_allowed(
+            state.auth_settings.is_production(),
+            guest_bootstrap,
+            &request.callback_protocol,
+        )
+    {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "invalid desktop Google OAuth initiation",
+        );
+    }
+    let guest_token_hash = bearer_token(&headers)
+        .filter(|token| guest_bootstrap && token.starts_with("pbg_"))
+        .map(patchbay_auth::jwt::hash_token);
+    if let Some(guest_token_hash) = guest_token_hash.as_deref() {
+        if let Err(error) = guest::set_handoff_expiry_by_token_hash(
+            &state.pool,
+            guest_token_hash,
+            chrono::Utc::now() + chrono::Duration::seconds(CODE_TTL_SECS),
+        )
+        .await
+        {
+            tracing::warn!(%error, "desktop Google guest expiry could not be armed");
+            return error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "desktop Google guest session is temporarily unavailable",
+            );
+        }
+    }
+    match state
+        .desktop_handoff_tokens
+        .register_google_attempt_with_guest(
+            &request.state,
+            &request.code_challenge,
+            &request.callback_protocol,
+            guest_token_hash.as_deref(),
+        )
+        .await
+    {
+        Ok(Some(_)) => Json(serde_json::json!({ "registered": true })).into_response(),
+        Ok(None) => error_response(
+            StatusCode::CONFLICT,
+            "desktop Google OAuth binding is already in use",
+        ),
+        Err(_) => error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "desktop Google OAuth is temporarily unavailable",
+        ),
+    }
+}
+
 async fn register_google_attempt(
     State(state): State<HandlerState>,
     Json(request): Json<AttemptRequest>,
@@ -604,7 +791,7 @@ async fn register_google_attempt(
     }
     match state
         .desktop_handoff_tokens
-        .register_google_attempt(&request.state, &request.code_challenge)
+        .register_google_attempt(&request.state, &request.code_challenge, "patchbay")
         .await
     {
         Ok(Some(_)) => Json(serde_json::json!({ "registered": true })).into_response(),
@@ -685,6 +872,17 @@ async fn complete_google_attempt(
         Ok(current) => current,
         Err(response) => return response,
     };
+    if let Some(guest_token_hash) = attempt.guest_token_hash.as_deref() {
+        if let Err(error) =
+            guest::claim_active_by_token_hash(&state.pool, guest_token_hash, current.id).await
+        {
+            tracing::warn!(%error, user_id = %current.id, "desktop Google guest claim failed");
+            return error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "desktop Google guest session is temporarily unavailable",
+            );
+        }
+    }
     match state
         .desktop_handoff_tokens
         .consume_google_attempt(&request.state, &request.code_challenge, &attempt)
@@ -709,7 +907,11 @@ async fn complete_google_attempt(
         .issue(current.id, &request.code_challenge)
         .await
     {
-        Ok(code) => Json(serde_json::json!({ "code": code })).into_response(),
+        Ok(code) => Json(serde_json::json!({
+            "callback_protocol": attempt.callback_protocol,
+            "code": code,
+        }))
+        .into_response(),
         Err(_) => error_response(
             StatusCode::SERVICE_UNAVAILABLE,
             "desktop handoff is temporarily unavailable",
@@ -777,6 +979,12 @@ mod tests {
         HandlerState::new(pool, patchbay_auth::pat_cache::PatCache::disabled(), None)
     }
 
+    fn handler_state_for_environment(app_env: &str) -> HandlerState {
+        let mut config = patchbay_config::Config::default();
+        config.server.app_env = Some(app_env.to_string());
+        handler_state().with_auth_settings(crate::auth::AuthSettings::from_config(&config))
+    }
+
     struct RejectFresh;
 
     #[async_trait]
@@ -817,21 +1025,21 @@ mod tests {
         let state = "s".repeat(43);
         let challenge = "c".repeat(43);
         let attempt = store
-            .register_google_attempt(&state, &challenge)
+            .register_google_attempt(&state, &challenge, "patchbay-canary-test-123")
             .await
             .unwrap()
             .unwrap();
 
         assert_eq!(
             store
-                .register_google_attempt(&state, &challenge)
+                .register_google_attempt(&state, &challenge, "patchbay")
                 .await
                 .unwrap(),
             Some(attempt.clone())
         );
         assert_eq!(
             store
-                .register_google_attempt(&state, &"x".repeat(43))
+                .register_google_attempt(&state, &"x".repeat(43), "patchbay")
                 .await
                 .unwrap(),
             None
@@ -847,18 +1055,86 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn local_google_attempts_preserve_bootstrap_guest_binding() {
+        let store = DesktopHandoffTokens::new();
+        let state = "s".repeat(43);
+        let challenge = "c".repeat(43);
+        let guest_token_hash = "a".repeat(64);
+        let attempt = store
+            .register_google_attempt_with_guest(
+                &state,
+                &challenge,
+                "patchbay",
+                Some(&guest_token_hash),
+            )
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(
+            attempt.guest_token_hash.as_deref(),
+            Some(guest_token_hash.as_str())
+        );
+        assert_eq!(
+            store
+                .get_google_attempt(&state, &challenge)
+                .await
+                .unwrap()
+                .and_then(|attempt| attempt.guest_token_hash),
+            Some(guest_token_hash)
+        );
+    }
+
+    #[test]
+    fn redis_attempt_serialization_preserves_optional_guest_binding() {
+        let guest_token_hash = "a".repeat(64);
+        let attempt = DesktopGoogleAttempt {
+            callback_protocol: "patchbay-canary-test-123".into(),
+            guest_token_hash: Some(guest_token_hash.clone()),
+            started_at_ms: 123,
+            generation: "generation".into(),
+        };
+        let challenge = "c".repeat(43);
+        let encoded = encode_attempt(&challenge, &attempt);
+
+        assert_eq!(parse_attempt(&encoded, &challenge), Some(attempt));
+        assert_eq!(
+            parse_attempt(&format!("{challenge}|123|generation|patchbay"), &challenge,)
+                .and_then(|attempt| attempt.guest_token_hash),
+            None
+        );
+        assert_eq!(
+            parse_attempt(&format!("{challenge}|123|generation"), &challenge,)
+                .map(|attempt| attempt.callback_protocol),
+            Some("patchbay".into())
+        );
+        let production_attempt = DesktopGoogleAttempt {
+            callback_protocol: "patchbay".into(),
+            guest_token_hash: None,
+            started_at_ms: 123,
+            generation: "generation".into(),
+        };
+        assert_eq!(
+            encode_attempt(&challenge, &production_attempt),
+            format!("{challenge}|123|generation")
+        );
+    }
+
+    #[tokio::test]
     async fn stale_completion_cannot_consume_a_re_registered_google_attempt() {
         let store = DesktopHandoffTokens::new();
         let state = "s".repeat(43);
         let challenge = "c".repeat(43);
         let attempt = store
-            .register_google_attempt(&state, &challenge)
+            .register_google_attempt(&state, &challenge, "patchbay")
             .await
             .unwrap()
             .unwrap();
         let replacement = DesktopGoogleAttempt {
             // Even an ABA replacement registered in the same millisecond has
             // a distinct server-generated generation.
+            callback_protocol: attempt.callback_protocol.clone(),
+            guest_token_hash: attempt.guest_token_hash.clone(),
             started_at_ms: attempt.started_at_ms,
             generation: generate_attempt_generation(),
         };
@@ -870,6 +1146,8 @@ mod tests {
                 hash_code(&state),
                 LocalAttempt {
                     code_challenge: challenge.clone(),
+                    callback_protocol: replacement.callback_protocol.clone(),
+                    guest_token_hash: replacement.guest_token_hash.clone(),
                     started_at_ms: replacement.started_at_ms,
                     generation: replacement.generation.clone(),
                     expires_at: Instant::now() + CODE_TTL,
@@ -890,12 +1168,57 @@ mod tests {
             .unwrap());
     }
 
+    #[tokio::test]
+    async fn production_initiation_allows_canary_only_for_guest_bootstrap() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-user-id", Uuid::new_v4().to_string().parse().unwrap());
+        let request = |callback_protocol: &str| InitiateRequest {
+            state: "s".repeat(43),
+            code_challenge: "c".repeat(43),
+            callback_protocol: callback_protocol.to_string(),
+        };
+
+        let rejected = initiate_google_attempt(
+            State(handler_state_for_environment(" Production ")),
+            headers.clone(),
+            Json(request("patchbay-canary-login-fix-123")),
+        )
+        .await;
+        assert_eq!(rejected.status(), StatusCode::BAD_REQUEST);
+
+        assert!(callback_protocol_allowed(
+            true,
+            true,
+            "patchbay-canary-login-fix-123"
+        ));
+
+        let accepted = initiate_google_attempt(
+            State(handler_state_for_environment("production")),
+            headers.clone(),
+            Json(request("patchbay")),
+        )
+        .await;
+        assert_eq!(accepted.status(), StatusCode::OK);
+
+        let local_canary = initiate_google_attempt(
+            State(handler_state_for_environment("development")),
+            headers,
+            Json(request("patchbay-canary-login-fix-123")),
+        )
+        .await;
+        assert_eq!(local_canary.status(), StatusCode::OK);
+    }
+
     #[test]
     fn validates_only_url_safe_handoff_values() {
         assert!(valid_code("pbd_abc-123", CODE_PREFIX));
         assert!(!valid_code("jwt-token", CODE_PREFIX));
         assert!(valid_pkce_value(&"a".repeat(43)));
         assert!(!valid_pkce_value("short"));
+        assert!(valid_callback_protocol("patchbay"));
+        assert!(valid_callback_protocol("patchbay-canary-login-fix-123"));
+        assert!(!valid_callback_protocol("patchbay-canary-attacker!"));
+        assert!(!valid_callback_protocol("evil-app"));
     }
 
     #[test]
@@ -1028,7 +1351,7 @@ mod tests {
         state.clerk_auth = Some(Arc::new(RejectFresh));
         state
             .desktop_handoff_tokens
-            .register_google_attempt(&state_value, &challenge)
+            .register_google_attempt(&state_value, &challenge, "patchbay")
             .await
             .unwrap();
         let app = google_router().with_state(state);

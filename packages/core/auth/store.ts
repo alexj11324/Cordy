@@ -41,6 +41,8 @@ export interface AuthState {
   verifyCode: (email: string, code: string) => Promise<User>;
   loginWithClerk: (sessionToken: string, signal?: AbortSignal) => Promise<User>;
   createGuestSession: () => Promise<User>;
+  /** Starts a guest bearer for a desktop OAuth handoff without publishing it as the active UI user. */
+  createGuestSessionForHandoff: () => Promise<User>;
   loginWithToken: (token: string) => Promise<User>;
   /** Clears local auth state and resolves after a cookie session is revoked. */
   logout: (options?: AuthLogoutOptions) => Promise<void>;
@@ -50,6 +52,14 @@ export interface AuthState {
 
 export function createAuthStore(options: AuthStoreOptions) {
   const { api, storage, onLogin, onLogout, cookieAuth } = options;
+
+  const requestGuestSession = async () => {
+    const { token, user } = await api.createGuestSession();
+    if (user.is_guest !== true) {
+      throw new Error("server did not return a guest session");
+    }
+    return { token, user };
+  };
 
   return create<AuthState>((set, get) => ({
     user: null,
@@ -105,10 +115,7 @@ export function createAuthStore(options: AuthStoreOptions) {
     },
 
     createGuestSession: async () => {
-      const { token, user } = await api.createGuestSession();
-      if (user.is_guest !== true) {
-        throw new Error("server did not return a guest session");
-      }
+      const { token, user } = await requestGuestSession();
       // Guest auth is still token auth: the user is real and the bearer is
       // required for every subsequent workspace/onboarding API call.
       storage.setItem("patchbay_token", token);
@@ -116,6 +123,14 @@ export function createAuthStore(options: AuthStoreOptions) {
       onLogin?.();
       identifyAnalytics(user.id, { email: user.email, name: user.name });
       set({ user, isLoading: false, status: "authenticated" });
+      return user;
+    },
+    createGuestSessionForHandoff: async () => {
+      const { token, user } = await requestGuestSession();
+      // The bootstrap bearer only authenticates the one desktop initiation.
+      // Keep it in the in-memory API client so the renderer remains on the
+      // login page, and let the server claim it when Google completes.
+      api.setToken(token);
       return user;
     },
     loginWithToken: async (token: string) => {
