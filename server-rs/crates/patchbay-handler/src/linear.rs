@@ -686,7 +686,17 @@ struct ResolveLinearConflictRequest {
     resolution: String,
     /// `None` means the property was omitted; `Some(None)` is an explicit
     /// JSON null and is valid for nullable fields such as description.
+    #[serde(default, deserialize_with = "deserialize_optional_nullable_value")]
     manual_value: Option<Option<Value>>,
+}
+
+fn deserialize_optional_nullable_value<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<Value>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Some(Option::<Value>::deserialize(deserializer)?))
 }
 
 #[derive(Debug, Deserialize)]
@@ -4429,6 +4439,28 @@ mod tests {
             validate_webhook(Some(secret), &headers, body, timestamp),
             Err(WebhookValidationError::TimestampMismatch)
         );
+    }
+
+    #[test]
+    fn conflict_manual_value_distinguishes_omitted_null_and_value() {
+        let omitted: ResolveLinearConflictRequest = serde_json::from_value(json!({
+            "resolution": "manual"
+        }))
+        .unwrap();
+        let cleared: ResolveLinearConflictRequest = serde_json::from_value(json!({
+            "resolution": "manual",
+            "manual_value": null
+        }))
+        .unwrap();
+        let supplied: ResolveLinearConflictRequest = serde_json::from_value(json!({
+            "resolution": "manual",
+            "manual_value": "kept"
+        }))
+        .unwrap();
+
+        assert_eq!(omitted.manual_value, None);
+        assert_eq!(cleared.manual_value, Some(None));
+        assert_eq!(supplied.manual_value, Some(Some(json!("kept"))));
     }
 
     #[test]
