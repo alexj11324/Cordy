@@ -33,6 +33,7 @@ pub struct ChannelRuntime {
     wecom_relay: Option<Arc<patchbay_wecom::outbound_relay::OutboundRelay>>,
     router: Arc<ChannelRouter>,
     inbound_handler: patchbay_channel::InboundHandler,
+    slack_slash_processor: Option<Arc<patchbay_slack::slash_command::SlashCommandProcessor>>,
 }
 
 impl ChannelRuntime {
@@ -69,7 +70,7 @@ impl ChannelRuntime {
         let cancel = state.channel_cancel.clone();
         let outbound_tasks = state.channel_tasks.clone();
 
-        configure_slack(
+        let slack_slash_processor = configure_slack(
             state,
             cfg,
             &services,
@@ -171,11 +172,18 @@ impl ChannelRuntime {
             wecom_relay: wecom.relay,
             router,
             inbound_handler,
+            slack_slash_processor,
         })
     }
 
     pub fn inbound_handler(&self) -> patchbay_channel::InboundHandler {
         self.inbound_handler.clone()
+    }
+
+    pub fn slack_slash_processor(
+        &self,
+    ) -> Option<Arc<patchbay_slack::slash_command::SlashCommandProcessor>> {
+        self.slack_slash_processor.clone()
     }
 
     pub async fn shutdown(mut self) {
@@ -307,16 +315,16 @@ fn configure_slack(
     storage: Option<&Arc<ChannelStorage>>,
     registry: &Arc<patchbay_channel::Registry>,
     outbound_tasks: &Arc<patchbay_channel::RuntimeTasks>,
-) {
+) -> Option<Arc<patchbay_slack::slash_command::SlashCommandProcessor>> {
     let secret_box = match channel_secret_box("PATCHBAY_SLACK_SECRET_KEY") {
         Ok(Some(secret_box)) => secret_box,
         Ok(None) => {
             tracing::info!("slack channel runtime disabled: PATCHBAY_SLACK_SECRET_KEY not set");
-            return;
+            return None;
         }
         Err(error) => {
             tracing::error!(%error, "slack channel runtime disabled: invalid secret key");
-            return;
+            return None;
         }
     };
     let decrypt: Arc<patchbay_slack::config::Decrypter> =
@@ -382,9 +390,10 @@ fn configure_slack(
         registry,
         patchbay_slack::channel::ChannelDeps {
             decrypt: Some(decrypt),
-            slash: Some(slash),
+            slash: Some(slash.clone()),
         },
     );
+    Some(slash)
 }
 
 fn configure_dingtalk(

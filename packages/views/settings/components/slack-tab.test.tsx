@@ -238,6 +238,28 @@ describe("SlackAgentBindButton", () => {
     );
     expect(screen.queryByTestId("slack-byo-dialog")).toBeNull();
   });
+
+  it("treats the managed workspace Hub as connected from an Agent detail", () => {
+    installationsRef.current = {
+      installations: [
+        {
+          id: "workspace-hub",
+          agent_id: null,
+          status: "active",
+          team_id: "T1",
+          runtime: healthyRuntime,
+        },
+      ],
+      configured: true,
+      install_supported: true,
+      setup_mode: "managed_oauth",
+    };
+
+    renderUI(<SlackAgentBindButton agentId="agent-1" />);
+
+    expect(screen.getByTestId("slack-agent-bot-connected")).toBeTruthy();
+    expect(screen.queryByTestId("slack-agent-connect")).toBeNull();
+  });
 });
 
 describe("SlackTab", () => {

@@ -11,6 +11,17 @@ features:
   bot_user:
     display_name: Patchbay
     always_online: true
+  slash_commands:
+    - command: /agents
+      url: https://api.aspectlylabs.com/api/integrations/slack/commands
+      description: Choose the Agent for this conversation
+      usage_hint: "[number or name]"
+      should_escape: false
+    - command: /issue
+      url: https://api.aspectlylabs.com/api/integrations/slack/commands
+      description: Create a Patchbay issue with an Agent
+      usage_hint: "what should be filed"
+      should_escape: false
 oauth_config:
   redirect_urls:
     - https://api.aspectlylabs.com/api/integrations/slack/oauth/callback
@@ -19,6 +30,7 @@ oauth_config:
       - app_mentions:read
       - channels:history
       - chat:write
+      - commands
       - files:read
       - groups:history
       - im:history

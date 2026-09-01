@@ -7,6 +7,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { ApiError } from "@patchbay/core/api";
@@ -47,6 +48,19 @@ const channelInstallationsRef = vi.hoisted(() => ({
     >
   >,
 }));
+const navigationRef = vi.hoisted(() => ({
+  searchParams: new URLSearchParams("tab=integrations"),
+  replace: vi.fn(),
+}));
+const toastSuccess = vi.hoisted(() => vi.fn());
+const toastError = vi.hoisted(() => vi.fn());
+
+vi.mock("sonner", () => ({
+  toast: {
+    success: toastSuccess,
+    error: toastError,
+  },
+}));
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
@@ -80,6 +94,14 @@ vi.mock("@patchbay/core/composio", () => ({
 
 vi.mock("@patchbay/core/hooks", () => ({
   useWorkspaceId: () => "workspace-id",
+}));
+
+vi.mock("../../navigation", () => ({
+  useNavigation: () => ({
+    pathname: "/acme/settings",
+    searchParams: navigationRef.searchParams,
+    replace: navigationRef.replace,
+  }),
 }));
 
 vi.mock("@patchbay/core/auth", () => ({
@@ -144,6 +166,10 @@ describe("Settings IntegrationsTab", () => {
     authUserRef.current = null;
     membersRef.current = [];
     channelInstallationsRef.current = {};
+    navigationRef.searchParams = new URLSearchParams("tab=integrations");
+    navigationRef.replace.mockReset();
+    toastSuccess.mockReset();
+    toastError.mockReset();
     configStore.getState().setFeatureFlags({ [COMPOSIO_MCP_APPS_FLAG]: true });
     // Reset the self-host-only VCS gate to its default (hidden) so tests stay
     // isolated; individual tests opt in below.
@@ -175,6 +201,22 @@ describe("Settings IntegrationsTab", () => {
       (query) => query.queryKey[0] === "composio",
     );
     expect(composioQuery?.enabled).toBe(true);
+  });
+
+  it("surfaces and consumes Slack OAuth callback failures without touching other params", async () => {
+    navigationRef.searchParams = new URLSearchParams(
+      "tab=integrations&slack_error=slack_authorization_denied",
+    );
+
+    renderTab();
+
+    await waitFor(() =>
+      expect(toastError).toHaveBeenCalledWith("Slack authorization was canceled"),
+    );
+    expect(navigationRef.replace).toHaveBeenCalledWith(
+      "/acme/settings?tab=integrations",
+    );
+    expect(toastSuccess).not.toHaveBeenCalled();
   });
 
   it("shows each channel description below its icon and title", () => {

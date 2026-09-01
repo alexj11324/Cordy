@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { CheckCircle2, CircleAlert, Loader2, Settings2, Trash2 } from "lucide-react";
@@ -39,6 +39,7 @@ import { telegramInstallationsOptions, telegramKeys } from "@patchbay/core/teleg
 import { weixinInstallationsOptions, weixinKeys } from "@patchbay/core/weixin";
 import { composioToolkitsOptions } from "@patchbay/core/composio";
 import { useT } from "../../i18n";
+import { useNavigation } from "../../navigation";
 import { SettingsSection, SettingsTab } from "./settings-layout";
 import {
   IntegrationChannelIcon,
@@ -379,6 +380,7 @@ function IntegrationCard({
 // available only from legacy deep links and Agent detail pages.
 export function IntegrationsTab({ standalone = false }: { standalone?: boolean } = {}) {
   const { t } = useT("settings");
+  const navigation = useNavigation();
   const wsId = useWorkspaceId();
   const qc = useQueryClient();
   const [managedChannel, setManagedChannel] = useState<IntegrationChannel | null>(null);
@@ -447,6 +449,41 @@ export function IntegrationsTab({ standalone = false }: { standalone?: boolean }
   // capability contract is the authority for whether this page may mutate an
   // installation; a missing field must never silently re-enable writes.
   const setupWritable = messaging?.setupWritable === true;
+  const slackConnected = navigation.searchParams.get("slack_connected");
+  const slackError = navigation.searchParams.get("slack_error");
+  const consumedSlackCallback = useRef<string | null>(null);
+  useEffect(() => {
+    const callbackKey = slackConnected
+      ? `connected:${slackConnected}`
+      : slackError
+        ? `error:${slackError}`
+        : null;
+    if (!callbackKey || consumedSlackCallback.current === callbackKey) return;
+    consumedSlackCallback.current = callbackKey;
+    if (slackConnected) {
+      toast.success(t(($) => $.slack.connect_success_toast));
+      void qc.invalidateQueries({ queryKey: slackKeys.installations(wsId) });
+    } else if (slackError === "slack_authorization_denied") {
+      toast.error(t(($) => $.slack.oauth_denied_toast));
+    } else if (slackError === "im_installation_limit_reached") {
+      toast.error(t(($) => $.slack.oauth_limit_toast));
+    } else if (
+      slackError === "slack_authorization_changed" ||
+      slackError === "slack_code_missing"
+    ) {
+      toast.error(t(($) => $.slack.oauth_expired_toast));
+    } else {
+      toast.error(t(($) => $.slack.oauth_failed_toast));
+    }
+    const params = new URLSearchParams(navigation.searchParams);
+    params.delete("slack_connected");
+    params.delete("slack_error");
+    const query = params.toString();
+    navigation.replace(query ? `${navigation.pathname}?${query}` : navigation.pathname);
+    // Callback parameters are one-shot provider state. The ref prevents the
+    // Strict Mode double effect before navigation commits the replacement.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slackConnected, slackError]);
   const messagingQuota = useQuery({
     queryKey: ["messaging-quota", wsId],
     queryFn: () => api.getMessagingQuotaUsage(wsId),

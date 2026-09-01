@@ -500,7 +500,9 @@ async fn build_production_router(
     .await?;
     let slack_token_rotation =
         slack_token_rotation::start(state.pool.clone(), cfg, state.channel_cancel.clone());
-    let state = state.with_channel_inbound_handler(channel_runtime.inbound_handler());
+    let state = state
+        .with_channel_inbound_handler(channel_runtime.inbound_handler())
+        .with_slack_slash_processor(channel_runtime.slack_slash_processor());
     let scheduler =
         patchbay_scheduler::production_manager(state.pool.clone(), state.automations.clone())?;
     let scheduler = scheduler.start(root_cancel.child_token())?;

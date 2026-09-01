@@ -28,6 +28,7 @@ use crate::state::HandlerState;
 
 const OAUTH_STATE_TTL: chrono::Duration = chrono::Duration::minutes(10);
 const SLACK_HTTP_TIMEOUT: Duration = Duration::from_secs(15);
+const SLACK_INGRESS_ACCEPT_TIMEOUT: Duration = Duration::from_millis(2500);
 const SLACK_SIGNATURE_MAX_AGE_SECS: i64 = 5 * 60;
 const SLACK_BOT_SCOPES: &str = "app_mentions:read,channels:history,chat:write,files:read,groups:history,im:history,mpim:history,reactions:write,users:read";
 
@@ -100,6 +101,7 @@ pub fn public_router() -> Router<HandlerState> {
             get(oauth_callback),
         )
         .route("/api/integrations/slack/events", post(events_api))
+        .route("/api/integrations/slack/commands", post(commands_api))
 }
 
 pub(crate) async fn begin_install(
@@ -273,24 +275,7 @@ pub(crate) async fn revoke_install(
                 );
             }
         };
-        let response = client
-            .post("https://slack.com/api/apps.uninstall")
-            .bearer_auth(&token)
-            .form(&[
-                ("client_id", managed.client_id.as_str()),
-                ("client_secret", managed.client_secret.as_str()),
-            ])
-            .send()
-            .await
-            .and_then(reqwest::Response::error_for_status);
-        let uninstalled = match response {
-            Ok(response) => response.json::<SlackApiResponse>().await,
-            Err(error) => {
-                tracing::warn!(%error, %installation_uuid, "Slack uninstall request failed");
-                return error_response(StatusCode::BAD_GATEWAY, "Slack uninstall failed");
-            }
-        };
-        match uninstalled {
+        match uninstall_slack_app(&client, &managed, &token).await {
             Ok(value)
                 if value.ok
                     || matches!(
@@ -302,7 +287,7 @@ pub(crate) async fn revoke_install(
                 return error_response(StatusCode::BAD_GATEWAY, "Slack uninstall failed");
             }
             Err(error) => {
-                tracing::warn!(%error, %installation_uuid, "Slack uninstall response decode failed");
+                tracing::warn!(%error, %installation_uuid, "Slack uninstall request failed");
                 return error_response(StatusCode::BAD_GATEWAY, "Slack uninstall failed");
             }
         }
@@ -344,22 +329,18 @@ async fn oauth_callback(
     .flatten()
     .is_some_and(|member| can_manage(&member.role));
     if !still_authorized {
-        return redirect_result(
-            &claimed.redirect_url,
-            "error",
-            "slack_authorization_changed",
-        );
+        return redirect_slack_error(&claimed.redirect_url, "slack_authorization_changed");
     }
     if !query.error.is_empty() {
-        return redirect_result(&claimed.redirect_url, "error", "slack_authorization_denied");
+        return redirect_slack_error(&claimed.redirect_url, "slack_authorization_denied");
     }
     if query.code.trim().is_empty() {
-        return redirect_result(&claimed.redirect_url, "error", "slack_code_missing");
+        return redirect_slack_error(&claimed.redirect_url, "slack_code_missing");
     }
     let config = match ManagedSlackConfig::from_state(&state) {
         Ok(value) => value,
         Err(_) => {
-            return redirect_result(&claimed.redirect_url, "error", "slack_not_configured");
+            return redirect_slack_error(&claimed.redirect_url, "slack_not_configured");
         }
     };
     let client = match reqwest::Client::builder()
@@ -368,7 +349,7 @@ async fn oauth_callback(
     {
         Ok(value) => value,
         Err(_) => {
-            return redirect_result(&claimed.redirect_url, "error", "slack_exchange_failed");
+            return redirect_slack_error(&claimed.redirect_url, "slack_exchange_failed");
         }
     };
     let exchanged = client
@@ -386,16 +367,16 @@ async fn oauth_callback(
             Ok(value) if value.ok => value,
             Ok(value) => {
                 tracing::warn!(error = value.error, "Slack OAuth exchange rejected");
-                return redirect_result(&claimed.redirect_url, "error", "slack_exchange_rejected");
+                return redirect_slack_error(&claimed.redirect_url, "slack_exchange_rejected");
             }
             Err(error) => {
                 tracing::warn!(%error, "Slack OAuth response decode failed");
-                return redirect_result(&claimed.redirect_url, "error", "slack_exchange_failed");
+                return redirect_slack_error(&claimed.redirect_url, "slack_exchange_failed");
             }
         },
         Err(error) => {
             tracing::warn!(%error, "Slack OAuth exchange failed");
-            return redirect_result(&claimed.redirect_url, "error", "slack_exchange_failed");
+            return redirect_slack_error(&claimed.redirect_url, "slack_exchange_failed");
         }
     };
     if response.access_token.is_empty()
@@ -403,21 +384,24 @@ async fn oauth_callback(
         || response.team.id.is_empty()
         || response.bot_user_id.is_empty()
     {
-        return redirect_result(&claimed.redirect_url, "error", "slack_exchange_incomplete");
+        compensate_failed_install(&client, &config, &response.access_token).await;
+        return redirect_slack_error(&claimed.redirect_url, "slack_exchange_incomplete");
     }
 
     let box_ = match slack_secret_box() {
         Ok(value) => value,
         Err(error) => {
             tracing::error!(%error, "managed Slack token encryption unavailable");
-            return redirect_result(&claimed.redirect_url, "error", "slack_not_configured");
+            compensate_failed_install(&client, &config, &response.access_token).await;
+            return redirect_slack_error(&claimed.redirect_url, "slack_not_configured");
         }
     };
     let bot_token_encrypted = match seal_base64(&box_, response.access_token.as_bytes()) {
         Ok(value) => value,
         Err(error) => {
             tracing::error!(%error, "failed to encrypt managed Slack bot token");
-            return redirect_result(&claimed.redirect_url, "error", "slack_persist_failed");
+            compensate_failed_install(&client, &config, &response.access_token).await;
+            return redirect_slack_error(&claimed.redirect_url, "slack_persist_failed");
         }
     };
     let refresh_token_encrypted = if response.refresh_token.is_empty() {
@@ -427,7 +411,8 @@ async fn oauth_callback(
             Ok(value) => value,
             Err(error) => {
                 tracing::error!(%error, "failed to encrypt managed Slack refresh token");
-                return redirect_result(&claimed.redirect_url, "error", "slack_persist_failed");
+                compensate_failed_install(&client, &config, &response.access_token).await;
+                return redirect_slack_error(&claimed.redirect_url, "slack_persist_failed");
             }
         }
     };
@@ -455,7 +440,8 @@ async fn oauth_callback(
         Ok(value) => value,
         Err(error) => {
             tracing::error!(%error, "failed to compose managed Slack installation");
-            return redirect_result(&claimed.redirect_url, "error", "slack_persist_failed");
+            compensate_failed_install(&client, &config, &response.access_token).await;
+            return redirect_slack_error(&claimed.redirect_url, "slack_persist_failed");
         }
     };
     let installation = patchbay_slack::install::InstallService::new(state.pool.clone())
@@ -465,6 +451,7 @@ async fn oauth_callback(
         Ok(value) => value,
         Err(error) => {
             tracing::error!(%error, workspace_id = %claimed.workspace_id, "managed Slack installation persist failed");
+            compensate_failed_install(&client, &config, &response.access_token).await;
             let code = if error
                 .to_string()
                 .contains("hosted messaging installation limit reached")
@@ -473,11 +460,11 @@ async fn oauth_callback(
             } else {
                 "slack_persist_failed"
             };
-            return redirect_result(&claimed.redirect_url, "error", code);
+            return redirect_slack_error(&claimed.redirect_url, code);
         }
     };
     connectors::publish_created(&state, Provider::Slack, &row, claimed.installer_user_id);
-    redirect_result(&claimed.redirect_url, "connected", "slack")
+    redirect_result(&claimed.redirect_url, "slack_connected", "1")
 }
 
 async fn claim_oauth_state(
@@ -641,23 +628,170 @@ async fn events_api(
         );
     };
     let cancel = state.channel_cancel.child_token();
-    if !state.channel_tasks.spawn(async move {
-        if let Err(error) = handler.call(cancel, inbound).await {
-            tracing::error!(%error, "managed Slack event processing failed");
+    match tokio::time::timeout(SLACK_INGRESS_ACCEPT_TIMEOUT, handler.call(cancel, inbound)).await {
+        Ok(Ok(())) => Json(json!({"ok": true})).into_response(),
+        Ok(Err(error)) => {
+            tracing::error!(%error, "managed Slack event acceptance failed");
+            error_response(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Slack event acceptance unavailable",
+            )
         }
-    }) {
-        return error_response(
+        Err(_) => error_response(
             StatusCode::SERVICE_UNAVAILABLE,
-            "Slack event handler is shutting down",
+            "Slack event acceptance timed out",
+        ),
+    }
+}
+
+async fn commands_api(
+    State(state): State<HandlerState>,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    if state.public_config.messaging.mode != "managed" {
+        return error_response(
+            StatusCode::NOT_FOUND,
+            "managed Slack commands are not enabled",
         );
     }
-    Json(json!({"ok": true})).into_response()
+    let Some(signing_secret) = state
+        .integrations
+        .slack_signing_secret
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "managed Slack commands are not configured",
+        );
+    };
+    if !verify_slack_signature(signing_secret, &headers, &body, Utc::now()) {
+        return error_response(StatusCode::UNAUTHORIZED, "invalid Slack signature");
+    }
+    let fields = url::form_urlencoded::parse(&body)
+        .into_owned()
+        .collect::<std::collections::HashMap<String, String>>();
+    let command = patchbay_slack::slash_command::SlashCommand {
+        command: fields.get("command").cloned().unwrap_or_default(),
+        text: fields.get("text").cloned().unwrap_or_default(),
+        user_id: fields.get("user_id").cloned().unwrap_or_default(),
+        team_id: fields.get("team_id").cloned().unwrap_or_default(),
+        api_app_id: fields.get("api_app_id").cloned().unwrap_or_default(),
+        channel_id: fields.get("channel_id").cloned().unwrap_or_default(),
+        trigger_id: fields.get("trigger_id").cloned().unwrap_or_default(),
+        response_url: fields.get("response_url").cloned().unwrap_or_default(),
+    };
+    match command.command.trim() {
+        "/agents" => {
+            let Some(inbound) = patchbay_slack::inbound::inbound_from_agents_command(&command)
+            else {
+                return error_response(StatusCode::BAD_REQUEST, "incomplete Slack command");
+            };
+            let Some(handler) = state.channel_inbound_handler.clone() else {
+                return error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Slack command handler unavailable",
+                );
+            };
+            let cancel = state.channel_cancel.child_token();
+            match tokio::time::timeout(SLACK_INGRESS_ACCEPT_TIMEOUT, handler.call(cancel, inbound))
+                .await
+            {
+                Ok(Ok(())) => Json(json!({"response_type": "ephemeral"})).into_response(),
+                Ok(Err(error)) => {
+                    tracing::error!(%error, "managed Slack /agents acceptance failed");
+                    error_response(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "Slack command acceptance unavailable",
+                    )
+                }
+                Err(_) => error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Slack command acceptance timed out",
+                ),
+            }
+        }
+        "/issue" => {
+            let Some(processor) = state.slack_slash_processor.clone() else {
+                return error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Slack command handler unavailable",
+                );
+            };
+            let cancel = state.channel_cancel.child_token();
+            match tokio::time::timeout(
+                SLACK_INGRESS_ACCEPT_TIMEOUT,
+                processor.response_text(cancel, &command),
+            )
+            .await
+            {
+                Ok(text) => Json(json!({
+                    "response_type": "ephemeral",
+                    "text": text,
+                }))
+                .into_response(),
+                Err(_) => error_response(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "Slack command acceptance timed out",
+                ),
+            }
+        }
+        _ => error_response(StatusCode::BAD_REQUEST, "unsupported Slack command"),
+    }
 }
 
 struct ManagedSlackConfig {
     client_id: String,
     client_secret: String,
     redirect_uri: String,
+}
+
+async fn uninstall_slack_app(
+    client: &reqwest::Client,
+    config: &ManagedSlackConfig,
+    access_token: &str,
+) -> anyhow::Result<SlackApiResponse> {
+    Ok(client
+        .post("https://slack.com/api/apps.uninstall")
+        .bearer_auth(access_token)
+        .form(&[
+            ("client_id", config.client_id.as_str()),
+            ("client_secret", config.client_secret.as_str()),
+        ])
+        .send()
+        .await?
+        .error_for_status()?
+        .json::<SlackApiResponse>()
+        .await?)
+}
+
+async fn compensate_failed_install(
+    client: &reqwest::Client,
+    config: &ManagedSlackConfig,
+    access_token: &str,
+) {
+    if access_token.trim().is_empty() {
+        return;
+    }
+    match uninstall_slack_app(client, config, access_token).await {
+        Ok(value)
+            if value.ok
+                || matches!(
+                    value.error.as_str(),
+                    "token_revoked" | "account_inactive" | "invalid_auth"
+                ) => {}
+        Ok(value) => {
+            tracing::error!(
+                error = value.error,
+                "Slack failed-install compensation rejected"
+            );
+        }
+        Err(error) => {
+            tracing::error!(%error, "Slack failed-install compensation request failed");
+        }
+    }
 }
 
 impl ManagedSlackConfig {
@@ -765,6 +899,10 @@ fn redirect_result(base: &str, key: &str, value: &str) -> Response {
         [(header::LOCATION, url.as_str().to_string())],
     )
         .into_response()
+}
+
+fn redirect_slack_error(base: &str, code: &str) -> Response {
+    redirect_result(base, "slack_error", code)
 }
 
 fn verify_slack_signature(

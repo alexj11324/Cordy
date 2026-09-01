@@ -334,7 +334,11 @@ export function SlackAgentBindButton({
 
   const existing = listing?.installations.find(
     (inst) =>
-      (agentId ? inst.agent_id === agentId : inst.agent_id === null) &&
+      (managedOAuth
+        ? inst.agent_id === null
+        : agentId
+          ? inst.agent_id === agentId
+          : inst.agent_id === null) &&
       inst.status === "active",
   );
   if (existing) {
