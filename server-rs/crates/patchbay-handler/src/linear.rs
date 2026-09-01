@@ -974,7 +974,8 @@ async fn resolve_conflict(
         return error_response(StatusCode::CONFLICT, "Linear binding is no longer syncable");
     };
     if binding.status != "active"
-        || !matches!(binding.sync_mode.as_str(), "publish" | "two_way")
+        || !(matches!(binding.sync_mode.as_str(), "publish" | "two_way")
+            || (binding.sync_mode == "import" && request.resolution == "remote"))
         || binding
             .linear_team_id
             .as_deref()
@@ -1000,12 +1001,14 @@ async fn resolve_conflict(
         Ok(patch) => patch,
         Err(message) => return error_response(StatusCode::BAD_REQUEST, message),
     };
-    if let Some(status) = patch.status.as_deref() {
-        if !status_resolution_is_publishable(&binding.status_mapping, status) {
-            return error_response(
-                StatusCode::BAD_REQUEST,
-                "status resolution has no Linear state mapping",
-            );
+    if request.resolution != "remote" {
+        if let Some(status) = patch.status.as_deref() {
+            if !status_resolution_is_publishable(&binding.status_mapping, status) {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "status resolution has no Linear state mapping",
+                );
+            }
         }
     }
     if let Some(owner_id) = patch.owner_id.flatten() {
