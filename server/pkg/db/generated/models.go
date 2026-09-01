@@ -640,6 +640,53 @@ type DaemonToken struct {
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 }
 
+type DependencyGraphEdge struct {
+	ID             pgtype.UUID        `json:"id"`
+	PlanID         pgtype.UUID        `json:"plan_id"`
+	WorkspaceID    pgtype.UUID        `json:"workspace_id"`
+	FromIssueID    pgtype.UUID        `json:"from_issue_id"`
+	ToIssueID      pgtype.UUID        `json:"to_issue_id"`
+	Type           string             `json:"type"`
+	Reason         string             `json:"reason"`
+	ConsumedOutput string             `json:"consumed_output"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+}
+
+type DependencyGraphNode struct {
+	ID                 pgtype.UUID        `json:"id"`
+	PlanID             pgtype.UUID        `json:"plan_id"`
+	WorkspaceID        pgtype.UUID        `json:"workspace_id"`
+	TempID             string             `json:"temp_id"`
+	IssueID            pgtype.UUID        `json:"issue_id"`
+	Title              string             `json:"title"`
+	Description        string             `json:"description"`
+	AcceptanceCriteria []byte             `json:"acceptance_criteria"`
+	Context            []byte             `json:"context"`
+	Outputs            []byte             `json:"outputs"`
+	AssigneeType       pgtype.Text        `json:"assignee_type"`
+	AssigneeID         pgtype.UUID        `json:"assignee_id"`
+	CandidateAssignees []byte             `json:"candidate_assignees"`
+	Wave               int32              `json:"wave"`
+	CreatedAt          pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
+}
+
+type DependencyGraphPlan struct {
+	ID                pgtype.UUID        `json:"id"`
+	WorkspaceID       pgtype.UUID        `json:"workspace_id"`
+	ParentIssueID     pgtype.UUID        `json:"parent_issue_id"`
+	IdempotencyKey    string             `json:"idempotency_key"`
+	RequestHash       string             `json:"request_hash"`
+	Goal              string             `json:"goal"`
+	Status            string             `json:"status"`
+	CreatedByType     string             `json:"created_by_type"`
+	CreatedByID       pgtype.UUID        `json:"created_by_id"`
+	CreatedAt         pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt         pgtype.Timestamptz `json:"updated_at"`
+	AttentionRequired bool               `json:"attention_required"`
+	AttentionReason   pgtype.Text        `json:"attention_reason"`
+}
+
 type DingtalkBotIdentity struct {
 	WorkspaceID      pgtype.UUID        `json:"workspace_id"`
 	InstallationID   pgtype.UUID        `json:"installation_id"`
