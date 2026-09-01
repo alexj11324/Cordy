@@ -1526,7 +1526,7 @@ async fn validate_agent_label_mapping(
                     "Failed to validate Agent target",
                 )
             })?;
-        if agent.is_none_or(|agent| agent.archived_at.is_some()) {
+        if agent.is_none_or(|agent| agent.archived_at.is_some() || agent.runtime_id.is_none()) {
             return Err(error_response(
                 StatusCode::BAD_REQUEST,
                 "Linear Agent target must be an available workspace Agent",
@@ -1599,6 +1599,7 @@ fn binding_needs_outbox_seed(
         || (next.sync_mode == "two_way"
             && next.initial_source_of_truth.as_deref() == Some("patchbay")
             && previous.initial_source_of_truth.as_deref() != Some("patchbay"))
+        || next.agent_label_mapping != previous.agent_label_mapping
 }
 
 async fn seed_binding_outbox(

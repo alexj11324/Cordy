@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { CheckCircle2, CircleAlert, GitMerge, Loader2, Settings2, Trash2 } from "lucide-react";
 import { ApiError, api } from "@patchbay/core/api";
+import { isAgentRuntimeBound } from "@patchbay/core/agents";
 import { useFeatureEnabled } from "@patchbay/core/config";
 import { LINEAR_AGENT_BRIDGE_FLAG } from "@patchbay/core/feature-flags";
 import {
@@ -391,7 +392,9 @@ function BindingWizard({
   const selectedAgentLabelChildren = catalog.labels.filter(
     (label) => !label.is_group && label.parent_id === selectedAgentLabelGroupId,
   );
-  const activeAgents = agents.filter((agent) => !agent.archived_at);
+  const activeAgents = agents.filter(
+    (agent) => !agent.archived_at && isAgentRuntimeBound(agent),
+  );
   const agentLabelAssignments =
     typeof draft.agentLabelMapping.labels === "object" &&
     draft.agentLabelMapping.labels !== null &&

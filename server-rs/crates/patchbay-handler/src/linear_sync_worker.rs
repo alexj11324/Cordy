@@ -92,6 +92,18 @@ impl SyncError {
     }
 }
 
+fn linear_connection_status_error(status: &str) -> Option<SyncError> {
+    match status {
+        "active" => None,
+        "reauthorization_required" => Some(SyncError::retry(anyhow::anyhow!(
+            "Linear connection requires reauthorization"
+        ))),
+        _ => Some(SyncError::permanent(anyhow::anyhow!(
+            "Linear connection is not active"
+        ))),
+    }
+}
+
 #[derive(Debug)]
 struct LinearAgentSessionEvent {
     session_id: String,
@@ -874,14 +886,8 @@ impl LinearSyncWorker {
                 "Linear Outbox workspace does not match its binding"
             )));
         }
-        if connection.status != "active" {
-            return Err(if connection.status == "reauthorization_required" {
-                SyncError::retry(anyhow::anyhow!(
-                    "Linear connection requires reauthorization"
-                ))
-            } else {
-                SyncError::permanent(anyhow::anyhow!("Linear connection is not active"))
-            });
+        if let Some(error) = linear_connection_status_error(&connection.status) {
+            return Err(error);
         }
 
         let mut issue =
@@ -1487,15 +1493,8 @@ impl LinearSyncWorker {
         let agent_terminal = is_agent_session_event(row)
             && (row.event_type == "linear.agentSession.terminal"
                 || row.payload.get("linearAgentSessionTerminal").is_some());
-        if connection.status == "reauthorization_required" && agent_terminal {
-            return Err(SyncError::retry(anyhow::anyhow!(
-                "Linear Agent terminal is waiting for connection reauthorization"
-            )));
-        }
-        if connection.status != "active" {
-            return Err(SyncError::permanent(anyhow::anyhow!(
-                "Linear connection is not active"
-            )));
+        if let Some(error) = linear_connection_status_error(&connection.status) {
+            return Err(error);
         }
         if is_agent_session_event(row) {
             if !self
@@ -1795,6 +1794,28 @@ impl LinearSyncWorker {
                 "Linear Agent Issue is outside an active inbound project binding"
             )));
         }
+
+        let issue = issue_q::get_issue_in_workspace(
+            &self.state.pool,
+            link.patchbay_issue_id,
+            connection.workspace_id,
+        )
+        .await
+        .map_err(SyncError::retry)?
+        .ok_or_else(|| SyncError::permanent(anyhow::anyhow!("Patchbay Issue not found")))?;
+
+        // Linear considers a newly created Agent Session unresponsive unless
+        // the app emits an activity or external URL within ten seconds. Set
+        // the durable Patchbay URL before agent-selection and dispatch work
+        // so waiting or failed task paths still receive the first bootstrap
+        // link. The URL mutation is idempotent and owns the integration URL.
+        if let Some(url) = self.patchbay_issue_url(&issue).await? {
+            manager
+                .update_agent_session_external_url(connection.id, &event.session_id, &url)
+                .await
+                .map_err(|error| classify_token_error(error, "update Linear Agent Session URL"))?;
+        }
+
         if link.sync_status == "agent_selection_required" {
             linear_agent_q::upsert_linear_agent_session(
                 &self.state.pool,
@@ -1819,14 +1840,6 @@ impl LinearSyncWorker {
             return Ok(());
         }
 
-        let issue = issue_q::get_issue_in_workspace(
-            &self.state.pool,
-            link.patchbay_issue_id,
-            connection.workspace_id,
-        )
-        .await
-        .map_err(SyncError::retry)?
-        .ok_or_else(|| SyncError::permanent(anyhow::anyhow!("Patchbay Issue not found")))?;
         let selected_agent_id = agent_route_override.unwrap_or_else(|| {
             (issue.executor_type.as_deref() == Some("agent"))
                 .then_some(issue.executor_id)
@@ -1861,7 +1874,7 @@ impl LinearSyncWorker {
                 .map_err(SyncError::retry)?;
         if agent
             .as_ref()
-            .map(|agent| agent.archived_at.is_some())
+            .map(|agent| agent.archived_at.is_some() || agent.runtime_id.is_none())
             .unwrap_or(true)
         {
             linear_agent_q::upsert_linear_agent_session(
@@ -2247,14 +2260,6 @@ impl LinearSyncWorker {
             }
         }
 
-        let manager = LinearTokenManager::from_state(&self.state)
-            .map_err(|error| classify_token_error(error, "create Linear token manager"))?;
-        if let Some(url) = self.patchbay_issue_url(&issue).await? {
-            manager
-                .update_agent_session_external_url(connection.id, &event.session_id, &url)
-                .await
-                .map_err(|error| classify_token_error(error, "update Linear Agent Session URL"))?;
-        }
         let released = linear_agent_q::release_linear_agent_session_dispatch(
             &self.state.pool,
             connection.workspace_id,
@@ -3099,7 +3104,7 @@ impl LinearSyncWorker {
             .map_err(SyncError::retry)?;
             if agent
                 .as_ref()
-                .map(|agent| agent.archived_at.is_some())
+                .map(|agent| agent.archived_at.is_some() || agent.runtime_id.is_none())
                 .unwrap_or(true)
             {
                 tracing::warn!(
@@ -3572,25 +3577,55 @@ impl LinearSyncWorker {
         .map_err(SyncError::retry)?) else {
             return Ok(());
         };
-        let Some(binding) = linear_q::get_project_binding(
-            &self.state.pool,
+        let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
+        // Match inbound merge lock order (binding -> link -> Issue) so a
+        // deletion cannot cancel an Issue while another delivery advances its
+        // link or while an administrator tombstones the binding.
+        let locked_binding = linear_q::get_project_binding_for_update(
+            &mut *transaction,
             connection.workspace_id,
             link.binding_id,
+        )
+        .await
+        .map_err(SyncError::retry)?;
+        let Some(locked_binding) = locked_binding.filter(inbound_enabled) else {
+            return Ok(());
+        };
+        let Some(locked_link) = linear_q::get_linear_issue_link_for_update(
+            &mut *transaction,
+            connection.workspace_id,
+            link.id,
         )
         .await
         .map_err(SyncError::retry)?
         else {
             return Ok(());
         };
-        if !inbound_enabled(&binding) {
+        if locked_link.binding_id != locked_binding.id
+            || locked_link.linear_issue_id != linear_issue_id
+            || locked_link.sync_status == "deleted"
+        {
             return Ok(());
         }
-        let _ = self
+        if locked_link.last_common_snapshot != link.last_common_snapshot
+            || locked_link.last_remote_event_at_ms != link.last_remote_event_at_ms
+            || locked_link.last_remote_event_id != link.last_remote_event_id
+        {
+            return Err(SyncError::retry(anyhow::anyhow!(
+                "Linear Issue Link advanced before deletion"
+            )));
+        }
+        if is_out_of_order(Some(&locked_link), event_timestamp_ms) {
+            return Ok(());
+        }
+
+        let applied = self
             .state
             .issues
-            .apply_external_patch(
+            .apply_external_patch_in_transaction(
+                &mut transaction,
                 connection.workspace_id,
-                link.patchbay_issue_id,
+                locked_link.patchbay_issue_id,
                 IssueCommand::ApplyExternalPatch {
                     source: ExternalSource::Linear,
                     source_event_id: source_event_id.to_string(),
@@ -3603,42 +3638,28 @@ impl LinearSyncWorker {
                 },
             )
             .await
-            .map_err(classify_external_issue_error)?;
+            .map_err(|error| classify_external_error(error, "cancel deleted Linear Issue"))?;
         let snapshot = json!({
             "linear_issue_id": linear_issue_id,
             "deleted": true,
         });
-        let event_at = event_timestamp_ms.or(link.last_remote_event_at_ms);
+        let event_at = event_timestamp_ms.or(locked_link.last_remote_event_at_ms);
         let event_id = event_timestamp_ms
             .map(|_| source_event_id)
-            .or(link.last_remote_event_id.as_deref());
-        let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
-        let updated = linear_q::update_linear_issue_link(
+            .or(locked_link.last_remote_event_id.as_deref());
+        let updated = linear_q::set_linear_issue_link_state(
             &mut *transaction,
-            &linear_q::LinearIssueLinkUpdate {
-                link_id: link.id,
-                workspace_id: connection.workspace_id,
-                last_common_snapshot: &snapshot,
-                remote_updated_at: link.remote_updated_at,
-                last_remote_event_at_ms: event_at,
-                last_remote_event_id: event_id,
-                sync_status: "deleted",
-            },
+            locked_link.id,
+            connection.workspace_id,
+            &snapshot,
+            locked_link.remote_updated_at,
+            event_at,
+            event_id,
+            "deleted",
         )
         .await
         .map_err(SyncError::retry)?;
         if !updated {
-            let current = linear_q::find_linear_issue_link(
-                &self.state.pool,
-                connection.workspace_id,
-                connection.id,
-                linear_issue_id,
-            )
-            .await
-            .map_err(SyncError::retry)?;
-            if is_out_of_order(current.as_ref(), event_timestamp_ms) {
-                return Ok(());
-            }
             return Err(SyncError::retry(anyhow::anyhow!(
                 "Linear deletion link update lost its row"
             )));
@@ -3646,7 +3667,7 @@ impl LinearSyncWorker {
         linear_q::dismiss_stale_linear_sync_conflicts(
             &mut *transaction,
             connection.workspace_id,
-            link.id,
+            locked_link.id,
             &[],
         )
         .await
@@ -3654,7 +3675,7 @@ impl LinearSyncWorker {
         activity::create_activity(
             &mut *transaction,
             connection.workspace_id,
-            link.patchbay_issue_id,
+            locked_link.patchbay_issue_id,
             Some("system"),
             None,
             "linear_sync_removed",
@@ -3662,13 +3683,13 @@ impl LinearSyncWorker {
                 "source": "linear",
                 "source_event_id": source_event_id,
                 "connection_id": connection.id,
-                "binding_id": link.binding_id,
+                "binding_id": locked_link.binding_id,
                 "linear_issue_id": linear_issue_id,
                 "event_timestamp_ms": event_timestamp_ms,
             }),
             linear_sync_activity_id(
                 connection.id,
-                link.patchbay_issue_id,
+                locked_link.patchbay_issue_id,
                 source_event_id,
                 "removed",
             ),
@@ -3676,6 +3697,10 @@ impl LinearSyncWorker {
         .await
         .map_err(SyncError::retry)?;
         transaction.commit().await.map_err(SyncError::retry)?;
+        self.state
+            .issues
+            .publish_external_issue_apply(&applied)
+            .await;
         Ok(())
     }
 }
@@ -4264,12 +4289,12 @@ mod tests {
         agent_label_decision, agent_label_ids_for_issue, combined_agent_prompt,
         extract_event_timestamp_ms, extract_issue_id, extract_updated_from,
         import_status_is_inadmissible, inbound_enabled, is_out_of_order, linear_agent_activity_id,
-        linear_assignee_update, map_local_priority, map_local_status, map_remote_priority,
-        map_remote_status, merge_sync_snapshots, merge_sync_snapshots_with_updated_from,
-        normalize_base_snapshot_fields, parse_agent_session_event,
-        parse_agent_session_terminal_event, parse_remote_timestamp, preserve_owner_base,
-        remote_sync_snapshot, retry_delay, should_preserve_unmapped_remote_assignee,
-        RemoteOwnerMapping,
+        linear_assignee_update, linear_connection_status_error, map_local_priority,
+        map_local_status, map_remote_priority, map_remote_status, merge_sync_snapshots,
+        merge_sync_snapshots_with_updated_from, normalize_base_snapshot_fields,
+        parse_agent_session_event, parse_agent_session_terminal_event, parse_remote_timestamp,
+        preserve_owner_base, remote_sync_snapshot, retry_delay,
+        should_preserve_unmapped_remote_assignee, RemoteOwnerMapping, SyncError,
     };
     use crate::linear::{
         LinearRemoteIssue, LinearRemoteLabel, LinearRemoteLabelParent, LinearRemoteState,
@@ -4327,6 +4352,19 @@ mod tests {
             .map(|attempt| retry_delay(attempt).num_seconds())
             .collect::<Vec<_>>();
         assert_eq!(delays, vec![5, 10, 20, 40, 80, 160, 320, 640, 900, 900]);
+    }
+
+    #[test]
+    fn reauthorization_retries_every_linear_sync_row() {
+        assert!(linear_connection_status_error("active").is_none());
+        assert!(matches!(
+            linear_connection_status_error("reauthorization_required"),
+            Some(SyncError::Retry(_))
+        ));
+        assert!(matches!(
+            linear_connection_status_error("revoked"),
+            Some(SyncError::Permanent(_))
+        ));
     }
 
     #[test]

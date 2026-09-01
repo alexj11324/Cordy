@@ -125,11 +125,19 @@ pub async fn upsert_connection(
                FROM linear_connection
                WHERE workspace_id = $2
                FOR UPDATE
+           ), pending_revocation AS MATERIALIZED (
+               SELECT 1
+               FROM linear_agent_session AS session
+               JOIN workspace_connection AS connection ON connection.id = session.connection_id
+               WHERE session.status = 'revocation_cancellation_pending'
+                  OR session.status LIKE 'revocation_cancellation_dispatching:%'
+               LIMIT 1
            ), old_bindings AS MATERIALIZED (
                SELECT binding.id
                FROM linear_project_binding AS binding
                JOIN workspace_connection AS connection ON connection.id = binding.connection_id
                WHERE connection.organization_id <> $3
+                 AND NOT EXISTS (SELECT 1 FROM pending_revocation)
                ORDER BY binding.id
                FOR UPDATE OF binding
            ), old_agent_sessions AS MATERIALIZED (
@@ -154,6 +162,7 @@ pub async fn upsert_connection(
                UPDATE agent_task_queue
                SET status = 'cancelled', completed_at = now(), prepare_lease_expires_at = NULL
                WHERE id IN (SELECT id FROM old_agent_task_tree)
+                 AND NOT EXISTS (SELECT 1 FROM pending_revocation)
                  AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory',
                                 'waiting_capacity', 'deferred')
                RETURNING id
@@ -164,26 +173,30 @@ pub async fn upsert_connection(
                    FROM workspace_connection
                    WHERE organization_id <> $3
                )
+                 AND NOT EXISTS (SELECT 1 FROM pending_revocation)
            ), deleted_agent_sessions AS (
                DELETE FROM linear_agent_session
                WHERE workspace_id = $2
                  AND connection_id IN (
-                     SELECT id
-                     FROM workspace_connection
-                     WHERE organization_id <> $3
+                   SELECT id
+                   FROM workspace_connection
+                   WHERE organization_id <> $3
                  )
+                 AND NOT EXISTS (SELECT 1 FROM pending_revocation)
            ), deleted_conflicts AS (
                DELETE FROM linear_sync_conflict
                WHERE workspace_id = $2
                  AND binding_id IN (SELECT id FROM old_bindings)
+                 AND NOT EXISTS (SELECT 1 FROM pending_revocation)
            ), deleted_member_bindings AS (
                DELETE FROM linear_member_binding
                WHERE workspace_id = $2
                  AND connection_id IN (
-                     SELECT id
-                     FROM workspace_connection
-                     WHERE organization_id <> $3
+                   SELECT id
+                   FROM workspace_connection
+                   WHERE organization_id <> $3
                  )
+                 AND NOT EXISTS (SELECT 1 FROM pending_revocation)
            ), changed_bindings AS (
                UPDATE linear_project_binding
                SET status = 'tombstone',
@@ -191,13 +204,15 @@ pub async fn upsert_connection(
                    updated_at = now()
                WHERE workspace_id = $2
                  AND id IN (SELECT id FROM old_bindings)
+                 AND NOT EXISTS (SELECT 1 FROM pending_revocation)
                  AND status <> 'tombstone'
            )
            INSERT INTO linear_connection
            (id, workspace_id, organization_id, organization_name, actor_id,
             access_token_encrypted, refresh_token_encrypted, token_expires_at,
             scopes, created_by_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+           SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+           WHERE NOT EXISTS (SELECT 1 FROM pending_revocation)
            ON CONFLICT (workspace_id) DO UPDATE SET
              organization_id = EXCLUDED.organization_id,
              organization_name = EXCLUDED.organization_name,
