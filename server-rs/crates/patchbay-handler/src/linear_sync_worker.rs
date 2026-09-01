@@ -2317,10 +2317,10 @@ mod tests {
 
     use super::{
         extract_event_timestamp_ms, extract_issue_id, extract_updated_from, inbound_enabled,
-        is_out_of_order, map_local_priority, map_local_status, map_remote_priority,
-        map_remote_status, merge_sync_snapshots, merge_sync_snapshots_with_updated_from,
-        normalize_base_snapshot_fields, parse_remote_timestamp, remote_sync_snapshot, retry_delay,
-        RemoteOwnerMapping,
+        is_out_of_order, linear_assignee_update, map_local_priority, map_local_status,
+        map_remote_priority, map_remote_status, merge_sync_snapshots,
+        merge_sync_snapshots_with_updated_from, normalize_base_snapshot_fields,
+        parse_remote_timestamp, remote_sync_snapshot, retry_delay, RemoteOwnerMapping,
     };
     use crate::linear::{LinearRemoteIssue, LinearRemoteState};
 
