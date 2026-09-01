@@ -58,11 +58,7 @@ fn linear_sync_activity_id(
     )
 }
 
-fn linear_agent_activity_id(
-    connection_id: Uuid,
-    session_id: &str,
-    delivery_id: &str,
-) -> Uuid {
+fn linear_agent_activity_id(connection_id: Uuid, session_id: &str, delivery_id: &str) -> Uuid {
     let digest = Sha256::digest(
         format!("patchbay:linear:agent-activity:{connection_id}:{session_id}:{delivery_id}")
             .as_bytes(),
@@ -2206,11 +2202,7 @@ impl LinearSyncWorker {
                 .create_agent_activity(
                     connection.id,
                     &event.session_id,
-                    linear_agent_activity_id(
-                        connection.id,
-                        &event.session_id,
-                        &row.delivery_id,
-                    ),
+                    linear_agent_activity_id(connection.id, &event.session_id, &row.delivery_id),
                     json!({"type": "response", "body": event.body}),
                 )
                 .await
@@ -4564,8 +4556,14 @@ mod tests {
     fn agent_activity_id_is_stable_provider_uuid_v4() {
         let connection_id = Uuid::now_v7();
         let first = linear_agent_activity_id(connection_id, "session-1", "delivery-1");
-        assert_eq!(first, linear_agent_activity_id(connection_id, "session-1", "delivery-1"));
-        assert_ne!(first, linear_agent_activity_id(connection_id, "session-1", "delivery-2"));
+        assert_eq!(
+            first,
+            linear_agent_activity_id(connection_id, "session-1", "delivery-1")
+        );
+        assert_ne!(
+            first,
+            linear_agent_activity_id(connection_id, "session-1", "delivery-2")
+        );
         assert_eq!(first.get_version_num(), 4);
     }
 
