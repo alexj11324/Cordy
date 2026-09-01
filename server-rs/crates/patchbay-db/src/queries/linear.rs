@@ -6,7 +6,7 @@
 
 use crate::models::{
     Issue, LinearConnection, LinearIssueLink, LinearMemberBinding, LinearOAuthState,
-    LinearProjectBinding, LinearSyncInbox, LinearSyncOutbox,
+    LinearProjectBinding, LinearSyncConflict, LinearSyncInbox, LinearSyncOutbox,
 };
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -120,13 +120,29 @@ pub async fn upsert_connection(
     connection: &LinearConnectionInput<'_>,
 ) -> anyhow::Result<LinearConnection> {
     Ok(sqlx::query_as::<_, LinearConnection>(
-        r#"WITH deleted_member_bindings AS (
+        r#"WITH workspace_connection AS MATERIALIZED (
+               SELECT id, organization_id
+               FROM linear_connection
+               WHERE workspace_id = $2
+               FOR UPDATE
+           ), old_bindings AS MATERIALIZED (
+               SELECT binding.id
+               FROM linear_project_binding AS binding
+               JOIN workspace_connection AS connection ON connection.id = binding.connection_id
+               WHERE connection.organization_id <> $3
+               ORDER BY binding.id
+               FOR UPDATE OF binding
+           ), deleted_conflicts AS (
+               DELETE FROM linear_sync_conflict
+               WHERE workspace_id = $2
+                 AND binding_id IN (SELECT id FROM old_bindings)
+           ), deleted_member_bindings AS (
                DELETE FROM linear_member_binding
                WHERE workspace_id = $2
                  AND connection_id IN (
                      SELECT id
-                     FROM linear_connection
-                     WHERE workspace_id = $2 AND organization_id <> $3
+                     FROM workspace_connection
+                     WHERE organization_id <> $3
                  )
            ), changed_bindings AS (
                UPDATE linear_project_binding
@@ -134,12 +150,8 @@ pub async fn upsert_connection(
                    paused_at = COALESCE(paused_at, now()),
                    updated_at = now()
                WHERE workspace_id = $2
+                 AND id IN (SELECT id FROM old_bindings)
                  AND status <> 'tombstone'
-                 AND EXISTS (
-                     SELECT 1
-                     FROM linear_connection
-                     WHERE workspace_id = $2 AND organization_id <> $3
-                 )
            )
            INSERT INTO linear_connection
            (id, workspace_id, organization_id, organization_name, actor_id,
@@ -458,6 +470,25 @@ pub async fn get_linear_member_binding(
         .await?)
 }
 
+pub async fn get_linear_member_binding_by_linear_user(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    connection_id: Uuid,
+    linear_user_id: &str,
+) -> anyhow::Result<Option<LinearMemberBinding>> {
+    let query = format!(
+        "SELECT {columns} FROM linear_member_binding\
+         WHERE workspace_id = $1 AND connection_id = $2 AND linear_user_id = $3",
+        columns = member_binding_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearMemberBinding>(&query)
+        .bind(workspace_id)
+        .bind(connection_id)
+        .bind(linear_user_id)
+        .fetch_optional(executor)
+        .await?)
+}
+
 pub async fn upsert_linear_member_binding(
     executor: impl Executor<'_, Database = Postgres>,
     id: Uuid,
@@ -501,6 +532,139 @@ pub async fn delete_linear_member_binding(
     .execute(executor)
     .await?;
     Ok(result.rows_affected() == 1)
+}
+
+pub async fn delete_linear_member_bindings_for_workspace_member(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    patchbay_user_id: Uuid,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"DELETE FROM linear_member_binding
+           WHERE workspace_id = $1 AND patchbay_user_id = $2"#,
+    )
+    .bind(workspace_id)
+    .bind(patchbay_user_id)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+/// Follows the Linear mutation lock order before member revocation changes
+/// Issue ownership. This prevents a sync worker holding binding/link locks
+/// from deadlocking with owner cleanup when it reaches the Issue row.
+pub async fn lock_linear_rows_for_workspace_member_issue_owners(
+    executor: &mut sqlx::PgConnection,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> anyhow::Result<()> {
+    sqlx::query_scalar::<_, Uuid>(
+        r#"SELECT binding.id
+           FROM linear_project_binding binding
+           WHERE binding.workspace_id = $1
+             AND EXISTS (
+                 SELECT 1
+                 FROM linear_issue_link link
+                 JOIN issue ON issue.id = link.patchbay_issue_id
+                 WHERE link.binding_id = binding.id
+                   AND issue.workspace_id = $1
+                   AND issue.owner_type = 'member'
+                   AND issue.owner_id = $2
+             )
+           ORDER BY binding.id
+           FOR UPDATE"#,
+    )
+    .bind(workspace_id)
+    .bind(user_id)
+    .fetch_all(&mut *executor)
+    .await?;
+    sqlx::query_scalar::<_, Uuid>(
+        r#"SELECT link.id
+           FROM linear_issue_link link
+           JOIN issue ON issue.id = link.patchbay_issue_id
+           WHERE link.workspace_id = $1
+             AND issue.workspace_id = $1
+             AND issue.owner_type = 'member'
+             AND issue.owner_id = $2
+           ORDER BY link.id
+           FOR UPDATE OF link"#,
+    )
+    .bind(workspace_id)
+    .bind(user_id)
+    .fetch_all(&mut *executor)
+    .await?;
+    Ok(())
+}
+
+/// Import bindings have no outbound owner-clear mutation. Advance only their
+/// merge base to the cleared owner after the Issue rows are updated; publish
+/// and two-way bindings retain the old base so their outbox emits unassignment.
+pub async fn clear_import_link_owner_snapshots(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    issue_ids: &[Uuid],
+    user_id: Uuid,
+) -> anyhow::Result<u64> {
+    if issue_ids.is_empty() {
+        return Ok(0);
+    }
+    let result = sqlx::query(
+        r#"UPDATE linear_issue_link link
+           SET last_common_snapshot = jsonb_set(
+                   link.last_common_snapshot,
+                   '{owner_id}',
+                   'null'::jsonb,
+                   true
+               ),
+               updated_at = now()
+           FROM linear_project_binding binding
+           WHERE link.binding_id = binding.id
+             AND link.workspace_id = $1
+             AND link.patchbay_issue_id = ANY($2::uuid[])
+             AND binding.workspace_id = $1
+             AND binding.sync_mode = 'import'
+             AND link.last_common_snapshot->>'owner_id' = $3"#,
+    )
+    .bind(workspace_id)
+    .bind(issue_ids)
+    .bind(user_id.to_string())
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+pub async fn canonicalize_legacy_link_owner_snapshots(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    issue_ids: &[Uuid],
+    user_id: Uuid,
+) -> anyhow::Result<u64> {
+    if issue_ids.is_empty() {
+        return Ok(0);
+    }
+    let result = sqlx::query(
+        r#"UPDATE linear_issue_link link
+           SET last_common_snapshot = jsonb_set(
+                   link.last_common_snapshot, '{owner_id}', to_jsonb($3::text), true
+               ), updated_at = now()
+           FROM linear_project_binding binding, linear_member_binding member
+           WHERE link.binding_id = binding.id
+             AND member.connection_id = binding.connection_id
+             AND member.workspace_id = $1
+             AND member.patchbay_user_id = $3
+             AND link.workspace_id = $1
+             AND link.patchbay_issue_id = ANY($2::uuid[])
+             AND binding.workspace_id = $1
+             AND binding.sync_mode IN ('publish', 'two_way')
+             AND NOT (link.last_common_snapshot ? 'owner_id')
+             AND link.last_common_snapshot->'assignee'->>'id' = member.linear_user_id"#,
+    )
+    .bind(workspace_id)
+    .bind(issue_ids)
+    .bind(user_id)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
 }
 
 pub async fn insert_sync_inbox(
@@ -1214,6 +1378,43 @@ pub async fn update_linear_issue_link(
     Ok(result.rows_affected() == 1)
 }
 
+/// Updates link state after the caller has already established ordering and
+/// holds the link row lock. Conflict resolution uses this variant because a
+/// user decision must not be rejected merely because it carries the same
+/// remote event metadata that is already stored on the link.
+#[allow(clippy::too_many_arguments)]
+pub async fn set_linear_issue_link_state(
+    executor: impl Executor<'_, Database = Postgres>,
+    link_id: Uuid,
+    workspace_id: Uuid,
+    last_common_snapshot: &Value,
+    remote_updated_at: Option<DateTime<Utc>>,
+    last_remote_event_at_ms: Option<i64>,
+    last_remote_event_id: Option<&str>,
+    sync_status: &str,
+) -> anyhow::Result<bool> {
+    let result = sqlx::query(
+        r#"UPDATE linear_issue_link
+           SET last_common_snapshot = $3,
+               remote_updated_at = $4,
+               last_remote_event_at_ms = $5,
+               last_remote_event_id = $6,
+               sync_status = $7,
+               updated_at = now()
+           WHERE id = $1 AND workspace_id = $2"#,
+    )
+    .bind(link_id)
+    .bind(workspace_id)
+    .bind(last_common_snapshot)
+    .bind(remote_updated_at)
+    .bind(last_remote_event_at_ms)
+    .bind(last_remote_event_id)
+    .bind(sync_status)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() == 1)
+}
+
 pub async fn rebind_linear_issue_link(
     executor: impl Executor<'_, Database = Postgres>,
     link_id: Uuid,
@@ -1233,13 +1434,269 @@ pub async fn rebind_linear_issue_link(
     Ok(result.rows_affected() == 1)
 }
 
+pub async fn get_linear_issue_link(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    link_id: Uuid,
+) -> anyhow::Result<Option<LinearIssueLink>> {
+    Ok(sqlx::query_as::<_, LinearIssueLink>(
+        r#"SELECT id, workspace_id, binding_id, patchbay_issue_id,
+                  linear_issue_id, linear_identifier, last_common_snapshot,
+                  remote_updated_at, last_remote_event_at_ms,
+                  last_remote_event_id, sync_status, created_at, updated_at
+           FROM linear_issue_link
+           WHERE id = $1 AND workspace_id = $2"#,
+    )
+    .bind(link_id)
+    .bind(workspace_id)
+    .fetch_optional(executor)
+    .await?)
+}
+
+pub async fn get_linear_issue_link_for_update(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    link_id: Uuid,
+) -> anyhow::Result<Option<LinearIssueLink>> {
+    Ok(sqlx::query_as::<_, LinearIssueLink>(
+        r#"SELECT id, workspace_id, binding_id, patchbay_issue_id,
+                  linear_issue_id, linear_identifier, last_common_snapshot,
+                  remote_updated_at, last_remote_event_at_ms,
+                  last_remote_event_id, sync_status, created_at, updated_at
+           FROM linear_issue_link
+           WHERE id = $1 AND workspace_id = $2
+           FOR UPDATE"#,
+    )
+    .bind(link_id)
+    .bind(workspace_id)
+    .fetch_optional(executor)
+    .await?)
+}
+
+fn conflict_columns() -> &'static str {
+    "id, workspace_id, binding_id, link_id, patchbay_issue_id, linear_issue_id,\
+     field, base_value, local_value, remote_value, source_event_id,\
+     source_event_at_ms, status, resolution, resolved_value, resolved_by_id,\
+     created_at, updated_at"
+}
+
+pub async fn list_linear_sync_conflicts(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    status: Option<&str>,
+) -> anyhow::Result<Vec<LinearSyncConflict>> {
+    let query = format!(
+        "SELECT {columns} FROM linear_sync_conflict\
+         WHERE workspace_id = $1 AND ($2::text IS NULL OR status = $2)\
+         ORDER BY CASE WHEN status = 'open' THEN 0 ELSE 1 END, updated_at DESC, id DESC",
+        columns = conflict_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearSyncConflict>(&query)
+        .bind(workspace_id)
+        .bind(status)
+        .fetch_all(executor)
+        .await?)
+}
+
+pub async fn list_linear_issue_identifiers_for_links(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    link_ids: &[Uuid],
+) -> anyhow::Result<Vec<(Uuid, String)>> {
+    Ok(sqlx::query_as(
+        r#"SELECT id, linear_identifier
+           FROM linear_issue_link
+           WHERE workspace_id = $1 AND id = ANY($2::uuid[])"#,
+    )
+    .bind(workspace_id)
+    .bind(link_ids)
+    .fetch_all(executor)
+    .await?)
+}
+
+pub async fn get_linear_sync_conflict(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    conflict_id: Uuid,
+) -> anyhow::Result<Option<LinearSyncConflict>> {
+    let query = format!(
+        "SELECT {columns} FROM linear_sync_conflict\
+         WHERE workspace_id = $1 AND id = $2",
+        columns = conflict_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearSyncConflict>(&query)
+        .bind(workspace_id)
+        .bind(conflict_id)
+        .fetch_optional(executor)
+        .await?)
+}
+
+pub async fn get_linear_sync_conflict_for_update(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    conflict_id: Uuid,
+) -> anyhow::Result<Option<LinearSyncConflict>> {
+    let query = format!(
+        "SELECT {columns} FROM linear_sync_conflict\
+         WHERE workspace_id = $1 AND id = $2\
+         FOR UPDATE",
+        columns = conflict_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearSyncConflict>(&query)
+        .bind(workspace_id)
+        .bind(conflict_id)
+        .fetch_optional(executor)
+        .await?)
+}
+
+pub struct LinearSyncConflictInput<'a> {
+    pub id: Uuid,
+    pub workspace_id: Uuid,
+    pub binding_id: Uuid,
+    pub link_id: Uuid,
+    pub patchbay_issue_id: Uuid,
+    pub linear_issue_id: &'a str,
+    pub field: &'a str,
+    pub base_value: &'a Value,
+    pub local_value: &'a Value,
+    pub remote_value: &'a Value,
+    pub source_event_id: &'a str,
+    pub source_event_at_ms: Option<i64>,
+}
+
+pub async fn create_linear_sync_conflict(
+    executor: impl Executor<'_, Database = Postgres>,
+    input: &LinearSyncConflictInput<'_>,
+) -> anyhow::Result<Option<LinearSyncConflict>> {
+    let query = format!(
+        "INSERT INTO linear_sync_conflict\
+         (id, workspace_id, binding_id, link_id, patchbay_issue_id, linear_issue_id,\
+          field, base_value, local_value, remote_value, source_event_id,\
+          source_event_at_ms)\
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)\
+         ON CONFLICT (link_id, field) WHERE status = 'open' DO UPDATE SET\
+             binding_id = EXCLUDED.binding_id,\
+             patchbay_issue_id = EXCLUDED.patchbay_issue_id,\
+             linear_issue_id = EXCLUDED.linear_issue_id,\
+             base_value = EXCLUDED.base_value,\
+             local_value = EXCLUDED.local_value,\
+             remote_value = EXCLUDED.remote_value,\
+             source_event_id = EXCLUDED.source_event_id,\
+             source_event_at_ms = EXCLUDED.source_event_at_ms,\
+             updated_at = now()\
+         WHERE EXCLUDED.source_event_at_ms IS NOT NULL\
+           AND (linear_sync_conflict.source_event_at_ms IS NULL\
+                OR EXCLUDED.source_event_at_ms > linear_sync_conflict.source_event_at_ms)\
+         RETURNING {columns}",
+        columns = conflict_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearSyncConflict>(&query)
+        .bind(input.id)
+        .bind(input.workspace_id)
+        .bind(input.binding_id)
+        .bind(input.link_id)
+        .bind(input.patchbay_issue_id)
+        .bind(input.linear_issue_id)
+        .bind(input.field)
+        .bind(input.base_value)
+        .bind(input.local_value)
+        .bind(input.remote_value)
+        .bind(input.source_event_id)
+        .bind(input.source_event_at_ms)
+        .fetch_optional(executor)
+        .await?)
+}
+
+pub async fn dismiss_stale_linear_sync_conflicts(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    link_id: Uuid,
+    active_fields: &[String],
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"UPDATE linear_sync_conflict
+           SET status = 'dismissed', updated_at = now()
+           WHERE workspace_id = $1
+             AND link_id = $2
+             AND status = 'open'
+             AND NOT (field = ANY($3::text[]))"#,
+    )
+    .bind(workspace_id)
+    .bind(link_id)
+    .bind(active_fields)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+pub async fn resolve_linear_sync_conflict(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    conflict_id: Uuid,
+    resolution: &str,
+    resolved_value: &Value,
+    resolved_by_id: Uuid,
+) -> anyhow::Result<Option<LinearSyncConflict>> {
+    let query = format!(
+        "UPDATE linear_sync_conflict\
+         SET status = 'resolved', resolution = $3, resolved_value = $4,\
+             resolved_by_id = $5, updated_at = now()\
+         WHERE workspace_id = $1 AND id = $2 AND status = 'open'\
+         RETURNING {columns}",
+        columns = conflict_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearSyncConflict>(&query)
+        .bind(workspace_id)
+        .bind(conflict_id)
+        .bind(resolution)
+        .bind(resolved_value)
+        .bind(resolved_by_id)
+        .fetch_optional(executor)
+        .await?)
+}
+
+pub async fn count_open_linear_sync_conflicts(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+) -> anyhow::Result<i64> {
+    Ok(sqlx::query_scalar(
+        r#"SELECT COUNT(*)::bigint
+           FROM linear_sync_conflict
+           WHERE workspace_id = $1 AND status = 'open'"#,
+    )
+    .bind(workspace_id)
+    .fetch_one(executor)
+    .await?)
+}
+
+pub async fn count_open_linear_sync_conflicts_for_link(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    link_id: Uuid,
+) -> anyhow::Result<i64> {
+    Ok(sqlx::query_scalar(
+        r#"SELECT COUNT(*)::bigint
+           FROM linear_sync_conflict
+           WHERE workspace_id = $1 AND link_id = $2 AND status = 'open'"#,
+    )
+    .bind(workspace_id)
+    .bind(link_id)
+    .fetch_one(executor)
+    .await?)
+}
+
 pub async fn mark_linear_issue_link_deleted(
     executor: impl Executor<'_, Database = Postgres>,
     link_id: Uuid,
     workspace_id: Uuid,
 ) -> anyhow::Result<bool> {
     let result = sqlx::query(
-        r#"UPDATE linear_issue_link
+        r#"WITH dismissed_conflicts AS (
+               UPDATE linear_sync_conflict
+               SET status = 'dismissed', updated_at = now()
+               WHERE link_id = $1 AND workspace_id = $2 AND status = 'open'
+           )
+           UPDATE linear_issue_link
            SET sync_status = 'deleted', updated_at = now()
            WHERE id = $1 AND workspace_id = $2 AND sync_status <> 'deleted'"#,
     )
@@ -1386,6 +1843,24 @@ pub async fn get_project_binding(
         .await?)
 }
 
+pub async fn get_project_binding_for_update(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    binding_id: Uuid,
+) -> anyhow::Result<Option<LinearProjectBinding>> {
+    let query = format!(
+        "SELECT {columns} FROM linear_project_binding\
+         WHERE workspace_id = $1 AND id = $2 AND status <> 'tombstone'\
+         FOR UPDATE",
+        columns = binding_columns(),
+    );
+    Ok(sqlx::query_as::<_, LinearProjectBinding>(&query)
+        .bind(workspace_id)
+        .bind(binding_id)
+        .fetch_optional(executor)
+        .await?)
+}
+
 pub async fn update_project_binding(
     executor: impl Executor<'_, Database = Postgres>,
     input: &LinearProjectBindingInput<'_>,
@@ -1428,12 +1903,18 @@ pub async fn tombstone_project_binding(
                SELECT id
                FROM linear_project_binding
                WHERE workspace_id = $1 AND id = $2
+               FOR UPDATE
            ), tombstoned_binding AS (
                UPDATE linear_project_binding
                SET status = 'tombstone',
                    paused_at = COALESCE(paused_at, now()),
                    updated_at = now()
                WHERE id IN (SELECT id FROM target_binding) AND status <> 'tombstone'
+               RETURNING id
+           ), deleted_conflicts AS (
+               DELETE FROM linear_sync_conflict
+               WHERE workspace_id = $1
+                 AND binding_id IN (SELECT id FROM target_binding)
                RETURNING id
            ), deleted_links AS (
                UPDATE linear_issue_link

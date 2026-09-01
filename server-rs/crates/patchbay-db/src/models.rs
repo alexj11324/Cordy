@@ -1858,6 +1858,31 @@ pub struct LinearIssueLink {
     pub workspace_id: Uuid,
 }
 
+/// One shared-field conflict retained for the Linear Conflict Center. The
+/// three JSON values are immutable evidence for the merge decision; only the
+/// resolution fields change after an operator resolves the conflict.
+#[derive(Debug, Clone, Serialize, sqlx::FromRow)]
+pub struct LinearSyncConflict {
+    pub base_value: serde_json::Value,
+    pub binding_id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub field: String,
+    pub id: Uuid,
+    pub link_id: Uuid,
+    pub linear_issue_id: String,
+    pub local_value: serde_json::Value,
+    pub patchbay_issue_id: Uuid,
+    pub remote_value: serde_json::Value,
+    pub resolution: Option<String>,
+    pub resolved_by_id: Option<Uuid>,
+    pub resolved_value: Option<serde_json::Value>,
+    pub source_event_at_ms: Option<i64>,
+    pub source_event_id: String,
+    pub status: String,
+    pub updated_at: DateTime<Utc>,
+    pub workspace_id: Uuid,
+}
+
 /// Durable outbound Linear mutation. Provider calls happen only after a
 /// worker claims this row; the lease fields make retries safe across process
 /// crashes and multiple server instances.

@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use serde_json::json;
-use sqlx::PgPool;
+use sqlx::{PgConnection, PgPool};
 use uuid::Uuid;
 
 use patchbay_analytics as analytics;
@@ -25,6 +25,7 @@ use patchbay_db::queries::issue::{create_issue, create_issue_with_origin, get_is
 use patchbay_db::queries::issue_label::{attach_label_to_issue_on_create, get_label};
 use patchbay_db::queries::issue_status::lock_issue_status_catalog_shared;
 use patchbay_db::queries::linear as linear_q;
+use patchbay_db::queries::member as member_q;
 use patchbay_db::queries::project::get_project_in_workspace;
 use patchbay_db::queries::team::get_team_in_workspace;
 use patchbay_db::queries::workspace::{get_workspace, increment_issue_counter};
@@ -62,6 +63,25 @@ impl IssueService {
         issue_id: Uuid,
         command: IssueCommand,
     ) -> Result<Issue, ExternalIssueError> {
+        let mut tx = self.pool.begin().await?;
+        let applied = self
+            .apply_external_patch_in_transaction(&mut tx, workspace_id, issue_id, command)
+            .await?;
+        tx.commit().await?;
+        self.publish_external_issue_apply(&applied).await;
+        Ok(applied.updated.unwrap_or(applied.previous))
+    }
+
+    /// Applies the external Issue command without committing. Callers that
+    /// also need to update provider-sync state can use the same transaction,
+    /// then call [`Self::publish_external_issue_apply`] after commit.
+    pub async fn apply_external_patch_in_transaction(
+        &self,
+        executor: &mut PgConnection,
+        workspace_id: Uuid,
+        issue_id: Uuid,
+        command: IssueCommand,
+    ) -> Result<ExternalIssueApply, ExternalIssueError> {
         let IssueCommand::ApplyExternalPatch {
             source,
             source_event_id,
@@ -76,13 +96,12 @@ impl IssueService {
             return Err(ExternalIssueError::ExternalOutboxNotSuppressed);
         }
 
-        let mut tx = self.pool.begin().await?;
         let Some(previous) = sqlx::query_as::<_, Issue>(
             "SELECT * FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
         )
         .bind(issue_id)
         .bind(workspace_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut *executor)
         .await?
         else {
             return Err(ExternalIssueError::NotFound);
@@ -109,7 +128,7 @@ impl IssueService {
             next.description = description;
         }
         if let Some(status) = patch.status {
-            next.status = issue_status::resolve(&mut *tx, workspace_id, &status)
+            next.status = issue_status::resolve(&mut *executor, workspace_id, &status)
                 .await
                 .map_err(|_| ExternalIssueError::InvalidStatus)?
                 .key;
@@ -128,7 +147,7 @@ impl IssueService {
         }
         if let Some(project_id) = patch.project_id {
             if let Some(project_id) = project_id {
-                if get_project_in_workspace(&mut *tx, project_id, workspace_id)
+                if get_project_in_workspace(&mut *executor, project_id, workspace_id)
                     .await
                     .map_err(|error| {
                         ExternalIssueError::Internal(format!("validate external project: {error}"))
@@ -140,7 +159,33 @@ impl IssueService {
             }
             next.project_id = project_id;
         }
-        let next_category = issue_status::effective(&mut *tx, workspace_id, &next.status).await;
+        if let Some(owner_type) = patch.owner_type {
+            next.owner_type = owner_type;
+        }
+        if let Some(owner_id) = patch.owner_id {
+            next.owner_id = owner_id;
+        }
+        match (next.owner_type.as_deref(), next.owner_id) {
+            (None, None) => {}
+            (Some("member"), Some(owner_id)) => {
+                if member_q::get_member_by_user_and_workspace(
+                    &mut *executor,
+                    owner_id,
+                    workspace_id,
+                )
+                .await
+                .map_err(|error| {
+                    ExternalIssueError::Internal(format!("validate external owner: {error}"))
+                })?
+                .is_none()
+                {
+                    return Err(ExternalIssueError::InvalidOwner);
+                }
+            }
+            _ => return Err(ExternalIssueError::InvalidOwner),
+        }
+        let next_category =
+            issue_status::effective(&mut *executor, workspace_id, &next.status).await;
         validate_external_workflow(
             &next_category,
             next.executor_type.as_deref(),
@@ -154,9 +199,15 @@ impl IssueService {
             && next.priority == previous.priority
             && next.due_date == previous.due_date
             && next.project_id == previous.project_id
+            && next.owner_type == previous.owner_type
+            && next.owner_id == previous.owner_id
         {
-            tx.commit().await?;
-            return Ok(previous);
+            return Ok(ExternalIssueApply {
+                source,
+                source_event_id,
+                previous,
+                updated: None,
+            });
         }
 
         let updated = sqlx::query_as::<_, Issue>(
@@ -167,6 +218,8 @@ impl IssueService {
                priority = $6,
                due_date = $7,
                project_id = $8,
+               owner_type = $9,
+               owner_id = $10,
                revision = revision + 1,
                last_activity_at = GREATEST(COALESCE(last_activity_at, updated_at), now()),
                updated_at = now()
@@ -181,10 +234,12 @@ impl IssueService {
         .bind(&next.priority)
         .bind(next.due_date)
         .bind(next.project_id)
-        .fetch_one(&mut *tx)
+        .bind(&next.owner_type)
+        .bind(next.owner_id)
+        .fetch_one(&mut *executor)
         .await?;
         activity::create_activity(
-            &mut *tx,
+            &mut *executor,
             workspace_id,
             issue_id,
             Some("system"),
@@ -200,13 +255,32 @@ impl IssueService {
                 "prev_priority": previous.priority,
                 "prev_due_date": previous.due_date.map(|date| date.format("%Y-%m-%d").to_string()),
                 "prev_project_id": previous.project_id.map(|id| id.to_string()),
+                "prev_owner_type": previous.owner_type,
+                "prev_owner_id": previous.owner_id.map(|id| id.to_string()),
             }),
             new_v7(),
         )
         .await
         .map_err(|error| ExternalIssueError::Internal(format!("create activity: {error}")))?;
-        tx.commit().await?;
+        Ok(ExternalIssueApply {
+            source,
+            source_event_id,
+            previous,
+            updated: Some(updated),
+        })
+    }
 
+    /// Publishes the non-transactional effects of a committed external Issue
+    /// write. The database mutation remains durable even when these effects
+    /// are unavailable, and the normal domain run-admission logic is retained.
+    pub async fn publish_external_issue_apply(&self, applied: &ExternalIssueApply) {
+        let Some(updated) = applied.updated.as_ref() else {
+            return;
+        };
+        let previous = &applied.previous;
+        let workspace_id = updated.workspace_id;
+        let source = applied.source;
+        let source_event_id = &applied.source_event_id;
         let prefix = get_workspace(&self.pool, workspace_id)
             .await
             .ok()
@@ -220,10 +294,11 @@ impl IssueService {
             actor_type: "system".to_string(),
             actor_id: String::new(),
             payload: json!({
-                "issue": issue_to_map_with_category(&updated, &prefix, &category),
+                "issue": issue_to_map_with_category(updated, &prefix, &category),
                 "external_source": source.as_str(),
                 "source_event_id": source_event_id,
-                "owner_changed": false,
+                "owner_changed": previous.owner_type != updated.owner_type
+                    || previous.owner_id != updated.owner_id,
                 "executor_changed": false,
                 "status_changed": previous.status != updated.status,
                 "priority_changed": previous.priority != updated.priority,
@@ -237,6 +312,8 @@ impl IssueService {
                 "prev_priority": previous.priority,
                 "prev_due_date": previous.due_date.map(|date| date.format("%Y-%m-%d").to_string()),
                 "prev_project_id": previous.project_id.map(|id| id.to_string()),
+                "prev_owner_type": previous.owner_type,
+                "prev_owner_id": previous.owner_id.map(|id| id.to_string()),
             }),
             task_id: String::new(),
             chat_session_id: String::new(),
@@ -266,7 +343,7 @@ impl IssueService {
             let enqueue = if trigger.executor_type == "team" {
                 self.task_svc
                     .enqueue_task_for_team_leader_with_handoff(
-                        &updated,
+                        updated,
                         trigger.agent_id,
                         updated.executor_id.unwrap_or_default(),
                         "",
@@ -275,7 +352,7 @@ impl IssueService {
                     .await
             } else {
                 self.task_svc
-                    .enqueue_task_for_issue_with_handoff(&updated, "", None)
+                    .enqueue_task_for_issue_with_handoff(updated, "", None)
                     .await
             };
             if let Err(error) = enqueue {
@@ -286,7 +363,6 @@ impl IssueService {
                 );
             }
         }
-        Ok(updated)
     }
 }
 
@@ -367,6 +443,8 @@ pub struct IssueCreateOpts {
     /// requests cannot create multiple issues from one task lease. A failed
     /// create rolls the revocation back with the rest of the transaction.
     pub consume_task_lease_id: Option<Uuid>,
+    /// Serialize an integration-owned member assignment with member removal.
+    pub require_owner_member: bool,
 }
 
 /// Typed failure surface of [`IssueService::create`]. The four sentinel
@@ -437,6 +515,21 @@ pub struct ExternalIssuePatch {
     /// binding normally supplies a concrete workspace-local Project, but the
     /// tri-state keeps the domain command explicit for future providers.
     pub project_id: Option<Option<Uuid>>,
+    /// `Some(None)` clears the human owner. When present, the type and id are
+    /// validated as one member-scoped pair before the update commits.
+    pub owner_type: Option<Option<String>>,
+    pub owner_id: Option<Option<Uuid>>,
+}
+
+/// Result of applying an external Issue command inside a caller-owned
+/// transaction. `updated` is `None` when the patch was a no-op; the previous
+/// snapshot is retained for post-commit event and side-effect decisions.
+#[derive(Debug)]
+pub struct ExternalIssueApply {
+    pub source: ExternalSource,
+    pub source_event_id: String,
+    pub previous: Issue,
+    pub updated: Option<Issue>,
 }
 
 #[derive(Debug, Clone)]
@@ -466,6 +559,8 @@ pub enum ExternalIssueError {
     InvalidPriority,
     #[error("external issue project not found in workspace")]
     ProjectNotFound,
+    #[error("invalid external issue owner")]
+    InvalidOwner,
     #[error("external issue status requires an executor")]
     ActiveExecutorRequired,
     #[error("external issue review status requires a reviewer different from the executor")]
@@ -595,6 +690,17 @@ RETURNING id"#,
                 .is_none()
             {
                 return Err(IssueCreateError::ProjectNotFound);
+            }
+        }
+        if opts.require_owner_member && p.owner_type.as_deref() == Some("member") {
+            if let Some(owner_id) = p.owner_id.filter(|id| !id.is_nil()) {
+                if member_q::lock_member_by_user_and_workspace(&mut *tx, owner_id, p.workspace_id)
+                    .await
+                    .map_err(|error| ic_err("lock issue owner member", error))?
+                    .is_none()
+                {
+                    return Err(ic_err_msg("issue owner is no longer a workspace member"));
+                }
             }
         }
 

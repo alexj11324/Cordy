@@ -1,8 +1,8 @@
 //! Linear installation foundation.
 //!
-//! This module deliberately stops at installation and durable Webhook
-//! receipt. It does not mutate Issues. Later sync workers consume the Inbox
-//! through an explicit domain boundary.
+//! This module owns Linear installation, catalog/binding administration, and
+//! the verified Webhook receipt. Issue mutations still go through the
+//! IssueService domain boundary and durable sync queues.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -14,7 +14,7 @@ use axum::routing::{delete, get, patch, post, put};
 use axum::{Json, Router};
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use base64::Engine as _;
-use chrono::{Duration, Utc};
+use chrono::{Duration, NaiveDate, Utc};
 use hmac::{Hmac, Mac};
 use patchbay_db::models::{LinearConnection, LinearProjectBinding};
 use patchbay_db::queries::issue as issue_q;
@@ -32,6 +32,9 @@ use uuid::Uuid;
 
 use crate::error::error_response;
 use crate::state::HandlerState;
+use patchbay_service::issue_service::{
+    ExternalIssueError, ExternalIssuePatch, ExternalSource, IssueCommand,
+};
 
 type HmacSha256 = Hmac<Sha256>;
 
@@ -55,6 +58,7 @@ pub fn member_router() -> Router<HandlerState> {
             "/api/workspaces/{id}/linear/members",
             get(list_member_bindings),
         )
+        .route("/api/workspaces/{id}/linear/conflicts", get(list_conflicts))
 }
 
 pub fn admin_router() -> Router<HandlerState> {
@@ -69,6 +73,10 @@ pub fn admin_router() -> Router<HandlerState> {
         .route(
             "/api/workspaces/{id}/linear/members/{user_id}",
             delete(delete_member_binding),
+        )
+        .route(
+            "/api/workspaces/{id}/linear/conflicts/{conflict_id}",
+            patch(resolve_conflict),
         )
         .route("/api/workspaces/{id}/linear/dry-run", post(dry_run_binding))
         .route(
@@ -608,6 +616,611 @@ async fn delete_member_binding(
             )
         }
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearConflictQuery {
+    status: Option<String>,
+}
+
+async fn list_conflicts(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Query(query): Query<LinearConflictQuery>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    let status = query
+        .status
+        .as_deref()
+        .filter(|value| matches!(*value, "open" | "resolved" | "dismissed"));
+    if query.status.is_some() && status.is_none() {
+        return error_response(StatusCode::BAD_REQUEST, "invalid Linear conflict status");
+    }
+    match linear_q::list_linear_sync_conflicts(&state.pool, workspace_id, status).await {
+        Ok(conflicts) => {
+            let link_ids = conflicts
+                .iter()
+                .map(|conflict| conflict.link_id)
+                .collect::<Vec<_>>();
+            let identifiers = linear_q::list_linear_issue_identifiers_for_links(
+                &state.pool,
+                workspace_id,
+                &link_ids,
+            )
+            .await
+            .unwrap_or_default()
+            .into_iter()
+            .collect::<std::collections::HashMap<_, _>>();
+            let mut enriched = Vec::with_capacity(conflicts.len());
+            for conflict in conflicts {
+                let identifier = identifiers.get(&conflict.link_id).cloned();
+                let mut value = serde_json::to_value(conflict).unwrap_or_else(|_| json!({}));
+                if let Some(object) = value.as_object_mut() {
+                    object.insert("linear_identifier".to_string(), json!(identifier));
+                }
+                enriched.push(value);
+            }
+            Json(json!({ "conflicts": enriched })).into_response()
+        }
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict lookup failed");
+            error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear conflicts",
+            )
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+struct ResolveLinearConflictRequest {
+    resolution: String,
+    /// `None` means the property was omitted; `Some(None)` is an explicit
+    /// JSON null and is valid for nullable fields such as description.
+    #[serde(default, deserialize_with = "deserialize_optional_nullable_value")]
+    manual_value: Option<Option<Value>>,
+}
+
+fn deserialize_optional_nullable_value<'de, D>(
+    deserializer: D,
+) -> Result<Option<Option<Value>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Some(Option::<Value>::deserialize(deserializer)?))
+}
+
+#[derive(Debug, Deserialize)]
+struct LinearConflictPath {
+    id: Uuid,
+    conflict_id: Uuid,
+}
+
+fn conflict_patch(field: &str, value: &Value) -> Result<ExternalIssuePatch, &'static str> {
+    match field {
+        "title" => Ok(ExternalIssuePatch {
+            title: Some(
+                value
+                    .as_str()
+                    .filter(|value| !value.trim().is_empty())
+                    .ok_or("title resolution must be a non-empty string")?
+                    .to_string(),
+            ),
+            ..ExternalIssuePatch::default()
+        }),
+        "description" => {
+            let description = match value {
+                Value::String(value) => Some(Some(value.clone())),
+                Value::Null => Some(None),
+                _ => return Err("description resolution must be a string or null"),
+            };
+            Ok(ExternalIssuePatch {
+                description,
+                ..ExternalIssuePatch::default()
+            })
+        }
+        "priority" => Ok(ExternalIssuePatch {
+            priority: Some(
+                value
+                    .as_str()
+                    .filter(|value| matches!(*value, "none" | "urgent" | "high" | "medium" | "low"))
+                    .ok_or("priority resolution is invalid")?
+                    .to_string(),
+            ),
+            ..ExternalIssuePatch::default()
+        }),
+        "status" => Ok(ExternalIssuePatch {
+            status: Some(
+                value
+                    .as_str()
+                    .filter(|value| !value.trim().is_empty())
+                    .ok_or("status resolution must be a non-empty string")?
+                    .to_string(),
+            ),
+            ..ExternalIssuePatch::default()
+        }),
+        "due_date" => Ok(ExternalIssuePatch {
+            due_date: Some(
+                value
+                    .as_str()
+                    .filter(|value| !value.trim().is_empty())
+                    .map(|value| {
+                        NaiveDate::parse_from_str(value, "%Y-%m-%d")
+                            .map_err(|_| "due date resolution is invalid")
+                    })
+                    .transpose()?,
+            ),
+            ..ExternalIssuePatch::default()
+        }),
+        "owner_id" => {
+            let owner_id = value
+                .as_str()
+                .filter(|value| !value.trim().is_empty())
+                .map(|value| {
+                    value
+                        .parse::<Uuid>()
+                        .map_err(|_| "owner resolution is invalid")
+                })
+                .transpose()?;
+            Ok(ExternalIssuePatch {
+                owner_type: Some(owner_id.map(|_| "member".to_string())),
+                owner_id: Some(owner_id),
+                ..ExternalIssuePatch::default()
+            })
+        }
+        _ => Err("this Linear field cannot be resolved here"),
+    }
+}
+
+fn status_resolution_is_publishable(status_mapping: &Value, status: &str) -> bool {
+    status_mapping.as_object().is_some_and(|mapping| {
+        mapping
+            .values()
+            .any(|mapped_status| mapped_status.as_str() == Some(status))
+    })
+}
+
+fn current_issue_conflict_value(
+    issue: &patchbay_db::models::Issue,
+    field: &str,
+) -> Result<Value, &'static str> {
+    match field {
+        "title" => Ok(Value::String(issue.title.clone())),
+        "description" => Ok(issue
+            .description
+            .clone()
+            .map(Value::String)
+            .unwrap_or(Value::Null)),
+        "priority" => Ok(Value::String(issue.priority.clone())),
+        "status" => Ok(Value::String(issue.status.clone())),
+        "due_date" => Ok(issue
+            .due_date
+            .map(|date| Value::String(date.format("%Y-%m-%d").to_string()))
+            .unwrap_or(Value::Null)),
+        "owner_id" => Ok(if issue.owner_type.as_deref() == Some("member") {
+            issue
+                .owner_id
+                .map(|id| Value::String(id.to_string()))
+                .unwrap_or(Value::Null)
+        } else {
+            Value::Null
+        }),
+        _ => Err("this Linear field cannot be resolved here"),
+    }
+}
+
+fn issue_differs_from_common_snapshot(
+    issue: &patchbay_db::models::Issue,
+    common_snapshot: &Value,
+) -> bool {
+    [
+        "title",
+        "description",
+        "priority",
+        "status",
+        "due_date",
+        "owner_id",
+    ]
+    .into_iter()
+    .any(|field| {
+        current_issue_conflict_value(issue, field)
+            .map(|value| common_snapshot.get(field) != Some(&value))
+            .unwrap_or(false)
+    })
+}
+
+fn external_conflict_error_status(error: &ExternalIssueError) -> StatusCode {
+    match error {
+        ExternalIssueError::RevisionConflict { .. } => StatusCode::CONFLICT,
+        ExternalIssueError::NotFound => StatusCode::NOT_FOUND,
+        ExternalIssueError::InvalidStatus
+        | ExternalIssueError::InvalidPriority
+        | ExternalIssueError::InvalidOwner
+        | ExternalIssueError::ActiveExecutorRequired
+        | ExternalIssueError::ReviewReviewerRequired
+        | ExternalIssueError::ProjectNotFound
+        | ExternalIssueError::Internal(_)
+        | ExternalIssueError::MissingSourceEvent
+        | ExternalIssueError::ExternalOutboxNotSuppressed => StatusCode::BAD_REQUEST,
+        ExternalIssueError::Sql(_) => StatusCode::INTERNAL_SERVER_ERROR,
+    }
+}
+
+async fn resolve_conflict(
+    State(state): State<HandlerState>,
+    Extension(context): Extension<WorkspaceContext>,
+    Path(path): Path<LinearConflictPath>,
+    Json(request): Json<ResolveLinearConflictRequest>,
+) -> Response {
+    if let Some(response) = integration_disabled(&state) {
+        return response;
+    }
+    let workspace_id = match workspace_id(&context) {
+        Ok(id) => id,
+        Err(response) => return response,
+    };
+    if path.id != workspace_id {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "workspace id does not match context",
+        );
+    }
+    if !matches!(request.resolution.as_str(), "local" | "remote" | "manual") {
+        return error_response(
+            StatusCode::BAD_REQUEST,
+            "resolution must be local, remote, or manual",
+        );
+    }
+    let mut transaction = match state.pool.begin().await {
+        Ok(transaction) => transaction,
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict transaction failed to start");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to resolve Linear conflict",
+            );
+        }
+    };
+    let Some(conflict_snapshot) = (match linear_q::get_linear_sync_conflict(
+        &mut *transaction,
+        workspace_id,
+        path.conflict_id,
+    )
+    .await
+    {
+        Ok(conflict) => conflict,
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict lookup failed before resolution");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear conflict",
+            );
+        }
+    }) else {
+        return error_response(StatusCode::NOT_FOUND, "Linear conflict not found");
+    };
+    if conflict_snapshot.status != "open" {
+        return error_response(StatusCode::CONFLICT, "Linear conflict is already resolved");
+    }
+    let Some(connection) =
+        (match linear_q::get_connection_for_workspace_for_update(&mut transaction, workspace_id)
+            .await
+        {
+            Ok(connection) => connection,
+            Err(error) => {
+                tracing::warn!(%error, "Linear conflict connection lookup failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to load Linear connection",
+                );
+            }
+        })
+    else {
+        return error_response(
+            StatusCode::CONFLICT,
+            "Linear connection is no longer available",
+        );
+    };
+    let Some(binding) = (match linear_q::get_project_binding_for_update(
+        &mut *transaction,
+        workspace_id,
+        conflict_snapshot.binding_id,
+    )
+    .await
+    {
+        Ok(binding) => binding,
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict binding lookup failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear binding",
+            );
+        }
+    }) else {
+        return error_response(StatusCode::CONFLICT, "Linear binding is no longer syncable");
+    };
+    if binding.connection_id != connection.id
+        || (matches!(binding.sync_mode.as_str(), "publish" | "two_way")
+            && connection.status != "active")
+    {
+        return error_response(
+            StatusCode::CONFLICT,
+            "Linear connection is no longer active for this resolution",
+        );
+    }
+    let Some(link) = (match linear_q::get_linear_issue_link_for_update(
+        &mut *transaction,
+        workspace_id,
+        conflict_snapshot.link_id,
+    )
+    .await
+    {
+        Ok(link) => link,
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict link lookup failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to load Linear link",
+            );
+        }
+    }) else {
+        return error_response(StatusCode::NOT_FOUND, "Linear Issue Link not found");
+    };
+    if link.patchbay_issue_id != conflict_snapshot.patchbay_issue_id
+        || link.binding_id != conflict_snapshot.binding_id
+        || link.sync_status == "deleted"
+    {
+        return error_response(
+            StatusCode::CONFLICT,
+            "Linear Issue Link is no longer syncable",
+        );
+    }
+    let Some(issue) = (match sqlx::query_as::<_, patchbay_db::models::Issue>(
+        "SELECT * FROM issue WHERE id = $1 AND workspace_id = $2 FOR UPDATE",
+    )
+    .bind(conflict_snapshot.patchbay_issue_id)
+    .bind(workspace_id)
+    .fetch_optional(&mut *transaction)
+    .await
+    {
+        Ok(issue) => issue,
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict Issue lookup failed");
+            return error_response(StatusCode::INTERNAL_SERVER_ERROR, "failed to load Issue");
+        }
+    }) else {
+        return error_response(StatusCode::NOT_FOUND, "Patchbay Issue not found");
+    };
+    let Some(conflict) = (match linear_q::get_linear_sync_conflict_for_update(
+        &mut *transaction,
+        workspace_id,
+        path.conflict_id,
+    )
+    .await
+    {
+        Ok(conflict) => conflict,
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict lock failed before resolution");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to lock Linear conflict",
+            );
+        }
+    }) else {
+        return error_response(StatusCode::NOT_FOUND, "Linear conflict not found");
+    };
+    if conflict.status != "open"
+        || conflict.binding_id != binding.id
+        || conflict.link_id != link.id
+        || conflict.patchbay_issue_id != issue.id
+    {
+        return error_response(
+            StatusCode::CONFLICT,
+            "Linear conflict is no longer resolvable",
+        );
+    }
+    if binding.status != "active"
+        || !(matches!(binding.sync_mode.as_str(), "publish" | "two_way")
+            || (binding.sync_mode == "import" && request.resolution == "remote"))
+        || binding
+            .linear_team_id
+            .as_deref()
+            .map(|team| team.trim().is_empty())
+            .unwrap_or(true)
+    {
+        return error_response(StatusCode::CONFLICT, "Linear binding is no longer syncable");
+    }
+    let selected_value = match request.resolution.as_str() {
+        "local" => match current_issue_conflict_value(&issue, &conflict.field) {
+            Ok(value) => value,
+            Err(message) => return error_response(StatusCode::BAD_REQUEST, message),
+        },
+        "remote" => conflict.remote_value.clone(),
+        "manual" => match request.manual_value {
+            Some(Some(value)) => value,
+            Some(None) => Value::Null,
+            None => return error_response(StatusCode::BAD_REQUEST, "manual_value is required"),
+        },
+        _ => unreachable!(),
+    };
+    let patch = match conflict_patch(&conflict.field, &selected_value) {
+        Ok(patch) => patch,
+        Err(message) => return error_response(StatusCode::BAD_REQUEST, message),
+    };
+    if request.resolution != "remote" {
+        if let Some(status) = patch.status.as_deref() {
+            if !status_resolution_is_publishable(&binding.status_mapping, status) {
+                return error_response(
+                    StatusCode::BAD_REQUEST,
+                    "status resolution has no Linear state mapping",
+                );
+            }
+        }
+    }
+    if request.resolution != "remote" {
+        if let Some(owner_id) = patch.owner_id.flatten() {
+            match linear_q::get_linear_member_binding(
+                &mut *transaction,
+                workspace_id,
+                binding.connection_id,
+                owner_id,
+            )
+            .await
+            {
+                Ok(Some(_)) => {}
+                Ok(None) => {
+                    return error_response(
+                        StatusCode::BAD_REQUEST,
+                        "owner resolution has no Linear member mapping",
+                    );
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "Linear conflict owner mapping lookup failed");
+                    return error_response(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "failed to validate owner resolution",
+                    );
+                }
+            }
+        }
+    }
+    let applied = match state
+        .issues
+        .apply_external_patch_in_transaction(
+            &mut transaction,
+            workspace_id,
+            issue.id,
+            IssueCommand::ApplyExternalPatch {
+                source: ExternalSource::Linear,
+                source_event_id: format!("linear-conflict:{}", conflict.id),
+                expected_revision: Some(issue.revision),
+                suppress_external_outbox: true,
+                patch,
+            },
+        )
+        .await
+    {
+        Ok(applied) => applied,
+        Err(error) => {
+            tracing::warn!(%error, conflict_id = %conflict.id, "Linear conflict Issue resolution failed");
+            return error_response(external_conflict_error_status(&error), &error.to_string());
+        }
+    };
+    let resolved = match linear_q::resolve_linear_sync_conflict(
+        &mut *transaction,
+        workspace_id,
+        conflict.id,
+        &request.resolution,
+        &selected_value,
+        context.member.user_id,
+    )
+    .await
+    {
+        Ok(Some(conflict)) => conflict,
+        Ok(None) => {
+            return error_response(StatusCode::CONFLICT, "Linear conflict is already resolved")
+        }
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict resolution persistence failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to save Linear conflict resolution",
+            );
+        }
+    };
+    let open_conflicts = match linear_q::count_open_linear_sync_conflicts_for_link(
+        &mut *transaction,
+        workspace_id,
+        link.id,
+    )
+    .await
+    {
+        Ok(count) => count,
+        Err(error) => {
+            tracing::warn!(%error, "Linear conflict count failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update Linear conflict",
+            );
+        }
+    };
+    // The remote value is the latest common evidence. Keeping it as the
+    // merge base means a local/manual choice remains an intentional local
+    // delta for the subsequent outbound push.
+    let mut common_snapshot = link.last_common_snapshot.clone();
+    if let Some(object) = common_snapshot.as_object_mut() {
+        object.insert(conflict.field.clone(), conflict.remote_value.clone());
+    }
+    let link_status = if open_conflicts == 0 {
+        "active"
+    } else {
+        "conflict"
+    };
+    let link_updated = match linear_q::set_linear_issue_link_state(
+        &mut *transaction,
+        link.id,
+        workspace_id,
+        &common_snapshot,
+        link.remote_updated_at,
+        link.last_remote_event_at_ms,
+        link.last_remote_event_id.as_deref(),
+        link_status,
+    )
+    .await
+    {
+        Ok(updated) => updated,
+        Err(error) => {
+            tracing::warn!(%error, conflict_id = %resolved.id, "Linear conflict link update failed");
+            return error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "failed to update Linear link",
+            );
+        }
+    };
+    if !link_updated {
+        return error_response(
+            StatusCode::CONFLICT,
+            "Linear Issue Link disappeared during resolution",
+        );
+    }
+    if open_conflicts == 0 {
+        let updated_issue = applied.updated.as_ref().unwrap_or(&applied.previous);
+        if issue_differs_from_common_snapshot(updated_issue, &common_snapshot) {
+            if let Err(error) = linear_q::enqueue_issue_outbox_for_binding(
+                &mut *transaction,
+                workspace_id,
+                link.binding_id,
+                updated_issue.id,
+                &format!("conflict:{}:{}", conflict.id, request.resolution),
+                "issue_updated",
+                &patchbay_service::issue_service::linear_issue_sync_payload(updated_issue),
+            )
+            .await
+            {
+                tracing::warn!(%error, conflict_id = %conflict.id, "Linear conflict outbound resolution enqueue failed");
+                return error_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "failed to queue Linear conflict resolution",
+                );
+            }
+        }
+    }
+    if let Err(error) = transaction.commit().await {
+        tracing::warn!(%error, conflict_id = %conflict.id, "Linear conflict transaction commit failed");
+        return error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "failed to commit Linear conflict resolution",
+        );
+    }
+    state.issues.publish_external_issue_apply(&applied).await;
+    state.notify_linear_sync();
+    Json(resolved).into_response()
 }
 
 #[derive(Debug, Deserialize)]
@@ -1610,6 +2223,7 @@ pub(crate) struct LinearRemoteIssue {
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
     pub team: Option<LinearRemoteTeam>,
+    pub assignee: Option<LinearRemoteUser>,
     pub labels: LinearCatalogPage<LinearRemoteLabel>,
 }
 
@@ -1653,6 +2267,11 @@ pub(crate) struct LinearRemoteProject {
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct LinearRemoteTeam {
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct LinearRemoteUser {
     pub id: String,
 }
 
@@ -2256,7 +2875,7 @@ impl LinearTokenManager {
             .post(&self.graphql_url)
             .bearer_auth(access_token)
             .json(&json!({
-                "query": "query LinearIssue($issueId: ID!) { issue(id: $issueId) { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } labels { nodes { id } } } }",
+                "query": "query LinearIssue($issueId: ID!) { issue(id: $issueId) { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } labels { nodes { id } } } }",
                 "variables": { "issueId": linear_issue_id },
             }))
             .send()
@@ -2299,7 +2918,7 @@ impl LinearTokenManager {
             .post(&self.graphql_url)
             .bearer_auth(access_token)
             .json(&json!({
-                "query": "query LinearProjectIssues($projectId: ID!, $after: String) { issues(first: 100, after: $after, filter: { project: { id: { eq: $projectId } } }) { nodes { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } labels { nodes { id } } } pageInfo { hasNextPage endCursor } } }",
+                "query": "query LinearProjectIssues($projectId: ID!, $after: String) { issues(first: 100, after: $after, filter: { project: { id: { eq: $projectId } } }) { nodes { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } labels { nodes { id } } } pageInfo { hasNextPage endCursor } } }",
                 "variables": {
                     "projectId": linear_project_id,
                     "after": after,
@@ -2455,7 +3074,7 @@ impl LinearTokenManager {
         self.mutate_issue(
             &access_token,
             "issueCreate",
-            "mutation LinearIssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } labels { nodes { id } } } userErrors { message } } }",
+            "mutation LinearIssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } labels { nodes { id } } } userErrors { message } } }",
             json!({ "input": Value::Object(variables) }),
         )
         .await
@@ -2486,7 +3105,7 @@ impl LinearTokenManager {
         self.mutate_issue(
             &access_token,
             "issueUpdate",
-            "mutation LinearIssueUpdate($issueId: ID!, $input: IssueUpdateInput!) { issueUpdate(id: $issueId, input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } labels { nodes { id } } } userErrors { message } } }",
+            "mutation LinearIssueUpdate($issueId: ID!, $input: IssueUpdateInput!) { issueUpdate(id: $issueId, input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } labels { nodes { id } } } userErrors { message } } }",
             json!({ "issueId": input.linear_issue_id, "input": Value::Object(variables) }),
         )
         .await
@@ -3591,6 +4210,38 @@ mod tests {
             validate_webhook(Some(secret), &headers, body, timestamp),
             Err(WebhookValidationError::TimestampMismatch)
         );
+    }
+
+    #[test]
+    fn conflict_manual_value_distinguishes_omitted_null_and_value() {
+        let omitted: ResolveLinearConflictRequest = serde_json::from_value(json!({
+            "resolution": "manual"
+        }))
+        .unwrap();
+        let cleared: ResolveLinearConflictRequest = serde_json::from_value(json!({
+            "resolution": "manual",
+            "manual_value": null
+        }))
+        .unwrap();
+        let supplied: ResolveLinearConflictRequest = serde_json::from_value(json!({
+            "resolution": "manual",
+            "manual_value": "kept"
+        }))
+        .unwrap();
+
+        assert_eq!(omitted.manual_value, None);
+        assert_eq!(cleared.manual_value, Some(None));
+        assert_eq!(supplied.manual_value, Some(Some(json!("kept"))));
+    }
+
+    #[test]
+    fn conflict_status_resolution_requires_reverse_mapping() {
+        let mapping = json!({
+            "linear-started": "in_progress",
+            "linear-done": "done"
+        });
+        assert!(status_resolution_is_publishable(&mapping, "done"));
+        assert!(!status_resolution_is_publishable(&mapping, "todo"));
     }
 
     #[test]

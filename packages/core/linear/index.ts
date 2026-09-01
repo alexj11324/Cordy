@@ -3,5 +3,6 @@ export {
   linearCatalogOptions,
   linearConnectionOptions,
   linearMemberBindingsOptions,
+  linearConflictsOptions,
   linearKeys,
 } from "./queries";
