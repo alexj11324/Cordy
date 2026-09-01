@@ -8,6 +8,7 @@ import { clerk, setupClerkTestingToken } from "@clerk/testing/playwright";
 
 import {
   buildProductionSmokeDependencyPlan,
+  buildProductionSmokeGraphIdempotencyKey,
   buildGoogleOAuthProbeUrl,
   decodeClerkFrontendApi,
   findProductionSmokeGraph,
@@ -485,7 +486,10 @@ async function ensureSmokeDependencyGraph(page, workspace) {
       method: "POST",
       headers: {
         ...workspaceHeaders,
-        "idempotency-key": `production-smoke-${parentIssueId}`,
+        "idempotency-key": buildProductionSmokeGraphIdempotencyKey(
+          parentIssueId,
+          randomBytes(16).toString("hex"),
+        ),
       },
       body: JSON.stringify(buildProductionSmokeDependencyPlan(parentIssueId)),
     },
@@ -533,10 +537,6 @@ async function ensureSmokeGraphParentIssue(page, workspaceHeaders) {
   return requireAuthenticatedBrowserResponse(path, response);
 }
 
-function escapeRegExp(value) {
-  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-}
-
 async function verifyProductionSmokeTaskGraph(page, graph) {
   const contract = requireProductionSmokeGraphContract(graph);
   const nodes = page.locator("[data-graph-node]");
@@ -548,17 +548,15 @@ async function verifyProductionSmokeTaskGraph(page, graph) {
     edgeCount: await edges.count(),
   });
   for (const edge of contract.edges) {
-    const accessibleName = new RegExp(
-      `^Dependency from ${escapeRegExp(edge.fromIdentifier)} to ${escapeRegExp(edge.toIdentifier)} — (Blocked|Satisfied)$`,
-      "u",
-    );
-    const renderedEdge = page.getByRole("button", { name: accessibleName });
+    const accessibleName = `Dependency from ${edge.fromIdentifier} to ${edge.toIdentifier} — ${edge.stateLabel}`;
+    const renderedEdge = page.getByRole("button", {
+      name: accessibleName,
+      exact: true,
+    });
     await expect(renderedEdge).toHaveCount(1, { timeout: 30_000 });
-    await expect(renderedEdge).toHaveAttribute(
-      "data-edge-state",
-      /^(?:blocked|satisfied)$/u,
-      { timeout: 30_000 },
-    );
+    await expect(renderedEdge).toHaveAttribute("data-edge-state", edge.state, {
+      timeout: 30_000,
+    });
   }
   const dependentNode = nodes.filter({
     hasText: PRODUCTION_SMOKE_DEPENDENT_TASK_TITLE,

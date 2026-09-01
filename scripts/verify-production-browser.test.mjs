@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   buildProductionSmokeDependencyPlan,
+  buildProductionSmokeGraphIdempotencyKey,
   buildGoogleOAuthProbeUrl,
   decodeClerkFrontendApi,
   findProductionSmokeGraph,
@@ -60,8 +61,20 @@ function productionSmokeGraph() {
       },
     ],
     edges: [
-      { from: "task-1", to: "task-3" },
-      { from: "task-2", to: "task-3" },
+      {
+        from: "task-1",
+        to: "task-3",
+        type: "hard",
+        consumed_output: "First prerequisite output",
+        satisfied: false,
+      },
+      {
+        from: "task-2",
+        to: "task-3",
+        type: "hard",
+        consumed_output: "Second prerequisite output",
+        satisfied: true,
+      },
     ],
   };
 }
@@ -215,6 +228,24 @@ test("builds the production three-task, two-edge dependency fixture", () => {
   }
 });
 
+test("rotates the graph apply idempotency key for each fixture incarnation", () => {
+  const parentIssueId = "11111111-1111-4111-8111-111111111111";
+  const first = buildProductionSmokeGraphIdempotencyKey(
+    parentIssueId,
+    "a".repeat(32),
+  );
+  const second = buildProductionSmokeGraphIdempotencyKey(
+    parentIssueId,
+    "b".repeat(32),
+  );
+  assert.notEqual(first, second);
+  assert.equal(first, `production-smoke-${parentIssueId}-${"a".repeat(32)}`);
+  assert.throws(
+    () => buildProductionSmokeGraphIdempotencyKey(parentIssueId, "too-short"),
+    /32 hexadecimal/u,
+  );
+});
+
 test("finds an existing smoke graph across every cursor page", async () => {
   const expected = productionSmokeGraph();
   const cursors = [];
@@ -280,13 +311,24 @@ test("requires the exact safe fixture topology and identifiers", () => {
   assert.deepEqual(requireProductionSmokeGraphContract(graph), {
     dependentIdentifier: "SMOKE-4",
     edges: [
-      { fromIdentifier: "SMOKE-2", toIdentifier: "SMOKE-4" },
-      { fromIdentifier: "SMOKE-3", toIdentifier: "SMOKE-4" },
+      {
+        fromIdentifier: "SMOKE-2",
+        toIdentifier: "SMOKE-4",
+        state: "blocked",
+        stateLabel: "Blocked",
+      },
+      {
+        fromIdentifier: "SMOKE-3",
+        toIdentifier: "SMOKE-4",
+        state: "satisfied",
+        stateLabel: "Satisfied",
+      },
     ],
   });
 
   const reversed = structuredClone(graph);
-  reversed.edges[0] = { from: "task-3", to: "task-1" };
+  reversed.edges[0].from = "task-3";
+  reversed.edges[0].to = "task-1";
   assert.throws(
     () => requireProductionSmokeGraphContract(reversed),
     /missing edge task-1->task-3/u,
@@ -298,6 +340,27 @@ test("requires the exact safe fixture topology and identifiers", () => {
   assert.throws(
     () => requireProductionSmokeGraphContract(assigned),
     /assigned to an executor/u,
+  );
+
+  const wrongContract = structuredClone(graph);
+  wrongContract.edges[0].type = "soft";
+  assert.throws(
+    () => requireProductionSmokeGraphContract(wrongContract),
+    /wrong contract/u,
+  );
+
+  const wrongConsumedOutput = structuredClone(graph);
+  wrongConsumedOutput.edges[0].consumed_output = "Wrong output";
+  assert.throws(
+    () => requireProductionSmokeGraphContract(wrongConsumedOutput),
+    /wrong contract/u,
+  );
+
+  const invalidState = structuredClone(graph);
+  delete invalidState.edges[0].satisfied;
+  assert.throws(
+    () => requireProductionSmokeGraphContract(invalidState),
+    /invalid state/u,
   );
 });
 
@@ -326,6 +389,11 @@ test("requires real graph nodes and edges and wires fixture acceptance", () => {
   assert.match(browserVerifierSource, /response\.status === 409/u);
   assert.match(
     browserVerifierSource,
-    /Dependency from .* to .* — \(Blocked\|Satisfied\)/u,
+    /Dependency from \$\{edge\.fromIdentifier\} to \$\{edge\.toIdentifier\} — \$\{edge\.stateLabel\}/u,
   );
+  assert.match(
+    browserVerifierSource,
+    /toHaveAttribute\("data-edge-state", edge\.state/u,
+  );
+  assert.match(browserVerifierSource, /randomBytes\(16\)\.toString\("hex"\)/u);
 });

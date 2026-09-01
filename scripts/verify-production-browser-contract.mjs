@@ -1,5 +1,6 @@
 const SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const HANDOFF_VALUE_PATTERN = /^[A-Za-z0-9._~-]{43,128}$/u;
+const GRAPH_NONCE_PATTERN = /^[0-9a-f]{32}$/u;
 const GOOGLE_OAUTH_ENTRY = "https://accounts.aspectlylabs.com/oauth/google";
 
 export const PRODUCTION_SMOKE_GRAPH_GOAL =
@@ -14,6 +15,24 @@ export const PRODUCTION_SMOKE_DEPENDENT_TASK_TITLE =
   "Production smoke: combine prerequisites";
 export const PRODUCTION_SMOKE_DEPENDENT_ACCEPTANCE =
   "Both prerequisite outputs are visible before the dependent task can run";
+const PRODUCTION_SMOKE_FIRST_OUTPUT = "First prerequisite output";
+const PRODUCTION_SMOKE_SECOND_OUTPUT = "Second prerequisite output";
+const PRODUCTION_SMOKE_EDGE_CONTRACTS = [
+  {
+    from: "task-1",
+    to: "task-3",
+    type: "hard",
+    reason: "The dependent task requires the first validated input.",
+    consumed_output: PRODUCTION_SMOKE_FIRST_OUTPUT,
+  },
+  {
+    from: "task-2",
+    to: "task-3",
+    type: "hard",
+    reason: "The dependent task requires the second validated input.",
+    consumed_output: PRODUCTION_SMOKE_SECOND_OUTPUT,
+  },
+];
 
 export function requiredString(value, label) {
   if (typeof value !== "string" || value.trim() === "") {
@@ -35,7 +54,7 @@ export function buildProductionSmokeDependencyPlan(parentIssueId) {
           "The first prerequisite exposes its validated output",
         ],
         context: {},
-        outputs: ["First prerequisite output"],
+        outputs: [PRODUCTION_SMOKE_FIRST_OUTPUT],
       },
       {
         temp_id: "task-2",
@@ -45,7 +64,7 @@ export function buildProductionSmokeDependencyPlan(parentIssueId) {
           "The second prerequisite exposes its validated output",
         ],
         context: {},
-        outputs: ["Second prerequisite output"],
+        outputs: [PRODUCTION_SMOKE_SECOND_OUTPUT],
       },
       {
         temp_id: "task-3",
@@ -57,23 +76,18 @@ export function buildProductionSmokeDependencyPlan(parentIssueId) {
         outputs: ["Combined production smoke result"],
       },
     ],
-    edges: [
-      {
-        from: "task-1",
-        to: "task-3",
-        type: "hard",
-        reason: "The dependent task requires the first validated input.",
-        consumed_output: "First prerequisite output",
-      },
-      {
-        from: "task-2",
-        to: "task-3",
-        type: "hard",
-        reason: "The dependent task requires the second validated input.",
-        consumed_output: "Second prerequisite output",
-      },
-    ],
+    edges: PRODUCTION_SMOKE_EDGE_CONTRACTS.map((edge) => ({ ...edge })),
   };
+}
+
+export function buildProductionSmokeGraphIdempotencyKey(parentIssueId, nonce) {
+  const parent = requiredString(parentIssueId, "parent issue id");
+  if (!GRAPH_NONCE_PATTERN.test(nonce)) {
+    throw new Error(
+      "production smoke graph nonce must be 32 hexadecimal characters",
+    );
+  }
+  return `production-smoke-${parent}-${nonce}`;
 }
 
 export function requireProductionSmokeGraph({ nodeCount, edgeCount }) {
@@ -178,17 +192,28 @@ export function requireProductionSmokeGraphContract(graph) {
     }
   }
 
-  const expectedPairs = [
-    ["task-1", "task-3"],
-    ["task-2", "task-3"],
-  ];
-  const actualPairs = new Set(
-    graph.edges.map((edge) => `${edge?.from}->${edge?.to}`),
+  const expectedEdges = PRODUCTION_SMOKE_EDGE_CONTRACTS;
+  const edgesByPair = new Map(
+    graph.edges.map((edge) => [`${edge?.from}->${edge?.to}`, edge]),
   );
-  for (const [from, to] of expectedPairs) {
-    if (!actualPairs.has(`${from}->${to}`)) {
+  for (const expected of expectedEdges) {
+    const edge = edgesByPair.get(`${expected.from}->${expected.to}`);
+    if (!edge) {
       throw new Error(
-        `production smoke dependency graph is missing edge ${from}->${to}`,
+        `production smoke dependency graph is missing edge ${expected.from}->${expected.to}`,
+      );
+    }
+    if (
+      edge.type !== expected.type ||
+      edge.consumed_output !== expected.consumed_output
+    ) {
+      throw new Error(
+        `production smoke dependency graph edge ${expected.from}->${expected.to} has the wrong contract`,
+      );
+    }
+    if (typeof edge.satisfied !== "boolean") {
+      throw new Error(
+        `production smoke dependency graph edge ${expected.from}->${expected.to} has an invalid state`,
       );
     }
   }
@@ -216,10 +241,15 @@ export function requireProductionSmokeGraphContract(graph) {
   );
   return {
     dependentIdentifier: identifiers.get("task-3"),
-    edges: expectedPairs.map(([from, to]) => ({
-      fromIdentifier: identifiers.get(from),
-      toIdentifier: identifiers.get(to),
-    })),
+    edges: expectedEdges.map((expected) => {
+      const edge = edgesByPair.get(`${expected.from}->${expected.to}`);
+      return {
+        fromIdentifier: identifiers.get(expected.from),
+        toIdentifier: identifiers.get(expected.to),
+        state: edge.satisfied ? "satisfied" : "blocked",
+        stateLabel: edge.satisfied ? "Satisfied" : "Blocked",
+      };
+    }),
   };
 }
 
