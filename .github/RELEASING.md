@@ -1,12 +1,51 @@
 # Release runbook
 
+## Build channels
+
+Keep the build channels separate. A normal development launch is not a
+release, and a Mac installer used for smoke testing must not create a public
+GitHub Release.
+
+### Daily development
+
+Use `pnpm dev` or `make dev`. This uses the development Rust profile and the
+source-matched per-user CLI cache. It is the fast feedback path and does not
+need Apple signing or notarization credentials.
+
+### Local packaged smoke test
+
+On a Mac, build an installer without publishing it:
+
+```bash
+CSC_IDENTITY_AUTO_DISCOVERY=false \
+  pnpm --filter @patchbay/desktop package -- --mac --arm64 --publish never
+```
+
+Use `--x64` on an Intel Mac. This validates Electron packaging, bundled CLI
+resources, and installation behavior, but it is not evidence that Gatekeeper
+will accept a customer download.
+
+### macOS candidate artifact
+
+Use **Actions → macOS Desktop Candidate → Run workflow** for a reviewed PR,
+branch, or commit that needs a real Mac package. Enter the source in `ref` and
+select `arm64`, `x64`, or `all`. The workflow resolves that ref to an immutable
+commit, builds a release-profile package, and uploads it as an Actions
+artifact for 14 days. It never receives production Apple credentials and never
+publishes a GitHub Release. Candidate artifacts are for internal smoke tests;
+they use the local/ad-hoc signing path.
+
+Do not grant production signing secrets to a workflow that executes arbitrary
+PR code. A candidate branch can change its own build scripts and would
+otherwise be able to read or exfiltrate those secrets.
+
 ## Automatic macOS ARM release
 
 Release from a reviewed commit on `main` by creating and pushing a new semantic
-version tag such as `v0.18.4`. The version-tag push first runs the normal CI
-workflow. Only after that CI run succeeds does `macos-release.yml` publish the
-Apple Silicon (`arm64`) desktop release. Pull-request CI and ordinary `main`
-pushes never create a Release.
+version tag such as `v0.18.4`. The version-tag push first runs the complete CI
+workflow, including the Rust gate. Only after that CI run succeeds does
+`macos-release.yml` build the Apple Silicon (`arm64`) desktop release.
+Pull-request CI and ordinary `main` pushes never create a Release.
 
 The version-tag path publishes no Rust CLI archive, Intel macOS package, Linux
 or Windows installer, versioned multi-architecture container image, or Helm
@@ -53,16 +92,24 @@ these GitHub Actions secrets:
 The automatic macOS ARM job builds the Apple Silicon DMG/ZIP assets without
 publishing them first, verifies the Developer ID signature and expected team,
 validates the stapled notarization ticket, and requires Gatekeeper to report
-`Notarized Developer ID`. Only then are the ARM assets uploaded to and
-published from the draft Release.
+`Notarized Developer ID`. The assets are staged as workflow artifacts and the
+GitHub Release remains a draft until the `macos-production` environment is
+approved. That approval should happen only after a maintainer installs and
+smoke-tests the exact staged artifact on a real Mac. The promotion job uploads
+and publishes those same artifacts; it does not rebuild them.
+
+Configure `macos-production` in repository settings with required reviewers.
+The environment is the publication gate, not a substitute for the signature,
+notarization, or Gatekeeper checks performed by the packaging job.
 
 ### Manual macOS-only release
 
 When a non-automatic macOS package is needed, run **Actions → macOS Desktop
 Release → Run workflow**, enter an existing semantic version tag, and choose
 `x64`, `arm64`, or `all`. This path is manual and applies the same Developer
-ID/notarization/Gatekeeper gates. The ARM choice is also useful for rerunning
-the automatic artifact after a transient failure.
+ID/notarization/Gatekeeper gates. It still requires the `macos-production`
+environment approval before it uploads or publishes assets. The ARM choice is
+also useful for rerunning the automatic artifact after a transient failure.
 
 ## Manual publication for all other assets
 

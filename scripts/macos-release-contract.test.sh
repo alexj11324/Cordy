@@ -4,6 +4,7 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 workflow="$repo_root/.github/workflows/macos-release.yml"
 ci_workflow="$repo_root/.github/workflows/ci.yml"
+candidate_workflow="$repo_root/.github/workflows/macos-candidate.yml"
 
 require_literal() {
   local value="$1"
@@ -34,6 +35,7 @@ require_literal 'group: production-release-${{ inputs.tag || github.event.workfl
 require_literal 'echo "commit_sha=$commit_sha"'
 require_literal 'ref: ${{ needs.prepare.outputs.commit_sha }}'
 require_literal "startsWith(github.event.workflow_run.head_branch, 'v')"
+require_literal "github.event.workflow_run.event == 'push'"
 require_literal "github.event.workflow_run.event == 'workflow_dispatch'"
 require_literal 'TRIGGERING_RUN_ID: ${{ github.event.workflow_run.id }}'
 require_literal 'actions/runs/$TRIGGERING_RUN_ID/jobs?per_page=100'
@@ -77,3 +79,30 @@ if [ "$(grep -Fc -- "needs.changes.outputs.rust == 'true'" "$ci_workflow" || tru
 fi
 
 echo "macOS release trigger, matrix, and immutable-commit contract: ok"
+
+candidate_require_literal() {
+  local value="$1"
+  if ! grep -Fq -- "$value" "$candidate_workflow"; then
+    echo "missing macOS candidate contract: $value" >&2
+    exit 1
+  fi
+}
+
+candidate_require_literal 'workflow_dispatch:'
+candidate_require_literal 'ref: ${{ inputs.ref }}'
+candidate_require_literal 'ref: ${{ needs.prepare.outputs.commit_sha }}'
+candidate_require_literal 'CSC_IDENTITY_AUTO_DISCOVERY: "false"'
+candidate_require_literal '--publish never'
+candidate_require_literal 'uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4'
+candidate_require_literal 'name: patchbay-desktop-candidate-${{ needs.prepare.outputs.short_sha }}-mac-${{ matrix.arch }}'
+if grep -Eq 'secrets\.|CSC_LINK|APPLE_ID|APPLE_APP_SPECIFIC_PASSWORD|APPLE_TEAM_ID' "$candidate_workflow"; then
+  echo "macOS candidate workflow must not expose production signing credentials" >&2
+  exit 1
+fi
+if ! grep -Fq -- 'environment:' "$workflow" ||
+  ! grep -Fq -- 'name: macos-production' "$workflow"; then
+  echo "macOS publication must use the protected production environment" >&2
+  exit 1
+fi
+
+echo "macOS candidate artifact and promotion contracts: ok"
