@@ -133,7 +133,11 @@ describe("TelegramAgentBindButton", () => {
       id: "i1",
       agent_id: "agent-1",
       status: "active",
-      runtime: healthyRuntime,
+      runtime: {
+        state: "starting",
+        observedAt: null,
+        errorCode: null,
+      },
     });
     renderUI(<TelegramAgentBindButton agentId="agent-1" agentName="Bot" />);
     await userEvent.click(screen.getByTestId("telegram-agent-connect"));
@@ -147,6 +151,8 @@ describe("TelegramAgentBindButton", () => {
       }),
     );
     expect(mockOpenExternal).not.toHaveBeenCalled();
+    expect(mockInvalidate).toHaveBeenCalled();
+    expect(mockToastError).not.toHaveBeenCalled();
   });
 
   it("opens the localized Telegram setup guide", async () => {

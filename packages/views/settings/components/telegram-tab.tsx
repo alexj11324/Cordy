@@ -339,7 +339,11 @@ export function TelegramAgentBindButton({
     setSubmitting(true);
     try {
       const installation = await api.registerTelegramBot(wsId, agentId, { bot_token });
-      if (!installation.id || !isMessagingInstallationHealthy(installation)) {
+      // A newly persisted installation is expected to be `starting` until the
+      // Supervisor completes its first getUpdates round trip. Treat the
+      // durable active installation as success here; the runtime badge below
+      // reports the handshake independently and will turn healthy afterward.
+      if (!installation.id || installation.status !== "active") {
         throw new Error("Telegram connection returned an invalid installation");
       }
       // The telegram_installation realtime event also refreshes this list, but
