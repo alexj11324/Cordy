@@ -35,6 +35,14 @@ diff, or package mapping cannot be completed, `changes` fails and the required
 when the classifier explicitly returns `lightweight`; a skipped lightweight
 job can never make a full-scope PR green.
 
+Merge-group checks use `github.event.merge_group.base_sha` and `head_sha` for
+the authentication-release diff, so auth-broker packaging changes in a queued
+group keep the same release classification as the constituent PRs. The image
+budget gate fetches every constituent PR body through the read-only GitHub API
+and carries forward an `Oversized image exemption:` line as explicit state;
+missing merge-group metadata or API access fails the classifier rather than
+silently dropping an exemption.
+
 ## Stack workflow
 
 Use the installed `gh-stack` extension and keep the layers in dependency

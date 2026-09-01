@@ -55,6 +55,7 @@ jobs:
       rust_packages: ${{ steps.rust-scope.outputs.rust_packages }}
       rust_test_packages: ${{ steps.rust-scope.outputs.rust_test_packages }}
       stack_intermediate: ${{ steps.stack.outputs.stack_intermediate }}
+      image_budget_exempt: ${{ steps.image-exemption.outputs.image_budget_exempt }}
       mobile: ${{ steps.decide.outputs.mobile }}
       installer: ${{ steps.decide.outputs.installer }}
       images: ${{ steps.filter.outputs.images }}
@@ -85,6 +86,7 @@ jobs:
           scripts/assemble-production-manifest.test.mjs
           scripts/ci-workflow-contract.test.mjs
           scripts/classify-rust-scope.test.mjs
+          scripts/classify-image-budget-exemption.test.mjs
           scripts/cleanup-actions-caches.test.mjs
           scripts/github-actions-pinning-contract.test.mjs
           scripts/dev-clerk-auth.test.mjs
@@ -339,23 +341,91 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MERGE_GROUP_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          MERGE_GROUP_HEAD_SHA: ${{ github.event.merge_group.head_sha }}
         run: |
-          if [[ "$EVENT_NAME" = "pull_request" ]]; then
-            node scripts/classify-auth-change.mjs "$PR_BASE_SHA" "$PR_HEAD_SHA"
-          else
-            echo "auth_broker_release=false" >> "$GITHUB_OUTPUT"
-            echo "full_google_oauth_e2e=false" >> "$GITHUB_OUTPUT"
+          case "$EVENT_NAME" in
+            pull_request)
+              base_sha="$PR_BASE_SHA"
+              head_sha="$PR_HEAD_SHA"
+              ;;
+            merge_group)
+              base_sha="$MERGE_GROUP_BASE_SHA"
+              head_sha="$MERGE_GROUP_HEAD_SHA"
+              ;;
+            *)
+              echo "auth_broker_release=false" >> "$GITHUB_OUTPUT"
+              echo "full_google_oauth_e2e=false" >> "$GITHUB_OUTPUT"
+              exit 0
+              ;;
+          esac
+          if [[ -z "$base_sha" || -z "$head_sha" ]]; then
+            echo "::error::authentication classification is missing the event base/head SHA"
+            exit 1
           fi
+          node scripts/classify-auth-change.mjs "$base_sha" "$head_sha"
+
+      - name: Resolve merge-group image budget exemptions
+        id: image-exemption
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          INPUT_PR_BODY: ${{ inputs.pr_body }}
+          MERGE_GROUP_PULL_REQUESTS: ${{ toJSON(github.event.merge_group.pull_requests) }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          body_dir="$RUNNER_TEMP/image-budget-bodies"
+          mkdir -p "$body_dir"
+          body_files=()
+
+          case "$EVENT_NAME" in
+            pull_request)
+              body_file="$body_dir/pull-request"
+              printf '%s' "${PR_BODY:-}" > "$body_file"
+              body_files+=(--body-file "$body_file")
+              ;;
+            workflow_dispatch)
+              body_file="$body_dir/workflow-dispatch"
+              printf '%s' "${INPUT_PR_BODY:-}" > "$body_file"
+              body_files+=(--body-file "$body_file")
+              ;;
+            merge_group)
+              if [[ -z "$MERGE_GROUP_PULL_REQUESTS" || "$MERGE_GROUP_PULL_REQUESTS" = "null" ]]; then
+                echo "::error::merge_group event is missing constituent pull-request metadata"
+                exit 1
+              fi
+              if ! pr_numbers="$(jq -r '.[].number // empty' <<<"$MERGE_GROUP_PULL_REQUESTS")" || [[ -z "$pr_numbers" ]]; then
+                echo "::error::merge_group constituent pull-request metadata has no numbers"
+                exit 1
+              fi
+              while IFS= read -r number; do
+                if [[ ! "$number" =~ ^[0-9]+$ ]]; then
+                  echo "::error::invalid merge_group pull-request number"
+                  exit 1
+                fi
+                body_file="$(mktemp "$body_dir/body.XXXXXX")"
+                if ! gh api "repos/$GITHUB_REPOSITORY/pulls/$number" --jq '.body // ""' > "$body_file"; then
+                  echo "::error::unable to read constituent pull-request metadata for image exemption"
+                  exit 1
+                fi
+                body_files+=(--body-file "$body_file")
+              done <<< "$pr_numbers"
+              ;;
+          esac
+
+          node scripts/classify-image-budget-exemption.mjs "${body_files[@]}" >> "$GITHUB_OUTPUT"
 
       - name: Summarize authentication release impact
         env:
           AUTH_BROKER_RELEASE: ${{ steps.auth-impact.outputs.auth_broker_release }}
           FULL_GOOGLE_OAUTH_E2E: ${{ steps.auth-impact.outputs.full_google_oauth_e2e }}
+          IMAGE_BUDGET_EXEMPT: ${{ steps.image-exemption.outputs.image_budget_exempt }}
         run: |
           {
             echo "### Authentication release impact"
             echo "- Independent broker release: \`$AUTH_BROKER_RELEASE\`"
             echo "- Full Google OAuth E2E before auth traffic cutover: \`$FULL_GOOGLE_OAUTH_E2E\`"
+            echo "- Image-budget exemption from PR metadata: \`${IMAGE_BUDGET_EXEMPT:-false}\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Decide
@@ -1236,6 +1306,7 @@ jobs:
       - name: Check image budget
         env:
           PR_BODY: ${{ inputs.pr_body || github.event.pull_request.body }}
+          IMAGE_BUDGET_EXEMPT: ${{ needs.changes.outputs.image_budget_exempt }}
         run: node scripts/check-image-budget.mjs --base "origin/${{ inputs.base_ref || github.base_ref || 'main' }}"
 
   installer-check:

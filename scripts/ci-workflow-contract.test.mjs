@@ -59,6 +59,24 @@ test("Stack Rust layers select a tested lightweight scope without weakening the 
   assert.match(ci, /rust_scope_reason/u);
 });
 
+test("merge-group metadata preserves auth classification and image exemptions", () => {
+  assert.match(ci, /MERGE_GROUP_BASE_SHA: \$\{\{ github\.event\.merge_group\.base_sha \}\}/u);
+  assert.match(ci, /MERGE_GROUP_HEAD_SHA: \$\{\{ github\.event\.merge_group\.head_sha \}\}/u);
+  assert.match(ci, /base_sha="\$MERGE_GROUP_BASE_SHA"/u);
+  assert.match(ci, /head_sha="\$MERGE_GROUP_HEAD_SHA"/u);
+  assert.match(
+    ci,
+    /MERGE_GROUP_PULL_REQUESTS: \$\{\{ toJSON\(github\.event\.merge_group\.pull_requests\) \}\}/u,
+  );
+  assert.match(ci, /gh api "repos\/\$GITHUB_REPOSITORY\/pulls\/\$number" --jq/u);
+  assert.match(ci, /scripts\/classify-image-budget-exemption\.mjs/u);
+  assert.match(ci, /merge_group event is missing constituent pull-request metadata/u);
+  assert.match(
+    ci,
+    /IMAGE_BUDGET_EXEMPT: \$\{\{ needs\.changes\.outputs\.image_budget_exempt \}\}/u,
+  );
+});
+
 test("merge queue runs the same path-aware CI gate", () => {
   assert.match(ci, /^  merge_group:\n/mu);
   assert.match(ci, /^    types: \[checks_requested\]\n/mu);
@@ -164,6 +182,7 @@ test("Turbo cache lifecycle is bounded for active, closed, and main refs", async
 
 test("CI runs cache cleanup tests and classifies new development scripts", () => {
   assert.match(ci, /scripts\/cleanup-actions-caches\.test\.mjs/u);
+  assert.match(ci, /scripts\/classify-image-budget-exemption\.test\.mjs/u);
   assert.equal([...ci.matchAll(/- 'scripts\/dev-\*\.mjs'/gu)].length, 2);
 });
 

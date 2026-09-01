@@ -47,6 +47,11 @@ for (const { file, bytes, was } of offenders) {
   console.log(process.env.GITHUB_ACTIONS ? `::error file=${file}::${message}` : `  ${message}`);
 }
 
+if (process.env.IMAGE_BUDGET_EXEMPT === "true") {
+  console.log("\nA constituent PR description carries an exemption line — allowing.");
+  process.exit(0);
+}
+
 if (EXEMPTION_PATTERN.test(process.env.PR_BODY ?? "")) {
   console.log("\nPR description carries an exemption line — allowing.");
   process.exit(0);
