@@ -3478,21 +3478,24 @@ impl TaskService {
         // direct callers and for permission changes racing the continuation
         // request. Locking the member row makes a concurrent role revocation
         // serialize with this final authorization decision.
-        let requester_member =
-            match lock_member_by_user_and_workspace(&mut *tx, requester_user_id, agent.workspace_id)
-                .await
-            {
-                Ok(member) => member,
-                Err(error) => {
-                    tracing::warn!(
-                        %error,
-                        requester_user_id = %requester_user_id,
-                        agent_id = %agent.id,
-                        "failed to verify Agent thread requester membership"
-                    );
-                    None
-                }
-            };
+        let requester_member = match lock_member_by_user_and_workspace(
+            &mut *tx,
+            requester_user_id,
+            agent.workspace_id,
+        )
+        .await
+        {
+            Ok(member) => member,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    requester_user_id = %requester_user_id,
+                    agent_id = %agent.id,
+                    "failed to verify Agent thread requester membership"
+                );
+                None
+            }
+        };
         if integration_authorized && requester_member.is_none() {
             return Err(TaskServiceError::AgentThreadInvokeForbidden);
         }
