@@ -443,6 +443,8 @@ pub struct IssueCreateOpts {
     /// requests cannot create multiple issues from one task lease. A failed
     /// create rolls the revocation back with the rest of the transaction.
     pub consume_task_lease_id: Option<Uuid>,
+    /// Serialize an integration-owned member assignment with member removal.
+    pub require_owner_member: bool,
 }
 
 /// Typed failure surface of [`IssueService::create`]. The four sentinel
@@ -689,6 +691,16 @@ RETURNING id"#,
             {
                 return Err(IssueCreateError::ProjectNotFound);
             }
+        }
+        if opts.require_owner_member
+            && p.owner_type.as_deref() == Some("member")
+            && let Some(owner_id) = p.owner_id.filter(|id| !id.is_nil())
+            && member_q::lock_member_by_user_and_workspace(&mut *tx, owner_id, p.workspace_id)
+                .await
+                .map_err(|error| ic_err("lock issue owner member", error))?
+                .is_none()
+        {
+            return Err(ic_err_msg("issue owner is no longer a workspace member"));
         }
 
         // Validate labels before incrementing the counter so a stale/wrong-

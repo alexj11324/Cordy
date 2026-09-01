@@ -1147,7 +1147,18 @@ impl LinearSyncWorker {
                     )
                     .await
                     .map_err(SyncError::retry)?;
-                    if locked_link.is_some() {
+                    if let Some(locked_link) = locked_link {
+                        if locked_link.binding_id != link.binding_id
+                            || locked_link.sync_status == "deleted"
+                            || locked_link.last_common_snapshot != link.last_common_snapshot
+                            || locked_link.last_remote_event_at_ms
+                                != link.last_remote_event_at_ms
+                            || locked_link.last_remote_event_id != link.last_remote_event_id
+                        {
+                            return Err(SyncError::retry(anyhow::anyhow!(
+                                "Linear Issue Link advanced before move-away deletion"
+                            )));
+                        }
                         let _ = linear_q::mark_linear_issue_link_deleted(
                             &mut *transaction,
                             link.id,
@@ -1306,6 +1317,7 @@ impl LinearSyncWorker {
                             actor_id: connection.created_by_id.to_string(),
                             analytics_agent_id: String::new(),
                             platform: "linear".to_string(),
+                            require_owner_member: remote_owner_id.id.is_some(),
                             ..IssueCreateOpts::default()
                         },
                     )
@@ -1595,6 +1607,33 @@ impl LinearSyncWorker {
                     .iter()
                     .any(|field| merge.merged.get(*field) != local_snapshot.get(*field));
             }
+        }
+        if matches!(binding.sync_mode.as_str(), "publish" | "two_way")
+            && merge.merged.get("status") != merge.common.get("status")
+            && merge
+                .merged
+                .get("status")
+                .and_then(Value::as_str)
+                .is_some_and(|status| map_local_status(&binding, status).is_none())
+            && !merge
+                .conflicts
+                .iter()
+                .any(|conflict| conflict.field == "status")
+        {
+            merge.conflicts.push(SyncConflictValue {
+                field: "status".to_string(),
+                base_value: base_snapshot.get("status").cloned().unwrap_or(Value::Null),
+                local_value: local_snapshot.get("status").cloned().unwrap_or(Value::Null),
+                remote_value: remote_snapshot.get("status").cloned().unwrap_or(Value::Null),
+            });
+            merge.common["status"] = base_snapshot
+                .get("status")
+                .cloned()
+                .unwrap_or(Value::Null);
+            merge.merged["status"] = local_snapshot
+                .get("status")
+                .cloned()
+                .unwrap_or(Value::Null);
         }
         let last_event_at_ms = event_timestamp_ms.or(link.last_remote_event_at_ms);
         let last_event_id = event_timestamp_ms
