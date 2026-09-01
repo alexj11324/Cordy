@@ -36,4 +36,16 @@ describe("IntegrationSetupGuide", () => {
     expect(screen.getByRole("button", { name: "View Patchbay manifest" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open Slack app dashboard" })).toBeInTheDocument();
   });
+
+  it("keeps hosted Slack setup inside the managed OAuth flow", () => {
+    render(
+      <I18nProvider locale="en" resources={{ en: { common: enCommon, settings: enSettings } }}>
+        <IntegrationSetupGuide channel="slack" managed />
+      </I18nProvider>,
+    );
+
+    expect(screen.getByText(/Click Connect Slack on this page/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "View Patchbay manifest" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open Slack app dashboard" })).not.toBeInTheDocument();
+  });
 });

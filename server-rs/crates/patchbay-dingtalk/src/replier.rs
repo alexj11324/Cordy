@@ -197,6 +197,14 @@ impl ReplierSeam for OutboundReplier {
             self.post(inst, msg, AGENT_ARCHIVED_TEXT)
                 .await
                 .map_err(|e| ("dingtalk replier: archived notice failed", e))
+        } else if outcome == Outcome::quota_exceeded() {
+            self.post(
+                inst,
+                msg,
+                patchbay_channel::quota_exceeded_notice_for_message(msg),
+            )
+            .await
+            .map_err(|e| ("dingtalk replier: quota notice failed", e))
         } else if outcome == Outcome::fresh_pending() {
             self.post(inst, msg, FRESH_PENDING_TEXT)
                 .await

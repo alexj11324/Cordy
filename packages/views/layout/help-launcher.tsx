@@ -23,13 +23,13 @@ import { isDesktopShell } from "../platform/local-directory";
 import { DISCORD_URL, DiscordIcon } from "./discord";
 import { useT } from "../i18n";
 
-const DOCS_URL = "https://patchbay.ai/docs";
-const CHANGELOG_URL = "https://patchbay.ai/changelog";
+const DOCS_URL = "https://patchbay.aspectlylabs.com/docs";
+const CHANGELOG_URL = "https://patchbay.aspectlylabs.com/changelog";
 // Absolute, including on self-hosted deployments: the installers we ship are
 // the same binaries either way, and the desktop client can point at a
 // self-hosted backend once installed. A self-host-relative /download would
 // only serve a copy of this page that still has to reach our release assets.
-const DOWNLOAD_URL = "https://patchbay.ai/download";
+const DOWNLOAD_URL = "https://patchbay.aspectlylabs.com/download";
 
 export function HelpLauncher({
   onOpenChange,

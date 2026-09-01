@@ -93,6 +93,7 @@ pub struct SlashCommand {
     pub team_id: String,
     pub api_app_id: String,
     pub channel_id: String,
+    pub trigger_id: String,
     pub response_url: String,
 }
 
@@ -152,7 +153,7 @@ impl SlashCommandProcessor {
         if !cmd.command.trim().eq_ignore_ascii_case(ISSUE_SLASH_COMMAND) {
             return;
         }
-        let text = self.process(ctx.clone(), &cmd).await;
+        let text = self.response_text(ctx.clone(), &cmd).await;
         if text.is_empty() || cmd.response_url.is_empty() {
             return;
         }
@@ -163,6 +164,13 @@ impl SlashCommandProcessor {
                 "slack slash command: response_url reply failed"
             );
         }
+    }
+
+    /// Runs a verified HTTP slash command and returns the ephemeral response
+    /// body. The managed Events API uses this instead of `response_url` so the
+    /// provider is acknowledged only after the task has been durably accepted.
+    pub async fn response_text(&self, ctx: CancellationToken, cmd: &SlashCommand) -> String {
+        self.process(ctx, cmd).await
     }
 
     /// Runs the command and returns the ephemeral text to reply with.
@@ -273,9 +281,14 @@ impl SlashCommandProcessor {
         app_id: &str,
         team_id: &str,
     ) -> anyhow::Result<ResolvedInstallation> {
-        let inst = get_channel_installation_by_app_id(&self.pool, TYPE_SLACK, app_id)
-            .await?
-            .ok_or(ResolverError::InstallationNotFound)?;
+        let managed_key = crate::config::managed_routing_key(app_id, team_id);
+        let inst =
+            match get_channel_installation_by_app_id(&self.pool, TYPE_SLACK, &managed_key).await? {
+                Some(value) => value,
+                None => get_channel_installation_by_app_id(&self.pool, TYPE_SLACK, app_id)
+                    .await?
+                    .ok_or(ResolverError::InstallationNotFound)?,
+            };
         if !installation_serves_team(&inst.config, team_id) {
             return Err(ResolverError::InstallationNotFound.into());
         }

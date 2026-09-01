@@ -2,10 +2,10 @@
 # Patchbay installer — installs the CLI and optionally provisions a self-host server.
 #
 # Install / upgrade CLI only:
-#   curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash
 #
 # Install CLI + provision self-host server:
-#   curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash -s -- --with-server
+#   curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server
 #
 # After installation, run `patchbay setup` to configure your environment.
 #
@@ -18,8 +18,8 @@ fi
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-REPO_URL="https://github.com/patchbay-ai/patchbay.git"
-REPO_WEB_URL="https://github.com/patchbay-ai/patchbay"  # without .git, for GitHub web APIs
+REPO_URL="https://github.com/alexj11324/Cordy.git"
+REPO_WEB_URL="https://github.com/alexj11324/Cordy"  # without .git, for GitHub web APIs
 INSTALL_DIR="${PATCHBAY_INSTALL_DIR:-$HOME/.patchbay/server}"
 LEGACY_PATCHBAY_HOME="$HOME/.cordy" # legacy-brand-compat
 BREW_PACKAGE="patchbay-ai/tap/patchbay"
@@ -148,7 +148,7 @@ print_remote_server_token_hint() {
 
   printf "  ${BOLD}Looks like a remote/SSH session.${RESET} Browser login may not be able to call back to this machine's localhost.\n"
   printf "  Token login is usually simpler here:\n"
-  printf "     1. On your local computer, open ${CYAN}https://patchbay.ai/settings?tab=tokens${RESET}\n"
+  printf "     1. On your local computer, open ${CYAN}https://patchbay.aspectlylabs.com/settings?tab=tokens${RESET}\n"
   printf "        and create a token under ${BOLD}Settings > API Tokens${RESET}.\n"
   printf "     2. On this server, run:\n"
   printf "        ${CYAN}patchbay login --token <YOUR_TOKEN>${RESET}\n"
@@ -184,7 +184,7 @@ detect_os() {
     Linux)  OS="linux" ;;
     MINGW*|MSYS*|CYGWIN*)
             fail "This script does not support Windows. Use the PowerShell installer instead:
-  irm https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.ps1 | iex" ;;
+  irm https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.ps1 | iex" ;;
     *)      fail "Unsupported operating system: $(uname -s). Patchbay supports macOS, Linux, and Windows." ;;
   esac
 
@@ -246,7 +246,7 @@ install_cli_binary() {
   fi
 
   local version="${latest#v}"
-  local url="https://github.com/patchbay-ai/patchbay/releases/download/${latest}/patchbay-cli-${version}-${OS}-${ARCH}.tar.gz"
+  local url="https://github.com/alexj11324/Cordy/releases/download/${latest}/patchbay-cli-${version}-${OS}-${ARCH}.tar.gz"
   local tmp_dir
   tmp_dir=$(mktemp -d)
 
@@ -258,7 +258,7 @@ install_cli_binary() {
 
   local checksum_file="$tmp_dir/checksums.txt"
   local asset_name="patchbay-cli-${version}-${OS}-${ARCH}.tar.gz"
-  if ! curl -fsSL "https://github.com/patchbay-ai/patchbay/releases/download/${latest}/checksums.txt" -o "$checksum_file"; then
+  if ! curl -fsSL "https://github.com/alexj11324/Cordy/releases/download/${latest}/checksums.txt" -o "$checksum_file"; then
     rm -rf "$tmp_dir"
     fail "Failed to download the CLI checksum manifest; refusing to install an unverified binary."
   fi
@@ -400,8 +400,8 @@ checkout_server_ref() {
 
 migrate_legacy_selfhost_branding() {
   local migrated=false
-  local canonical_backend="ghcr.io/patchbay-ai/patchbay-backend"
-  local canonical_web="ghcr.io/patchbay-ai/patchbay-web"
+  local canonical_backend="ghcr.io/alexj11324/patchbay-backend"
+  local canonical_web="ghcr.io/alexj11324/patchbay-web"
   local legacy_backend legacy_web
   local legacy_backends=(
     "ghcr.io/cordy-ai/cordy-backend" # legacy-brand-compat
@@ -775,12 +775,12 @@ run_default() {
   printf "\n"
   printf "  ${BOLD}Next: configure your environment${RESET}\n"
   printf "\n"
-  printf "     ${CYAN}patchbay setup${RESET}                # Connect to Patchbay Cloud (patchbay.ai)\n"
+  printf "     ${CYAN}patchbay setup${RESET}                # Connect to Patchbay Cloud (patchbay.aspectlylabs.com)\n"
   printf "     ${CYAN}patchbay setup self-host${RESET}       # Connect to a self-hosted server\n"
   printf "\n"
   print_remote_server_token_hint
   printf "  ${BOLD}Self-hosting?${RESET} Install the server first:\n"
-  printf "     curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash -s -- --with-server\n"
+  printf "     curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --with-server\n"
   printf "\n"
 }
 
@@ -821,7 +821,7 @@ run_with_server() {
   printf "  or read the generated code from backend logs when Resend is unset.\n"
   printf "\n"
   printf "  ${BOLD}To stop all services:${RESET}\n"
-  printf "     curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash -s -- --stop\n"
+  printf "     curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash -s -- --stop\n"
   printf "\n"
 }
 

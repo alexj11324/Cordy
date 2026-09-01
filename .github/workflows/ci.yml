@@ -68,10 +68,20 @@ jobs:
       - name: Test CI workflow contracts
         run: >-
           node --test
+          scripts/assemble-production-manifest.test.mjs
           scripts/ci-workflow-contract.test.mjs
           scripts/cleanup-actions-caches.test.mjs
           scripts/github-actions-pinning-contract.test.mjs
           scripts/dev-clerk-auth.test.mjs
+          scripts/production-deployment-contract.test.mjs
+          scripts/verify-production-browser.test.mjs
+          scripts/verify-production-deployment.test.mjs
+
+      - name: Test restricted production deployment gateway
+        run: python3 -m unittest deploy/origin/production_deploy_test.py
+
+      - name: Test public URL contract
+        run: bash scripts/public-url-contract.test.sh
 
       - name: Test accounts origin proxy contract
         run: node --test deploy/cloudflare/accounts-origin-proxy/src/index.test.mjs
@@ -103,12 +113,12 @@ jobs:
               - 'turbo.json'
               - 'knip.jsonc'
               - 'Dockerfile.web'
+              - 'Dockerfile.docs'
               - 'Dockerfile.auth-broker'
               - 'contracts/auth-broker/**'
               - '.dockerignore'
               - '.github/workflows/ci.yml'
-              - '.github/workflows/container-images.yml'
-              - '.github/workflows/auth-broker-release.yml'
+              - '.github/workflows/aspectlylabs-production-images.yml'
               - '.github/workflows/release.yml'
               - 'scripts/generate-reserved-slugs.mjs'
               - 'scripts/classify-auth-change.mjs'
@@ -117,6 +127,10 @@ jobs:
               - 'scripts/check-ui-wildcard-exports.mjs'
               - 'scripts/check-ui-wildcard-exports.test.sh'
               - 'scripts/selfhost-config.test.sh'
+              - 'scripts/messaging-self-host-check.sh'
+              - 'scripts/messaging-self-host-check.test.sh'
+              - 'scripts/messaging-self-host-setup.sh'
+              - 'scripts/messaging-self-host-setup.test.sh'
               - 'scripts/drop-database.sh'
               - 'scripts/ensure-dev-integration-secrets.mjs'
               - 'scripts/postgres-runtime.sh'
@@ -144,10 +158,12 @@ jobs:
               - 'docker-compose.selfhost.yml'
               - 'docker-compose.selfhost.build.yml'
               - 'docker-compose.labs.yml'
+              - 'deploy/messaging/**'
             rust:
               - 'server-rs/**'
               - 'rust-toolchain.toml'
               - 'migrations/**'
+              - 'deploy/messaging/**'
               - 'deploy/helm/**'
               - 'Dockerfile'
               - 'Makefile'
@@ -331,6 +347,14 @@ jobs:
       - name: Test self-host env derivation
         if: ${{ needs.changes.outputs.frontend == 'true' }}
         run: bash scripts/selfhost-config.test.sh
+
+      - name: Test self-host messaging deployment contract
+        if: ${{ needs.changes.outputs.frontend == 'true' }}
+        run: bash scripts/messaging-self-host-check.test.sh
+
+      - name: Test self-host messaging setup helper
+        if: ${{ needs.changes.outputs.frontend == 'true' }}
+        run: bash scripts/messaging-self-host-setup.test.sh
 
       - name: Test worktree database cleanup
         if: ${{ needs.changes.outputs.frontend == 'true' }}

@@ -4,6 +4,9 @@ import { DEFAULT_RUNTIME_CONFIG } from "../shared/runtime-config";
 
 // Keep this in sync with patchbay_daemon::control_client::health_port_for_profile.
 export const DEFAULT_HEALTH_PORT = 19514;
+// Internal migration adapter for profiles created by packaged builds before
+// the canonical API host cutover. This is not a user-facing link; keep it
+// until the old profile migration is retired explicitly.
 const LEGACY_PACKAGED_API_URL = "https://api.patchbay.ai";
 
 export type LegacyDesktopProfile = {

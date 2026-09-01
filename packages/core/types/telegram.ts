@@ -1,3 +1,8 @@
+import type {
+  MessagingInstallationRuntime,
+  MessagingInstallationSetup,
+} from "./messaging";
+
 /** A Telegram bot installation, optionally bound to a Patchbay agent.
  *
  * Wire shape mirrors `TelegramInstallationResponse` in
@@ -18,6 +23,8 @@ export interface TelegramInstallation {
   installed_at: string;
   created_at: string;
   updated_at: string;
+  runtime?: MessagingInstallationRuntime;
+  setup?: MessagingInstallationSetup;
 }
 
 export interface ListTelegramInstallationsResponse {

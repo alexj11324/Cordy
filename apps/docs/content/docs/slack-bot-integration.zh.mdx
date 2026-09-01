@@ -1,13 +1,13 @@
 ---
 title: Slack Bot
-description: 为智能体创建一个 Slack Bot，在私聊、频道和 /issue 命令中使用它。
+description: 为工作区安装 Slack Bot，在私聊、频道和 /issue 命令中使用它。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
 Patchbay 使用你自己的 Slack app。连接后，团队成员可以私聊 Bot、在频道里 @ 它，或用 `/issue` 创建 issue。
 
-一个 Slack app 对应一个 Patchbay 智能体。需要接入多个智能体时，为每个智能体分别创建 app。
+Slack app 按 Patchbay 工作区安装，不绑定某台电脑或某一个智能体。成员可以在对话中使用 `/agents` 选择或切换当前智能体；只有需要独立 Bot 身份时，才需要额外创建 Slack app。
 
 ## 开始前
 
@@ -88,17 +88,17 @@ Bot 使用 Socket Mode 主动连接 Slack，不需要配置公网 Request URL �
 4. 生成并复制以 `xapp-` 开头的 token。
 
 
-## 3. 连接到智能体
+## 3. 连接到工作区
 
-1. 在 Patchbay 中打开 **智能体**，选择要接入 Slack 的智能体。
-2. 进入 **集成**，点击 **连接 Slack**。
+1. 在 Patchbay 中打开 **设置 → 集成**，点击 **连接 Slack**。
+2. 选择工作区级安装（只有需要独立 Bot 身份时才选择专属智能体路由）。
 3. 填入 Bot token 和 App-level token。
 4. 点击 **连接**。
 
 Patchbay 会验证两个 token 是否来自同一个 app。连接成功后，页面会显示 **已连接到 Slack**。
 
 <Callout type="warning">
-两个 token 会加密保存在 Patchbay 服务器上。Token 即凭据，不要写进 issue、评论或代码仓库。已连接到其他智能体或工作区的 app 不能直接重复使用，需先断开原连接。
+两个 token 会加密保存在 Patchbay 服务器上。Token 即凭据，不要写进 issue、评论或代码仓库。已连接到其他工作区的 app 不能直接重复使用，需先断开原连接。
 </Callout>
 
 ## 第一次使用
@@ -145,7 +145,9 @@ Bot 只会响应明确 @ 它的频道消息。执行时，它会在权限允许�
 
 ## 自托管配置
 
-Patchbay Cloud 无需额外配置。自托管部署需要先设置一个用于加密 Slack token 的密钥：
+Patchbay Cloud 无需额外配置。自托管部署由服务器管理：App 只读，不接收
+Slack 凭据。请按[自托管消息部署契约](/self-host-messaging)在服务器上运行
+配置脚本。
 
 ```dotenv
 PATCHBAY_SLACK_SECRET_KEY=<base64 编码的 32 字节密钥>
@@ -157,7 +159,10 @@ PATCHBAY_SLACK_SECRET_KEY=<base64 编码的 32 字节密钥>
 openssl rand -base64 32
 ```
 
-重启 API 服务后，再连接 Slack app。该密钥需要长期保存：更换或丢失后，已有 token 无法解密，需要重新连接。
+设置 `PATCHBAY_MESSAGING_BOOTSTRAP=true`，并在服务器密钥存储中填写工作区
+与安装者 ID、`SLACK_BOT_TOKEN`、`SLACK_APP_TOKEN`、team ID 和 bot user ID，
+然后重启 API 服务。该密钥需要长期保存：更换或丢失后，已有 token 无法解密。
+自托管 App 不会出现“连接”按钮。
 
 账号绑定链接使用 `PATCHBAY_APP_URL`，未设置时回退到 `FRONTEND_ORIGIN`；它需要指向成员可以访问的 Patchbay 地址。
 

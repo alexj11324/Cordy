@@ -76,11 +76,34 @@ impl InstallService {
         &self,
         params: &InstallPersist,
     ) -> anyhow::Result<ChannelInstallation> {
+        self.persist_install_with_limit(params, None).await
+    }
+
+    /// Persists an installation while optionally enforcing the hosted
+    /// workspace cap in the same transaction as the upsert.
+    pub async fn persist_install_with_limit(
+        &self,
+        params: &InstallPersist,
+        installation_limit: Option<i64>,
+    ) -> anyhow::Result<ChannelInstallation> {
         let mut tx = self
             .pool
             .begin()
             .await
             .map_err(|error| anyhow::anyhow!("begin Telegram install: {error:#}"))?;
+        if let Some(limit) = installation_limit {
+            let allowed = patchbay_db::queries::channel::channel_installation_limit_allows(
+                &mut tx,
+                params.workspace_id,
+                TYPE_TELEGRAM,
+                (!params.agent_id.is_nil()).then_some(params.agent_id),
+                limit,
+            )
+            .await?;
+            if !allowed {
+                anyhow::bail!("hosted messaging installation limit reached");
+            }
+        }
         if params.agent_id.is_nil() {
             lock_channel_installation_hub_slot(&mut *tx, TYPE_TELEGRAM, params.workspace_id)
                 .await?;

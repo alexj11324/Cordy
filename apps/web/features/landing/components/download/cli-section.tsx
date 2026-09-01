@@ -6,7 +6,7 @@ import { copyText } from "@patchbay/ui/lib/clipboard";
 import { useLocale } from "../../i18n";
 
 const INSTALL_CMD =
-  "curl -fsSL https://raw.githubusercontent.com/patchbay-ai/patchbay/main/scripts/install.sh | bash";
+  "curl -fsSL https://raw.githubusercontent.com/alexj11324/Cordy/main/scripts/install.sh | bash";
 const SETUP_CMD = "patchbay setup";
 
 /**

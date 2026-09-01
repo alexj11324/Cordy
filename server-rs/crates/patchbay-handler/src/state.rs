@@ -413,6 +413,14 @@ pub struct HandlerState {
     /// during shutdown.
     pub channel_tasks: Arc<patchbay_channel::RuntimeTasks>,
     pub channel_cancel: tokio_util::sync::CancellationToken,
+    /// Shared provider-neutral inbound entry point. Production wires this
+    /// after the ChannelRuntime builds the router; HTTP transports such as the
+    /// managed Slack Events API use the same path as Socket Mode/polling.
+    pub channel_inbound_handler: Option<patchbay_channel::InboundHandler>,
+    /// Shared Slack command processor. Managed signed HTTP commands and
+    /// self-hosted Socket Mode commands use the same workspace/identity/task
+    /// logic rather than maintaining two implementations.
+    pub slack_slash_processor: Option<Arc<patchbay_slack::slash_command::SlashCommandProcessor>>,
     /// Prometheus business counters. None when METRICS_ADDR is disabled.
     pub business_metrics: Option<Arc<patchbay_metrics::BusinessMetrics>>,
     /// HTTP request metrics. None when METRICS_ADDR is disabled.
@@ -648,6 +656,8 @@ impl HandlerState {
             bus,
             channel_tasks: Arc::new(patchbay_channel::RuntimeTasks::new()),
             channel_cancel: tokio_util::sync::CancellationToken::new(),
+            channel_inbound_handler: None,
+            slack_slash_processor: None,
             business_metrics,
             http_metrics: None,
             heartbeat_scheduler,
@@ -799,12 +809,33 @@ impl HandlerState {
     }
 
     pub fn with_public_config(mut self, settings: crate::config::PublicConfigSettings) -> Self {
+        self.tasks.set_channel_quota_mode(
+            patchbay_service::channel_quota::ChannelQuotaMode::for_messaging_mode(
+                &settings.messaging.mode,
+            ),
+        );
         self.public_config = settings;
         self
     }
 
     pub fn with_integrations(mut self, integrations: patchbay_config::IntegrationsConfig) -> Self {
         self.integrations = integrations;
+        self
+    }
+
+    pub fn with_channel_inbound_handler(
+        mut self,
+        handler: patchbay_channel::InboundHandler,
+    ) -> Self {
+        self.channel_inbound_handler = Some(handler);
+        self
+    }
+
+    pub fn with_slack_slash_processor(
+        mut self,
+        processor: Option<Arc<patchbay_slack::slash_command::SlashCommandProcessor>>,
+    ) -> Self {
+        self.slack_slash_processor = processor;
         self
     }
 
@@ -997,6 +1028,7 @@ impl HandlerState {
         mut self,
         entitlements: Option<Arc<dyn EntitlementProvider>>,
     ) -> Self {
+        self.tasks.set_im_entitlements(entitlements.clone());
         let mut service =
             AutomationService::new(self.pool.clone(), self.bus.clone(), self.tasks.clone());
         service.entitlements = entitlements;

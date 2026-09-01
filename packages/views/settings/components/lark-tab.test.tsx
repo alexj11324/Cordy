@@ -43,6 +43,12 @@ const installationsRef = vi.hoisted(() => ({
   },
 }));
 
+const healthyRuntime = {
+  state: "healthy",
+  observedAt: null,
+  errorCode: null,
+} as const;
+
 vi.mock("@tanstack/react-query", () => ({
   useQuery: (opts: { queryKey: unknown[]; enabled?: boolean }) => {
     if (opts.enabled === false) return { data: undefined, isLoading: false };
@@ -306,6 +312,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
         bot_open_id: "ou_existing_bot",
         installer_user_id: "user-1",
         status: "active",
+        runtime: healthyRuntime,
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",
@@ -349,6 +356,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
         installer_user_id: "user-1",
         status: "active",
         region: "lark",
+        runtime: healthyRuntime,
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",
@@ -372,6 +380,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
         bot_open_id: "ou_other",
         installer_user_id: "user-1",
         status: "active",
+        runtime: healthyRuntime,
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",
@@ -400,6 +409,7 @@ describe("LarkAgentBindButton (CTA gate)", () => {
         bot_open_id: "ou_existing_bot",
         installer_user_id: "user-1",
         status: "active",
+        runtime: healthyRuntime,
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",
@@ -464,6 +474,7 @@ describe("LarkAgentBotConnectedBadge (Unbind / Disconnect)", () => {
         bot_open_id: "ou_existing_bot",
         installer_user_id: "user-1",
         status: "active",
+        runtime: healthyRuntime,
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",
@@ -727,6 +738,7 @@ describe("LarkTab connected bots list (agent identity rendering)", () => {
         bot_open_id: "ou_abc123",
         installer_user_id: "user-1",
         status: "active",
+        runtime: healthyRuntime,
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",
@@ -763,6 +775,7 @@ describe("LarkTab connected bots list (agent identity rendering)", () => {
         bot_open_id: "ou_orphan",
         installer_user_id: "user-1",
         status: "active",
+        runtime: healthyRuntime,
         installed_at: "2026-06-03T00:00:00Z",
         created_at: "2026-06-03T00:00:00Z",
         updated_at: "2026-06-03T00:00:00Z",

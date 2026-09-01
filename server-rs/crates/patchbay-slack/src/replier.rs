@@ -198,6 +198,15 @@ impl patchbay_channel_engine::resolvers::OutboundReplier for OutboundReplier {
                 .post(ctx, inst, msg, AGENT_ARCHIVED_TEXT)
                 .await
                 .map_err(|e| ("archived notice", e)),
+            o if *o == Outcome::quota_exceeded() => self
+                .post(
+                    ctx,
+                    inst,
+                    msg,
+                    patchbay_channel::quota_exceeded_notice_for_message(msg),
+                )
+                .await
+                .map_err(|e| ("quota notice", e)),
             o if *o == Outcome::fresh_pending() => self
                 .post(ctx, inst, msg, FRESH_PENDING_TEXT)
                 .await

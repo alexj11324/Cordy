@@ -24,6 +24,25 @@ impl PostgresChannelStore {
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
+
+    /// Mirrors a lease owned by the external Redis backend into the durable
+    /// installation row for the public health endpoint.
+    pub async fn mirror_lease(
+        &self,
+        id: Uuid,
+        token: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> anyhow::Result<()> {
+        patchbay_db::queries::channel::mirror_channel_ws_lease(&self.pool, id, token, expires_at)
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn clear_mirrored_lease(&self, id: Uuid, token: &str) -> anyhow::Result<()> {
+        patchbay_db::queries::channel::clear_mirrored_channel_ws_lease(&self.pool, id, token)
+            .await
+            .map(|_| ())
+    }
 }
 
 fn row_fingerprint(channel_type: &str, config: &serde_json::Value) -> String {
@@ -36,6 +55,13 @@ fn row_fingerprint(channel_type: &str, config: &serde_json::Value) -> String {
     hex::encode(hash.finalize())
 }
 
+fn supervisor_owns_transport(config: &serde_json::Value) -> bool {
+    // Webhook installations have no process-local receive loop. Their public
+    // HTTP handler owns inbound delivery and reports its own observations;
+    // assigning a websocket/polling lease would create a false live signal.
+    config.get("transport").and_then(serde_json::Value::as_str) != Some("webhook")
+}
+
 #[async_trait]
 impl InstallationStore for PostgresChannelStore {
     async fn list_active_installations(&self) -> anyhow::Result<Vec<Installation>> {
@@ -43,6 +69,7 @@ impl InstallationStore for PostgresChannelStore {
             .await?;
         Ok(rows
             .into_iter()
+            .filter(|row| supervisor_owns_transport(&row.config))
             .map(|row| Installation {
                 id: row.id,
                 channel_type: patchbay_channel::Type(row.channel_type.clone()),
@@ -98,7 +125,7 @@ async fn acquire_or_renew(pool: &PgPool, arg: AcquireLeaseParams) -> Result<(), 
 
 #[cfg(test)]
 mod tests {
-    use super::row_fingerprint;
+    use super::{row_fingerprint, supervisor_owns_transport};
     use serde_json::json;
 
     #[test]
@@ -111,5 +138,14 @@ mod tests {
         assert_eq!(first, reordered);
         assert_ne!(first, rotated);
         assert_ne!(first, other_type);
+    }
+
+    #[test]
+    fn webhook_installations_are_not_owned_by_the_connection_supervisor() {
+        assert!(!supervisor_owns_transport(&json!({"transport": "webhook"})));
+        assert!(supervisor_owns_transport(
+            &json!({"transport": "socket_mode"})
+        ));
+        assert!(supervisor_owns_transport(&json!({})));
     }
 }

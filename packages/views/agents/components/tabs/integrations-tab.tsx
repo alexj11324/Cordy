@@ -1,8 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { Agent } from "@patchbay/core/types";
+import {
+  isMessagingInstallationHealthy,
+  type Agent,
+} from "@patchbay/core/types";
 import { useAuthStore } from "@patchbay/core/auth";
+import { useConfigStore } from "@patchbay/core/config";
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { larkInstallationsOptions } from "@patchbay/core/lark";
 import { slackInstallationsOptions } from "@patchbay/core/slack";
@@ -43,6 +47,10 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
   const { t: ts } = useT("settings");
   const wsId = useWorkspaceId();
   const user = useAuthStore((s) => s.user);
+  // The server capability contract is authoritative for all secret-bearing
+  // writes. Self-hosted deployments deliberately expose the cards read-only;
+  // the backend still rejects a forged request with server_managed_integration.
+  const setupWritable = useConfigStore((state) => state.messaging?.setupWritable === true);
 
   // Both queries are already issued by LarkAgentBindButton (and keyed per
   // workspace), so re-reading them here is free — TanStack dedupes by key.
@@ -95,14 +103,14 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
   const canManageWeixin = isWorkspaceAdmin || isAgentOwner;
   const hasActiveInstall =
     listing?.installations.some(
-      (inst) => inst.agent_id === agent.id && inst.status === "active",
+      (inst) => inst.agent_id === agent.id && isMessagingInstallationHealthy(inst),
     ) ?? false;
 
   const slackConfigured = slackListing?.configured === true;
   const slackInstallSupported = slackListing?.install_supported === true;
   const slackHasActiveInstall =
     slackListing?.installations.some(
-      (inst) => inst.agent_id === agent.id && inst.status === "active",
+      (inst) => inst.agent_id === agent.id && isMessagingInstallationHealthy(inst),
     ) ?? false;
 
   const dingtalkConfigured = dingtalkListing?.configured === true;
@@ -114,14 +122,14 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
   const wecomInstallSupported = wecomListing?.install_supported === true;
   const wecomHasActiveInstall =
     wecomListing?.installations.some(
-      (inst) => inst.agent_id === agent.id && inst.status === "active",
+      (inst) => inst.agent_id === agent.id && isMessagingInstallationHealthy(inst),
     ) ?? false;
 
   const telegramConfigured = telegramListing?.configured === true;
   const telegramInstallSupported = telegramListing?.install_supported === true;
   const telegramHasActiveInstall =
     telegramListing?.installations.some(
-      (inst) => inst.agent_id === agent.id && inst.status === "active",
+      (inst) => inst.agent_id === agent.id && isMessagingInstallationHealthy(inst),
     ) ?? false;
 
   // A member who can manage no platform (not a workspace admin and not this
@@ -171,6 +179,10 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
             <p className="text-caption text-muted-foreground">
               {t(($) => $.tab_body.integrations.members_note)}
             </p>
+          ) : !setupWritable ? (
+            <p className="text-caption text-muted-foreground">
+              {ts(($) => $.page.integrations_server_managed)}
+            </p>
           ) : !weixinListing?.configured ? (
             <p className="text-caption text-muted-foreground">
               {ts(($) => $.weixin.not_enabled)}
@@ -194,7 +206,15 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
           </div>
         </div>
         <div className="border-t px-4 py-3">
-          {!configured ? (
+          {!canManageLark ? (
+            <p className="text-caption text-muted-foreground">
+              {t(($) => $.tab_body.integrations.members_note)}
+            </p>
+          ) : !setupWritable ? (
+            <p className="text-caption text-muted-foreground">
+              {ts(($) => $.page.integrations_server_managed)}
+            </p>
+          ) : !configured ? (
             // No at-rest key on this deployment. The tab is only mounted
             // when the feature is configured, so this is the rare "key was
             // removed after an install existed" race.
@@ -248,6 +268,10 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
             <p className="text-caption text-muted-foreground">
               {t(($) => $.tab_body.integrations.members_note)}
             </p>
+          ) : !setupWritable ? (
+            <p className="text-caption text-muted-foreground">
+              {ts(($) => $.page.integrations_server_managed)}
+            </p>
           ) : !slackConfigured ? (
             <p className="text-caption text-muted-foreground">
               {ts(($) => $.slack.not_enabled_title)}
@@ -288,6 +312,10 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
             <p className="text-caption text-muted-foreground">
               {t(($) => $.tab_body.integrations.members_note)}
             </p>
+          ) : !setupWritable ? (
+            <p className="text-caption text-muted-foreground">
+              {ts(($) => $.page.integrations_server_managed)}
+            </p>
           ) : !dingtalkConfigured ? (
             <p className="text-caption text-muted-foreground">
               {ts(($) => $.dingtalk.not_enabled_title)}
@@ -314,6 +342,10 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
           {!canManageWecom ? (
             <p className="text-caption text-muted-foreground">
               {t(($) => $.tab_body.integrations.members_note)}
+            </p>
+          ) : !setupWritable ? (
+            <p className="text-caption text-muted-foreground">
+              {ts(($) => $.page.integrations_server_managed)}
             </p>
           ) : !wecomConfigured ? (
             <p className="text-caption text-muted-foreground">
@@ -348,6 +380,10 @@ export function IntegrationsTab({ agent }: { agent: Agent }) {
           {!canManageTelegram ? (
             <p className="text-caption text-muted-foreground">
               {t(($) => $.tab_body.integrations.members_note)}
+            </p>
+          ) : !setupWritable ? (
+            <p className="text-caption text-muted-foreground">
+              {ts(($) => $.page.integrations_server_managed)}
             </p>
           ) : !telegramConfigured ? (
             <p className="text-caption text-muted-foreground">
