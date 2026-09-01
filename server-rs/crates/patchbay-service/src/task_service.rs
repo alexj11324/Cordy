@@ -1691,7 +1691,7 @@ impl TaskService {
                         TaskServiceError::Internal(format!("load promoted graph tasks: {error}"))
                     })?;
             for issue in &promoted_issues {
-                enqueue_linear_issue_update_tx(&mut *tx, issue)
+                enqueue_linear_issue_update_tx(&mut tx, issue)
                     .await
                     .map_err(|error| {
                         TaskServiceError::Internal(format!(
@@ -1743,7 +1743,7 @@ impl TaskService {
                         ))
                     })?;
             for issue in &promoted_issues {
-                enqueue_linear_issue_update_tx(&mut *tx, issue)
+                enqueue_linear_issue_update_tx(&mut tx, issue)
                     .await
                     .map_err(|error| {
                         TaskServiceError::Internal(format!(
@@ -1872,7 +1872,7 @@ impl TaskService {
                         ))
                     })?;
             for issue in &promoted_issues {
-                enqueue_linear_issue_update_tx(&mut *tx, issue)
+                enqueue_linear_issue_update_tx(&mut tx, issue)
                     .await
                     .map_err(|error| {
                         TaskServiceError::Internal(format!(
@@ -1966,7 +1966,7 @@ impl TaskService {
                     continue;
                 }
             };
-            if let Err(error) = enqueue_linear_issue_update_tx(&mut *tx, &issue).await {
+            if let Err(error) = enqueue_linear_issue_update_tx(&mut tx, &issue).await {
                 tracing::warn!(
                     issue_id = %issue.id,
                     %error,
