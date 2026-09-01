@@ -51,6 +51,10 @@ test("Rust uses one workspace test invocation and PR compiler caches are read-on
 
 test("Rust quality uses clippy as the compile gate and CI compiles with line tables only", () => {
   assert.match(ci, /cargo clippy --workspace --all-targets --locked -- -D warnings/u);
+  assert.match(
+    ci,
+    /cargo build --locked -p patchbay-server --bin patchbay-server -p patchbay-cli --bin patchbay/u,
+  );
   assert.doesNotMatch(ci, /cargo check --workspace --all-targets --locked/u);
   assert.doesNotMatch(ci, /cargo build --workspace --locked/u);
   assert.equal(

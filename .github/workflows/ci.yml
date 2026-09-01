@@ -750,12 +750,19 @@ jobs:
         run: cargo fmt --all --check
 
       # Clippy typechecks every target. A preceding cargo check repeats rustc
-      # work without codegen, and a following cargo build repeats codegen that
-      # rust-tests already performs with --all-targets (libs, bins, tests,
-      # examples, and benches). Keep this job to fmt + clippy.
+      # work without codegen, and a following workspace cargo build repeats
+      # codegen that rust-tests already performs with --all-targets (libs,
+      # bins, tests, examples, and benches). cargo test still compiles those
+      # bins with rustc --test, so cfg(not(test)) / linker-flag failures on
+      # the shipping executables would miss the PR gate. Link only those two
+      # binaries here instead of rebuilding the whole workspace.
       - name: Run Clippy
         working-directory: server-rs
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Link shipping binaries
+        working-directory: server-rs
+        run: cargo build --locked -p patchbay-server --bin patchbay-server -p patchbay-cli --bin patchbay
 
       - name: Report compiler cache effectiveness
         if: always()

@@ -396,10 +396,12 @@ an entire `server-rs/target`. Pull-request sccache restores are read-only so a
 branch compile cannot evict `main`'s objects. Cargo incremental is disabled in
 those jobs because ephemeral runners cannot reuse `target/` and incremental
 fingerprints fight sccache. Debuginfo is `line-tables-only` so backtraces remain
-while skipping full DWARF. `rust-quality` runs `fmt` plus Clippy; it does not
-repeat `cargo check` or a third workspace `cargo build`, because Clippy already
-typechecks every target and `rust-tests` already links `--all-targets`. Release
-CLIs/installers are exact-commit workflow artifacts, not reusable caches. Cache
+while skipping full DWARF. `rust-quality` runs `fmt`, Clippy, and a normal
+link of the shipping `patchbay-server` and `patchbay` binaries; it does not
+repeat `cargo check` or a workspace `cargo build`, because Clippy already
+typechecks every target and `rust-tests` already links `--all-targets` as
+libtest executables. Release CLIs/installers are exact-commit workflow
+artifacts, not reusable caches. Cache
 keys remain OS/architecture/target aware, and Rust jobs print sccache statistics
 so restore/upload time and hit rate can be compared with cold compilation. Keep
 the repository within GitHub's default cache budget unless measured savings
