@@ -1447,7 +1447,7 @@ impl LinearSyncWorker {
             if let Some(existing_link) = link {
                 self.apply_remote_removal(
                     connection,
-                    existing_link,
+                    Some(existing_link),
                     &event.linear_issue_id,
                     &source_event_id,
                     event_timestamp_ms,
