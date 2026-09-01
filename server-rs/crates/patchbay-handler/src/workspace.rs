@@ -1023,7 +1023,7 @@ async fn revoke_and_remove_member(
         .map(|issue| issue.id)
         .collect::<Vec<_>>();
     linear_q::clear_import_link_owner_snapshots(
-        &mut transaction,
+        &mut *transaction,
         workspace_id,
         &cleared_issue_ids,
         user_id,
