@@ -362,7 +362,7 @@ fn agent_label_ids_for_issue(
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty());
-    let Some(_group_id) = configured_group else {
+    let Some(group_id) = configured_group else {
         return Ok(None);
     };
     let label_mapping = mapping
@@ -415,6 +415,7 @@ fn agent_label_ids_for_issue(
 
     let mut label_ids = existing_labels
         .iter()
+        .filter(|label| label.parent.as_ref().map(|parent| parent.id.as_str()) != Some(group_id))
         .map(|label| label.id.clone())
         .filter(|label_id| !owned_label_ids.iter().any(|owned| *owned == label_id))
         .collect::<Vec<_>>();
@@ -1298,6 +1299,34 @@ impl LinearSyncWorker {
                     })?;
             }
         }
+        let mut selection_retries_enqueued = false;
+        if let Some(agent_id) = (issue.executor_type.as_deref() == Some("agent"))
+            .then_some(issue.executor_id)
+            .flatten()
+        {
+            let sessions = linear_agent_q::list_waiting_linear_agent_sessions(
+                &mut *transaction,
+                connection.workspace_id,
+                issue.id,
+            )
+            .await
+            .map_err(SyncError::retry)?;
+            for session in sessions {
+                let delivery_id = format!(
+                    "linear-agent-selection-retry:{}:{}:linear-outbox:{}",
+                    session.linear_session_id, agent_id, row.id
+                );
+                selection_retries_enqueued |= linear_agent_q::enqueue_linear_agent_session_retry(
+                    &mut transaction,
+                    connection.id,
+                    &delivery_id,
+                    &session,
+                    Some(agent_id),
+                )
+                .await
+                .map_err(SyncError::retry)?;
+            }
+        }
         let completed =
             linear_q::complete_claimed_sync_outbox(&mut *transaction, row.id, worker_id)
                 .await
@@ -1308,6 +1337,9 @@ impl LinearSyncWorker {
             )));
         }
         transaction.commit().await.map_err(SyncError::retry)?;
+        if selection_retries_enqueued {
+            self.notify.notify_waiters();
+        }
         self.resume_agent_sessions_awaiting_issue_link(&connection, &remote.id)
             .await?;
         Ok(())
@@ -3792,7 +3824,9 @@ mod tests {
         parse_agent_session_terminal_event, parse_remote_timestamp, remote_sync_snapshot,
         retry_delay, should_preserve_unmapped_remote_assignee, RemoteOwnerMapping,
     };
-    use crate::linear::{LinearRemoteIssue, LinearRemoteLabel, LinearRemoteState};
+    use crate::linear::{
+        LinearRemoteIssue, LinearRemoteLabel, LinearRemoteLabelParent, LinearRemoteState,
+    };
 
     fn binding(status_mapping: serde_json::Value) -> LinearProjectBinding {
         LinearProjectBinding {
@@ -3812,6 +3846,13 @@ mod tests {
             sync_mode: "import".to_string(),
             updated_at: Utc::now(),
             workspace_id: Uuid::now_v7(),
+        }
+    }
+
+    fn remote_label(id: &str, parent_id: Option<&str>) -> LinearRemoteLabel {
+        LinearRemoteLabel {
+            id: id.to_string(),
+            parent: parent_id.map(|id| LinearRemoteLabelParent { id: id.to_string() }),
         }
     }
 
@@ -3982,12 +4023,8 @@ mod tests {
             "labels": {"agent-backend": agent_id.to_string()}
         });
         let labels = vec![
-            LinearRemoteLabel {
-                id: "bug".to_string(),
-            },
-            LinearRemoteLabel {
-                id: "agent-backend".to_string(),
-            },
+            remote_label("bug", None),
+            remote_label("agent-backend", Some("agent-group")),
         ];
         assert_eq!(
             agent_label_decision(&binding, &labels).unwrap(),
@@ -3998,13 +4035,7 @@ mod tests {
         );
 
         assert_eq!(
-            agent_label_decision(
-                &binding,
-                &[LinearRemoteLabel {
-                    id: "bug".to_string(),
-                }]
-            )
-            .unwrap(),
+            agent_label_decision(&binding, &[remote_label("bug", None)]).unwrap(),
             super::AgentLabelDecision {
                 configured: true,
                 agent_id: None,
@@ -4027,12 +4058,8 @@ mod tests {
         let error = agent_label_decision(
             &binding,
             &[
-                LinearRemoteLabel {
-                    id: "agent-backend".to_string(),
-                },
-                LinearRemoteLabel {
-                    id: "agent-frontend".to_string(),
-                },
+                remote_label("agent-backend", Some("agent-group")),
+                remote_label("agent-frontend", Some("agent-group")),
             ],
         )
         .unwrap_err();
@@ -4048,12 +4075,9 @@ mod tests {
             "labels": {"agent-backend": agent_id.to_string()}
         });
         let existing = vec![
-            LinearRemoteLabel {
-                id: "bug".to_string(),
-            },
-            LinearRemoteLabel {
-                id: "agent-backend".to_string(),
-            },
+            remote_label("bug", None),
+            remote_label("agent-unmapped", Some("agent-group")),
+            remote_label("agent-backend", Some("agent-group")),
         ];
         assert_eq!(
             agent_label_ids_for_issue(&binding, Some("agent"), Some(agent_id), &existing).unwrap(),

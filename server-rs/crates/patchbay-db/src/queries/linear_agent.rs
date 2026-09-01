@@ -460,7 +460,7 @@ pub async fn mark_linear_agent_session_terminal(
         r#"UPDATE linear_agent_session
            SET status = $4,
                last_event_id = $5,
-               last_event_at_ms = $6,
+               last_event_at_ms = COALESCE($6, last_event_at_ms),
                updated_at = now()
            WHERE workspace_id = $1
              AND connection_id = $2

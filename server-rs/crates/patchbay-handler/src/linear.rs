@@ -2373,6 +2373,13 @@ pub(crate) struct LinearRemoteUser {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub(crate) struct LinearRemoteLabel {
     pub id: String,
+    #[serde(default)]
+    pub parent: Option<LinearRemoteLabelParent>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub(crate) struct LinearRemoteLabelParent {
+    pub id: String,
 }
 
 const PATCHBAY_ISSUE_MARKER_PREFIX: &str = "<!-- patchbay:issue:";
@@ -2973,7 +2980,7 @@ impl LinearTokenManager {
             .post(&self.graphql_url)
             .bearer_auth(access_token)
             .json(&json!({
-                "query": "query LinearIssue($issueId: ID!) { issue(id: $issueId) { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } delegate { id } labels { nodes { id } } } }",
+                "query": "query LinearIssue($issueId: ID!) { issue(id: $issueId) { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } delegate { id } labels { nodes { id parent { id } } } } }",
                 "variables": { "issueId": linear_issue_id },
             }))
             .send()
@@ -3016,7 +3023,7 @@ impl LinearTokenManager {
             .post(&self.graphql_url)
             .bearer_auth(access_token)
             .json(&json!({
-                "query": "query LinearProjectIssues($projectId: ID!, $after: String) { issues(first: 100, after: $after, filter: { project: { id: { eq: $projectId } } }) { nodes { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } delegate { id } labels { nodes { id } } } pageInfo { hasNextPage endCursor } } }",
+                "query": "query LinearProjectIssues($projectId: ID!, $after: String) { issues(first: 100, after: $after, filter: { project: { id: { eq: $projectId } } }) { nodes { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } delegate { id } labels { nodes { id parent { id } } } } pageInfo { hasNextPage endCursor } } }",
                 "variables": {
                     "projectId": linear_project_id,
                     "after": after,
@@ -3338,7 +3345,7 @@ impl LinearTokenManager {
         self.mutate_issue(
             &access_token,
             "issueCreate",
-            "mutation LinearIssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } delegate { id } labels { nodes { id } } } userErrors { message } } }",
+            "mutation LinearIssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } delegate { id } labels { nodes { id parent { id } } } } userErrors { message } } }",
             json!({ "input": Value::Object(variables) }),
         )
         .await
@@ -3375,7 +3382,7 @@ impl LinearTokenManager {
         self.mutate_issue(
             &access_token,
             "issueUpdate",
-            "mutation LinearIssueUpdate($issueId: ID!, $input: IssueUpdateInput!) { issueUpdate(id: $issueId, input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } delegate { id } labels { nodes { id } } } userErrors { message } } }",
+            "mutation LinearIssueUpdate($issueId: ID!, $input: IssueUpdateInput!) { issueUpdate(id: $issueId, input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } delegate { id } labels { nodes { id parent { id } } } } userErrors { message } } }",
             json!({ "issueId": input.linear_issue_id, "input": Value::Object(variables) }),
         )
         .await
