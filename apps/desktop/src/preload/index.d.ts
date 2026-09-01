@@ -24,6 +24,7 @@ interface DesktopAPI {
   appInfo: {
     version: string;
     os: "macos" | "windows" | "linux" | "unknown";
+    authCallbackProtocol: string;
   };
   /** OS-preferred locale (BCP 47) injected by main via additionalArguments. */
   systemLocale: string;

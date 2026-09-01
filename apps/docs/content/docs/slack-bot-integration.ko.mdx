@@ -1,13 +1,13 @@
 ---
 title: Slack Bot
-description: 에이전트용 Slack Bot을 만들어 DM, 채널, /issue 명령에서 사용합니다.
+description: 워크스페이스용 Slack Bot을 만들어 DM, 채널, /issue 명령에서 사용합니다.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
 Patchbay는 사용자가 직접 만든 Slack app을 사용합니다. 연결하면 팀 멤버가 Bot과 DM을 나누고 채널에서 @멘션하거나 `/issue`로 이슈를 만들 수 있습니다.
 
-Slack app 하나는 Patchbay 에이전트 하나에 대응합니다. 여러 에이전트를 연결하려면 에이전트마다 별도의 app을 만드세요.
+Slack app은 특정 컴퓨터나 하나의 Patchbay 에이전트가 아니라 워크스페이스 단위로 설치됩니다. 멤버는 대화에서 `/agents`로 에이전트를 선택하거나 전환할 수 있으며, 별도의 Bot ID가 필요할 때만 추가 Slack app을 만드세요.
 
 ## 시작하기 전에
 
@@ -86,17 +86,17 @@ Bot은 Socket Mode로 Slack에 능동적으로 연결하므로 공개 Request UR
 3. `connections:write` scope를 추가합니다.
 4. `xapp-`로 시작하는 token을 생성하고 복사합니다.
 
-## 3. 에이전트에 연결
+## 3. 워크스페이스에 연결
 
-1. Patchbay에서 **에이전트**를 열고 Slack에 연결할 에이전트를 선택합니다.
-2. **연동**으로 이동해 **Slack 연결**을 클릭합니다.
+1. Patchbay에서 **Settings → Integrations**를 열고 **Connect Slack**을 클릭합니다.
+2. 워크스페이스 설치를 선택합니다(별도 Bot ID가 필요할 때만 에이전트 경로를 선택합니다).
 3. Bot token과 App-level token을 입력합니다.
 4. **연결**을 클릭합니다.
 
 Patchbay가 두 token이 같은 app에서 발급되었는지 확인합니다. 연결에 성공하면 페이지에 **Slack에 연결됨**이 표시됩니다.
 
 <Callout type="warning">
-두 token은 Patchbay 서버에 암호화되어 저장됩니다. Token은 자격 증명이므로 이슈, 댓글, 코드 저장소에 넣지 마세요. 이미 다른 에이전트나 워크스페이스에 연결된 app은 바로 재사용할 수 없으며 기존 연결을 먼저 해제해야 합니다.
+두 token은 Patchbay 서버에 암호화되어 저장됩니다. Token은 자격 증명이므로 이슈, 댓글, 코드 저장소에 넣지 마세요. 이미 다른 워크스페이스에 연결된 app은 바로 재사용할 수 없으며 기존 연결을 먼저 해제해야 합니다.
 </Callout>
 
 ## 처음 사용
@@ -143,7 +143,7 @@ DM이나 Bot을 @멘션한 채널 메시지에 파일을 그대로 첨부하세�
 
 ## 자체 호스팅 설정
 
-Patchbay Cloud에는 추가 설정이 필요 없습니다. 자체 호스팅 환경에서는 Slack token 암호화에 사용할 키를 먼저 설정해야 합니다.
+Patchbay Cloud에는 추가 설정이 필요 없습니다. 자체 호스팅 환경은 서버가 관리하며 앱은 읽기 전용으로 Slack 자격 증명을 받지 않습니다. [자체 호스팅 메시징 배포 계약](/self-host-messaging)에 따라 서버에서 설정 헬퍼를 실행하세요.
 
 ```dotenv
 PATCHBAY_SLACK_SECRET_KEY=<base64로 인코딩한 32바이트 키>
@@ -155,7 +155,7 @@ PATCHBAY_SLACK_SECRET_KEY=<base64로 인코딩한 32바이트 키>
 openssl rand -base64 32
 ```
 
-API 서비스를 다시 시작한 뒤 Slack app을 연결하세요. 이 키는 장기간 보관해야 합니다. 키를 바꾸거나 잃어버리면 기존 token을 복호화할 수 없으므로 다시 연결해야 합니다.
+`PATCHBAY_MESSAGING_BOOTSTRAP=true`와 서버 소유 워크스페이스/설치자 ID를 설정하고 `SLACK_BOT_TOKEN`, `SLACK_APP_TOKEN`, team ID, bot user ID를 배포 시크릿 저장소에 넣은 뒤 API 서비스를 다시 시작하세요. 이 키는 장기간 보관해야 하며 자체 호스팅 앱에는 연결 버튼이 표시되지 않습니다.
 
 계정 연결 링크는 `PATCHBAY_APP_URL`을 사용하고, 설정되지 않으면 `FRONTEND_ORIGIN`을 사용합니다. 멤버가 접근할 수 있는 Patchbay 주소를 지정해야 합니다.
 

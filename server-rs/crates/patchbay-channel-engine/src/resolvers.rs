@@ -39,6 +39,9 @@ impl Outcome {
     pub fn agent_archived() -> Self {
         Self("agent_archived".to_string())
     }
+    pub fn quota_exceeded() -> Self {
+        Self("quota_exceeded".to_string())
+    }
     pub fn hub_command() -> Self {
         Self("hub_command".to_string())
     }

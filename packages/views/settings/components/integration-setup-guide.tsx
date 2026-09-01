@@ -14,7 +14,13 @@ const providerConsoleUrls: Partial<Record<Exclude<IntegrationChannel, "linear">,
   telegram: "https://t.me/BotFather",
 };
 
-export function IntegrationSetupGuide({ channel }: { channel: Exclude<IntegrationChannel, "linear"> }) {
+export function IntegrationSetupGuide({
+  channel,
+  managed = false,
+}: {
+  channel: Exclude<IntegrationChannel, "linear">;
+  managed?: boolean;
+}) {
   const { t, i18n } = useT("settings");
   const copy = {
     lark: {
@@ -27,12 +33,20 @@ export function IntegrationSetupGuide({ channel }: { channel: Exclude<Integratio
       open: t(($) => $.lark.setup_open),
     },
     slack: {
-      requirement: t(($) => $.slack.setup_requirement),
-      steps: [
-        t(($) => $.slack.setup_step_1),
-        t(($) => $.slack.setup_step_2),
-        t(($) => $.slack.setup_step_3),
-      ],
+      requirement: managed
+        ? t(($) => $.slack.managed_setup_requirement)
+        : t(($) => $.slack.setup_requirement),
+      steps: managed
+        ? [
+            t(($) => $.slack.managed_setup_step_1),
+            t(($) => $.slack.managed_setup_step_2),
+            t(($) => $.slack.managed_setup_step_3),
+          ]
+        : [
+            t(($) => $.slack.setup_step_1),
+            t(($) => $.slack.setup_step_2),
+            t(($) => $.slack.setup_step_3),
+          ],
       open: t(($) => $.slack.setup_open),
     },
     dingtalk: {
@@ -72,9 +86,9 @@ export function IntegrationSetupGuide({ channel }: { channel: Exclude<Integratio
       open: t(($) => $.weixin.setup_open),
     },
   }[channel];
-  const consoleUrl = providerConsoleUrls[channel];
+  const consoleUrl = managed && channel === "slack" ? undefined : providerConsoleUrls[channel];
   const instructionsUrl =
-    channel === "slack" ? slackDocsUrl(i18n.language) : undefined;
+    channel === "slack" && !managed ? slackDocsUrl(i18n.language) : undefined;
 
   return (
     <section

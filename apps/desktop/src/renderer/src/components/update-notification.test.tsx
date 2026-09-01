@@ -44,7 +44,7 @@ describe("UpdateNotification", () => {
     fireEvent.click(screen.getByRole("button", { name: "See changelog" }));
 
     expect(mocks.openExternal).toHaveBeenCalledWith(
-      "https://patchbay.ai/changelog#release-0-4-27",
+      "https://patchbay.aspectlylabs.com/changelog#release-0-4-27",
     );
   });
 

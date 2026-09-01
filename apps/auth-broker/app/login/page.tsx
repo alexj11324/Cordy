@@ -1,6 +1,13 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useAuth } from "@clerk/nextjs";
 import { useSearchParams } from "next/navigation";
 import { AuthShell } from "@/components/auth-shell";
@@ -45,11 +52,16 @@ function DesktopCompletionContent() {
     try {
       const sessionToken = await getToken();
       if (!sessionToken) throw new BrokerApiError(401);
-      const code = await completeDesktopGoogleAttempt(sessionToken, {
-        state: binding.state,
-        code_challenge: binding.codeChallenge,
-      });
-      window.location.assign(buildDesktopCallbackUrl(code, binding.state));
+      const { callbackProtocol, code } = await completeDesktopGoogleAttempt(
+        sessionToken,
+        {
+          state: binding.state,
+          code_challenge: binding.codeChallenge,
+        },
+      );
+      window.location.assign(
+        buildDesktopCallbackUrl(code, binding.state, callbackProtocol),
+      );
       setLoading(false);
     } catch (caught) {
       if (
@@ -92,7 +104,11 @@ function DesktopCompletionContent() {
               : messages.web.desktop_handoff.opening_description}
       </p>
       {binding && (
-        <button type="button" disabled={loading} onClick={() => void openDesktopApp()}>
+        <button
+          type="button"
+          disabled={loading}
+          onClick={() => void openDesktopApp()}
+        >
           {messages.web.desktop_handoff.open_button}
         </button>
       )}

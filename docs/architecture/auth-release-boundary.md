@@ -95,12 +95,15 @@ requests and redemption retain the original limiter.
 
 ## Release boundary
 
-`Dockerfile.auth-broker`, the disabled-by-default
-`deploy/helm/patchbay-auth-broker` chart, and the manual
-`Auth Broker Release` workflow form an independent artifact lane. The ordinary
-product `Release` workflow does not build, publish, deploy, or route this
-artifact. Conversely, building the broker artifact does not deploy the Web,
-Rust API, or Desktop applications.
+`Dockerfile.auth-broker` and the disabled-by-default
+`deploy/helm/patchbay-auth-broker` chart preserve the broker's independent
+runtime and authority boundary. The versioned product `Release` workflow does
+not publish the broker. For production commits, **Aspectlylabs production**
+builds Backend, Web, Docs, and Auth Broker from one Git SHA and deploys their
+immutable digests together so a live environment cannot silently mix source
+versions. This artifact-set coupling does not merge runtime ownership:
+deploying the broker does not route `accounts` traffic, and the Rust API remains
+the grant/session authority.
 
 `scripts/classify-auth-change.mjs` is the executable release-impact contract:
 

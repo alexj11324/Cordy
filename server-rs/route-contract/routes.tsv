@@ -137,6 +137,7 @@ GET	/api/inbox/unread-summary
 GET	/api/integrations/composio/callback
 GET	/api/integrations/composio/connections
 GET	/api/integrations/composio/toolkits
+GET	/api/integrations/slack/oauth/callback
 GET	/api/invitations
 GET	/api/invitations/{}
 GET	/api/issue-category-policies
@@ -219,6 +220,7 @@ GET	/api/workspaces/{}/linear
 GET	/api/workspaces/{}/linear/bindings
 GET	/api/workspaces/{}/linear/catalog
 GET	/api/workspaces/{}/mcp-servers
+GET	/api/workspaces/{}/messaging/usage
 GET	/api/workspaces/{}/members
 GET	/api/workspaces/{}/plugins
 GET	/api/workspaces/{}/plugins/{}/invocations
@@ -330,7 +332,6 @@ POST	/api/daemon/tasks/{}/usage
 POST	/api/daemon/tasks/{}/wait-local-directory
 POST	/api/daemon/workspaces/{}/issues/gc-check
 POST	/api/dependency-graphs/{}/retire
-POST	/api/desktop-handoff
 POST	/api/desktop-handoff/redeem
 POST	/api/dingtalk/binding/redeem
 POST	/api/feedback
@@ -343,6 +344,8 @@ POST	/api/inbox/{}/read
 POST	/api/inbox/{}/unarchive
 POST	/api/inbox/{}/unread
 POST	/api/integrations/composio/connect/init
+POST	/api/integrations/slack/commands
+POST	/api/integrations/slack/events
 POST	/api/invitations/{}/accept
 POST	/api/invitations/{}/decline
 POST	/api/issue-statuses
@@ -430,6 +433,7 @@ POST	/api/workspaces/{}/plugins/{}/token
 POST	/api/workspaces/{}/runtime-profiles
 POST	/api/workspaces/{}/share-links
 POST	/api/workspaces/{}/slack/install/byo
+POST	/api/workspaces/{}/slack/install/begin
 POST	/api/workspaces/{}/telegram/install
 POST	/api/workspaces/{}/vcs/connections
 POST	/api/workspaces/{}/vcs/connections/{}/rotate-webhook

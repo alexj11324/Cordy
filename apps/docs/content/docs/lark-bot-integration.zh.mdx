@@ -1,22 +1,22 @@
 ---
 title: 飞书 Bot
-description: 把智能体接入飞书，在私聊或群聊中直接交代工作。
+description: 为工作区安装飞书 Bot，在私聊或群聊中直接交代工作。
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-把一个 Patchbay 智能体连接成飞书 Bot 后，团队成员可以在飞书里私聊它、在群里 @ 它，也可以用 `/issue` 创建 issue。对话和Agent 事件仍会保存到 Patchbay 工作区。
+为 Patchbay 工作区安装飞书 Bot 后，团队成员可以在飞书里私聊它、在群里 @ 它，也可以用 `/issue` 创建 issue。对话和 Agent 事件仍会保存到 Patchbay 工作区。
 
-每个 Bot 只对应一个智能体。需要在飞书中使用多个智能体时，分别为它们连接 Bot。
+安装属于工作区，不绑定某台电脑或某一个智能体。成员可以在对话中使用 `/agents` 选择或切换当前智能体；只有需要独立 Bot 身份时，才需要额外安装。
 
 ## 连接 Bot
 
-智能体的所有者、工作区 owner 和 admin 可以发起连接：
+工作区 owner 和 admin 可以发起连接：
 
-1. 打开 **智能体**，选择要接入飞书的智能体。
-2. 进入 **集成**，点击 **绑定到飞书**。
+1. 打开 **设置 → 集成**，点击 **绑定到飞书**。
+2. 选择工作区级安装。
 3. 用飞书扫描二维码并确认授权。
-4. 回到 Patchbay。页面显示 **已连接到飞书** 后即可使用。
+4. 回到 Patchbay。页面显示 **已连接到飞书** 后，工作区即可使用。
 
 
 二维码为一次性凭证，过期后重新生成即可。已经连接的智能体不会再次显示扫码入口；需要改名或调整权限时，点击 **在飞书中管理**。
@@ -64,7 +64,9 @@ Safari 登录成功后仍然停留在登录页。
 
 ## 自托管配置
 
-Patchbay Cloud 无需额外配置。自托管部署需要先设置一个用于加密 Bot 凭据的密钥：
+Patchbay Cloud 无需额外配置。自托管部署由服务器管理：App 只读，不接收
+Bot 凭据。请按[自托管消息部署契约](/self-host-messaging)在服务器上运行
+配置脚本。
 
 ```dotenv
 PATCHBAY_LARK_SECRET_KEY=<base64 编码的 32 字节密钥>
@@ -76,7 +78,9 @@ PATCHBAY_LARK_SECRET_KEY=<base64 编码的 32 字节密钥>
 openssl rand -base64 32
 ```
 
-重启 API 服务后，再从智能体的 **集成** 页面连接 Bot。该密钥需要长期保存：更换或丢失后，已有凭据无法解密，需要重新连接。
+设置 `PATCHBAY_MESSAGING_BOOTSTRAP=true`，并在服务器密钥存储中填写工作区与
+安装者 ID及飞书凭据，然后重启 API 服务。该密钥需要长期保存：更换或丢失后，
+已有凭据无法解密。自托管 App 不会出现“连接”按钮。
 
 `PATCHBAY_LARK_HTTP_BASE_URL` 和 `PATCHBAY_LARK_CALLBACK_BASE_URL` 只用于代理、测试等特殊部署，正常情况下不需要设置。
 

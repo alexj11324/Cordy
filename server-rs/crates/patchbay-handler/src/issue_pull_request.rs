@@ -797,8 +797,8 @@ mod tests {
     #[test]
     fn github_pull_request_urls_match_go_contract() {
         assert_eq!(
-            parse_github_pr_url(" https://github.com/Patchbay-AI/Patchbay/pull/24/files "),
-            Ok(("patchbay-ai".into(), "patchbay".into(), 24))
+            parse_github_pr_url(" https://github.com/alexj11324/Cordy/pull/24/files "),
+            Ok(("alexj11324".into(), "cordy".into(), 24)), // legacy-brand-compat: normalized repository identity
         );
         assert_eq!(
             parse_github_pr_url("http://github.com/Owner/repo.name/pull/7?diff=split"),

@@ -62,10 +62,8 @@ pub struct InstallPersist {
     pub ws_id: Uuid,
     pub agent_id: Uuid,
     pub installer_id: Uuid,
-    /// The value stored at `config->>'app_id'` — the real Slack app id — and
-    /// MUST equal the app_id inside `config_json`; it keys the dead-owner
-    /// reclaim and the live-owner lookup that drives the accurate conflict
-    /// message.
+    /// The stable routing identity stored in `app_id`: a tenant-specific key
+    /// for managed Slack or the real Slack app id for BYO Socket Mode.
     pub app_id_key: String,
     /// The config blob holding the Slack app id used for inbound routing; the
     /// ROW itself is keyed by (workspace, agent) — one bot per agent.
@@ -73,8 +71,8 @@ pub struct InstallPersist {
 }
 
 impl InstallPersist {
-    /// Composes an InstallPersist from a decoded config, deriving the routing
-    /// key from the config's own app_id so the two can never disagree.
+    /// Composes an InstallPersist from a decoded config. Both managed and BYO
+    /// installations use the existing `app_id` routing slot.
     pub fn from_config(
         ws_id: Uuid,
         agent_id: Uuid,
@@ -123,11 +121,34 @@ impl InstallService {
     /// identity state: Slack channel/user ids are scoped to the old app/team
     /// and must never be sent through the new credentials.
     pub async fn persist_install(&self, p: &InstallPersist) -> anyhow::Result<ChannelInstallation> {
+        self.persist_install_with_limit(p, None).await
+    }
+
+    /// Persists an installation while optionally enforcing the hosted
+    /// workspace cap in the same transaction as the upsert.
+    pub async fn persist_install_with_limit(
+        &self,
+        p: &InstallPersist,
+        installation_limit: Option<i64>,
+    ) -> anyhow::Result<ChannelInstallation> {
         let mut tx = self
             .pool
             .begin()
             .await
             .map_err(|e| anyhow::anyhow!("begin install tx: {e:#}"))?;
+        if let Some(limit) = installation_limit {
+            let allowed = patchbay_db::queries::channel::channel_installation_limit_allows(
+                &mut tx,
+                p.ws_id,
+                TYPE_SLACK,
+                (!p.agent_id.is_nil()).then_some(p.agent_id),
+                limit,
+            )
+            .await?;
+            if !allowed {
+                anyhow::bail!("hosted messaging installation limit reached");
+            }
+        }
         if p.agent_id.is_nil() {
             lock_channel_installation_hub_slot(&mut *tx, TYPE_SLACK, p.ws_id).await?;
         } else {
@@ -173,8 +194,10 @@ impl InstallService {
             }
         });
         if let Some(current) = current.filter(|row| {
-            row.config.get("app_id").and_then(serde_json::Value::as_str)
-                != Some(p.app_id_key.as_str())
+            let current_app_id = serde_json::from_value::<InstallConfig>(row.config.clone())
+                .map(|cfg| cfg.app_id)
+                .unwrap_or_default();
+            current_app_id != p.app_id_key
         }) {
             patchbay_db::queries::channel::delete_channel_installation_for_replacement(
                 &mut *tx, current.id,
@@ -309,7 +332,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn install_persist_derives_routing_key_from_config() {
+    fn install_persist_uses_existing_app_id_routing_slot() {
         let p = InstallPersist::from_config(
             Uuid::nil(),
             Uuid::nil(),
@@ -318,6 +341,19 @@ mod tests {
         )
         .unwrap();
         assert_eq!(p.app_id_key, "A123");
+
+        let managed = InstallPersist::from_config(
+            Uuid::nil(),
+            Uuid::nil(),
+            Uuid::nil(),
+            serde_json::json!({
+                "app_id": "A123:T456",
+                "api_app_id": "A123",
+                "bot_token_encrypted": "x"
+            }),
+        )
+        .unwrap();
+        assert_eq!(managed.app_id_key, "A123:T456");
     }
 
     #[test]

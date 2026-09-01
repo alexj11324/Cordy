@@ -16,7 +16,7 @@ const workspaceRef = vi.hoisted(() => ({
     id: "workspace-1",
     name: "Test Workspace",
     slug: "test-workspace",
-    repos: [{ url: "https://github.com/patchbay-ai/patchbay" }] as {
+    repos: [{ url: "https://github.com/alexj11324/Cordy" }] as {
       url: string;
       description?: string;
     }[],
@@ -149,7 +149,7 @@ describe("RepositoriesTab — automatic updates", () => {
       id: "workspace-1",
       name: "Test Workspace",
       slug: "test-workspace",
-      repos: [{ url: "https://github.com/patchbay-ai/patchbay" }],
+      repos: [{ url: "https://github.com/alexj11324/Cordy" }],
     };
     membersRef.current = [{ user_id: "user-1", role: "owner" }];
     githubRef.current = {
@@ -188,7 +188,7 @@ describe("RepositoriesTab — automatic updates", () => {
 
     const inputs = screen.getAllByRole("textbox") as HTMLInputElement[];
     expect(inputs).toHaveLength(2);
-    expect(inputs[0]!.value).toBe("https://github.com/patchbay-ai/patchbay");
+    expect(inputs[0]!.value).toBe("https://github.com/alexj11324/Cordy");
     expect(screen.queryByRole("button", { name: /^Save$/ })).toBeNull();
   });
 
@@ -239,7 +239,7 @@ describe("RepositoriesTab — automatic updates", () => {
     await waitFor(() => {
       expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {
         repos: [
-          { url: "https://github.com/patchbay-ai/patchbay" },
+          { url: "https://github.com/alexj11324/Cordy" },
           { url: "git@github.com:patchbay-ai/second.git" },
         ],
       });
@@ -268,14 +268,14 @@ describe("RepositoriesTab — automatic updates", () => {
 
     const urlInput = screen.getAllByRole("textbox")[0] as HTMLInputElement;
     await user.clear(urlInput);
-    await user.type(urlInput, "git@github.com:patchbay-ai/patchbay.git");
+    await user.type(urlInput, "git@github.com:alexj11324/Cordy.git");
     expect(urlInput.type).toBe("text");
     expect(urlInput.validity.valid).toBe(true);
     await user.tab();
 
     await waitFor(() => {
       expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {
-        repos: [{ url: "git@github.com:patchbay-ai/patchbay.git" }],
+        repos: [{ url: "git@github.com:alexj11324/Cordy.git" }],
       });
     });
   });
@@ -283,7 +283,7 @@ describe("RepositoriesTab — automatic updates", () => {
   it("includes the description in the automatic update payload", async () => {
     workspaceRef.current = {
       ...workspaceRef.current,
-      repos: [{ url: "https://github.com/patchbay-ai/patchbay", description: "Main app" }],
+      repos: [{ url: "https://github.com/alexj11324/Cordy", description: "Main app" }],
     };
     const user = setupUser();
     render(<RepositoriesTab />, { wrapper: I18nWrapper });
@@ -298,7 +298,7 @@ describe("RepositoriesTab — automatic updates", () => {
       expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {
         repos: [
           {
-            url: "https://github.com/patchbay-ai/patchbay",
+            url: "https://github.com/alexj11324/Cordy",
             description: "Updated description",
           },
         ],
@@ -359,10 +359,10 @@ describe("RepositoriesTab — automatic updates", () => {
   it("imports selected GitHub repositories and deduplicates HTTPS against SSH", async () => {
     workspaceRef.current = {
       ...workspaceRef.current,
-      repos: [{ url: "git@github.com:patchbay-ai/patchbay.git" }],
+      repos: [{ url: "git@github.com:alexj11324/Cordy.git" }],
     };
     githubRef.current = {
-      installations: [{ id: "installation-row-1", account_login: "patchbay-ai" }],
+      installations: [{ id: "installation-row-1", account_login: "alexj11324" }],
       configured: true,
       repository_browse_configured: true,
       can_manage: true,
@@ -370,9 +370,9 @@ describe("RepositoriesTab — automatic updates", () => {
     githubRepositoriesRef.current = [
       {
         id: 1,
-        full_name: "patchbay-ai/patchbay",
-        html_url: "https://github.com/patchbay-ai/patchbay",
-        clone_url: "https://github.com/patchbay-ai/patchbay.git",
+        full_name: "alexj11324/Cordy",
+        html_url: "https://github.com/alexj11324/Cordy",
+        clone_url: "https://github.com/alexj11324/Cordy.git",
         description: "Existing repository",
         private: false,
         archived: false,
@@ -408,7 +408,7 @@ describe("RepositoriesTab — automatic updates", () => {
     await waitFor(() => {
       expect(mockUpdateWorkspace).toHaveBeenCalledWith("workspace-1", {
         repos: [
-          { url: "git@github.com:patchbay-ai/patchbay.git" },
+          { url: "git@github.com:alexj11324/Cordy.git" },
           {
             url: "https://github.com/patchbay-ai/console.git",
             description: "Console app",

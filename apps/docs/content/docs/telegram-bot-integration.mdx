@@ -1,13 +1,13 @@
 ---
 title: Telegram Bot
-description: Connect a Patchbay agent to your own Telegram Bot for private chats, group mentions, topics, and /issue.
+description: Install your own Telegram Bot for a Patchbay workspace and use it for private chats, group mentions, topics, and /issue.
 ---
 
 import { Callout } from "fumadocs-ui/components/callout";
 
-Patchbay uses a Bot that you create with Telegram's official [@BotFather](https://t.me/BotFather). One Bot maps to one Patchbay agent. Create a separate Bot for each agent that needs its own Telegram identity.
+Patchbay uses a Bot that you create with Telegram's official [@BotFather](https://t.me/BotFather). The Bot is installed at the Patchbay workspace level, not on a particular computer or agent. Members can choose or switch the active agent with `/agents`; create another Bot only when a separate Telegram identity is required.
 
-Telegram support is [community-maintained](/community-maintained): it ships in every release, but it carries no official support SLA. Report problems in [GitHub issues](https://github.com/patchbay-ai/patchbay/issues).
+Telegram support is [community-maintained](/community-maintained): it ships in every release, but it carries no official support SLA. Report problems in [GitHub issues](https://github.com/alexj11324/Cordy/issues).
 
 ## Before you start
 
@@ -26,17 +26,17 @@ Telegram support is [community-maintained](/community-maintained): it ships in e
 Never paste the token into an issue, chat message, log, or source repository. If it is exposed, use @BotFather to revoke it, then reconnect the Bot with the replacement token.
 </Callout>
 
-## 2. Connect it to an agent
+## 2. Connect it to the workspace
 
-1. In Patchbay, open **Agents**, select an agent, and open **Integrations**.
-2. Click **Connect Telegram**.
+1. In Patchbay, open **Settings → Integrations** and click **Connect Telegram**.
+2. Choose the workspace-level installation.
 3. Paste the Bot token and click **Connect**.
 
-Patchbay calls Telegram to verify the Bot, checks that no outgoing webhook conflicts with long polling, encrypts the token, and starts one supervised `getUpdates` connection. A Bot already connected to another agent or workspace must be disconnected there first.
+Patchbay calls Telegram to verify the Bot, checks that no outgoing webhook conflicts with long polling, encrypts the token, and starts one supervised `getUpdates` connection. A Bot already connected to another workspace must be disconnected there first.
 
 ## First use and account binding
 
-The first time a member messages the Bot, it sends a single-use Patchbay account-binding link. Open it, sign in to the same Patchbay workspace, then return to Telegram and send the message again. The link expires after 15 minutes; message the Bot again to get a new link.
+The first time a member messages the Bot, it sends a single-use Patchbay account-binding link. Open it, sign in to the same Patchbay workspace, then return to Telegram and send the message again. The link expires after 15 minutes; message the Bot again to get a new link. The binding belongs to the account and workspace, so another computer signed in to that account does not need a new bind.
 
 In a group, the Bot never posts the bearer link publicly. It asks the sender to start a private chat first.
 
@@ -70,13 +70,20 @@ Open **Settings → Integrations → Telegram** to view connected Bots. Owners a
 
 ## Self-hosting setup
 
-Set a stable 32-byte encryption key before starting the API server:
+Patchbay Cloud needs no extra configuration. A self-hosted deployment is
+server-managed: the app is read-only and does not accept a Bot token. Follow
+the [self-hosted messaging deployment contract](/self-host-messaging) and run
+the setup helper on the server.
 
 ```dotenv
 PATCHBAY_TELEGRAM_SECRET_KEY=<base64-encoded 32-byte key>
 ```
 
-Generate one with `openssl rand -base64 32`. Keep it long-term: losing or rotating it makes existing Bot tokens unreadable and requires reconnecting each Bot.
+Set `PATCHBAY_MESSAGING_BOOTSTRAP=true` with the server-owned workspace and
+installer IDs, add `TELEGRAM_BOT_TOKEN` to the deployment secret store, then
+restart the API server. Generate the encryption key with `openssl rand -base64 32`
+and keep it long-term: losing or rotating it makes existing Bot tokens
+unreadable. Do not expect a Connect button in the self-hosted app.
 
 Binding links use `PATCHBAY_APP_URL`, falling back to `FRONTEND_ORIGIN`. The resulting address must be reachable by members. The server's network or proxy must allow HTTPS access to `api.telegram.org`; the Rust HTTP client honors standard `HTTPS_PROXY` and `NO_PROXY` environment variables.
 

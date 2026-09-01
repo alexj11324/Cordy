@@ -47,6 +47,7 @@ import type {
   BeginWeixinInstallResponse,
   WeixinInstallStatusResponse,
   RedeemWeixinBindingTokenResponse,
+  MessagingQuotaUsage,
   GroupedIssuesResponse,
   GitHubConnectResponse,
   GitHubPullRequest,
@@ -942,7 +943,46 @@ export interface AppConfigResponse {
    * has no way to tell them apart, and only one of the two answers is safe. */
   local_worktree_supported?: boolean;
   server_version?: string;
+  /** Server-owned messaging setup capability. Older servers omit this field
+   * and must be treated as read-only/disabled by the UI. */
+  messaging?: MessagingCapabilities;
 }
+
+export type MessagingMode = "managed" | "server_configured" | "disabled" | string;
+
+export interface MessagingPlatformCapability {
+  type: string;
+  enabled: boolean;
+  experimental: boolean;
+}
+
+export interface MessagingCapabilities {
+  mode: MessagingMode;
+  setupWritable: boolean;
+  platforms: MessagingPlatformCapability[];
+}
+
+export const MessagingQuotaUsageSchema = z
+  .object({
+    mode: z.string().default("disabled"),
+    used: z.number().int().nonnegative().nullable().default(null),
+    reserved: z.number().int().nonnegative().nullable().default(null),
+    limit: z.number().int().nonnegative().nullable().default(null),
+    period_start: z.string().nullable().default(null),
+    period_end: z.string().nullable().default(null),
+    reset_at: z.string().nullable().default(null),
+  })
+  .loose();
+
+export const EMPTY_MESSAGING_QUOTA_USAGE: MessagingQuotaUsage = {
+  mode: "disabled",
+  used: null,
+  reserved: null,
+  limit: null,
+  period_start: null,
+  period_end: null,
+  reset_at: null,
+};
 
 // ---------------------------------------------------------------------------
 // Schemas for the highest-risk API endpoints — those whose responses drive
@@ -1184,6 +1224,20 @@ const FeatureFlagsSchema = z.preprocess(
   z.record(z.string(), BooleanWithDefaultSchema(false)).default({}),
 );
 
+const MessagingCapabilitiesSchema = z.object({
+  mode: z.string().default("disabled"),
+  setupWritable: z.boolean().default(false),
+  platforms: z
+    .array(
+      z.object({
+        type: z.string(),
+        enabled: z.boolean().default(false),
+        experimental: z.boolean().default(false),
+      }),
+    )
+    .default([]),
+});
+
 export const AppConfigSchema = z.object({
   cdn_domain: z.string().default(""),
   cdn_signed: BooleanWithDefaultSchema(false),
@@ -1198,6 +1252,7 @@ export const AppConfigSchema = z.object({
   feature_flags: FeatureFlagsSchema,
   local_worktree_supported: BooleanWithDefaultSchema(false),
   server_version: OptionalStringSchema,
+  messaging: MessagingCapabilitiesSchema.optional(),
 }).loose();
 
 export const EMPTY_APP_CONFIG: AppConfigResponse = {
@@ -1212,6 +1267,11 @@ export const EMPTY_APP_CONFIG: AppConfigResponse = {
   // validates execution_mode.
   local_worktree_supported: false,
   feature_flags: {},
+  messaging: {
+    mode: "disabled",
+    setupWritable: false,
+    platforms: [],
+  },
 };
 
 // Preference keys may grow over time, so keep both the key and value spaces
@@ -1670,7 +1730,8 @@ const IssueTableFacetValueSchema = z.object({
 
 const IssueTableFacetSchema = z.object({
   kind: z.enum(["status", "priority", "executor", "creator", "project", "label", "property", "working_agents"]),
-  property_id: z.string().optional(),
+  // The backend includes this key as null for non-property facets.
+  property_id: z.string().nullable().optional(),
   values: z.array(IssueTableFacetValueSchema).default([]),
 }).loose();
 
@@ -2836,23 +2897,38 @@ export const WorkspaceSubscriptionEntitlementsSchema = z
     seats: z.number().int().nonnegative(),
     issue_window: z.number().int().nonnegative().nullable(),
     automation_runs: z.number().int().nonnegative().nullable(),
+    hosted_workspace_limit: z.number().int().nonnegative().nullable().optional(),
+    im_installation_limit: z.number().int().nonnegative().nullable().optional(),
+    im_agent_turns: z.number().int().nonnegative().nullable().optional(),
     current_period_end: z.string().nullable().optional(),
     snapshot_expires_at: z.string().nullable().optional(),
     version: z.number().int().nonnegative(),
   })
   .loose()
   .transform(
-    (value): WorkspaceSubscriptionEntitlements => ({
-      workspaceId: value.workspace_id,
-      plan: value.plan,
-      status: value.status,
-      seats: value.seats,
-      issueWindow: value.issue_window,
-      automationRuns: value.automation_runs,
-      currentPeriodEnd: value.current_period_end ?? null,
-      snapshotExpiresAt: value.snapshot_expires_at ?? null,
-      version: value.version,
-    }),
+    (value): WorkspaceSubscriptionEntitlements => {
+      const entitlement: WorkspaceSubscriptionEntitlements = {
+        workspaceId: value.workspace_id,
+        plan: value.plan,
+        status: value.status,
+        seats: value.seats,
+        issueWindow: value.issue_window,
+        automationRuns: value.automation_runs,
+        currentPeriodEnd: value.current_period_end ?? null,
+        snapshotExpiresAt: value.snapshot_expires_at ?? null,
+        version: value.version,
+      };
+      if (value.hosted_workspace_limit !== undefined) {
+        entitlement.hostedWorkspaceLimit = value.hosted_workspace_limit;
+      }
+      if (value.im_installation_limit !== undefined) {
+        entitlement.imInstallationLimit = value.im_installation_limit;
+      }
+      if (value.im_agent_turns !== undefined) {
+        entitlement.imAgentTurns = value.im_agent_turns;
+      }
+      return entitlement;
+    },
   );
 
 export const WorkspaceSubscriptionSummarySchema = z
@@ -3040,6 +3116,18 @@ export const MALFORMED_RUNTIME_MODEL_LIST_REQUEST: RuntimeModelListRequest = {
   updated_at: "",
 };
 
+const MessagingInstallationRuntimeSchema = z.object({
+  state: z.string().default("offline"),
+  observedAt: z.string().nullable().default(null),
+  errorCode: z.string().nullable().default(null),
+}).loose();
+
+const MessagingInstallationSetupSchema = z.object({
+  mode: z.string().default("server_configured"),
+  writable: z.boolean().default(false),
+  experimental: z.boolean().default(true),
+}).loose();
+
 export const DingTalkInstallationSchema = z.object({
   id: z.string(),
   workspace_id: z.string().default(""),
@@ -3049,6 +3137,8 @@ export const DingTalkInstallationSchema = z.object({
   installed_at: z.string().default(""),
   created_at: z.string().default(""),
   updated_at: z.string().default(""),
+  runtime: MessagingInstallationRuntimeSchema.optional(),
+  setup: MessagingInstallationSetupSchema.optional(),
   bound_dingtalk_user_ids: z.array(z.string()).catch([]).default([]),
 }).loose();
 
@@ -3132,6 +3222,11 @@ export const WecomInstallationSchema = z.object({
   bot_id: z.string().default(""),
   installer_user_id: z.string().default(""),
   status: z.string().default("revoked"),
+  installed_at: z.string().default(""),
+  created_at: z.string().default(""),
+  updated_at: z.string().default(""),
+  runtime: MessagingInstallationRuntimeSchema.optional(),
+  setup: MessagingInstallationSetupSchema.optional(),
 }).loose();
 
 export const EMPTY_WECOM_INSTALLATION: WecomInstallation = {
@@ -3177,6 +3272,8 @@ export const TelegramInstallationSchema = z.object({
   installed_at: z.string().default(""),
   created_at: z.string().default(""),
   updated_at: z.string().default(""),
+  runtime: MessagingInstallationRuntimeSchema.optional(),
+  setup: MessagingInstallationSetupSchema.optional(),
 }).loose();
 
 export const EMPTY_TELEGRAM_INSTALLATION: TelegramInstallation = {
@@ -3226,6 +3323,8 @@ export const WeixinInstallationSchema = z.object({
   installed_at: z.string().default(""),
   created_at: z.string().default(""),
   updated_at: z.string().default(""),
+  runtime: MessagingInstallationRuntimeSchema.optional(),
+  setup: MessagingInstallationSetupSchema.optional(),
 }).loose();
 export const EMPTY_WEIXIN_INSTALLATION: WeixinInstallation = {
   id: "",
@@ -3250,6 +3349,7 @@ export const EMPTY_LIST_WEIXIN_INSTALLATIONS_RESPONSE: ListWeixinInstallationsRe
 };
 export const BeginWeixinInstallResponseSchema = z.object({
   session_id: z.string(),
+  qr_code_content: z.string().optional(),
   qr_code_url: z.string(),
   expires_in_seconds: z.number(),
   poll_interval_seconds: z.number(),

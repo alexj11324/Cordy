@@ -45,7 +45,7 @@ That gives you the project-management layer first. Once a device is connected, a
 
 ## Connect your first device
 
-Full guide: https://patchbay.ai/docs/install-agent-runtime
+Full guide: https://patchbay.aspectlylabs.com/docs/install-agent-runtime
 
 For English users, the fastest first path is Codex:
 
@@ -87,7 +87,7 @@ const zh = `欢迎来到 Patchbay。
 
 ## 连接第一台设备
 
-完整文档:https://patchbay.ai/docs/install-agent-runtime
+完整文档:https://patchbay.aspectlylabs.com/docs/install-agent-runtime
 
 中文用户建议先装 Kimi CLI:
 
@@ -128,7 +128,7 @@ agent가 작업을 실행하려면 먼저 기기가 필요합니다. 기기를 �
 
 ## 첫 기기 연결하기
 
-전체 가이드: https://patchbay.ai/docs/install-agent-runtime
+전체 가이드: https://patchbay.aspectlylabs.com/docs/install-agent-runtime
 
 한국어 사용자는 Codex로 시작하는 것이 가장 빠릅니다:
 
@@ -170,7 +170,7 @@ agent が作業を実行するには、まずデバイスが必要です。デ�
 
 ## 最初のデバイスを接続する
 
-詳しいガイド: https://patchbay.ai/docs/install-agent-runtime
+詳しいガイド: https://patchbay.aspectlylabs.com/docs/install-agent-runtime
 
 日本語ユーザーには、Codex で始めるのが最も速い経路です:
 

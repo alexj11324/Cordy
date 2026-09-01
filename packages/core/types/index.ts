@@ -348,6 +348,8 @@ export type {
 export type {
   SlackInstallation,
   ListSlackInstallationsResponse,
+  BeginSlackOAuthRequest,
+  BeginSlackOAuthResponse,
   RegisterSlackBYORequest,
   RedeemSlackBindingTokenResponse,
 } from "./slack";
@@ -453,3 +455,11 @@ export type {
   WeixinInstallStatusResponse,
   RedeemWeixinBindingTokenResponse,
 } from "./weixin";
+export {
+  isMessagingInstallationHealthy,
+  type MessagingInstallationRuntime,
+  type MessagingInstallationSetup,
+  type MessagingInstallationSetupMode,
+  type MessagingQuotaUsage,
+  type MessagingRuntimeState,
+} from "./messaging";
