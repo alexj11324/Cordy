@@ -710,11 +710,17 @@ impl LinearSyncWorker {
             )));
         }
         let remote_updated_at = parse_remote_timestamp(&remote.updated_at)?;
-        let snapshot = serde_json::to_value(&remote).map_err(|error| {
-            SyncError::permanent(anyhow::anyhow!(
-                "serialize Linear post-mutation snapshot: {error}"
-            ))
-        })?;
+        let remote_status = map_remote_status(&binding, remote.state.as_ref())?;
+        let remote_priority = map_remote_priority(remote.priority)?;
+        let remote_owner_id = self
+            .remote_owner_id(&connection, remote.assignee.as_ref())
+            .await?;
+        let snapshot = remote_sync_snapshot(
+            &remote,
+            &remote_status,
+            &remote_priority,
+            remote_owner_id,
+        );
 
         // The provider mutation is followed by one local transaction. If the
         // commit fails, the Outbox row remains pending and the next attempt
@@ -2109,9 +2115,9 @@ mod tests {
         extract_event_timestamp_ms, extract_issue_id, extract_updated_from, inbound_enabled,
         is_out_of_order, map_local_priority, map_local_status, map_remote_priority,
         map_remote_status, merge_sync_snapshots, merge_sync_snapshots_with_updated_from,
-        parse_remote_timestamp, retry_delay,
+        parse_remote_timestamp, remote_sync_snapshot, retry_delay,
     };
-    use crate::linear::LinearRemoteState;
+    use crate::linear::{LinearRemoteIssue, LinearRemoteState};
 
     fn binding(status_mapping: serde_json::Value) -> LinearProjectBinding {
         LinearProjectBinding {
@@ -2255,6 +2261,47 @@ mod tests {
     fn remote_timestamp_requires_rfc3339() {
         assert!(parse_remote_timestamp("2026-08-31T12:00:00Z").is_ok());
         assert!(parse_remote_timestamp("not-a-timestamp").is_err());
+    }
+
+    #[test]
+    fn post_mutation_snapshot_uses_canonical_shared_values() {
+        let remote: LinearRemoteIssue = serde_json::from_value(json!({
+            "id": "linear-issue",
+            "identifier": "LIN-1",
+            "title": "Canonical snapshot",
+            "description": "Description\n\n<!-- patchbay:issue:00000000-0000-0000-0000-000000000000 -->",
+            "priority": 2,
+            "state": {
+                "id": "unmapped-linear-state",
+                "name": "Started",
+                "type": "started"
+            },
+            "dueDate": null,
+            "project": {"id": "linear-project"},
+            "updatedAt": "2026-08-31T12:00:00Z",
+            "team": {"id": "linear-team"},
+            "assignee": {"id": "linear-user"},
+            "labels": {
+                "nodes": [],
+                "pageInfo": {"hasNextPage": false, "endCursor": null}
+            }
+        }))
+        .expect("remote issue fixture should deserialize");
+        let patchbay_owner_id = Uuid::now_v7();
+
+        let snapshot = remote_sync_snapshot(
+            &remote,
+            "in_progress",
+            "high",
+            Some(patchbay_owner_id),
+        );
+
+        assert_eq!(snapshot["status"], "in_progress");
+        assert_eq!(snapshot["priority"], "high");
+        assert_eq!(snapshot["owner_id"], patchbay_owner_id.to_string());
+        assert_eq!(snapshot["description"], "Description");
+        assert!(snapshot.get("state").is_none());
+        assert!(snapshot.get("assignee").is_none());
     }
 
     #[test]
