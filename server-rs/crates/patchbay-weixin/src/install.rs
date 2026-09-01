@@ -262,6 +262,34 @@ pub async fn reactivate_with_limit(
     if !authorized {
         anyhow::bail!("weixin: authorization changed during install");
     }
+    let current = sqlx::query_as::<_, ChannelInstallation>(
+        r#"SELECT agent_id, channel_type, config, created_at, id, installed_at,
+          installer_user_id, status, updated_at, workspace_id,
+          ws_lease_expires_at, ws_lease_token
+FROM channel_installation
+WHERE id = $1
+  AND workspace_id = $2
+  AND channel_type = $3
+  AND agent_id IS NOT DISTINCT FROM $4
+  AND config ->> 'app_id' = $5
+  AND status IN ('active', 'revoked')
+FOR UPDATE"#,
+    )
+    .bind(installation_id)
+    .bind(workspace_id)
+    .bind(crate::TYPE_WEIXIN)
+    .bind((!agent_id.is_nil()).then_some(agent_id))
+    .bind(expected_bot_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or_else(|| anyhow::anyhow!("weixin: installation no longer matches this target"))?;
+    if current.status == "active" {
+        // Another completion already reactivated this exact slot. Preserve its
+        // current lease and token-fenced observation instead of resetting a
+        // live Supervisor generation.
+        tx.commit().await?;
+        return Ok(current);
+    }
     let row = sqlx::query_as::<_, ChannelInstallation>(
         r#"UPDATE channel_installation
 SET status = 'active',
@@ -275,7 +303,7 @@ WHERE id = $1
   AND channel_type = $3
   AND agent_id IS NOT DISTINCT FROM $4
   AND config ->> 'app_id' = $6
-  AND status IN ('active', 'revoked')
+  AND status = 'revoked'
 RETURNING agent_id, channel_type, config, created_at, id, installed_at,
           installer_user_id, status, updated_at, workspace_id,
           ws_lease_expires_at, ws_lease_token"#,

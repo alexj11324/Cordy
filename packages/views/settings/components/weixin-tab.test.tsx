@@ -11,6 +11,19 @@ import enSettings from "../../locales/en/settings.json";
 const mockBeginInstall = vi.hoisted(() => vi.fn());
 const mockGetStatus = vi.hoisted(() => vi.fn());
 const mockInvalidate = vi.hoisted(() => vi.fn());
+const MockApiError = vi.hoisted(
+  () =>
+    class ApiError extends Error {
+      constructor(
+        message: string,
+        readonly status: number,
+        readonly statusText: string,
+      ) {
+        super(message);
+        this.name = "ApiError";
+      }
+    },
+);
 
 vi.mock("@tanstack/react-query", () => ({
   useQuery: () => ({
@@ -43,6 +56,7 @@ vi.mock("@patchbay/core/weixin", () => ({
 }));
 
 vi.mock("@patchbay/core/api", () => ({
+  ApiError: MockApiError,
   api: {
     beginWeixinInstall: mockBeginInstall,
     getWeixinInstallStatus: mockGetStatus,
@@ -134,5 +148,31 @@ describe("WeixinAgentBindButton", () => {
       "data-value",
       "https://liteapp.weixin.qq.com/qr/session-2",
     );
+  });
+
+  it("stops polling and offers a fresh QR code after a permanent conflict", async () => {
+    mockBeginInstall.mockResolvedValueOnce({
+      session_id: "session-conflict",
+      qr_code_url: "https://ilink.weixin.qq.com/qr/session-conflict",
+      expires_in_seconds: 300,
+      poll_interval_seconds: 0,
+    });
+    mockGetStatus.mockRejectedValueOnce(
+      new MockApiError("installation no longer matches", 409, "Conflict"),
+    );
+    renderUI(<WeixinAgentBindButton />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Connect WeChat" }),
+    );
+    await screen.findByTestId("weixin-qr-code");
+
+    expect(
+      await screen.findByText(/This account is already connected elsewhere/, {}, { timeout: 3000 }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Refresh QR code" }),
+    ).toBeInTheDocument();
+    expect(mockGetStatus).toHaveBeenCalledTimes(1);
   });
 });

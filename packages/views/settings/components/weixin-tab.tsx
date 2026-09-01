@@ -17,7 +17,7 @@ import { SettingsInput as Input } from "@patchbay/ui/components/common/lobe-sett
 import { useWorkspaceId } from "@patchbay/core/hooks";
 import { useAuthStore } from "@patchbay/core/auth";
 import { memberListOptions } from "@patchbay/core/workspace/queries";
-import { api } from "@patchbay/core/api";
+import { api, ApiError } from "@patchbay/core/api";
 import { isMessagingInstallationHealthy } from "@patchbay/core/types";
 import { weixinInstallationsOptions, weixinKeys } from "@patchbay/core/weixin";
 import { WeixinMark } from "./weixin-mark";
@@ -244,6 +244,21 @@ export function WeixinAgentBindButton({ agentId }: { agentId?: string }) {
           const message = detail
             ? t(($) => $.weixin.connect_failed_detail, { details: detail })
             : t(($) => $.weixin.connect_failed);
+          if (error instanceof ApiError && error.status === 409) {
+            setStatus("already_connected");
+            setErrorMessage(message);
+            return;
+          }
+          if (
+            error instanceof ApiError &&
+            error.status >= 400 &&
+            error.status < 500
+          ) {
+            setStatus("error");
+            setErrorMessage(message);
+            toast.error(message);
+            return;
+          }
           // A transient browser/API interruption does not destroy the
           // server-side scan session. Surface it and keep polling so recovery
           // does not require closing the dialog.
