@@ -632,9 +632,7 @@ struct WireGate {
 /// `null`. Serde's default nested `Option` implementation maps both forms to
 /// `None`, but entitlement policy uses the distinction to make unlimited IM
 /// capacity an explicit, auditable decision rather than an accidental default.
-fn deserialize_double_option_i64<'de, D>(
-    deserializer: D,
-) -> Result<Option<Option<i64>>, D::Error>
+fn deserialize_double_option_i64<'de, D>(deserializer: D) -> Result<Option<Option<i64>>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
