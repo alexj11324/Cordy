@@ -101,4 +101,20 @@ describe("WeixinAgentBindButton", () => {
     );
     expect(screen.getByText("Scan with WeChat")).toBeInTheDocument();
   });
+
+  it("keeps the provider error visible when authorization cannot start", async () => {
+    mockBeginInstall.mockRejectedValueOnce(
+      new Error("WeChat service unavailable (HTTP 503)"),
+    );
+    renderUI(<WeixinAgentBindButton />);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Connect WeChat" }),
+    );
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(
+      "WeChat connection failed: WeChat service unavailable (HTTP 503)",
+    );
+  });
 });

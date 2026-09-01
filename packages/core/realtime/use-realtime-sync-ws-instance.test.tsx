@@ -13,6 +13,8 @@ import { agentThreadKeys } from "../agent-thread/queries";
 import { workspaceWorkingAgentsKeys } from "../agents/queries";
 import { workspaceKeys } from "../workspace/queries";
 import { dingtalkKeys } from "../dingtalk/queries";
+import { telegramKeys } from "../telegram/queries";
+import { weixinKeys } from "../weixin/queries";
 import { issueStatusKeys } from "../issue-statuses/queries";
 import {
   markWorkspaceDeletePending,
@@ -291,6 +293,26 @@ describe("useRealtimeSync — ws instance change", () => {
 
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: dingtalkKeys.groupRoutes("ws-1"),
+    });
+  });
+
+  it("refreshes Telegram and WeChat installation status after verification events", async () => {
+    const ws = createMockWs();
+    renderHook(() => useRealtimeSync(ws, stores), {
+      wrapper: createWrapper(qc),
+    });
+    const onAny = vi.mocked(ws.onAny).mock.calls[0]?.[0];
+    expect(onAny).toBeDefined();
+
+    onAny!({ type: "telegram_installation:verified", payload: {} } as never);
+    onAny!({ type: "weixin_installation:verified", payload: {} } as never);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: telegramKeys.installations("ws-1"),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: weixinKeys.installations("ws-1"),
     });
   });
 });

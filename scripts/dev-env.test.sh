@@ -22,7 +22,7 @@ for key in NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY CLERK_PUBLISHABLE_KEY CLERK_SECRET_
 done
 
 source_line="$(grep -n '^\. "\$ENV_FILE"' "$root_dir/scripts/dev.sh" | cut -d: -f1)"
-snapshot_line="$(grep -n '^clerk_env_args=()$' "$root_dir/scripts/dev.sh" | cut -d: -f1)"
+snapshot_line="$(grep -n '^capture_process_only_clerk_env$' "$root_dir/scripts/dev.sh" | cut -d: -f1)"
 clear_line="$(grep -n '^clear_process_only_clerk_env$' "$root_dir/scripts/dev.sh" | cut -d: -f1)"
 if [ -z "$source_line" ] || [ -z "$snapshot_line" ] || [ "$snapshot_line" -ge "$source_line" ]; then
   echo "dev.sh must snapshot injected Clerk values before sourcing the checkout env" >&2

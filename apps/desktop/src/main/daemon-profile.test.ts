@@ -31,6 +31,12 @@ describe("deriveProfileName", () => {
     );
   });
 
+  it("keeps IPv6 literals within the Rust profile-name grammar", () => {
+    expect(deriveProfileName("http://[::1]:8080")).toBe(
+      "desktop----1--8080",
+    );
+  });
+
   it("falls back to a fixed name on an unparseable URL", () => {
     expect(deriveProfileName("not a url")).toBe("desktop");
   });
