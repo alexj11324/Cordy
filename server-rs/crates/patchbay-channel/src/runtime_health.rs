@@ -44,7 +44,7 @@ impl RuntimeHealthReporter {
     pub fn new<F, Fut>(callback: F) -> Self
     where
         F: Fn(RuntimeHealthObservation) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = ()> + Send + 'static,
+        Fut: Future<Output = bool> + Send + 'static,
     {
         Self {
             callback: Arc::new(move |observation| Box::pin(callback(observation))),
@@ -65,7 +65,7 @@ impl RuntimeHealthReporter {
             error_code: None,
             error_summary: None,
         })
-        .await;
+        .await
     }
 }
 
