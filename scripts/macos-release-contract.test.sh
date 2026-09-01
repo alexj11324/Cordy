@@ -93,7 +93,7 @@ candidate_require_literal 'ref: ${{ inputs.ref }}'
 candidate_require_literal 'ref: ${{ needs.prepare.outputs.commit_sha }}'
 candidate_require_literal 'CSC_IDENTITY_AUTO_DISCOVERY: "false"'
 candidate_require_literal '--publish never'
-candidate_require_literal 'uses: actions/upload-artifact@v4'
+candidate_require_literal 'uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4'
 candidate_require_literal 'name: patchbay-desktop-candidate-${{ needs.prepare.outputs.short_sha }}-mac-${{ matrix.arch }}'
 if grep -Eq 'secrets\.|CSC_LINK|APPLE_ID|APPLE_APP_SPECIFIC_PASSWORD|APPLE_TEAM_ID' "$candidate_workflow"; then
   echo "macOS candidate workflow must not expose production signing credentials" >&2
