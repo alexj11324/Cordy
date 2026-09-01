@@ -1292,6 +1292,24 @@ impl TaskService {
     /// capability leases. Keep the rows for explain/audit; authentication
     /// rejects revoked leases and a separate retention policy may purge them.
     pub async fn capture_task_cancelled(&self, task: &AgentTaskQueue) {
+        if let Err(error) = self.capture_task_cancelled_required(task).await {
+            tracing::warn!(
+                task_id = %task.id,
+                %error,
+                "cancel task: required cancellation capture failed"
+            );
+        }
+    }
+
+    async fn capture_task_cancelled_required(
+        &self,
+        task: &AgentTaskQueue,
+    ) -> Result<(), TaskServiceError> {
+        revoke_task_tokens_by_task(&self.pool, task.id, "task_cancelled")
+            .await
+            .map_err(|error| {
+                TaskServiceError::Internal(format!("revoke cancelled task tokens: {error}"))
+            })?;
         if let Some(metrics) = &self.metrics {
             let (source, runtime_mode, _) = self.task_metrics_context(task).await;
             metrics.record_task_terminal(
@@ -1304,13 +1322,7 @@ impl TaskService {
                 task.attempt,
             );
         }
-        if let Err(err) = revoke_task_tokens_by_task(&self.pool, task.id, "task_cancelled").await {
-            tracing::warn!(
-                task_id = %task.id,
-                error = %err,
-                "cancel task: failed to revoke task tokens"
-            );
-        }
+        Ok(())
     }
 
     /// cost_usd_ticks is the provider's own price for this usage in 1e-10 USD,
@@ -1818,27 +1830,39 @@ impl TaskService {
     /// best-effort here: cancellation must still finish if the issue was
     /// deleted as part of the surrounding lifecycle operation.
     async fn flag_dependency_attention_for_cancelled_task(&self, task: &AgentTaskQueue) {
+        if let Err(error) = self
+            .flag_dependency_attention_for_cancelled_task_required(task)
+            .await
+        {
+            tracing::warn!(
+                %error,
+                task_id = %task.id,
+                "dependency attention update after batch task cancellation failed"
+            );
+        }
+    }
+
+    async fn flag_dependency_attention_for_cancelled_task_required(
+        &self,
+        task: &AgentTaskQueue,
+    ) -> Result<(), TaskServiceError> {
         let Some(issue_id) = task.issue_id else {
-            return;
+            return Ok(());
         };
-        let Ok(Some(issue)) = get_issue(&self.pool, issue_id).await else {
-            return;
+        let Some(issue) = get_issue(&self.pool, issue_id)
+            .await
+            .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?
+        else {
+            return Ok(());
         };
         let reason = task
             .failure_reason
             .as_deref()
             .filter(|reason| !reason.trim().is_empty())
             .unwrap_or("prerequisite task cancelled");
-        if let Err(error) = self
-            .flag_dependency_attention(issue.workspace_id, issue.id, reason)
-            .await
-        {
-            tracing::warn!(
-                %error,
-                issue_id = %issue.id,
-                "dependency attention update after batch task cancellation failed"
-            );
-        }
+        self.flag_dependency_attention(issue.workspace_id, issue.id, reason)
+            .await?;
+        Ok(())
     }
 
     /// Claim recovery closes the only unsafe window left by a two-phase
@@ -2631,6 +2655,15 @@ impl TaskService {
                     authority.connection_id,
                     authority.patchbay_user_id,
                     &authority.linear_user_id,
+                )
+                .await
+                .map_err(downcast_sqlx)?
+                || !linear_agent_q::lock_linear_agent_initial_dispatch_binding(
+                    &mut tx,
+                    issue.workspace_id,
+                    authority.connection_id,
+                    &authority.linear_issue_id,
+                    issue.id,
                 )
                 .await
                 .map_err(downcast_sqlx)?
@@ -4272,18 +4305,77 @@ impl TaskService {
         self.notify_tasks_finished(cancelled).await;
     }
 
+    async fn publish_transactional_cancellations_required(
+        &self,
+        cancelled: &[AgentTaskQueue],
+    ) -> Result<(), TaskServiceError> {
+        let mut agents = std::collections::HashSet::new();
+        for task in cancelled {
+            self.flag_dependency_attention_for_cancelled_task_required(task)
+                .await?;
+            self.capture_task_cancelled_required(task).await?;
+            self.broadcast_task_event(
+                patchbay_protocol::EVENT_TASK_CANCELLED,
+                task,
+                Default::default(),
+            )
+            .await;
+            agents.insert(task.agent_id);
+        }
+        for agent_id in agents {
+            self.reconcile_agent_status_required(agent_id).await?;
+        }
+        self.notify_tasks_finished(cancelled).await;
+        Ok(())
+    }
+
     pub async fn replay_linear_revocation_cancellation(
         &self,
         connection_id: Uuid,
     ) -> Result<usize, TaskServiceError> {
-        let cancelled = linear_agent_q::list_revocation_cancelled_tasks(&self.pool, connection_id)
+        let claim_owner = Uuid::now_v7().to_string();
+        if !linear_agent_q::claim_revocation_cancellation(&self.pool, connection_id, &claim_owner)
+            .await
+            .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?
+        {
+            return Ok(0);
+        }
+        let replay_result = async {
+            let cancelled = linear_agent_q::list_revocation_cancelled_tasks(
+                &self.pool,
+                connection_id,
+                &claim_owner,
+            )
             .await
             .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?;
-        self.publish_transactional_cancellations(&cancelled).await;
-        linear_agent_q::complete_revocation_cancellation(&self.pool, connection_id)
+            self.publish_transactional_cancellations_required(&cancelled)
+                .await?;
+            linear_agent_q::complete_revocation_cancellation(
+                &self.pool,
+                connection_id,
+                &claim_owner,
+            )
             .await
             .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?;
-        Ok(cancelled.len())
+            Ok::<_, TaskServiceError>(cancelled.len())
+        }
+        .await;
+        if replay_result.is_err() {
+            if let Err(release_error) = linear_agent_q::release_revocation_cancellation(
+                &self.pool,
+                connection_id,
+                &claim_owner,
+            )
+            .await
+            {
+                tracing::warn!(
+                    %release_error,
+                    %connection_id,
+                    "release failed Linear revocation cancellation claim failed"
+                );
+            }
+        }
+        replay_result
     }
 
     pub async fn recover_pending_linear_revocation_cancellations(
@@ -5087,11 +5179,24 @@ impl TaskService {
     /// Refreshes the agent's status from its active tasks and broadcasts
     /// agent:status. Best-effort: errors are swallowed like Go's early return.
     pub async fn reconcile_agent_status(&self, agent_id: Uuid) {
-        let Ok(Some(agent)) = refresh_agent_status_from_tasks(&self.pool, agent_id).await else {
-            return;
+        if let Err(error) = self.reconcile_agent_status_required(agent_id).await {
+            tracing::warn!(%error, %agent_id, "agent status reconciliation failed");
+        }
+    }
+
+    async fn reconcile_agent_status_required(
+        &self,
+        agent_id: Uuid,
+    ) -> Result<(), TaskServiceError> {
+        let Some(agent) = refresh_agent_status_from_tasks(&self.pool, agent_id)
+            .await
+            .map_err(|error| TaskServiceError::Sql(downcast_sqlx(error)))?
+        else {
+            return Ok(());
         };
         tracing::debug!(agent_id = %agent_id, status = %agent.status, "agent status reconciled");
         self.publish_agent_status(&agent).await;
+        Ok(())
     }
 
     pub(crate) async fn publish_agent_status(&self, agent: &Agent) {

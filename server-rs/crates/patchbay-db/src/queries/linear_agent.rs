@@ -162,6 +162,16 @@ pub async fn lock_linear_agent_initial_dispatch_authority(
     if session.is_none() {
         return Ok(false);
     }
+    Ok(true)
+}
+
+pub async fn lock_linear_agent_initial_dispatch_binding(
+    executor: &mut PgConnection,
+    workspace_id: Uuid,
+    connection_id: Uuid,
+    linear_issue_id: &str,
+    patchbay_issue_id: Uuid,
+) -> anyhow::Result<bool> {
     Ok(sqlx::query_scalar::<_, Uuid>(
         r#"SELECT link.id
            FROM linear_issue_link AS link
@@ -668,6 +678,8 @@ pub async fn list_pending_revocation_cancellation_connections(
         r#"SELECT DISTINCT connection_id
            FROM linear_agent_session
            WHERE status = 'revocation_cancellation_pending'
+              OR (status LIKE 'revocation_cancellation_dispatching:%'
+                  AND updated_at <= now() - interval '60 seconds')
            ORDER BY connection_id
            LIMIT $1"#,
     )
@@ -676,16 +688,44 @@ pub async fn list_pending_revocation_cancellation_connections(
     .await?)
 }
 
+pub async fn claim_revocation_cancellation(
+    executor: impl Executor<'_, Database = Postgres>,
+    connection_id: Uuid,
+    claim_owner: &str,
+) -> anyhow::Result<bool> {
+    let claim_status = format!("revocation_cancellation_dispatching:{claim_owner}");
+    let result = sqlx::query(
+        r#"UPDATE linear_agent_session AS session
+           SET status = $2, updated_at = now()
+           WHERE connection_id = $1
+             AND (status = 'revocation_cancellation_pending'
+                  OR (status LIKE 'revocation_cancellation_dispatching:%'
+                      AND updated_at <= now() - interval '60 seconds'))
+             AND NOT EXISTS (
+                 SELECT 1 FROM linear_agent_session AS claimed
+                 WHERE claimed.connection_id = $1
+                   AND claimed.status LIKE 'revocation_cancellation_dispatching:%'
+                   AND claimed.updated_at > now() - interval '60 seconds'
+             )"#,
+    )
+    .bind(connection_id)
+    .bind(claim_status)
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected() > 0)
+}
+
 pub async fn list_revocation_cancelled_tasks(
     executor: impl Executor<'_, Database = Postgres>,
     connection_id: Uuid,
+    claim_owner: &str,
 ) -> anyhow::Result<Vec<AgentTaskQueue>> {
     Ok(sqlx::query_as::<_, AgentTaskQueue>(
         r#"WITH RECURSIVE task_tree AS (
                SELECT task_id AS id
                FROM linear_agent_session
                WHERE connection_id = $1
-                 AND status = 'revocation_cancellation_pending'
+                 AND status = $2
                  AND task_id IS NOT NULL
                UNION
                SELECT child.id
@@ -699,6 +739,7 @@ pub async fn list_revocation_cancelled_tasks(
            ORDER BY queue.created_at, queue.id"#,
     )
     .bind(connection_id)
+    .bind(format!("revocation_cancellation_dispatching:{claim_owner}"))
     .fetch_all(executor)
     .await?)
 }
@@ -706,14 +747,33 @@ pub async fn list_revocation_cancelled_tasks(
 pub async fn complete_revocation_cancellation(
     executor: impl Executor<'_, Database = Postgres>,
     connection_id: Uuid,
+    claim_owner: &str,
 ) -> anyhow::Result<u64> {
     let result = sqlx::query(
         r#"UPDATE linear_agent_session
            SET status = 'cancelled', updated_at = now()
            WHERE connection_id = $1
-             AND status = 'revocation_cancellation_pending'"#,
+             AND status = $2"#,
     )
     .bind(connection_id)
+    .bind(format!("revocation_cancellation_dispatching:{claim_owner}"))
+    .execute(executor)
+    .await?;
+    Ok(result.rows_affected())
+}
+
+pub async fn release_revocation_cancellation(
+    executor: impl Executor<'_, Database = Postgres>,
+    connection_id: Uuid,
+    claim_owner: &str,
+) -> anyhow::Result<u64> {
+    let result = sqlx::query(
+        r#"UPDATE linear_agent_session
+           SET status = 'revocation_cancellation_pending', updated_at = now()
+           WHERE connection_id = $1 AND status = $2"#,
+    )
+    .bind(connection_id)
+    .bind(format!("revocation_cancellation_dispatching:{claim_owner}"))
     .execute(executor)
     .await?;
     Ok(result.rows_affected())
