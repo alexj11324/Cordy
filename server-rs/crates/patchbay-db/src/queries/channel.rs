@@ -1820,7 +1820,9 @@ RETURNING workspace_id"#,
     .bind(installed_at)
     .fetch_optional(executor)
     .await?;
-    row.map(|row| row.try_get(0)).transpose().map_err(Into::into)
+    row.map(|row| row.try_get(0))
+        .transpose()
+        .map_err(Into::into)
 }
 
 /// Atomically stamps bot_union_id only while it is still absent. Unlike the

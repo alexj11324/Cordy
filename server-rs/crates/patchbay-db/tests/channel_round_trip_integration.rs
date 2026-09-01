@@ -2,8 +2,7 @@
 
 use chrono::{Duration, Utc};
 use patchbay_db::queries::channel::{
-    get_channel_installation, mark_channel_installation_round_trip,
-    set_channel_installation_config,
+    get_channel_installation, mark_channel_installation_round_trip, set_channel_installation_config,
 };
 use serde_json::json;
 use sqlx::postgres::PgPoolOptions;
@@ -60,34 +59,19 @@ async fn round_trip_marker_is_generation_scoped_and_idempotent() {
     .await
     .expect("replace installation generation");
 
-    let stale = mark_channel_installation_round_trip(
-        &pool,
-        id,
-        channel_type,
-        generation_one,
-    )
-    .await
-    .expect("stale generation marker");
+    let stale = mark_channel_installation_round_trip(&pool, id, channel_type, generation_one)
+        .await
+        .expect("stale generation marker");
     assert!(stale.is_none(), "stale generation must not verify the row");
 
-    let fresh = mark_channel_installation_round_trip(
-        &pool,
-        id,
-        channel_type,
-        generation_two,
-    )
-    .await
-    .expect("current generation marker");
+    let fresh = mark_channel_installation_round_trip(&pool, id, channel_type, generation_two)
+        .await
+        .expect("current generation marker");
     assert_eq!(fresh, Some(workspace_id));
 
-    let duplicate = mark_channel_installation_round_trip(
-        &pool,
-        id,
-        channel_type,
-        generation_two,
-    )
-    .await
-    .expect("duplicate generation marker");
+    let duplicate = mark_channel_installation_round_trip(&pool, id, channel_type, generation_two)
+        .await
+        .expect("duplicate generation marker");
     assert!(duplicate.is_none(), "a passed marker must be idempotent");
 
     let current = get_channel_installation(&pool, id, channel_type)
@@ -113,7 +97,10 @@ async fn round_trip_marker_is_generation_scoped_and_idempotent() {
         .expect("read patched installation")
         .expect("patched installation exists")
         .installed_at;
-    assert_eq!(before, after, "metadata patch must preserve installation generation");
+    assert_eq!(
+        before, after,
+        "metadata patch must preserve installation generation"
+    );
 
     sqlx::query("DELETE FROM channel_installation WHERE id = $1")
         .bind(id)

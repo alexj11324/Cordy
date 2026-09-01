@@ -236,13 +236,8 @@ impl OutboundReplier {
             result = api.send_message(&params) => result.map(|_| ()),
         };
         if result.is_ok() {
-            crate::verification::record_round_trip(
-                &self.pool,
-                &self.bus,
-                inst.id,
-                installed_at,
-            )
-            .await;
+            crate::verification::record_round_trip(&self.pool, &self.bus, inst.id, installed_at)
+                .await;
         }
         result
     }
