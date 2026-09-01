@@ -439,6 +439,19 @@ jobs:
     environment:
       name: macos-production
     steps:
+      - name: Require protected macos-production environment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          environment_json="$(gh api "repos/$GITHUB_REPOSITORY/environments/macos-production")"
+          reviewer_count="$(jq '[.protection_rules[]? | select(.type == "required_reviewers") | .reviewers[]?] | length' <<< "$environment_json")"
+          if [ "$reviewer_count" -lt 1 ]; then
+            echo "::error::macos-production must have at least one required reviewer; refusing to publish without the approval gate."
+            exit 1
+          fi
+
       - name: Checkout prepared release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
