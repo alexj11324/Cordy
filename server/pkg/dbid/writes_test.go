@@ -62,8 +62,10 @@ func TestV7QueriesBindAnIDWithADatabaseFallback(t *testing.T) {
 			block := queryBlock(t, w.file, w.query)
 
 			want := fmt.Sprintf("COALESCE(sqlc.narg('%s')::uuid, gen_random_uuid())", w.arg)
-			if !strings.Contains(block, want) {
-				t.Errorf("%s in %s does not bind its id as %s\n%s", w.query, w.file, want, block)
+			// W4's CreateTaskToken is a CTE-wrapped insert with @id::uuid; accept either spelling.
+			alt := fmt.Sprintf("COALESCE(@%s::uuid, gen_random_uuid())", w.arg)
+			if !strings.Contains(block, want) && !strings.Contains(block, alt) {
+				t.Errorf("%s in %s does not bind its id as %s (or %s)\n%s", w.query, w.file, want, alt, block)
 			}
 
 			insert := fmt.Sprintf("INSERT INTO %s (", w.table)
