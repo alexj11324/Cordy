@@ -357,7 +357,7 @@ pub async fn delete_issue(
 ) -> anyhow::Result<u64> {
     let r = sqlx::query(
         r#"WITH target AS (
-    SELECT issue.id FROM issue WHERE issue.id = $1 AND issue.workspace_id = $2
+    SELECT issue.id FROM issue WHERE issue.id = $1 AND issue.workspace_id = $2 FOR UPDATE
 ),
 cleared_work_product_relations AS (
     DELETE FROM work_product_relation
@@ -420,6 +420,28 @@ DELETE FROM issue WHERE issue.id IN (SELECT target.id FROM target)"#,
     .execute(executor)
     .await?;
     Ok(r.rows_affected())
+}
+
+pub async fn clear_workspace_member_issue_owners(
+    executor: impl sqlx::Executor<'_, Database = sqlx::Postgres>,
+    workspace_id: Uuid,
+    user_id: Uuid,
+) -> anyhow::Result<Vec<Issue>> {
+    Ok(sqlx::query_as::<_, Issue>(
+        r#"UPDATE issue
+           SET owner_type = NULL,
+               owner_id = NULL,
+               revision = revision + 1,
+               updated_at = now()
+           WHERE workspace_id = $1
+             AND owner_type = 'member'
+             AND owner_id = $2
+           RETURNING *"#,
+    )
+    .bind(workspace_id)
+    .bind(user_id)
+    .fetch_all(executor)
+    .await?)
 }
 
 pub async fn delete_issue_metadata_key(

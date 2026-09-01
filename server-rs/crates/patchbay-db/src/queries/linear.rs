@@ -1784,6 +1784,7 @@ pub async fn tombstone_project_binding(
                SELECT id
                FROM linear_project_binding
                WHERE workspace_id = $1 AND id = $2
+               FOR UPDATE
            ), tombstoned_binding AS (
                UPDATE linear_project_binding
                SET status = 'tombstone',
