@@ -913,13 +913,10 @@ async fn revoke_and_remove_member(
     archived_by: Uuid,
 ) -> anyhow::Result<MemberRevocation> {
     let mut transaction = state.pool.begin().await?;
-    let locked_member = member::lock_member_by_user_and_workspace(
-        &mut *transaction,
-        user_id,
-        workspace_id,
-    )
-    .await?
-    .ok_or_else(|| anyhow::anyhow!("member is no longer in the workspace"))?;
+    let locked_member =
+        member::lock_member_by_user_and_workspace(&mut *transaction, user_id, workspace_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("member is no longer in the workspace"))?;
     anyhow::ensure!(
         locked_member.id == member_id,
         "workspace member identity changed during revocation"
