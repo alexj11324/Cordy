@@ -223,7 +223,7 @@ impl TaskService {
                 TaskServiceError::Internal(format!("record task completion handoff: {error}"))
             })?;
         linear_agent_q::enqueue_linear_agent_terminal_event(
-            &mut *tx,
+            &mut tx,
             t.id,
             &format!("linear-agent-terminal:{}:completed", t.id),
             &serde_json::json!({
@@ -566,7 +566,7 @@ impl TaskService {
 
         if !retry_pending {
             linear_agent_q::enqueue_linear_agent_terminal_event(
-                &mut *tx,
+                &mut tx,
                 t.id,
                 &format!("linear-agent-terminal:{}:failed", t.id),
                 &serde_json::json!({

@@ -5093,7 +5093,7 @@ impl TaskService {
                     ))
                 })?;
             linear_agent_q::enqueue_linear_agent_terminal_event(
-                &mut *tx,
+                &mut tx,
                 cancelled.id,
                 &format!("linear-agent-terminal:{}:cancelled", cancelled.id),
                 &serde_json::json!({
@@ -5162,7 +5162,7 @@ impl TaskService {
                     ))
                 })?;
             linear_agent_q::enqueue_linear_agent_terminal_event(
-                &mut *tx,
+                &mut tx,
                 cancelled.id,
                 &format!("linear-agent-terminal:{}:cancelled", cancelled.id),
                 &serde_json::json!({

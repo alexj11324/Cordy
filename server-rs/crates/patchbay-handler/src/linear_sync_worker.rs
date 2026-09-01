@@ -30,8 +30,8 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::linear::{
-    strip_patchbay_issue_marker, LinearRemoteIssue, LinearRemoteLabel, LinearRemoteUser,
-    LinearTokenError, LinearTokenManager,
+    strip_patchbay_issue_marker, LinearIssueCreateInput, LinearIssueUpdateInput, LinearRemoteIssue,
+    LinearRemoteLabel, LinearRemoteUser, LinearTokenError, LinearTokenManager,
 };
 use crate::state::HandlerState;
 
@@ -390,6 +390,19 @@ fn agent_label_ids_for_issue(
         }
     }
     Ok(Some(label_ids))
+}
+
+struct ExistingRemoteIssueInput<'a> {
+    connection: &'a LinearConnection,
+    binding: LinearProjectBinding,
+    link: LinearIssueLink,
+    remote: LinearRemoteIssue,
+    remote_snapshot: Value,
+    source_event_id: &'a str,
+    event_timestamp_ms: Option<i64>,
+    remote_updated_at: DateTime<Utc>,
+    updated_from: Option<&'a Value>,
+    agent_decision: AgentLabelDecision,
 }
 
 /// A supervisor-owned Linear Inbox worker. `HandlerState` is cloned into the
@@ -1000,19 +1013,19 @@ impl LinearSyncWorker {
         };
         let remote = if let Some(remote) = current_remote {
             manager
-                .update_issue(
-                    connection.id,
-                    &remote.id,
-                    issue.id,
-                    &issue.title,
-                    issue.description.as_deref(),
+                .update_issue(&LinearIssueUpdateInput {
+                    connection_id: connection.id,
+                    linear_issue_id: &remote.id,
+                    patchbay_issue_id: issue.id,
+                    title: &issue.title,
+                    description: issue.description.as_deref(),
                     priority,
-                    state_id.as_deref(),
-                    due_date.as_deref(),
-                    update_assignee,
-                    update_delegate,
-                    agent_label_ids.as_deref(),
-                )
+                    state_id: state_id.as_deref(),
+                    due_date: due_date.as_deref(),
+                    assignee_id: update_assignee,
+                    delegate_id: update_delegate,
+                    label_ids: agent_label_ids.as_deref(),
+                })
                 .await
                 .map_err(|error| classify_token_error(error, "update Linear Issue"))?
         } else if row.attempts > 1 {
@@ -1029,20 +1042,20 @@ impl LinearSyncWorker {
                     ))
                 })?;
                 manager
-                    .create_issue(
-                        connection.id,
+                    .create_issue(&LinearIssueCreateInput {
+                        connection_id: connection.id,
                         team_id,
-                        &binding.linear_project_id,
-                        issue.id,
-                        &issue.title,
-                        issue.description.as_deref(),
+                        project_id: &binding.linear_project_id,
+                        issue_id: issue.id,
+                        title: &issue.title,
+                        description: issue.description.as_deref(),
                         priority,
-                        state_id.as_deref(),
-                        due_date.as_deref(),
-                        linear_owner_id.as_deref(),
-                        desired_delegate_id,
-                        agent_label_ids.as_deref(),
-                    )
+                        state_id: state_id.as_deref(),
+                        due_date: due_date.as_deref(),
+                        assignee_id: linear_owner_id.as_deref(),
+                        delegate_id: desired_delegate_id,
+                        label_ids: agent_label_ids.as_deref(),
+                    })
                     .await
                     .map_err(|error| classify_token_error(error, "create Linear Issue"))?
             }
@@ -1053,20 +1066,20 @@ impl LinearSyncWorker {
                 ))
             })?;
             manager
-                .create_issue(
-                    connection.id,
+                .create_issue(&LinearIssueCreateInput {
+                    connection_id: connection.id,
                     team_id,
-                    &binding.linear_project_id,
-                    issue.id,
-                    &issue.title,
-                    issue.description.as_deref(),
+                    project_id: &binding.linear_project_id,
+                    issue_id: issue.id,
+                    title: &issue.title,
+                    description: issue.description.as_deref(),
                     priority,
-                    state_id.as_deref(),
-                    due_date.as_deref(),
-                    linear_owner_id.as_deref(),
-                    desired_delegate_id,
-                    agent_label_ids.as_deref(),
-                )
+                    state_id: state_id.as_deref(),
+                    due_date: due_date.as_deref(),
+                    assignee_id: linear_owner_id.as_deref(),
+                    delegate_id: desired_delegate_id,
+                    label_ids: agent_label_ids.as_deref(),
+                })
                 .await
                 .map_err(|error| classify_token_error(error, "create Linear Issue"))?
         };
@@ -1984,18 +1997,18 @@ impl LinearSyncWorker {
                 link.binding_id = binding.id;
             }
             return self
-                .apply_existing_remote_issue(
+                .apply_existing_remote_issue(ExistingRemoteIssueInput {
                     connection,
                     binding,
                     link,
                     remote,
-                    snapshot,
+                    remote_snapshot: snapshot,
                     source_event_id,
                     event_timestamp_ms,
                     remote_updated_at,
                     updated_from,
                     agent_decision,
-                )
+                })
                 .await;
         }
         let mapped_category = patchbay_service::issue_status::effective(
@@ -2294,17 +2307,20 @@ impl LinearSyncWorker {
 
     async fn apply_existing_remote_issue(
         &self,
-        connection: &LinearConnection,
-        binding: LinearProjectBinding,
-        link: LinearIssueLink,
-        remote: LinearRemoteIssue,
-        remote_snapshot: Value,
-        source_event_id: &str,
-        event_timestamp_ms: Option<i64>,
-        remote_updated_at: DateTime<Utc>,
-        updated_from: Option<&Value>,
-        agent_decision: AgentLabelDecision,
+        input: ExistingRemoteIssueInput<'_>,
     ) -> Result<(), SyncError> {
+        let ExistingRemoteIssueInput {
+            connection,
+            binding,
+            link,
+            remote,
+            remote_snapshot,
+            source_event_id,
+            event_timestamp_ms,
+            remote_updated_at,
+            updated_from,
+            agent_decision,
+        } = input;
         if event_timestamp_ms.is_none()
             && link
                 .remote_updated_at

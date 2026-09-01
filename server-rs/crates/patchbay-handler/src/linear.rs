@@ -940,7 +940,7 @@ async fn resolve_conflict(
     let applied = match state
         .issues
         .apply_external_patch_in_transaction(
-            &mut *transaction,
+            &mut transaction,
             workspace_id,
             issue.id,
             IssueCommand::ApplyExternalPatch {
@@ -1403,7 +1403,7 @@ async fn create_binding(
     match linear_q::create_project_binding(&mut *transaction, &input).await {
         Ok(binding) => {
             if binding_needs_outbox_seed(None, &binding) {
-                if let Err(error) = seed_binding_outbox(&mut *transaction, &binding).await {
+                if let Err(error) = seed_binding_outbox(&mut transaction, &binding).await {
                     tracing::warn!(%error, binding_id = %binding.id, "Linear binding Outbox seed failed");
                     return error_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
@@ -1518,7 +1518,7 @@ async fn update_binding(
     match linear_q::update_project_binding(&mut *transaction, &input).await {
         Ok(Some(binding)) => {
             if binding_needs_outbox_seed(Some(&existing), &binding) {
-                if let Err(error) = seed_binding_outbox(&mut *transaction, &binding).await {
+                if let Err(error) = seed_binding_outbox(&mut transaction, &binding).await {
                     tracing::warn!(%error, binding_id = %binding.id, "Linear binding Outbox seed failed");
                     return error_response(
                         StatusCode::INTERNAL_SERVER_ERROR,
@@ -1648,7 +1648,7 @@ async fn enqueue_initial_import(
         }
     };
     let inserted = match linear_q::insert_sync_inbox(
-        &mut *transaction,
+        &mut transaction,
         job_id,
         binding.connection_id,
         &delivery_id,
@@ -2071,6 +2071,35 @@ pub(crate) struct LinearRemoteIssue {
     pub assignee: Option<LinearRemoteUser>,
     pub delegate: Option<LinearRemoteUser>,
     pub labels: LinearCatalogPage<LinearRemoteLabel>,
+}
+
+pub(crate) struct LinearIssueCreateInput<'a> {
+    pub connection_id: Uuid,
+    pub team_id: &'a str,
+    pub project_id: &'a str,
+    pub issue_id: Uuid,
+    pub title: &'a str,
+    pub description: Option<&'a str>,
+    pub priority: i64,
+    pub state_id: Option<&'a str>,
+    pub due_date: Option<&'a str>,
+    pub assignee_id: Option<&'a str>,
+    pub delegate_id: Option<&'a str>,
+    pub label_ids: Option<&'a [String]>,
+}
+
+pub(crate) struct LinearIssueUpdateInput<'a> {
+    pub connection_id: Uuid,
+    pub linear_issue_id: &'a str,
+    pub patchbay_issue_id: Uuid,
+    pub title: &'a str,
+    pub description: Option<&'a str>,
+    pub priority: i64,
+    pub state_id: Option<&'a str>,
+    pub due_date: Option<&'a str>,
+    pub assignee_id: Option<Option<&'a str>>,
+    pub delegate_id: Option<Option<&'a str>>,
+    pub label_ids: Option<&'a [String]>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -3021,96 +3050,75 @@ impl LinearTokenManager {
 
     pub(crate) async fn create_issue(
         &self,
-        connection_id: Uuid,
-        team_id: &str,
-        project_id: &str,
-        issue_id: Uuid,
-        title: &str,
-        description: Option<&str>,
-        priority: i64,
-        state_id: Option<&str>,
-        due_date: Option<&str>,
-        assignee_id: Option<&str>,
-        delegate_id: Option<&str>,
-        label_ids: Option<&[String]>,
+        input: &LinearIssueCreateInput<'_>,
     ) -> Result<LinearRemoteIssue, LinearTokenError> {
-        let access_token = self.access_token(connection_id).await?;
-        let mut input = serde_json::Map::new();
-        input.insert("teamId".to_string(), json!(team_id));
-        input.insert("projectId".to_string(), json!(project_id));
-        input.insert("title".to_string(), json!(title));
-        input.insert(
+        let access_token = self.access_token(input.connection_id).await?;
+        let mut variables = serde_json::Map::new();
+        variables.insert("teamId".to_string(), json!(input.team_id));
+        variables.insert("projectId".to_string(), json!(input.project_id));
+        variables.insert("title".to_string(), json!(input.title));
+        variables.insert(
             "description".to_string(),
-            json!(description_with_patchbay_marker(description, issue_id)),
+            json!(description_with_patchbay_marker(input.description, input.issue_id)),
         );
-        input.insert("priority".to_string(), json!(priority));
-        if let Some(state_id) = state_id {
-            input.insert("stateId".to_string(), json!(state_id));
+        variables.insert("priority".to_string(), json!(input.priority));
+        if let Some(state_id) = input.state_id {
+            variables.insert("stateId".to_string(), json!(state_id));
         }
-        if let Some(due_date) = due_date {
-            input.insert("dueDate".to_string(), json!(due_date));
+        if let Some(due_date) = input.due_date {
+            variables.insert("dueDate".to_string(), json!(due_date));
         }
-        if let Some(assignee_id) = assignee_id {
-            input.insert("assigneeId".to_string(), json!(assignee_id));
+        if let Some(assignee_id) = input.assignee_id {
+            variables.insert("assigneeId".to_string(), json!(assignee_id));
         }
-        if let Some(delegate_id) = delegate_id {
-            input.insert("delegateId".to_string(), json!(delegate_id));
+        if let Some(delegate_id) = input.delegate_id {
+            variables.insert("delegateId".to_string(), json!(delegate_id));
         }
-        if let Some(label_ids) = label_ids {
-            input.insert("labelIds".to_string(), json!(label_ids));
+        if let Some(label_ids) = input.label_ids {
+            variables.insert("labelIds".to_string(), json!(label_ids));
         }
         self.mutate_issue(
             &access_token,
             "issueCreate",
             "mutation LinearIssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } delegate { id } labels { nodes { id } } } userErrors { message } } }",
-            json!({ "input": Value::Object(input) }),
+            json!({ "input": Value::Object(variables) }),
         )
         .await
     }
 
     pub(crate) async fn update_issue(
         &self,
-        connection_id: Uuid,
-        linear_issue_id: &str,
-        patchbay_issue_id: Uuid,
-        title: &str,
-        description: Option<&str>,
-        priority: i64,
-        state_id: Option<&str>,
-        due_date: Option<&str>,
-        assignee_id: Option<Option<&str>>,
-        delegate_id: Option<Option<&str>>,
-        label_ids: Option<&[String]>,
+        input: &LinearIssueUpdateInput<'_>,
     ) -> Result<LinearRemoteIssue, LinearTokenError> {
-        let access_token = self.access_token(connection_id).await?;
-        let mut input = serde_json::Map::new();
-        input.insert("title".to_string(), json!(title));
-        input.insert(
+        let access_token = self.access_token(input.connection_id).await?;
+        let mut variables = serde_json::Map::new();
+        variables.insert("title".to_string(), json!(input.title));
+        variables.insert(
             "description".to_string(),
             json!(description_with_patchbay_marker(
-                description,
-                patchbay_issue_id
+                input.description,
+                input.patchbay_issue_id
             )),
         );
-        input.insert("priority".to_string(), json!(priority));
-        input.insert("dueDate".to_string(), json!(due_date));
-        if let Some(state_id) = state_id {
-            input.insert("stateId".to_string(), json!(state_id));
+        variables.insert("priority".to_string(), json!(input.priority));
+        variables.insert("dueDate".to_string(), json!(input.due_date));
+        if let Some(state_id) = input.state_id {
+            variables.insert("stateId".to_string(), json!(state_id));
         }
-        if let Some(assignee_id) = assignee_id {
-            input.insert("assigneeId".to_string(), json!(assignee_id));
+        if let Some(assignee_id) = input.assignee_id {
+            variables.insert("assigneeId".to_string(), json!(assignee_id));
         }
-        if let Some(delegate_id) = delegate_id {
-            input.insert("delegateId".to_string(), json!(delegate_id));
+        if let Some(delegate_id) = input.delegate_id {
+            variables.insert("delegateId".to_string(), json!(delegate_id));
         }
-        if let Some(label_ids) = label_ids {
-            input.insert("labelIds".to_string(), json!(label_ids));
+        if let Some(label_ids) = input.label_ids {
+            variables.insert("labelIds".to_string(), json!(label_ids));
         }
         self.mutate_issue(
             &access_token,
             "issueUpdate",
             "mutation LinearIssueUpdate($issueId: ID!, $input: IssueUpdateInput!) { issueUpdate(id: $issueId, input: $input) { success issue { id identifier title description priority state { id name type } dueDate project { id } updatedAt team { id } assignee { id } delegate { id } labels { nodes { id } } } userErrors { message } } }",
-            json!({ "issueId": linear_issue_id, "input": Value::Object(input) }),
+            json!({ "issueId": input.linear_issue_id, "input": Value::Object(variables) }),
         )
         .await
     }
