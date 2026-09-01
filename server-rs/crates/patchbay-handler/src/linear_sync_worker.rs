@@ -1439,10 +1439,28 @@ impl LinearSyncWorker {
         // linked so dispatch always observes the current Agent label route.
         let manager = LinearTokenManager::from_state(&self.state)
             .map_err(|error| classify_token_error(error, "create Linear token manager"))?;
-        if let Some(remote) = manager
+        let remote = manager
             .fetch_issue(connection.id, &event.linear_issue_id)
             .await
-            .map_err(|error| classify_token_error(error, "fetch Linear Agent Issue"))?
+            .map_err(|error| classify_token_error(error, "fetch Linear Agent Issue"))?;
+        let Some(remote) = remote else {
+            if let Some(existing_link) = link {
+                self.apply_remote_removal(
+                    connection,
+                    existing_link,
+                    &event.linear_issue_id,
+                    &source_event_id,
+                    event_timestamp_ms,
+                )
+                .await?;
+            }
+            return Ok(());
+        };
+        let remote_project_id = remote.project.as_ref().map(|project| project.id.clone());
+        let mut agent_route_override = None;
+        if self
+            .state
+            .linear_pull_import_enabled(connection.workspace_id)
         {
             self.apply_remote_issue(
                 connection,
@@ -1461,6 +1479,78 @@ impl LinearSyncWorker {
             )
             .await
             .map_err(SyncError::retry)?;
+        } else if let Some(existing_link) = link.as_ref() {
+            let binding = linear_q::get_project_binding(
+                &self.state.pool,
+                connection.workspace_id,
+                existing_link.binding_id,
+            )
+            .await
+            .map_err(SyncError::retry)?;
+            if let Some(binding) = binding.filter(|binding| {
+                binding.status == "active"
+                    && remote_project_id.as_deref() == Some(binding.linear_project_id.as_str())
+                    && existing_link.sync_status != "deleted"
+            }) {
+                let decision = self
+                    .agent_label_decision_for_issue(connection, &binding, &remote)
+                    .await?;
+                agent_route_override = decision.configured.then_some(decision.agent_id);
+                let issue = issue_q::get_issue_in_workspace(
+                    &self.state.pool,
+                    existing_link.patchbay_issue_id,
+                    connection.workspace_id,
+                )
+                .await
+                .map_err(SyncError::retry)?
+                .ok_or_else(|| SyncError::permanent(anyhow::anyhow!("Patchbay Issue not found")))?;
+                if decision.configured
+                    && (issue.executor_type.as_deref() != decision.agent_id.map(|_| "agent")
+                        || issue.executor_id != decision.agent_id)
+                {
+                    let mut transaction =
+                        self.state.pool.begin().await.map_err(SyncError::retry)?;
+                    let applied = self
+                        .state
+                        .issues
+                        .apply_external_patch_in_transaction(
+                            &mut transaction,
+                            connection.workspace_id,
+                            issue.id,
+                            IssueCommand::ApplyExternalPatch {
+                                source: ExternalSource::Linear,
+                                source_event_id: source_event_id.clone(),
+                                expected_revision: Some(issue.revision),
+                                suppress_external_outbox: true,
+                                patch: ExternalIssuePatch {
+                                    executor_type: Some(
+                                        decision.agent_id.map(|_| "agent".to_string()),
+                                    ),
+                                    executor_id: Some(decision.agent_id),
+                                    ..ExternalIssuePatch::default()
+                                },
+                            },
+                        )
+                        .await;
+                    match applied {
+                        Ok(applied) => {
+                            transaction.commit().await.map_err(SyncError::retry)?;
+                            self.state
+                                .issues
+                                .publish_external_issue_apply(&applied)
+                                .await;
+                        }
+                        Err(ExternalIssueError::ActiveExecutorRequired)
+                            if decision.agent_id.is_none() =>
+                        {
+                            transaction.rollback().await.map_err(SyncError::retry)?;
+                        }
+                        Err(error) => {
+                            return Err(classify_external_error(error, "apply Linear Agent route"));
+                        }
+                    }
+                }
+            }
         }
 
         let Some(link) = link else {
@@ -1487,6 +1577,22 @@ impl LinearSyncWorker {
             return Ok(());
         };
 
+        let binding = linear_q::get_project_binding(
+            &self.state.pool,
+            connection.workspace_id,
+            link.binding_id,
+        )
+        .await
+        .map_err(SyncError::retry)?;
+        if link.sync_status == "deleted"
+            || !binding.as_ref().is_some_and(|binding| {
+                binding.status == "active"
+                    && remote_project_id.as_deref() == Some(binding.linear_project_id.as_str())
+            })
+        {
+            return Ok(());
+        }
+
         let issue = issue_q::get_issue_in_workspace(
             &self.state.pool,
             link.patchbay_issue_id,
@@ -1495,10 +1601,12 @@ impl LinearSyncWorker {
         .await
         .map_err(SyncError::retry)?
         .ok_or_else(|| SyncError::permanent(anyhow::anyhow!("Patchbay Issue not found")))?;
-        let Some(agent_id) = (issue.executor_type.as_deref() == Some("agent"))
-            .then_some(issue.executor_id)
-            .flatten()
-        else {
+        let selected_agent_id = agent_route_override.unwrap_or_else(|| {
+            (issue.executor_type.as_deref() == Some("agent"))
+                .then_some(issue.executor_id)
+                .flatten()
+        });
+        let Some(agent_id) = selected_agent_id else {
             linear_agent_q::upsert_linear_agent_session(
                 &self.state.pool,
                 Uuid::now_v7(),

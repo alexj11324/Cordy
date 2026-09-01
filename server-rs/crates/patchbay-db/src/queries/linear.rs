@@ -120,7 +120,7 @@ pub async fn upsert_connection(
     connection: &LinearConnectionInput<'_>,
 ) -> anyhow::Result<LinearConnection> {
     Ok(sqlx::query_as::<_, LinearConnection>(
-        r#"WITH old_agent_sessions AS MATERIALIZED (
+        r#"WITH RECURSIVE old_agent_sessions AS MATERIALIZED (
                SELECT session.task_id
                FROM linear_agent_session AS session
                WHERE session.workspace_id = $2
@@ -130,10 +130,18 @@ pub async fn upsert_connection(
                      FROM linear_connection
                      WHERE workspace_id = $2 AND organization_id <> $3
                  )
+           ), old_agent_task_tree AS (
+               SELECT queue.id
+               FROM agent_task_queue AS queue
+               JOIN old_agent_sessions AS session ON session.task_id = queue.id
+               UNION
+               SELECT child.id
+               FROM agent_task_queue AS child
+               JOIN old_agent_task_tree AS parent ON child.parent_task_id = parent.id
            ), cancelled_agent_tasks AS (
                UPDATE agent_task_queue
                SET status = 'cancelled', completed_at = now(), prepare_lease_expires_at = NULL
-               WHERE id IN (SELECT task_id FROM old_agent_sessions)
+               WHERE id IN (SELECT id FROM old_agent_task_tree)
                  AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory',
                                 'waiting_capacity', 'deferred')
                RETURNING id
@@ -409,7 +417,36 @@ pub async fn mark_revoked(
     connection_id: Uuid,
 ) -> anyhow::Result<bool> {
     let result = sqlx::query(
-        r#"UPDATE linear_connection
+        r#"WITH RECURSIVE session_roots AS (
+               SELECT task_id
+               FROM linear_agent_session
+               WHERE workspace_id = $1
+                 AND connection_id = $2
+                 AND task_id IS NOT NULL
+           ), task_tree AS (
+               SELECT queue.id
+               FROM agent_task_queue AS queue
+               JOIN session_roots AS root ON root.task_id = queue.id
+               UNION
+               SELECT child.id
+               FROM agent_task_queue AS child
+               JOIN task_tree AS parent ON child.parent_task_id = parent.id
+           ), cancelled_tasks AS (
+               UPDATE agent_task_queue
+               SET status = 'cancelled', completed_at = now(), prepare_lease_expires_at = NULL
+               WHERE id IN (SELECT id FROM task_tree)
+                 AND status IN ('queued', 'dispatched', 'running', 'waiting_local_directory',
+                                'waiting_capacity', 'deferred')
+               RETURNING id
+           ), settled_sessions AS (
+               UPDATE linear_agent_session
+               SET status = 'cancelled', updated_at = now()
+               WHERE workspace_id = $1
+                 AND connection_id = $2
+                 AND status NOT IN ('completed', 'failed', 'cancelled')
+               RETURNING id
+           )
+           UPDATE linear_connection
            SET status = 'revoked', last_error = NULL, updated_at = now()
            WHERE workspace_id = $1 AND id = $2 AND status <> 'revoked'"#,
     )

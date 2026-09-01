@@ -2361,6 +2361,20 @@ async fn delete_issue_and_collect_attachment_urls(
         child_issue_ids,
     )
     .await?;
+    for task in &cancellation.cancelled_tasks {
+        linear_agent_q::enqueue_linear_agent_terminal_event(
+            &mut tx,
+            task.id,
+            &format!("linear-agent-terminal:{}:cancelled", task.id),
+            &json!({
+                "action": "terminal",
+                "linearAgentSessionTerminal": true,
+                "status": "cancelled",
+                "taskId": task.id,
+            }),
+        )
+        .await?;
+    }
     let target_tasks = agent::cancel_agent_tasks_by_issue(&mut *tx, issue.id).await?;
     for task in &target_tasks {
         linear_agent_q::enqueue_linear_agent_terminal_event(

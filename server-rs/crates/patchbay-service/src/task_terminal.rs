@@ -1154,6 +1154,35 @@ impl TaskService {
                 .clone()
                 .filter(|r| !r.is_empty())
                 .unwrap_or_else(|| "agent_error".to_string());
+            if !retry_pending {
+                let terminal_enqueue = async {
+                    let mut tx = self.pool.begin().await?;
+                    linear_agent_q::enqueue_linear_agent_terminal_event(
+                        &mut tx,
+                        t.id,
+                        &format!("linear-agent-terminal:{}:failed", t.id),
+                        &serde_json::json!({
+                            "action": "terminal",
+                            "linearAgentSessionTerminal": true,
+                            "status": "failed",
+                            "error": t.error.as_deref(),
+                            "failureReason": failure_reason.as_str(),
+                            "taskId": t.id,
+                        }),
+                    )
+                    .await?;
+                    tx.commit().await?;
+                    Ok::<_, anyhow::Error>(())
+                }
+                .await;
+                if let Err(error) = terminal_enqueue {
+                    tracing::warn!(
+                        task_id = %t.id,
+                        %error,
+                        "handle failed tasks: enqueue Linear Agent terminal event failed"
+                    );
+                }
+            }
             self.capture_task_failed(t).await;
 
             if let Some(issue_id) = t.issue_id {
