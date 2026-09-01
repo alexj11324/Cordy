@@ -632,6 +632,12 @@ struct PreparedIssueEnqueue {
     head_sha: String,
 }
 
+struct LinearIssueEnqueueAuthority {
+    connection_id: Uuid,
+    patchbay_user_id: Uuid,
+    linear_user_id: String,
+}
+
 #[derive(Default)]
 struct AnalyticsContextCache {
     map: HashMap<String, analytics::TaskContext>,
@@ -2352,6 +2358,33 @@ impl TaskService {
             .await
     }
 
+    pub async fn enqueue_task_for_issue_with_handoff_from_linear(
+        &self,
+        issue: &Issue,
+        handoff_note: &str,
+        patchbay_user_id: Uuid,
+        connection_id: Uuid,
+        linear_user_id: &str,
+    ) -> Result<AgentTaskQueue, TaskServiceError> {
+        self.enqueue_issue_task_with_comment_plan_internal(
+            issue,
+            None,
+            vec![],
+            false,
+            handoff_note,
+            Some(patchbay_user_id),
+            None,
+            None,
+            None,
+            Some(LinearIssueEnqueueAuthority {
+                connection_id,
+                patchbay_user_id,
+                linear_user_id: linear_user_id.to_string(),
+            }),
+        )
+        .await
+    }
+
     /// Creates the coordinator's task while it is still unclaimable. The
     /// coordinator links the returned task to its assignment in the same
     /// transaction that promotes it to `queued`.
@@ -2372,6 +2405,7 @@ impl TaskService {
             None,
             None,
             Some(coordination_assignment_id),
+            None,
         )
         .await
     }
@@ -2527,6 +2561,7 @@ impl TaskService {
             rerun_of_task_id,
             fire_at,
             None,
+            None,
         )
         .await
     }
@@ -2543,6 +2578,7 @@ impl TaskService {
         rerun_of_task_id: Option<Uuid>,
         fire_at: Option<chrono::DateTime<chrono::Utc>>,
         coordination_assignment_id: Option<Uuid>,
+        linear_authority: Option<LinearIssueEnqueueAuthority>,
     ) -> Result<AgentTaskQueue, TaskServiceError> {
         if coordination_assignment_id.is_some() && fire_at.is_some() {
             return Err(TaskServiceError::Internal(
@@ -2553,6 +2589,28 @@ impl TaskService {
             .prepare_issue_enqueue(issue, trigger_comment_id, actor_user_id, true)
             .await?;
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        if let Some(authority) = linear_authority {
+            if lock_member_by_user_and_workspace(
+                &mut *tx,
+                authority.patchbay_user_id,
+                issue.workspace_id,
+            )
+            .await
+            .map_err(downcast_sqlx)?
+            .is_none()
+                || !linear_q::lock_linear_member_binding(
+                    &mut *tx,
+                    issue.workspace_id,
+                    authority.connection_id,
+                    authority.patchbay_user_id,
+                    &authority.linear_user_id,
+                )
+                .await
+                .map_err(downcast_sqlx)?
+            {
+                return Err(TaskServiceError::AgentThreadInvokeForbidden);
+            }
+        }
         // The owner-row fence acquires workspace → agent → issue → runtime
         // locks. Take it before the issue FOR UPDATE below so this transaction
         // cannot invert the teardown/merge lock order.

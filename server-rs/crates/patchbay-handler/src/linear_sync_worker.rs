@@ -1374,26 +1374,6 @@ impl LinearSyncWorker {
                 "Linear Issue Link disappeared during push"
             )));
         }
-        if self.state.linear_agent_bridge_enabled(row.workspace_id) {
-            if let Some(url) = self.patchbay_issue_url(&issue).await? {
-                manager
-                    .create_or_update_attachment(
-                        connection.id,
-                        &remote.id,
-                        "Open in Patchbay",
-                        &format!("Agent · {}", issue.status),
-                        &url,
-                        json!({
-                            "patchbay_issue_id": issue.id.to_string(),
-                            "status": issue.status,
-                        }),
-                    )
-                    .await
-                    .map_err(|error| {
-                        classify_token_error(error, "publish Linear Agent attachment")
-                    })?;
-            }
-        }
         let mut selection_retries_enqueued = false;
         if let Some(agent_id) = (issue.executor_type.as_deref() == Some("agent"))
             .then_some(issue.executor_id)
@@ -1432,6 +1412,76 @@ impl LinearSyncWorker {
             )));
         }
         transaction.commit().await.map_err(SyncError::retry)?;
+        if self.state.linear_agent_bridge_enabled(row.workspace_id) {
+            let mut attachment_failed = false;
+            match self.patchbay_issue_url(&issue).await {
+                Ok(Some(url)) => {
+                    if let Err(error) = manager
+                        .create_or_update_attachment(
+                            connection.id,
+                            &remote.id,
+                            "Open in Patchbay",
+                            &format!("Agent · {}", issue.status),
+                            &url,
+                            json!({
+                                "patchbay_issue_id": issue.id.to_string(),
+                                "status": issue.status,
+                            }),
+                        )
+                        .await
+                    {
+                        attachment_failed = true;
+                        tracing::warn!(
+                            %error,
+                            issue_id = %issue.id,
+                            linear_issue_id = %remote.id,
+                            "failed to publish optional Linear Agent attachment"
+                        );
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    attachment_failed = true;
+                    tracing::warn!(
+                        error = %error.message(),
+                        issue_id = %issue.id,
+                        linear_issue_id = %remote.id,
+                        "failed to resolve optional Linear Agent attachment URL"
+                    );
+                }
+            }
+            if attachment_failed {
+                if let Err(error) = activity::create_activity(
+                    &self.state.pool,
+                    row.workspace_id,
+                    issue.id,
+                    Some("system"),
+                    None,
+                    "linear_agent_attachment_failed",
+                    &json!({
+                        "source": "linear",
+                        "connection_id": connection.id,
+                        "linear_issue_id": remote.id.clone(),
+                        "linear_identifier": remote.identifier.clone(),
+                        "outbox_id": row.id,
+                    }),
+                    linear_sync_activity_id(
+                        connection.id,
+                        issue.id,
+                        &row.id.to_string(),
+                        "agent_attachment_failed",
+                    ),
+                )
+                .await
+                {
+                    tracing::warn!(
+                        %error,
+                        issue_id = %issue.id,
+                        "failed to record optional Linear Agent attachment failure"
+                    );
+                }
+            }
+        }
         if selection_retries_enqueued {
             self.notify.notify_waiters();
         }
@@ -1684,10 +1734,12 @@ impl LinearSyncWorker {
                                 .publish_external_issue_apply(&applied)
                                 .await;
                         }
-                        Err(ExternalIssueError::ActiveExecutorRequired)
-                            if decision.agent_id.is_none() =>
-                        {
+                        Err(
+                            ExternalIssueError::ActiveExecutorRequired
+                            | ExternalIssueError::ReviewReviewerRequired,
+                        ) => {
                             transaction.rollback().await.map_err(SyncError::retry)?;
+                            agent_route_override = Some(None);
                         }
                         Err(error) => {
                             return Err(classify_external_error(error, "apply Linear Agent route"));
@@ -1805,8 +1857,17 @@ impl LinearSyncWorker {
             .map_err(SyncError::retry)?;
             return Ok(());
         }
+        let requester_linear_user_id = event
+            .requester_user_id
+            .as_deref()
+            .filter(|id| !id.trim().is_empty())
+            .ok_or_else(|| {
+                SyncError::permanent(anyhow::anyhow!(
+                    "Linear Agent Session creator identity is required"
+                ))
+            })?;
         let requester_user_id = self
-            .patchbay_requester_id(connection, event.requester_user_id.as_deref())
+            .patchbay_requester_id(connection, Some(requester_linear_user_id))
             .await?;
 
         let existing_session = linear_agent_q::get_linear_agent_session(
@@ -1918,6 +1979,7 @@ impl LinearSyncWorker {
             None
         };
         let session_marker = format!("linear-agent-session:{}", event.session_id);
+        let main_lane_key = format!("issue:{}:agent:{agent_id}:main", issue.id);
         if task.is_none() {
             if let Some(task_id) = agent_q::find_task_id_by_issue_agent_session_marker(
                 &self.state.pool,
@@ -1963,7 +2025,10 @@ impl LinearSyncWorker {
                 .await
                 .map_err(SyncError::retry)?
                 .into_iter()
-                .find(|candidate| candidate.agent_id == agent_id);
+                .find(|candidate| {
+                    candidate.agent_id == agent_id
+                        && candidate.execution_lane_key.as_str() == main_lane_key
+                });
         }
         if let Some(parent_task) = task.as_ref() {
             if claimed_session.task_id != Some(parent_task.id)
@@ -2032,10 +2097,12 @@ impl LinearSyncWorker {
             let enqueue_result = self
                 .state
                 .tasks
-                .enqueue_task_for_issue_with_handoff(
+                .enqueue_task_for_issue_with_handoff_from_linear(
                     &agent_issue,
                     &handoff,
-                    Some(requester_user_id),
+                    requester_user_id,
+                    connection.id,
+                    requester_linear_user_id,
                 )
                 .await;
             task = match enqueue_result {
@@ -2066,7 +2133,10 @@ impl LinearSyncWorker {
                             .await
                             .map_err(SyncError::retry)?
                             .into_iter()
-                            .find(|candidate| candidate.agent_id == agent_id),
+                            .find(|candidate| {
+                                candidate.agent_id == agent_id
+                                    && candidate.execution_lane_key.as_str() == main_lane_key
+                            }),
                     )
                 }
                 Err(error) => {

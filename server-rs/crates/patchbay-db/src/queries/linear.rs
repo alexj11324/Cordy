@@ -558,6 +558,28 @@ pub async fn get_linear_member_binding_by_linear_user(
         .await?)
 }
 
+pub async fn lock_linear_member_binding(
+    executor: impl Executor<'_, Database = Postgres>,
+    workspace_id: Uuid,
+    connection_id: Uuid,
+    patchbay_user_id: Uuid,
+    linear_user_id: &str,
+) -> anyhow::Result<bool> {
+    Ok(sqlx::query_scalar::<_, Uuid>(
+        r#"SELECT id FROM linear_member_binding
+           WHERE workspace_id = $1 AND connection_id = $2
+             AND patchbay_user_id = $3 AND linear_user_id = $4
+           FOR SHARE"#,
+    )
+    .bind(workspace_id)
+    .bind(connection_id)
+    .bind(patchbay_user_id)
+    .bind(linear_user_id)
+    .fetch_optional(executor)
+    .await?
+    .is_some())
+}
+
 pub async fn upsert_linear_member_binding(
     executor: impl Executor<'_, Database = Postgres>,
     id: Uuid,
