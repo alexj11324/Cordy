@@ -55,10 +55,11 @@ pub async fn upsert_linear_agent_session(
            last_event_id = EXCLUDED.last_event_id,\
            last_event_at_ms = EXCLUDED.last_event_at_ms,\
            updated_at = now() \
-         WHERE EXCLUDED.last_event_at_ms IS NULL \
+         WHERE linear_agent_session.status NOT IN ('completed', 'failed', 'cancelled') \
+           AND (EXCLUDED.last_event_at_ms IS NULL \
             OR linear_agent_session.last_event_at_ms IS NULL \
             OR EXCLUDED.last_event_at_ms > linear_agent_session.last_event_at_ms \
-            OR EXCLUDED.last_event_id = linear_agent_session.last_event_id \
+            OR EXCLUDED.last_event_id = linear_agent_session.last_event_id) \
          RETURNING {columns}",
         columns = columns(),
     );

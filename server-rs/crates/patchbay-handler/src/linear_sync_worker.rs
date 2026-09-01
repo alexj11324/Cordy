@@ -1475,6 +1475,14 @@ impl LinearSyncWorker {
         .await
         .map_err(SyncError::retry)?;
         if existing_session.as_ref().is_some_and(|session| {
+            matches!(
+                session.status.as_str(),
+                "completed" | "failed" | "cancelled"
+            )
+        }) {
+            return Ok(());
+        }
+        if existing_session.as_ref().is_some_and(|session| {
             session.last_event_id != row.delivery_id
                 && matches!(
                     (event_timestamp_ms, session.last_event_at_ms),
