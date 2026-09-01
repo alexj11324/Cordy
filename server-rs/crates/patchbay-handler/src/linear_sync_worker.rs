@@ -26,6 +26,7 @@ use patchbay_service::issue_service::{
 use patchbay_service::task_helpers::has_runnable_successor;
 use patchbay_service::task_service::pending_slot_taken_err;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -55,6 +56,22 @@ fn linear_sync_activity_id(
         format!("patchbay:linear:activity:{action}:{connection_id}:{issue_id}:{source_event_id}")
             .as_bytes(),
     )
+}
+
+fn linear_agent_activity_id(
+    connection_id: Uuid,
+    session_id: &str,
+    delivery_id: &str,
+) -> Uuid {
+    let digest = Sha256::digest(
+        format!("patchbay:linear:agent-activity:{connection_id}:{session_id}:{delivery_id}")
+            .as_bytes(),
+    );
+    let mut bytes = [0_u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    Uuid::from_bytes(bytes)
 }
 
 #[derive(Debug)]
@@ -2189,6 +2206,11 @@ impl LinearSyncWorker {
                 .create_agent_activity(
                     connection.id,
                     &event.session_id,
+                    linear_agent_activity_id(
+                        connection.id,
+                        &event.session_id,
+                        &row.delivery_id,
+                    ),
                     json!({"type": "response", "body": event.body}),
                 )
                 .await
@@ -2270,6 +2292,7 @@ impl LinearSyncWorker {
             .create_agent_activity(
                 connection.id,
                 &event.session_id,
+                linear_agent_activity_id(connection.id, &event.session_id, &row.delivery_id),
                 json!({"type": "response", "body": event.body}),
             )
             .await
@@ -3256,7 +3279,10 @@ impl LinearSyncWorker {
                 .await;
             match apply_result {
                 Ok(applied) => (Some(applied), false),
-                Err(ExternalIssueError::ActiveExecutorRequired) if executor_changed => {
+                Err(
+                    ExternalIssueError::ActiveExecutorRequired
+                    | ExternalIssueError::ReviewReviewerRequired,
+                ) if executor_changed => {
                     let applied = if merge.remote_changed || destination_project_id.is_some() {
                         Some(
                             self.state
@@ -4532,6 +4558,15 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(failed.body, "provider unavailable");
+    }
+
+    #[test]
+    fn agent_activity_id_is_stable_provider_uuid_v4() {
+        let connection_id = Uuid::now_v7();
+        let first = linear_agent_activity_id(connection_id, "session-1", "delivery-1");
+        assert_eq!(first, linear_agent_activity_id(connection_id, "session-1", "delivery-1"));
+        assert_ne!(first, linear_agent_activity_id(connection_id, "session-1", "delivery-2"));
+        assert_eq!(first.get_version_num(), 4);
     }
 
     #[test]

@@ -3324,6 +3324,7 @@ impl LinearTokenManager {
         &self,
         connection_id: Uuid,
         session_id: &str,
+        activity_id: Uuid,
         content: Value,
     ) -> Result<(), LinearTokenError> {
         let access_token = self.access_token(connection_id).await?;
@@ -3333,6 +3334,7 @@ impl LinearTokenManager {
             "mutation AgentActivityCreate($input: AgentActivityCreateInput!) { agentActivityCreate(input: $input) { success } }",
             json!({
                 "input": {
+                    "id": activity_id,
                     "agentSessionId": session_id,
                     "content": content
                 }

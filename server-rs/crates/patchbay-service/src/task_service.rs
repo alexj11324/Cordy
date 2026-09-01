@@ -3395,6 +3395,31 @@ impl TaskService {
             .map(|source| source.as_str().to_string());
 
         let mut tx = self.pool.begin().await.map_err(TaskServiceError::Sql)?;
+        // Member revocation takes this row before touching owned runtimes,
+        // Agents, or tasks. Follow the same order so a continuation cannot
+        // deadlock with revocation and hold the fence through the final
+        // integration/ACL authorization and child insert.
+        let requester_member = match lock_member_by_user_and_workspace(
+            &mut *tx,
+            requester_user_id,
+            snapshot_agent.workspace_id,
+        )
+        .await
+        {
+            Ok(member) => member,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    requester_user_id = %requester_user_id,
+                    agent_id = %snapshot_agent.id,
+                    "failed to verify Agent thread requester membership"
+                );
+                None
+            }
+        };
+        if integration_connection_id.is_some() && requester_member.is_none() {
+            return Err(TaskServiceError::AgentThreadInvokeForbidden);
+        }
         // Follow the repository owner-row fence: lock Agent/owner rows before
         // the task row. Claim paths take the same order; upgrading the Agent
         // after locking the task could otherwise deadlock on a concurrent
@@ -3472,33 +3497,6 @@ impl TaskService {
             return Err(TaskServiceError::AgentThreadInvokeForbidden);
         }
 
-        // Recheck the authenticated requester after taking the Agent and
-        // parent-task locks. The handler performs the same admission check for
-        // the HTTP path, but this service boundary must also fail closed for
-        // direct callers and for permission changes racing the continuation
-        // request. Locking the member row makes a concurrent role revocation
-        // serialize with this final authorization decision.
-        let requester_member = match lock_member_by_user_and_workspace(
-            &mut *tx,
-            requester_user_id,
-            agent.workspace_id,
-        )
-        .await
-        {
-            Ok(member) => member,
-            Err(error) => {
-                tracing::warn!(
-                    %error,
-                    requester_user_id = %requester_user_id,
-                    agent_id = %agent.id,
-                    "failed to verify Agent thread requester membership"
-                );
-                None
-            }
-        };
-        if integration_authorized && requester_member.is_none() {
-            return Err(TaskServiceError::AgentThreadInvokeForbidden);
-        }
         let is_workspace_member = requester_member.is_some();
 
         // Continuation children intentionally clear `automation_run_id`; use
