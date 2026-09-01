@@ -905,13 +905,17 @@ impl LinearSyncWorker {
             let remote_owner_id = self
                 .remote_owner_id(&connection, remote.assignee.as_ref())
                 .await?;
-            preserve_unmapped_remote_assignee = !remote_owner_id.mapped;
             let remote_snapshot =
                 remote_sync_snapshot(&remote, &remote_status, &remote_priority, remote_owner_id);
             let base_snapshot = self
                 .normalized_base_snapshot(&connection, &link.last_common_snapshot, &binding)
                 .await?;
             let local_snapshot = local_sync_snapshot(&issue);
+            preserve_unmapped_remote_assignee = should_preserve_unmapped_remote_assignee(
+                remote_owner_id.mapped,
+                &base_snapshot,
+                &local_snapshot,
+            );
             let merge = merge_sync_snapshots(&base_snapshot, &local_snapshot, &remote_snapshot);
             if !merge.conflicts.is_empty() {
                 let source_event_id = format!("linear-outbox:{}", row.id);
@@ -3025,11 +3029,13 @@ impl LinearSyncWorker {
                 "Linear Issue Link disappeared after merge"
             )));
         }
-        if destination_project_id.is_some()
-            && merge.conflicts.is_empty()
-            && merge.merged != merge.common
-        {
-            let event_key = format!("linear-rebind:{source_event_id}:{}", issue.id);
+        if merge.conflicts.is_empty() && merge.merged != merge.common {
+            let reason = if destination_project_id.is_some() {
+                "linear_project_rebind"
+            } else {
+                "linear_conflict_reconciled"
+            };
+            let event_key = format!("linear-reconcile:{source_event_id}:{}", issue.id);
             linear_q::enqueue_issue_outbox_for_binding(
                 &mut *transaction,
                 connection.workspace_id,
@@ -3037,7 +3043,7 @@ impl LinearSyncWorker {
                 issue.id,
                 &event_key,
                 "issue_updated",
-                &json!({"reason": "linear_project_rebind"}),
+                &json!({"reason": reason}),
             )
             .await
             .map_err(SyncError::retry)?;
@@ -3248,6 +3254,14 @@ fn linear_assignee_update(
     } else {
         Some(linear_owner_id)
     }
+}
+
+fn should_preserve_unmapped_remote_assignee(
+    remote_owner_mapped: bool,
+    base_snapshot: &Value,
+    local_snapshot: &Value,
+) -> bool {
+    !remote_owner_mapped && local_snapshot.get("owner_id") == base_snapshot.get("owner_id")
 }
 
 fn local_sync_snapshot(issue: &patchbay_db::models::Issue) -> Value {
@@ -3776,7 +3790,7 @@ mod tests {
         merge_sync_snapshots, merge_sync_snapshots_with_updated_from,
         normalize_base_snapshot_fields, parse_agent_session_event,
         parse_agent_session_terminal_event, parse_remote_timestamp, remote_sync_snapshot,
-        retry_delay, RemoteOwnerMapping,
+        retry_delay, should_preserve_unmapped_remote_assignee, RemoteOwnerMapping,
     };
     use crate::linear::{LinearRemoteIssue, LinearRemoteLabel, LinearRemoteState};
 
@@ -3913,6 +3927,16 @@ mod tests {
             Some(Some("mapped-linear-user"))
         );
         assert_eq!(linear_assignee_update(false, None), Some(None));
+        assert!(should_preserve_unmapped_remote_assignee(
+            false,
+            &json!({"owner_id": null}),
+            &json!({"owner_id": null})
+        ));
+        assert!(!should_preserve_unmapped_remote_assignee(
+            false,
+            &json!({"owner_id": Uuid::now_v7().to_string()}),
+            &json!({"owner_id": null})
+        ));
     }
 
     #[test]
