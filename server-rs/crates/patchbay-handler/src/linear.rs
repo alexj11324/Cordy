@@ -1309,13 +1309,21 @@ fn agent_label_mapping_matches_catalog(
     let Some(labels) = mapping.get("labels").and_then(Value::as_object) else {
         return false;
     };
-    labels.keys().all(|label_id| {
-        catalog.labels.iter().any(|label| {
-            label.id == *label_id
-                && !label.is_group
-                && label.parent_id.as_deref() == Some(group_id)
-                && (label.team_id.is_none() || label.team_id.as_deref() == linear_team_id)
-        })
+    let mut agent_targets = std::collections::HashSet::new();
+    labels.iter().all(|(label_id, agent_id)| {
+        let Some(agent_id) = agent_id
+            .as_str()
+            .filter(|value| value.parse::<Uuid>().is_ok())
+        else {
+            return false;
+        };
+        agent_targets.insert(agent_id)
+            && catalog.labels.iter().any(|label| {
+                label.id == *label_id
+                    && !label.is_group
+                    && label.parent_id.as_deref() == Some(group_id)
+                    && (label.team_id.is_none() || label.team_id.as_deref() == linear_team_id)
+            })
     })
 }
 
@@ -4374,6 +4382,14 @@ mod tests {
                     team_id: None,
                 },
                 LinearCatalogLabelResponse {
+                    id: "workspace-agent-2".to_string(),
+                    name: "Agent 2".to_string(),
+                    color: "#000000".to_string(),
+                    is_group: false,
+                    parent_id: Some("workspace-group".to_string()),
+                    team_id: None,
+                },
+                LinearCatalogLabelResponse {
                     id: "other-team-group".to_string(),
                     name: "Other team".to_string(),
                     color: "#000000".to_string(),
@@ -4394,6 +4410,17 @@ mod tests {
         ));
         assert!(!agent_label_mapping_matches_catalog(
             &json!({"group_id": "other-team-group", "labels": {}}),
+            Some("team-1"),
+            &catalog,
+        ));
+        assert!(!agent_label_mapping_matches_catalog(
+            &json!({
+                "group_id": "workspace-group",
+                "labels": {
+                    "workspace-agent": Uuid::nil().to_string(),
+                    "workspace-agent-2": Uuid::nil().to_string(),
+                },
+            }),
             Some("team-1"),
             &catalog,
         ));

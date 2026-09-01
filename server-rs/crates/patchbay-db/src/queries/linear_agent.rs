@@ -384,6 +384,32 @@ pub async fn enqueue_linear_agent_terminal_event(
     Ok(row.is_some())
 }
 
+/// A terminal event is current when its task is the session-correlated task
+/// or one of that task's retry/continuation descendants. A parent that
+/// finishes after correlation moves to a child is deliberately superseded.
+pub async fn linear_agent_terminal_task_matches(
+    executor: impl Executor<'_, Database = Postgres>,
+    current_task_id: Uuid,
+    terminal_task_id: Uuid,
+) -> anyhow::Result<bool> {
+    Ok(sqlx::query_scalar::<_, bool>(
+        r#"WITH RECURSIVE ancestors AS (
+               SELECT id, parent_task_id
+               FROM agent_task_queue
+               WHERE id = $2
+               UNION ALL
+               SELECT parent.id, parent.parent_task_id
+               FROM agent_task_queue AS parent
+               JOIN ancestors AS child ON child.parent_task_id = parent.id
+           )
+           SELECT EXISTS (SELECT 1 FROM ancestors WHERE id = $1)"#,
+    )
+    .bind(current_task_id)
+    .bind(terminal_task_id)
+    .fetch_one(executor)
+    .await?)
+}
+
 pub async fn mark_linear_agent_session_terminal(
     executor: impl Executor<'_, Database = Postgres>,
     workspace_id: Uuid,

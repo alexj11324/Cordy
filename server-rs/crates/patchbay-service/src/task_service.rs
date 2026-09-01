@@ -4915,6 +4915,23 @@ impl TaskService {
                         "record cancelled reviewer recovery: {error}"
                     ))
                 })?;
+            linear_agent_q::enqueue_linear_agent_terminal_event(
+                &mut *executor,
+                task.id,
+                &format!("linear-agent-terminal:{}:cancelled", task.id),
+                &serde_json::json!({
+                    "action": "terminal",
+                    "linearAgentSessionTerminal": true,
+                    "status": "cancelled",
+                    "taskId": task.id,
+                }),
+            )
+            .await
+            .map_err(|error| {
+                TaskServiceError::Internal(format!(
+                    "enqueue bulk Linear Agent cancellation: {error}"
+                ))
+            })?;
         }
         Ok(cancelled)
     }

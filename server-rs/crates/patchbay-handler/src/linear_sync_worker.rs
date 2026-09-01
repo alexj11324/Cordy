@@ -92,6 +92,7 @@ struct LinearAgentSessionTerminalEvent {
     session_id: String,
     status: String,
     body: String,
+    task_id: Uuid,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -221,6 +222,13 @@ fn parse_agent_session_terminal_event(
             "unsupported Linear Agent Session terminal status: {status}"
         )));
     }
+    let task_id = first_string(Some(data), &["taskId"])
+        .and_then(|value| value.parse::<Uuid>().ok())
+        .ok_or_else(|| {
+            SyncError::permanent(anyhow::anyhow!(
+                "Linear Agent Session terminal event has no valid task id"
+            ))
+        })?;
     let result_body = data
         .get("result")
         .and_then(|result| {
@@ -242,6 +250,7 @@ fn parse_agent_session_terminal_event(
         session_id,
         status,
         body,
+        task_id,
     })
 }
 
@@ -598,12 +607,16 @@ impl LinearSyncWorker {
                                     lost.cancel();
                                     return;
                                 }
-                                Err(error) => tracing::warn!(
-                                    inbox_id = %inbox_id,
-                                    worker_id,
-                                    %error,
-                                    "Linear Inbox lease renewal failed"
-                                ),
+                                Err(error) => {
+                                    tracing::warn!(
+                                        inbox_id = %inbox_id,
+                                        worker_id,
+                                        %error,
+                                        "Linear Inbox lease renewal failed; cancelling processing before ownership can expire"
+                                    );
+                                    lost.cancel();
+                                    return;
+                                }
                             }
                         }
                     }
@@ -1822,6 +1835,19 @@ impl LinearSyncWorker {
                 "Linear Agent Session terminal event has no local correlation"
             ))
         })?;
+        let Some(current_task_id) = existing.task_id else {
+            return Ok(());
+        };
+        if !linear_agent_q::linear_agent_terminal_task_matches(
+            &self.state.pool,
+            current_task_id,
+            event.task_id,
+        )
+        .await
+        .map_err(SyncError::retry)?
+        {
+            return Ok(());
+        }
         if existing.status == event.status && existing.last_event_id == row.delivery_id {
             return Ok(());
         }
@@ -2600,7 +2626,7 @@ impl LinearSyncWorker {
         let mut transaction = self.state.pool.begin().await.map_err(SyncError::retry)?;
         let (applied, agent_selection_required) = if merge.remote_changed
             || destination_project_id.is_some()
-            || (merge.conflicts.is_empty() && executor_changed)
+            || executor_changed
         {
             let mut patch = if merge.remote_changed {
                 external_patch_from_snapshot(&merge.merged)?
@@ -2608,7 +2634,7 @@ impl LinearSyncWorker {
                 ExternalIssuePatch::default()
             };
             patch.project_id = destination_project_id.map(Some);
-            if merge.conflicts.is_empty() && executor_changed {
+            if executor_changed {
                 patch.executor_type = Some(agent_decision.agent_id.map(|_| "agent".to_string()));
                 patch.executor_id = Some(agent_decision.agent_id);
             }
@@ -2734,6 +2760,17 @@ impl LinearSyncWorker {
                     .issues
                     .publish_external_issue_apply(applied)
                     .await;
+            }
+            if !agent_selection_required {
+                if let Some(agent_id) = agent_decision.agent_id {
+                    self.resume_waiting_agent_sessions(
+                        connection,
+                        &issue,
+                        agent_id,
+                        source_event_id,
+                    )
+                    .await?;
+                }
             }
             return Ok(());
         }
@@ -3747,20 +3784,24 @@ mod tests {
 
     #[test]
     fn agent_session_terminal_parser_keeps_result_or_failure_context() {
+        let task_id = Uuid::now_v7();
         let completed = parse_agent_session_terminal_event(&json!({
             "status": "completed",
             "agentSession": {"id": "session-1"},
-            "result": {"output": "Implemented the change"}
+            "result": {"output": "Implemented the change"},
+            "taskId": task_id,
         }))
         .unwrap();
         assert_eq!(completed.session_id, "session-1");
         assert_eq!(completed.status, "completed");
         assert_eq!(completed.body, "Implemented the change");
+        assert_eq!(completed.task_id, task_id);
 
         let failed = parse_agent_session_terminal_event(&json!({
             "status": "failed",
             "agentSession": {"id": "session-1"},
-            "error": "provider unavailable"
+            "error": "provider unavailable",
+            "taskId": task_id,
         }))
         .unwrap();
         assert_eq!(failed.body, "Patchbay Agent failed: provider unavailable");
