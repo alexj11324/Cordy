@@ -888,6 +888,7 @@ impl LinearSyncWorker {
 
         let manager = LinearTokenManager::from_state(&self.state)
             .map_err(|error| classify_token_error(error, "create Linear token manager"))?;
+        let mut preserve_unmapped_remote_assignee = false;
         let current_remote = if let Some(link) = existing_link.as_ref() {
             let remote = manager
                 .fetch_issue(connection.id, &link.linear_issue_id)
@@ -904,6 +905,7 @@ impl LinearSyncWorker {
             let remote_owner_id = self
                 .remote_owner_id(&connection, remote.assignee.as_ref())
                 .await?;
+            preserve_unmapped_remote_assignee = !remote_owner_id.mapped;
             let remote_snapshot =
                 remote_sync_snapshot(&remote, &remote_status, &remote_priority, remote_owner_id);
             let base_snapshot = self
@@ -1075,7 +1077,10 @@ impl LinearSyncWorker {
                 )))
             }
         };
-        let update_assignee = Some(linear_owner_id.as_deref());
+        let update_assignee = linear_assignee_update(
+            preserve_unmapped_remote_assignee,
+            linear_owner_id.as_deref(),
+        );
         let desired_delegate_id = if self.state.linear_agent_bridge_enabled(row.workspace_id)
             && issue.executor_type.as_deref() == Some("agent")
             && issue.executor_id.is_some()
@@ -3234,6 +3239,17 @@ struct RemoteOwnerMapping {
     mapped: bool,
 }
 
+fn linear_assignee_update(
+    preserve_unmapped_remote_assignee: bool,
+    linear_owner_id: Option<&str>,
+) -> Option<Option<&str>> {
+    if preserve_unmapped_remote_assignee && linear_owner_id.is_none() {
+        None
+    } else {
+        Some(linear_owner_id)
+    }
+}
+
 fn local_sync_snapshot(issue: &patchbay_db::models::Issue) -> Value {
     json!({
         "title": issue.title,
@@ -3886,6 +3902,16 @@ mod tests {
             Some("linear-started")
         );
         assert_eq!(map_local_status(&binding, "todo"), None);
+    }
+
+    #[test]
+    fn outbound_assignee_preserves_unmapped_remote_owner_until_reassigned() {
+        assert_eq!(linear_assignee_update(true, None), None);
+        assert_eq!(
+            linear_assignee_update(true, Some("mapped-linear-user")),
+            Some(Some("mapped-linear-user"))
+        );
+        assert_eq!(linear_assignee_update(false, None), Some(None));
     }
 
     #[test]
